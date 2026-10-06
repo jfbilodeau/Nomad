@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "cmake",
+      "label": "CMake: build runtime",
+      "command": "build",
+      "targets": [
+        "nomad-runtime"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [],
+      "detail": "Build the generic Nomad runtime using the active CMake configuration"
+    },
+    {
+      "type": "cmake",
+      "label": "CMake: build tests",
+      "command": "build",
+      "targets": [
+        "nomad_test"
+      ],
+      "group": "test",
+      "problemMatcher": [],
+      "detail": "Build the Nomad unit tests using the active CMake configuration"
+    },
+    {
+      "type": "cmake",
+      "label": "CMake: clean",
+      "command": "clean",
+      "problemMatcher": [],
+      "detail": "Clean the active CMake build configuration"
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Nomad Runtime - GDB",
+      "type": "cppdbg",
+      "request": "launch",
+      "preLaunchTask": "CMake: build runtime",
+      "program": "${workspaceFolder}/build/nomad-runtime",
+      "args": [
+        "--resource-path",
+        "${input:nomadResourcePath}"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${input:nomadResourcePath}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable GDB pretty-printing",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        },
+        {
+          "description": "Use Intel disassembly syntax",
+          "text": "-gdb-set disassembly-flavor intel",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "Nomad Runtime - MSVC Debug",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "preLaunchTask": "CMake: build runtime",
+      "program": "${workspaceFolder}/build/Debug/nomad-runtime.exe",
+      "args": [
+        "--resource-path",
+        "${input:nomadResourcePath}",
+        "--debug"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${input:nomadResourcePath}",
+      "environment": [],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Nomad Runtime - MSVC Release",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "preLaunchTask": "CMake: build runtime",
+      "program": "${workspaceFolder}/build/Release/nomad-runtime.exe",
+      "args": [
+        "--resource-path",
+        "${input:nomadResourcePath}"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${input:nomadResourcePath}",
+      "environment": [],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Nomad Tests - GDB",
+      "type": "cppdbg",
+      "request": "launch",
+      "preLaunchTask": "CMake: build tests",
+      "program": "${workspaceFolder}/build/tests/nomad_test",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/build/tests",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable GDB pretty-printing",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "Nomad Tests - MSVC",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "preLaunchTask": "CMake: build tests",
+      "program": "${workspaceFolder}/build/tests/Debug/nomad_test.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/build/tests/Debug",
+      "environment": [],
+      "console": "integratedTerminal"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "nomadResourcePath",
+      "type": "promptString",
+      "description": "Absolute path to a Nomad project's resource directory"
+    }
+  ]
+}
