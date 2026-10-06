@@ -25,7 +25,7 @@ jobs:
       matrix:
         include:
           - name: Windows
-            os: windows-latest
+            os: windows-2022
             preset: windows-ci
           - name: Ubuntu
             os: ubuntu-latest
