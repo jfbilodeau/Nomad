@@ -11,6 +11,7 @@
 #include <nomad/script/Function.hpp>
 #include <nomad/script/RuntimeValue.hpp>
 
+#include <type_traits>
 #include <vector>
 
 namespace nomad {
@@ -23,15 +24,17 @@ class Closure;
 struct Instruction {
     explicit Instruction(const InstructionFn fn) : fn(fn) {}
     explicit Instruction(const RuntimeValue& value) : value(value) {}
-    Instruction(const Instruction& other) { fn = other.fn; }
+    Instruction(const Instruction& other) = default;
 
-    ~Instruction() {}
+    ~Instruction() = default;
 
     union {
         InstructionFn fn = nullptr;
         RuntimeValue value;
     };
 };
+
+static_assert(std::is_trivially_copyable_v<Instruction>, "Instruction must preserve its active union member when copied");
 
 class VirtualMachineException : public NomadException {
 public:
