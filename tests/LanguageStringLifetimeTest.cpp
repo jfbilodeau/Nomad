@@ -413,8 +413,10 @@ BOOST_AUTO_TEST_CASE(function_parameters_borrowed_from_context_variables_are_cop
     BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
     BOOST_TEST(!outcome.fault.has_value());
     BOOST_TEST(outcome.text == "B");
+#ifdef NOMAD_DEBUG
     // `global.x` still owns "B"; nothing else is live.
     BOOST_TEST(outcome.leakedStrings == 1);
+#endif
 
     const std::vector<NomadString> expected{"A", "A"};
     BOOST_TEST(consumed == expected, boost::test_tools::per_element());
@@ -435,8 +437,10 @@ BOOST_AUTO_TEST_CASE(context_variables_passed_to_functions_are_copied)
             BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
             BOOST_TEST(!outcome.fault.has_value());
             BOOST_TEST(outcome.text == expectedText);
+#ifdef NOMAD_DEBUG
             // `global.text` still owns its string; nothing else is live.
             BOOST_TEST(outcome.leakedStrings == 1);
+#endif
         }
     }
 }
@@ -475,11 +479,15 @@ BOOST_AUTO_TEST_CASE(closures_capture_copies_of_borrowed_parameters)
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
 
+#ifdef NOMAD_DEBUG
     const auto before = RuntimeValue::getLiveStringCount();
+#endif
     BOOST_REQUIRE(!fixture.execute("main").fault.has_value());
     BOOST_REQUIRE(closure != nullptr);
+#ifdef NOMAD_DEBUG
     // Only the captured copy is live.
     BOOST_TEST(RuntimeValue::getLiveStringCount() - before == 1);
+#endif
 
     RuntimeValue result;
     runtime.executeFunction(closure.get(), {}, result);
@@ -487,7 +495,9 @@ BOOST_AUTO_TEST_CASE(closures_capture_copies_of_borrowed_parameters)
     runtime.getStringType()->freeValue(result);
 
     closure.reset();
+#ifdef NOMAD_DEBUG
     BOOST_TEST(RuntimeValue::getLiveStringCount() == before);
+#endif
 }
 
 #ifdef NOMAD_DEBUG

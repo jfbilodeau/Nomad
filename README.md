@@ -1,5 +1,7 @@
 # Nomad
 
+[![CI](https://github.com/jfbilodeau/Nomad/actions/workflows/ci.yml/badge.svg)](https://github.com/jfbilodeau/Nomad/actions/workflows/ci.yml)
+
 Nomad is a compiled, strongly typed scripting language
 designed for embedding in C++ applications, and a 2D game engine built around it.
 
