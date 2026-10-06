@@ -158,6 +158,22 @@ BOOST_AUTO_TEST_CASE(live_string_counter_tracks_allocations)
 }
 #endif
 
+BOOST_AUTO_TEST_CASE(moving_string_values_transfers_ownership)
+{
+    RuntimeValue source;
+    source.setStringValue("abc");
+
+    RuntimeValue destination;
+    destination.initStringValue();
+    destination.moveStringValue(source);
+
+    BOOST_TEST(source.getStringValue() == nullptr);
+    BOOST_TEST(destination.getStringValue() == "abc");
+
+    destination.freeStringValue();
+    BOOST_TEST(destination.getStringValue() == nullptr);
+}
+
 BOOST_AUTO_TEST_CASE(discarded_string_results_are_freed)
 {
     checkCases({

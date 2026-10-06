@@ -152,10 +152,7 @@ void RuntimeValue::initStringValue(const NomadString& value) {
 
 void RuntimeValue::moveStringValue(RuntimeValue& other) {
     m_stringValue = other.m_stringValue;
-
-#ifdef NOMAD_DEBUG
     other.m_stringValue = nullptr;
-#endif
 }
 
 void RuntimeValue::freeStringValue() {
@@ -166,10 +163,7 @@ void RuntimeValue::freeStringValue() {
 #endif
 
     delete[] m_stringValue;
-
-#ifdef NOMAD_DEBUG
     m_stringValue = nullptr;
-#endif
 }
 
 NomadInteger RuntimeValue::getLiveStringCount() {
