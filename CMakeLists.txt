@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(NOMAD_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(NOMAD_WARNINGS_AS_ERRORS "Treat Nomad compiler warnings as errors" ON)
 
 if(NOMAD_ENABLE_SANITIZERS)
         if(MSVC)
@@ -151,6 +152,8 @@ FetchContent_Declare(
         GIT_TAG release-3.2.4
         GIT_SHALLOW    TRUE
         GIT_PROGRESS   TRUE
+        GIT_SUBMODULES ""
+        GIT_SUBMODULES_RECURSE FALSE
         OVERRIDE_FIND_PACKAGE
         EXCLUDE_FROM_ALL
 )

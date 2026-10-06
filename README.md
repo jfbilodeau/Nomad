@@ -12,10 +12,15 @@ The current baseline builds the engine library, generic runtime, and tests.
 Nomad requires CMake 3.30 or newer and a C++20 compiler.
 
 ```console
-cmake -S . -B build
-cmake --build build
-ctest --test-dir build
+cmake --preset windows-debug
+cmake --build --preset windows-debug
+ctest --preset windows-debug
 ```
+
+On Linux, use the corresponding `linux-debug` preset. The
+`windows-release` and `linux-release` presets create optimized builds.
+The `linux-sanitizers` preset enables AddressSanitizer and
+UndefinedBehaviorSanitizer for Linux diagnostics.
 
 See [the language documentation](docs/language.md) for the current Nomad
 language reference.

@@ -28,6 +28,17 @@
     },
     {
       "type": "cmake",
+      "label": "CMake: run tests",
+      "command": "test",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": [],
+      "detail": "Run CTest using the active CMake test preset"
+    },
+    {
+      "type": "cmake",
       "label": "CMake: clean",
       "command": "clean",
       "problemMatcher": [],

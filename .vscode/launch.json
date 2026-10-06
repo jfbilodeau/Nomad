@@ -6,7 +6,7 @@
       "type": "cppdbg",
       "request": "launch",
       "preLaunchTask": "CMake: build runtime",
-      "program": "${workspaceFolder}/build/nomad-runtime",
+      "program": "${workspaceFolder}/out/build/linux-debug/nomad-runtime",
       "args": [
         "--resource-path",
         "${input:nomadResourcePath}"
@@ -34,7 +34,7 @@
       "type": "cppvsdbg",
       "request": "launch",
       "preLaunchTask": "CMake: build runtime",
-      "program": "${workspaceFolder}/build/Debug/nomad-runtime.exe",
+      "program": "${workspaceFolder}/out/build/windows-debug/Debug/nomad-runtime.exe",
       "args": [
         "--resource-path",
         "${input:nomadResourcePath}",
@@ -50,7 +50,7 @@
       "type": "cppvsdbg",
       "request": "launch",
       "preLaunchTask": "CMake: build runtime",
-      "program": "${workspaceFolder}/build/Release/nomad-runtime.exe",
+      "program": "${workspaceFolder}/out/build/windows-release/Release/nomad-runtime.exe",
       "args": [
         "--resource-path",
         "${input:nomadResourcePath}"
@@ -65,10 +65,10 @@
       "type": "cppdbg",
       "request": "launch",
       "preLaunchTask": "CMake: build tests",
-      "program": "${workspaceFolder}/build/tests/nomad_test",
+      "program": "${workspaceFolder}/out/build/linux-debug/tests/nomad_test",
       "args": [],
       "stopAtEntry": false,
-      "cwd": "${workspaceFolder}/build/tests",
+      "cwd": "${workspaceFolder}/out/build/linux-debug/tests",
       "environment": [],
       "externalConsole": false,
       "MIMode": "gdb",
@@ -85,10 +85,10 @@
       "type": "cppvsdbg",
       "request": "launch",
       "preLaunchTask": "CMake: build tests",
-      "program": "${workspaceFolder}/build/tests/Debug/nomad_test.exe",
+      "program": "${workspaceFolder}/out/build/windows-debug/tests/Debug/nomad_test.exe",
       "args": [],
       "stopAtEntry": false,
-      "cwd": "${workspaceFolder}/build/tests/Debug",
+      "cwd": "${workspaceFolder}/out/build/windows-debug/tests/Debug",
       "environment": [],
       "console": "integratedTerminal"
     }
