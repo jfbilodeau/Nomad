@@ -16,6 +16,12 @@ else()
     set_source_files_properties(${DEAR_IMGUI_SOURCE} PROPERTIES COMPILE_OPTIONS "-w;-Wno-error")
     # Boost.Spirit templates instantiated by Tokenizer.cpp trigger conversion warnings outside Nomad source.
     set_source_files_properties(${NOMAD_SOURCE_DIR}/nomad/compiler/Tokenizer.cpp PROPERTIES COMPILE_OPTIONS "-Wno-error=conversion;-Wno-error=float-conversion")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        set_property(
+            SOURCE ${NOMAD_SOURCE_DIR}/nomad/compiler/Tokenizer.cpp
+            APPEND PROPERTY COMPILE_OPTIONS "-Wno-error=maybe-uninitialized"
+        )
+    endif()
     # Boost.JSON templates instantiated by these sources trigger conversion warnings outside Nomad source.
     set_source_files_properties(
         ${NOMAD_SOURCE_DIR}/nomad/game/ActionManager.cpp
