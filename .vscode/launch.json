@@ -143,6 +143,26 @@
       "cwd": "${workspaceFolder}/out/build/windows-debug/tests/Debug",
       "environment": [],
       "console": "integratedTerminal"
+    },
+    {
+      "name": "CMake: Run Tests",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "preLaunchTask": "CMake: build tests",
+      "program": "${env:ComSpec}",
+      "args": [
+        "/d",
+        "/c",
+        "ctest",
+        "--test-dir",
+        "${command:cmake.buildDirectory}",
+        "-C",
+        "${command:cmake.buildType}",
+        "--output-on-failure"
+      ],
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "console": "integratedTerminal"
     }
   ],
   "inputs": [
