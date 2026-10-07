@@ -7,7 +7,8 @@ designed for embedding in C++ applications, and a 2D game engine built around it
 
 Nomad is a bespoke language and engine built to suit my very specific brain. I don’t expect it to make sense to most people--maybe two others, tops.
 
-The current baseline builds the engine library, generic runtime, and tests.
+The current baseline builds the standalone `Nomad::Language` and
+`Nomad::Engine` libraries, compiler tooling, generic runtime, and tests.
 
 ## Runtime
 

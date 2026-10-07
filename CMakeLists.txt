@@ -248,6 +248,7 @@ set(
         ${NOMAD_INCLUDE_DIR}/nomad/compiler/statements/ReturnStatement.hpp
 
         ${NOMAD_INCLUDE_DIR}/nomad/debug/DebugConsole.hpp
+        ${NOMAD_INCLUDE_DIR}/nomad/debug/Decompiler.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/debug/DebugDraw.hpp
 
         ${NOMAD_INCLUDE_DIR}/nomad/game/Alignment.hpp
@@ -440,6 +441,64 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/system/String.cpp
 )
 
+set(
+        NOMAD_LANGUAGE_SOURCES
+        ${NOMAD_SOURCE_DIR}/nomad/Nomad.cpp
+
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/Argument.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/CallNode.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/Compilation.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/Compiler.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerContext.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/Expression.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/FormatStringCompiler.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/Operators.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/Parser.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/StatementParsers.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/SyntaxTree.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/Tokenizer.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/statements/EventStatement.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/statements/ReturnStatement.cpp
+
+        ${NOMAD_SOURCE_DIR}/nomad/debug/Decompiler.cpp
+
+        ${NOMAD_SOURCE_DIR}/nomad/log/ConsoleSink.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/log/Logger.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/log/MemorySink.cpp
+
+        ${NOMAD_SOURCE_DIR}/nomad/script/Closure.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunction.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunctions.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Documentation.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/DynamicVariable.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Event.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/FormatString.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/VirtualMachine.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/OpCode.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Runtime.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeOpCodes.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Function.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeValue.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Type.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Variable.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/VariableContext.cpp
+
+        ${NOMAD_SOURCE_DIR}/nomad/system/TempHeap.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/system/Memory.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/system/String.cpp
+)
+
+set(NOMAD_LANGUAGE_INCLUDE ${NOMAD_INCLUDE})
+list(
+        FILTER NOMAD_LANGUAGE_INCLUDE
+        INCLUDE REGEX
+        "/nomad/(compiler|log|script|system)/|/nomad/Nomad\\.hpp$|/nomad/debug/Decompiler\\.hpp$"
+)
+
+list(REMOVE_ITEM NOMAD_SOURCES ${NOMAD_LANGUAGE_SOURCES})
+
 #set(NOMAD_PUBLIC_HEADERS
 #    ${NOMAD_INCLUDE_DIR}/nomad/Nomad.hpp
 #    ${NOMAD_INCLUDE_DIR}/nomad/debug/DebugDraw.hpp
@@ -466,7 +525,7 @@ endif()
 option(NOMAD_BUILD_COMPILER "Build the Nomad compiler tooling" ON)
 if(NOMAD_BUILD_COMPILER)
     add_executable(nomadc apps/compiler/main.cpp)
-    target_link_libraries(nomadc PRIVATE Nomad::Engine)
+    target_link_libraries(nomadc PRIVATE Nomad::Language)
 endif()
 
 option(NOMAD_BUILD_TESTS "Build Nomad unit tests" ON)

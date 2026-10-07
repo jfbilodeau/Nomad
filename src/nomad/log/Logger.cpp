@@ -4,8 +4,6 @@
 
 #include <nomad/log/ConsoleSink.hpp>
 
-#include <SDL3/SDL.h>
-
 #include <algorithm>
 #include <chrono>
 #include <format>
