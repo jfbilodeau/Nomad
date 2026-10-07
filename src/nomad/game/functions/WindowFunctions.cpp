@@ -11,67 +11,79 @@
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>
 
-#include <utility>
-
 namespace nomad {
 
 void Game::initWindowFunctions() {
     log::debug("Initializing window functions");
 
-    const auto bindFunction = [this](const NomadString& name, NativeFunctionFn callback) {
-        if (!m_runtime->bindNativeFunction(name, std::move(callback))) {
-            throw NomadBug("Failed to bind native function '" + name + "'");
-        }
-    };
-
-    bindFunction(
+    m_runtime->registerNativeFunction(
         "window.maximize",
         [this](VirtualMachine* /*interpreter*/) {
             if (!SDL_MaximizeWindow(m_window)) {
                 log::error(NomadString("Unable to maximize window: ") + SDL_GetError());
             }
-        }
+        },
+        {},
+        m_runtime->getVoidType(),
+        NomadDoc("Maximizes the window.")
     );
 
-    bindFunction(
+    m_runtime->registerNativeFunction(
         "window.minimize",
         [this](VirtualMachine* /*interpreter*/) {
             if (!SDL_MinimizeWindow(m_window)) {
                 log::error(NomadString("Unable to minimize window: ") + SDL_GetError());
             }
-        }
+        },
+        {},
+        m_runtime->getVoidType(),
+        NomadDoc("Minimizes the window.")
     );
 
-    bindFunction(
+    m_runtime->registerNativeFunction(
         "window.setFps",
         [this](const VirtualMachine* interpreter) {
             const auto fps = static_cast<int>(interpreter->getIntegerParameter(0));
 
             m_fps = fps;
-        }
+        }, {
+            defParameter("framesPerSecond", m_runtime->getIntegerType(), NomadParamDoc("Frames per second."))
+        },
+        m_runtime->getVoidType(),
+        NomadDoc("Sets the frames per seconds (FPS) of the game.")
     );
 
-    bindFunction(
+    m_runtime->registerNativeFunction(
         "window.setResolution",
         [this](VirtualMachine* interpreter) {
             const auto resolutionX = static_cast<int>(interpreter->getIntegerParameter(0));
             const auto resolutionY = static_cast<int>(interpreter->getIntegerParameter(1));
 
             setResolution(resolutionX, resolutionY);
-        }
+        }, {
+            defParameter("resolutionWidth", m_runtime->getIntegerType(), NomadParamDoc("Resolution width.")),
+            defParameter("resolutionHeight", m_runtime->getIntegerType(), NomadParamDoc("Resolution height."))
+        },
+        m_runtime->getVoidType(),
+        NomadDoc("Sets the resolution of the game window.")
     );
 
-    bindFunction(
+    m_runtime->registerNativeFunction(
         "window.setSize",
         [this](const VirtualMachine* interpreter) {
             const auto width = static_cast<int>(interpreter->getIntegerParameter(0));
             const auto height = static_cast<int>(interpreter->getIntegerParameter(1));
 
             setWindowSize(width, height);
-        }
+        }, {
+            defParameter("windowWidth", m_runtime->getIntegerType(), NomadParamDoc("Window width.")),
+            defParameter("windowHeight", m_runtime->getIntegerType(), NomadParamDoc("Window height."))
+        },
+        m_runtime->getVoidType(),
+        NomadDoc("Sets the size of the game window.")
     );
 
-    bindFunction(
+    m_runtime->registerNativeFunction(
         "window.setSizeAndCenter",
         [this](const VirtualMachine* interpreter) {
             const auto width = static_cast<int>(interpreter->getIntegerParameter(0));
@@ -80,101 +92,139 @@ void Game::initWindowFunctions() {
             setWindowSize(width, height);
 
             centerWindow();
-        }
+        }, {
+            defParameter("windowWidth", m_runtime->getIntegerType(), NomadParamDoc("Window width.")),
+            defParameter("windowHeight", m_runtime->getIntegerType(), NomadParamDoc("Window height."))
+        },
+        m_runtime->getVoidType(),
+        NomadDoc("Sets the size of the game window.")
     );
 
-    bindFunction(
+    m_runtime->registerNativeFunction(
         "window.setTitle",
         [this](const VirtualMachine* interpreter) {
             const auto title = interpreter->getStringParameter(0);
 
             SDL_SetWindowTitle(m_window, title);
-        }
+        }, {
+            defParameter("windowTitle", m_runtime->getStringRefType(), NomadParamDoc("Title of the game window.")),
+        },
+        m_runtime->getVoidType(),
+        NomadDoc("Set the title of the game window.")
     );
 
-    bindFunction(
+    m_runtime->registerNativeFunction(
         "window.toggleFullScreen",
         [this](VirtualMachine* /*interpreter*/) {
             const auto fullscreen = (SDL_GetWindowFlags(m_window) & SDL_WINDOW_FULLSCREEN) != 0;
             if (!SDL_SetWindowFullscreen(m_window, !fullscreen)) {
                 log::error(NomadString("Unable to toggle window full-screen mode: ") + SDL_GetError());
             }
-        }
+        },
+        {},
+        m_runtime->getVoidType(),
+        NomadDoc("Toggles the window between windowed and full-screen modes.")
     );
+
 }
 
 void Game::initWindowCallbacks() {
-    const auto bindWindowCallback = [this](
+    const auto registerWindowCallback = [this](
         const NomadString& name,
         const NomadString& clearName,
-        std::shared_ptr<Closure> Game::* callback
+        std::shared_ptr<Closure> Game::* callback,
+        const std::vector<const Type*>& parameterTypes,
+        const NomadString& documentation
     ) {
-        if (!m_runtime->bindNativeFunction(
+        m_runtime->registerNativeFunction(
             name,
             [this, callback](VirtualMachine* interpreter) {
                 const auto functionId = interpreter->getIdParameter(0);
                 this->*callback = interpreter->createClosure(m_runtime.get(), functionId);
-            }
-        )) {
-            throw NomadBug("Failed to bind native function '" + name + "'");
-        }
+            }, {
+                defParameter(
+                    "callback",
+                    m_runtime->getCallbackType(parameterTypes, m_runtime->getVoidType()),
+                    NomadParamDoc("Callback to invoke when the window event occurs.")
+                )
+            },
+            m_runtime->getVoidType(),
+            NomadDoc(documentation)
+        );
 
-        if (!m_runtime->bindNativeFunction(
+        m_runtime->registerNativeFunction(
             clearName,
             [this, callback](VirtualMachine* /*interpreter*/) {
                 (this->*callback).reset();
-            }
-        )) {
-            throw NomadBug("Failed to bind native function '" + clearName + "'");
-        }
+            },
+            {},
+            m_runtime->getVoidType(),
+            NomadDoc("Clears the callback registered by " + name + ".")
+        );
     };
 
-    bindWindowCallback(
+    registerWindowCallback(
         "window.onClose",
         "window.clearOnClose",
-        &Game::m_onWindowClose
+        &Game::m_onWindowClose,
+        {},
+        "Sets the callback invoked when the user requests that the window close. The window is not closed automatically."
     );
 
-    bindWindowCallback(
+    registerWindowCallback(
         "window.onGainFocus",
         "window.clearOnGainFocus",
-        &Game::m_onWindowGainFocus
+        &Game::m_onWindowGainFocus,
+        {},
+        "Sets the callback invoked when the window gains focus."
     );
 
-    bindWindowCallback(
+    registerWindowCallback(
         "window.onLoseFocus",
         "window.clearOnLoseFocus",
-        &Game::m_onWindowLoseFocus
+        &Game::m_onWindowLoseFocus,
+        {},
+        "Sets the callback invoked when the window loses focus."
     );
 
-    bindWindowCallback(
+    registerWindowCallback(
         "window.onMaximize",
         "window.clearOnMaximize",
-        &Game::m_onWindowMaximize
+        &Game::m_onWindowMaximize,
+        {},
+        "Sets the callback invoked when the window is maximized."
     );
 
-    bindWindowCallback(
+    registerWindowCallback(
         "window.onMinimize",
         "window.clearOnMinimize",
-        &Game::m_onWindowMinimize
+        &Game::m_onWindowMinimize,
+        {},
+        "Sets the callback invoked when the window is minimized."
     );
 
-    bindWindowCallback(
+    registerWindowCallback(
         "window.onMove",
         "window.clearOnMove",
-        &Game::m_onWindowMove
+        &Game::m_onWindowMove,
+        {m_runtime->getIntegerType(), m_runtime->getIntegerType()},
+        "Sets the callback invoked when the window is moved. Receives the x and y position."
     );
 
-    bindWindowCallback(
+    registerWindowCallback(
         "window.onResize",
         "window.clearOnResize",
-        &Game::m_onWindowResize
+        &Game::m_onWindowResize,
+        {m_runtime->getIntegerType(), m_runtime->getIntegerType()},
+        "Sets the callback invoked when the window is resized. Receives the width and height."
     );
 
-    bindWindowCallback(
+    registerWindowCallback(
         "window.onRestore",
         "window.clearOnRestore",
-        &Game::m_onWindowRestore
+        &Game::m_onWindowRestore,
+        {},
+        "Sets the callback invoked when the window is restored."
     );
 }
 

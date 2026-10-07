@@ -1,7 +1,8 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
 #include <nomad/compiler/Compilation.hpp>
-#include <nomad/game/EngineApi.hpp>
+
+#include <nomad/game/Game.hpp>
 
 #include <TestDirectory.hpp>
 
@@ -115,28 +116,33 @@ BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
     BOOST_TEST(result.documentation.find("## NativeFunctions") != NomadString::npos);
 }
 
-BOOST_AUTO_TEST_CASE(engine_api_metadata_enables_headless_compilation)
+BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
 {
-    TestDirectory directory("nomad_compilation_test_engine_api");
-    const auto source = directory.write(
-        "engine.nomad",
-        "fun sceneSetup\n"
-        "end\n"
-        "fun resized width:int height:int\n"
-        "end\n"
-        "game.createScene sceneSetup\n"
-        "game.settings.load\n"
-        "window.onResize resized\n"
-        "window.clearOnResize\n"
-        "window.setTitle \"Nomad\"\n"
-        "return (rgb 1 2 3) + alignment.topLeft"
-    );
+    TestDirectory directory("nomad_compilation_test_headless");
+    directory.write("start.nomad", "window.setTitle \"Nomad\"\nreturn alignment.topLeft\n");
 
-    const auto languageOnly = checkPath(source);
-    BOOST_TEST(!languageOnly.succeeded());
+    // A bare runtime knows only the language built-ins, so the engine symbols are unresolved.
+    const auto withoutEngine = checkPath(directory.getPath());
+    BOOST_TEST(!withoutEngine.succeeded());
 
-    const auto withEngineApi = checkPath(source, registerEngineApi);
-    BOOST_REQUIRE(withEngineApi.succeeded());
+    GameOptions options;
+    options.resourcePath = directory.getPath().generic_string();
+
+    Game game(&options);
+    game.initializeHeadless();
+
+    // The dummy drivers still produce a real renderer, so the engine is fully constructed.
+    BOOST_TEST(game.getCanvas() != nullptr);
+    BOOST_TEST(game.getResources() != nullptr);
+
+    const auto result = checkPath(directory.getPath(), game.getRuntime());
+
+    for (const auto& diagnostic : result.diagnostics) {
+        BOOST_TEST_MESSAGE(formatDiagnostic(diagnostic));
+    }
+
+    BOOST_TEST(result.succeeded());
+    BOOST_TEST(result.errorCount == 0U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

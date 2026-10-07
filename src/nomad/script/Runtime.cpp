@@ -124,15 +124,6 @@ const std::vector<Instruction>& Runtime::getInstructions() const {
 
 NomadId Runtime::registerNativeFunction(
     const NomadString& name,
-    const std::vector<NativeFunctionParameterDefinition>& parameters,
-    const Type* returnType,
-    NomadDocArg
-) {
-    return registerNativeFunction(name, {}, parameters, returnType, doc);
-}
-
-NomadId Runtime::registerNativeFunction(
-    const NomadString& name,
     NativeFunctionFn nativeFunction_fn,
     const std::vector<NativeFunctionParameterDefinition>& parameters,
     const Type* returnType,
@@ -167,19 +158,6 @@ NomadId Runtime::registerNativeFunction(
     addCallable(name, callable);
 
     return id;
-}
-
-bool Runtime::bindNativeFunction(const NomadId id, NativeFunctionFn nativeFunctionFn) {
-    if (!isIdInRange(id, m_nativeFunctions.size()) || !nativeFunctionFn) {
-        return false;
-    }
-
-    m_nativeFunctions[toNomadIndex(id)].fn = std::move(nativeFunctionFn);
-    return true;
-}
-
-bool Runtime::bindNativeFunction(const NomadString& name, NativeFunctionFn nativeFunctionFn) {
-    return bindNativeFunction(getNativeFunctionId(name), std::move(nativeFunctionFn));
 }
 
 void Runtime::addCallable(const NomadString& name, const CallableId callable) {
@@ -837,10 +815,6 @@ NomadId Runtime::getNativeFunctionId(const NomadString& name) const {
 }
 
 NativeFunctionFn Runtime::getNativeFunctionFn(const NomadId id) const {
-    if (!isIdInRange(id, m_nativeFunctions.size())) {
-        return {};
-    }
-
     return m_nativeFunctions[toNomadIndex(id)].fn;
 }
 

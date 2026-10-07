@@ -17,20 +17,22 @@ namespace nomad {
 namespace {
 
 struct CompilationArtifacts {
-    std::unique_ptr<Runtime> runtime;
+    std::unique_ptr<Runtime> ownedRuntime;
+    Runtime* runtime = nullptr;
     CompilationResult result;
 };
 
-CompilationArtifacts compilePath(
-    const std::filesystem::path& path,
-    const RuntimeRegistrationFn& registerRuntime
-) {
-    auto runtime = std::make_unique<Runtime>();
+// When `externalRuntime` is null a bare runtime is created, exposing only the language built-ins.
+// Tools that need the engine API pass the runtime of a headless `Game`.
+CompilationArtifacts compilePath(const std::filesystem::path& path, Runtime* externalRuntime) {
+    std::unique_ptr<Runtime> ownedRuntime;
 
-    if (registerRuntime) {
-        registerRuntime(runtime.get());
+    if (externalRuntime == nullptr) {
+        ownedRuntime = std::make_unique<Runtime>();
+        externalRuntime = ownedRuntime.get();
     }
 
+    auto* runtime = externalRuntime;
     auto compiler = runtime->createCompiler();
     CompilerContext context(compiler.get());
     const auto sourceName = path.generic_string();
@@ -85,7 +87,8 @@ CompilationArtifacts compilePath(
     const auto diagnostics = context.getDiagnostics();
 
     return CompilationArtifacts{
-        std::move(runtime),
+        std::move(ownedRuntime),
+        runtime,
         CompilationResult{
             {diagnostics.begin(), diagnostics.end()},
             context.getErrorCount(),
@@ -100,16 +103,16 @@ bool CompilationResult::succeeded() const {
     return errorCount == 0;
 }
 
-CompilationResult checkPath(const std::filesystem::path& path, const RuntimeRegistrationFn& registerRuntime) {
-    return compilePath(path, registerRuntime).result;
+CompilationResult checkPath(const std::filesystem::path& path, Runtime* runtime) {
+    return compilePath(path, runtime).result;
 }
 
 InstructionDumpResult dumpInstructions(
     const std::filesystem::path& path,
     const std::optional<NomadString>& functionName,
-    const RuntimeRegistrationFn& registerRuntime
+    Runtime* runtime
 ) {
-    auto artifacts = compilePath(path, registerRuntime);
+    auto artifacts = compilePath(path, runtime);
     InstructionDumpResult result{std::move(artifacts.result), {}};
 
     if (!result.compilation.succeeded()) {
@@ -146,11 +149,8 @@ InstructionDumpResult dumpInstructions(
     return result;
 }
 
-DocumentationResult generateDocumentationForPath(
-    const std::filesystem::path& path,
-    const RuntimeRegistrationFn& registerRuntime
-) {
-    auto artifacts = compilePath(path, registerRuntime);
+DocumentationResult generateDocumentationForPath(const std::filesystem::path& path, Runtime* runtime) {
+    auto artifacts = compilePath(path, runtime);
     DocumentationResult result{std::move(artifacts.result), {}};
 
     if (!result.compilation.succeeded()) {
@@ -158,7 +158,7 @@ DocumentationResult generateDocumentationForPath(
     }
 
     std::ostringstream output;
-    generateDocumentation(artifacts.runtime.get(), output);
+    generateDocumentation(artifacts.runtime, output);
     result.documentation = output.str();
 
     return result;

@@ -2,13 +2,14 @@
 
 #include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/game/EngineApi.hpp>
+#include <nomad/game/Game.hpp>
 #include <nomad/log/Logger.hpp>
 
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 
 using namespace nomad;
 
@@ -27,6 +28,29 @@ void printDiagnostics(const CompilationResult& result) {
         std::cerr << formatDiagnostic(diagnostic) << '\n';
     }
 }
+
+// Stands up the real engine against SDL's dummy drivers so compiled sources resolve the same
+// `game.*`, `window.*`, `scene.*` and `t.*` symbols a windowed build would expose.
+class HeadlessGame {
+public:
+    explicit HeadlessGame(const std::filesystem::path& path) {
+        auto resourcePath = std::filesystem::is_regular_file(path) ? path.parent_path() : path;
+
+        if (resourcePath.empty()) {
+            resourcePath = std::filesystem::current_path();
+        }
+
+        m_options.resourcePath = resourcePath.generic_string();
+        m_game = std::make_unique<Game>(&m_options);
+        m_game->initializeHeadless();
+    }
+
+    [[nodiscard]] Runtime* getRuntime() const { return m_game->getRuntime(); }
+
+private:
+    GameOptions m_options;
+    std::unique_ptr<Game> m_game;
+};
 
 } // namespace
 
@@ -54,7 +78,8 @@ int main(const int argc, char** argv) {
         }
 
         const auto path = argc == 3 ? std::filesystem::path(argv[2]) : std::filesystem::current_path();
-        const auto result = checkPath(path, registerEngineApi);
+        const HeadlessGame game(path);
+        const auto result = checkPath(path, game.getRuntime());
         printDiagnostics(result);
 
         return result.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
@@ -95,7 +120,8 @@ int main(const int argc, char** argv) {
             }
         }
 
-        const auto result = dumpInstructions(path, functionName, registerEngineApi);
+        const HeadlessGame game(path);
+        const auto result = dumpInstructions(path, functionName, game.getRuntime());
         printDiagnostics(result.compilation);
 
         if (!result.compilation.succeeded()) {
@@ -146,7 +172,8 @@ int main(const int argc, char** argv) {
             return EXIT_FAILURE;
         }
 
-        const auto result = generateDocumentationForPath(path, registerEngineApi);
+        const HeadlessGame game(path);
+        const auto result = generateDocumentationForPath(path, game.getRuntime());
         printDiagnostics(result.compilation);
 
         if (!result.compilation.succeeded()) {

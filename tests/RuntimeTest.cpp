@@ -3,7 +3,6 @@
 #include <boost/test/unit_test.hpp>
 
 #include "nomad/game/Entity.hpp"
-#include "nomad/game/EngineApi.hpp"
 #include "nomad/game/EntityVariableContext.hpp"
 #include "nomad/game/Scene.hpp"
 #include "nomad/script/Runtime.hpp"
@@ -51,70 +50,6 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_and_duplicate_function_ids)
     BOOST_TEST(!runtime.getFunctionName(NOMAD_INVALID_ID).has_value());
     BOOST_TEST(!runtime.getFunctionName(-2).has_value());
     BOOST_TEST(!runtime.getFunctionName(1).has_value());
-}
-
-BOOST_AUTO_TEST_CASE(engine_api_callbacks_are_bound_separately_from_metadata)
-{
-    Runtime runtime;
-    registerEngineApi(&runtime);
-
-    const auto rgbId = runtime.getNativeFunctionId("rgb");
-    BOOST_REQUIRE(rgbId != NOMAD_INVALID_ID);
-    BOOST_TEST(!runtime.getNativeFunctionFn(rgbId));
-    BOOST_TEST(runtime.getConstantId("alignment.topLeft") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getEventId("update") != NOMAD_INVALID_ID);
-
-    const std::vector<NomadString> engineFunctions{
-        "game.createScene",
-        "game.createSceneByName",
-        "game.createSceneByNameThen",
-        "game.createSceneThen",
-        "game.isInScene",
-        "game.loadFont",
-        "game.loadImage",
-        "game.loadSpriteAtlas",
-        "game.inventory.load",
-        "game.inventory.save",
-        "game.inventory.saveExists",
-        "game.settings.load",
-        "game.settings.save",
-        "game.trigger",
-        "window.maximize",
-        "window.minimize",
-        "window.setFps",
-        "window.setResolution",
-        "window.setSize",
-        "window.setSizeAndCenter",
-        "window.setTitle",
-        "window.toggleFullScreen",
-        "window.onClose",
-        "window.clearOnClose",
-        "window.onGainFocus",
-        "window.clearOnGainFocus",
-        "window.onLoseFocus",
-        "window.clearOnLoseFocus",
-        "window.onMaximize",
-        "window.clearOnMaximize",
-        "window.onMinimize",
-        "window.clearOnMinimize",
-        "window.onMove",
-        "window.clearOnMove",
-        "window.onResize",
-        "window.clearOnResize",
-        "window.onRestore",
-        "window.clearOnRestore"
-    };
-    for (const auto& name : engineFunctions) {
-        const auto functionId = runtime.getNativeFunctionId(name);
-        BOOST_TEST_CONTEXT(name) {
-            BOOST_REQUIRE(functionId != NOMAD_INVALID_ID);
-            BOOST_TEST(!runtime.getNativeFunctionFn(functionId));
-        }
-    }
-
-    const auto callback = [](VirtualMachine*) {};
-    BOOST_TEST(runtime.bindNativeFunction(rgbId, callback));
-    BOOST_TEST(static_cast<bool>(runtime.getNativeFunctionFn(rgbId)));
 }
 
 BOOST_AUTO_TEST_CASE(id_validation_helpers_distinguish_values_from_ranges)

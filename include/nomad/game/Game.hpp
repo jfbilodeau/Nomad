@@ -62,6 +62,11 @@ public:
 
     void initialize();
 
+    // Brings up the full engine against SDL's dummy video and audio drivers: no display server, no
+    // visible window, but a valid window, renderer and canvas. Registers the complete script API
+    // without compiling or running the game's own scripts, so tooling can drive a real runtime.
+    void initializeHeadless();
+
     [[nodiscard]] Runtime* getRuntime() const;
     [[nodiscard]] Canvas* getCanvas() const;
     [[nodiscard]] ResourceManager* getResources() const;
@@ -186,12 +191,19 @@ public:
     [[noreturn]] void raiseError(const NomadString& message);
 
 private:
+    void initEngine();
     void initSdl();
+    void initSdlHeadless();
     void initSdlTtf();
     void initResourcePath();
     void initText() const;
+    [[nodiscard]] bool tryInitText() const;
     void initRuntime();
     void initWindowCallbacks();
+
+    void initEvents() const;
+
+    void initConstants() const;
 
     void initFunctions();
     void initGameFunctions();
@@ -311,6 +323,7 @@ private:
 
     SDL_Window* m_window = nullptr;
     SDL_Renderer* m_renderer = nullptr;
+    bool m_sdlTtfInitialized = false;
     std::unique_ptr<Canvas> m_canvas;
     Color m_clearColor = Colors::White;
     // Using shared pointers for window event closures to allows closures to be replaced in the event handler.

@@ -7,9 +7,9 @@
 
 #include <nomad/debug/DebugConsole.hpp>
 
+#include <nomad/game/Alignment.hpp>
 #include <nomad/game/Canvas.hpp>
 #include <nomad/game/EntityVariableContext.hpp>
-#include <nomad/game/EngineApi.hpp>
 #include <nomad/game/Scene.hpp>
 #include <nomad/game/VariablePersistence.hpp>
 
@@ -34,19 +34,26 @@ Game::Game(const GameOptions* options) :
     m_options(*options)
 {}
 
-void Game::initialize()
+void Game::initEngine()
 {
-    initSdl();
     initSdlTtf();
     initResourcePath();
     initRuntime();
-    registerEngineApi(m_runtime.get());
     initWindowCallbacks();
+    initEvents();
     initDynamicVariables();
     initVariableContext();
     initFunctions();
     initResourceManager();
+}
+
+void Game::initialize()
+{
+    initSdl();
+    initEngine();
     initText();
+    initConstants();
+
     setLanguage("en");
 
     compileFunctions();
@@ -65,6 +72,27 @@ void Game::initialize()
     log::flush();
 }
 
+void Game::initializeHeadless()
+{
+    initSdlHeadless();
+    initEngine();
+    initConstants();
+
+    // Text is optional headless: tooling is often pointed at a directory that has no text catalogue.
+    // When one is present the `t.*` constants it defines resolve just like they do in a windowed game.
+    if (tryInitText()) {
+        setLanguage("en");
+    }
+
+    if (m_options.debug) {
+        log::setLogLevel(LogLevel::Debug);
+    }
+
+    log::info("Game initialized (headless)");
+
+    log::flush();
+}
+
 Game::~Game() {
     m_debugConsole.reset();
     m_scenes.clear();
@@ -79,6 +107,12 @@ Game::~Game() {
         if (m_window) {
             SDL_DestroyWindow(m_window);
         }
+    }
+
+    if (m_sdlTtfInitialized) {
+        TTF_Quit();
+
+        m_sdlTtfInitialized = false;
     }
 
     // Always quit: besides shutting down subsystems, SDL_Quit() releases SDL's thread-local storage
@@ -967,6 +1001,17 @@ void Game::initSdl() {
     m_canvas = std::make_unique<Canvas>(this, m_renderer);
 }
 
+void Game::initSdlHeadless() {
+    log::info("Selecting SDL headless (dummy) drivers");
+
+    // Must be set before SDL_Init(). The dummy drivers still create a window, renderer and audio
+    // device, so the rest of the engine runs unchanged -- nothing is presented to a display.
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+
+    initSdl();
+}
+
 void Game::initSdlTtf() {
     const auto result = TTF_Init();
 
@@ -977,6 +1022,8 @@ void Game::initSdlTtf() {
 
         throw GameException(error_message);
     }
+
+    m_sdlTtfInitialized = true;
 }
 
 void Game::initResourcePath() {
@@ -1000,6 +1047,14 @@ void Game::initRuntime() {
     m_runtime = std::make_unique<Runtime>();
 
     m_runtime->setDebug(m_options.debug);
+}
+
+void Game::initEvents() const {
+    log::info("Initializing events");
+
+    m_runtime->registerEvent("update", {});
+    m_runtime->registerEvent("beforeUpdate", {});
+    m_runtime->registerEvent("afterUpdate", {});
 }
 
 void Game::initFunctions() {
@@ -1068,10 +1123,61 @@ void Game::initResourceManager() {
     m_resourceManager = std::make_unique<ResourceManager>(this, m_options.resourcePath);
 }
 
+void Game::initConstants() const {
+    log::info("Initializing constants");
+
+    m_runtime->registerConstant("alignment.topLeft", RuntimeValue(static_cast<NomadInteger>(Alignment::TopLeft)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("alignment.topMiddle", RuntimeValue(static_cast<NomadInteger>(Alignment::TopMiddle)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("alignment.topRight", RuntimeValue(static_cast<NomadInteger>(Alignment::TopRight)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("alignment.centerLeft", RuntimeValue(static_cast<NomadInteger>(Alignment::CenterLeft)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("alignment.centerMiddle", RuntimeValue(static_cast<NomadInteger>(Alignment::CenterMiddle)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("alignment.centerRight", RuntimeValue(static_cast<NomadInteger>(Alignment::CenterRight)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("alignment.bottomLeft", RuntimeValue(static_cast<NomadInteger>(Alignment::BottomLeft)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("alignment.bottomMiddle", RuntimeValue(static_cast<NomadInteger>(Alignment::BottomMiddle)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("alignment.bottomRight", RuntimeValue(static_cast<NomadInteger>(Alignment::BottomRight)), m_runtime->getIntegerType());
+
+    m_runtime->registerConstant("alignment.left", RuntimeValue(static_cast<NomadInteger>(HorizontalAlignment::Left)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("alignment.middle", RuntimeValue(static_cast<NomadInteger>(HorizontalAlignment::Middle)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("alignment.right", RuntimeValue(static_cast<NomadInteger>(HorizontalAlignment::Right)), m_runtime->getIntegerType());
+
+    m_runtime->registerConstant("alignment.top", RuntimeValue(static_cast<NomadInteger>(VerticalAlignment::Top)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("alignment.center", RuntimeValue(static_cast<NomadInteger>(VerticalAlignment::Center)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("alignment.bottom", RuntimeValue(static_cast<NomadInteger>(VerticalAlignment::Bottom)), m_runtime->getIntegerType());
+
+    m_runtime->registerConstant("body.static", RuntimeValue(static_cast<NomadInteger>(BodyType::Static)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("body.dynamic", RuntimeValue(static_cast<NomadInteger>(BodyType::Dynamic)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("body.kinematic", RuntimeValue(static_cast<NomadInteger>(BodyType::Kinematic)), m_runtime->getIntegerType());
+
+    m_runtime->registerConstant("cardinal.north", RuntimeValue(static_cast<NomadInteger>(Cardinal::North)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("cardinal.east", RuntimeValue(static_cast<NomadInteger>(Cardinal::East)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("cardinal.south", RuntimeValue(static_cast<NomadInteger>(Cardinal::South)), m_runtime->getIntegerType());
+    m_runtime->registerConstant("cardinal.west", RuntimeValue(static_cast<NomadInteger>(Cardinal::West)), m_runtime->getIntegerType());
+}
+
 void Game::initText() const {
     log::info("Loading text...");
 
     m_resourceManager->getText()->loadTextFromCsv(this, m_options.resourcePath + "text/text.csv");
+}
+
+bool Game::tryInitText() const {
+    const auto textPath = m_options.resourcePath + "text/text.csv";
+
+    if (!std::filesystem::exists(textPath)) {
+        log::info("No text catalogue at '" + textPath + "', skipping");
+
+        return false;
+    }
+
+    try {
+        initText();
+    } catch (const NomadException& exception) {
+        log::warning(NomadString("Failed to load text: ") + exception.what());
+
+        return false;
+    }
+
+    return true;
 }
 
 void Game::initDebugConsole() {

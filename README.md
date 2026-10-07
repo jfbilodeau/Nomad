@@ -8,8 +8,7 @@ designed for embedding in C++ applications, and a 2D game engine built around it
 Nomad is a bespoke language and engine built to suit my very specific brain. I don’t expect it to make sense to most people--maybe two others, tops.
 
 The current baseline builds the standalone `Nomad::Language` and
-`Nomad::Engine` libraries, the callback-free `Nomad::EngineApi` metadata
-catalog, compiler tooling, generic runtime, and tests.
+`Nomad::Engine` libraries, compiler tooling, generic runtime, and tests.
 
 ## Runtime
 
@@ -23,16 +22,17 @@ the future headless `nomadc` tooling.
 `nomadc check [path]` compiles one `.nomad` file or recursively compiles a
 directory without opening a window or executing any function. It prints
 source-located diagnostics and returns a nonzero exit code when compilation
-fails. The initial command checks the core language API; headless engine API
-registration will be added as the next tool-separation slice.
+fails. The full engine API is available: the tool stands up a headless `Game`
+on SDL's dummy video and audio drivers, so `game.*`, `window.*`, `scene.*` and
+the `t.*` text constants resolve exactly as they do in a windowed build.
 
 `nomadc dump [path] [--function <name>] [--format text]` performs the same
 headless compilation and writes the generated VM instructions. It never runs
 the selected function. Text is the initial supported output format.
 
 `nomadc docs [path] --format markdown --output <file>` compiles without
-execution and writes the registered language API documentation. Markdown is
-the initial supported documentation format.
+execution and writes the registered language and engine API documentation.
+Markdown is the initial supported documentation format.
 
 ## Build
 

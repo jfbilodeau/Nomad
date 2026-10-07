@@ -2,31 +2,20 @@
 add_library(nomad-language STATIC ${NOMAD_LANGUAGE_SOURCES} ${NOMAD_LANGUAGE_INCLUDE})
 add_library(Nomad::Language ALIAS nomad-language)
 
-add_library(
-    nomad-engine-api
-    STATIC
-    ${NOMAD_INCLUDE_DIR}/nomad/game/EngineApi.hpp
-    ${NOMAD_SOURCE_DIR}/nomad/game/EngineApi.cpp
-)
-add_library(Nomad::EngineApi ALIAS nomad-engine-api)
-
 # Build the game engine on top of the language runtime.
 add_library(nomad STATIC ${NOMAD_SOURCES} ${NOMAD_INCLUDE})
 add_library(Nomad::Engine ALIAS nomad)
 
 if(NOMAD_ENABLE_SANITIZERS)
     target_link_libraries(nomad-language PRIVATE nomad_sanitizers)
-    target_link_libraries(nomad-engine-api PRIVATE nomad_sanitizers)
     target_link_libraries(nomad PRIVATE nomad_sanitizers)
 endif()
 
 if(MSVC)
     target_compile_options(nomad-language PRIVATE /W4)
-    target_compile_options(nomad-engine-api PRIVATE /W4)
     target_compile_options(nomad PRIVATE /W4)
     if(NOMAD_WARNINGS_AS_ERRORS)
         target_compile_options(nomad-language PRIVATE /WX)
-        target_compile_options(nomad-engine-api PRIVATE /WX)
         target_compile_options(nomad PRIVATE /WX)
     endif()
     set_source_files_properties(${DEAR_IMGUI_SOURCE} PROPERTIES COMPILE_OPTIONS "/W0;/WX-")
@@ -34,11 +23,9 @@ if(MSVC)
     set_source_files_properties(${NOMAD_SOURCE_DIR}/nomad/compiler/Tokenizer.cpp PROPERTIES COMPILE_OPTIONS "/wd4459")
 else()
     target_compile_options(nomad-language PRIVATE -Wall -Wextra -Wconversion)
-    target_compile_options(nomad-engine-api PRIVATE -Wall -Wextra -Wconversion)
     target_compile_options(nomad PRIVATE -Wall -Wextra -Wconversion)
     if(NOMAD_WARNINGS_AS_ERRORS)
         target_compile_options(nomad-language PRIVATE -Werror)
-        target_compile_options(nomad-engine-api PRIVATE -Werror)
         target_compile_options(nomad PRIVATE -Werror)
     endif()
     set_source_files_properties(${DEAR_IMGUI_SOURCE} PROPERTIES COMPILE_OPTIONS "-w;-Wno-error")
@@ -72,13 +59,6 @@ target_include_directories(
 )
 
 target_include_directories(
-    nomad-engine-api
-    PUBLIC
-    $<BUILD_INTERFACE:${NOMAD_INCLUDE_DIR}>
-    $<INSTALL_INTERFACE:include>
-)
-
-target_include_directories(
     nomad
     PUBLIC
     $<BUILD_INTERFACE:${NOMAD_INCLUDE_DIR}>
@@ -90,12 +70,6 @@ target_compile_definitions(
     nomad-language
     PRIVATE
     _LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION
-    $<$<CONFIG:Debug>:NOMAD_DEBUG>
-)
-
-target_compile_definitions(
-    nomad-engine-api
-    PRIVATE
     $<$<CONFIG:Debug>:NOMAD_DEBUG>
 )
 
@@ -115,15 +89,9 @@ target_link_libraries(
 )
 
 target_link_libraries(
-    nomad-engine-api
-    PUBLIC
-    Nomad::Language
-)
-
-target_link_libraries(
     nomad
     PUBLIC
-    Nomad::EngineApi
+    Nomad::Language
     SDL3::SDL3
     SDL3_image::SDL3_image
     SDL3_ttf::SDL3_ttf

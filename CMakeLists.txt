@@ -257,7 +257,6 @@ set(
         ${NOMAD_INCLUDE_DIR}/nomad/game/Color.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/game/Entity.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/game/EntityVariableContext.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/EngineApi.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/game/EventRegistration.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/game/Game.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/game/GameEvent.hpp
@@ -524,7 +523,7 @@ endif()
 option(NOMAD_BUILD_COMPILER "Build the Nomad compiler tooling" ON)
 if(NOMAD_BUILD_COMPILER)
     add_executable(nomadc apps/compiler/main.cpp)
-    target_link_libraries(nomadc PRIVATE Nomad::EngineApi)
+    target_link_libraries(nomadc PRIVATE Nomad::Engine)
 endif()
 
 option(NOMAD_BUILD_TESTS "Build Nomad unit tests" ON)
