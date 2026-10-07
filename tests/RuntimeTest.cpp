@@ -72,7 +72,23 @@ BOOST_AUTO_TEST_CASE(engine_api_callbacks_are_bound_separately_from_metadata)
         "window.setSize",
         "window.setSizeAndCenter",
         "window.setTitle",
-        "window.toggleFullScreen"
+        "window.toggleFullScreen",
+        "window.onClose",
+        "window.clearOnClose",
+        "window.onGainFocus",
+        "window.clearOnGainFocus",
+        "window.onLoseFocus",
+        "window.clearOnLoseFocus",
+        "window.onMaximize",
+        "window.clearOnMaximize",
+        "window.onMinimize",
+        "window.clearOnMinimize",
+        "window.onMove",
+        "window.clearOnMove",
+        "window.onResize",
+        "window.clearOnResize",
+        "window.onRestore",
+        "window.clearOnRestore"
     };
     for (const auto& name : windowFunctions) {
         const auto functionId = runtime.getNativeFunctionId(name);

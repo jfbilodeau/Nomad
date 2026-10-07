@@ -104,102 +104,77 @@ void Game::initWindowFunctions() {
 }
 
 void Game::initWindowCallbacks() {
-    const auto registerWindowCallback = [this](
+    const auto bindWindowCallback = [this](
         const NomadString& name,
         const NomadString& clearName,
-        std::shared_ptr<Closure> Game::* callback,
-        const std::vector<const Type*>& parameterTypes,
-        const NomadString& documentation
+        std::shared_ptr<Closure> Game::* callback
     ) {
-        m_runtime->registerNativeFunction(
+        if (!m_runtime->bindNativeFunction(
             name,
             [this, callback](VirtualMachine* interpreter) {
                 const auto functionId = interpreter->getIdParameter(0);
                 this->*callback = interpreter->createClosure(m_runtime.get(), functionId);
-            }, {
-                defParameter(
-                    "callback",
-                    m_runtime->getCallbackType(parameterTypes, m_runtime->getVoidType()),
-                    NomadParamDoc("Callback to invoke when the window event occurs.")
-                )
-            },
-            m_runtime->getVoidType(),
-            NomadDoc(documentation)
-        );
+            }
+        )) {
+            throw NomadBug("Failed to bind native function '" + name + "'");
+        }
 
-        m_runtime->registerNativeFunction(
+        if (!m_runtime->bindNativeFunction(
             clearName,
             [this, callback](VirtualMachine* /*interpreter*/) {
                 (this->*callback).reset();
-            },
-            {},
-            m_runtime->getVoidType(),
-            NomadDoc("Clears the callback registered by " + name + ".")
-        );
+            }
+        )) {
+            throw NomadBug("Failed to bind native function '" + clearName + "'");
+        }
     };
 
-    registerWindowCallback(
+    bindWindowCallback(
         "window.onClose",
         "window.clearOnClose",
-        &Game::m_onWindowClose,
-        {},
-        "Sets the callback invoked when the user requests that the window close. The window is not closed automatically."
+        &Game::m_onWindowClose
     );
 
-    registerWindowCallback(
+    bindWindowCallback(
         "window.onGainFocus",
         "window.clearOnGainFocus",
-        &Game::m_onWindowGainFocus,
-        {},
-        "Sets the callback invoked when the window gains focus."
+        &Game::m_onWindowGainFocus
     );
 
-    registerWindowCallback(
+    bindWindowCallback(
         "window.onLoseFocus",
         "window.clearOnLoseFocus",
-        &Game::m_onWindowLoseFocus,
-        {},
-        "Sets the callback invoked when the window loses focus."
+        &Game::m_onWindowLoseFocus
     );
 
-    registerWindowCallback(
+    bindWindowCallback(
         "window.onMaximize",
         "window.clearOnMaximize",
-        &Game::m_onWindowMaximize,
-        {},
-        "Sets the callback invoked when the window is maximized."
+        &Game::m_onWindowMaximize
     );
 
-    registerWindowCallback(
+    bindWindowCallback(
         "window.onMinimize",
         "window.clearOnMinimize",
-        &Game::m_onWindowMinimize,
-        {},
-        "Sets the callback invoked when the window is minimized."
+        &Game::m_onWindowMinimize
     );
 
-    registerWindowCallback(
+    bindWindowCallback(
         "window.onMove",
         "window.clearOnMove",
-        &Game::m_onWindowMove,
-        {m_runtime->getIntegerType(), m_runtime->getIntegerType()},
-        "Sets the callback invoked when the window is moved. Receives the x and y position."
+        &Game::m_onWindowMove
     );
 
-    registerWindowCallback(
+    bindWindowCallback(
         "window.onResize",
         "window.clearOnResize",
-        &Game::m_onWindowResize,
-        {m_runtime->getIntegerType(), m_runtime->getIntegerType()},
-        "Sets the callback invoked when the window is resized. Receives the width and height."
+        &Game::m_onWindowResize
     );
 
-    registerWindowCallback(
+    bindWindowCallback(
         "window.onRestore",
         "window.clearOnRestore",
-        &Game::m_onWindowRestore,
-        {},
-        "Sets the callback invoked when the window is restored."
+        &Game::m_onWindowRestore
     );
 }
 

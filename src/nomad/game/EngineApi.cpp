@@ -167,6 +167,89 @@ void registerEngineApi(Runtime* runtime) {
         runtime->getVoidType(),
         NomadDoc("Toggles the window between windowed and full-screen modes.")
     );
+
+    const auto registerWindowCallback = [runtime, &registerFunction](
+        const NomadString& name,
+        const NomadString& clearName,
+        const std::vector<const Type*>& parameterTypes,
+        const NomadString& documentation
+    ) {
+        registerFunction(
+            name,
+            {
+                defParameter(
+                    "callback",
+                    runtime->getCallbackType(parameterTypes, runtime->getVoidType()),
+                    NomadParamDoc("Callback to invoke when the window event occurs.")
+                )
+            },
+            runtime->getVoidType(),
+            documentation
+        );
+
+        registerFunction(
+            clearName,
+            {},
+            runtime->getVoidType(),
+            NomadDoc("Clears the callback registered by " + name + ".")
+        );
+    };
+
+    registerWindowCallback(
+        "window.onClose",
+        "window.clearOnClose",
+        {},
+        "Sets the callback invoked when the user requests that the window close. The window is not closed automatically."
+    );
+
+    registerWindowCallback(
+        "window.onGainFocus",
+        "window.clearOnGainFocus",
+        {},
+        "Sets the callback invoked when the window gains focus."
+    );
+
+    registerWindowCallback(
+        "window.onLoseFocus",
+        "window.clearOnLoseFocus",
+        {},
+        "Sets the callback invoked when the window loses focus."
+    );
+
+    registerWindowCallback(
+        "window.onMaximize",
+        "window.clearOnMaximize",
+        {},
+        "Sets the callback invoked when the window is maximized."
+    );
+
+    registerWindowCallback(
+        "window.onMinimize",
+        "window.clearOnMinimize",
+        {},
+        "Sets the callback invoked when the window is minimized."
+    );
+
+    registerWindowCallback(
+        "window.onMove",
+        "window.clearOnMove",
+        {integerType, integerType},
+        "Sets the callback invoked when the window is moved. Receives the x and y position."
+    );
+
+    registerWindowCallback(
+        "window.onResize",
+        "window.clearOnResize",
+        {integerType, integerType},
+        "Sets the callback invoked when the window is resized. Receives the width and height."
+    );
+
+    registerWindowCallback(
+        "window.onRestore",
+        "window.clearOnRestore",
+        {},
+        "Sets the callback invoked when the window is restored."
+    );
 }
 
 } // namespace nomad
