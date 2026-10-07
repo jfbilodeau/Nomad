@@ -64,6 +64,24 @@ BOOST_AUTO_TEST_CASE(engine_api_callbacks_are_bound_separately_from_metadata)
     BOOST_TEST(runtime.getConstantId("alignment.topLeft") != NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getEventId("update") != NOMAD_INVALID_ID);
 
+    const std::vector<NomadString> windowFunctions{
+        "window.maximize",
+        "window.minimize",
+        "window.setFps",
+        "window.setResolution",
+        "window.setSize",
+        "window.setSizeAndCenter",
+        "window.setTitle",
+        "window.toggleFullScreen"
+    };
+    for (const auto& name : windowFunctions) {
+        const auto functionId = runtime.getNativeFunctionId(name);
+        BOOST_TEST_CONTEXT(name) {
+            BOOST_REQUIRE(functionId != NOMAD_INVALID_ID);
+            BOOST_TEST(!runtime.getNativeFunctionFn(functionId));
+        }
+    }
+
     const auto callback = [](VirtualMachine*) {};
     BOOST_TEST(runtime.bindNativeFunction(rgbId, callback));
     BOOST_TEST(static_cast<bool>(runtime.getNativeFunctionFn(rgbId)));

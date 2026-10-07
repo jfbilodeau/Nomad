@@ -94,6 +94,79 @@ void registerEngineApi(Runtime* runtime) {
         runtime->getVoidType(),
         NomadDoc("Exits the game.")
     );
+
+    registerFunction(
+        "window.maximize",
+        {},
+        runtime->getVoidType(),
+        NomadDoc("Maximizes the window.")
+    );
+
+    registerFunction(
+        "window.minimize",
+        {},
+        runtime->getVoidType(),
+        NomadDoc("Minimizes the window.")
+    );
+
+    registerFunction(
+        "window.setFps",
+        {
+            defParameter("framesPerSecond", integerType, NomadParamDoc("Frames per second."))
+        },
+        runtime->getVoidType(),
+        NomadDoc("Sets the frames per seconds (FPS) of the game.")
+    );
+
+    registerFunction(
+        "window.setResolution",
+        {
+            defParameter("resolutionWidth", integerType, NomadParamDoc("Resolution width.")),
+            defParameter("resolutionHeight", integerType, NomadParamDoc("Resolution height."))
+        },
+        runtime->getVoidType(),
+        NomadDoc("Sets the resolution of the game window.")
+    );
+
+    registerFunction(
+        "window.setSize",
+        {
+            defParameter("windowWidth", integerType, NomadParamDoc("Window width.")),
+            defParameter("windowHeight", integerType, NomadParamDoc("Window height."))
+        },
+        runtime->getVoidType(),
+        NomadDoc("Sets the size of the game window.")
+    );
+
+    registerFunction(
+        "window.setSizeAndCenter",
+        {
+            defParameter("windowWidth", integerType, NomadParamDoc("Window width.")),
+            defParameter("windowHeight", integerType, NomadParamDoc("Window height."))
+        },
+        runtime->getVoidType(),
+        NomadDoc("Sets the size of the game window.")
+    );
+
+    registerFunction(
+        "window.setTitle",
+        {
+            defParameter(
+                "windowTitle",
+                runtime->getStringRefType(),
+                NomadParamDoc("Title of the game window.")
+            )
+        },
+        runtime->getVoidType(),
+        NomadDoc("Set the title of the game window.")
+    );
+
+    registerFunction(
+        "window.toggleFullScreen",
+        {},
+        runtime->getVoidType(),
+        NomadDoc("Toggles the window between windowed and full-screen modes.")
+    );
 }
 
 } // namespace nomad

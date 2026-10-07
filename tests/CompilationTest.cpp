@@ -118,7 +118,10 @@ BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
 BOOST_AUTO_TEST_CASE(engine_api_metadata_enables_headless_compilation)
 {
     TestDirectory directory("nomad_compilation_test_engine_api");
-    const auto source = directory.write("color.nomad", "return (rgb 1 2 3) + alignment.topLeft");
+    const auto source = directory.write(
+        "engine.nomad",
+        "window.setTitle \"Nomad\"\nreturn (rgb 1 2 3) + alignment.topLeft"
+    );
 
     const auto languageOnly = checkPath(source);
     BOOST_TEST(!languageOnly.succeeded());
