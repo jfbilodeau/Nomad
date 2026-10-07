@@ -140,7 +140,10 @@ public:
     [[nodiscard]] const std::vector<Operand>& getInstructionOperands(NomadId id) const;
 
     // NativeFunctions
+    NomadId registerNativeFunction(const NomadString& name, const std::vector<NativeFunctionParameterDefinition>& parameters, const Type* returnType, NomadDocArg);
     NomadId registerNativeFunction(const NomadString& name, NativeFunctionFn nativeFunction_fn, const std::vector<NativeFunctionParameterDefinition>& parameters, const Type* returnType, NomadDocArg);
+    bool bindNativeFunction(NomadId id, NativeFunctionFn nativeFunctionFn);
+    bool bindNativeFunction(const NomadString& name, NativeFunctionFn nativeFunctionFn);
     [[nodiscard]] NomadId getNativeFunctionId(const NomadString& name) const;
     [[nodiscard]] NativeFunctionFn getNativeFunctionFn(NomadId id) const;
 

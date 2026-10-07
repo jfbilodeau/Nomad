@@ -4,6 +4,7 @@
 
 #include <nomad/Nomad.hpp>
 
+#include <nomad/game/BodyType.hpp>
 #include <nomad/geometry/PointF.hpp>
 
 namespace nomad {
@@ -16,12 +17,6 @@ enum class BodyShape {
     None = 1,
     Rectangle,
     Circle,
-};
-
-enum class BodyType {
-    Static = 1,
-    Dynamic,
-    Kinematic,
 };
 
 class Body {

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
 #include <nomad/compiler/Compilation.hpp>
+#include <nomad/game/EngineApi.hpp>
 
 #include <TestDirectory.hpp>
 
@@ -112,6 +113,18 @@ BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
     BOOST_REQUIRE(result.compilation.succeeded());
     BOOST_TEST(result.documentation.find("# Nomad") != NomadString::npos);
     BOOST_TEST(result.documentation.find("## NativeFunctions") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(engine_api_metadata_enables_headless_compilation)
+{
+    TestDirectory directory("nomad_compilation_test_engine_api");
+    const auto source = directory.write("color.nomad", "return (rgb 1 2 3) + alignment.topLeft");
+
+    const auto languageOnly = checkPath(source);
+    BOOST_TEST(!languageOnly.succeeded());
+
+    const auto withEngineApi = checkPath(source, registerEngineApi);
+    BOOST_REQUIRE(withEngineApi.succeeded());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

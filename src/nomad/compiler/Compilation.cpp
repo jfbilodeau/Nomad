@@ -21,8 +21,16 @@ struct CompilationArtifacts {
     CompilationResult result;
 };
 
-CompilationArtifacts compilePath(const std::filesystem::path& path) {
+CompilationArtifacts compilePath(
+    const std::filesystem::path& path,
+    const RuntimeRegistrationFn& registerRuntime
+) {
     auto runtime = std::make_unique<Runtime>();
+
+    if (registerRuntime) {
+        registerRuntime(runtime.get());
+    }
+
     auto compiler = runtime->createCompiler();
     CompilerContext context(compiler.get());
     const auto sourceName = path.generic_string();
@@ -92,15 +100,16 @@ bool CompilationResult::succeeded() const {
     return errorCount == 0;
 }
 
-CompilationResult checkPath(const std::filesystem::path& path) {
-    return compilePath(path).result;
+CompilationResult checkPath(const std::filesystem::path& path, const RuntimeRegistrationFn& registerRuntime) {
+    return compilePath(path, registerRuntime).result;
 }
 
 InstructionDumpResult dumpInstructions(
     const std::filesystem::path& path,
-    const std::optional<NomadString>& functionName
+    const std::optional<NomadString>& functionName,
+    const RuntimeRegistrationFn& registerRuntime
 ) {
-    auto artifacts = compilePath(path);
+    auto artifacts = compilePath(path, registerRuntime);
     InstructionDumpResult result{std::move(artifacts.result), {}};
 
     if (!result.compilation.succeeded()) {
@@ -137,8 +146,11 @@ InstructionDumpResult dumpInstructions(
     return result;
 }
 
-DocumentationResult generateDocumentationForPath(const std::filesystem::path& path) {
-    auto artifacts = compilePath(path);
+DocumentationResult generateDocumentationForPath(
+    const std::filesystem::path& path,
+    const RuntimeRegistrationFn& registerRuntime
+) {
+    auto artifacts = compilePath(path, registerRuntime);
     DocumentationResult result{std::move(artifacts.result), {}};
 
     if (!result.compilation.succeeded()) {

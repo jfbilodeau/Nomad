@@ -5,10 +5,15 @@
 #include <nomad/compiler/CompilerContext.hpp>
 
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <vector>
 
 namespace nomad {
+
+class Runtime;
+
+using RuntimeRegistrationFn = std::function<void(Runtime*)>;
 
 struct CompilationResult {
     std::vector<Diagnostic> diagnostics;
@@ -29,15 +34,22 @@ struct DocumentationResult {
 };
 
 // Compiles a Nomad source file or every Nomad source below a directory without executing any function.
-[[nodiscard]] CompilationResult checkPath(const std::filesystem::path& path);
+[[nodiscard]] CompilationResult checkPath(
+    const std::filesystem::path& path,
+    const RuntimeRegistrationFn& registerRuntime = {}
+);
 
 // Compiles without executing and formats generated instructions for every function or one named function.
 [[nodiscard]] InstructionDumpResult dumpInstructions(
     const std::filesystem::path& path,
-    const std::optional<NomadString>& functionName = std::nullopt
+    const std::optional<NomadString>& functionName = std::nullopt,
+    const RuntimeRegistrationFn& registerRuntime = {}
 );
 
 // Compiles without executing and generates Markdown documentation for the registered language API.
-[[nodiscard]] DocumentationResult generateDocumentationForPath(const std::filesystem::path& path);
+[[nodiscard]] DocumentationResult generateDocumentationForPath(
+    const std::filesystem::path& path,
+    const RuntimeRegistrationFn& registerRuntime = {}
+);
 
 } // namespace nomad

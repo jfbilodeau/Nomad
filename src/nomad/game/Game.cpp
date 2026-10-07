@@ -7,9 +7,9 @@
 
 #include <nomad/debug/DebugConsole.hpp>
 
-#include <nomad/game/Alignment.hpp>
 #include <nomad/game/Canvas.hpp>
 #include <nomad/game/EntityVariableContext.hpp>
+#include <nomad/game/EngineApi.hpp>
 #include <nomad/game/Scene.hpp>
 #include <nomad/game/VariablePersistence.hpp>
 
@@ -40,15 +40,13 @@ void Game::initialize()
     initSdlTtf();
     initResourcePath();
     initRuntime();
+    registerEngineApi(m_runtime.get());
     initWindowCallbacks();
-    initEvents();
     initDynamicVariables();
     initVariableContext();
     initFunctions();
     initResourceManager();
     initText();
-    initConstants();
-
     setLanguage("en");
 
     compileFunctions();
@@ -1004,14 +1002,6 @@ void Game::initRuntime() {
     m_runtime->setDebug(m_options.debug);
 }
 
-void Game::initEvents() const {
-    log::info("Initializing events");
-
-    m_runtime->registerEvent("update", {});
-    m_runtime->registerEvent("beforeUpdate", {});
-    m_runtime->registerEvent("afterUpdate", {});
-}
-
 void Game::initFunctions() {
     log::info("Initializing functions");
 
@@ -1076,37 +1066,6 @@ void Game::initResourceManager() {
     log::info("Initializing resource manager");
 
     m_resourceManager = std::make_unique<ResourceManager>(this, m_options.resourcePath);
-}
-
-void Game::initConstants() const {
-    log::info("Initializing constants");
-
-    m_runtime->registerConstant("alignment.topLeft", RuntimeValue(static_cast<NomadInteger>(Alignment::TopLeft)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.topMiddle", RuntimeValue(static_cast<NomadInteger>(Alignment::TopMiddle)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.topRight", RuntimeValue(static_cast<NomadInteger>(Alignment::TopRight)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.centerLeft", RuntimeValue(static_cast<NomadInteger>(Alignment::CenterLeft)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.centerMiddle", RuntimeValue(static_cast<NomadInteger>(Alignment::CenterMiddle)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.centerRight", RuntimeValue(static_cast<NomadInteger>(Alignment::CenterRight)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.bottomLeft", RuntimeValue(static_cast<NomadInteger>(Alignment::BottomLeft)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.bottomMiddle", RuntimeValue(static_cast<NomadInteger>(Alignment::BottomMiddle)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.bottomRight", RuntimeValue(static_cast<NomadInteger>(Alignment::BottomRight)), m_runtime->getIntegerType());
-
-    m_runtime->registerConstant("alignment.left", RuntimeValue(static_cast<NomadInteger>(HorizontalAlignment::Left)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.middle", RuntimeValue(static_cast<NomadInteger>(HorizontalAlignment::Middle)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.right", RuntimeValue(static_cast<NomadInteger>(HorizontalAlignment::Right)), m_runtime->getIntegerType());
-
-    m_runtime->registerConstant("alignment.top", RuntimeValue(static_cast<NomadInteger>(VerticalAlignment::Top)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.center", RuntimeValue(static_cast<NomadInteger>(VerticalAlignment::Center)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.bottom", RuntimeValue(static_cast<NomadInteger>(VerticalAlignment::Bottom)), m_runtime->getIntegerType());
-
-    m_runtime->registerConstant("body.static", RuntimeValue(static_cast<NomadInteger>(BodyType::Static)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("body.dynamic", RuntimeValue(static_cast<NomadInteger>(BodyType::Dynamic)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("body.kinematic", RuntimeValue(static_cast<NomadInteger>(BodyType::Kinematic)), m_runtime->getIntegerType());
-
-    m_runtime->registerConstant("cardinal.north", RuntimeValue(static_cast<NomadInteger>(Cardinal::North)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("cardinal.east", RuntimeValue(static_cast<NomadInteger>(Cardinal::East)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("cardinal.south", RuntimeValue(static_cast<NomadInteger>(Cardinal::South)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("cardinal.west", RuntimeValue(static_cast<NomadInteger>(Cardinal::West)), m_runtime->getIntegerType());
 }
 
 void Game::initText() const {

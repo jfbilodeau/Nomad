@@ -193,10 +193,6 @@ private:
     void initRuntime();
     void initWindowCallbacks();
 
-    void initEvents() const;
-
-    void initConstants() const;
-
     void initFunctions();
     void initGameFunctions();
     void initInputFunctions();

@@ -2,6 +2,7 @@
 
 #include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/game/EngineApi.hpp>
 #include <nomad/log/Logger.hpp>
 
 #include <cstdlib>
@@ -53,7 +54,7 @@ int main(const int argc, char** argv) {
         }
 
         const auto path = argc == 3 ? std::filesystem::path(argv[2]) : std::filesystem::current_path();
-        const auto result = checkPath(path);
+        const auto result = checkPath(path, registerEngineApi);
         printDiagnostics(result);
 
         return result.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
@@ -94,7 +95,7 @@ int main(const int argc, char** argv) {
             }
         }
 
-        const auto result = dumpInstructions(path, functionName);
+        const auto result = dumpInstructions(path, functionName, registerEngineApi);
         printDiagnostics(result.compilation);
 
         if (!result.compilation.succeeded()) {
@@ -145,7 +146,7 @@ int main(const int argc, char** argv) {
             return EXIT_FAILURE;
         }
 
-        const auto result = generateDocumentationForPath(path);
+        const auto result = generateDocumentationForPath(path, registerEngineApi);
         printDiagnostics(result.compilation);
 
         if (!result.compilation.succeeded()) {

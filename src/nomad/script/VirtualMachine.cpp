@@ -182,14 +182,11 @@ void VirtualMachine::callNativeFunction(const NomadId nativeFunctionId) {
 
     const auto nativeFunctionFn = m_runtime->getNativeFunctionFn(nativeFunctionId);
 
-#ifdef NOMAD_DEBUG
-    if (nativeFunctionFn == nullptr) {
-        log::error("NativeFunction not found: " + toString(nativeFunctionId));
+    if (!nativeFunctionFn) {
         m_parameterIndex = previousParameterIndex;
         m_enclosingParameterIndex = previousEnclosingParameterIndex;
-        return;
+        fault("Native function implementation is not bound: " + toString(nativeFunctionId));
     }
-#endif
 
     try {
         nativeFunctionFn(this);

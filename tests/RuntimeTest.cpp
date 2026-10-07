@@ -3,6 +3,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "nomad/game/Entity.hpp"
+#include "nomad/game/EngineApi.hpp"
 #include "nomad/game/EntityVariableContext.hpp"
 #include "nomad/game/Scene.hpp"
 #include "nomad/script/Runtime.hpp"
@@ -50,6 +51,22 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_and_duplicate_function_ids)
     BOOST_TEST(!runtime.getFunctionName(NOMAD_INVALID_ID).has_value());
     BOOST_TEST(!runtime.getFunctionName(-2).has_value());
     BOOST_TEST(!runtime.getFunctionName(1).has_value());
+}
+
+BOOST_AUTO_TEST_CASE(engine_api_callbacks_are_bound_separately_from_metadata)
+{
+    Runtime runtime;
+    registerEngineApi(&runtime);
+
+    const auto rgbId = runtime.getNativeFunctionId("rgb");
+    BOOST_REQUIRE(rgbId != NOMAD_INVALID_ID);
+    BOOST_TEST(!runtime.getNativeFunctionFn(rgbId));
+    BOOST_TEST(runtime.getConstantId("alignment.topLeft") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getEventId("update") != NOMAD_INVALID_ID);
+
+    const auto callback = [](VirtualMachine*) {};
+    BOOST_TEST(runtime.bindNativeFunction(rgbId, callback));
+    BOOST_TEST(static_cast<bool>(runtime.getNativeFunctionFn(rgbId)));
 }
 
 BOOST_AUTO_TEST_CASE(id_validation_helpers_distinguish_values_from_ranges)
