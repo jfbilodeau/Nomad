@@ -10,6 +10,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(NOMAD_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(NOMAD_WARNINGS_AS_ERRORS "Treat Nomad compiler warnings as errors" ON)
+option(NOMAD_USE_CCACHE "Use ccache when it is available" ON)
+
+if(NOMAD_USE_CCACHE AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
+        find_program(NOMAD_CCACHE_PROGRAM ccache)
+        if(NOMAD_CCACHE_PROGRAM)
+                set(CMAKE_CXX_COMPILER_LAUNCHER "${NOMAD_CCACHE_PROGRAM}")
+                message(STATUS "Using ccache: ${NOMAD_CCACHE_PROGRAM}")
+        endif()
+endif()
 
 if(NOMAD_ENABLE_SANITIZERS)
         if(MSVC)

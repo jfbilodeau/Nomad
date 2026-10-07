@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Nomad Runtime - GDB",
+      "name": "Nomad Runtime - WSL/Linux Debug (GDB)",
       "type": "cppdbg",
       "request": "launch",
       "preLaunchTask": "CMake: build runtime",
@@ -25,6 +25,29 @@
         {
           "description": "Use Intel disassembly syntax",
           "text": "-gdb-set disassembly-flavor intel",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "Nomad Runtime - WSL/Linux Release (GDB)",
+      "type": "cppdbg",
+      "request": "launch",
+      "preLaunchTask": "CMake: build runtime",
+      "program": "${workspaceFolder}/out/build/linux-release/nomad-runtime",
+      "args": [
+        "--resource-path",
+        "${input:nomadResourcePath}"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${input:nomadResourcePath}",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable GDB pretty-printing",
+          "text": "-enable-pretty-printing",
           "ignoreFailures": true
         }
       ]
@@ -61,7 +84,7 @@
       "console": "integratedTerminal"
     },
     {
-      "name": "Nomad Tests - GDB",
+      "name": "Nomad Tests - WSL/Linux Debug (GDB)",
       "type": "cppdbg",
       "request": "launch",
       "preLaunchTask": "CMake: build tests",
@@ -70,6 +93,35 @@
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}/out/build/linux-debug/tests",
       "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable GDB pretty-printing",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
+      "name": "Nomad Tests - WSL/Linux Sanitizers (GDB)",
+      "type": "cppdbg",
+      "request": "launch",
+      "preLaunchTask": "CMake: build tests",
+      "program": "${workspaceFolder}/out/build/linux-sanitizers/tests/nomad_test",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/out/build/linux-sanitizers/tests",
+      "environment": [
+        {
+          "name": "ASAN_OPTIONS",
+          "value": "abort_on_error=1:detect_leaks=0"
+        },
+        {
+          "name": "UBSAN_OPTIONS",
+          "value": "print_stacktrace=1:halt_on_error=1"
+        }
+      ],
       "externalConsole": false,
       "MIMode": "gdb",
       "setupCommands": [

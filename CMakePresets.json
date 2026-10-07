@@ -30,7 +30,7 @@
       "name": "linux-base",
       "hidden": true,
       "inherits": "base",
-      "generator": "Unix Makefiles",
+      "generator": "Ninja",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -61,7 +61,8 @@
       "description": "GCC Debug build for local development",
       "inherits": "linux-base",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "FETCHCONTENT_UPDATES_DISCONNECTED": true
       }
     },
     {
@@ -70,7 +71,8 @@
       "description": "GCC optimized release build",
       "inherits": "linux-base",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "FETCHCONTENT_UPDATES_DISCONNECTED": true
       }
     },
     {
@@ -89,6 +91,7 @@
       "inherits": "linux-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "FETCHCONTENT_UPDATES_DISCONNECTED": true,
         "NOMAD_ENABLE_SANITIZERS": true,
         "NOMAD_WARNINGS_AS_ERRORS": false
       }
