@@ -64,7 +64,21 @@ BOOST_AUTO_TEST_CASE(engine_api_callbacks_are_bound_separately_from_metadata)
     BOOST_TEST(runtime.getConstantId("alignment.topLeft") != NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getEventId("update") != NOMAD_INVALID_ID);
 
-    const std::vector<NomadString> windowFunctions{
+    const std::vector<NomadString> engineFunctions{
+        "game.createScene",
+        "game.createSceneByName",
+        "game.createSceneByNameThen",
+        "game.createSceneThen",
+        "game.isInScene",
+        "game.loadFont",
+        "game.loadImage",
+        "game.loadSpriteAtlas",
+        "game.inventory.load",
+        "game.inventory.save",
+        "game.inventory.saveExists",
+        "game.settings.load",
+        "game.settings.save",
+        "game.trigger",
         "window.maximize",
         "window.minimize",
         "window.setFps",
@@ -90,7 +104,7 @@ BOOST_AUTO_TEST_CASE(engine_api_callbacks_are_bound_separately_from_metadata)
         "window.onRestore",
         "window.clearOnRestore"
     };
-    for (const auto& name : windowFunctions) {
+    for (const auto& name : engineFunctions) {
         const auto functionId = runtime.getNativeFunctionId(name);
         BOOST_TEST_CONTEXT(name) {
             BOOST_REQUIRE(functionId != NOMAD_INVALID_ID);

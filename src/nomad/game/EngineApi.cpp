@@ -95,17 +95,178 @@ void registerEngineApi(Runtime* runtime) {
         NomadDoc("Exits the game.")
     );
 
+    const auto* voidCallbackType = runtime->getCallbackType({}, runtime->getVoidType());
+    const auto* stringRefType = runtime->getStringRefType();
+    const auto* voidType = runtime->getVoidType();
+
+    registerFunction(
+        "game.createScene",
+        {
+            defParameter(
+                "function",
+                voidCallbackType,
+                NomadParamDoc("The function to execute to initialize the scene. Return the scene id.")
+            )
+        },
+        integerType,
+        NomadDoc("Creates a new scene.")
+    );
+
+    registerFunction(
+        "game.createSceneByName",
+        {
+            defParameter(
+                "functionName",
+                stringRefType,
+                NomadParamDoc("Name of the function to execute to initialize the scene. Return the scene id.")
+            )
+        },
+        integerType,
+        NomadDoc("Creates a new scene.")
+    );
+
+    registerFunction(
+        "game.createSceneByNameThen",
+        {
+            defParameter(
+                "functionName",
+                stringRefType,
+                NomadParamDoc("Name of the function to execute to initialize the scene.")
+            ),
+            defParameter(
+                "postCreateFunction",
+                voidCallbackType,
+                NomadParamDoc("Function to execute once the scene is created.")
+            )
+        },
+        integerType,
+        NomadDoc("Creates a new scene and execute a function once the scene is created. Returns the scene id.")
+    );
+
+    registerFunction(
+        "game.createSceneThen",
+        {
+            defParameter(
+                "function",
+                voidCallbackType,
+                NomadParamDoc("The function to execute to initialize the scene.")
+            ),
+            defParameter(
+                "postCreateFunction",
+                voidCallbackType,
+                NomadParamDoc("Function to execute once the scene is created.")
+            )
+        },
+        integerType,
+        NomadDoc("Creates a new scene and execute a function once the scene is created. Returns the scene id.")
+    );
+
+    registerFunction(
+        "game.isInScene",
+        {},
+        runtime->getBooleanType(),
+        NomadDoc("Returns true if this function is executing in a scene.")
+    );
+
+    registerFunction(
+        "game.loadFont",
+        {
+            defParameter("fontName", stringRefType, NomadParamDoc("Name of the font to load.")),
+            defParameter("fontSize", integerType, NomadParamDoc("Size of the font in point to load."))
+        },
+        integerType,
+        NomadDoc("Loads a font from a file. Returns the ID of the font.")
+    );
+
+    registerFunction(
+        "game.loadImage",
+        {
+            defParameter("imageName", stringRefType, NomadParamDoc("Name of the image to load."))
+        },
+        integerType,
+        NomadDoc("Loads a font from a file.")
+    );
+
+    registerFunction(
+        "game.loadSpriteAtlas",
+        {
+            defParameter("atlasName", stringRefType, NomadParamDoc("Name of the sprite atlas to load."))
+        },
+        voidType,
+        NomadDoc("Loads a sprite atlas from a file.")
+    );
+
+    registerFunction(
+        "game.inventory.load",
+        {
+            defParameter("saveName", stringRefType, NomadParamDoc("Name of the save to load."))
+        },
+        voidType,
+        NomadDoc(
+            "Loads `inventory.*` variables from `<pref>/save/<saveName>.json`. Variables absent from the save keep "
+            "their current value."
+        )
+    );
+
+    registerFunction(
+        "game.inventory.save",
+        {
+            defParameter("saveName", stringRefType, NomadParamDoc("Name of the save."))
+        },
+        voidType,
+        NomadDoc("Saves all `inventory.*` variables to `<pref>/save/<saveName>.json`.")
+    );
+
+    registerFunction(
+        "game.inventory.saveExists",
+        {
+            defParameter("saveName", stringRefType, NomadParamDoc("Name of the save."))
+        },
+        runtime->getBooleanType(),
+        NomadDoc("Returns true if the save `<pref>/save/<saveName>.json` exists.")
+    );
+
+    registerFunction(
+        "game.settings.load",
+        {},
+        voidType,
+        NomadDoc(
+            "Loads `settings.*` variables from `<pref>/settings.json`. Variables absent from the file keep their "
+            "current value."
+        )
+    );
+
+    registerFunction(
+        "game.settings.save",
+        {},
+        voidType,
+        NomadDoc("Saves all `settings.*` variables to `<pref>/settings.json`.")
+    );
+
+    registerFunction(
+        "game.trigger",
+        {
+            defParameter(
+                "event",
+                runtime->getEventDispatchType(),
+                NomadParamDoc("The event to dispatch (trigger).")
+            )
+        },
+        voidType,
+        NomadDoc("Trigger a global event.")
+    );
+
     registerFunction(
         "window.maximize",
         {},
-        runtime->getVoidType(),
+        voidType,
         NomadDoc("Maximizes the window.")
     );
 
     registerFunction(
         "window.minimize",
         {},
-        runtime->getVoidType(),
+        voidType,
         NomadDoc("Minimizes the window.")
     );
 
@@ -114,7 +275,7 @@ void registerEngineApi(Runtime* runtime) {
         {
             defParameter("framesPerSecond", integerType, NomadParamDoc("Frames per second."))
         },
-        runtime->getVoidType(),
+        voidType,
         NomadDoc("Sets the frames per seconds (FPS) of the game.")
     );
 
@@ -124,7 +285,7 @@ void registerEngineApi(Runtime* runtime) {
             defParameter("resolutionWidth", integerType, NomadParamDoc("Resolution width.")),
             defParameter("resolutionHeight", integerType, NomadParamDoc("Resolution height."))
         },
-        runtime->getVoidType(),
+        voidType,
         NomadDoc("Sets the resolution of the game window.")
     );
 
@@ -134,7 +295,7 @@ void registerEngineApi(Runtime* runtime) {
             defParameter("windowWidth", integerType, NomadParamDoc("Window width.")),
             defParameter("windowHeight", integerType, NomadParamDoc("Window height."))
         },
-        runtime->getVoidType(),
+        voidType,
         NomadDoc("Sets the size of the game window.")
     );
 
@@ -144,7 +305,7 @@ void registerEngineApi(Runtime* runtime) {
             defParameter("windowWidth", integerType, NomadParamDoc("Window width.")),
             defParameter("windowHeight", integerType, NomadParamDoc("Window height."))
         },
-        runtime->getVoidType(),
+        voidType,
         NomadDoc("Sets the size of the game window.")
     );
 
@@ -157,14 +318,14 @@ void registerEngineApi(Runtime* runtime) {
                 NomadParamDoc("Title of the game window.")
             )
         },
-        runtime->getVoidType(),
+        voidType,
         NomadDoc("Set the title of the game window.")
     );
 
     registerFunction(
         "window.toggleFullScreen",
         {},
-        runtime->getVoidType(),
+        voidType,
         NomadDoc("Toggles the window between windowed and full-screen modes.")
     );
 

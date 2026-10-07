@@ -120,8 +120,12 @@ BOOST_AUTO_TEST_CASE(engine_api_metadata_enables_headless_compilation)
     TestDirectory directory("nomad_compilation_test_engine_api");
     const auto source = directory.write(
         "engine.nomad",
+        "fun sceneSetup\n"
+        "end\n"
         "fun resized width:int height:int\n"
         "end\n"
+        "game.createScene sceneSetup\n"
+        "game.settings.load\n"
         "window.onResize resized\n"
         "window.clearOnResize\n"
         "window.setTitle \"Nomad\"\n"
