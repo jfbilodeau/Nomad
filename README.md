@@ -25,6 +25,10 @@ source-located diagnostics and returns a nonzero exit code when compilation
 fails. The initial command checks the core language API; headless engine API
 registration will be added as the next tool-separation slice.
 
+`nomadc dump [path] [--function <name>] [--format text]` performs the same
+headless compilation and writes the generated VM instructions. It never runs
+the selected function. Text is the initial supported output format.
+
 ## Build
 
 Nomad requires CMake 3.30 or newer and a C++20 compiler.

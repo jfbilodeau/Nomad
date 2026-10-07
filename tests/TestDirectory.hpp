@@ -33,7 +33,7 @@ public:
         return (m_path / name).string();
     }
 
-    [[nodiscard]] std::filesystem::path write(
+    std::filesystem::path write(
         const std::filesystem::path& relativePath,
         const std::string& content
     ) const {

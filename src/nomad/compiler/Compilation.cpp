@@ -3,20 +3,26 @@
 #include <nomad/compiler/Compilation.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
+#include <nomad/script/Function.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <fstream>
 #include <iterator>
+#include <memory>
+#include <sstream>
 
 namespace nomad {
 
-bool CompilationResult::succeeded() const {
-    return errorCount == 0;
-}
+namespace {
 
-CompilationResult checkPath(const std::filesystem::path& path) {
-    Runtime runtime;
-    auto compiler = runtime.createCompiler();
+struct CompilationArtifacts {
+    std::unique_ptr<Runtime> runtime;
+    CompilationResult result;
+};
+
+CompilationArtifacts compilePath(const std::filesystem::path& path) {
+    auto runtime = std::make_unique<Runtime>();
+    auto compiler = runtime->createCompiler();
     CompilerContext context(compiler.get());
     const auto sourceName = path.generic_string();
 
@@ -69,11 +75,65 @@ CompilationResult checkPath(const std::filesystem::path& path) {
 
     const auto diagnostics = context.getDiagnostics();
 
-    return CompilationResult{
-        {diagnostics.begin(), diagnostics.end()},
-        context.getErrorCount(),
-        context.getWarningCount()
+    return CompilationArtifacts{
+        std::move(runtime),
+        CompilationResult{
+            {diagnostics.begin(), diagnostics.end()},
+            context.getErrorCount(),
+            context.getWarningCount()
+        }
     };
+}
+
+} // namespace
+
+bool CompilationResult::succeeded() const {
+    return errorCount == 0;
+}
+
+CompilationResult checkPath(const std::filesystem::path& path) {
+    return compilePath(path).result;
+}
+
+InstructionDumpResult dumpInstructions(
+    const std::filesystem::path& path,
+    const std::optional<NomadString>& functionName
+) {
+    auto artifacts = compilePath(path);
+    InstructionDumpResult result{std::move(artifacts.result), {}};
+
+    if (!result.compilation.succeeded()) {
+        return result;
+    }
+
+    if (functionName) {
+        const auto functionId = artifacts.runtime->getFunctionId(*functionName);
+        const auto* function = artifacts.runtime->getFunction(functionId);
+
+        if (function == nullptr) {
+            result.compilation.diagnostics.push_back(Diagnostic{
+                DiagnosticSeverity::Error,
+                "Unknown function '" + *functionName + "'",
+                path.generic_string(),
+                NOMAD_INVALID_INDEX,
+                NOMAD_INVALID_INDEX
+            });
+            ++result.compilation.errorCount;
+
+            return result;
+        }
+
+        std::ostringstream output;
+        artifacts.runtime->dumpInstructions(output, function);
+        result.instructions = output.str();
+        return result;
+    }
+
+    std::ostringstream output;
+    artifacts.runtime->dumpInstructions(output);
+    result.instructions = output.str();
+
+    return result;
 }
 
 } // namespace nomad

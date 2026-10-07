@@ -1719,7 +1719,7 @@ void Runtime::executeNativeFunction(
 }
 
 void dumpFunctionDeclaration(const Function* function, std::ostream& out) {
-    out << function->getName();
+    out << "function " << function->getName();
 
     for (NomadIndex i = 0; i < function->getParameterCount(); ++i) {
         const auto parameterId = toNomadId(i);
@@ -1731,20 +1731,18 @@ void dumpFunctionDeclaration(const Function* function, std::ostream& out) {
 }
 
 void Runtime::dumpInstructions(std::ostream& out) const {
-    NomadId functionId = 0;
-    auto function = getFunction(functionId);
+    std::vector<Function*> functions;
+    getFunctions(functions);
 
+    for (const auto* function : functions) {
+        dumpInstructions(out, function);
+    }
+}
+
+void Runtime::dumpInstructions(std::ostream& out, const Function* function) const {
     dumpFunctionDeclaration(function, out);
 
-    for (NomadIndex i = 0; i < m_instructions.size(); ++i) {
-        // Should we move to the next function?
-        if (i == function->getFunctionEnd()) {
-            functionId++;
-            function = getFunction(functionId);
-
-            dumpFunctionDeclaration(function, out);
-        }
-
+    for (auto i = function->getFunctionStart(); i < function->getFunctionEnd(); ++i) {
         auto fn = m_instructions[i].fn;
 
         auto instructionId = getInstructionId(fn);

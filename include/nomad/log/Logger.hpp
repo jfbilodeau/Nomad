@@ -81,6 +81,7 @@ public:
     void addSink(LogSink* sink);
     void removeSink(LogSink* sink);
 
+    void clear();
     void flush();
 
 private:
@@ -105,6 +106,7 @@ void fatal(NomadStringView message, const Location& location = Location());
 void addSink(LogSink* sink);
 void removeSink(LogSink* sink);
 
+void clear();
 void flush();
 
 } // namespace log

@@ -279,6 +279,7 @@ public:
 
     // Debug
     void dumpInstructions(std::ostream& out) const;
+    void dumpInstructions(std::ostream& out, const Function* function) const;
     void dumpDocumentation(std::ostream& out) const;
 
 private:

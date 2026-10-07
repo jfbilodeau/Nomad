@@ -69,6 +69,10 @@ void Logger::removeSink(LogSink* sink) {
     m_sinks.erase(std::ranges::remove(m_sinks, sink).begin(), m_sinks.end());
 }
 
+void Logger::clear() {
+    m_entries.clear();
+}
+
 void Logger::flush() {
     for (auto& sink: m_sinks) {
         sink->begin();
@@ -179,6 +183,10 @@ void addSink(LogSink* sink) {
 
 void removeSink(LogSink* sink) {
     getGlobalLogger().removeSink(sink);
+}
+
+void clear() {
+    getGlobalLogger().clear();
 }
 
 void flush() {

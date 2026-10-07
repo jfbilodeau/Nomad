@@ -44,6 +44,7 @@ target_link_libraries(
     nomad_test
     PRIVATE
     nomad
+    Boost::program_options
     Boost::unit_test_framework
 )
 

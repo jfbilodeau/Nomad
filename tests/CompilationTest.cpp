@@ -64,4 +64,42 @@ BOOST_AUTO_TEST_CASE(reports_missing_paths)
     BOOST_TEST(result.diagnostics.front().message == "Path does not exist");
 }
 
+BOOST_AUTO_TEST_CASE(dumps_generated_instructions_without_executing_source)
+{
+    TestDirectory directory("nomad_compilation_test_dump");
+    const auto source = directory.write("answer.nomad", "return 42");
+
+    const auto result = dumpInstructions(source);
+
+    BOOST_REQUIRE(result.compilation.succeeded());
+    BOOST_TEST(result.instructions.find("function answer") != NomadString::npos);
+    BOOST_TEST(result.instructions.find("return") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(dumps_only_the_selected_function)
+{
+    TestDirectory directory("nomad_compilation_test_dump_selected");
+    directory.write("first.nomad", "return 1");
+    directory.write("second.nomad", "return 2");
+
+    const auto result = dumpInstructions(directory.getPath(), NomadString{"second"});
+
+    BOOST_REQUIRE(result.compilation.succeeded());
+    BOOST_TEST(result.instructions.find("function second") != NomadString::npos);
+    BOOST_TEST(result.instructions.find("function first") == NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(reports_unknown_dump_functions)
+{
+    TestDirectory directory("nomad_compilation_test_dump_unknown");
+    const auto source = directory.write("answer.nomad", "return 42");
+
+    const auto result = dumpInstructions(source, NomadString{"missing"});
+
+    BOOST_TEST(!result.compilation.succeeded());
+    BOOST_REQUIRE(!result.compilation.diagnostics.empty());
+    BOOST_TEST(result.compilation.diagnostics.back().message == "Unknown function 'missing'");
+    BOOST_TEST(result.instructions.empty());
+}
+
 BOOST_AUTO_TEST_SUITE_END()

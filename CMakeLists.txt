@@ -248,7 +248,6 @@ set(
         ${NOMAD_INCLUDE_DIR}/nomad/compiler/statements/ReturnStatement.hpp
 
         ${NOMAD_INCLUDE_DIR}/nomad/debug/DebugConsole.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/debug/Decompiler.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/debug/DebugDraw.hpp
 
         ${NOMAD_INCLUDE_DIR}/nomad/game/Alignment.hpp
@@ -460,8 +459,6 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/compiler/statements/EventStatement.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/statements/ReturnStatement.cpp
 
-        ${NOMAD_SOURCE_DIR}/nomad/debug/Decompiler.cpp
-
         ${NOMAD_SOURCE_DIR}/nomad/log/ConsoleSink.cpp
         ${NOMAD_SOURCE_DIR}/nomad/log/Logger.cpp
         ${NOMAD_SOURCE_DIR}/nomad/log/MemorySink.cpp
@@ -494,7 +491,7 @@ set(NOMAD_LANGUAGE_INCLUDE ${NOMAD_INCLUDE})
 list(
         FILTER NOMAD_LANGUAGE_INCLUDE
         INCLUDE REGEX
-        "/nomad/(compiler|log|script|system)/|/nomad/Nomad\\.hpp$|/nomad/debug/Decompiler\\.hpp$"
+        "/nomad/(compiler|log|script|system)/|/nomad/Nomad\\.hpp$"
 )
 
 list(REMOVE_ITEM NOMAD_SOURCES ${NOMAD_LANGUAGE_SOURCES})

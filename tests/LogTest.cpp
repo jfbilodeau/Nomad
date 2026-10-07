@@ -117,4 +117,19 @@ BOOST_AUTO_TEST_CASE(SuppressingAndRestoringLogLevel)
     BOOST_TEST(foundRestored);
 }
 
+BOOST_AUTO_TEST_CASE(ClearingPendingEntries)
+{
+    MemorySink memorySink;
+    Logger logger(&memorySink);
+
+    logger.info("discarded");
+    logger.clear();
+    logger.info("retained");
+    logger.flush();
+
+    const auto& entries = memorySink.getEntries();
+    BOOST_REQUIRE(entries.size() == 1U);
+    BOOST_TEST(entries.front().message.find("retained") != NomadString::npos);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
