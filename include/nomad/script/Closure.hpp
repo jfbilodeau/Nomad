@@ -14,6 +14,7 @@ namespace nomad {
 class Function;
 class Type;
 
+// A closure references function and type metadata owned by its Runtime and must not outlive that Runtime.
 class Closure {
 public:
     explicit Closure(const Function* function, std::vector<RuntimeValue> captures = {});

@@ -136,8 +136,8 @@ BOOST_AUTO_TEST_SUITE(language_callbacks)
 
 BOOST_AUTO_TEST_CASE(named_file_function_callback)
 {
-    CallbackStore store;
     LanguageTestFixture fixture;
+    CallbackStore store;
     registerCallbackNativeFunctions(fixture.getRuntime(), store);
     fixture.addFunction("handler", "params value:int\nreturn value * 10");
     fixture.addFunction("main", "test.store handler");
@@ -152,8 +152,8 @@ BOOST_AUTO_TEST_CASE(named_file_function_callback)
 
 BOOST_AUTO_TEST_CASE(named_function_callback)
 {
-    CallbackStore store;
     LanguageTestFixture fixture;
+    CallbackStore store;
     registerCallbackNativeFunctions(fixture.getRuntime(), store);
     fixture.addFunction(
         "main",
@@ -170,8 +170,8 @@ BOOST_AUTO_TEST_CASE(named_function_callback)
 
 BOOST_AUTO_TEST_CASE(inline_fun_callback_captures_variables)
 {
-    CallbackStore store;
     LanguageTestFixture fixture;
+    CallbackStore store;
     registerCallbackNativeFunctions(fixture.getRuntime(), store);
     fixture.addFunction(
         "main",
@@ -196,8 +196,8 @@ BOOST_AUTO_TEST_CASE(inline_fun_callback_captures_variables)
 
 BOOST_AUTO_TEST_CASE(inline_callback_passes_captured_parameter_to_function)
 {
-    CallbackStore store;
     LanguageTestFixture fixture;
+    CallbackStore store;
     registerCallbackNativeFunctions(fixture.getRuntime(), store);
     fixture.addFunction("combine", "params first:int second:int\nreturn first + second");
     fixture.addFunction(
@@ -218,8 +218,8 @@ BOOST_AUTO_TEST_CASE(inline_callback_passes_captured_parameter_to_function)
 
 BOOST_AUTO_TEST_CASE(then_callback_consumes_rest_of_function)
 {
-    CallbackStore store;
     LanguageTestFixture fixture;
+    CallbackStore store;
     registerCallbackNativeFunctions(fixture.getRuntime(), store);
     fixture.addFunction(
         "main",
@@ -239,8 +239,8 @@ BOOST_AUTO_TEST_CASE(then_callback_consumes_rest_of_function)
 
 BOOST_AUTO_TEST_CASE(void_inline_callback)
 {
-    CallbackStore store;
     LanguageTestFixture fixture;
+    CallbackStore store;
     registerCallbackNativeFunctions(fixture.getRuntime(), store);
     fixture.addFunction(
         "main",
@@ -284,8 +284,8 @@ BOOST_AUTO_TEST_CASE(invalid_callbacks_are_rejected)
 
     for (const auto& source: sources) {
         BOOST_TEST_CONTEXT(source) {
-            CallbackStore store;
             LanguageTestFixture fixture;
+            CallbackStore store;
             registerCallbackNativeFunctions(fixture.getRuntime(), store);
             fixture.addFunction("main", source);
 
@@ -296,8 +296,8 @@ BOOST_AUTO_TEST_CASE(invalid_callbacks_are_rejected)
 
 BOOST_AUTO_TEST_CASE(callback_signature_mismatch_for_named_function)
 {
-    CallbackStore store;
     LanguageTestFixture fixture;
+    CallbackStore store;
     registerCallbackNativeFunctions(fixture.getRuntime(), store);
     fixture.addFunction("handler", "params value:float\nreturn 1");
     fixture.addFunction("main", "test.store handler");
@@ -375,8 +375,8 @@ BOOST_AUTO_TEST_CASE(events_are_shared_across_functions)
 
 BOOST_AUTO_TEST_CASE(event_handler_inline_fun)
 {
-    CallbackStore store;
     LanguageTestFixture fixture;
+    CallbackStore store;
     registerCallbackNativeFunctions(fixture.getRuntime(), store);
     fixture.addFunction(
         "main",
@@ -397,8 +397,8 @@ BOOST_AUTO_TEST_CASE(event_handler_inline_fun)
 
 BOOST_AUTO_TEST_CASE(event_handler_named_function)
 {
-    CallbackStore store;
     LanguageTestFixture fixture;
+    CallbackStore store;
     registerCallbackNativeFunctions(fixture.getRuntime(), store);
     fixture.addFunction(
         "main",
@@ -418,8 +418,8 @@ BOOST_AUTO_TEST_CASE(event_handler_named_function)
 
 BOOST_AUTO_TEST_CASE(event_dispatch_passes_typed_arguments)
 {
-    CallbackStore store;
     LanguageTestFixture fixture;
+    CallbackStore store;
     registerCallbackNativeFunctions(fixture.getRuntime(), store);
     fixture.addFunction(
         "main",
@@ -452,8 +452,8 @@ BOOST_AUTO_TEST_CASE(invalid_event_usage_is_rejected)
 
     for (const auto& source: sources) {
         BOOST_TEST_CONTEXT(source) {
-            CallbackStore store;
             LanguageTestFixture fixture;
+            CallbackStore store;
             registerCallbackNativeFunctions(fixture.getRuntime(), store);
             fixture.addFunction("main", source);
 

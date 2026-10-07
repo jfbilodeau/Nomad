@@ -5,7 +5,7 @@
 Nomad is a compiled, strongly typed scripting language
 designed for embedding in C++ applications, and a 2D game engine built around it.
 
-Nomad is a bespoke language and engine built to suit my very specific brain. I don’t expect it to make sense to most people—maybe two others, tops.
+Nomad is a bespoke language and engine built to suit my very specific brain. I don’t expect it to make sense to most people--maybe two others, tops.
 
 The current baseline builds the engine library, generic runtime, and tests.
 
@@ -57,7 +57,7 @@ sure it precedes `/usr/bin/cmake` on `PATH`:
 
 ```console
 sudo snap install cmake --classic
-sudo ln -s /snap/bin/cmake /usr/local/bin/cmake
+sudo ln -sf /snap/bin/cmake /snap/bin/ctest /snap/bin/cpack /usr/local/bin/
 ```
 
 See [the language documentation](docs/language.md) for the current Nomad
