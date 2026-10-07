@@ -97,4 +97,27 @@ BOOST_AUTO_TEST_CASE(function_colliding_with_function_file_is_rejected)
     BOOST_TEST(!fixture.compile());
 }
 
+BOOST_AUTO_TEST_CASE(symbolic_linked_directories_are_not_scanned)
+{
+    TestDirectory directory("nomad_language_test_symlink");
+    directory.write("init.nomad", "return 1");
+
+    std::error_code error;
+    std::filesystem::create_directory_symlink(
+        directory.getPath() / "missing-target",
+        directory.getPath() / "linked",
+        error
+    );
+
+    if (error) {
+        BOOST_TEST_MESSAGE("Directory symbolic links are unavailable: " << error.message());
+        return;
+    }
+
+    LanguageTestFixture fixture;
+    BOOST_CHECK_NO_THROW(fixture.getCompiler().loadScriptsFromPath(directory.getPath().generic_string()));
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    BOOST_TEST(fixture.getRuntime().getFunctionId("init") != NOMAD_INVALID_ID);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

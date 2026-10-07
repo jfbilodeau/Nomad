@@ -102,4 +102,16 @@ BOOST_AUTO_TEST_CASE(reports_unknown_dump_functions)
     BOOST_TEST(result.instructions.empty());
 }
 
+BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
+{
+    TestDirectory directory("nomad_compilation_test_documentation");
+    const auto source = directory.write("answer.nomad", "return 42");
+
+    const auto result = generateDocumentationForPath(source);
+
+    BOOST_REQUIRE(result.compilation.succeeded());
+    BOOST_TEST(result.documentation.find("# Nomad") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("## NativeFunctions") != NomadString::npos);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

@@ -6,8 +6,10 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
-#include <string_view>
+
+using namespace nomad;
 
 namespace {
 
@@ -15,27 +17,28 @@ void printUsage(std::ostream& out) {
     out
         << "Usage:\n"
         << "  nomadc check [path]\n"
-        << "  nomadc dump [path] [--function <name>] [--format text]\n";
+        << "  nomadc dump [path] [--function <name>] [--format text]\n"
+        << "  nomadc docs [path] --format markdown --output <file>\n";
 }
 
-void printDiagnostics(const nomad::CompilationResult& result) {
+void printDiagnostics(const CompilationResult& result) {
     for (const auto& diagnostic : result.diagnostics) {
-        std::cerr << nomad::formatDiagnostic(diagnostic) << '\n';
+        std::cerr << formatDiagnostic(diagnostic) << '\n';
     }
 }
 
 } // namespace
 
 int main(const int argc, char** argv) {
-    nomad::log::setLogLevel(nomad::LogLevel::Warning);
-    nomad::log::clear();
+    log::setLogLevel(LogLevel::Warning);
+    log::clear();
 
     if (argc < 2) {
         printUsage(std::cerr);
         return EXIT_FAILURE;
     }
 
-    const std::string_view command(argv[1]);
+    const NomadStringView command(argv[1]);
 
     if (command == "--help" || command == "-h") {
         printUsage(std::cout);
@@ -50,7 +53,7 @@ int main(const int argc, char** argv) {
         }
 
         const auto path = argc == 3 ? std::filesystem::path(argv[2]) : std::filesystem::current_path();
-        const auto result = nomad::checkPath(path);
+        const auto result = checkPath(path);
         printDiagnostics(result);
 
         return result.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
@@ -58,11 +61,11 @@ int main(const int argc, char** argv) {
 
     if (command == "dump") {
         auto path = std::filesystem::current_path();
-        std::optional<nomad::NomadString> functionName;
+        std::optional<NomadString> functionName;
         auto pathSet = false;
 
         for (auto index = 2; index < argc; ++index) {
-            const std::string_view argument(argv[index]);
+            const NomadStringView argument(argv[index]);
 
             if (argument == "--function") {
                 if (++index >= argc) {
@@ -77,7 +80,7 @@ int main(const int argc, char** argv) {
                     return EXIT_FAILURE;
                 }
 
-                if (std::string_view(argv[index]) != "text") {
+                if (NomadStringView(argv[index]) != "text") {
                     std::cerr << "The dump command currently supports only text output\n";
                     return EXIT_FAILURE;
                 }
@@ -91,7 +94,7 @@ int main(const int argc, char** argv) {
             }
         }
 
-        const auto result = nomad::dumpInstructions(path, functionName);
+        const auto result = dumpInstructions(path, functionName);
         printDiagnostics(result.compilation);
 
         if (!result.compilation.succeeded()) {
@@ -99,6 +102,70 @@ int main(const int argc, char** argv) {
         }
 
         std::cout << result.instructions;
+        return EXIT_SUCCESS;
+    }
+
+    if (command == "docs") {
+        auto path = std::filesystem::current_path();
+        std::optional<std::filesystem::path> outputPath;
+        auto pathSet = false;
+
+        for (auto index = 2; index < argc; ++index) {
+            const NomadStringView argument(argv[index]);
+
+            if (argument == "--format") {
+                if (++index >= argc) {
+                    std::cerr << "The --format option requires a format\n";
+                    return EXIT_FAILURE;
+                }
+
+                if (NomadStringView(argv[index]) != "markdown") {
+                    std::cerr << "The docs command currently supports only Markdown output\n";
+                    return EXIT_FAILURE;
+                }
+            } else if (argument == "--output") {
+                if (++index >= argc) {
+                    std::cerr << "The --output option requires a file\n";
+                    return EXIT_FAILURE;
+                }
+
+                outputPath = argv[index];
+            } else if (!pathSet) {
+                path = argv[index];
+                pathSet = true;
+            } else {
+                std::cerr << "Unexpected docs argument: " << argument << '\n';
+                printUsage(std::cerr);
+                return EXIT_FAILURE;
+            }
+        }
+
+        if (!outputPath) {
+            std::cerr << "The docs command requires --output <file>\n";
+            return EXIT_FAILURE;
+        }
+
+        const auto result = generateDocumentationForPath(path);
+        printDiagnostics(result.compilation);
+
+        if (!result.compilation.succeeded()) {
+            return EXIT_FAILURE;
+        }
+
+        std::ofstream output(*outputPath, std::ios::binary);
+
+        if (!output.is_open()) {
+            std::cerr << "Failed to open documentation output: " << outputPath->string() << '\n';
+            return EXIT_FAILURE;
+        }
+
+        output << result.documentation;
+
+        if (!output) {
+            std::cerr << "Failed to write documentation output: " << outputPath->string() << '\n';
+            return EXIT_FAILURE;
+        }
+
         return EXIT_SUCCESS;
     }
 

@@ -29,6 +29,10 @@ registration will be added as the next tool-separation slice.
 headless compilation and writes the generated VM instructions. It never runs
 the selected function. Text is the initial supported output format.
 
+`nomadc docs [path] --format markdown --output <file>` compiles without
+execution and writes the registered language API documentation. Markdown is
+the initial supported documentation format.
+
 ## Build
 
 Nomad requires CMake 3.30 or newer and a C++20 compiler.

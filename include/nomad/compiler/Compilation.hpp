@@ -23,6 +23,11 @@ struct InstructionDumpResult {
     NomadString instructions;
 };
 
+struct DocumentationResult {
+    CompilationResult compilation;
+    NomadString documentation;
+};
+
 // Compiles a Nomad source file or every Nomad source below a directory without executing any function.
 [[nodiscard]] CompilationResult checkPath(const std::filesystem::path& path);
 
@@ -31,5 +36,8 @@ struct InstructionDumpResult {
     const std::filesystem::path& path,
     const std::optional<NomadString>& functionName = std::nullopt
 );
+
+// Compiles without executing and generates Markdown documentation for the registered language API.
+[[nodiscard]] DocumentationResult generateDocumentationForPath(const std::filesystem::path& path);
 
 } // namespace nomad

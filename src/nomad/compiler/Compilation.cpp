@@ -4,6 +4,7 @@
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/script/Function.hpp>
+#include <nomad/script/Documentation.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <fstream>
@@ -132,6 +133,21 @@ InstructionDumpResult dumpInstructions(
     std::ostringstream output;
     artifacts.runtime->dumpInstructions(output);
     result.instructions = output.str();
+
+    return result;
+}
+
+DocumentationResult generateDocumentationForPath(const std::filesystem::path& path) {
+    auto artifacts = compilePath(path);
+    DocumentationResult result{std::move(artifacts.result), {}};
+
+    if (!result.compilation.succeeded()) {
+        return result;
+    }
+
+    std::ostringstream output;
+    generateDocumentation(artifacts.runtime.get(), output);
+    result.documentation = output.str();
 
     return result;
 }
