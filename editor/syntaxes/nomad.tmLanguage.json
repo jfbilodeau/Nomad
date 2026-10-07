@@ -1,0 +1,128 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Nomad",
+  "scopeName": "source.nomad",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#formatStrings" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#literals" },
+    { "include": "#functions" },
+    { "include": "#types" },
+    { "name": "punctuation.operator.nomad", "match": "[+\\-*/%=&|<>!]+" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.nomad",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "formatStrings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.format.nomad",
+          "begin": "\\$\"",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.begin.nomad"
+            }
+          },
+          "end": "\"",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.string.end.nomad"
+            }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.nomad",
+              "match": "\\\\."
+            },
+            {
+              "name": "variable.interpolation.nomad",
+              "begin": "\\{",
+              "end": "\\}",
+              "patterns": [
+                {
+                  "include": "#keywords"
+                },
+                {
+                  "include": "#numbers"
+                },
+                {
+                  "include": "#functions"
+                },
+                {
+                  "include": "#literals"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.nomad",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.nomad",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.nomad",
+          "match": "\\b\\d+\\.\\d+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.nomad",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.nomad",
+          "match": "\\b(?:if|else|return|fun|const|end|params|then|event)\\b"
+        }
+      ]
+    },
+    "literals": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.nomad",
+          "match": "\\b(?:true|false)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.nomad",
+          "match": "\\b(?:int|float|string|bool)\\b"
+        }
+      ]
+    }
+  },
+  "foldingStartMarker": "\\b(fun|if|else)\\b",
+  "foldingStopMarker": "\\bend\\b",
+  "scopeNameToFileTypes": {
+    "source.nomad": [
+      "nomad"
+    ]
+  }
+}
