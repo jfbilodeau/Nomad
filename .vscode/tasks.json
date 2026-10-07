@@ -28,6 +28,16 @@
     },
     {
       "type": "cmake",
+      "label": "CMake: build compiler",
+      "command": "build",
+      "targets": [
+        "nomadc"
+      ],
+      "problemMatcher": [],
+      "detail": "Build the headless Nomad compiler tooling using the active CMake configuration"
+    },
+    {
+      "type": "cmake",
       "label": "CMake: run tests",
       "command": "test",
       "group": {

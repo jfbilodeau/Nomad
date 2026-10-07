@@ -15,7 +15,6 @@
 
 #include <nomad/resource/ResourceManager.hpp>
 
-#include <nomad/script/Documentation.hpp>
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>
 
@@ -25,7 +24,6 @@
 #include <SDL3_ttf/SDL_ttf.h>
 
 #include <filesystem>
-#include <fstream>
 #include <memory>
 #include <utility>
 #include <variant>
@@ -57,13 +55,6 @@ void Game::initialize()
 
     if (m_options.debug) {
         log::setLogLevel(LogLevel::Debug);
-
-        std::ofstream instructionDump("instructions.txt");
-        m_runtime->dumpInstructions(instructionDump);
-
-        std::ofstream documentationDump("documentation.md");
-        // m_runtime->dumpDocumentation(documentationDump);
-        generateDocumentation(m_runtime.get(), documentationDump);
     }
 
     runInitFunction();

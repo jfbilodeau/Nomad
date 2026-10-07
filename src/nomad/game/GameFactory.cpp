@@ -7,14 +7,11 @@
 
 #include <nomad/game/Game.hpp>
 
-#include <nomad/script/Documentation.hpp>
-
 #define BOOST_NO_CXX98_FUNCTION_BASE
 #include <boost/program_options.hpp>
 
 #include <cstdlib>
 #include <iostream>
-#include <fstream>
 
 namespace nomad
 {
@@ -26,8 +23,6 @@ void parseCommandLine(const int argc, char **argv, GameOptions *options)
     desc.add_options()
         ("help", "Display help and exit")
         ("debug", "Enable debug mode")
-        ("doc", "Generate function documentation")
-        ("tm", "Generate tmLanguage syntax highlighting files")
         ("resource-path", boost::program_options::value<NomadString>(&options->resourcePath),
          "Path to resource directory");
 
@@ -40,12 +35,6 @@ void parseCommandLine(const int argc, char **argv, GameOptions *options)
         std::exit(EXIT_SUCCESS);
     }
 
-    if (vm.contains("doc")) {
-        options->generateDocumentation = true;
-    }
-    if (vm.contains("tm")) {
-        options->generateTextMateGrammar = true;
-    }
     if (vm.contains("debug")) {
         log::info("Debug mode enabled");
         log::setLogLevel(LogLevel::Debug);

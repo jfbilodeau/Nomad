@@ -104,6 +104,7 @@
       "configuration": "Debug",
       "targets": [
         "nomad-runtime",
+        "nomadc",
         "nomad_test"
       ]
     },
@@ -113,6 +114,7 @@
       "configuration": "Release",
       "targets": [
         "nomad-runtime",
+        "nomadc",
         "nomad_test"
       ]
     },
@@ -122,6 +124,7 @@
       "configuration": "Release",
       "targets": [
         "nomad-runtime",
+        "nomadc",
         "nomad_test"
       ]
     },
@@ -130,6 +133,7 @@
       "configurePreset": "linux-debug",
       "targets": [
         "nomad-runtime",
+        "nomadc",
         "nomad_test"
       ]
     },
@@ -138,6 +142,7 @@
       "configurePreset": "linux-release",
       "targets": [
         "nomad-runtime",
+        "nomadc",
         "nomad_test"
       ]
     },
@@ -146,6 +151,7 @@
       "configurePreset": "linux-ci",
       "targets": [
         "nomad-runtime",
+        "nomadc",
         "nomad_test"
       ]
     },

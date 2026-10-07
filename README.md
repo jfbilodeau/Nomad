@@ -9,6 +9,21 @@ Nomad is a bespoke language and engine built to suit my very specific brain. I d
 
 The current baseline builds the engine library, generic runtime, and tests.
 
+## Runtime
+
+`nomad-runtime` accepts `--resource-path <directory>` and `--debug`. Debug
+mode enables diagnostic logging and the debug console; normal runtime startup
+does not generate documentation or instruction dumps. Those outputs belong to
+the future headless `nomadc` tooling.
+
+## Compiler tooling
+
+`nomadc check [path]` compiles one `.nomad` file or recursively compiles a
+directory without opening a window or executing any function. It prints
+source-located diagnostics and returns a nonzero exit code when compilation
+fails. The initial command checks the core language API; headless engine API
+registration will be added as the next tool-separation slice.
+
 ## Build
 
 Nomad requires CMake 3.30 or newer and a C++20 compiler.

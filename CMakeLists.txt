@@ -231,6 +231,7 @@ set(
 
         ${NOMAD_INCLUDE_DIR}/nomad/compiler/Argument.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/compiler/CallNode.hpp
+        ${NOMAD_INCLUDE_DIR}/nomad/compiler/Compilation.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/compiler/Compiler.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/compiler/CompilerContext.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/compiler/CompilerException.hpp
@@ -336,6 +337,7 @@ set(
 
         ${NOMAD_SOURCE_DIR}/nomad/compiler/Argument.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/CallNode.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/Compilation.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/Compiler.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerContext.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/Expression.cpp
@@ -459,6 +461,12 @@ if(NOMAD_BUILD_RUNTIME)
             COMMAND_EXPAND_LISTS
         )
     endif()
+endif()
+
+option(NOMAD_BUILD_COMPILER "Build the Nomad compiler tooling" ON)
+if(NOMAD_BUILD_COMPILER)
+    add_executable(nomadc apps/compiler/main.cpp)
+    target_link_libraries(nomadc PRIVATE Nomad::Engine)
 endif()
 
 option(NOMAD_BUILD_TESTS "Build Nomad unit tests" ON)

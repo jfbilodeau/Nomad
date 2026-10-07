@@ -3,12 +3,14 @@ add_executable(
     ./main.cpp
     ./ColorTest.cpp
     ./CallableCatalogTest.cpp
+    ./CompilationTest.cpp
     ./CompilerContextTest.cpp
     ./CompilerTest.cpp
     ./EventRegistrationTest.cpp
     ./ExpressionEvaluationTest.cpp
     ./ExpressionResolveTest.cpp
     ./GameEventQueueTest.cpp
+    ./GameFactoryTest.cpp
     ./GeometryTest.cpp
     ./InterpreterTest.cpp
     ./LanguageCallbackEventTest.cpp
@@ -26,6 +28,7 @@ add_executable(
     ./RuntimeTest.cpp
     ./StatementExecutionTest.cpp
     ./SystemTest.cpp
+    ./TestDirectory.hpp
     ./TileMapDataTest.cpp
     ./TileMapTest.cpp
     ./TokenizerTest.cpp

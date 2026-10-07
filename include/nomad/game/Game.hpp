@@ -45,8 +45,6 @@ public:
 struct GameOptions {
     NomadString resourcePath;
     bool debug = false;
-    bool generateDocumentation = false;
-    bool generateTextMateGrammar = false;
 };
 
 constexpr NomadFloat DEBUG_CONSOLE_MINIMUM_SCALE = 0.8f;

@@ -7,6 +7,8 @@
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VariableContext.hpp>
 
+#include <TestDirectory.hpp>
+
 #include <boost/json.hpp>
 
 #include <filesystem>
@@ -14,6 +16,7 @@
 #include <limits>
 
 using namespace nomad;
+using namespace nomad::test;
 
 namespace {
 
@@ -33,28 +36,6 @@ RuntimeValue getValue(SimpleVariableContext& context, const NomadString& name) {
 boost::json::object parseObject(const char* text) {
     return boost::json::parse(text).as_object();
 }
-
-struct TemporaryDirectory {
-    TemporaryDirectory() :
-        path(std::filesystem::temp_directory_path() / "nomad_variable_persistence_test")
-    {
-        std::filesystem::remove_all(path);
-        std::filesystem::create_directories(path);
-    }
-
-    TemporaryDirectory(const TemporaryDirectory&) = delete;
-
-    ~TemporaryDirectory() {
-        std::error_code error;
-        std::filesystem::remove_all(path, error);
-    }
-
-    [[nodiscard]] NomadString file(const NomadString& name) const {
-        return (path / name).string();
-    }
-
-    std::filesystem::path path;
-};
 
 } // namespace
 
@@ -243,7 +224,7 @@ BOOST_AUTO_TEST_CASE(variable_persistence_validates_save_names)
 
 BOOST_AUTO_TEST_CASE(variable_persistence_writes_and_reads_json_files)
 {
-    const TemporaryDirectory directory;
+    const TestDirectory directory("nomad_variable_persistence_test");
     const auto fileName = directory.file("save.json");
 
     const auto root = parseObject(R"({"inventory.gold": 25})");
@@ -265,7 +246,7 @@ BOOST_AUTO_TEST_CASE(variable_persistence_writes_and_reads_json_files)
 
 BOOST_AUTO_TEST_CASE(variable_persistence_rejects_invalid_json_files)
 {
-    const TemporaryDirectory directory;
+    const TestDirectory directory("nomad_variable_persistence_test");
 
     const auto malformedFileName = directory.file("malformed.json");
     std::ofstream(malformedFileName) << R"({"inventory.gold": )";
