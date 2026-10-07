@@ -3,7 +3,7 @@ add_executable(
     ./main.cpp
     ./ColorTest.cpp
     ./CallableCatalogTest.cpp
-    ./CompilationTest.cpp
+    ./CompilerToolsTest.cpp
     ./CompilerContextTest.cpp
     ./CompilerTest.cpp
     ./EventRegistrationTest.cpp

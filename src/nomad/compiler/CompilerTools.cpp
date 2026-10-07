@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/compiler/Compilation.hpp>
+#include <nomad/compiler/CompilerTools.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/script/Function.hpp>
