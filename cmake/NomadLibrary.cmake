@@ -64,6 +64,7 @@ target_include_directories(
     nomad-language
     PUBLIC
     $<BUILD_INTERFACE:${NOMAD_INCLUDE_DIR}>
+    $<BUILD_INTERFACE:${NOMAD_GENERATED_INCLUDE_DIR}>
     $<INSTALL_INTERFACE:include>
 )
 
@@ -79,6 +80,7 @@ target_include_directories(
     nomad-project
     PUBLIC
     $<BUILD_INTERFACE:${NOMAD_INCLUDE_DIR}>
+    $<BUILD_INTERFACE:${NOMAD_GENERATED_INCLUDE_DIR}>
     $<INSTALL_INTERFACE:include>
 )
 

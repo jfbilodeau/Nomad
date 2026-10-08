@@ -26,6 +26,7 @@ add_executable(
     ./LogTest.cpp
     ./ParserTest.cpp
     ./ProjectConfigurationTest.cpp
+    ./ProjectInitializerTest.cpp
     ./RuntimeTest.cpp
     ./StatementExecutionTest.cpp
     ./SystemTest.cpp

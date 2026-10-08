@@ -8,6 +8,13 @@ include(CTest)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+set(NOMAD_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
+configure_file(
+        cmake/Version.hpp.in
+        "${NOMAD_GENERATED_INCLUDE_DIR}/nomad/Version.hpp"
+        @ONLY
+)
+
 option(NOMAD_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(NOMAD_WARNINGS_AS_ERRORS "Treat Nomad compiler warnings as errors" ON)
 option(NOMAD_USE_CCACHE "Use ccache when it is available" ON)
@@ -508,11 +515,13 @@ list(REMOVE_ITEM NOMAD_SOURCES ${NOMAD_LANGUAGE_SOURCES})
 
 set(
         NOMAD_PROJECT_INCLUDE
+        ${NOMAD_INCLUDE_DIR}/nomad/project/ProjectInitializer.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/project/ProjectConfiguration.hpp
 )
 
 set(
         NOMAD_PROJECT_SOURCES
+        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectInitializer.cpp
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectConfiguration.cpp
 )
 
@@ -523,6 +532,13 @@ set(
 #)
 
 include(cmake/NomadLibrary.cmake)
+
+option(NOMAD_BUILD_CLI "Build the Nomad project manager" ON)
+if(NOMAD_BUILD_CLI)
+    add_executable(nomad-cli apps/manager/main.cpp)
+    set_target_properties(nomad-cli PROPERTIES OUTPUT_NAME nomad)
+    target_link_libraries(nomad-cli PRIVATE Nomad::Project)
+endif()
 
 option(NOMAD_BUILD_RUNTIME "Build the Nomad game runtime" ON)
 if(NOMAD_BUILD_RUNTIME)

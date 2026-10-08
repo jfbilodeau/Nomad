@@ -1,0 +1,14 @@
+// Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
+
+#pragma once
+
+#include <nomad/Nomad.hpp>
+
+namespace nomad {
+
+inline constexpr NomadStringView NOMAD_VERSION = "@PROJECT_VERSION@";
+inline constexpr NomadInteger NOMAD_VERSION_MAJOR = @PROJECT_VERSION_MAJOR@;
+inline constexpr NomadInteger NOMAD_VERSION_MINOR = @PROJECT_VERSION_MINOR@;
+inline constexpr NomadInteger NOMAD_VERSION_PATCH = @PROJECT_VERSION_PATCH@;
+
+} // namespace nomad

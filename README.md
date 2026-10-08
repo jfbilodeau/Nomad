@@ -1,5 +1,8 @@
 # Nomad
 
+> [!IMPORTANT]
+> This project is a work in progress.
+
 [![CI](https://github.com/jfbilodeau/Nomad/actions/workflows/ci.yml/badge.svg)](https://github.com/jfbilodeau/Nomad/actions/workflows/ci.yml)
 
 Nomad is a compiled, strongly typed scripting language
@@ -10,6 +13,15 @@ Nomad is a bespoke language and engine built to suit my very specific brain. I d
 The current baseline builds the standalone `Nomad::Language` and
 `Nomad::Project` and `Nomad::Engine` libraries, compiler tooling, generic
 runtime, and tests.
+
+## Project manager
+
+`nomad init [directory]` creates a minimal project containing `nomad.toml` and
+`res/scripts/init.nomad`. It can initialize a new directory or an existing
+directory, but refuses to overwrite either generated file.
+
+`nomad version` prints the Nomad version. The version is defined once by the
+root CMake project and generated into the C++ targets.
 
 ## Project configuration
 

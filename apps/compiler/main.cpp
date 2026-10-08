@@ -9,6 +9,8 @@
 
 #include <nomad/project/ProjectConfiguration.hpp>
 
+#include <nomad/Version.hpp>
+
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -25,7 +27,8 @@ void printUsage(std::ostream& out) {
         << "Usage:\n"
         << "  nomadc check [path]\n"
         << "  nomadc dump [path] [--function <name>] [--format text]\n"
-        << "  nomadc docs [path] --format markdown --output <file>\n";
+        << "  nomadc docs [path] --format markdown --output <file>\n"
+        << "  nomadc version\n";
 }
 
 void printDiagnostics(const CompilationResult& result) {
@@ -111,6 +114,16 @@ int main(const int argc, char** argv) {
 
     if (command == "--help" || command == "-h") {
         printUsage(std::cout);
+        return EXIT_SUCCESS;
+    }
+
+    if (command == "--version" || command == "version") {
+        if (argc != 2) {
+            std::cerr << "The version command does not accept arguments\n";
+            return EXIT_FAILURE;
+        }
+
+        std::cout << "nomadc " << NOMAD_VERSION << '\n';
         return EXIT_SUCCESS;
     }
 
