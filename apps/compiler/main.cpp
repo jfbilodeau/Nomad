@@ -9,6 +9,8 @@
 
 #include <nomad/project/ProjectConfiguration.hpp>
 
+#include <nomad/system/Path.hpp>
+
 #include <nomad/Version.hpp>
 
 #include <boost/nowide/args.hpp>
@@ -18,6 +20,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <span>
 #include <utility>
 
 using namespace nomad;
@@ -90,7 +93,7 @@ class HeadlessGame {
 public:
     explicit HeadlessGame(const NomadPath& resourcePath) {
         GameOptions options;
-        options.resourcePath = pathToString(resourcePath);
+        options.resourcePath = pathToUtf8(resourcePath);
         m_game = Game::createHeadless(std::move(options));
     }
 
@@ -99,6 +102,180 @@ public:
 private:
     std::unique_ptr<Game> m_game;
 };
+
+int versionCommand(const std::span<char*> arguments) {
+    if (!arguments.empty()) {
+        std::cerr << "The version command does not accept arguments\n";
+        return EXIT_FAILURE;
+    }
+
+    std::cout << "nomadc " << getNomadVersion() << '\n';
+    return EXIT_SUCCESS;
+}
+
+int checkCommand(const std::span<char*> arguments) {
+    if (arguments.size() > 1U) {
+        std::cerr << "The check command accepts at most one path\n";
+        printUsage(std::cerr);
+        return EXIT_FAILURE;
+    }
+
+    const auto explicitPath = !arguments.empty();
+    const auto path = explicitPath
+        ? pathFromUtf8(arguments.front())
+        : std::filesystem::current_path();
+    const auto paths = resolveCompilationPaths(path, explicitPath);
+    const HeadlessGame game(paths.resources);
+    auto result = checkPaths(paths.sources, game.getRuntime());
+
+    if (paths.entryFunction) {
+        validateEntryFunction(result, game.getRuntime(), *paths.entryFunction, paths.projectFile);
+    }
+
+    printDiagnostics(result);
+    return result.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+int dumpCommand(const std::span<char*> arguments) {
+    auto path = std::filesystem::current_path();
+    std::optional<NomadString> functionName;
+    auto pathSet = false;
+
+    for (std::size_t index = 0; index < arguments.size(); ++index) {
+        const NomadStringView argument(arguments[index]);
+
+        if (argument == "--function") {
+            if (++index >= arguments.size()) {
+                std::cerr << "The --function option requires a function name\n";
+                return EXIT_FAILURE;
+            }
+
+            functionName = arguments[index];
+        } else if (argument == "--format") {
+            if (++index >= arguments.size()) {
+                std::cerr << "The --format option requires a format\n";
+                return EXIT_FAILURE;
+            }
+
+            if (NomadStringView(arguments[index]) != "text") {
+                std::cerr << "The dump command currently supports only text output\n";
+                return EXIT_FAILURE;
+            }
+        } else if (!pathSet) {
+            path = pathFromUtf8(arguments[index]);
+            pathSet = true;
+        } else {
+            std::cerr << "Unexpected dump argument: " << argument << '\n';
+            printUsage(std::cerr);
+            return EXIT_FAILURE;
+        }
+    }
+
+    const auto paths = resolveCompilationPaths(path, pathSet);
+    const HeadlessGame game(paths.resources);
+    const auto result = dumpInstructions(paths.sources, functionName, game.getRuntime());
+    printDiagnostics(result.compilation);
+
+    if (!result.compilation.succeeded()) {
+        return EXIT_FAILURE;
+    }
+
+    std::cout << result.instructions;
+    return EXIT_SUCCESS;
+}
+
+int documentationCommand(const std::span<char*> arguments) {
+    auto path = std::filesystem::current_path();
+    std::optional<std::filesystem::path> outputPath;
+    auto pathSet = false;
+
+    for (std::size_t index = 0; index < arguments.size(); ++index) {
+        const NomadStringView argument(arguments[index]);
+
+        if (argument == "--format") {
+            if (++index >= arguments.size()) {
+                std::cerr << "The --format option requires a format\n";
+                return EXIT_FAILURE;
+            }
+
+            if (NomadStringView(arguments[index]) != "markdown") {
+                std::cerr << "The docs command currently supports only Markdown output\n";
+                return EXIT_FAILURE;
+            }
+        } else if (argument == "--output") {
+            if (++index >= arguments.size()) {
+                std::cerr << "The --output option requires a file\n";
+                return EXIT_FAILURE;
+            }
+
+            outputPath = pathFromUtf8(arguments[index]);
+        } else if (!pathSet) {
+            path = pathFromUtf8(arguments[index]);
+            pathSet = true;
+        } else {
+            std::cerr << "Unexpected docs argument: " << argument << '\n';
+            printUsage(std::cerr);
+            return EXIT_FAILURE;
+        }
+    }
+
+    if (!outputPath) {
+        std::cerr << "The docs command requires --output <file>\n";
+        return EXIT_FAILURE;
+    }
+
+    const auto paths = resolveCompilationPaths(path, pathSet);
+    const HeadlessGame game(paths.resources);
+    const auto result = generateDocumentationForPaths(paths.sources, game.getRuntime());
+    printDiagnostics(result.compilation);
+
+    if (!result.compilation.succeeded()) {
+        return EXIT_FAILURE;
+    }
+
+    std::ofstream output(*outputPath, std::ios::binary);
+
+    if (!output.is_open()) {
+        std::cerr << "Failed to open documentation output: " << pathToUtf8(*outputPath) << '\n';
+        return EXIT_FAILURE;
+    }
+
+    output << result.documentation;
+
+    if (!output) {
+        std::cerr << "Failed to write documentation output: " << pathToUtf8(*outputPath) << '\n';
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
+}
+
+int dispatchCommand(const NomadStringView command, const std::span<char*> arguments) {
+    if (command == "--help" || command == "-h") {
+        printUsage(std::cout);
+        return EXIT_SUCCESS;
+    }
+
+    if (command == "--version" || command == "version") {
+        return versionCommand(arguments);
+    }
+
+    if (command == "check") {
+        return checkCommand(arguments);
+    }
+
+    if (command == "dump") {
+        return dumpCommand(arguments);
+    }
+
+    if (command == "docs") {
+        return documentationCommand(arguments);
+    }
+
+    std::cerr << "Unknown command: " << command << '\n';
+    printUsage(std::cerr);
+    return EXIT_FAILURE;
+}
 
 } // namespace
 
@@ -109,169 +286,13 @@ int main(int argc, char** argv) {
     log::clear();
 
     try {
-    if (argc < 2) {
-        printUsage(std::cerr);
-        return EXIT_FAILURE;
-    }
-
-    const NomadStringView command(argv[1]);
-
-    if (command == "--help" || command == "-h") {
-        printUsage(std::cout);
-        return EXIT_SUCCESS;
-    }
-
-    if (command == "--version" || command == "version") {
-        if (argc != 2) {
-            std::cerr << "The version command does not accept arguments\n";
-            return EXIT_FAILURE;
-        }
-
-        std::cout << "nomadc " << getNomadVersion() << '\n';
-        return EXIT_SUCCESS;
-    }
-
-    if (command == "check") {
-        if (argc > 3) {
-            std::cerr << "The check command accepts at most one path\n";
+        if (argc < 2) {
             printUsage(std::cerr);
             return EXIT_FAILURE;
         }
 
-        const auto explicitPath = argc == 3;
-        const auto path = explicitPath ? pathFromString(argv[2]) : std::filesystem::current_path();
-        const auto paths = resolveCompilationPaths(path, explicitPath);
-        const HeadlessGame game(paths.resources);
-        auto result = checkPaths(paths.sources, game.getRuntime());
-
-        if (paths.entryFunction) {
-            validateEntryFunction(result, game.getRuntime(), *paths.entryFunction, paths.projectFile);
-        }
-
-        printDiagnostics(result);
-
-        return result.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
-    }
-
-    if (command == "dump") {
-        auto path = std::filesystem::current_path();
-        std::optional<NomadString> functionName;
-        auto pathSet = false;
-
-        for (auto index = 2; index < argc; ++index) {
-            const NomadStringView argument(argv[index]);
-
-            if (argument == "--function") {
-                if (++index >= argc) {
-                    std::cerr << "The --function option requires a function name\n";
-                    return EXIT_FAILURE;
-                }
-
-                functionName = argv[index];
-            } else if (argument == "--format") {
-                if (++index >= argc) {
-                    std::cerr << "The --format option requires a format\n";
-                    return EXIT_FAILURE;
-                }
-
-                if (NomadStringView(argv[index]) != "text") {
-                    std::cerr << "The dump command currently supports only text output\n";
-                    return EXIT_FAILURE;
-                }
-            } else if (!pathSet) {
-                path = pathFromString(argv[index]);
-                pathSet = true;
-            } else {
-                std::cerr << "Unexpected dump argument: " << argument << '\n';
-                printUsage(std::cerr);
-                return EXIT_FAILURE;
-            }
-        }
-
-        const auto paths = resolveCompilationPaths(path, pathSet);
-        const HeadlessGame game(paths.resources);
-        const auto result = dumpInstructions(paths.sources, functionName, game.getRuntime());
-        printDiagnostics(result.compilation);
-
-        if (!result.compilation.succeeded()) {
-            return EXIT_FAILURE;
-        }
-
-        std::cout << result.instructions;
-        return EXIT_SUCCESS;
-    }
-
-    if (command == "docs") {
-        auto path = std::filesystem::current_path();
-        std::optional<std::filesystem::path> outputPath;
-        auto pathSet = false;
-
-        for (auto index = 2; index < argc; ++index) {
-            const NomadStringView argument(argv[index]);
-
-            if (argument == "--format") {
-                if (++index >= argc) {
-                    std::cerr << "The --format option requires a format\n";
-                    return EXIT_FAILURE;
-                }
-
-                if (NomadStringView(argv[index]) != "markdown") {
-                    std::cerr << "The docs command currently supports only Markdown output\n";
-                    return EXIT_FAILURE;
-                }
-            } else if (argument == "--output") {
-                if (++index >= argc) {
-                    std::cerr << "The --output option requires a file\n";
-                    return EXIT_FAILURE;
-                }
-
-                outputPath = pathFromString(argv[index]);
-            } else if (!pathSet) {
-                path = pathFromString(argv[index]);
-                pathSet = true;
-            } else {
-                std::cerr << "Unexpected docs argument: " << argument << '\n';
-                printUsage(std::cerr);
-                return EXIT_FAILURE;
-            }
-        }
-
-        if (!outputPath) {
-            std::cerr << "The docs command requires --output <file>\n";
-            return EXIT_FAILURE;
-        }
-
-        const auto paths = resolveCompilationPaths(path, pathSet);
-        const HeadlessGame game(paths.resources);
-        const auto result = generateDocumentationForPaths(paths.sources, game.getRuntime());
-        printDiagnostics(result.compilation);
-
-        if (!result.compilation.succeeded()) {
-            return EXIT_FAILURE;
-        }
-
-        std::ofstream output(*outputPath, std::ios::binary);
-
-        if (!output.is_open()) {
-            std::cerr << "Failed to open documentation output: " << outputPath->string() << '\n';
-            return EXIT_FAILURE;
-        }
-
-        output << result.documentation;
-
-        if (!output) {
-            std::cerr << "Failed to write documentation output: " << outputPath->string() << '\n';
-            return EXIT_FAILURE;
-        }
-
-        return EXIT_SUCCESS;
-    }
-
-    {
-        std::cerr << "Unknown command: " << command << '\n';
-        printUsage(std::cerr);
-        return EXIT_FAILURE;
-    }
+        const auto arguments = std::span(argv + 2, static_cast<std::size_t>(argc - 2));
+        return dispatchCommand(argv[1], arguments);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return EXIT_FAILURE;

@@ -8,6 +8,8 @@
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
+#include <nomad/system/Path.hpp>
+
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -41,7 +43,7 @@ CompilationArtifacts compilePaths(
     CompilerContext context(compiler.get());
 
     for (const auto& path : paths) {
-        const auto sourceName = pathToGenericString(path);
+        const auto sourceName = pathToGenericUtf8(path);
 
         try {
             if (!std::filesystem::exists(path)) {
@@ -69,7 +71,7 @@ CompilationArtifacts compilePaths(
                             std::istreambuf_iterator<char>(sourceFile),
                             std::istreambuf_iterator<char>()
                         };
-                        (void)compiler->registerScriptFile(pathToString(path.stem()), sourceName, source);
+                        (void)compiler->registerScriptFile(pathToUtf8(path.stem()), sourceName, source);
                     }
                 }
             } else if (std::filesystem::is_directory(path)) {
@@ -145,7 +147,7 @@ void validateEntryFunction(
     result.diagnostics.push_back(Diagnostic{
         DiagnosticSeverity::Error,
         std::move(message),
-        pathToGenericString(projectFile),
+        pathToGenericUtf8(projectFile),
         NOMAD_INVALID_INDEX,
         NOMAD_INVALID_INDEX
     });
@@ -180,7 +182,7 @@ InstructionDumpResult dumpInstructions(
             result.compilation.diagnostics.push_back(Diagnostic{
                 DiagnosticSeverity::Error,
                 "Unknown function '" + *functionName + "'",
-                paths.empty() ? NomadString{} : pathToGenericString(paths.front()),
+                paths.empty() ? NomadString{} : pathToGenericUtf8(paths.front()),
                 NOMAD_INVALID_INDEX,
                 NOMAD_INVALID_INDEX
             });

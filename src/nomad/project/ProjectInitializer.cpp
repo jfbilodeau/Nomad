@@ -3,6 +3,7 @@
 #include <nomad/project/ProjectInitializer.hpp>
 
 #include <nomad/project/ProjectConfiguration.hpp>
+#include <nomad/system/Path.hpp>
 #include <nomad/Version.hpp>
 
 #include <cctype>
@@ -36,13 +37,13 @@ void writeFile(const NomadPath& path, const NomadString& content) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
 
     if (!output.is_open()) {
-        throw ProjectInitializationError("Failed to create '" + pathToString(path) + "'");
+        throw ProjectInitializationError("Failed to create '" + pathToUtf8(path) + "'");
     }
 
     output << content;
 
     if (!output) {
-        throw ProjectInitializationError("Failed to write '" + pathToString(path) + "'");
+        throw ProjectInitializationError("Failed to write '" + pathToUtf8(path) + "'");
     }
 }
 
@@ -111,32 +112,32 @@ ProjectInitializationResult initializeProject(const NomadPath& destination) {
 
     if (error) {
         throw ProjectInitializationError(
-            "Failed to resolve project directory '" + pathToString(destination) + "': " + error.message()
+            "Failed to resolve project directory '" + pathToUtf8(destination) + "': " + error.message()
         );
     }
 
     if (std::filesystem::exists(root, error) && !std::filesystem::is_directory(root, error)) {
-        throw ProjectInitializationError("Project destination is not a directory: '" + pathToString(root) + "'");
+        throw ProjectInitializationError("Project destination is not a directory: '" + pathToUtf8(root) + "'");
     }
 
     if (error) {
         throw ProjectInitializationError(
-            "Failed to inspect project directory '" + pathToString(root) + "': " + error.message()
+            "Failed to inspect project directory '" + pathToUtf8(root) + "': " + error.message()
         );
     }
 
-    const auto projectName = pathToString(root.filename());
+    const auto projectName = pathToUtf8(root.filename());
     const auto executable = makeProjectExecutableName(projectName);
     const auto projectFile = root / NOMAD_PROJECT_FILE_NAME;
     const auto initFile = root / "res" / "scripts" / "init.nomad";
 
     for (const auto& path : {projectFile, initFile}) {
         if (std::filesystem::exists(path, error)) {
-            throw ProjectInitializationError("Refusing to overwrite existing file '" + pathToString(path) + "'");
+            throw ProjectInitializationError("Refusing to overwrite existing file '" + pathToUtf8(path) + "'");
         }
 
         if (error) {
-            throw ProjectInitializationError("Failed to inspect '" + pathToString(path) + "': " + error.message());
+            throw ProjectInitializationError("Failed to inspect '" + pathToUtf8(path) + "': " + error.message());
         }
     }
 
@@ -147,11 +148,11 @@ ProjectInitializationResult initializeProject(const NomadPath& destination) {
 
     for (const auto& path : {projectTemporary, initTemporary}) {
         if (std::filesystem::exists(path, error)) {
-            throw ProjectInitializationError("Temporary initialization file already exists: '" + pathToString(path) + "'");
+            throw ProjectInitializationError("Temporary initialization file already exists: '" + pathToUtf8(path) + "'");
         }
 
         if (error) {
-            throw ProjectInitializationError("Failed to inspect '" + pathToString(path) + "': " + error.message());
+            throw ProjectInitializationError("Failed to inspect '" + pathToUtf8(path) + "': " + error.message());
         }
     }
 

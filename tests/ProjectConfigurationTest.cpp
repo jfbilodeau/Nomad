@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
 #include <nomad/project/ProjectConfiguration.hpp>
+#include <nomad/system/Path.hpp>
 
 #include <TestDirectory.hpp>
 
@@ -41,7 +42,7 @@ BOOST_AUTO_TEST_CASE(converts_utf8_paths_without_using_the_system_code_page)
 {
     const NomadString path = "日本語/école";
 
-    BOOST_TEST(pathToString(pathFromString(path)) == path);
+    BOOST_TEST(pathToUtf8(pathFromUtf8(path)) == path);
 }
 
 BOOST_AUTO_TEST_CASE(loads_typed_project_configuration)

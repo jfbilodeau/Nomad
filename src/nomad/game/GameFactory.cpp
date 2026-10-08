@@ -7,6 +7,7 @@
 
 #include <nomad/game/Game.hpp>
 #include <nomad/project/ProjectConfiguration.hpp>
+#include <nomad/system/Path.hpp>
 
 #define BOOST_NO_CXX98_FUNCTION_BASE
 #include <boost/program_options.hpp>
@@ -55,14 +56,14 @@ void loadProjectOptions(const NomadPath& startPath, GameOptions* options) {
     options->entryFunction = configuration.project.entry;
 
     if (options->resourcePath.empty()) {
-        options->resourcePath = pathToString(resolveProjectResourcePath(configuration));
+        options->resourcePath = pathToUtf8(resolveProjectResourcePath(configuration));
     }
 
     std::error_code error;
-    const auto resourcePath = pathFromString(options->resourcePath);
+    const auto resourcePath = pathFromUtf8(options->resourcePath);
 
     if (!std::filesystem::is_directory(resourcePath, error)) {
-        auto message = "Resource directory does not exist: '" + pathToString(resourcePath) + "'";
+        auto message = "Resource directory does not exist: '" + pathToUtf8(resourcePath) + "'";
 
         if (error && error != std::errc::no_such_file_or_directory) {
             message += ": " + error.message();

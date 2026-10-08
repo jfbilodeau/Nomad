@@ -268,6 +268,7 @@ set(
         ${NOMAD_INCLUDE_DIR}/nomad/system/Float.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/system/Integer.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/system/Memory.hpp
+        ${NOMAD_INCLUDE_DIR}/nomad/system/Path.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/system/String.hpp
 )
 

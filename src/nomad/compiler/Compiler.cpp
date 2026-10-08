@@ -8,6 +8,7 @@
 
 #include <nomad/script/Runtime.hpp>
 
+#include <nomad/system/Path.hpp>
 #include <nomad/system/String.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
@@ -1231,7 +1232,7 @@ void Compiler::scanDirectoryForScripts(const NomadString& basePath, const NomadS
     const NomadString extension = ".nomad";
 
     const auto pathString = concatPath(basePath, sub_path);
-    const auto path = pathFromString(pathString);
+    const auto path = pathFromUtf8(pathString);
 
     std::error_code iteratorError;
     auto iterator = std::filesystem::directory_iterator(
@@ -1242,8 +1243,8 @@ void Compiler::scanDirectoryForScripts(const NomadString& basePath, const NomadS
 
     if (iteratorError) {
         m_loadErrors.push_back(LoadError{
-            "Failed to scan directory '" + pathToGenericString(path) + "': " + iteratorError.message(),
-            pathToGenericString(path)
+            "Failed to scan directory '" + pathToGenericUtf8(path) + "': " + iteratorError.message(),
+            pathToGenericUtf8(path)
         });
         return;
     }
@@ -1255,22 +1256,22 @@ void Compiler::scanDirectoryForScripts(const NomadString& basePath, const NomadS
         std::error_code statusError;
 
         if (entry.is_symlink(statusError)) {
-            log::debug("Skipping symbolic link '" + pathToGenericString(entry.path()) + "'");
+            log::debug("Skipping symbolic link '" + pathToGenericUtf8(entry.path()) + "'");
         } else if (statusError) {
             log::debug(
-                "Skipping inaccessible path '" + pathToGenericString(entry.path()) + "': " + statusError.message()
+                "Skipping inaccessible path '" + pathToGenericUtf8(entry.path()) + "': " + statusError.message()
             );
         } else if (entry.is_directory(statusError)) {
-            const auto directoryName = pathToString(entry.path().filename());
+            const auto directoryName = pathToUtf8(entry.path().filename());
             const auto newSubPath = concatPath(sub_path, directoryName);
             scanDirectoryForScripts(basePath, newSubPath, max_depth - 1);
         } else if (statusError) {
             log::debug(
-                "Skipping inaccessible path '" + pathToGenericString(entry.path()) + "': " + statusError.message()
+                "Skipping inaccessible path '" + pathToGenericUtf8(entry.path()) + "': " + statusError.message()
             );
         } else if (entry.is_regular_file(statusError) && entry.path().extension() == extension) {
-            const auto fileName = pathToGenericString(entry.path());
-            auto functionName = concatPath(sub_path, pathToString(entry.path().stem()));
+            const auto fileName = pathToGenericUtf8(entry.path());
+            auto functionName = concatPath(sub_path, pathToUtf8(entry.path().stem()));
             std::replace(functionName.begin(), functionName.end(), '\\', '.');
             std::replace(functionName.begin(), functionName.end(), '/', '.');
 
@@ -1287,7 +1288,7 @@ void Compiler::scanDirectoryForScripts(const NomadString& basePath, const NomadS
             registerScriptFile(functionName, fileName, source);
         } else if (statusError) {
             log::debug(
-                "Skipping inaccessible path '" + pathToGenericString(entry.path()) + "': " + statusError.message()
+                "Skipping inaccessible path '" + pathToGenericUtf8(entry.path()) + "': " + statusError.message()
             );
         }
 
@@ -1295,7 +1296,7 @@ void Compiler::scanDirectoryForScripts(const NomadString& basePath, const NomadS
 
         if (iteratorError) {
             log::debug(
-                "Failed to continue scanning directory '" + pathToGenericString(path) + "': " + iteratorError.message()
+                "Failed to continue scanning directory '" + pathToGenericUtf8(path) + "': " + iteratorError.message()
             );
             break;
         }

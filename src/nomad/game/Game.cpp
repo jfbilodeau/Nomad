@@ -18,6 +18,8 @@
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>
 
+#include <nomad/system/Path.hpp>
+
 #include <nomad/system/TempHeap.hpp>
 
 #include <SDL3/SDL.h>
@@ -1210,7 +1212,7 @@ void Game::initDebugConsole() {
 
 //NomadString Game::make_path(const NomadString& path) const {
 void Game::createPathToFile(const NomadString& fileName) const {
-    const auto path = pathFromString(fileName).parent_path();
+    const auto path = pathFromUtf8(fileName).parent_path();
 
     if (!std::filesystem::exists(path)) {
         std::filesystem::create_directories(path);

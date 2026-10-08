@@ -2,6 +2,7 @@
 
 #include <nomad/project/ProjectConfiguration.hpp>
 #include <nomad/project/ProjectInitializer.hpp>
+#include <nomad/system/Path.hpp>
 #include <nomad/Version.hpp>
 
 #include <boost/asio/io_context.hpp>
@@ -33,11 +34,11 @@ void printUsage(std::ostream& output, const po::options_description& options) {
 NomadPath resolveSiblingExecutable(const NomadStringView executableName) {
     const auto cliPath = NomadPath(boost::dll::program_location().native());
     const auto directory = cliPath.parent_path();
-    auto suffixedCandidate = directory / pathFromString(executableName);
+    auto suffixedCandidate = directory / pathFromUtf8(executableName);
     suffixedCandidate += cliPath.extension();
     const NomadPath candidates[] = {
         suffixedCandidate,
-        directory / pathFromString(executableName)
+        directory / pathFromUtf8(executableName)
     };
 
     for (const auto& candidate : candidates) {
@@ -48,7 +49,7 @@ NomadPath resolveSiblingExecutable(const NomadStringView executableName) {
 
     throw NomadException(
         "Could not find the Nomad " + NomadString(executableName) +
-        " beside the CLI in '" + pathToString(directory) + "'"
+        " beside the CLI in '" + pathToUtf8(directory) + "'"
     );
 }
 
@@ -67,6 +68,83 @@ int runSiblingExecutable(
     );
 
     return child.wait();
+}
+
+NomadPath getRequestedDirectory(const po::variables_map& arguments) {
+    return arguments.contains("directory")
+        ? pathFromUtf8(arguments["directory"].as<NomadString>())
+        : std::filesystem::current_path();
+}
+
+ProjectConfiguration loadCompatibleProject(const po::variables_map& arguments) {
+    const auto configuration = discoverProjectConfiguration(getRequestedDirectory(arguments));
+    validateNomadVersionCompatibility(configuration.nomad.version, getNomadVersion());
+    return configuration;
+}
+
+int versionCommand(const po::variables_map& arguments) {
+    if (arguments.contains("directory")) {
+        throw po::error("The version command does not accept arguments");
+    }
+
+    std::cout << "nomad " << getNomadVersion() << '\n';
+    return EXIT_SUCCESS;
+}
+
+int initializeCommand(const po::variables_map& arguments) {
+    const auto result = initializeProject(getRequestedDirectory(arguments));
+
+    for (const auto& path : result.createdFiles) {
+        std::cout << "Created " << pathToUtf8(path) << '\n';
+    }
+
+    return EXIT_SUCCESS;
+}
+
+int checkCommand(const po::variables_map& arguments) {
+    const auto configuration = loadCompatibleProject(arguments);
+    return runSiblingExecutable("nomadc", configuration.root, {"check"});
+}
+
+int runCommand(const po::variables_map& arguments) {
+    const auto configuration = loadCompatibleProject(arguments);
+    std::vector<NomadString> runtimeArguments;
+
+    if (arguments.contains("debug")) {
+        runtimeArguments.emplace_back("--debug");
+    }
+
+    return runSiblingExecutable("nomad-runtime", configuration.root, runtimeArguments);
+}
+
+int dispatchCommand(
+    const NomadStringView command,
+    const po::variables_map& arguments,
+    const po::options_description& visibleOptions
+) {
+    if (arguments.contains("debug") && command != "run") {
+        throw po::error("The --debug option is supported only by the run command");
+    }
+
+    if (command == "version") {
+        return versionCommand(arguments);
+    }
+
+    if (command == "init") {
+        return initializeCommand(arguments);
+    }
+
+    if (command == "check") {
+        return checkCommand(arguments);
+    }
+
+    if (command == "run") {
+        return runCommand(arguments);
+    }
+
+    std::cerr << "Unknown command: " << command << '\n';
+    printUsage(std::cerr, visibleOptions);
+    return EXIT_FAILURE;
 }
 
 } // namespace
@@ -135,62 +213,7 @@ int main(int argc, char** argv) {
         }
 
         const auto& command = arguments["command"].as<NomadString>();
-
-        if (arguments.contains("debug") && command != "run") {
-            throw po::error("The --debug option is supported only by the run command");
-        }
-
-        if (command == "version") {
-            if (arguments.contains("directory")) {
-                throw po::error("The version command does not accept arguments");
-            }
-
-            std::cout << "nomad " << getNomadVersion() << '\n';
-            return EXIT_SUCCESS;
-        }
-
-        if (command == "init") {
-            const auto destination = arguments.contains("directory")
-                ? pathFromString(arguments["directory"].as<NomadString>())
-                : std::filesystem::current_path();
-            const auto result = initializeProject(destination);
-
-            for (const auto& path : result.createdFiles) {
-                std::cout << "Created " << pathToString(path) << '\n';
-            }
-
-            return EXIT_SUCCESS;
-        }
-
-        if (command == "check") {
-            const auto destination = arguments.contains("directory")
-                ? pathFromString(arguments["directory"].as<NomadString>())
-                : std::filesystem::current_path();
-            const auto configuration = discoverProjectConfiguration(destination);
-            validateNomadVersionCompatibility(configuration.nomad.version, getNomadVersion());
-
-            return runSiblingExecutable("nomadc", configuration.root, {"check"});
-        }
-
-        if (command == "run") {
-            const auto destination = arguments.contains("directory")
-                ? pathFromString(arguments["directory"].as<NomadString>())
-                : std::filesystem::current_path();
-            const auto configuration = discoverProjectConfiguration(destination);
-            validateNomadVersionCompatibility(configuration.nomad.version, getNomadVersion());
-
-            std::vector<NomadString> runtimeArguments;
-
-            if (arguments.contains("debug")) {
-                runtimeArguments.emplace_back("--debug");
-            }
-
-            return runSiblingExecutable("nomad-runtime", configuration.root, runtimeArguments);
-        }
-
-        std::cerr << "Unknown command: " << command << '\n';
-        printUsage(std::cerr, visibleOptions);
-        return EXIT_FAILURE;
+        return dispatchCommand(command, arguments, visibleOptions);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return EXIT_FAILURE;
