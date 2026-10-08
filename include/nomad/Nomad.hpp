@@ -35,6 +35,33 @@ using NomadStringView = std::string_view;
 
 using NomadPath = std::filesystem::path;
 
+// Nomad strings are UTF-8. Convert them explicitly instead of letting Windows
+// interpret narrow strings using the active system code page.
+[[nodiscard]] inline NomadPath pathFromString(const NomadStringView path) {
+    std::u8string encoded;
+    encoded.reserve(path.size());
+
+    for (const auto character : path) {
+        encoded.push_back(static_cast<char8_t>(static_cast<unsigned char>(character)));
+    }
+
+    return NomadPath(encoded);
+}
+
+// `std::filesystem::path::string()` converts to the platform's narrow code page, which can
+// throw or corrupt characters it cannot represent. Nomad always renders paths as UTF-8.
+[[nodiscard]] inline NomadString pathToString(const NomadPath& path) {
+    const auto encoded = path.u8string();
+
+    return NomadString(reinterpret_cast<const NomadChar*>(encoded.data()), encoded.size());
+}
+
+[[nodiscard]] inline NomadString pathToGenericString(const NomadPath& path) {
+    const auto encoded = path.generic_u8string();
+
+    return NomadString(reinterpret_cast<const NomadChar*>(encoded.data()), encoded.size());
+}
+
 struct NomadStringHash {
     using is_transparent = void;
 

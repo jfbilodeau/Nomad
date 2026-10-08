@@ -36,13 +36,13 @@ void writeFile(const NomadPath& path, const NomadString& content) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
 
     if (!output.is_open()) {
-        throw ProjectInitializationError("Failed to create '" + path.string() + "'");
+        throw ProjectInitializationError("Failed to create '" + pathToString(path) + "'");
     }
 
     output << content;
 
     if (!output) {
-        throw ProjectInitializationError("Failed to write '" + path.string() + "'");
+        throw ProjectInitializationError("Failed to write '" + pathToString(path) + "'");
     }
 }
 
@@ -80,8 +80,11 @@ NomadString makeProjectExecutableName(const NomadStringView projectName) {
 
     for (const auto character : projectName) {
         const auto byte = static_cast<unsigned char>(character);
+        // Executable names are restricted to ASCII so they remain portable across platforms.
+        const auto isAsciiDigit = byte >= '0' && byte <= '9';
+        const auto isAsciiLetter = (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z');
 
-        if (std::isalnum(byte)) {
+        if (isAsciiDigit || isAsciiLetter) {
             if (separatorPending && !executable.empty()) {
                 executable += '-';
             }
@@ -94,7 +97,9 @@ NomadString makeProjectExecutableName(const NomadStringView projectName) {
     }
 
     if (executable.empty()) {
-        throw ProjectInitializationError("Project name must contain at least one letter or number");
+        throw ProjectInitializationError(
+            "Project name must contain at least one ASCII letter or number to derive an executable name"
+        );
     }
 
     return executable;
@@ -106,45 +111,47 @@ ProjectInitializationResult initializeProject(const NomadPath& destination) {
 
     if (error) {
         throw ProjectInitializationError(
-            "Failed to resolve project directory '" + destination.string() + "': " + error.message()
+            "Failed to resolve project directory '" + pathToString(destination) + "': " + error.message()
         );
     }
 
     if (std::filesystem::exists(root, error) && !std::filesystem::is_directory(root, error)) {
-        throw ProjectInitializationError("Project destination is not a directory: '" + root.string() + "'");
+        throw ProjectInitializationError("Project destination is not a directory: '" + pathToString(root) + "'");
     }
 
     if (error) {
         throw ProjectInitializationError(
-            "Failed to inspect project directory '" + root.string() + "': " + error.message()
+            "Failed to inspect project directory '" + pathToString(root) + "': " + error.message()
         );
     }
 
-    const auto projectName = root.filename().string();
+    const auto projectName = pathToString(root.filename());
     const auto executable = makeProjectExecutableName(projectName);
     const auto projectFile = root / NOMAD_PROJECT_FILE_NAME;
     const auto initFile = root / "res" / "scripts" / "init.nomad";
 
     for (const auto& path : {projectFile, initFile}) {
         if (std::filesystem::exists(path, error)) {
-            throw ProjectInitializationError("Refusing to overwrite existing file '" + path.string() + "'");
+            throw ProjectInitializationError("Refusing to overwrite existing file '" + pathToString(path) + "'");
         }
 
         if (error) {
-            throw ProjectInitializationError("Failed to inspect '" + path.string() + "': " + error.message());
+            throw ProjectInitializationError("Failed to inspect '" + pathToString(path) + "': " + error.message());
         }
     }
 
-    const auto projectTemporary = NomadPath(projectFile.string() + ".tmp");
-    const auto initTemporary = NomadPath(initFile.string() + ".tmp");
+    auto projectTemporary = projectFile;
+    projectTemporary += ".tmp";
+    auto initTemporary = initFile;
+    initTemporary += ".tmp";
 
     for (const auto& path : {projectTemporary, initTemporary}) {
         if (std::filesystem::exists(path, error)) {
-            throw ProjectInitializationError("Temporary initialization file already exists: '" + path.string() + "'");
+            throw ProjectInitializationError("Temporary initialization file already exists: '" + pathToString(path) + "'");
         }
 
         if (error) {
-            throw ProjectInitializationError("Failed to inspect '" + path.string() + "': " + error.message());
+            throw ProjectInitializationError("Failed to inspect '" + pathToString(path) + "': " + error.message());
         }
     }
 

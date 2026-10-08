@@ -1210,7 +1210,7 @@ void Game::initDebugConsole() {
 
 //NomadString Game::make_path(const NomadString& path) const {
 void Game::createPathToFile(const NomadString& fileName) const {
-    const auto path = std::filesystem::path(fileName).parent_path();
+    const auto path = pathFromString(fileName).parent_path();
 
     if (!std::filesystem::exists(path)) {
         std::filesystem::create_directories(path);

@@ -8,6 +8,8 @@ include(CTest)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
+
 set(NOMAD_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
 configure_file(
         cmake/Version.hpp.in
@@ -65,89 +67,22 @@ include(FetchContent)
 set(
         BOOST_INCLUDE_LIBRARIES
         algorithm
+        dll
         exception
         json
+        nowide
         phoenix
+        process
         program_options
         spirit
         test
         tokenizer
 )
 
-set(
-        NOMAD_BOOST_GIT_SUBMODULES
-        libs/algorithm
-        libs/align
-        libs/any
-        libs/array
-        libs/assert
-        libs/atomic
-        libs/bind
-        libs/chrono
-        libs/concept_check
-        libs/config
-        libs/container
-        libs/container_hash
-        libs/conversion
-        libs/core
-        libs/date_time
-        libs/describe
-        libs/detail
-        libs/endian
-        libs/exception
-        libs/function
-        libs/function_types
-        libs/functional
-        libs/fusion
-        libs/headers
-        libs/integer
-        libs/intrusive
-        libs/io
-        libs/iterator
-        libs/json
-        libs/lexical_cast
-        libs/move
-        libs/mp11
-        libs/mpl
-        libs/numeric/conversion
-        libs/optional
-        libs/phoenix
-        libs/pool
-        libs/predef
-        libs/preprocessor
-        libs/program_options
-        libs/proto
-        libs/range
-        libs/ratio
-        libs/regex
-        libs/smart_ptr
-        libs/spirit
-        libs/static_assert
-        libs/system
-        libs/test
-        libs/thread
-        libs/throw_exception
-        libs/tokenizer
-        libs/tuple
-        libs/type_index
-        libs/type_traits
-        libs/typeof
-        libs/unordered
-        libs/utility
-        libs/variant
-        libs/variant2
-        libs/winapi
-        tools/cmake
-)
-
 FetchContent_Declare(
         Boost
-        GIT_REPOSITORY https://github.com/boostorg/boost.git
-        GIT_TAG boost-1.88.0
-        GIT_SHALLOW    TRUE
-        GIT_PROGRESS   TRUE
-        GIT_SUBMODULES ${NOMAD_BOOST_GIT_SUBMODULES}
-        GIT_SUBMODULES_RECURSE FALSE
+        URL https://github.com/boostorg/boost/releases/download/boost-1.88.0/boost-1.88.0-cmake.tar.xz
+        URL_HASH SHA256=f48b48390380cfb94a629872346e3a81370dc498896f16019ade727ab72eb1ec
         OVERRIDE_FIND_PACKAGE
         EXCLUDE_FROM_ALL
 )
@@ -538,7 +473,27 @@ option(NOMAD_BUILD_CLI "Build the Nomad project manager" ON)
 if(NOMAD_BUILD_CLI)
     add_executable(nomad-cli apps/manager/main.cpp)
     set_target_properties(nomad-cli PROPERTIES OUTPUT_NAME nomad)
-    target_link_libraries(nomad-cli PRIVATE Nomad::Project Boost::program_options)
+    target_link_libraries(
+        nomad-cli
+        PRIVATE
+        Nomad::Project
+        Boost::dll
+        Boost::nowide
+        Boost::process
+        Boost::program_options
+    )
+
+    if(WIN32)
+        # Boost.Asio requires an explicit Windows target version.
+        target_compile_definitions(nomad-cli PRIVATE _WIN32_WINNT=0x0A00)
+
+        add_custom_command(
+            TARGET nomad-cli
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:nomad-cli> $<TARGET_FILE_DIR:nomad-cli>
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
 endif()
 
 option(NOMAD_BUILD_RUNTIME "Build the Nomad game runtime" ON)
@@ -559,7 +514,7 @@ endif()
 option(NOMAD_BUILD_COMPILER "Build the Nomad compiler tooling" ON)
 if(NOMAD_BUILD_COMPILER)
     add_executable(nomadc apps/compiler/main.cpp)
-    target_link_libraries(nomadc PRIVATE Nomad::Engine Nomad::Project)
+    target_link_libraries(nomadc PRIVATE Nomad::Engine Nomad::Project Boost::nowide)
 endif()
 
 option(NOMAD_BUILD_TESTS "Build Nomad unit tests" ON)

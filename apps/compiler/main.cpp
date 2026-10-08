@@ -11,6 +11,8 @@
 
 #include <nomad/Version.hpp>
 
+#include <boost/nowide/args.hpp>
+
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -88,7 +90,7 @@ class HeadlessGame {
 public:
     explicit HeadlessGame(const NomadPath& resourcePath) {
         GameOptions options;
-        options.resourcePath = resourcePath.generic_string();
+        options.resourcePath = pathToString(resourcePath);
         m_game = Game::createHeadless(std::move(options));
     }
 
@@ -100,7 +102,9 @@ private:
 
 } // namespace
 
-int main(const int argc, char** argv) {
+int main(int argc, char** argv) {
+    boost::nowide::args utf8Arguments(argc, argv);
+
     log::setLogLevel(LogLevel::Warning);
     log::clear();
 
@@ -135,7 +139,7 @@ int main(const int argc, char** argv) {
         }
 
         const auto explicitPath = argc == 3;
-        const auto path = explicitPath ? NomadPath(argv[2]) : std::filesystem::current_path();
+        const auto path = explicitPath ? pathFromString(argv[2]) : std::filesystem::current_path();
         const auto paths = resolveCompilationPaths(path, explicitPath);
         const HeadlessGame game(paths.resources);
         auto result = checkPaths(paths.sources, game.getRuntime());
@@ -175,7 +179,7 @@ int main(const int argc, char** argv) {
                     return EXIT_FAILURE;
                 }
             } else if (!pathSet) {
-                path = argv[index];
+                path = pathFromString(argv[index]);
                 pathSet = true;
             } else {
                 std::cerr << "Unexpected dump argument: " << argument << '\n';
@@ -221,9 +225,9 @@ int main(const int argc, char** argv) {
                     return EXIT_FAILURE;
                 }
 
-                outputPath = argv[index];
+                outputPath = pathFromString(argv[index]);
             } else if (!pathSet) {
-                path = argv[index];
+                path = pathFromString(argv[index]);
                 pathSet = true;
             } else {
                 std::cerr << "Unexpected docs argument: " << argument << '\n';

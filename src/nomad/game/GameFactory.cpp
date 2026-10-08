@@ -55,14 +55,14 @@ void loadProjectOptions(const NomadPath& startPath, GameOptions* options) {
     options->entryFunction = configuration.project.entry;
 
     if (options->resourcePath.empty()) {
-        options->resourcePath = resolveProjectResourcePath(configuration).string();
+        options->resourcePath = pathToString(resolveProjectResourcePath(configuration));
     }
 
     std::error_code error;
-    const auto resourcePath = NomadPath(options->resourcePath);
+    const auto resourcePath = pathFromString(options->resourcePath);
 
     if (!std::filesystem::is_directory(resourcePath, error)) {
-        auto message = "Resource directory does not exist: '" + resourcePath.string() + "'";
+        auto message = "Resource directory does not exist: '" + pathToString(resourcePath) + "'";
 
         if (error && error != std::errc::no_such_file_or_directory) {
             message += ": " + error.message();

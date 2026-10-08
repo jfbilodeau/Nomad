@@ -41,7 +41,7 @@ CompilationArtifacts compilePaths(
     CompilerContext context(compiler.get());
 
     for (const auto& path : paths) {
-        const auto sourceName = path.generic_string();
+        const auto sourceName = pathToGenericString(path);
 
         try {
             if (!std::filesystem::exists(path)) {
@@ -69,7 +69,7 @@ CompilationArtifacts compilePaths(
                             std::istreambuf_iterator<char>(sourceFile),
                             std::istreambuf_iterator<char>()
                         };
-                        (void)compiler->registerScriptFile(path.stem().string(), sourceName, source);
+                        (void)compiler->registerScriptFile(pathToString(path.stem()), sourceName, source);
                     }
                 }
             } else if (std::filesystem::is_directory(path)) {
@@ -145,7 +145,7 @@ void validateEntryFunction(
     result.diagnostics.push_back(Diagnostic{
         DiagnosticSeverity::Error,
         std::move(message),
-        projectFile.generic_string(),
+        pathToGenericString(projectFile),
         NOMAD_INVALID_INDEX,
         NOMAD_INVALID_INDEX
     });
@@ -180,7 +180,7 @@ InstructionDumpResult dumpInstructions(
             result.compilation.diagnostics.push_back(Diagnostic{
                 DiagnosticSeverity::Error,
                 "Unknown function '" + *functionName + "'",
-                paths.empty() ? NomadString{} : paths.front().generic_string(),
+                paths.empty() ? NomadString{} : pathToGenericString(paths.front()),
                 NOMAD_INVALID_INDEX,
                 NOMAD_INVALID_INDEX
             });

@@ -4,6 +4,7 @@
 
 #include <toml++/toml.hpp>
 
+#include <fstream>
 #include <sstream>
 #include <system_error>
 
@@ -43,11 +44,11 @@ NomadPath requiredPath(
     const NomadStringView tableName,
     const NomadStringView key
 ) {
-    return NomadPath(requiredString(table, tableName, key));
+    return pathFromString(requiredString(table, tableName, key));
 }
 
 void validateExecutable(const NomadString& executable) {
-    const auto path = NomadPath(executable);
+    const auto path = pathFromString(executable);
     const auto containsSeparator =
         executable.find('/') != NomadString::npos || executable.find('\\') != NomadString::npos;
 
@@ -103,7 +104,7 @@ std::optional<NomadPath> findProjectRoot(const NomadPath& startPath) {
 
     if (error) {
         throw ProjectConfigurationError(
-            "Failed to resolve project search path '" + startPath.string() + "': " + error.message()
+            "Failed to resolve project search path '" + pathToString(startPath) + "': " + error.message()
         );
     }
 
@@ -111,7 +112,7 @@ std::optional<NomadPath> findProjectRoot(const NomadPath& startPath) {
         current = current.parent_path();
     } else if (error) {
         throw ProjectConfigurationError(
-            "Failed to inspect project search path '" + current.string() + "': " + error.message()
+            "Failed to inspect project search path '" + pathToString(current) + "': " + error.message()
         );
     }
 
@@ -128,7 +129,7 @@ std::optional<NomadPath> findProjectRoot(const NomadPath& startPath) {
 
         if (error) {
             throw ProjectConfigurationError(
-                "Failed to inspect project directory '" + current.string() + "': " + error.message()
+                "Failed to inspect project directory '" + pathToString(current) + "': " + error.message()
             );
         }
 
@@ -145,8 +146,16 @@ std::optional<NomadPath> findProjectRoot(const NomadPath& startPath) {
 ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
     toml::table document;
 
+    std::ifstream input(projectFile, std::ios::binary);
+
+    if (!input) {
+        throw ProjectConfigurationError(
+            "Failed to open project configuration '" + pathToString(projectFile) + "' for reading"
+        );
+    }
+
     try {
-        document = toml::parse_file(projectFile.string());
+        document = toml::parse(input, pathToString(projectFile));
     } catch (const toml::parse_error& error) {
         throw ProjectConfigurationError(formatParseError(error));
     }
@@ -200,7 +209,7 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
 
     if (error) {
         throw ProjectConfigurationError(
-            "Failed to resolve project root '" + projectFile.parent_path().string() + "': " + error.message()
+            "Failed to resolve project root '" + pathToString(projectFile.parent_path()) + "': " + error.message()
         );
     }
 
@@ -213,7 +222,7 @@ ProjectConfiguration discoverProjectConfiguration(const NomadPath& startPath) {
     if (!root) {
         throw ProjectConfigurationError(
             "Could not find " + NomadString(NOMAD_PROJECT_FILE_NAME) +
-            " from '" + startPath.string() + "' or any parent directory"
+            " from '" + pathToString(startPath) + "' or any parent directory"
         );
     }
 

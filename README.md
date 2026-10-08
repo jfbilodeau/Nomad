@@ -24,8 +24,15 @@ directory, but refuses to overwrite either generated file.
 is at least as new as the required `nomad.version`, and runs the sibling
 `nomadc` executable from the project root.
 
+`nomad run [directory] [--debug]` performs the same project and SDK validation,
+then launches the sibling `nomad-runtime` executable from the project root.
+
 `nomad version` and `nomad --version` print the Nomad version. The version is
 defined once by the root CMake project and generated into the C++ targets.
+
+`nomad` and `nomadc` normalize command-line arguments to UTF-8 on Windows, so
+project paths are not limited by the active system code page. SDL provides the
+equivalent UTF-8 command-line boundary for `nomad-runtime`.
 
 ## Project configuration
 

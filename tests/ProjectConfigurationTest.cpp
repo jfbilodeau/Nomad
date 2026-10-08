@@ -37,6 +37,13 @@ exclude = ["**/*.psd", "development/**"]
 
 BOOST_AUTO_TEST_SUITE(project_configuration)
 
+BOOST_AUTO_TEST_CASE(converts_utf8_paths_without_using_the_system_code_page)
+{
+    const NomadString path = "日本語/école";
+
+    BOOST_TEST(pathToString(pathFromString(path)) == path);
+}
+
 BOOST_AUTO_TEST_CASE(loads_typed_project_configuration)
 {
     TestDirectory directory("nomad_project_configuration_load");
