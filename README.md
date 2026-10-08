@@ -35,6 +35,12 @@ is at least as new as the required `nomad.version`, and runs the sibling
 `nomad run [directory] [--debug]` performs the same project and SDK validation,
 then launches the sibling `nomad-runtime` executable from the project root.
 
+`nomad package [directory] [--force]` checks the project and creates a
+standalone package in `package.output`. It copies the project resources while
+applying `package.exclude`, adds the runtime executable and its shared
+libraries, and names the executable using `project.executable`. Packaging
+refuses to replace a nonempty output directory unless `--force` is supplied.
+
 `nomad version` and `nomad --version` print the Nomad version. The version is
 defined once by the root CMake project and generated into the C++ targets.
 
@@ -78,6 +84,11 @@ commands can reject projects that require a newer SDK.
 `project.executable` is an extensionless file name. `project.entry` defaults
 to `init` when omitted. All other fields shown above are required; exclusion
 patterns are relative to the resource directory.
+
+Packaged projects use the same schema with a reduced runtime manifest. The
+release `nomad.toml` retains `schema`, project identity and version,
+`project.entry`, and `nomad.version`. It omits `project.executable`,
+`[resources]`, and `[package]`; packaged resources always live in `res`.
 
 ## Runtime
 

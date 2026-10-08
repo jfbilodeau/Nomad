@@ -454,12 +454,14 @@ set(
         ${NOMAD_INCLUDE_DIR}/nomad/NomadVersion.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/project/ProjectInitializer.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/project/ProjectConfiguration.hpp
+        ${NOMAD_INCLUDE_DIR}/nomad/project/ProjectPackager.hpp
 )
 
 set(
         NOMAD_PROJECT_SOURCES
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectInitializer.cpp
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectConfiguration.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectPackager.cpp
 )
 
 #set(NOMAD_PUBLIC_HEADERS
@@ -533,6 +535,52 @@ if(NOMAD_BUILD_RUNTIME)
             COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:nomad-runtime> $<TARGET_FILE_DIR:nomad-runtime>
             COMMAND_EXPAND_LISTS
         )
+    elseif(APPLE)
+        set_target_properties(nomad-runtime PROPERTIES BUILD_RPATH "@loader_path")
+    else()
+        set_target_properties(
+            nomad-runtime
+            PROPERTIES
+            BUILD_RPATH "$ORIGIN"
+            BUILD_RPATH_USE_ORIGIN TRUE
+        )
+    endif()
+
+    if(TARGET nomad-cli)
+        if(WIN32)
+            add_custom_target(
+                nomad-runtime-bundle
+                COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:nomad-runtime>/runtime"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:nomad-runtime>/runtime"
+                COMMAND
+                    ${CMAKE_COMMAND} -E copy
+                    "$<TARGET_FILE:nomad-runtime>"
+                    $<TARGET_RUNTIME_DLLS:nomad-runtime>
+                    "$<TARGET_FILE_DIR:nomad-runtime>/runtime"
+                COMMAND_EXPAND_LISTS
+                DEPENDS nomad-runtime
+                VERBATIM
+            )
+        else()
+            add_custom_target(
+                nomad-runtime-bundle
+                COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:nomad-runtime>/runtime"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:nomad-runtime>/runtime"
+                COMMAND
+                    ${CMAKE_COMMAND} -E copy
+                    "$<TARGET_FILE:nomad-runtime>"
+                    "$<TARGET_FILE_DIR:nomad-runtime>/runtime"
+                COMMAND
+                    ${CMAKE_COMMAND}
+                    "-DNOMAD_RUNTIME=$<TARGET_FILE:nomad-runtime>"
+                    "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad-runtime>/runtime"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
+                DEPENDS nomad-runtime
+                VERBATIM
+            )
+        endif()
+
+        add_dependencies(nomad-cli nomad-runtime-bundle)
     endif()
 endif()
 

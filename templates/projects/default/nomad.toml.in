@@ -16,6 +16,7 @@ directory = "res"
 [package]
 output = "dist"
 exclude = [
+    "**/*.aseprite",
     "**/*.psd",
     "**/*.kra",
     "development/**",

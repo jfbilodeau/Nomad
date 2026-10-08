@@ -8,6 +8,7 @@
 #include <nomad/game/Game.hpp>
 #include <nomad/project/ProjectConfiguration.hpp>
 #include <nomad/system/Path.hpp>
+#include <nomad/Version.hpp>
 
 #define BOOST_NO_CXX98_FUNCTION_BASE
 #include <boost/program_options.hpp>
@@ -53,6 +54,7 @@ void parseCommandLine(const int argc, char **argv, GameOptions *options)
 
 void loadProjectOptions(const NomadPath& startPath, GameOptions* options) {
     const auto configuration = discoverProjectConfiguration(startPath);
+    validateNomadVersionCompatibility(configuration.nomad.version, getNomadVersion());
     options->entryFunction = configuration.project.entry;
 
     if (options->resourcePath.empty()) {

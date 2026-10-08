@@ -49,6 +49,24 @@ NomadPath requiredPath(
     return pathFromUtf8(requiredString(table, tableName, key));
 }
 
+NomadString escapeTomlString(const NomadStringView value) {
+    NomadString escaped;
+    escaped.reserve(value.size());
+
+    for (const auto character : value) {
+        switch (character) {
+            case '\\': escaped += "\\\\"; break;
+            case '"': escaped += "\\\""; break;
+            case '\n': escaped += "\\n"; break;
+            case '\r': escaped += "\\r"; break;
+            case '\t': escaped += "\\t"; break;
+            default: escaped += character; break;
+        }
+    }
+
+    return escaped;
+}
+
 void validateExecutable(const NomadString& executable) {
     const auto path = pathFromUtf8(executable);
     const auto containsSeparator =
@@ -57,6 +75,25 @@ void validateExecutable(const NomadString& executable) {
     if (containsSeparator || path.has_extension() || executable == "." || executable == "..") {
         throw ProjectConfigurationError(
             "Configuration field 'project.executable' must be an extensionless file name"
+        );
+    }
+}
+
+void validateProjectRelativePath(
+    const NomadPath& path,
+    const NomadStringView field,
+    const bool allowProjectRoot
+) {
+    const auto normalized = path.lexically_normal();
+
+    if (
+        path.is_absolute() ||
+        normalized.empty() ||
+        (!allowProjectRoot && normalized == ".") ||
+        *normalized.begin() == ".."
+    ) {
+        throw ProjectConfigurationError(
+            "Configuration field '" + NomadString(field) + "' must be a project-relative directory"
         );
     }
 }
@@ -177,15 +214,29 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
 
     const auto& project = requiredTable(document, "project");
     const auto& nomad = requiredTable(document, "nomad");
-    const auto& resources = requiredTable(document, "resources");
-    const auto& package = requiredTable(document, "package");
+    const auto* resources = document["resources"].as_table();
+    const auto* package = document["package"].as_table();
+    const auto executable = project["executable"].value<NomadString>();
+    const auto hasExecutable = executable.has_value();
+    const auto developmentFieldCount =
+        static_cast<NomadInteger>(hasExecutable) +
+        static_cast<NomadInteger>(resources != nullptr) +
+        static_cast<NomadInteger>(package != nullptr);
+
+    if (developmentFieldCount != 0 && developmentFieldCount != 3) {
+        throw ProjectConfigurationError(
+            "Development configuration requires 'project.executable', '[resources]', and '[package]' together"
+        );
+    }
 
     ProjectConfiguration configuration;
     configuration.schema = *schema;
+    configuration.type = developmentFieldCount == 3
+        ? ProjectConfigurationType::Development
+        : ProjectConfigurationType::Release;
     configuration.project.name = requiredString(project, "project", "name");
     configuration.project.identifier = requiredString(project, "project", "identifier");
     configuration.project.version = requiredString(project, "project", "version");
-    configuration.project.executable = requiredString(project, "project", "executable");
     configuration.project.entry = project["entry"].value_or<NomadString>("init");
     const auto nomadVersion = requiredString(nomad, "nomad", "version");
 
@@ -196,15 +247,20 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
             "Configuration field 'nomad.version' is invalid: " + NomadString(error.what())
         );
     }
-    configuration.resources.directory = requiredPath(resources, "resources", "directory");
-    configuration.package.output = requiredPath(package, "package", "output");
-    configuration.package.exclude = readExclusions(package);
+
+    if (configuration.type == ProjectConfigurationType::Development) {
+        configuration.project.executable = requiredString(project, "project", "executable");
+        configuration.resources.directory = requiredPath(*resources, "resources", "directory");
+        configuration.package.output = requiredPath(*package, "package", "output");
+        configuration.package.exclude = readExclusions(*package);
+        validateExecutable(configuration.project.executable);
+        validateProjectRelativePath(configuration.resources.directory, "resources.directory", true);
+        validateProjectRelativePath(configuration.package.output, "package.output", false);
+    }
 
     if (configuration.project.entry.empty()) {
         throw ProjectConfigurationError("Configuration field 'project.entry' must be a non-empty string");
     }
-
-    validateExecutable(configuration.project.executable);
 
     std::error_code error;
     configuration.root = std::filesystem::absolute(projectFile.parent_path(), error);
@@ -233,6 +289,20 @@ ProjectConfiguration discoverProjectConfiguration(const NomadPath& startPath) {
 
 NomadPath resolveProjectResourcePath(const ProjectConfiguration& configuration) {
     return (configuration.root / configuration.resources.directory).lexically_normal();
+}
+
+NomadString serializeReleaseProjectConfiguration(const ProjectConfiguration& configuration) {
+    return
+        "schema = " + std::to_string(configuration.schema) + "\n"
+        "\n"
+        "[project]\n"
+        "name = \"" + escapeTomlString(configuration.project.name) + "\"\n"
+        "identifier = \"" + escapeTomlString(configuration.project.identifier) + "\"\n"
+        "version = \"" + escapeTomlString(configuration.project.version) + "\"\n"
+        "entry = \"" + escapeTomlString(configuration.project.entry) + "\"\n"
+        "\n"
+        "[nomad]\n"
+        "version = \"" + configuration.nomad.version.toString() + "\"\n";
 }
 
 void validateNomadVersionCompatibility(

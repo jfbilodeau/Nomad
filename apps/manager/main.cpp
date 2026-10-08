@@ -2,6 +2,7 @@
 
 #include <nomad/project/ProjectConfiguration.hpp>
 #include <nomad/project/ProjectInitializer.hpp>
+#include <nomad/project/ProjectPackager.hpp>
 #include <nomad/system/Path.hpp>
 #include <nomad/Version.hpp>
 
@@ -71,6 +72,19 @@ NomadPath resolveProjectTemplate(const NomadStringView templateName) {
     return templateDirectory;
 }
 
+NomadPath resolveRuntimeBundle() {
+    const auto runtimeDirectory = getCliDirectory() / "runtime";
+
+    if (!std::filesystem::is_directory(runtimeDirectory)) {
+        throw NomadException(
+            "Could not find the Nomad runtime bundle beside the CLI in '" +
+            pathToUtf8(runtimeDirectory) + "'"
+        );
+    }
+
+    return runtimeDirectory;
+}
+
 int runSiblingExecutable(
     const NomadStringView executableName,
     const NomadPath& projectRoot,
@@ -135,6 +149,23 @@ int runCommand(const po::variables_map& arguments) {
     return runSiblingExecutable("nomad-runtime", configuration.root, runtimeArguments);
 }
 
+int packageCommand(const po::variables_map& arguments) {
+    const auto configuration = loadCompatibleProject(arguments);
+    const auto checkResult = runSiblingExecutable("nomadc", configuration.root, {"check"});
+
+    if (checkResult != EXIT_SUCCESS) {
+        return checkResult;
+    }
+
+    const auto result = packageProject(
+        configuration,
+        resolveRuntimeBundle(),
+        arguments.contains("force")
+    );
+    std::cout << "Packaged " << pathToUtf8(result.output) << '\n';
+    return EXIT_SUCCESS;
+}
+
 int dispatchCommand(
     const NomadStringView command,
     const po::variables_map& arguments,
@@ -142,6 +173,10 @@ int dispatchCommand(
 ) {
     if (arguments.contains("debug") && command != "run") {
         throw po::error("The --debug option is supported only by the run command");
+    }
+
+    if (arguments.contains("force") && command != "package") {
+        throw po::error("The --force option is supported only by the package command");
     }
 
     if (command == "version") {
@@ -160,6 +195,10 @@ int dispatchCommand(
         return runCommand(arguments);
     }
 
+    if (command == "package") {
+        return packageCommand(arguments);
+    }
+
     std::cerr << "Unknown command: " << command << '\n';
     printUsage(std::cerr, visibleOptions);
     return EXIT_FAILURE;
@@ -175,6 +214,7 @@ int main(int argc, char** argv) {
         "  nomad init [directory]\n"
         "  nomad check [directory]\n"
         "  nomad run [directory] [--debug]\n"
+        "  nomad package [directory] [--force]\n"
         "  nomad version\n"
         "\n"
         "Options"
@@ -182,7 +222,8 @@ int main(int argc, char** argv) {
     visibleOptions.add_options()
         ("help,h", "Show this help")
         ("version,v", "Show the Nomad version")
-        ("debug", "Enable runtime debug mode");
+        ("debug", "Enable runtime debug mode")
+        ("force", "Replace a nonempty package output directory");
 
     po::options_description hiddenOptions;
     hiddenOptions.add_options()
@@ -216,7 +257,8 @@ int main(int argc, char** argv) {
             if (
                 arguments.contains("command") ||
                 arguments.contains("directory") ||
-                arguments.contains("debug")
+                arguments.contains("debug") ||
+                arguments.contains("force")
             ) {
                 throw po::error("The version option does not accept arguments");
             }

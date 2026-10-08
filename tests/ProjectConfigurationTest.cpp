@@ -53,6 +53,10 @@ BOOST_AUTO_TEST_CASE(loads_typed_project_configuration)
     const auto configuration = loadProjectConfiguration(projectFile);
 
     BOOST_TEST(configuration.schema == 1U);
+    BOOST_TEST(
+        static_cast<int>(configuration.type) ==
+        static_cast<int>(ProjectConfigurationType::Development)
+    );
     BOOST_TEST(configuration.project.name == "Test Game");
     BOOST_TEST(configuration.project.identifier == "com.example.test-game");
     BOOST_TEST(configuration.project.version == "0.1.0");
@@ -68,6 +72,51 @@ BOOST_AUTO_TEST_CASE(loads_typed_project_configuration)
     BOOST_TEST(
         resolveProjectResourcePath(configuration) ==
         (std::filesystem::absolute(directory.getPath()) / "res").lexically_normal()
+    );
+}
+
+BOOST_AUTO_TEST_CASE(loads_and_serializes_release_configuration)
+{
+    TestDirectory directory("nomad_release_project_configuration");
+    const auto developmentFile = directory.write(NOMAD_PROJECT_FILE_NAME, COMPLETE_CONFIGURATION);
+    const auto development = loadProjectConfiguration(developmentFile);
+    const auto releaseText = serializeReleaseProjectConfiguration(development);
+    const auto releaseFile = directory.write("release/nomad.toml", releaseText);
+
+    BOOST_TEST(releaseText.find("executable") == NomadString::npos);
+    BOOST_TEST(releaseText.find("[resources]") == NomadString::npos);
+    BOOST_TEST(releaseText.find("[package]") == NomadString::npos);
+
+    const auto release = loadProjectConfiguration(releaseFile);
+    BOOST_TEST(
+        static_cast<int>(release.type) ==
+        static_cast<int>(ProjectConfigurationType::Release)
+    );
+    BOOST_TEST(release.project.name == development.project.name);
+    BOOST_TEST(release.project.identifier == development.project.identifier);
+    BOOST_TEST(release.project.version == development.project.version);
+    BOOST_TEST(release.project.entry == development.project.entry);
+    BOOST_TEST(release.project.executable.empty());
+    BOOST_TEST(release.nomad.version == development.nomad.version);
+    BOOST_TEST(release.resources.directory == NomadPath("res"));
+    BOOST_TEST(release.package.output.empty());
+    BOOST_TEST(release.package.exclude.empty());
+}
+
+BOOST_AUTO_TEST_CASE(rejects_partial_development_configuration)
+{
+    TestDirectory directory("nomad_partial_project_configuration");
+    auto configurationText = std::string(COMPLETE_CONFIGURATION);
+    const auto resources = configurationText.find("[resources]");
+    configurationText.erase(resources, configurationText.find("[package]") - resources);
+    const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText);
+
+    BOOST_CHECK_EXCEPTION(
+        (void)loadProjectConfiguration(projectFile),
+        ProjectConfigurationError,
+        [](const ProjectConfigurationError& error) {
+            return NomadString(error.what()).find("requires 'project.executable'") != NomadString::npos;
+        }
     );
 }
 

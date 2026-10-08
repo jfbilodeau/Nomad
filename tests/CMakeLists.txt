@@ -28,6 +28,7 @@ add_executable(
     ./ParserTest.cpp
     ./ProjectConfigurationTest.cpp
     ./ProjectInitializerTest.cpp
+    ./ProjectPackagerTest.cpp
     ./RuntimeTest.cpp
     ./StatementExecutionTest.cpp
     ./SystemTest.cpp
