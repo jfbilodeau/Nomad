@@ -123,7 +123,7 @@ int main(const int argc, char** argv) {
             return EXIT_FAILURE;
         }
 
-        std::cout << "nomadc " << NOMAD_VERSION << '\n';
+        std::cout << "nomadc " << getNomadVersion() << '\n';
         return EXIT_SUCCESS;
     }
 

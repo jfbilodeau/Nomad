@@ -41,7 +41,7 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
     BOOST_TEST(configuration.project.identifier == "com.example.example-game");
     BOOST_TEST(configuration.project.executable == "example-game");
     BOOST_TEST(configuration.project.entry == "init");
-    BOOST_TEST(configuration.nomad.version == NOMAD_VERSION);
+    BOOST_TEST(configuration.nomad.version == getNomadVersion());
     BOOST_TEST(configuration.resources.directory == NomadPath("res"));
 }
 

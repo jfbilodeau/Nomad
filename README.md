@@ -20,8 +20,12 @@ runtime, and tests.
 `res/scripts/init.nomad`. It can initialize a new directory or an existing
 directory, but refuses to overwrite either generated file.
 
-`nomad version` prints the Nomad version. The version is defined once by the
-root CMake project and generated into the C++ targets.
+`nomad check [directory]` discovers the project, verifies that the running CLI
+is at least as new as the required `nomad.version`, and runs the sibling
+`nomadc` executable from the project root.
+
+`nomad version` and `nomad --version` print the Nomad version. The version is
+defined once by the root CMake project and generated into the C++ targets.
 
 ## Project configuration
 
@@ -51,6 +55,10 @@ exclude = [
     "development/**",
 ]
 ```
+
+`nomad.version` is the required Nomad SDK version and must use the canonical
+`major.minor.patch` form. Nomad parses it as a comparable version so CLI
+commands can reject projects that require a newer SDK.
 
 `project.executable` is an extensionless file name. `project.entry` defaults
 to `init` when omitted. All other fields shown above are required; exclusion

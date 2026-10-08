@@ -58,7 +58,7 @@ NomadString makeConfiguration(const NomadString& projectName, const NomadString&
         "entry = \"init\"\n"
         "\n"
         "[nomad]\n"
-        "version = \"" + NomadString(NOMAD_VERSION) + "\"\n"
+        "version = \"" + getNomadVersion().toString() + "\"\n"
         "\n"
         "[resources]\n"
         "directory = \"res\"\n"

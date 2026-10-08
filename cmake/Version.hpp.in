@@ -2,13 +2,28 @@
 
 #pragma once
 
-#include <nomad/Nomad.hpp>
+#include <nomad/NomadVersion.hpp>
 
 namespace nomad {
 
-inline constexpr NomadStringView NOMAD_VERSION = "@PROJECT_VERSION@";
-inline constexpr NomadInteger NOMAD_VERSION_MAJOR = @PROJECT_VERSION_MAJOR@;
-inline constexpr NomadInteger NOMAD_VERSION_MINOR = @PROJECT_VERSION_MINOR@;
-inline constexpr NomadInteger NOMAD_VERSION_PATCH = @PROJECT_VERSION_PATCH@;
+[[nodiscard]] inline constexpr NomadVersion getNomadVersion() {
+    return {
+        @PROJECT_VERSION_MAJOR@,
+        @PROJECT_VERSION_MINOR@,
+        @PROJECT_VERSION_PATCH@
+    };
+}
+
+[[nodiscard]] inline constexpr NomadInteger getNomadVersionMajor() {
+    return getNomadVersion().getMajor();
+}
+
+[[nodiscard]] inline constexpr NomadInteger getNomadVersionMinor() {
+    return getNomadVersion().getMinor();
+}
+
+[[nodiscard]] inline constexpr NomadInteger getNomadVersionPatch() {
+    return getNomadVersion().getPatch();
+}
 
 } // namespace nomad

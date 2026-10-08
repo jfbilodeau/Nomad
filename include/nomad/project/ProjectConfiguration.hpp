@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "nomad/Nomad.hpp"
+#include "nomad/NomadVersion.hpp"
 
 namespace nomad {
 
@@ -25,7 +26,7 @@ struct ProjectMetadata {
 };
 
 struct NomadSdkConfiguration {
-    NomadString version;
+    NomadVersion version{0, 0, 0};
 };
 
 struct ResourceConfiguration {
@@ -66,6 +67,11 @@ std::optional<NomadPath> findProjectRoot(
 
 [[nodiscard]] NomadPath resolveProjectResourcePath(
     const ProjectConfiguration& configuration
+);
+
+void validateNomadVersionCompatibility(
+    const NomadVersion& requiredVersion,
+    const NomadVersion& availableVersion
 );
 
 } // namespace nomad

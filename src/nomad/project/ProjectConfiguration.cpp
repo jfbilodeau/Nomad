@@ -176,7 +176,15 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
     configuration.project.version = requiredString(project, "project", "version");
     configuration.project.executable = requiredString(project, "project", "executable");
     configuration.project.entry = project["entry"].value_or<NomadString>("init");
-    configuration.nomad.version = requiredString(nomad, "nomad", "version");
+    const auto nomadVersion = requiredString(nomad, "nomad", "version");
+
+    try {
+        configuration.nomad.version = NomadVersion::parse(nomadVersion);
+    } catch (const NomadVersionError& error) {
+        throw ProjectConfigurationError(
+            "Configuration field 'nomad.version' is invalid: " + NomadString(error.what())
+        );
+    }
     configuration.resources.directory = requiredPath(resources, "resources", "directory");
     configuration.package.output = requiredPath(package, "package", "output");
     configuration.package.exclude = readExclusions(package);
@@ -214,6 +222,18 @@ ProjectConfiguration discoverProjectConfiguration(const NomadPath& startPath) {
 
 NomadPath resolveProjectResourcePath(const ProjectConfiguration& configuration) {
     return (configuration.root / configuration.resources.directory).lexically_normal();
+}
+
+void validateNomadVersionCompatibility(
+    const NomadVersion& requiredVersion,
+    const NomadVersion& availableVersion
+) {
+    if (requiredVersion > availableVersion) {
+        throw ProjectConfigurationError(
+            "Project requires Nomad " + requiredVersion.toString() +
+            ", but this CLI provides Nomad " + availableVersion.toString()
+        );
+    }
 }
 
 } // namespace nomad

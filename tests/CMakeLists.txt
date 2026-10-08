@@ -24,6 +24,7 @@ add_executable(
     ./LanguageTestFixture.cpp
     ./LanguageTypeTest.cpp
     ./LogTest.cpp
+    ./NomadVersionTest.cpp
     ./ParserTest.cpp
     ./ProjectConfigurationTest.cpp
     ./ProjectInitializerTest.cpp

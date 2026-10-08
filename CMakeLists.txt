@@ -515,6 +515,7 @@ list(REMOVE_ITEM NOMAD_SOURCES ${NOMAD_LANGUAGE_SOURCES})
 
 set(
         NOMAD_PROJECT_INCLUDE
+        ${NOMAD_INCLUDE_DIR}/nomad/NomadVersion.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/project/ProjectInitializer.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/project/ProjectConfiguration.hpp
 )
@@ -537,7 +538,7 @@ option(NOMAD_BUILD_CLI "Build the Nomad project manager" ON)
 if(NOMAD_BUILD_CLI)
     add_executable(nomad-cli apps/manager/main.cpp)
     set_target_properties(nomad-cli PROPERTIES OUTPUT_NAME nomad)
-    target_link_libraries(nomad-cli PRIVATE Nomad::Project)
+    target_link_libraries(nomad-cli PRIVATE Nomad::Project Boost::program_options)
 endif()
 
 option(NOMAD_BUILD_RUNTIME "Build the Nomad game runtime" ON)
