@@ -57,6 +57,10 @@ BOOST_AUTO_TEST_CASE(loads_typed_project_configuration)
     BOOST_TEST(configuration.package.exclude[0] == "**/*.psd");
     BOOST_TEST(configuration.package.exclude[1] == "development/**");
     BOOST_TEST(configuration.root == std::filesystem::absolute(directory.getPath()));
+    BOOST_TEST(
+        resolveProjectResourcePath(configuration) ==
+        (std::filesystem::absolute(directory.getPath()) / "res").lexically_normal()
+    );
 }
 
 BOOST_AUTO_TEST_CASE(defaults_the_entry_function_to_init)

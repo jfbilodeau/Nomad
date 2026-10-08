@@ -2,14 +2,19 @@
 
 #include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+
 #include <nomad/game/Game.hpp>
+
 #include <nomad/log/Logger.hpp>
+
+#include <nomad/project/ProjectConfiguration.hpp>
 
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <utility>
 
 using namespace nomad;
 
@@ -29,26 +34,64 @@ void printDiagnostics(const CompilationResult& result) {
     }
 }
 
+struct CompilationPaths {
+    std::vector<NomadPath> sources;
+    NomadPath resources;
+    std::optional<NomadString> entryFunction;
+    NomadPath projectFile;
+};
+
+CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const bool explicitPath) {
+    auto resourcePath = std::filesystem::is_regular_file(requestedPath)
+        ? requestedPath.parent_path()
+        : requestedPath;
+    std::vector<NomadPath> sourcePaths{requestedPath};
+
+    if (std::filesystem::exists(requestedPath)) {
+        const auto projectRoot = findProjectRoot(requestedPath);
+
+        if (projectRoot) {
+            const auto configuration = loadProjectConfiguration(*projectRoot / NOMAD_PROJECT_FILE_NAME);
+            resourcePath = resolveProjectResourcePath(configuration);
+
+            if (!explicitPath) {
+                sourcePaths = {resourcePath / "scripts"};
+                const auto modsPath = resourcePath / "mods";
+
+                if (std::filesystem::is_directory(modsPath)) {
+                    sourcePaths.push_back(modsPath);
+                }
+
+                return CompilationPaths{
+                    std::move(sourcePaths),
+                    resourcePath,
+                    configuration.project.entry,
+                    *projectRoot / NOMAD_PROJECT_FILE_NAME
+                };
+            }
+        }
+    }
+
+    if (resourcePath.empty()) {
+        resourcePath = std::filesystem::current_path();
+    }
+
+    return CompilationPaths{std::move(sourcePaths), resourcePath, std::nullopt, {}};
+}
+
 // Stands up the real engine against SDL's dummy drivers so compiled sources resolve the same
 // `game.*`, `window.*`, `scene.*` and `t.*` symbols a windowed build would expose.
 class HeadlessGame {
 public:
-    explicit HeadlessGame(const std::filesystem::path& path) {
-        auto resourcePath = std::filesystem::is_regular_file(path) ? path.parent_path() : path;
-
-        if (resourcePath.empty()) {
-            resourcePath = std::filesystem::current_path();
-        }
-
-        m_options.resourcePath = resourcePath.generic_string();
-        m_game = std::make_unique<Game>(&m_options);
-        m_game->initializeHeadless();
+    explicit HeadlessGame(const NomadPath& resourcePath) {
+        GameOptions options;
+        options.resourcePath = resourcePath.generic_string();
+        m_game = Game::createHeadless(std::move(options));
     }
 
     [[nodiscard]] Runtime* getRuntime() const { return m_game->getRuntime(); }
 
 private:
-    GameOptions m_options;
     std::unique_ptr<Game> m_game;
 };
 
@@ -58,6 +101,7 @@ int main(const int argc, char** argv) {
     log::setLogLevel(LogLevel::Warning);
     log::clear();
 
+    try {
     if (argc < 2) {
         printUsage(std::cerr);
         return EXIT_FAILURE;
@@ -77,9 +121,16 @@ int main(const int argc, char** argv) {
             return EXIT_FAILURE;
         }
 
-        const auto path = argc == 3 ? std::filesystem::path(argv[2]) : std::filesystem::current_path();
-        const HeadlessGame game(path);
-        const auto result = checkPath(path, game.getRuntime());
+        const auto explicitPath = argc == 3;
+        const auto path = explicitPath ? NomadPath(argv[2]) : std::filesystem::current_path();
+        const auto paths = resolveCompilationPaths(path, explicitPath);
+        const HeadlessGame game(paths.resources);
+        auto result = checkPaths(paths.sources, game.getRuntime());
+
+        if (paths.entryFunction) {
+            validateEntryFunction(result, game.getRuntime(), *paths.entryFunction, paths.projectFile);
+        }
+
         printDiagnostics(result);
 
         return result.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
@@ -120,8 +171,9 @@ int main(const int argc, char** argv) {
             }
         }
 
-        const HeadlessGame game(path);
-        const auto result = dumpInstructions(path, functionName, game.getRuntime());
+        const auto paths = resolveCompilationPaths(path, pathSet);
+        const HeadlessGame game(paths.resources);
+        const auto result = dumpInstructions(paths.sources, functionName, game.getRuntime());
         printDiagnostics(result.compilation);
 
         if (!result.compilation.succeeded()) {
@@ -172,8 +224,9 @@ int main(const int argc, char** argv) {
             return EXIT_FAILURE;
         }
 
-        const HeadlessGame game(path);
-        const auto result = generateDocumentationForPath(path, game.getRuntime());
+        const auto paths = resolveCompilationPaths(path, pathSet);
+        const HeadlessGame game(paths.resources);
+        const auto result = generateDocumentationForPaths(paths.sources, game.getRuntime());
         printDiagnostics(result.compilation);
 
         if (!result.compilation.succeeded()) {
@@ -200,6 +253,10 @@ int main(const int argc, char** argv) {
     {
         std::cerr << "Unknown command: " << command << '\n';
         printUsage(std::cerr);
+        return EXIT_FAILURE;
+    }
+    } catch (const std::exception& error) {
+        std::cerr << error.what() << '\n';
         return EXIT_FAILURE;
     }
 }

@@ -57,11 +57,16 @@ dumps. Those outputs belong to the headless `nomadc` tooling.
 ## Compiler tooling
 
 `nomadc check [path]` compiles one `.nomad` file or recursively compiles a
-directory without opening a window or executing any function. It prints
-source-located diagnostics and returns a nonzero exit code when compilation
-fails. The full engine API is available: the tool stands up a headless `Game`
-on SDL's dummy video and audio drivers, so `game.*`, `window.*`, `scene.*` and
-the `t.*` text constants resolve exactly as they do in a windowed build.
+directory without opening a window or executing any function. When no path is
+provided, it discovers `nomad.toml` and checks the configured resource
+directory. A project check also requires the configured entry function
+(`init` by default) to exist, accept no parameters, and return `void`. An
+explicit path remains usable without project entry validation.
+It prints source-located diagnostics and returns a nonzero exit code when
+compilation fails. The full engine API is available: the tool stands up a
+headless `Game` on SDL's dummy video and audio drivers, using the project's
+configured resources so `game.*`, `window.*`, `scene.*` and the `t.*` text
+constants resolve exactly as they do in a windowed build.
 
 `nomadc dump [path] [--function <name>] [--format text]` performs the same
 headless compilation and writes the generated VM instructions. It never runs

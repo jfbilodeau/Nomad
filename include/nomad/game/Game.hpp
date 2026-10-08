@@ -57,16 +57,16 @@ const NomadString DEBUG_CONSOLE_SCALE_VARIABLE = "game.debug.console.scale";
 
 class Game {
 public:
-    explicit Game(const GameOptions* options);
+    [[nodiscard]] static std::unique_ptr<Game> create(GameOptions options);
+
+    // Creates a fully initialized engine against SDL's dummy video and audio drivers: no display
+    // server or visible window, but a valid window, renderer and canvas. The complete script API is
+    // registered without compiling or running the game's own scripts.
+    [[nodiscard]] static std::unique_ptr<Game> createHeadless(GameOptions options);
+
     Game(const Game&) = delete;
+    Game& operator=(const Game&) = delete;
     ~Game();
-
-    void initialize();
-
-    // Brings up the full engine against SDL's dummy video and audio drivers: no display server, no
-    // visible window, but a valid window, renderer and canvas. Registers the complete script API
-    // without compiling or running the game's own scripts, so tooling can drive a real runtime.
-    void initializeHeadless();
 
     [[nodiscard]] Runtime* getRuntime() const;
     [[nodiscard]] Canvas* getCanvas() const;
@@ -192,6 +192,11 @@ public:
     [[noreturn]] void raiseError(const NomadString& message);
 
 private:
+    explicit Game(GameOptions options);
+
+    void initialize();
+    void initializeHeadless();
+
     void initEngine();
     void initSdl();
     void initSdlHeadless();

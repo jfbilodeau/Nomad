@@ -33,6 +33,16 @@ struct DocumentationResult {
 // Compiles a Nomad source file or every Nomad source below a directory without executing any function.
 // Pass the runtime of a headless `Game` to resolve engine API symbols; null compiles against language built-ins only.
 [[nodiscard]] CompilationResult checkPath(const std::filesystem::path& path, Runtime* runtime = nullptr);
+[[nodiscard]] CompilationResult checkPaths(
+    const std::vector<std::filesystem::path>& paths,
+    Runtime* runtime = nullptr
+);
+void validateEntryFunction(
+    CompilationResult& result,
+    const Runtime* runtime,
+    const NomadString& entryFunction,
+    const std::filesystem::path& projectFile
+);
 
 // Compiles without executing and formats generated instructions for every function or one named function.
 [[nodiscard]] InstructionDumpResult dumpInstructions(
@@ -40,10 +50,19 @@ struct DocumentationResult {
     const std::optional<NomadString>& functionName = std::nullopt,
     Runtime* runtime = nullptr
 );
+[[nodiscard]] InstructionDumpResult dumpInstructions(
+    const std::vector<std::filesystem::path>& paths,
+    const std::optional<NomadString>& functionName = std::nullopt,
+    Runtime* runtime = nullptr
+);
 
 // Compiles without executing and generates Markdown documentation for the registered language API.
 [[nodiscard]] DocumentationResult generateDocumentationForPath(
     const std::filesystem::path& path,
+    Runtime* runtime = nullptr
+);
+[[nodiscard]] DocumentationResult generateDocumentationForPaths(
+    const std::vector<std::filesystem::path>& paths,
     Runtime* runtime = nullptr
 );
 

@@ -30,9 +30,21 @@
 
 namespace nomad {
 
-Game::Game(const GameOptions* options) :
-    m_options(*options)
+Game::Game(GameOptions options) :
+    m_options(std::move(options))
 {}
+
+std::unique_ptr<Game> Game::create(GameOptions options) {
+    auto game = std::unique_ptr<Game>(new Game(std::move(options)));
+    game->initialize();
+    return game;
+}
+
+std::unique_ptr<Game> Game::createHeadless(GameOptions options) {
+    auto game = std::unique_ptr<Game>(new Game(std::move(options)));
+    game->initializeHeadless();
+    return game;
+}
 
 void Game::initEngine()
 {

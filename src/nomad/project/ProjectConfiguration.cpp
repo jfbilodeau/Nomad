@@ -212,4 +212,8 @@ ProjectConfiguration discoverProjectConfiguration(const NomadPath& startPath) {
     return loadProjectConfiguration(*root / NOMAD_PROJECT_FILE_NAME);
 }
 
+NomadPath resolveProjectResourcePath(const ProjectConfiguration& configuration) {
+    return (configuration.root / configuration.resources.directory).lexically_normal();
+}
+
 } // namespace nomad

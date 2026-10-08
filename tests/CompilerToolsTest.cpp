@@ -3,12 +3,14 @@
 #include <nomad/compiler/CompilerTools.hpp>
 
 #include <nomad/game/Game.hpp>
+#include <nomad/script/Runtime.hpp>
 
 #include <TestDirectory.hpp>
 
 #include <boost/test/unit_test.hpp>
 
 #include <filesystem>
+#include <utility>
 
 using namespace nomad;
 using namespace nomad::test;
@@ -37,6 +39,52 @@ BOOST_AUTO_TEST_CASE(checks_source_files_recursively)
 
     BOOST_TEST(result.succeeded());
     BOOST_TEST(result.errorCount == 0U);
+}
+
+BOOST_AUTO_TEST_CASE(checks_multiple_script_roots_in_one_compilation)
+{
+    TestDirectory directory("nomad_compilation_test_multiple_roots");
+    const auto scripts = directory.write("scripts/init.nomad", "return helpers.answer").parent_path();
+    const auto mods = directory.write("mods/helpers/answer.nomad", "return 42").parent_path().parent_path();
+
+    const auto result = checkPaths({scripts, mods});
+
+    BOOST_TEST(result.succeeded());
+    BOOST_TEST(result.errorCount == 0U);
+}
+
+BOOST_AUTO_TEST_CASE(validates_project_entry_function_presence_and_signature)
+{
+    TestDirectory directory("nomad_compilation_test_entry");
+    Runtime runtime;
+    auto result = checkPath(directory.write("other.nomad", "return"), &runtime);
+
+    validateEntryFunction(result, &runtime, "init", directory.getPath() / "nomad.toml");
+
+    BOOST_TEST(!result.succeeded());
+    BOOST_REQUIRE(!result.diagnostics.empty());
+    BOOST_TEST(result.diagnostics.back().message == "Configured entry function 'init' was not found");
+    BOOST_TEST(result.diagnostics.back().sourceName == (directory.getPath() / "nomad.toml").generic_string());
+
+    Runtime parameterRuntime;
+    result = checkPath(directory.write("init.nomad", "params value:int\n"), &parameterRuntime);
+    validateEntryFunction(result, &parameterRuntime, "init", directory.getPath() / "nomad.toml");
+
+    BOOST_TEST(!result.succeeded());
+    BOOST_TEST(result.diagnostics.back().message == "Configured entry function 'init' must not have parameters");
+
+    Runtime returnRuntime;
+    result = checkPath(directory.write("init.nomad", "return 1\n"), &returnRuntime);
+    validateEntryFunction(result, &returnRuntime, "init", directory.getPath() / "nomad.toml");
+
+    BOOST_TEST(!result.succeeded());
+    BOOST_TEST(result.diagnostics.back().message == "Configured entry function 'init' must return void");
+
+    Runtime validRuntime;
+    result = checkPath(directory.write("init.nomad", "return\n"), &validRuntime);
+    validateEntryFunction(result, &validRuntime, "init", directory.getPath() / "nomad.toml");
+
+    BOOST_TEST(result.succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(reports_compiler_diagnostics_without_executing_source)
@@ -128,14 +176,13 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     GameOptions options;
     options.resourcePath = directory.getPath().generic_string();
 
-    Game game(&options);
-    game.initializeHeadless();
+    auto game = Game::createHeadless(std::move(options));
 
     // The dummy drivers still produce a real renderer, so the engine is fully constructed.
-    BOOST_TEST(game.getCanvas() != nullptr);
-    BOOST_TEST(game.getResources() != nullptr);
+    BOOST_TEST(game->getCanvas() != nullptr);
+    BOOST_TEST(game->getResources() != nullptr);
 
-    const auto result = checkPath(directory.getPath(), game.getRuntime());
+    const auto result = checkPath(directory.getPath(), game->getRuntime());
 
     for (const auto& diagnostic : result.diagnostics) {
         BOOST_TEST_MESSAGE(formatDiagnostic(diagnostic));

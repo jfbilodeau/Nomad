@@ -64,4 +64,8 @@ std::optional<NomadPath> findProjectRoot(
     const NomadPath& startPath
 );
 
+[[nodiscard]] NomadPath resolveProjectResourcePath(
+    const ProjectConfiguration& configuration
+);
+
 } // namespace nomad

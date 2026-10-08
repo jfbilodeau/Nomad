@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <utility>
 
 namespace nomad
 {
@@ -54,7 +55,7 @@ void loadProjectOptions(const NomadPath& startPath, GameOptions* options) {
     options->entryFunction = configuration.project.entry;
 
     if (options->resourcePath.empty()) {
-        options->resourcePath = (configuration.root / configuration.resources.directory).lexically_normal().string();
+        options->resourcePath = resolveProjectResourcePath(configuration).string();
     }
 
     std::error_code error;
@@ -81,11 +82,10 @@ int run(const int argc, char **argv) {
         parseCommandLine(argc, argv, &options);
         loadProjectOptions(std::filesystem::current_path(), &options);
 
-        Game game(&options);
-        game.initialize();
+        auto game = Game::create(std::move(options));
 
         try {
-            game.run();
+            game->run();
         }
         catch (const NomadException &e) {
             SDL_ShowSimpleMessageBox((SDL_MESSAGEBOX_ERROR), "Internal Error", e.what(), nullptr);
