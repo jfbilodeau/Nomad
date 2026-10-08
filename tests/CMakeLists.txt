@@ -70,3 +70,27 @@ if(WIN32)
 endif()
 
 add_test(NAME nomad_test COMMAND nomad_test)
+
+if(
+    TARGET nomad-cli AND
+    TARGET nomadc AND
+    TARGET nomad-runtime AND
+    NOT NOMAD_ENABLE_SANITIZERS
+)
+    add_test(
+        NAME nomad_package_integration
+        COMMAND
+            ${CMAKE_COMMAND}
+            "-DNOMAD_CLI=$<TARGET_FILE:nomad-cli>"
+            "-DNOMAD_RUNTIME_SUFFIX=$<TARGET_FILE_SUFFIX:nomad-runtime>"
+            "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/package-integration/$<CONFIG>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/PackageIntegrationTest.cmake"
+    )
+    set_tests_properties(
+        nomad_package_integration
+        PROPERTIES
+        LABELS integration
+        RUN_SERIAL TRUE
+        TIMEOUT 60
+    )
+endif()

@@ -137,6 +137,12 @@ On Linux, install Ninja and use the corresponding `linux-debug` preset. The
 The `linux-sanitizers` preset enables AddressSanitizer and
 UndefinedBehaviorSanitizer for Linux diagnostics.
 
+The normal Windows and Linux test presets also run an end-to-end packaging
+test. It initializes a project in a Unicode path, packages and checks the
+release, starts the packaged runtime with `--help`, verifies exclusions and
+overwrite protection, and confirms a failed compilation preserves the
+previous package.
+
 For faster repeat builds, install `ccache`; CMake uses it automatically when
 it is available:
 

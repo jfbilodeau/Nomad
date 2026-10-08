@@ -103,6 +103,7 @@
       "configurePreset": "windows-debug",
       "configuration": "Debug",
       "targets": [
+        "nomad-cli",
         "nomad-runtime",
         "nomadc",
         "nomad_test"
@@ -113,6 +114,7 @@
       "configurePreset": "windows-release",
       "configuration": "Release",
       "targets": [
+        "nomad-cli",
         "nomad-runtime",
         "nomadc",
         "nomad_test"
@@ -123,6 +125,7 @@
       "configurePreset": "windows-ci",
       "configuration": "Release",
       "targets": [
+        "nomad-cli",
         "nomad-runtime",
         "nomadc",
         "nomad_test"
@@ -132,6 +135,7 @@
       "name": "linux-debug",
       "configurePreset": "linux-debug",
       "targets": [
+        "nomad-cli",
         "nomad-runtime",
         "nomadc",
         "nomad_test"
@@ -141,6 +145,7 @@
       "name": "linux-release",
       "configurePreset": "linux-release",
       "targets": [
+        "nomad-cli",
         "nomad-runtime",
         "nomadc",
         "nomad_test"
@@ -150,6 +155,7 @@
       "name": "linux-ci",
       "configurePreset": "linux-ci",
       "targets": [
+        "nomad-cli",
         "nomad-runtime",
         "nomadc",
         "nomad_test"
