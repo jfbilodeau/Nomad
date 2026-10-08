@@ -14,26 +14,23 @@
 #include <nomad/Version.hpp>
 
 #include <boost/nowide/args.hpp>
+#include <boost/program_options.hpp>
 
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
-#include <span>
 #include <utility>
 
 using namespace nomad;
 
 namespace {
 
-void printUsage(std::ostream& out) {
-    out
-        << "Usage:\n"
-        << "  nomadc check [path]\n"
-        << "  nomadc dump [path] [--function <name>] [--format text]\n"
-        << "  nomadc docs [path] --format markdown --output <file>\n"
-        << "  nomadc version\n";
+namespace po = boost::program_options;
+
+void printUsage(std::ostream& output, const po::options_description& options) {
+    output << options << '\n';
 }
 
 void printDiagnostics(const CompilationResult& result) {
@@ -103,28 +100,22 @@ private:
     std::unique_ptr<Game> m_game;
 };
 
-int versionCommand(const std::span<char*> arguments) {
-    if (!arguments.empty()) {
-        std::cerr << "The version command does not accept arguments\n";
-        return EXIT_FAILURE;
-    }
+CompilationPaths resolveRequestedPaths(const po::variables_map& arguments) {
+    const auto explicitPath = arguments.contains("path");
+    const auto path = explicitPath
+        ? pathFromUtf8(arguments["path"].as<NomadString>())
+        : std::filesystem::current_path();
 
+    return resolveCompilationPaths(path, explicitPath);
+}
+
+int versionCommand() {
     std::cout << "nomadc " << getNomadVersion() << '\n';
     return EXIT_SUCCESS;
 }
 
-int checkCommand(const std::span<char*> arguments) {
-    if (arguments.size() > 1U) {
-        std::cerr << "The check command accepts at most one path\n";
-        printUsage(std::cerr);
-        return EXIT_FAILURE;
-    }
-
-    const auto explicitPath = !arguments.empty();
-    const auto path = explicitPath
-        ? pathFromUtf8(arguments.front())
-        : std::filesystem::current_path();
-    const auto paths = resolveCompilationPaths(path, explicitPath);
+int checkCommand(const po::variables_map& arguments) {
+    const auto paths = resolveRequestedPaths(arguments);
     const HeadlessGame game(paths.resources);
     auto result = checkPaths(paths.sources, game.getRuntime());
 
@@ -136,42 +127,14 @@ int checkCommand(const std::span<char*> arguments) {
     return result.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
-int dumpCommand(const std::span<char*> arguments) {
-    auto path = std::filesystem::current_path();
+int dumpCommand(const po::variables_map& arguments) {
     std::optional<NomadString> functionName;
-    auto pathSet = false;
 
-    for (std::size_t index = 0; index < arguments.size(); ++index) {
-        const NomadStringView argument(arguments[index]);
-
-        if (argument == "--function") {
-            if (++index >= arguments.size()) {
-                std::cerr << "The --function option requires a function name\n";
-                return EXIT_FAILURE;
-            }
-
-            functionName = arguments[index];
-        } else if (argument == "--format") {
-            if (++index >= arguments.size()) {
-                std::cerr << "The --format option requires a format\n";
-                return EXIT_FAILURE;
-            }
-
-            if (NomadStringView(arguments[index]) != "text") {
-                std::cerr << "The dump command currently supports only text output\n";
-                return EXIT_FAILURE;
-            }
-        } else if (!pathSet) {
-            path = pathFromUtf8(arguments[index]);
-            pathSet = true;
-        } else {
-            std::cerr << "Unexpected dump argument: " << argument << '\n';
-            printUsage(std::cerr);
-            return EXIT_FAILURE;
-        }
+    if (arguments.contains("function")) {
+        functionName = arguments["function"].as<NomadString>();
     }
 
-    const auto paths = resolveCompilationPaths(path, pathSet);
+    const auto paths = resolveRequestedPaths(arguments);
     const HeadlessGame game(paths.resources);
     const auto result = dumpInstructions(paths.sources, functionName, game.getRuntime());
     printDiagnostics(result.compilation);
@@ -184,47 +147,9 @@ int dumpCommand(const std::span<char*> arguments) {
     return EXIT_SUCCESS;
 }
 
-int documentationCommand(const std::span<char*> arguments) {
-    auto path = std::filesystem::current_path();
-    std::optional<std::filesystem::path> outputPath;
-    auto pathSet = false;
-
-    for (std::size_t index = 0; index < arguments.size(); ++index) {
-        const NomadStringView argument(arguments[index]);
-
-        if (argument == "--format") {
-            if (++index >= arguments.size()) {
-                std::cerr << "The --format option requires a format\n";
-                return EXIT_FAILURE;
-            }
-
-            if (NomadStringView(arguments[index]) != "markdown") {
-                std::cerr << "The docs command currently supports only Markdown output\n";
-                return EXIT_FAILURE;
-            }
-        } else if (argument == "--output") {
-            if (++index >= arguments.size()) {
-                std::cerr << "The --output option requires a file\n";
-                return EXIT_FAILURE;
-            }
-
-            outputPath = pathFromUtf8(arguments[index]);
-        } else if (!pathSet) {
-            path = pathFromUtf8(arguments[index]);
-            pathSet = true;
-        } else {
-            std::cerr << "Unexpected docs argument: " << argument << '\n';
-            printUsage(std::cerr);
-            return EXIT_FAILURE;
-        }
-    }
-
-    if (!outputPath) {
-        std::cerr << "The docs command requires --output <file>\n";
-        return EXIT_FAILURE;
-    }
-
-    const auto paths = resolveCompilationPaths(path, pathSet);
+int documentationCommand(const po::variables_map& arguments) {
+    const auto outputPath = pathFromUtf8(arguments["output"].as<NomadString>());
+    const auto paths = resolveRequestedPaths(arguments);
     const HeadlessGame game(paths.resources);
     const auto result = generateDocumentationForPaths(paths.sources, game.getRuntime());
     printDiagnostics(result.compilation);
@@ -233,31 +158,52 @@ int documentationCommand(const std::span<char*> arguments) {
         return EXIT_FAILURE;
     }
 
-    std::ofstream output(*outputPath, std::ios::binary);
+    std::ofstream output(outputPath, std::ios::binary);
 
     if (!output.is_open()) {
-        std::cerr << "Failed to open documentation output: " << pathToUtf8(*outputPath) << '\n';
+        std::cerr << "Failed to open documentation output: " << pathToUtf8(outputPath) << '\n';
         return EXIT_FAILURE;
     }
 
     output << result.documentation;
 
     if (!output) {
-        std::cerr << "Failed to write documentation output: " << pathToUtf8(*outputPath) << '\n';
+        std::cerr << "Failed to write documentation output: " << pathToUtf8(outputPath) << '\n';
         return EXIT_FAILURE;
     }
 
     return EXIT_SUCCESS;
 }
 
-int dispatchCommand(const NomadStringView command, const std::span<char*> arguments) {
-    if (command == "--help" || command == "-h") {
-        printUsage(std::cout);
-        return EXIT_SUCCESS;
+// Boost.ProgramOptions parses every option globally, so each command rejects the
+// options it does not implement instead of silently ignoring them.
+void validateCommandOptions(const NomadStringView command, const po::variables_map& arguments) {
+    if (arguments.contains("function") && command != "dump") {
+        throw po::error("The --function option is supported only by the dump command");
     }
 
-    if (command == "--version" || command == "version") {
-        return versionCommand(arguments);
+    if (arguments.contains("output") && command != "docs") {
+        throw po::error("The --output option is supported only by the docs command");
+    }
+
+    if (command == "docs" && !arguments.contains("output")) {
+        throw po::error("The docs command requires --output <file>");
+    }
+
+    if (command == "version" && arguments.contains("path")) {
+        throw po::error("The version command does not accept arguments");
+    }
+}
+
+int dispatchCommand(
+    const NomadStringView command,
+    const po::variables_map& arguments,
+    const po::options_description& visibleOptions
+) {
+    validateCommandOptions(command, arguments);
+
+    if (command == "version") {
+        return versionCommand();
     }
 
     if (command == "check") {
@@ -273,7 +219,7 @@ int dispatchCommand(const NomadStringView command, const std::span<char*> argume
     }
 
     std::cerr << "Unknown command: " << command << '\n';
-    printUsage(std::cerr);
+    printUsage(std::cerr, visibleOptions);
     return EXIT_FAILURE;
 }
 
@@ -285,14 +231,63 @@ int main(int argc, char** argv) {
     log::setLogLevel(LogLevel::Warning);
     log::clear();
 
+    po::options_description visibleOptions(
+        "Usage:\n"
+        "  nomadc check [path]\n"
+        "  nomadc dump [path] [--function <name>]\n"
+        "  nomadc docs [path] --output <file>\n"
+        "  nomadc version\n"
+        "\n"
+        "Options"
+    );
+    visibleOptions.add_options()
+        ("help,h", "Show this help")
+        ("version,v", "Show the Nomad version")
+        ("function", po::value<NomadString>(), "Function to dump")
+        ("output", po::value<NomadString>(), "Output file");
+
+    po::options_description hiddenOptions;
+    hiddenOptions.add_options()
+        ("command", po::value<NomadString>(), "Command to run")
+        ("path", po::value<NomadString>(), "Source or project path");
+
+    po::options_description allOptions;
+    allOptions.add(visibleOptions).add(hiddenOptions);
+
+    po::positional_options_description positional;
+    positional.add("command", 1);
+    positional.add("path", 1);
+
     try {
-        if (argc < 2) {
-            printUsage(std::cerr);
+        po::variables_map arguments;
+        po::store(
+            po::command_line_parser(argc, argv)
+                .options(allOptions)
+                .positional(positional)
+                .run(),
+            arguments
+        );
+        po::notify(arguments);
+
+        if (arguments.contains("help")) {
+            printUsage(std::cout, visibleOptions);
+            return EXIT_SUCCESS;
+        }
+
+        if (arguments.contains("version")) {
+            if (arguments.contains("command")) {
+                throw po::error("The version option does not accept arguments");
+            }
+
+            return dispatchCommand("version", arguments, visibleOptions);
+        }
+
+        if (!arguments.contains("command")) {
+            printUsage(std::cerr, visibleOptions);
             return EXIT_FAILURE;
         }
 
-        const auto arguments = std::span(argv + 2, static_cast<std::size_t>(argc - 2));
-        return dispatchCommand(argv[1], arguments);
+        return dispatchCommand(arguments["command"].as<NomadString>(), arguments, visibleOptions);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return EXIT_FAILURE;

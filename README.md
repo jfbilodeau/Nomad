@@ -95,13 +95,13 @@ headless `Game` on SDL's dummy video and audio drivers, using the project's
 configured resources so `game.*`, `window.*`, `scene.*` and the `t.*` text
 constants resolve exactly as they do in a windowed build.
 
-`nomadc dump [path] [--function <name>] [--format text]` performs the same
+`nomadc dump [path] [--function <name>]` performs the same
 headless compilation and writes the generated VM instructions. It never runs
-the selected function. Text is the initial supported output format.
+the selected function. Instructions are written as text.
 
-`nomadc docs [path] --format markdown --output <file>` compiles without
+`nomadc docs [path] --output <file>` compiles without
 execution and writes the registered language and engine API documentation.
-Markdown is the initial supported documentation format.
+Documentation is written as Markdown.
 
 ## Build
 

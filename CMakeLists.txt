@@ -515,7 +515,7 @@ endif()
 option(NOMAD_BUILD_COMPILER "Build the Nomad compiler tooling" ON)
 if(NOMAD_BUILD_COMPILER)
     add_executable(nomadc apps/compiler/main.cpp)
-    target_link_libraries(nomadc PRIVATE Nomad::Engine Nomad::Project Boost::nowide)
+    target_link_libraries(nomadc PRIVATE Nomad::Engine Nomad::Project Boost::nowide Boost::program_options)
 endif()
 
 option(NOMAD_BUILD_TESTS "Build Nomad unit tests" ON)
