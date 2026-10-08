@@ -28,12 +28,16 @@ void printUsage(std::ostream& output, const po::options_description& options) {
     output << options << '\n';
 }
 
+NomadPath getCliDirectory() {
+    return NomadPath(boost::dll::program_location().native()).parent_path();
+}
+
 // Tools ship beside the CLI, so the executable suffix is taken from the running
 // CLI instead of being selected with platform-specific conditionals. Paths are
 // kept in their native encoding so non-ASCII directories survive the round trip.
 NomadPath resolveSiblingExecutable(const NomadStringView executableName) {
-    const auto cliPath = NomadPath(boost::dll::program_location().native());
-    const auto directory = cliPath.parent_path();
+    const auto directory = getCliDirectory();
+    const auto cliPath = directory / NomadPath(boost::dll::program_location().native()).filename();
     auto suffixedCandidate = directory / pathFromUtf8(executableName);
     suffixedCandidate += cliPath.extension();
     const NomadPath candidates[] = {
@@ -51,6 +55,20 @@ NomadPath resolveSiblingExecutable(const NomadStringView executableName) {
         "Could not find the Nomad " + NomadString(executableName) +
         " beside the CLI in '" + pathToUtf8(directory) + "'"
     );
+}
+
+NomadPath resolveProjectTemplate(const NomadStringView templateName) {
+    const auto templateDirectory =
+        getCliDirectory() / "templates" / "projects" / pathFromUtf8(templateName);
+
+    if (!std::filesystem::is_directory(templateDirectory)) {
+        throw NomadException(
+            "Could not find the Nomad project template '" + NomadString(templateName) +
+            "' beside the CLI in '" + pathToUtf8(templateDirectory) + "'"
+        );
+    }
+
+    return templateDirectory;
 }
 
 int runSiblingExecutable(
@@ -92,7 +110,7 @@ int versionCommand(const po::variables_map& arguments) {
 }
 
 int initializeCommand(const po::variables_map& arguments) {
-    const auto result = initializeProject(getRequestedDirectory(arguments));
+    const auto result = initializeProject(getRequestedDirectory(arguments), resolveProjectTemplate("default"));
 
     for (const auto& path : result.createdFiles) {
         std::cout << "Created " << pathToUtf8(path) << '\n';

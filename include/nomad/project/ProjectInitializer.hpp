@@ -20,6 +20,9 @@ public:
 
 [[nodiscard]] NomadString makeProjectExecutableName(NomadStringView projectName);
 
-[[nodiscard]] ProjectInitializationResult initializeProject(const NomadPath& destination);
+[[nodiscard]] ProjectInitializationResult initializeProject(
+    const NomadPath& destination,
+    const NomadPath& templateDirectory
+);
 
 } // namespace nomad

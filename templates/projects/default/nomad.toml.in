@@ -1,0 +1,22 @@
+schema = 1
+
+[project]
+name = "{{project_name_toml}}"
+identifier = "com.example.{{project_executable}}"
+version = "0.1.0"
+executable = "{{project_executable}}"
+entry = "init"
+
+[nomad]
+version = "{{nomad_version}}"
+
+[resources]
+directory = "res"
+
+[package]
+output = "dist"
+exclude = [
+    "**/*.psd",
+    "**/*.kra",
+    "development/**",
+]

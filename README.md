@@ -17,8 +17,16 @@ runtime, and tests.
 ## Project manager
 
 `nomad init [directory]` creates a minimal project containing `nomad.toml` and
-`res/scripts/init.nomad`. It can initialize a new directory or an existing
-directory, but refuses to overwrite either generated file.
+`res/scripts/init.nomad`, along with a starter `README.md` and `.gitignore`. It
+can initialize a new directory or an existing directory, but refuses to
+overwrite any generated file.
+
+The default project is stored in `templates/projects/default` and is copied
+beside the `nomad` executable during the build. Initialization recursively
+copies that directory. Files ending in `.in` are rendered with project
+metadata and written without the `.in` suffix; other files are copied
+unchanged. This keeps the project layout and starter content out of the C++
+implementation.
 
 `nomad check [directory]` discovers the project, verifies that the running CLI
 is at least as new as the required `nomad.version`, and runs the sibling

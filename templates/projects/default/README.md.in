@@ -1,0 +1,17 @@
+# {{project_name}}
+
+This project uses [Nomad](https://github.com/jfbilodeau/Nomad) {{nomad_version}}.
+
+## Development
+
+Check the project:
+
+```console
+nomad check
+```
+
+Run the project:
+
+```console
+nomad run
+```

@@ -474,6 +474,30 @@ option(NOMAD_BUILD_CLI "Build the Nomad project manager" ON)
 if(NOMAD_BUILD_CLI)
     add_executable(nomad-cli apps/manager/main.cpp)
     set_target_properties(nomad-cli PROPERTIES OUTPUT_NAME nomad)
+
+    set(NOMAD_PROJECT_TEMPLATE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/templates")
+    file(
+        GLOB_RECURSE NOMAD_PROJECT_TEMPLATE_FILES
+        CONFIGURE_DEPENDS
+        "${NOMAD_PROJECT_TEMPLATE_DIR}/*"
+        "${NOMAD_PROJECT_TEMPLATE_DIR}/.*"
+    )
+    set_source_files_properties(${NOMAD_PROJECT_TEMPLATE_FILES} PROPERTIES HEADER_FILE_ONLY TRUE)
+    target_sources(nomad-cli PRIVATE ${NOMAD_PROJECT_TEMPLATE_FILES})
+
+    add_custom_target(
+        nomad-cli-templates
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:nomad-cli>"
+        COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:nomad-cli>/templates"
+        COMMAND
+            ${CMAKE_COMMAND} -E copy_directory
+            "${NOMAD_PROJECT_TEMPLATE_DIR}"
+            "$<TARGET_FILE_DIR:nomad-cli>/templates"
+        SOURCES ${NOMAD_PROJECT_TEMPLATE_FILES}
+        VERBATIM
+    )
+    add_dependencies(nomad-cli nomad-cli-templates)
+
     target_link_libraries(
         nomad-cli
         PRIVATE

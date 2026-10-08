@@ -41,7 +41,12 @@ add_executable(
 target_include_directories(nomad_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Matches the `nomad` library so debug-only checks (e.g. the live string counter) are compiled into the tests.
-target_compile_definitions(nomad_test PRIVATE $<$<CONFIG:Debug>:NOMAD_DEBUG>)
+target_compile_definitions(
+    nomad_test
+    PRIVATE
+    $<$<CONFIG:Debug>:NOMAD_DEBUG>
+    NOMAD_TEST_PROJECT_TEMPLATE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../templates/projects/default"
+)
 
 target_link_libraries(
     nomad_test
