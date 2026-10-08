@@ -25,6 +25,7 @@ add_executable(
     ./LanguageTypeTest.cpp
     ./LogTest.cpp
     ./ParserTest.cpp
+    ./ProjectConfigurationTest.cpp
     ./RuntimeTest.cpp
     ./StatementExecutionTest.cpp
     ./SystemTest.cpp
@@ -44,6 +45,7 @@ target_link_libraries(
     nomad_test
     PRIVATE
     nomad
+    Nomad::Project
     Boost::program_options
     Boost::unit_test_framework
 )

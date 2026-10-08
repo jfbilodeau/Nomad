@@ -3,10 +3,12 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <limits>
 #include <memory>
 #include <numbers>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -30,6 +32,8 @@ constexpr NomadFloat NOMAD_PI = static_cast<NomadFloat>(std::numbers::pi);
 using NomadChar = char;
 using NomadString = std::string;
 using NomadStringView = std::string_view;
+
+using NomadPath = std::filesystem::path;
 
 struct NomadStringHash {
     using is_transparent = void;
@@ -92,34 +96,20 @@ NomadIndex toNomadIndex(T value) {
    return static_cast<NomadIndex>(value);
 }
 
-class NomadException : public std::exception {
+class NomadException : public std::runtime_error {
 public:
-   explicit NomadException(const NomadString& message) {
-       m_message = message;
-   }
-
-   [[nodiscard]] const char* what() const noexcept override {
-       return m_message.c_str();
-   }
-
-   [[nodiscard]] const NomadString& message() const {
-       return m_message;
-   }
-
-private:
-   static NomadString m_message;
+    using std::runtime_error::runtime_error;
 };
 
 class NomadBug : public NomadException {
 public:
-    explicit NomadBug(const NomadString& message):
-    NomadException(message) { }
+    using NomadException::NomadException;
 };
 
 // Default values
 constexpr NomadInteger NOMAD_DEFAULT_INTEGER = 0;
 constexpr NomadFloat NOMAD_DEFAULT_FLOAT = 0.0;
 constexpr NomadBoolean NOMAD_DEFAULT_BOOLEAN = false;
-const NomadString NOMAD_DEFAULT_STRING = NOMAD_EMPTY_STRING;
+extern const NomadString NOMAD_DEFAULT_STRING;
 
 } // namespace nomad

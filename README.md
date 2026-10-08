@@ -8,7 +8,41 @@ designed for embedding in C++ applications, and a 2D game engine built around it
 Nomad is a bespoke language and engine built to suit my very specific brain. I don’t expect it to make sense to most people--maybe two others, tops.
 
 The current baseline builds the standalone `Nomad::Language` and
-`Nomad::Engine` libraries, compiler tooling, generic runtime, and tests.
+`Nomad::Project` and `Nomad::Engine` libraries, compiler tooling, generic
+runtime, and tests.
+
+## Project configuration
+
+Nomad projects use one `nomad.toml` file. Project discovery starts at the
+requested path and searches its parent directories. Schema version 1 requires:
+
+```toml
+schema = 1
+
+[project]
+name = "Example Game"
+identifier = "com.example.game"
+version = "0.1.0"
+executable = "example-game"
+entry = "init"
+
+[nomad]
+version = "0.1.0"
+
+[resources]
+directory = "res"
+
+[package]
+output = "dist"
+exclude = [
+    "**/*.psd",
+    "development/**",
+]
+```
+
+`project.executable` is an extensionless file name. `project.entry` defaults
+to `init` when omitted. All other fields shown above are required; exclusion
+patterns are relative to the resource directory.
 
 ## Runtime
 

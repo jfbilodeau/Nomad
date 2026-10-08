@@ -197,7 +197,16 @@ FetchContent_Declare(
         EXCLUDE_FROM_ALL
 )
 
-FetchContent_MakeAvailable(Boost box2d SDL SDL_image SDL_ttf DearImGui)
+FetchContent_Declare(
+        tomlplusplus
+        GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+        GIT_TAG v3.4.0
+        GIT_SHALLOW TRUE
+        GIT_PROGRESS TRUE
+        EXCLUDE_FROM_ALL
+)
+
+FetchContent_MakeAvailable(Boost box2d SDL SDL_image SDL_ttf DearImGui tomlplusplus)
 #FetchContent_GetProperties(DearImGui)
 
 # find_package(Boost REQUIRED algorithm exception json phoenix program_options spirit unit_test_framework tokenizer)
@@ -496,6 +505,16 @@ list(
 )
 
 list(REMOVE_ITEM NOMAD_SOURCES ${NOMAD_LANGUAGE_SOURCES})
+
+set(
+        NOMAD_PROJECT_INCLUDE
+        ${NOMAD_INCLUDE_DIR}/nomad/project/ProjectConfiguration.hpp
+)
+
+set(
+        NOMAD_PROJECT_SOURCES
+        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectConfiguration.cpp
+)
 
 #set(NOMAD_PUBLIC_HEADERS
 #    ${NOMAD_INCLUDE_DIR}/nomad/Nomad.hpp

@@ -4,9 +4,6 @@
 
 namespace nomad {
 
-const NomadString NOMAD_EMPTY_STRING;
-
-// Hack: Global exception message
-NomadString NomadException::m_message;
-
+const NomadString NOMAD_EMPTY_STRING = "";
+const NomadString NOMAD_DEFAULT_STRING = NOMAD_EMPTY_STRING;
 } // namespace nomad
