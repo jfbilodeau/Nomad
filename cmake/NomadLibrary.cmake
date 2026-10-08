@@ -115,5 +115,6 @@ target_link_libraries(
     SDL3_ttf::SDL3_ttf
     box2d
     PRIVATE
+    Nomad::Project
     Boost::program_options
 )

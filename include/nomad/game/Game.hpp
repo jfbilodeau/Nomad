@@ -44,6 +44,7 @@ public:
 
 struct GameOptions {
     NomadString resourcePath;
+    NomadString entryFunction = "init";
     bool debug = false;
 };
 

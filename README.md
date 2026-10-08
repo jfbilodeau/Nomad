@@ -46,10 +46,13 @@ patterns are relative to the resource directory.
 
 ## Runtime
 
-`nomad-runtime` accepts `--resource-path <directory>` and `--debug`. Debug
-mode enables diagnostic logging and the debug console; normal runtime startup
-does not generate documentation or instruction dumps. Those outputs belong to
-the future headless `nomadc` tooling.
+`nomad-runtime` discovers `nomad.toml` from the current directory or one of
+its parents. It resolves `resources.directory` relative to the project root
+and executes the configured `project.entry` function. The
+`--resource-path <directory>` option explicitly overrides the configured
+resource directory, while `--debug` enables diagnostic logging and the debug
+console. Normal runtime startup does not generate documentation or instruction
+dumps. Those outputs belong to the headless `nomadc` tooling.
 
 ## Compiler tooling
 

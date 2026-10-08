@@ -1348,22 +1348,20 @@ NomadString& Game::getText(const NomadString& key, NomadString& text) const {
 }
 
 void Game::runInitFunction() {
-    log::info("Executing `init` function");
+    log::info("Executing `" + m_options.entryFunction + "` entry function");
 
-    const NomadId initFunctionId = m_runtime->getFunctionId("init");
+    const NomadId initFunctionId = m_runtime->getFunctionId(m_options.entryFunction);
 
     if (initFunctionId == NOMAD_INVALID_ID) {
-        const auto message = "Fatal: No `init` function found";
-
-        log::fatal(message);
-
-        exit(EXIT_FAILURE);
+        raiseError("Configured entry function '" + m_options.entryFunction + "' was not found");
     }
 
     try {
         executeFunction(initFunctionId, nullptr, nullptr);
     } catch (std::exception& e) {
-        raiseError(NomadString("Failed to execute 'init' function: ") + e.what());
+        raiseError(
+            "Failed to execute entry function '" + m_options.entryFunction + "': " + e.what()
+        );
     }
 }
 

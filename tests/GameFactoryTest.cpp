@@ -2,11 +2,39 @@
 
 #include <nomad/game/Game.hpp>
 #include <nomad/game/GameFactory.hpp>
+#include <nomad/project/ProjectConfiguration.hpp>
+
+#include <TestDirectory.hpp>
 
 #include <boost/program_options/errors.hpp>
 #include <boost/test/unit_test.hpp>
 
 using namespace nomad;
+using namespace nomad::test;
+
+namespace {
+
+constexpr auto PROJECT_CONFIGURATION = R"(schema = 1
+
+[project]
+name = "Runtime Test"
+identifier = "com.example.runtime-test"
+version = "0.1.0"
+executable = "runtime-test"
+entry = "start"
+
+[nomad]
+version = "0.1.0"
+
+[resources]
+directory = "assets"
+
+[package]
+output = "dist"
+exclude = []
+)";
+
+} // namespace
 
 BOOST_AUTO_TEST_SUITE(game_factory)
 
@@ -23,6 +51,49 @@ BOOST_AUTO_TEST_CASE(runtime_options_accept_debug_and_resource_path)
 
     BOOST_TEST(options.resourcePath == "project-resources");
     BOOST_TEST(options.debug);
+}
+
+BOOST_AUTO_TEST_CASE(runtime_options_load_project_resources_and_entry_function)
+{
+    TestDirectory directory("nomad_game_factory_project");
+    directory.write("nomad.toml", PROJECT_CONFIGURATION);
+    directory.write("assets/scripts/start.nomad", "return 0");
+    GameOptions options;
+
+    loadProjectOptions(directory.getPath() / "assets/scripts", &options);
+
+    BOOST_TEST(options.resourcePath == (directory.getPath() / "assets").lexically_normal().string());
+    BOOST_TEST(options.entryFunction == "start");
+}
+
+BOOST_AUTO_TEST_CASE(runtime_resource_path_override_takes_precedence)
+{
+    TestDirectory directory("nomad_game_factory_override");
+    directory.write("nomad.toml", PROJECT_CONFIGURATION);
+    directory.write("assets/scripts/start.nomad", "return 0");
+    const auto overridePath = directory.write("override/scripts/start.nomad", "return 0").parent_path().parent_path();
+    GameOptions options;
+    options.resourcePath = overridePath.string();
+
+    loadProjectOptions(directory.getPath(), &options);
+
+    BOOST_TEST(options.resourcePath == overridePath.string());
+    BOOST_TEST(options.entryFunction == "start");
+}
+
+BOOST_AUTO_TEST_CASE(runtime_options_report_missing_resources)
+{
+    TestDirectory directory("nomad_game_factory_missing_resources");
+    directory.write("nomad.toml", PROJECT_CONFIGURATION);
+    GameOptions options;
+
+    BOOST_CHECK_EXCEPTION(
+        loadProjectOptions(directory.getPath(), &options),
+        ProjectConfigurationError,
+        [](const ProjectConfigurationError& error) {
+            return NomadString(error.what()).find("Resource directory does not exist") != NomadString::npos;
+        }
+    );
 }
 
 BOOST_AUTO_TEST_CASE(runtime_options_reject_removed_generation_flags)

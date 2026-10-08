@@ -6,11 +6,13 @@
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/game/Game.hpp>
+#include <nomad/project/ProjectConfiguration.hpp>
 
 #define BOOST_NO_CXX98_FUNCTION_BASE
 #include <boost/program_options.hpp>
 
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 
 namespace nomad
@@ -45,8 +47,27 @@ void parseCommandLine(const int argc, char **argv, GameOptions *options)
         options->debug = false;
     }
 
+}
+
+void loadProjectOptions(const NomadPath& startPath, GameOptions* options) {
+    const auto configuration = discoverProjectConfiguration(startPath);
+    options->entryFunction = configuration.project.entry;
+
     if (options->resourcePath.empty()) {
-        options->resourcePath = NomadString(SDL_GetBasePath());
+        options->resourcePath = (configuration.root / configuration.resources.directory).lexically_normal().string();
+    }
+
+    std::error_code error;
+    const auto resourcePath = NomadPath(options->resourcePath);
+
+    if (!std::filesystem::is_directory(resourcePath, error)) {
+        auto message = "Resource directory does not exist: '" + resourcePath.string() + "'";
+
+        if (error && error != std::errc::no_such_file_or_directory) {
+            message += ": " + error.message();
+        }
+
+        throw ProjectConfigurationError(message);
     }
 }
 
@@ -58,6 +79,7 @@ int run(const int argc, char **argv) {
         GameOptions options;
 
         parseCommandLine(argc, argv, &options);
+        loadProjectOptions(std::filesystem::current_path(), &options);
 
         Game game(&options);
         game.initialize();
