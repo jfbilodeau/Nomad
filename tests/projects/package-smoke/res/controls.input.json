@@ -1,0 +1,6 @@
+{
+    "keyboard": {"code1": "Space"},
+    "click": {"code1": "Mouse Left"},
+    "fullscreen": {"code1": "F11"},
+    "quit": {"code1": "Escape"}
+}

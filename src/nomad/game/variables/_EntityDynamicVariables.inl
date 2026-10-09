@@ -530,7 +530,8 @@ m_runtime->registerDynamicVariable(
         END_SINGLE_ENTITY_BLOCK(NOMAD_DEFAULT_INTEGER)
     },
     m_runtime->getIntegerType(),
-    NomadDoc("The alignment of the text of an entity.")
+    NomadDoc("The point of the text anchored at the entity position plus text.x and text.y. "
+        "topLeft anchors the top-left corner, centerMiddle the center, and bottomRight the bottom-right corner.")
 );
 
 m_runtime->registerDynamicVariable(
@@ -677,7 +678,7 @@ m_runtime->registerDynamicVariable(
         END_SINGLE_ENTITY_BLOCK(NOMAD_DEFAULT_FLOAT)
     },
     m_runtime->getFloatType(),
-    NomadDoc("The x position of the text of an entity.")
+    NomadDoc("The horizontal offset of the text anchor from the entity position, applied once.")
 );
 
 m_runtime->registerDynamicVariable(
@@ -697,7 +698,7 @@ m_runtime->registerDynamicVariable(
         END_SINGLE_ENTITY_BLOCK(NOMAD_DEFAULT_FLOAT)
     },
     m_runtime->getFloatType(),
-    NomadDoc("The y position of the text of an entity.")
+    NomadDoc("The vertical offset of the text anchor from the entity position, applied once.")
 );
 
 m_runtime->registerDynamicVariable(

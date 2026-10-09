@@ -21,11 +21,11 @@ HorizontalAlignment getHorizontalAlignment(Alignment alignment) {
 VerticalAlignment getVerticalAlignment(Alignment alignment) {
     int bits = static_cast<int>(alignment);
 
-    if (bits & 0b0001000) {
+    if (bits & static_cast<int>(VerticalAlignment::Top)) {
         return VerticalAlignment::Top;
-    } else if (bits & 0b0010000) {
+    } else if (bits & static_cast<int>(VerticalAlignment::Center)) {
         return VerticalAlignment::Center;
-    } else if (bits & 0b0100000) {
+    } else if (bits & static_cast<int>(VerticalAlignment::Bottom)) {
         return VerticalAlignment::Bottom;
     } else {
         return VerticalAlignment::Center;
@@ -37,25 +37,25 @@ Alignment getAlignment(HorizontalAlignment horizontal, VerticalAlignment vertica
 
     switch (horizontal) {
         case HorizontalAlignment::Left:
-            bits |= 0b001;
+            bits |= static_cast<int>(HorizontalAlignment::Left);
             break;
         case HorizontalAlignment::Middle:
-            bits |= 0b010;
+            bits |= static_cast<int>(HorizontalAlignment::Middle);
             break;
         case HorizontalAlignment::Right:
-            bits |= 0b100;
+            bits |= static_cast<int>(HorizontalAlignment::Right);
             break;
     }
 
     switch (vertical) {
         case VerticalAlignment::Top:
-            bits |= 0b0001000;
+            bits |= static_cast<int>(VerticalAlignment::Top);
             break;
         case VerticalAlignment::Center:
-            bits |= 0b0010000;
+            bits |= static_cast<int>(VerticalAlignment::Center);
             break;
         case VerticalAlignment::Bottom:
-            bits |= 0b0100000;
+            bits |= static_cast<int>(VerticalAlignment::Bottom);
             break;
     }
 

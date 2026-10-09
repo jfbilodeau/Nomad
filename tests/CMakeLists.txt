@@ -2,6 +2,7 @@ add_executable(
     nomad_test
     ./main.cpp
     ./ColorTest.cpp
+    ./EntityTextTest.cpp
     ./CallableCatalogTest.cpp
     ./CompilerToolsTest.cpp
     ./CompilerContextTest.cpp
@@ -48,6 +49,7 @@ target_compile_definitions(
     PRIVATE
     $<$<CONFIG:Debug>:NOMAD_DEBUG>
     NOMAD_TEST_PROJECT_TEMPLATE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../templates/projects/default"
+    NOMAD_TEST_FONT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/projects/package-smoke/res/fonts/ProggyClean.ttf"
 )
 
 target_link_libraries(
@@ -85,6 +87,29 @@ if(
     TARGET nomad-runtime AND
     NOT NOMAD_ENABLE_SANITIZERS
 )
+    set(NOMAD_GRAPHICAL_SMOKE_PROJECT "${CMAKE_CURRENT_BINARY_DIR}/package-smoke-project")
+    file(REMOVE_RECURSE "${NOMAD_GRAPHICAL_SMOKE_PROJECT}/res")
+    file(GLOB_RECURSE NOMAD_GRAPHICAL_SMOKE_RESOURCES CONFIGURE_DEPENDS
+        RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}/projects/package-smoke"
+        "${CMAKE_CURRENT_SOURCE_DIR}/projects/package-smoke/res/*")
+    foreach(RESOURCE IN LISTS NOMAD_GRAPHICAL_SMOKE_RESOURCES)
+        configure_file("projects/package-smoke/${RESOURCE}"
+            "${NOMAD_GRAPHICAL_SMOKE_PROJECT}/${RESOURCE}" COPYONLY)
+    endforeach()
+    configure_file(projects/package-smoke/nomad.toml.in
+        "${NOMAD_GRAPHICAL_SMOKE_PROJECT}/nomad.toml" @ONLY)
+    add_test(
+        NAME nomad_package_graphical_smoke
+        COMMAND "${CMAKE_COMMAND}"
+            "-DNOMAD_CLI=$<TARGET_FILE:nomad-cli>"
+            "-DNOMAD_SMOKE_PROJECT=${NOMAD_GRAPHICAL_SMOKE_PROJECT}"
+            "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/package-graphical-smoke/$<CONFIG>"
+            "-DNOMAD_RUNTIME_SUFFIX=$<TARGET_FILE_SUFFIX:nomad-runtime>"
+            "-DNOMAD_PACKAGE_ARTIFACT_DIR=${CMAKE_CURRENT_BINARY_DIR}/package-graphical-artifact/$<CONFIG>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/PackageGraphicalSmokeTest.cmake"
+    )
+    set_tests_properties(nomad_package_graphical_smoke PROPERTIES
+        LABELS integration RUN_SERIAL TRUE TIMEOUT 60)
     add_test(
         NAME nomad_package_integration
         COMMAND

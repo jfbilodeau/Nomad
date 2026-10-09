@@ -1,0 +1,2 @@
+global.automated = true
+init

@@ -1,0 +1,18 @@
+schema = 1
+
+[project]
+name = "Nomad Packaging Smoke Test"
+identifier = "org.nomad.package-smoke"
+version = "0.1.0"
+executable = "nomad-package-smoke"
+entry = "init"
+
+[nomad]
+version = "@PROJECT_VERSION@"
+
+[resources]
+directory = "res"
+
+[package]
+output = "dist"
+exclude = []

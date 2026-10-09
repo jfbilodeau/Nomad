@@ -78,6 +78,14 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Upload graphical acceptance game
+        uses: actions/upload-artifact@v4
+        with:
+          name: graphical-package-${{ matrix.name }}
+          path: out/build/${{ matrix.preset }}/tests/package-graphical-artifact/Release/*
+          if-no-files-found: error
+          retention-days: 7
+
   package-smoke:
     name: ${{ matrix.name }} isolated package
     needs: build-and-test

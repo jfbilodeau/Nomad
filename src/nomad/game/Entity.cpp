@@ -182,19 +182,19 @@ void Entity::render(Canvas* canvas) {
 
         switch (m_textAlignment) {
         case Alignment::TopLeft:
-            textAnchor.set(textX - textWidth, textY - textHeight);
+            textAnchor.set(textX, textY);
             break;
 
         case Alignment::TopMiddle:
-            textAnchor.set(textX - (textWidth / 2), textY - textHeight);
+            textAnchor.set(textX - (textWidth / 2), textY);
             break;
 
         case Alignment::TopRight:
-            textAnchor.set(textX, textY - textHeight);
+            textAnchor.set(textX - textWidth, textY);
             break;
 
         case Alignment::CenterLeft:
-            textAnchor.set(textX - textWidth, textY  - (textHeight / 2));
+            textAnchor.set(textX, textY - (textHeight / 2));
             break;
 
         case Alignment::CenterMiddle:
@@ -202,19 +202,19 @@ void Entity::render(Canvas* canvas) {
             break;
 
         case Alignment::CenterRight:
-            textAnchor.set(textX, textY - (textHeight / 2));
+            textAnchor.set(textX - textWidth, textY - (textHeight / 2));
             break;
 
         case Alignment::BottomLeft:
-            textAnchor.set(textX - textWidth, textY);
+            textAnchor.set(textX, textY - textHeight);
             break;
 
         case Alignment::BottomMiddle:
-            textAnchor.set(textX - (textWidth / 2), textY);
+            textAnchor.set(textX - (textWidth / 2), textY - textHeight);
             break;
 
         case Alignment::BottomRight:
-            textAnchor.set(textX, textY);
+            textAnchor.set(textX - textWidth, textY - textHeight);
             break;
 
         default:
@@ -225,6 +225,7 @@ void Entity::render(Canvas* canvas) {
                 m_name +
                 "'"
                 );
+            return;
         }
 
         const auto source = RectangleF {
@@ -235,8 +236,8 @@ void Entity::render(Canvas* canvas) {
         };
 
         const auto destination = RectangleF {
-            textAnchor.getX() + entity_x + m_textPosition.getX(),
-            textAnchor.getY() + entity_y + m_textPosition.getY(),
+            textAnchor.getX() + entity_x,
+            textAnchor.getY() + entity_y,
             textWidth,
             textHeight
         };
