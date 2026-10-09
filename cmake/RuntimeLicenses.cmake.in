@@ -4,6 +4,8 @@ set(NOMAD_RUNTIME_LICENSES
     "@box2d_SOURCE_DIR@/LICENSE|Box2D.txt"
     "@dearimgui_SOURCE_DIR@/LICENSE.txt|DearImGui.txt"
     "@tomlplusplus_SOURCE_DIR@/LICENSE|tomlplusplus.txt"
+    "@libarchive_SOURCE_DIR@/COPYING|libarchive.txt"
+    "@zlib_SOURCE_DIR@/LICENSE|zlib.txt"
     "@sdl_SOURCE_DIR@/LICENSE.txt|SDL.txt"
     "@sdl_image_SOURCE_DIR@/LICENSE.txt|SDL_image.txt"
     "@sdl_ttf_SOURCE_DIR@/LICENSE.txt|SDL_ttf.txt"
@@ -12,4 +14,11 @@ set(NOMAD_RUNTIME_LICENSES
     "@sdl_ttf_SOURCE_DIR@/external/plutosvg/LICENSE|plutosvg.txt"
     "@sdl_ttf_SOURCE_DIR@/external/plutovg/LICENSE|plutovg.txt"
 )
-set(NOMAD_STB_IMAGE_SOURCE "@sdl_image_SOURCE_DIR@/src/stb_image.h")
+set(NOMAD_RUNTIME_EMBEDDED_LICENSES
+    "@sdl_image_SOURCE_DIR@/src/stb_image.h|stb_image.txt|ALTERNATIVE A - MIT License|*/"
+    "@sdl_image_SOURCE_DIR@/src/nanosvg.h|NanoSVG.txt|/*|*/"
+    "@sdl_image_SOURCE_DIR@/src/nanosvgrast.h|NanoSVG_rasterizer.txt|/*|*/"
+    "@sdl_image_SOURCE_DIR@/src/qoi.h|QOI.txt|-- LICENSE:|-- About"
+    "@sdl_image_SOURCE_DIR@/src/tiny_jpeg.h|tiny_jpeg.txt|==== License ====|*/"
+    "@sdl_image_SOURCE_DIR@/src/miniz.h|miniz.txt|This is free and unencumbered software|*/"
+)

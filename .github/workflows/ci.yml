@@ -69,3 +69,34 @@ jobs:
 
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
+
+      - name: Upload tested Release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-smoke-${{ matrix.name }}
+          path: out/build/${{ matrix.preset }}/tests/package-artifact/Release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  package-smoke:
+    name: ${{ matrix.name }} isolated package
+    needs: build-and-test
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-2022
+          - name: Ubuntu
+            os: ubuntu-latest
+    steps:
+      - name: Download tested Release package
+        uses: actions/download-artifact@v4
+        with:
+          name: package-smoke-${{ matrix.name }}
+          path: package-smoke
+
+      - name: Extract and start without a source checkout or build
+        run: cmake -P package-smoke/PackageSmokeTest.cmake

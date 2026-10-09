@@ -93,6 +93,7 @@ if(
             "-DNOMAD_COMPILER=$<TARGET_FILE:nomadc>"
             "-DNOMAD_RUNTIME_SUFFIX=$<TARGET_FILE_SUFFIX:nomad-runtime>"
             "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/package-integration/$<CONFIG>"
+            "-DNOMAD_PACKAGE_ARTIFACT_DIR=${CMAKE_CURRENT_BINARY_DIR}/package-artifact/$<CONFIG>"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/PackageIntegrationTest.cmake"
     )
     set_tests_properties(

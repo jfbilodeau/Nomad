@@ -182,7 +182,23 @@ The normal Windows and Linux test presets also run an end-to-end packaging
 test. It initializes a project in a Unicode path, packages and checks the
 release, starts the packaged runtime with `--help`, verifies exclusions and
 overwrite protection, and confirms a failed compilation preserves the
-previous package.
+previous package. It also checks Unicode resource filenames, bundled notices,
+Unix executable permissions, and identical ZIP bytes after source timestamps
+change. The tested ZIP and its standalone startup script are retained under
+the build directory's `tests/package-artifact/<configuration>` directory.
+
+CI builds Release packages and starts the tested archives on fresh Windows
+and Ubuntu runners without checking out source or restoring build output.
+Startup uses only package-local and system dependency search paths. This
+checks runtime loading and `--help`, not graphical gameplay or every optional
+codec. Hosted runners include system libraries and, on Windows, the Visual
+C++ runtime; testing a pristine installation remains a separate release check.
+
+Bundled notices cover the core dependencies and SDL_image's embedded
+stb_image, NanoSVG, QOI, tiny_jpeg, and miniz implementations. libarchive and
+zlib notices are included conservatively for the project library's packaging
+dependencies. Optional system codecs enabled by a particular build must be
+reviewed separately before redistributing those libraries.
 
 For faster repeat builds, install `ccache`; CMake uses it automatically when
 it is available:

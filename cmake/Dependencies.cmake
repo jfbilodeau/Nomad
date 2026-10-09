@@ -138,6 +138,8 @@ function(nomadConfigureArchiveDependencies)
 endfunction()
 
 nomadConfigureArchiveDependencies()
+FetchContent_GetProperties(libarchive SOURCE_DIR libarchive_SOURCE_DIR)
+FetchContent_GetProperties(zlib SOURCE_DIR zlib_SOURCE_DIR)
 
 if(MSVC)
     target_compile_options(box2d PRIVATE /wd4201)

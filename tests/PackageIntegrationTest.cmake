@@ -131,6 +131,18 @@ require_path("${PACKAGED_RUNTIME}" "Packaged runtime")
 require_path("${PACKAGE_DIR}/licenses/Nomad.txt" "Nomad license")
 require_path("${PACKAGE_DIR}/licenses/SDL.txt" "SDL license")
 require_path("${PACKAGE_DIR}/licenses/FreeType.txt" "FreeType license")
+foreach(LICENSE IN ITEMS
+    Boost Box2D DearImGui tomlplusplus libarchive zlib SDL_image SDL_ttf
+    HarfBuzz plutosvg plutovg stb_image NanoSVG NanoSVG_rasterizer QOI tiny_jpeg miniz
+    ThirdPartyNotices
+)
+    set(LICENSE_PATH "${PACKAGE_DIR}/licenses/${LICENSE}.txt")
+    require_path("${LICENSE_PATH}" "${LICENSE} license")
+    file(SIZE "${LICENSE_PATH}" LICENSE_SIZE)
+    if(LICENSE_SIZE EQUAL 0)
+        message(FATAL_ERROR "Empty ${LICENSE} license")
+    endif()
+endforeach()
 reject_path("${PACKAGE_DIR}/runtime.json" "Internal runtime bundle manifest")
 reject_path("${PACKAGE_DIR}/res/development/notes.txt" "Excluded development resource")
 reject_path("${PACKAGE_DIR}/res/sprite.aseprite" "Excluded Aseprite resource")
@@ -150,8 +162,11 @@ run_success(
     "${NOMAD_CLI}" check "${PACKAGE_DIR}"
 )
 run_success(
-    "Packaged runtime startup"
-    "${PACKAGED_RUNTIME}" --help
+    "Isolated packaged runtime startup"
+    "${CMAKE_COMMAND}"
+    "-DNOMAD_PACKAGE_ARCHIVE=${PACKAGE_ARCHIVE}"
+    "-DNOMAD_PACKAGE_DIRECTORY=${NOMAD_TEST_ROOT}/isolated"
+    -P "${CMAKE_CURRENT_LIST_DIR}/PackageSmokeTest.cmake"
 )
 
 run_failure(
@@ -160,13 +175,29 @@ run_failure(
 )
 
 file(SHA256 "${PACKAGE_ARCHIVE}" FIRST_CHECKSUM)
+file(TIMESTAMP "${PROJECT_DIR}/res/keep.txt" ORIGINAL_TIMESTAMP "%s")
+run_success("Wait for distinct source timestamp" "${CMAKE_COMMAND}" -E sleep 2)
+file(GLOB_RECURSE SOURCE_FILES LIST_DIRECTORIES FALSE "${PROJECT_DIR}/res/*")
+file(TOUCH ${SOURCE_FILES} "${PROJECT_DIR}/nomad.toml")
+file(TIMESTAMP "${PROJECT_DIR}/res/keep.txt" CHANGED_TIMESTAMP "%s")
+if(ORIGINAL_TIMESTAMP STREQUAL CHANGED_TIMESTAMP)
+    message(FATAL_ERROR "Source timestamp did not change before reproducibility check")
+endif()
 run_success(
     "Forced package replacement"
     "${NOMAD_CLI}" package "${PROJECT_DIR}" --force
 )
 file(SHA256 "${PACKAGE_ARCHIVE}" REPEATED_CHECKSUM)
 if(NOT FIRST_CHECKSUM STREQUAL REPEATED_CHECKSUM)
-    message(FATAL_ERROR "Repeated packaging produced different archive bytes")
+    message(FATAL_ERROR "Changing source timestamps produced different archive bytes")
+endif()
+
+if(DEFINED NOMAD_PACKAGE_ARTIFACT_DIR)
+    file(MAKE_DIRECTORY "${NOMAD_PACKAGE_ARTIFACT_DIR}")
+    get_filename_component(ARCHIVE_NAME "${PACKAGE_ARCHIVE}" NAME)
+    file(COPY_FILE "${PACKAGE_ARCHIVE}" "${NOMAD_PACKAGE_ARTIFACT_DIR}/${ARCHIVE_NAME}")
+    file(COPY_FILE "${CMAKE_CURRENT_LIST_DIR}/PackageSmokeTest.cmake"
+        "${NOMAD_PACKAGE_ARTIFACT_DIR}/PackageSmokeTest.cmake")
 endif()
 
 file(WRITE "${PROJECT_DIR}/res/scripts/init.nomad" "missing.statement\n")
