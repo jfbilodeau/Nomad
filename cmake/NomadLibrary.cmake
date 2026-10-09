@@ -53,6 +53,7 @@ else()
         ${NOMAD_SOURCE_DIR}/nomad/game/InputManager.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/TileMapData.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/VariablePersistence.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectPackager.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/ResourceManager.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteAtlas.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/Documentation.cpp
