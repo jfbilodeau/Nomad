@@ -42,135 +42,19 @@ if(NOMAD_ENABLE_SANITIZERS)
         endif()
 endif()
 
-set(Boost_USE_STATIC_LIBS ON)
+include(cmake/Dependencies.cmake)
 
-#set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(SDL2IMAGE_INSTALL OFF CACHE BOOL "" FORCE)
-#set(DAV1D_ASM OFF CACHE BOOL "" FORCE)
-#set(AOM_TARGET_CPU generic CACHE STRING "" FORCE)
-set(SDL2IMAGE_AVIF OFF CACHE BOOL "" FORCE)
-set(SDL2IMAGE_JXL OFF CACHE BOOL "" FORCE)
-set(SDLIMAGE_VENDORED OFF CACHE BOOL "" FORCE)
-
-#set(SDL2IMAGE_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(SDL2TTF_SAMPLES OFF CACHE BOOL "" FORCE)
-set(SDL2TTF_INSTALL OFF CACHE BOOL "" FORCE)
-#set(SDL2IMAGE_DEPS_SHARED OFF CACHE BOOL "" FORCE)
-set(SDLTTF_VENDORED ON CACHE BOOL "" FORCE)
-set(SDL2NET_INSTALL OFF CACHE BOOL "" FORCE)
-
-set(BOX2D_COMPILE_WARNING_AS_ERROR OFF CACHE BOOL "" FORCE)
-
-set(FETCHCONTENT_QUIET OFF)
-
-include(FetchContent)
-
-set(
-        BOOST_INCLUDE_LIBRARIES
-        algorithm
-        dll
-        exception
-        json
-        nowide
-        phoenix
-        process
-        program_options
-        spirit
-        test
-        tokenizer
-)
-
-FetchContent_Declare(
-        Boost
-        URL https://github.com/boostorg/boost/releases/download/boost-1.88.0/boost-1.88.0-cmake.tar.xz
-        URL_HASH SHA256=f48b48390380cfb94a629872346e3a81370dc498896f16019ade727ab72eb1ec
-        OVERRIDE_FIND_PACKAGE
-        EXCLUDE_FROM_ALL
-)
-
-FetchContent_Declare(
-        SDL
-        GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-        GIT_TAG release-3.2.22
-        GIT_SHALLOW    TRUE
-        GIT_PROGRESS   TRUE
-        OVERRIDE_FIND_PACKAGE
-        EXCLUDE_FROM_ALL
-)
-
-FetchContent_Declare(
-        SDL_image
-        GIT_REPOSITORY https://github.com/libsdl-org/SDL_image.git
-        GIT_TAG release-3.2.4
-        GIT_SHALLOW    TRUE
-        GIT_PROGRESS   TRUE
-        GIT_SUBMODULES ""
-        GIT_SUBMODULES_RECURSE FALSE
-        OVERRIDE_FIND_PACKAGE
-        EXCLUDE_FROM_ALL
-)
-
-FetchContent_Declare(
-        SDL_ttf
-        GIT_REPOSITORY https://github.com/libsdl-org/SDL_ttf.git
-        GIT_TAG release-3.2.2
-        GIT_SHALLOW    TRUE
-        GIT_PROGRESS   TRUE
-        OVERRIDE_FIND_PACKAGE
-        EXCLUDE_FROM_ALL
-)
-
-FetchContent_Declare(
-        DearImGui
-        GIT_REPOSITORY https://github.com/ocornut/imgui.git
-        GIT_TAG v1.92.9
-        GIT_SHALLOW    TRUE
-        GIT_PROGRESS   TRUE
-        OVERRIDE_FIND_PACKAGE
-        EXCLUDE_FROM_ALL
-)
-
-FetchContent_Declare(
-        box2d
-        GIT_REPOSITORY https://github.com/erincatto/box2d
-        GIT_TAG v3.1.1
-        GIT_SHALLOW    TRUE
-        GIT_PROGRESS   TRUE
-        OVERRIDE_FIND_PACKAGE
-        EXCLUDE_FROM_ALL
-)
-
-FetchContent_Declare(
-        tomlplusplus
-        GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
-        GIT_TAG v3.4.0
-        GIT_SHALLOW TRUE
-        GIT_PROGRESS TRUE
-        EXCLUDE_FROM_ALL
-)
-
-FetchContent_MakeAvailable(Boost box2d SDL SDL_image SDL_ttf DearImGui tomlplusplus)
-#FetchContent_GetProperties(DearImGui)
-
-# find_package(Boost REQUIRED algorithm exception json phoenix program_options spirit unit_test_framework tokenizer)
-#if(NOT TARGET SDL3::SDL3)
-#    find_package(SDL3 REQUIRED CONFIG)
-#endif()
-#if(NOT TARGET SDL3_image::SDL3_image)
-#    find_package(SDL3_image REQUIRED CONFIG)
-#endif()
-#if(NOT TARGET SDL3_ttf::SDL3_ttf)
-#    find_package(SDL3_ttf REQUIRED CONFIG)
-#endif()
-#find_package(SDL3 REQUIRED CONFIG)
-#find_package(SDL3_image REQUIRED CONFIG)
-#find_package(SDL3_ttf REQUIRED CONFIG)
-#find_package(DearImGui REQUIRED)
-#find_package(box2d REQUIRED)
-
-if(MSVC)
-    target_compile_options(box2d PRIVATE /wd4201)
+string(TOLOWER "${CMAKE_SYSTEM_NAME}" NOMAD_PACKAGE_SYSTEM)
+if(APPLE)
+    set(NOMAD_PACKAGE_SYSTEM macos)
 endif()
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" NOMAD_PACKAGE_ARCHITECTURE)
+if(CMAKE_GENERATOR_PLATFORM STREQUAL "x64" OR NOMAD_PACKAGE_ARCHITECTURE MATCHES "^(amd64|x86_64)$")
+    set(NOMAD_PACKAGE_ARCHITECTURE x64)
+elseif(NOMAD_PACKAGE_ARCHITECTURE MATCHES "^(aarch64|arm64)$")
+    set(NOMAD_PACKAGE_ARCHITECTURE arm64)
+endif()
+set(NOMAD_PACKAGE_PLATFORM "${NOMAD_PACKAGE_SYSTEM}-${NOMAD_PACKAGE_ARCHITECTURE}")
 
 set(NOMAD_SOURCE_DIR ${CMAKE_SOURCE_DIR}/src)
 set(NOMAD_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
@@ -472,6 +356,7 @@ set(
 #)
 
 include(cmake/NomadLibrary.cmake)
+target_compile_definitions(nomad-project PRIVATE NOMAD_PACKAGE_PLATFORM="${NOMAD_PACKAGE_PLATFORM}")
 
 add_library(nomad-cli-options INTERFACE)
 add_library(Nomad::CliOptions ALIAS nomad-cli-options)
@@ -534,6 +419,7 @@ endif()
 option(NOMAD_BUILD_RUNTIME "Build the Nomad game runtime" ON)
 if(NOMAD_BUILD_RUNTIME)
     add_executable(nomad-runtime apps/runtime/main.cpp)
+    set_target_properties(nomad-runtime PROPERTIES WIN32_EXECUTABLE TRUE)
     target_link_libraries(nomad-runtime PRIVATE Nomad::Engine)
 
     if(WIN32)

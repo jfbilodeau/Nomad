@@ -4,10 +4,16 @@
 
 #include <nomad/system/Path.hpp>
 
+#include <archive.h>
+#include <archive_entry.h>
+
 #include <algorithm>
+#include <array>
+#include <cerrno>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <system_error>
 #include <vector>
 
@@ -293,18 +299,81 @@ std::vector<NomadPath> copyRuntime(
     return files;
 }
 
-bool isEmptyDirectory(const NomadPath& path) {
-    std::error_code error;
-    const auto empty = std::filesystem::is_empty(path, error);
-
-    if (error) {
-        raiseFilesystemError("Failed to inspect package output directory", path, error);
+void checkArchive(const int result, archive* writer) {
+    if (result != ARCHIVE_OK) {
+        const auto* message = archive_error_string(writer);
+        throw ProjectPackagingError("Failed to write ZIP archive: " + NomadString(message ? message : "unknown archive error"));
     }
+}
 
-    return empty;
+la_ssize_t writeArchiveData(archive* writer, void* context, const void* data, const size_t size) {
+    auto& output = *static_cast<std::ofstream*>(context);
+    output.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
+    if (!output) {
+        archive_set_error(writer, EIO, "Failed to write archive output");
+        return -1;
+    }
+    return static_cast<la_ssize_t>(size);
+}
+
+void writeArchive(const NomadPath& destination, const NomadPath& staging, const std::vector<NomadPath>& files) {
+    std::ofstream output(destination, std::ios::binary | std::ios::trunc);
+    if (!output) {
+        throw ProjectPackagingError("Failed to open ZIP archive '" + pathToUtf8(destination) + "'");
+    }
+    const std::unique_ptr<archive, decltype(&archive_write_free)> writer(archive_write_new(), &archive_write_free);
+    if (!writer) {
+        throw ProjectPackagingError("Failed to allocate ZIP writer");
+    }
+    checkArchive(archive_write_set_format_zip(writer.get()), writer.get());
+    checkArchive(archive_write_set_options(writer.get(), "zip:compression=deflate,zip:compression-level=6,zip:hdrcharset=UTF-8"), writer.get());
+    checkArchive(archive_write_set_bytes_per_block(writer.get(), 0), writer.get());
+    checkArchive(archive_write_open(writer.get(), &output, nullptr, &writeArchiveData, nullptr), writer.get());
+
+    std::array<char, 65536> buffer{};
+    for (const auto& file : files) {
+        std::ifstream input(file, std::ios::binary);
+        if (!input) {
+            throw ProjectPackagingError("Failed to read staged file '" + pathToUtf8(file) + "'");
+        }
+        const std::unique_ptr<archive_entry, decltype(&archive_entry_free)> entry(archive_entry_new(), &archive_entry_free);
+        if (!entry) {
+            throw ProjectPackagingError("Failed to allocate ZIP entry");
+        }
+        const auto name = pathToGenericUtf8(file.lexically_relative(staging));
+        archive_entry_set_pathname_utf8(entry.get(), name.c_str());
+        archive_entry_set_filetype(entry.get(), AE_IFREG);
+        const auto permissions = std::filesystem::status(file).permissions();
+        const auto executable = (permissions & (std::filesystem::perms::owner_exec |
+            std::filesystem::perms::group_exec | std::filesystem::perms::others_exec)) != std::filesystem::perms::none;
+        archive_entry_set_perm(entry.get(), executable ? 0755 : 0644);
+        archive_entry_set_size(entry.get(), static_cast<la_int64_t>(std::filesystem::file_size(file)));
+        archive_entry_set_mtime(entry.get(), 315532800, 0);
+        checkArchive(archive_write_header(writer.get(), entry.get()), writer.get());
+        while (input) {
+            input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+            const auto size = input.gcount();
+            if (size > 0 && archive_write_data(writer.get(), buffer.data(), static_cast<size_t>(size)) != size) {
+                throw ProjectPackagingError("Failed to write ZIP entry '" + name + "'");
+            }
+        }
+        if (!input.eof()) {
+            throw ProjectPackagingError("Failed to read staged file '" + pathToUtf8(file) + "'");
+        }
+        checkArchive(archive_write_finish_entry(writer.get()), writer.get());
+    }
+    checkArchive(archive_write_close(writer.get()), writer.get());
+    output.close();
+    if (!output) {
+        throw ProjectPackagingError("Failed to close ZIP archive '" + pathToUtf8(destination) + "'");
+    }
 }
 
 } // namespace
+
+NomadStringView getPackagePlatform() {
+    return NOMAD_PACKAGE_PLATFORM;
+}
 
 ProjectPackageResult packageProject(
     const ProjectConfiguration& configuration,
@@ -320,19 +389,30 @@ ProjectPackageResult packageProject(
         throw ProjectPackagingError("Configuration field 'package.output' must be a project-relative directory");
     }
 
-    const auto output = (configuration.root / configuration.package.output).lexically_normal();
+    const auto outputDirectory = (configuration.root / configuration.package.output).lexically_normal();
     const auto resources = resolveProjectResourcePath(configuration);
 
     if (
-        output == configuration.root ||
-        isWithin(output, resources) ||
-        isWithin(resources, output)
+        outputDirectory == configuration.root ||
+        isWithin(outputDirectory, resources) ||
+        isWithin(resources, outputDirectory)
     ) {
         throw ProjectPackagingError("Package output must not contain or replace the project resources");
     }
 
+    const auto validComponent = [](const NomadString& value) {
+        return !value.empty() && value.find_first_of("/\\<>:\"|?*") == NomadString::npos &&
+            std::ranges::none_of(value, [](const unsigned char character) { return character < 32; });
+    };
+    if (!validComponent(configuration.project.executable) || !validComponent(configuration.project.version)) {
+        throw ProjectPackagingError("Project executable and version must be valid archive filename components");
+    }
+    const auto output = outputDirectory / pathFromUtf8(configuration.project.executable + "-" +
+        NomadString(getPackagePlatform()) + "-" + configuration.project.version + ".zip");
     auto staging = output;
-    staging += ".tmp";
+    staging += ".staging";
+    auto temporaryArchive = output;
+    temporaryArchive += ".tmp";
     auto backup = output;
     backup += ".backup";
     std::error_code error;
@@ -359,17 +439,23 @@ ProjectPackageResult packageProject(
         raiseFilesystemError("Failed to inspect package output directory", output, error);
     }
 
-    if (outputExists && !std::filesystem::is_directory(output, error)) {
-        throw ProjectPackagingError("Package output is not a directory: '" + pathToUtf8(output) + "'");
+    if (std::filesystem::exists(temporaryArchive, error)) {
+        throw ProjectPackagingError("Temporary ZIP archive already exists: '" + pathToUtf8(temporaryArchive) + "'");
+    }
+    if (error) {
+        raiseFilesystemError("Failed to inspect temporary ZIP archive", temporaryArchive, error);
+    }
+    if (outputExists && !std::filesystem::is_regular_file(output, error)) {
+        throw ProjectPackagingError("Package output is not a regular file: '" + pathToUtf8(output) + "'");
     }
 
     if (error) {
         raiseFilesystemError("Failed to inspect package output directory", output, error);
     }
 
-    if (outputExists && !force && !isEmptyDirectory(output)) {
+    if (outputExists && !force) {
         throw ProjectPackagingError(
-            "Package output directory is not empty; use --force to replace it: '" + pathToUtf8(output) + "'"
+            "Package archive already exists; use --force to replace it: '" + pathToUtf8(output) + "'"
         );
     }
 
@@ -391,6 +477,17 @@ ProjectPackageResult packageProject(
         }
 
         stagedFiles.push_back(manifest);
+        std::ranges::sort(stagedFiles, {}, [&](const auto& file) {
+            return pathToGenericUtf8(file.lexically_relative(staging));
+        });
+
+        if (!dryRun) {
+            writeArchive(temporaryArchive, staging, stagedFiles);
+            std::filesystem::remove_all(staging, error);
+            if (error) {
+                raiseFilesystemError("Failed to remove package staging directory", staging, error);
+            }
+        }
 
         if (!dryRun && outputExists) {
             std::filesystem::rename(output, backup, error);
@@ -401,12 +498,15 @@ ProjectPackageResult packageProject(
         }
 
         if (!dryRun) {
-            std::filesystem::rename(staging, output, error);
+            std::filesystem::rename(temporaryArchive, output, error);
 
             if (error) {
                 if (outputExists) {
                     std::error_code restoreError;
                     std::filesystem::rename(backup, output, restoreError);
+                    if (restoreError) {
+                        raiseFilesystemError("Failed to restore previous package; backup retained at", backup, restoreError);
+                    }
                 }
 
                 raiseFilesystemError("Failed to publish package output", output, error);
@@ -423,6 +523,13 @@ ProjectPackageResult packageProject(
     } catch (...) {
         if (!dryRun) {
             std::filesystem::remove_all(staging, error);
+            if (error) {
+                raiseFilesystemError("Failed to clean package staging directory", staging, error);
+            }
+            std::filesystem::remove(temporaryArchive, error);
+            if (error) {
+                raiseFilesystemError("Failed to clean temporary ZIP archive", temporaryArchive, error);
+            }
         }
 
         throw;
@@ -432,7 +539,7 @@ ProjectPackageResult packageProject(
     files.reserve(stagedFiles.size());
 
     for (const auto& stagedFile : stagedFiles) {
-        files.push_back(output / stagedFile.lexically_relative(staging));
+        files.push_back(stagedFile.lexically_relative(staging));
     }
 
     std::ranges::sort(files);

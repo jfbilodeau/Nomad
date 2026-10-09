@@ -3,13 +3,19 @@
 #include <nomad/project/ProjectConfiguration.hpp>
 #include <nomad/project/ProjectPackager.hpp>
 
+#include <nomad/system/Path.hpp>
+
 #include <TestDirectory.hpp>
 
 #include <boost/test/unit_test.hpp>
 
+#include <archive.h>
+#include <archive_entry.h>
+
 #include <algorithm>
 #include <fstream>
 #include <iterator>
+#include <memory>
 
 using namespace nomad;
 using namespace nomad::test;
@@ -44,6 +50,33 @@ NomadString readFile(const NomadPath& path) {
     };
 }
 
+NomadPath archivePath(const TestDirectory& directory) {
+    return directory.getPath() / "dist" /
+        ("package-test-" + NomadString(getPackagePlatform()) + "-1.2.3.zip");
+}
+
+void extractArchive(const NomadPath& source, const NomadPath& destination) {
+    const auto bytes = readFile(source);
+    const std::unique_ptr<archive, decltype(&archive_read_free)> reader(archive_read_new(), &archive_read_free);
+    BOOST_REQUIRE_EQUAL(archive_read_support_format_zip(reader.get()), ARCHIVE_OK);
+    BOOST_REQUIRE_EQUAL(archive_read_open_memory(reader.get(), bytes.data(), bytes.size()), ARCHIVE_OK);
+    archive_entry* entry = nullptr;
+    auto result = ARCHIVE_OK;
+    while ((result = archive_read_next_header(reader.get(), &entry)) == ARCHIVE_OK) {
+        const auto path = destination / std::filesystem::u8path(archive_entry_pathname(entry));
+        std::filesystem::create_directories(path.parent_path());
+        std::ofstream output(path, std::ios::binary);
+        char buffer[4096];
+        la_ssize_t size;
+        while ((size = archive_read_data(reader.get(), buffer, sizeof(buffer))) > 0) {
+            output.write(buffer, size);
+        }
+        BOOST_REQUIRE_EQUAL(size, 0);
+        BOOST_REQUIRE(output.good());
+    }
+    BOOST_REQUIRE_EQUAL(result, ARCHIVE_EOF);
+}
+
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(project_packager)
@@ -61,7 +94,7 @@ BOOST_AUTO_TEST_CASE(dry_run_lists_package_files_without_writing_output)
 
     const auto configuration = loadProjectConfiguration(projectFile);
     const auto result = packageProject(configuration, runtimeDirectory, false, true);
-    const auto output = directory.getPath() / "dist";
+    const auto output = archivePath(directory);
 
     BOOST_TEST(result.output == output);
     BOOST_TEST(result.files.size() == 5U);
@@ -78,7 +111,13 @@ BOOST_AUTO_TEST_CASE(dry_run_lists_package_files_without_writing_output)
         return file.filename() == NOMAD_PROJECT_FILE_NAME;
     }));
     BOOST_TEST(!std::filesystem::exists(output));
-    BOOST_TEST(!std::filesystem::exists(directory.getPath() / "dist.tmp"));
+    BOOST_TEST(!std::filesystem::exists(directory.getPath() / "dist"));
+    auto staging = output;
+    staging += ".staging";
+    auto temporaryArchive = output;
+    temporaryArchive += ".tmp";
+    BOOST_TEST(!std::filesystem::exists(staging));
+    BOOST_TEST(!std::filesystem::exists(temporaryArchive));
     BOOST_TEST(!std::filesystem::exists(directory.getPath() / "dist.backup"));
 }
 
@@ -98,8 +137,9 @@ BOOST_AUTO_TEST_CASE(packages_runtime_resources_and_release_manifest)
     const auto configuration = loadProjectConfiguration(projectFile);
     const auto result = packageProject(configuration, runtimeDirectory, false);
 
-    const auto output = directory.getPath() / "dist";
-    BOOST_TEST(result.output == output);
+    const auto output = directory.getPath() / "extracted";
+    BOOST_TEST(result.output == archivePath(directory));
+    extractArchive(result.output, output);
     BOOST_TEST(std::filesystem::is_regular_file(output / "package-test.exe"));
     BOOST_TEST(std::filesystem::is_regular_file(output / "SDL3.dll"));
     BOOST_TEST(std::filesystem::is_regular_file(output / "res/scripts/start.nomad"));
@@ -119,6 +159,11 @@ BOOST_AUTO_TEST_CASE(packages_runtime_resources_and_release_manifest)
         static_cast<int>(ProjectConfigurationType::Release)
     );
     BOOST_TEST(resolveProjectResourcePath(release) == output / "res");
+
+    const auto firstArchive = readFile(result.output);
+    const auto repeated = packageProject(configuration, runtimeDirectory, true);
+    BOOST_TEST(readFile(repeated.output) == firstArchive);
+    BOOST_TEST(!std::filesystem::exists(NomadPath(pathToUtf8(result.output) + ".staging")));
 }
 
 BOOST_AUTO_TEST_CASE(requires_force_to_replace_nonempty_output)
@@ -128,8 +173,10 @@ BOOST_AUTO_TEST_CASE(requires_force_to_replace_nonempty_output)
     directory.write("assets/scripts/start.nomad", "return\n");
     const auto runtimeDirectory = directory.getPath() / "runtime";
     directory.write("runtime/nomad-runtime", "runtime");
-    directory.write("dist/old.txt", "old");
+    directory.write("dist/keep.txt", "unrelated");
     const auto configuration = loadProjectConfiguration(projectFile);
+    const auto original = packageProject(configuration, runtimeDirectory, false);
+    const auto originalBytes = readFile(original.output);
 
     BOOST_CHECK_EXCEPTION(
         (void)packageProject(configuration, runtimeDirectory, false),
@@ -138,12 +185,16 @@ BOOST_AUTO_TEST_CASE(requires_force_to_replace_nonempty_output)
             return NomadString(error.what()).find("use --force") != NomadString::npos;
         }
     );
-    BOOST_TEST(std::filesystem::is_regular_file(directory.getPath() / "dist/old.txt"));
+    BOOST_TEST(readFile(original.output) == originalBytes);
+    const auto preview = packageProject(configuration, runtimeDirectory, true, true);
+    BOOST_TEST(preview.output == original.output);
+    BOOST_TEST(readFile(original.output) == originalBytes);
 
     const auto result = packageProject(configuration, runtimeDirectory, true);
-    BOOST_TEST(result.output == directory.getPath() / "dist");
-    BOOST_TEST(!std::filesystem::exists(directory.getPath() / "dist/old.txt"));
-    BOOST_TEST(std::filesystem::is_regular_file(directory.getPath() / "dist/package-test"));
+    BOOST_TEST(result.output == archivePath(directory));
+    BOOST_TEST(readFile(directory.getPath() / "dist/keep.txt") == "unrelated");
+    extractArchive(result.output, directory.getPath() / "extracted");
+    BOOST_TEST(std::filesystem::is_regular_file(directory.getPath() / "extracted/package-test"));
 }
 
 BOOST_AUTO_TEST_CASE(cleans_staging_directory_after_failure)
@@ -159,8 +210,14 @@ BOOST_AUTO_TEST_CASE(cleans_staging_directory_after_failure)
         (void)packageProject(configuration, runtimeDirectory, false),
         ProjectPackagingError
     );
-    BOOST_TEST(!std::filesystem::exists(directory.getPath() / "dist"));
-    BOOST_TEST(!std::filesystem::exists(directory.getPath() / "dist.tmp"));
+    const auto output = archivePath(directory);
+    BOOST_TEST(!std::filesystem::exists(output));
+    auto staging = output;
+    staging += ".staging";
+    auto temporaryArchive = output;
+    temporaryArchive += ".tmp";
+    BOOST_TEST(!std::filesystem::exists(staging));
+    BOOST_TEST(!std::filesystem::exists(temporaryArchive));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

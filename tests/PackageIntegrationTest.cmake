@@ -58,7 +58,8 @@ function(reject_path PATH DESCRIPTION)
 endfunction()
 
 set(PROJECT_DIR "${NOMAD_TEST_ROOT}/Package 日本語 Game")
-set(PACKAGE_DIR "${PROJECT_DIR}/dist")
+set(PACKAGE_DIR "${NOMAD_TEST_ROOT}/extracted")
+set(OUTPUT_DIR "${PROJECT_DIR}/dist")
 set(PACKAGED_RUNTIME "${PACKAGE_DIR}/package-game${NOMAD_RUNTIME_SUFFIX}")
 
 file(REMOVE_RECURSE "${NOMAD_TEST_ROOT}")
@@ -95,7 +96,7 @@ run_success(
     "Package dry run"
     "${NOMAD_CLI}" package "${PROJECT_DIR}" --dry-run
 )
-reject_path("${PACKAGE_DIR}" "Package output after dry run")
+reject_path("${OUTPUT_DIR}" "Package output after dry run")
 reject_path("${PROJECT_DIR}/dist.tmp" "Package staging directory after dry run")
 reject_path("${PROJECT_DIR}/dist.backup" "Package backup directory after dry run")
 
@@ -103,6 +104,19 @@ run_success(
     "Project packaging"
     "${NOMAD_CLI}" package "${PROJECT_DIR}"
 )
+
+file(GLOB ARCHIVES "${OUTPUT_DIR}/package-game-*-0.1.0.zip")
+list(LENGTH ARCHIVES ARCHIVE_COUNT)
+if(NOT ARCHIVE_COUNT EQUAL 1)
+    message(FATAL_ERROR "Expected exactly one named game ZIP, got: ${ARCHIVES}")
+endif()
+list(GET ARCHIVES 0 PACKAGE_ARCHIVE)
+file(ARCHIVE_EXTRACT INPUT "${PACKAGE_ARCHIVE}" DESTINATION "${PACKAGE_DIR}")
+file(GLOB OUTPUT_FILES "${OUTPUT_DIR}/*")
+list(LENGTH OUTPUT_FILES OUTPUT_COUNT)
+if(NOT OUTPUT_COUNT EQUAL 1)
+    message(FATAL_ERROR "Packaging left files other than its ZIP: ${OUTPUT_FILES}")
+endif()
 
 require_path("${PACKAGE_DIR}/nomad.toml" "Release manifest")
 require_path("${PACKAGE_DIR}/res/scripts/init.nomad" "Packaged entry script")
@@ -135,19 +149,24 @@ run_failure(
     "${NOMAD_CLI}" package "${PROJECT_DIR}"
 )
 
-file(WRITE "${PACKAGE_DIR}/stale.txt" "stale")
+file(SHA256 "${PACKAGE_ARCHIVE}" FIRST_CHECKSUM)
 run_success(
     "Forced package replacement"
     "${NOMAD_CLI}" package "${PROJECT_DIR}" --force
 )
-reject_path("${PACKAGE_DIR}/stale.txt" "Replaced package file")
+file(SHA256 "${PACKAGE_ARCHIVE}" REPEATED_CHECKSUM)
+if(NOT FIRST_CHECKSUM STREQUAL REPEATED_CHECKSUM)
+    message(FATAL_ERROR "Repeated packaging produced different archive bytes")
+endif()
 
-file(WRITE "${PACKAGE_DIR}/preserved.txt" "preserved")
 file(WRITE "${PROJECT_DIR}/res/scripts/init.nomad" "missing.statement\n")
 run_failure(
     "Package compilation gate"
     "${NOMAD_CLI}" package "${PROJECT_DIR}" --force
 )
-require_path("${PACKAGE_DIR}/preserved.txt" "Previous package after failed compilation")
+file(SHA256 "${PACKAGE_ARCHIVE}" PRESERVED_CHECKSUM)
+if(NOT FIRST_CHECKSUM STREQUAL PRESERVED_CHECKSUM)
+    message(FATAL_ERROR "Failed compilation changed the previous archive")
+endif()
 
 file(REMOVE_RECURSE "${NOMAD_TEST_ROOT}")

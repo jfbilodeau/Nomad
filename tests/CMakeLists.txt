@@ -56,6 +56,7 @@ target_link_libraries(
     nomad
     Nomad::Project
     Nomad::CliOptions
+    archive_static
     Boost::unit_test_framework
 )
 

@@ -18,6 +18,8 @@ public:
     using NomadException::NomadException;
 };
 
+[[nodiscard]] NomadStringView getPackagePlatform();
+
 [[nodiscard]] ProjectPackageResult packageProject(
     const ProjectConfiguration& configuration,
     const NomadPath& runtimeDirectory,

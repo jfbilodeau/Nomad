@@ -43,13 +43,21 @@ is at least as new as the required `nomad.version`, and runs the sibling
 then launches the sibling `nomad-runtime` executable from the project root.
 
 `nomad package [directory] [--force] [--dry-run]` checks the project and creates
-a standalone package in `package.output`. It copies the project resources while
+a standalone ZIP in `package.output`, named
+`<project.executable>-<platform>-<project.version>.zip` (for example,
+`example-game-windows-x64-0.1.0.zip`). The platform identifies the installed
+host runtime; cross-target runtime selection is not yet supported.
+It copies the project resources into temporary staging while
 applying `package.exclude`, adds the runtime executable and its shared
 libraries, and names the executable using `project.executable`. Packaging
-refuses to replace a nonempty output directory unless `--force` is supplied.
+refuses to replace an existing archive unless `--force` is supplied. Only that
+archive is replaced; other files in the output directory are preserved.
 `-f` is an alias for `--force`.
 `--dry-run` lists the planned package files without creating or modifying the
-package output.
+package output. Archive entries are sorted and use normalized timestamps and
+permissions. Only the ZIP is retained; extracting it places the runtime,
+`nomad.toml`, and `res` at the extraction root. ZIP compression uses statically
+linked libarchive and zlib; no external archive utility is required.
 
 `nomad version` and `nomad --version` print the Nomad version. The version is
 defined once by the root CMake project and generated into the C++ targets.
@@ -102,6 +110,10 @@ release `nomad.toml` retains `schema`, project identity and version,
 
 ## Runtime
 
+On Windows, the runtime is built as a GUI application, so launching a packaged
+game does not open a console window. The `nomad` and `nomadc` tools remain
+console applications.
+
 `nomad-runtime` discovers `nomad.toml` from the current directory or one of
 its parents. It resolves `resources.directory` relative to the project root
 and executes the configured `project.entry` function. The
@@ -135,6 +147,10 @@ Documentation is written as Markdown.
 ## Build
 
 Nomad requires CMake 3.30 or newer and a C++20 compiler.
+
+Pinned third-party dependencies and their build configuration live in
+`cmake/Dependencies.cmake`, including the specialized libarchive and zlib
+configuration.
 
 ```console
 cmake --preset windows-debug
