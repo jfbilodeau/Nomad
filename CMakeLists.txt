@@ -493,6 +493,8 @@ if(NOMAD_BUILD_COMPILER)
     target_link_libraries(nomadc PRIVATE Nomad::Engine Nomad::Project Nomad::CliOptions Boost::nowide)
 endif()
 
+include(cmake/NomadDistribution.cmake)
+
 option(NOMAD_BUILD_TESTS "Build Nomad unit tests" ON)
 if(NOMAD_BUILD_TESTS AND BUILD_TESTING)
     add_subdirectory(tests)

@@ -87,6 +87,14 @@ if(
     TARGET nomad-runtime AND
     NOT NOMAD_ENABLE_SANITIZERS
 )
+    add_test(NAME nomad_distribution_integration
+        COMMAND "${CMAKE_COMMAND}"
+            "-DNOMAD_DISTRIBUTION_CONFIG=${NOMAD_DISTRIBUTION_CONFIG}"
+            "-DNOMAD_DISTRIBUTION_OUTPUT=${NOMAD_DISTRIBUTION_OUTPUT}"
+            "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/distribution-smoke/$<CONFIG>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/DistributionIntegrationTest.cmake")
+    set_tests_properties(nomad_distribution_integration PROPERTIES
+        LABELS integration RUN_SERIAL TRUE TIMEOUT 120)
     set(NOMAD_GRAPHICAL_SMOKE_PROJECT "${CMAKE_CURRENT_BINARY_DIR}/package-smoke-project")
     file(REMOVE_RECURSE "${NOMAD_GRAPHICAL_SMOKE_PROJECT}/res")
     file(GLOB_RECURSE NOMAD_GRAPHICAL_SMOKE_RESOURCES CONFIGURE_DEPENDS

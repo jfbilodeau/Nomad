@@ -178,6 +178,22 @@ On Linux, install Ninja and use the corresponding `linux-debug` preset. The
 The `linux-sanitizers` preset enables AddressSanitizer and
 UndefinedBehaviorSanitizer for Linux diagnostics.
 
+To create runnable SDK and runtime ZIPs, build the `nomad-distribution` target
+after configuring a preset. The archives and `SHA256SUMS.txt` are written to
+`distribution/<configuration>` under the build directory:
+
+- `nomad-sdk-<platform>-<version>.zip` contains `nomad`, `nomadc`,
+  `nomad-runtime`, their shared libraries, project templates, language
+  documentation, licenses, and the `runtime` bundle used for game packaging.
+- `nomad-runtime-<platform>-<version>.zip` contains the runtime bundle with
+  its `runtime.json`, shared libraries, and licenses.
+
+Extract the SDK into one directory and invoke its `nomad` executable, or add
+that directory to `PATH`. These distributions contain runnable tools, not
+C++ embedding headers or development libraries. Use Release builds for
+distribution; Debug archives use the same names in a separate configuration
+directory.
+
 For faster repeat builds, install `ccache`; CMake uses it automatically when
 it is available:
 

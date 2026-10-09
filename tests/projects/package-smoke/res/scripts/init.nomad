@@ -7,7 +7,7 @@ window.setSizeAndCenter 800 480
 window.setResolution 800 480
 window.setFps 60
 
-global.font = game.loadFont "fonts/PressStart2P-Regular.ttf" 26
+global.font = game.loadFont "fonts/ProggyClean.ttf" 26
 
 game.loadSpriteAtlas "images/checker.json"
 game.createScene scenes.smokeScene
