@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
+add_compile_definitions($<$<PLATFORM_ID:Windows>:_WIN32_WINNT=0x0A00>)
 
 set(NOMAD_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
 configure_file(
@@ -511,14 +512,15 @@ if(NOMAD_BUILD_CLI)
     )
 
     if(WIN32)
-        # Boost.Asio requires an explicit Windows target version.
-        target_compile_definitions(nomad-cli PRIVATE _WIN32_WINNT=0x0A00)
-
         add_custom_command(
             TARGET nomad-cli
             POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:nomad-cli> $<TARGET_FILE_DIR:nomad-cli>
-            COMMAND_EXPAND_LISTS
+            COMMAND
+                ${CMAKE_COMMAND}
+                "-DNOMAD_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-cli>,|>"
+                "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad-cli>"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
+            VERBATIM
         )
     endif()
 endif()
@@ -532,8 +534,12 @@ if(NOMAD_BUILD_RUNTIME)
         add_custom_command(
             TARGET nomad-runtime
             POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:nomad-runtime> $<TARGET_FILE_DIR:nomad-runtime>
-            COMMAND_EXPAND_LISTS
+            COMMAND
+                ${CMAKE_COMMAND}
+                "-DNOMAD_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-runtime>,|>"
+                "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad-runtime>"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
+            VERBATIM
         )
     elseif(APPLE)
         set_target_properties(nomad-runtime PROPERTIES BUILD_RPATH "@loader_path")
@@ -551,13 +557,12 @@ if(NOMAD_BUILD_RUNTIME)
             add_custom_target(
                 nomad-runtime-bundle
                 COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:nomad-runtime>/runtime"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:nomad-runtime>/runtime"
                 COMMAND
-                    ${CMAKE_COMMAND} -E copy
-                    "$<TARGET_FILE:nomad-runtime>"
-                    $<TARGET_RUNTIME_DLLS:nomad-runtime>
-                    "$<TARGET_FILE_DIR:nomad-runtime>/runtime"
-                COMMAND_EXPAND_LISTS
+                    ${CMAKE_COMMAND}
+                    "-DNOMAD_RUNTIME=$<TARGET_FILE:nomad-runtime>"
+                    "-DNOMAD_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-runtime>,|>"
+                    "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad-runtime>/runtime"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
                 DEPENDS nomad-runtime
                 VERBATIM
             )
@@ -565,11 +570,6 @@ if(NOMAD_BUILD_RUNTIME)
             add_custom_target(
                 nomad-runtime-bundle
                 COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:nomad-runtime>/runtime"
-                COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:nomad-runtime>/runtime"
-                COMMAND
-                    ${CMAKE_COMMAND} -E copy
-                    "$<TARGET_FILE:nomad-runtime>"
-                    "$<TARGET_FILE_DIR:nomad-runtime>/runtime"
                 COMMAND
                     ${CMAKE_COMMAND}
                     "-DNOMAD_RUNTIME=$<TARGET_FILE:nomad-runtime>"
