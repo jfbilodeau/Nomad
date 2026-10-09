@@ -1,0 +1,15 @@
+set(NOMAD_RUNTIME_LICENSES
+    "@CMAKE_SOURCE_DIR@/LICENSE|Nomad.txt"
+    "@boost_SOURCE_DIR@/LICENSE_1_0.txt|Boost.txt"
+    "@box2d_SOURCE_DIR@/LICENSE|Box2D.txt"
+    "@dearimgui_SOURCE_DIR@/LICENSE.txt|DearImGui.txt"
+    "@tomlplusplus_SOURCE_DIR@/LICENSE|tomlplusplus.txt"
+    "@sdl_SOURCE_DIR@/LICENSE.txt|SDL.txt"
+    "@sdl_image_SOURCE_DIR@/LICENSE.txt|SDL_image.txt"
+    "@sdl_ttf_SOURCE_DIR@/LICENSE.txt|SDL_ttf.txt"
+    "@sdl_ttf_SOURCE_DIR@/external/freetype/docs/FTL.TXT|FreeType.txt"
+    "@sdl_ttf_SOURCE_DIR@/external/harfbuzz/COPYING|HarfBuzz.txt"
+    "@sdl_ttf_SOURCE_DIR@/external/plutosvg/LICENSE|plutosvg.txt"
+    "@sdl_ttf_SOURCE_DIR@/external/plutovg/LICENSE|plutovg.txt"
+)
+set(NOMAD_STB_IMAGE_SOURCE "@sdl_image_SOURCE_DIR@/src/stb_image.h")

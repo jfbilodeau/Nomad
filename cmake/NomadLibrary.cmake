@@ -106,7 +106,7 @@ target_link_libraries(
     Boost::spirit
 )
 
-target_link_libraries(nomad-project PRIVATE tomlplusplus::tomlplusplus archive_static)
+target_link_libraries(nomad-project PRIVATE tomlplusplus::tomlplusplus archive_static Boost::json)
 
 target_link_libraries(
     nomad

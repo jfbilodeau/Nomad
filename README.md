@@ -46,7 +46,7 @@ then launches the sibling `nomad-runtime` executable from the project root.
 a standalone ZIP in `package.output`, named
 `<project.executable>-<platform>-<project.version>.zip` (for example,
 `example-game-windows-x64-0.1.0.zip`). The platform identifies the installed
-host runtime; cross-target runtime selection is not yet supported.
+runtime bundle target; cross-target runtime selection is not yet supported.
 It copies the project resources into temporary staging while
 applying `package.exclude`, adds the runtime executable and its shared
 libraries, and names the executable using `project.executable`. Packaging
@@ -113,6 +113,19 @@ release `nomad.toml` retains `schema`, project identity and version,
 On Windows, the runtime is built as a GUI application, so launching a packaged
 game does not open a console window. The `nomad` and `nomadc` tools remain
 console applications.
+
+The SDK's `runtime` directory contains a generated `runtime.json` bundle
+manifest (distinct from a game's `nomad.toml`). Schema 1 declares the exact
+Nomad `version`, `target`, and a `files` array of `{ "path": "...", "role": "..." }`
+entries. Roles are `runtime`, `library`, and `license`. Paths are relative to
+the bundle, use `/` separators, and cannot traverse outside it or use symbolic
+links. Exactly one root-level runtime executable and at least one license are
+required. Every declared file must exist; undeclared files are ignored.
+Packaging requires the bundle version to match the project's `nomad.version`,
+renames the declared runtime executable, and preserves the relative paths of
+libraries and licenses. The internal bundle manifest is not included in games.
+The build assembles license notices for Nomad and its core runtime dependencies
+under `licenses`, including the vendored font-rendering dependencies.
 
 `nomad-runtime` discovers `nomad.toml` from the current directory or one of
 its parents. It resolves `resources.directory` relative to the project root

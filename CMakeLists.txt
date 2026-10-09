@@ -445,6 +445,11 @@ if(NOMAD_BUILD_RUNTIME)
     endif()
 
     if(TARGET nomad-cli)
+        configure_file(
+            cmake/RuntimeLicenses.cmake.in
+            "${CMAKE_CURRENT_BINARY_DIR}/RuntimeLicenses.cmake"
+            @ONLY
+        )
         if(WIN32)
             add_custom_target(
                 nomad-runtime-bundle
@@ -452,6 +457,9 @@ if(NOMAD_BUILD_RUNTIME)
                 COMMAND
                     ${CMAKE_COMMAND}
                     "-DNOMAD_RUNTIME=$<TARGET_FILE:nomad-runtime>"
+                    "-DNOMAD_RUNTIME_VERSION=${PROJECT_VERSION}"
+                    "-DNOMAD_RUNTIME_TARGET=${NOMAD_PACKAGE_PLATFORM}"
+                    "-DNOMAD_RUNTIME_LICENSE_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/RuntimeLicenses.cmake"
                     "-DNOMAD_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-runtime>,|>"
                     "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad-runtime>/runtime"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
@@ -465,6 +473,9 @@ if(NOMAD_BUILD_RUNTIME)
                 COMMAND
                     ${CMAKE_COMMAND}
                     "-DNOMAD_RUNTIME=$<TARGET_FILE:nomad-runtime>"
+                    "-DNOMAD_RUNTIME_VERSION=${PROJECT_VERSION}"
+                    "-DNOMAD_RUNTIME_TARGET=${NOMAD_PACKAGE_PLATFORM}"
+                    "-DNOMAD_RUNTIME_LICENSE_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/RuntimeLicenses.cmake"
                     "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad-runtime>/runtime"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
                 DEPENDS nomad-runtime

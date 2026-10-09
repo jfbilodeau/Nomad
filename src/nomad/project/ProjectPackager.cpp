@@ -4,6 +4,8 @@
 
 #include <nomad/system/Path.hpp>
 
+#include <boost/json.hpp>
+
 #include <archive.h>
 #include <archive_entry.h>
 
@@ -14,6 +16,7 @@
 #include <fstream>
 #include <functional>
 #include <memory>
+#include <set>
 #include <system_error>
 #include <vector>
 
@@ -225,77 +228,131 @@ std::vector<NomadPath> copyResources(
     return files;
 }
 
+struct RuntimeBundleFile {
+    NomadPath path;
+    NomadString role;
+};
+
+struct RuntimeBundle {
+    NomadString target;
+    std::vector<RuntimeBundleFile> files;
+};
+
+RuntimeBundle loadRuntimeBundle(const ProjectConfiguration& configuration, const NomadPath& directory) {
+    const auto manifest = directory / "runtime.json";
+    std::error_code manifestError;
+    if (std::filesystem::is_symlink(std::filesystem::symlink_status(manifest, manifestError))) {
+        throw ProjectPackagingError("Runtime manifest must not be a symbolic link");
+    }
+    std::ifstream input(manifest, std::ios::binary);
+    if (!input) {
+        throw ProjectPackagingError("Failed to open runtime manifest '" + pathToUtf8(manifest) + "'");
+    }
+    const NomadString text{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    if (input.bad()) {
+        throw ProjectPackagingError("Failed to read runtime manifest '" + pathToUtf8(manifest) + "'");
+    }
+    boost::system::error_code parseError;
+    const auto value = boost::json::parse(text, parseError);
+    if (parseError || !value.is_object()) {
+        throw ProjectPackagingError("Invalid runtime manifest JSON: '" + pathToUtf8(manifest) + "'");
+    }
+    const auto& object = value.as_object();
+    const auto* schema = object.if_contains("schema");
+    const auto* version = object.if_contains("version");
+    const auto* target = object.if_contains("target");
+    const auto* entries = object.if_contains("files");
+    if (!schema || !schema->is_int64() || schema->as_int64() != 1 ||
+        !version || !version->is_string() || !target || !target->is_string() ||
+        !entries || !entries->is_array()) {
+        throw ProjectPackagingError("Runtime manifest requires schema 1, version, target, and files");
+    }
+    if (version->as_string() != configuration.nomad.version.toString()) {
+        throw ProjectPackagingError("Runtime bundle version does not match the project's required Nomad version");
+    }
+    RuntimeBundle bundle{NomadString(target->as_string()), {}};
+    if (bundle.target.empty() || std::ranges::any_of(bundle.target, [](const unsigned char character) {
+        return !(character >= 'a' && character <= 'z') && !(character >= '0' && character <= '9') && character != '-';
+    })) {
+        throw ProjectPackagingError("Runtime manifest target must contain only lowercase letters, digits, and hyphens");
+    }
+    auto runtimeCount = 0;
+    auto licenseCount = 0;
+    std::set<NomadString> paths;
+    for (const auto& entry : entries->as_array()) {
+        if (!entry.is_object()) {
+            throw ProjectPackagingError("Runtime manifest file entries must be objects");
+        }
+        const auto* pathValue = entry.as_object().if_contains("path");
+        const auto* roleValue = entry.as_object().if_contains("role");
+        if (!pathValue || !pathValue->is_string() || !roleValue || !roleValue->is_string()) {
+            throw ProjectPackagingError("Runtime manifest files require string path and role fields");
+        }
+        const NomadString name(pathValue->as_string());
+        const auto path = pathFromUtf8(name);
+        if (name.empty() || name.find_first_of("\\:") != NomadString::npos ||
+            std::ranges::any_of(name, [](const unsigned char character) { return character < 32; }) ||
+            pathToGenericUtf8(path.lexically_normal()) != name ||
+            path.is_absolute() || path.has_root_name() || std::ranges::any_of(path, [](const auto& part) {
+                return part == ".." || part == ".";
+            }) || !paths.insert(name).second) {
+            throw ProjectPackagingError("Unsafe or duplicate runtime manifest path: '" + name + "'");
+        }
+        const NomadString role(roleValue->as_string());
+        if (role == "runtime") {
+            ++runtimeCount;
+            if (path.has_parent_path()) {
+                throw ProjectPackagingError("Runtime executable must be at the bundle root");
+            }
+        } else if (role == "license") {
+            ++licenseCount;
+        } else if (role != "library") {
+            throw ProjectPackagingError("Unknown runtime manifest file role: '" + role + "'");
+        }
+        auto current = directory;
+        for (const auto& part : path) {
+            current /= part;
+            std::error_code error;
+            const auto status = std::filesystem::symlink_status(current, error);
+            if (error || std::filesystem::is_symlink(status)) {
+                throw ProjectPackagingError("Missing or symbolic-linked runtime file: '" + name + "'");
+            }
+        }
+        if (!std::filesystem::is_regular_file(directory / path)) {
+            throw ProjectPackagingError("Declared runtime file is not a regular file: '" + name + "'");
+        }
+        bundle.files.push_back({path, role});
+    }
+    if (runtimeCount != 1 || licenseCount == 0) {
+        throw ProjectPackagingError("Runtime manifest must declare exactly one runtime executable and at least one license");
+    }
+    return bundle;
+}
+
 std::vector<NomadPath> copyRuntime(
     const ProjectConfiguration& configuration,
     const NomadPath& runtimeDirectory,
+    const RuntimeBundle& bundle,
     const NomadPath& staging,
     const bool dryRun
 ) {
-    std::error_code error;
-
-    if (!std::filesystem::is_directory(runtimeDirectory, error)) {
-        if (error) {
-            raiseFilesystemError("Failed to inspect runtime directory", runtimeDirectory, error);
-        }
-
-        throw ProjectPackagingError(
-            "Nomad runtime bundle does not exist: '" + pathToUtf8(runtimeDirectory) + "'"
-        );
-    }
-
     std::vector<NomadPath> files;
-    auto foundRuntime = false;
-    std::filesystem::directory_iterator iterator(runtimeDirectory, error);
-    const std::filesystem::directory_iterator end;
-
-    while (iterator != end) {
-        if (error) {
-            raiseFilesystemError("Failed to read runtime directory", runtimeDirectory, error);
-        }
-
-        const auto& entry = *iterator;
-
-        if (!entry.is_regular_file(error)) {
-            if (error) {
-                raiseFilesystemError("Failed to inspect runtime file", entry.path(), error);
-            }
-
-            throw ProjectPackagingError(
-                "Unsupported entry in Nomad runtime bundle: '" + pathToUtf8(entry.path()) + "'"
-            );
-        }
-
-        auto destinationName = entry.path().filename();
-        const auto isRuntime =
-            destinationName == "nomad-runtime" ||
-            entry.path().stem() == "nomad-runtime";
-
-        if (isRuntime) {
-            if (foundRuntime) {
-                throw ProjectPackagingError("Nomad runtime bundle contains multiple runtime executables");
-            }
-
+    std::set<NomadPath> destinations{"nomad.toml"};
+    for (const auto& entry : bundle.files) {
+        auto destinationName = entry.path;
+        if (entry.role == "runtime") {
             destinationName = pathFromUtf8(configuration.project.executable);
-            destinationName += entry.path().extension();
-            foundRuntime = true;
+            destinationName += entry.path.extension();
         }
-
+        if (!destinations.insert(destinationName).second || *destinationName.begin() == "res") {
+            throw ProjectPackagingError("Runtime file collides with a package entry: '" + pathToUtf8(destinationName) + "'");
+        }
         const auto destination = staging / destinationName;
-
         if (!dryRun) {
-            copyFile(entry.path(), destination);
+            copyFile(runtimeDirectory / entry.path, destination);
         }
-
         files.push_back(destination);
-        iterator.increment(error);
     }
-
-    if (!foundRuntime) {
-        throw ProjectPackagingError(
-            "Nomad runtime bundle does not contain the nomad-runtime executable"
-        );
-    }
-
     return files;
 }
 
@@ -407,8 +464,9 @@ ProjectPackageResult packageProject(
     if (!validComponent(configuration.project.executable) || !validComponent(configuration.project.version)) {
         throw ProjectPackagingError("Project executable and version must be valid archive filename components");
     }
+    const auto bundle = loadRuntimeBundle(configuration, runtimeDirectory);
     const auto output = outputDirectory / pathFromUtf8(configuration.project.executable + "-" +
-        NomadString(getPackagePlatform()) + "-" + configuration.project.version + ".zip");
+        bundle.target + "-" + configuration.project.version + ".zip");
     auto staging = output;
     staging += ".staging";
     auto temporaryArchive = output;
@@ -468,7 +526,7 @@ ProjectPackageResult packageProject(
 
         auto resourceFiles = copyResources(configuration, staging, dryRun);
         stagedFiles.insert(stagedFiles.end(), resourceFiles.begin(), resourceFiles.end());
-        auto runtimeFiles = copyRuntime(configuration, runtimeDirectory, staging, dryRun);
+        auto runtimeFiles = copyRuntime(configuration, runtimeDirectory, bundle, staging, dryRun);
         stagedFiles.insert(stagedFiles.end(), runtimeFiles.begin(), runtimeFiles.end());
         const auto manifest = staging / NOMAD_PROJECT_FILE_NAME;
 
