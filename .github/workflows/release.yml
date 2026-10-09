@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-version:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Match tag to project version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a v<major>.<minor>.<patch> tag, got $RELEASE_TAG"
+            exit 1
+          fi
+          version="$(sed -nE 's/^[[:space:]]*project[[:space:]]*\([[:space:]]*Nomad[[:space:]]+VERSION[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+)[[:space:]].*/\1/p' CMakeLists.txt)"
+          if [[ -z "$version" ]]; then
+            echo "::error::Could not find the Nomad project version"
+            exit 1
+          fi
+          if [[ "$RELEASE_TAG" != "v$version" ]]; then
+            echo "::error::Tag $RELEASE_TAG does not match project version $version"
+            exit 1
+          fi
+
+  build-and-test:
+    name: Validate release SDKs
+    needs: validate-version
+    uses: ./.github/workflows/ci.yml
+
+  draft-release:
+    name: Create draft release
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download tested SDK distributions
+        uses: actions/download-artifact@v4
+        with:
+          pattern: distribution-*
+          path: distributions
+
+      - name: Collect SDK ZIPs and verify checksums
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir release-assets
+          version="${RELEASE_TAG#v}"
+          windows="distributions/distribution-Windows/out/build/windows-ci/distribution/Release"
+          linux="distributions/distribution-Ubuntu/out/build/linux-ci/distribution/Release"
+          cp "$windows/nomad-sdk-windows-x64-$version.zip" release-assets/
+          cp "$linux/nomad-sdk-linux-x64-$version.zip" release-assets/
+          cat "$windows/SHA256SUMS.txt" "$linux/SHA256SUMS.txt" > release-assets/SHA256SUMS.txt
+          test "$(wc -l < release-assets/SHA256SUMS.txt)" -eq 2
+          cd release-assets
+          sha256sum --check --strict SHA256SUMS.txt
+
+      - name: Create draft GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" \
+            --verify-tag \
+            --draft \
+            --title "Nomad $RELEASE_TAG" \
+            --generate-notes \
+            release-assets/nomad-sdk-*.zip \
+            release-assets/SHA256SUMS.txt
