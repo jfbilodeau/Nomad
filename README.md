@@ -178,15 +178,15 @@ On Linux, install Ninja and use the corresponding `linux-debug` preset. The
 The `linux-sanitizers` preset enables AddressSanitizer and
 UndefinedBehaviorSanitizer for Linux diagnostics.
 
-To create runnable SDK and runtime ZIPs, build the `nomad-distribution` target
+To create a runnable SDK ZIP, build the `nomad-distribution` target
 after configuring a preset. The archives and `SHA256SUMS.txt` are written to
 `distribution/<configuration>` under the build directory:
 
 - `nomad-sdk-<platform>-<version>.zip` contains `nomad`, `nomadc`,
   `nomad-runtime`, their shared libraries, project templates, language
   documentation, licenses, and the `runtime` bundle used for game packaging.
-- `nomad-runtime-<platform>-<version>.zip` contains the runtime bundle with
-  its `runtime.json`, shared libraries, and licenses.
+  The included runtime bundle contains its `runtime.json`, shared libraries,
+  and licenses; no separate runtime download is needed.
 
 Extract the SDK into one directory and invoke its `nomad` executable, or add
 that directory to `PATH`. These distributions contain runnable tools, not

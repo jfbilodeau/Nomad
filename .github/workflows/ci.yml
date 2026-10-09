@@ -78,12 +78,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Upload SDK and runtime distributions
+      - name: Upload SDK distribution
         uses: actions/upload-artifact@v4
         with:
           name: distribution-${{ matrix.name }}
           path: |
-            out/build/${{ matrix.preset }}/distribution/Release/*.zip
+            out/build/${{ matrix.preset }}/distribution/Release/nomad-sdk-*.zip
             out/build/${{ matrix.preset }}/distribution/Release/SHA256SUMS.txt
             tests/DistributionSmokeTest.cmake
           if-no-files-found: error
@@ -122,11 +122,11 @@ jobs:
       - name: Extract and start without a source checkout or build
         run: cmake -P package-smoke/PackageSmokeTest.cmake
 
-      - name: Download SDK and runtime distributions
+      - name: Download SDK distribution
         uses: actions/download-artifact@v4
         with:
           name: distribution-${{ matrix.name }}
           path: distribution-smoke
 
-      - name: Check SDK and runtime without a source checkout or build
+      - name: Check SDK without a source checkout or build
         run: cmake -DNOMAD_DISTRIBUTION_OUTPUT=distribution-smoke/out/build/${{ matrix.preset }}/distribution/Release -P distribution-smoke/tests/DistributionSmokeTest.cmake
