@@ -21,7 +21,8 @@ public:
 [[nodiscard]] ProjectPackageResult packageProject(
     const ProjectConfiguration& configuration,
     const NomadPath& runtimeDirectory,
-    bool force
+    bool force,
+    bool dryRun = false
 );
 
 } // namespace nomad

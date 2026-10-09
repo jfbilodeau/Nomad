@@ -1,9 +1,10 @@
 if(
     NOT DEFINED NOMAD_CLI OR
+    NOT DEFINED NOMAD_COMPILER OR
     NOT DEFINED NOMAD_RUNTIME_SUFFIX OR
     NOT DEFINED NOMAD_TEST_ROOT
 )
-    message(FATAL_ERROR "NOMAD_CLI, NOMAD_RUNTIME_SUFFIX, and NOMAD_TEST_ROOT are required")
+    message(FATAL_ERROR "NOMAD_CLI, NOMAD_COMPILER, NOMAD_RUNTIME_SUFFIX, and NOMAD_TEST_ROOT are required")
 endif()
 
 function(run_success DESCRIPTION)
@@ -62,6 +63,24 @@ set(PACKAGED_RUNTIME "${PACKAGE_DIR}/package-game${NOMAD_RUNTIME_SUFFIX}")
 
 file(REMOVE_RECURSE "${NOMAD_TEST_ROOT}")
 
+foreach(PROGRAM IN ITEMS "${NOMAD_CLI}" "${NOMAD_COMPILER}")
+    foreach(ACTION IN ITEMS --help -h --version -v help version)
+        run_success("Standalone ${ACTION}" "${PROGRAM}" "${ACTION}")
+    endforeach()
+    run_failure("Global help must stand alone" "${PROGRAM}" --help check)
+    run_failure("Global version must stand alone" "${PROGRAM}" -v check)
+    run_failure("Version is not a command option" "${PROGRAM}" check -v)
+    run_failure("Version rejects positional arguments" "${PROGRAM}" version extra)
+    run_success("Help verb" "${PROGRAM}" help check)
+    run_success("Command help" "${PROGRAM}" check -h)
+    run_failure("Unknown command" "${PROGRAM}" missing)
+endforeach()
+run_success("Package help" "${NOMAD_CLI}" package --help)
+run_failure("Package flag rejected by run" "${NOMAD_CLI}" run --force)
+run_success("Compiler docs help without required output" "${NOMAD_COMPILER}" docs -h)
+run_failure("Compiler docs requires output" "${NOMAD_COMPILER}" docs)
+run_failure("Compiler dump rejects docs options" "${NOMAD_COMPILER}" dump --output ignored.md)
+
 run_success(
     "Project initialization"
     "${NOMAD_CLI}" init "${PROJECT_DIR}"
@@ -71,6 +90,14 @@ file(MAKE_DIRECTORY "${PROJECT_DIR}/res/development")
 file(WRITE "${PROJECT_DIR}/res/development/notes.txt" "excluded")
 file(WRITE "${PROJECT_DIR}/res/sprite.aseprite" "excluded")
 file(WRITE "${PROJECT_DIR}/res/keep.txt" "included")
+
+run_success(
+    "Package dry run"
+    "${NOMAD_CLI}" package "${PROJECT_DIR}" --dry-run
+)
+reject_path("${PACKAGE_DIR}" "Package output after dry run")
+reject_path("${PROJECT_DIR}/dist.tmp" "Package staging directory after dry run")
+reject_path("${PROJECT_DIR}/dist.backup" "Package backup directory after dry run")
 
 run_success(
     "Project packaging"

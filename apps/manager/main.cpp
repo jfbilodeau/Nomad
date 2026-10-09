@@ -3,7 +3,10 @@
 #include <nomad/project/ProjectConfiguration.hpp>
 #include <nomad/project/ProjectInitializer.hpp>
 #include <nomad/project/ProjectPackager.hpp>
+
 #include <nomad/system/Path.hpp>
+#include <nomad/system/ProgramOptions.hpp>
+
 #include <nomad/Version.hpp>
 
 #include <boost/asio/io_context.hpp>
@@ -11,7 +14,6 @@
 #include <boost/nowide/args.hpp>
 #include <boost/process/v2/process.hpp>
 #include <boost/process/v2/start_dir.hpp>
-#include <boost/program_options.hpp>
 
 #include <cstdlib>
 #include <filesystem>
@@ -22,12 +24,26 @@ using namespace nomad;
 
 namespace {
 
-namespace po = boost::program_options;
 namespace bp = boost::process::v2;
 
-void printUsage(std::ostream& output, const po::options_description& options) {
-    output << options << '\n';
-}
+struct ProjectParameters {
+    std::optional<NomadString> directory;
+};
+
+struct RunParameters {
+    std::optional<NomadString> directory;
+    bool debug = false;
+};
+
+struct PackageParameters {
+    std::optional<NomadString> directory;
+    bool force = false;
+    bool dryRun = false;
+};
+
+struct HelpParameters {
+    std::optional<NomadString> verb;
+};
 
 NomadPath getCliDirectory() {
     return NomadPath(boost::dll::program_location().native()).parent_path();
@@ -102,29 +118,25 @@ int runSiblingExecutable(
     return child.wait();
 }
 
-NomadPath getRequestedDirectory(const po::variables_map& arguments) {
-    return arguments.contains("directory")
-        ? pathFromUtf8(arguments["directory"].as<NomadString>())
+NomadPath getRequestedDirectory(const std::optional<NomadString>& directory) {
+    return directory
+        ? pathFromUtf8(*directory)
         : std::filesystem::current_path();
 }
 
-ProjectConfiguration loadCompatibleProject(const po::variables_map& arguments) {
-    const auto configuration = discoverProjectConfiguration(getRequestedDirectory(arguments));
+ProjectConfiguration loadCompatibleProject(const std::optional<NomadString>& directory) {
+    const auto configuration = discoverProjectConfiguration(getRequestedDirectory(directory));
     validateNomadVersionCompatibility(configuration.nomad.version, getNomadVersion());
     return configuration;
 }
 
-int versionCommand(const po::variables_map& arguments) {
-    if (arguments.contains("directory")) {
-        throw po::error("The version command does not accept arguments");
-    }
-
+int versionCommand(EmptyParameters&) {
     std::cout << "nomad " << getNomadVersion() << '\n';
     return EXIT_SUCCESS;
 }
 
-int initializeCommand(const po::variables_map& arguments) {
-    const auto result = initializeProject(getRequestedDirectory(arguments), resolveProjectTemplate("default"));
+int initializeCommand(ProjectParameters& parameters) {
+    const auto result = initializeProject(getRequestedDirectory(parameters.directory), resolveProjectTemplate("default"));
 
     for (const auto& path : result.createdFiles) {
         std::cout << "Created " << pathToUtf8(path) << '\n';
@@ -133,24 +145,24 @@ int initializeCommand(const po::variables_map& arguments) {
     return EXIT_SUCCESS;
 }
 
-int checkCommand(const po::variables_map& arguments) {
-    const auto configuration = loadCompatibleProject(arguments);
+int checkCommand(ProjectParameters& parameters) {
+    const auto configuration = loadCompatibleProject(parameters.directory);
     return runSiblingExecutable("nomadc", configuration.root, {"check"});
 }
 
-int runCommand(const po::variables_map& arguments) {
-    const auto configuration = loadCompatibleProject(arguments);
+int runCommand(RunParameters& parameters) {
+    const auto configuration = loadCompatibleProject(parameters.directory);
     std::vector<NomadString> runtimeArguments;
 
-    if (arguments.contains("debug")) {
+    if (parameters.debug) {
         runtimeArguments.emplace_back("--debug");
     }
 
     return runSiblingExecutable("nomad-runtime", configuration.root, runtimeArguments);
 }
 
-int packageCommand(const po::variables_map& arguments) {
-    const auto configuration = loadCompatibleProject(arguments);
+int packageCommand(PackageParameters& parameters) {
+    const auto configuration = loadCompatibleProject(parameters.directory);
     const auto checkResult = runSiblingExecutable("nomadc", configuration.root, {"check"});
 
     if (checkResult != EXIT_SUCCESS) {
@@ -160,48 +172,21 @@ int packageCommand(const po::variables_map& arguments) {
     const auto result = packageProject(
         configuration,
         resolveRuntimeBundle(),
-        arguments.contains("force")
+        parameters.force,
+        parameters.dryRun
     );
-    std::cout << "Packaged " << pathToUtf8(result.output) << '\n';
+
+    if (parameters.dryRun) {
+        std::cout << "Would package to " << pathToUtf8(result.output) << ":\n";
+
+        for (const auto& file : result.files) {
+            std::cout << "  " << pathToUtf8(file) << '\n';
+        }
+    } else {
+        std::cout << "Packaged " << pathToUtf8(result.output) << '\n';
+    }
+
     return EXIT_SUCCESS;
-}
-
-int dispatchCommand(
-    const NomadStringView command,
-    const po::variables_map& arguments,
-    const po::options_description& visibleOptions
-) {
-    if (arguments.contains("debug") && command != "run") {
-        throw po::error("The --debug option is supported only by the run command");
-    }
-
-    if (arguments.contains("force") && command != "package") {
-        throw po::error("The --force option is supported only by the package command");
-    }
-
-    if (command == "version") {
-        return versionCommand(arguments);
-    }
-
-    if (command == "init") {
-        return initializeCommand(arguments);
-    }
-
-    if (command == "check") {
-        return checkCommand(arguments);
-    }
-
-    if (command == "run") {
-        return runCommand(arguments);
-    }
-
-    if (command == "package") {
-        return packageCommand(arguments);
-    }
-
-    std::cerr << "Unknown command: " << command << '\n';
-    printUsage(std::cerr, visibleOptions);
-    return EXIT_FAILURE;
 }
 
 } // namespace
@@ -209,71 +194,36 @@ int dispatchCommand(
 int main(int argc, char** argv) {
     boost::nowide::args utf8Arguments(argc, argv);
 
-    po::options_description visibleOptions(
-        "Usage:\n"
-        "  nomad init [directory]\n"
-        "  nomad check [directory]\n"
-        "  nomad run [directory] [--debug]\n"
-        "  nomad package [directory] [--force]\n"
-        "  nomad version\n"
-        "\n"
-        "Options"
-    );
-    visibleOptions.add_options()
-        ("help,h", "Show this help")
-        ("version,v", "Show the Nomad version")
-        ("debug", "Enable runtime debug mode")
-        ("force", "Replace a nonempty package output directory");
-
-    po::options_description hiddenOptions;
-    hiddenOptions.add_options()
-        ("command", po::value<NomadString>(), "Command to run")
-        ("directory", po::value<NomadString>(), "Project directory");
-
-    po::options_description allOptions;
-    allOptions.add(visibleOptions).add(hiddenOptions);
-
-    po::positional_options_description positional;
-    positional.add("command", 1);
-    positional.add("directory", 1);
-
     try {
-        po::variables_map arguments;
-        po::store(
-            po::command_line_parser(argc, argv)
-                .options(allOptions)
-                .positional(positional)
-                .run(),
-            arguments
-        );
-        po::notify(arguments);
+        ProgramOptions program("nomad", "Nomad project manager");
 
-        if (arguments.contains("help")) {
-            printUsage(std::cout, visibleOptions);
+        program.addGlobal("help", "h", [&program] {
+            program.printHelp(std::cout);
             return EXIT_SUCCESS;
-        }
-
-        if (arguments.contains("version")) {
-            if (
-                arguments.contains("command") ||
-                arguments.contains("directory") ||
-                arguments.contains("debug") ||
-                arguments.contains("force")
-            ) {
-                throw po::error("The version option does not accept arguments");
-            }
-
-            std::cout << "nomad " << getNomadVersion() << '\n';
+        }, "Show general help");
+        program.addGlobal("version", "v", [] {
+            EmptyParameters parameters;
+            return versionCommand(parameters);
+        }, "Show the Nomad version");
+        program.addVerb<HelpParameters>("help", [&program](HelpParameters& parameters) {
+            program.printHelp(std::cout, parameters.verb);
             return EXIT_SUCCESS;
-        }
-
-        if (!arguments.contains("command")) {
-            printUsage(std::cerr, visibleOptions);
-            return EXIT_FAILURE;
-        }
-
-        const auto& command = arguments["command"].as<NomadString>();
-        return dispatchCommand(command, arguments, visibleOptions);
+        }, "Show general or command help")
+            .addOptionalPositional("verb", &HelpParameters::verb, "Command to describe");
+        program.addVerb<EmptyParameters>("version", &versionCommand, "Show the Nomad version");
+        program.addVerb<ProjectParameters>("init", &initializeCommand, "Create a minimal Nomad project")
+            .addOptionalPositional("directory", &ProjectParameters::directory, "Project directory (default: current directory)");
+        program.addVerb<ProjectParameters>("check", &checkCommand, "Check project scripts without running them")
+            .addOptionalPositional("directory", &ProjectParameters::directory, "Project directory (default: current directory)");
+        program.addVerb<RunParameters>("run", &runCommand, "Launch a project using the installed runtime")
+            .addOptionalPositional("directory", &RunParameters::directory, "Project directory (default: current directory)")
+            .addFlag("debug", "", &RunParameters::debug, "Enable runtime debug mode");
+        program.addVerb<PackageParameters>("package", &packageCommand, "Create a standalone game package")
+            .addOptionalPositional("directory", &PackageParameters::directory, "Project directory (default: current directory)")
+            .addFlag("force", "f", &PackageParameters::force, "Replace a nonempty package output directory")
+            .addFlag("dry-run", "", &PackageParameters::dryRun, "List package files without writing them");
+            
+        return program.run(argc, argv, std::cout);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return EXIT_FAILURE;

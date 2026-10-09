@@ -16,6 +16,13 @@ runtime, and tests.
 
 ## Project manager
 
+Both `nomad` and `nomadc` use `program <verb> [arguments] [options]`.
+`--help`/`-h` and `--version`/`-v` are standalone top-level actions and cannot
+be combined with a verb or other arguments. `help [verb]` and `version` are
+also available as verbs. Use `<verb> --help` or `<verb> -h` for command-specific
+help, including commands with required arguments. Options belong to individual
+verbs; for example, `nomad run --force` is rejected.
+
 `nomad init [directory]` creates a minimal project containing `nomad.toml` and
 `res/scripts/init.nomad`, along with a starter `README.md` and `.gitignore`. It
 can initialize a new directory or an existing directory, but refuses to
@@ -35,11 +42,14 @@ is at least as new as the required `nomad.version`, and runs the sibling
 `nomad run [directory] [--debug]` performs the same project and SDK validation,
 then launches the sibling `nomad-runtime` executable from the project root.
 
-`nomad package [directory] [--force]` checks the project and creates a
-standalone package in `package.output`. It copies the project resources while
+`nomad package [directory] [--force] [--dry-run]` checks the project and creates
+a standalone package in `package.output`. It copies the project resources while
 applying `package.exclude`, adds the runtime executable and its shared
 libraries, and names the executable using `project.executable`. Packaging
 refuses to replace a nonempty output directory unless `--force` is supplied.
+`-f` is an alias for `--force`.
+`--dry-run` lists the planned package files without creating or modifying the
+package output.
 
 `nomad version` and `nomad --version` print the Nomad version. The version is
 defined once by the root CMake project and generated into the C++ targets.
@@ -118,7 +128,7 @@ constants resolve exactly as they do in a windowed build.
 headless compilation and writes the generated VM instructions. It never runs
 the selected function. Instructions are written as text.
 
-`nomadc docs [path] --output <file>` compiles without
+`nomadc docs [path] --output <file>` (or `-o <file>`) compiles without
 execution and writes the registered language and engine API documentation.
 Documentation is written as Markdown.
 

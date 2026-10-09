@@ -7,6 +7,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 
@@ -46,6 +47,40 @@ NomadString readFile(const NomadPath& path) {
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(project_packager)
+
+BOOST_AUTO_TEST_CASE(dry_run_lists_package_files_without_writing_output)
+{
+    TestDirectory directory("nomad_project_packager_dry_run");
+    const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, CONFIGURATION);
+    directory.write("assets/scripts/start.nomad", "return\n");
+    directory.write("assets/images/player.png", "png");
+    directory.write("assets/images/player.aseprite", "source");
+    const auto runtimeDirectory = directory.getPath() / "runtime";
+    directory.write("runtime/nomad-runtime.exe", "runtime");
+    directory.write("runtime/SDL3.dll", "library");
+
+    const auto configuration = loadProjectConfiguration(projectFile);
+    const auto result = packageProject(configuration, runtimeDirectory, false, true);
+    const auto output = directory.getPath() / "dist";
+
+    BOOST_TEST(result.output == output);
+    BOOST_TEST(result.files.size() == 5U);
+    BOOST_TEST(std::ranges::any_of(result.files, [](const auto& file) {
+        return file.filename() == "package-test.exe";
+    }));
+    BOOST_TEST(std::ranges::any_of(result.files, [](const auto& file) {
+        return file.filename() == "SDL3.dll";
+    }));
+    BOOST_TEST(std::ranges::any_of(result.files, [](const auto& file) {
+        return file.filename() == "start.nomad";
+    }));
+    BOOST_TEST(std::ranges::any_of(result.files, [](const auto& file) {
+        return file.filename() == NOMAD_PROJECT_FILE_NAME;
+    }));
+    BOOST_TEST(!std::filesystem::exists(output));
+    BOOST_TEST(!std::filesystem::exists(directory.getPath() / "dist.tmp"));
+    BOOST_TEST(!std::filesystem::exists(directory.getPath() / "dist.backup"));
+}
 
 BOOST_AUTO_TEST_CASE(packages_runtime_resources_and_release_manifest)
 {

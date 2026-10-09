@@ -26,6 +26,7 @@ add_executable(
     ./LogTest.cpp
     ./NomadVersionTest.cpp
     ./ParserTest.cpp
+    ./ProgramOptionsTest.cpp
     ./ProjectConfigurationTest.cpp
     ./ProjectInitializerTest.cpp
     ./ProjectPackagerTest.cpp
@@ -54,7 +55,7 @@ target_link_libraries(
     PRIVATE
     nomad
     Nomad::Project
-    Boost::program_options
+    Nomad::CliOptions
     Boost::unit_test_framework
 )
 
@@ -88,6 +89,7 @@ if(
         COMMAND
             ${CMAKE_COMMAND}
             "-DNOMAD_CLI=$<TARGET_FILE:nomad-cli>"
+            "-DNOMAD_COMPILER=$<TARGET_FILE:nomadc>"
             "-DNOMAD_RUNTIME_SUFFIX=$<TARGET_FILE_SUFFIX:nomad-runtime>"
             "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/package-integration/$<CONFIG>"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/PackageIntegrationTest.cmake"

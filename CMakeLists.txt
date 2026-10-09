@@ -473,6 +473,12 @@ set(
 
 include(cmake/NomadLibrary.cmake)
 
+add_library(nomad-cli-options INTERFACE)
+add_library(Nomad::CliOptions ALIAS nomad-cli-options)
+target_sources(nomad-cli-options INTERFACE ${NOMAD_INCLUDE_DIR}/nomad/system/ProgramOptions.hpp)
+target_include_directories(nomad-cli-options INTERFACE ${NOMAD_INCLUDE_DIR})
+target_link_libraries(nomad-cli-options INTERFACE Boost::program_options)
+
 option(NOMAD_BUILD_CLI "Build the Nomad project manager" ON)
 if(NOMAD_BUILD_CLI)
     add_executable(nomad-cli apps/manager/main.cpp)
@@ -508,7 +514,7 @@ if(NOMAD_BUILD_CLI)
         Boost::dll
         Boost::nowide
         Boost::process
-        Boost::program_options
+        Nomad::CliOptions
     )
 
     if(WIN32)
@@ -587,7 +593,7 @@ endif()
 option(NOMAD_BUILD_COMPILER "Build the Nomad compiler tooling" ON)
 if(NOMAD_BUILD_COMPILER)
     add_executable(nomadc apps/compiler/main.cpp)
-    target_link_libraries(nomadc PRIVATE Nomad::Engine Nomad::Project Boost::nowide Boost::program_options)
+    target_link_libraries(nomadc PRIVATE Nomad::Engine Nomad::Project Nomad::CliOptions Boost::nowide)
 endif()
 
 option(NOMAD_BUILD_TESTS "Build Nomad unit tests" ON)

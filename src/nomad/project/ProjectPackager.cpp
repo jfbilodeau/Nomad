@@ -154,7 +154,8 @@ void writeReleaseManifest(const ProjectConfiguration& configuration, const Nomad
 
 std::vector<NomadPath> copyResources(
     const ProjectConfiguration& configuration,
-    const NomadPath& staging
+    const NomadPath& staging,
+    const bool dryRun
 ) {
     const auto resources = resolveProjectResourcePath(configuration);
     std::error_code error;
@@ -197,7 +198,11 @@ std::vector<NomadPath> copyResources(
 
             if (!isExcluded(relative, configuration.package.exclude)) {
                 const auto destination = staging / "res" / relative;
-                copyFile(entry.path(), destination);
+
+                if (!dryRun) {
+                    copyFile(entry.path(), destination);
+                }
+
                 files.push_back(destination);
             }
         } else if (!entry.is_directory(error)) {
@@ -217,7 +222,8 @@ std::vector<NomadPath> copyResources(
 std::vector<NomadPath> copyRuntime(
     const ProjectConfiguration& configuration,
     const NomadPath& runtimeDirectory,
-    const NomadPath& staging
+    const NomadPath& staging,
+    const bool dryRun
 ) {
     std::error_code error;
 
@@ -269,7 +275,11 @@ std::vector<NomadPath> copyRuntime(
         }
 
         const auto destination = staging / destinationName;
-        copyFile(entry.path(), destination);
+
+        if (!dryRun) {
+            copyFile(entry.path(), destination);
+        }
+
         files.push_back(destination);
         iterator.increment(error);
     }
@@ -299,7 +309,8 @@ bool isEmptyDirectory(const NomadPath& path) {
 ProjectPackageResult packageProject(
     const ProjectConfiguration& configuration,
     const NomadPath& runtimeDirectory,
-    const bool force
+    const bool force,
+    const bool dryRun
 ) {
     if (configuration.type != ProjectConfigurationType::Development) {
         throw ProjectPackagingError("A release manifest cannot be used to create another package");
@@ -365,16 +376,23 @@ ProjectPackageResult packageProject(
     std::vector<NomadPath> stagedFiles;
 
     try {
-        createDirectories(staging);
-        auto resourceFiles = copyResources(configuration, staging);
+        if (!dryRun) {
+            createDirectories(staging);
+        }
+
+        auto resourceFiles = copyResources(configuration, staging, dryRun);
         stagedFiles.insert(stagedFiles.end(), resourceFiles.begin(), resourceFiles.end());
-        auto runtimeFiles = copyRuntime(configuration, runtimeDirectory, staging);
+        auto runtimeFiles = copyRuntime(configuration, runtimeDirectory, staging, dryRun);
         stagedFiles.insert(stagedFiles.end(), runtimeFiles.begin(), runtimeFiles.end());
         const auto manifest = staging / NOMAD_PROJECT_FILE_NAME;
-        writeReleaseManifest(configuration, manifest);
+
+        if (!dryRun) {
+            writeReleaseManifest(configuration, manifest);
+        }
+
         stagedFiles.push_back(manifest);
 
-        if (outputExists) {
+        if (!dryRun && outputExists) {
             std::filesystem::rename(output, backup, error);
 
             if (error) {
@@ -382,26 +400,31 @@ ProjectPackageResult packageProject(
             }
         }
 
-        std::filesystem::rename(staging, output, error);
-
-        if (error) {
-            if (outputExists) {
-                std::error_code restoreError;
-                std::filesystem::rename(backup, output, restoreError);
-            }
-
-            raiseFilesystemError("Failed to publish package output", output, error);
-        }
-
-        if (outputExists) {
-            std::filesystem::remove_all(backup, error);
+        if (!dryRun) {
+            std::filesystem::rename(staging, output, error);
 
             if (error) {
-                raiseFilesystemError("Failed to remove replaced package output", backup, error);
+                if (outputExists) {
+                    std::error_code restoreError;
+                    std::filesystem::rename(backup, output, restoreError);
+                }
+
+                raiseFilesystemError("Failed to publish package output", output, error);
+            }
+
+            if (outputExists) {
+                std::filesystem::remove_all(backup, error);
+
+                if (error) {
+                    raiseFilesystemError("Failed to remove replaced package output", backup, error);
+                }
             }
         }
     } catch (...) {
-        std::filesystem::remove_all(staging, error);
+        if (!dryRun) {
+            std::filesystem::remove_all(staging, error);
+        }
+
         throw;
     }
 
