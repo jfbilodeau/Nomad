@@ -163,7 +163,9 @@ Nomad requires CMake 3.30 or newer and a C++20 compiler.
 
 Pinned third-party dependencies and their build configuration live in
 `cmake/Dependencies.cmake`, including the specialized libarchive and zlib
-configuration.
+configuration. Non-Windows builds enable libarchive's system iconv support for
+UTF-8 ZIP filenames; on Ubuntu, iconv is provided by glibc. Windows uses native
+character-set conversion.
 
 ```console
 cmake --preset windows-debug
