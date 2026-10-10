@@ -4,7 +4,6 @@ This the author wants to do
 ## Open
 [ ] Display physics bodies in debug mode
 [ ] Debug mode should only come up when the `--debug` parameter is passed.
-[ ] Enums
 [ ] Indexer notation.
 [ ] Persist scene
 [ ] First script should start at index 1 instead of 0 in decompiler (instructions.txt).
@@ -22,6 +21,7 @@ This the author wants to do
 [X] Replace Context/Var ID with single ContextVariableID
 [X] Save/load variable context/dynamic
 [X] Window events
+[X] Enums
 
 ## Low priority
 [ ] Strings might leak if a script faults
