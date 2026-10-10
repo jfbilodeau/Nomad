@@ -223,6 +223,16 @@ bool parseValue(const Type* type, const NomadString& text, RuntimeValue& value) 
         return false;
     }
 
+    if (const auto* enumType = type->asEnum()) {
+        NomadInteger enumValue = 0;
+        if (!enumType->getValueByName(text, enumValue)) {
+            return false;
+        }
+
+        value.setIntegerValue(enumValue);
+        return true;
+    }
+
     if (type->isString()) {
         value.setStringValue(text);
         return true;
@@ -276,6 +286,10 @@ bool parseValue(const Type* type, const NomadString& text, RuntimeValue& value) 
     }
 
     if (type->isString()) {
+        return true;
+    }
+
+    if (type->asEnum() != nullptr) {
         return true;
     }
 
@@ -970,10 +984,37 @@ void DebugConsole::renderVariableInspector() {
         ImGui::TextUnformatted(row.name.c_str());
 
         ImGui::TableSetColumnIndex(1);
-        ImGui::TextUnformatted(row.type != nullptr ? row.type->getTypeName().c_str() : "<unknown>");
+        ImGui::TextUnformatted(getTypeDisplayName(row.type).c_str());
 
         ImGui::TableSetColumnIndex(2);
-        if (isBooleanType(row.type)) {
+        const auto* enumType = row.type == nullptr ? nullptr : row.type->asEnum();
+        if (enumType != nullptr) {
+            ImGui::BeginDisabled(!row.editable);
+            ImGui::SetNextItemWidth(-1.0f);
+
+            if (ImGui::BeginCombo("##enumValue", row.value.c_str())) {
+                for (NomadIndex index = 0; index < enumType->getValueCount(); ++index) {
+                    const auto& definition = enumType->getValue(index);
+                    const auto selected = row.value == definition.name;
+
+                    if (ImGui::Selectable(definition.name.c_str(), selected) &&
+                        !applyVariableEdit(row, definition.name)) {
+                        m_consoleEntries.push_back({
+                            true,
+                            "Could not set " + row.name + " to '" + definition.name + "'"
+                        });
+                    }
+
+                    if (selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+
+                ImGui::EndCombo();
+            }
+
+            ImGui::EndDisabled();
+        } else if (isBooleanType(row.type)) {
             auto checked = row.value == BOOLEAN_TRUE_STRING;
             ImGui::BeginDisabled(!row.editable);
             if (ImGui::Checkbox("##booleanValue", &checked)) {

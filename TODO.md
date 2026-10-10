@@ -1,22 +1,27 @@
 # TODO
 This the author wants to do
 
-[ ] Enums
+## Open
+[ ] Display physics bodies in debug mode
+[ ] Debug mode should only come up when the `--debug` parameter is passed.
 [ ] Indexer notation.
+[ ] Persist scene
+[ ] First script should start at index 1 instead of 0 in decompiler (instructions.txt).
+[ ] Command overloading (WIP)
+
+## Completed
 [X] Switch from `const NomadString&` to `NomadStringView`
 [X] Ensure scripts that return a value early also have a valid `return` statement at the end.
-[ ] Persist scene
 [X] Add column number to parser
 [X] Language unit tests
-[ ] First script should start at index 1 instead of 0 in decompiler (instructions.txt).
 [X] Ensure there's no duplication between `execute()` and `parse`
 [X] Rename Interpreter to something else.
 [X] Replace exceptions in compiler with a CompilerContext.
 [X] Implement debug command console.
 [X] Replace Context/Var ID with single ContextVariableID
 [X] Save/load variable context/dynamic
-[ ] Command overloading
 [X] Window events
+[X] Enums
 
 ## Low priority
 [ ] Strings might leak if a script faults

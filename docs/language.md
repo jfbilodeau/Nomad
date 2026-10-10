@@ -15,6 +15,7 @@ Nomad is case‑sensitive.
 - [Data types and numeric ranges](#data-types-and-numeric-ranges)
 - [Variables and variable kinds](#variables-and-variable-kinds)
 - [Constants and predefined values](#constants-and-predefined-values)
+- [Enumerations (`enum`)](#enums)
 - [Type rules and conversions](#type-rules-and-conversions)
 - [Control flow (if) and No loops](#control-flow-if-and-no-loops)
 - [Assertions](#assertions)
@@ -98,6 +99,8 @@ Nomad provides the following built‑in types:
 | `bool` | `true`, `false` | Boolean value |
 | `string` | `"hello"` | UTF‑8 string; supports escape sequences `\n`, `\r`, `\t` |
 
+Scripts and the embedding engine may also define strongly typed enumerations. See [Enumerations](#enums).
+
 Types whose names start with `$` (for example `$stringref`) are internal to the runtime and cannot be named in Nomad code.
 
 String literal notes:
@@ -117,11 +120,12 @@ Numeric literal notes:
 Variables in compiled code are implicitly declared through assignment. The assigned value determines the variable type and that type is then fixed for that variable.
 
 ```nomad
-value = 10      # int
-ratio1 = 0.5    # float
-ratio2 = 1.0    # float
-text = "hello"  # string
-flag = false    # bool
+value = 10           # int
+ratio1 = 0.5         # float
+ratio2 = 1.0         # float
+text = "hello"       # string
+flag = false         # bool
+state = state.idle   # State enum
 ```
 
 Nomad supports three variable kinds:
@@ -145,6 +149,65 @@ const MAX_SCORE = 1000
 Predefined constant:
 
 - `pi` — the value of `std::numbers::pi` from the host C++ runtime.
+
+---
+
+## Enums
+
+Enumerations define a named type and a set of globally visible, immutable values:
+
+```nomad
+enum state
+    idle
+    walking
+    jumping
+end
+
+state = state.idle
+```
+
+Enum declarations and their values are globally visible across scripts. A value is referenced by its qualified name, such as `state.walking`, and variables infer the named enum type from assignment.
+
+Enums are strongly typed:
+
+- A value may be assigned only to a variable of the same enum type.
+- Values from different enum types are incompatible, even when their internal values match.
+- Enum values cannot be passed to an `int` parameter or assigned from an `int`.
+- `toInt`, `toFloat`, and other conversion functions do not accept enums.
+- The `==` and `!=` operators are available between values of the same enum.
+- Arithmetic, bitwise, and ordering operators are not available for enums.
+
+For example, each of these expressions fails to compile:
+
+```nomad
+state = State.idle
+state = 1                    # int cannot be assigned to State
+same = State.idle == 1       # State cannot be compared with int
+next = State.idle + State.walking # enums do not support arithmetic
+```
+
+The embedding engine may register enum members with explicit internal values rather than compiler-assigned sequential values. This preserves corresponding C++ enum values without weakening Nomad's type rules.
+
+The game engine provides these enums:
+
+| Enum | Members |
+| --- | --- |
+| `alignment` | `topLeft`, `topMiddle`, `topRight`, `centerLeft`, `centerMiddle`, `centerRight`, `bottomLeft`, `bottomMiddle`, `bottomRight` |
+| `horizontalAlignment` | `left`, `middle`, `right` |
+| `verticalAlignment` | `top`, `center`, `bottom` |
+| `body` | `static`, `dynamic`, `kinematic` |
+| `cardinal` | `north`, `east`, `south`, `west` |
+
+For example:
+
+```nomad
+this.text.alignment = alignment.centerMiddle
+this.body.circle body.dynamic 16.0
+```
+
+The `this.*` and `other.*` text alignment variables use the `alignment` type. The `this.body.circle`, `other.body.circle`, `this.body.rectangle`, and `other.body.rectangle` functions require a `body` value.
+
+In the DebugConsole variable inspector, an enum is displayed as `enum <name>`, its value is shown by member name, and editable enum variables use a member selector rather than accepting arbitrary text or integers.
 
 ---
 
@@ -511,10 +574,16 @@ Set `game.organization` and `game.name` before using persistence. The engine pas
 Context variables are defined by assignment in Nomad code; loading never creates variables. Full dotted names are written as flat keys in a pretty-printed JSON object. This allows both a variable and its child, such as `inventory.weapon` and `inventory.weapon.attack`, to be saved without ambiguity. For example:
 
 ```nomad
+enum state
+    idle
+    walking
+end
+
 inventory.gold = 25
 inventory.playerName = "Nomad"
 inventory.weapon.attack = 10
 inventory.weapon.speed = 0.5
+inventory.state = state.walking
 game.inventory.save "slot1"
 ```
 
@@ -524,6 +593,7 @@ produces:
 {
     "inventory.gold": 25,
     "inventory.playerName": "Nomad",
+    "inventory.state": "walking",
     "inventory.weapon.attack": 10,
     "inventory.weapon.speed": 0.5
 }
@@ -534,12 +604,13 @@ The declared Nomad variable type controls conversion during loading, not how the
 - An `int` accepts a JSON integer or a whole, in-range JSON number such as `10.0`, but not `10.5`.
 - A `float` accepts either a JSON integer or floating-point number.
 - A `bool` or `string` accepts only the corresponding JSON type.
+- An enum accepts only a JSON string naming a member of that variable's enum type. Unknown names and numeric values are rejected.
 - Missing keys keep their current values, and unknown JSON keys are ignored.
 - Invalid values for individual variables are reported and ignored.
 - Malformed JSON or a non-object root changes nothing.
 - Loading never changes a variable's type.
 
-Only `int`, `float`, `bool`, and `string` variables are persisted. Save names may optionally end in `.json`, but cannot be empty, `.` or `..`, contain control characters or `< > : " / \ | ? *`, or end in a dot or space.
+Only `int`, `float`, `bool`, `string`, and enum variables are persisted. Enum member names are saved instead of their internal integer values. Save names may optionally end in `.json`, but cannot be empty, `.` or `..`, contain control characters or `< > : " / \ | ? *`, or end in a dot or space.
 
 ```nomad
 game.organization = "Example Studio"
@@ -615,13 +686,14 @@ Nomad does not support exceptions inside functions. Errors detectable at compile
 - Nomad is line‑based: one statement per line.
 - Line continuation is not (yet) supported.
 - Indentation is optional but encouraged for readability.
-- Blocks (functions, if, event handlers, callbacks, etc.) are terminated with the `end` keyword. `end` is a reserved word.
+- Blocks (functions, enums, if, event handlers, callbacks, etc.) are terminated with the `end` keyword. `end` is a reserved word.
 
 Reserved words (cannot use as identifiers):
 
 - `const`
 - `else`
 - `end`
+- `enum`
 - `event`
 - `fun`
 - `if`

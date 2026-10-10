@@ -20,8 +20,8 @@ class Type;
 class VariableContext;
 
 // Maps Nomad variables to flat JSON keys: the variable `inventory.weapon.attack` is stored as
-// `{"inventory.weapon.attack": ...}`. Only `int`, `float`, `bool` and `string` variables are
-// persisted. The declared type of the variable, not the JSON value, determines how a value is read.
+// `{"inventory.weapon.attack": ...}`. The built-in scalar types and enums are persisted. Enums are
+// stored by member name. The declared type of the variable, not the JSON value, determines how a value is read.
 
 // Returns the file name (`<saveName>.json`) for a save name or `std::nullopt` if the name is empty or could
 // escape the save directory.

@@ -199,8 +199,8 @@ void AssignmentStatement::onResolve(CompilerContext* context, Function* function
                 reportError(
                     context,
                     function,
-                    "Cannot assign value of type '" + expressionType->getTypeName() +
-                    "' to dynamic variable '" + m_identifier + "' of type '" + variableType->getTypeName() + "'"
+                    "Cannot assign value of type '" + getTypeDisplayName(expressionType) +
+                    "' to dynamic variable '" + m_identifier + "' of type '" + getTypeDisplayName(variableType) + "'"
                 );
                 return;
             }
@@ -214,8 +214,8 @@ void AssignmentStatement::onResolve(CompilerContext* context, Function* function
                 reportError(
                     context,
                     function,
-                    "Cannot assign value of type '" + expressionType->getTypeName() +
-                    "' to variable '" + m_identifier + "' of type '" + variableType->getTypeName() + "'"
+                    "Cannot assign value of type '" + getTypeDisplayName(expressionType) +
+                    "' to variable '" + m_identifier + "' of type '" + getTypeDisplayName(variableType) + "'"
                 );
                 return;
             }
@@ -257,7 +257,12 @@ void AssignmentStatement::onResolve(CompilerContext* context, Function* function
         const auto variableType = function->getVariableType(identifier.variableId);
 
         if (variableType != nullptr && variableType != expressionType) {
-            reportError(context, function, "Cannot assign value of type '" + expressionType->getTypeName() + "' to variable '" + m_identifier + "' of type '" + variableType->getTypeName() + "'");
+            reportError(
+                context,
+                function,
+                "Cannot assign value of type '" + getTypeDisplayName(expressionType) + "' to variable '" +
+                    m_identifier + "' of type '" + getTypeDisplayName(variableType) + "'"
+            );
             return;
         }
 
@@ -268,9 +273,12 @@ void AssignmentStatement::onResolve(CompilerContext* context, Function* function
         const auto variableType = runtime->getDynamicVariableType(identifier.variableId);
 
         if (variableType != expressionType) {
-            const auto& variableTypeName = variableType ? variableType->getTypeName() : "<unknown>";
-
-            reportError(context, function, "Cannot assign value of type '" + expressionType->getTypeName() + "' to dynamic variable '" + m_identifier + "' of type '" + variableTypeName + "'");
+            reportError(
+                context,
+                function,
+                "Cannot assign value of type '" + getTypeDisplayName(expressionType) + "' to dynamic variable '" +
+                    m_identifier + "' of type '" + getTypeDisplayName(variableType) + "'"
+            );
         }
         break;
     }
@@ -279,7 +287,12 @@ void AssignmentStatement::onResolve(CompilerContext* context, Function* function
         const auto variableType = runtime->getContextVariableType(identifier.variableId);
 
         if (variableType != nullptr && variableType != expressionType) {
-            reportError(context, function, "Cannot assign value of type '" + expressionType->getTypeName() + "' to variable '" + m_identifier + "' of type '" + variableType->getTypeName() + "'");
+            reportError(
+                context,
+                function,
+                "Cannot assign value of type '" + getTypeDisplayName(expressionType) + "' to variable '" +
+                    m_identifier + "' of type '" + getTypeDisplayName(variableType) + "'"
+            );
             return;
         }
 
@@ -659,6 +672,32 @@ void ConstDeclaration::onResolve(CompilerContext* context, Function* function) {
     if (m_initializer && m_initializer->resolve(context, function)) {
         m_type = m_initializer->getType();
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// EnumDecl
+EnumDeclaration::EnumDeclaration(
+    const NomadIndex line,
+    const NomadIndex column,
+    NomadString name,
+    std::vector<NomadString> values
+):
+    Statement(line, column),
+    m_name(std::move(name)),
+    m_values(std::move(values))
+{
+}
+
+const NomadString& EnumDeclaration::getName() const {
+    return m_name;
+}
+
+const std::vector<NomadString>& EnumDeclaration::getValues() const {
+    return m_values;
+}
+
+NomadBoolean EnumDeclaration::isDeclaration() const {
+    return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

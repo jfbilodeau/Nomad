@@ -209,6 +209,7 @@ private:
 
     void initEvents() const;
 
+    void initEnums();
     void initConstants() const;
 
     void initFunctions();

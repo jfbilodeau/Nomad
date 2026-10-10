@@ -6,6 +6,7 @@
 #include "nomad/game/EntityVariableContext.hpp"
 #include "nomad/game/Scene.hpp"
 #include "nomad/script/Runtime.hpp"
+#include "nomad/script/Type.hpp"
 #include "nomad/script/Variable.hpp"
 
 using namespace nomad;
@@ -50,6 +51,102 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_and_duplicate_function_ids)
     BOOST_TEST(!runtime.getFunctionName(NOMAD_INVALID_ID).has_value());
     BOOST_TEST(!runtime.getFunctionName(-2).has_value());
     BOOST_TEST(!runtime.getFunctionName(1).has_value());
+}
+
+BOOST_AUTO_TEST_CASE(runtime_registers_strongly_typed_enums_with_explicit_values)
+{
+    Runtime runtime;
+
+    const auto* bodyType = runtime.registerEnum(
+        "body",
+        {
+            {"static", 3},
+            {"dynamic", 7},
+            {"kinematic", 11},
+        }
+    );
+
+    BOOST_REQUIRE(bodyType != nullptr);
+    BOOST_TEST(runtime.getTypeByName("body") == bodyType);
+    BOOST_TEST(bodyType->getValueCount() == 3U);
+    BOOST_TEST(bodyType->getValue(0).name == "static");
+    BOOST_TEST(bodyType->getValue(0).value == 3);
+    BOOST_TEST(bodyType->toString(RuntimeValue{NomadInteger{7}}) == "dynamic");
+    BOOST_TEST(bodyType->toString(RuntimeValue{NomadInteger{99}}) == "<invalid body value>");
+
+    NomadInteger value = 0;
+    BOOST_TEST(bodyType->getValueByName("kinematic", value));
+    BOOST_TEST(value == 11);
+    BOOST_TEST(!bodyType->getValueByName("missing", value));
+
+    NomadString name;
+    BOOST_TEST(bodyType->getNameByValue(3, name));
+    BOOST_TEST(name == "static");
+    BOOST_TEST(!bodyType->getNameByValue(99, name));
+
+    const auto staticId = runtime.getConstantId("body.static");
+    BOOST_REQUIRE(staticId != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getConstantType(staticId) == bodyType);
+
+    RuntimeValue staticValue;
+    runtime.getConstantValue(staticId, staticValue);
+    BOOST_TEST(staticValue.getIntegerValue() == 3);
+}
+
+BOOST_AUTO_TEST_CASE(runtime_enum_types_only_support_same_type_equality)
+{
+    Runtime runtime;
+    const auto* bodyType = runtime.registerEnum("body", {{"static", 1}, {"dynamic", 2}});
+    const auto* cardinalType = runtime.registerEnum("cardinal", {{"north", 1}, {"south", 2}});
+
+    BOOST_REQUIRE(bodyType != nullptr);
+    BOOST_REQUIRE(cardinalType != nullptr);
+    BOOST_TEST(!bodyType->sameType(cardinalType));
+    BOOST_TEST(!bodyType->sameType(runtime.getIntegerType()));
+    BOOST_TEST(
+        runtime.getBinaryOperatorResultType(BinaryOperator::EqualEqual, bodyType, bodyType) ==
+        runtime.getBooleanType()
+    );
+    BOOST_TEST(
+        runtime.getBinaryOperatorResultType(BinaryOperator::BangEqual, bodyType, bodyType) ==
+        runtime.getBooleanType()
+    );
+    BOOST_TEST(runtime.getBinaryOperatorResultType(BinaryOperator::EqualEqual, bodyType, cardinalType) == nullptr);
+    BOOST_TEST(
+        runtime.getBinaryOperatorResultType(BinaryOperator::EqualEqual, bodyType, runtime.getIntegerType()) == nullptr
+    );
+    BOOST_TEST(runtime.getBinaryOperatorResultType(BinaryOperator::Plus, bodyType, bodyType) == nullptr);
+
+    RuntimeValue result;
+    BOOST_TEST(
+        runtime.foldBinary(
+            BinaryOperator::EqualEqual,
+            bodyType,
+            RuntimeValue{NomadInteger{2}},
+            bodyType,
+            RuntimeValue{NomadInteger{2}},
+            result
+        )
+    );
+    BOOST_TEST(result.getBooleanValue());
+}
+
+BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_enum_definitions_without_partial_registration)
+{
+    Runtime runtime;
+
+    BOOST_TEST(runtime.registerEnum("", {{"value", 1}}) == nullptr);
+    BOOST_TEST(runtime.registerEnum("empty", {}) == nullptr);
+    BOOST_TEST(runtime.registerEnum("unnamed", {{"", 1}}) == nullptr);
+    BOOST_TEST(runtime.registerEnum("duplicateName", {{"value", 1}, {"value", 2}}) == nullptr);
+    BOOST_TEST(runtime.registerEnum("duplicateValue", {{"first", 1}, {"second", 1}}) == nullptr);
+    BOOST_TEST(runtime.registerEnum("int", {{"value", 1}}) == nullptr);
+
+    BOOST_REQUIRE(runtime.registerEnum("valid", {{"first", 1}}) != nullptr);
+    BOOST_TEST(runtime.registerEnum("valid", {{"second", 2}}) == nullptr);
+    BOOST_TEST(runtime.getConstantId("valid.second") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getTypeByName("duplicateName") == nullptr);
+    BOOST_TEST(runtime.getConstantId("duplicateName.value") == NOMAD_INVALID_ID);
 }
 
 BOOST_AUTO_TEST_CASE(id_validation_helpers_distinguish_values_from_ranges)

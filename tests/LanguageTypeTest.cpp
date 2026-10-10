@@ -236,6 +236,148 @@ BOOST_AUTO_TEST_CASE(constants_are_globally_visible)
     BOOST_TEST(outcome.integerValue == 13);
 }
 
+BOOST_AUTO_TEST_CASE(enums_assign_sequential_values_starting_at_one)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction(
+        "main",
+        "enum State\n"
+        "    idle\n"
+        "    walking\n"
+        "    jumping\n"
+        "end\n"
+        "return State.walking"
+    );
+
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+
+    const auto* stateType = fixture.getRuntime().getTypeByName("State")->asEnum();
+    BOOST_REQUIRE(stateType != nullptr);
+    BOOST_TEST(stateType->getValueCount() == 3U);
+    BOOST_TEST(stateType->getValue(0).value == 1);
+    BOOST_TEST(stateType->getValue(1).value == 2);
+    BOOST_TEST(stateType->getValue(2).value == 3);
+
+    const auto outcome = fixture.execute("main");
+    BOOST_TEST(outcome.returnTypeName == "State");
+    BOOST_TEST(outcome.text == "walking");
+}
+
+BOOST_AUTO_TEST_CASE(enum_values_support_assignment_and_same_type_equality)
+{
+    const auto outcome = runSource(
+        "enum State\n"
+        "    idle\n"
+        "    walking\n"
+        "end\n"
+        "state = State.idle\n"
+        "state = State.walking\n"
+        "return state == State.walking"
+    );
+
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_TEST(outcome.returnTypeName == "bool");
+    BOOST_TEST(outcome.booleanValue);
+}
+
+BOOST_AUTO_TEST_CASE(enums_are_globally_visible)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction(
+        "declaration",
+        "enum State\n"
+        "    idle\n"
+        "    walking\n"
+        "end"
+    );
+    fixture.addFunction("user", "return State.walking");
+
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+
+    const auto outcome = fixture.execute("user");
+    BOOST_TEST(outcome.returnTypeName == "State");
+    BOOST_TEST(outcome.text == "walking");
+}
+
+BOOST_AUTO_TEST_CASE(enum_types_reject_integers_other_enums_and_arithmetic)
+{
+    const NomadString declarations =
+        "enum State\n"
+        "    idle\n"
+        "    walking\n"
+        "end\n"
+        "enum Direction\n"
+        "    left\n"
+        "    right\n"
+        "end\n";
+    const std::vector<NomadString> statements = {
+        "state = State.idle\nstate = 1",
+        "state = State.idle\nstate = Direction.left",
+        "return State.idle == 1",
+        "return State.idle == Direction.left",
+        "return State.idle + State.walking",
+        "return toInt State.idle",
+    };
+
+    for (const auto& statement: statements) {
+        BOOST_TEST_CONTEXT(statement) {
+            BOOST_TEST(!compileErrors(declarations + statement).empty());
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(enum_type_diagnostics_include_the_enum_name)
+{
+    const NomadString declaration =
+        "enum State\n"
+        "    idle\n"
+        "    walking\n"
+        "end\n";
+
+    const auto argumentErrors = compileErrors(declaration + "return toFloat State.idle");
+    BOOST_TEST(
+        argumentErrors.find("No overload of 'toFloat' accepts arguments (enum State)") != NomadString::npos,
+        argumentErrors
+    );
+
+    const auto operatorErrors = compileErrors(declaration + "return 1 == State.idle");
+    BOOST_TEST(
+        operatorErrors.find("Invalid binary operator '==' for int and enum State") != NomadString::npos,
+        operatorErrors
+    );
+
+    const auto assignmentErrors = compileErrors(declaration + "state = State.idle\nstate = 1");
+    BOOST_TEST(
+        assignmentErrors.find("value of type 'int' to variable 'state' of type 'enum State'") != NomadString::npos,
+        assignmentErrors
+    );
+}
+
+BOOST_AUTO_TEST_CASE(invalid_enum_declarations_are_rejected)
+{
+    const std::vector<std::pair<NomadString, NomadString>> cases = {
+        {"enum Empty\nend", "must declare at least one value"},
+        {"enum MissingEnd\n    value", "expected 'end'"},
+        {"enum Duplicate\n    value\n    value\nend", "already contains value"},
+        {"enum Extra token\n    value\nend", "Unexpected token after enum name"},
+        {"enum ValueExtra\n    value extra\nend", "Unexpected token after enum value"},
+        {"enum int\n    value\nend", "already defined"},
+        {"enum enum\n    value\nend", "already defined"},
+        {
+            "enum DuplicateType\n    first\nend\n"
+            "enum DuplicateType\n    second\nend",
+            "already defined"
+        },
+    };
+
+    for (const auto& [source, fragment]: cases) {
+        BOOST_TEST_CONTEXT(source) {
+            const auto errors = compileErrors(source);
+            BOOST_TEST(errors.find(fragment) != NomadString::npos, errors);
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(invalid_constants_are_rejected)
 {
     const std::vector<std::pair<std::string, std::string>> cases = {

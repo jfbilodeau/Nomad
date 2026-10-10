@@ -5,6 +5,7 @@
 #include <nomad/game/VariablePersistence.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
 
 #include <TestDirectory.hpp>
@@ -106,6 +107,73 @@ BOOST_AUTO_TEST_CASE(variable_persistence_round_trips_all_supported_types)
     BOOST_TEST(NomadString(getValue(destination, "inventory.playerName").getStringValue()) == "J-F \"Nomad\" \xC3\xA9");
 }
 
+BOOST_AUTO_TEST_CASE(variable_persistence_round_trips_enums_by_member_name)
+{
+    Runtime runtime;
+    const auto* stateType = runtime.registerEnum("State", {{"idle", 10}, {"walking", 20}});
+    BOOST_REQUIRE(stateType != nullptr);
+
+    SimpleVariableContext source;
+    registerValue(source, "inventory.state", stateType, RuntimeValue{NomadInteger{20}});
+
+    boost::json::object root;
+    BOOST_REQUIRE(saveVariableContext(&runtime, source, root));
+    BOOST_REQUIRE(root.at("inventory.state").is_string());
+    BOOST_TEST(root.at("inventory.state").as_string() == "walking");
+    BOOST_TEST(toPrettyJson(root) == "{\n    \"inventory.state\": \"walking\"\n}\n");
+
+    SimpleVariableContext destination;
+    registerValue(destination, "inventory.state", stateType, RuntimeValue{NomadInteger{10}});
+
+    loadVariableContext(&runtime, destination, root);
+
+    BOOST_TEST(getValue(destination, "inventory.state").getIntegerValue() == 20);
+}
+
+BOOST_AUTO_TEST_CASE(variable_persistence_resolves_enum_names_against_the_destination_type)
+{
+    Runtime runtime;
+    const auto* stateType = runtime.registerEnum("State", {{"idle", 1}, {"walking", 2}});
+    const auto* directionType = runtime.registerEnum("Direction", {{"idle", 10}, {"right", 20}});
+    BOOST_REQUIRE(stateType != nullptr);
+    BOOST_REQUIRE(directionType != nullptr);
+
+    SimpleVariableContext context;
+    registerValue(context, "inventory.state", stateType, RuntimeValue{NomadInteger{1}});
+    registerValue(context, "inventory.direction", directionType, RuntimeValue{NomadInteger{20}});
+
+    const auto root = parseObject(R"({
+        "inventory.state": "walking",
+        "inventory.direction": "idle"
+    })");
+
+    loadVariableContext(&runtime, context, root);
+
+    BOOST_TEST(getValue(context, "inventory.state").getIntegerValue() == 2);
+    BOOST_TEST(getValue(context, "inventory.direction").getIntegerValue() == 10);
+}
+
+BOOST_AUTO_TEST_CASE(variable_persistence_rejects_invalid_enum_names_and_numeric_values)
+{
+    Runtime runtime;
+    const auto* stateType = runtime.registerEnum("State", {{"idle", 1}, {"walking", 2}});
+    BOOST_REQUIRE(stateType != nullptr);
+
+    SimpleVariableContext context;
+    registerValue(context, "inventory.unknown", stateType, RuntimeValue{NomadInteger{1}});
+    registerValue(context, "inventory.numeric", stateType, RuntimeValue{NomadInteger{2}});
+
+    const auto root = parseObject(R"({
+        "inventory.unknown": "running",
+        "inventory.numeric": 1
+    })");
+
+    loadVariableContext(&runtime, context, root);
+
+    BOOST_TEST(getValue(context, "inventory.unknown").getIntegerValue() == 1);
+    BOOST_TEST(getValue(context, "inventory.numeric").getIntegerValue() == 2);
+}
+
 BOOST_AUTO_TEST_CASE(variable_persistence_uses_variable_type_to_read_numbers)
 {
     Runtime runtime;
@@ -190,8 +258,17 @@ BOOST_AUTO_TEST_CASE(variable_persistence_rejects_unsupported_and_non_finite_val
 {
     Runtime runtime;
     boost::json::object root;
+    const auto* stateType = runtime.registerEnum("State", {{"idle", 1}});
+    BOOST_REQUIRE(stateType != nullptr);
 
     BOOST_TEST(!writeJsonVariable(&runtime, root, "inventory.id", runtime.getVoidType(), RuntimeValue{}));
+    BOOST_TEST(!writeJsonVariable(
+        &runtime,
+        root,
+        "inventory.state",
+        stateType,
+        RuntimeValue{NomadInteger{2}}
+    ));
     BOOST_TEST(!writeJsonVariable(
         &runtime,
         root,

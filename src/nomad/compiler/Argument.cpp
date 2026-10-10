@@ -211,7 +211,8 @@ void ExpressionArgument::onResolve(CompilerContext* context, Function* function)
         reportError(
             context,
             function,
-            "Argument type mismatch. Expected " + argumentType->getTypeName() + " but got " + expressionType->getTypeName()
+            "Argument type mismatch. Expected " + getTypeDisplayName(argumentType) + " but got " +
+                getTypeDisplayName(expressionType)
         );
         return;
     }
@@ -307,8 +308,8 @@ void CallbackArgument::onResolve(CompilerContext* context, Function* function) {
         reportError(
             context,
             function,
-            "Callback return type mismatch. Expected " + expectedReturnType->getTypeName() + " but got " +
-                actualReturnType->getTypeName()
+            "Callback return type mismatch. Expected " + getTypeDisplayName(expectedReturnType) + " but got " +
+                getTypeDisplayName(actualReturnType)
         );
     }
 }

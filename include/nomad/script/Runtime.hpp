@@ -33,6 +33,8 @@ class Parser;
 class FunctionBuilder;
 class Tokenizer;
 class Type;
+class EnumType;
+struct EnumValueDefinition;
 
 enum class Operand {
     Boolean,
@@ -104,6 +106,10 @@ public:
     [[nodiscard]] NomadId getTypeId(const NomadString& typeName) const;
     [[nodiscard]] std::optional<const Type*> getType(NomadId id) const;
     [[nodiscard]] const Type* getTypeByName(const NomadString& name) const;
+    [[nodiscard]] const EnumType* registerEnum(
+        const NomadString& name,
+        const std::vector<EnumValueDefinition>& values
+    );
     [[nodiscard]] const Type* getCallbackType(const std::vector<const Type*>& parameterTypes, const Type* returnType);
     [[nodiscard]] const Type* getEventType(const NomadString& name) const;
     [[nodiscard]] const Type* getPredicateType();

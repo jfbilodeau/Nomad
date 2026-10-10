@@ -19,6 +19,7 @@ namespace nomad {
 class EventType;
 class Runtime;
 class FunctionType;
+class EnumType;
 
 // Opcodes loading a value into the `r` register, the `i` register or onto the stack.
 struct TargetOpCodes {
@@ -99,11 +100,14 @@ public:
     // Return the type as a callback type or `nullptr` if it is not a callback
     [[nodiscard]] virtual const FunctionType* asCallback() const;
     [[nodiscard]] virtual const EventType* asEvent() const;
+    [[nodiscard]] virtual const EnumType* asEnum() const;
 
 protected:
     // Types owning heap memory replace the defaults in their constructor.
     TypeOpCodes m_typeOpCodes;
 };
+
+[[nodiscard]] NomadString getTypeDisplayName(const Type* type);
 
 const NomadString VOID_TYPE_NAME = "void";
 class VoidType final : public Type {
@@ -129,6 +133,33 @@ public:
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
+};
+
+struct EnumValueDefinition {
+    NomadString name;
+    NomadInteger value;
+};
+
+class EnumType final : public Type {
+public:
+    EnumType(NomadString name, std::vector<EnumValueDefinition> values);
+
+    using Type::toString;
+
+    [[nodiscard]] NomadString getTypeName() const override;
+    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    void toString(const RuntimeValue& value, NomadString& string) const override;
+    [[nodiscard]] bool sameType(const Type* other) const override;
+    [[nodiscard]] const EnumType* asEnum() const override;
+
+    [[nodiscard]] NomadIndex getValueCount() const;
+    [[nodiscard]] const EnumValueDefinition& getValue(NomadIndex index) const;
+    [[nodiscard]] bool getValueByName(const NomadString& name, NomadInteger& value) const;
+    [[nodiscard]] bool getNameByValue(NomadInteger value, NomadString& name) const;
+
+private:
+    NomadString m_name;
+    std::vector<EnumValueDefinition> m_values;
 };
 
 const NomadString FLOAT_TYPE_NAME = "float";
