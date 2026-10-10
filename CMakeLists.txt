@@ -9,6 +9,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
+if(CMAKE_GENERATOR MATCHES "^Visual Studio")
+        add_compile_options(
+                $<$<COMPILE_LANG_AND_ID:C,MSVC>:/MP>
+                $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/MP>
+        )
+endif()
 add_compile_definitions($<$<PLATFORM_ID:Windows>:_WIN32_WINNT=0x0A00>)
 
 set(NOMAD_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
