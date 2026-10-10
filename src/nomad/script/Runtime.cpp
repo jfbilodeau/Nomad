@@ -1836,10 +1836,10 @@ void Runtime::dumpDocumentation(std::ostream &out) const {
     // Output TOC
     out << "# Nomad Engine Reference" << std::endl;
 
-    out << "* [Constants](#Constants)" << std::endl;
-    out << "* [Variable contexts](#Variable-contexts)" << std::endl;
-    out << "* [NativeFunctions](#NativeFunctions)" << std::endl;
-    out << "* [Instructions](#Instructions)" << std::endl;
+    out << "* [Constants](#constants)" << std::endl;
+    out << "* [Variable contexts](#variable-contexts)" << std::endl;
+    out << "* [NativeFunctions](#nativefunctions)" << std::endl;
+    out << "* [Instructions](#instructions)" << std::endl;
 
     out << "---" << std::endl;
 

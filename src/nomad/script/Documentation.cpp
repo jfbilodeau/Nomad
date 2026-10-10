@@ -14,10 +14,9 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     // Output TOC
     out << "# Nomad Engine Reference" << std::endl;
 
-    out << "* [Constants](#Constants)" << std::endl;
-    out << "* [Variable contexts](#Variable-contexts)" << std::endl;
-    out << "* [NativeFunctions](#NativeFunctions)" << std::endl;
-    out << "* [Instructions](#Instructions)" << std::endl;
+    out << "* [Constants](#constants)" << std::endl;
+    out << "* [Variables](#variables)" << std::endl;
+    out << "* [NativeFunctions](#nativefunctions)" << std::endl;
 
     out << "---" << std::endl;
 

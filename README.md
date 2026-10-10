@@ -14,6 +14,9 @@ The project provides the standalone `Nomad::Language`,
 `Nomad::Project`, and `Nomad::Engine` libraries, compiler tooling, a generic
 runtime, and tests.
 
+See the [documentation site](https://jfbilodeau.github.io/Nomad/) for getting
+started, the language guide, engine API, and command references.
+
 ## Project manager
 
 Both `nomad` and `nomadc` use `program <verb> [arguments] [options]`.

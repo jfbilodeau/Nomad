@@ -1,0 +1,25 @@
+site_name: Nomad
+site_description: The Nomad scripting language and 2D game engine
+site_url: https://jfbilodeau.github.io/Nomad/
+repo_url: https://github.com/jfbilodeau/Nomad
+edit_uri: ''
+docs_dir: out/documentation/source
+site_dir: out/documentation/site
+use_directory_urls: true
+theme:
+  name: mkdocs
+validation:
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
+nav:
+  - Getting started: index.md
+  - Language: language.md
+  - Engine API: engine-api.md
+  - CLI: cli.md
+  - Project configuration: configuration.md
+  - Contributing documentation: documentation.md
+markdown_extensions:
+  - fenced_code
+  - tables

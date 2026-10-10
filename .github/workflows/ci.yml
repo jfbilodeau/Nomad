@@ -131,3 +131,50 @@ jobs:
 
       - name: Check SDK without a source checkout or build
         run: cmake -DNOMAD_DISTRIBUTION_OUTPUT=distribution-smoke/out/build/${{ matrix.preset }}/distribution/Release -P distribution-smoke/tests/DistributionSmokeTest.cmake
+
+  documentation:
+    name: Build documentation
+    needs: package-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Download tested Linux SDK
+        uses: actions/download-artifact@v4
+        with:
+          name: distribution-Ubuntu
+          path: documentation-sdk
+
+      - name: Extract verified SDK and generate API reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          distribution="$PWD/documentation-sdk/out/build/linux-ci/distribution/Release"
+          sdk="$PWD/out/documentation/sdk"
+          cd "$distribution"
+          sha256sum --check --strict SHA256SUMS.txt
+          archives=(nomad-sdk-*.zip)
+          test "${#archives[@]}" -eq 1
+          unzip -q "${archives[0]}" -d "$sdk"
+          cd "$GITHUB_WORKSPACE"
+          cmake "-DNOMAD_DOCUMENTATION_SDK=$sdk" -P cmake/GenerateDocumentation.cmake
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Build site
+        run: |
+          python -m pip install -r docs/requirements.txt
+          python -m mkdocs build --strict
+
+      - name: Upload validated site
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation-site
+          path: out/documentation/site
+          if-no-files-found: error
+          retention-days: 7

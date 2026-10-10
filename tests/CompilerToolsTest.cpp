@@ -162,6 +162,10 @@ BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
     BOOST_REQUIRE(result.compilation.succeeded());
     BOOST_TEST(result.documentation.find("# Nomad") != NomadString::npos);
     BOOST_TEST(result.documentation.find("## NativeFunctions") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("[Constants](#constants)") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("[Variables](#variables)") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("[NativeFunctions](#nativefunctions)") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("[Instructions](#instructions)") == NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
