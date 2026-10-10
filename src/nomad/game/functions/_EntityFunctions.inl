@@ -32,7 +32,7 @@ BEGIN_ENTITY_FUNCTION(body.circle)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("bodyType", m_runtime->getIntegerType(), NomadParamDoc("Body type.")),
+        defParameter("bodyType", m_runtime->getTypeByName("body"), NomadParamDoc("Body type.")),
         defParameter("radius", m_runtime->getFloatType(), NomadParamDoc("Radius of the circle body.")),
     },
     m_runtime->getVoidType(),
@@ -64,7 +64,7 @@ BEGIN_ENTITY_FUNCTION(body.rectangle)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("bodyType", m_runtime->getIntegerType(), NomadParamDoc("Body type.")),
+        defParameter("bodyType", m_runtime->getTypeByName("body"), NomadParamDoc("Body type.")),
         defParameter("width", m_runtime->getFloatType(), NomadParamDoc("Width of the rectangle body.")),
         defParameter("height", m_runtime->getFloatType(), NomadParamDoc("Height of the rectangle body.")),
     },

@@ -529,7 +529,7 @@ m_runtime->registerDynamicVariable(
 
         END_SINGLE_ENTITY_BLOCK(NOMAD_DEFAULT_INTEGER)
     },
-    m_runtime->getIntegerType(),
+    m_runtime->getTypeByName("alignment"),
     NomadDoc("The point of the text anchored at the entity position plus text.x and text.y. "
         "topLeft anchors the top-left corner, centerMiddle the center, and bottomRight the bottom-right corner.")
 );

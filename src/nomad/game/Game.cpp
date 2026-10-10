@@ -17,6 +17,7 @@
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/Type.hpp>
 
 #include <nomad/system/Path.hpp>
 
@@ -53,6 +54,7 @@ void Game::initEngine()
     initSdlTtf();
     initResourcePath();
     initRuntime();
+    initEnums();
     initWindowCallbacks();
     initEvents();
     initDynamicVariables();
@@ -1137,35 +1139,54 @@ void Game::initResourceManager() {
     m_resourceManager = std::make_unique<ResourceManager>(this, m_options.resourcePath);
 }
 
+void Game::initEnums() {
+    log::info("Initializing enums");
+
+    const auto registerEnum = [this](
+        const NomadString& name,
+        const std::vector<EnumValueDefinition>& values
+    ) {
+        if (m_runtime->registerEnum(name, values) == nullptr) {
+            raiseError("Failed to register enum '" + name + "'");
+        }
+    };
+
+    registerEnum("alignment", {
+        {"topLeft", static_cast<NomadInteger>(Alignment::TopLeft)},
+        {"topMiddle", static_cast<NomadInteger>(Alignment::TopMiddle)},
+        {"topRight", static_cast<NomadInteger>(Alignment::TopRight)},
+        {"centerLeft", static_cast<NomadInteger>(Alignment::CenterLeft)},
+        {"centerMiddle", static_cast<NomadInteger>(Alignment::CenterMiddle)},
+        {"centerRight", static_cast<NomadInteger>(Alignment::CenterRight)},
+        {"bottomLeft", static_cast<NomadInteger>(Alignment::BottomLeft)},
+        {"bottomMiddle", static_cast<NomadInteger>(Alignment::BottomMiddle)},
+        {"bottomRight", static_cast<NomadInteger>(Alignment::BottomRight)},
+    });
+    registerEnum("horizontalAlignment", {
+        {"left", static_cast<NomadInteger>(HorizontalAlignment::Left)},
+        {"middle", static_cast<NomadInteger>(HorizontalAlignment::Middle)},
+        {"right", static_cast<NomadInteger>(HorizontalAlignment::Right)},
+    });
+    registerEnum("verticalAlignment", {
+        {"top", static_cast<NomadInteger>(VerticalAlignment::Top)},
+        {"center", static_cast<NomadInteger>(VerticalAlignment::Center)},
+        {"bottom", static_cast<NomadInteger>(VerticalAlignment::Bottom)},
+    });
+    registerEnum("body", {
+        {"static", static_cast<NomadInteger>(BodyType::Static)},
+        {"dynamic", static_cast<NomadInteger>(BodyType::Dynamic)},
+        {"kinematic", static_cast<NomadInteger>(BodyType::Kinematic)},
+    });
+    registerEnum("cardinal", {
+        {"north", static_cast<NomadInteger>(Cardinal::North)},
+        {"east", static_cast<NomadInteger>(Cardinal::East)},
+        {"south", static_cast<NomadInteger>(Cardinal::South)},
+        {"west", static_cast<NomadInteger>(Cardinal::West)},
+    });
+}
+
 void Game::initConstants() const {
     log::info("Initializing constants");
-
-    m_runtime->registerConstant("alignment.topLeft", RuntimeValue(static_cast<NomadInteger>(Alignment::TopLeft)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.topMiddle", RuntimeValue(static_cast<NomadInteger>(Alignment::TopMiddle)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.topRight", RuntimeValue(static_cast<NomadInteger>(Alignment::TopRight)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.centerLeft", RuntimeValue(static_cast<NomadInteger>(Alignment::CenterLeft)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.centerMiddle", RuntimeValue(static_cast<NomadInteger>(Alignment::CenterMiddle)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.centerRight", RuntimeValue(static_cast<NomadInteger>(Alignment::CenterRight)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.bottomLeft", RuntimeValue(static_cast<NomadInteger>(Alignment::BottomLeft)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.bottomMiddle", RuntimeValue(static_cast<NomadInteger>(Alignment::BottomMiddle)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.bottomRight", RuntimeValue(static_cast<NomadInteger>(Alignment::BottomRight)), m_runtime->getIntegerType());
-
-    m_runtime->registerConstant("alignment.left", RuntimeValue(static_cast<NomadInteger>(HorizontalAlignment::Left)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.middle", RuntimeValue(static_cast<NomadInteger>(HorizontalAlignment::Middle)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.right", RuntimeValue(static_cast<NomadInteger>(HorizontalAlignment::Right)), m_runtime->getIntegerType());
-
-    m_runtime->registerConstant("alignment.top", RuntimeValue(static_cast<NomadInteger>(VerticalAlignment::Top)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.center", RuntimeValue(static_cast<NomadInteger>(VerticalAlignment::Center)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("alignment.bottom", RuntimeValue(static_cast<NomadInteger>(VerticalAlignment::Bottom)), m_runtime->getIntegerType());
-
-    m_runtime->registerConstant("body.static", RuntimeValue(static_cast<NomadInteger>(BodyType::Static)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("body.dynamic", RuntimeValue(static_cast<NomadInteger>(BodyType::Dynamic)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("body.kinematic", RuntimeValue(static_cast<NomadInteger>(BodyType::Kinematic)), m_runtime->getIntegerType());
-
-    m_runtime->registerConstant("cardinal.north", RuntimeValue(static_cast<NomadInteger>(Cardinal::North)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("cardinal.east", RuntimeValue(static_cast<NomadInteger>(Cardinal::East)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("cardinal.south", RuntimeValue(static_cast<NomadInteger>(Cardinal::South)), m_runtime->getIntegerType());
-    m_runtime->registerConstant("cardinal.west", RuntimeValue(static_cast<NomadInteger>(Cardinal::West)), m_runtime->getIntegerType());
 }
 
 void Game::initText() const {

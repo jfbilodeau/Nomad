@@ -2,8 +2,12 @@
 
 #include <nomad/compiler/CompilerTools.hpp>
 
+#include <nomad/game/Alignment.hpp>
+#include <nomad/game/BodyType.hpp>
+#include <nomad/game/Cardinal.hpp>
 #include <nomad/game/Game.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/Type.hpp>
 
 #include <TestDirectory.hpp>
 
@@ -171,7 +175,13 @@ BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
 BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
 {
     TestDirectory directory("nomad_compilation_test_headless");
-    directory.write("start.nomad", "window.setTitle \"Nomad\"\nreturn alignment.topLeft\n");
+    directory.write(
+        "start.nomad",
+        "window.setTitle \"Nomad\"\n"
+        "this.text.alignment = alignment.topLeft\n"
+        "this.body.circle body.dynamic 1.0\n"
+        "return cardinal.north == cardinal.north\n"
+    );
 
     // A bare runtime knows only the language built-ins, so the engine symbols are unresolved.
     const auto withoutEngine = checkPath(directory.getPath());
@@ -181,12 +191,53 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     options.resourcePath = directory.getPath().generic_string();
 
     auto game = Game::createHeadless(std::move(options));
+    auto* runtime = game->getRuntime();
 
     // The dummy drivers still produce a real renderer, so the engine is fully constructed.
     BOOST_TEST(game->getCanvas() != nullptr);
     BOOST_TEST(game->getResources() != nullptr);
 
-    const auto result = checkPath(directory.getPath(), game->getRuntime());
+    const auto* alignmentType = runtime->getTypeByName("alignment")->asEnum();
+    const auto* horizontalAlignmentType = runtime->getTypeByName("horizontalAlignment")->asEnum();
+    const auto* verticalAlignmentType = runtime->getTypeByName("verticalAlignment")->asEnum();
+    const auto* bodyType = runtime->getTypeByName("body")->asEnum();
+    const auto* cardinalType = runtime->getTypeByName("cardinal")->asEnum();
+    BOOST_REQUIRE(alignmentType != nullptr);
+    BOOST_REQUIRE(horizontalAlignmentType != nullptr);
+    BOOST_REQUIRE(verticalAlignmentType != nullptr);
+    BOOST_REQUIRE(bodyType != nullptr);
+    BOOST_REQUIRE(cardinalType != nullptr);
+    BOOST_TEST(alignmentType->getValueCount() == 9U);
+    BOOST_TEST(horizontalAlignmentType->getValueCount() == 3U);
+    BOOST_TEST(verticalAlignmentType->getValueCount() == 3U);
+    BOOST_TEST(bodyType->getValueCount() == 3U);
+    BOOST_TEST(cardinalType->getValueCount() == 4U);
+
+    NomadInteger enumValue = 0;
+    BOOST_REQUIRE(alignmentType->getValueByName("topLeft", enumValue));
+    BOOST_TEST(enumValue == static_cast<NomadInteger>(Alignment::TopLeft));
+    BOOST_REQUIRE(bodyType->getValueByName("dynamic", enumValue));
+    BOOST_TEST(enumValue == static_cast<NomadInteger>(BodyType::Dynamic));
+    BOOST_REQUIRE(cardinalType->getValueByName("east", enumValue));
+    BOOST_TEST(enumValue == static_cast<NomadInteger>(Cardinal::East));
+
+    NativeFunctionDefinition thisCircleBody;
+    NativeFunctionDefinition otherRectangleBody;
+    BOOST_REQUIRE(runtime->getNativeFunctionDefinition("this.body.circle", thisCircleBody));
+    BOOST_REQUIRE(runtime->getNativeFunctionDefinition("other.body.rectangle", otherRectangleBody));
+    BOOST_REQUIRE(!thisCircleBody.parameters.empty());
+    BOOST_REQUIRE(!otherRectangleBody.parameters.empty());
+    BOOST_TEST(thisCircleBody.parameters[0].type == bodyType);
+    BOOST_TEST(otherRectangleBody.parameters[0].type == bodyType);
+
+    const auto thisAlignmentId = runtime->getDynamicVariableId("this.text.alignment");
+    const auto otherAlignmentId = runtime->getDynamicVariableId("other.text.alignment");
+    BOOST_REQUIRE(thisAlignmentId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(otherAlignmentId != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime->getDynamicVariableType(thisAlignmentId) == alignmentType);
+    BOOST_TEST(runtime->getDynamicVariableType(otherAlignmentId) == alignmentType);
+
+    const auto result = checkPath(directory.getPath(), runtime);
 
     for (const auto& diagnostic : result.diagnostics) {
         BOOST_TEST_MESSAGE(formatDiagnostic(diagnostic));
