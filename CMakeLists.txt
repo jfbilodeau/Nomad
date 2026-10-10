@@ -414,9 +414,12 @@ if(NOMAD_BUILD_CLI)
             POST_BUILD
             COMMAND
                 ${CMAKE_COMMAND}
-                "-DNOMAD_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-cli>,|>"
+                -DNOMAD_RUNTIME_DEPENDENCIES_FROM_ARGUMENTS=ON
                 "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad-cli>"
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
+                --
+                $<TARGET_RUNTIME_DLLS:nomad-cli>
+            COMMAND_EXPAND_LISTS
             VERBATIM
         )
     endif()
@@ -434,9 +437,12 @@ if(NOMAD_BUILD_RUNTIME)
             POST_BUILD
             COMMAND
                 ${CMAKE_COMMAND}
-                "-DNOMAD_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-runtime>,|>"
+                -DNOMAD_RUNTIME_DEPENDENCIES_FROM_ARGUMENTS=ON
                 "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad-runtime>"
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
+                --
+                $<TARGET_RUNTIME_DLLS:nomad-runtime>
+            COMMAND_EXPAND_LISTS
             VERBATIM
         )
     elseif(APPLE)
@@ -466,10 +472,13 @@ if(NOMAD_BUILD_RUNTIME)
                     "-DNOMAD_RUNTIME_VERSION=${PROJECT_VERSION}"
                     "-DNOMAD_RUNTIME_TARGET=${NOMAD_PACKAGE_PLATFORM}"
                     "-DNOMAD_RUNTIME_LICENSE_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/RuntimeLicenses.cmake"
-                    "-DNOMAD_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-runtime>,|>"
+                    -DNOMAD_RUNTIME_DEPENDENCIES_FROM_ARGUMENTS=ON
                     "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad-runtime>/runtime"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
+                    --
+                    $<TARGET_RUNTIME_DLLS:nomad-runtime>
                 DEPENDS nomad-runtime
+                COMMAND_EXPAND_LISTS
                 VERBATIM
             )
         else()

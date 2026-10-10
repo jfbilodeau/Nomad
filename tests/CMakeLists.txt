@@ -72,9 +72,12 @@ if(WIN32)
         POST_BUILD
         COMMAND
             ${CMAKE_COMMAND}
-            "-DNOMAD_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomad_test>,|>"
+            -DNOMAD_RUNTIME_DEPENDENCIES_FROM_ARGUMENTS=ON
             "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad_test>"
             -P "${CMAKE_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
+            --
+            $<TARGET_RUNTIME_DLLS:nomad_test>
+        COMMAND_EXPAND_LISTS
         VERBATIM
     )
 endif()
