@@ -280,7 +280,7 @@ void BinaryExpression::onResolve(CompilerContext* context, Function* function) {
             context,
             function,
             "Invalid binary operator '" + toString(m_binaryOperator) + "' for " +
-                lhsType->getTypeName() + " and " + rhsType->getTypeName()
+                getTypeDisplayName(lhsType) + " and " + getTypeDisplayName(rhsType)
         );
         return;
     }

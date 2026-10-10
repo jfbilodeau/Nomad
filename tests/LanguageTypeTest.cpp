@@ -326,6 +326,33 @@ BOOST_AUTO_TEST_CASE(enum_types_reject_integers_other_enums_and_arithmetic)
     }
 }
 
+BOOST_AUTO_TEST_CASE(enum_type_diagnostics_include_the_enum_name)
+{
+    const NomadString declaration =
+        "enum State\n"
+        "    idle\n"
+        "    walking\n"
+        "end\n";
+
+    const auto argumentErrors = compileErrors(declaration + "return toFloat State.idle");
+    BOOST_TEST(
+        argumentErrors.find("No overload of 'toFloat' accepts arguments (enum State)") != NomadString::npos,
+        argumentErrors
+    );
+
+    const auto operatorErrors = compileErrors(declaration + "return 1 == State.idle");
+    BOOST_TEST(
+        operatorErrors.find("Invalid binary operator '==' for int and enum State") != NomadString::npos,
+        operatorErrors
+    );
+
+    const auto assignmentErrors = compileErrors(declaration + "state = State.idle\nstate = 1");
+    BOOST_TEST(
+        assignmentErrors.find("value of type 'int' to variable 'state' of type 'enum State'") != NomadString::npos,
+        assignmentErrors
+    );
+}
+
 BOOST_AUTO_TEST_CASE(invalid_enum_declarations_are_rejected)
 {
     const std::vector<std::pair<NomadString, NomadString>> cases = {

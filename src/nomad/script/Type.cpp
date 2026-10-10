@@ -93,6 +93,15 @@ bool Type::isString() const {
     return false;
 }
 
+NomadString getTypeDisplayName(const Type* type) {
+    if (type == nullptr) {
+        return "<unknown>";
+    }
+
+    const auto prefix = type->asEnum() == nullptr ? NomadString{} : NomadString{"enum "};
+    return prefix + type->getTypeName();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // VoidType
 NomadString VoidType::getTypeName() const {

@@ -489,7 +489,7 @@ CallableId Runtime::resolveCallableOverload(
             argumentList += ", ";
         }
 
-        argumentList += argumentType->getTypeName();
+        argumentList += getTypeDisplayName(argumentType);
     }
 
     error = compatibleCount > 1

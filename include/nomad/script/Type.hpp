@@ -107,6 +107,8 @@ protected:
     TypeOpCodes m_typeOpCodes;
 };
 
+[[nodiscard]] NomadString getTypeDisplayName(const Type* type);
+
 const NomadString VOID_TYPE_NAME = "void";
 class VoidType final : public Type {
 public:
