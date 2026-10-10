@@ -54,6 +54,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out tagged installer scripts
+        uses: actions/checkout@v4
+
       - name: Download tested SDK distributions
         uses: actions/download-artifact@v4
         with:
@@ -74,6 +77,7 @@ jobs:
           cp "$linux/nomad-sdk-linux-x64-$version.zip" release-assets/
           cat "$windows/SHA256SUMS.txt" "$linux/SHA256SUMS.txt" > release-assets/SHA256SUMS.txt
           test "$(wc -l < release-assets/SHA256SUMS.txt)" -eq 2
+          cp scripts/install.ps1 scripts/install.sh release-assets/
           cd release-assets
           sha256sum --check --strict SHA256SUMS.txt
 
@@ -91,4 +95,6 @@ jobs:
             --title "Nomad $RELEASE_TAG" \
             --generate-notes \
             release-assets/nomad-sdk-*.zip \
-            release-assets/SHA256SUMS.txt
+            release-assets/SHA256SUMS.txt \
+            release-assets/install.ps1 \
+            release-assets/install.sh

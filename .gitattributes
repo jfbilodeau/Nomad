@@ -1,0 +1,2 @@
+# For WSL Bash scripts
+*.sh text eol=lf

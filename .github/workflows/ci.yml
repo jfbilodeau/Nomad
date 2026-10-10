@@ -169,7 +169,7 @@ jobs:
 
       - name: Build site
         run: |
-          python -m unittest discover -s scripts -p "test_*.py"
+          python -m unittest discover -s scripts -p "test_generate_documentation.py"
           python scripts/generate_documentation.py --sdk out/documentation/sdk
           python -m pip install -r docs/requirements.txt
           python -m mkdocs build --strict
@@ -181,3 +181,36 @@ jobs:
           path: out/documentation/site
           if-no-files-found: error
           retention-days: 7
+
+  installers:
+    name: ${{ matrix.name }} installer
+    needs: package-smoke
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-2022
+          - name: Ubuntu
+            os: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Download tested SDK
+        uses: actions/download-artifact@v4
+        with:
+          name: distribution-${{ matrix.name }}
+          path: installer-sdk
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Test installer and installed SDK
+        env:
+          NOMAD_INSTALLER_DISTRIBUTION_ROOT: installer-sdk
+        run: python -m unittest discover -s scripts -p "test_installers.py" -v

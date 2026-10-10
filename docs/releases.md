@@ -18,6 +18,7 @@ Prerelease suffixes are not currently supported.
    - `nomad-sdk-windows-x64-<version>.zip`
    - `nomad-sdk-linux-x64-<version>.zip`
    - `SHA256SUMS.txt`, containing checksums for both ZIPs
+   - `install.ps1` and `install.sh`, the Windows and Linux bootstrap installers
 5. Download the draft assets, verify their checksums, and check the SDK and a
    packaged game on both platforms. Review the generated release notes, then
    publish the draft manually.
