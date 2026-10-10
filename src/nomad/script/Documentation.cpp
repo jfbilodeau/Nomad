@@ -1,10 +1,12 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/compiler/Compiler.hpp>
 #include <nomad/script/Documentation.hpp>
+
+#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/Parser.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/Type.hpp>
 
 #include <boost/json.hpp>
 
@@ -15,6 +17,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     out << "# Nomad Engine Reference" << std::endl;
 
     out << "* [Constants](#constants)" << std::endl;
+    out << "* [Enums](#enums)" << std::endl;
     out << "* [Variables](#variables)" << std::endl;
     out << "* [NativeFunctions](#nativefunctions)" << std::endl;
 
@@ -29,6 +32,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     };
 
     std::vector<constantInfo> constants;
+    std::vector<const EnumType*> enums;
 
     NomadId constantId = runtime->getFirstConstantId();
 
@@ -38,11 +42,17 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
         RuntimeValue value;
         runtime->getConstantValue(constantId, value);
 
-        constants.emplace_back(
-            name,
-            type,
-            value
-        );
+        if (const auto* enumType = type->asEnum()) {
+            if (std::ranges::find(enums, enumType) == enums.end()) {
+                enums.push_back(enumType);
+            }
+        } else {
+            constants.emplace_back(
+                name,
+                type,
+                value
+            );
+        }
 
         constantId = runtime->getNextConstantId(constantId);
     }
@@ -98,6 +108,24 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
             << constantTextValue
             << "`"
             << std::endl;
+    }
+
+    out << std::endl;
+
+    std::ranges::sort(enums, {}, [](const EnumType* type) {
+        return type->getTypeName();
+    });
+
+    out << "## Enums" << std::endl;
+
+    for (const auto* enumType: enums) {
+        out << std::endl;
+        out << "### " << enumType->getTypeName() << std::endl;
+        out << std::endl;
+
+        for (NomadIndex index = 0; index < enumType->getValueCount(); ++index) {
+            out << "* `" << enumType->getTypeName() << "." << enumType->getValue(index).name << "`" << std::endl;
+        }
     }
 
     out << std::endl;

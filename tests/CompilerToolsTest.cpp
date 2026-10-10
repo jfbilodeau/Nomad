@@ -159,16 +159,31 @@ BOOST_AUTO_TEST_CASE(reports_unknown_dump_functions)
 BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
 {
     TestDirectory directory("nomad_compilation_test_documentation");
-    const auto source = directory.write("answer.nomad", "return 42");
+    const auto source = directory.write(
+        "answer.nomad",
+        "enum State\n"
+        "    idle\n"
+        "    walking\n"
+        "end\n"
+        "const ANSWER = 42\n"
+        "return ANSWER"
+    );
 
     const auto result = generateDocumentationForPath(source);
 
     BOOST_REQUIRE(result.compilation.succeeded());
     BOOST_TEST(result.documentation.find("# Nomad") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("## Enums") != NomadString::npos);
     BOOST_TEST(result.documentation.find("## NativeFunctions") != NomadString::npos);
     BOOST_TEST(result.documentation.find("[Constants](#constants)") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("[Enums](#enums)") != NomadString::npos);
     BOOST_TEST(result.documentation.find("[Variables](#variables)") != NomadString::npos);
     BOOST_TEST(result.documentation.find("[NativeFunctions](#nativefunctions)") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("### State") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("* `State.idle`") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("* `State.walking`") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("State.idle:State") == NomadString::npos);
+    BOOST_TEST(result.documentation.find("ANSWER:int = 42") != NomadString::npos);
     BOOST_TEST(result.documentation.find("[Instructions](#instructions)") == NomadString::npos);
 }
 
