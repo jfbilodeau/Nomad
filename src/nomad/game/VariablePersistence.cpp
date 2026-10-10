@@ -53,11 +53,13 @@ std::vector<NomadString> splitVariableName(const NomadString& variableName) {
 }
 
 bool isPersistableType(const Runtime* runtime, const Type* type) {
-    return
+    return type != nullptr && (
         type == runtime->getIntegerType() ||
         type == runtime->getFloatType() ||
         type == runtime->getBooleanType() ||
-        type == runtime->getStringType();
+        type == runtime->getStringType() ||
+        type->asEnum() != nullptr
+    );
 }
 
 // Returns the double closest to the shortest decimal representation of `value` so that `0.1f` is written
@@ -178,6 +180,20 @@ std::optional<boost::json::value> toJsonValue(
     const Type* type,
     const RuntimeValue& value
 ) {
+    if (const auto* enumType = type == nullptr ? nullptr : type->asEnum()) {
+        NomadString valueName;
+
+        if (!enumType->getNameByValue(value.getIntegerValue(), valueName)) {
+            log::error(
+                "Cannot save '" + variableName + "': " + std::to_string(value.getIntegerValue()) +
+                " is not a valid value of enum '" + type->getTypeName() + "'"
+            );
+            return std::nullopt;
+        }
+
+        return boost::json::value(valueName);
+    }
+
     if (type == runtime->getIntegerType()) {
         return boost::json::value(value.getIntegerValue());
     }
@@ -255,6 +271,20 @@ bool toFloatValue(const boost::json::value& json, NomadFloat& floatValue) {
 }
 
 bool fromJsonValue(const Runtime* runtime, const boost::json::value& json, const Type* type, RuntimeValue& value) {
+    if (const auto* enumType = type == nullptr ? nullptr : type->asEnum()) {
+        if (!json.is_string()) {
+            return false;
+        }
+
+        NomadInteger enumValue = 0;
+        if (!enumType->getValueByName(NomadString(json.get_string()), enumValue)) {
+            return false;
+        }
+
+        value.setIntegerValue(enumValue);
+        return true;
+    }
+
     if (type == runtime->getIntegerType()) {
         NomadInteger integerValue = 0;
 
