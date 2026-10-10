@@ -50,7 +50,15 @@ try {
         throw "Expected exactly one checksum for $name"
     }
     $expected = $entries[0].Substring(0, 64)
-    if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expected) {
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($archive)
+    try {
+        $actual = [System.BitConverter]::ToString($algorithm.ComputeHash($stream)).Replace('-', '')
+    } finally {
+        $stream.Dispose()
+        $algorithm.Dispose()
+    }
+    if ($actual -ne $expected) {
         throw "Checksum mismatch for $name"
     }
     Add-Type -AssemblyName System.IO.Compression.FileSystem

@@ -60,6 +60,9 @@ class InstallerTest(unittest.TestCase):
 param([string]$Fixture, [string]$Installer, [string]$Destination, [string]$Version)
 $ErrorActionPreference = 'Stop'
 Import-Module Microsoft.PowerShell.Utility
+function Get-FileHash {
+    throw 'The installer must not depend on Get-FileHash being available.'
+}
 function Invoke-RestMethod {
     param($Uri, $TimeoutSec)
     Get-Content -LiteralPath (Join-Path $Fixture 'release.json') -Raw | ConvertFrom-Json
