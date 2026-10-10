@@ -11,3 +11,5 @@ CMakeUserPresets.json
 /build/
 /cmake-build-*/
 /out/
+
+__pycache__/

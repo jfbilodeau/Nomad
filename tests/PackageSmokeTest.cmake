@@ -43,21 +43,14 @@ else()
     endif()
 endif()
 
-execute_process(
+include("${CMAKE_CURRENT_LIST_DIR}/TestProcess.cmake")
+nomadRunTestCommand("Packaged runtime startup"
     COMMAND "${CMAKE_COMMAND}" -E env
         --unset=LD_LIBRARY_PATH --unset=LD_PRELOAD --unset=DYLD_LIBRARY_PATH
         --unset=DYLD_FALLBACK_LIBRARY_PATH
         "PATH=${SYSTEM_PATH}"
         "${RUNTIME}" --help
     WORKING_DIRECTORY "${NOMAD_PACKAGE_DIRECTORY}"
-    RESULT_VARIABLE RESULT
-    OUTPUT_VARIABLE OUTPUT
-    ERROR_VARIABLE ERROR_OUTPUT
-    ENCODING UTF-8
-    TIMEOUT 30
+    OUTPUT_MATCH "Allowed options"
 )
-if(NOT RESULT STREQUAL "0" OR NOT OUTPUT MATCHES "Allowed options")
-    message(FATAL_ERROR
-        "Packaged runtime startup failed (${RESULT})\nstdout:\n${OUTPUT}\nstderr:\n${ERROR_OUTPUT}")
-endif()
 message(STATUS "Packaged runtime starts with only package-local and system dependency search paths")

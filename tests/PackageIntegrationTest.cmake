@@ -7,42 +7,14 @@ if(
     message(FATAL_ERROR "NOMAD_CLI, NOMAD_COMPILER, NOMAD_RUNTIME_SUFFIX, and NOMAD_TEST_ROOT are required")
 endif()
 
-function(run_success DESCRIPTION)
-    execute_process(
-        COMMAND ${ARGN}
-        RESULT_VARIABLE RESULT
-        OUTPUT_VARIABLE OUTPUT
-        ERROR_VARIABLE ERROR_OUTPUT
-        ENCODING UTF-8
-    )
+include("${CMAKE_CURRENT_LIST_DIR}/TestProcess.cmake")
 
-    if(NOT RESULT EQUAL 0)
-        message(
-            FATAL_ERROR
-            "${DESCRIPTION} failed with exit code ${RESULT}\n"
-            "stdout:\n${OUTPUT}\n"
-            "stderr:\n${ERROR_OUTPUT}"
-        )
-    endif()
+function(run_success DESCRIPTION)
+    nomadRunTestCommand("${DESCRIPTION}" COMMAND ${ARGN})
 endfunction()
 
 function(run_failure DESCRIPTION)
-    execute_process(
-        COMMAND ${ARGN}
-        RESULT_VARIABLE RESULT
-        OUTPUT_VARIABLE OUTPUT
-        ERROR_VARIABLE ERROR_OUTPUT
-        ENCODING UTF-8
-    )
-
-    if(RESULT EQUAL 0)
-        message(
-            FATAL_ERROR
-            "${DESCRIPTION} unexpectedly succeeded\n"
-            "stdout:\n${OUTPUT}\n"
-            "stderr:\n${ERROR_OUTPUT}"
-        )
-    endif()
+    nomadRunTestCommand("${DESCRIPTION}" EXPECT_FAILURE COMMAND ${ARGN})
 endfunction()
 
 function(require_path PATH DESCRIPTION)
@@ -198,6 +170,8 @@ if(DEFINED NOMAD_PACKAGE_ARTIFACT_DIR)
     file(COPY_FILE "${PACKAGE_ARCHIVE}" "${NOMAD_PACKAGE_ARTIFACT_DIR}/${ARCHIVE_NAME}")
     file(COPY_FILE "${CMAKE_CURRENT_LIST_DIR}/PackageSmokeTest.cmake"
         "${NOMAD_PACKAGE_ARTIFACT_DIR}/PackageSmokeTest.cmake")
+    file(COPY_FILE "${CMAKE_CURRENT_LIST_DIR}/TestProcess.cmake"
+        "${NOMAD_PACKAGE_ARTIFACT_DIR}/TestProcess.cmake")
 endif()
 
 file(WRITE "${PROJECT_DIR}/res/scripts/init.nomad" "missing.statement\n")

@@ -9,7 +9,7 @@ Use an extracted SDK matching the source revision, or the directory containing
 the locally built tools and templates. From the repository root:
 
 ```console
-cmake -DNOMAD_DOCUMENTATION_SDK=<sdk-directory> -P cmake/GenerateDocumentation.cmake
+python scripts/generate_documentation.py --sdk <sdk-directory>
 python -m pip install -r docs/requirements.txt
 python -m mkdocs build --strict
 ```
@@ -18,6 +18,10 @@ The preparation script copies handwritten pages to `out/documentation/source`,
 initializes a disposable project, and generates `engine-api.md` without
 executing game scripts. The rendered site is in `out/documentation/site`.
 Run `python -m mkdocs serve` to preview it locally.
+
+The preparation script uses only the Python standard library and needs no
+CMake installation. Test it with
+`python -m unittest discover -s scripts -p "test_*.py"`.
 
 ## CI and deployment
 

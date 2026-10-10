@@ -50,22 +50,22 @@ unset(ENV{LD_PRELOAD})
 unset(ENV{DYLD_LIBRARY_PATH})
 unset(ENV{DYLD_FALLBACK_LIBRARY_PATH})
 
+include("${CMAKE_CURRENT_LIST_DIR}/TestProcess.cmake")
+
 function(run_success)
-    execute_process(COMMAND ${ARGV} WORKING_DIRECTORY "${NOMAD_TEST_ROOT}"
-        RESULT_VARIABLE RESULT OUTPUT_VARIABLE OUTPUT ERROR_VARIABLE ERROR_OUTPUT TIMEOUT 30)
-    if(NOT RESULT STREQUAL "0")
-        message(FATAL_ERROR "Command failed (${RESULT}): ${ARGV}\n${OUTPUT}\n${ERROR_OUTPUT}")
-    endif()
+    nomadRunTestCommand("Extracted SDK command" COMMAND ${ARGV}
+        WORKING_DIRECTORY "${NOMAD_TEST_ROOT}")
 endfunction()
 
 foreach(PROGRAM IN ITEMS nomad nomadc)
-    execute_process(COMMAND "${SDK}/${PROGRAM}${SUFFIX}" --version
+    nomadRunTestCommand("Extracted ${PROGRAM} version"
+        COMMAND "${SDK}/${PROGRAM}${SUFFIX}" --version
         WORKING_DIRECTORY "${NOMAD_TEST_ROOT}"
-        RESULT_VARIABLE RESULT OUTPUT_VARIABLE OUTPUT ERROR_VARIABLE ERROR_OUTPUT TIMEOUT 30)
+        OUTPUT_VARIABLE OUTPUT)
     string(STRIP "${OUTPUT}" OUTPUT)
     string(FIND "${OUTPUT}" "${VERSION}" VERSION_POSITION)
-    if(NOT RESULT STREQUAL "0" OR VERSION_POSITION LESS 0)
-        message(FATAL_ERROR "Extracted ${PROGRAM} version failed: ${RESULT}\n${OUTPUT}\n${ERROR_OUTPUT}")
+    if(VERSION_POSITION LESS 0)
+        message(FATAL_ERROR "Extracted ${PROGRAM} version mismatch:\n${OUTPUT}")
     endif()
 endforeach()
 set(PROJECT "${NOMAD_TEST_ROOT}/game")

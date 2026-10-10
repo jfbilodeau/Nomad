@@ -87,6 +87,7 @@ jobs:
             out/build/${{ matrix.preset }}/distribution/Release/nomad-sdk-*.zip
             out/build/${{ matrix.preset }}/distribution/Release/SHA256SUMS.txt
             tests/DistributionSmokeTest.cmake
+            tests/TestProcess.cmake
           if-no-files-found: error
           retention-days: 7
 
@@ -147,7 +148,7 @@ jobs:
           name: distribution-Ubuntu
           path: documentation-sdk
 
-      - name: Extract verified SDK and generate API reference
+      - name: Extract verified SDK
         shell: bash
         run: |
           set -euo pipefail
@@ -159,7 +160,6 @@ jobs:
           test "${#archives[@]}" -eq 1
           unzip -q "${archives[0]}" -d "$sdk"
           cd "$GITHUB_WORKSPACE"
-          cmake "-DNOMAD_DOCUMENTATION_SDK=$sdk" -P cmake/GenerateDocumentation.cmake
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -168,6 +168,8 @@ jobs:
 
       - name: Build site
         run: |
+          python -m unittest discover -s scripts -p "test_*.py"
+          python scripts/generate_documentation.py --sdk out/documentation/sdk
           python -m pip install -r docs/requirements.txt
           python -m mkdocs build --strict
 

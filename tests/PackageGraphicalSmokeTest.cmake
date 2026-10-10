@@ -4,13 +4,10 @@ foreach(REQUIRED IN ITEMS NOMAD_CLI NOMAD_SMOKE_PROJECT NOMAD_TEST_ROOT NOMAD_RU
     endif()
 endforeach()
 
+include("${CMAKE_CURRENT_LIST_DIR}/TestProcess.cmake")
+
 function(run_success DESCRIPTION)
-    execute_process(COMMAND ${ARGN}
-        RESULT_VARIABLE RESULT OUTPUT_VARIABLE OUTPUT ERROR_VARIABLE ERROR_OUTPUT
-        ENCODING UTF-8 TIMEOUT 30)
-    if(NOT RESULT STREQUAL "0")
-        message(FATAL_ERROR "${DESCRIPTION} failed (${RESULT})\nstdout:\n${OUTPUT}\nstderr:\n${ERROR_OUTPUT}")
-    endif()
+    nomadRunTestCommand("${DESCRIPTION}" COMMAND ${ARGN})
 endfunction()
 
 file(REMOVE_RECURSE "${NOMAD_TEST_ROOT}")
@@ -33,16 +30,14 @@ if(MANIFEST STREQUAL AUTOMATED_MANIFEST)
     message(FATAL_ERROR "Could not select automated smoke entry")
 endif()
 file(WRITE "${EXTRACTED}/nomad.toml" "${AUTOMATED_MANIFEST}")
-execute_process(
+nomadRunTestCommand("Graphical fixture initialization"
     COMMAND "${CMAKE_COMMAND}" -E env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy
         "${EXTRACTED}/nomad-package-smoke${NOMAD_RUNTIME_SUFFIX}"
     WORKING_DIRECTORY "${EXTRACTED}"
-    RESULT_VARIABLE RESULT OUTPUT_VARIABLE OUTPUT ERROR_VARIABLE ERROR_OUTPUT
-    ENCODING UTF-8 TIMEOUT 30
+    OUTPUT_VARIABLE OUTPUT ERROR_VARIABLE ERROR_OUTPUT OUTPUT_MATCH "PACKAGING_SMOKE_COMPLETE"
 )
-if(NOT RESULT STREQUAL "0" OR NOT OUTPUT MATCHES "PACKAGING_SMOKE_COMPLETE"
-    OR "${OUTPUT}\n${ERROR_OUTPUT}" MATCHES "\\[(ERROR|FATAL)\\]")
-    message(FATAL_ERROR "Graphical fixture initialization failed (${RESULT})\nstdout:\n${OUTPUT}\nstderr:\n${ERROR_OUTPUT}")
+if("${OUTPUT}\n${ERROR_OUTPUT}" MATCHES "\\[(ERROR|FATAL)\\]")
+    message(FATAL_ERROR "Graphical fixture logged an error:\n${OUTPUT}\n${ERROR_OUTPUT}")
 endif()
 file(MAKE_DIRECTORY "${NOMAD_PACKAGE_ARTIFACT_DIR}")
 get_filename_component(ARCHIVE_NAME "${ARCHIVE}" NAME)
