@@ -7,7 +7,9 @@ docs_dir: out/documentation/source
 site_dir: out/documentation/site
 use_directory_urls: true
 theme:
-  name: mkdocs
+  name: material
+  features:
+    - content.code.copy
 validation:
   links:
     not_found: warn
@@ -21,5 +23,6 @@ nav:
   - Project configuration: configuration.md
   - Contributing documentation: documentation.md
 markdown_extensions:
-  - fenced_code
+  - pymdownx.highlight
+  - pymdownx.superfences
   - tables

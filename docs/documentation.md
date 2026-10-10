@@ -2,6 +2,8 @@
 
 Handwritten pages live in `docs`. The engine API page is generated from the
 registered API with `nomadc docs`; do not edit the generated Markdown.
+The site uses Material for MkDocs for syntax highlighting and built-in code
+copy buttons; clipboard access requires HTTPS or localhost.
 
 ## Build locally
 
