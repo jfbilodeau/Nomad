@@ -27,14 +27,22 @@ jobs:
         include:
           - name: Windows
             os: windows-2022
-            preset: windows-ci
           - name: Ubuntu
             os: ubuntu-latest
-            preset: linux-ci
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+      # - name: Activate Windows compiler
+      #   if: runner.os == 'Windows'
+      #   shell: pwsh
+      #   run: |
+      #     $visualStudio = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+      #     if (-not $visualStudio) { throw 'Visual Studio C++ tools were not found' }
+      #     $environment = & $env:ComSpec /c "call `"$visualStudio\Common7\Tools\VsDevCmd.bat`" -arch=x64 -host_arch=x64 >nul && set"
+      #     if ($LASTEXITCODE -ne 0) { throw 'Failed to activate MSVC' }
+      #     $environment | Where-Object { $_ -match '^(PATH|INCLUDE|LIB|LIBPATH)=' } | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
 
       - name: Install Ubuntu dependencies
         if: runner.os == 'Linux'
@@ -63,19 +71,19 @@ jobs:
             libxtst-dev
 
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }}
+        run: cmake --preset ci
 
       - name: Build
-        run: cmake --build --preset ${{ matrix.preset }} --parallel
+        run: cmake --build --preset ci --parallel
 
       - name: Test
-        run: ctest --preset ${{ matrix.preset }}
+        run: ctest --preset ci
 
       - name: Upload tested Release package
         uses: actions/upload-artifact@v4
         with:
           name: package-smoke-${{ matrix.name }}
-          path: out/build/${{ matrix.preset }}/tests/package-artifact/Release/*
+          path: out/build/ci/tests/package-artifact/Release/*
           if-no-files-found: error
           retention-days: 7
 
@@ -84,8 +92,8 @@ jobs:
         with:
           name: distribution-${{ matrix.name }}
           path: |
-            out/build/${{ matrix.preset }}/distribution/Release/nomad-sdk-*.zip
-            out/build/${{ matrix.preset }}/distribution/Release/SHA256SUMS.txt
+            out/build/ci/distribution/Release/nomad-sdk-*.zip
+            out/build/ci/distribution/Release/SHA256SUMS.txt
             tests/DistributionSmokeTest.cmake
             tests/TestProcess.cmake
           if-no-files-found: error
@@ -95,7 +103,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: graphical-package-${{ matrix.name }}
-          path: out/build/${{ matrix.preset }}/tests/package-graphical-artifact/Release/*
+          path: out/build/ci/tests/package-graphical-artifact/Release/*
           if-no-files-found: error
           retention-days: 7
 
@@ -110,10 +118,8 @@ jobs:
         include:
           - name: Windows
             os: windows-2022
-            preset: windows-ci
           - name: Ubuntu
             os: ubuntu-latest
-            preset: linux-ci
     steps:
       - name: Download tested Release package
         uses: actions/download-artifact@v4
@@ -131,7 +137,7 @@ jobs:
           path: distribution-smoke
 
       - name: Check SDK without a source checkout or build
-        run: cmake -DNOMAD_DISTRIBUTION_OUTPUT=distribution-smoke/out/build/${{ matrix.preset }}/distribution/Release -P distribution-smoke/tests/DistributionSmokeTest.cmake
+        run: cmake -DNOMAD_DISTRIBUTION_OUTPUT=distribution-smoke/out/build/ci/distribution/Release -P distribution-smoke/tests/DistributionSmokeTest.cmake
 
   documentation:
     name: Build documentation
@@ -152,7 +158,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          distribution="$PWD/documentation-sdk/out/build/linux-ci/distribution/Release"
+          distribution="$PWD/documentation-sdk/out/build/ci/distribution/Release"
           sdk="$PWD/out/documentation/sdk"
           cd "$distribution"
           sha256sum --check --strict SHA256SUMS.txt

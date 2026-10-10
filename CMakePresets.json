@@ -50,10 +50,14 @@
       "inherits": "windows-base"
     },
     {
-      "name": "windows-ci",
-      "displayName": "Windows CI",
-      "description": "Visual Studio Release build used by continuous integration",
-      "inherits": "windows-base"
+      "name": "ci",
+      "displayName": "CI",
+      "description": "Ninja Release build for Windows and Linux",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     },
     {
       "name": "linux-debug",
@@ -76,15 +80,6 @@
       }
     },
     {
-      "name": "linux-ci",
-      "displayName": "Linux CI",
-      "description": "GCC Release build used by continuous integration",
-      "inherits": "linux-base",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-    {
       "name": "linux-sanitizers",
       "displayName": "Linux sanitizers",
       "description": "GCC RelWithDebInfo build with AddressSanitizer and UndefinedBehaviorSanitizer",
@@ -99,67 +94,41 @@
   ],
   "buildPresets": [
     {
-      "name": "windows-debug",
-      "configurePreset": "windows-debug",
-      "configuration": "Debug",
+      "name": "base",
+      "hidden": true,
       "targets": [
         "nomad-cli",
         "nomad-runtime",
         "nomadc",
         "nomad_test"
       ]
+    },
+    {
+      "name": "windows-debug",
+      "inherits": "base",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug"
     },
     {
       "name": "windows-release",
+      "inherits": "base",
       "configurePreset": "windows-release",
-      "configuration": "Release",
-      "targets": [
-        "nomad-cli",
-        "nomad-runtime",
-        "nomadc",
-        "nomad_test"
-      ]
+      "configuration": "Release"
     },
     {
-      "name": "windows-ci",
-      "configurePreset": "windows-ci",
-      "configuration": "Release",
-      "targets": [
-        "nomad-cli",
-        "nomad-runtime",
-        "nomadc",
-        "nomad_test"
-      ]
+      "name": "ci",
+      "inherits": "base",
+      "configurePreset": "ci"
     },
     {
       "name": "linux-debug",
-      "configurePreset": "linux-debug",
-      "targets": [
-        "nomad-cli",
-        "nomad-runtime",
-        "nomadc",
-        "nomad_test"
-      ]
+      "inherits": "base",
+      "configurePreset": "linux-debug"
     },
     {
       "name": "linux-release",
-      "configurePreset": "linux-release",
-      "targets": [
-        "nomad-cli",
-        "nomad-runtime",
-        "nomadc",
-        "nomad_test"
-      ]
-    },
-    {
-      "name": "linux-ci",
-      "configurePreset": "linux-ci",
-      "targets": [
-        "nomad-cli",
-        "nomad-runtime",
-        "nomadc",
-        "nomad_test"
-      ]
+      "inherits": "base",
+      "configurePreset": "linux-release"
     },
     {
       "name": "linux-sanitizers",
@@ -171,77 +140,46 @@
   ],
   "testPresets": [
     {
-      "name": "windows-debug",
-      "configurePreset": "windows-debug",
-      "configuration": "Debug",
+      "name": "base",
+      "hidden": true,
       "output": {
         "outputOnFailure": true
       },
       "execution": {
         "noTestsAction": "error"
       }
+    },
+    {
+      "name": "windows-debug",
+      "inherits": "base",
+      "configurePreset": "windows-debug",
+      "configuration": "Debug"
     },
     {
       "name": "windows-release",
+      "inherits": "base",
       "configurePreset": "windows-release",
-      "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error"
-      }
+      "configuration": "Release"
     },
     {
-      "name": "windows-ci",
-      "configurePreset": "windows-ci",
-      "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error"
-      }
+      "name": "ci",
+      "inherits": "base",
+      "configurePreset": "ci"
     },
     {
       "name": "linux-debug",
-      "configurePreset": "linux-debug",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error"
-      }
+      "inherits": "base",
+      "configurePreset": "linux-debug"
     },
     {
       "name": "linux-release",
-      "configurePreset": "linux-release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error"
-      }
-    },
-    {
-      "name": "linux-ci",
-      "configurePreset": "linux-ci",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error"
-      }
+      "inherits": "base",
+      "configurePreset": "linux-release"
     },
     {
       "name": "linux-sanitizers",
-      "configurePreset": "linux-sanitizers",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error"
-      }
+      "inherits": "base",
+      "configurePreset": "linux-sanitizers"
     }
   ]
 }

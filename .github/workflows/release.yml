@@ -71,8 +71,8 @@ jobs:
           set -euo pipefail
           mkdir release-assets
           version="${RELEASE_TAG#v}"
-          windows="distributions/distribution-Windows/out/build/windows-ci/distribution/Release"
-          linux="distributions/distribution-Ubuntu/out/build/linux-ci/distribution/Release"
+          windows="distributions/distribution-Windows/out/build/ci/distribution/Release"
+          linux="distributions/distribution-Ubuntu/out/build/ci/distribution/Release"
           cp "$windows/nomad-sdk-windows-x64-$version.zip" release-assets/
           cp "$linux/nomad-sdk-linux-x64-$version.zip" release-assets/
           cat "$windows/SHA256SUMS.txt" "$linux/SHA256SUMS.txt" > release-assets/SHA256SUMS.txt
