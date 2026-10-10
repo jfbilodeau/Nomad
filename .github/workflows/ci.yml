@@ -158,6 +158,7 @@ jobs:
           sha256sum --check --strict SHA256SUMS.txt
           archives=(nomad-sdk-*.zip)
           test "${#archives[@]}" -eq 1
+          mkdir -p "$sdk"
           unzip -q "${archives[0]}" -d "$sdk"
           cd "$GITHUB_WORKSPACE"
 
