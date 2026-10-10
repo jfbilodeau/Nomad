@@ -534,6 +534,88 @@ const Type* Runtime::getTypeByName(const NomadString& name) const {
     return nullptr;
 }
 
+const EnumType* Runtime::registerEnum(
+    const NomadString& name,
+    const std::vector<EnumValueDefinition>& values
+) {
+    if (name.empty()) {
+        log::error("Cannot register an enum with an empty name");
+        return nullptr;
+    }
+
+    if (getTypeByName(name) != nullptr) {
+        log::error("Type with name '" + name + "' already registered");
+        return nullptr;
+    }
+
+    if (values.empty()) {
+        log::error("Cannot register enum '" + name + "' without values");
+        return nullptr;
+    }
+
+    for (NomadIndex index = 0; index < values.size(); ++index) {
+        const auto& definition = values[index];
+        const auto constantName = name + "." + definition.name;
+
+        if (definition.name.empty()) {
+            log::error("Cannot register an unnamed value in enum '" + name + "'");
+            return nullptr;
+        }
+
+        if (getConstantId(constantName) != NOMAD_INVALID_ID) {
+            log::error("Constant with name '" + constantName + "' already registered");
+            return nullptr;
+        }
+
+        for (NomadIndex previousIndex = 0; previousIndex < index; ++previousIndex) {
+            const auto& previousDefinition = values[previousIndex];
+
+            if (previousDefinition.name == definition.name) {
+                log::error("Enum '" + name + "' has duplicate value name '" + definition.name + "'");
+                return nullptr;
+            }
+
+            if (previousDefinition.value == definition.value) {
+                log::error(
+                    "Enum '" + name + "' assigns value " + std::to_string(definition.value) + " more than once"
+                );
+                return nullptr;
+            }
+        }
+    }
+
+    auto enumType = std::make_unique<EnumType>(name, values);
+    const auto* registeredType = enumType.get();
+    registerType(std::move(enumType));
+
+    for (const auto& definition: values) {
+        registerConstant(
+            name + "." + definition.name,
+            RuntimeValue(definition.value),
+            registeredType
+        );
+    }
+
+    registerBinaryOperator(
+        BinaryOperator::EqualEqual,
+        registeredType,
+        registeredType,
+        getBooleanType(),
+        OpCodes::op_integer_equal,
+        foldIntegerBinaryEqualEqual
+    );
+    registerBinaryOperator(
+        BinaryOperator::BangEqual,
+        registeredType,
+        registeredType,
+        getBooleanType(),
+        OpCodes::op_integer_not_equal,
+        foldIntegerBinaryBangEqual
+    );
+
+    return registeredType;
+}
+
 const Type* Runtime::getCallbackType(const std::vector<const Type*>& parameterTypes, const Type* returnType) {
     auto test_type = std::make_unique<FunctionType>(parameterTypes, returnType);
 
