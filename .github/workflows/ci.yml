@@ -34,15 +34,20 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      # - name: Activate Windows compiler
-      #   if: runner.os == 'Windows'
-      #   shell: pwsh
-      #   run: |
-      #     $visualStudio = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-      #     if (-not $visualStudio) { throw 'Visual Studio C++ tools were not found' }
-      #     $environment = & $env:ComSpec /c "call `"$visualStudio\Common7\Tools\VsDevCmd.bat`" -arch=x64 -host_arch=x64 >nul && set"
-      #     if ($LASTEXITCODE -ne 0) { throw 'Failed to activate MSVC' }
-      #     $environment | Where-Object { $_ -match '^(PATH|INCLUDE|LIB|LIBPATH)=' } | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+      - name: Activate MSVC
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+
+          $envVars = & "$env:ComSpec" /c "call `"$vs\Common7\Tools\VsDevCmd.bat`" -arch=x64 -host_arch=x64 >nul && set"
+
+          $envVars |
+            Where-Object { $_ -match '^(PATH|INCLUDE|LIB|LIBPATH)=' } |
+            Add-Content -LiteralPath $env:GITHUB_ENV
 
       - name: Install Ubuntu dependencies
         if: runner.os == 'Linux'
