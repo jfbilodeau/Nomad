@@ -99,7 +99,7 @@ Nomad provides the following built‑in types:
 | `bool` | `true`, `false` | Boolean value |
 | `string` | `"hello"` | UTF‑8 string; supports escape sequences `\n`, `\r`, `\t` |
 
-Scripts and the embedding engine may also define strongly typed enumerations. See [Enumerations](#enumerations).
+Scripts and the embedding engine may also define strongly typed enumerations. See [Enumerations](#enums).
 
 Types whose names start with `$` (for example `$stringref`) are internal to the runtime and cannot be named in Nomad code.
 
