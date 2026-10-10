@@ -1,6 +1,8 @@
 # TODO
 This the author wants to do
 
+[ ] Display physics bodies in debug mode
+[ ] Debug mode should only come up when the `--debug` parameter is passed.
 [ ] Enums
 [ ] Indexer notation.
 [X] Switch from `const NomadString&` to `NomadStringView`
