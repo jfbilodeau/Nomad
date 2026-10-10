@@ -103,8 +103,12 @@ exclude = [
 commands can reject projects that require a newer SDK.
 
 `project.executable` is an extensionless file name. `project.entry` defaults
-to `init` when omitted. All other fields shown above are required; exclusion
-patterns are relative to the resource directory.
+to `init` when omitted. `resources.directory` defaults to `res`;
+`package.output` defaults to `dist`; `package.exclude` defaults to `[]`
+(no exclusions).
+The `[resources]` and `[package]` tables are optional. A supplied exclusion
+array replaces the defaults; `[]` disables exclusions. Patterns are relative
+to the resource directory. All other fields shown above are required.
 
 Packaged projects use the same schema with a reduced runtime manifest. The
 release `nomad.toml` retains `schema`, project identity and version,

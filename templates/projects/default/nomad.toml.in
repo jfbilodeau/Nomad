@@ -19,5 +19,5 @@ exclude = [
     "**/*.aseprite",
     "**/*.psd",
     "**/*.kra",
-    "development/**",
+    "development/**"
 ]

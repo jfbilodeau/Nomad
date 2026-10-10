@@ -39,7 +39,7 @@ struct ResourceConfiguration {
 };
 
 struct PackageConfiguration {
-    NomadPath output;
+    NomadPath output = "dist";
     std::vector<NomadString> exclude;
 };
 

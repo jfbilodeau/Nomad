@@ -41,12 +41,20 @@ const toml::table& requiredTable(const toml::table& document, const NomadStringV
     return *table;
 }
 
-NomadPath requiredPath(
+NomadString optionalString(
     const toml::table& table,
     const NomadStringView tableName,
-    const NomadStringView key
+    const NomadStringView key,
+    const NomadStringView fallback
 ) {
-    return pathFromUtf8(requiredString(table, tableName, key));
+    return table.contains(key) ? requiredString(table, tableName, key) : NomadString(fallback);
+}
+
+const toml::table* optionalTable(const toml::table& document, const NomadStringView name) {
+    if (!document.contains(name)) {
+        return nullptr;
+    }
+    return &requiredTable(document, name);
 }
 
 NomadString escapeTomlString(const NomadStringView value) {
@@ -214,30 +222,25 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
 
     const auto& project = requiredTable(document, "project");
     const auto& nomad = requiredTable(document, "nomad");
-    const auto* resources = document["resources"].as_table();
-    const auto* package = document["package"].as_table();
-    const auto executable = project["executable"].value<NomadString>();
-    const auto hasExecutable = executable.has_value();
-    const auto developmentFieldCount =
-        static_cast<NomadInteger>(hasExecutable) +
-        static_cast<NomadInteger>(resources != nullptr) +
-        static_cast<NomadInteger>(package != nullptr);
+    const auto* resources = optionalTable(document, "resources");
+    const auto* package = optionalTable(document, "package");
+    const auto hasExecutable = project.contains("executable");
 
-    if (developmentFieldCount != 0 && developmentFieldCount != 3) {
+    if (!hasExecutable && (resources != nullptr || package != nullptr)) {
         throw ProjectConfigurationError(
-            "Development configuration requires 'project.executable', '[resources]', and '[package]' together"
+            "Development configuration requires 'project.executable' when '[resources]' or '[package]' is supplied"
         );
     }
 
     ProjectConfiguration configuration;
     configuration.schema = *schema;
-    configuration.type = developmentFieldCount == 3
+    configuration.type = hasExecutable
         ? ProjectConfigurationType::Development
         : ProjectConfigurationType::Release;
     configuration.project.name = requiredString(project, "project", "name");
     configuration.project.identifier = requiredString(project, "project", "identifier");
     configuration.project.version = requiredString(project, "project", "version");
-    configuration.project.entry = project["entry"].value_or<NomadString>("init");
+    configuration.project.entry = optionalString(project, "project", "entry", configuration.project.entry);
     const auto nomadVersion = requiredString(nomad, "nomad", "version");
 
     try {
@@ -250,12 +253,23 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
 
     if (configuration.type == ProjectConfigurationType::Development) {
         configuration.project.executable = requiredString(project, "project", "executable");
-        configuration.resources.directory = requiredPath(*resources, "resources", "directory");
-        configuration.package.output = requiredPath(*package, "package", "output");
-        configuration.package.exclude = readExclusions(*package);
+        if (resources != nullptr) {
+            configuration.resources.directory = pathFromUtf8(optionalString(
+                *resources, "resources", "directory", pathToUtf8(configuration.resources.directory)));
+        }
+        if (package != nullptr) {
+            configuration.package.output = pathFromUtf8(optionalString(
+                *package, "package", "output", pathToUtf8(configuration.package.output)));
+            if (package->contains("exclude")) {
+                configuration.package.exclude = readExclusions(*package);
+            }
+        }
         validateExecutable(configuration.project.executable);
         validateProjectRelativePath(configuration.resources.directory, "resources.directory", true);
         validateProjectRelativePath(configuration.package.output, "package.output", false);
+    } else {
+        configuration.package.output.clear();
+        configuration.package.exclude.clear();
     }
 
     if (configuration.project.entry.empty()) {

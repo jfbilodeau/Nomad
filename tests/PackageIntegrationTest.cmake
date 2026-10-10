@@ -64,6 +64,10 @@ file(WRITE "${PROJECT_DIR}/res/development/notes.txt" "excluded")
 file(WRITE "${PROJECT_DIR}/res/sprite.aseprite" "excluded")
 file(WRITE "${PROJECT_DIR}/res/keep.txt" "included")
 file(WRITE "${PROJECT_DIR}/res/日本語.txt" "Unicode resource")
+file(READ "${PROJECT_DIR}/nomad.toml" PROJECT_MANIFEST)
+string(REPLACE "exclude = []" "exclude = [\"**/*.aseprite\", \"development/**\"]"
+    PROJECT_MANIFEST "${PROJECT_MANIFEST}")
+file(WRITE "${PROJECT_DIR}/nomad.toml" "${PROJECT_MANIFEST}")
 
 run_success(
     "Package dry run"

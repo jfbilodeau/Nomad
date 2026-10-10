@@ -8,6 +8,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <string>
+#include <utility>
 
 using namespace nomad;
 using namespace nomad::test;
@@ -107,8 +108,8 @@ BOOST_AUTO_TEST_CASE(rejects_partial_development_configuration)
 {
     TestDirectory directory("nomad_partial_project_configuration");
     auto configurationText = std::string(COMPLETE_CONFIGURATION);
-    const auto resources = configurationText.find("[resources]");
-    configurationText.erase(resources, configurationText.find("[package]") - resources);
+    const auto executable = configurationText.find("executable = \"test-game\"\n");
+    configurationText.erase(executable, std::string("executable = \"test-game\"\n").size());
     const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText);
 
     BOOST_CHECK_EXCEPTION(
@@ -118,6 +119,49 @@ BOOST_AUTO_TEST_CASE(rejects_partial_development_configuration)
             return NomadString(error.what()).find("requires 'project.executable'") != NomadString::npos;
         }
     );
+}
+
+BOOST_AUTO_TEST_CASE(defaults_optional_development_fields)
+{
+    TestDirectory directory("nomad_project_configuration_defaults");
+    auto configurationText = std::string(COMPLETE_CONFIGURATION);
+    configurationText.erase(configurationText.find("[resources]"));
+    const auto entry = configurationText.find("entry = \"start\"\n");
+    configurationText.erase(entry, std::string("entry = \"start\"\n").size());
+
+    for (const auto& tables : {"", "\n[resources]\n[package]\n",
+        "\n[resources]\ndirectory = \"assets\"\n[package]\noutput = \"packages\"\n"}) {
+        const auto file = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText + tables);
+        const auto configuration = loadProjectConfiguration(file);
+        BOOST_TEST(static_cast<int>(configuration.type) == static_cast<int>(ProjectConfigurationType::Development));
+        BOOST_TEST(configuration.project.entry == "init");
+        const auto overrides = std::string(tables).find("assets") != std::string::npos;
+        BOOST_TEST(configuration.resources.directory == NomadPath(overrides ? "assets" : "res"));
+        BOOST_TEST(configuration.package.output == NomadPath(overrides ? "packages" : "dist"));
+        BOOST_TEST(configuration.package.exclude.empty());
+    }
+
+    const auto file = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText + "\n[package]\nexclude = []\n");
+    BOOST_TEST(loadProjectConfiguration(file).package.exclude.empty());
+}
+
+BOOST_AUTO_TEST_CASE(rejects_invalid_optional_fields_instead_of_defaulting)
+{
+    TestDirectory directory("nomad_project_configuration_optional_validation");
+    for (const auto& replacement : {
+        std::pair{"entry = \"start\"", "entry = 42"},
+        std::pair{"entry = \"start\"", "entry = \"\""},
+        std::pair{"directory = \"res\"", "directory = false"},
+        std::pair{"directory = \"res\"", "directory = \"\""},
+        std::pair{"output = \"dist\"", "output = 42"},
+        std::pair{"output = \"dist\"", "output = \"\""},
+        std::pair{"exclude = [\"**/*.psd\", \"development/**\"]", "exclude = false"}
+    }) {
+        auto text = std::string(COMPLETE_CONFIGURATION);
+        text.replace(text.find(replacement.first), std::string(replacement.first).size(), replacement.second);
+        const auto file = directory.write(NOMAD_PROJECT_FILE_NAME, text);
+        BOOST_CHECK_THROW((void)loadProjectConfiguration(file), ProjectConfigurationError);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(defaults_the_entry_function_to_init)

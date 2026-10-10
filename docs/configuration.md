@@ -27,10 +27,23 @@ exclude = [
 ]
 ```
 
-All fields shown are required except `project.entry`, which defaults to `init`.
-`project.executable` is an extensionless file name.
-`nomad.version` uses canonical `major.minor.patch` form and identifies the
-required SDK version. Packaging requires that exact runtime bundle version.
+| Property | Description | Required / default |
+| --- | --- | --- |
+| `schema` | Configuration format version. | Required; `1` |
+| `project.name` | Human-readable game name. | Required |
+| `project.identifier` | Stable application identifier used to locate saved data. | Required |
+| `project.version` | Game version used in package archive names. | Required |
+| `project.executable` | Executable file name without extension or directory. | Required for development projects |
+| `project.entry` | Script entry function taking no arguments and returning `void`. | Optional; `"init"` |
+| `nomad.version` | Required SDK version in canonical `major.minor.patch` form; packaging requires this exact runtime version. | Required |
+| `resources.directory` | Resource directory relative to the project root. | Optional; `"res"` |
+| `package.output` | Package output directory relative to the project root. | Optional; `"dist"` |
+| `package.exclude` | Resource-relative exclusion patterns; omitted or `[]` includes all resources. | Optional; `[]` |
+
+The entire `[resources]` and `[package]` tables may be omitted. Defaults apply
+only to missing fields; invalid types and empty strings are rejected.
+Development projects are identified by `project.executable`. A configuration
+without it is a packaged configuration and must omit `[resources]` and `[package]`.
 
 ## Packaged configuration
 
