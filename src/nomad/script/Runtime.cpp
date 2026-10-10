@@ -94,6 +94,7 @@ Runtime::Runtime() {
     registerKeyword("else", NomadDoc("`else` branch of an `if` statement"));
     registerKeyword("end", NomadDoc("End of a `fun` or `if` statement"));
     registerKeyword("const", NomadDoc("Declares a constant"));
+    registerKeyword("enum", NomadDoc("Declares an enum"));
 
     registerConstant("false", RuntimeValue(NOMAD_FALSE), getBooleanType());
     registerConstant("true", RuntimeValue(NOMAD_TRUE), getBooleanType());

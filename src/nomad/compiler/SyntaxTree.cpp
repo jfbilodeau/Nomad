@@ -662,6 +662,32 @@ void ConstDeclaration::onResolve(CompilerContext* context, Function* function) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// EnumDecl
+EnumDeclaration::EnumDeclaration(
+    const NomadIndex line,
+    const NomadIndex column,
+    NomadString name,
+    std::vector<NomadString> values
+):
+    Statement(line, column),
+    m_name(std::move(name)),
+    m_values(std::move(values))
+{
+}
+
+const NomadString& EnumDeclaration::getName() const {
+    return m_name;
+}
+
+const std::vector<NomadString>& EnumDeclaration::getValues() const {
+    return m_values;
+}
+
+NomadBoolean EnumDeclaration::isDeclaration() const {
+    return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // OnHandlerDecl
 EventHandlerDeclaration::EventHandlerDeclaration(NomadIndex line, NomadIndex column, NomadString eventName, std::unique_ptr<FunctionDeclaration> handler):
     Statement(line, column),

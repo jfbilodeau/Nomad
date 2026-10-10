@@ -11,6 +11,7 @@
 #include <nomad/compiler/SyntaxTree.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/Type.hpp>
 
 #include <nomad/system/String.hpp>
 
@@ -636,6 +637,133 @@ std::unique_ptr<Statement> parseConstStatement(CompilerContext* context, Functio
         tokens->getColumnIndex(),
         constantName,
         std::move(initializer)
+    );
+}
+
+bool parseEnumDefinition(
+    CompilerContext* context,
+    Tokenizer* tokens,
+    NomadString& enumName,
+    std::vector<EnumValueDefinition>& values
+) {
+    auto valid = true;
+
+    if (!tokens->nextIdentifier(enumName)) {
+        valid = false;
+    } else if (!tokens->endOfLine()) {
+        context->reportError("Unexpected token after enum name: '" + tokens->currentToken().textValue + "'", tokens);
+        valid = false;
+    }
+
+    while (tokens->nextLine()) {
+        if (tokens->is("end")) {
+            tokens->next();
+
+            if (!tokens->endOfLine()) {
+                context->reportError("Unexpected token after 'end': '" + tokens->currentToken().textValue + "'", tokens);
+                valid = false;
+            }
+
+            if (values.empty()) {
+                context->reportError("Enum '" + enumName + "' must declare at least one value", tokens);
+                valid = false;
+            }
+
+            return valid;
+        }
+
+        if (!tokens->is(TokenType::Identifier)) {
+            context->reportError("Enum value name expected", tokens);
+            valid = false;
+            continue;
+        }
+
+        const auto valueName = tokens->next().textValue;
+
+        if (!tokens->endOfLine()) {
+            context->reportError(
+                "Unexpected token after enum value '" + valueName + "': '" + tokens->currentToken().textValue + "'",
+                tokens
+            );
+            valid = false;
+            continue;
+        }
+
+        if (std::ranges::find(values, valueName, &EnumValueDefinition::name) != values.end()) {
+            context->reportError("Enum '" + enumName + "' already contains value '" + valueName + "'", tokens);
+            valid = false;
+            continue;
+        }
+
+        values.push_back({valueName, static_cast<NomadInteger>(values.size() + 1)});
+    }
+
+    context->reportError("Unexpected end of file while parsing enum '" + enumName + "': expected 'end'", tokens);
+    return false;
+}
+
+bool preParseEnumStatement(CompilerContext* context, Function* function, Tokenizer* tokens) {
+    NomadString enumName;
+    std::vector<EnumValueDefinition> values;
+
+    if (!parseEnumDefinition(context, tokens, enumName, values)) {
+        return false;
+    }
+
+    auto* compiler = context->getCompiler();
+    auto* runtime = context->getRuntime();
+
+    if (runtime->getTypeByName(enumName) != nullptr) {
+        context->reportError("Type '" + enumName + "' is already defined", tokens);
+        return false;
+    }
+
+    if (compiler->getIdentifierType(enumName, function) != IdentifierType::Unknown) {
+        context->reportError("Identifier '" + enumName + "' is already defined", tokens);
+        return false;
+    }
+
+    for (const auto& definition: values) {
+        const auto qualifiedName = enumName + "." + definition.name;
+
+        if (compiler->getIdentifierType(qualifiedName, function) != IdentifierType::Unknown) {
+            context->reportError("Identifier '" + qualifiedName + "' is already defined", tokens);
+            return false;
+        }
+    }
+
+    if (runtime->registerEnum(enumName, values) == nullptr) {
+        context->reportError("Failed to register enum '" + enumName + "'", tokens);
+        return false;
+    }
+
+    return true;
+}
+
+std::unique_ptr<Statement> parseEnumStatement(
+    CompilerContext* context,
+    Function* /*function*/,
+    Tokenizer* tokens
+) {
+    NomadString enumName;
+    std::vector<EnumValueDefinition> values;
+
+    if (!parseEnumDefinition(context, tokens, enumName, values)) {
+        return nullptr;
+    }
+
+    std::vector<NomadString> valueNames;
+    valueNames.reserve(values.size());
+
+    for (auto& definition: values) {
+        valueNames.push_back(std::move(definition.name));
+    }
+
+    return std::make_unique<EnumDeclaration>(
+        tokens->getLineIndex(),
+        tokens->getColumnIndex(),
+        std::move(enumName),
+        std::move(valueNames)
     );
 }
 

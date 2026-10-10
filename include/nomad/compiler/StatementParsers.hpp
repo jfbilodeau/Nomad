@@ -62,6 +62,8 @@ std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, Function*
 std::unique_ptr<Statement> parseAssertStatement(CompilerContext* context, Function* function, Tokenizer* tokens);
 bool preParseConstStatement(CompilerContext* context, Function* function, Tokenizer* tokens);
 std::unique_ptr<Statement> parseConstStatement(CompilerContext* context, Function* function, Tokenizer* tokens);
+bool preParseEnumStatement(CompilerContext* context, Function* function, Tokenizer* tokens);
+std::unique_ptr<Statement> parseEnumStatement(CompilerContext* context, Function* function, Tokenizer* tokens);
 std::unique_ptr<Statement> parseIfStatement(CompilerContext* context, Function* function, Tokenizer* tokens);
 bool preParseParamsStatement(CompilerContext* context, Function* function, Tokenizer* tokens);
 std::unique_ptr<Statement> parseEventStatement(CompilerContext* context, Function* function, Tokenizer* tokens);

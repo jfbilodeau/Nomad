@@ -54,6 +54,7 @@ Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
     }
 
     registerParseStatementFn("const", parseConstStatement, preParseConstStatement);
+    registerParseStatementFn("enum", parseEnumStatement, preParseEnumStatement);
     registerParseStatementFn("event", parseEventStatement, preParseEventStatement);
     registerParseStatementFn("fun", parseFunStatement, preParseFunStatement);
     registerParseStatementFn("assert", parseAssertStatement);
@@ -419,7 +420,7 @@ NomadIndex Compiler::addFloat(NomadFloat value) {
 NomadIndex Compiler::addLoadValue(const Type* type, const RuntimeValue& value, ExpressionTarget target) {
     if (type == getRuntime()->getBooleanType()) {
         return addLoadBooleanValue(value.getBooleanValue(), target);
-    } else if (type == getRuntime()->getIntegerType()) {
+    } else if (type == getRuntime()->getIntegerType() || type->asEnum() != nullptr) {
         return addLoadIntegerValue(value.getIntegerValue(), target);
     } else if (type == getRuntime()->getFloatType()) {
         return addLoadFloatValue(value.getFloatValue(), target);

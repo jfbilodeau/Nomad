@@ -155,7 +155,7 @@ public:
 
     // True when every execution path through this statement ends with a `return`.
     [[nodiscard]] virtual NomadBoolean alwaysReturns() const;
-    // Declarations (`fun`, `const`, `event`, `on`) emit no code, so they are never unreachable.
+    // Declarations (`fun`, `const`, `enum`, `event`, `on`) emit no code, so they are never unreachable.
     [[nodiscard]] virtual NomadBoolean isDeclaration() const;
     // Reports statements that follow a `return` in any statement list nested in this statement.
     virtual void checkReachability(CompilerContext* context, const Function* function) const;
@@ -325,6 +325,24 @@ private:
     NomadString m_name;
     std::unique_ptr<Expression> m_initializer;
     const Type* m_type = nullptr;
+};
+
+class EnumDeclaration : public Statement {
+public:
+    EnumDeclaration(
+        NomadIndex line,
+        NomadIndex column,
+        NomadString name,
+        std::vector<NomadString> values
+    );
+
+    [[nodiscard]] const NomadString& getName() const;
+    [[nodiscard]] const std::vector<NomadString>& getValues() const;
+    [[nodiscard]] NomadBoolean isDeclaration() const override;
+
+private:
+    NomadString m_name;
+    std::vector<NomadString> m_values;
 };
 
 class EventHandlerDeclaration : public Statement {
