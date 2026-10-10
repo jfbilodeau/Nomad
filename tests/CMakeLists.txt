@@ -77,6 +77,7 @@ if(WIN32)
             -P "${CMAKE_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
             --
             $<TARGET_RUNTIME_DLLS:nomad_test>
+            ${NOMAD_TOOLCHAIN_RUNTIME_DLLS}
         COMMAND_EXPAND_LISTS
         VERBATIM
     )

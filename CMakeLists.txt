@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.30)
 set(CMAKE_POLICY_VERSION 3.30)
 
-project(Nomad VERSION 0.1.0 LANGUAGES CXX)
+project(Nomad VERSION 0.1.1 LANGUAGES CXX)
 
 include(CTest)
 
@@ -27,6 +27,38 @@ configure_file(
 option(NOMAD_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(NOMAD_WARNINGS_AS_ERRORS "Treat Nomad compiler warnings as errors" ON)
 option(NOMAD_USE_CCACHE "Use ccache when it is available" ON)
+
+if(WIN32 AND MINGW)
+        get_filename_component(NOMAD_MINGW_BINARY_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        find_file(
+                NOMAD_MINGW_STDLIB_RUNTIME
+                NAMES libstdc++-6.dll
+                PATHS "${NOMAD_MINGW_BINARY_DIR}"
+                NO_DEFAULT_PATH
+                REQUIRED
+        )
+        find_file(
+                NOMAD_MINGW_THREAD_RUNTIME
+                NAMES libwinpthread-1.dll
+                PATHS "${NOMAD_MINGW_BINARY_DIR}"
+                NO_DEFAULT_PATH
+                REQUIRED
+        )
+        file(GLOB NOMAD_MINGW_GCC_RUNTIMES "${NOMAD_MINGW_BINARY_DIR}/libgcc_s_*.dll")
+        list(LENGTH NOMAD_MINGW_GCC_RUNTIMES NOMAD_MINGW_GCC_RUNTIME_COUNT)
+        if(NOT NOMAD_MINGW_GCC_RUNTIME_COUNT EQUAL 1)
+                message(FATAL_ERROR
+                        "Expected one MinGW GCC runtime DLL in ${NOMAD_MINGW_BINARY_DIR}, "
+                        "found: ${NOMAD_MINGW_GCC_RUNTIMES}"
+                )
+        endif()
+        set(
+                NOMAD_TOOLCHAIN_RUNTIME_DLLS
+                ${NOMAD_MINGW_GCC_RUNTIMES}
+                "${NOMAD_MINGW_STDLIB_RUNTIME}"
+                "${NOMAD_MINGW_THREAD_RUNTIME}"
+        )
+endif()
 
 if(NOMAD_USE_CCACHE AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
         find_program(NOMAD_CCACHE_PROGRAM ccache)
@@ -419,6 +451,7 @@ if(NOMAD_BUILD_CLI)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
                 --
                 $<TARGET_RUNTIME_DLLS:nomad-cli>
+                ${NOMAD_TOOLCHAIN_RUNTIME_DLLS}
             COMMAND_EXPAND_LISTS
             VERBATIM
         )
@@ -442,6 +475,7 @@ if(NOMAD_BUILD_RUNTIME)
                 -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
                 --
                 $<TARGET_RUNTIME_DLLS:nomad-runtime>
+                ${NOMAD_TOOLCHAIN_RUNTIME_DLLS}
             COMMAND_EXPAND_LISTS
             VERBATIM
         )
@@ -477,6 +511,7 @@ if(NOMAD_BUILD_RUNTIME)
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
                     --
                     $<TARGET_RUNTIME_DLLS:nomad-runtime>
+                    ${NOMAD_TOOLCHAIN_RUNTIME_DLLS}
                 DEPENDS nomad-runtime
                 COMMAND_EXPAND_LISTS
                 VERBATIM
