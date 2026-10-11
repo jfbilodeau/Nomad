@@ -81,6 +81,10 @@ void op_pop_i(VirtualMachine* interpreter) {
     interpreter->popIntermediate();
 }
 
+void op_copy_i_to_r(VirtualMachine* interpreter) {
+    interpreter->setResult(interpreter->getIntermediate());
+}
+
 void op_pop_1(VirtualMachine* interpreter) {
     interpreter->pop1();
 }
@@ -111,6 +115,11 @@ void op_string_move_r_to_i(VirtualMachine* interpreter) {
     interpreter->moveStringResultToIntermediate();
 }
 
+void op_string_move_i_to_r(VirtualMachine* interpreter) {
+    interpreter->pushStringIntermediate();
+    interpreter->popStringResult();
+}
+
 void op_string_move_r_to_stack(VirtualMachine* interpreter) {
     interpreter->moveStringResultToStack();
 }
@@ -133,6 +142,32 @@ void op_call_native_function(VirtualMachine* interpreter) {
     const auto nativeFunctionId = interpreter->nextId();
 
     interpreter->callNativeFunction(nativeFunctionId);
+}
+
+void op_intrinsic_property_get(VirtualMachine* interpreter) {
+    const auto memberId = interpreter->nextId();
+    IntrinsicPropertyDefinition definition;
+
+    if (!interpreter->getRuntime()->getIntrinsicPropertyDefinition(memberId, definition) || !definition.getFn) {
+        interpreter->fault("Invalid intrinsic property getter");
+    }
+
+    definition.getFn(interpreter, interpreter->getIntermediate(), interpreter->getResult());
+}
+
+void op_intrinsic_property_set(VirtualMachine* interpreter) {
+    const auto memberId = interpreter->nextId();
+    IntrinsicPropertyDefinition definition;
+
+    if (!interpreter->getRuntime()->getIntrinsicPropertyDefinition(memberId, definition) || !definition.setFn) {
+        interpreter->fault("Invalid intrinsic property setter");
+    }
+
+    definition.setFn(interpreter, interpreter->getIntermediate(), interpreter->getResult());
+}
+
+void op_intrinsic_method_call(VirtualMachine* interpreter) {
+    interpreter->callIntrinsicMethod(interpreter->nextId());
 }
 
 void op_parameter_load_r(VirtualMachine* interpreter) {

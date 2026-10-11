@@ -203,6 +203,50 @@ void VirtualMachine::callNativeFunction(const NomadId nativeFunctionId) {
     m_enclosingParameterIndex = previousEnclosingParameterIndex;
 }
 
+void VirtualMachine::callIntrinsicMethod(const NomadId memberId) {
+    IntrinsicMethodDefinition definition;
+    if (!m_runtime->getIntrinsicMethodDefinition(memberId, definition) || !definition.fn) {
+        fault("Invalid intrinsic method id: " + toString(memberId));
+    }
+    const auto previousParameterIndex = m_parameterIndex;
+    const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
+    auto* previousReceiver = m_intrinsicReceiver;
+    if (m_intrinsicReceiver == nullptr) {
+        m_intrinsicReceiver = &m_intermediate;
+    }
+    m_parameterIndex = m_stackIndex;
+    m_enclosingParameterIndex = previousParameterIndex;
+
+    try {
+        definition.fn(this);
+    } catch (...) {
+        m_parameterIndex = previousParameterIndex;
+        m_enclosingParameterIndex = previousEnclosingParameterIndex;
+        m_intrinsicReceiver = previousReceiver;
+        throw;
+    }
+
+    m_parameterIndex = previousParameterIndex;
+    m_enclosingParameterIndex = previousEnclosingParameterIndex;
+    m_intrinsicReceiver = previousReceiver;
+}
+
+const RuntimeValue& VirtualMachine::getIntrinsicReceiver() const {
+    if (m_intrinsicReceiver == nullptr) {
+        fault("Intrinsic method has no receiver");
+    }
+
+    return *m_intrinsicReceiver;
+}
+
+RuntimeValue& VirtualMachine::getIntrinsicReceiver() {
+    if (m_intrinsicReceiver == nullptr) {
+        fault("Intrinsic method has no receiver");
+    }
+
+    return *m_intrinsicReceiver;
+}
+
 void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std::vector<RuntimeValue>& args) {
     NativeFunctionDefinition definition;
     if (!m_runtime->getNativeFunctionDefinition(nativeFunctionId, definition)) {
@@ -253,6 +297,64 @@ void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std
         throw;
     }
 
+    releaseArguments();
+}
+
+void VirtualMachine::runIntrinsicMethod(const NomadId memberId, const std::vector<RuntimeValue>& args,
+                                        RuntimeValue& receiver) {
+    IntrinsicMethodDefinition definition;
+    if (!m_runtime->getIntrinsicMethodDefinition(memberId, definition)) {
+        fault("Invalid intrinsic method id: " + toString(memberId));
+    }
+    if (definition.returnType == nullptr) {
+        fault("Intrinsic method '" + definition.name + "' has no return type");
+    }
+    if (!definition.returnType->isVoid()) {
+        definition.returnType->initValue(m_result);
+    }
+    if (args.size() != definition.parameters.size()) {
+        fault("Incorrect argument count when calling intrinsic method '" + definition.name + "'");
+    }
+    if (m_stackIndex >= m_stack.size() || args.size() > m_stack.size() - m_stackIndex - 1) {
+        fault("Stack overflow");
+    }
+
+    const auto initialStackIndex = m_stackIndex;
+    std::vector<const Type*> argumentTypes;
+    argumentTypes.reserve(args.size());
+
+    const auto releaseArguments = [&]() {
+        for (NomadIndex index = 0; index < argumentTypes.size(); ++index) {
+            argumentTypes[index]->freeValue(m_stack[initialStackIndex + index + 1]);
+        }
+        m_stackIndex = initialStackIndex;
+    };
+
+    auto* previousReceiver = m_intrinsicReceiver;
+    m_intrinsicReceiver = &receiver;
+
+    try {
+        for (NomadIndex index = args.size(); index > 0; --index) {
+            const auto argumentIndex = index - 1;
+            const auto* type = definition.parameters[argumentIndex].type;
+            if (type == nullptr) {
+                fault("Intrinsic method '" + definition.name + "' has an invalid parameter type");
+            }
+
+            ++m_stackIndex;
+            argumentTypes.push_back(type);
+            type->initValue(m_stack[m_stackIndex]);
+            type->copyValue(args[argumentIndex], m_stack[m_stackIndex]);
+        }
+
+        callIntrinsicMethod(memberId);
+    } catch (...) {
+        m_intrinsicReceiver = previousReceiver;
+        releaseArguments();
+        throw;
+    }
+
+    m_intrinsicReceiver = previousReceiver;
     releaseArguments();
 }
 

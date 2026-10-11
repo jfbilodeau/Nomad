@@ -114,9 +114,13 @@ public:
 
     [[nodiscard]] bool isTerminal() const override;
     [[nodiscard]] bool isWritable() const override;
+    [[nodiscard]] IntrinsicMemberExpression* asIntrinsicExpression() override;
+    [[nodiscard]] const IntrinsicMemberExpression* asIntrinsicExpression() const override;
 
     void setAccess(IntrinsicMemberAccess access);
     void setAllowVoid(bool allowVoid);
+    void compileAssignment(Compiler* compiler, Function* function, Expression* expression);
+    void evaluateAssignment(Interpreter& context, const Expression* expression) const;
 
 protected:
     void onResolve(CompilerContext* context, Function* function) override;
@@ -229,6 +233,10 @@ public:
 
     [[nodiscard]] bool canBorrow() const override;
     [[nodiscard]] bool isWritable() const override;
+    [[nodiscard]] IdentifierExpression* asIdentifierExpression() override;
+    [[nodiscard]] const IdentifierExpression* asIdentifierExpression() const override;
+    void compileStore(Compiler* compiler) const;
+    void evaluateStore(Interpreter& context, const RuntimeValue& value) const;
 
 protected:
     void onResolve(CompilerContext* context, Function* function) override;

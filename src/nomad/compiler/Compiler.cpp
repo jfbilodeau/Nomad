@@ -628,8 +628,16 @@ void Compiler::addMoveResult(const Type* type, const ExpressionTarget target) {
     }
 }
 
+void Compiler::addMoveIntermediateToResult(const Type* type) {
+    addOpCode(type->getTypeOpCodes()->moveIntermediateToResult);
+}
+
 NomadIndex Compiler::addPushIntermediate(const Type* type) {
     return addOpCode(type->getTypeOpCodes()->pushIntermediate);
+}
+
+NomadIndex Compiler::addPopResult(const Type* type) {
+    return addOpCode(type->getTypeOpCodes()->popResult);
 }
 
 NomadIndex Compiler::addPopIntermediate(const Type* type) {
@@ -749,6 +757,23 @@ NomadIndex Compiler::addNativeFunctionCall(const NomadId nativeFunctionId, Funct
     //     addOpCode(OpCodes::op_pop_n);
     //     addIndex(arguments->getArgumentCount());
     // }
+
+    return m_instructions.size() - 1;
+}
+
+NomadIndex Compiler::addIntrinsicMethodCall(const NomadId memberId, Function* function,
+                                            const ArgumentList* arguments) {
+    arguments->compile(this, function);
+
+    addOpCode(op_intrinsic_method_call);
+    addId(memberId);
+
+    const auto argumentCount = arguments->getArgumentCount();
+    if (argumentCount != 0) {
+        addFreeArguments(arguments);
+        addOpCode(op_pop_n);
+        addIndex(argumentCount);
+    }
 
     return m_instructions.size() - 1;
 }

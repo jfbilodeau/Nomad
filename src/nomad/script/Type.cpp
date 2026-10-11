@@ -265,8 +265,10 @@ BaseStringType::BaseStringType() {
 
     m_typeOpCodes.copyResultToStack = op_string_push_r;
     m_typeOpCodes.moveResultToIntermediate = op_string_move_r_to_i;
+    m_typeOpCodes.moveIntermediateToResult = op_string_move_i_to_r;
     m_typeOpCodes.moveResultToStack = op_string_move_r_to_stack;
     m_typeOpCodes.pushIntermediate = op_string_push_i;
+    m_typeOpCodes.popResult = op_string_pop_r;
     m_typeOpCodes.popIntermediate = op_string_pop_i;
 
     // The compiler frees the previous value, then `r` is moved into the variable.

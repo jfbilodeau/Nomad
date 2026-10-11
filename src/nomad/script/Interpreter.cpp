@@ -304,6 +304,9 @@ NomadBoolean Interpreter::execute(const NomadString& source) {
             auto expression = parser::parseExpression(&compilerContext, m_function.get(), &tokenizer);
             if (expression != nullptr &&
                 parser::expectEndOfLine(&compilerContext, m_function.get(), &tokenizer)) {
+                if (auto* member = expression->asIntrinsicExpression()) {
+                    member->setAllowVoid(true);
+                }
                 statement = std::make_unique<ExpressionStatement>(
                     line,
                     column,

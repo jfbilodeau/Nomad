@@ -134,7 +134,9 @@ public:
     NomadIndex addPushResult(const Type* type);
     // Moves a freshly computed value from the `r` register to target. String buffers are moved, not copied.
     void addMoveResult(const Type* type, ExpressionTarget target);
+    void addMoveIntermediateToResult(const Type* type);
     NomadIndex addPushIntermediate(const Type* type);
+    NomadIndex addPopResult(const Type* type);
     NomadIndex addPopIntermediate(const Type* type);
     // Emit a free opcode taken from `TypeOpCodes`. Emits nothing when `freeOpCode` is `nullptr` (plain values).
     void addFreeValue(InstructionFn freeOpCode);
@@ -143,6 +145,7 @@ public:
 
     NomadIndex addFunctionCall(NomadId targetFunctionId, Function* function, const ArgumentList* arguments);
     NomadIndex addNativeFunctionCall(NomadId nativeFunctionId, Function* function, const ArgumentList* arguments);
+    NomadIndex addIntrinsicMethodCall(NomadId memberId, Function* function, const ArgumentList* arguments);
     // After a call returns, free the owned arguments still on the stack. Lent arguments (`$stringref`) are skipped.
     void addFreeArguments(const ArgumentList* arguments);
 

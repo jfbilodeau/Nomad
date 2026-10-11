@@ -250,7 +250,7 @@ std::unique_ptr<Statement> parseLine(CompilerContext* context, Function* functio
             return nullptr;
         }
 
-        if (auto* member = dynamic_cast<IntrinsicMemberExpression*>(expression.get())) {
+        if (auto* member = expression->asIntrinsicExpression()) {
             member->setAllowVoid(true);
         }
 
@@ -740,7 +740,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Fu
 
     if (!isDirectIdentifier) {
         auto target = parseExpression(context, function, tokens);
-        auto* memberTarget = dynamic_cast<IntrinsicMemberExpression*>(target.get());
+        auto* memberTarget = target == nullptr ? nullptr : target->asIntrinsicExpression();
 
         if (memberTarget == nullptr) {
             context->reportError("Assignment target must be an identifier or intrinsic property", tokens);

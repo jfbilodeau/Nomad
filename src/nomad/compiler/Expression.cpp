@@ -61,6 +61,22 @@ bool Expression::isWritable() const {
     return false;
 }
 
+IdentifierExpression* Expression::asIdentifierExpression() {
+    return nullptr;
+}
+
+const IdentifierExpression* Expression::asIdentifierExpression() const {
+    return nullptr;
+}
+
+IntrinsicMemberExpression* Expression::asIntrinsicExpression() {
+    return nullptr;
+}
+
+const IntrinsicMemberExpression* Expression::asIntrinsicExpression() const {
+    return nullptr;
+}
+
 void Expression::compileBorrowed(Compiler* compiler, Function* function, const ExpressionTarget target) {
     if (!canBorrow()) {
         compiler->reportInternalError("BUG: Expression cannot lend a string reference");
@@ -675,6 +691,14 @@ bool IntrinsicMemberExpression::isWritable() const {
     return false;
 }
 
+IntrinsicMemberExpression* IntrinsicMemberExpression::asIntrinsicExpression() {
+    return this;
+}
+
+const IntrinsicMemberExpression* IntrinsicMemberExpression::asIntrinsicExpression() const {
+    return this;
+}
+
 void IntrinsicMemberExpression::setAccess(const IntrinsicMemberAccess access) {
     m_access = access;
 }
@@ -772,13 +796,204 @@ void IntrinsicMemberExpression::onResolve(CompilerContext* context, Function* fu
     }
 }
 
-void IntrinsicMemberExpression::onCompile(Compiler* compiler, Function* /*function*/, const ExpressionTarget /*target*/
-) {
-    compiler->reportInternalError("Intrinsic member compilation is not implemented yet: " + m_qualifiedName);
+void IntrinsicMemberExpression::onCompile(Compiler* compiler, Function* function, const ExpressionTarget target) {
+    auto* runtime = compiler->getRuntime();
+    const auto memberType = runtime->getIntrinsicMemberType(m_memberId);
+    const auto* receiverType = m_receiver->getType();
+
+    m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
+
+    if (memberType == IntrinsicMemberType::Property) {
+        compiler->addOpCode(op_intrinsic_property_get);
+        compiler->addId(m_memberId);
+        compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
+        compiler->addMoveResult(getType(), target);
+        return;
+    }
+
+    IntrinsicMethodDefinition definition;
+    if (memberType != IntrinsicMemberType::Method ||
+        !runtime->getIntrinsicMethodDefinition(m_memberId, definition)) {
+        compiler->reportInternalError("Invalid intrinsic member: " + m_qualifiedName);
+    }
+
+    compiler->addIntrinsicMethodCall(m_memberId, function, &m_arguments);
+
+    if (definition.mutatesReceiver) {
+        const auto* receiver = m_receiver->asIdentifierExpression();
+        if (receiver == nullptr) {
+            compiler->reportInternalError("Mutating intrinsic method receiver is not directly writable");
+        }
+
+        if (!definition.returnType->isVoid()) {
+            compiler->addPushResult(definition.returnType);
+            compiler->addFreeValue(definition.returnType->getTypeOpCodes()->freeResult);
+        }
+
+        compiler->addMoveIntermediateToResult(receiverType);
+        receiver->compileStore(compiler);
+
+        if (!definition.returnType->isVoid()) {
+            compiler->addPopResult(definition.returnType);
+        }
+    } else {
+        compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
+    }
+
+    if (!definition.returnType->isVoid()) {
+        compiler->addMoveResult(definition.returnType, target);
+    }
 }
 
-void IntrinsicMemberExpression::onEvaluate(Interpreter& /*context*/) const {
-    raiseException("Intrinsic member evaluation is not implemented yet: " + m_qualifiedName);
+void IntrinsicMemberExpression::onEvaluate(Interpreter& context) const {
+    m_receiver->evaluate(context);
+    const auto* evaluatedReceiver = context.getResult();
+    if (evaluatedReceiver == nullptr) {
+        if (!context.hasError()) {
+            context.setError("Intrinsic member receiver did not produce a value");
+        }
+        return;
+    }
+
+    const auto* receiverType = m_receiver->getType();
+    RuntimeValue receiver;
+    receiverType->initValue(receiver);
+    receiverType->copyValue(evaluatedReceiver->getValue(), receiver);
+
+    auto* runtime = context.getRuntime();
+    const auto memberType = runtime->getIntrinsicMemberType(m_memberId);
+
+    if (memberType == IntrinsicMemberType::Property) {
+        IntrinsicPropertyDefinition definition;
+        RuntimeValue result;
+        definition.valueType = nullptr;
+
+        try {
+            if (!runtime->getIntrinsicPropertyDefinition(m_memberId, definition) || !definition.getFn) {
+                raiseException("Invalid intrinsic property getter: " + m_qualifiedName);
+            }
+
+            definition.valueType->initValue(result);
+            definition.getFn(context.getVirtualMachine(), receiver, result);
+            context.setResult(definition.valueType, result);
+            definition.valueType->freeValue(result);
+            receiverType->freeValue(receiver);
+        } catch (...) {
+            if (definition.valueType != nullptr) {
+                definition.valueType->freeValue(result);
+            }
+            receiverType->freeValue(receiver);
+            throw;
+        }
+        return;
+    }
+
+    IntrinsicMethodDefinition definition;
+    if (memberType != IntrinsicMemberType::Method ||
+        !runtime->getIntrinsicMethodDefinition(m_memberId, definition)) {
+        receiverType->freeValue(receiver);
+        raiseException("Invalid intrinsic method: " + m_qualifiedName);
+    }
+
+    std::vector<TypedValue> evaluatedArguments;
+    std::vector<RuntimeValue> values;
+    m_arguments.evaluate(context, evaluatedArguments, values);
+    if (context.hasError()) {
+        receiverType->freeValue(receiver);
+        return;
+    }
+
+    auto* virtualMachine = context.getVirtualMachine();
+    try {
+        virtualMachine->runIntrinsicMethod(m_memberId, values, receiver);
+
+        if (definition.mutatesReceiver) {
+            const auto* writableReceiver = m_receiver->asIdentifierExpression();
+            if (writableReceiver == nullptr) {
+                raiseException("Mutating intrinsic method receiver is not directly writable");
+            }
+            writableReceiver->evaluateStore(context, receiver);
+        }
+
+        if (definition.returnType->isVoid()) {
+            context.setVoidResult();
+        } else {
+            context.setResult(definition.returnType, virtualMachine->getResult());
+            definition.returnType->freeValue(virtualMachine->getResult());
+        }
+    } catch (...) {
+        if (!definition.returnType->isVoid()) {
+            definition.returnType->freeValue(virtualMachine->getResult());
+        }
+        receiverType->freeValue(receiver);
+        throw;
+    }
+
+    receiverType->freeValue(receiver);
+}
+
+void IntrinsicMemberExpression::compileAssignment(Compiler* compiler, Function* function, Expression* expression) {
+    const auto* receiverType = m_receiver->getType();
+    const auto* propertyType = getType();
+    const auto* writableReceiver = m_receiver->asIdentifierExpression();
+    if (writableReceiver == nullptr) {
+        compiler->reportInternalError("Intrinsic property receiver is not directly writable");
+    }
+
+    m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
+    expression->compile(compiler, function, ExpressionTarget::Result);
+    compiler->addOpCode(op_intrinsic_property_set);
+    compiler->addId(m_memberId);
+    compiler->addFreeValue(propertyType->getTypeOpCodes()->freeResult);
+    compiler->addMoveIntermediateToResult(receiverType);
+    writableReceiver->compileStore(compiler);
+}
+
+void IntrinsicMemberExpression::evaluateAssignment(Interpreter& context, const Expression* expression) const {
+    m_receiver->evaluate(context);
+    const auto* evaluatedReceiver = context.getResult();
+    if (evaluatedReceiver == nullptr) {
+        if (!context.hasError()) {
+            context.setError("Intrinsic property receiver did not produce a value");
+        }
+        return;
+    }
+
+    const auto* receiverType = m_receiver->getType();
+    RuntimeValue receiver;
+    receiverType->initValue(receiver);
+    receiverType->copyValue(evaluatedReceiver->getValue(), receiver);
+
+    expression->evaluate(context);
+    const auto* assignedValue = context.getResult();
+    if (assignedValue == nullptr) {
+        receiverType->freeValue(receiver);
+        if (!context.hasError()) {
+            context.setError("Intrinsic property assignment did not produce a value");
+        }
+        return;
+    }
+
+    IntrinsicPropertyDefinition definition;
+    if (!context.getRuntime()->getIntrinsicPropertyDefinition(m_memberId, definition) || !definition.setFn) {
+        receiverType->freeValue(receiver);
+        raiseException("Invalid intrinsic property setter: " + m_qualifiedName);
+    }
+
+    try {
+        definition.setFn(context.getVirtualMachine(), receiver, assignedValue->getValue());
+        const auto* writableReceiver = m_receiver->asIdentifierExpression();
+        if (writableReceiver == nullptr) {
+            raiseException("Intrinsic property receiver is not directly writable");
+        }
+        writableReceiver->evaluateStore(context, receiver);
+        context.setResult(definition.valueType, assignedValue->getValue());
+    } catch (...) {
+        receiverType->freeValue(receiver);
+        throw;
+    }
+
+    receiverType->freeValue(receiver);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1114,6 +1329,69 @@ bool IdentifierExpression::canBorrow() const {
 
 bool IdentifierExpression::isWritable() const {
     return m_writable;
+}
+
+IdentifierExpression* IdentifierExpression::asIdentifierExpression() {
+    return this;
+}
+
+const IdentifierExpression* IdentifierExpression::asIdentifierExpression() const {
+    return this;
+}
+
+void IdentifierExpression::compileStore(Compiler* compiler) const {
+    const auto* typeOpCodes = m_identifierDefinition.valueType->getTypeOpCodes();
+
+    switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::FunctionVariable:
+        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(m_identifierDefinition.variableId));
+        compiler->addOpCode(typeOpCodes->setFunctionVariable);
+        compiler->addId(m_identifierDefinition.variableId);
+        break;
+
+    case IdentifierType::DynamicVariable:
+        compiler->addOpCode(typeOpCodes->setDynamicVariable);
+        compiler->addId(m_identifierDefinition.variableId);
+        compiler->addFreeValue(typeOpCodes->freeResult);
+        break;
+
+    case IdentifierType::ContextVariable:
+        compiler->addOpCode(typeOpCodes->setContextVariable);
+        compiler->addId(m_identifierDefinition.variableId);
+        compiler->addFreeValue(typeOpCodes->freeResult);
+        compiler->getRuntime()->setContextVariableWritten(m_identifierDefinition.variableId, true);
+        break;
+
+    default:
+        compiler->reportInternalError("Cannot store intrinsic receiver '" + m_identifier + "'");
+    }
+}
+
+void IdentifierExpression::evaluateStore(Interpreter& context, const RuntimeValue& value) const {
+    auto* runtime = context.getRuntime();
+    const auto* type = m_identifierDefinition.valueType;
+
+    switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::FunctionVariable:
+        context.setVariable(m_identifier, type, value);
+        break;
+
+    case IdentifierType::DynamicVariable:
+        if (type->isString()) {
+            runtime->setStringDynamicVariable(context.getVirtualMachine(), m_identifierDefinition.variableId, value);
+        } else {
+            runtime->setDynamicVariable(context.getVirtualMachine(), m_identifierDefinition.variableId, value);
+        }
+        break;
+
+    case IdentifierType::ContextVariable:
+        runtime->setContextVariableValue(m_identifierDefinition.variableId, value);
+        runtime->setContextVariableWritten(m_identifierDefinition.variableId, true);
+        break;
+
+    default:
+        raiseException("Cannot store intrinsic receiver '" + m_identifier + "'");
+    }
 }
 
 void IdentifierExpression::onCompileBorrowed(Compiler* compiler, Function* /*function*/,

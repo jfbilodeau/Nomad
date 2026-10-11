@@ -448,12 +448,22 @@ void MemberAssignmentStatement::onResolve(CompilerContext* context, Function* fu
     }
 }
 
-void MemberAssignmentStatement::onCompile(Compiler* compiler, Function* /*function*/) {
-    compiler->reportInternalError("Intrinsic property assignment compilation is not implemented yet");
+void MemberAssignmentStatement::onCompile(Compiler* compiler, Function* function) {
+    auto* target = m_target->asIntrinsicExpression();
+    if (target == nullptr) {
+        compiler->reportInternalError("Invalid intrinsic property assignment target");
+    }
+
+    target->compileAssignment(compiler, function, m_expression.get());
 }
 
-void MemberAssignmentStatement::onEvaluate(Interpreter& /*context*/) const {
-    raiseException("Intrinsic property assignment evaluation is not implemented yet");
+void MemberAssignmentStatement::onEvaluate(Interpreter& context) const {
+    const auto* target = m_target->asIntrinsicExpression();
+    if (target == nullptr) {
+        raiseException("Invalid intrinsic property assignment target");
+    }
+
+    target->evaluateAssignment(context, m_expression.get());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -467,8 +477,11 @@ void ExpressionStatement::onResolve(CompilerContext* context, Function* function
     (void)m_expression->resolve(context, function);
 }
 
-void ExpressionStatement::onCompile(Compiler* /*compiler*/, Function* /*function*/) {
-    raiseException("Expression statements are only supported by the interpreter");
+void ExpressionStatement::onCompile(Compiler* compiler, Function* function) {
+    m_expression->compile(compiler, function, ExpressionTarget::Result);
+    if (!m_expression->getType()->isVoid()) {
+        compiler->addFreeValue(m_expression->getType()->getTypeOpCodes()->freeResult);
+    }
 }
 
 void ExpressionStatement::onEvaluate(Interpreter& context) const {

@@ -30,6 +30,8 @@ class FunctionBuilder;
 class CallNativeFunctionExpression;
 class CallStatementNode;
 class Expression;
+class IdentifierExpression;
+class IntrinsicMemberExpression;
 class Statement;
 class StatementList;
 
@@ -102,6 +104,10 @@ public:
     // Only literals/constants, function variables and parameters can: their storage outlives the borrowing operation.
     [[nodiscard]] virtual bool canBorrow() const;
     [[nodiscard]] virtual bool isWritable() const;
+    [[nodiscard]] virtual IdentifierExpression* asIdentifierExpression();
+    [[nodiscard]] virtual const IdentifierExpression* asIdentifierExpression() const;
+    [[nodiscard]] virtual IntrinsicMemberExpression* asIntrinsicExpression();
+    [[nodiscard]] virtual const IntrinsicMemberExpression* asIntrinsicExpression() const;
     // Load a borrowed string pointer into `target`. Only valid when `canBorrow()` is true.
     void compileBorrowed(Compiler* compiler, Function* function, ExpressionTarget target);
     // The expression must have been resolved first.

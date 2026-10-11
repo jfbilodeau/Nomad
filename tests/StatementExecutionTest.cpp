@@ -153,7 +153,7 @@ BOOST_AUTO_TEST_CASE(statement_execution_calls_compiled_functions_with_interpret
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 18);
 }
 
-BOOST_AUTO_TEST_CASE(expression_statement_evaluates_and_cannot_compile)
+BOOST_AUTO_TEST_CASE(expression_statement_evaluates_and_compiles)
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
@@ -168,7 +168,7 @@ BOOST_AUTO_TEST_CASE(expression_statement_evaluates_and_cannot_compile)
     statement->evaluate(context);
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 10);
-    BOOST_CHECK_THROW(statement->compile(compiler.get(), nullptr), AstException);
+    BOOST_CHECK_NO_THROW(statement->compile(compiler.get(), nullptr));
 }
 
 BOOST_AUTO_TEST_CASE(expression_execution_calls_registered_nativeFunctions_without_compiling_input)

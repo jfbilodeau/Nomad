@@ -62,7 +62,12 @@ public:
 
     void callFunction(const Function* function);
     void callNativeFunction(NomadId nativeFunctionId);
+    void callIntrinsicMethod(NomadId memberId);
     void returnFunction(NomadIndex variableCount);
+    void runIntrinsicMethod(NomadId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
+
+    [[nodiscard]] const RuntimeValue& getIntrinsicReceiver() const;
+    [[nodiscard]] RuntimeValue& getIntrinsicReceiver();
 
     [[nodiscard]]
     std::unique_ptr<Closure> createClosure(const Runtime* runtime, NomadId functionId) const;
@@ -94,6 +99,7 @@ public:
     void setStringRefIntermediate(const NomadChar* intermediate) { m_intermediate.setStringRefValue(intermediate); }
 
     [[nodiscard]] const RuntimeValue& getIntermediate() const { return m_intermediate; }
+    [[nodiscard]] RuntimeValue& getIntermediate() { return m_intermediate; }
     [[nodiscard]] NomadBoolean getBooleanIntermediate() const { return m_intermediate.getBooleanValue(); }
     [[nodiscard]] NomadInteger getIntegerIntermediate() const { return m_intermediate.getIntegerValue(); }
     [[nodiscard]] NomadFloat getFloatIntermediate() const { return m_intermediate.getFloatValue(); }
@@ -218,6 +224,7 @@ private:
     NomadIndex m_parameterIndex = 0;
     NomadIndex m_enclosingParameterIndex = 0;  // Enclosing function's parameter frame for closure capture
     NomadIndex m_variableIndex = 0;
+    RuntimeValue* m_intrinsicReceiver = nullptr;
 };
 
 } // nomad
