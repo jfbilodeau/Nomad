@@ -10,7 +10,128 @@
 
 #include <boost/json.hpp>
 
+#include <set>
+
 namespace nomad {
+
+namespace {
+
+struct IntrinsicMemberDocumentationInfo {
+    NomadId id;
+    IntrinsicMemberType memberType;
+    const Type* objectType;
+    NomadString name;
+};
+
+std::vector<IntrinsicMemberDocumentationInfo> getIntrinsicMemberDocumentation(const Runtime* runtime) {
+    std::vector<NomadId> memberIds;
+    runtime->getIntrinsicMembers(memberIds);
+
+    std::vector<IntrinsicMemberDocumentationInfo> members;
+    members.reserve(memberIds.size());
+
+    for (const auto memberId : memberIds) {
+        switch (runtime->getIntrinsicMemberType(memberId)) {
+        case IntrinsicMemberType::Property: {
+            IntrinsicPropertyDefinition definition;
+            if (runtime->getIntrinsicPropertyDefinition(memberId, definition)) {
+                members.emplace_back(memberId, IntrinsicMemberType::Property, definition.objectType, definition.name);
+            }
+            break;
+        }
+
+        case IntrinsicMemberType::Method: {
+            IntrinsicMethodDefinition definition;
+            if (runtime->getIntrinsicMethodDefinition(memberId, definition)) {
+                members.emplace_back(memberId, IntrinsicMemberType::Method, definition.objectType, definition.name);
+            }
+            break;
+        }
+
+        case IntrinsicMemberType::Unknown:
+            break;
+        }
+    }
+
+    std::ranges::sort(members, [](const auto& left, const auto& right) {
+        const auto leftType = left.objectType->getTypeName();
+        const auto rightType = right.objectType->getTypeName();
+        return leftType == rightType ? left.name < right.name : leftType < rightType;
+    });
+
+    return members;
+}
+
+std::vector<NomadString> getIntrinsicMemberNames(const Runtime* runtime) {
+    std::vector<NomadString> names;
+
+    for (const auto& member : getIntrinsicMemberDocumentation(runtime)) {
+        if (std::ranges::find(names, member.name) == names.end()) {
+            names.push_back(member.name);
+        }
+    }
+
+    std::ranges::sort(names);
+    return names;
+}
+
+NomadString getDocumentedTypeName(const Runtime* runtime, const Type* type) {
+    return type == runtime->getStringRefType() ? runtime->getStringType()->getTypeName() : type->getTypeName();
+}
+
+NomadString escapeRegularExpression(const NomadString& text) {
+    constexpr std::string_view specialCharacters = R"(\.^$|()[]{}*+?)";
+    NomadString escaped;
+    escaped.reserve(text.size() * 2);
+
+    for (const auto character : text) {
+        if (specialCharacters.find(character) != std::string_view::npos) {
+            escaped += '\\';
+        }
+        escaped += character;
+    }
+
+    return escaped;
+}
+
+NomadString createWordPattern(const std::vector<NomadString>& words) {
+    std::set<NomadString> uniqueWords(words.begin(), words.end());
+    NomadString pattern = "\\b(?:";
+    auto separator = "";
+
+    for (const auto& word : uniqueWords) {
+        pattern += separator;
+        pattern += escapeRegularExpression(word);
+        separator = "|";
+    }
+
+    pattern += ")\\b";
+    return pattern;
+}
+
+boost::json::object createInclude(const NomadString& repositoryName) {
+    boost::json::object include;
+    include["include"] = "#" + repositoryName;
+    return include;
+}
+
+boost::json::object createMatchPattern(const NomadString& scopeName, const NomadString& match) {
+    boost::json::object pattern;
+    pattern["name"] = scopeName;
+    pattern["match"] = match;
+    return pattern;
+}
+
+boost::json::object createPatternRepositoryEntry(boost::json::object pattern) {
+    boost::json::array patterns;
+    patterns.push_back(std::move(pattern));
+
+    boost::json::object entry;
+    entry["patterns"] = std::move(patterns);
+    return entry;
+}
+
+} // namespace
 
 void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     // Output TOC
@@ -19,6 +140,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     out << "* [Constants](#constants)" << std::endl;
     out << "* [Enums](#enums)" << std::endl;
     out << "* [Variables](#variables)" << std::endl;
+    out << "* [Intrinsic Members](#intrinsic-members)" << std::endl;
     out << "* [NativeFunctions](#nativefunctions)" << std::endl;
 
     out << "---" << std::endl;
@@ -187,6 +309,8 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     out << std::endl;
 
+    generateIntrinsicMemberDocumentation(runtime, out);
+
     out << "## NativeFunctions" << std::endl;
 
     enum class NativeFunctionType {
@@ -312,6 +436,80 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     out.flush();
 }
 
+void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& out) {
+    out << "## Intrinsic Members" << std::endl;
+    out << std::endl;
+    out << "Intrinsic properties and methods are available on values of the receiver type." << std::endl;
+
+    const Type* currentType = nullptr;
+
+    for (const auto& member : getIntrinsicMemberDocumentation(runtime)) {
+        if (member.objectType != currentType) {
+            currentType = member.objectType;
+            out << std::endl;
+            out << "### `" << currentType->getTypeName() << "`" << std::endl;
+            out << std::endl;
+        }
+
+        out << "#### `" << member.name << "`";
+
+        if (member.memberType == IntrinsicMemberType::Property) {
+            IntrinsicPropertyDefinition definition;
+            (void)runtime->getIntrinsicPropertyDefinition(member.id, definition);
+
+            NomadString access;
+            if (definition.getFn && definition.setFn) {
+                access = "read/write";
+            } else if (definition.getFn) {
+                access = "read-only";
+            } else {
+                access = "write-only";
+            }
+
+            out << " (*" << access << " property*)" << std::endl;
+            out << std::endl;
+            out << "`" << member.name << ":" << getDocumentedTypeName(runtime, definition.valueType) << "`"
+                << std::endl;
+            out << std::endl;
+            if (!definition.doc.empty()) {
+                out << definition.doc << std::endl;
+                out << std::endl;
+            }
+        } else {
+            IntrinsicMethodDefinition definition;
+            (void)runtime->getIntrinsicMethodDefinition(member.id, definition);
+
+            out << " (*" << (definition.mutatesReceiver ? "mutating " : "") << "method*)" << std::endl;
+            out << std::endl;
+
+            if (definition.parameters.empty()) {
+                out << "No parameters." << std::endl;
+            } else {
+                out << "parameters:" << std::endl;
+                for (const auto& parameter : definition.parameters) {
+                    out << "- `" << parameter.name << ":" << getDocumentedTypeName(runtime, parameter.type) << "`";
+                    if (!parameter.doc.empty()) {
+                        out << " - " << parameter.doc;
+                    }
+                    out << std::endl;
+                }
+            }
+
+            out << std::endl;
+            out << "`returns " << getDocumentedTypeName(runtime, definition.returnType) << "`" << std::endl;
+            out << std::endl;
+            if (!definition.doc.empty()) {
+                out << definition.doc << std::endl;
+                out << std::endl;
+            }
+        }
+
+        out << "---" << std::endl;
+    }
+
+    out << std::endl;
+}
+
 void generateKeywords(Runtime* runtime, std::ostream& out) {
     out << "--- Keywords ---\n";
 
@@ -341,80 +539,143 @@ void generateKeywords(Runtime* runtime, std::ostream& out) {
     for (const NativeFunctionDefinition& nativeFunction : nativeFunctions) {
         out << nativeFunction.name << "\n";
     }
+
+    out << "--- IntrinsicMembers ---\n";
+
+    for (const auto& name : getIntrinsicMemberNames(runtime)) {
+        out << name << "\n";
+    }
 }
 
 void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
-    using boost::json::object;
     using boost::json::array;
+    using boost::json::object;
 
     object root;
+    root["$schema"] = "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json";
+    root["name"] = "Nomad";
+    root["scopeName"] = "source.nomad";
+    root["fileTypes"] = array({"nomad"});
 
-    // File extension and basic syntax
-    root["fileExtensions"] = array({".nomad"});
+    array rootPatterns;
+    for (const auto& repositoryName : {
+        "comments",
+        "formatStrings",
+        "strings",
+        "numbers",
+        "keywords",
+        "literals",
+        "functions",
+        "intrinsicMembers",
+        "types"
+    }) {
+        rootPatterns.push_back(createInclude(repositoryName));
+    }
+    rootPatterns.push_back(createMatchPattern("punctuation.operator.nomad", "[+\\-*/%=&|<>!]+"));
+    root["patterns"] = std::move(rootPatterns);
 
-    object comments;
-    // Nomad uses '#' for line comments
-    comments["line"] = "#";
-    root["comments"] = comments;
+    object repository;
+    repository["comments"] = createPatternRepositoryEntry(
+        createMatchPattern("comment.line.number-sign.nomad", "#.*$")
+    );
 
-    root["strings"] = array({"\"", "'"});
-    // Format strings: prefix with $ and support { ... } interpolation
-    object formatObj;
-    formatObj["prefix"] = "$";
-    formatObj["delimiter"] = "\"";
-    formatObj["interpolationStart"] = "{";
-    formatObj["interpolationEnd"] = "}";
-    root["formatString"] = formatObj;
-    root["numberRegex"] = R"(\b\d+(?:\.\d+)?\b)";
-    root["operatorRegex"] = "[+\\-*/%=&|<>!]+";
+    object formatString;
+    formatString["name"] = "string.quoted.double.format.nomad";
+    formatString["begin"] = "\\$\"";
+    formatString["beginCaptures"] = object({{"0", object({{"name", "punctuation.definition.string.begin.nomad"}})}});
+    formatString["end"] = "\"";
+    formatString["endCaptures"] = object({{"0", object({{"name", "punctuation.definition.string.end.nomad"}})}});
 
-    // Keywords
-    std::vector<KeywordDefinition> keywords;
-    runtime->getKeywords(keywords);
-
-    array keywordsArray;
-
-    for (const auto& k : keywords) {
-        keywordsArray.push_back(boost::json::value(k.keyword));
+    array interpolationPatterns;
+    for (const auto& repositoryName : {"keywords", "numbers", "functions", "intrinsicMembers", "literals"}) {
+        interpolationPatterns.push_back(createInclude(repositoryName));
     }
 
-    // Statements registered in the compiler
+    object interpolation;
+    interpolation["name"] = "meta.interpolation.nomad";
+    interpolation["begin"] = "\\{";
+    interpolation["end"] = "\\}";
+    interpolation["patterns"] = std::move(interpolationPatterns);
+
+    array formatStringPatterns;
+    formatStringPatterns.push_back(
+        createMatchPattern("constant.character.escape.nomad", "\\\\.")
+    );
+    formatStringPatterns.push_back(std::move(interpolation));
+    formatString["patterns"] = std::move(formatStringPatterns);
+    repository["formatStrings"] = createPatternRepositoryEntry(std::move(formatString));
+
+    object string;
+    string["name"] = "string.quoted.double.nomad";
+    string["begin"] = "\"";
+    string["end"] = "\"";
+    string["patterns"] = array({
+        createMatchPattern("constant.character.escape.nomad", "\\\\.")
+    });
+    repository["strings"] = createPatternRepositoryEntry(std::move(string));
+
+    object numbers;
+    numbers["patterns"] = array({
+        createMatchPattern("constant.numeric.float.nomad", "\\b\\d+\\.\\d+\\b"),
+        createMatchPattern("constant.numeric.integer.nomad", "\\b\\d+\\b")
+    });
+    repository["numbers"] = std::move(numbers);
+
+    std::vector<NomadString> controlWords;
+    std::vector<KeywordDefinition> keywords;
+    runtime->getKeywords(keywords);
+    controlWords.reserve(keywords.size());
+    for (const auto& keyword : keywords) {
+        controlWords.push_back(keyword.keyword);
+    }
+
     auto compiler = runtime->createCompiler();
     std::vector<NomadString> statements;
     compiler->getRegisteredStatements(statements);
+    controlWords.insert(controlWords.end(), statements.begin(), statements.end());
+    repository["keywords"] = createPatternRepositoryEntry(
+        createMatchPattern("keyword.control.nomad", createWordPattern(controlWords))
+    );
 
-    array statementsArray;
-    for (const auto& s : statements) {
-        statementsArray.push_back(boost::json::value(s));
-    }
+    repository["literals"] = createPatternRepositoryEntry(
+        createMatchPattern("constant.language.boolean.nomad", createWordPattern({"true", "false"}))
+    );
 
-    // NativeFunctions (includes engine nativeFunctions)
+    std::vector<NomadString> nativeFunctionNames;
     std::vector<NativeFunctionDefinition> nativeFunctions;
     runtime->getNativeFunctions(nativeFunctions);
-
-    array nativeFunctionsArray;
-    for (const auto& c : nativeFunctions) {
-        // Ensure nativeFunctions are single-line and prefix with '#'
-        std::string name = c.name;
-        for (char &ch : name) {
-            if (ch == '\n' || ch == '\r') ch = ' ';
-        }
-
-        nativeFunctionsArray.push_back(boost::json::value(std::string("#") + name));
+    nativeFunctionNames.reserve(nativeFunctions.size());
+    for (const auto& nativeFunction : nativeFunctions) {
+        nativeFunctionNames.push_back(nativeFunction.name);
     }
+    repository["functions"] = createPatternRepositoryEntry(
+        createMatchPattern("support.function.nomad", createWordPattern(nativeFunctionNames))
+    );
 
-    root["keywords"] = keywordsArray;
-    root["statements"] = statementsArray;
-    root["nativeFunctions"] = nativeFunctionsArray;
+    repository["intrinsicMembers"] = createPatternRepositoryEntry(
+        createMatchPattern(
+            "support.function.member.nomad",
+            "(?<=\\.)" + createWordPattern(getIntrinsicMemberNames(runtime))
+        )
+    );
 
-    // Common literals
-    array literalsArray;
-    literalsArray.push_back(boost::json::value("true"));
-    literalsArray.push_back(boost::json::value("false"));
-    root["literals"] = literalsArray;
+    repository["types"] = createPatternRepositoryEntry(
+        createMatchPattern(
+            "storage.type.nomad",
+            createWordPattern({
+                runtime->getBooleanType()->getTypeName(),
+                runtime->getFloatType()->getTypeName(),
+                runtime->getIntegerType()->getTypeName(),
+                runtime->getStringType()->getTypeName(),
+                runtime->getVoidType()->getTypeName()
+            })
+        )
+    );
 
-    // Serialize to output
+    root["repository"] = std::move(repository);
+    root["foldingStartMarker"] = "\\b(fun|if|else|enum)\\b";
+    root["foldingStopMarker"] = "\\bend\\b";
     out << boost::json::serialize(root) << std::endl;
 }
 
-}  // nomad
+} // namespace nomad

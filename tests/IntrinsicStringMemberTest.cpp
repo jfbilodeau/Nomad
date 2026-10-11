@@ -5,8 +5,11 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
+#include <nomad/script/Documentation.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
+
+#include <sstream>
 
 using namespace nomad;
 
@@ -47,6 +50,27 @@ BOOST_AUTO_TEST_CASE(registers_immutable_string_members) {
     BOOST_REQUIRE(runtime.getIntrinsicMethodDefinition(toUpperId, toUpper));
     BOOST_TEST(!toUpper.mutatesReceiver);
     BOOST_TEST(toUpper.returnType == runtime.getStringType());
+}
+
+BOOST_AUTO_TEST_CASE(exports_string_members_to_documentation_and_textmate_grammar) {
+    Runtime runtime;
+    std::ostringstream documentation;
+    std::ostringstream keywords;
+    std::ostringstream grammar;
+
+    generateDocumentation(&runtime, documentation);
+    generateKeywords(&runtime, keywords);
+    generateTextMateGrammar(&runtime, grammar);
+
+    BOOST_TEST(documentation.str().find("## Intrinsic Members") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `length` (*read-only property*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `contains` (*method*)") != NomadString::npos);
+    BOOST_TEST(keywords.str().find("--- IntrinsicMembers ---") != NomadString::npos);
+    BOOST_TEST(keywords.str().find("toUpper") != NomadString::npos);
+    BOOST_TEST(grammar.str().find("\"scopeName\":\"source.nomad\"") != NomadString::npos);
+    BOOST_TEST(grammar.str().find("\"repository\"") != NomadString::npos);
+    BOOST_TEST(grammar.str().find("\"support.function.member.nomad\"") != NomadString::npos);
+    BOOST_TEST(grammar.str().find("trimStart") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(compiled_length_counts_unicode_code_points) {

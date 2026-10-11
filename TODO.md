@@ -8,6 +8,7 @@ This the author wants to do
 [ ] Indexer notation.
 [ ] Persist scene
 [ ] First script should start at index 1 instead of 0 in decompiler (instructions.txt).
+[ ] LSP
 [ ] Command overloading (WIP)
 
 ## Completed

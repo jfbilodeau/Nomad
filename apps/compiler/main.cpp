@@ -9,6 +9,8 @@
 
 #include <nomad/project/ProjectConfiguration.hpp>
 
+#include <nomad/script/Documentation.hpp>
+
 #include <nomad/system/Path.hpp>
 #include <nomad/system/ProgramOptions.hpp>
 
@@ -21,6 +23,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <utility>
 
 using namespace nomad;
@@ -41,6 +44,11 @@ struct DocumentationParameters {
     NomadString output;
 };
 
+struct TextMateParameters {
+    std::optional<NomadString> path;
+    NomadString output;
+};
+
 struct HelpParameters {
     std::optional<NomadString> verb;
 };
@@ -49,6 +57,29 @@ void printDiagnostics(const CompilationResult& result) {
     for (const auto& diagnostic : result.diagnostics) {
         std::cerr << formatDiagnostic(diagnostic) << '\n';
     }
+}
+
+int writeOutputFile(
+    const NomadString& output,
+    const NomadString& outputDescription,
+    const NomadString& contents
+) {
+    const auto outputPath = pathFromUtf8(output);
+    std::ofstream outputStream(outputPath, std::ios::binary);
+
+    if (!outputStream.is_open()) {
+        std::cerr << "Failed to open " << outputDescription << " output: " << pathToUtf8(outputPath) << '\n';
+        return EXIT_FAILURE;
+    }
+
+    outputStream << contents;
+
+    if (!outputStream) {
+        std::cerr << "Failed to write " << outputDescription << " output: " << pathToUtf8(outputPath) << '\n';
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
 }
 
 struct CompilationPaths {
@@ -154,7 +185,6 @@ int dumpCommand(DumpParameters& parameters) {
 }
 
 int documentationCommand(DocumentationParameters& parameters) {
-    const auto outputPath = pathFromUtf8(parameters.output);
     const auto paths = resolveRequestedPaths(parameters.path);
     const HeadlessGame game(paths.resources);
     const auto result = generateDocumentationForPaths(paths.sources, game.getRuntime());
@@ -164,21 +194,15 @@ int documentationCommand(DocumentationParameters& parameters) {
         return EXIT_FAILURE;
     }
 
-    std::ofstream output(outputPath, std::ios::binary);
+    return writeOutputFile(parameters.output, "documentation", result.documentation);
+}
 
-    if (!output.is_open()) {
-        std::cerr << "Failed to open documentation output: " << pathToUtf8(outputPath) << '\n';
-        return EXIT_FAILURE;
-    }
-
-    output << result.documentation;
-
-    if (!output) {
-        std::cerr << "Failed to write documentation output: " << pathToUtf8(outputPath) << '\n';
-        return EXIT_FAILURE;
-    }
-
-    return EXIT_SUCCESS;
+int textMateCommand(TextMateParameters& parameters) {
+    const auto paths = resolveRequestedPaths(parameters.path);
+    const HeadlessGame game(paths.resources);
+    std::ostringstream output;
+    generateTextMateGrammar(game.getRuntime(), output);
+    return writeOutputFile(parameters.output, "TextMate grammar", output.str());
 }
 
 } // namespace
@@ -213,6 +237,9 @@ int main(int argc, char** argv) {
         program.addVerb<DocumentationParameters>("docs", &documentationCommand, "Generate language and engine API documentation")
             .addOptionalPositional("path", &DocumentationParameters::path, "Source path (default: discover the current project)")
             .addRequiredOption("output", "o", &DocumentationParameters::output, "Output Markdown file (required)");
+        program.addVerb<TextMateParameters>("textmate", &textMateCommand, "Generate a VS Code TextMate grammar")
+            .addOptionalPositional("path", &TextMateParameters::path, "Project path (default: discover the current project)")
+            .addRequiredOption("output", "o", &TextMateParameters::output, "Output .tmLanguage.json file (required)");
         return program.run(argc, argv, std::cout);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

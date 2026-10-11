@@ -52,12 +52,30 @@ run_success("Package help" "${NOMAD_CLI}" package --help)
 run_failure("Package flag rejected by run" "${NOMAD_CLI}" run --force)
 run_success("Compiler docs help without required output" "${NOMAD_COMPILER}" docs -h)
 run_failure("Compiler docs requires output" "${NOMAD_COMPILER}" docs)
+run_success("Compiler TextMate help without required output" "${NOMAD_COMPILER}" textmate -h)
+run_failure("Compiler TextMate requires output" "${NOMAD_COMPILER}" textmate)
 run_failure("Compiler dump rejects docs options" "${NOMAD_COMPILER}" dump --output ignored.md)
 
 run_success(
     "Project initialization"
     "${NOMAD_CLI}" init "${PROJECT_DIR}"
 )
+
+set(TEXTMATE_GRAMMAR "${PROJECT_DIR}/nomad.tmLanguage.json")
+run_success(
+    "TextMate grammar generation"
+    "${NOMAD_COMPILER}" textmate "${PROJECT_DIR}" --output "${TEXTMATE_GRAMMAR}"
+)
+require_path("${TEXTMATE_GRAMMAR}" "Generated TextMate grammar")
+file(READ "${TEXTMATE_GRAMMAR}" TEXTMATE_GRAMMAR_JSON)
+string(JSON TEXTMATE_SCOPE_NAME GET "${TEXTMATE_GRAMMAR_JSON}" scopeName)
+if(NOT TEXTMATE_SCOPE_NAME STREQUAL "source.nomad")
+    message(FATAL_ERROR "Generated TextMate grammar has an invalid scope name")
+endif()
+string(JSON TEXTMATE_REPOSITORY_TYPE TYPE "${TEXTMATE_GRAMMAR_JSON}" repository)
+if(NOT TEXTMATE_REPOSITORY_TYPE STREQUAL "OBJECT")
+    message(FATAL_ERROR "Generated TextMate grammar does not contain a repository")
+endif()
 
 file(MAKE_DIRECTORY "${PROJECT_DIR}/res/development")
 file(WRITE "${PROJECT_DIR}/res/development/notes.txt" "excluded")
