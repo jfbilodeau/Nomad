@@ -3,8 +3,8 @@
 #include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/script/Runtime.hpp>
 #include <nomad/script/Function.hpp>
+#include <nomad/script/Runtime.hpp>
 
 #if defined(NOMAD_DEBUG)
 //#define BOOST_SPIRIT_DEBUG
@@ -117,7 +117,8 @@ struct LineGrammar : boost::spirit::qi::grammar<Iterator, std::vector<Token>()> 
             qi::string("<") |
             qi::string(":") |
             qi::string("(") |
-            qi::string(")")
+            qi::string(")") |
+            qi::string(".")
         ],
 //        keyword = qi::string("true") | qi::string("false") | qi::string("fun"),
         identifier = (qi::alpha | qi::char_("_")) >>

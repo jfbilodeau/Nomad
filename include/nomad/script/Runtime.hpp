@@ -11,12 +11,13 @@
 
 #include <nomad/log/Logger.hpp>
 
-#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
 #include <nomad/script/Function.hpp>
+#include <nomad/script/IntrinsicMember.hpp>
+#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/VariableContext.hpp>
 
 #include <nomad/system/TempHeap.hpp>
@@ -113,6 +114,21 @@ public:
     [[nodiscard]] const Type* getCallbackType(const std::vector<const Type*>& parameterTypes, const Type* returnType);
     [[nodiscard]] const Type* getEventType(const NomadString& name) const;
     [[nodiscard]] const Type* getPredicateType();
+
+    // Intrinsic members
+    NomadId registerIntrinsicProperty(const Type* objectType, const NomadString& name, const Type* valueType,
+                                      IntrinsicPropertyGetFn getFn, IntrinsicPropertySetFn setFn, NomadDocArg);
+    NomadId registerIntrinsicMethod(const Type* objectType, const NomadString& name, NativeFunctionFn fn,
+                                    const std::vector<NativeFunctionParameterDefinition>& parameters,
+                                    const Type* returnType, bool mutatesReceiver, NomadDocArg);
+    [[nodiscard]] NomadId getIntrinsicMemberId(const Type* objectType, const NomadString& name) const;
+    [[nodiscard]] IntrinsicMemberType getIntrinsicMemberType(NomadId memberId) const;
+    [[nodiscard]] bool getIntrinsicPropertyDefinition(NomadId memberId, IntrinsicPropertyDefinition& definition) const;
+    [[nodiscard]] bool getIntrinsicMethodDefinition(NomadId memberId, IntrinsicMethodDefinition& definition) const;
+    void getIntrinsicMembers(const Type* objectType, std::vector<NomadId>& members) const;
+    void getIntrinsicMembers(std::vector<NomadId>& members) const;
+    void getIntrinsicMemberOverloads(const NomadString& name, std::vector<NomadId>& overloads) const;
+    [[nodiscard]] NomadIndex getIntrinsicMemberOverloadCount(const NomadString& name) const;
 
     // Convenience type access:
     [[nodiscard]] const Type* getVoidType() const;
@@ -315,6 +331,11 @@ private:
         std::unique_ptr<FormatString> formatString;
     };
 
+    struct IntrinsicMemberRegistration {
+        IntrinsicMemberType type;
+        NomadIndex definitionIndex;
+    };
+
     void registerDefaultInstructions();
     NomadId internContextVariable(NomadId contextId, NomadId localVariableId);
     [[nodiscard]] const ContextVariable* getContextVariable(NomadId contextVariableId) const;
@@ -322,11 +343,12 @@ private:
     void addCallable(const NomadString& name, CallableId callable);
     [[nodiscard]] const CallableOverloadSet* findCallableOverloadSet(const NomadString& name) const;
     // Checks that `candidate` may join `overloadSet` as an overload.
-    [[nodiscard]] bool canOverloadCallable(
-        const CallableOverloadSet& overloadSet,
-        CallableId candidate,
-        NomadString& error
-    ) const;
+    [[nodiscard]] bool canOverloadCallable(const CallableOverloadSet& overloadSet, CallableId candidate,
+                                           NomadString& error) const;
+    [[nodiscard]] bool ownsType(const Type* type) const;
+    [[nodiscard]] bool canRegisterIntrinsicMember(const Type* objectType, const NomadString& name,
+                                                  const std::vector<NativeFunctionParameterDefinition>& parameters,
+                                                  NomadString& error) const;
 
     std::vector<Instruction> m_instructions;
     std::vector<OpCodeDefinition> m_opCodes;
@@ -348,7 +370,11 @@ private:
     std::vector<CallableOverloadSet> m_callables;
     // Maps a callable name to its index in `m_callables`.
     std::unordered_map<NomadString, NomadIndex> m_callablesByName;
+    std::vector<IntrinsicMemberRegistration> m_intrinsicMembers;
+    std::vector<IntrinsicPropertyDefinition> m_intrinsicProperties;
+    std::vector<IntrinsicMethodDefinition> m_intrinsicMethods;
+    std::unordered_map<NomadString, std::vector<NomadId>> m_intrinsicMembersByName;
     bool m_debug = false;
     std::unique_ptr<VirtualMachine> m_virtualMachine = nullptr;
 };
-} // nomad
+} // namespace nomad

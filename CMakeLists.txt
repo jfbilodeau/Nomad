@@ -176,6 +176,7 @@ set(
         ${NOMAD_INCLUDE_DIR}/nomad/script/Event.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/script/FormatString.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/script/Instructions.hpp
+        ${NOMAD_INCLUDE_DIR}/nomad/script/IntrinsicMember.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/script/VirtualMachine.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/script/Interpreter.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/script/OpCode.hpp

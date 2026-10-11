@@ -1,17 +1,17 @@
 // Copyright (c) 2024-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/Argument.hpp>
 #include <nomad/compiler/CallNode.hpp>
+#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/FormatStringCompiler.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 
-#include <nomad/script/VirtualMachine.hpp>
+#include <nomad/script/Function.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Function.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <algorithm>
 #include <any>
@@ -55,6 +55,10 @@ void Expression::compile(Compiler* compiler, Function* function, const Expressio
 
 bool Expression::canBorrow() const {
     return isParsed() && m_type->isString();
+}
+
+bool Expression::isWritable() const {
+    return false;
 }
 
 void Expression::compileBorrowed(Compiler* compiler, Function* function, const ExpressionTarget target) {
@@ -173,7 +177,6 @@ UnaryExpression::UnaryExpression(
     m_unaryOperator(unaryOperator),
     m_expression(std::move(expression)) {
 }
-
 
 void UnaryExpression::onResolve(CompilerContext* context, Function* function) {
     if (!m_expression->resolve(context, function)) {
@@ -650,12 +653,132 @@ void FunctionCallExpression::onEvaluate(Interpreter& context) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // PrimaryExpression
-PrimaryExpression::PrimaryExpression(
-    const Expression* parent,
-    const NomadIndex line,
-    const NomadIndex column
-):
-    Expression(parent, line, column) {
+PrimaryExpression::PrimaryExpression(const Expression* parent, const NomadIndex line, const NomadIndex column)
+    : Expression(parent, line, column) {
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// IntrinsicMemberExpression
+IntrinsicMemberExpression::IntrinsicMemberExpression(const Expression* parent, const NomadIndex line,
+                                                     const NomadIndex column, NomadString qualifiedName,
+                                                     NomadString memberName, std::unique_ptr<Expression> receiver,
+                                                     ArgumentList arguments, const IntrinsicMemberAccess access)
+    : Expression(parent, line, column), m_qualifiedName(std::move(qualifiedName)), m_memberName(std::move(memberName)),
+      m_receiver(std::move(receiver)), m_arguments(std::move(arguments)), m_access(access) {
+}
+
+bool IntrinsicMemberExpression::isTerminal() const {
+    return false;
+}
+
+bool IntrinsicMemberExpression::isWritable() const {
+    return false;
+}
+
+void IntrinsicMemberExpression::setAccess(const IntrinsicMemberAccess access) {
+    m_access = access;
+}
+
+void IntrinsicMemberExpression::setAllowVoid(const bool allowVoid) {
+    m_allowVoid = allowVoid;
+}
+
+void IntrinsicMemberExpression::onResolve(CompilerContext* context, Function* function) {
+    if (!m_receiver->resolve(context, function)) {
+        return;
+    }
+
+    auto* runtime = context->getRuntime();
+    m_memberId = runtime->getIntrinsicMemberId(m_receiver->getType(), m_memberName);
+
+    if (m_memberId == NOMAD_INVALID_ID) {
+        reportError(context, function,
+                    "Type '" + getTypeDisplayName(m_receiver->getType()) + "' has no intrinsic member '" +
+                        m_memberName + "'");
+        return;
+    }
+
+    switch (runtime->getIntrinsicMemberType(m_memberId)) {
+    case IntrinsicMemberType::Property: {
+        IntrinsicPropertyDefinition definition;
+        if (!runtime->getIntrinsicPropertyDefinition(m_memberId, definition)) {
+            context->getCompiler()->reportInternalError("Invalid intrinsic property: " + m_qualifiedName);
+        }
+
+        if (m_access == IntrinsicMemberAccess::Read && !definition.getFn) {
+            reportError(context, function, "Intrinsic property '" + m_qualifiedName + "' is write-only");
+            return;
+        }
+
+        if (m_access == IntrinsicMemberAccess::Write) {
+            if (!definition.setFn) {
+                reportError(context, function, "Intrinsic property '" + m_qualifiedName + "' is read-only");
+                return;
+            }
+
+            if (!m_receiver->isWritable()) {
+                reportError(context, function, "Cannot assign intrinsic property on a read-only or temporary receiver");
+                return;
+            }
+        }
+
+        setType(definition.valueType);
+        return;
+    }
+
+    case IntrinsicMemberType::Method: {
+        IntrinsicMethodDefinition definition;
+        if (!runtime->getIntrinsicMethodDefinition(m_memberId, definition)) {
+            context->getCompiler()->reportInternalError("Invalid intrinsic method: " + m_qualifiedName);
+        }
+
+        if (m_access == IntrinsicMemberAccess::Write) {
+            reportError(context, function, "Cannot assign to intrinsic method '" + m_qualifiedName + "'");
+            return;
+        }
+
+        if (definition.mutatesReceiver && !m_receiver->isWritable()) {
+            reportError(context, function,
+                        "Cannot call mutating method '" + m_qualifiedName + "' on a temporary or read-only receiver");
+            return;
+        }
+
+        auto& arguments = m_arguments.getArguments();
+        if (arguments.size() != definition.parameters.size()) {
+            context->getCompiler()->reportInternalError("Intrinsic method argument shape changed after parsing");
+        }
+
+        for (NomadIndex index = 0; index < arguments.size(); ++index) {
+            arguments[index]->setType(definition.parameters[index].type);
+        }
+
+        if (!m_arguments.resolve(context, function)) {
+            return;
+        }
+
+        if (definition.returnType->isVoid() && !m_allowVoid) {
+            reportError(context, function,
+                        "Cannot use intrinsic method '" + m_qualifiedName +
+                            "' in an expression because it does not return a value");
+            return;
+        }
+
+        setType(definition.returnType);
+        return;
+    }
+
+    case IntrinsicMemberType::Unknown:
+        context->getCompiler()->reportInternalError("Invalid intrinsic member: " + m_qualifiedName);
+    }
+}
+
+void IntrinsicMemberExpression::onCompile(Compiler* compiler, Function* /*function*/, const ExpressionTarget /*target*/
+) {
+    compiler->reportInternalError("Intrinsic member compilation is not implemented yet: " + m_qualifiedName);
+}
+
+void IntrinsicMemberExpression::onEvaluate(Interpreter& /*context*/) const {
+    raiseException("Intrinsic member evaluation is not implemented yet: " + m_qualifiedName);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -928,6 +1051,21 @@ void IdentifierExpression::onResolve(CompilerContext* context, Function* functio
         return;
     }
 
+    switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::FunctionVariable:
+    case IdentifierType::ContextVariable:
+        m_writable = true;
+        break;
+
+    case IdentifierType::DynamicVariable:
+        m_writable = context->getRuntime()->canSetDynamicVariable(m_identifierDefinition.variableId);
+        break;
+
+    default:
+        m_writable = false;
+        break;
+    }
+
     setType(m_identifierDefinition.valueType);
 }
 
@@ -965,16 +1103,21 @@ bool IdentifierExpression::canBorrow() const {
         return true;
     }
 
-    // Literals, the caller's locals and the caller's (read-only) parameters cannot be changed by the nativeFunction or function
-    // being called. Dynamic and context variables are read through getters that allocate, and their storage can be
-    // replaced by the callee, so they are always copied.
+    // Literals, the caller's locals and the caller's (read-only) parameters cannot be changed by the nativeFunction or
+    // function being called. Dynamic and context variables are read through getters that allocate, and their storage
+    // can be replaced by the callee, so they are always copied.
     const auto identifierType = m_identifierDefinition.identifierType;
 
     return hasType() && getType()->isString() &&
         (identifierType == IdentifierType::FunctionVariable || identifierType == IdentifierType::Parameter);
 }
 
-void IdentifierExpression::onCompileBorrowed(Compiler* compiler, Function* /*function*/, const ExpressionTarget target) {
+bool IdentifierExpression::isWritable() const {
+    return m_writable;
+}
+
+void IdentifierExpression::onCompileBorrowed(Compiler* compiler, Function* /*function*/,
+                                             const ExpressionTarget target) {
     // Borrowing is a bitwise load of the pointer: the non-string load opcodes do exactly that.
     const auto* referenceType = compiler->getRuntime()->getStringRefType();
 

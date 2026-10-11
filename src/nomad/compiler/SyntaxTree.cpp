@@ -7,8 +7,8 @@
 
 #include <nomad/script/Function.hpp>
 
-#include <nomad/script/VirtualMachine.hpp>
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <algorithm>
 #include <utility>
@@ -45,7 +45,6 @@ NomadIndex AstException::getLine() const {
 NomadIndex AstException::getColumn() const {
     return m_column;
 }
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // AstNode
@@ -421,14 +420,47 @@ void AssignmentStatement::onEvaluate(Interpreter& context) const {
     context.setResult(assignedValue);
 }
 
-ExpressionStatement::ExpressionStatement(
-    const NomadIndex line,
-    const NomadIndex column,
-    std::unique_ptr<Expression> expression
-):
-    Statement(line, column),
-    m_expression(std::move(expression))
-{
+///////////////////////////////////////////////////////////////////////////////
+// MemberAssignmentStatement
+MemberAssignmentStatement::MemberAssignmentStatement(const NomadIndex line, const NomadIndex column,
+                                                     std::unique_ptr<Expression> target,
+                                                     std::unique_ptr<Expression> expression)
+    : Statement(line, column), m_target(std::move(target)), m_expression(std::move(expression)) {
+}
+
+void MemberAssignmentStatement::onResolve(CompilerContext* context, Function* function) {
+    if (!m_target->resolve(context, function) || !m_expression->resolve(context, function)) {
+        return;
+    }
+
+    const auto* targetType = m_target->getType();
+    const auto* expressionType = m_expression->getType();
+
+    if (targetType == nullptr || expressionType == nullptr) {
+        reportError(context, function, "Cannot determine intrinsic property assignment type");
+        return;
+    }
+
+    if (targetType != expressionType) {
+        reportError(context, function,
+                    "Cannot assign value of type '" + getTypeDisplayName(expressionType) +
+                        "' to intrinsic property of type '" + getTypeDisplayName(targetType) + "'");
+    }
+}
+
+void MemberAssignmentStatement::onCompile(Compiler* compiler, Function* /*function*/) {
+    compiler->reportInternalError("Intrinsic property assignment compilation is not implemented yet");
+}
+
+void MemberAssignmentStatement::onEvaluate(Interpreter& /*context*/) const {
+    raiseException("Intrinsic property assignment evaluation is not implemented yet");
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// ExpressionStatement
+ExpressionStatement::ExpressionStatement(const NomadIndex line, const NomadIndex column,
+                                         std::unique_ptr<Expression> expression)
+    : Statement(line, column), m_expression(std::move(expression)) {
 }
 
 void ExpressionStatement::onResolve(CompilerContext* context, Function* function) {

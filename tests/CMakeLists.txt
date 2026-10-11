@@ -14,6 +14,8 @@ add_executable(
     ./GameFactoryTest.cpp
     ./GeometryTest.cpp
     ./InterpreterTest.cpp
+    ./IntrinsicMemberTest.cpp
+    ./IntrinsicMemberSyntaxTest.cpp
     ./LanguageCallbackEventTest.cpp
     ./LanguageControlFlowTest.cpp
     ./LanguageFormatStringFunctionTest.cpp

@@ -101,6 +101,38 @@ private:
     ArgumentList m_arguments;
 };
 
+enum class IntrinsicMemberAccess {
+    Read = 1,
+    Write,
+};
+
+class IntrinsicMemberExpression final : public Expression {
+public:
+    IntrinsicMemberExpression(const Expression* parent, NomadIndex line, NomadIndex column, NomadString qualifiedName,
+                              NomadString memberName, std::unique_ptr<Expression> receiver, ArgumentList arguments,
+                              IntrinsicMemberAccess access = IntrinsicMemberAccess::Read);
+
+    [[nodiscard]] bool isTerminal() const override;
+    [[nodiscard]] bool isWritable() const override;
+
+    void setAccess(IntrinsicMemberAccess access);
+    void setAllowVoid(bool allowVoid);
+
+protected:
+    void onResolve(CompilerContext* context, Function* function) override;
+    void onCompile(Compiler* compiler, Function* function, ExpressionTarget target) override;
+    void onEvaluate(Interpreter& context) const override;
+
+private:
+    NomadString m_qualifiedName;
+    NomadString m_memberName;
+    std::unique_ptr<Expression> m_receiver;
+    ArgumentList m_arguments;
+    IntrinsicMemberAccess m_access;
+    NomadId m_memberId = NOMAD_INVALID_ID;
+    bool m_allowVoid = false;
+};
+
 ///////////////////////////////////////////////////////////////////////////////
 // Primary expressions
 ///////////////////////////////////////////////////////////////////////////////
@@ -196,6 +228,7 @@ public:
     explicit IdentifierExpression(const Expression* parent, NomadIndex line, NomadIndex column, const NomadString& identifier);
 
     [[nodiscard]] bool canBorrow() const override;
+    [[nodiscard]] bool isWritable() const override;
 
 protected:
     void onResolve(CompilerContext* context, Function* function) override;
@@ -208,6 +241,7 @@ private:
 
     NomadString m_identifier;
     IdentifierDefinition m_identifierDefinition = {};
+    bool m_writable = false;
 };
 
 // Parse an identifier and handle capture.
@@ -247,14 +281,14 @@ private:
 // Function line number expressions
 ///////////////////////////////////////////////////////////////////////////////
 class LineNumberExpression final : public PrimaryExpression {
-public:
+  public:
     explicit LineNumberExpression(const Expression* parent, NomadIndex line, NomadIndex column);
 
-protected:
+  protected:
     void onResolve(CompilerContext* context, Function* function) override;
     void onCompile(Compiler* compiler, Function* function, ExpressionTarget target) override;
 
-private:
+  private:
 };
 
 } // namespace nomad

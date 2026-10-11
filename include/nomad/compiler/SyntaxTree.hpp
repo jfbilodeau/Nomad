@@ -7,8 +7,8 @@
 #include <nomad/compiler/Identifier.hpp>
 #include <nomad/compiler/Operators.hpp>
 
-#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/FormatString.hpp>
+#include <nomad/script/NativeFunction.hpp>
 
 #include <memory>
 #include <vector>
@@ -101,6 +101,7 @@ public:
     // Can the expression lend a pointer to a string it does not own (`$stringref`) instead of producing a copy?
     // Only literals/constants, function variables and parameters can: their storage outlives the borrowing operation.
     [[nodiscard]] virtual bool canBorrow() const;
+    [[nodiscard]] virtual bool isWritable() const;
     // Load a borrowed string pointer into `target`. Only valid when `canBorrow()` is true.
     void compileBorrowed(Compiler* compiler, Function* function, ExpressionTarget target);
     // The expression must have been resolved first.
@@ -190,11 +191,26 @@ private:
     std::unique_ptr<Expression> m_expression;
 };
 
+class MemberAssignmentStatement final : public Statement {
+public:
+    MemberAssignmentStatement(NomadIndex line, NomadIndex column, std::unique_ptr<Expression> target,
+                              std::unique_ptr<Expression> expression);
+
+protected:
+    void onResolve(CompilerContext* context, Function* function) override;
+    void onCompile(Compiler* compiler, Function* function) override;
+    void onEvaluate(Interpreter& context) const override;
+
+private:
+    std::unique_ptr<Expression> m_target;
+    std::unique_ptr<Expression> m_expression;
+};
+
 class ExpressionStatement final : public Statement {
 public:
     ExpressionStatement(NomadIndex line, NomadIndex column, std::unique_ptr<Expression> expression);
 
-protected:
+  protected:
     void onResolve(CompilerContext* context, Function* function) override;
     void onCompile(Compiler* compiler, Function* function) override;
     void onEvaluate(Interpreter& context) const override;
@@ -311,7 +327,7 @@ private:
 };
 
 class ConstDeclaration : public Statement {
-public:
+  public:
     ConstDeclaration(NomadIndex line, NomadIndex column, NomadString name, std::unique_ptr<Expression> initializer);
 
     [[nodiscard]] const NomadString& getName() const;
@@ -357,9 +373,9 @@ protected:
     void onResolve(CompilerContext* context, Function* function) override;
     void onCompile(Compiler* compiler, Function* function) override;
 
-private:
+  private:
     NomadString m_eventName;
     std::unique_ptr<FunctionDeclaration> m_handler;
 };
 
-} // nomad
+} // namespace nomad
