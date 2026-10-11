@@ -4,6 +4,7 @@ This the author wants to do
 ## Open
 [ ] Display physics bodies in debug mode
 [ ] Debug mode should only come up when the `--debug` parameter is passed.
+[ ] Objects (intrinsic)
 [ ] Indexer notation.
 [ ] Persist scene
 [ ] First script should start at index 1 instead of 0 in decompiler (instructions.txt).
@@ -23,7 +24,7 @@ This the author wants to do
 [X] Window events
 [X] Enums
 
-## Low priority
+## Defered
 [ ] Strings might leak if a script faults
 [ ] Borrowed (no-copy) getter for dynamic string variables. Deferred: as of 2026-10 the game scripts read string dynamics 0 times in `==`/`!=` and 6 times in format strings. Constraints if revisited:
     - Opt-in third callback per variable; not every getter can lend (`Scene::getName()` returns by value, entity getters fall back to a default when there is no entity).

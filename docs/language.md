@@ -163,7 +163,7 @@ enum state
     jumping
 end
 
-state = state.idle
+this.state = state.idle
 ```
 
 Enum declarations and their values are globally visible across scripts. A value is referenced by its qualified name, such as `state.walking`, and variables infer the named enum type from assignment.
@@ -180,10 +180,10 @@ Enums are strongly typed:
 For example, each of these expressions fails to compile:
 
 ```nomad
-state = State.idle
-state = 1                    # int cannot be assigned to State
-same = State.idle == 1       # State cannot be compared with int
-next = State.idle + State.walking # enums do not support arithmetic
+this.state = state.idle
+this.state = 1                    # int cannot be assigned to State
+same = state.idle == 1            # State cannot be compared with int
+next = state.idle + state.walking # enums do not support arithmetic
 ```
 
 The embedding engine may register enum members with explicit internal values rather than compiler-assigned sequential values. This preserves corresponding C++ enum values without weakening Nomad's type rules.
