@@ -377,10 +377,11 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
         return a.name < b.name;
     });
 
-    for (auto& nativeFunction: nativeFunctions) {
+    for (const auto& nativeFunction: nativeFunctions) {
         out << "### `" << nativeFunction.name << "`";
 
-        auto nativeFunctionTypeText = (nativeFunction.nativeFunctionType == NativeFunctionType::NativeFunction) ? "Native" : "Script";
+        const auto nativeFunctionTypeText =
+            nativeFunction.nativeFunctionType == NativeFunctionType::NativeFunction ? "Native" : "Script";
 
         out << " (*" << nativeFunctionTypeText << "*)" << std::endl;
 
@@ -410,7 +411,9 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
         out << std::endl;
 
-        auto returnTypeName = nativeFunction.returnType ? nativeFunction.returnType->getTypeName() : runtime->getVoidType()->getTypeName();
+        const auto returnTypeName = nativeFunction.returnType
+            ? nativeFunction.returnType->getTypeName()
+            : runtime->getVoidType()->getTypeName();
 
         out << "`returns " << returnTypeName << "`" << std::endl;
 
