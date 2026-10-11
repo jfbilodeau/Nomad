@@ -177,6 +177,7 @@ set(
         ${NOMAD_INCLUDE_DIR}/nomad/script/FormatString.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/script/Instructions.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/script/IntrinsicMember.hpp
+        ${NOMAD_INCLUDE_DIR}/nomad/script/IntrinsicMembers.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/script/VirtualMachine.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/script/Interpreter.hpp
         ${NOMAD_INCLUDE_DIR}/nomad/script/OpCode.hpp
@@ -301,6 +302,7 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/script/Event.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/FormatString.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/IntrinsicMembers.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/VirtualMachine.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/OpCode.cpp

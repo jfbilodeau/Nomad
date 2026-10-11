@@ -10,26 +10,10 @@
 
 using namespace nomad;
 
-namespace {
-
-void registerStringLength(Runtime& runtime) {
-    runtime.registerIntrinsicProperty(
-        runtime.getStringType(),
-        "length",
-        runtime.getIntegerType(),
-        [](VirtualMachine*, const RuntimeValue&, RuntimeValue&) {},
-        {},
-        NomadDoc("Length")
-    );
-}
-
-} // namespace
-
 BOOST_AUTO_TEST_SUITE(intrinsic_member_conflicts)
 
 BOOST_AUTO_TEST_CASE(compiled_function_rejects_existing_qualified_identifier) {
     Runtime runtime;
-    registerStringLength(runtime);
 
     auto compiler = runtime.createCompiler();
     compiler->registerScriptFile(
@@ -49,7 +33,6 @@ BOOST_AUTO_TEST_CASE(compiled_function_rejects_existing_qualified_identifier) {
 
 BOOST_AUTO_TEST_CASE(interpreter_rejects_existing_qualified_identifier) {
     Runtime runtime;
-    registerStringLength(runtime);
     Interpreter interpreter(&runtime);
 
     BOOST_REQUIRE(interpreter.execute("name.length = 10"));
@@ -61,7 +44,6 @@ BOOST_AUTO_TEST_CASE(interpreter_rejects_existing_qualified_identifier) {
 
 BOOST_AUTO_TEST_CASE(unrelated_qualified_identifier_does_not_conflict) {
     Runtime runtime;
-    registerStringLength(runtime);
 
     auto compiler = runtime.createCompiler();
     const auto functionId = compiler->registerScriptFile(

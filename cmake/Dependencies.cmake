@@ -9,6 +9,7 @@ set(
     dll
     exception
     json
+    locale
     nowide
     phoenix
     process

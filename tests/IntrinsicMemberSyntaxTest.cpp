@@ -14,10 +14,6 @@ using namespace nomad;
 
 namespace {
 
-IntrinsicPropertyGetFn propertyGetter() {
-    return [](VirtualMachine*, const RuntimeValue&, RuntimeValue&) {};
-}
-
 IntrinsicPropertySetFn propertySetter() {
     return [](VirtualMachine*, RuntimeValue&, const RuntimeValue&) {};
 }
@@ -46,9 +42,6 @@ BOOST_AUTO_TEST_CASE(resolves_property_on_literal) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    BOOST_REQUIRE(runtime.registerIntrinsicProperty(runtime.getStringType(), "length", runtime.getIntegerType(),
-                                                    propertyGetter(), {}, NomadDoc("Length")) != NOMAD_INVALID_ID);
-
     auto expression = parseExpression(context, nullptr, "\"Nomad\".length");
 
     BOOST_REQUIRE(expression != nullptr);
@@ -64,9 +57,6 @@ BOOST_AUTO_TEST_CASE(resolves_property_on_qualified_local) {
     Function function(NOMAD_INVALID_ID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
 
-    BOOST_REQUIRE(runtime.registerIntrinsicProperty(runtime.getStringType(), "length", runtime.getIntegerType(),
-                                                    propertyGetter(), {}, NomadDoc("Length")) != NOMAD_INVALID_ID);
-
     auto expression = parseExpression(context, &function, "name.length");
 
     BOOST_REQUIRE(expression != nullptr);
@@ -80,11 +70,6 @@ BOOST_AUTO_TEST_CASE(resolves_method_arguments_using_receiver_type) {
     CompilerContext context(compiler.get());
     Function function(NOMAD_INVALID_ID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
-
-    BOOST_REQUIRE(runtime.registerIntrinsicMethod(runtime.getStringType(), "contains", methodFunction(),
-                                                  {defParameter("text", runtime.getStringType(), NomadDoc("Text"))},
-                                                  runtime.getBooleanType(), false,
-                                                  NomadDoc("Contains text")) != NOMAD_INVALID_ID);
 
     auto expression = parseExpression(context, &function, "name.contains \"mad\"");
 
@@ -100,12 +85,6 @@ BOOST_AUTO_TEST_CASE(resolves_chained_members_on_function_return) {
 
     const auto functionId = runtime.registerFunction("getName", "getName.nomad", "return \"Nomad\"");
     runtime.getFunction(functionId)->setReturnType(runtime.getStringType());
-
-    BOOST_REQUIRE(runtime.registerIntrinsicMethod(runtime.getStringType(), "toUpper", methodFunction(), {},
-                                                  runtime.getStringType(), false,
-                                                  NomadDoc("Uppercase")) != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(runtime.registerIntrinsicProperty(runtime.getStringType(), "length", runtime.getIntegerType(),
-                                                    propertyGetter(), {}, NomadDoc("Length")) != NOMAD_INVALID_ID);
 
     auto expression = parseExpression(context, nullptr, "getName.toUpper.length");
 
@@ -136,9 +115,6 @@ BOOST_AUTO_TEST_CASE(rejects_writing_read_only_property) {
     CompilerContext context(compiler.get());
     Function function(NOMAD_INVALID_ID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
-
-    BOOST_REQUIRE(runtime.registerIntrinsicProperty(runtime.getStringType(), "length", runtime.getIntegerType(),
-                                                    propertyGetter(), {}, NomadDoc("Length")) != NOMAD_INVALID_ID);
 
     Tokenizer tokens(&context, "test.nomad", "name.length = 10");
     auto statement = parser::parseLine(&context, &function, &tokens);
@@ -173,9 +149,6 @@ BOOST_AUTO_TEST_CASE(preserves_existing_qualified_identifier) {
     Function function(NOMAD_INVALID_ID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
     function.registerVariable("name.length", runtime.getIntegerType());
-
-    BOOST_REQUIRE(runtime.registerIntrinsicProperty(runtime.getStringType(), "length", runtime.getIntegerType(),
-                                                    propertyGetter(), {}, NomadDoc("Length")) != NOMAD_INVALID_ID);
 
     auto expression = parseExpression(context, &function, "name.length");
 

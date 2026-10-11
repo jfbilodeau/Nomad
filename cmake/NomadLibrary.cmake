@@ -104,6 +104,7 @@ target_link_libraries(
     PUBLIC
     Boost::exception
     Boost::json
+    Boost::locale
     Boost::spirit
 )
 

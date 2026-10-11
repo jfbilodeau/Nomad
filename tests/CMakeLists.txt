@@ -18,6 +18,7 @@ add_executable(
     ./IntrinsicMemberExecutionTest.cpp
     ./IntrinsicMemberTest.cpp
     ./IntrinsicMemberSyntaxTest.cpp
+    ./IntrinsicStringMemberTest.cpp
     ./LanguageCallbackEventTest.cpp
     ./LanguageControlFlowTest.cpp
     ./LanguageFormatStringFunctionTest.cpp

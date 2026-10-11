@@ -5,6 +5,7 @@
 #include <nomad/script/IntrinsicMember.hpp>
 #include <nomad/script/Runtime.hpp>
 
+#include <algorithm>
 #include <vector>
 
 using namespace nomad;
@@ -30,8 +31,7 @@ BOOST_AUTO_TEST_SUITE(intrinsic_members)
 BOOST_AUTO_TEST_CASE(registers_read_only_write_only_and_read_write_properties) {
     Runtime runtime;
 
-    const auto readOnlyId = runtime.registerIntrinsicProperty(
-        runtime.getStringType(), "length", runtime.getIntegerType(), propertyGetter(), {}, NomadDoc("String length"));
+    const auto readOnlyId = runtime.getIntrinsicMemberId(runtime.getStringType(), "length");
     const auto writeOnlyId = runtime.registerIntrinsicProperty(
         runtime.getStringType(), "sink", runtime.getIntegerType(), {}, propertySetter(), NomadDoc("Write-only value"));
     const auto readWriteId =
@@ -156,8 +156,6 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_member_definitions) {
 BOOST_AUTO_TEST_CASE(iterates_members_by_type_and_globally) {
     Runtime runtime;
 
-    const auto stringPropertyId = runtime.registerIntrinsicProperty(
-        runtime.getStringType(), "length", runtime.getIntegerType(), propertyGetter(), {}, NomadDoc("Length"));
     const auto stringMethodId = runtime.registerIntrinsicMethod(
         runtime.getStringType(), "convert", methodFunction(), {}, runtime.getStringType(), false, NomadDoc("Convert"));
     const auto integerPropertyId = runtime.registerIntrinsicProperty(
@@ -165,11 +163,19 @@ BOOST_AUTO_TEST_CASE(iterates_members_by_type_and_globally) {
 
     std::vector<NomadId> stringMembers;
     runtime.getIntrinsicMembers(runtime.getStringType(), stringMembers);
-    BOOST_TEST(stringMembers == std::vector<NomadId>({stringPropertyId, stringMethodId}));
+    BOOST_TEST(stringMembers.size() == NomadIndex{12});
+    const auto hasCustomStringMethod = std::ranges::find(stringMembers, stringMethodId) != stringMembers.end();
+    const auto hasLength =
+        std::ranges::find(stringMembers, runtime.getIntrinsicMemberId(runtime.getStringType(), "length")) !=
+        stringMembers.end();
+    BOOST_TEST(hasCustomStringMethod);
+    BOOST_TEST(hasLength);
 
     std::vector<NomadId> allMembers;
     runtime.getIntrinsicMembers(allMembers);
-    BOOST_TEST(allMembers == std::vector<NomadId>({stringPropertyId, stringMethodId, integerPropertyId}));
+    BOOST_TEST(allMembers.size() == stringMembers.size() + 1);
+    const auto hasIntegerProperty = std::ranges::find(allMembers, integerPropertyId) != allMembers.end();
+    BOOST_TEST(hasIntegerProperty);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

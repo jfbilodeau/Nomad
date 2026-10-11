@@ -31,16 +31,6 @@ BOOST_AUTO_TEST_SUITE(intrinsic_member_execution)
 
 BOOST_AUTO_TEST_CASE(compiled_property_getter_reads_temporary_receiver) {
     Runtime runtime;
-    runtime.registerIntrinsicProperty(
-        runtime.getStringType(),
-        "length",
-        runtime.getIntegerType(),
-        [](VirtualMachine*, const RuntimeValue& receiver, RuntimeValue& result) {
-            result.setIntegerValue(static_cast<NomadInteger>(NomadString(receiver.getStringValue()).size()));
-        },
-        {},
-        NomadDoc("Length")
-    );
 
     const auto functionId = compileFunction(runtime, "return \"Nomad\".length");
     RuntimeValue result;

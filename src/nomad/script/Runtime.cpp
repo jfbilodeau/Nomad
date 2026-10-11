@@ -6,6 +6,7 @@
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/IntrinsicMembers.hpp>
 #include <nomad/script/NativeFunctions.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -108,6 +109,7 @@ Runtime::Runtime() {
 
     // Register build-in nativeFunctions
     registerBuildInNativeFunctions(this);
+    registerBuiltInIntrinsicMembers(this);
 
 //    register_keyword("stringId" NomadDoc("Load the string id of the given string"));
     registerKeyword("fun", NomadDoc("Function declaration"));
