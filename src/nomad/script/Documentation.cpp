@@ -141,7 +141,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     out << "* [Enums](#enums)" << std::endl;
     out << "* [Variables](#variables)" << std::endl;
     out << "* [Intrinsic Members](#intrinsic-members)" << std::endl;
-    out << "* [NativeFunctions](#nativefunctions)" << std::endl;
+    out << "* [Native Functions](#native-functions)" << std::endl;
 
     out << "---" << std::endl;
 
@@ -311,7 +311,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     generateIntrinsicMemberDocumentation(runtime, out);
 
-    out << "## NativeFunctions" << std::endl;
+    out << "## Native Functions" << std::endl;
 
     enum class NativeFunctionType {
         NativeFunction,
@@ -380,7 +380,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     for (auto& nativeFunction: nativeFunctions) {
         out << "### `" << nativeFunction.name << "`";
 
-        auto nativeFunctionTypeText = (nativeFunction.nativeFunctionType == NativeFunctionType::NativeFunction) ? "NativeFunction" : "Function";
+        auto nativeFunctionTypeText = (nativeFunction.nativeFunctionType == NativeFunctionType::NativeFunction) ? "Native" : "Script";
 
         out << " (*" << nativeFunctionTypeText << "*)" << std::endl;
 
@@ -531,7 +531,7 @@ void generateKeywords(Runtime* runtime, std::ostream& out) {
         out << statement << "\n";
     }
 
-    out << "--- NativeFunctions ---\n";
+    out << "--- Native Functions ---\n";
 
     std::vector<NativeFunctionDefinition> nativeFunctions;
     runtime->getNativeFunctions(nativeFunctions);

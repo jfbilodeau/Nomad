@@ -56,6 +56,24 @@ run_success("Compiler TextMate help without required output" "${NOMAD_COMPILER}"
 run_failure("Compiler TextMate requires output" "${NOMAD_COMPILER}" textmate)
 run_failure("Compiler dump rejects docs options" "${NOMAD_COMPILER}" dump --output ignored.md)
 
+set(REFERENCE_DIRECTORY "${NOMAD_TEST_ROOT}/reference")
+file(MAKE_DIRECTORY "${REFERENCE_DIRECTORY}")
+nomadRunTestCommand(
+    "Engine-only documentation outside a project"
+    COMMAND "${NOMAD_COMPILER}" docs --output .
+    WORKING_DIRECTORY "${REFERENCE_DIRECTORY}"
+    ERROR_VARIABLE DOCUMENTATION_WARNING
+)
+if(NOT DOCUMENTATION_WARNING MATCHES "warning: No Nomad project found.*generating engine-only documentation")
+    message(FATAL_ERROR "Engine-only documentation did not report the expected warning")
+endif()
+set(REFERENCE_DOCUMENT "${REFERENCE_DIRECTORY}/nomad-reference.md")
+require_path("${REFERENCE_DOCUMENT}" "Generated engine-only documentation")
+file(READ "${REFERENCE_DOCUMENT}" REFERENCE_CONTENT)
+if(NOT REFERENCE_CONTENT MATCHES "# Nomad Engine Reference")
+    message(FATAL_ERROR "Generated engine-only documentation is invalid")
+endif()
+
 run_success(
     "Project initialization"
     "${NOMAD_CLI}" init "${PROJECT_DIR}"

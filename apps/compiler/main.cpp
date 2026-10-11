@@ -60,11 +60,10 @@ void printDiagnostics(const CompilationResult& result) {
 }
 
 int writeOutputFile(
-    const NomadString& output,
+    const NomadPath& outputPath,
     const NomadString& outputDescription,
     const NomadString& contents
 ) {
-    const auto outputPath = pathFromUtf8(output);
     std::ofstream outputStream(outputPath, std::ios::binary);
 
     if (!outputStream.is_open()) {
@@ -80,6 +79,16 @@ int writeOutputFile(
     }
 
     return EXIT_SUCCESS;
+}
+
+NomadPath resolveDocumentationOutputPath(const NomadString& output) {
+    auto outputPath = pathFromUtf8(output);
+
+    if (std::filesystem::is_directory(outputPath)) {
+        outputPath /= "nomad-reference.md";
+    }
+
+    return outputPath;
 }
 
 struct CompilationPaths {
@@ -185,6 +194,24 @@ int dumpCommand(DumpParameters& parameters) {
 }
 
 int documentationCommand(DocumentationParameters& parameters) {
+    const auto outputPath = resolveDocumentationOutputPath(parameters.output);
+
+    if (!parameters.path) {
+        const auto currentPath = std::filesystem::current_path();
+
+        if (!findProjectRoot(currentPath)) {
+            std::cerr
+                << "warning: No Nomad project found from "
+                << pathToUtf8(currentPath)
+                << "; generating engine-only documentation.\n";
+
+            const HeadlessGame game(currentPath);
+            std::ostringstream output;
+            generateDocumentation(game.getRuntime(), output);
+            return writeOutputFile(outputPath, "documentation", output.str());
+        }
+    }
+
     const auto paths = resolveRequestedPaths(parameters.path);
     const HeadlessGame game(paths.resources);
     const auto result = generateDocumentationForPaths(paths.sources, game.getRuntime());
@@ -194,7 +221,7 @@ int documentationCommand(DocumentationParameters& parameters) {
         return EXIT_FAILURE;
     }
 
-    return writeOutputFile(parameters.output, "documentation", result.documentation);
+    return writeOutputFile(outputPath, "documentation", result.documentation);
 }
 
 int textMateCommand(TextMateParameters& parameters) {
@@ -202,7 +229,7 @@ int textMateCommand(TextMateParameters& parameters) {
     const HeadlessGame game(paths.resources);
     std::ostringstream output;
     generateTextMateGrammar(game.getRuntime(), output);
-    return writeOutputFile(parameters.output, "TextMate grammar", output.str());
+    return writeOutputFile(pathFromUtf8(parameters.output), "TextMate grammar", output.str());
 }
 
 } // namespace
@@ -236,7 +263,12 @@ int main(int argc, char** argv) {
             .addOption("function", "", &DumpParameters::function, "Function to dump (default: all functions)");
         program.addVerb<DocumentationParameters>("docs", &documentationCommand, "Generate language and engine API documentation")
             .addOptionalPositional("path", &DocumentationParameters::path, "Source path (default: discover the current project)")
-            .addRequiredOption("output", "o", &DocumentationParameters::output, "Output Markdown file (required)");
+            .addRequiredOption(
+                "output",
+                "o",
+                &DocumentationParameters::output,
+                "Output Markdown file or directory (required)"
+            );
         program.addVerb<TextMateParameters>("textmate", &textMateCommand, "Generate a VS Code TextMate grammar")
             .addOptionalPositional("path", &TextMateParameters::path, "Project path (default: discover the current project)")
             .addRequiredOption("output", "o", &TextMateParameters::output, "Output .tmLanguage.json file (required)");
