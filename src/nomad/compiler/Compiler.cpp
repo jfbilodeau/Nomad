@@ -346,6 +346,54 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const Function* 
     definition.identifierType = IdentifierType::Unknown;
 }
 
+bool Compiler::getIntrinsicMemberConflict(const NomadString& identifier, const Type* type, const Function* function,
+                                          NomadString& conflictingIdentifier) const {
+    if (identifier.empty() || type == nullptr) {
+        return false;
+    }
+
+    std::vector<NomadId> members;
+    m_runtime->getIntrinsicMembers(type, members);
+
+    for (const auto memberId : members) {
+        NomadString memberName;
+
+        switch (m_runtime->getIntrinsicMemberType(memberId)) {
+        case IntrinsicMemberType::Property: {
+            IntrinsicPropertyDefinition definition;
+            if (!m_runtime->getIntrinsicPropertyDefinition(memberId, definition)) {
+                reportInternalError("Invalid intrinsic property id: " + toString(memberId));
+            }
+            memberName = definition.name;
+            break;
+        }
+
+        case IntrinsicMemberType::Method: {
+            IntrinsicMethodDefinition definition;
+            if (!m_runtime->getIntrinsicMethodDefinition(memberId, definition)) {
+                reportInternalError("Invalid intrinsic method id: " + toString(memberId));
+            }
+            memberName = definition.name;
+            break;
+        }
+
+        case IntrinsicMemberType::Unknown:
+            reportInternalError("Invalid intrinsic member id: " + toString(memberId));
+        }
+
+        const auto candidate = identifier + "." + memberName;
+        IdentifierDefinition existingIdentifier;
+        getIdentifierDefinition(candidate, function, existingIdentifier);
+
+        if (existingIdentifier.identifierType != IdentifierType::Unknown) {
+            conflictingIdentifier = candidate;
+            return true;
+        }
+    }
+
+    return false;
+}
+
 
 NomadIndex Compiler::getOpCodeSize() const {
     return m_instructions.size();

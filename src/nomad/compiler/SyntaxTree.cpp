@@ -183,6 +183,20 @@ void AssignmentStatement::onResolve(CompilerContext* context, Function* function
     IdentifierDefinition identifier;
     compiler->getIdentifierDefinition(m_identifier, function, identifier);
 
+    if (expressionType != nullptr) {
+        NomadString conflictingIdentifier;
+        if (compiler->getIntrinsicMemberConflict(m_identifier, expressionType, function, conflictingIdentifier)) {
+            reportError(
+                context,
+                function,
+                "Assigning type '" + getTypeDisplayName(expressionType) + "' to variable '" + m_identifier +
+                    "' introduces intrinsic member '" + conflictingIdentifier +
+                    "', which conflicts with an existing identifier"
+            );
+            return;
+        }
+    }
+
     if (context->getMode() == CompilerMode::Interpreter) {
         auto* interpreterRuntime = context->getRuntime();
 

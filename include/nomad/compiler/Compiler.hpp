@@ -105,6 +105,9 @@ public:
     // Identifier identification
     IdentifierType getIdentifierType(const NomadString& name, const Function* function) const;
     void getIdentifierDefinition(const NomadString& name, const Function* function, IdentifierDefinition& definition) const;
+    [[nodiscard]] bool getIntrinsicMemberConflict(const NomadString& identifier, const Type* type,
+                                                  const Function* function,
+                                                  NomadString& conflictingIdentifier) const;
 
     // Opcode generation
     [[nodiscard]] NomadIndex getOpCodeSize() const;
