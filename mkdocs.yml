@@ -21,6 +21,7 @@ nav:
   - Engine API: engine-api.md
   - CLI: cli.md
   - Project configuration: configuration.md
+  - Building from source: building.md
   - Contributing documentation: documentation.md
 markdown_extensions:
   - pymdownx.highlight
