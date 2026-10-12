@@ -41,6 +41,15 @@ if ($env:OS -ne 'Windows_NT' -or
 }
 $target = 'windows-x64'
 
+$downloadPolicy = if ([string]::IsNullOrEmpty($env:NOMAD_DOWNLOAD_POLICY)) {
+    'prompt'
+} else {
+    $env:NOMAD_DOWNLOAD_POLICY
+}
+if ($downloadPolicy -cnotin @('prompt', 'allow', 'never')) {
+    Stop-NomadWrapper 'NOMAD_DOWNLOAD_POLICY must be prompt, allow, or never.'
+}
+
 if ($env:NOMAD_HOME) {
     $nomadHome = $env:NOMAD_HOME
 } else {
@@ -70,8 +79,15 @@ function Test-NomadSdk([string]$Directory) {
 }
 
 if (-not (Test-NomadSdk $sdk)) {
-    if ($env:NOMAD_OFFLINE -eq '1') {
-        Stop-NomadWrapper "Nomad SDK $version for $target is not installed and NOMAD_OFFLINE=1."
+    if ($downloadPolicy -eq 'never') {
+        Stop-NomadWrapper "Nomad SDK $version for $target is not installed and NOMAD_DOWNLOAD_POLICY=never."
+    }
+
+    if ($downloadPolicy -eq 'prompt') {
+        $response = Read-Host "Nomad SDK $version for $target is not installed. Download and install it? [y/N]"
+        if (-not $response -or $response.Trim().ToLowerInvariant() -notin @('y', 'yes')) {
+            Stop-NomadWrapper 'SDK download was not approved.'
+        }
     }
 
     $parent = Split-Path -Parent $sdk

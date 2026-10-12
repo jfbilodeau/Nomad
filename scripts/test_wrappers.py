@@ -86,7 +86,7 @@ exit "${NOMAD_TEST_EXIT_CODE:-0}"
         )
         return release
 
-    def run_wrapper(self, arguments, extra_environment=None):
+    def run_wrapper(self, arguments, extra_environment=None, input_text=None):
         environment = os.environ.copy()
         environment["NOMAD_HOME"] = str(self.nomad_home)
         if extra_environment:
@@ -104,7 +104,12 @@ exit "${NOMAD_TEST_EXIT_CODE:-0}"
         else:
             command = ["bash", str(self.project / "nomadw"), *arguments]
         return subprocess.run(
-            command, capture_output=True, text=True, timeout=60, env=environment
+            command,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=environment,
+            input=input_text,
         )
 
     def assert_no_installation_temporary_paths(self):
@@ -131,10 +136,34 @@ exit "${NOMAD_TEST_EXIT_CODE:-0}"
             )
         self.assertEqual(result.returncode, 23, result.stdout + result.stderr)
 
-    def test_offline_mode_rejects_missing_sdk(self):
-        result = self.run_wrapper(["--version"], {"NOMAD_OFFLINE": "1"})
+    def test_never_policy_rejects_missing_sdk(self):
+        result = self.run_wrapper(
+            ["--version"], {"NOMAD_DOWNLOAD_POLICY": "never"}
+        )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("NOMAD_OFFLINE=1", result.stdout + result.stderr)
+        self.assertIn("NOMAD_DOWNLOAD_POLICY=never", result.stdout + result.stderr)
+        self.assertFalse(self.sdk_path().exists())
+
+    def test_rejects_invalid_download_policy(self):
+        result = self.run_wrapper(
+            ["--version"], {"NOMAD_DOWNLOAD_POLICY": "sometimes"}
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "NOMAD_DOWNLOAD_POLICY must be prompt, allow, or never",
+            result.stdout + result.stderr,
+        )
+        self.assertFalse(self.sdk_path().exists())
+
+    def test_rejects_download_without_user_approval(self):
+        result = self.run_wrapper(["--version"], input_text="n\n")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("download was not approved", result.stdout + result.stderr)
+        self.assertFalse(self.sdk_path().exists())
+
+        result = self.run_wrapper(["--version"], input_text="")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("download was not approved", result.stdout + result.stderr)
         self.assertFalse(self.sdk_path().exists())
 
     def test_downloads_verifies_and_installs_sdk(self):
@@ -153,6 +182,7 @@ exit "${NOMAD_TEST_EXIT_CODE:-0}"
             result = self.run_wrapper(
                 ["/d", "/c", "exit", "0"],
                 {"NOMAD_RELEASE_BASE_URL": release_url},
+                "y\n",
             )
         else:
             arguments_file = self.root / "downloaded arguments"
@@ -162,10 +192,26 @@ exit "${NOMAD_TEST_EXIT_CODE:-0}"
                     "NOMAD_RELEASE_BASE_URL": release_url,
                     "NOMAD_TEST_ARGUMENTS": str(arguments_file),
                 },
+                "y\n",
             )
             self.assertEqual(arguments_file.read_text(encoding="utf-8").strip(), "version")
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.sdk_path() / "runtime" / "runtime.json").is_file())
+        self.assert_no_installation_temporary_paths()
+
+        shutil.rmtree(self.sdk_path())
+        automatic_arguments = self.root / "automatic arguments"
+        environment = {
+            "NOMAD_DOWNLOAD_POLICY": "allow",
+            "NOMAD_RELEASE_BASE_URL": release_url,
+        }
+        arguments = ["/d", "/c", "exit", "0"] if os.name == "nt" else ["check"]
+        if os.name != "nt":
+            environment["NOMAD_TEST_ARGUMENTS"] = str(automatic_arguments)
+        result = self.run_wrapper(arguments, environment)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("Download and install it?", result.stdout + result.stderr)
         self.assertTrue((self.sdk_path() / "runtime" / "runtime.json").is_file())
         self.assert_no_installation_temporary_paths()
 
@@ -186,7 +232,10 @@ exit "${NOMAD_TEST_EXIT_CODE:-0}"
 
         result = self.run_wrapper(
             ["--version"],
-            {"NOMAD_RELEASE_BASE_URL": f"http://127.0.0.1:{server.server_port}"},
+            {
+                "NOMAD_DOWNLOAD_POLICY": "allow",
+                "NOMAD_RELEASE_BASE_URL": f"http://127.0.0.1:{server.server_port}",
+            },
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.sdk_path().exists())

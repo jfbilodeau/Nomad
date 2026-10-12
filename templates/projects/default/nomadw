@@ -45,6 +45,12 @@ case "$(uname -m)" in
 esac
 target="$system-$architecture"
 
+download_policy="${NOMAD_DOWNLOAD_POLICY:-prompt}"
+case "$download_policy" in
+    prompt|allow|never) ;;
+    *) fail "NOMAD_DOWNLOAD_POLICY must be prompt, allow, or never." ;;
+esac
+
 if [[ -n "${NOMAD_HOME:-}" ]]; then
     nomad_home="$NOMAD_HOME"
 elif [[ "$system" == "macos" ]]; then
@@ -70,8 +76,21 @@ validate_sdk() {
 }
 
 if ! validate_sdk "$sdk"; then
-    [[ "${NOMAD_OFFLINE:-0}" != "1" ]] ||
-        fail "Nomad SDK $version for $target is not installed and NOMAD_OFFLINE=1."
+    [[ "$download_policy" != "never" ]] ||
+        fail "Nomad SDK $version for $target is not installed and NOMAD_DOWNLOAD_POLICY=never."
+
+    if [[ "$download_policy" == "prompt" ]]; then
+        printf 'Nomad SDK %s for %s is not installed. Download and install it? [y/N] ' \
+            "$version" "$target" >&2
+        if ! IFS= read -r response; then
+            printf '\n' >&2
+            fail "SDK download was not approved."
+        fi
+        case "$response" in
+            y|Y|yes|YES|Yes) ;;
+            *) fail "SDK download was not approved." ;;
+        esac
+    fi
 
     for tool in curl unzip zipinfo awk; do
         command -v "$tool" >/dev/null || fail "Required tool missing: $tool"

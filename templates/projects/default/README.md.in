@@ -17,4 +17,6 @@ Run the project:
 ```
 
 On Windows, use `nomadw.cmd` instead. The wrapper installs the exact Nomad SDK
-selected by `nomad.toml` when it is not already available.
+selected by `nomad.toml` when it is not already available, after asking for
+permission. Set `NOMAD_DOWNLOAD_POLICY=allow` to approve installation in
+automated environments or `NOMAD_DOWNLOAD_POLICY=never` to prohibit downloads.
