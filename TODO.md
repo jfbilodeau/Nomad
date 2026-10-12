@@ -2,6 +2,7 @@
 This the author wants to do
 
 ## Open
+[ ] Texture packing
 [ ] Display physics bodies in debug mode
 [ ] Debug mode should only come up when the `--debug` parameter is passed.
 [ ] Objects (intrinsic)

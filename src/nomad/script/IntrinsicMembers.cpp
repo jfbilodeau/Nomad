@@ -38,21 +38,34 @@ NomadString getStringParameter(const VirtualMachine* virtualMachine, const Nomad
     return parameter != nullptr ? parameter : "";
 }
 
+bool isUnicodeWhitespace(const char32_t character) {
+    return (character >= U'\u0009' && character <= U'\u000D') ||
+           character == U'\u0020' ||
+           character == U'\u0085' ||
+           character == U'\u00A0' ||
+           character == U'\u1680' ||
+           (character >= U'\u2000' && character <= U'\u200A') ||
+           character == U'\u2028' ||
+           character == U'\u2029' ||
+           character == U'\u202F' ||
+           character == U'\u205F' ||
+           character == U'\u3000';
+}
+
 NomadString trimString(VirtualMachine* virtualMachine, const NomadString& text, const bool trimStart,
                        const bool trimEnd, const NomadString& memberName) {
     validateUtf8(virtualMachine, text, memberName);
-    const auto characters = boost::locale::conv::utf_to_utf<wchar_t>(text, boost::locale::conv::stop);
-    const auto& locale = getIntrinsicStringLocale();
+    const auto characters = boost::locale::conv::utf_to_utf<char32_t>(text, boost::locale::conv::stop);
     NomadIndex start = 0;
     auto end = characters.size();
 
     if (trimStart) {
-        while (start < end && std::isspace(characters[start], locale)) {
+        while (start < end && isUnicodeWhitespace(characters[start])) {
             ++start;
         }
     }
     if (trimEnd) {
-        while (end > start && std::isspace(characters[end - 1], locale)) {
+        while (end > start && isUnicodeWhitespace(characters[end - 1])) {
             --end;
         }
     }
