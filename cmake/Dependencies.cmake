@@ -92,6 +92,14 @@ FetchContent_Declare(
 )
 
 FetchContent_Declare(
+    libarchive
+    GIT_REPOSITORY https://github.com/libarchive/libarchive.git
+    GIT_TAG v3.8.2
+    GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
+)
+
+FetchContent_Declare(
     tomlplusplus
     GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
     GIT_TAG v3.4.0
@@ -100,48 +108,17 @@ FetchContent_Declare(
     EXCLUDE_FROM_ALL
 )
 
+FetchContent_Declare(
+    zlib
+    GIT_REPOSITORY https://github.com/madler/zlib.git
+    GIT_TAG v1.3.1
+    GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
+)
+
 FetchContent_MakeAvailable(Boost box2d SDL SDL_image SDL_ttf DearImGui tomlplusplus)
 
-function(nomadConfigureArchiveDependencies)
-    set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    FetchContent_Declare(
-        zlib
-        GIT_REPOSITORY https://github.com/madler/zlib.git
-        GIT_TAG v1.3.1
-        GIT_SHALLOW TRUE
-        EXCLUDE_FROM_ALL
-    )
-    FetchContent_MakeAvailable(zlib)
-    set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR};${zlib_BINARY_DIR}")
-    set(ZLIB_LIBRARY zlibstatic)
-
-    set(BUILD_SHARED_LIBS OFF)
-    foreach(FEATURE IN ITEMS
-        WERROR MBEDTLS NETTLE OPENSSL LIBB2 LZ4 LZO LZMA ZSTD BZip2
-        LIBXML2 EXPAT WIN32_XMLLITE PCREPOSIX PCRE2POSIX LIBGCC CNG
-        TAR CPIO CAT UNZIP XATTR ACL ICONV TEST COVERAGE INSTALL
-    )
-        set(ENABLE_${FEATURE} OFF CACHE BOOL "" FORCE)
-    endforeach()
-    if(NOT WIN32)
-        set(ENABLE_ICONV ON CACHE BOOL "" FORCE)
-    endif()
-    set(ENABLE_ZLIB ON CACHE BOOL "" FORCE)
-    set(POSIX_REGEX_LIB NONE CACHE STRING "" FORCE)
-    FetchContent_Declare(
-        libarchive
-        GIT_REPOSITORY https://github.com/libarchive/libarchive.git
-        GIT_TAG v3.8.2
-        GIT_SHALLOW TRUE
-        EXCLUDE_FROM_ALL
-    )
-    FetchContent_MakeAvailable(libarchive)
-    target_compile_definitions(archive_static INTERFACE LIBARCHIVE_STATIC)
-endfunction()
-
-nomadConfigureArchiveDependencies()
-FetchContent_GetProperties(libarchive SOURCE_DIR libarchive_SOURCE_DIR)
-FetchContent_GetProperties(zlib SOURCE_DIR zlib_SOURCE_DIR)
+include(${CMAKE_CURRENT_LIST_DIR}/ArchiveDependencies.cmake)
 
 if(MSVC)
     target_compile_options(box2d PRIVATE /wd4201)
