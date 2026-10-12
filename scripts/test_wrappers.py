@@ -107,6 +107,11 @@ exit "${NOMAD_TEST_EXIT_CODE:-0}"
             command, capture_output=True, text=True, timeout=60, env=environment
         )
 
+    def assert_no_installation_temporary_paths(self):
+        parent = self.sdk_path().parent
+        self.assertEqual(list(parent.glob(".nomad-install-*")), [])
+        self.assertFalse(Path(f"{self.sdk_path()}.install-lock").exists())
+
     def test_uses_installed_exact_sdk_and_forwards_exit_code(self):
         self.write_sdk(self.sdk_path())
         if os.name == "nt":
@@ -162,7 +167,7 @@ exit "${NOMAD_TEST_EXIT_CODE:-0}"
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue((self.sdk_path() / "runtime" / "runtime.json").is_file())
-        self.assertEqual(list(self.sdk_path().parent.glob(".nomad-install-*")), [])
+        self.assert_no_installation_temporary_paths()
 
     def test_rejects_checksum_mismatch(self):
         release = self.write_release()
@@ -185,7 +190,7 @@ exit "${NOMAD_TEST_EXIT_CODE:-0}"
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.sdk_path().exists())
-        self.assertEqual(list(self.sdk_path().parent.glob(".nomad-install-*")), [])
+        self.assert_no_installation_temporary_paths()
 
 
 if __name__ == "__main__":

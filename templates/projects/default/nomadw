@@ -134,6 +134,8 @@ if ! validate_sdk "$sdk"; then
     [[ ! -e "$sdk" && ! -L "$sdk" ]] ||
         fail "Invalid SDK installation already exists: $sdk"
     mv "$extracted" "$sdk"
+    cleanup
+    trap - EXIT
 fi
 
 exec "$sdk/nomad" "$@"
