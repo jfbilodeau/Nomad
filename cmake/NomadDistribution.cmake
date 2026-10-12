@@ -2,7 +2,7 @@ if(NOT TARGET nomad-cli OR NOT TARGET nomadc OR NOT TARGET nomad-runtime OR NOMA
     return()
 endif()
 
-add_executable(nomad-packager EXCLUDE_FROM_ALL apps/archive/main.cpp)
+add_executable(nomad-packager apps/archive/main.cpp)
 target_link_libraries(nomad-packager PRIVATE Nomad::Project Boost::nowide)
 
 foreach(PROGRAM IN ITEMS nomad-cli nomadc)

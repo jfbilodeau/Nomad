@@ -2,6 +2,11 @@ if(NOT DEFINED NOMAD_DISTRIBUTION_CONFIG)
     message(FATAL_ERROR "NOMAD_DISTRIBUTION_CONFIG is required")
 endif()
 include("${NOMAD_DISTRIBUTION_CONFIG}")
+if(NOT EXISTS "${NOMAD_DISTRIBUTION_ARCHIVER}")
+    message(FATAL_ERROR
+        "Nomad packager was not built: ${NOMAD_DISTRIBUTION_ARCHIVER}"
+    )
+endif()
 set(STAGING "${NOMAD_DISTRIBUTION_OUTPUT}/staging")
 file(REMOVE_RECURSE "${STAGING}")
 set(SDK "${STAGING}/sdk")
