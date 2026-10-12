@@ -218,7 +218,6 @@ private:
     RuntimeValue m_intermediate;
     bool m_running = false;
     bool m_yielded = false;
-//    std::vector<NomadId> m_op_codes;
     NomadIndex m_stackIndex = 0;
     std::vector<RuntimeValue> m_stack;
     NomadIndex m_parameterIndex = 0;
