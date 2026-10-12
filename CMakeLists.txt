@@ -231,6 +231,7 @@ set(
 )
 
 include(cmake/NomadLibrary.cmake)
+include(cmake/NomadRuntime.cmake)
 target_compile_definitions(nomad-project PRIVATE NOMAD_PACKAGE_PLATFORM="${NOMAD_PACKAGE_PLATFORM}")
 
 add_library(nomad-cli-options INTERFACE)
@@ -277,22 +278,7 @@ if(NOMAD_BUILD_CLI)
         Nomad::CliOptions
     )
 
-    if(WIN32)
-        add_custom_command(
-            TARGET nomad-cli
-            POST_BUILD
-            COMMAND
-                ${CMAKE_COMMAND}
-                -DNOMAD_RUNTIME_DEPENDENCIES_FROM_ARGUMENTS=ON
-                "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad-cli>"
-                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
-                --
-                $<TARGET_RUNTIME_DLLS:nomad-cli>
-                ${NOMAD_TOOLCHAIN_RUNTIME_DLLS}
-            COMMAND_EXPAND_LISTS
-            VERBATIM
-        )
-    endif()
+    nomad_copy_runtime_dependencies(nomad-cli)
 endif()
 
 option(NOMAD_BUILD_RUNTIME "Build the Nomad game runtime" ON)
@@ -301,24 +287,10 @@ if(NOMAD_BUILD_RUNTIME)
     set_target_properties(nomad-runtime PROPERTIES WIN32_EXECUTABLE TRUE)
     target_link_libraries(nomad-runtime PRIVATE Nomad::Engine)
 
-    if(WIN32)
-        add_custom_command(
-            TARGET nomad-runtime
-            POST_BUILD
-            COMMAND
-                ${CMAKE_COMMAND}
-                -DNOMAD_RUNTIME_DEPENDENCIES_FROM_ARGUMENTS=ON
-                "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad-runtime>"
-                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
-                --
-                $<TARGET_RUNTIME_DLLS:nomad-runtime>
-                ${NOMAD_TOOLCHAIN_RUNTIME_DLLS}
-            COMMAND_EXPAND_LISTS
-            VERBATIM
-        )
-    elseif(APPLE)
+    nomad_copy_runtime_dependencies(nomad-runtime)
+    if(APPLE)
         set_target_properties(nomad-runtime PROPERTIES BUILD_RPATH "@loader_path")
-    else()
+    elseif(UNIX)
         set_target_properties(
             nomad-runtime
             PROPERTIES
@@ -328,48 +300,7 @@ if(NOMAD_BUILD_RUNTIME)
     endif()
 
     if(TARGET nomad-cli)
-        configure_file(
-            cmake/RuntimeLicenses.cmake.in
-            "${CMAKE_CURRENT_BINARY_DIR}/RuntimeLicenses.cmake"
-            @ONLY
-        )
-        if(WIN32)
-            add_custom_target(
-                nomad-runtime-bundle
-                COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:nomad-runtime>/runtime"
-                COMMAND
-                    ${CMAKE_COMMAND}
-                    "-DNOMAD_RUNTIME=$<TARGET_FILE:nomad-runtime>"
-                    "-DNOMAD_RUNTIME_VERSION=${PROJECT_VERSION}"
-                    "-DNOMAD_RUNTIME_TARGET=${NOMAD_PACKAGE_PLATFORM}"
-                    "-DNOMAD_RUNTIME_LICENSE_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/RuntimeLicenses.cmake"
-                    -DNOMAD_RUNTIME_DEPENDENCIES_FROM_ARGUMENTS=ON
-                    "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad-runtime>/runtime"
-                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
-                    --
-                    $<TARGET_RUNTIME_DLLS:nomad-runtime>
-                    ${NOMAD_TOOLCHAIN_RUNTIME_DLLS}
-                DEPENDS nomad-runtime
-                COMMAND_EXPAND_LISTS
-                VERBATIM
-            )
-        else()
-            add_custom_target(
-                nomad-runtime-bundle
-                COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:nomad-runtime>/runtime"
-                COMMAND
-                    ${CMAKE_COMMAND}
-                    "-DNOMAD_RUNTIME=$<TARGET_FILE:nomad-runtime>"
-                    "-DNOMAD_RUNTIME_VERSION=${PROJECT_VERSION}"
-                    "-DNOMAD_RUNTIME_TARGET=${NOMAD_PACKAGE_PLATFORM}"
-                    "-DNOMAD_RUNTIME_LICENSE_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/RuntimeLicenses.cmake"
-                    "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad-runtime>/runtime"
-                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
-                DEPENDS nomad-runtime
-                VERBATIM
-            )
-        endif()
-
+        nomad_add_runtime_bundle(nomad-runtime nomad-runtime-bundle)
         add_dependencies(nomad-cli nomad-runtime-bundle)
     endif()
 endif()

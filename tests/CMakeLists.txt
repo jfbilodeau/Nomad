@@ -71,22 +71,7 @@ if(NOMAD_ENABLE_SANITIZERS)
     target_link_libraries(nomad_test PRIVATE nomad_sanitizers)
 endif()
 
-if(WIN32)
-    add_custom_command(
-        TARGET nomad_test
-        POST_BUILD
-        COMMAND
-            ${CMAKE_COMMAND}
-            -DNOMAD_RUNTIME_DEPENDENCIES_FROM_ARGUMENTS=ON
-            "-DNOMAD_RUNTIME_DESTINATION=$<TARGET_FILE_DIR:nomad_test>"
-            -P "${CMAKE_SOURCE_DIR}/cmake/BundleRuntimeDependencies.cmake"
-            --
-            $<TARGET_RUNTIME_DLLS:nomad_test>
-            ${NOMAD_TOOLCHAIN_RUNTIME_DLLS}
-        COMMAND_EXPAND_LISTS
-        VERBATIM
-    )
-endif()
+nomad_copy_runtime_dependencies(nomad_test)
 
 add_test(NAME nomad_test COMMAND nomad_test)
 
