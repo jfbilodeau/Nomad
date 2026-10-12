@@ -9,7 +9,7 @@ namespace nomad {
 
 std::optional<NomadString> compileFormatString(
     const Compiler* compiler,
-    Function* function,
+    ScriptFunction* function,
     const NomadString& format,
     FormatString* formatString
 ) {

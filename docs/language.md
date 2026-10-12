@@ -13,6 +13,7 @@ Nomad is case‑sensitive.
 - [Comments](#comments)
 - [Identifiers and naming rules](#identifiers-and-naming-rules)
 - [Data types and numeric ranges](#data-types-and-numeric-ranges)
+- [Object types and intrinsic members](#object-types-and-intrinsic-members)
 - [Variables and variable kinds](#variables-and-variable-kinds)
 - [Constants and predefined values](#constants-and-predefined-values)
 - [Enumerations (`enum`)](#enums)
@@ -115,6 +116,39 @@ Numeric literal notes:
 
 ---
 
+## Object types and intrinsic members
+
+Built-in and host-defined types may register intrinsic properties and methods. A value of that type exposes those members through postfix dot syntax:
+
+```nomad
+name = "Nomad"
+characterCount = name.length
+upperName = name.toUpper
+containsName = name.contains "mad"
+```
+
+Properties do not take arguments. Methods use Nomad's normal no-parentheses calling convention. Members can be chained when the preceding property or method returns an object type:
+
+```nomad
+upperLength = name.toUpper.length
+literalLength = "Nomad".length
+```
+
+Properties may be read-only, write-only or read/write. Methods may be non-mutating or mutating. A mutating member requires a writable variable receiver; it cannot be called on a literal, constant, parameter, function result or other temporary. Receiver mutation is transactional: the runtime commits the changed value only after the member callback completes successfully.
+
+Nomad does not currently support script-defined object types or script-defined intrinsic members.
+
+The available members for each registered object type are listed in the generated [engine API](engine-api.md#intrinsic-members).
+
+Intrinsic member names share the identifier namespace with dotted identifiers. Assigning a type to a variable is rejected if that type would introduce a qualified member name that already exists:
+
+```nomad
+name.length = 10
+name = "Nomad" # Error: string would introduce the conflicting name.length member.
+```
+
+---
+
 ## Variables and variable kinds
 
 Variables in compiled code are implicitly declared through assignment. The assigned value determines the variable type and that type is then fixed for that variable.
@@ -125,7 +159,7 @@ ratio1 = 0.5         # float
 ratio2 = 1.0         # float
 text = "hello"       # string
 flag = false         # bool
-state = state.idle   # State enum
+state = state.idle   # state enum
 ```
 
 Nomad supports three variable kinds:

@@ -13,7 +13,7 @@ namespace nomad {
 // Forward declaration
 class Compiler;
 class Expression;
-class Function;
+class ScriptFunction;
 class Statement;
 class SyntaxTree;
 class Tokenizer;
@@ -29,6 +29,6 @@ private:
     std::vector<NomadString> m_parameters;
 };
 
-bool preParseEventStatement(CompilerContext* context, Function* function, Tokenizer* tokens);
+bool preParseEventStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 
 } // namespace nomad

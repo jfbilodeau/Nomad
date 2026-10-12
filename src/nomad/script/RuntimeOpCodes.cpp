@@ -36,8 +36,10 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_pop_3, op_pop_3, "Pop 3 values from the stack", {});
     registerInstruction(OpCodes::op_pop_n, op_pop_n, "Pop `n` values from the stack", {Operand::Index});
     registerInstruction(OpCodes::op_copy_r_to_i, op_copy_r_to_i, "Copy the value of the `result` register into the `intermediate` register", {});
+    registerInstruction(OpCodes::op_copy_i_to_r, op_copy_i_to_r, "Copy the value of the `intermediate` register into the `result` register", {});
     registerInstruction(OpCodes::op_copy_string_r_to_i, op_copy_string_r_to_i, "Copy the string in the `result` register into the `intermediate` register", {});
     registerInstruction(OpCodes::op_string_move_r_to_i, op_string_move_r_to_i, "Move the string in the `result` register into the `intermediate` register without copying it", {});
+    registerInstruction(OpCodes::op_string_move_i_to_r, op_string_move_i_to_r, "Move the string in the `intermediate` register into the `result` register without copying it", {});
     registerInstruction(OpCodes::op_string_move_r_to_stack, op_string_move_r_to_stack, "Move the string in the `result` register onto the stack without copying it", {});
 
     // Function and nativeFunction calls
@@ -47,6 +49,9 @@ void Runtime::registerDefaultInstructions() {
         {Operand::Function}
     );
     registerInstruction(OpCodes::op_call_native_function, op_call_native_function, "Call the given native function id", {Operand::NativeFunction});
+    registerInstruction(OpCodes::op_intrinsic_property_get, op_intrinsic_property_get, "Call an intrinsic property getter", {Operand::Id});
+    registerInstruction(OpCodes::op_intrinsic_property_set, op_intrinsic_property_set, "Call an intrinsic property setter", {Operand::Id});
+    registerInstruction(OpCodes::op_intrinsic_method_call, op_intrinsic_method_call, "Call an intrinsic method", {Operand::Id});
     registerInstruction(OpCodes::op_parameter_load_r, op_parameter_load_r, "Load the `n`th parameter into result", {Operand::Id});
     registerInstruction(OpCodes::op_parameter_load_i, op_parameter_load_i, "Load the `n`th parameter into intermediate", {Operand::Id});
     registerInstruction(OpCodes::op_parameter_push, op_parameter_push, "Push the `n`th parameter onto the stack", {Operand::Id});

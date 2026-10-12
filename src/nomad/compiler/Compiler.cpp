@@ -74,7 +74,7 @@ void Compiler::reportError(const NomadString& message) const {
     throw CompilerException(message);
 }
 
-void Compiler::reportError(const NomadString& message, const Function* function, const Tokenizer* tokenizer) const {
+void Compiler::reportError(const NomadString& message, const ScriptFunction* function, const Tokenizer* tokenizer) const {
     reportError(message, function->getName(), tokenizer->getLineIndex(), tokenizer->getColumnIndex());
 }
 
@@ -187,7 +187,7 @@ bool Compiler::foldBinary(
     return m_runtime->foldBinary(op, lhsType, lhs, rhsType, rhs, result);
 }
 
-IdentifierType Compiler::getIdentifierType(const NomadString& name, const Function* function) const {
+IdentifierType Compiler::getIdentifierType(const NomadString& name, const ScriptFunction* function) const {
     if (m_runtime->getKeywordId(name) != NOMAD_INVALID_ID) {
         return IdentifierType::Keyword;
     }
@@ -233,7 +233,7 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Functi
     return IdentifierType::Unknown;
 }
 
-void Compiler::getIdentifierDefinition(const NomadString& name, const Function* function, IdentifierDefinition& definition) const {
+void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunction* function, IdentifierDefinition& definition) const {
     if (name.empty()) {
         definition.identifierType = IdentifierType::Unknown;
 
@@ -344,6 +344,54 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const Function* 
     }
 
     definition.identifierType = IdentifierType::Unknown;
+}
+
+bool Compiler::getIntrinsicMemberConflict(const NomadString& identifier, const Type* type, const ScriptFunction* function,
+                                          NomadString& conflictingIdentifier) const {
+    if (identifier.empty() || type == nullptr) {
+        return false;
+    }
+
+    std::vector<NomadId> members;
+    m_runtime->getIntrinsicMembers(type, members);
+
+    for (const auto memberId : members) {
+        NomadString memberName;
+
+        switch (m_runtime->getIntrinsicMemberType(memberId)) {
+        case IntrinsicMemberType::Property: {
+            IntrinsicPropertyDefinition definition;
+            if (!m_runtime->getIntrinsicPropertyDefinition(memberId, definition)) {
+                reportInternalError("Invalid intrinsic property id: " + toString(memberId));
+            }
+            memberName = definition.name;
+            break;
+        }
+
+        case IntrinsicMemberType::Method: {
+            IntrinsicMethodDefinition definition;
+            if (!m_runtime->getIntrinsicMethodDefinition(memberId, definition)) {
+                reportInternalError("Invalid intrinsic method id: " + toString(memberId));
+            }
+            memberName = definition.name;
+            break;
+        }
+
+        case IntrinsicMemberType::Unknown:
+            reportInternalError("Invalid intrinsic member id: " + toString(memberId));
+        }
+
+        const auto candidate = identifier + "." + memberName;
+        IdentifierDefinition existingIdentifier;
+        getIdentifierDefinition(candidate, function, existingIdentifier);
+
+        if (existingIdentifier.identifierType != IdentifierType::Unknown) {
+            conflictingIdentifier = candidate;
+            return true;
+        }
+    }
+
+    return false;
 }
 
 
@@ -628,8 +676,16 @@ void Compiler::addMoveResult(const Type* type, const ExpressionTarget target) {
     }
 }
 
+void Compiler::addMoveIntermediateToResult(const Type* type) {
+    addOpCode(type->getTypeOpCodes()->moveIntermediateToResult);
+}
+
 NomadIndex Compiler::addPushIntermediate(const Type* type) {
     return addOpCode(type->getTypeOpCodes()->pushIntermediate);
+}
+
+NomadIndex Compiler::addPopResult(const Type* type) {
+    return addOpCode(type->getTypeOpCodes()->popResult);
 }
 
 NomadIndex Compiler::addPopIntermediate(const Type* type) {
@@ -649,7 +705,7 @@ void Compiler::addFreeValue(const InstructionFn freeOpCode, const NomadIndex ope
     }
 }
 
-NomadIndex Compiler::addFunctionCall(const NomadId targetFunctionId, Function* function, const ArgumentList* arguments) {
+NomadIndex Compiler::addFunctionCall(const NomadId targetFunctionId, ScriptFunction* function, const ArgumentList* arguments) {
     const auto targetFunction = getRuntime()->getFunction(targetFunctionId);
 
     if (targetFunction == nullptr) {
@@ -698,7 +754,7 @@ void Compiler::addFreeArguments(const ArgumentList* arguments) {
     }
 }
 
-NomadIndex Compiler::addNativeFunctionCall(const NomadId nativeFunctionId, Function* function, const ArgumentList* arguments) {
+NomadIndex Compiler::addNativeFunctionCall(const NomadId nativeFunctionId, ScriptFunction* function, const ArgumentList* arguments) {
     arguments->compile(this, function);
 
     NativeFunctionDefinition nativeFunction;
@@ -749,6 +805,23 @@ NomadIndex Compiler::addNativeFunctionCall(const NomadId nativeFunctionId, Funct
     //     addOpCode(OpCodes::op_pop_n);
     //     addIndex(arguments->getArgumentCount());
     // }
+
+    return m_instructions.size() - 1;
+}
+
+NomadIndex Compiler::addIntrinsicMethodCall(const NomadId memberId, ScriptFunction* function,
+                                            const ArgumentList* arguments) {
+    arguments->compile(this, function);
+
+    addOpCode(op_intrinsic_method_call);
+    addId(memberId);
+
+    const auto argumentCount = arguments->getArgumentCount();
+    if (argumentCount != 0) {
+        addFreeArguments(arguments);
+        addOpCode(op_pop_n);
+        addIndex(argumentCount);
+    }
 
     return m_instructions.size() - 1;
 }
@@ -904,7 +977,7 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
 }
 
 void Compiler::compileFunction(const FunctionSource& source) {
-    Function* function = source.function;
+    ScriptFunction* function = source.function;
 
     function->setFunctionStart(m_instructions.size());
 
@@ -921,7 +994,7 @@ void Compiler::compileFunction(const FunctionSource& source) {
     function->setFunctionEnd(m_instructions.size());
 }
 
-void Compiler::addFunctionReturn(const Function* function) {
+void Compiler::addFunctionReturn(const ScriptFunction* function) {
     const NomadIndex variableCount = function->getVariableCount();
 
     if (variableCount == 0) {
@@ -1316,7 +1389,7 @@ NomadString Compiler::generateFunctionName(const NomadString& generatedName, con
     return generatedFunctionName;
 }
 
-NomadString Compiler::generateFunctionName(const NomadString& name, const Function* function, NomadIndex line) {
+NomadString Compiler::generateFunctionName(const NomadString& name, const ScriptFunction* function, NomadIndex line) {
     return generateFunctionName(name, function->getName(), line);
 }
 

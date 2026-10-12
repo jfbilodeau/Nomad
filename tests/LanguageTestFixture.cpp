@@ -2,7 +2,7 @@
 
 #include <LanguageTestFixture.hpp>
 
-#include <nomad/script/Function.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 

@@ -5,10 +5,10 @@
 #include <nomad/compiler/Argument.hpp>
 #include <nomad/compiler/CallNode.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/script/VirtualMachine.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Function.hpp>
+#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 namespace nomad {
 
@@ -29,7 +29,7 @@ void Argument::setType(const Type* type) {
     m_type = type;
 }
 
-const Type* Argument::resolveOverloadType(CompilerContext* /*context*/, Function* /*function*/) {
+const Type* Argument::resolveOverloadType(CompilerContext* /*context*/, ScriptFunction* /*function*/) {
     // Most arguments are built by the parser with a fixed type and cannot tell overloads apart.
     return nullptr;
 }
@@ -46,7 +46,7 @@ TypedValue Argument::onEvaluate(Interpreter& /*context*/) const {
     throw AstException("Argument kind is not supported by the interpreter", getLine(), getColumn());
 }
 
-NomadBoolean Argument::resolve(CompilerContext* context, Function* function) {
+NomadBoolean Argument::resolve(CompilerContext* context, ScriptFunction* function) {
     const auto errorCount = context->getErrorCount();
 
     onResolve(context, function);
@@ -54,11 +54,11 @@ NomadBoolean Argument::resolve(CompilerContext* context, Function* function) {
     return context->getErrorCount() == errorCount;
 }
 
-void Argument::onResolve(CompilerContext* /*context*/, Function* /*function*/) {
+void Argument::onResolve(CompilerContext* /*context*/, ScriptFunction* /*function*/) {
     // Most arguments have nothing to resolve.
 }
 
-void Argument::generateCode(Compiler* compiler, Function* function) {
+void Argument::generateCode(Compiler* compiler, ScriptFunction* function) {
     onCompile(compiler, function);
 }
 
@@ -132,7 +132,7 @@ void ArgumentList::addAll(std::vector<std::unique_ptr<Argument>>&& arguments) {
     }
 }
 
-NomadBoolean ArgumentList::resolve(CompilerContext* context, Function* function) const {
+NomadBoolean ArgumentList::resolve(CompilerContext* context, ScriptFunction* function) const {
     NomadBoolean resolved = true;
 
     for (const auto& argument : m_arguments) {
@@ -144,7 +144,7 @@ NomadBoolean ArgumentList::resolve(CompilerContext* context, Function* function)
     return resolved;
 }
 
-void ArgumentList::compile(Compiler* compiler, Function* function) const {
+void ArgumentList::compile(Compiler* compiler, ScriptFunction* function) const {
     // Push arguments right-to-left
     for (auto argument = m_arguments.rbegin(); argument != m_arguments.rend(); ++argument) {
         (*argument)->generateCode(compiler, function);
@@ -207,13 +207,13 @@ const ArgumentList* CallStatementNode::getArguments() const {
     return &m_arguments;
 }
 
-void CallStatementNode::onResolve(CompilerContext* context, Function* function) {
+void CallStatementNode::onResolve(CompilerContext* context, ScriptFunction* function) {
     (void)m_arguments.resolve(context, function);
 }
 
 CallableId selectCallableOverload(
     CompilerContext* context,
-    Function* function,
+    ScriptFunction* function,
     const NomadString& name,
     ArgumentList* arguments,
     NomadString& error
@@ -252,7 +252,7 @@ NativeFunctionStatementNode::NativeFunctionStatementNode(const NomadIndex line, 
 {
 }
 
-void NativeFunctionStatementNode::onResolve(CompilerContext* context, Function* function) {
+void NativeFunctionStatementNode::onResolve(CompilerContext* context, ScriptFunction* function) {
     auto* runtime = context->getRuntime();
 
     // The parser picked the first overload to shape the argument list; now that the arguments exist, pick the one
@@ -273,7 +273,7 @@ void NativeFunctionStatementNode::onResolve(CompilerContext* context, Function* 
     CallStatementNode::onResolve(context, function);
 }
 
-void NativeFunctionStatementNode::onCompile(Compiler* compiler, Function* function) {
+void NativeFunctionStatementNode::onCompile(Compiler* compiler, ScriptFunction* function) {
     compiler->addNativeFunctionCall(m_definition.id, function, getArguments());
 
     // The statement discards the nativeFunction's return value.
@@ -301,7 +301,7 @@ FunctionCallStatementNode::FunctionCallStatementNode(const NomadIndex line, cons
     m_name(std::move(name)) {
 }
 
-void FunctionCallStatementNode::onResolve(CompilerContext* context, Function* function) {
+void FunctionCallStatementNode::onResolve(CompilerContext* context, ScriptFunction* function) {
     const auto* runtime = context->getRuntime();
     m_functionId = runtime->getFunctionId(m_name);
 
@@ -319,7 +319,7 @@ void FunctionCallStatementNode::onResolve(CompilerContext* context, Function* fu
     CallStatementNode::onResolve(context, function);
 }
 
-void FunctionCallStatementNode::onCompile(Compiler* compiler, Function* function) {
+void FunctionCallStatementNode::onCompile(Compiler* compiler, ScriptFunction* function) {
     const auto targetFunctionId = compiler->getRuntime()->getFunctionId(m_name);
 
     compiler->addFunctionCall(targetFunctionId, function, getArguments());

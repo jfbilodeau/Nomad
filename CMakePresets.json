@@ -15,9 +15,17 @@
       }
     },
     {
-      "name": "windows-base",
+      "name": "development-base",
       "hidden": true,
       "inherits": "base",
+      "cacheVariables": {
+        "FETCHCONTENT_UPDATES_DISCONNECTED": true
+      }
+    },
+    {
+      "name": "windows-base",
+      "hidden": true,
+      "inherits": "development-base",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "condition": {
@@ -29,7 +37,7 @@
     {
       "name": "linux-base",
       "hidden": true,
-      "inherits": "base",
+      "inherits": "development-base",
       "generator": "Ninja",
       "condition": {
         "type": "equals",
@@ -52,7 +60,7 @@
     {
       "name": "ci",
       "displayName": "CI",
-      "description": "Ninja Release build for Windows and Linux",
+      "description": "Cross-platform Ninja Release build for continuous integration",
       "inherits": "base",
       "generator": "Ninja",
       "cacheVariables": {
@@ -62,31 +70,28 @@
     {
       "name": "linux-debug",
       "displayName": "Linux Debug",
-      "description": "GCC Debug build for local development",
+      "description": "Ninja Debug build for local development",
       "inherits": "linux-base",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "FETCHCONTENT_UPDATES_DISCONNECTED": true
+        "CMAKE_BUILD_TYPE": "Debug"
       }
     },
     {
       "name": "linux-release",
       "displayName": "Linux Release",
-      "description": "GCC optimized release build",
+      "description": "Ninja optimized release build",
       "inherits": "linux-base",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "FETCHCONTENT_UPDATES_DISCONNECTED": true
+        "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
       "name": "linux-sanitizers",
       "displayName": "Linux sanitizers",
-      "description": "GCC RelWithDebInfo build with AddressSanitizer and UndefinedBehaviorSanitizer",
+      "description": "Ninja RelWithDebInfo build with AddressSanitizer and UndefinedBehaviorSanitizer",
       "inherits": "linux-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "FETCHCONTENT_UPDATES_DISCONNECTED": true,
         "NOMAD_ENABLE_SANITIZERS": true,
         "NOMAD_WARNINGS_AS_ERRORS": false
       }

@@ -23,18 +23,18 @@ struct Capture {
     CaptureSource source = CaptureSource::Variable;
 };
 
-class Function {
+class ScriptFunction {
 public:
-    Function(
+    ScriptFunction(
         NomadId id,
         NomadString name,
         NomadString path,
         NomadString source
     );
 
-    Function(const Function& other) = delete;
+    ScriptFunction(const ScriptFunction& other) = delete;
 
-    ~Function();
+    ~ScriptFunction();
 
     [[nodiscard]]
     NomadId getId() const { return m_id; }

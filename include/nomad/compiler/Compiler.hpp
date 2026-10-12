@@ -43,12 +43,12 @@ private:
 
 class FunctionDefinition {
 public:
-    FunctionDefinition(Function* function);
+    FunctionDefinition(ScriptFunction* function);
 
 
 
 private:
-    Function* m_function;
+    ScriptFunction* m_function;
 };
 
 class Compiler {
@@ -63,7 +63,7 @@ public:
     [[noreturn]]
     void reportError(const NomadString& message) const;
     [[noreturn]]
-    void reportError(const NomadString& message, const Function* function, const Tokenizer* tokenizer) const;
+    void reportError(const NomadString& message, const ScriptFunction* function, const Tokenizer* tokenizer) const;
     [[noreturn]]
     void reportError(const NomadString& message, const NomadString& functionName, NomadIndex line, NomadIndex column) const;
     [[noreturn]]
@@ -103,8 +103,11 @@ public:
     ) const;
 
     // Identifier identification
-    IdentifierType getIdentifierType(const NomadString& name, const Function* function) const;
-    void getIdentifierDefinition(const NomadString& name, const Function* function, IdentifierDefinition& definition) const;
+    IdentifierType getIdentifierType(const NomadString& name, const ScriptFunction* function) const;
+    void getIdentifierDefinition(const NomadString& name, const ScriptFunction* function, IdentifierDefinition& definition) const;
+    [[nodiscard]] bool getIntrinsicMemberConflict(const NomadString& identifier, const Type* type,
+                                                  const ScriptFunction* function,
+                                                  NomadString& conflictingIdentifier) const;
 
     // Opcode generation
     [[nodiscard]] NomadIndex getOpCodeSize() const;
@@ -112,7 +115,7 @@ public:
     NomadIndex addOpCode(NomadId opCode);
     NomadIndex addOpCode(const NomadString& opCodeName);
     NomadIndex addOpCode(InstructionFn opCode);
-    void addFunctionReturn(const Function* function);
+    void addFunctionReturn(const ScriptFunction* function);
     NomadIndex addId(NomadId id);
     NomadIndex addIndex(NomadIndex index);
     NomadIndex addInteger(NomadInteger value);
@@ -134,15 +137,18 @@ public:
     NomadIndex addPushResult(const Type* type);
     // Moves a freshly computed value from the `r` register to target. String buffers are moved, not copied.
     void addMoveResult(const Type* type, ExpressionTarget target);
+    void addMoveIntermediateToResult(const Type* type);
     NomadIndex addPushIntermediate(const Type* type);
+    NomadIndex addPopResult(const Type* type);
     NomadIndex addPopIntermediate(const Type* type);
     // Emit a free opcode taken from `TypeOpCodes`. Emits nothing when `freeOpCode` is `nullptr` (plain values).
     void addFreeValue(InstructionFn freeOpCode);
     // Same, for free opcodes taking an operand (stack offset from the top or function variable index).
     void addFreeValue(InstructionFn freeOpCode, NomadIndex operand);
 
-    NomadIndex addFunctionCall(NomadId targetFunctionId, Function* function, const ArgumentList* arguments);
-    NomadIndex addNativeFunctionCall(NomadId nativeFunctionId, Function* function, const ArgumentList* arguments);
+    NomadIndex addFunctionCall(NomadId targetFunctionId, ScriptFunction* function, const ArgumentList* arguments);
+    NomadIndex addNativeFunctionCall(NomadId nativeFunctionId, ScriptFunction* function, const ArgumentList* arguments);
+    NomadIndex addIntrinsicMethodCall(NomadId memberId, ScriptFunction* function, const ArgumentList* arguments);
     // After a call returns, free the owned arguments still on the stack. Lent arguments (`$stringref`) are skipped.
     void addFreeArguments(const ArgumentList* arguments);
 
@@ -171,13 +177,13 @@ public:
 
     // Generate function names for internal functions
     NomadString generateFunctionName(const NomadString& generatedName, const NomadString& hostFunctionName, NomadIndex line);
-    NomadString generateFunctionName(const NomadString& name, const Function* function, NomadIndex line);
+    NomadString generateFunctionName(const NomadString& name, const ScriptFunction* function, NomadIndex line);
 
 private:
     struct FunctionSource {
         NomadString source;
         std::unique_ptr<FunctionNode> ast;
-        Function* function;
+        ScriptFunction* function;
     };
 
     struct ScriptFile {

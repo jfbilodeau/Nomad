@@ -11,18 +11,18 @@
 namespace nomad {
 
 // Forward declarations
-class Function;
+class ScriptFunction;
 class Type;
 
 // A closure references function and type metadata owned by its Runtime and must not outlive that Runtime.
 class Closure {
 public:
-    explicit Closure(const Function* function, std::vector<RuntimeValue> captures = {});
+    explicit Closure(const ScriptFunction* function, std::vector<RuntimeValue> captures = {});
     Closure(const Closure& other) = delete;
     ~Closure();
 
     [[nodiscard]]
-    const Function* getFunction() const { return m_function; }
+    const ScriptFunction* getFunction() const { return m_function; }
 
     [[nodiscard]]
     NomadIndex getCaptureCount() const;
@@ -34,7 +34,7 @@ public:
     const Type* getCaptureType(NomadIndex captureIndex) const;
 
 private:
-    const Function* m_function;
+    const ScriptFunction* m_function;
     std::vector<RuntimeValue> m_capturedParameters;
 };
 

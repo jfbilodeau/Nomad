@@ -27,7 +27,7 @@ BOOST_AUTO_TEST_CASE(runtime_owns_registered_functions_and_exposes_observer_view
         BOOST_TEST(runtime.getFunctionId("first") == firstFunctionId);
         BOOST_TEST(runtime.getFunctionName(secondFunctionId).value() == "second");
 
-        std::vector<Function*> functions;
+        std::vector<ScriptFunction*> functions;
         runtime.getFunctions(functions);
 
         BOOST_TEST(functions.size() == 2U);

@@ -21,6 +21,18 @@ initializes a disposable project, and generates `engine-api.md` without
 executing game scripts. The rendered site is in `out/documentation/site`.
 Run `python -m mkdocs serve` to preview it locally.
 
+To generate the registered engine API directly outside a Nomad project, run:
+
+```console
+nomadc docs --output .
+```
+
+The compiler warns that no project was found and writes engine-only
+documentation to `nomad-reference.md`. Inside a project, the default invocation
+also includes API declarations from the discovered project scripts. Pass an
+explicit source or project path to document it regardless of the current
+directory.
+
 The preparation script uses only the Python standard library and needs no
 CMake installation. Test it with
 `python -m unittest discover -s scripts -p "test_*.py"`.

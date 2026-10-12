@@ -1,17 +1,17 @@
 // Copyright (c) 2024-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/Argument.hpp>
 #include <nomad/compiler/CallNode.hpp>
+#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/FormatStringCompiler.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 
-#include <nomad/script/VirtualMachine.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Function.hpp>
+#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <algorithm>
 #include <any>
@@ -33,7 +33,7 @@ Expression::~Expression() {
     }
 }
 
-NomadBoolean Expression::resolve(CompilerContext* context, Function* function) {
+NomadBoolean Expression::resolve(CompilerContext* context, ScriptFunction* function) {
     if (isParsed()) {
         return true;
     }
@@ -45,7 +45,7 @@ NomadBoolean Expression::resolve(CompilerContext* context, Function* function) {
     return context->getErrorCount() == errorCount;
 }
 
-void Expression::compile(Compiler* compiler, Function* function, const ExpressionTarget target) {
+void Expression::compile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
     if (isParsed()) {
         compiler->addLoadValue(m_type, m_value, target);
     } else {
@@ -57,7 +57,27 @@ bool Expression::canBorrow() const {
     return isParsed() && m_type->isString();
 }
 
-void Expression::compileBorrowed(Compiler* compiler, Function* function, const ExpressionTarget target) {
+bool Expression::isWritable() const {
+    return false;
+}
+
+IdentifierExpression* Expression::asIdentifierExpression() {
+    return nullptr;
+}
+
+const IdentifierExpression* Expression::asIdentifierExpression() const {
+    return nullptr;
+}
+
+IntrinsicMemberExpression* Expression::asIntrinsicExpression() {
+    return nullptr;
+}
+
+const IntrinsicMemberExpression* Expression::asIntrinsicExpression() const {
+    return nullptr;
+}
+
+void Expression::compileBorrowed(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
     if (!canBorrow()) {
         compiler->reportInternalError("BUG: Expression cannot lend a string reference");
     }
@@ -69,7 +89,7 @@ void Expression::compileBorrowed(Compiler* compiler, Function* function, const E
     }
 }
 
-void Expression::onCompileBorrowed(Compiler* compiler, Function* /*function*/, ExpressionTarget /*target*/) {
+void Expression::onCompileBorrowed(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget /*target*/) {
     compiler->reportInternalError("BUG: Expression does not implement borrowed compilation");
 }
 
@@ -174,8 +194,7 @@ UnaryExpression::UnaryExpression(
     m_expression(std::move(expression)) {
 }
 
-
-void UnaryExpression::onResolve(CompilerContext* context, Function* function) {
+void UnaryExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
     if (!m_expression->resolve(context, function)) {
         return;
     }
@@ -213,7 +232,7 @@ void UnaryExpression::onResolve(CompilerContext* context, Function* function) {
     }
 }
 
-void UnaryExpression::onCompile(Compiler* compiler, Function* function, ExpressionTarget target) {
+void UnaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) {
     m_expression->compile(compiler, function, target);
 
     auto opcode = compiler->getUnaryOperatorOpCodeId(m_unaryOperator, m_expression->getType());
@@ -256,7 +275,7 @@ bool BinaryExpression::isTerminal() const {
     return false;
 }
 
-void BinaryExpression::onResolve(CompilerContext* context, Function* function) {
+void BinaryExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
     const auto leftResolved = m_left->resolve(context, function);
     const auto rightResolved = m_right->resolve(context, function);
 
@@ -299,7 +318,7 @@ void BinaryExpression::onResolve(CompilerContext* context, Function* function) {
     }
 }
 
-void BinaryExpression::onCompile(Compiler* compiler, Function* function, const ExpressionTarget target) {
+void BinaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
     if (isParsed()) {
         compiler->addLoadValue(getType(), getValue(), target);
         return;
@@ -473,7 +492,7 @@ bool CallNativeFunctionExpression::isTerminal() const {
     return false;
 }
 
-void CallNativeFunctionExpression::onResolve(CompilerContext* context, Function* function) {
+void CallNativeFunctionExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
     auto* runtime = context->getRuntime();
 
     if (runtime->getCallableOverloadCount(m_name) > 1) {
@@ -508,7 +527,7 @@ void CallNativeFunctionExpression::onResolve(CompilerContext* context, Function*
     (void)m_arguments.resolve(context, function);
 }
 
-void CallNativeFunctionExpression::onCompile(Compiler* compiler, Function* function, const ExpressionTarget target) {
+void CallNativeFunctionExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
     if (m_nativeFunctionId == NOMAD_INVALID_ID) {
         raiseException("Unknown native function '" + m_name + "'");
     }
@@ -558,7 +577,7 @@ bool FunctionCallExpression::isTerminal() const {
     return false;
 }
 
-void FunctionCallExpression::onResolve(CompilerContext* context, Function* function) {
+void FunctionCallExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
     auto* runtime = context->getRuntime();
     m_functionId = runtime->getFunctionId(m_name);
 
@@ -605,7 +624,7 @@ void FunctionCallExpression::onResolve(CompilerContext* context, Function* funct
     (void)m_arguments.resolve(context, function);
 }
 
-void FunctionCallExpression::onCompile(Compiler* compiler, Function* function, const ExpressionTarget target) {
+void FunctionCallExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
     compiler->addFunctionCall(m_functionId, function, &m_arguments);
 
     compiler->addMoveResult(getType(), target);
@@ -650,12 +669,331 @@ void FunctionCallExpression::onEvaluate(Interpreter& context) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // PrimaryExpression
-PrimaryExpression::PrimaryExpression(
-    const Expression* parent,
-    const NomadIndex line,
-    const NomadIndex column
-):
-    Expression(parent, line, column) {
+PrimaryExpression::PrimaryExpression(const Expression* parent, const NomadIndex line, const NomadIndex column)
+    : Expression(parent, line, column) {
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// IntrinsicMemberExpression
+IntrinsicMemberExpression::IntrinsicMemberExpression(const Expression* parent, const NomadIndex line,
+                                                     const NomadIndex column, NomadString qualifiedName,
+                                                     NomadString memberName, std::unique_ptr<Expression> receiver,
+                                                     ArgumentList arguments, const IntrinsicMemberAccess access)
+    : Expression(parent, line, column), m_qualifiedName(std::move(qualifiedName)), m_memberName(std::move(memberName)),
+      m_receiver(std::move(receiver)), m_arguments(std::move(arguments)), m_access(access) {
+}
+
+bool IntrinsicMemberExpression::isTerminal() const {
+    return false;
+}
+
+bool IntrinsicMemberExpression::isWritable() const {
+    return false;
+}
+
+IntrinsicMemberExpression* IntrinsicMemberExpression::asIntrinsicExpression() {
+    return this;
+}
+
+const IntrinsicMemberExpression* IntrinsicMemberExpression::asIntrinsicExpression() const {
+    return this;
+}
+
+void IntrinsicMemberExpression::setAccess(const IntrinsicMemberAccess access) {
+    m_access = access;
+}
+
+void IntrinsicMemberExpression::setAllowVoid(const bool allowVoid) {
+    m_allowVoid = allowVoid;
+}
+
+void IntrinsicMemberExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+    if (!m_receiver->resolve(context, function)) {
+        return;
+    }
+
+    auto* runtime = context->getRuntime();
+    m_memberId = runtime->getIntrinsicMemberId(m_receiver->getType(), m_memberName);
+
+    if (m_memberId == NOMAD_INVALID_ID) {
+        reportError(context, function,
+                    "Type '" + getTypeDisplayName(m_receiver->getType()) + "' has no intrinsic member '" +
+                        m_memberName + "'");
+        return;
+    }
+
+    switch (runtime->getIntrinsicMemberType(m_memberId)) {
+    case IntrinsicMemberType::Property: {
+        IntrinsicPropertyDefinition definition;
+        if (!runtime->getIntrinsicPropertyDefinition(m_memberId, definition)) {
+            context->getCompiler()->reportInternalError("Invalid intrinsic property: " + m_qualifiedName);
+        }
+
+        if (m_access == IntrinsicMemberAccess::Read && !definition.getFn) {
+            reportError(context, function, "Intrinsic property '" + m_qualifiedName + "' is write-only");
+            return;
+        }
+
+        if (m_access == IntrinsicMemberAccess::Write) {
+            if (!definition.setFn) {
+                reportError(context, function, "Intrinsic property '" + m_qualifiedName + "' is read-only");
+                return;
+            }
+
+            if (!m_receiver->isWritable()) {
+                reportError(context, function, "Cannot assign intrinsic property on a read-only or temporary receiver");
+                return;
+            }
+        }
+
+        setType(definition.valueType);
+        return;
+    }
+
+    case IntrinsicMemberType::Method: {
+        IntrinsicMethodDefinition definition;
+        if (!runtime->getIntrinsicMethodDefinition(m_memberId, definition)) {
+            context->getCompiler()->reportInternalError("Invalid intrinsic method: " + m_qualifiedName);
+        }
+
+        if (m_access == IntrinsicMemberAccess::Write) {
+            reportError(context, function, "Cannot assign to intrinsic method '" + m_qualifiedName + "'");
+            return;
+        }
+
+        if (definition.mutatesReceiver && !m_receiver->isWritable()) {
+            reportError(context, function,
+                        "Cannot call mutating method '" + m_qualifiedName + "' on a temporary or read-only receiver");
+            return;
+        }
+
+        auto& arguments = m_arguments.getArguments();
+        if (arguments.size() != definition.parameters.size()) {
+            context->getCompiler()->reportInternalError("Intrinsic method argument shape changed after parsing");
+        }
+
+        for (NomadIndex index = 0; index < arguments.size(); ++index) {
+            arguments[index]->setType(definition.parameters[index].type);
+        }
+
+        if (!m_arguments.resolve(context, function)) {
+            return;
+        }
+
+        if (definition.returnType->isVoid() && !m_allowVoid) {
+            reportError(context, function,
+                        "Cannot use intrinsic method '" + m_qualifiedName +
+                            "' in an expression because it does not return a value");
+            return;
+        }
+
+        setType(definition.returnType);
+        return;
+    }
+
+    case IntrinsicMemberType::Unknown:
+        context->getCompiler()->reportInternalError("Invalid intrinsic member: " + m_qualifiedName);
+    }
+}
+
+void IntrinsicMemberExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+    auto* runtime = compiler->getRuntime();
+    const auto memberType = runtime->getIntrinsicMemberType(m_memberId);
+    const auto* receiverType = m_receiver->getType();
+
+    m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
+
+    if (memberType == IntrinsicMemberType::Property) {
+        compiler->addOpCode(op_intrinsic_property_get);
+        compiler->addId(m_memberId);
+        compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
+        compiler->addMoveResult(getType(), target);
+        return;
+    }
+
+    IntrinsicMethodDefinition definition;
+    if (memberType != IntrinsicMemberType::Method ||
+        !runtime->getIntrinsicMethodDefinition(m_memberId, definition)) {
+        compiler->reportInternalError("Invalid intrinsic member: " + m_qualifiedName);
+    }
+
+    compiler->addIntrinsicMethodCall(m_memberId, function, &m_arguments);
+
+    if (definition.mutatesReceiver) {
+        const auto* receiver = m_receiver->asIdentifierExpression();
+        if (receiver == nullptr) {
+            compiler->reportInternalError("Mutating intrinsic method receiver is not directly writable");
+        }
+
+        if (!definition.returnType->isVoid()) {
+            compiler->addPushResult(definition.returnType);
+            compiler->addFreeValue(definition.returnType->getTypeOpCodes()->freeResult);
+        }
+
+        compiler->addMoveIntermediateToResult(receiverType);
+        receiver->compileStore(compiler);
+
+        if (!definition.returnType->isVoid()) {
+            compiler->addPopResult(definition.returnType);
+        }
+    } else {
+        compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
+    }
+
+    if (!definition.returnType->isVoid()) {
+        compiler->addMoveResult(definition.returnType, target);
+    }
+}
+
+void IntrinsicMemberExpression::onEvaluate(Interpreter& context) const {
+    m_receiver->evaluate(context);
+    const auto* evaluatedReceiver = context.getResult();
+    if (evaluatedReceiver == nullptr) {
+        if (!context.hasError()) {
+            context.setError("Intrinsic member receiver did not produce a value");
+        }
+        return;
+    }
+
+    const auto* receiverType = m_receiver->getType();
+    RuntimeValue receiver;
+    receiverType->initValue(receiver);
+    receiverType->copyValue(evaluatedReceiver->getValue(), receiver);
+
+    auto* runtime = context.getRuntime();
+    const auto memberType = runtime->getIntrinsicMemberType(m_memberId);
+
+    if (memberType == IntrinsicMemberType::Property) {
+        IntrinsicPropertyDefinition definition;
+        RuntimeValue result;
+        definition.valueType = nullptr;
+
+        try {
+            if (!runtime->getIntrinsicPropertyDefinition(m_memberId, definition) || !definition.getFn) {
+                raiseException("Invalid intrinsic property getter: " + m_qualifiedName);
+            }
+
+            definition.valueType->initValue(result);
+            definition.getFn(context.getVirtualMachine(), receiver, result);
+            context.setResult(definition.valueType, result);
+            definition.valueType->freeValue(result);
+            receiverType->freeValue(receiver);
+        } catch (...) {
+            if (definition.valueType != nullptr) {
+                definition.valueType->freeValue(result);
+            }
+            receiverType->freeValue(receiver);
+            throw;
+        }
+        return;
+    }
+
+    IntrinsicMethodDefinition definition;
+    if (memberType != IntrinsicMemberType::Method ||
+        !runtime->getIntrinsicMethodDefinition(m_memberId, definition)) {
+        receiverType->freeValue(receiver);
+        raiseException("Invalid intrinsic method: " + m_qualifiedName);
+    }
+
+    std::vector<TypedValue> evaluatedArguments;
+    std::vector<RuntimeValue> values;
+    m_arguments.evaluate(context, evaluatedArguments, values);
+    if (context.hasError()) {
+        receiverType->freeValue(receiver);
+        return;
+    }
+
+    auto* virtualMachine = context.getVirtualMachine();
+    try {
+        virtualMachine->runIntrinsicMethod(m_memberId, values, receiver);
+
+        if (definition.mutatesReceiver) {
+            const auto* writableReceiver = m_receiver->asIdentifierExpression();
+            if (writableReceiver == nullptr) {
+                raiseException("Mutating intrinsic method receiver is not directly writable");
+            }
+            writableReceiver->evaluateStore(context, receiver);
+        }
+
+        if (definition.returnType->isVoid()) {
+            context.setVoidResult();
+        } else {
+            context.setResult(definition.returnType, virtualMachine->getResult());
+            definition.returnType->freeValue(virtualMachine->getResult());
+        }
+    } catch (...) {
+        if (!definition.returnType->isVoid()) {
+            definition.returnType->freeValue(virtualMachine->getResult());
+        }
+        receiverType->freeValue(receiver);
+        throw;
+    }
+
+    receiverType->freeValue(receiver);
+}
+
+void IntrinsicMemberExpression::compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression) {
+    const auto* receiverType = m_receiver->getType();
+    const auto* propertyType = getType();
+    const auto* writableReceiver = m_receiver->asIdentifierExpression();
+    if (writableReceiver == nullptr) {
+        compiler->reportInternalError("Intrinsic property receiver is not directly writable");
+    }
+
+    m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
+    expression->compile(compiler, function, ExpressionTarget::Result);
+    compiler->addOpCode(op_intrinsic_property_set);
+    compiler->addId(m_memberId);
+    compiler->addFreeValue(propertyType->getTypeOpCodes()->freeResult);
+    compiler->addMoveIntermediateToResult(receiverType);
+    writableReceiver->compileStore(compiler);
+}
+
+void IntrinsicMemberExpression::evaluateAssignment(Interpreter& context, const Expression* expression) const {
+    m_receiver->evaluate(context);
+    const auto* evaluatedReceiver = context.getResult();
+    if (evaluatedReceiver == nullptr) {
+        if (!context.hasError()) {
+            context.setError("Intrinsic property receiver did not produce a value");
+        }
+        return;
+    }
+
+    const auto* receiverType = m_receiver->getType();
+    RuntimeValue receiver;
+    receiverType->initValue(receiver);
+    receiverType->copyValue(evaluatedReceiver->getValue(), receiver);
+
+    expression->evaluate(context);
+    const auto* assignedValue = context.getResult();
+    if (assignedValue == nullptr) {
+        receiverType->freeValue(receiver);
+        if (!context.hasError()) {
+            context.setError("Intrinsic property assignment did not produce a value");
+        }
+        return;
+    }
+
+    IntrinsicPropertyDefinition definition;
+    if (!context.getRuntime()->getIntrinsicPropertyDefinition(m_memberId, definition) || !definition.setFn) {
+        receiverType->freeValue(receiver);
+        raiseException("Invalid intrinsic property setter: " + m_qualifiedName);
+    }
+
+    try {
+        definition.setFn(context.getVirtualMachine(), receiver, assignedValue->getValue());
+        const auto* writableReceiver = m_receiver->asIdentifierExpression();
+        if (writableReceiver == nullptr) {
+            raiseException("Intrinsic property receiver is not directly writable");
+        }
+        writableReceiver->evaluateStore(context, receiver);
+        context.setResult(definition.valueType, assignedValue->getValue());
+    } catch (...) {
+        receiverType->freeValue(receiver);
+        throw;
+    }
+
+    receiverType->freeValue(receiver);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -670,11 +1008,11 @@ BooleanLiteral::BooleanLiteral(
     m_value(m_value) {
 }
 
-void BooleanLiteral::onResolve(CompilerContext* context, Function* /*function*/) {
+void BooleanLiteral::onResolve(CompilerContext* context, ScriptFunction* /*function*/) {
     setResolved(RuntimeValue{m_value}, context->getRuntime()->getBooleanType());
 }
 
-void BooleanLiteral::onCompile(Compiler* compiler, Function* /*function*/, ExpressionTarget target) {
+void BooleanLiteral::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget target) {
     compiler->addLoadBooleanValue(m_value, target);
 }
 
@@ -691,13 +1029,13 @@ IntegerLiteral::IntegerLiteral(
     m_value(value) {
 }
 
-void IntegerLiteral::onResolve(CompilerContext* context, Function* /*function*/) {
+void IntegerLiteral::onResolve(CompilerContext* context, ScriptFunction* /*function*/) {
     RuntimeValue value{m_value};
 
     setResolved(value, context->getRuntime()->getIntegerType());
 }
 
-void IntegerLiteral::onCompile(Compiler* compiler, Function* /*function*/, ExpressionTarget target) {
+void IntegerLiteral::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget target) {
     compiler->addLoadIntegerValue(m_value, target);
 }
 
@@ -713,13 +1051,13 @@ FloatLiteral::FloatLiteral(
     m_value(value) {
 }
 
-void FloatLiteral::onResolve(CompilerContext* context, Function* /*function*/) {
+void FloatLiteral::onResolve(CompilerContext* context, ScriptFunction* /*function*/) {
     RuntimeValue value{m_value};
 
     setResolved(value, context->getRuntime()->getFloatType());
 }
 
-void FloatLiteral::onCompile(Compiler* compiler, Function* /*function*/, ExpressionTarget target) {
+void FloatLiteral::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget target) {
     compiler->addLoadFloatValue(m_value, target);
 }
 
@@ -736,7 +1074,7 @@ StringLiteral::StringLiteral(
     m_value(std::move(value)) {
 }
 
-void StringLiteral::onResolve(CompilerContext* context, Function* /*function*/) {
+void StringLiteral::onResolve(CompilerContext* context, ScriptFunction* /*function*/) {
     const auto* stringType = context->getRuntime()->getStringType();
     RuntimeValue value{m_value};
 
@@ -744,7 +1082,7 @@ void StringLiteral::onResolve(CompilerContext* context, Function* /*function*/) 
     stringType->freeValue(value);
 }
 
-void StringLiteral::onCompile(Compiler* compiler, Function* /*function*/, ExpressionTarget /*target*/) {
+void StringLiteral::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget /*target*/) {
     const auto stringValue = getValue().getStringValue();
 
     const auto stringId = compiler->getRuntime()->registerString(stringValue);
@@ -765,7 +1103,7 @@ ConstantValueExpression::ConstantValueExpression(
     m_constantName(constantName) {
 }
 
-void ConstantValueExpression::onResolve(CompilerContext* context, Function* function) {
+void ConstantValueExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
     auto* runtime = context->getRuntime();
     m_constantId = runtime->getConstantId(m_constantName);
 
@@ -781,7 +1119,7 @@ void ConstantValueExpression::onResolve(CompilerContext* context, Function* func
     setResolved(constantValue, constantType);
 }
 
-void ConstantValueExpression::onCompile(Compiler* compiler, Function* /*function*/, ExpressionTarget target) {
+void ConstantValueExpression::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget target) {
     if (!isParsed()) {
         raiseException("Unknown constant: " + m_constantName);
     }
@@ -801,7 +1139,7 @@ FormatStringLiteral::FormatStringLiteral(
     m_formatString(formatString) {
 }
 
-void FormatStringLiteral::onResolve(CompilerContext* context, Function* function) {
+void FormatStringLiteral::onResolve(CompilerContext* context, ScriptFunction* function) {
     if (context->getMode() == CompilerMode::Interpreter) {
         reportError(context, function, "Format strings are not supported by the interpreter");
         return;
@@ -815,7 +1153,7 @@ void FormatStringLiteral::onResolve(CompilerContext* context, Function* function
     setType(context->getRuntime()->getStringType());
 }
 
-void FormatStringLiteral::onCompile(Compiler* compiler, Function* function, ExpressionTarget target) {
+void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) {
     const NomadId functionId = function->getId();
 
     auto formatStringId = compiler->getRuntime()->getFormatStringId(m_formatString, functionId);
@@ -849,7 +1187,7 @@ IdentifierExpression::IdentifierExpression(
 {
 }
 
-void IdentifierExpression::onResolve(CompilerContext* context, Function* function) {
+void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
     auto* compiler = context->getCompiler();
 
     compiler->getIdentifierDefinition(m_identifier, function, m_identifierDefinition);
@@ -928,10 +1266,25 @@ void IdentifierExpression::onResolve(CompilerContext* context, Function* functio
         return;
     }
 
+    switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::FunctionVariable:
+    case IdentifierType::ContextVariable:
+        m_writable = true;
+        break;
+
+    case IdentifierType::DynamicVariable:
+        m_writable = context->getRuntime()->canSetDynamicVariable(m_identifierDefinition.variableId);
+        break;
+
+    default:
+        m_writable = false;
+        break;
+    }
+
     setType(m_identifierDefinition.valueType);
 }
 
-void IdentifierExpression::onCompile(Compiler* compiler, Function* /*function*/, const ExpressionTarget target) {
+void IdentifierExpression::onCompile(Compiler* compiler, ScriptFunction* /*function*/, const ExpressionTarget target) {
     switch (m_identifierDefinition.identifierType) {
         case IdentifierType::FunctionVariable:
             compiler->addLoadFunctionVariable(m_identifierDefinition.variableId, m_identifierDefinition.valueType, target);
@@ -965,16 +1318,84 @@ bool IdentifierExpression::canBorrow() const {
         return true;
     }
 
-    // Literals, the caller's locals and the caller's (read-only) parameters cannot be changed by the nativeFunction or function
-    // being called. Dynamic and context variables are read through getters that allocate, and their storage can be
-    // replaced by the callee, so they are always copied.
+    // Literals, the caller's locals and the caller's (read-only) parameters cannot be changed by the nativeFunction or
+    // function being called. Dynamic and context variables are read through getters that allocate, and their storage
+    // can be replaced by the callee, so they are always copied.
     const auto identifierType = m_identifierDefinition.identifierType;
 
     return hasType() && getType()->isString() &&
         (identifierType == IdentifierType::FunctionVariable || identifierType == IdentifierType::Parameter);
 }
 
-void IdentifierExpression::onCompileBorrowed(Compiler* compiler, Function* /*function*/, const ExpressionTarget target) {
+bool IdentifierExpression::isWritable() const {
+    return m_writable;
+}
+
+IdentifierExpression* IdentifierExpression::asIdentifierExpression() {
+    return this;
+}
+
+const IdentifierExpression* IdentifierExpression::asIdentifierExpression() const {
+    return this;
+}
+
+void IdentifierExpression::compileStore(Compiler* compiler) const {
+    const auto* typeOpCodes = m_identifierDefinition.valueType->getTypeOpCodes();
+
+    switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::FunctionVariable:
+        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(m_identifierDefinition.variableId));
+        compiler->addOpCode(typeOpCodes->setFunctionVariable);
+        compiler->addId(m_identifierDefinition.variableId);
+        break;
+
+    case IdentifierType::DynamicVariable:
+        compiler->addOpCode(typeOpCodes->setDynamicVariable);
+        compiler->addId(m_identifierDefinition.variableId);
+        compiler->addFreeValue(typeOpCodes->freeResult);
+        break;
+
+    case IdentifierType::ContextVariable:
+        compiler->addOpCode(typeOpCodes->setContextVariable);
+        compiler->addId(m_identifierDefinition.variableId);
+        compiler->addFreeValue(typeOpCodes->freeResult);
+        compiler->getRuntime()->setContextVariableWritten(m_identifierDefinition.variableId, true);
+        break;
+
+    default:
+        compiler->reportInternalError("Cannot store intrinsic receiver '" + m_identifier + "'");
+    }
+}
+
+void IdentifierExpression::evaluateStore(Interpreter& context, const RuntimeValue& value) const {
+    auto* runtime = context.getRuntime();
+    const auto* type = m_identifierDefinition.valueType;
+
+    switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::FunctionVariable:
+        context.setVariable(m_identifier, type, value);
+        break;
+
+    case IdentifierType::DynamicVariable:
+        if (type->isString()) {
+            runtime->setStringDynamicVariable(context.getVirtualMachine(), m_identifierDefinition.variableId, value);
+        } else {
+            runtime->setDynamicVariable(context.getVirtualMachine(), m_identifierDefinition.variableId, value);
+        }
+        break;
+
+    case IdentifierType::ContextVariable:
+        runtime->setContextVariableValue(m_identifierDefinition.variableId, value);
+        runtime->setContextVariableWritten(m_identifierDefinition.variableId, true);
+        break;
+
+    default:
+        raiseException("Cannot store intrinsic receiver '" + m_identifier + "'");
+    }
+}
+
+void IdentifierExpression::onCompileBorrowed(Compiler* compiler, ScriptFunction* /*function*/,
+                                             const ExpressionTarget target) {
     // Borrowing is a bitwise load of the pointer: the non-string load opcodes do exactly that.
     const auto* referenceType = compiler->getRuntime()->getStringRefType();
 
@@ -1063,11 +1484,11 @@ void IdentifierExpression::onEvaluate(Interpreter& context) const {
     }
 }
 
-bool IdentifierExpression::parseCapture(const Compiler* compiler, Function* function) {
+bool IdentifierExpression::parseCapture(const Compiler* compiler, ScriptFunction* function) {
     return resolveIdentifier(m_identifier, compiler, function, m_identifierDefinition);
 }
 
-bool getCapture(const NomadString& identifier, const Function* function, NomadId& id, CaptureSource& captureSource) {
+bool getCapture(const NomadString& identifier, const ScriptFunction* function, NomadId& id, CaptureSource& captureSource) {
     const NomadId parameterId = function->getParameterId(identifier);
     if (parameterId != NOMAD_INVALID_ID) {
         id = parameterId;
@@ -1087,14 +1508,14 @@ bool getCapture(const NomadString& identifier, const Function* function, NomadId
 
 // Resolve captures in nested functions.
 // This function assumes the identifier is not already a variable or identifier of the function.
-bool parseCapture(const NomadString& identifier, const Compiler* compiler, Function* function) {
+bool parseCapture(const NomadString& identifier, const Compiler* compiler, ScriptFunction* function) {
     if (function->isNested() == false) {
         return false;
     }
 
-    Function* currentFunction = function;
+    ScriptFunction* currentFunction = function;
     const Type* captureType;
-    std::vector<Function*> intermediateFunctions = { function };
+    std::vector<ScriptFunction*> intermediateFunctions = { function };
 
     // Walk up the nested functions until the identifier is found.
     for (;;) {
@@ -1161,7 +1582,7 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Funct
     return true;
 }
 
-bool resolveIdentifier(const NomadString& identifier, const Compiler* compiler, Function* function, IdentifierDefinition& definition) {
+bool resolveIdentifier(const NomadString& identifier, const Compiler* compiler, ScriptFunction* function, IdentifierDefinition& definition) {
     compiler->getIdentifierDefinition(identifier, function, definition);
 
     // Check for invalid identifier type.
@@ -1191,11 +1612,11 @@ FileNameExpression::FileNameExpression(
 {
 }
 
-void FileNameExpression::onResolve(CompilerContext* /*context*/, Function* /*function*/) {
+void FileNameExpression::onResolve(CompilerContext* /*context*/, ScriptFunction* /*function*/) {
     // Nothing to do...
 }
 
-void FileNameExpression::onCompile(Compiler* compiler, Function* /*function*/, const ExpressionTarget target) {
+void FileNameExpression::onCompile(Compiler* compiler, ScriptFunction* /*function*/, const ExpressionTarget target) {
     compiler->addLoadStringValue(m_fileName, target);
 }
 
@@ -1212,11 +1633,11 @@ FunctionNameExpression::FunctionNameExpression(
 {
 }
 
-void FunctionNameExpression::onResolve(CompilerContext* /*context*/, Function* /*function*/) {
+void FunctionNameExpression::onResolve(CompilerContext* /*context*/, ScriptFunction* /*function*/) {
     // Nothing to do...
 }
 
-void FunctionNameExpression::onCompile(Compiler* compiler, Function* /*function*/, ExpressionTarget target) {
+void FunctionNameExpression::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget target) {
     compiler->addLoadStringValue(m_functionName, target);
 }
 
@@ -1231,11 +1652,11 @@ LineNumberExpression::LineNumberExpression(
 {
 }
 
-void LineNumberExpression::onResolve(CompilerContext* /*context*/, Function* /*function*/) {
+void LineNumberExpression::onResolve(CompilerContext* /*context*/, ScriptFunction* /*function*/) {
     // Nothing to do...
 }
 
-void LineNumberExpression::onCompile(Compiler* compiler, Function* /*function*/, ExpressionTarget target) {
+void LineNumberExpression::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget target) {
     const auto lineNumber = static_cast<NomadInteger>(getLine());
 
     compiler->addLoadIntegerValue(lineNumber, target);

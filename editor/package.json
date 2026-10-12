@@ -2,16 +2,22 @@
   "name": "nomad-language",
   "displayName": "Nomad Language",
   "description": "Syntax highlighting for Nomad (.nomad) scripts",
-  "version": "0.0.3",
+  "version": "0.1.2",
   "license": "MIT",
   "publisher": "Chronogears",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jfbilodeau/Wishlair1.git"
+    "url": "https://github.com/jfbilodeau/Nomad.git"
   },
   "engines": {
     "vscode": "^1.60.0"
   },
+  "files": [
+    "language-configuration.json",
+    "syntaxes/**",
+    "README.md",
+    "LICENSE"
+  ],
   "categories": [
     "Programming Languages"
   ],
@@ -19,8 +25,13 @@
     "languages": [
       {
         "id": "nomad",
-        "aliases": ["Nomad", "nomad"],
-        "extensions": [".nomad"],
+        "aliases": [
+          "Nomad",
+          "nomad"
+        ],
+        "extensions": [
+          ".nomad"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],

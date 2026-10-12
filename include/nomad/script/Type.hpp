@@ -49,8 +49,10 @@ struct TypeOpCodes {
     // Register and stack traffic.
     InstructionFn copyResultToStack = op_push_r;
     InstructionFn moveResultToIntermediate = op_copy_r_to_i;
+    InstructionFn moveIntermediateToResult = op_copy_i_to_r;
     InstructionFn moveResultToStack = op_push_r;
     InstructionFn pushIntermediate = op_push_i;
+    InstructionFn popResult = op_pop_r;
     InstructionFn popIntermediate = op_pop_i;
 
     // Store the `r` register.

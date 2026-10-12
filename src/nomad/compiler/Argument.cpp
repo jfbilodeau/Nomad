@@ -30,16 +30,16 @@ public:
     );
 
     [[nodiscard]] const Type* getPushedType() const override;
-    [[nodiscard]] const Type* resolveOverloadType(CompilerContext* context, Function* function) override;
+    [[nodiscard]] const Type* resolveOverloadType(CompilerContext* context, ScriptFunction* function) override;
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override;
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
     [[nodiscard]] TypedValue onEvaluate(Interpreter& context) const override;
 
 private:
     // Resolves `m_expression`, so overload resolution and the regular resolve pass can both ask for its type.
-    bool resolveExpression(CompilerContext* context, Function* function);
+    bool resolveExpression(CompilerContext* context, ScriptFunction* function);
 
     std::unique_ptr<Expression> m_expression;
     ParameterAccess m_parameterAccess;
@@ -57,7 +57,7 @@ public:
     PredicateArgument(NomadIndex line, NomadIndex column, NomadId predicateFunctionId);
 
 protected:
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
 
 private:
     NomadId m_predicateFunctionId;
@@ -74,8 +74,8 @@ public:
     NomadId getFunctionId() const;
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override;
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
     [[nodiscard]] TypedValue onEvaluate(Interpreter& context) const override;
 
 private:
@@ -93,7 +93,7 @@ public:
     NomadIndex getStackValueCount() const override { return 2; }
 
 protected:
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
 
 private:
     NomadId m_eventId;
@@ -108,7 +108,7 @@ public:
     EventDispatchArgument(NomadIndex line, NomadIndex column, const Type* type, const EventDefinition& eventDefinition);
 
 protected:
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
 
 private:
     const EventDefinition m_eventDefinition;
@@ -122,7 +122,7 @@ public:
     FileNameArgument(NomadIndex line, NomadIndex column, const Type* type, NomadString fileName);
 
 protected:
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
     [[nodiscard]] TypedValue onEvaluate(Interpreter& context) const override;
 
 private:
@@ -137,7 +137,7 @@ public:
     FunctionNameArgument(NomadIndex line, NomadIndex column, const Type* type, NomadString functionName);
 
 protected:
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
     [[nodiscard]] TypedValue onEvaluate(Interpreter& context) const override;
 
 private:
@@ -152,7 +152,7 @@ public:
     LineNumberArgument(NomadIndex line, NomadIndex column, const Type* type);
 
 protected:
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
     [[nodiscard]] TypedValue onEvaluate(Interpreter& context) const override;
 
 private:
@@ -180,13 +180,13 @@ ExpressionArgument::ExpressionArgument(
 {
 }
 
-bool ExpressionArgument::resolveExpression(CompilerContext* context, Function* function) {
+bool ExpressionArgument::resolveExpression(CompilerContext* context, ScriptFunction* function) {
     // Deliberately not cached: type inference resolves a function more than once, and the expression's type may only
     // settle on a later pass.
     return m_expression->resolve(context, function);
 }
 
-const Type* ExpressionArgument::resolveOverloadType(CompilerContext* context, Function* function) {
+const Type* ExpressionArgument::resolveOverloadType(CompilerContext* context, ScriptFunction* function) {
     if (!resolveExpression(context, function)) {
         return nullptr;
     }
@@ -194,7 +194,7 @@ const Type* ExpressionArgument::resolveOverloadType(CompilerContext* context, Fu
     return m_expression->getType();
 }
 
-void ExpressionArgument::onResolve(CompilerContext* context, Function* function) {
+void ExpressionArgument::onResolve(CompilerContext* context, ScriptFunction* function) {
     if (!resolveExpression(context, function)) {
         return;
     }
@@ -233,7 +233,7 @@ const Type* ExpressionArgument::getPushedType() const {
     return m_pushedType;
 }
 
-void ExpressionArgument::onCompile(Compiler* compiler, Function* function) {
+void ExpressionArgument::onCompile(Compiler* compiler, ScriptFunction* function) {
     if (m_borrow) {
         m_expression->compileBorrowed(compiler, function, ExpressionTarget::Stack);
     } else {
@@ -270,7 +270,7 @@ PredicateArgument::PredicateArgument(
 {
 }
 
-void PredicateArgument::onCompile(Compiler* compiler, Function* /*function*/) {
+void PredicateArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*/) {
     compiler->addIndex(m_predicateFunctionId);
 }
 
@@ -288,7 +288,7 @@ NomadId CallbackArgument::getFunctionId() const {
     return m_functionId;
 }
 
-void CallbackArgument::onResolve(CompilerContext* context, Function* function) {
+void CallbackArgument::onResolve(CompilerContext* context, ScriptFunction* function) {
     const auto* callbackType = getType() == nullptr ? nullptr : getType()->asCallback();
     const auto* callbackFunction = context->getRuntime()->getFunction(m_functionId);
 
@@ -314,7 +314,7 @@ void CallbackArgument::onResolve(CompilerContext* context, Function* function) {
     }
 }
 
-void CallbackArgument::onCompile(Compiler* compiler, Function* /*function*/) {
+void CallbackArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*/) {
     compiler->addOpCode(OpCodes::op_id_push_v);
     compiler->addIndex(m_functionId);
 }
@@ -371,7 +371,7 @@ EventCallbackArgument::EventCallbackArgument(
 {
 }
 
-void EventCallbackArgument::onCompile(Compiler* compiler, Function* /*function*/) {
+void EventCallbackArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*/) {
     compiler->addOpCode(OpCodes::op_id_push_v);
     compiler->addIndex(m_functionId);
     compiler->addOpCode(OpCodes::op_id_push_v);
@@ -392,7 +392,7 @@ EventDispatchArgument::EventDispatchArgument(
 {
 }
 
-void EventDispatchArgument::onCompile(Compiler* compiler, Function* /*function*/) {
+void EventDispatchArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*/) {
     compiler->addOpCode(OpCodes::op_id_push_v);
     compiler->addIndex(m_eventDefinition.id);
 }
@@ -411,7 +411,7 @@ FileNameArgument::FileNameArgument(
 {
 }
 
-void FileNameArgument::onCompile(Compiler* compiler, Function* /*function*/) {
+void FileNameArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*/) {
     compiler->addLoadStringReference(m_fileName, ExpressionTarget::Stack);
 }
 
@@ -436,7 +436,7 @@ FunctionNameArgument::FunctionNameArgument(
 {
 }
 
-void FunctionNameArgument::onCompile(Compiler* compiler, Function* /*function*/) {
+void FunctionNameArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*/) {
     compiler->addLoadStringReference(m_functionName, ExpressionTarget::Stack);
 }
 
@@ -452,7 +452,7 @@ LineNumberArgument::LineNumberArgument(const NomadIndex line, const NomadIndex c
 {
 }
 
-void LineNumberArgument::onCompile(Compiler* compiler, Function* /*function*/) {
+void LineNumberArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*/) {
     compiler->addLoadIntegerValue(static_cast<NomadInteger>(getLine()), ExpressionTarget::Stack);
 }
 

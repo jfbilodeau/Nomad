@@ -14,7 +14,7 @@ namespace nomad {
 
 class Type;
 class Runtime;
-class Function;
+class ScriptFunction;
 class VirtualMachine;
 
 class TypedValue {
@@ -54,7 +54,7 @@ public:
     // first use so interpreters without a runtime stay cheap to construct.
     [[nodiscard]] VirtualMachine* getVirtualMachine();
     // Console function holding variable definitions (names and types). Not registered with the Runtime.
-    [[nodiscard]] const Function* getFunction() const;
+    [[nodiscard]] const ScriptFunction* getFunction() const;
 
     void setResult(const Type* type, const RuntimeValue& value);
     void setResult(const TypedValue& value);
@@ -79,7 +79,7 @@ public:
 
 private:
     Runtime* m_runtime;
-    std::unique_ptr<Function> m_function;
+    std::unique_ptr<ScriptFunction> m_function;
     std::unique_ptr<VirtualMachine> m_virtualMachine;
     std::optional<TypedValue> m_result;
     std::optional<NomadString> m_error;

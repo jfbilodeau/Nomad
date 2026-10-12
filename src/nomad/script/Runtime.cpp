@@ -4,20 +4,42 @@
 
 #include <nomad/compiler/Compiler.hpp>
 
-#include <nomad/script/NativeFunctions.hpp>
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Interpreter.hpp>
-#include <nomad/script/VirtualMachine.hpp>
+#include <nomad/script/IntrinsicMembers.hpp>
+#include <nomad/script/NativeFunctions.hpp>
 #include <nomad/script/Type.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/json/array.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <utility>
 
 #include <iomanip>
 
 namespace nomad {
+
+namespace {
+
+bool isIntrinsicMemberName(const NomadString& name) {
+    if (name.empty()) {
+        return false;
+    }
+
+    const auto firstCharacter = static_cast<unsigned char>(name.front());
+    if (!std::isalpha(firstCharacter) && firstCharacter != '_') {
+        return false;
+    }
+
+    return std::ranges::all_of(name.begin() + 1, name.end(), [](const NomadChar character) {
+        const auto unsignedCharacter = static_cast<unsigned char>(character);
+        return std::isalnum(unsignedCharacter) || character == '_';
+    });
+}
+
+} // namespace
 
 Runtime::Runtime() {
     // Types
@@ -87,6 +109,7 @@ Runtime::Runtime() {
 
     // Register build-in nativeFunctions
     registerBuildInNativeFunctions(this);
+    registerBuiltInIntrinsicMembers(this);
 
 //    register_keyword("stringId" NomadDoc("Load the string id of the given string"));
     registerKeyword("fun", NomadDoc("Function declaration"));
@@ -126,7 +149,7 @@ const std::vector<Instruction>& Runtime::getInstructions() const {
 NomadId Runtime::registerNativeFunction(
     const NomadString& name,
     NativeFunctionFn nativeFunction_fn,
-    const std::vector<NativeFunctionParameterDefinition>& parameters,
+    const std::vector<FunctionParameterDefinition>& parameters,
     const Type* returnType,
     NomadDocArg
 ) {
@@ -212,19 +235,19 @@ const NomadString& Runtime::getCallableName(const CallableId callable) const {
     static const NomadString emptyName;
 
     switch (callable.kind) {
-        case CallableKind::NativeFunction: {
-            if (isIdOutOfRange(callable.id, m_nativeFunctions.size())) {
-                return emptyName;
-            }
-
-            return m_nativeFunctions[toNomadIndex(callable.id)].name;
+    case CallableKind::NativeFunction: {
+        if (isIdOutOfRange(callable.id, m_nativeFunctions.size())) {
+            return emptyName;
         }
 
-        case CallableKind::Function: {
-            const auto* function = getFunction(callable.id);
+        return m_nativeFunctions[toNomadIndex(callable.id)].name;
+    }
 
-            return function == nullptr ? emptyName : function->getName();
-        }
+    case CallableKind::Function: {
+        const auto* function = getFunction(callable.id);
+
+        return function == nullptr ? emptyName : function->getName();
+    }
     }
 
     return emptyName;
@@ -232,19 +255,19 @@ const NomadString& Runtime::getCallableName(const CallableId callable) const {
 
 NomadIndex Runtime::getCallableParameterCount(const CallableId callable) const {
     switch (callable.kind) {
-        case CallableKind::NativeFunction: {
-            if (isIdOutOfRange(callable.id, m_nativeFunctions.size())) {
-                return 0;
-            }
-
-            return m_nativeFunctions[toNomadIndex(callable.id)].parameters.size();
+    case CallableKind::NativeFunction: {
+        if (isIdOutOfRange(callable.id, m_nativeFunctions.size())) {
+            return 0;
         }
 
-        case CallableKind::Function: {
-            const auto* function = getFunction(callable.id);
+        return m_nativeFunctions[toNomadIndex(callable.id)].parameters.size();
+    }
 
-            return function == nullptr ? 0 : function->getParameterCount();
-        }
+    case CallableKind::Function: {
+        const auto* function = getFunction(callable.id);
+
+        return function == nullptr ? 0 : function->getParameterCount();
+    }
     }
 
     return 0;
@@ -286,19 +309,19 @@ const NomadString& Runtime::getCallableParameterName(const CallableId callable, 
 
 const Type* Runtime::getCallableReturnType(const CallableId callable) const {
     switch (callable.kind) {
-        case CallableKind::NativeFunction: {
-            if (isIdOutOfRange(callable.id, m_nativeFunctions.size())) {
-                return nullptr;
-            }
-
-            return m_nativeFunctions[toNomadIndex(callable.id)].returnType;
+    case CallableKind::NativeFunction: {
+        if (isIdOutOfRange(callable.id, m_nativeFunctions.size())) {
+            return nullptr;
         }
 
-        case CallableKind::Function: {
-            const auto* function = getFunction(callable.id);
+        return m_nativeFunctions[toNomadIndex(callable.id)].returnType;
+    }
 
-            return function == nullptr ? nullptr : function->getReturnType();
-        }
+    case CallableKind::Function: {
+        const auto* function = getFunction(callable.id);
+
+        return function == nullptr ? nullptr : function->getReturnType();
+    }
     }
 
     return nullptr;
@@ -645,12 +668,274 @@ const Type* Runtime::getPredicateType() {
     return getCallbackType({}, getBooleanType());
 }
 
-NomadId Runtime::registerInstruction(
-    const NomadString& name,
-    const InstructionFn fn,
-    const NomadString& doc,
-    std::vector<Operand> operands
-) {
+bool Runtime::ownsType(const Type* type) const {
+    return type != nullptr &&
+           std::ranges::any_of(m_types, [type](const auto& registeredType) { return registeredType.get() == type; });
+}
+
+bool Runtime::canRegisterIntrinsicMember(const Type* objectType, const NomadString& name,
+                                         const std::vector<FunctionParameterDefinition>& parameters,
+                                         NomadString& error) const {
+    if (!ownsType(objectType)) {
+        error = "object type is not registered with this runtime";
+        return false;
+    }
+
+    if (objectType->isVoid()) {
+        error = "void cannot have intrinsic members";
+        return false;
+    }
+
+    if (!isIntrinsicMemberName(name)) {
+        error = "member name must be a simple identifier";
+        return false;
+    }
+
+    if (getIntrinsicMemberId(objectType, name) != NOMAD_INVALID_ID) {
+        error = "the type already has a member with that name";
+        return false;
+    }
+
+    const auto existing = m_intrinsicMembersByName.find(name);
+    if (existing == m_intrinsicMembersByName.end()) {
+        return true;
+    }
+
+    for (const auto memberId : existing->second) {
+        std::vector<FunctionParameterDefinition> existingParameters;
+
+        if (getIntrinsicMemberType(memberId) == IntrinsicMemberType::Method) {
+            IntrinsicMethodDefinition definition;
+            if (!getIntrinsicMethodDefinition(memberId, definition)) {
+                throw NomadBug("Invalid intrinsic method registration");
+            }
+
+            existingParameters = std::move(definition.parameters);
+        }
+
+        if (existingParameters.size() != parameters.size()) {
+            error = "members sharing a name must take the same number of parameters";
+            return false;
+        }
+
+        for (NomadIndex index = 0; index < parameters.size(); ++index) {
+            const auto candidateShape = getParameterShape(parameters[index].type);
+            const auto existingShape = getParameterShape(existingParameters[index].type);
+
+            if (candidateShape != existingShape) {
+                error = "members sharing a name must agree on the kind of every parameter";
+                return false;
+            }
+
+            if (candidateShape != ParameterShape::Value && parameters[index].type != existingParameters[index].type) {
+                error = "members sharing a name must agree on parser-dependent parameter types";
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+NomadId Runtime::registerIntrinsicProperty(const Type* objectType, const NomadString& name, const Type* valueType,
+                                           IntrinsicPropertyGetFn getFn, IntrinsicPropertySetFn setFn,
+                                           const NomadString& doc) {
+    if (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
+        log::error("Cannot register intrinsic property '" + name + "': invalid value type");
+        return NOMAD_INVALID_ID;
+    }
+
+    if (!getFn && !setFn) {
+        log::error("Cannot register intrinsic property '" + name + "': property has no accessor or mutator");
+        return NOMAD_INVALID_ID;
+    }
+
+    NomadString error;
+    if (!canRegisterIntrinsicMember(objectType, name, {}, error)) {
+        log::error("Cannot register intrinsic property '" + name + "': " + error);
+        return NOMAD_INVALID_ID;
+    }
+
+    const auto id = toNomadId(m_intrinsicMembers.size());
+    const auto definitionIndex = m_intrinsicProperties.size();
+
+    m_intrinsicProperties.push_back({
+        id,
+        objectType,
+        name,
+        valueType,
+        std::move(getFn),
+        std::move(setFn),
+        doc,
+    });
+    m_intrinsicMembers.push_back({IntrinsicMemberType::Property, definitionIndex});
+    m_intrinsicMembersByName[name].push_back(id);
+
+    return id;
+}
+
+NomadId Runtime::registerIntrinsicMethod(const Type* objectType, const NomadString& name, NativeFunctionFn fn,
+                                         const std::vector<FunctionParameterDefinition>& parameters,
+                                         const Type* returnType, const bool mutatesReceiver, const NomadString& doc) {
+    if (!fn) {
+        log::error("Cannot register intrinsic method '" + name + "': method has no function");
+        return NOMAD_INVALID_ID;
+    }
+
+    if (!ownsType(returnType) || (returnType->isInternal() && !returnType->isVoid())) {
+        log::error("Cannot register intrinsic method '" + name + "': invalid return type");
+        return NOMAD_INVALID_ID;
+    }
+
+    for (const auto& parameter : parameters) {
+        if (parameter.name.empty() || !ownsType(parameter.type) || parameter.type->isVoid()) {
+            log::error("Cannot register intrinsic method '" + name + "': invalid parameter definition");
+            return NOMAD_INVALID_ID;
+        }
+    }
+
+    NomadString error;
+    if (!canRegisterIntrinsicMember(objectType, name, parameters, error)) {
+        log::error("Cannot register intrinsic method '" + name + "': " + error);
+        return NOMAD_INVALID_ID;
+    }
+
+    const auto id = toNomadId(m_intrinsicMembers.size());
+    const auto definitionIndex = m_intrinsicMethods.size();
+
+    m_intrinsicMethods.push_back({
+        id,
+        objectType,
+        name,
+        std::move(fn),
+        parameters,
+        returnType,
+        mutatesReceiver,
+        doc,
+    });
+    m_intrinsicMembers.push_back({IntrinsicMemberType::Method, definitionIndex});
+    m_intrinsicMembersByName[name].push_back(id);
+
+    return id;
+}
+
+NomadId Runtime::getIntrinsicMemberId(const Type* objectType, const NomadString& name) const {
+    const auto overloads = m_intrinsicMembersByName.find(name);
+    if (overloads == m_intrinsicMembersByName.end()) {
+        return NOMAD_INVALID_ID;
+    }
+
+    for (const auto memberId : overloads->second) {
+        switch (getIntrinsicMemberType(memberId)) {
+        case IntrinsicMemberType::Property: {
+            IntrinsicPropertyDefinition definition;
+            if (getIntrinsicPropertyDefinition(memberId, definition) && definition.objectType == objectType) {
+                return memberId;
+            }
+            break;
+        }
+
+        case IntrinsicMemberType::Method: {
+            IntrinsicMethodDefinition definition;
+            if (getIntrinsicMethodDefinition(memberId, definition) && definition.objectType == objectType) {
+                return memberId;
+            }
+            break;
+        }
+
+        case IntrinsicMemberType::Unknown:
+            break;
+        }
+    }
+
+    return NOMAD_INVALID_ID;
+}
+
+IntrinsicMemberType Runtime::getIntrinsicMemberType(const NomadId memberId) const {
+    const auto memberIndex = toNomadIndex(memberId);
+    if (memberIndex >= m_intrinsicMembers.size()) {
+        return IntrinsicMemberType::Unknown;
+    }
+
+    return m_intrinsicMembers[memberIndex].type;
+}
+
+bool Runtime::getIntrinsicPropertyDefinition(const NomadId memberId, IntrinsicPropertyDefinition& definition) const {
+    const auto memberIndex = toNomadIndex(memberId);
+    if (memberIndex >= m_intrinsicMembers.size()) {
+        return false;
+    }
+
+    const auto& member = m_intrinsicMembers[memberIndex];
+    if (member.type != IntrinsicMemberType::Property || member.definitionIndex >= m_intrinsicProperties.size()) {
+        return false;
+    }
+
+    definition = m_intrinsicProperties[member.definitionIndex];
+    return true;
+}
+
+bool Runtime::getIntrinsicMethodDefinition(const NomadId memberId, IntrinsicMethodDefinition& definition) const {
+    const auto memberIndex = toNomadIndex(memberId);
+    if (memberIndex >= m_intrinsicMembers.size()) {
+        return false;
+    }
+
+    const auto& member = m_intrinsicMembers[memberIndex];
+    if (member.type != IntrinsicMemberType::Method || member.definitionIndex >= m_intrinsicMethods.size()) {
+        return false;
+    }
+
+    definition = m_intrinsicMethods[member.definitionIndex];
+    return true;
+}
+
+void Runtime::getIntrinsicMembers(const Type* objectType, std::vector<NomadId>& members) const {
+    members.clear();
+
+    for (NomadIndex index = 0; index < m_intrinsicMembers.size(); ++index) {
+        const auto memberId = toNomadId(index);
+        const auto type = getIntrinsicMemberType(memberId);
+
+        if (type == IntrinsicMemberType::Property) {
+            IntrinsicPropertyDefinition definition;
+            if (getIntrinsicPropertyDefinition(memberId, definition) && definition.objectType == objectType) {
+                members.push_back(memberId);
+            }
+        } else if (type == IntrinsicMemberType::Method) {
+            IntrinsicMethodDefinition definition;
+            if (getIntrinsicMethodDefinition(memberId, definition) && definition.objectType == objectType) {
+                members.push_back(memberId);
+            }
+        }
+    }
+}
+
+void Runtime::getIntrinsicMembers(std::vector<NomadId>& members) const {
+    members.clear();
+    members.reserve(m_intrinsicMembers.size());
+
+    for (NomadIndex index = 0; index < m_intrinsicMembers.size(); ++index) {
+        members.push_back(toNomadId(index));
+    }
+}
+
+void Runtime::getIntrinsicMemberOverloads(const NomadString& name, std::vector<NomadId>& overloads) const {
+    overloads.clear();
+
+    const auto members = m_intrinsicMembersByName.find(name);
+    if (members != m_intrinsicMembersByName.end()) {
+        overloads = members->second;
+    }
+}
+
+NomadIndex Runtime::getIntrinsicMemberOverloadCount(const NomadString& name) const {
+    const auto members = m_intrinsicMembersByName.find(name);
+    return members == m_intrinsicMembersByName.end() ? 0 : members->second.size();
+}
+
+NomadId Runtime::registerInstruction(const NomadString& name, const InstructionFn fn, const NomadString& doc,
+                                     std::vector<Operand> operands) {
     auto id = getInstructionId(name);
 
     if (id != NOMAD_INVALID_ID) {
@@ -1550,7 +1835,7 @@ NomadId Runtime::registerFunction(
 
     const auto id = toNomadId(m_functions.size());
 
-    m_functions.push_back(std::make_unique<Function>(id, name, path, source));
+    m_functions.push_back(std::make_unique<ScriptFunction>(id, name, path, source));
 
     addCallable(name, CallableId{CallableKind::Function, id});
 
@@ -1567,7 +1852,7 @@ NomadId Runtime::getFunctionId(const NomadString& name) const {
     return callable.id;
 }
 
-Function* Runtime::getFunction(NomadId function_id) const {
+ScriptFunction* Runtime::getFunction(NomadId function_id) const {
     if (isIdOutOfRange(function_id, m_functions.size())) {
         return nullptr;
     }
@@ -1583,7 +1868,7 @@ std::optional<NomadString> Runtime::getFunctionName(NomadId functionId) const {
     return m_functions[static_cast<NomadIndex>(functionId)]->getName();
 }
 
-Function * Runtime::getFunctionByStartAddress(NomadIndex startAddress) const {
+ScriptFunction * Runtime::getFunctionByStartAddress(NomadIndex startAddress) const {
     for (const auto& function: m_functions) {
         if (function->getFunctionStart() == startAddress) {
             return function.get();
@@ -1597,7 +1882,16 @@ NomadIndex Runtime::getFunctionCount() const {
     return m_functions.size();
 }
 
-void Runtime::getFunctions(std::vector<Function*>& functions) const {
+void Runtime::getFunctions(std::vector<ScriptFunction*>& functions) const {
+    functions.clear();
+    functions.reserve(m_functions.size());
+
+    for (const auto& function: m_functions) {
+        functions.push_back(function.get());
+    }
+}
+
+void Runtime::getFunctions(TempVector<ScriptFunction*>& functions) {
     functions.clear();
     functions.reserve(m_functions.size());
 
@@ -1606,16 +1900,7 @@ void Runtime::getFunctions(std::vector<Function*>& functions) const {
     }
 }
 
-void Runtime::getFunctions(TempVector<Function*>& functions) {
-    functions.clear();
-    functions.reserve(m_functions.size());
-
-    for (const auto& function : m_functions) {
-        functions.push_back(function.get());
-    }
-}
-
-Function * Runtime::getFunctionAtInstructionIndex(const NomadIndex instructionIndex) const {
+ScriptFunction * Runtime::getFunctionAtInstructionIndex(const NomadIndex instructionIndex) const {
     for (const auto& function : m_functions) {
         if (instructionIndex >= function->getFunctionStart() && instructionIndex < function->getFunctionEnd()) {
             return function.get();
@@ -1628,7 +1913,7 @@ Function * Runtime::getFunctionAtInstructionIndex(const NomadIndex instructionIn
 NomadIndex Runtime::getFunctionSize() const {
     NomadIndex size = 0;
 
-    for (const auto& function: m_functions) {
+    for (const auto& function : m_functions) {
         size += function->getFunctionLength();
     }
 
@@ -1647,7 +1932,7 @@ void Runtime::executeFunction(const NomadId functionId) {
     executeFunction(functionId, {});
 }
 
-const Function* Runtime::runClosure(const Closure* closure, const std::vector<RuntimeValue>& args) {
+const ScriptFunction* Runtime::runClosure(const Closure* closure, const std::vector<RuntimeValue>& args) {
     if (m_virtualMachine == nullptr) {
         m_virtualMachine = std::make_unique<VirtualMachine>(this);
     }
@@ -1801,7 +2086,7 @@ void Runtime::executeNativeFunction(
     }
 }
 
-void dumpFunctionDeclaration(const Function* function, std::ostream& out) {
+void dumpFunctionDeclaration(const ScriptFunction* function, std::ostream& out) {
     out << "function " << function->getName();
 
     for (NomadIndex i = 0; i < function->getParameterCount(); ++i) {
@@ -1814,7 +2099,7 @@ void dumpFunctionDeclaration(const Function* function, std::ostream& out) {
 }
 
 void Runtime::dumpInstructions(std::ostream& out) const {
-    std::vector<Function*> functions;
+    std::vector<ScriptFunction*> functions;
     getFunctions(functions);
 
     for (const auto* function : functions) {
@@ -1822,7 +2107,7 @@ void Runtime::dumpInstructions(std::ostream& out) const {
     }
 }
 
-void Runtime::dumpInstructions(std::ostream& out, const Function* function) const {
+void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function) const {
     dumpFunctionDeclaration(function, out);
 
     for (auto i = function->getFunctionStart(); i < function->getFunctionEnd(); ++i) {
@@ -1868,38 +2153,42 @@ void Runtime::dumpInstructions(std::ostream& out, const Function* function) cons
 
                     const auto calledFunction = getFunctionByStartAddress(functionStart);
 
-                    textValue = calledFunction->getName() + " (" + std::to_string(calledFunction->getId()) + ")";
-                    break;
-                }
-                case Operand::NativeFunction: {
-                    NativeFunctionDefinition definition;
-                    auto result = getNativeFunctionDefinition(value.getIdValue(), definition);
+                textValue = calledFunction->getName() + " (" + std::to_string(calledFunction->getId()) + ")";
+                break;
+            }
+            case Operand::NativeFunction: {
+                NativeFunctionDefinition definition;
+                auto result = getNativeFunctionDefinition(value.getIdValue(), definition);
 
-                    if (result) {
-                        textValue = definition.name + " (" + std::to_string(definition.id) + ")";
-                    } else {
-                        textValue = "<unknown native function> (" + std::to_string(value.getIdValue()) + ")";
-                    }
-                    break;
+                if (result) {
+                    textValue = definition.name + " (" + std::to_string(definition.id) + ")";
+                } else {
+                    textValue = "<unknown native function> (" + std::to_string(value.getIdValue()) + ")";
                 }
-                case Operand::FunctionVariable:
-                    textValue = function->getVariableName(value.getIdValue()) + " (" + std::to_string(value.getIdValue()) + ")";
-                    break;
-                case Operand::DynamicVariable:
-                    textValue = getDynamicVariableName(value.getIdValue()) + " (" + std::to_string(value.getIdValue()) + ")";
-                    break;
-                case Operand::ContextVariableId:
-                    textValue = getContextVariableName(value.getIdValue()) + " (" + std::to_string(value.getIdValue()) + ")";
-                    break;
-                case Operand::FormatString:
-                    textValue = "$\"" + getFormatString(value.getIdValue())->getFormatString() + "\" (" + std::to_string(value.getIdValue()) + ")";
-                    break;
-                case Operand::Index:
-                    textValue = std::to_string(value.getIndexValue());
-                    break;
-                default:
-                    textValue = "unknown (" + std::to_string(static_cast<int>(operand)) + ")";
-                    log::debug("Unknown operand type: " + std::to_string(static_cast<int>(operand)));
+                break;
+            }
+            case Operand::FunctionVariable:
+                textValue =
+                    function->getVariableName(value.getIdValue()) + " (" + std::to_string(value.getIdValue()) + ")";
+                break;
+            case Operand::DynamicVariable:
+                textValue =
+                    getDynamicVariableName(value.getIdValue()) + " (" + std::to_string(value.getIdValue()) + ")";
+                break;
+            case Operand::ContextVariableId:
+                textValue =
+                    getContextVariableName(value.getIdValue()) + " (" + std::to_string(value.getIdValue()) + ")";
+                break;
+            case Operand::FormatString:
+                textValue = "$\"" + getFormatString(value.getIdValue())->getFormatString() + "\" (" +
+                            std::to_string(value.getIdValue()) + ")";
+                break;
+            case Operand::Index:
+                textValue = std::to_string(value.getIndexValue());
+                break;
+            default:
+                textValue = "unknown (" + std::to_string(static_cast<int>(operand)) + ")";
+                log::debug("Unknown operand type: " + std::to_string(static_cast<int>(operand)));
             }
 
             out

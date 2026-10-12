@@ -63,7 +63,13 @@ jobs:
           pattern: distribution-*
           path: distributions
 
-      - name: Collect SDK ZIPs and verify checksums
+      - name: Download VS Code extension
+        uses: actions/download-artifact@v4
+        with:
+          name: vscode-extension
+          path: vscode-extension
+
+      - name: Collect release assets and verify checksums
         shell: bash
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -75,10 +81,12 @@ jobs:
           linux="distributions/distribution-Ubuntu/out/build/ci/distribution/Release"
           cp "$windows/nomad-sdk-windows-x64-$version.zip" release-assets/
           cp "$linux/nomad-sdk-linux-x64-$version.zip" release-assets/
+          cp "vscode-extension/nomad-language-$version.vsix" release-assets/
           cat "$windows/SHA256SUMS.txt" "$linux/SHA256SUMS.txt" > release-assets/SHA256SUMS.txt
-          test "$(wc -l < release-assets/SHA256SUMS.txt)" -eq 2
           cp scripts/install.ps1 scripts/install.sh release-assets/
           cd release-assets
+          sha256sum "nomad-language-$version.vsix" >> SHA256SUMS.txt
+          test "$(wc -l < SHA256SUMS.txt)" -eq 3
           sha256sum --check --strict SHA256SUMS.txt
 
       - name: Create draft GitHub Release
@@ -95,6 +103,7 @@ jobs:
             --title "Nomad $RELEASE_TAG" \
             --generate-notes \
             release-assets/nomad-sdk-*.zip \
+            release-assets/nomad-language-*.vsix \
             release-assets/SHA256SUMS.txt \
             release-assets/install.ps1 \
             release-assets/install.sh

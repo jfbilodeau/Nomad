@@ -6,6 +6,6 @@
 
 namespace nomad {
 
-std::unique_ptr<Statement> parseSelectStatement(CompilerContext* context, Function* function, Tokenizer* tokens);
+std::unique_ptr<Statement> parseSelectStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 
 } // nomad

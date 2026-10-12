@@ -10,7 +10,7 @@
 #include <nomad/compiler/SyntaxTree.hpp>
 
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Function.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <algorithm>
@@ -189,13 +189,13 @@ std::vector<InterpreterVariableInfo> Interpreter::listVariables() const {
 
 Interpreter::Interpreter(Runtime* runtime):
     m_runtime(runtime),
-    m_function(std::make_unique<Function>(NOMAD_INVALID_ID, CONSOLE_SOURCE_NAME, CONSOLE_SOURCE_NAME, ""))
+    m_function(std::make_unique<ScriptFunction>(NOMAD_INVALID_ID, CONSOLE_SOURCE_NAME, CONSOLE_SOURCE_NAME, ""))
 {
 }
 
 Interpreter::~Interpreter() = default;
 
-const Function* Interpreter::getFunction() const {
+const ScriptFunction* Interpreter::getFunction() const {
     return m_function.get();
 }
 
@@ -304,6 +304,9 @@ NomadBoolean Interpreter::execute(const NomadString& source) {
             auto expression = parser::parseExpression(&compilerContext, m_function.get(), &tokenizer);
             if (expression != nullptr &&
                 parser::expectEndOfLine(&compilerContext, m_function.get(), &tokenizer)) {
+                if (auto* member = expression->asIntrinsicExpression()) {
+                    member->setAllowVoid(true);
+                }
                 statement = std::make_unique<ExpressionStatement>(
                     line,
                     column,

@@ -2,12 +2,14 @@
 This the author wants to do
 
 ## Open
+[ ] Texture packing
 [ ] Display physics bodies in debug mode
 [ ] Debug mode should only come up when the `--debug` parameter is passed.
 [ ] Objects (intrinsic)
 [ ] Indexer notation.
 [ ] Persist scene
 [ ] First script should start at index 1 instead of 0 in decompiler (instructions.txt).
+[ ] LSP
 [ ] Command overloading (WIP)
 
 ## Completed

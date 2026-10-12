@@ -11,7 +11,7 @@
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Function.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
 
@@ -1320,9 +1320,9 @@ void DebugConsole::renderFunctionInspector() {
     ImGui::Begin("Functions", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
     ImGui::InputTextWithHint("##functionFilter", "Filter functions", m_functionFilter.data(), m_functionFilter.size());
 
-    std::vector<Function*> functions;
+    std::vector<ScriptFunction*> functions;
     m_game->getRuntime()->getFunctions(functions);
-    std::ranges::sort(functions, {}, &Function::getName);
+    std::ranges::sort(functions, {}, &ScriptFunction::getName);
 
     if (ImGui::BeginCombo(
         "##function",

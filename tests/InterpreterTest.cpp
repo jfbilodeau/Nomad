@@ -3,13 +3,12 @@
 #include <boost/test/unit_test.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
-#include <nomad/script/VariableContext.hpp>
-#include <nomad/script/VirtualMachine.hpp>
-#include <nomad/script/VirtualMachine.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Function.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>
+#include <nomad/script/VariableContext.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <stdexcept>
 
