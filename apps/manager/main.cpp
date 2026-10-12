@@ -30,6 +30,11 @@ struct ProjectParameters {
     std::optional<NomadString> directory;
 };
 
+struct InitializeParameters {
+    std::optional<NomadString> directory;
+    bool noWrapper = false;
+};
+
 struct RunParameters {
     std::optional<NomadString> directory;
     bool debug = false;
@@ -135,8 +140,12 @@ int versionCommand(EmptyParameters&) {
     return EXIT_SUCCESS;
 }
 
-int initializeCommand(ProjectParameters& parameters) {
-    const auto result = initializeProject(getRequestedDirectory(parameters.directory), resolveProjectTemplate("default"));
+int initializeCommand(InitializeParameters& parameters) {
+    const auto result = initializeProject(
+        getRequestedDirectory(parameters.directory),
+        resolveProjectTemplate("default"),
+        !parameters.noWrapper
+    );
 
     for (const auto& path : result.createdFiles) {
         std::cout << "Created " << pathToUtf8(path) << '\n';
@@ -211,8 +220,9 @@ int main(int argc, char** argv) {
         }, "Show general or command help")
             .addOptionalPositional("verb", &HelpParameters::verb, "Command to describe");
         program.addVerb<EmptyParameters>("version", &versionCommand, "Show the Nomad version");
-        program.addVerb<ProjectParameters>("init", &initializeCommand, "Create a minimal Nomad project")
-            .addOptionalPositional("directory", &ProjectParameters::directory, "Project directory (default: current directory)");
+        program.addVerb<InitializeParameters>("init", &initializeCommand, "Create a minimal Nomad project")
+            .addOptionalPositional("directory", &InitializeParameters::directory, "Project directory (default: current directory)")
+            .addFlag("no-wrapper", "", &InitializeParameters::noWrapper, "Do not install project-local SDK wrappers");
         program.addVerb<ProjectParameters>("check", &checkCommand, "Check project scripts without running them")
             .addOptionalPositional("directory", &ProjectParameters::directory, "Project directory (default: current directory)");
         program.addVerb<RunParameters>("run", &runCommand, "Launch a project using the installed runtime")

@@ -305,7 +305,8 @@ NomadString makeProjectExecutableName(const NomadStringView projectName) {
 
 ProjectInitializationResult initializeProject(
     const NomadPath& destination,
-    const NomadPath& templateDirectory
+    const NomadPath& templateDirectory,
+    const bool includeWrapper
 ) {
     std::error_code error;
     auto root = std::filesystem::absolute(destination, error).lexically_normal();
@@ -337,7 +338,14 @@ ProjectInitializationResult initializeProject(
         );
     }
 
-    const auto files = collectTemplateFiles(templateRoot, root);
+    auto files = collectTemplateFiles(templateRoot, root);
+
+    if (!includeWrapper) {
+        std::erase_if(files, [&root](const ProjectTemplateFile& file) {
+            const auto relative = file.destination.lexically_relative(root);
+            return relative == "nomadw" || relative == "nomadw.cmd" || relative == "nomadw.ps1";
+        });
+    }
     const std::map<NomadString, NomadString, std::less<>> variables{
         {"nomad_version", getNomadVersion().toString()},
         {"project_executable", executable},
@@ -390,6 +398,24 @@ ProjectInitializationResult initializeProject(
                 writeFile(temporary, renderTemplate(readFile(file.source), variables, file.source));
             } else {
                 std::filesystem::copy_file(file.source, temporary);
+            }
+
+            if (file.destination.filename() == "nomadw") {
+                std::filesystem::permissions(
+                    temporary,
+                    std::filesystem::perms::owner_exec |
+                        std::filesystem::perms::group_exec |
+                        std::filesystem::perms::others_exec,
+                    std::filesystem::perm_options::add,
+                    error
+                );
+
+                if (error) {
+                    throw ProjectInitializationError(
+                        "Failed to make wrapper executable '" + pathToUtf8(file.destination) +
+                        "': " + error.message()
+                    );
+                }
             }
 
             std::filesystem::rename(temporary, file.destination);

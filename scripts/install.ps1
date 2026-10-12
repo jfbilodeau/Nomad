@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$Version = 'latest',
-    [string]$Destination
+    [string]$Destination,
+    [string]$ProjectDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,11 +27,29 @@ if ($Version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
     throw 'Version must be latest or major.minor.patch (optionally prefixed with v).'
 }
 if (-not $Destination) {
-    $Destination = Join-Path $HOME ".nomad\sdks\$Version\windows-x64"
+    $nomadHome = if ($env:NOMAD_HOME) {
+        $env:NOMAD_HOME
+    } else {
+        Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Nomad'
+    }
+    $Destination = Join-Path $nomadHome "sdks\$Version\windows-x64"
 }
 $Destination = [System.IO.Path]::GetFullPath($Destination)
 if (Test-Path -LiteralPath $Destination) {
     throw "Installation already exists: $Destination"
+}
+$wrapperNames = @('nomadw', 'nomadw.cmd', 'nomadw.ps1')
+if ($ProjectDirectory) {
+    $ProjectDirectory = [System.IO.Path]::GetFullPath($ProjectDirectory)
+    if (-not (Test-Path -LiteralPath (Join-Path $ProjectDirectory 'nomad.toml') -PathType Leaf)) {
+        throw "Project directory does not contain nomad.toml: $ProjectDirectory"
+    }
+    foreach ($wrapperName in $wrapperNames) {
+        $wrapperDestination = Join-Path $ProjectDirectory $wrapperName
+        if (Test-Path -LiteralPath $wrapperDestination) {
+            throw "Refusing to overwrite project wrapper: $wrapperDestination"
+        }
+    }
 }
 $parent = Split-Path -Parent $Destination
 [System.IO.Directory]::CreateDirectory($parent) | Out-Null
@@ -86,6 +105,20 @@ try {
         throw 'SDK runtime version or target does not match the requested installation.'
     }
     [System.IO.Directory]::Move($sdk, $Destination)
+    if ($ProjectDirectory) {
+        $wrapperSource = Join-Path $Destination 'templates\projects\default'
+        foreach ($wrapperName in $wrapperNames) {
+            $source = Join-Path $wrapperSource $wrapperName
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+                throw "Installed SDK does not contain project wrapper: $source"
+            }
+        }
+        foreach ($wrapperName in $wrapperNames) {
+            Copy-Item -LiteralPath (Join-Path $wrapperSource $wrapperName) `
+                -Destination (Join-Path $ProjectDirectory $wrapperName)
+        }
+        Write-Host "Installed Nomad wrappers in $ProjectDirectory"
+    }
     Write-Host "Installed Nomad $Version to $Destination"
     Write-Host "Add this directory to PATH, or run: & '$($Destination.Replace("'", "''"))\nomad.exe' --version"
 } finally {

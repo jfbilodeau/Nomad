@@ -26,10 +26,11 @@ also available as verbs. Use `<verb> --help` or `<verb> -h` for command-specific
 help, including commands with required arguments. Options belong to individual
 verbs; for example, `nomad run --force` is rejected.
 
-`nomad init [directory]` creates a minimal project containing `nomad.toml` and
-`res/scripts/init.nomad`, along with a starter `README.md` and `.gitignore`. It
-can initialize a new directory or an existing directory, but refuses to
-overwrite any generated file.
+`nomad init [directory]` creates a minimal project containing `nomad.toml`,
+`res/scripts/init.nomad`, project-local `nomadw` wrappers, a starter
+`README.md`, and `.gitignore`. It can initialize a new directory or an existing
+directory, but refuses to overwrite any generated file. Pass `--no-wrapper` to
+omit the wrappers.
 
 The default project is stored in `templates/projects/default` and is copied
 beside the `nomad` executable during the build. Initialization recursively
@@ -37,6 +38,28 @@ copies that directory. Files ending in `.in` are rendered with project
 metadata and written without the `.in` suffix; other files are copied
 unchanged. This keeps the project layout and starter content out of the C++
 implementation.
+
+Use `./nomadw <command>` on Linux and macOS or `nomadw.cmd <command>` on
+Windows to run the exact SDK selected by `[nomad].version`. The wrapper checks
+`NOMAD_HOME`, the platform-standard user data directory, and the legacy
+`~/.nomad` location. If the SDK is missing, it downloads the matching host SDK,
+verifies its SHA-256 checksum and manifest, extracts it safely, and installs it
+atomically before forwarding the command. Set `NOMAD_OFFLINE=1` to prohibit
+downloads or `NOMAD_RELEASE_BASE_URL` to use a release mirror.
+
+The release installers accept an optional project directory when wrappers need
+to be added to an existing project:
+
+```powershell
+.\install.ps1 -ProjectDirectory C:\src\game
+```
+
+```console
+bash install.sh latest "" --project-directory ~/src/game
+```
+
+The project must already contain `nomad.toml`, and the installers refuse to
+replace existing wrapper files.
 
 `nomad check [directory]` discovers the project, verifies that the running CLI
 is at least as new as the required `nomad.version`, and runs the sibling
@@ -133,6 +156,13 @@ renames the declared runtime executable, and preserves the relative paths of
 libraries and licenses. The internal bundle manifest is not included in games.
 The build assembles license notices for Nomad and its core runtime dependencies
 under `licenses`, including the vendored font-rendering dependencies.
+
+Release distributions provide both a complete
+`nomad-sdk-<target>-<version>.zip` and a smaller
+`nomad-runtime-<target>-<version>.zip`. The runtime archive contains
+`runtime.json` and exactly the files declared by that manifest, allowing a host
+SDK to package games for a separately downloaded target runtime without
+building native code.
 
 `nomad-runtime` discovers `nomad.toml` from the current directory or one of
 its parents. It resolves `resources.directory` relative to the project root

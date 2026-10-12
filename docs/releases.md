@@ -17,14 +17,18 @@ Prerelease suffixes are not currently supported.
 4. After all checks pass, it creates a draft GitHub Release containing:
    - `nomad-sdk-windows-x64-<version>.zip`
    - `nomad-sdk-linux-x64-<version>.zip`
-   - `SHA256SUMS.txt`, containing checksums for both ZIPs
+   - `nomad-runtime-windows-x64-<version>.zip`
+   - `nomad-runtime-linux-x64-<version>.zip`
+   - `SHA256SUMS.txt`, containing checksums for all SDK and runtime ZIPs
    - `install.ps1` and `install.sh`, the Windows and Linux bootstrap installers
 5. Download the draft assets, verify their checksums, and check the SDK and a
    packaged game on both platforms. Review the generated release notes, then
    publish the draft manually.
 
 Smoke-test packages and validation scripts remain CI artifacts; they are not
-attached to the release. Each SDK ZIP includes the runtime.
+attached to the release. Each SDK ZIP includes its host runtime. The smaller
+runtime ZIPs contain only the target runtime executable, libraries, licenses,
+and `runtime.json`; they are intended for packaging games for that target.
 
 If validation fails, no draft release is created. Fix the failure before
 retrying. Draft creation fails if a release already exists for the tag rather

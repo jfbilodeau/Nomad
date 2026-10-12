@@ -80,13 +80,15 @@ jobs:
           windows="distributions/distribution-Windows/out/build/ci/distribution/Release"
           linux="distributions/distribution-Ubuntu/out/build/ci/distribution/Release"
           cp "$windows/nomad-sdk-windows-x64-$version.zip" release-assets/
+          cp "$windows/nomad-runtime-windows-x64-$version.zip" release-assets/
           cp "$linux/nomad-sdk-linux-x64-$version.zip" release-assets/
+          cp "$linux/nomad-runtime-linux-x64-$version.zip" release-assets/
           cp "vscode-extension/nomad-language-$version.vsix" release-assets/
           cat "$windows/SHA256SUMS.txt" "$linux/SHA256SUMS.txt" > release-assets/SHA256SUMS.txt
           cp scripts/install.ps1 scripts/install.sh release-assets/
           cd release-assets
           sha256sum "nomad-language-$version.vsix" >> SHA256SUMS.txt
-          test "$(wc -l < SHA256SUMS.txt)" -eq 3
+          test "$(wc -l < SHA256SUMS.txt)" -eq 5
           sha256sum --check --strict SHA256SUMS.txt
 
       - name: Create draft GitHub Release
@@ -103,6 +105,7 @@ jobs:
             --title "Nomad $RELEASE_TAG" \
             --generate-notes \
             release-assets/nomad-sdk-*.zip \
+            release-assets/nomad-runtime-*.zip \
             release-assets/nomad-language-*.vsix \
             release-assets/SHA256SUMS.txt \
             release-assets/install.ps1 \

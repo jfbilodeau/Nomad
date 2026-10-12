@@ -7,11 +7,14 @@ This project uses [Nomad](https://github.com/jfbilodeau/Nomad) {{nomad_version}}
 Check the project:
 
 ```console
-nomad check
+./nomadw check
 ```
 
 Run the project:
 
 ```console
-nomad run
+./nomadw run
 ```
+
+On Windows, use `nomadw.cmd` instead. The wrapper installs the exact Nomad SDK
+selected by `nomad.toml` when it is not already available.
