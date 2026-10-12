@@ -5,7 +5,6 @@ This the author wants to do
 [ ] Texture packing
 [ ] Display physics bodies in debug mode
 [ ] Debug mode should only come up when the `--debug` parameter is passed.
-[ ] Objects (intrinsic)
 [ ] Indexer notation.
 [ ] Persist scene
 [ ] First script should start at index 1 instead of 0 in decompiler (instructions.txt).
@@ -13,6 +12,7 @@ This the author wants to do
 [ ] Command overloading (WIP)
 
 ## Completed
+[X] Objects (intrinsic)
 [X] Switch from `const NomadString&` to `NomadStringView`
 [X] Ensure scripts that return a value early also have a valid `return` statement at the end.
 [X] Add column number to parser

@@ -130,6 +130,29 @@ BOOST_AUTO_TEST_CASE(variable_persistence_round_trips_enums_by_member_name)
     BOOST_TEST(getValue(destination, "inventory.state").getIntegerValue() == 20);
 }
 
+BOOST_AUTO_TEST_CASE(variable_persistence_round_trips_uninitialized_enums_as_blank_strings)
+{
+    Runtime runtime;
+    const auto* stateType = runtime.registerEnum("State", {{"idle", 1}, {"walking", 2}});
+    BOOST_REQUIRE(stateType != nullptr);
+
+    SimpleVariableContext source;
+    registerValue(source, "inventory.state", stateType, RuntimeValue{NomadInteger{0}});
+
+    boost::json::object root;
+    BOOST_REQUIRE(saveVariableContext(&runtime, source, root));
+    BOOST_REQUIRE(root.at("inventory.state").is_string());
+    BOOST_TEST(root.at("inventory.state").as_string() == "");
+    BOOST_TEST(toPrettyJson(root) == "{\n    \"inventory.state\": \"\"\n}\n");
+
+    SimpleVariableContext destination;
+    registerValue(destination, "inventory.state", stateType, RuntimeValue{NomadInteger{1}});
+
+    loadVariableContext(&runtime, destination, root);
+
+    BOOST_TEST(getValue(destination, "inventory.state").getIntegerValue() == 0);
+}
+
 BOOST_AUTO_TEST_CASE(variable_persistence_resolves_enum_names_against_the_destination_type)
 {
     Runtime runtime;

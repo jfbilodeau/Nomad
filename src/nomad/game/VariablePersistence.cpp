@@ -181,6 +181,10 @@ std::optional<boost::json::value> toJsonValue(
     const RuntimeValue& value
 ) {
     if (const auto* enumType = type == nullptr ? nullptr : type->asEnum()) {
+        if (value.getIntegerValue() == 0) {
+            return boost::json::value("");
+        }
+
         NomadString valueName;
 
         if (!enumType->getNameByValue(value.getIntegerValue(), valueName)) {
@@ -274,6 +278,11 @@ bool fromJsonValue(const Runtime* runtime, const boost::json::value& json, const
     if (const auto* enumType = type == nullptr ? nullptr : type->asEnum()) {
         if (!json.is_string()) {
             return false;
+        }
+
+        if (json.get_string().empty()) {
+            value.setIntegerValue(0);
+            return true;
         }
 
         NomadInteger enumValue = 0;
