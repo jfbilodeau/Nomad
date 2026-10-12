@@ -103,6 +103,7 @@
       "hidden": true,
       "targets": [
         "nomad-cli",
+        "nomad-packager",
         "nomad-runtime",
         "nomadc",
         "nomad_test"
