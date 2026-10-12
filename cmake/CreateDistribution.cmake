@@ -46,12 +46,9 @@ foreach(PROGRAM IN ITEMS CLI COMPILER RUNTIME)
 endforeach()
 
 function(create_distribution_archive NAME ROOT)
-    file(GLOB_RECURSE FILES LIST_DIRECTORIES FALSE RELATIVE "${ROOT}" "${ROOT}/*" "${ROOT}/.*")
-    list(SORT FILES)
     execute_process(
-        COMMAND "${CMAKE_COMMAND}" -E tar cf "${NOMAD_DISTRIBUTION_OUTPUT}/${NAME}.tmp"
-            --format=zip "--mtime=1980-01-01 00:00:00 UTC" -- ${FILES}
-        WORKING_DIRECTORY "${ROOT}"
+        COMMAND "${NOMAD_DISTRIBUTION_ARCHIVER}"
+            "${NOMAD_DISTRIBUTION_OUTPUT}/${NAME}.tmp" "${ROOT}"
         RESULT_VARIABLE RESULT ERROR_VARIABLE ERROR_OUTPUT
     )
     if(NOT RESULT STREQUAL "0")

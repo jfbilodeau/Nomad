@@ -20,6 +20,12 @@ public:
 
 [[nodiscard]] NomadStringView getPackagePlatform();
 
+void writeDeterministicZipArchive(
+    const NomadPath& destination,
+    const NomadPath& root,
+    const std::vector<NomadPath>& files
+);
+
 [[nodiscard]] ProjectPackageResult packageProject(
     const ProjectConfiguration& configuration,
     const NomadPath& runtimeDirectory,

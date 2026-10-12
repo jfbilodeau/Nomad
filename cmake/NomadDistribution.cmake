@@ -2,6 +2,9 @@ if(NOT TARGET nomad-cli OR NOT TARGET nomadc OR NOT TARGET nomad-runtime OR NOMA
     return()
 endif()
 
+add_executable(nomad-packager EXCLUDE_FROM_ALL apps/archive/main.cpp)
+target_link_libraries(nomad-packager PRIVATE Nomad::Project Boost::nowide)
+
 foreach(PROGRAM IN ITEMS nomad-cli nomadc)
     if(APPLE)
         set_target_properties(${PROGRAM} PROPERTIES BUILD_RPATH "@loader_path")
@@ -19,6 +22,7 @@ set(NOMAD_DISTRIBUTION_SETTINGS
     "set(NOMAD_DISTRIBUTION_CLI \"$<TARGET_FILE:nomad-cli>\")\n"
     "set(NOMAD_DISTRIBUTION_COMPILER \"$<TARGET_FILE:nomadc>\")\n"
     "set(NOMAD_DISTRIBUTION_RUNTIME \"$<TARGET_FILE:nomad-runtime>\")\n"
+    "set(NOMAD_DISTRIBUTION_ARCHIVER \"$<TARGET_FILE:nomad-packager>\")\n"
     "set(NOMAD_DISTRIBUTION_BUNDLE \"$<TARGET_FILE_DIR:nomad-runtime>/runtime\")\n"
     "set(NOMAD_DISTRIBUTION_TEMPLATES \"${NOMAD_PROJECT_TEMPLATE_DIR}\")\n"
     "set(NOMAD_DISTRIBUTION_DOCUMENTATION \"${CMAKE_CURRENT_SOURCE_DIR}/docs/language.md\")\n"
@@ -38,6 +42,6 @@ file(GENERATE OUTPUT "${NOMAD_DISTRIBUTION_CONFIG}" CONTENT "${NOMAD_DISTRIBUTIO
 add_custom_target(nomad-distribution
     COMMAND "${CMAKE_COMMAND}" "-DNOMAD_DISTRIBUTION_CONFIG=${NOMAD_DISTRIBUTION_CONFIG}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CreateDistribution.cmake"
-    DEPENDS nomad-cli nomadc nomad-runtime-bundle
+    DEPENDS nomad-cli nomadc nomad-runtime-bundle nomad-packager
     VERBATIM
 )

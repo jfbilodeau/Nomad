@@ -373,7 +373,13 @@ la_ssize_t writeArchiveData(archive* writer, void* context, const void* data, co
     return static_cast<la_ssize_t>(size);
 }
 
-void writeArchive(const NomadPath& destination, const NomadPath& staging, const std::vector<NomadPath>& files) {
+} // namespace
+
+void writeDeterministicZipArchive(
+    const NomadPath& destination,
+    const NomadPath& root,
+    const std::vector<NomadPath>& files
+) {
     std::ofstream output(destination, std::ios::binary | std::ios::trunc);
     if (!output) {
         throw ProjectPackagingError("Failed to open ZIP archive '" + pathToUtf8(destination) + "'");
@@ -397,7 +403,7 @@ void writeArchive(const NomadPath& destination, const NomadPath& staging, const 
         if (!entry) {
             throw ProjectPackagingError("Failed to allocate ZIP entry");
         }
-        const auto name = pathToGenericUtf8(file.lexically_relative(staging));
+        const auto name = pathToGenericUtf8(file.lexically_relative(root));
         archive_entry_set_pathname_utf8(entry.get(), name.c_str());
         archive_entry_set_filetype(entry.get(), AE_IFREG);
         const auto permissions = std::filesystem::status(file).permissions();
@@ -425,8 +431,6 @@ void writeArchive(const NomadPath& destination, const NomadPath& staging, const 
         throw ProjectPackagingError("Failed to close ZIP archive '" + pathToUtf8(destination) + "'");
     }
 }
-
-} // namespace
 
 NomadStringView getPackagePlatform() {
     return NOMAD_PACKAGE_PLATFORM;
@@ -540,7 +544,7 @@ ProjectPackageResult packageProject(
         });
 
         if (!dryRun) {
-            writeArchive(temporaryArchive, staging, stagedFiles);
+            writeDeterministicZipArchive(temporaryArchive, staging, stagedFiles);
             std::filesystem::remove_all(staging, error);
             if (error) {
                 raiseFilesystemError("Failed to remove package staging directory", staging, error);
