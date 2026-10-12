@@ -1,42 +1,25 @@
+include(${CMAKE_CURRENT_LIST_DIR}/NomadTarget.cmake)
+
 # Build the reusable language and VM without engine dependencies.
 add_library(nomad-language STATIC ${NOMAD_LANGUAGE_SOURCES})
 add_library(Nomad::Language ALIAS nomad-language)
+nomad_configure_runtime_target(nomad-language)
 
 # Build project configuration support independently from the language and engine.
 add_library(nomad-project STATIC ${NOMAD_PROJECT_SOURCES})
 add_library(Nomad::Project ALIAS nomad-project)
+nomad_configure_target(nomad-project)
 
 # Build the game engine on top of the language runtime.
 add_library(nomad STATIC ${NOMAD_ENGINE_SOURCES})
 add_library(Nomad::Engine ALIAS nomad)
-
-if(NOMAD_ENABLE_SANITIZERS)
-    target_link_libraries(nomad-language PRIVATE nomad_sanitizers)
-    target_link_libraries(nomad-project PRIVATE nomad_sanitizers)
-    target_link_libraries(nomad PRIVATE nomad_sanitizers)
-endif()
+nomad_configure_runtime_target(nomad)
 
 if(MSVC)
-    target_compile_options(nomad-language PRIVATE /W4)
-    target_compile_options(nomad-project PRIVATE /W4)
-    target_compile_options(nomad PRIVATE /W4)
-    if(NOMAD_WARNINGS_AS_ERRORS)
-        target_compile_options(nomad-language PRIVATE /WX)
-        target_compile_options(nomad-project PRIVATE /WX)
-        target_compile_options(nomad PRIVATE /WX)
-    endif()
     set_source_files_properties(${DEAR_IMGUI_SOURCE} PROPERTIES COMPILE_OPTIONS "/W0;/WX-")
     # Boost.Spirit templates instantiated by Tokenizer.cpp trigger C4459 outside Nomad source.
     set_source_files_properties(${NOMAD_SOURCE_DIR}/nomad/compiler/Tokenizer.cpp PROPERTIES COMPILE_OPTIONS "/wd4459")
 else()
-    target_compile_options(nomad-language PRIVATE -Wall -Wextra -Wconversion)
-    target_compile_options(nomad-project PRIVATE -Wall -Wextra -Wconversion)
-    target_compile_options(nomad PRIVATE -Wall -Wextra -Wconversion)
-    if(NOMAD_WARNINGS_AS_ERRORS)
-        target_compile_options(nomad-language PRIVATE -Werror)
-        target_compile_options(nomad-project PRIVATE -Werror)
-        target_compile_options(nomad PRIVATE -Werror)
-    endif()
     set_source_files_properties(${DEAR_IMGUI_SOURCE} PROPERTIES COMPILE_OPTIONS "-w;-Wno-error")
     # Boost.Spirit templates instantiated by Tokenizer.cpp trigger conversion warnings outside Nomad source.
     set_source_files_properties(${NOMAD_SOURCE_DIR}/nomad/compiler/Tokenizer.cpp PROPERTIES COMPILE_OPTIONS "-Wno-error=conversion;-Wno-error=float-conversion")
@@ -83,20 +66,6 @@ target_include_directories(
     $<BUILD_INTERFACE:${NOMAD_INCLUDE_DIR}>
     $<BUILD_INTERFACE:${NOMAD_GENERATED_INCLUDE_DIR}>
     $<INSTALL_INTERFACE:include>
-)
-
-target_compile_definitions(
-    nomad-language
-    PRIVATE
-    _LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION
-    $<$<CONFIG:Debug>:NOMAD_DEBUG>
-)
-
-target_compile_definitions(
-    nomad
-    PRIVATE
-    _LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION
-    $<$<CONFIG:Debug>:NOMAD_DEBUG>
 )
 
 target_link_libraries(
