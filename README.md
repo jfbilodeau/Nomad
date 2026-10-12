@@ -157,6 +157,13 @@ libraries and licenses. The internal bundle manifest is not included in games.
 The build assembles license notices for Nomad and its core runtime dependencies
 under `licenses`, including the vendored font-rendering dependencies.
 
+Release distributions provide both a complete
+`nomad-sdk-<target>-<version>.zip` and a smaller
+`nomad-runtime-<target>-<version>.zip`. The runtime archive contains
+`runtime.json` and exactly the files declared by that manifest, allowing a host
+SDK to package games for a separately downloaded target runtime without
+building native code.
+
 `nomad-runtime` discovers `nomad.toml` from the current directory or one of
 its parents. It resolves `resources.directory` relative to the project root
 and executes the configured `project.entry` function. The
