@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+    echo "nomadw: $*" >&2
+    exit 1
+}
+
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+project_file="$script_directory/nomad.toml"
+[[ -f "$project_file" ]] || fail "Missing project configuration: $project_file"
+
+version=""
+section=""
+version_pattern='^version[[:space:]]*=[[:space:]]*"([0-9]+\.[0-9]+\.[0-9]+)"[[:space:]]*(#.*)?$'
+while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    trimmed="${line#"${line%%[![:space:]]*}"}"
+    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+    [[ -z "$trimmed" || "$trimmed" == \#* ]] && continue
+
+    if [[ "$trimmed" =~ ^\[([^]]+)\][[:space:]]*(#.*)?$ ]]; then
+        section="${BASH_REMATCH[1]}"
+        continue
+    fi
+
+    if [[ "$section" == "nomad" && "$trimmed" == version* ]]; then
+        [[ "$trimmed" =~ $version_pattern ]] ||
+            fail "The [nomad].version value must use the canonical major.minor.patch form."
+        [[ -z "$version" ]] || fail "The project defines [nomad].version more than once."
+        version="${BASH_REMATCH[1]}"
+    fi
+done < "$project_file"
+[[ -n "$version" ]] || fail "The project does not define [nomad].version."
+
+case "$(uname -s)" in
+    Linux) system="linux" ;;
+    Darwin) system="macos" ;;
+    *) fail "Unsupported operating system: $(uname -s)" ;;
+esac
+case "$(uname -m)" in
+    x86_64|amd64) architecture="x64" ;;
+    arm64|aarch64) architecture="arm64" ;;
+    *) fail "Unsupported architecture: $(uname -m)" ;;
+esac
+target="$system-$architecture"
+
+if [[ -n "${NOMAD_HOME:-}" ]]; then
+    nomad_home="$NOMAD_HOME"
+elif [[ "$system" == "macos" ]]; then
+    nomad_home="$HOME/Library/Application Support/Nomad"
+else
+    nomad_home="${XDG_DATA_HOME:-$HOME/.local/share}/nomad"
+fi
+
+sdk="$nomad_home/sdks/$version/$target"
+legacy_sdk="$HOME/.nomad/sdks/$version/$target"
+if [[ -z "${NOMAD_HOME:-}" && ! -x "$sdk/nomad" && -x "$legacy_sdk/nomad" ]]; then
+    sdk="$legacy_sdk"
+fi
+
+validate_sdk() {
+    local directory="$1"
+    local manifest="$directory/runtime/runtime.json"
+    [[ -x "$directory/nomad" && -x "$directory/nomadc" &&
+       -x "$directory/nomad-runtime" && -d "$directory/templates" &&
+       -f "$manifest" ]] || return 1
+    grep -Eq "\"version\"[[:space:]]*:[[:space:]]*\"${version//./\\.}\"" "$manifest" &&
+        grep -Eq "\"target\"[[:space:]]*:[[:space:]]*\"$target\"" "$manifest"
+}
+
+if ! validate_sdk "$sdk"; then
+    [[ "${NOMAD_OFFLINE:-0}" != "1" ]] ||
+        fail "Nomad SDK $version for $target is not installed and NOMAD_OFFLINE=1."
+
+    for tool in curl unzip zipinfo awk; do
+        command -v "$tool" >/dev/null || fail "Required tool missing: $tool"
+    done
+    if command -v sha256sum >/dev/null; then
+        checksum_tool="sha256sum"
+    elif command -v shasum >/dev/null; then
+        checksum_tool="shasum"
+    else
+        fail "Required tool missing: sha256sum or shasum"
+    fi
+
+    parent="$(dirname "$sdk")"
+    mkdir -p "$parent"
+    lock="$sdk.install-lock"
+    if ! mkdir "$lock" 2>/dev/null; then
+        validate_sdk "$sdk" && exec "$sdk/nomad" "$@"
+        fail "Another process is installing Nomad SDK $version for $target."
+    fi
+
+    staging="$(mktemp -d "$parent/.nomad-install-XXXXXXXX")"
+    cleanup() {
+        rm -rf -- "$staging"
+        rmdir "$lock" 2>/dev/null || true
+    }
+    trap cleanup EXIT
+
+    name="nomad-sdk-$target-$version.zip"
+    release_root="${NOMAD_RELEASE_BASE_URL:-https://github.com/jfbilodeau/Nomad/releases/download}"
+    base="${release_root%/}/v$version"
+    curl --fail --silent --show-error --location --connect-timeout 15 --max-time 180 \
+        "$base/SHA256SUMS.txt" -o "$staging/SHA256SUMS.txt"
+    curl --fail --silent --show-error --location --connect-timeout 15 --max-time 180 \
+        "$base/$name" -o "$staging/$name"
+
+    awk -v name="$name" '$2 == name && length($1) == 64 && $1 !~ /[^0-9a-fA-F]/ { print }' \
+        "$staging/SHA256SUMS.txt" > "$staging/checksum"
+    [[ "$(wc -l < "$staging/checksum")" -eq 1 ]] ||
+        fail "Expected exactly one checksum for $name."
+    if [[ "$checksum_tool" == "sha256sum" ]]; then
+        (cd "$staging" && sha256sum --check --strict checksum)
+    else
+        expected="$(awk '{ print $1 }' "$staging/checksum")"
+        actual="$(shasum -a 256 "$staging/$name" | awk '{ print $1 }')"
+        [[ "$actual" == "$expected" ]] || fail "Checksum mismatch for $name."
+    fi
+
+    unzip -Z -1 "$staging/$name" > "$staging/entries"
+    if ! awk '/^\// || /\\/ || /:/ || /(^|\/)\.\.(\/|$)/ { exit 1 }' "$staging/entries"; then
+        fail "Unsafe archive path."
+    fi
+    zipinfo -l "$staging/$name" > "$staging/metadata"
+    grep -q '^l' "$staging/metadata" && fail "Archive symbolic links are not supported."
+
+    extracted="$staging/sdk"
+    mkdir "$extracted"
+    unzip -q "$staging/$name" -d "$extracted"
+    validate_sdk "$extracted" ||
+        fail "Downloaded SDK manifest or required files do not match $version for $target."
+    [[ ! -e "$sdk" && ! -L "$sdk" ]] ||
+        fail "Invalid SDK installation already exists: $sdk"
+    mv "$extracted" "$sdk"
+fi
+
+exec "$sdk/nomad" "$@"

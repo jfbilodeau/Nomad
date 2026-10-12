@@ -285,4 +285,6 @@ jobs:
       - name: Test installer and installed SDK
         env:
           NOMAD_INSTALLER_DISTRIBUTION_ROOT: installer-sdk
-        run: python -m unittest discover -s scripts -p "test_installers.py" -v
+        run: |
+          python -m unittest discover -s scripts -p "test_installers.py" -v
+          python -m unittest discover -s scripts -p "test_wrappers.py" -v

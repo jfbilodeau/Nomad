@@ -1,12 +1,38 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-version="${1:-latest}"
-destination="${2:-}"
-if (( $# > 2 )); then
-    echo "Usage: bash install.sh [latest|VERSION] [DESTINATION]" >&2
+version="latest"
+destination=""
+project_directory=""
+positionals=()
+while (( $# )); do
+    case "$1" in
+        --project-directory)
+            (( $# >= 2 )) || { echo "--project-directory requires a value" >&2; exit 1; }
+            project_directory="$2"
+            shift 2
+            ;;
+        --)
+            shift
+            positionals+=("$@")
+            break
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            exit 1
+            ;;
+        *)
+            positionals+=("$1")
+            shift
+            ;;
+    esac
+done
+if (( ${#positionals[@]} > 2 )); then
+    echo "Usage: bash install.sh [latest|VERSION] [DESTINATION] [--project-directory DIRECTORY]" >&2
     exit 1
 fi
+(( ${#positionals[@]} >= 1 )) && version="${positionals[0]}"
+(( ${#positionals[@]} >= 2 )) && destination="${positionals[1]}"
 if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
     echo "This installer supports Linux x64 only." >&2
     exit 1
@@ -31,10 +57,24 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "Version must be latest or major.minor.patch (optionally prefixed with v)." >&2
     exit 1
 fi
-destination="${destination:-$HOME/.nomad/sdks/$version/linux-x64}"
+nomad_home="${NOMAD_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/nomad}"
+destination="${destination:-$nomad_home/sdks/$version/linux-x64}"
 if [[ -e "$destination" || -L "$destination" ]]; then
     echo "Installation already exists: $destination" >&2
     exit 1
+fi
+if [[ -n "$project_directory" ]]; then
+    [[ -f "$project_directory/nomad.toml" ]] || {
+        echo "Project directory does not contain nomad.toml: $project_directory" >&2
+        exit 1
+    }
+    project_directory="$(cd "$project_directory" && pwd)"
+    for wrapper in nomadw nomadw.cmd nomadw.ps1; do
+        [[ ! -e "$project_directory/$wrapper" && ! -L "$project_directory/$wrapper" ]] || {
+            echo "Refusing to overwrite project wrapper: $project_directory/$wrapper" >&2
+            exit 1
+        }
+    done
 fi
 mkdir -p "$(dirname "$destination")"
 parent="$(cd "$(dirname "$destination")" && pwd)"
@@ -81,6 +121,19 @@ mv -T -n "$staging/sdk" "$destination"
 if [[ -d "$staging/sdk" ]]; then
     echo "Installation destination was created by another process: $destination" >&2
     exit 1
+fi
+if [[ -n "$project_directory" ]]; then
+    wrapper_source="$destination/templates/projects/default"
+    for wrapper in nomadw nomadw.cmd nomadw.ps1; do
+        [[ -f "$wrapper_source/$wrapper" ]] || {
+            echo "Installed SDK does not contain project wrapper: $wrapper_source/$wrapper" >&2
+            exit 1
+        }
+    done
+    cp "$wrapper_source/nomadw" "$wrapper_source/nomadw.cmd" "$wrapper_source/nomadw.ps1" \
+        "$project_directory/"
+    chmod +x "$project_directory/nomadw"
+    echo "Installed Nomad wrappers in $project_directory"
 fi
 echo "Installed Nomad $version to $destination"
 printf 'Add this directory to PATH: export PATH=%q:"$PATH"\n' "$destination"

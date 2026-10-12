@@ -51,9 +51,16 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
     const auto result = initializeProject(destination, getProjectTemplateDirectory());
 
     BOOST_TEST(result.root == std::filesystem::absolute(destination));
-    BOOST_REQUIRE(result.createdFiles.size() == 4U);
+    BOOST_REQUIRE(result.createdFiles.size() == 7U);
     BOOST_TEST(std::filesystem::is_regular_file(destination / ".gitignore"));
     BOOST_TEST(std::filesystem::is_regular_file(destination / "README.md"));
+    BOOST_TEST(std::filesystem::is_regular_file(destination / "nomadw"));
+    BOOST_TEST(std::filesystem::is_regular_file(destination / "nomadw.cmd"));
+    BOOST_TEST(std::filesystem::is_regular_file(destination / "nomadw.ps1"));
+    BOOST_CHECK(
+        (std::filesystem::status(destination / "nomadw").permissions() &
+         std::filesystem::perms::owner_exec) != std::filesystem::perms::none
+    );
     BOOST_TEST(std::filesystem::is_regular_file(destination / "nomad.toml"));
     BOOST_TEST(std::filesystem::is_regular_file(destination / "res/scripts/init.nomad"));
 
@@ -73,6 +80,20 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
     auto compilation = checkPath(destination / "res/scripts/init.nomad", &runtime);
     validateEntryFunction(compilation, &runtime, "init", destination / "nomad.toml");
     BOOST_TEST(compilation.succeeded());
+}
+
+BOOST_AUTO_TEST_CASE(can_omit_project_wrappers)
+{
+    TestDirectory directory("nomad_project_initializer_without_wrapper");
+    const auto destination = directory.getPath() / "project";
+
+    const auto result = initializeProject(destination, getProjectTemplateDirectory(), false);
+
+    BOOST_REQUIRE(result.createdFiles.size() == 4U);
+    BOOST_TEST(!std::filesystem::exists(destination / "nomadw"));
+    BOOST_TEST(!std::filesystem::exists(destination / "nomadw.cmd"));
+    BOOST_TEST(!std::filesystem::exists(destination / "nomadw.ps1"));
+    BOOST_TEST(std::filesystem::is_regular_file(destination / "nomad.toml"));
 }
 
 BOOST_AUTO_TEST_CASE(refuses_to_overwrite_existing_project_files)

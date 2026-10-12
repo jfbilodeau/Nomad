@@ -22,7 +22,8 @@ public:
 
 [[nodiscard]] ProjectInitializationResult initializeProject(
     const NomadPath& destination,
-    const NomadPath& templateDirectory
+    const NomadPath& templateDirectory,
+    bool includeWrapper = true
 );
 
 } // namespace nomad

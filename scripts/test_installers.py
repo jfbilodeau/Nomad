@@ -34,6 +34,9 @@ class InstallerTest(unittest.TestCase):
             for name in ("nomad", "nomadc", "nomad-runtime")
         }
         files["templates/project.txt"] = b"template"
+        template = Path(__file__).resolve().parents[1] / "templates" / "projects" / "default"
+        for name in ("nomadw", "nomadw.cmd", "nomadw.ps1"):
+            files[f"templates/projects/default/{name}"] = (template / name).read_bytes()
         files["runtime/runtime.json"] = json.dumps(
             {"version": version, "target": self.platform}
         ).encode()
@@ -52,12 +55,12 @@ class InstallerTest(unittest.TestCase):
             f"{checksum}  {self.archive.name}\n", encoding="utf-8"
         )
 
-    def install(self, version=None):
+    def install(self, version=None, project=None):
         if os.name == "nt":
             wrapper = self.root / "run.ps1"
             wrapper.write_text(
                 """
-param([string]$Fixture, [string]$Installer, [string]$Destination, [string]$Version)
+param([string]$Fixture, [string]$Installer, [string]$Destination, [string]$Version, [string]$ProjectDirectory)
 $ErrorActionPreference = 'Stop'
 Import-Module Microsoft.PowerShell.Utility
 function Get-FileHash {
@@ -72,9 +75,9 @@ function Invoke-WebRequest {
     Copy-Item -LiteralPath (Join-Path $Fixture ($Uri.Split('/')[-1])) -Destination $OutFile
 }
 if ($Version) {
-    & $Installer -Destination $Destination -Version $Version
+    & $Installer -Destination $Destination -Version $Version -ProjectDirectory $ProjectDirectory
 } else {
-    & $Installer -Destination $Destination
+    & $Installer -Destination $Destination -ProjectDirectory $ProjectDirectory
 }
 """,
                 encoding="utf-8",
@@ -87,6 +90,8 @@ if ($Version) {
             ]
             if version is not None:
                 command.extend(["-Version", version])
+            if project is not None:
+                command.extend(["-ProjectDirectory", str(project)])
         else:
             wrapper = """
 set -euo pipefail
@@ -110,7 +115,7 @@ curl() {
     fi
 }
 export -f curl
-bash "$installer" "${1:-latest}" "$destination"
+bash "$installer" "${1:-latest}" "$destination" "${@:2}"
 """
             command = [
                 "bash", "-c", wrapper, "installer-test", str(self.fixture),
@@ -118,6 +123,10 @@ bash "$installer" "${1:-latest}" "$destination"
             ]
             if version is not None:
                 command.append(version)
+            if project is not None:
+                if version is None:
+                    command.append("latest")
+                command.extend(["--project-directory", str(project)])
         environment = os.environ.copy()
         if os.name == "nt":
             environment.pop("PSModulePath", None)
@@ -141,6 +150,21 @@ bash "$installer" "${1:-latest}" "$destination"
         result = self.install("v0.1.0")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assert_no_staging()
+
+    def test_optionally_installs_project_wrappers(self):
+        project = self.root / "project"
+        project.mkdir()
+        (project / "nomad.toml").write_text(
+            '[nomad]\nversion = "0.1.0"\n', encoding="utf-8"
+        )
+
+        result = self.install("0.1.0", project)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for name in ("nomadw", "nomadw.cmd", "nomadw.ps1"):
+            self.assertTrue((project / name).is_file())
+        if os.name != "nt":
+            self.assertTrue(os.access(project / "nomadw", os.X_OK))
 
     def test_download_failure(self):
         self.archive.unlink()
