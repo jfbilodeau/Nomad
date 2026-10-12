@@ -175,12 +175,12 @@ BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
     BOOST_TEST(result.documentation.find("# Nomad") != NomadString::npos);
     BOOST_TEST(result.documentation.find("## Enums") != NomadString::npos);
     BOOST_TEST(result.documentation.find("## Intrinsic Members") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("## Native Functions") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("## Functions") != NomadString::npos);
     BOOST_TEST(result.documentation.find("[Constants](#constants)") != NomadString::npos);
     BOOST_TEST(result.documentation.find("[Enums](#enums)") != NomadString::npos);
     BOOST_TEST(result.documentation.find("[Variables](#variables)") != NomadString::npos);
     BOOST_TEST(result.documentation.find("[Intrinsic Members](#intrinsic-members)") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("[Native Functions](#native-functions)") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("[Functions](#functions)") != NomadString::npos);
     BOOST_TEST(result.documentation.find("### `string`") != NomadString::npos);
     BOOST_TEST(result.documentation.find("#### `length` (*read-only property*)") != NomadString::npos);
     BOOST_TEST(result.documentation.find("#### `toUpper` (*method*)") != NomadString::npos);

@@ -19,7 +19,7 @@
 
 namespace nomad {
 
-NomadString generateFunFunctionName(CompilerContext* context, Function* function, NomadIndex line) {
+NomadString generateFunFunctionName(CompilerContext* context, ScriptFunction* function, NomadIndex line) {
     // Generate function name
     NomadString testFunctionName;
     auto count = 0;
@@ -39,12 +39,12 @@ NomadString generateFunFunctionName(CompilerContext* context, Function* function
     return testFunctionName;
 }
 
-FunStatementNode::FunStatementNode(NomadIndex line, NomadIndex column, Function* function, std::unique_ptr<Expression> /*ptr*/):
+FunStatementNode::FunStatementNode(NomadIndex line, NomadIndex column, ScriptFunction* function, std::unique_ptr<Expression> /*ptr*/):
     Statement(line, column),
     m_function(function)
 {}
 
-void FunStatementNode::onCompile(Compiler* /*compiler*/, Function* /*function*/) {
+void FunStatementNode::onCompile(Compiler* /*compiler*/, ScriptFunction* /*function*/) {
     // `fun` will be build along other functions
 }
 
@@ -56,7 +56,7 @@ NomadIndex FunStatementNode::getParameterCount() const {
     return m_parameters.size();
 }
 
-Function* FunStatementNode::getFunction() const {
+ScriptFunction* FunStatementNode::getFunction() const {
     return m_function;
 }
 
@@ -68,7 +68,7 @@ StatementList& FunStatementNode::getBody() {
     return m_body;
 }
 
-bool preParseFunStatement(CompilerContext* context, Function* function, Tokenizer* tokens) {
+bool preParseFunStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
     NomadString funName;
 
     if (!tokens->nextIdentifier(funName)) {
@@ -110,7 +110,7 @@ bool preParseFunStatement(CompilerContext* context, Function* function, Tokenize
     return preParseParamsStatement(context, fun, tokens);
 }
 
-bool parseCallbackFunParameters(CompilerContext* context, Function* function, Tokenizer* tokens, const FunctionType* callbackType) {
+bool parseCallbackFunParameters(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const FunctionType* callbackType) {
     for (auto i = NomadIndex{0}; i < callbackType->getParameterCount(); ++i) {
         NomadString parameterName;
 
@@ -132,7 +132,7 @@ bool parseCallbackFunParameters(CompilerContext* context, Function* function, To
     return true;
 }
 
-std::unique_ptr<FunctionNode> parseFunBody(CompilerContext* context, Function* function, Tokenizer* tokens) {
+std::unique_ptr<FunctionNode> parseFunBody(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
     auto fun = std::make_unique<FunctionNode>(tokens->getLineIndex(), 0);
 
     const auto valid = parser::parseBlock(context, function, tokens, {"end"}, fun->getStatements());
@@ -153,7 +153,7 @@ std::unique_ptr<FunctionNode> parseFunBody(CompilerContext* context, Function* f
     return fun;
 }
 
-std::unique_ptr<FunctionNode> parseThenBody(CompilerContext* context, Function* function, Tokenizer* tokens) {
+std::unique_ptr<FunctionNode> parseThenBody(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
     const auto errorCount = context->getErrorCount();
 
     auto thenBody = std::make_unique<FunctionNode>(tokens->getLineIndex(), 0);
@@ -176,7 +176,7 @@ std::unique_ptr<FunctionNode> parseThenBody(CompilerContext* context, Function* 
     return thenBody;
 }
 
-std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, Function* /*function*/, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptFunction* /*function*/, Tokenizer* tokens) {
     NomadString funName;
 
     if (!tokens->is(TokenType::Identifier)) {
@@ -230,7 +230,7 @@ public:
     {}
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override {
+    void onResolve(CompilerContext* context, ScriptFunction* function) override {
         if (!m_expression->resolve(context, function)) {
             return;
         }
@@ -240,7 +240,7 @@ protected:
         }
     }
 
-    void onCompile(Compiler* compiler, Function* function) override {
+    void onCompile(Compiler* compiler, ScriptFunction* function) override {
         auto assert_message =
             "Assertion failed: " +
             function->getName() +
@@ -264,7 +264,7 @@ private:
     std::unique_ptr<Expression> m_expression;
 };
 
-std::unique_ptr<Statement> parseAssertStatement(CompilerContext* context, Function* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseAssertStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
     auto line = stringTrimCopy(tokens->getLine());
 
     auto expression = parser::parseExpression(context, function, tokens);
@@ -291,7 +291,7 @@ public:
     {}
 
 protected:
-    void onCompile(Compiler* /*compiler*/, Function* /*function*/) override {
+    void onCompile(Compiler* /*compiler*/, ScriptFunction* /*function*/) override {
         // Nothing to do...
     }
 
@@ -594,7 +594,7 @@ bool parseConstantName(CompilerContext* context, Tokenizer* tokens, NomadString&
     return tokens->expect(TokenType::Operator) && tokens->expect("=");
 }
 
-bool preParseConstStatement(CompilerContext* context, Function* /*function*/, Tokenizer* tokens) {
+bool preParseConstStatement(CompilerContext* context, ScriptFunction* /*function*/, Tokenizer* tokens) {
     NomadString constantName;
 
     if (!parseConstantName(context, tokens, constantName)) {
@@ -618,7 +618,7 @@ bool preParseConstStatement(CompilerContext* context, Function* /*function*/, To
     return true;
 }
 
-std::unique_ptr<Statement> parseConstStatement(CompilerContext* context, Function* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseConstStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
     NomadString constantName;
 
     if (!parseConstantName(context, tokens, constantName)) {
@@ -702,7 +702,7 @@ bool parseEnumDefinition(
     return false;
 }
 
-bool preParseEnumStatement(CompilerContext* context, Function* function, Tokenizer* tokens) {
+bool preParseEnumStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
     NomadString enumName;
     std::vector<EnumValueDefinition> values;
 
@@ -742,7 +742,7 @@ bool preParseEnumStatement(CompilerContext* context, Function* function, Tokeniz
 
 std::unique_ptr<Statement> parseEnumStatement(
     CompilerContext* context,
-    Function* /*function*/,
+    ScriptFunction* /*function*/,
     Tokenizer* tokens
 ) {
     NomadString enumName;
@@ -767,7 +767,7 @@ std::unique_ptr<Statement> parseEnumStatement(
     );
 }
 
-std::unique_ptr<Statement> parseEventStatement(CompilerContext* context, Function* /*function*/, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseEventStatement(CompilerContext* context, ScriptFunction* /*function*/, Tokenizer* tokens) {
     // Event declarations were registered during pre-parse; create AST node for tooling/analysis.
     if (!tokens->is(TokenType::Identifier)) {
         context->reportError("Event name expected", tokens);
@@ -807,7 +807,7 @@ std::unique_ptr<Statement> parseEventStatement(CompilerContext* context, Functio
     return eventDecl;
 }
 
-std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, Function* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
     // Syntax: on <eventName> fun <params> <body> end  OR on <eventName> <functionName>
     if (!tokens->is(TokenType::Identifier)) {
         context->reportError("Event name expected", tokens);
@@ -883,7 +883,7 @@ public:
 
     StatementList* getBody() { return &m_body; }
 
-    static void resolveCondition(CompilerContext* context, Function* function, Expression* condition) {
+    static void resolveCondition(CompilerContext* context, ScriptFunction* function, Expression* condition) {
         if (!condition->resolve(context, function)) {
             return;
         }
@@ -922,7 +922,7 @@ public:
         });
     }
 
-    void checkReachability(CompilerContext* context, const Function* function) const override {
+    void checkReachability(CompilerContext* context, const ScriptFunction* function) const override {
         m_body.checkReachability(context, function);
 
         for (const auto& branch : m_branches) {
@@ -933,7 +933,7 @@ public:
     }
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override {
+    void onResolve(CompilerContext* context, ScriptFunction* function) override {
         resolveCondition(context, function, m_expression.get());
         (void)m_body.resolve(context, function);
 
@@ -945,7 +945,7 @@ protected:
         (void)m_elseStatements.resolve(context, function);
     }
 
-    void onCompile(Compiler* compiler, Function* function) override {
+    void onCompile(Compiler* compiler, ScriptFunction* function) override {
         std::vector<size_t> jumpEndIndices;
 
         m_expression->compile(compiler, function, ExpressionTarget::Result);
@@ -1002,7 +1002,7 @@ private:
     StatementList m_elseStatements;
 };
 
-std::unique_ptr<Statement> parseIfStatement(CompilerContext* context, Function* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseIfStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
     auto ifStatement = std::make_unique<IfStatementNode>(tokens->getLineIndex(), tokens->getColumnIndex());
 
     // Keep parsing after a condition error so the blocks and `end` are consumed by this statement.
@@ -1077,7 +1077,7 @@ std::unique_ptr<Statement> parseIfStatement(CompilerContext* context, Function* 
     return ifStatement;
 }
 
-bool preParseParamsStatement(CompilerContext* context, Function* function, Tokenizer* tokens) {
+bool preParseParamsStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
     if (function->getParameterCount() > 0) {
         context->reportError("Function '" + function->getName() + "' already has parameters", tokens);
 

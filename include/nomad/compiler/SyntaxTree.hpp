@@ -69,8 +69,8 @@ public:
 
 protected:
     [[noreturn]] void raiseException(const NomadString& message) const;
-    void reportError(CompilerContext* context, const Function* function, const NomadString& message) const;
-    void reportWarning(CompilerContext* context, const Function* function, const NomadString& message) const;
+    void reportError(CompilerContext* context, const ScriptFunction* function, const NomadString& message) const;
+    void reportWarning(CompilerContext* context, const ScriptFunction* function, const NomadString& message) const;
 
 private:
     struct SourceSpan {
@@ -97,9 +97,9 @@ public:
     Expression(const Expression* parent, NomadIndex line, NomadIndex column, const Type* type = nullptr);
     ~Expression() override;
     // Determines the expression type (and value when it can be folded). Returns false if errors were reported.
-    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, Function* function);
+    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptFunction* function);
     // The expression must have been resolved first.
-    void compile(Compiler* compiler, Function* function, ExpressionTarget target);
+    void compile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target);
     // Can the expression lend a pointer to a string it does not own (`$stringref`) instead of producing a copy?
     // Only literals/constants, function variables and parameters can: their storage outlives the borrowing operation.
     [[nodiscard]] virtual bool canBorrow() const;
@@ -109,7 +109,7 @@ public:
     [[nodiscard]] virtual IntrinsicMemberExpression* asIntrinsicExpression();
     [[nodiscard]] virtual const IntrinsicMemberExpression* asIntrinsicExpression() const;
     // Load a borrowed string pointer into `target`. Only valid when `canBorrow()` is true.
-    void compileBorrowed(Compiler* compiler, Function* function, ExpressionTarget target);
+    void compileBorrowed(Compiler* compiler, ScriptFunction* function, ExpressionTarget target);
     // The expression must have been resolved first.
     void evaluate(Interpreter& context) const;
 
@@ -132,9 +132,9 @@ protected:
     void setType(const Type* type);
     void setValue(const RuntimeValue& value);
 
-    virtual void onResolve(CompilerContext* context, Function* function) = 0;
-    virtual void onCompile(Compiler* compiler, Function* function, ExpressionTarget target) = 0;
-    virtual void onCompileBorrowed(Compiler* compiler, Function* function, ExpressionTarget target);
+    virtual void onResolve(CompilerContext* context, ScriptFunction* function) = 0;
+    virtual void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) = 0;
+    virtual void onCompileBorrowed(Compiler* compiler, ScriptFunction* function, ExpressionTarget target);
     virtual void onEvaluate(Interpreter& context) const;
     [[nodiscard]]
     virtual const Statement* onGetStatement() const;
@@ -156,8 +156,8 @@ public:
     ~Statement() override = default;
 
     // Resolves identifiers and expression types. Returns false if errors were reported.
-    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, Function* function);
-    void compile(Compiler* compiler, Function* function);
+    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptFunction* function);
+    void compile(Compiler* compiler, ScriptFunction* function);
     void evaluate(Interpreter& context) const;
 
     // True when every execution path through this statement ends with a `return`.
@@ -165,11 +165,11 @@ public:
     // Declarations (`fun`, `const`, `enum`, `event`, `on`) emit no code, so they are never unreachable.
     [[nodiscard]] virtual NomadBoolean isDeclaration() const;
     // Reports statements that follow a `return` in any statement list nested in this statement.
-    virtual void checkReachability(CompilerContext* context, const Function* function) const;
+    virtual void checkReachability(CompilerContext* context, const ScriptFunction* function) const;
 
 protected:
-    virtual void onResolve(CompilerContext* context, Function* function);
-    virtual void onCompile(Compiler* compiler, Function* function);
+    virtual void onResolve(CompilerContext* context, ScriptFunction* function);
+    virtual void onCompile(Compiler* compiler, ScriptFunction* function);
     virtual void onEvaluate(Interpreter& context) const;
 };
 
@@ -178,7 +178,7 @@ public:
     NullStatement(NomadIndex line, NomadIndex column);
 
 protected:
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
     void onEvaluate(Interpreter& context) const override;
 };
 
@@ -187,8 +187,8 @@ public:
     AssignmentStatement(NomadIndex line, NomadIndex column, NomadString identifier, std::unique_ptr<Expression> expression);
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override;
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
     void onEvaluate(Interpreter& context) const override;
 
 private:
@@ -203,8 +203,8 @@ public:
                               std::unique_ptr<Expression> expression);
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override;
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
     void onEvaluate(Interpreter& context) const override;
 
 private:
@@ -217,8 +217,8 @@ public:
     ExpressionStatement(NomadIndex line, NomadIndex column, std::unique_ptr<Expression> expression);
 
   protected:
-    void onResolve(CompilerContext* context, Function* function) override;
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
     void onEvaluate(Interpreter& context) const override;
 
 private:
@@ -235,8 +235,8 @@ public:
 
     StatementList& operator=(StatementList&&) = default;
 
-    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, Function* function) const;
-    void compile(Compiler* compiler, Function* function) const;
+    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptFunction* function) const;
+    void compile(Compiler* compiler, ScriptFunction* function) const;
     void evaluate(Interpreter& context) const;
 
     void addStatement(std::unique_ptr<Statement> statement);
@@ -246,7 +246,7 @@ public:
     // True when execution cannot reach the end of the list without executing a `return`.
     [[nodiscard]] NomadBoolean alwaysReturns() const;
     // Reports the first statement that follows one that always returns, then checks nested statement lists.
-    void checkReachability(CompilerContext* context, const Function* function) const;
+    void checkReachability(CompilerContext* context, const ScriptFunction* function) const;
 
 private:
     std::vector<std::unique_ptr<Statement>> m_statements;
@@ -260,10 +260,10 @@ class FunctionNode : public AstNode {
 public:
     FunctionNode(NomadIndex line, NomadIndex row);
 
-    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, Function* function) const;
-    void compile(Compiler* compiler, Function* function) const;
+    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptFunction* function) const;
+    void compile(Compiler* compiler, ScriptFunction* function) const;
     [[nodiscard]] NomadBoolean alwaysReturns() const;
-    void checkReachability(CompilerContext* context, const Function* function) const;
+    void checkReachability(CompilerContext* context, const ScriptFunction* function) const;
 
     void addStatement(std::unique_ptr<Statement> statement);
     [[nodiscard]] StatementList* getStatements();
@@ -303,8 +303,8 @@ public:
     [[nodiscard]] NomadBoolean isDeclaration() const override;
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override;
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
 
 private:
     NomadString m_name;
@@ -325,7 +325,7 @@ public:
     [[nodiscard]] NomadBoolean isDeclaration() const override;
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override;
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
 
 private:
     NomadString m_name;
@@ -341,7 +341,7 @@ class ConstDeclaration : public Statement {
     [[nodiscard]] NomadBoolean isDeclaration() const override;
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override;
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
 
 private:
     NomadString m_name;
@@ -376,8 +376,8 @@ public:
     [[nodiscard]] NomadBoolean isDeclaration() const override;
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override;
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
 
   private:
     NomadString m_eventName;

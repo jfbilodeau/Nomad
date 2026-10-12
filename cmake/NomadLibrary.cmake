@@ -1,13 +1,13 @@
 # Build the reusable language and VM without engine dependencies.
-add_library(nomad-language STATIC ${NOMAD_LANGUAGE_SOURCES} ${NOMAD_LANGUAGE_INCLUDE})
+add_library(nomad-language STATIC ${NOMAD_LANGUAGE_SOURCES})
 add_library(Nomad::Language ALIAS nomad-language)
 
 # Build project configuration support independently from the language and engine.
-add_library(nomad-project STATIC ${NOMAD_PROJECT_SOURCES} ${NOMAD_PROJECT_INCLUDE})
+add_library(nomad-project STATIC ${NOMAD_PROJECT_SOURCES})
 add_library(Nomad::Project ALIAS nomad-project)
 
 # Build the game engine on top of the language runtime.
-add_library(nomad STATIC ${NOMAD_SOURCES} ${NOMAD_INCLUDE})
+add_library(nomad STATIC ${NOMAD_ENGINE_SOURCES})
 add_library(Nomad::Engine ALIAS nomad)
 
 if(NOMAD_ENABLE_SANITIZERS)

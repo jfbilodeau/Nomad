@@ -3,7 +3,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "nomad/game/GameEventQueue.hpp"
-#include "nomad/script/Function.hpp"
+#include "nomad/script/ScriptFunction.hpp"
 #include "nomad/script/Type.hpp"
 
 #include <memory>
@@ -113,7 +113,7 @@ BOOST_AUTO_TEST_CASE(game_event_queue_destroys_queued_move_only_payloads)
 {
     auto valueFreed = false;
     TrackingType trackingType(valueFreed);
-    Function function(0, "function", "function.nomad", "");
+    ScriptFunction function(0, "function", "function.nomad", "");
     function.createCapture(0, "capture", CaptureSource::Variable, &trackingType);
 
     {

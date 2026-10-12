@@ -15,9 +15,9 @@
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
-#include <nomad/script/Function.hpp>
 #include <nomad/script/IntrinsicMember.hpp>
 #include <nomad/script/NativeFunction.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/VariableContext.hpp>
 
 #include <nomad/system/TempHeap.hpp>
@@ -119,7 +119,7 @@ public:
     NomadId registerIntrinsicProperty(const Type* objectType, const NomadString& name, const Type* valueType,
                                       IntrinsicPropertyGetFn getFn, IntrinsicPropertySetFn setFn, NomadDocArg);
     NomadId registerIntrinsicMethod(const Type* objectType, const NomadString& name, NativeFunctionFn fn,
-                                    const std::vector<NativeFunctionParameterDefinition>& parameters,
+                                    const std::vector<FunctionParameterDefinition>& parameters,
                                     const Type* returnType, bool mutatesReceiver, NomadDocArg);
     [[nodiscard]] NomadId getIntrinsicMemberId(const Type* objectType, const NomadString& name) const;
     [[nodiscard]] IntrinsicMemberType getIntrinsicMemberType(NomadId memberId) const;
@@ -162,7 +162,7 @@ public:
     [[nodiscard]] const std::vector<Operand>& getInstructionOperands(NomadId id) const;
 
     // NativeFunctions
-    NomadId registerNativeFunction(const NomadString& name, NativeFunctionFn nativeFunction_fn, const std::vector<NativeFunctionParameterDefinition>& parameters, const Type* returnType, NomadDocArg);
+    NomadId registerNativeFunction(const NomadString& name, NativeFunctionFn nativeFunction_fn, const std::vector<FunctionParameterDefinition>& parameters, const Type* returnType, NomadDocArg);
     [[nodiscard]] NomadId getNativeFunctionId(const NomadString& name) const;
     [[nodiscard]] NativeFunctionFn getNativeFunctionFn(NomadId id) const;
 
@@ -277,13 +277,13 @@ public:
     // Functions
     NomadId registerFunction(const NomadString& name, const NomadString& path, const NomadString& source);
     [[nodiscard]] NomadId getFunctionId(const NomadString& name) const;
-    [[nodiscard]] Function* getFunction(NomadId function_id) const;
+    [[nodiscard]] ScriptFunction* getFunction(NomadId function_id) const;
     [[nodiscard]] std::optional<NomadString> getFunctionName(NomadId functionId) const;
-    [[nodiscard]] Function* getFunctionByStartAddress(NomadIndex startAddress) const;
+    [[nodiscard]] ScriptFunction* getFunctionByStartAddress(NomadIndex startAddress) const;
     [[nodiscard]] NomadIndex getFunctionCount() const;
-    void getFunctions(std::vector<Function*>& functions) const;
-    void getFunctions(TempVector<Function*>& functions);
-    [[nodiscard]] Function* getFunctionAtInstructionIndex(NomadIndex instructionIndex) const;
+    void getFunctions(std::vector<ScriptFunction*>& functions) const;
+    void getFunctions(TempVector<ScriptFunction*>& functions);
+    [[nodiscard]] ScriptFunction* getFunctionAtInstructionIndex(NomadIndex instructionIndex) const;
 
     [[nodiscard]] NomadIndex getFunctionSize() const;
 
@@ -301,12 +301,12 @@ public:
 
     // Debug
     void dumpInstructions(std::ostream& out) const;
-    void dumpInstructions(std::ostream& out, const Function* function) const;
+    void dumpInstructions(std::ostream& out, const ScriptFunction* function) const;
     void dumpDocumentation(std::ostream& out) const;
 
 private:
     // Runs the closure's function and returns it, or nullptr when the closure is invalid.
-    const Function* runClosure(const Closure* closure, const std::vector<RuntimeValue>& args);
+    const ScriptFunction* runClosure(const Closure* closure, const std::vector<RuntimeValue>& args);
 
     struct UnaryOperatorRegistration {
         UnaryOperator op;
@@ -347,7 +347,7 @@ private:
                                            NomadString& error) const;
     [[nodiscard]] bool ownsType(const Type* type) const;
     [[nodiscard]] bool canRegisterIntrinsicMember(const Type* objectType, const NomadString& name,
-                                                  const std::vector<NativeFunctionParameterDefinition>& parameters,
+                                                  const std::vector<FunctionParameterDefinition>& parameters,
                                                   NomadString& error) const;
 
     std::vector<Instruction> m_instructions;
@@ -366,7 +366,7 @@ private:
     std::vector<VariableContextRegistration> m_variables;
     std::vector<ContextVariable> m_contextVariables;
     std::vector<FormatStringRegistration> m_formatStrings;
-    std::vector<std::unique_ptr<Function>> m_functions;
+    std::vector<std::unique_ptr<ScriptFunction>> m_functions;
     std::vector<CallableOverloadSet> m_callables;
     // Maps a callable name to its index in `m_callables`.
     std::unordered_map<NomadString, NomadIndex> m_callablesByName;

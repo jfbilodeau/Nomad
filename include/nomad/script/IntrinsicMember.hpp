@@ -40,7 +40,7 @@ struct IntrinsicMethodDefinition {
     const Type* objectType = nullptr;
     NomadString name;
     NativeFunctionFn fn;
-    std::vector<NativeFunctionParameterDefinition> parameters;
+    std::vector<FunctionParameterDefinition> parameters;
     const Type* returnType = nullptr;
     bool mutatesReceiver = false;
     NomadDocField;

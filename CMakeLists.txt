@@ -98,126 +98,25 @@ set(NOMAD_SOURCE_DIR ${CMAKE_SOURCE_DIR}/src)
 set(NOMAD_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 
 set(
-        NOMAD_INCLUDE
-        ${DEAR_IMGUI_INCLUDE}
-
-        ${NOMAD_INCLUDE_DIR}/nomad/Nomad.hpp
-
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/Argument.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/CallNode.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/CompilerTools.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/Compiler.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/CompilerContext.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/CompilerException.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/Expression.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/FormatStringCompiler.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/Identifier.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/Operators.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/Parser.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/StatementParsers.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/SyntaxTree.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/Tokenizer.hpp
-
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/statements/EventStatement.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/compiler/statements/ReturnStatement.hpp
-
-        ${NOMAD_INCLUDE_DIR}/nomad/debug/DebugConsole.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/debug/DebugDraw.hpp
-
-        ${NOMAD_INCLUDE_DIR}/nomad/game/Alignment.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/ActionManager.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/BodyType.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/Canvas.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/Color.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/Entity.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/EntityVariableContext.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/EventRegistration.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/Game.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/GameEvent.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/GameExecutionContext.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/GameFactory.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/GameStatementParsers.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/InputManager.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/Layer.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/Scene.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/SceneVariableContext.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/System.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/TileMapData.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/TileMap.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/game/VariablePersistence.hpp
-
-        ${NOMAD_INCLUDE_DIR}/nomad/geometry/Circle.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/geometry/CircleF.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/geometry/Geometry.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/geometry/Intersection.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/geometry/Point.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/geometry/PointF.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/geometry/Rectangle.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/geometry/RectangleF.hpp
-
-        ${NOMAD_INCLUDE_DIR}/nomad/log/ConsoleSink.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/log/Logger.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/log/MemorySink.hpp
-
-        ${NOMAD_INCLUDE_DIR}/nomad/resource/Animation.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/resource/Font.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/resource/Resource.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/resource/ResourceManager.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/resource/Sprite.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/resource/SpriteAtlas.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/resource/Texture.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/resource/Text.hpp
-
-        ${NOMAD_INCLUDE_DIR}/nomad/script/Closure.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/Callable.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/NativeFunctions.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/Documentation.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/DynamicVariable.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/Event.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/FormatString.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/Instructions.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/IntrinsicMember.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/IntrinsicMembers.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/VirtualMachine.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/Interpreter.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/OpCode.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/Runtime.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/Function.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/RuntimeValue.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/Type.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/Variable.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/script/VariableContext.hpp
-
-        ${NOMAD_INCLUDE_DIR}/nomad/system/Boolean.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/system/TempHeap.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/system/Float.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/system/Integer.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/system/Memory.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/system/Path.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/system/String.hpp
-)
-
-set(
         DEAR_IMGUI_SOURCE
+        ${dearimgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+        ${dearimgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp
+
         ${dearimgui_SOURCE_DIR}/imgui.cpp
         ${dearimgui_SOURCE_DIR}/imgui_draw.cpp
         ${dearimgui_SOURCE_DIR}/imgui_tables.cpp
         ${dearimgui_SOURCE_DIR}/imgui_widgets.cpp
-        ${dearimgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
-        ${dearimgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp
 )
 
 set(
-        NOMAD_SOURCES
-        ${DEAR_IMGUI_SOURCE}
-
+        NOMAD_LANGUAGE_SOURCES
         ${NOMAD_SOURCE_DIR}/nomad/Nomad.cpp
 
         ${NOMAD_SOURCE_DIR}/nomad/compiler/Argument.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/CallNode.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerTools.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/Compiler.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerContext.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerTools.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/Expression.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/FormatStringCompiler.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/Operators.cpp
@@ -229,11 +128,51 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/compiler/statements/EventStatement.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/statements/ReturnStatement.cpp
 
+        ${NOMAD_SOURCE_DIR}/nomad/log/ConsoleSink.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/log/Logger.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/log/MemorySink.cpp
+
+        ${NOMAD_SOURCE_DIR}/nomad/script/Closure.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Documentation.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/DynamicVariable.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Event.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/FormatString.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/IntrinsicMembers.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunction.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunctions.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/OpCode.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Runtime.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeOpCodes.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeValue.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/ScriptFunction.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Type.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/Variable.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/VariableContext.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/VirtualMachine.cpp
+
+        ${NOMAD_SOURCE_DIR}/nomad/system/Memory.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/system/String.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/system/TempHeap.cpp
+)
+
+set(
+        NOMAD_PROJECT_SOURCES
+        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectConfiguration.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectInitializer.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectPackager.cpp
+)
+
+set(
+        NOMAD_ENGINE_SOURCES
+        ${DEAR_IMGUI_SOURCE}
+
         ${NOMAD_SOURCE_DIR}/nomad/debug/DebugConsole.cpp
         ${NOMAD_SOURCE_DIR}/nomad/debug/DebugDraw.cpp
 
-        ${NOMAD_SOURCE_DIR}/nomad/game/Alignment.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/ActionManager.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/game/Alignment.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/Canvas.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/Color.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/Entity.cpp
@@ -254,8 +193,8 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/game/Scene.update.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/SceneVariableContext.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/System.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/game/TileMapData.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/TileMap.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/game/TileMapData.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/VariablePersistence.cpp
 
         ${NOMAD_SOURCE_DIR}/nomad/game/functions/GameFunctions.cpp
@@ -275,15 +214,11 @@ set(
 
         ${NOMAD_SOURCE_DIR}/nomad/geometry/Circle.cpp
         ${NOMAD_SOURCE_DIR}/nomad/geometry/CircleF.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/geometry/Point.cpp
         ${NOMAD_SOURCE_DIR}/nomad/geometry/Intersection.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/geometry/Point.cpp
         ${NOMAD_SOURCE_DIR}/nomad/geometry/PointF.cpp
         ${NOMAD_SOURCE_DIR}/nomad/geometry/Rectangle.cpp
         ${NOMAD_SOURCE_DIR}/nomad/geometry/RectangleF.cpp
-
-        ${NOMAD_SOURCE_DIR}/nomad/log/ConsoleSink.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/log/Logger.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/log/MemorySink.cpp
 
         ${NOMAD_SOURCE_DIR}/nomad/resource/Animation.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Font.cpp
@@ -291,110 +226,9 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/resource/ResourceManager.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Sprite.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteAtlas.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/resource/Texture.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Text.cpp
-
-        ${NOMAD_SOURCE_DIR}/nomad/script/Closure.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunction.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunctions.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Documentation.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/DynamicVariable.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Event.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/FormatString.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/IntrinsicMembers.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/VirtualMachine.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/OpCode.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Runtime.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeOpCodes.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Function.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeValue.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Type.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Variable.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/VariableContext.cpp
-
-        ${NOMAD_SOURCE_DIR}/nomad/system/TempHeap.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/system/Memory.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/system/String.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/resource/Texture.cpp
 )
-
-set(
-        NOMAD_LANGUAGE_SOURCES
-        ${NOMAD_SOURCE_DIR}/nomad/Nomad.cpp
-
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/Argument.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/CallNode.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerTools.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/Compiler.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerContext.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/Expression.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/FormatStringCompiler.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/Operators.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/Parser.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/StatementParsers.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/SyntaxTree.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/Tokenizer.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/statements/EventStatement.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/compiler/statements/ReturnStatement.cpp
-
-        ${NOMAD_SOURCE_DIR}/nomad/log/ConsoleSink.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/log/Logger.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/log/MemorySink.cpp
-
-        ${NOMAD_SOURCE_DIR}/nomad/script/Closure.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunction.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunctions.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Documentation.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/DynamicVariable.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Event.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/FormatString.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/VirtualMachine.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/OpCode.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Runtime.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeOpCodes.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Function.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeValue.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Type.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/Variable.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/VariableContext.cpp
-
-        ${NOMAD_SOURCE_DIR}/nomad/system/TempHeap.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/system/Memory.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/system/String.cpp
-)
-
-set(NOMAD_LANGUAGE_INCLUDE ${NOMAD_INCLUDE})
-list(
-        FILTER NOMAD_LANGUAGE_INCLUDE
-        INCLUDE REGEX
-        "/nomad/(compiler|log|script|system)/|/nomad/Nomad\\.hpp$"
-)
-
-list(REMOVE_ITEM NOMAD_SOURCES ${NOMAD_LANGUAGE_SOURCES})
-
-set(
-        NOMAD_PROJECT_INCLUDE
-        ${NOMAD_INCLUDE_DIR}/nomad/NomadVersion.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/project/ProjectInitializer.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/project/ProjectConfiguration.hpp
-        ${NOMAD_INCLUDE_DIR}/nomad/project/ProjectPackager.hpp
-)
-
-set(
-        NOMAD_PROJECT_SOURCES
-        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectInitializer.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectConfiguration.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectPackager.cpp
-)
-
-#set(NOMAD_PUBLIC_HEADERS
-#    ${NOMAD_INCLUDE_DIR}/nomad/Nomad.hpp
-#    ${NOMAD_INCLUDE_DIR}/nomad/debug/DebugDraw.hpp
-#    # add other public headers as needed
-#)
 
 include(cmake/NomadLibrary.cmake)
 target_compile_definitions(nomad-project PRIVATE NOMAD_PACKAGE_PLATFORM="${NOMAD_PACKAGE_PLATFORM}")

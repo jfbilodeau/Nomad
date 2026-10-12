@@ -4,7 +4,7 @@
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Function.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <nomad/script/VirtualMachine.hpp>
@@ -38,7 +38,7 @@ const RuntimeValue& VirtualMachine::getFunctionVariableValue(const NomadId varia
     return m_stack[m_variableIndex + variableId];
 }
 
-void VirtualMachine::run(const Function* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures) {
+void VirtualMachine::run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures) {
     // Save the frame so `run` can be re-entered (e.g. from a nativeFunction) and so a fault leaves the VM usable.
     const auto savedInstructionIndex = m_instructionIndex;
     const auto savedStackIndex = m_stackIndex;
@@ -105,7 +105,7 @@ void VirtualMachine::run(const Function* function, const std::vector<RuntimeValu
     }
 }
 
-void VirtualMachine::initializeFunctionVariables(const Function* function) {
+void VirtualMachine::initializeFunctionVariables(const ScriptFunction* function) {
     if (function == nullptr) {
         return;
     }
@@ -139,11 +139,11 @@ void VirtualMachine::fault(const NomadString& faultMessage) const {
     throw VirtualMachineException(faultMessage);
 }
 
-Function* VirtualMachine::getCurrentFunction() const {
+ScriptFunction* VirtualMachine::getCurrentFunction() const {
     return m_runtime->getFunctionAtInstructionIndex(m_instructionIndex);
 }
 
-void VirtualMachine::callFunction(const Function* function) {
+void VirtualMachine::callFunction(const ScriptFunction* function) {
     if (function == nullptr) {
         fault("Invalid function");
         return;

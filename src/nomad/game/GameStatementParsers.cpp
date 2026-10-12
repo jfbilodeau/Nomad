@@ -8,7 +8,7 @@
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Function.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 
 #include <memory>
 
@@ -19,7 +19,7 @@ public:
     SelectStatement(NomadIndex line, NomadIndex column, NomadId predicateFunctionId);
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override;
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
 
 private:
     NomadId m_predicateFunctionId;
@@ -36,7 +36,7 @@ SelectStatement::SelectStatement(
 {
 }
 
-void SelectStatement::onResolve(CompilerContext* context, Function* function) {
+void SelectStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
     // The predicate is resolved with its own function, which infers the function return type.
     const auto* predicateFunction = context->getRuntime()->getFunction(m_predicateFunctionId);
 
@@ -45,7 +45,7 @@ void SelectStatement::onResolve(CompilerContext* context, Function* function) {
     }
 }
 
-std::unique_ptr<Statement> parseSelectStatement(CompilerContext* context, Function* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseSelectStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
     const auto functionName = context->getCompiler()->generateFunctionName("select", function, tokens->getLineIndex());
 
     const auto functionId = context->getCompiler()->registerFunctionSource(

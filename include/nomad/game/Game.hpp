@@ -33,7 +33,7 @@ class Runtime;
 class Resource;
 class ResourceManager;
 class Scene;
-class Function;
+class ScriptFunction;
 class SimpleVariableContext;
 class Closure;
 

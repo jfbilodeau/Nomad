@@ -149,7 +149,7 @@ const std::vector<Instruction>& Runtime::getInstructions() const {
 NomadId Runtime::registerNativeFunction(
     const NomadString& name,
     NativeFunctionFn nativeFunction_fn,
-    const std::vector<NativeFunctionParameterDefinition>& parameters,
+    const std::vector<FunctionParameterDefinition>& parameters,
     const Type* returnType,
     NomadDocArg
 ) {
@@ -674,7 +674,7 @@ bool Runtime::ownsType(const Type* type) const {
 }
 
 bool Runtime::canRegisterIntrinsicMember(const Type* objectType, const NomadString& name,
-                                         const std::vector<NativeFunctionParameterDefinition>& parameters,
+                                         const std::vector<FunctionParameterDefinition>& parameters,
                                          NomadString& error) const {
     if (!ownsType(objectType)) {
         error = "object type is not registered with this runtime";
@@ -702,7 +702,7 @@ bool Runtime::canRegisterIntrinsicMember(const Type* objectType, const NomadStri
     }
 
     for (const auto memberId : existing->second) {
-        std::vector<NativeFunctionParameterDefinition> existingParameters;
+        std::vector<FunctionParameterDefinition> existingParameters;
 
         if (getIntrinsicMemberType(memberId) == IntrinsicMemberType::Method) {
             IntrinsicMethodDefinition definition;
@@ -775,7 +775,7 @@ NomadId Runtime::registerIntrinsicProperty(const Type* objectType, const NomadSt
 }
 
 NomadId Runtime::registerIntrinsicMethod(const Type* objectType, const NomadString& name, NativeFunctionFn fn,
-                                         const std::vector<NativeFunctionParameterDefinition>& parameters,
+                                         const std::vector<FunctionParameterDefinition>& parameters,
                                          const Type* returnType, const bool mutatesReceiver, const NomadString& doc) {
     if (!fn) {
         log::error("Cannot register intrinsic method '" + name + "': method has no function");
@@ -1835,7 +1835,7 @@ NomadId Runtime::registerFunction(
 
     const auto id = toNomadId(m_functions.size());
 
-    m_functions.push_back(std::make_unique<Function>(id, name, path, source));
+    m_functions.push_back(std::make_unique<ScriptFunction>(id, name, path, source));
 
     addCallable(name, CallableId{CallableKind::Function, id});
 
@@ -1852,7 +1852,7 @@ NomadId Runtime::getFunctionId(const NomadString& name) const {
     return callable.id;
 }
 
-Function* Runtime::getFunction(NomadId function_id) const {
+ScriptFunction* Runtime::getFunction(NomadId function_id) const {
     if (isIdOutOfRange(function_id, m_functions.size())) {
         return nullptr;
     }
@@ -1868,7 +1868,7 @@ std::optional<NomadString> Runtime::getFunctionName(NomadId functionId) const {
     return m_functions[static_cast<NomadIndex>(functionId)]->getName();
 }
 
-Function * Runtime::getFunctionByStartAddress(NomadIndex startAddress) const {
+ScriptFunction * Runtime::getFunctionByStartAddress(NomadIndex startAddress) const {
     for (const auto& function: m_functions) {
         if (function->getFunctionStart() == startAddress) {
             return function.get();
@@ -1882,7 +1882,7 @@ NomadIndex Runtime::getFunctionCount() const {
     return m_functions.size();
 }
 
-void Runtime::getFunctions(std::vector<Function*>& functions) const {
+void Runtime::getFunctions(std::vector<ScriptFunction*>& functions) const {
     functions.clear();
     functions.reserve(m_functions.size());
 
@@ -1891,7 +1891,7 @@ void Runtime::getFunctions(std::vector<Function*>& functions) const {
     }
 }
 
-void Runtime::getFunctions(TempVector<Function*>& functions) {
+void Runtime::getFunctions(TempVector<ScriptFunction*>& functions) {
     functions.clear();
     functions.reserve(m_functions.size());
 
@@ -1900,7 +1900,7 @@ void Runtime::getFunctions(TempVector<Function*>& functions) {
     }
 }
 
-Function * Runtime::getFunctionAtInstructionIndex(const NomadIndex instructionIndex) const {
+ScriptFunction * Runtime::getFunctionAtInstructionIndex(const NomadIndex instructionIndex) const {
     for (const auto& function : m_functions) {
         if (instructionIndex >= function->getFunctionStart() && instructionIndex < function->getFunctionEnd()) {
             return function.get();
@@ -1932,7 +1932,7 @@ void Runtime::executeFunction(const NomadId functionId) {
     executeFunction(functionId, {});
 }
 
-const Function* Runtime::runClosure(const Closure* closure, const std::vector<RuntimeValue>& args) {
+const ScriptFunction* Runtime::runClosure(const Closure* closure, const std::vector<RuntimeValue>& args) {
     if (m_virtualMachine == nullptr) {
         m_virtualMachine = std::make_unique<VirtualMachine>(this);
     }
@@ -2086,7 +2086,7 @@ void Runtime::executeNativeFunction(
     }
 }
 
-void dumpFunctionDeclaration(const Function* function, std::ostream& out) {
+void dumpFunctionDeclaration(const ScriptFunction* function, std::ostream& out) {
     out << "function " << function->getName();
 
     for (NomadIndex i = 0; i < function->getParameterCount(); ++i) {
@@ -2099,7 +2099,7 @@ void dumpFunctionDeclaration(const Function* function, std::ostream& out) {
 }
 
 void Runtime::dumpInstructions(std::ostream& out) const {
-    std::vector<Function*> functions;
+    std::vector<ScriptFunction*> functions;
     getFunctions(functions);
 
     for (const auto* function : functions) {
@@ -2107,7 +2107,7 @@ void Runtime::dumpInstructions(std::ostream& out) const {
     }
 }
 
-void Runtime::dumpInstructions(std::ostream& out, const Function* function) const {
+void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function) const {
     dumpFunctionDeclaration(function, out);
 
     for (auto i = function->getFunctionStart(); i < function->getFunctionEnd(); ++i) {

@@ -30,7 +30,7 @@ protected:
 
 std::unique_ptr<Statement> parseExecutableTestStatement(
     CompilerContext* /*context*/,
-    Function* /*function*/,
+    ScriptFunction* /*function*/,
     Tokenizer* /*tokens*/
 ) {
     return std::make_unique<ExecutableTestStatement>();

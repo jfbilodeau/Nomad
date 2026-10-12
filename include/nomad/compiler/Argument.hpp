@@ -24,7 +24,7 @@ public:
     // that expression yields. Returns `nullptr` for arguments whose value does not depend on the parameter type, and
     // for expressions that failed to resolve. Overload resolution uses this to learn the argument types before the
     // parameter types are known.
-    [[nodiscard]] virtual const Type* resolveOverloadType(CompilerContext* context, Function* function);
+    [[nodiscard]] virtual const Type* resolveOverloadType(CompilerContext* context, ScriptFunction* function);
 
     // Type of the value actually pushed on the stack; decides whether the caller frees it after the call.
     // Differs from `getType()` when a `$stringref` parameter receives an owned temporary, or when a borrowable string
@@ -37,12 +37,12 @@ public:
 
     [[nodiscard]] TypedValue evaluate(Interpreter& context) const;
     // Resolves the argument's expression (if any). Returns false if errors were reported.
-    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, Function* function);
-    void generateCode(Compiler* compiler, Function* function);
+    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptFunction* function);
+    void generateCode(Compiler* compiler, ScriptFunction* function);
 
 protected:
-    virtual void onResolve(CompilerContext* context, Function* function);
-    virtual void onCompile(Compiler* compiler, Function* function) = 0;
+    virtual void onResolve(CompilerContext* context, ScriptFunction* function);
+    virtual void onCompile(Compiler* compiler, ScriptFunction* function) = 0;
     [[nodiscard]] virtual TypedValue onEvaluate(Interpreter& context) const;
 
 private:

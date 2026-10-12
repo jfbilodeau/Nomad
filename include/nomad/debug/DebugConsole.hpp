@@ -24,7 +24,7 @@ namespace nomad {
 class Entity;
 class Game;
 class Scene;
-class Function;
+class ScriptFunction;
 class Type;
 class VirtualMachine;
 

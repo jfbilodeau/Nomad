@@ -2,10 +2,10 @@
 
 #include <utility>
 
-#include <nomad/script/Function.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 
 namespace nomad {
-Function::Function(
+ScriptFunction::ScriptFunction(
     NomadId      id,
     NomadString  name,
     NomadString  path,
@@ -18,32 +18,32 @@ Function::Function(
 {
 }
 
-Function::~Function() = default;
+ScriptFunction::~ScriptFunction() = default;
 
 
-NomadId Function::addParameter(const NomadString& parameterName, const Type* type) {
+NomadId ScriptFunction::addParameter(const NomadString& parameterName, const Type* type) {
     m_parameters.registerVariable(parameterName, type);
 
     return static_cast<NomadId>(m_parameters.getVariableCount() - 1);
 }
 
-NomadId Function::getParameterId(const NomadString& parameterName) const {
+NomadId ScriptFunction::getParameterId(const NomadString& parameterName) const {
     return m_parameters.getVariableId(parameterName);
 }
 
-const NomadString& Function::getParameterName(const NomadId parameterId) const {
+const NomadString& ScriptFunction::getParameterName(const NomadId parameterId) const {
     return m_parameters.getVariableName(parameterId);
 }
 
-const Type* Function::getParameterType(const NomadId parameterId) const {
+const Type* ScriptFunction::getParameterType(const NomadId parameterId) const {
     return m_parameters.getVariableType(parameterId);
 }
 
-NomadIndex Function::getParameterCount() const {
+NomadIndex ScriptFunction::getParameterCount() const {
     return m_parameters.getVariableCount();
 }
 
-NomadId Function::createCapture(
+NomadId ScriptFunction::createCapture(
     NomadId id,
     const NomadString& name,
     const CaptureSource source,
@@ -90,15 +90,15 @@ NomadId Function::createCapture(
     return captureId;
 }
 
-NomadId Function::flagParameterAsCaptured(const NomadId parameterId, const NomadString& parameterName, const Type* parameterType) {
+NomadId ScriptFunction::flagParameterAsCaptured(const NomadId parameterId, const NomadString& parameterName, const Type* parameterType) {
     return createCapture(parameterId, parameterName, CaptureSource::Parameter, parameterType);
 }
 
-NomadId Function::flagVariableAsCaptured(const NomadId variableId, const NomadString& variableName, const Type* variableType) {
+NomadId ScriptFunction::flagVariableAsCaptured(const NomadId variableId, const NomadString& variableName, const Type* variableType) {
     return createCapture(variableId, variableName, CaptureSource::Variable, variableType);
 }
 
-NomadId Function::getCaptureId(const NomadString& name) const {
+NomadId ScriptFunction::getCaptureId(const NomadString& name) const {
     for (NomadIndex id = 0; id < m_captures.size(); ++id) {
         if (m_captures[id].name == name) {
             return toNomadId(id);
@@ -108,7 +108,7 @@ NomadId Function::getCaptureId(const NomadString& name) const {
     return NOMAD_INVALID_ID;
 }
 
-NomadId Function::getCaptureParameterId(NomadId captureId) const {
+NomadId ScriptFunction::getCaptureParameterId(NomadId captureId) const {
     const auto parameterCount = toNomadId(getParameterCount());
     if (captureId < 0 || captureId >= parameterCount) {
         return NOMAD_INVALID_ID;
@@ -117,7 +117,7 @@ NomadId Function::getCaptureParameterId(NomadId captureId) const {
     return parameterCount + captureId;
 }
 
-const Type* Function::getCaptureType(const NomadId captureId) const {
+const Type* ScriptFunction::getCaptureType(const NomadId captureId) const {
     const auto index = toNomadIndex(captureId);
 
     if (index >= m_captures.size()) {
@@ -127,7 +127,7 @@ const Type* Function::getCaptureType(const NomadId captureId) const {
     return m_captures[index].type;
 }
 
-bool Function::isCaptured(const NomadId id, const CaptureSource source) const {
+bool ScriptFunction::isCaptured(const NomadId id, const CaptureSource source) const {
     for (const auto& capture : m_captures) {
         if (capture.id == id && capture.source == source) {
             return true;
@@ -136,27 +136,27 @@ bool Function::isCaptured(const NomadId id, const CaptureSource source) const {
     return false;
 }
 
-NomadIndex Function::getCaptureCount() const {
+NomadIndex ScriptFunction::getCaptureCount() const {
     return m_captures.size();
 }
 
-const std::vector<Capture>& Function::getCaptures() const {
+const std::vector<Capture>& ScriptFunction::getCaptures() const {
     return m_captures;
 }
 
-void Function::setParentId(const NomadId parentId) {
+void ScriptFunction::setParentId(const NomadId parentId) {
     m_parentId = parentId;
 }
 
-NomadId Function::getParentId() const {
+NomadId ScriptFunction::getParentId() const {
     return m_parentId;
 }
 
-NomadIndex Function::isNested() const {
+NomadIndex ScriptFunction::isNested() const {
     return m_parentId != NOMAD_INVALID_ID;
 }
 
-NomadId Function::registerVariable(const NomadString& variableName, const Type* type) {
+NomadId ScriptFunction::registerVariable(const NomadString& variableName, const Type* type) {
     const auto variableId = getVariableId(variableName);
 
     if (variableId != NOMAD_INVALID_ID) {
@@ -174,51 +174,51 @@ NomadId Function::registerVariable(const NomadString& variableName, const Type* 
     return m_variables.registerVariable(variableName, type);
 }
 
-NomadId Function::getVariableId(const NomadString& variableName) const {
+NomadId ScriptFunction::getVariableId(const NomadString& variableName) const {
     return m_variables.getVariableId(variableName);
 }
 
-[[nodiscard]] const NomadString& Function::getVariableName(NomadId variableId) const {
+[[nodiscard]] const NomadString& ScriptFunction::getVariableName(NomadId variableId) const {
     return m_variables.getVariableName(variableId);
 }
 
-void Function::setVariableType(NomadId variableId, const Type* type) {
+void ScriptFunction::setVariableType(NomadId variableId, const Type* type) {
     m_variables.setVariableType(variableId, type);
 }
 
-const Type* Function::getVariableType(NomadId variableId) const {
+const Type* ScriptFunction::getVariableType(NomadId variableId) const {
     return m_variables.getVariableType(variableId);
 }
 
-NomadIndex Function::getVariableCount() const {
+NomadIndex ScriptFunction::getVariableCount() const {
     return m_variables.getVariableCount();
 }
 
-void Function::setReturnType(const Type* returnType) {
+void ScriptFunction::setReturnType(const Type* returnType) {
     m_returnType = returnType;
 }
 
-const Type* Function::getReturnType() const {
+const Type* ScriptFunction::getReturnType() const {
     return m_returnType;
 }
 
-void Function::setFunctionStart(NomadIndex functionStartIndex) {
+void ScriptFunction::setFunctionStart(NomadIndex functionStartIndex) {
     m_functionStartIndex = functionStartIndex;
 }
 
-NomadIndex Function::getFunctionStart() const {
+NomadIndex ScriptFunction::getFunctionStart() const {
     return m_functionStartIndex;
 }
 
-void Function::setFunctionEnd(NomadIndex functionEndIndex) {
+void ScriptFunction::setFunctionEnd(NomadIndex functionEndIndex) {
     m_functionEndIndex = functionEndIndex;
 }
 
-NomadIndex Function::getFunctionEnd() const {
+NomadIndex ScriptFunction::getFunctionEnd() const {
     return m_functionEndIndex;
 }
 
-NomadIndex Function::getFunctionLength() const {
+NomadIndex ScriptFunction::getFunctionLength() const {
     return m_functionEndIndex - m_functionStartIndex;
 }
 

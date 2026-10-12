@@ -7,8 +7,8 @@
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
-#include <nomad/script/Function.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 
 using namespace nomad;
 
@@ -22,7 +22,7 @@ NativeFunctionFn methodFunction() {
     return [](VirtualMachine*) {};
 }
 
-std::unique_ptr<Expression> parseExpression(CompilerContext& context, Function* function, const NomadString& source) {
+std::unique_ptr<Expression> parseExpression(CompilerContext& context, ScriptFunction* function, const NomadString& source) {
     Tokenizer tokens(&context, "test.nomad", source);
     auto expression = parser::parseExpression(&context, function, &tokens);
 
@@ -54,7 +54,7 @@ BOOST_AUTO_TEST_CASE(resolves_property_on_qualified_local) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    Function function(NOMAD_INVALID_ID, "test", "test.nomad", "");
+    ScriptFunction function(NOMAD_INVALID_ID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
 
     auto expression = parseExpression(context, &function, "name.length");
@@ -68,7 +68,7 @@ BOOST_AUTO_TEST_CASE(resolves_method_arguments_using_receiver_type) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    Function function(NOMAD_INVALID_ID, "test", "test.nomad", "");
+    ScriptFunction function(NOMAD_INVALID_ID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
 
     auto expression = parseExpression(context, &function, "name.contains \"mad\"");
@@ -113,7 +113,7 @@ BOOST_AUTO_TEST_CASE(rejects_writing_read_only_property) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    Function function(NOMAD_INVALID_ID, "test", "test.nomad", "");
+    ScriptFunction function(NOMAD_INVALID_ID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
 
     Tokenizer tokens(&context, "test.nomad", "name.length = 10");
@@ -146,7 +146,7 @@ BOOST_AUTO_TEST_CASE(preserves_existing_qualified_identifier) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    Function function(NOMAD_INVALID_ID, "test", "test.nomad", "");
+    ScriptFunction function(NOMAD_INVALID_ID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
     function.registerVariable("name.length", runtime.getIntegerType());
 

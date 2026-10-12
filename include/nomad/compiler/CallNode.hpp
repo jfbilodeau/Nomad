@@ -28,8 +28,8 @@ public:
     void add(std::unique_ptr<Argument>&& argument);
     void addAll(std::vector<std::unique_ptr<Argument>>&& arguments);
 
-    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, Function* function) const;
-    void compile(Compiler* compiler, Function* function) const;
+    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptFunction* function) const;
+    void compile(Compiler* compiler, ScriptFunction* function) const;
     // Evaluates arguments in order. The entries of values share the storage owned by evaluatedArguments.
     // Stops at the first argument that reports an error through the context->
     void evaluate(
@@ -55,7 +55,7 @@ private:
 // types to those arguments. Returns an invalid id and fills `error` when no single overload matches.
 CallableId selectCallableOverload(
     CompilerContext* context,
-    Function* function,
+    ScriptFunction* function,
     const NomadString& name,
     ArgumentList* arguments,
     NomadString& error
@@ -75,7 +75,7 @@ public:
     [[nodiscard]] const ArgumentList* getArguments() const;
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override;
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
 
 private:
     ArgumentList m_arguments;
@@ -89,8 +89,8 @@ public:
     NativeFunctionStatementNode(NomadIndex line, NomadIndex column, const NativeFunctionDefinition& definition);
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override;
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
     void onEvaluate(Interpreter& context) const override;
 
 private:
@@ -105,8 +105,8 @@ public:
     FunctionCallStatementNode(NomadIndex line, NomadIndex column, NomadString name);
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override;
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
     void onEvaluate(Interpreter& context) const override;
 
 private:

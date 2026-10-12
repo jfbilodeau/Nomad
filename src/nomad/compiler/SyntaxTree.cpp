@@ -5,7 +5,7 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
-#include <nomad/script/Function.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -17,7 +17,7 @@ namespace nomad {
 
 namespace {
 
-NomadString getSourceName(const Function* function) {
+NomadString getSourceName(const ScriptFunction* function) {
     return function != nullptr ? function->getPath() : NomadString{};
 }
 
@@ -59,11 +59,11 @@ void AstNode::raiseException(const NomadString& message) const {
     throw AstException(message, m_span.startLine, m_span.startColumn, m_span.endLine, m_span.endColumn);
 }
 
-void AstNode::reportError(CompilerContext* context, const Function* function, const NomadString& message) const {
+void AstNode::reportError(CompilerContext* context, const ScriptFunction* function, const NomadString& message) const {
     context->reportError(message, getSourceName(function), m_span.startLine, m_span.startColumn);
 }
 
-void AstNode::reportWarning(CompilerContext* context, const Function* function, const NomadString& message) const {
+void AstNode::reportWarning(CompilerContext* context, const ScriptFunction* function, const NomadString& message) const {
     context->reportWarning(message, getSourceName(function), m_span.startLine, m_span.startColumn);
 }
 
@@ -94,7 +94,7 @@ Statement::Statement(const NomadIndex line, const NomadIndex column):
     AstNode(line, column) {
 }
 
-NomadBoolean Statement::resolve(CompilerContext* context, Function* function) {
+NomadBoolean Statement::resolve(CompilerContext* context, ScriptFunction* function) {
     const auto errorCount = context->getErrorCount();
 
     onResolve(context, function);
@@ -102,7 +102,7 @@ NomadBoolean Statement::resolve(CompilerContext* context, Function* function) {
     return context->getErrorCount() == errorCount;
 }
 
-void Statement::compile(Compiler* compiler, Function* function) {
+void Statement::compile(Compiler* compiler, ScriptFunction* function) {
     onCompile(compiler, function);
 }
 
@@ -114,7 +114,7 @@ NomadBoolean Statement::isDeclaration() const {
     return false;
 }
 
-void Statement::checkReachability(CompilerContext* /*context*/, const Function* /*function*/) const {
+void Statement::checkReachability(CompilerContext* /*context*/, const ScriptFunction* /*function*/) const {
 }
 
 void Statement::evaluate(Interpreter& context) const {
@@ -131,11 +131,11 @@ void Statement::evaluate(Interpreter& context) const {
     }
 }
 
-void Statement::onResolve(CompilerContext* /*context*/, Function* /*function*/) {
+void Statement::onResolve(CompilerContext* /*context*/, ScriptFunction* /*function*/) {
     // Default implementation does nothing
 }
 
-void Statement::onCompile(Compiler* /*compiler*/, Function* /*function*/) {
+void Statement::onCompile(Compiler* /*compiler*/, ScriptFunction* /*function*/) {
     // Default implementation does nothing
 }
 
@@ -150,7 +150,7 @@ NullStatement::NullStatement(NomadIndex line, NomadIndex column):
 
 }
 
-void NullStatement::onCompile(nomad::Compiler* /*compiler*/, Function* /*function*/) {
+void NullStatement::onCompile(nomad::Compiler* /*compiler*/, ScriptFunction* /*function*/) {
     // Nothing to do...
 }
 
@@ -172,7 +172,7 @@ AssignmentStatement::AssignmentStatement(
 
 }
 
-void AssignmentStatement::onResolve(CompilerContext* context, Function* function) {
+void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
     if (!m_expression->resolve(context, function)) {
         return;
     }
@@ -345,7 +345,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, Function* function
     }
 }
 
-void AssignmentStatement::onCompile(Compiler* compiler, Function* function) {
+void AssignmentStatement::onCompile(Compiler* compiler, ScriptFunction* function) {
     m_expression->compile(compiler, function, ExpressionTarget::Result);
 
     IdentifierDefinition identifier;
@@ -442,7 +442,7 @@ MemberAssignmentStatement::MemberAssignmentStatement(const NomadIndex line, cons
     : Statement(line, column), m_target(std::move(target)), m_expression(std::move(expression)) {
 }
 
-void MemberAssignmentStatement::onResolve(CompilerContext* context, Function* function) {
+void MemberAssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
     if (!m_target->resolve(context, function) || !m_expression->resolve(context, function)) {
         return;
     }
@@ -462,7 +462,7 @@ void MemberAssignmentStatement::onResolve(CompilerContext* context, Function* fu
     }
 }
 
-void MemberAssignmentStatement::onCompile(Compiler* compiler, Function* function) {
+void MemberAssignmentStatement::onCompile(Compiler* compiler, ScriptFunction* function) {
     auto* target = m_target->asIntrinsicExpression();
     if (target == nullptr) {
         compiler->reportInternalError("Invalid intrinsic property assignment target");
@@ -487,11 +487,11 @@ ExpressionStatement::ExpressionStatement(const NomadIndex line, const NomadIndex
     : Statement(line, column), m_expression(std::move(expression)) {
 }
 
-void ExpressionStatement::onResolve(CompilerContext* context, Function* function) {
+void ExpressionStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
     (void)m_expression->resolve(context, function);
 }
 
-void ExpressionStatement::onCompile(Compiler* compiler, Function* function) {
+void ExpressionStatement::onCompile(Compiler* compiler, ScriptFunction* function) {
     m_expression->compile(compiler, function, ExpressionTarget::Result);
     if (!m_expression->getType()->isVoid()) {
         compiler->addFreeValue(m_expression->getType()->getTypeOpCodes()->freeResult);
@@ -504,7 +504,7 @@ void ExpressionStatement::onEvaluate(Interpreter& context) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // StatementList
-NomadBoolean StatementList::resolve(CompilerContext* context, Function* function) const {
+NomadBoolean StatementList::resolve(CompilerContext* context, ScriptFunction* function) const {
     NomadBoolean resolved = true;
 
     for (auto& statement: m_statements) {
@@ -516,7 +516,7 @@ NomadBoolean StatementList::resolve(CompilerContext* context, Function* function
     return resolved;
 }
 
-void StatementList::compile(Compiler* compiler, Function* function) const {
+void StatementList::compile(Compiler* compiler, ScriptFunction* function) const {
     for (auto& statement: m_statements) {
         statement->compile(compiler, function);
     }
@@ -562,7 +562,7 @@ NomadBoolean StatementList::alwaysReturns() const {
     });
 }
 
-void StatementList::checkReachability(CompilerContext* context, const Function* function) const {
+void StatementList::checkReachability(CompilerContext* context, const ScriptFunction* function) const {
     auto returned = false;
 
     for (const auto& statement: m_statements) {
@@ -590,11 +590,11 @@ FunctionNode::FunctionNode(const NomadIndex line, const NomadIndex row):
     AstNode(line, row)
 {}
 
-NomadBoolean FunctionNode::resolve(CompilerContext* context, Function* function) const {
+NomadBoolean FunctionNode::resolve(CompilerContext* context, ScriptFunction* function) const {
     return m_statements.resolve(context, function);
 }
 
-void FunctionNode::compile(Compiler* compiler, Function* function) const {
+void FunctionNode::compile(Compiler* compiler, ScriptFunction* function) const {
     m_statements.compile(compiler, function);
 }
 
@@ -602,7 +602,7 @@ NomadBoolean FunctionNode::alwaysReturns() const {
     return m_statements.alwaysReturns();
 }
 
-void FunctionNode::checkReachability(CompilerContext* context, const Function* function) const {
+void FunctionNode::checkReachability(CompilerContext* context, const ScriptFunction* function) const {
     m_statements.checkReachability(context, function);
 }
 
@@ -669,14 +669,14 @@ NomadBoolean FunctionDeclaration::isDeclaration() const {
     return true;
 }
 
-void FunctionDeclaration::onResolve(CompilerContext* context, Function* function) {
+void FunctionDeclaration::onResolve(CompilerContext* context, ScriptFunction* function) {
     // Default: resolve body if present
     if (m_body) {
         (void)m_body->resolve(context, function);
     }
 }
 
-void FunctionDeclaration::onCompile(Compiler* /*compiler*/, Function* /*function*/) {
+void FunctionDeclaration::onCompile(Compiler* /*compiler*/, ScriptFunction* /*function*/) {
     // Functions compile as functions; by default do nothing here. Runtime registration handled elsewhere.
 }
 
@@ -703,7 +703,7 @@ NomadBoolean EventDeclaration::isDeclaration() const {
     return true;
 }
 
-void EventDeclaration::onResolve(CompilerContext* /*context*/, Function* /*function*/) {
+void EventDeclaration::onResolve(CompilerContext* /*context*/, ScriptFunction* /*function*/) {
     // Nothing by default; runtime registration happens in pre-parse stage.
 }
 
@@ -727,7 +727,7 @@ NomadBoolean ConstDeclaration::isDeclaration() const {
     return true;
 }
 
-void ConstDeclaration::onResolve(CompilerContext* context, Function* function) {
+void ConstDeclaration::onResolve(CompilerContext* context, ScriptFunction* function) {
     if (m_initializer && m_initializer->resolve(context, function)) {
         m_type = m_initializer->getType();
     }
@@ -779,13 +779,13 @@ NomadBoolean EventHandlerDeclaration::isDeclaration() const {
     return true;
 }
 
-void EventHandlerDeclaration::onResolve(CompilerContext* context, Function* function) {
+void EventHandlerDeclaration::onResolve(CompilerContext* context, ScriptFunction* function) {
     if (m_handler) {
         (void)m_handler->resolve(context, function);
     }
 }
 
-void EventHandlerDeclaration::onCompile(Compiler* /*compiler*/, Function* /*function*/) {
+void EventHandlerDeclaration::onCompile(Compiler* /*compiler*/, ScriptFunction* /*function*/) {
     // Handler registration and compilation are handled by the compiler's event system.
 }
 

@@ -141,7 +141,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     out << "* [Enums](#enums)" << std::endl;
     out << "* [Variables](#variables)" << std::endl;
     out << "* [Intrinsic Members](#intrinsic-members)" << std::endl;
-    out << "* [Native Functions](#native-functions)" << std::endl;
+    out << "* [Functions](#functions)" << std::endl;
 
     out << "---" << std::endl;
 
@@ -311,22 +311,22 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     generateIntrinsicMemberDocumentation(runtime, out);
 
-    out << "## Native Functions" << std::endl;
+    out << "## Functions" << std::endl;
 
-    enum class NativeFunctionType {
-        NativeFunction,
-        Function,
+    enum class FunctionType {
+        Native,
+        Script,
     };
 
-    struct NativeFunctionInfo {
+    struct FunctionInfo {
         NomadString name;
-        NativeFunctionType nativeFunctionType;
+        FunctionType functionType;
         NomadString doc;
-        std::vector<NativeFunctionParameterDefinition> parameters;
+        std::vector<FunctionParameterDefinition> parameters;
         const Type* returnType = nullptr;
     };
 
-    std::vector<NativeFunctionInfo> nativeFunctions;
+    std::vector<FunctionInfo> functions;
 
     auto nativeFunctionId = runtime->getFirstNativeFunctionId();
 
@@ -335,9 +335,9 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
         runtime->getNativeFunctionDefinition(nativeFunctionId, nativeFunctionDefinition);
 
-        nativeFunctions.emplace_back(
+        functions.emplace_back(
             nativeFunctionDefinition.name,
-            NativeFunctionType::NativeFunction,
+            FunctionType::Native,
             nativeFunctionDefinition.doc,
             nativeFunctionDefinition.parameters,
             nativeFunctionDefinition.returnType
@@ -346,12 +346,12 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
         nativeFunctionId = runtime->getNextNativeFunctionId(nativeFunctionId);
     }
 
-    std::vector<Function*> functions;
+    std::vector<ScriptFunction*> scriptFunctions;
 
-    runtime->getFunctions(functions);
+    runtime->getFunctions(scriptFunctions);
 
-    for (auto function: functions) {
-        std::vector<NativeFunctionParameterDefinition> parameters;
+    for (auto function: scriptFunctions) {
+        std::vector<FunctionParameterDefinition> parameters;
 
         for (NomadIndex i = 0; i < function->getParameterCount(); i++) {
             auto name = function->getParameterName(toNomadId(i));
@@ -364,36 +364,36 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
             );
         }
 
-        nativeFunctions.emplace_back(
+        functions.emplace_back(
             function->getName(),
-            NativeFunctionType::Function,
+            FunctionType::Script,
             "",
             parameters,
             function->getReturnType()
         );
     }
 
-    std::ranges::sort(nativeFunctions, [](const auto& a, const auto& b) {
+    std::ranges::sort(functions, [](const auto& a, const auto& b) {
         return a.name < b.name;
     });
 
-    for (const auto& nativeFunction: nativeFunctions) {
-        out << "### `" << nativeFunction.name << "`";
+    for (const auto& function: functions) {
+        out << "### `" << function.name << "`";
 
-        const auto nativeFunctionTypeText =
-            nativeFunction.nativeFunctionType == NativeFunctionType::NativeFunction ? "Native" : "Script";
+        const auto functionTypeText =
+            function.functionType == FunctionType::Native ? "Native" : "Script";
 
-        out << " (*" << nativeFunctionTypeText << "*)" << std::endl;
+        out << " (*" << functionTypeText << "*)" << std::endl;
 
         out << std::endl;
 
-        if (nativeFunction.parameters.empty()) {
+        if (function.parameters.empty()) {
             out << "No parameters." << std::endl;
             out << std::endl;
         } else {
             out << "parameters:" << std::endl;
 
-            for (const auto& parameter: nativeFunction.parameters) {
+            for (const auto& parameter: function.parameters) {
                 // Callers pass a regular string to a `$stringref` parameter.
                 const auto parameterTypeName = parameter.type == runtime->getStringRefType()
                     ? runtime->getStringType()->getTypeName()
@@ -411,16 +411,16 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
         out << std::endl;
 
-        const auto returnTypeName = nativeFunction.returnType
-            ? nativeFunction.returnType->getTypeName()
+        const auto returnTypeName = function.returnType
+            ? function.returnType->getTypeName()
             : runtime->getVoidType()->getTypeName();
 
         out << "`returns " << returnTypeName << "`" << std::endl;
 
         out << std::endl;
 
-        if (nativeFunction.doc.empty() == false) {
-            out << nativeFunction.doc << std::endl;
+        if (function.doc.empty() == false) {
+            out << function.doc << std::endl;
             out << std::endl;
         }
         out << "---" << std::endl;

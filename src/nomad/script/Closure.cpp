@@ -3,12 +3,12 @@
 #include <nomad/script/Closure.hpp>
 
 #include <nomad/log/Logger.hpp>
-#include <nomad/script/Function.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 #include <nomad/system/String.hpp>
 
 namespace nomad {
 
-Closure::Closure(const Function* function, std::vector<RuntimeValue> captures):
+Closure::Closure(const ScriptFunction* function, std::vector<RuntimeValue> captures):
 	m_function(function),
 	m_capturedParameters(std::move(captures))
 {

@@ -13,13 +13,13 @@ namespace nomad {
 // Forward declarations
 class Compiler;
 class FormatString;
-class Function;
+class ScriptFunction;
 
 // Compiles format into formatString. With a null formatString, only validates format. Returns an error message if
 // format is invalid.
 [[nodiscard]] std::optional<NomadString> compileFormatString(
     const Compiler* compiler,
-    Function* function,
+    ScriptFunction* function,
     const NomadString& format,
     FormatString* formatString
 );

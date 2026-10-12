@@ -13,7 +13,7 @@ namespace nomad {
 // Forward declaration
 class Compiler;
 class Expression;
-class Function;
+class ScriptFunction;
 class Statement;
 class SyntaxTree;
 class Tokenizer;
@@ -25,13 +25,13 @@ public:
     [[nodiscard]] NomadBoolean alwaysReturns() const override;
 
 protected:
-    void onResolve(CompilerContext* context, Function* function) override;
-    void onCompile(Compiler* compiler, Function* function) override;
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
 
 private:
     std::unique_ptr<Expression> m_expression;
 };
 
-std::unique_ptr<Statement> parseReturnStatement(CompilerContext* context, Function* function, Tokenizer* tokens);
+std::unique_ptr<Statement> parseReturnStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 
 } // namespace nomad

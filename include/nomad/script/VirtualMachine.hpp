@@ -8,8 +8,8 @@
 
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/OpCode.hpp>
-#include <nomad/script/Function.hpp>
 #include <nomad/script/RuntimeValue.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 
 #include <type_traits>
 #include <vector>
@@ -18,7 +18,7 @@ namespace nomad {
 
 class VirtualMachine;
 class Runtime;
-class Function;
+class ScriptFunction;
 class Closure;
 
 struct Instruction {
@@ -52,15 +52,15 @@ public:
     void setFunctionVariableValue(NomadId variableId, const RuntimeValue& value);
     [[nodiscard]] const RuntimeValue& getFunctionVariableValue(NomadId variableId) const;
 
-    void run(const Function* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
+    void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
     void yield(const RuntimeValue& result);
     void stop(const RuntimeValue& result);
     void fault(const NomadString& faultMessage) const;
 
     [[nodiscard]]
-    Function* getCurrentFunction() const;
+    ScriptFunction* getCurrentFunction() const;
 
-    void callFunction(const Function* function);
+    void callFunction(const ScriptFunction* function);
     void callNativeFunction(NomadId nativeFunctionId);
     void callIntrinsicMethod(NomadId memberId);
     void returnFunction(NomadIndex variableCount);
@@ -208,7 +208,7 @@ public:
 private:
     friend class Runtime;
 
-    void initializeFunctionVariables(const Function* function);
+    void initializeFunctionVariables(const ScriptFunction* function);
     void runNativeFunction(NomadId nativeFunctionId, const std::vector<RuntimeValue>& args);
 
     Runtime* m_runtime;

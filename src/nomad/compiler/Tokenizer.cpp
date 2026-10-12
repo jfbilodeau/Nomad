@@ -3,8 +3,8 @@
 #include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/script/Function.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 
 #if defined(NOMAD_DEBUG)
 //#define BOOST_SPIRIT_DEBUG

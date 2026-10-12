@@ -9,7 +9,7 @@
 #include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Function.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 
 using namespace nomad;
 
@@ -17,7 +17,7 @@ BOOST_AUTO_TEST_CASE(expression_resolve_reports_unknown_identifier_without_throw
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    Function function(NOMAD_INVALID_ID, "test", "", "");
+    ScriptFunction function(NOMAD_INVALID_ID, "test", "", "");
     CompilerContext context(compiler.get());
 
     IdentifierExpression expression(nullptr, 3, 7, "missing");
@@ -38,7 +38,7 @@ BOOST_AUTO_TEST_CASE(statement_resolve_reports_errors_in_call_arguments)
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    Function function(NOMAD_INVALID_ID, "test", "", "");
+    ScriptFunction function(NOMAD_INVALID_ID, "test", "", "");
     CompilerContext context(compiler.get());
 
     NativeFunctionDefinition definition{};
@@ -70,7 +70,7 @@ BOOST_AUTO_TEST_CASE(statement_list_resolve_reports_every_failing_statement)
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    Function function(NOMAD_INVALID_ID, "test", "", "");
+    ScriptFunction function(NOMAD_INVALID_ID, "test", "", "");
     CompilerContext context(compiler.get());
 
     StatementList statements;
@@ -91,7 +91,7 @@ BOOST_AUTO_TEST_CASE(assignment_resolve_reports_function_variable_type_mismatch)
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    Function function(NOMAD_INVALID_ID, "test", "", "");
+    ScriptFunction function(NOMAD_INVALID_ID, "test", "", "");
     function.registerVariable("score", runtime.getIntegerType());
     CompilerContext context(compiler.get());
 
