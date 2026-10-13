@@ -8,14 +8,55 @@
 #include <nomad/resource/SpriteAtlas.hpp>
 #include <nomad/resource/Texture.hpp>
 
+#include <nomad/game/Canvas.hpp>
 #include <nomad/game/Game.hpp>
 
 #include <boost/json.hpp>
 
+#include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <set>
 
 namespace nomad {
+
+namespace {
+
+NomadString toLowerAscii(NomadString value) {
+    for (auto& character : value) {
+        character = static_cast<NomadChar>(std::tolower(static_cast<unsigned char>(character)));
+    }
+
+    return value;
+}
+
+NomadString makePackedTextureName(const NomadString& group, const NomadIndex page) {
+    return group + "#" + std::to_string(page);
+}
+
+void validateFrame(
+    const PackedSpriteDefinition& sprite,
+    const PackedSpritePage& page
+) {
+    if (
+        sprite.source.getLeft() < 0 ||
+        sprite.source.getTop() < 0 ||
+        sprite.source.getWidth() <= 0 ||
+        sprite.source.getHeight() <= 0 ||
+        sprite.frame.getLeft() < 0 ||
+        sprite.frame.getTop() < 0 ||
+        sprite.frame.getWidth() <= 0 ||
+        sprite.frame.getHeight() <= 0 ||
+        sprite.source.getLeft() + sprite.frame.getWidth() > sprite.source.getWidth() ||
+        sprite.source.getTop() + sprite.frame.getHeight() > sprite.source.getHeight() ||
+        sprite.frame.getRight() > page.width ||
+        sprite.frame.getBottom() > page.height
+    ) {
+        throw ResourceException("Packed sprite has invalid rectangles: '" + sprite.name + "'");
+    }
+}
+
+} // namespace
 
 ResourceManager::ResourceManager(Game* game, const NomadString& basePath) :
     m_game(game),
@@ -140,6 +181,114 @@ void ResourceManager::loadSpriteAtlas(const NomadString& resourceName) {
     }
     catch (const std::exception& e) {
         throw ResourceException("Failed to load sprite atlas: '" + resourceName + "' - " + e.what());
+    }
+}
+
+void ResourceManager::registerPackedSprites(const std::vector<PackedSpriteGroup>& groups) {
+    std::set<NomadString> textureNames;
+    std::set<NomadString> spriteNames;
+    NomadIndex textureCount = 0;
+    NomadIndex spriteCount = 0;
+
+    for (const auto& texture : m_textures.m_textures) {
+        textureNames.insert(toLowerAscii(texture->getName()));
+    }
+    for (const auto& sprite : m_sprites.m_sprites) {
+        spriteNames.insert(toLowerAscii(sprite->getName()));
+    }
+
+    for (const auto& group : groups) {
+        if (group.name.empty()) {
+            throw ResourceException("Packed sprite group name must not be empty");
+        }
+
+        textureCount += group.pages.size();
+        spriteCount += group.sprites.size();
+
+        for (NomadIndex pageIndex = 0; pageIndex < group.pages.size(); ++pageIndex) {
+            const auto& page = group.pages[pageIndex];
+            const auto textureName = makePackedTextureName(group.name, pageIndex);
+
+            if (!textureNames.insert(toLowerAscii(textureName)).second) {
+                throw ResourceException("Packed texture name is already registered: '" + textureName + "'");
+            }
+            if (
+                !page.surface ||
+                page.width <= 0 ||
+                page.height <= 0 ||
+                page.surface->w != page.width ||
+                page.surface->h != page.height
+            ) {
+                throw ResourceException("Packed texture page is invalid: '" + textureName + "'");
+            }
+        }
+
+        for (const auto& sprite : group.sprites) {
+            if (sprite.name.empty()) {
+                throw ResourceException("Packed sprite name must not be empty");
+            }
+            if (!spriteNames.insert(toLowerAscii(sprite.name)).second) {
+                throw ResourceException("Packed sprite name is already registered: '" + sprite.name + "'");
+            }
+            if (sprite.page >= group.pages.size()) {
+                throw ResourceException("Packed sprite references an invalid texture page: '" + sprite.name + "'");
+            }
+
+            validateFrame(sprite, group.pages[sprite.page]);
+        }
+    }
+
+    std::vector<std::unique_ptr<Texture>> textures;
+    std::vector<std::vector<const Texture*>> groupTextures;
+    textures.reserve(textureCount);
+    groupTextures.reserve(groups.size());
+    auto* renderer = m_game->getCanvas()->getSdlRenderer();
+
+    for (const auto& group : groups) {
+        auto& pages = groupTextures.emplace_back();
+        pages.reserve(group.pages.size());
+
+        for (NomadIndex pageIndex = 0; pageIndex < group.pages.size(); ++pageIndex) {
+            const auto& page = group.pages[pageIndex];
+            const auto textureName = makePackedTextureName(group.name, pageIndex);
+            auto* sdlTexture = SDL_CreateTextureFromSurface(renderer, page.surface.get());
+
+            if (sdlTexture == nullptr) {
+                throw ResourceException(
+                    "Failed to create packed texture '" + textureName + "': " + SDL_GetError()
+                );
+            }
+
+            auto texture = std::make_unique<Texture>(textureName, sdlTexture);
+            pages.push_back(texture.get());
+            textures.push_back(std::move(texture));
+        }
+    }
+
+    std::vector<std::unique_ptr<Sprite>> sprites;
+    sprites.reserve(spriteCount);
+
+    for (NomadIndex groupIndex = 0; groupIndex < groups.size(); ++groupIndex) {
+        const auto& group = groups[groupIndex];
+
+        for (const auto& sprite : group.sprites) {
+            sprites.push_back(std::make_unique<Sprite>(
+                sprite.name,
+                groupTextures[groupIndex][sprite.page],
+                sprite.source,
+                sprite.frame
+            ));
+        }
+    }
+
+    m_textures.m_textures.reserve(m_textures.m_textures.size() + textures.size());
+    m_sprites.m_sprites.reserve(m_sprites.m_sprites.size() + sprites.size());
+
+    for (auto& texture : textures) {
+        m_textures.m_textures.push_back(std::move(texture));
+    }
+    for (auto& sprite : sprites) {
+        m_sprites.m_sprites.push_back(std::move(sprite));
     }
 }
 

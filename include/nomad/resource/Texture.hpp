@@ -65,6 +65,8 @@ public:
     [[nodiscard]] Texture* createTexture(const NomadString& name, NomadInteger width, NomadInteger height) const;
 
 private:
+    friend class ResourceManager;
+
     ResourceManager* m_resources;
     std::vector<std::unique_ptr<Texture>> m_textures;
 };

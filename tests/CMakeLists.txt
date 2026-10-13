@@ -32,6 +32,7 @@ add_executable(
     ./LogTest.cpp
     ./NomadVersionTest.cpp
     ./ParserTest.cpp
+    ./PackedSpriteRegistrationTest.cpp
     ./ProgramOptionsTest.cpp
     ./ProjectConfigurationTest.cpp
     ./ProjectInitializerTest.cpp

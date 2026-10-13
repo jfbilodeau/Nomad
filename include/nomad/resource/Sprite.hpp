@@ -51,6 +51,8 @@ public:
     void getSpritesByPrefix(const NomadString& prefix, std::vector<Sprite*>& sprites) const;
 
 private:
+    friend class ResourceManager;
+
     ResourceManager* m_resources;
     std::vector<std::unique_ptr<Sprite>> m_sprites;
 };
