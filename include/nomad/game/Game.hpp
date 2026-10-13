@@ -42,9 +42,17 @@ public:
     explicit GameException(const NomadString& message) : NomadException(message) {}
 };
 
+struct SpriteOptions {
+    std::vector<NomadPath> directories{"sprites"};
+    NomadInteger maxTextureSize = 2048;
+    NomadInteger padding = 1;
+    bool directoriesExplicitlyConfigured = false;
+};
+
 struct GameOptions {
     NomadString resourcePath;
     NomadString entryFunction = "init";
+    SpriteOptions sprites;
     bool debug = false;
 };
 
@@ -246,6 +254,7 @@ private:
     void loadTextIntoConst(const NomadString& languageCode) const;
 
     void compileFunctions();
+    [[nodiscard]] NomadIndex loadSprites();
 
     void runInitFunction();
 

@@ -14,6 +14,7 @@
 
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
+#include <algorithm>
 #include <optional>
 
 namespace nomad {

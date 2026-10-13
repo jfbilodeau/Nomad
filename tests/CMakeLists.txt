@@ -12,6 +12,7 @@ add_executable(
     ./ExpressionResolveTest.cpp
     ./GameEventQueueTest.cpp
     ./GameFactoryTest.cpp
+    ./GameStartupTest.cpp
     ./GeometryTest.cpp
     ./InterpreterTest.cpp
     ./IntrinsicMemberConflictTest.cpp

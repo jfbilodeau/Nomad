@@ -29,6 +29,11 @@ version = "0.1.0"
 [resources]
 directory = "assets"
 
+[sprites]
+directories = ["sprites", "mods/sprites"]
+max-texture-size = 1024
+padding = 2
+
 [package]
 output = "dist"
 exclude = []
@@ -64,6 +69,12 @@ BOOST_AUTO_TEST_CASE(runtime_options_load_project_resources_and_entry_function)
 
     BOOST_TEST(options.resourcePath == (directory.getPath() / "assets").lexically_normal().string());
     BOOST_TEST(options.entryFunction == "start");
+    BOOST_REQUIRE(options.sprites.directories.size() == 2U);
+    BOOST_TEST(options.sprites.directories[0] == NomadPath("sprites"));
+    BOOST_TEST(options.sprites.directories[1] == NomadPath("mods/sprites"));
+    BOOST_TEST(options.sprites.maxTextureSize == 1024);
+    BOOST_TEST(options.sprites.padding == 2);
+    BOOST_TEST(options.sprites.directoriesExplicitlyConfigured);
 }
 
 BOOST_AUTO_TEST_CASE(runtime_options_load_release_manifest_defaults)

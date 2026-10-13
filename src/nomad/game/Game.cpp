@@ -14,6 +14,8 @@
 #include <nomad/game/VariablePersistence.hpp>
 
 #include <nomad/resource/ResourceManager.hpp>
+#include <nomad/resource/SpriteDiscovery.hpp>
+#include <nomad/resource/SpritePacker.hpp>
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -26,12 +28,28 @@
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
+#include <exception>
 #include <filesystem>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <variant>
 
 namespace nomad {
+
+namespace {
+
+NomadString getExceptionMessage(const std::exception_ptr& exception) {
+    try {
+        std::rethrow_exception(exception);
+    } catch (const std::exception& error) {
+        return error.what();
+    } catch (...) {
+        return "Unknown exception";
+    }
+}
+
+} // namespace
 
 Game::Game(GameOptions options) :
     m_options(std::move(options))
@@ -72,7 +90,49 @@ void Game::initialize()
 
     setLanguage("en");
 
-    compileFunctions();
+    log::info("Loading sprites...");
+
+    std::exception_ptr compilationFailure;
+    std::jthread compilationThread([this, &compilationFailure] {
+        try {
+            compileFunctions();
+        } catch (...) {
+            compilationFailure = std::current_exception();
+        }
+    });
+
+    std::exception_ptr spriteFailure;
+    const auto spriteStartTicks = SDL_GetTicks();
+    NomadIndex spriteCount = 0;
+
+    try {
+        spriteCount = loadSprites();
+    } catch (...) {
+        spriteFailure = std::current_exception();
+    }
+
+    compilationThread.join();
+
+    if (!spriteFailure) {
+        log::info(
+            "Loaded " + toString(spriteCount) + " sprites in " +
+            toString(static_cast<NomadInteger>(SDL_GetTicks() - spriteStartTicks)) + "ms"
+        );
+    }
+
+    if (spriteFailure && compilationFailure) {
+        raiseError(
+            "Game initialization failed:"
+            "\nSprite loading: " + getExceptionMessage(spriteFailure) +
+            "\nScript compilation: " + getExceptionMessage(compilationFailure)
+        );
+    }
+    if (spriteFailure) {
+        std::rethrow_exception(spriteFailure);
+    }
+    if (compilationFailure) {
+        std::rethrow_exception(compilationFailure);
+    }
 
     if (m_options.debug) {
         log::setLogLevel(LogLevel::Debug);
@@ -1314,6 +1374,28 @@ void Game::compileFunctions() {
         "ms";
 
     log::info(message);
+}
+
+NomadIndex Game::loadSprites() {
+    const auto sources = discoverSpriteSources(
+        pathFromUtf8(m_options.resourcePath),
+        m_options.sprites.directories,
+        m_options.sprites.directoriesExplicitlyConfigured
+    );
+    auto groups = packSpriteGroups(
+        sources,
+        m_options.sprites.maxTextureSize,
+        m_options.sprites.padding
+    );
+    NomadIndex spriteCount = 0;
+
+    for (const auto& group : groups) {
+        spriteCount += group.sprites.size();
+    }
+
+    m_resourceManager->registerPackedSprites(groups);
+
+    return spriteCount;
 }
 
 // void Game::pushExecutionContext(Scene* scene, Entity* entity) {
