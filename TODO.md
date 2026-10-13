@@ -2,6 +2,7 @@
 This the author wants to do
 
 ## Open
+[ ] Splash image / default titles & resolution
 [ ] Sound!!!
 [ ] Texture packing
 [ ] Display physics bodies in debug mode
