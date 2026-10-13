@@ -196,21 +196,6 @@ void Game::initGameFunctions() {
     );
 
     m_runtime->registerNativeFunction(
-        "game.loadSpriteAtlas",
-        [this](const VirtualMachine* interpreter) {
-            const auto atlas_name = interpreter->getStringParameter(0);
-
-            m_resourceManager->loadSpriteAtlas(atlas_name);
-        }, {
-            defParameter(
-                "atlasName", m_runtime->getStringRefType(), NomadParamDoc("Name of the sprite atlas to load.")
-            ),
-        },
-        m_runtime->getVoidType(),
-        NomadDoc("Loads a sprite atlas from a file.")
-    );
-
-    m_runtime->registerNativeFunction(
         "game.inventory.load",
         [this](const VirtualMachine* interpreter) {
             const NomadString saveName = interpreter->getStringParameter(0);

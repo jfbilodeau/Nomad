@@ -384,16 +384,6 @@ parameters:
 Loads a font from a file.
 
 ---
-### `game.loadSpriteAtlas` (*NativeFunction*)
-
-parameters:
-- `atlasName:string` - Name of the sprite atlas to load.
-
-`returns void`
-
-Loads a sprite atlas from a file.
-
----
 ### `game.settings.load` (*NativeFunction*)
 
 No parameters.
@@ -1818,4 +1808,3 @@ No parameters.
 Toggles the window between windowed and full-screen modes.
 
 ---
-

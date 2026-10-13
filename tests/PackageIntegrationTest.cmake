@@ -81,7 +81,7 @@ run_success(
 
 file(MAKE_DIRECTORY "${PROJECT_DIR}/res/sprites/player")
 configure_file(
-    "${CMAKE_CURRENT_LIST_DIR}/projects/package-smoke/res/images/checker.png"
+    "${CMAKE_CURRENT_LIST_DIR}/projects/package-smoke/res/sprites/checker.png"
     "${PROJECT_DIR}/res/sprites/player/checker.png"
     COPYONLY
 )

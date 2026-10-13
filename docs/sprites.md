@@ -2,8 +2,7 @@
 
 Nomad automatically discovers PNG files in configured resource directories,
 packs them into texture pages, and registers them as sprites before the entry
-script runs. Games do not need to build atlases ahead of time or call
-`game.loadSpriteAtlas`.
+script runs. Games do not need to build atlases ahead of time.
 
 ## Directory layout and names
 

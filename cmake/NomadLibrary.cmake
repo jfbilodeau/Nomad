@@ -34,7 +34,6 @@ else()
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectPackager.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/ResourceManager.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteCatalog.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteAtlas.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/Documentation.cpp
         PROPERTIES COMPILE_OPTIONS "-Wno-error=conversion"
     )

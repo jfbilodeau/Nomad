@@ -44,7 +44,6 @@ public:
     TextManager* getText();
     TextureManager* getTextures();
 
-    void loadSpriteAtlas(const NomadString& resourceName);
     [[nodiscard]] NomadIndex loadSpriteRoots(
         const std::vector<NomadPath>& directories,
         bool directoriesExplicitlyConfigured,

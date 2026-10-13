@@ -5,7 +5,6 @@
 #include <nomad/resource/Animation.hpp>
 #include <nomad/resource/Font.hpp>
 #include <nomad/resource/Sprite.hpp>
-#include <nomad/resource/SpriteAtlas.hpp>
 #include <nomad/resource/SpriteCatalog.hpp>
 #include <nomad/resource/Texture.hpp>
 
@@ -15,10 +14,7 @@
 #include <nomad/system/Path.hpp>
 #include <nomad/system/String.hpp>
 
-#include <boost/json.hpp>
-
 #include <filesystem>
-#include <fstream>
 #include <iterator>
 #include <set>
 
@@ -107,73 +103,6 @@ TextManager* ResourceManager::getText() {
 
 TextureManager* ResourceManager::getTextures() {
     return &m_textures;
-}
-
-void ResourceManager::loadSpriteAtlas(const NomadString& resourceName) {
-    try {
-        log::debug("Loading sprite atlas: '" + resourceName + "'");
-
-        NomadString path = makeResourcePath(resourceName);
-
-        std::ifstream file(path);
-
-        if (!file.is_open()) {
-            throw ResourceException("Cloud not open file: '" + resourceName + "'");
-        }
-
-        boost::json::stream_parser parser;
-
-        char buffer[1024];
-
-        while (!file.eof()) {
-            file.read(buffer, sizeof(buffer));
-            parser.write(buffer, file.gcount());
-        }
-
-        auto json = parser.release().as_object();
-
-        // Texture name is the resource name but with the extension replaced by .png
-        NomadString texture_name = resourceName.substr(0, resourceName.find_last_of('.')) + ".png";
-
-        auto texture_id = getTextures()->registerTexture(texture_name);
-        auto texture = getTextures()->getTexture(texture_id);
-
-        auto sprites = json.at("sprites").as_array();
-
-        for (auto sprite: sprites) {
-            NomadString name = sprite.at("name").as_string().c_str();
-
-            Rectangle source(
-                static_cast<int>(sprite.at("source").at("x").as_int64()),
-                static_cast<int>(sprite.at("source").at("y").as_int64()),
-                static_cast<int>(sprite.at("source").at("width").as_int64()),
-                static_cast<int>(sprite.at("source").at("height").as_int64())
-            );
-
-            Rectangle frame(
-                static_cast<int>(sprite.at("frame").at("x").as_int64()),
-                static_cast<int>(sprite.at("frame").at("y").as_int64()),
-                static_cast<int>(sprite.at("frame").at("width").as_int64()),
-                static_cast<int>(sprite.at("frame").at("height").as_int64())
-            );
-
-            log::debug("Loading sprite: '" + name + "'");
-
-            auto sprite_id = m_sprites.registerSprite(name, texture, source, frame);
-
-            if (sprite_id == NOMAD_INVALID_ID) {
-                throw ResourceException("Internal error: Failed to register sprite: '" + name + "'");
-            }
-        }
-
-        log::debug("Loading texture: '" + texture_name + "'");
-    }
-    catch (const boost::exception& /*e*/) {
-        throw ResourceException("Failed to load sprite atlas: '" + resourceName + "'");
-    }
-    catch (const std::exception& e) {
-        throw ResourceException("Failed to load sprite atlas: '" + resourceName + "' - " + e.what());
-    }
 }
 
 NomadIndex ResourceManager::loadSpriteRoots(

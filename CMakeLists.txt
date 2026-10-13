@@ -223,7 +223,6 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/resource/Resource.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/ResourceManager.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Sprite.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteAtlas.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteCatalog.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteDiscovery.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/SpritePacker.cpp
