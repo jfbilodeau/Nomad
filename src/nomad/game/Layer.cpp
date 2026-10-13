@@ -2,6 +2,7 @@
 
 #include <nomad/game/Layer.hpp>
 
+#include <algorithm>
 #include <ranges>
 
 namespace nomad {

@@ -189,7 +189,7 @@ Texture* Font::generateTexture(
 
             case HorizontalAlignment::Right:
                 destinationRect = SDL_Rect{
-                    0,
+                    static_cast<int>(surfaceWidth - width),
                     textY,
                     textSurface->w,
                     textSurface->h

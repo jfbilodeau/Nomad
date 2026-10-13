@@ -13,6 +13,7 @@ function(nomad_copy_runtime_dependencies target)
             -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/BundleRuntimeDependencies.cmake"
             --
             $<TARGET_RUNTIME_DLLS:${target}>
+
             ${NOMAD_TOOLCHAIN_RUNTIME_DLLS}
         COMMAND_EXPAND_LISTS
         VERBATIM

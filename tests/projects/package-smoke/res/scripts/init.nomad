@@ -9,7 +9,6 @@ window.setFps 60
 
 global.font = game.loadFont "fonts/ProggyClean.ttf" 26
 
-game.loadSpriteAtlas "images/checker.json"
 game.createScene scenes.smokeScene
 
 log.info "Nomad Packaging Smoke Test initialized."

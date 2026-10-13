@@ -12,6 +12,7 @@ add_executable(
     ./ExpressionResolveTest.cpp
     ./GameEventQueueTest.cpp
     ./GameFactoryTest.cpp
+    ./GameStartupTest.cpp
     ./GeometryTest.cpp
     ./InterpreterTest.cpp
     ./IntrinsicMemberConflictTest.cpp
@@ -32,11 +33,16 @@ add_executable(
     ./LogTest.cpp
     ./NomadVersionTest.cpp
     ./ParserTest.cpp
+    ./PackedSpriteRegistrationTest.cpp
     ./ProgramOptionsTest.cpp
     ./ProjectConfigurationTest.cpp
     ./ProjectInitializerTest.cpp
     ./ProjectPackagerTest.cpp
+    ./RectanglePackerTest.cpp
     ./RuntimeTest.cpp
+    ./SpriteDiscoveryTest.cpp
+    ./SpriteCatalogTest.cpp
+    ./SpritePackerTest.cpp
     ./StatementExecutionTest.cpp
     ./SystemTest.cpp
     ./TestDirectory.hpp
@@ -61,7 +67,6 @@ target_link_libraries(
     nomad_test
     PRIVATE
     nomad
-    Nomad::Project
     Nomad::CliOptions
     archive_static
     Boost::unit_test_framework

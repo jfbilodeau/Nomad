@@ -7,6 +7,7 @@
 #include <nomad/resource/Animation.hpp>
 #include <nomad/resource/Font.hpp>
 #include <nomad/resource/Sprite.hpp>
+#include <nomad/resource/SpritePacker.hpp>
 #include <nomad/resource/Text.hpp>
 #include <nomad/resource/Texture.hpp>
 
@@ -43,8 +44,14 @@ public:
     TextManager* getText();
     TextureManager* getTextures();
 
-    // TODO: These specialized method should be move elsewhere...
-    void loadSpriteAtlas(const NomadString& resourceName);
+    [[nodiscard]] NomadIndex loadSpriteRoots(
+        const std::vector<NomadPath>& directories,
+        bool directoriesExplicitlyConfigured,
+        NomadInteger maxTextureSize,
+        NomadInteger padding,
+        bool missingDirectoriesAllowed = false
+    );
+    void registerPackedSprites(const std::vector<PackedSpriteGroup>& groups);
 
 private:
     NomadString makeResourceName(const NomadString& basePath, const NomadString& fileName);

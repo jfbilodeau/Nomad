@@ -5,25 +5,18 @@
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
-#include <boost/locale.hpp>
+#include <nomad/system/String.hpp>
+
 #include <boost/locale/encoding_utf.hpp>
 
-#include <locale>
 #include <vector>
 
 namespace nomad {
 
 namespace {
 
-const std::locale& getIntrinsicStringLocale() {
-    static const auto locale = boost::locale::generator{}("en_US.UTF-8");
-    return locale;
-}
-
-void validateUtf8(VirtualMachine* virtualMachine, const NomadString& text, const NomadString& memberName) {
-    try {
-        (void)boost::locale::conv::utf_to_utf<char32_t>(text, boost::locale::conv::stop);
-    } catch (const boost::locale::conv::conversion_error&) {
+void faultOnInvalidUtf8(VirtualMachine* virtualMachine, const NomadStringView text, const NomadString& memberName) {
+    if (!isValidUtf8(text)) {
         virtualMachine->fault("Intrinsic string member '" + memberName + "' requires valid UTF-8");
     }
 }
@@ -38,46 +31,10 @@ NomadString getStringParameter(const VirtualMachine* virtualMachine, const Nomad
     return parameter != nullptr ? parameter : "";
 }
 
-bool isUnicodeWhitespace(const char32_t character) {
-    return (character >= U'\u0009' && character <= U'\u000D') ||
-           character == U'\u0020' ||
-           character == U'\u0085' ||
-           character == U'\u00A0' ||
-           character == U'\u1680' ||
-           (character >= U'\u2000' && character <= U'\u200A') ||
-           character == U'\u2028' ||
-           character == U'\u2029' ||
-           character == U'\u202F' ||
-           character == U'\u205F' ||
-           character == U'\u3000';
-}
-
-NomadString trimString(VirtualMachine* virtualMachine, const NomadString& text, const bool trimStart,
-                       const bool trimEnd, const NomadString& memberName) {
-    validateUtf8(virtualMachine, text, memberName);
-    const auto characters = boost::locale::conv::utf_to_utf<char32_t>(text, boost::locale::conv::stop);
-    NomadIndex start = 0;
-    auto end = characters.size();
-
-    if (trimStart) {
-        while (start < end && isUnicodeWhitespace(characters[start])) {
-            ++start;
-        }
-    }
-    if (trimEnd) {
-        while (end > start && isUnicodeWhitespace(characters[end - 1])) {
-            --end;
-        }
-    }
-
-    return boost::locale::conv::utf_to_utf<NomadChar>(characters.substr(start, end - start),
-                                                       boost::locale::conv::stop);
-}
-
 void validateSearchOperands(VirtualMachine* virtualMachine, const NomadString& receiver, const NomadString& search,
                             const NomadString& memberName) {
-    validateUtf8(virtualMachine, receiver, memberName);
-    validateUtf8(virtualMachine, search, memberName);
+    faultOnInvalidUtf8(virtualMachine, receiver, memberName);
+    faultOnInvalidUtf8(virtualMachine, search, memberName);
 }
 
 } // namespace
@@ -132,8 +89,8 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         [](VirtualMachine* virtualMachine) {
             const auto* receiver = virtualMachine->getIntrinsicReceiver().getStringValue();
             const NomadString text = receiver != nullptr ? receiver : "";
-            validateUtf8(virtualMachine, text, "toUpper");
-            virtualMachine->setStringResult(boost::locale::to_upper(text, getIntrinsicStringLocale()));
+            faultOnInvalidUtf8(virtualMachine, text, "toUpper");
+            virtualMachine->setStringResult(stringToUpper(text));
         },
         {},
         runtime->getStringType(),
@@ -146,8 +103,8 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         "toLower",
         [](VirtualMachine* virtualMachine) {
             const auto text = getReceiverText(virtualMachine);
-            validateUtf8(virtualMachine, text, "toLower");
-            virtualMachine->setStringResult(boost::locale::to_lower(text, getIntrinsicStringLocale()));
+            faultOnInvalidUtf8(virtualMachine, text, "toLower");
+            virtualMachine->setStringResult(stringToLower(text));
         },
         {},
         runtime->getStringType(),
@@ -159,15 +116,9 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         runtime->getStringType(),
         "trim",
         [](VirtualMachine* virtualMachine) {
-            virtualMachine->setStringResult(
-                trimString(
-                    virtualMachine, 
-                    getReceiverText(virtualMachine), 
-                    true, 
-                    true,
-                    "trim"
-                )
-            );
+            const auto text = getReceiverText(virtualMachine);
+            faultOnInvalidUtf8(virtualMachine, text, "trim");
+            virtualMachine->setStringResult(stringTrimCopy(text));
         },
         {},
         runtime->getStringType(),
@@ -179,15 +130,9 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         runtime->getStringType(),
         "trimStart",
         [](VirtualMachine* virtualMachine) {
-            virtualMachine->setStringResult(
-                trimString(
-                    virtualMachine, 
-                    getReceiverText(virtualMachine), 
-                    true, 
-                    false,
-                    "trimStart"
-                )
-            );
+            const auto text = getReceiverText(virtualMachine);
+            faultOnInvalidUtf8(virtualMachine, text, "trimStart");
+            virtualMachine->setStringResult(stringLeftTrimCopy(text));
         },
         {},
         runtime->getStringType(),
@@ -199,15 +144,9 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         runtime->getStringType(),
         "trimEnd",
         [](VirtualMachine* virtualMachine) {
-            virtualMachine->setStringResult(
-                trimString(
-                    virtualMachine, 
-                    getReceiverText(virtualMachine), 
-                    false, 
-                    true,
-                    "trimEnd"
-                )
-            );
+            const auto text = getReceiverText(virtualMachine);
+            faultOnInvalidUtf8(virtualMachine, text, "trimEnd");
+            virtualMachine->setStringResult(stringRightTrimCopy(text));
         },
         {},
         runtime->getStringType(),

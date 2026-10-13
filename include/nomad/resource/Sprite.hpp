@@ -48,7 +48,10 @@ public:
     );
     [[nodiscard]] const Sprite* getSprite(NomadId sprite_id) const;
     [[nodiscard]] const Sprite* getSpriteByName(const NomadString& name) const;
+    [[nodiscard]] NomadIndex getSpriteCount() const;
     void getSpritesByPrefix(const NomadString& prefix, std::vector<Sprite*>& sprites) const;
+    void reserveAdditionalSprites(NomadIndex additionalCount);
+    void commitPreparedSprites(std::vector<std::unique_ptr<Sprite>> sprites) noexcept;
 
 private:
     ResourceManager* m_resources;

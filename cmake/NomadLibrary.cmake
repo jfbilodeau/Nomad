@@ -5,12 +5,7 @@ add_library(nomad-language STATIC ${NOMAD_LANGUAGE_SOURCES})
 add_library(Nomad::Language ALIAS nomad-language)
 nomad_configure_runtime_target(nomad-language)
 
-# Build project configuration support independently from the language and engine.
-add_library(nomad-project STATIC ${NOMAD_PROJECT_SOURCES})
-add_library(Nomad::Project ALIAS nomad-project)
-nomad_configure_target(nomad-project)
-
-# Build the game engine on top of the language runtime.
+# Build the game engine, resource pipeline, and project tooling on top of the language runtime.
 add_library(nomad STATIC ${NOMAD_ENGINE_SOURCES})
 add_library(Nomad::Engine ALIAS nomad)
 nomad_configure_runtime_target(nomad)
@@ -38,7 +33,7 @@ else()
         ${NOMAD_SOURCE_DIR}/nomad/game/VariablePersistence.cpp
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectPackager.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/ResourceManager.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteAtlas.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteCatalog.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/Documentation.cpp
         PROPERTIES COMPILE_OPTIONS "-Wno-error=conversion"
     )
@@ -56,16 +51,9 @@ target_include_directories(
     nomad
     PUBLIC
     $<BUILD_INTERFACE:${NOMAD_INCLUDE_DIR}>
-    $<INSTALL_INTERFACE:include>
-    ${dearimgui_SOURCE_DIR}  # DearImGui is not configured by CMake. Need to manually add include dir.
-)
-
-target_include_directories(
-    nomad-project
-    PUBLIC
-    $<BUILD_INTERFACE:${NOMAD_INCLUDE_DIR}>
     $<BUILD_INTERFACE:${NOMAD_GENERATED_INCLUDE_DIR}>
     $<INSTALL_INTERFACE:include>
+    ${dearimgui_SOURCE_DIR}  # DearImGui is not configured by CMake. Need to manually add include dir.
 )
 
 target_link_libraries(
@@ -77,8 +65,6 @@ target_link_libraries(
     Boost::spirit
 )
 
-target_link_libraries(nomad-project PRIVATE tomlplusplus::tomlplusplus archive_static Boost::json)
-
 target_link_libraries(
     nomad
     PUBLIC
@@ -88,6 +74,8 @@ target_link_libraries(
     SDL3_ttf::SDL3_ttf
     box2d
     PRIVATE
-    Nomad::Project
+    archive_static
+    tomlplusplus::tomlplusplus
+    Boost::json
     Boost::program_options
 )

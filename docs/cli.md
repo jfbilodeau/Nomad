@@ -10,7 +10,7 @@ command-specific help. Options belong to individual verbs.
 | Command | Behavior |
 | --- | --- |
 | `nomad init [directory]` | Create a minimal project; refuse to overwrite generated files. |
-| `nomad check [directory]` | Validate the project and delegate compilation to the sibling `nomadc`. |
+| `nomad check [directory]` | Validate project scripts and sprite packing through the sibling `nomadc`. |
 | `nomad run [directory] [--debug]` | Launch the sibling runtime from the project root. |
 | `nomad package [directory] [--force] [--dry-run]` | Create a standalone game ZIP using the included runtime bundle. |
 | `nomad version` | Print the SDK version. |
@@ -26,6 +26,11 @@ Resources are selected using `package.exclude`. Output is named
 Entries are sorted with normalized timestamps and permissions.
 `--force` (`-f`) replaces only the matching archive, preserving other output files.
 Cross-target runtime selection is not supported.
+
+Packaging compiles each nonempty raw sprite root into `catalog.json` and
+adjacent packed PNG pages. Individual source PNGs from that root are omitted
+from the archive. Roots that already contain a catalog are preserved, while
+empty roots remain uncompiled for dynamically installed mods.
 
 ## Compiler
 
@@ -45,11 +50,25 @@ The compiler initializes a headless engine with dummy video/audio drivers.
 Engine functions and constants remain available. Diagnostics include source
 locations; compilation errors return a nonzero exit code.
 
+When `nomadc check` discovers a project, it also discovers and CPU-packs the
+configured sprite directories without uploading textures to the GPU. The
+report lists each physical texture page, its dimensions, logical and unique
+sprite counts, and pixel occupancy. Sprite discovery, image decoding, naming,
+collision, size, and packing failures produce a nonzero exit code. An explicit
+`nomadc check <path>` remains a script-only check.
+
 ## Runtime
 
 `nomad-runtime` discovers the current project's configuration and executes
 `project.entry`. `--resource-path <directory>` overrides the configured
 resource directory; `--debug` enables diagnostic logging and the debug console.
 
-On Windows the runtime is a GUI application, so packaged games do not open a
-console window. The manager and compiler remain console applications.
+Run `nomad run --debug` and press `F12` in the game window to open the debug
+console. Runtime log messages appear in its **Logs** panel. Press `F12` again
+to close it.
+
+On Linux, runtime messages are also written to the terminal that launched
+`nomad run`. On Windows the runtime is a GUI application, so it has no terminal
+output even when the console-based `nomad` manager launches it. Use the in-game
+debug console to inspect runtime logs on Windows. The manager and compiler
+remain console applications on every platform.

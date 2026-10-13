@@ -91,7 +91,7 @@ runtime and does not require a separate Nomad SDK installation.
 | Command | Purpose |
 | --- | --- |
 | `nomad init [directory]` | Create a Nomad project. |
-| `nomad check [directory]` | Validate the project and compile its scripts. |
+| `nomad check [directory]` | Validate scripts and report automatic sprite packing. |
 | `nomad run [directory] [--debug]` | Run the game. |
 | `nomad package [directory] [--dry-run] [--force]` | Build a standalone game ZIP. |
 | `nomadc check [path]` | Compile a script or directory without running it. |
@@ -105,6 +105,7 @@ command-specific usage.
 
 - [Getting started](https://jfbilodeau.github.io/Nomad/)
 - [Language guide](docs/language.md)
+- [Sprites](docs/sprites.md)
 - [CLI reference](docs/cli.md)
 - [Project configuration](docs/configuration.md)
 - [Building from source](docs/building.md)

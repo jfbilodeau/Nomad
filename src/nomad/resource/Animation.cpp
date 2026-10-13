@@ -112,7 +112,7 @@ const Animation* AnimationManager::getAnimation(
     // Animation does not exist. Attempt to create it.
     std::vector<Sprite*> frames;
 
-    auto prefix = name + "-" + variant + "-" + direction + "-";
+    auto prefix = name + "." + variant + "." + direction + ".";
 
     m_resources->getSprites()->getSpritesByPrefix(prefix, frames);
 

@@ -62,7 +62,10 @@ public:
     [[nodiscard]] NomadId registerTexture(const NomadString& textureName);
     [[nodiscard]] const Texture* getTexture(NomadId textureId) const;
     [[nodiscard]] const Texture* getTextureByName(const NomadString& textureName) const;
+    [[nodiscard]] NomadIndex getTextureCount() const;
     [[nodiscard]] Texture* createTexture(const NomadString& name, NomadInteger width, NomadInteger height) const;
+    void reserveAdditionalTextures(NomadIndex additionalCount);
+    void commitPreparedTextures(std::vector<std::unique_ptr<Texture>> textures) noexcept;
 
 private:
     ResourceManager* m_resources;

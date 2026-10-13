@@ -122,4 +122,55 @@ BOOST_AUTO_TEST_CASE(all_anchors_render_at_expected_positions_with_single_offset
     }
 }
 
+BOOST_AUTO_TEST_CASE(fixed_width_text_applies_horizontal_alignment)
+{
+    TestDirectory directory("nomad_entity_text_horizontal_alignment");
+    std::filesystem::copy_file(NOMAD_TEST_FONT_FILE, directory.getPath() / "font.ttf");
+    GameOptions options;
+    options.resourcePath = directory.getPath().string();
+    auto game = Game::createHeadless(options);
+    auto* canvas = game->getCanvas();
+    const auto fontId = game->getResources()->getFonts()->registerFont("font.ttf", 13.0f);
+    const auto* font = game->getResources()->getFonts()->getFont(fontId);
+    const auto white = Color{255, 255, 255, 255};
+    const auto black = Color{0, 0, 0, 255};
+    constexpr NomadInteger textureWidth = 100;
+
+    const auto referenceTexture = std::unique_ptr<Texture>(
+        font->generateTexture(canvas, "Aligned", white, HorizontalAlignment::Left, 0, 0, 1.0f));
+    const auto referenceWidth = static_cast<Coord>(referenceTexture->getWidth());
+    const auto referenceHeight = static_cast<Coord>(referenceTexture->getHeight());
+    canvas->clear(black);
+    canvas->renderTexture(
+        referenceTexture.get(),
+        {0, 0, referenceWidth, referenceHeight},
+        {0, 0, referenceWidth, referenceHeight}
+    );
+    const auto reference = readTextBounds(canvas);
+
+    const auto alignments = std::array{
+        HorizontalAlignment::Left,
+        HorizontalAlignment::Middle,
+        HorizontalAlignment::Right
+    };
+
+    for (auto index = 0U; index < alignments.size(); ++index) {
+        const auto texture = std::unique_ptr<Texture>(
+            font->generateTexture(canvas, "Aligned", white, alignments[index], textureWidth, 0, 1.0f));
+        const auto textureHeight = static_cast<Coord>(texture->getHeight());
+        canvas->clear(black);
+        canvas->renderTexture(
+            texture.get(),
+            {0, 0, textureWidth, textureHeight},
+            {0, 0, textureWidth, textureHeight}
+        );
+        const auto bounds = readTextBounds(canvas);
+        const auto expectedX = static_cast<int>(
+            (textureWidth - static_cast<NomadInteger>(referenceWidth)) * index / 2
+        );
+        BOOST_TEST(bounds.left == expectedX + reference.left);
+        BOOST_TEST(bounds.right == expectedX + reference.right);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

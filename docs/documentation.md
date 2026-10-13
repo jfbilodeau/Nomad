@@ -1,6 +1,6 @@
 # Contributing documentation
 
-Handwritten pages live in `docs`. The engine API page is generated from the
+Handwritten pages live in `docs`. CI generates the engine API page from the
 registered API with `nomadc docs`; do not edit the generated Markdown.
 The site uses Material for MkDocs for syntax highlighting and built-in code
 copy buttons; clipboard access requires HTTPS or localhost.
@@ -28,10 +28,10 @@ nomadc docs --output .
 ```
 
 The compiler warns that no project was found and writes engine-only
-documentation to `nomad-reference.md`. Inside a project, the default invocation
-also includes API declarations from the discovered project scripts. Pass an
-explicit source or project path to document it regardless of the current
-directory.
+documentation to the ignored local output `nomad-reference.md`. Inside a
+project, the default invocation also includes API declarations from the
+discovered project scripts. Pass an explicit source or project path to document
+it regardless of the current directory.
 
 The preparation script uses only the Python standard library and needs no
 CMake installation. Test it with

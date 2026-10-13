@@ -38,6 +38,15 @@ struct ResourceConfiguration {
     NomadPath directory = "res";
 };
 
+struct SpriteConfiguration {
+    std::vector<NomadPath> directories{"sprites"};
+    NomadInteger maxTextureSize = 2048;
+    NomadInteger padding = 1;
+    bool directoriesExplicitlyConfigured = false;
+    bool maxTextureSizeExplicitlyConfigured = false;
+    bool paddingExplicitlyConfigured = false;
+};
+
 struct PackageConfiguration {
     NomadPath output = "dist";
     std::vector<NomadString> exclude;
@@ -49,6 +58,7 @@ struct ProjectConfiguration {
     ProjectMetadata project;
     NomadSdkConfiguration nomad;
     ResourceConfiguration resources;
+    SpriteConfiguration sprites;
     PackageConfiguration package;
     NomadPath root;
 };

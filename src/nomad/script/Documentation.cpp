@@ -10,6 +10,7 @@
 
 #include <boost/json.hpp>
 
+#include <algorithm>
 #include <set>
 
 namespace nomad {

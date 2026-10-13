@@ -15,12 +15,13 @@
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
 
+#include <nomad/system/String.hpp>
+
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_sdlrenderer3.h>
 #include <imgui.h>
 
 #include <algorithm>
-#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
@@ -38,14 +39,8 @@ bool containsText(const NomadString& value, const char* filter) {
         return true;
     }
 
-    NomadString lowerValue = value;
-    NomadString lowerFilter = filter;
-    std::ranges::transform(lowerValue, lowerValue.begin(), [](const unsigned char character) {
-        return static_cast<char>(std::tolower(character));
-    });
-    std::ranges::transform(lowerFilter, lowerFilter.begin(), [](const unsigned char character) {
-        return static_cast<char>(std::tolower(character));
-    });
+    const auto lowerValue = stringToLowerAscii(value);
+    const auto lowerFilter = stringToLowerAscii(filter);
     return lowerValue.find(lowerFilter) != NomadString::npos;
 }
 

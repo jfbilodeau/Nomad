@@ -17,6 +17,8 @@
 #include <nomad/resource/ResourceManager.hpp>
 #include <nomad/resource/Sprite.hpp>
 
+#include <algorithm>
+
 namespace nomad {
 
 Entity::Entity(

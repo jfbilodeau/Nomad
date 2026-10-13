@@ -3,9 +3,11 @@
 #include <nomad/project/ProjectConfiguration.hpp>
 
 #include <nomad/system/Path.hpp>
+#include <nomad/system/String.hpp>
 
 #include <toml++/toml.hpp>
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <system_error>
@@ -131,6 +133,122 @@ std::vector<NomadString> readExclusions(const toml::table& package) {
     return result;
 }
 
+NomadString normalizedDirectoryKey(const NomadPath& path) {
+    return stringToLowerAscii(pathToGenericUtf8(path.lexically_normal()));
+}
+
+bool directoriesOverlap(const NomadStringView left, const NomadStringView right) {
+    return
+        left == right ||
+        (left.size() < right.size() && right.starts_with(left) && right[left.size()] == '/') ||
+        (right.size() < left.size() && left.starts_with(right) && left[right.size()] == '/');
+}
+
+std::vector<NomadPath> readSpriteDirectories(const toml::table& sprites) {
+    const auto* directories = sprites["directories"].as_array();
+
+    if (directories == nullptr) {
+        throw ProjectConfigurationError("Configuration field 'sprites.directories' must be an array of strings");
+    }
+
+    std::vector<NomadPath> result;
+    std::vector<NomadString> normalizedKeys;
+    result.reserve(directories->size());
+    normalizedKeys.reserve(directories->size());
+
+    for (const auto& directory : *directories) {
+        const auto value = directory.value<NomadString>();
+
+        if (!value || value->empty()) {
+            throw ProjectConfigurationError(
+                "Configuration field 'sprites.directories' must contain only non-empty strings"
+            );
+        }
+
+        auto normalizedValue = *value;
+        std::ranges::replace(normalizedValue, '\\', '/');
+        auto path = pathFromUtf8(normalizedValue).lexically_normal();
+
+        if (!path.empty() && !path.has_filename()) {
+            path = path.parent_path();
+        }
+
+        validateProjectRelativePath(path, "sprites.directories", false);
+        const auto key = normalizedDirectoryKey(path);
+
+        for (const auto& existing : normalizedKeys) {
+            if (directoriesOverlap(existing, key)) {
+                throw ProjectConfigurationError(
+                    "Configuration field 'sprites.directories' contains duplicate or overlapping directories"
+                );
+            }
+        }
+
+        normalizedKeys.push_back(key);
+        result.push_back(std::move(path));
+    }
+
+    return result;
+}
+
+NomadInteger readSpriteInteger(
+    const toml::table& sprites,
+    const NomadStringView key,
+    const NomadInteger minimum
+) {
+    const auto& node = sprites[key];
+    const auto value = sprites[key].value<NomadInteger>();
+    const auto field = "sprites." + NomadString(key);
+
+    if (!node.is_integer() || !value) {
+        throw ProjectConfigurationError("Configuration field '" + field + "' must be an integer");
+    }
+
+    if (*value < minimum) {
+        throw ProjectConfigurationError(
+            "Configuration field '" + field + "' must be at least " + std::to_string(minimum)
+        );
+    }
+
+    return *value;
+}
+
+NomadString serializeSpriteConfiguration(const SpriteConfiguration& configuration) {
+    if (
+        !configuration.directoriesExplicitlyConfigured &&
+        !configuration.maxTextureSizeExplicitlyConfigured &&
+        !configuration.paddingExplicitlyConfigured
+    ) {
+        return {};
+    }
+
+    NomadString result = "\n[sprites]\n";
+
+    if (configuration.directoriesExplicitlyConfigured) {
+        result += "directories = [";
+
+        for (NomadIndex index = 0; index < configuration.directories.size(); ++index) {
+            if (index != 0) {
+                result += ", ";
+            }
+
+            result += "\"" + escapeTomlString(pathToGenericUtf8(configuration.directories[index])) + "\"";
+        }
+
+        result += "]\n";
+    }
+
+    if (configuration.maxTextureSizeExplicitlyConfigured) {
+        result += "max-texture-size = " + std::to_string(configuration.maxTextureSize) + "\n";
+    }
+
+    if (configuration.paddingExplicitlyConfigured) {
+        result += "padding = " + std::to_string(configuration.padding) + "\n";
+    }
+
+    return result;
+}
+
 NomadString formatParseError(const toml::parse_error& error) {
     std::ostringstream message;
     message
@@ -223,6 +341,7 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
     const auto& project = requiredTable(document, "project");
     const auto& nomad = requiredTable(document, "nomad");
     const auto* resources = optionalTable(document, "resources");
+    const auto* sprites = optionalTable(document, "sprites");
     const auto* package = optionalTable(document, "package");
     const auto hasExecutable = project.contains("executable");
 
@@ -249,6 +368,19 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
         throw ProjectConfigurationError(
             "Configuration field 'nomad.version' is invalid: " + NomadString(error.what())
         );
+    }
+
+    if (sprites != nullptr && sprites->contains("directories")) {
+        configuration.sprites.directories = readSpriteDirectories(*sprites);
+        configuration.sprites.directoriesExplicitlyConfigured = true;
+    }
+    if (sprites != nullptr && sprites->contains("max-texture-size")) {
+        configuration.sprites.maxTextureSize = readSpriteInteger(*sprites, "max-texture-size", 1);
+        configuration.sprites.maxTextureSizeExplicitlyConfigured = true;
+    }
+    if (sprites != nullptr && sprites->contains("padding")) {
+        configuration.sprites.padding = readSpriteInteger(*sprites, "padding", 0);
+        configuration.sprites.paddingExplicitlyConfigured = true;
     }
 
     if (configuration.type == ProjectConfigurationType::Development) {
@@ -316,7 +448,8 @@ NomadString serializeReleaseProjectConfiguration(const ProjectConfiguration& con
         "entry = \"" + escapeTomlString(configuration.project.entry) + "\"\n"
         "\n"
         "[nomad]\n"
-        "version = \"" + configuration.nomad.version.toString() + "\"\n";
+        "version = \"" + configuration.nomad.version.toString() + "\"\n" +
+        serializeSpriteConfiguration(configuration.sprites);
 }
 
 void validateNomadVersionCompatibility(

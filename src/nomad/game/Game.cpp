@@ -26,12 +26,29 @@
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
+#include <algorithm>
+#include <exception>
 #include <filesystem>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <variant>
 
 namespace nomad {
+
+namespace {
+
+NomadString getExceptionMessage(const std::exception_ptr& exception) {
+    try {
+        std::rethrow_exception(exception);
+    } catch (const std::exception& error) {
+        return error.what();
+    } catch (...) {
+        return "Unknown exception";
+    }
+}
+
+} // namespace
 
 Game::Game(GameOptions options) :
     m_options(std::move(options))
@@ -72,7 +89,7 @@ void Game::initialize()
 
     setLanguage("en");
 
-    compileFunctions();
+    loadSpritesAndCompileScripts();
 
     if (m_options.debug) {
         log::setLogLevel(LogLevel::Debug);
@@ -86,6 +103,52 @@ void Game::initialize()
     log::info("Game initialized");
 
     log::flush();
+}
+
+void Game::loadSpritesAndCompileScripts() {
+    log::info("Loading sprites...");
+
+    std::exception_ptr compilationFailure;
+    std::jthread compilationThread([this, &compilationFailure] {
+        try {
+            compileScripts();
+        } catch (...) {
+            compilationFailure = std::current_exception();
+        }
+    });
+
+    std::exception_ptr spriteFailure;
+    const auto spriteStartTicks = SDL_GetTicks();
+    NomadIndex spriteCount = 0;
+
+    try {
+        spriteCount = loadSprites();
+    } catch (...) {
+        spriteFailure = std::current_exception();
+    }
+
+    compilationThread.join();
+
+    if (!spriteFailure) {
+        log::info(
+            "Loaded " + toString(spriteCount) + " sprites in " +
+            toString(static_cast<NomadInteger>(SDL_GetTicks() - spriteStartTicks)) + "ms"
+        );
+    }
+
+    if (spriteFailure && compilationFailure) {
+        raiseError(
+            "Game initialization failed:"
+            "\nSprite loading: " + getExceptionMessage(spriteFailure) +
+            "\nScript compilation: " + getExceptionMessage(compilationFailure)
+        );
+    }
+    if (spriteFailure) {
+        std::rethrow_exception(spriteFailure);
+    }
+    if (compilationFailure) {
+        std::rethrow_exception(compilationFailure);
+    }
 }
 
 void Game::initializeHeadless()
@@ -1259,7 +1322,7 @@ void Game::loadTextIntoConst(const NomadString& languageCode) const {
     }
 }
 
-void Game::compileFunctions() {
+void Game::compileScripts() {
     log::info("Compiling functions...");
 
     const auto start_ticks = SDL_GetTicks();
@@ -1314,6 +1377,16 @@ void Game::compileFunctions() {
         "ms";
 
     log::info(message);
+}
+
+NomadIndex Game::loadSprites() {
+    return m_resourceManager->loadSpriteRoots(
+        m_options.sprites.directories,
+        m_options.sprites.directoriesExplicitlyConfigured,
+        m_options.sprites.maxTextureSize,
+        m_options.sprites.padding,
+        m_options.sprites.missingDirectoriesAllowed
+    );
 }
 
 // void Game::pushExecutionContext(Scene* scene, Entity* entity) {

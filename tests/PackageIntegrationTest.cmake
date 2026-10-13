@@ -79,6 +79,29 @@ run_success(
     "${NOMAD_CLI}" init "${PROJECT_DIR}"
 )
 
+file(MAKE_DIRECTORY "${PROJECT_DIR}/res/sprites/player")
+configure_file(
+    "${CMAKE_CURRENT_LIST_DIR}/projects/package-smoke/res/sprites/checker.png"
+    "${PROJECT_DIR}/res/sprites/player/checker.png"
+    COPYONLY
+)
+nomadRunTestCommand(
+    "Project sprite packing report"
+    COMMAND "${NOMAD_CLI}" check "${PROJECT_DIR}"
+    OUTPUT_MATCH "Sprites: 1 logical sprites, 1 groups, 1 texture pages[\r\n]+  sprites.player#0:"
+)
+file(WRITE "${PROJECT_DIR}/res/sprites/player/broken.png" "not a PNG")
+nomadRunTestCommand(
+    "Invalid project sprite"
+    EXPECT_FAILURE
+    COMMAND "${NOMAD_CLI}" check "${PROJECT_DIR}"
+    ERROR_VARIABLE INVALID_SPRITE_ERROR
+)
+if(NOT INVALID_SPRITE_ERROR MATCHES "error: Failed to check sprites: Failed to load image for sprite")
+    message(FATAL_ERROR "Invalid project sprite did not report the expected error")
+endif()
+file(REMOVE "${PROJECT_DIR}/res/sprites/player/broken.png")
+
 set(TEXTMATE_GRAMMAR "${PROJECT_DIR}/nomad.tmLanguage.json")
 run_success(
     "TextMate grammar generation"
@@ -135,6 +158,18 @@ require_path("${PACKAGE_DIR}/nomad.toml" "Release manifest")
 require_path("${PACKAGE_DIR}/res/scripts/init.nomad" "Packaged entry script")
 require_path("${PACKAGE_DIR}/res/keep.txt" "Included resource")
 require_path("${PACKAGE_DIR}/res/日本語.txt" "Unicode resource")
+require_path("${PACKAGE_DIR}/res/sprites/catalog.json" "Compiled sprite catalog")
+require_path("${PACKAGE_DIR}/res/sprites/sprites.player-0.png" "Compiled sprite texture page")
+reject_path("${PACKAGE_DIR}/res/sprites/player/checker.png" "Source sprite PNG")
+file(READ "${PACKAGE_DIR}/res/sprites/catalog.json" SPRITE_CATALOG)
+string(JSON SPRITE_CATALOG_SCHEMA GET "${SPRITE_CATALOG}" schema)
+if(NOT SPRITE_CATALOG_SCHEMA EQUAL 1)
+    message(FATAL_ERROR "Compiled sprite catalog has an invalid schema")
+endif()
+string(JSON SPRITE_CATALOG_GROUP_COUNT LENGTH "${SPRITE_CATALOG}" groups)
+if(NOT SPRITE_CATALOG_GROUP_COUNT EQUAL 1)
+    message(FATAL_ERROR "Compiled sprite catalog should contain exactly one group")
+endif()
 file(READ "${PACKAGE_DIR}/res/日本語.txt" UNICODE_RESOURCE)
 if(NOT UNICODE_RESOURCE STREQUAL "Unicode resource")
     message(FATAL_ERROR "Unicode resource contents changed during packaging")

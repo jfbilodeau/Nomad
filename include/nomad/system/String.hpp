@@ -5,10 +5,8 @@
 #include <nomad/system/TempHeap.hpp>
 #include <nomad/Nomad.hpp>
 
-#include <algorithm>
 #include <cctype>
 #include <cstring>
-#include <locale>
 #include <vector>
 
 namespace nomad {
@@ -61,49 +59,44 @@ inline NomadBoolean stringGreaterThanOrEqualTo(const NomadStringView a, const No
     return a >= b;
 }
 
-// trim from start (in place)
-inline NomadString& stringLeftTrim(NomadString &s) {
-    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
-        return !std::isspace(ch);
-    }));
-
-    return s;
+[[nodiscard]] inline NomadChar characterToLowerAscii(const NomadChar character) {
+    return static_cast<NomadChar>(std::tolower(static_cast<unsigned char>(character)));
 }
 
-// trim from end (in place)
-inline NomadString& stringRightTrim(NomadString &s) {
-    s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) {
-        return !std::isspace(ch);
-    }).base(), s.end());
-
-    return s;
+[[nodiscard]] inline NomadChar characterToUpperAscii(const NomadChar character) {
+    return static_cast<NomadChar>(std::toupper(static_cast<unsigned char>(character)));
 }
 
-// trim from both ends (in place)
-inline NomadString& stringTrim(NomadString &s) {
-    stringRightTrim(s);
-    stringLeftTrim(s);
+[[nodiscard]] inline NomadString stringToLowerAscii(const NomadStringView text) {
+    NomadString result(text);
 
-    return s;
+    for (auto& character : result) {
+        character = characterToLowerAscii(character);
+    }
+
+    return result;
 }
 
-// trim from start (copying)
-inline NomadString stringLeftTrimCopy(NomadString s) {
-    stringLeftTrim(s);
-    return s;
+[[nodiscard]] inline NomadString stringToUpperAscii(const NomadStringView text) {
+    NomadString result(text);
+
+    for (auto& character : result) {
+        character = characterToUpperAscii(character);
+    }
+
+    return result;
 }
 
-// trim from end (copying)
-inline NomadString stringRightTrimCopy(NomadString s) {
-    stringRightTrim(s);
-    return s;
-}
+[[nodiscard]] NomadString stringToLower(NomadStringView text);
+[[nodiscard]] NomadString stringToUpper(NomadStringView text);
+[[nodiscard]] NomadBoolean isValidUtf8(NomadStringView text);
 
-// trim from both ends (copying)
-inline NomadString stringTrimCopy(NomadString s) {
-    stringTrim(s);
-    return s;
-}
+NomadString& stringLeftTrim(NomadString& text);
+NomadString& stringRightTrim(NomadString& text);
+NomadString& stringTrim(NomadString& text);
+[[nodiscard]] NomadString stringLeftTrimCopy(NomadString text);
+[[nodiscard]] NomadString stringRightTrimCopy(NomadString text);
+[[nodiscard]] NomadString stringTrimCopy(NomadString text);
 
 NomadString toString(NomadBoolean value);
 NomadString toString(NomadId value);
