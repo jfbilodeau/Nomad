@@ -5,17 +5,7 @@ add_library(nomad-language STATIC ${NOMAD_LANGUAGE_SOURCES})
 add_library(Nomad::Language ALIAS nomad-language)
 nomad_configure_runtime_target(nomad-language)
 
-# Build CPU-only sprite discovery, packing, and catalog support for tools and the engine.
-add_library(nomad-assets STATIC ${NOMAD_ASSET_SOURCES})
-add_library(Nomad::Assets ALIAS nomad-assets)
-nomad_configure_target(nomad-assets)
-
-# Build project configuration support independently from the language and engine.
-add_library(nomad-project STATIC ${NOMAD_PROJECT_SOURCES})
-add_library(Nomad::Project ALIAS nomad-project)
-nomad_configure_target(nomad-project)
-
-# Build the game engine on top of the language runtime.
+# Build the game engine, resource pipeline, and project tooling on top of the language runtime.
 add_library(nomad STATIC ${NOMAD_ENGINE_SOURCES})
 add_library(Nomad::Engine ALIAS nomad)
 nomad_configure_runtime_target(nomad)
@@ -51,14 +41,6 @@ else()
 endif()
 
 target_include_directories(
-    nomad-assets
-    PUBLIC
-    $<BUILD_INTERFACE:${NOMAD_INCLUDE_DIR}>
-    $<BUILD_INTERFACE:${NOMAD_GENERATED_INCLUDE_DIR}>
-    $<INSTALL_INTERFACE:include>
-)
-
-target_include_directories(
     nomad-language
     PUBLIC
     $<BUILD_INTERFACE:${NOMAD_INCLUDE_DIR}>
@@ -70,16 +52,9 @@ target_include_directories(
     nomad
     PUBLIC
     $<BUILD_INTERFACE:${NOMAD_INCLUDE_DIR}>
-    $<INSTALL_INTERFACE:include>
-    ${dearimgui_SOURCE_DIR}  # DearImGui is not configured by CMake. Need to manually add include dir.
-)
-
-target_include_directories(
-    nomad-project
-    PUBLIC
-    $<BUILD_INTERFACE:${NOMAD_INCLUDE_DIR}>
     $<BUILD_INTERFACE:${NOMAD_GENERATED_INCLUDE_DIR}>
     $<INSTALL_INTERFACE:include>
+    ${dearimgui_SOURCE_DIR}  # DearImGui is not configured by CMake. Need to manually add include dir.
 )
 
 target_link_libraries(
@@ -91,30 +66,17 @@ target_link_libraries(
     Boost::spirit
 )
 
-target_link_libraries(nomad-project PRIVATE tomlplusplus::tomlplusplus archive_static Boost::json)
-
-target_link_libraries(
-    nomad-assets
-    PUBLIC
-    Nomad::Language
-    SDL3::SDL3
-    SDL3_image::SDL3_image
-    PRIVATE
-    Boost::json
-)
-
-target_link_libraries(nomad-project PRIVATE Nomad::Assets)
-
 target_link_libraries(
     nomad
     PUBLIC
-    Nomad::Assets
     Nomad::Language
     SDL3::SDL3
     SDL3_image::SDL3_image
     SDL3_ttf::SDL3_ttf
     box2d
     PRIVATE
-    Nomad::Project
+    archive_static
+    tomlplusplus::tomlplusplus
+    Boost::json
     Boost::program_options
 )

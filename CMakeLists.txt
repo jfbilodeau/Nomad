@@ -158,24 +158,6 @@ set(
 )
 
 set(
-        NOMAD_PROJECT_SOURCES
-        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectConfiguration.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectInitializer.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectPackager.cpp
-)
-
-set(
-        NOMAD_ASSET_SOURCES
-        ${NOMAD_SOURCE_DIR}/nomad/geometry/Rectangle.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/geometry/RectangleF.cpp
-
-        ${NOMAD_SOURCE_DIR}/nomad/resource/RectanglePacker.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteCatalog.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteDiscovery.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/resource/SpritePacker.cpp
-)
-
-set(
         NOMAD_ENGINE_SOURCES
         ${DEAR_IMGUI_SOURCE}
 
@@ -228,19 +210,30 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/geometry/Intersection.cpp
         ${NOMAD_SOURCE_DIR}/nomad/geometry/Point.cpp
         ${NOMAD_SOURCE_DIR}/nomad/geometry/PointF.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/geometry/Rectangle.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/geometry/RectangleF.cpp
+
+        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectConfiguration.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectInitializer.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/project/ProjectPackager.cpp
+
         ${NOMAD_SOURCE_DIR}/nomad/resource/Animation.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Font.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/resource/RectanglePacker.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Resource.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/ResourceManager.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Sprite.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteAtlas.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteCatalog.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteDiscovery.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/resource/SpritePacker.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Text.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Texture.cpp
 )
 
 include(cmake/NomadLibrary.cmake)
 include(cmake/NomadRuntime.cmake)
-target_compile_definitions(nomad-project PRIVATE NOMAD_PACKAGE_PLATFORM="${NOMAD_PACKAGE_PLATFORM}")
+target_compile_definitions(nomad PRIVATE NOMAD_PACKAGE_PLATFORM="${NOMAD_PACKAGE_PLATFORM}")
 
 add_library(nomad-cli-options INTERFACE)
 add_library(Nomad::CliOptions ALIAS nomad-cli-options)
@@ -279,7 +272,7 @@ if(NOMAD_BUILD_CLI)
     target_link_libraries(
         nomad-cli
         PRIVATE
-        Nomad::Project
+        Nomad::Engine
         Boost::dll
         Boost::nowide
         Boost::process
@@ -316,7 +309,7 @@ endif()
 option(NOMAD_BUILD_COMPILER "Build the Nomad compiler tooling" ON)
 if(NOMAD_BUILD_COMPILER)
     add_executable(nomadc apps/compiler/main.cpp)
-    target_link_libraries(nomadc PRIVATE Nomad::Engine Nomad::Project Nomad::CliOptions Boost::nowide)
+    target_link_libraries(nomadc PRIVATE Nomad::Engine Nomad::CliOptions Boost::nowide)
 endif()
 
 include(cmake/NomadDistribution.cmake)
