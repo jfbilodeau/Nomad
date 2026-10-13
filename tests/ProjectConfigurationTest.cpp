@@ -27,6 +27,9 @@ entry = "start"
 [nomad]
 version = "0.1.0"
 
+[sprites]
+directories = ["sprites", "mod/sprites"]
+
 [resources]
 directory = "res"
 
@@ -65,6 +68,10 @@ BOOST_AUTO_TEST_CASE(loads_typed_project_configuration)
     BOOST_TEST(configuration.project.entry == "start");
     BOOST_TEST(configuration.nomad.version == NomadVersion(0, 1, 0));
     BOOST_TEST(configuration.resources.directory == std::filesystem::path("res"));
+    BOOST_REQUIRE(configuration.sprites.directories.size() == 2U);
+    BOOST_TEST(configuration.sprites.directories[0] == NomadPath("sprites"));
+    BOOST_TEST(configuration.sprites.directories[1] == NomadPath("mod/sprites"));
+    BOOST_TEST(configuration.sprites.directoriesExplicitlyConfigured);
     BOOST_TEST(configuration.package.output == std::filesystem::path("dist"));
     BOOST_REQUIRE(configuration.package.exclude.size() == 2U);
     BOOST_TEST(configuration.package.exclude[0] == "**/*.psd");
@@ -87,6 +94,7 @@ BOOST_AUTO_TEST_CASE(loads_and_serializes_release_configuration)
     BOOST_TEST(releaseText.find("executable") == NomadString::npos);
     BOOST_TEST(releaseText.find("[resources]") == NomadString::npos);
     BOOST_TEST(releaseText.find("[package]") == NomadString::npos);
+    BOOST_TEST(releaseText.find("[sprites]") != NomadString::npos);
 
     const auto release = loadProjectConfiguration(releaseFile);
     BOOST_TEST(
@@ -100,8 +108,88 @@ BOOST_AUTO_TEST_CASE(loads_and_serializes_release_configuration)
     BOOST_TEST(release.project.executable.empty());
     BOOST_TEST(release.nomad.version == development.nomad.version);
     BOOST_TEST(release.resources.directory == NomadPath("res"));
+    BOOST_REQUIRE(release.sprites.directories.size() == development.sprites.directories.size());
+    BOOST_TEST(release.sprites.directories[0] == development.sprites.directories[0]);
+    BOOST_TEST(release.sprites.directories[1] == development.sprites.directories[1]);
+    BOOST_TEST(release.sprites.directoriesExplicitlyConfigured);
     BOOST_TEST(release.package.output.empty());
     BOOST_TEST(release.package.exclude.empty());
+}
+
+BOOST_AUTO_TEST_CASE(defaults_and_disables_sprite_directories)
+{
+    TestDirectory directory("nomad_project_configuration_sprite_defaults");
+    auto defaultText = std::string(COMPLETE_CONFIGURATION);
+    const auto sprites = defaultText.find("[sprites]");
+    const auto resources = defaultText.find("[resources]");
+    defaultText.erase(sprites, resources - sprites);
+    const auto defaultFile = directory.write("default.toml", defaultText);
+
+    const auto defaults = loadProjectConfiguration(defaultFile);
+    BOOST_REQUIRE(defaults.sprites.directories.size() == 1U);
+    BOOST_TEST(defaults.sprites.directories[0] == NomadPath("sprites"));
+    BOOST_TEST(!defaults.sprites.directoriesExplicitlyConfigured);
+    BOOST_TEST(serializeReleaseProjectConfiguration(defaults).find("[sprites]") == NomadString::npos);
+
+    auto disabledText = defaultText;
+    disabledText += "\n[sprites]\ndirectories = []\n";
+    const auto disabledFile = directory.write("disabled.toml", disabledText);
+    const auto disabled = loadProjectConfiguration(disabledFile);
+
+    BOOST_TEST(disabled.sprites.directories.empty());
+    BOOST_TEST(disabled.sprites.directoriesExplicitlyConfigured);
+    BOOST_TEST(serializeReleaseProjectConfiguration(disabled).find("directories = []") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(normalizes_sprite_directories)
+{
+    TestDirectory directory("nomad_project_configuration_sprite_normalization");
+    auto configurationText = std::string(COMPLETE_CONFIGURATION);
+    const auto originalDirectories = std::string("directories = [\"sprites\", \"mod/sprites\"]");
+    configurationText.replace(
+        configurationText.find(originalDirectories),
+        originalDirectories.size(),
+        "directories = [\"sprites/characters/..\", \"mod\\\\sprites\"]"
+    );
+    const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText);
+
+    const auto configuration = loadProjectConfiguration(projectFile);
+
+    BOOST_REQUIRE(configuration.sprites.directories.size() == 2U);
+    BOOST_TEST(configuration.sprites.directories[0] == NomadPath("sprites"));
+    BOOST_TEST(configuration.sprites.directories[1] == NomadPath("mod/sprites"));
+}
+
+BOOST_AUTO_TEST_CASE(rejects_invalid_sprite_directories)
+{
+    TestDirectory directory("nomad_project_configuration_sprite_validation");
+
+    const auto originalDirectories = std::string("[\"sprites\", \"mod/sprites\"]");
+    NomadIndex caseIndex = 0;
+
+    for (const auto& directories : {
+        "false",
+        "[\"sprites\", 42]",
+        "[\"\"]",
+        "[\".\"]",
+        "[\"../sprites\"]",
+        "[\"sprites\", \"sprites/../sprites\"]",
+        "[\"sprites\", \"sprites/ui\"]",
+        "[\"Sprites\", \"sprites\"]"
+    }) {
+        auto configurationText = std::string(COMPLETE_CONFIGURATION);
+        const auto value = configurationText.find(originalDirectories);
+        configurationText.replace(value, originalDirectories.size(), directories);
+        const auto projectFile = directory.write("invalid-" + std::to_string(caseIndex++) + ".toml", configurationText);
+
+        BOOST_CHECK_EXCEPTION(
+            (void)loadProjectConfiguration(projectFile),
+            ProjectConfigurationError,
+            [](const ProjectConfigurationError& error) {
+                return NomadString(error.what()).find("sprites.directories") != NomadString::npos;
+            }
+        );
+    }
 }
 
 BOOST_AUTO_TEST_CASE(rejects_partial_development_configuration)
@@ -155,6 +243,7 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_optional_fields_instead_of_defaulting)
         std::pair{"directory = \"res\"", "directory = \"\""},
         std::pair{"output = \"dist\"", "output = 42"},
         std::pair{"output = \"dist\"", "output = \"\""},
+        std::pair{"directories = [\"sprites\", \"mod/sprites\"]", "directories = \"sprites\""},
         std::pair{"exclude = [\"**/*.psd\", \"development/**\"]", "exclude = false"}
     }) {
         auto text = std::string(COMPLETE_CONFIGURATION);

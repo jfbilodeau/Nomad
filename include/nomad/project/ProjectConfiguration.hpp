@@ -38,6 +38,11 @@ struct ResourceConfiguration {
     NomadPath directory = "res";
 };
 
+struct SpriteConfiguration {
+    std::vector<NomadPath> directories{"sprites"};
+    bool directoriesExplicitlyConfigured = false;
+};
+
 struct PackageConfiguration {
     NomadPath output = "dist";
     std::vector<NomadString> exclude;
@@ -49,6 +54,7 @@ struct ProjectConfiguration {
     ProjectMetadata project;
     NomadSdkConfiguration nomad;
     ResourceConfiguration resources;
+    SpriteConfiguration sprites;
     PackageConfiguration package;
     NomadPath root;
 };

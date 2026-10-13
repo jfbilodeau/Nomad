@@ -19,6 +19,12 @@ version = "0.1.0"
 [resources]
 directory = "res"
 
+[sprites]
+directories = [
+    "sprites",
+    "mod/sprites",
+]
+
 [package]
 output = "dist"
 exclude = [
@@ -37,19 +43,37 @@ exclude = [
 | `project.entry` | Script entry function taking no arguments and returning `void`. | Optional; `"init"` |
 | `nomad.version` | Required SDK version in canonical `major.minor.patch` form; packaging requires this exact runtime version. | Required |
 | `resources.directory` | Resource directory relative to the project root. | Optional; `"res"` |
+| `sprites.directories` | Resource-relative directories recursively scanned for sprite PNG files. | Optional; `["sprites"]` |
 | `package.output` | Package output directory relative to the project root. | Optional; `"dist"` |
 | `package.exclude` | Resource-relative exclusion patterns; omitted or `[]` includes all resources. | Optional; `[]` |
 
-The entire `[resources]` and `[package]` tables may be omitted. Defaults apply
+The `[resources]`, `[sprites]`, and `[package]` tables may be omitted. Defaults apply
 only to missing fields; invalid types and empty strings are rejected.
 Development projects are identified by `project.executable`. A configuration
 without it is a packaged configuration and must omit `[resources]` and `[package]`.
 
+## Sprite directories
+
+`sprites.directories` contains directories relative to `resources.directory`.
+Nomad recursively discovers PNG files beneath each configured directory. Set
+the property to an empty array to disable automatic sprite discovery.
+
+Configured directories must be non-empty project-relative paths. Absolute
+paths, paths that escape through `..`, duplicates, and overlapping directories
+are rejected. For example, `["sprites", "sprites/ui"]` is invalid because the
+first entry already includes the second.
+
+When the `[sprites]` table is omitted, Nomad uses `["sprites"]`. A missing
+implicit default directory is allowed so projects without sprites remain
+valid. A directory listed explicitly must exist when sprite resources are
+checked or loaded.
+
 ## Packaged configuration
 
 Game packages contain a reduced `nomad.toml`. It retains the schema,
-project identity and version, entry function, and required Nomad version.
-It omits `project.executable`, `[resources]`, and `[package]`.
+project identity and version, entry function, required Nomad version, and
+explicit sprite directory configuration. It omits `project.executable`,
+`[resources]`, and `[package]`.
 Packaged resources always live in `res`.
 
 ## Runtime bundle manifest
