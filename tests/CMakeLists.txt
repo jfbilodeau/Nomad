@@ -37,6 +37,7 @@ add_executable(
     ./ProjectInitializerTest.cpp
     ./ProjectPackagerTest.cpp
     ./RuntimeTest.cpp
+    ./SpriteDiscoveryTest.cpp
     ./StatementExecutionTest.cpp
     ./SystemTest.cpp
     ./TestDirectory.hpp

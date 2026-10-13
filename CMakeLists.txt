@@ -226,6 +226,7 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/resource/ResourceManager.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Sprite.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteAtlas.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteDiscovery.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Text.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Texture.cpp
 )
