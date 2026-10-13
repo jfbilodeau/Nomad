@@ -165,6 +165,17 @@ set(
 )
 
 set(
+        NOMAD_ASSET_SOURCES
+        ${NOMAD_SOURCE_DIR}/nomad/geometry/Rectangle.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/geometry/RectangleF.cpp
+
+        ${NOMAD_SOURCE_DIR}/nomad/resource/RectanglePacker.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteCatalog.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteDiscovery.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/resource/SpritePacker.cpp
+)
+
+set(
         NOMAD_ENGINE_SOURCES
         ${DEAR_IMGUI_SOURCE}
 
@@ -217,18 +228,12 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/geometry/Intersection.cpp
         ${NOMAD_SOURCE_DIR}/nomad/geometry/Point.cpp
         ${NOMAD_SOURCE_DIR}/nomad/geometry/PointF.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/geometry/Rectangle.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/geometry/RectangleF.cpp
-
         ${NOMAD_SOURCE_DIR}/nomad/resource/Animation.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Font.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/resource/RectanglePacker.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Resource.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/ResourceManager.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Sprite.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteAtlas.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteDiscovery.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/resource/SpritePacker.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Text.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Texture.cpp
 )

@@ -4,6 +4,8 @@
 
 #include <nomad/resource/ResourceManager.hpp>
 #include <nomad/resource/Sprite.hpp>
+#include <nomad/resource/SpriteCatalog.hpp>
+#include <nomad/resource/SpriteDiscovery.hpp>
 #include <nomad/resource/SpritePacker.hpp>
 
 #include <nomad/system/Path.hpp>
@@ -77,6 +79,25 @@ BOOST_AUTO_TEST_CASE(loads_sprites_before_executing_the_entry_function)
     const auto* sprite = game->getResources()->getSprites()->getSpriteByName("sprites.player");
     BOOST_REQUIRE(sprite != nullptr);
     BOOST_TEST(game->getName() == "Initialized");
+}
+
+BOOST_AUTO_TEST_CASE(loads_compiled_sprite_catalog_instead_of_raw_pngs)
+{
+    TestDirectory directory("nomad_game_startup_compiled_sprites");
+    writeTextCatalogue(directory);
+    writePng(directory, "sprites/core.png");
+    const auto sources = discoverSpriteSources(directory.getPath(), {"sprites"}, true);
+    const auto groups = packSpriteGroups(sources, 64, 1);
+    writeSpriteCatalog(directory.getPath() / "sprites", groups);
+    writePng(directory, "sprites/ignored.png");
+    directory.write("scripts/init.nomad", "game.name = \"Compiled sprites\"\n");
+    selectDummyDrivers();
+
+    auto game = Game::create(makeOptions(directory));
+
+    BOOST_TEST(game->getResources()->getSprites()->getSpriteByName("sprites.core") != nullptr);
+    BOOST_TEST(game->getResources()->getSprites()->getSpriteByName("sprites.ignored") == nullptr);
+    BOOST_TEST(game->getName() == "Compiled sprites");
 }
 
 BOOST_AUTO_TEST_CASE(reports_script_compilation_failure_after_loading_valid_sprites)

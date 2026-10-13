@@ -100,6 +100,7 @@ struct CompilationPaths {
     std::optional<NomadString> entryFunction;
     NomadPath projectFile;
     std::optional<SpriteConfiguration> sprites;
+    bool missingSpriteDirectoriesAllowed = false;
 };
 
 CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const bool explicitPath) {
@@ -128,7 +129,8 @@ CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const b
                     resourcePath,
                     configuration.project.entry,
                     *projectRoot / NOMAD_PROJECT_FILE_NAME,
-                    configuration.sprites
+                    configuration.sprites,
+                    configuration.type == ProjectConfigurationType::Release
                 };
             }
         }
@@ -138,7 +140,14 @@ CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const b
         resourcePath = std::filesystem::current_path();
     }
 
-    return CompilationPaths{std::move(sourcePaths), resourcePath, std::nullopt, {}, std::nullopt};
+    return CompilationPaths{
+        std::move(sourcePaths),
+        resourcePath,
+        std::nullopt,
+        {},
+        std::nullopt,
+        false
+    };
 }
 
 // Stands up the real engine against SDL's dummy drivers so compiled sources resolve the same
@@ -187,12 +196,13 @@ bool checkSprites(const CompilationPaths& paths) {
             paths.sprites->directories,
             paths.sprites->directoriesExplicitlyConfigured,
             paths.sprites->maxTextureSize,
-            paths.sprites->padding
+            paths.sprites->padding,
+            paths.missingSpriteDirectoriesAllowed
         );
 
         std::cout
             << "Sprites: " << report.sourceCount
-            << " source sprites, " << report.groupCount
+            << " logical sprites, " << report.groupCount
             << " groups, " << report.pageCount
             << " texture pages\n";
 

@@ -47,6 +47,7 @@ struct SpriteOptions {
     NomadInteger maxTextureSize = 2048;
     NomadInteger padding = 1;
     bool directoriesExplicitlyConfigured = false;
+    bool missingDirectoriesAllowed = false;
 };
 
 struct GameOptions {

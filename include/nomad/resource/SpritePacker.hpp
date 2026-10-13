@@ -75,7 +75,8 @@ struct SpritePackingReport {
     const std::vector<NomadPath>& directories,
     bool directoriesExplicitlyConfigured,
     NomadInteger maxTextureSize,
-    NomadInteger padding
+    NomadInteger padding,
+    bool missingDirectoriesAllowed = false
 );
 
 } // namespace nomad

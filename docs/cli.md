@@ -27,6 +27,11 @@ Entries are sorted with normalized timestamps and permissions.
 `--force` (`-f`) replaces only the matching archive, preserving other output files.
 Cross-target runtime selection is not supported.
 
+Packaging compiles each nonempty raw sprite root into `catalog.json` and
+adjacent packed PNG pages. Individual source PNGs from that root are omitted
+from the archive. Roots that already contain a catalog are preserved, while
+empty roots remain uncompiled for dynamically installed mods.
+
 ## Compiler
 
 | Command | Behavior |

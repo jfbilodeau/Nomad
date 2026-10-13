@@ -2,7 +2,12 @@
 
 #include <nomad/project/ProjectPackager.hpp>
 
+#include <nomad/resource/SpriteCatalog.hpp>
+#include <nomad/resource/SpriteDiscovery.hpp>
+#include <nomad/resource/SpritePacker.hpp>
+
 #include <nomad/system/Path.hpp>
+#include <nomad/system/String.hpp>
 
 #include <boost/json.hpp>
 
@@ -161,9 +166,140 @@ void writeReleaseManifest(const ProjectConfiguration& configuration, const Nomad
     }
 }
 
+struct CompiledSpriteRoot {
+    NomadPath configuredDirectory;
+    NomadPath sourceDirectory;
+    std::vector<PackedSpriteGroup> groups;
+    bool generateCatalog;
+};
+
+std::vector<CompiledSpriteRoot> compileSpriteRoots(const ProjectConfiguration& configuration) {
+    const auto resources = resolveProjectResourcePath(configuration);
+    std::vector<CompiledSpriteRoot> compiledRoots;
+
+    try {
+        for (const auto& configuredDirectory : configuration.sprites.directories) {
+            const auto sourceDirectory = (resources / configuredDirectory).lexically_normal();
+
+            if (hasSpriteCatalog(sourceDirectory)) {
+                compiledRoots.push_back({
+                    configuredDirectory,
+                    sourceDirectory,
+                    loadSpriteCatalog(sourceDirectory),
+                    false
+                });
+                continue;
+            }
+
+            const auto sources = discoverSpriteSources(
+                resources,
+                {configuredDirectory},
+                configuration.sprites.directoriesExplicitlyConfigured
+            );
+
+            if (sources.empty()) {
+                continue;
+            }
+
+            compiledRoots.push_back({
+                configuredDirectory,
+                sourceDirectory,
+                packSpriteGroups(
+                    sources,
+                    configuration.sprites.maxTextureSize,
+                    configuration.sprites.padding
+                ),
+                true
+            });
+        }
+    } catch (const std::exception& error) {
+        throw ProjectPackagingError("Failed to compile sprite resources: " + NomadString(error.what()));
+    }
+
+    return compiledRoots;
+}
+
+bool isCompiledSpriteSource(
+    const NomadPath& source,
+    const std::vector<CompiledSpriteRoot>& compiledRoots
+) {
+    if (stringToLowerAscii(pathToUtf8(source.extension())) != ".png") {
+        return false;
+    }
+
+    return std::ranges::any_of(compiledRoots, [&](const auto& root) {
+        return root.generateCatalog && isWithin(source, root.sourceDirectory);
+    });
+}
+
+bool isRequiredCompiledSpriteFile(
+    const NomadPath& source,
+    const std::vector<CompiledSpriteRoot>& compiledRoots
+) {
+    return std::ranges::any_of(compiledRoots, [&](const auto& root) {
+        if (root.generateCatalog || source.parent_path() != root.sourceDirectory) {
+            return false;
+        }
+        if (pathToUtf8(source.filename()) == NOMAD_SPRITE_CATALOG_FILE_NAME) {
+            return true;
+        }
+
+        for (const auto& group : root.groups) {
+            for (NomadIndex pageIndex = 0; pageIndex < group.pages.size(); ++pageIndex) {
+                if (source.filename() == makePackedSpritePageFileName(group.name, pageIndex)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    });
+}
+
+std::vector<NomadPath> writeCompiledSpriteRoots(
+    const std::vector<CompiledSpriteRoot>& compiledRoots,
+    const NomadPath& staging,
+    const bool dryRun
+) {
+    std::vector<NomadPath> files;
+
+    for (const auto& root : compiledRoots) {
+        if (!root.generateCatalog) {
+            continue;
+        }
+
+        const auto destinationRoot = staging / "res" / root.configuredDirectory;
+
+        if (!dryRun) {
+            try {
+                writeSpriteCatalog(destinationRoot, root.groups);
+            } catch (const std::exception& error) {
+                throw ProjectPackagingError(
+                    "Failed to write compiled sprite root '" +
+                    pathToUtf8(root.configuredDirectory) + "': " + error.what()
+                );
+            }
+        }
+
+        files.push_back(destinationRoot / NOMAD_SPRITE_CATALOG_FILE_NAME);
+
+        for (const auto& group : root.groups) {
+            for (NomadIndex pageIndex = 0; pageIndex < group.pages.size(); ++pageIndex) {
+                files.push_back(
+                    destinationRoot /
+                    pathFromUtf8(makePackedSpritePageFileName(group.name, pageIndex))
+                );
+            }
+        }
+    }
+
+    return files;
+}
+
 std::vector<NomadPath> copyResources(
     const ProjectConfiguration& configuration,
     const NomadPath& staging,
+    const std::vector<CompiledSpriteRoot>& compiledSpriteRoots,
     const bool dryRun
 ) {
     const auto resources = resolveProjectResourcePath(configuration);
@@ -205,7 +341,16 @@ std::vector<NomadPath> copyResources(
                 raiseFilesystemError("Failed to resolve resource", entry.path(), error);
             }
 
-            if (!isExcluded(relative, configuration.package.exclude)) {
+            const auto excluded = isExcluded(relative, configuration.package.exclude);
+
+            if (excluded && isRequiredCompiledSpriteFile(entry.path(), compiledSpriteRoots)) {
+                throw ProjectPackagingError(
+                    "Package exclusions must not remove compiled sprite file: '" +
+                    pathToUtf8(relative) + "'"
+                );
+            }
+
+            if (!excluded && !isCompiledSpriteSource(entry.path(), compiledSpriteRoots)) {
                 const auto destination = staging / "res" / relative;
 
                 if (!dryRun) {
@@ -528,8 +673,11 @@ ProjectPackageResult packageProject(
             createDirectories(staging);
         }
 
-        auto resourceFiles = copyResources(configuration, staging, dryRun);
+        const auto compiledSpriteRoots = compileSpriteRoots(configuration);
+        auto resourceFiles = copyResources(configuration, staging, compiledSpriteRoots, dryRun);
         stagedFiles.insert(stagedFiles.end(), resourceFiles.begin(), resourceFiles.end());
+        auto compiledSpriteFiles = writeCompiledSpriteRoots(compiledSpriteRoots, staging, dryRun);
+        stagedFiles.insert(stagedFiles.end(), compiledSpriteFiles.begin(), compiledSpriteFiles.end());
         auto runtimeFiles = copyRuntime(configuration, runtimeDirectory, bundle, staging, dryRun);
         stagedFiles.insert(stagedFiles.end(), runtimeFiles.begin(), runtimeFiles.end());
         const auto manifest = staging / NOMAD_PROJECT_FILE_NAME;

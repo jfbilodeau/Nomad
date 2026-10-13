@@ -73,9 +73,13 @@ first entry already includes the second.
 When the `[sprites]` table is omitted, Nomad uses `["sprites"]`. A missing
 implicit default directory is allowed so projects without sprites remain
 valid. A directory listed explicitly must exist when sprite resources are
-checked or loaded. `nomad check` decodes and packs these resources on the CPU,
-then reports the physical texture pages, sprite counts, and occupancy without
-uploading textures to the GPU.
+checked or loaded from a development project. Packaged projects allow a
+configured directory to remain absent until a mod provides it.
+
+Each directory is loaded independently. A root containing `catalog.json` uses
+its pre-packed pages; a root without a catalog discovers and packs raw PNGs.
+`nomad check` validates either representation and reports the physical texture
+pages, sprite counts, and occupancy without uploading textures to the GPU.
 
 `sprites.max-texture-size` must be a positive integer. Logical sprite groups
 that do not fit in one texture are split into multiple pages of at most this
@@ -93,6 +97,10 @@ project identity and version, entry function, required Nomad version, and
 explicit sprite directory configuration. It omits `project.executable`,
 `[resources]`, and `[package]`.
 Packaged resources always live in `res`.
+
+Packaging replaces the source PNGs in every nonempty raw sprite root with a
+versioned `catalog.json` and adjacent packed PNG pages. Empty roots remain
+catalog-free so they can accept dynamically installed mod sprites.
 
 ## Runtime bundle manifest
 

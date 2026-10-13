@@ -87,6 +87,45 @@ Packing is deterministic and does not rotate images. Nomad trims transparent
 edges while preserving each sprite's original logical size and offset. Exact
 duplicate images may share packed pixels without sharing sprite names.
 
+## Source and compiled sprite roots
+
+Nomad selects the loading mode independently for each configured sprite
+directory:
+
+- If the root contains `catalog.json`, Nomad loads the pre-packed texture
+  pages described by that catalog and does not scan the root for source PNGs.
+- Otherwise, Nomad discovers the root's PNGs recursively and packs them at
+  startup.
+
+This permits a packaged game to load its built-in sprites from
+`res/sprites/catalog.json` while dynamically packing community-provided PNGs
+from a separate root such as `res/mod/sprites`.
+
+`nomad package` compiles each nonempty raw sprite root. It writes
+`catalog.json` and the packed PNG pages directly into that root in the package,
+then omits the individual source PNGs. Exact duplicate sprites have separate
+catalog entries that reference the same packed frame, so duplicate source
+images do not increase the packaged texture data.
+
+For example:
+
+```text
+res/
+└── sprites/
+    ├── catalog.json
+    ├── sprites.player-0.png
+    └── sprites.ui-0.png
+```
+
+Already compiled roots are preserved. Empty roots do not receive a catalog,
+allowing raw PNGs added later to select dynamic packing. Packaged games also
+permit configured roots to be absent until a mod provides them.
+
+A malformed catalog is a resource error. Nomad does not silently fall back to
+raw discovery because doing so could hide damaged or incomplete packages.
+Catalog page references are restricted to PNG filenames in the same directory
+as the catalog.
+
 ## Configuration
 
 Configure sprite discovery in `nomad.toml`:
@@ -121,9 +160,10 @@ Run the project-aware check from the project directory:
 nomad check
 ```
 
-The report lists discovered source images and each packed texture page,
-including its dimensions, logical and unique sprite counts, and occupancy.
-The command performs packing on the CPU without opening a window or uploading
+For raw roots, the report lists discovered source images and each packed
+texture page. For compiled roots, it validates and reports the catalog pages.
+Page details include dimensions, logical and unique sprite counts, and
+occupancy. The command performs all work without opening a window or uploading
 textures to the GPU.
 
 Use `nomad check` after adding or reorganizing images to catch malformed PNG

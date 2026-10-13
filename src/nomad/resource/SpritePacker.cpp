@@ -3,6 +3,7 @@
 #include <nomad/resource/SpritePacker.hpp>
 
 #include <nomad/resource/RectanglePacker.hpp>
+#include <nomad/resource/SpriteCatalog.hpp>
 
 #include <nomad/system/Path.hpp>
 #include <nomad/system/String.hpp>
@@ -390,16 +391,25 @@ SpritePackingReport analyzeSpritePacking(
     const std::vector<NomadPath>& directories,
     const bool directoriesExplicitlyConfigured,
     const NomadInteger maxTextureSize,
-    const NomadInteger padding
+    const NomadInteger padding,
+    const bool missingDirectoriesAllowed
 ) {
-    const auto sources = discoverSpriteSources(
+    const auto groups = loadOrPackSpriteRoots(
         resourcePath,
         directories,
-        directoriesExplicitlyConfigured
+        directoriesExplicitlyConfigured,
+        maxTextureSize,
+        padding,
+        missingDirectoriesAllowed
     );
-    const auto groups = packSpriteGroups(sources, maxTextureSize, padding);
+    NomadIndex spriteCount = 0;
+
+    for (const auto& group : groups) {
+        spriteCount += group.sprites.size();
+    }
+
     SpritePackingReport report{
-        sources.size(),
+        spriteCount,
         groups.size(),
         0,
         0,

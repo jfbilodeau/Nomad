@@ -60,6 +60,8 @@ void loadProjectOptions(const NomadPath& startPath, GameOptions* options) {
     options->sprites.maxTextureSize = configuration.sprites.maxTextureSize;
     options->sprites.padding = configuration.sprites.padding;
     options->sprites.directoriesExplicitlyConfigured = configuration.sprites.directoriesExplicitlyConfigured;
+    options->sprites.missingDirectoriesAllowed =
+        configuration.type == ProjectConfigurationType::Release;
 
     if (options->resourcePath.empty()) {
         options->resourcePath = pathToUtf8(resolveProjectResourcePath(configuration));

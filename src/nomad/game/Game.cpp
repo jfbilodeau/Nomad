@@ -14,8 +14,7 @@
 #include <nomad/game/VariablePersistence.hpp>
 
 #include <nomad/resource/ResourceManager.hpp>
-#include <nomad/resource/SpriteDiscovery.hpp>
-#include <nomad/resource/SpritePacker.hpp>
+#include <nomad/resource/SpriteCatalog.hpp>
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -1382,15 +1381,13 @@ void Game::compileScripts() {
 }
 
 NomadIndex Game::loadSprites() {
-    const auto sources = discoverSpriteSources(
+    auto groups = loadOrPackSpriteRoots(
         pathFromUtf8(m_options.resourcePath),
         m_options.sprites.directories,
-        m_options.sprites.directoriesExplicitlyConfigured
-    );
-    auto groups = packSpriteGroups(
-        sources,
+        m_options.sprites.directoriesExplicitlyConfigured,
         m_options.sprites.maxTextureSize,
-        m_options.sprites.padding
+        m_options.sprites.padding,
+        m_options.sprites.missingDirectoriesAllowed
     );
     NomadIndex spriteCount = 0;
 
