@@ -90,12 +90,29 @@ void Game::initialize()
 
     setLanguage("en");
 
+    loadSpritesAndCompileScripts();
+
+    if (m_options.debug) {
+        log::setLogLevel(LogLevel::Debug);
+    }
+
+    runInitFunction();
+
+    // Debug console must be initialized after the init function has been run
+    initDebugConsole();
+
+    log::info("Game initialized");
+
+    log::flush();
+}
+
+void Game::loadSpritesAndCompileScripts() {
     log::info("Loading sprites...");
 
     std::exception_ptr compilationFailure;
     std::jthread compilationThread([this, &compilationFailure] {
         try {
-            compileFunctions();
+            compileScripts();
         } catch (...) {
             compilationFailure = std::current_exception();
         }
@@ -133,19 +150,6 @@ void Game::initialize()
     if (compilationFailure) {
         std::rethrow_exception(compilationFailure);
     }
-
-    if (m_options.debug) {
-        log::setLogLevel(LogLevel::Debug);
-    }
-
-    runInitFunction();
-
-    // Debug console must be initialized after the init function has been run
-    initDebugConsole();
-
-    log::info("Game initialized");
-
-    log::flush();
 }
 
 void Game::initializeHeadless()
@@ -1319,7 +1323,7 @@ void Game::loadTextIntoConst(const NomadString& languageCode) const {
     }
 }
 
-void Game::compileFunctions() {
+void Game::compileScripts() {
     log::info("Compiling functions...");
 
     const auto start_ticks = SDL_GetTicks();

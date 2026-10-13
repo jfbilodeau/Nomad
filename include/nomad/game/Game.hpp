@@ -253,7 +253,8 @@ private:
     void createPathToFile(const NomadString& fileName) const;
     void loadTextIntoConst(const NomadString& languageCode) const;
 
-    void compileFunctions();
+    void loadSpritesAndCompileScripts();
+    void compileScripts();
     [[nodiscard]] NomadIndex loadSprites();
 
     void runInitFunction();
