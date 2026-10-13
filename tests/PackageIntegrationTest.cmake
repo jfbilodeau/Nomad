@@ -79,6 +79,29 @@ run_success(
     "${NOMAD_CLI}" init "${PROJECT_DIR}"
 )
 
+file(MAKE_DIRECTORY "${PROJECT_DIR}/res/sprites/player")
+configure_file(
+    "${CMAKE_CURRENT_LIST_DIR}/projects/package-smoke/res/images/checker.png"
+    "${PROJECT_DIR}/res/sprites/player/checker.png"
+    COPYONLY
+)
+nomadRunTestCommand(
+    "Project sprite packing report"
+    COMMAND "${NOMAD_CLI}" check "${PROJECT_DIR}"
+    OUTPUT_MATCH "Sprites: 1 source sprites, 1 groups, 1 texture pages[\r\n]+  sprites.player#0:"
+)
+file(WRITE "${PROJECT_DIR}/res/sprites/player/broken.png" "not a PNG")
+nomadRunTestCommand(
+    "Invalid project sprite"
+    EXPECT_FAILURE
+    COMMAND "${NOMAD_CLI}" check "${PROJECT_DIR}"
+    ERROR_VARIABLE INVALID_SPRITE_ERROR
+)
+if(NOT INVALID_SPRITE_ERROR MATCHES "error: Failed to check sprites: Failed to load image for sprite")
+    message(FATAL_ERROR "Invalid project sprite did not report the expected error")
+endif()
+file(REMOVE "${PROJECT_DIR}/res/sprites/player/broken.png")
+
 set(TEXTMATE_GRAMMAR "${PROJECT_DIR}/nomad.tmLanguage.json")
 run_success(
     "TextMate grammar generation"

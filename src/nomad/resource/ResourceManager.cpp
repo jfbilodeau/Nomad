@@ -23,10 +23,6 @@ namespace nomad {
 
 namespace {
 
-NomadString makePackedTextureName(const NomadString& group, const NomadIndex page) {
-    return group + "#" + std::to_string(page);
-}
-
 void validateFrame(
     const PackedSpriteDefinition& sprite,
     const PackedSpritePage& page
@@ -200,7 +196,7 @@ void ResourceManager::registerPackedSprites(const std::vector<PackedSpriteGroup>
 
         for (NomadIndex pageIndex = 0; pageIndex < group.pages.size(); ++pageIndex) {
             const auto& page = group.pages[pageIndex];
-            const auto textureName = makePackedTextureName(group.name, pageIndex);
+            const auto textureName = makePackedSpritePageName(group.name, pageIndex);
 
             if (!textureNames.insert(stringToLowerAscii(textureName)).second) {
                 throw ResourceException("Packed texture name is already registered: '" + textureName + "'");
@@ -243,7 +239,7 @@ void ResourceManager::registerPackedSprites(const std::vector<PackedSpriteGroup>
 
         for (NomadIndex pageIndex = 0; pageIndex < group.pages.size(); ++pageIndex) {
             const auto& page = group.pages[pageIndex];
-            const auto textureName = makePackedTextureName(group.name, pageIndex);
+            const auto textureName = makePackedSpritePageName(group.name, pageIndex);
             auto* sdlTexture = SDL_CreateTextureFromSurface(renderer, page.surface.get());
 
             if (sdlTexture == nullptr) {

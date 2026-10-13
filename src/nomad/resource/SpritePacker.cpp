@@ -5,6 +5,7 @@
 #include <nomad/resource/RectanglePacker.hpp>
 
 #include <nomad/system/Path.hpp>
+#include <nomad/system/String.hpp>
 
 #include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>
@@ -13,6 +14,8 @@
 #include <cstdint>
 #include <limits>
 #include <map>
+#include <set>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -357,6 +360,10 @@ void SdlSurfaceDeleter::operator()(SDL_Surface* surface) const {
     SDL_DestroySurface(surface);
 }
 
+NomadString makePackedSpritePageName(const NomadString& group, const NomadIndex page) {
+    return group + "#" + toString(page);
+}
+
 std::vector<PackedSpriteGroup> packSpriteGroups(
     const std::vector<SpriteSourceDefinition>& sources,
     const NomadInteger maxTextureSize,
@@ -376,6 +383,71 @@ std::vector<PackedSpriteGroup> packSpriteGroups(
     }
 
     return results;
+}
+
+SpritePackingReport analyzeSpritePacking(
+    const NomadPath& resourcePath,
+    const std::vector<NomadPath>& directories,
+    const bool directoriesExplicitlyConfigured,
+    const NomadInteger maxTextureSize,
+    const NomadInteger padding
+) {
+    const auto sources = discoverSpriteSources(
+        resourcePath,
+        directories,
+        directoriesExplicitlyConfigured
+    );
+    const auto groups = packSpriteGroups(sources, maxTextureSize, padding);
+    SpritePackingReport report{
+        sources.size(),
+        groups.size(),
+        0,
+        0,
+        {}
+    };
+
+    for (const auto& group : groups) {
+        report.pageCount += group.pages.size();
+
+        for (NomadIndex pageIndex = 0; pageIndex < group.pages.size(); ++pageIndex) {
+            const auto& page = group.pages[pageIndex];
+            std::set<std::tuple<NomadInteger, NomadInteger, NomadInteger, NomadInteger>> uniqueFrames;
+            SpritePackingPageReport pageReport{
+                makePackedSpritePageName(group.name, pageIndex),
+                page.width,
+                page.height,
+                0,
+                0,
+                0
+            };
+
+            for (const auto& sprite : group.sprites) {
+                if (sprite.page != pageIndex) {
+                    continue;
+                }
+
+                ++pageReport.spriteCount;
+                const auto frame = std::make_tuple(
+                    sprite.frame.getLeft(),
+                    sprite.frame.getTop(),
+                    sprite.frame.getWidth(),
+                    sprite.frame.getHeight()
+                );
+
+                if (uniqueFrames.insert(frame).second) {
+                    ++pageReport.uniqueSpriteCount;
+                    pageReport.usedPixelCount +=
+                        sprite.frame.getWidth() *
+                        sprite.frame.getHeight();
+                }
+            }
+
+            report.uniqueSpriteCount += pageReport.uniqueSpriteCount;
+            report.pages.push_back(std::move(pageReport));
+        }
+    }
+
+    return report;
 }
 
 } // namespace nomad

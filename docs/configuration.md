@@ -70,7 +70,9 @@ first entry already includes the second.
 When the `[sprites]` table is omitted, Nomad uses `["sprites"]`. A missing
 implicit default directory is allowed so projects without sprites remain
 valid. A directory listed explicitly must exist when sprite resources are
-checked or loaded.
+checked or loaded. `nomad check` decodes and packs these resources on the CPU,
+then reports the physical texture pages, sprite counts, and occupancy without
+uploading textures to the GPU.
 
 `sprites.max-texture-size` must be a positive integer. Logical sprite groups
 that do not fit in one texture are split into multiple pages of at most this

@@ -9,6 +9,8 @@
 
 #include <nomad/project/ProjectConfiguration.hpp>
 
+#include <nomad/resource/SpritePacker.hpp>
+
 #include <nomad/script/Documentation.hpp>
 
 #include <nomad/system/Path.hpp>
@@ -21,6 +23,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -96,6 +99,7 @@ struct CompilationPaths {
     NomadPath resources;
     std::optional<NomadString> entryFunction;
     NomadPath projectFile;
+    std::optional<SpriteConfiguration> sprites;
 };
 
 CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const bool explicitPath) {
@@ -123,7 +127,8 @@ CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const b
                     std::move(sourcePaths),
                     resourcePath,
                     configuration.project.entry,
-                    *projectRoot / NOMAD_PROJECT_FILE_NAME
+                    *projectRoot / NOMAD_PROJECT_FILE_NAME,
+                    configuration.sprites
                 };
             }
         }
@@ -133,7 +138,7 @@ CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const b
         resourcePath = std::filesystem::current_path();
     }
 
-    return CompilationPaths{std::move(sourcePaths), resourcePath, std::nullopt, {}};
+    return CompilationPaths{std::move(sourcePaths), resourcePath, std::nullopt, {}, std::nullopt};
 }
 
 // Stands up the real engine against SDL's dummy drivers so compiled sources resolve the same
@@ -166,6 +171,58 @@ int versionCommand(EmptyParameters&) {
     return EXIT_SUCCESS;
 }
 
+bool checkSprites(const CompilationPaths& paths) {
+    if (!paths.sprites) {
+        return true;
+    }
+
+    if (paths.sprites->directories.empty()) {
+        std::cout << "Sprites: disabled\n";
+        return true;
+    }
+
+    try {
+        const auto report = analyzeSpritePacking(
+            paths.resources,
+            paths.sprites->directories,
+            paths.sprites->directoriesExplicitlyConfigured,
+            paths.sprites->maxTextureSize,
+            paths.sprites->padding
+        );
+
+        std::cout
+            << "Sprites: " << report.sourceCount
+            << " source sprites, " << report.groupCount
+            << " groups, " << report.pageCount
+            << " texture pages\n";
+
+        for (const auto& page : report.pages) {
+            const auto totalPixelCount =
+                page.width * page.height;
+            const auto occupancy = totalPixelCount == 0
+                ? 0.0
+                : static_cast<double>(page.usedPixelCount) * 100.0 /
+                    static_cast<double>(totalPixelCount);
+            std::ostringstream line;
+            line
+                << "  " << page.name << ": "
+                << page.width << 'x' << page.height << ", "
+                << page.spriteCount << " sprites ("
+                << page.uniqueSpriteCount << " unique), "
+                << std::fixed << std::setprecision(1) << occupancy << "% occupancy\n";
+            std::cout << line.str();
+        }
+
+        return true;
+    } catch (const std::exception& error) {
+        std::cerr
+            << pathToGenericUtf8(paths.projectFile)
+            << ": error: Failed to check sprites: "
+            << error.what() << '\n';
+        return false;
+    }
+}
+
 int checkCommand(CheckParameters& parameters) {
     const auto paths = resolveRequestedPaths(parameters.path);
     const HeadlessGame game(paths.resources);
@@ -176,7 +233,8 @@ int checkCommand(CheckParameters& parameters) {
     }
 
     printDiagnostics(result);
-    return result.succeeded() ? EXIT_SUCCESS : EXIT_FAILURE;
+    const auto spritesSucceeded = checkSprites(paths);
+    return result.succeeded() && spritesSucceeded ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 int dumpCommand(DumpParameters& parameters) {

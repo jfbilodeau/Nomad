@@ -249,4 +249,30 @@ BOOST_AUTO_TEST_CASE(reports_invalid_image_sources)
     );
 }
 
+BOOST_AUTO_TEST_CASE(reports_physical_pages_aliases_and_used_pixels)
+{
+    TestDirectory directory("nomad_sprite_packing_report");
+    writePng(directory, "sprites/player/first.png", 4, 4, {{1, 1, 10, 20, 30, 255}});
+    writePng(directory, "sprites/player/alias.png", 6, 5, {{3, 2, 10, 20, 30, 255}});
+    writePng(directory, "sprites/player/different.png", 4, 4, {{1, 1, 30, 20, 10, 255}});
+
+    const auto report = analyzeSpritePacking(
+        directory.getPath(),
+        {"sprites"},
+        true,
+        16,
+        1
+    );
+
+    BOOST_TEST(report.sourceCount == 3U);
+    BOOST_TEST(report.groupCount == 1U);
+    BOOST_TEST(report.pageCount == 1U);
+    BOOST_TEST(report.uniqueSpriteCount == 2U);
+    BOOST_REQUIRE(report.pages.size() == 1U);
+    BOOST_TEST(report.pages[0].name == "sprites.player#0");
+    BOOST_TEST(report.pages[0].spriteCount == 3U);
+    BOOST_TEST(report.pages[0].uniqueSpriteCount == 2U);
+    BOOST_TEST(report.pages[0].usedPixelCount == 2U);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

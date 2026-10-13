@@ -10,7 +10,7 @@ command-specific help. Options belong to individual verbs.
 | Command | Behavior |
 | --- | --- |
 | `nomad init [directory]` | Create a minimal project; refuse to overwrite generated files. |
-| `nomad check [directory]` | Validate the project and delegate compilation to the sibling `nomadc`. |
+| `nomad check [directory]` | Validate project scripts and sprite packing through the sibling `nomadc`. |
 | `nomad run [directory] [--debug]` | Launch the sibling runtime from the project root. |
 | `nomad package [directory] [--force] [--dry-run]` | Create a standalone game ZIP using the included runtime bundle. |
 | `nomad version` | Print the SDK version. |
@@ -44,6 +44,13 @@ takes no arguments, and returns `void`.
 The compiler initializes a headless engine with dummy video/audio drivers.
 Engine functions and constants remain available. Diagnostics include source
 locations; compilation errors return a nonzero exit code.
+
+When `nomadc check` discovers a project, it also discovers and CPU-packs the
+configured sprite directories without uploading textures to the GPU. The
+report lists each physical texture page, its dimensions, logical and unique
+sprite counts, and pixel occupancy. Sprite discovery, image decoding, naming,
+collision, size, and packing failures produce a nonzero exit code. An explicit
+`nomadc check <path>` remains a script-only check.
 
 ## Runtime
 
