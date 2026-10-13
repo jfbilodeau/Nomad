@@ -29,6 +29,11 @@ version = "0.1.0"
 [resources]
 directory = "assets"
 
+[window]
+title = "Runtime Window"
+resolution = [1280, 720]
+splash-image = "images/splash.png"
+
 [sprites]
 directories = ["sprites", "mods/sprites"]
 max-texture-size = 1024
@@ -69,6 +74,11 @@ BOOST_AUTO_TEST_CASE(runtime_options_load_project_resources_and_entry_function)
 
     BOOST_TEST(options.resourcePath == (directory.getPath() / "assets").lexically_normal().string());
     BOOST_TEST(options.entryFunction == "start");
+    BOOST_TEST(options.windowTitle == "Runtime Window");
+    BOOST_TEST(options.resolution.getX() == 1280);
+    BOOST_TEST(options.resolution.getY() == 720);
+    BOOST_REQUIRE(options.splashImage.has_value());
+    BOOST_TEST(*options.splashImage == NomadPath("images/splash.png"));
     BOOST_REQUIRE(options.sprites.directories.size() == 2U);
     BOOST_TEST(options.sprites.directories[0] == NomadPath("sprites"));
     BOOST_TEST(options.sprites.directories[1] == NomadPath("mods/sprites"));
@@ -101,6 +111,10 @@ version = "0.1.0"
 
     BOOST_TEST(options.resourcePath == (directory.getPath() / "res").lexically_normal().string());
     BOOST_TEST(options.entryFunction == "start");
+    BOOST_TEST(options.windowTitle == "Runtime Test");
+    BOOST_TEST(options.resolution.getX() == 800);
+    BOOST_TEST(options.resolution.getY() == 600);
+    BOOST_TEST(!options.splashImage.has_value());
 }
 
 BOOST_AUTO_TEST_CASE(runtime_options_reject_newer_nomad_versions)

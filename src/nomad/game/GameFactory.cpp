@@ -56,6 +56,12 @@ void loadProjectOptions(const NomadPath& startPath, GameOptions* options) {
     const auto configuration = discoverProjectConfiguration(startPath);
     validateNomadVersionCompatibility(configuration.nomad.version, getNomadVersion());
     options->entryFunction = configuration.project.entry;
+    options->windowTitle = configuration.window.title;
+    options->resolution.set(
+        configuration.window.resolutionWidth,
+        configuration.window.resolutionHeight
+    );
+    options->splashImage = configuration.window.splashImage;
     options->sprites.directories = configuration.sprites.directories;
     options->sprites.maxTextureSize = configuration.sprites.maxTextureSize;
     options->sprites.padding = configuration.sprites.padding;

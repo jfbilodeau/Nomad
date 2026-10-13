@@ -191,6 +191,59 @@ std::vector<NomadPath> readSpriteDirectories(const toml::table& sprites) {
     return result;
 }
 
+NomadPath readResourceRelativeFile(
+    const toml::table& table,
+    const NomadStringView tableName,
+    const NomadStringView key
+) {
+    auto value = requiredString(table, tableName, key);
+    std::ranges::replace(value, '\\', '/');
+    const auto path = pathFromUtf8(value).lexically_normal();
+    const auto field = NomadString(tableName) + "." + NomadString(key);
+
+    if (
+        path.is_absolute() ||
+        path.empty() ||
+        path == "." ||
+        *path.begin() == ".." ||
+        !path.has_filename()
+    ) {
+        throw ProjectConfigurationError(
+            "Configuration field '" + field + "' must be a resource-relative file"
+        );
+    }
+
+    return path;
+}
+
+std::pair<NomadInteger, NomadInteger> readResolution(const toml::table& window) {
+    const auto* resolution = window["resolution"].as_array();
+
+    if (resolution == nullptr || resolution->size() != 2) {
+        throw ProjectConfigurationError(
+            "Configuration field 'window.resolution' must be an array of two positive integers"
+        );
+    }
+
+    const auto width = (*resolution)[0].value<NomadInteger>();
+    const auto height = (*resolution)[1].value<NomadInteger>();
+
+    if (
+        !(*resolution)[0].is_integer() ||
+        !(*resolution)[1].is_integer() ||
+        !width ||
+        !height ||
+        *width <= 0 ||
+        *height <= 0
+    ) {
+        throw ProjectConfigurationError(
+            "Configuration field 'window.resolution' must be an array of two positive integers"
+        );
+    }
+
+    return {*width, *height};
+}
+
 NomadInteger readSpriteInteger(
     const toml::table& sprites,
     const NomadStringView key,
@@ -244,6 +297,34 @@ NomadString serializeSpriteConfiguration(const SpriteConfiguration& configuratio
 
     if (configuration.paddingExplicitlyConfigured) {
         result += "padding = " + std::to_string(configuration.padding) + "\n";
+    }
+
+    return result;
+}
+
+NomadString serializeWindowConfiguration(const WindowConfiguration& configuration) {
+    if (
+        !configuration.titleExplicitlyConfigured &&
+        !configuration.resolutionExplicitlyConfigured &&
+        !configuration.splashImage
+    ) {
+        return {};
+    }
+
+    NomadString result = "\n[window]\n";
+
+    if (configuration.titleExplicitlyConfigured) {
+        result += "title = \"" + escapeTomlString(configuration.title) + "\"\n";
+    }
+    if (configuration.resolutionExplicitlyConfigured) {
+        result +=
+            "resolution = [" + std::to_string(configuration.resolutionWidth) + ", " +
+            std::to_string(configuration.resolutionHeight) + "]\n";
+    }
+    if (configuration.splashImage) {
+        result +=
+            "splash-image = \"" +
+            escapeTomlString(pathToGenericUtf8(*configuration.splashImage)) + "\"\n";
     }
 
     return result;
@@ -341,6 +422,7 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
     const auto& project = requiredTable(document, "project");
     const auto& nomad = requiredTable(document, "nomad");
     const auto* resources = optionalTable(document, "resources");
+    const auto* window = optionalTable(document, "window");
     const auto* sprites = optionalTable(document, "sprites");
     const auto* package = optionalTable(document, "package");
     const auto hasExecutable = project.contains("executable");
@@ -360,6 +442,7 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
     configuration.project.identifier = requiredString(project, "project", "identifier");
     configuration.project.version = requiredString(project, "project", "version");
     configuration.project.entry = optionalString(project, "project", "entry", configuration.project.entry);
+    configuration.window.title = configuration.project.name;
     const auto nomadVersion = requiredString(nomad, "nomad", "version");
 
     try {
@@ -368,6 +451,21 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
         throw ProjectConfigurationError(
             "Configuration field 'nomad.version' is invalid: " + NomadString(error.what())
         );
+    }
+
+    if (window != nullptr && window->contains("title")) {
+        configuration.window.title = requiredString(*window, "window", "title");
+        configuration.window.titleExplicitlyConfigured = true;
+    }
+    if (window != nullptr && window->contains("resolution")) {
+        const auto [width, height] = readResolution(*window);
+        configuration.window.resolutionWidth = width;
+        configuration.window.resolutionHeight = height;
+        configuration.window.resolutionExplicitlyConfigured = true;
+    }
+    if (window != nullptr && window->contains("splash-image")) {
+        configuration.window.splashImage =
+            readResourceRelativeFile(*window, "window", "splash-image");
     }
 
     if (sprites != nullptr && sprites->contains("directories")) {
@@ -449,6 +547,7 @@ NomadString serializeReleaseProjectConfiguration(const ProjectConfiguration& con
         "\n"
         "[nomad]\n"
         "version = \"" + configuration.nomad.version.toString() + "\"\n" +
+        serializeWindowConfiguration(configuration.window) +
         serializeSpriteConfiguration(configuration.sprites);
 }
 

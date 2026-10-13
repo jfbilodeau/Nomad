@@ -24,6 +24,7 @@
 #include <nomad/system/TempHeap.hpp>
 
 #include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
 #include <algorithm>
@@ -51,6 +52,9 @@ NomadString getExceptionMessage(const std::exception_ptr& exception) {
 } // namespace
 
 Game::Game(GameOptions options) :
+    m_title(options.windowTitle),
+    m_resolution(options.resolution),
+    m_windowSize(options.resolution),
     m_options(std::move(options))
 {}
 
@@ -1075,9 +1079,47 @@ void Game::initSdl() {
         raiseError("Failed to create SDL window. Reason: " + NomadString(SDL_GetError()));
     }
 
-    setResolution(m_windowSize.getX(), m_windowSize.getY());
+    setResolution(m_resolution.getX(), m_resolution.getY());
 
     m_canvas = std::make_unique<Canvas>(this, m_renderer);
+    showSplashImage();
+}
+
+void Game::showSplashImage() {
+    if (!m_options.splashImage) {
+        return;
+    }
+
+    const auto splashPath =
+        pathFromUtf8(m_options.resourcePath) / *m_options.splashImage;
+    auto* surface = IMG_Load(pathToUtf8(splashPath).c_str());
+
+    if (surface == nullptr) {
+        raiseError(
+            "Failed to load splash image '" + pathToUtf8(splashPath) + "': " +
+            NomadString(SDL_GetError())
+        );
+    }
+
+    auto* texture = SDL_CreateTextureFromSurface(m_renderer, surface);
+    SDL_DestroySurface(surface);
+
+    if (texture == nullptr) {
+        raiseError(
+            "Failed to create splash image texture '" + pathToUtf8(splashPath) + "': " +
+            NomadString(SDL_GetError())
+        );
+    }
+
+    const auto rendered = SDL_RenderTexture(m_renderer, texture, nullptr, nullptr);
+    SDL_DestroyTexture(texture);
+
+    if (!rendered || !SDL_RenderPresent(m_renderer)) {
+        raiseError(
+            "Failed to display splash image '" + pathToUtf8(splashPath) + "': " +
+            NomadString(SDL_GetError())
+        );
+    }
 }
 
 void Game::initSdlHeadless() {

@@ -66,6 +66,27 @@ void createGameDiscardingResult(const TestDirectory& directory) {
 
 BOOST_AUTO_TEST_SUITE(game_startup)
 
+BOOST_AUTO_TEST_CASE(displays_the_configured_splash_at_the_configured_resolution)
+{
+    TestDirectory directory("nomad_game_startup_splash");
+    writeTextCatalogue(directory);
+    writePng(directory, "splash.png");
+    directory.write("scripts/init.nomad", "game.name = \"Splash configured\"\n");
+    selectDummyDrivers();
+
+    auto options = makeOptions(directory);
+    options.windowTitle = "Configured title";
+    options.resolution.set(1280, 720);
+    options.splashImage = "splash.png";
+    auto game = Game::create(std::move(options));
+
+    BOOST_TEST(game->getResolution().getX() == 1280);
+    BOOST_TEST(game->getResolution().getY() == 720);
+    BOOST_TEST(game->getWindowSize().getX() == 1280);
+    BOOST_TEST(game->getWindowSize().getY() == 720);
+    BOOST_TEST(game->getName() == "Splash configured");
+}
+
 BOOST_AUTO_TEST_CASE(loads_sprites_before_executing_the_entry_function)
 {
     TestDirectory directory("nomad_game_startup_sprites");

@@ -19,6 +19,11 @@ version = "0.1.0"
 [resources]
 directory = "res"
 
+[window]
+title = "Example Game"
+resolution = [1280, 720]
+splash-image = "splash.png"
+
 [sprites]
 directories = [
     "sprites",
@@ -45,16 +50,24 @@ exclude = [
 | `project.entry` | Script entry function taking no arguments and returning `void`. | Optional; `"init"` |
 | `nomad.version` | Required SDK version in canonical `major.minor.patch` form; packaging requires this exact runtime version. | Required |
 | `resources.directory` | Resource directory relative to the project root. | Optional; `"res"` |
+| `window.title` | Initial game window title. Scripts may change it after startup. | Optional; `project.name` |
+| `window.resolution` | Initial logical rendering resolution and window size as `[width, height]`. | Optional; `[800, 600]` |
+| `window.splash-image` | Image displayed while resources and scripts load, relative to the resource directory. | Optional |
 | `sprites.directories` | Resource-relative directories recursively scanned for sprite PNG files. | Optional; `["sprites"]` |
 | `sprites.max-texture-size` | Maximum width and height of each packed texture page. | Optional; `2048` |
 | `sprites.padding` | Transparent pixels reserved between adjacent packed sprites. | Optional; `1` |
 | `package.output` | Package output directory relative to the project root. | Optional; `"dist"` |
 | `package.exclude` | Resource-relative exclusion patterns; omitted or `[]` includes all resources. | Optional; `[]` |
 
-The `[resources]`, `[sprites]`, and `[package]` tables may be omitted. Defaults apply
+The `[resources]`, `[window]`, `[sprites]`, and `[package]` tables may be omitted. Defaults apply
 only to missing fields; invalid types and empty strings are rejected.
 Development projects are identified by `project.executable`. A configuration
 without it is a packaged configuration and must omit `[resources]` and `[package]`.
+
+`window.resolution` must contain exactly two positive integers. The splash image
+path must be a non-empty, resource-relative file path and cannot escape the
+resource directory. Explicit window settings are retained in packaged
+configuration files.
 
 ## Sprite directories
 
@@ -93,8 +106,8 @@ the outer edge of a texture page.
 ## Packaged configuration
 
 Game packages contain a reduced `nomad.toml`. It retains the schema,
-project identity and version, entry function, required Nomad version, and
-explicit sprite directory configuration. It omits `project.executable`,
+project identity and version, entry function, required Nomad version, explicit
+window settings, and explicit sprite directory configuration. It omits `project.executable`,
 `[resources]`, and `[package]`.
 Packaged resources always live in `res`.
 

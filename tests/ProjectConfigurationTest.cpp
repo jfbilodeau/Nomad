@@ -35,6 +35,11 @@ padding = 2
 [resources]
 directory = "res"
 
+[window]
+title = "Test Window"
+resolution = [1280, 720]
+splash-image = "images/splash.png"
+
 [package]
 output = "dist"
 exclude = ["**/*.psd", "development/**"]
@@ -70,6 +75,13 @@ BOOST_AUTO_TEST_CASE(loads_typed_project_configuration)
     BOOST_TEST(configuration.project.entry == "start");
     BOOST_TEST(configuration.nomad.version == NomadVersion(0, 1, 0));
     BOOST_TEST(configuration.resources.directory == std::filesystem::path("res"));
+    BOOST_TEST(configuration.window.title == "Test Window");
+    BOOST_TEST(configuration.window.resolutionWidth == 1280);
+    BOOST_TEST(configuration.window.resolutionHeight == 720);
+    BOOST_REQUIRE(configuration.window.splashImage.has_value());
+    BOOST_TEST(*configuration.window.splashImage == NomadPath("images/splash.png"));
+    BOOST_TEST(configuration.window.titleExplicitlyConfigured);
+    BOOST_TEST(configuration.window.resolutionExplicitlyConfigured);
     BOOST_REQUIRE(configuration.sprites.directories.size() == 2U);
     BOOST_TEST(configuration.sprites.directories[0] == NomadPath("sprites"));
     BOOST_TEST(configuration.sprites.directories[1] == NomadPath("mod/sprites"));
@@ -100,6 +112,7 @@ BOOST_AUTO_TEST_CASE(loads_and_serializes_release_configuration)
     BOOST_TEST(releaseText.find("executable") == NomadString::npos);
     BOOST_TEST(releaseText.find("[resources]") == NomadString::npos);
     BOOST_TEST(releaseText.find("[package]") == NomadString::npos);
+    BOOST_TEST(releaseText.find("[window]") != NomadString::npos);
     BOOST_TEST(releaseText.find("[sprites]") != NomadString::npos);
 
     const auto release = loadProjectConfiguration(releaseFile);
@@ -114,6 +127,12 @@ BOOST_AUTO_TEST_CASE(loads_and_serializes_release_configuration)
     BOOST_TEST(release.project.executable.empty());
     BOOST_TEST(release.nomad.version == development.nomad.version);
     BOOST_TEST(release.resources.directory == NomadPath("res"));
+    BOOST_TEST(release.window.title == development.window.title);
+    BOOST_TEST(release.window.resolutionWidth == development.window.resolutionWidth);
+    BOOST_TEST(release.window.resolutionHeight == development.window.resolutionHeight);
+    BOOST_REQUIRE(release.window.splashImage.has_value());
+    BOOST_REQUIRE(development.window.splashImage.has_value());
+    BOOST_TEST(*release.window.splashImage == *development.window.splashImage);
     BOOST_REQUIRE(release.sprites.directories.size() == development.sprites.directories.size());
     BOOST_TEST(release.sprites.directories[0] == development.sprites.directories[0]);
     BOOST_TEST(release.sprites.directories[1] == development.sprites.directories[1]);
@@ -277,6 +296,26 @@ BOOST_AUTO_TEST_CASE(defaults_optional_development_fields)
     BOOST_TEST(loadProjectConfiguration(file).package.exclude.empty());
 }
 
+BOOST_AUTO_TEST_CASE(defaults_window_configuration)
+{
+    TestDirectory directory("nomad_project_configuration_window_defaults");
+    auto configurationText = std::string(COMPLETE_CONFIGURATION);
+    const auto window = configurationText.find("[window]");
+    const auto package = configurationText.find("[package]");
+    configurationText.erase(window, package - window);
+    const auto file = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText);
+
+    const auto configuration = loadProjectConfiguration(file);
+
+    BOOST_TEST(configuration.window.title == configuration.project.name);
+    BOOST_TEST(configuration.window.resolutionWidth == 800);
+    BOOST_TEST(configuration.window.resolutionHeight == 600);
+    BOOST_TEST(!configuration.window.splashImage.has_value());
+    BOOST_TEST(!configuration.window.titleExplicitlyConfigured);
+    BOOST_TEST(!configuration.window.resolutionExplicitlyConfigured);
+    BOOST_TEST(serializeReleaseProjectConfiguration(configuration).find("[window]") == NomadString::npos);
+}
+
 BOOST_AUTO_TEST_CASE(rejects_invalid_optional_fields_instead_of_defaulting)
 {
     TestDirectory directory("nomad_project_configuration_optional_validation");
@@ -285,6 +324,10 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_optional_fields_instead_of_defaulting)
         std::pair{"entry = \"start\"", "entry = \"\""},
         std::pair{"directory = \"res\"", "directory = false"},
         std::pair{"directory = \"res\"", "directory = \"\""},
+        std::pair{"title = \"Test Window\"", "title = \"\""},
+        std::pair{"resolution = [1280, 720]", "resolution = [1280]"},
+        std::pair{"resolution = [1280, 720]", "resolution = [1280, 0]"},
+        std::pair{"splash-image = \"images/splash.png\"", "splash-image = \"../splash.png\""},
         std::pair{"output = \"dist\"", "output = 42"},
         std::pair{"output = \"dist\"", "output = \"\""},
         std::pair{"directories = [\"sprites\", \"mod/sprites\"]", "directories = \"sprites\""},

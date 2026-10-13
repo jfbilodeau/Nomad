@@ -53,6 +53,9 @@ struct SpriteOptions {
 struct GameOptions {
     NomadString resourcePath;
     NomadString entryFunction = "init";
+    NomadString windowTitle = "Nomad";
+    Point resolution{800, 600};
+    std::optional<NomadPath> splashImage;
     SpriteOptions sprites;
     bool debug = false;
 };
@@ -209,6 +212,7 @@ private:
     void initEngine();
     void initSdl();
     void initSdlHeadless();
+    void showSplashImage();
     void initSdlTtf();
     void initResourcePath();
     void initText() const;

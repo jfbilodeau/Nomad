@@ -13,6 +13,11 @@ version = "{{nomad_version}}"
 [resources]
 directory = "res"
 
+[window]
+title = "{{project_name_toml}}"
+resolution = [800, 600]
+# splash-image = "splash.png"
+
 [package]
 output = "dist"
 exclude = [
