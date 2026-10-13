@@ -5,6 +5,9 @@
 #include <nomad/resource/Texture.hpp>
 #include <nomad/resource/ResourceManager.hpp>
 
+#include <cassert>
+#include <utility>
+
 namespace nomad {
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -83,11 +86,31 @@ const Sprite* SpriteManager::getSpriteByName(const NomadString& name) const {
     return nullptr;
 }
 
+NomadIndex SpriteManager::getSpriteCount() const {
+    return m_sprites.size();
+}
+
 void SpriteManager::getSpritesByPrefix(const NomadString& prefix, std::vector<Sprite*>& sprites) const {
     for (const auto& sprite : m_sprites) {
         if (sprite->getName().compare(0, prefix.size(), prefix) == 0) {
             sprites.push_back(sprite.get());
         }
+    }
+}
+
+void SpriteManager::reserveAdditionalSprites(const NomadIndex additionalCount) {
+    if (additionalCount > m_sprites.max_size() - m_sprites.size()) {
+        throw ResourceException("Sprite capacity exceeds the manager limit");
+    }
+
+    m_sprites.reserve(m_sprites.size() + additionalCount);
+}
+
+void SpriteManager::commitPreparedSprites(std::vector<std::unique_ptr<Sprite>> sprites) noexcept {
+    assert(m_sprites.capacity() - m_sprites.size() >= sprites.size());
+
+    for (auto& sprite : sprites) {
+        m_sprites.push_back(std::move(sprite));
     }
 }
 

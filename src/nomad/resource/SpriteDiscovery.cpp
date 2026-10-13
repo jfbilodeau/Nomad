@@ -3,9 +3,9 @@
 #include <nomad/resource/SpriteDiscovery.hpp>
 
 #include <nomad/system/Path.hpp>
+#include <nomad/system/String.hpp>
 
 #include <algorithm>
-#include <cctype>
 #include <filesystem>
 #include <system_error>
 
@@ -27,16 +27,8 @@ namespace {
     throw SpriteDiscoveryError(message);
 }
 
-NomadString toLowerAscii(NomadString value) {
-    for (auto& character : value) {
-        character = static_cast<NomadChar>(std::tolower(static_cast<unsigned char>(character)));
-    }
-
-    return value;
-}
-
 bool isPngFile(const NomadPath& path) {
-    return toLowerAscii(pathToUtf8(path.extension())) == ".png";
+    return stringToLowerAscii(pathToUtf8(path.extension())) == ".png";
 }
 
 NomadString makeDottedName(const NomadPath& path) {
@@ -178,8 +170,8 @@ std::vector<SpriteSourceDefinition> discoverSpriteSources(
     }
 
     std::ranges::sort(sources, [](const auto& left, const auto& right) {
-        const auto leftName = toLowerAscii(left.name);
-        const auto rightName = toLowerAscii(right.name);
+        const auto leftName = stringToLowerAscii(left.name);
+        const auto rightName = stringToLowerAscii(right.name);
 
         if (leftName == rightName) {
             return left.name < right.name;
@@ -189,7 +181,7 @@ std::vector<SpriteSourceDefinition> discoverSpriteSources(
     });
 
     for (NomadIndex index = 1; index < sources.size(); ++index) {
-        if (toLowerAscii(sources[index - 1].name) == toLowerAscii(sources[index].name)) {
+        if (stringToLowerAscii(sources[index - 1].name) == stringToLowerAscii(sources[index].name)) {
             throw SpriteDiscoveryError(
                 "Sprite resource name collision for '" + sources[index].name + "': '" +
                 pathToUtf8(sources[index - 1].filePath) + "' and '" +

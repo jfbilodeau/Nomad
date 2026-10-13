@@ -55,6 +55,24 @@ BOOST_AUTO_TEST_CASE(string_trim_and_comparisons)
     BOOST_TEST(stringConcatenate(std::string("x"), std::string("y")) == "xy");
 }
 
+BOOST_AUTO_TEST_CASE(string_case_conversion_and_unicode_trimming)
+{
+    BOOST_TEST(characterToLowerAscii('A') == 'a');
+    BOOST_TEST(characterToUpperAscii('z') == 'Z');
+    BOOST_TEST(stringToLowerAscii("Sprites.PlayerWalk") == "sprites.playerwalk");
+    BOOST_TEST(stringToUpperAscii("Sprites.PlayerWalk") == "SPRITES.PLAYERWALK");
+    BOOST_TEST(stringToLower("ÉCOLE") == "école");
+    BOOST_TEST(stringToUpper("école") == "ÉCOLE");
+    BOOST_TEST(isValidUtf8("Nomad"));
+    BOOST_TEST(isValidUtf8("École"));
+    BOOST_TEST(!isValidUtf8(NomadString("\xC3\x28", 2)));
+
+    const NomadString unicodeWhitespace = "\xC2\xA0\xE2\x80\x83";
+    BOOST_TEST(stringTrimCopy(unicodeWhitespace + "Nomad" + unicodeWhitespace) == "Nomad");
+    BOOST_TEST(stringLeftTrimCopy(unicodeWhitespace + "Nomad ") == "Nomad ");
+    BOOST_TEST(stringRightTrimCopy(" Nomad" + unicodeWhitespace) == " Nomad");
+}
+
 BOOST_AUTO_TEST_CASE(string_views_do_not_require_null_termination)
 {
     const NomadString backing = "xxalphabetayy";

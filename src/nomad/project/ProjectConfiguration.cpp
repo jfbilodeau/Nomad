@@ -3,11 +3,11 @@
 #include <nomad/project/ProjectConfiguration.hpp>
 
 #include <nomad/system/Path.hpp>
+#include <nomad/system/String.hpp>
 
 #include <toml++/toml.hpp>
 
 #include <algorithm>
-#include <cctype>
 #include <fstream>
 #include <sstream>
 #include <system_error>
@@ -134,13 +134,7 @@ std::vector<NomadString> readExclusions(const toml::table& package) {
 }
 
 NomadString normalizedDirectoryKey(const NomadPath& path) {
-    auto key = pathToGenericUtf8(path.lexically_normal());
-
-    for (auto& character : key) {
-        character = static_cast<NomadChar>(std::tolower(static_cast<unsigned char>(character)));
-    }
-
-    return key;
+    return stringToLowerAscii(pathToGenericUtf8(path.lexically_normal()));
 }
 
 bool directoriesOverlap(const NomadStringView left, const NomadStringView right) {

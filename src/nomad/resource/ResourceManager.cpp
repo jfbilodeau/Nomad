@@ -11,9 +11,10 @@
 #include <nomad/game/Canvas.hpp>
 #include <nomad/game/Game.hpp>
 
+#include <nomad/system/String.hpp>
+
 #include <boost/json.hpp>
 
-#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <set>
@@ -21,14 +22,6 @@
 namespace nomad {
 
 namespace {
-
-NomadString toLowerAscii(NomadString value) {
-    for (auto& character : value) {
-        character = static_cast<NomadChar>(std::tolower(static_cast<unsigned char>(character)));
-    }
-
-    return value;
-}
 
 NomadString makePackedTextureName(const NomadString& group, const NomadIndex page) {
     return group + "#" + std::to_string(page);
@@ -190,11 +183,11 @@ void ResourceManager::registerPackedSprites(const std::vector<PackedSpriteGroup>
     NomadIndex textureCount = 0;
     NomadIndex spriteCount = 0;
 
-    for (const auto& texture : m_textures.m_textures) {
-        textureNames.insert(toLowerAscii(texture->getName()));
+    for (NomadIndex index = 0; index < m_textures.getTextureCount(); ++index) {
+        textureNames.insert(stringToLowerAscii(m_textures.getTexture(toNomadId(index))->getName()));
     }
-    for (const auto& sprite : m_sprites.m_sprites) {
-        spriteNames.insert(toLowerAscii(sprite->getName()));
+    for (NomadIndex index = 0; index < m_sprites.getSpriteCount(); ++index) {
+        spriteNames.insert(stringToLowerAscii(m_sprites.getSprite(toNomadId(index))->getName()));
     }
 
     for (const auto& group : groups) {
@@ -209,7 +202,7 @@ void ResourceManager::registerPackedSprites(const std::vector<PackedSpriteGroup>
             const auto& page = group.pages[pageIndex];
             const auto textureName = makePackedTextureName(group.name, pageIndex);
 
-            if (!textureNames.insert(toLowerAscii(textureName)).second) {
+            if (!textureNames.insert(stringToLowerAscii(textureName)).second) {
                 throw ResourceException("Packed texture name is already registered: '" + textureName + "'");
             }
             if (
@@ -227,7 +220,7 @@ void ResourceManager::registerPackedSprites(const std::vector<PackedSpriteGroup>
             if (sprite.name.empty()) {
                 throw ResourceException("Packed sprite name must not be empty");
             }
-            if (!spriteNames.insert(toLowerAscii(sprite.name)).second) {
+            if (!spriteNames.insert(stringToLowerAscii(sprite.name)).second) {
                 throw ResourceException("Packed sprite name is already registered: '" + sprite.name + "'");
             }
             if (sprite.page >= group.pages.size()) {
@@ -281,15 +274,10 @@ void ResourceManager::registerPackedSprites(const std::vector<PackedSpriteGroup>
         }
     }
 
-    m_textures.m_textures.reserve(m_textures.m_textures.size() + textures.size());
-    m_sprites.m_sprites.reserve(m_sprites.m_sprites.size() + sprites.size());
-
-    for (auto& texture : textures) {
-        m_textures.m_textures.push_back(std::move(texture));
-    }
-    for (auto& sprite : sprites) {
-        m_sprites.m_sprites.push_back(std::move(sprite));
-    }
+    m_textures.reserveAdditionalTextures(textures.size());
+    m_sprites.reserveAdditionalSprites(sprites.size());
+    m_textures.commitPreparedTextures(std::move(textures));
+    m_sprites.commitPreparedSprites(std::move(sprites));
 }
 
 NomadString ResourceManager::makeResourceName(const NomadString& basePath, const NomadString& fileName) {

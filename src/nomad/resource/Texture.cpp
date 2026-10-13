@@ -11,6 +11,7 @@
 #include <SDL3_image/SDL_image.h>
 
 #include <cassert>
+#include <utility>
 
 namespace nomad {
 
@@ -193,9 +194,29 @@ const Texture* TextureManager::getTextureByName(const NomadString& textureName) 
     return nullptr;
 }
 
+NomadIndex TextureManager::getTextureCount() const {
+    return m_textures.size();
+}
+
 Texture * TextureManager::createTexture(const NomadString &name, NomadInteger width, NomadInteger height) const {
     auto texture = new Texture(name, m_resources->getGame(), width, height);
 
     return texture;
+}
+
+void TextureManager::reserveAdditionalTextures(const NomadIndex additionalCount) {
+    if (additionalCount > m_textures.max_size() - m_textures.size()) {
+        throw ResourceException("Texture capacity exceeds the manager limit");
+    }
+
+    m_textures.reserve(m_textures.size() + additionalCount);
+}
+
+void TextureManager::commitPreparedTextures(std::vector<std::unique_ptr<Texture>> textures) noexcept {
+    assert(m_textures.capacity() - m_textures.size() >= textures.size());
+
+    for (auto& texture : textures) {
+        m_textures.push_back(std::move(texture));
+    }
 }
 } // nomad

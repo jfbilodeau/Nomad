@@ -3,10 +3,10 @@
 #include <nomad/project/ProjectInitializer.hpp>
 
 #include <nomad/system/Path.hpp>
+#include <nomad/system/String.hpp>
 #include <nomad/Version.hpp>
 
 #include <algorithm>
-#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -287,7 +287,7 @@ NomadString makeProjectExecutableName(const NomadStringView projectName) {
                 executable += '-';
             }
 
-            executable += static_cast<NomadChar>(std::tolower(byte));
+            executable += characterToLowerAscii(static_cast<NomadChar>(byte));
             separatorPending = false;
         } else {
             separatorPending = true;
