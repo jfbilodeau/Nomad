@@ -107,17 +107,18 @@ BOOST_AUTO_TEST_CASE(selects_compiled_or_raw_loading_per_root)
     writePng(directory, "sprites/ignored.png", 0, 255);
     writePng(directory, "mod/sprites/community.png", 0, 255);
 
-    const auto groups = loadOrPackSpriteRoots(
+    const auto core = loadSpriteRoot(
         directory.getPath(),
-        {"sprites", "mod/sprites"},
+        "sprites",
         true,
         64,
         1
     );
+    const auto mod = loadSpriteRoot(directory.getPath(), "mod/sprites", true, 64, 1);
 
-    BOOST_TEST(findSprite(groups, "sprites.core") != nullptr);
-    BOOST_TEST(findSprite(groups, "sprites.ignored") == nullptr);
-    BOOST_TEST(findSprite(groups, "mod.sprites.community") != nullptr);
+    BOOST_TEST(findSprite(core, "sprites.core") != nullptr);
+    BOOST_TEST(findSprite(core, "sprites.ignored") == nullptr);
+    BOOST_TEST(findSprite(mod, "mod.sprites.community") != nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(malformed_catalog_does_not_fall_back_to_raw_images)
@@ -127,7 +128,7 @@ BOOST_AUTO_TEST_CASE(malformed_catalog_does_not_fall_back_to_raw_images)
     directory.write("sprites/catalog.json", "{\"schema\":1,\"groups\":\"invalid\"}");
 
     BOOST_CHECK_EXCEPTION(
-        (void)loadOrPackSpriteRoots(directory.getPath(), {"sprites"}, true, 64, 1),
+        (void)loadSpriteRoot(directory.getPath(), "sprites", true, 64, 1),
         SpriteCatalogError,
         [](const SpriteCatalogError& error) {
             return NomadString(error.what()).find("field 'groups' must be an array") != NomadString::npos;
@@ -139,25 +140,11 @@ BOOST_AUTO_TEST_CASE(packaged_projects_allow_missing_mod_roots)
 {
     TestDirectory directory("nomad_sprite_catalog_missing_mod_root");
 
-    const auto groups = loadOrPackSpriteRoots(
-        directory.getPath(),
-        {"mod/sprites"},
-        true,
-        64,
-        1,
-        true
-    );
+    const auto groups = loadSpriteRoot(directory.getPath(), "mod/sprites", false, 64, 1);
 
     BOOST_TEST(groups.empty());
     BOOST_CHECK_THROW(
-        (void)loadOrPackSpriteRoots(
-            directory.getPath(),
-            {"mod/sprites"},
-            true,
-            64,
-            1,
-            false
-        ),
+        (void)loadSpriteRoot(directory.getPath(), "mod/sprites", true, 64, 1),
         SpriteCatalogError
     );
 }

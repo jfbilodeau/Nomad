@@ -44,8 +44,14 @@ public:
     TextManager* getText();
     TextureManager* getTextures();
 
-    // TODO: These specialized method should be move elsewhere...
     void loadSpriteAtlas(const NomadString& resourceName);
+    [[nodiscard]] NomadIndex loadSpriteRoots(
+        const std::vector<NomadPath>& directories,
+        bool directoriesExplicitlyConfigured,
+        NomadInteger maxTextureSize,
+        NomadInteger padding,
+        bool missingDirectoriesAllowed = false
+    );
     void registerPackedSprites(const std::vector<PackedSpriteGroup>& groups);
 
 private:

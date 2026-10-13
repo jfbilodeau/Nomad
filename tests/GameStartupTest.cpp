@@ -90,13 +90,20 @@ BOOST_AUTO_TEST_CASE(loads_compiled_sprite_catalog_instead_of_raw_pngs)
     const auto groups = packSpriteGroups(sources, 64, 1);
     writeSpriteCatalog(directory.getPath() / "sprites", groups);
     writePng(directory, "sprites/ignored.png");
+    writePng(directory, "mod/sprites/community.png");
     directory.write("scripts/init.nomad", "game.name = \"Compiled sprites\"\n");
     selectDummyDrivers();
 
-    auto game = Game::create(makeOptions(directory));
+    auto options = makeOptions(directory);
+    options.sprites.directories = {"sprites", "mod/sprites"};
+    options.sprites.directoriesExplicitlyConfigured = true;
+    auto game = Game::create(std::move(options));
 
     BOOST_TEST(game->getResources()->getSprites()->getSpriteByName("sprites.core") != nullptr);
     BOOST_TEST(game->getResources()->getSprites()->getSpriteByName("sprites.ignored") == nullptr);
+    BOOST_TEST(
+        game->getResources()->getSprites()->getSpriteByName("mod.sprites.community") != nullptr
+    );
     BOOST_TEST(game->getName() == "Compiled sprites");
 }
 

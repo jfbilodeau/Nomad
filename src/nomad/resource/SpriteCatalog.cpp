@@ -15,7 +15,6 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <iterator>
 #include <set>
 #include <system_error>
 
@@ -139,7 +138,7 @@ SdlSurfacePtr loadPage(
 void validateSpriteRoot(
     const NomadPath& resourcePath,
     const NomadPath& configuredDirectory,
-    const bool directoriesExplicitlyConfigured
+    const bool directoryRequired
 ) {
     const auto directory = (resourcePath / configuredDirectory).lexically_normal();
     const auto relativeDirectory = directory.lexically_relative(resourcePath);
@@ -162,7 +161,7 @@ void validateSpriteRoot(
         (!error && !std::filesystem::exists(status)) ||
         error == std::errc::no_such_file_or_directory
     ) {
-        if (!directoriesExplicitlyConfigured) {
+        if (!directoryRequired) {
             return;
         }
 
@@ -426,66 +425,26 @@ void writeSpriteCatalog(
     }
 }
 
-std::vector<PackedSpriteGroup> loadOrPackSpriteRoots(
+std::vector<PackedSpriteGroup> loadSpriteRoot(
     const NomadPath& resourcePath,
-    const std::vector<NomadPath>& directories,
-    const bool directoriesExplicitlyConfigured,
+    const NomadPath& directory,
+    const bool directoryRequired,
     const NomadInteger maxTextureSize,
-    const NomadInteger padding,
-    const bool missingDirectoriesAllowed
+    const NomadInteger padding
 ) {
-    std::vector<PackedSpriteGroup> groups;
-    std::set<NomadString> groupNames;
-    std::set<NomadString> spriteNames;
+    validateSpriteRoot(resourcePath, directory, directoryRequired);
+    const auto spriteRoot = (resourcePath / directory).lexically_normal();
 
-    for (const auto& configuredDirectory : directories) {
-        const auto directoryRequired =
-            directoriesExplicitlyConfigured && !missingDirectoriesAllowed;
-        validateSpriteRoot(resourcePath, configuredDirectory, directoryRequired);
-        const auto spriteRoot = (resourcePath / configuredDirectory).lexically_normal();
-
-        if (!std::filesystem::exists(spriteRoot)) {
-            continue;
-        }
-
-        std::vector<PackedSpriteGroup> rootGroups;
-
-        if (hasSpriteCatalog(spriteRoot)) {
-            rootGroups = loadSpriteCatalog(spriteRoot);
-        } else {
-            const auto sources = discoverSpriteSources(
-                resourcePath,
-                {configuredDirectory},
-                directoryRequired
-            );
-            rootGroups = packSpriteGroups(sources, maxTextureSize, padding);
-        }
-
-        for (const auto& group : rootGroups) {
-            if (!groupNames.insert(stringToLowerAscii(group.name)).second) {
-                throw SpriteCatalogError(
-                    "Sprite group name collision across configured roots: '" + group.name + "'"
-                );
-            }
-
-            for (const auto& sprite : group.sprites) {
-                if (!spriteNames.insert(stringToLowerAscii(sprite.name)).second) {
-                    throw SpriteCatalogError(
-                        "Sprite resource name collision across configured roots: '" +
-                        sprite.name + "'"
-                    );
-                }
-            }
-        }
-
-        groups.insert(
-            groups.end(),
-            std::make_move_iterator(rootGroups.begin()),
-            std::make_move_iterator(rootGroups.end())
-        );
+    if (!std::filesystem::exists(spriteRoot)) {
+        return {};
     }
 
-    return groups;
+    if (hasSpriteCatalog(spriteRoot)) {
+        return loadSpriteCatalog(spriteRoot);
+    }
+
+    const auto sources = discoverSpriteSources(resourcePath, {directory}, directoryRequired);
+    return packSpriteGroups(sources, maxTextureSize, padding);
 }
 
 } // namespace nomad

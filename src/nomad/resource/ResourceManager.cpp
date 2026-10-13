@@ -6,17 +6,20 @@
 #include <nomad/resource/Font.hpp>
 #include <nomad/resource/Sprite.hpp>
 #include <nomad/resource/SpriteAtlas.hpp>
+#include <nomad/resource/SpriteCatalog.hpp>
 #include <nomad/resource/Texture.hpp>
 
 #include <nomad/game/Canvas.hpp>
 #include <nomad/game/Game.hpp>
 
+#include <nomad/system/Path.hpp>
 #include <nomad/system/String.hpp>
 
 #include <boost/json.hpp>
 
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <set>
 
 namespace nomad {
@@ -171,6 +174,60 @@ void ResourceManager::loadSpriteAtlas(const NomadString& resourceName) {
     catch (const std::exception& e) {
         throw ResourceException("Failed to load sprite atlas: '" + resourceName + "' - " + e.what());
     }
+}
+
+NomadIndex ResourceManager::loadSpriteRoots(
+    const std::vector<NomadPath>& directories,
+    const bool directoriesExplicitlyConfigured,
+    const NomadInteger maxTextureSize,
+    const NomadInteger padding,
+    const bool missingDirectoriesAllowed
+) {
+    std::vector<PackedSpriteGroup> groups;
+    std::set<NomadString> groupNames;
+    std::set<NomadString> spriteNames;
+    NomadIndex spriteCount = 0;
+    const auto resourcePath = pathFromUtf8(m_basePath);
+    const auto directoryRequired =
+        directoriesExplicitlyConfigured && !missingDirectoriesAllowed;
+
+    for (const auto& directory : directories) {
+        auto rootGroups = loadSpriteRoot(
+            resourcePath,
+            directory,
+            directoryRequired,
+            maxTextureSize,
+            padding
+        );
+
+        for (const auto& group : rootGroups) {
+            if (!groupNames.insert(stringToLowerAscii(group.name)).second) {
+                throw SpriteCatalogError(
+                    "Sprite group name collision across configured roots: '" + group.name + "'"
+                );
+            }
+
+            spriteCount += group.sprites.size();
+
+            for (const auto& sprite : group.sprites) {
+                if (!spriteNames.insert(stringToLowerAscii(sprite.name)).second) {
+                    throw SpriteCatalogError(
+                        "Sprite resource name collision across configured roots: '" +
+                        sprite.name + "'"
+                    );
+                }
+            }
+        }
+
+        groups.insert(
+            groups.end(),
+            std::make_move_iterator(rootGroups.begin()),
+            std::make_move_iterator(rootGroups.end())
+        );
+    }
+
+    registerPackedSprites(groups);
+    return spriteCount;
 }
 
 void ResourceManager::registerPackedSprites(const std::vector<PackedSpriteGroup>& groups) {

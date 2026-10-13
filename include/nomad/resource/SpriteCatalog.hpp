@@ -34,13 +34,12 @@ void writeSpriteCatalog(
     const std::vector<PackedSpriteGroup>& groups
 );
 
-[[nodiscard]] std::vector<PackedSpriteGroup> loadOrPackSpriteRoots(
+[[nodiscard]] std::vector<PackedSpriteGroup> loadSpriteRoot(
     const NomadPath& resourcePath,
-    const std::vector<NomadPath>& directories,
-    bool directoriesExplicitlyConfigured,
+    const NomadPath& directory,
+    bool directoryRequired,
     NomadInteger maxTextureSize,
-    NomadInteger padding,
-    bool missingDirectoriesAllowed = false
+    NomadInteger padding
 );
 
 } // namespace nomad

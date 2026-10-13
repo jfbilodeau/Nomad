@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <set>
@@ -355,6 +356,56 @@ PackedSpriteGroup packGroup(
     return result;
 }
 
+std::vector<PackedSpriteGroup> loadSpriteRootsForAnalysis(
+    const NomadPath& resourcePath,
+    const std::vector<NomadPath>& directories,
+    const bool directoriesExplicitlyConfigured,
+    const NomadInteger maxTextureSize,
+    const NomadInteger padding,
+    const bool missingDirectoriesAllowed
+) {
+    std::vector<PackedSpriteGroup> groups;
+    std::set<NomadString> groupNames;
+    std::set<NomadString> spriteNames;
+    const auto directoryRequired =
+        directoriesExplicitlyConfigured && !missingDirectoriesAllowed;
+
+    for (const auto& directory : directories) {
+        auto rootGroups = loadSpriteRoot(
+            resourcePath,
+            directory,
+            directoryRequired,
+            maxTextureSize,
+            padding
+        );
+
+        for (const auto& group : rootGroups) {
+            if (!groupNames.insert(stringToLowerAscii(group.name)).second) {
+                throw SpriteCatalogError(
+                    "Sprite group name collision across configured roots: '" + group.name + "'"
+                );
+            }
+
+            for (const auto& sprite : group.sprites) {
+                if (!spriteNames.insert(stringToLowerAscii(sprite.name)).second) {
+                    throw SpriteCatalogError(
+                        "Sprite resource name collision across configured roots: '" +
+                        sprite.name + "'"
+                    );
+                }
+            }
+        }
+
+        groups.insert(
+            groups.end(),
+            std::make_move_iterator(rootGroups.begin()),
+            std::make_move_iterator(rootGroups.end())
+        );
+    }
+
+    return groups;
+}
+
 } // namespace
 
 void SdlSurfaceDeleter::operator()(SDL_Surface* surface) const {
@@ -394,7 +445,7 @@ SpritePackingReport analyzeSpritePacking(
     const NomadInteger padding,
     const bool missingDirectoriesAllowed
 ) {
-    const auto groups = loadOrPackSpriteRoots(
+    const auto groups = loadSpriteRootsForAnalysis(
         resourcePath,
         directories,
         directoriesExplicitlyConfigured,
