@@ -105,6 +105,7 @@ command-specific usage.
 
 - [Getting started](https://jfbilodeau.github.io/Nomad/)
 - [Language guide](docs/language.md)
+- [Sprites](docs/sprites.md)
 - [CLI reference](docs/cli.md)
 - [Project configuration](docs/configuration.md)
 - [Building from source](docs/building.md)

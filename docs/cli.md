@@ -58,5 +58,12 @@ collision, size, and packing failures produce a nonzero exit code. An explicit
 `project.entry`. `--resource-path <directory>` overrides the configured
 resource directory; `--debug` enables diagnostic logging and the debug console.
 
-On Windows the runtime is a GUI application, so packaged games do not open a
-console window. The manager and compiler remain console applications.
+Run `nomad run --debug` and press `F12` in the game window to open the debug
+console. Runtime log messages appear in its **Logs** panel. Press `F12` again
+to close it.
+
+On Linux, runtime messages are also written to the terminal that launched
+`nomad run`. On Windows the runtime is a GUI application, so it has no terminal
+output even when the console-based `nomad` manager launches it. Use the in-game
+debug console to inspect runtime logs on Windows. The manager and compiler
+remain console applications on every platform.

@@ -19,6 +19,7 @@ nav:
   - Getting started: index.md
   - Language: language.md
   - Engine API: engine-api.md
+  - Sprites: sprites.md
   - CLI: cli.md
   - Project configuration: configuration.md
   - Building from source: building.md

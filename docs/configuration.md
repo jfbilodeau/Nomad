@@ -62,7 +62,10 @@ without it is a packaged configuration and must omit `[resources]` and `[package
 Nomad recursively discovers PNG files beneath each configured directory. Set
 the property to an empty array to disable automatic sprite discovery.
 
-Configured directories must be non-empty project-relative paths. Absolute
+See the [sprite guide](sprites.md) for directory layout, resource naming,
+animation conventions, and packing behavior.
+
+Configured directories must be non-empty resource-relative paths. Absolute
 paths, paths that escape through `..`, duplicates, and overlapping directories
 are rejected. For example, `["sprites", "sprites/ui"]` is invalid because the
 first entry already includes the second.
