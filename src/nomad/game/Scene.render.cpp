@@ -39,11 +39,11 @@ void Scene::render(Canvas* canvas) const {
     }
 
     if (m_game->isDebug()) {
-        b2DebugDraw debug_draw;
-        createDebugDraw(canvas, &debug_draw);
+        b2DebugDraw debugDraw;
+        createDebugDraw(canvas, &debugDraw);
 
         for (const auto& layer : m_layers) {
-            b2World_Draw(layer.worldId, &debug_draw);
+            b2World_Draw(layer.worldId, &debugDraw);
         }
     }
 
