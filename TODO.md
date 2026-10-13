@@ -4,7 +4,6 @@ This the author wants to do
 ## Open
 [ ] Splash image / default titles & resolution
 [ ] Sound!!!
-[ ] Texture packing
 [ ] Display physics bodies in debug mode
 [ ] Debug mode should only come up when the `--debug` parameter is passed.
 [ ] Indexer notation.
@@ -14,6 +13,7 @@ This the author wants to do
 [ ] Command overloading (WIP)
 
 ## Completed
+[X] Automatic sprite texture packing
 [X] Objects (intrinsic)
 [X] Switch from `const NomadString&` to `NomadStringView`
 [X] Ensure scripts that return a value early also have a valid `return` statement at the end.
