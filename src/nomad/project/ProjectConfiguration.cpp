@@ -197,22 +197,61 @@ std::vector<NomadPath> readSpriteDirectories(const toml::table& sprites) {
     return result;
 }
 
+NomadInteger readSpriteInteger(
+    const toml::table& sprites,
+    const NomadStringView key,
+    const NomadInteger minimum
+) {
+    const auto& node = sprites[key];
+    const auto value = sprites[key].value<NomadInteger>();
+    const auto field = "sprites." + NomadString(key);
+
+    if (!node.is_integer() || !value) {
+        throw ProjectConfigurationError("Configuration field '" + field + "' must be an integer");
+    }
+
+    if (*value < minimum) {
+        throw ProjectConfigurationError(
+            "Configuration field '" + field + "' must be at least " + std::to_string(minimum)
+        );
+    }
+
+    return *value;
+}
+
 NomadString serializeSpriteConfiguration(const SpriteConfiguration& configuration) {
-    if (!configuration.directoriesExplicitlyConfigured) {
+    if (
+        !configuration.directoriesExplicitlyConfigured &&
+        !configuration.maxTextureSizeExplicitlyConfigured &&
+        !configuration.paddingExplicitlyConfigured
+    ) {
         return {};
     }
 
-    NomadString result = "\n[sprites]\ndirectories = [";
+    NomadString result = "\n[sprites]\n";
 
-    for (NomadIndex index = 0; index < configuration.directories.size(); ++index) {
-        if (index != 0) {
-            result += ", ";
+    if (configuration.directoriesExplicitlyConfigured) {
+        result += "directories = [";
+
+        for (NomadIndex index = 0; index < configuration.directories.size(); ++index) {
+            if (index != 0) {
+                result += ", ";
+            }
+
+            result += "\"" + escapeTomlString(pathToGenericUtf8(configuration.directories[index])) + "\"";
         }
 
-        result += "\"" + escapeTomlString(pathToGenericUtf8(configuration.directories[index])) + "\"";
+        result += "]\n";
     }
 
-    result += "]\n";
+    if (configuration.maxTextureSizeExplicitlyConfigured) {
+        result += "max-texture-size = " + std::to_string(configuration.maxTextureSize) + "\n";
+    }
+
+    if (configuration.paddingExplicitlyConfigured) {
+        result += "padding = " + std::to_string(configuration.padding) + "\n";
+    }
+
     return result;
 }
 
@@ -340,6 +379,14 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
     if (sprites != nullptr && sprites->contains("directories")) {
         configuration.sprites.directories = readSpriteDirectories(*sprites);
         configuration.sprites.directoriesExplicitlyConfigured = true;
+    }
+    if (sprites != nullptr && sprites->contains("max-texture-size")) {
+        configuration.sprites.maxTextureSize = readSpriteInteger(*sprites, "max-texture-size", 1);
+        configuration.sprites.maxTextureSizeExplicitlyConfigured = true;
+    }
+    if (sprites != nullptr && sprites->contains("padding")) {
+        configuration.sprites.padding = readSpriteInteger(*sprites, "padding", 0);
+        configuration.sprites.paddingExplicitlyConfigured = true;
     }
 
     if (configuration.type == ProjectConfigurationType::Development) {

@@ -222,6 +222,7 @@ set(
 
         ${NOMAD_SOURCE_DIR}/nomad/resource/Animation.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Font.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/resource/RectanglePacker.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Resource.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/ResourceManager.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Sprite.cpp

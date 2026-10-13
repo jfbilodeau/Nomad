@@ -40,7 +40,11 @@ struct ResourceConfiguration {
 
 struct SpriteConfiguration {
     std::vector<NomadPath> directories{"sprites"};
+    NomadInteger maxTextureSize = 2048;
+    NomadInteger padding = 1;
     bool directoriesExplicitlyConfigured = false;
+    bool maxTextureSizeExplicitlyConfigured = false;
+    bool paddingExplicitlyConfigured = false;
 };
 
 struct PackageConfiguration {

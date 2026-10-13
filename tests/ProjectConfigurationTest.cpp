@@ -29,6 +29,8 @@ version = "0.1.0"
 
 [sprites]
 directories = ["sprites", "mod/sprites"]
+max-texture-size = 1024
+padding = 2
 
 [resources]
 directory = "res"
@@ -71,7 +73,11 @@ BOOST_AUTO_TEST_CASE(loads_typed_project_configuration)
     BOOST_REQUIRE(configuration.sprites.directories.size() == 2U);
     BOOST_TEST(configuration.sprites.directories[0] == NomadPath("sprites"));
     BOOST_TEST(configuration.sprites.directories[1] == NomadPath("mod/sprites"));
+    BOOST_TEST(configuration.sprites.maxTextureSize == 1024);
+    BOOST_TEST(configuration.sprites.padding == 2);
     BOOST_TEST(configuration.sprites.directoriesExplicitlyConfigured);
+    BOOST_TEST(configuration.sprites.maxTextureSizeExplicitlyConfigured);
+    BOOST_TEST(configuration.sprites.paddingExplicitlyConfigured);
     BOOST_TEST(configuration.package.output == std::filesystem::path("dist"));
     BOOST_REQUIRE(configuration.package.exclude.size() == 2U);
     BOOST_TEST(configuration.package.exclude[0] == "**/*.psd");
@@ -111,7 +117,11 @@ BOOST_AUTO_TEST_CASE(loads_and_serializes_release_configuration)
     BOOST_REQUIRE(release.sprites.directories.size() == development.sprites.directories.size());
     BOOST_TEST(release.sprites.directories[0] == development.sprites.directories[0]);
     BOOST_TEST(release.sprites.directories[1] == development.sprites.directories[1]);
+    BOOST_TEST(release.sprites.maxTextureSize == development.sprites.maxTextureSize);
+    BOOST_TEST(release.sprites.padding == development.sprites.padding);
     BOOST_TEST(release.sprites.directoriesExplicitlyConfigured);
+    BOOST_TEST(release.sprites.maxTextureSizeExplicitlyConfigured);
+    BOOST_TEST(release.sprites.paddingExplicitlyConfigured);
     BOOST_TEST(release.package.output.empty());
     BOOST_TEST(release.package.exclude.empty());
 }
@@ -128,7 +138,11 @@ BOOST_AUTO_TEST_CASE(defaults_and_disables_sprite_directories)
     const auto defaults = loadProjectConfiguration(defaultFile);
     BOOST_REQUIRE(defaults.sprites.directories.size() == 1U);
     BOOST_TEST(defaults.sprites.directories[0] == NomadPath("sprites"));
+    BOOST_TEST(defaults.sprites.maxTextureSize == 2048);
+    BOOST_TEST(defaults.sprites.padding == 1);
     BOOST_TEST(!defaults.sprites.directoriesExplicitlyConfigured);
+    BOOST_TEST(!defaults.sprites.maxTextureSizeExplicitlyConfigured);
+    BOOST_TEST(!defaults.sprites.paddingExplicitlyConfigured);
     BOOST_TEST(serializeReleaseProjectConfiguration(defaults).find("[sprites]") == NomadString::npos);
 
     auto disabledText = defaultText;
@@ -137,8 +151,38 @@ BOOST_AUTO_TEST_CASE(defaults_and_disables_sprite_directories)
     const auto disabled = loadProjectConfiguration(disabledFile);
 
     BOOST_TEST(disabled.sprites.directories.empty());
+    BOOST_TEST(disabled.sprites.maxTextureSize == 2048);
+    BOOST_TEST(disabled.sprites.padding == 1);
     BOOST_TEST(disabled.sprites.directoriesExplicitlyConfigured);
     BOOST_TEST(serializeReleaseProjectConfiguration(disabled).find("directories = []") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(parses_and_serializes_independent_sprite_packing_settings)
+{
+    TestDirectory directory("nomad_project_configuration_sprite_packing");
+    auto configurationText = std::string(COMPLETE_CONFIGURATION);
+    const auto sprites = configurationText.find("[sprites]");
+    const auto resources = configurationText.find("[resources]");
+    configurationText.replace(
+        sprites,
+        resources - sprites,
+        "[sprites]\nmax-texture-size = 4096\npadding = 0\n\n"
+    );
+    const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText);
+
+    const auto configuration = loadProjectConfiguration(projectFile);
+    BOOST_REQUIRE(configuration.sprites.directories.size() == 1U);
+    BOOST_TEST(configuration.sprites.directories[0] == NomadPath("sprites"));
+    BOOST_TEST(!configuration.sprites.directoriesExplicitlyConfigured);
+    BOOST_TEST(configuration.sprites.maxTextureSize == 4096);
+    BOOST_TEST(configuration.sprites.padding == 0);
+    BOOST_TEST(configuration.sprites.maxTextureSizeExplicitlyConfigured);
+    BOOST_TEST(configuration.sprites.paddingExplicitlyConfigured);
+
+    const auto releaseText = serializeReleaseProjectConfiguration(configuration);
+    BOOST_TEST(releaseText.find("directories") == NomadString::npos);
+    BOOST_TEST(releaseText.find("max-texture-size = 4096") != NomadString::npos);
+    BOOST_TEST(releaseText.find("padding = 0") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(normalizes_sprite_directories)
@@ -244,12 +288,18 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_optional_fields_instead_of_defaulting)
         std::pair{"output = \"dist\"", "output = 42"},
         std::pair{"output = \"dist\"", "output = \"\""},
         std::pair{"directories = [\"sprites\", \"mod/sprites\"]", "directories = \"sprites\""},
+        std::pair{"max-texture-size = 1024", "max-texture-size = 0"},
+        std::pair{"max-texture-size = 1024", "max-texture-size = \"large\""},
+        std::pair{"padding = 2", "padding = -1"},
+        std::pair{"padding = 2", "padding = false"},
         std::pair{"exclude = [\"**/*.psd\", \"development/**\"]", "exclude = false"}
     }) {
         auto text = std::string(COMPLETE_CONFIGURATION);
         text.replace(text.find(replacement.first), std::string(replacement.first).size(), replacement.second);
         const auto file = directory.write(NOMAD_PROJECT_FILE_NAME, text);
-        BOOST_CHECK_THROW((void)loadProjectConfiguration(file), ProjectConfigurationError);
+        BOOST_TEST_CONTEXT("replacement: " << replacement.first << " -> " << replacement.second) {
+            BOOST_CHECK_THROW((void)loadProjectConfiguration(file), ProjectConfigurationError);
+        }
     }
 }
 

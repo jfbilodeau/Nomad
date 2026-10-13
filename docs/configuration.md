@@ -24,6 +24,8 @@ directories = [
     "sprites",
     "mod/sprites",
 ]
+max-texture-size = 2048
+padding = 1
 
 [package]
 output = "dist"
@@ -44,6 +46,8 @@ exclude = [
 | `nomad.version` | Required SDK version in canonical `major.minor.patch` form; packaging requires this exact runtime version. | Required |
 | `resources.directory` | Resource directory relative to the project root. | Optional; `"res"` |
 | `sprites.directories` | Resource-relative directories recursively scanned for sprite PNG files. | Optional; `["sprites"]` |
+| `sprites.max-texture-size` | Maximum width and height of each packed texture page. | Optional; `2048` |
+| `sprites.padding` | Transparent pixels reserved between adjacent packed sprites. | Optional; `1` |
 | `package.output` | Package output directory relative to the project root. | Optional; `"dist"` |
 | `package.exclude` | Resource-relative exclusion patterns; omitted or `[]` includes all resources. | Optional; `[]` |
 
@@ -67,6 +71,15 @@ When the `[sprites]` table is omitted, Nomad uses `["sprites"]`. A missing
 implicit default directory is allowed so projects without sprites remain
 valid. A directory listed explicitly must exist when sprite resources are
 checked or loaded.
+
+`sprites.max-texture-size` must be a positive integer. Logical sprite groups
+that do not fit in one texture are split into multiple pages of at most this
+width and height. Each page shrinks to its smallest used non-power-of-two
+dimensions.
+
+`sprites.padding` must be a non-negative integer. It specifies the exact
+transparent distance between adjacent packed sprites; padding is not added at
+the outer edge of a texture page.
 
 ## Packaged configuration
 
