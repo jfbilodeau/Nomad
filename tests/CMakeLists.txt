@@ -39,6 +39,7 @@ add_executable(
     ./RectanglePackerTest.cpp
     ./RuntimeTest.cpp
     ./SpriteDiscoveryTest.cpp
+    ./SpritePackerTest.cpp
     ./StatementExecutionTest.cpp
     ./SystemTest.cpp
     ./TestDirectory.hpp
