@@ -22,6 +22,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
@@ -194,7 +195,21 @@ NomadString valueToDisplayString(const Type* type, const RuntimeValue& value) {
         return "<null>";
     }
 
-    return type->toString(value);
+    auto displayValue = type->toString(value);
+    if (type->getTypeName() == FLOAT_TYPE_NAME) {
+        const auto floatValue = value.getFloatValue();
+        if (std::isfinite(floatValue) && std::trunc(floatValue) == floatValue) {
+            const auto exponentPosition = displayValue.find_first_of("eE");
+            const auto mantissaEnd = exponentPosition == NomadString::npos
+                ? displayValue.size()
+                : exponentPosition;
+            if (displayValue.find('.') >= mantissaEnd) {
+                displayValue.insert(mantissaEnd, ".0");
+            }
+        }
+    }
+
+    return displayValue;
 }
 
 bool parseBoolean(const NomadString& text, NomadBoolean& value) {
@@ -1319,44 +1334,173 @@ void DebugConsole::renderFunctionInspector() {
         panelHeight
     );
     ImGui::Begin("Functions", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
-    ImGui::InputTextWithHint("##functionFilter", "Filter functions", m_functionFilter.data(), m_functionFilter.size());
 
-    std::vector<ScriptFunction*> functions;
-    m_game->getRuntime()->getFunctions(functions);
-    std::ranges::sort(functions, {}, &ScriptFunction::getName);
+    if (ImGui::BeginTabBar("FunctionInspectorTabs")) {
+        if (ImGui::BeginTabItem("Functions")) {
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::InputTextWithHint(
+                "##functionFilter",
+                "Filter functions",
+                m_functionFilter.data(),
+                m_functionFilter.size()
+            );
 
-    if (ImGui::BeginCombo(
-        "##function",
-        m_selectedFunctionId != NOMAD_INVALID_ID
-            ? m_game->getRuntime()->getFunction(m_selectedFunctionId)->getName().c_str()
-            : "<select function>"
-    )) {
-        for (const auto* function : functions) {
-            if (!containsText(function->getName(), m_functionFilter.data())) {
-                continue;
+            std::vector<ScriptFunction*> functions;
+            m_game->getRuntime()->getFunctions(functions);
+            std::ranges::sort(functions, {}, &ScriptFunction::getName);
+
+            const auto* selectedFunction = m_selectedFunctionId == NOMAD_INVALID_ID
+                ? nullptr
+                : m_game->getRuntime()->getFunction(m_selectedFunctionId);
+            if (ImGui::BeginCombo(
+                "##function",
+                selectedFunction != nullptr ? selectedFunction->getName().c_str() : "<select function>"
+            )) {
+                for (const auto* function : functions) {
+                    if (!containsText(function->getName(), m_functionFilter.data())) {
+                        continue;
+                    }
+                    if (ImGui::Selectable(function->getName().c_str(), function->getId() == m_selectedFunctionId)) {
+                        m_selectedFunctionId = function->getId();
+                    }
+                }
+                ImGui::EndCombo();
             }
-            if (ImGui::Selectable(function->getName().c_str(), function->getId() == m_selectedFunctionId)) {
-                m_selectedFunctionId = function->getId();
+
+            if (selectedFunction != nullptr) {
+                ImGui::TextWrapped("%s", selectedFunction->getPath().c_str());
+                ImGui::Text(
+                    "Parameters: %zu | Variables: %zu | Instructions: %zu-%zu | Return: %s",
+                    selectedFunction->getParameterCount(),
+                    selectedFunction->getVariableCount(),
+                    selectedFunction->getFunctionStart(),
+                    selectedFunction->getFunctionEnd(),
+                    selectedFunction->getReturnType() != nullptr
+                        ? selectedFunction->getReturnType()->getTypeName().c_str()
+                        : "<unknown>"
+                );
+                ImGui::Separator();
+                ImGui::BeginChild("FunctionSource");
+                ImGui::TextUnformatted(selectedFunction->getSource().c_str());
+                ImGui::EndChild();
             }
+
+            ImGui::EndTabItem();
         }
-        ImGui::EndCombo();
-    }
 
-    if (m_selectedFunctionId != NOMAD_INVALID_ID) {
-        const auto* function = m_game->getRuntime()->getFunction(m_selectedFunctionId);
-        ImGui::TextWrapped("%s", function->getPath().c_str());
-        ImGui::Text(
-            "Parameters: %zu | Variables: %zu | Instructions: %zu-%zu | Return: %s",
-            function->getParameterCount(),
-            function->getVariableCount(),
-            function->getFunctionStart(),
-            function->getFunctionEnd(),
-            function->getReturnType() != nullptr ? function->getReturnType()->getTypeName().c_str() : "<unknown>"
-        );
-        ImGui::Separator();
-        ImGui::BeginChild("FunctionSource");
-        ImGui::TextUnformatted(function->getSource().c_str());
-        ImGui::EndChild();
+        if (ImGui::BeginTabItem("Constants")) {
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::InputTextWithHint(
+                "##constantFilter",
+                "Filter constants",
+                m_constantFilter.data(),
+                m_constantFilter.size()
+            );
+
+            struct ConstantRow {
+                NomadString name;
+                const Type* type;
+                NomadString value;
+            };
+
+            std::vector<ConstantRow> constants;
+            const auto* runtime = m_game->getRuntime();
+            auto constantId = runtime->getFirstConstantId();
+            while (constantId != NOMAD_INVALID_ID) {
+                const auto* type = runtime->getConstantType(constantId);
+                const auto& name = runtime->getConstantName(constantId);
+                if (type->asEnum() == nullptr && containsText(name, m_constantFilter.data())) {
+                    RuntimeValue value;
+                    runtime->getConstantValue(constantId, value);
+                    constants.push_back({name, type, valueToDisplayString(type, value)});
+                }
+                constantId = runtime->getNextConstantId(constantId);
+            }
+            std::ranges::sort(constants, {}, &ConstantRow::name);
+
+            const auto tableFlags =
+                ImGuiTableFlags_Borders |
+                ImGuiTableFlags_RowBg |
+                ImGuiTableFlags_Resizable |
+                ImGuiTableFlags_ScrollY;
+            if (ImGui::BeginTable("ConstantTable", 3, tableFlags)) {
+                ImGui::TableSetupColumn("Name");
+                ImGui::TableSetupColumn("Type");
+                ImGui::TableSetupColumn("Value");
+                ImGui::TableHeadersRow();
+
+                for (const auto& constant : constants) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted(constant.name.c_str());
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::TextUnformatted(getTypeDisplayName(constant.type).c_str());
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::TextUnformatted(constant.value.c_str());
+                }
+
+                ImGui::EndTable();
+            }
+
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("Enums")) {
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::InputTextWithHint(
+                "##enumFilter",
+                "Filter enums",
+                m_enumFilter.data(),
+                m_enumFilter.size()
+            );
+
+            std::vector<const EnumType*> enumTypes;
+            const auto* runtime = m_game->getRuntime();
+            auto constantId = runtime->getFirstConstantId();
+            while (constantId != NOMAD_INVALID_ID) {
+                const auto* enumType = runtime->getConstantType(constantId)->asEnum();
+                if (enumType != nullptr &&
+                    containsText(enumType->getTypeName(), m_enumFilter.data()) &&
+                    std::ranges::find(enumTypes, enumType) == enumTypes.end()) {
+                    enumTypes.push_back(enumType);
+                }
+                constantId = runtime->getNextConstantId(constantId);
+            }
+            std::ranges::sort(enumTypes, {}, [](const EnumType* enumType) {
+                return enumType->getTypeName();
+            });
+
+            const auto tableFlags =
+                ImGuiTableFlags_Borders |
+                ImGuiTableFlags_RowBg |
+                ImGuiTableFlags_Resizable |
+                ImGuiTableFlags_ScrollY;
+            if (ImGui::BeginTable("EnumTable", 3, tableFlags)) {
+                ImGui::TableSetupColumn("Enum");
+                ImGui::TableSetupColumn("Name");
+                ImGui::TableSetupColumn("Value");
+                ImGui::TableHeadersRow();
+
+                for (const auto* enumType : enumTypes) {
+                    for (NomadIndex index = 0; index < enumType->getValueCount(); ++index) {
+                        const auto& value = enumType->getValue(index);
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::TextUnformatted(enumType->getTypeName().c_str());
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::TextUnformatted(value.name.c_str());
+                        ImGui::TableSetColumnIndex(2);
+                        ImGui::Text("%lld", static_cast<long long>(value.value));
+                    }
+                }
+
+                ImGui::EndTable();
+            }
+
+            ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
     }
 
     ImGui::End();
@@ -1461,7 +1605,12 @@ void DebugConsole::renderLogs() {
     ImGui::Text("%zu entries", m_memorySink.getEntries().size());
     ImGui::Separator();
 
-    ImGui::BeginChild("LogEntries");
+    ImGui::BeginChild(
+        "LogEntries",
+        ImVec2(0.0f, 0.0f),
+        ImGuiChildFlags_None,
+        ImGuiWindowFlags_HorizontalScrollbar
+    );
     for (const auto& entry : m_memorySink.getEntries()) {
         ImVec4 color;
         switch (entry.level) {

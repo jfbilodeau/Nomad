@@ -160,6 +160,8 @@ private:
     std::array<char, 128> m_variableFilter{};
     std::array<char, 128> m_entityFilter{};
     std::array<char, 128> m_functionFilter{};
+    std::array<char, 128> m_constantFilter{};
+    std::array<char, 128> m_enumFilter{};
     std::vector<NomadString> m_nativeFunctionHistory;
     std::vector<ConsoleEntry> m_consoleEntries;
     std::deque<FrameProfile> m_frameProfiles;
