@@ -29,6 +29,12 @@ size = [1600, 900]
 fullscreen = false
 splash-image = "splash.png"
 
+[audio]
+directories = [
+    "audio",
+    "mod/audio",
+]
+
 [sprites]
 directories = [
     "sprites",
@@ -61,13 +67,14 @@ exclude = [
 | `window.size` | Initial window size as `[width, height]`. | Optional; `window.resolution` |
 | `window.fullscreen` | Whether the game starts in fullscreen mode. | Optional; `false` |
 | `window.splash-image` | Image displayed while resources and scripts load, relative to the resource directory. | Optional |
+| `audio.directories` | Resource-relative directories recursively scanned for sound effects. | Optional; `["audio"]` |
 | `sprites.directories` | Resource-relative directories recursively scanned for sprite PNG files. | Optional; `["sprites"]` |
 | `sprites.max-texture-size` | Maximum width and height of each packed texture page. | Optional; `2048` |
 | `sprites.padding` | Transparent pixels reserved between adjacent packed sprites. | Optional; `1` |
 | `package.output` | Package output directory relative to the project root. | Optional; `"dist"` |
 | `package.exclude` | Resource-relative exclusion patterns; omitted or `[]` includes all resources. | Optional; `[]` |
 
-The `[game]`, `[resources]`, `[window]`, `[sprites]`, and `[package]` tables may be omitted. Defaults apply
+The `[game]`, `[resources]`, `[window]`, `[audio]`, `[sprites]`, and `[package]` tables may be omitted. Defaults apply
 only to missing fields; invalid types and empty strings are rejected.
 Development projects are identified by `project.executable`. A configuration
 without it is a packaged configuration and must omit `[resources]` and `[package]`.
@@ -81,6 +88,25 @@ retained in packaged configuration files.
 `--debug` and `--no-debug` override `game.debug` for an individual run.
 See the [debugging guide](debugging.md) for the in-game console, physics debug
 drawing, and persisted debug settings.
+
+## Audio directories
+
+`audio.directories` contains directories relative to `resources.directory`.
+Nomad recursively discovers WAV, Ogg Vorbis, MP3, and FLAC files beneath each
+configured directory. Set the property to an empty array to disable automatic
+sound-effect discovery.
+
+Configured directories must be non-empty resource-relative paths. Absolute
+paths, paths that escape through `..`, duplicates, and overlapping directories
+are rejected. When `[audio]` is omitted, Nomad uses `["audio"]`. A missing
+implicit default directory is allowed, while a directory listed explicitly
+must exist in a development project. Packaged projects allow configured
+directories to remain absent until a mod provides them.
+
+Resource names omit the file extension and replace directory separators with
+dots. For example, `audio/player/jump.ogg` is named `audio.player.jump`.
+Names are unique case-insensitively across every configured root and supported
+format, so `audio/hit.mp3` and `audio/Hit.wav` cannot coexist.
 
 ## Sprite directories
 
@@ -120,7 +146,7 @@ the outer edge of a texture page.
 
 Game packages contain a reduced `nomad.toml`. It retains the schema,
 project identity and version, entry function, required Nomad version, explicit
-game and window settings, and explicit sprite configuration. It omits `project.executable`,
+game and window settings, and explicit audio and sprite configuration. It omits `project.executable`,
 `[resources]`, and `[package]`.
 Packaged resources always live in `res`.
 

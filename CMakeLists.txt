@@ -218,6 +218,7 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectPackager.cpp
 
         ${NOMAD_SOURCE_DIR}/nomad/resource/Animation.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/resource/AudioDiscovery.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Font.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/RectanglePacker.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Resource.cpp
