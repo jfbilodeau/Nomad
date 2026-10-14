@@ -2,6 +2,8 @@
 Things the author wants to do.
 
 ## Open
+[ ] `this.wait`, `scene.wait`, `game.wait`
+[ ] Support to tween properties
 [ ] `args`
 [ ] MacOS
 [ ] WASM
@@ -14,6 +16,7 @@ Things the author wants to do.
 [ ] Auto publish Nomad plugin to VS Code extensions
 [ ] Compile to binary
 [ ] LLVM
+[ ] Gen game docs for modding
 
 ## Completed
 [X] Display physics bodies in debug mode

@@ -59,6 +59,23 @@ std::unique_ptr<Game> createHeadlessGame(const TestDirectory& directory) {
     return Game::createHeadless(std::move(options));
 }
 
+template<typename Predicate>
+bool waitForAudioCallback(AudioManager* audio, Predicate&& predicate) {
+    constexpr auto timeoutMilliseconds = 1000U;
+    constexpr auto pollMilliseconds = 10U;
+
+    for (auto elapsed = 0U; elapsed < timeoutMilliseconds; elapsed += pollMilliseconds) {
+        SDL_Delay(pollMilliseconds);
+        audio->processCallbacks();
+
+        if (predicate()) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 class ScopedLogCapture final {
 public:
     ScopedLogCapture() {
@@ -123,11 +140,15 @@ BOOST_AUTO_TEST_CASE(game_scripts_control_preloaded_audio_instances)
     directory.write("text/text.csv", "key,en\ntitle,Test\n");
     directory.write(
         "scripts/init.nomad",
+        "fun audioFinished\n"
+        " game.volume = 0.7\n"
+        "end\n"
         "sound = game.audio.load \"audio.hit\"\n"
         "game.volume = 0.8\n"
         "game.audio.volume = 0.5\n"
         "sound.volume = 0.25\n"
         "sound.playLoop\n"
+        "sound.playOnceThen audioFinished\n"
         "sound.pause\n"
         "sound.resume\n"
         "game.audio.pauseAll\n"
@@ -155,6 +176,42 @@ BOOST_AUTO_TEST_CASE(game_scripts_control_preloaded_audio_instances)
     BOOST_TEST(object->getVolume() == 0.25, boost::test_tools::tolerance(0.001));
     BOOST_TEST(!object->isPlaying());
     BOOST_TEST(!object->isPaused());
+}
+
+BOOST_AUTO_TEST_CASE(game_scripts_control_streamed_music)
+{
+    TestDirectory directory("nomad_music_script_api");
+    directory.write("music/theme.wav", makeWaveFile());
+    directory.write("text/text.csv", "key,en\ntitle,Test\n");
+    directory.write(
+        "scripts/init.nomad",
+        "fun musicFinished\n"
+        " game.volume = 0.7\n"
+        "end\n"
+        "game.music.volume = 0.4\n"
+        "game.audio.pauseAutomatically = false\n"
+        "game.music.pauseAutomatically = false\n"
+        "game.music.play \"music.theme\"\n"
+        "game.music.pause\n"
+        "game.music.resume\n"
+        "game.music.playOnce \"music.theme\"\n"
+        "game.music.playThen \"music.theme\" musicFinished\n"
+        "game.music.stop\n"
+    );
+    std::filesystem::create_directories(directory.getPath() / "mods");
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+
+    GameOptions options;
+    options.resourcePath = directory.getPath().string();
+    auto game = Game::create(std::move(options));
+    const auto* audio = game->getResources()->getAudio();
+
+    BOOST_TEST(audio->getMusicVolume() == 0.4, boost::test_tools::tolerance(0.001));
+    BOOST_TEST(!audio->getAudioPauseAutomatically());
+    BOOST_TEST(!audio->getMusicPauseAutomatically());
+    BOOST_TEST(!audio->isMusicPlaying());
+    BOOST_TEST(!audio->isMusicPaused());
 }
 
 BOOST_AUTO_TEST_CASE(game_scripts_log_invalid_audio_volume)
@@ -318,6 +375,141 @@ BOOST_AUTO_TEST_CASE(audio_manager_controls_all_tracks_and_master_volume)
     audio->stopAll();
     BOOST_TEST(!first->isPlaying());
     BOOST_TEST(!second->isPlaying());
+}
+
+BOOST_AUTO_TEST_CASE(audio_manager_streams_music_on_a_separate_track)
+{
+    TestDirectory directory("nomad_music_stream");
+    directory.write("music/theme.wav", makeWaveFile());
+    auto game = createHeadlessGame(directory);
+    auto* audio = game->getResources()->getAudio();
+
+    BOOST_REQUIRE(audio->isAvailable());
+    BOOST_REQUIRE(audio->playMusic(directory.getPath(), "music.theme", true));
+    BOOST_TEST(audio->isMusicPlaying());
+    BOOST_TEST(audio->isMusicLooping());
+    SDL_Delay(150);
+    audio->processCallbacks();
+    BOOST_TEST(audio->isMusicPlaying());
+
+    audio->pauseAll();
+    BOOST_TEST(audio->isMusicPlaying());
+
+    audio->pauseMusic();
+    BOOST_TEST(audio->isMusicPaused());
+    BOOST_TEST(!audio->isMusicPlaying());
+
+    audio->resumeMusic();
+    BOOST_TEST(audio->isMusicPlaying());
+
+    audio->setMusicVolume(0.25);
+    BOOST_TEST(audio->getMusicVolume() == 0.25, boost::test_tools::tolerance(0.001));
+    audio->setMusicVolume(-0.1);
+    BOOST_TEST(audio->getMusicVolume() == 0.0, boost::test_tools::tolerance(0.001));
+    audio->setMusicVolume(1.1);
+    BOOST_TEST(audio->getMusicVolume() == 1.0, boost::test_tools::tolerance(0.001));
+
+    BOOST_REQUIRE(audio->playMusic(directory.getPath(), "music.theme", false));
+    BOOST_TEST(audio->isMusicPlaying());
+    BOOST_TEST(!audio->isMusicLooping());
+
+    audio->stopMusic();
+    BOOST_TEST(!audio->isMusicPlaying());
+    BOOST_TEST(!audio->isMusicPaused());
+    BOOST_TEST(!audio->playMusic(directory.getPath(), "music.missing", true));
+}
+
+BOOST_AUTO_TEST_CASE(audio_completion_callbacks_run_after_playback_and_cancel_on_stop)
+{
+    TestDirectory directory("nomad_audio_completion");
+    directory.write("audio/hit.wav", makeWaveFile());
+    directory.write("music/theme.wav", makeWaveFile());
+    auto game = createHeadlessGame(directory);
+    auto* audio = game->getResources()->getAudio();
+
+    BOOST_REQUIRE(audio->loadAudioRoots(directory.getPath(), {"audio"}, true) == 1U);
+    auto* object = audio->getAudioObject(audio->createAudioObject("audio.hit"));
+    BOOST_REQUIRE(object != nullptr);
+
+    auto soundCompleted = false;
+    object->playOnceThen([&soundCompleted] {
+        soundCompleted = true;
+    });
+    BOOST_TEST(waitForAudioCallback(audio, [&soundCompleted] {
+        return soundCompleted;
+    }));
+
+    auto canceledSoundCompleted = false;
+    object->playOnceThen([&canceledSoundCompleted] {
+        canceledSoundCompleted = true;
+    });
+    object->stop();
+    SDL_Delay(150);
+    audio->processCallbacks();
+    BOOST_TEST(!canceledSoundCompleted);
+
+    auto musicCompleted = false;
+    BOOST_REQUIRE(audio->playMusic(
+        directory.getPath(),
+        "music.theme",
+        false,
+        [&musicCompleted] {
+            musicCompleted = true;
+        }
+    ));
+    BOOST_TEST(waitForAudioCallback(audio, [&musicCompleted] {
+        return musicCompleted;
+    }));
+
+    auto canceledMusicCompleted = false;
+    BOOST_REQUIRE(audio->playMusic(
+        directory.getPath(),
+        "music.theme",
+        false,
+        [&canceledMusicCompleted] {
+            canceledMusicCompleted = true;
+        }
+    ));
+    audio->stopMusic();
+    SDL_Delay(150);
+    audio->processCallbacks();
+    BOOST_TEST(!canceledMusicCompleted);
+}
+
+BOOST_AUTO_TEST_CASE(game_pause_automatically_controls_configured_audio_categories)
+{
+    TestDirectory directory("nomad_audio_automatic_pause");
+    directory.write("audio/hit.wav", makeWaveFile());
+    directory.write("music/theme.wav", makeWaveFile());
+    auto game = createHeadlessGame(directory);
+    auto* audio = game->getResources()->getAudio();
+
+    BOOST_REQUIRE(audio->loadAudioRoots(directory.getPath(), {"audio"}, true) == 1U);
+    auto* object = audio->getAudioObject(audio->createAudioObject("audio.hit"));
+    BOOST_REQUIRE(object != nullptr);
+    object->playLoop();
+    BOOST_REQUIRE(audio->playMusic(directory.getPath(), "music.theme", true));
+
+    game->pause();
+    BOOST_TEST(object->isPaused());
+    BOOST_TEST(audio->isMusicPaused());
+
+    game->resume();
+    BOOST_TEST(object->isPlaying());
+    BOOST_TEST(audio->isMusicPlaying());
+
+    audio->setAudioPauseAutomatically(false);
+    audio->setMusicPauseAutomatically(false);
+    game->pause();
+    BOOST_TEST(object->isPlaying());
+    BOOST_TEST(audio->isMusicPlaying());
+    game->resume();
+
+    object->pause();
+    audio->setAudioPauseAutomatically(true);
+    game->pause();
+    game->resume();
+    BOOST_TEST(object->isPaused());
 }
 
 BOOST_AUTO_TEST_CASE(rejects_unknown_resources_and_invalid_object_ids)

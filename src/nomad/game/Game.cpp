@@ -419,11 +419,21 @@ bool Game::isPaused() const {
 }
 
 void Game::pause() {
+    if (m_paused) {
+        return;
+    }
+
+    m_resourceManager->getAudio()->pauseAutomatically();
     m_paused = true;
 }
 
 void Game::resume() {
+    if (!m_paused) {
+        return;
+    }
+
     m_paused = false;
+    m_resourceManager->getAudio()->resumeAutomatically();
 }
 
 NomadInteger Game::getTicks() const {
@@ -566,6 +576,8 @@ void Game::run() {
 
         const auto inputEndTime = getTicks();
         frameProfile.inputDuration = inputEndTime - inputStartTime;
+
+        m_resourceManager->getAudio()->processCallbacks();
 
         // Time management for fixed timestep
         const auto current = getTicks();
