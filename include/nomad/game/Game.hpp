@@ -322,7 +322,7 @@ private:
     bool m_debugSettingsLoaded = false;
     bool m_debugConsoleVisible = false;
     NomadFloat m_debugConsoleScale = DEBUG_CONSOLE_DEFAULT_SCALE;
-    bool m_debugDrawVisible = true;
+    bool m_debugDrawVisible = false;
 
     PointF m_mousePosition;
     struct MouseButtonState {

@@ -25,7 +25,6 @@ class Runtime;
     param_doc
 
 void generateDocumentation(const Runtime* runtime, std::ostream& out);
-void generateDebuggingDocumentation(std::ostream& out);
 void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& out);
 void generateKeywords(Runtime* runtime, std::ostream& out);
 void generateTextMateGrammar(Runtime* runtime, std::ostream& out);

@@ -135,17 +135,8 @@ boost::json::object createPatternRepositoryEntry(boost::json::object pattern) {
 } // namespace
 
 void generateDocumentation(const Runtime* runtime, std::ostream& out) {
-    // Output TOC
     out << "# Nomad Engine Reference" << std::endl;
-
-    out << "* [Constants](#constants)" << std::endl;
-    out << "* [Enums](#enums)" << std::endl;
-    out << "* [Variables](#variables)" << std::endl;
-    out << "* [Debugging](#debugging)" << std::endl;
-    out << "* [Intrinsic Members](#intrinsic-members)" << std::endl;
-    out << "* [Functions](#functions)" << std::endl;
-
-    out << "---" << std::endl;
+    out << std::endl;
 
     out << "## Constants" << std::endl;
 
@@ -311,8 +302,6 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     out << std::endl;
 
-    generateDebuggingDocumentation(out);
-
     generateIntrinsicMemberDocumentation(runtime, out);
 
     out << "## Functions" << std::endl;
@@ -441,22 +430,6 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     // }
 
     out.flush();
-}
-
-void generateDebuggingDocumentation(std::ostream& out) {
-    out << "## Debugging" << std::endl;
-    out << std::endl;
-    out << "Enable debug mode with `game.debug = true` in `nomad.toml` or the runtime's `--debug` option. "
-           "While debug mode is enabled, press the grave/tilde key (`~`) to open or close the in-game debug console."
-        << std::endl;
-    out << std::endl;
-    out << "- `game.debug.console.visible:bool` shows or hides the console." << std::endl;
-    out << "- `game.debug.console.scale:float` sets the console UI scale from `0.8` to `2.0`." << std::endl;
-    out << "- `game.debug.draw.visible:bool` shows or hides Box2D physics debug drawing." << std::endl;
-    out << std::endl;
-    out << "These values are saved automatically to `debug.json` after `game.organization` and `game.name` are set."
-        << std::endl;
-    out << std::endl;
 }
 
 void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& out) {

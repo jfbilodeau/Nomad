@@ -45,10 +45,10 @@ launching terminal.
 
 ## Physics debug drawing
 
-Physics debug drawing is visible by default in debug mode. Clear **Physics
-debug draw** in the console toolbar to hide it without disabling the rest of
-the debugging facilities. The setting affects every scene and takes effect on
-the next rendered frame.
+Physics debug drawing is hidden by default. Select **Physics debug draw** in
+the console toolbar to show it without changing the rest of the debugging
+facilities. The setting affects every scene and takes effect on the next
+rendered frame.
 
 Nomad code can read or change the same setting:
 
@@ -67,7 +67,7 @@ The following dynamic variables are saved automatically in `debug.json`:
 | --- | --- | --- |
 | `game.debug.console.visible:bool` | Show or hide the debug console. | `false` |
 | `game.debug.console.scale:float` | Set the console UI scale from `0.8` to `2.0`. | `1.25` |
-| `game.debug.draw.visible:bool` | Show or hide physics debug drawing. | `true` |
+| `game.debug.draw.visible:bool` | Show or hide physics debug drawing. | `false` |
 
 `debug.json` is stored in the SDL preference directory selected by
 `game.organization` and `game.name`. Changes are persisted after both values
