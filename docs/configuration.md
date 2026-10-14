@@ -79,6 +79,8 @@ path and cannot escape the resource directory. Explicit window settings are
 retained in packaged configuration files.
 
 `--debug` and `--no-debug` override `game.debug` for an individual run.
+See the [debugging guide](debugging.md) for the in-game console, physics debug
+drawing, and persisted debug settings.
 
 ## Sprite directories
 

@@ -604,6 +604,7 @@ Set `game.organization` and `game.name` before using persistence. The engine pas
 | `game.settings.load` | Load matching `settings.*` variables. | `<pref>/settings.json` |
 | `game.debug.console.visible:bool` | Show or hide the console in debug mode. Saved automatically when changed. | `<pref>/debug.json` |
 | `game.debug.console.scale:float` | Set the console scale from `0.8` to `2.0`. Saved automatically when changed. | `<pref>/debug.json` |
+| `game.debug.draw.visible:bool` | Show or hide Box2D physics debug drawing in debug mode. Saved automatically when changed. | `<pref>/debug.json` |
 
 Context variables are defined by assignment in Nomad code; loading never creates variables. Full dotted names are written as flat keys in a pretty-printed JSON object. This allows both a variable and its child, such as `inventory.weapon` and `inventory.weapon.attack`, to be saved without ambiguity. For example:
 
