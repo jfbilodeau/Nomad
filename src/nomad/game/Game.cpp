@@ -1781,13 +1781,15 @@ bool Game::processGameEventTriggerEntityCallback(const GameEventTriggerEntityCal
 bool Game::processSystemInput(const SDL_KeyboardEvent& event) {
     switch (event.type) {
     case SDL_EVENT_KEY_UP:
-        switch (event.key) {
-        case SDLK_F12:
-            if (m_debugConsole != nullptr) {
+        if (event.scancode == SDL_SCANCODE_GRAVE) {
+            if (isDebug() && m_debugConsole != nullptr) {
                 setDebugConsoleVisible(!m_debugConsole->isActive());
                 return true;
             }
             break;
+        }
+
+        switch (event.key) {
         case SDLK_RETURN:
             if ((event.mod & SDL_KMOD_ALT) != 0) {
                 const auto fullscreen = (SDL_GetWindowFlags(m_window) & SDL_WINDOW_FULLSCREEN) != 0;

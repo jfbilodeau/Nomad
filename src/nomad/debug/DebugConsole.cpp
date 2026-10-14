@@ -562,7 +562,7 @@ void DebugConsole::renderToolbar() {
     }
 
     ImGui::SameLine();
-    ImGui::TextUnformatted("F12 closes |");
+    ImGui::TextUnformatted("~ closes |");
     ImGui::SameLine();
     const auto* scene = getSelectedScene();
     const auto* entity = getSelectedEntity();
