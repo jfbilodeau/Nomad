@@ -2,6 +2,8 @@
 
 #include <nomad/game/Game.hpp>
 
+#include <nomad/log/MemorySink.hpp>
+
 #include <nomad/resource/Audio.hpp>
 #include <nomad/resource/ResourceManager.hpp>
 
@@ -12,6 +14,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -55,6 +58,38 @@ std::unique_ptr<Game> createHeadlessGame(const TestDirectory& directory) {
     options.resourcePath = directory.getPath().string();
     return Game::createHeadless(std::move(options));
 }
+
+class ScopedLogCapture final {
+public:
+    ScopedLogCapture() {
+        log::addSink(&m_sink);
+    }
+
+    ScopedLogCapture(const ScopedLogCapture&) = delete;
+    ScopedLogCapture& operator=(const ScopedLogCapture&) = delete;
+
+    ~ScopedLogCapture() {
+        log::removeSink(&m_sink);
+    }
+
+    [[nodiscard]] const std::vector<LogEntry>& getEntries() const {
+        return m_sink.getEntries();
+    }
+
+private:
+    MemorySink m_sink;
+};
+
+class AudioDriverHintReset final {
+public:
+    AudioDriverHintReset() = default;
+    AudioDriverHintReset(const AudioDriverHintReset&) = delete;
+    AudioDriverHintReset& operator=(const AudioDriverHintReset&) = delete;
+
+    ~AudioDriverHintReset() {
+        SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    }
+};
 
 } // namespace
 
@@ -141,6 +176,36 @@ BOOST_AUTO_TEST_CASE(game_scripts_reject_invalid_audio_volume)
             return NomadString(error.what()).find("between 0.0 and 1.0") != NomadString::npos;
         }
     );
+}
+
+BOOST_AUTO_TEST_CASE(game_audio_load_logs_when_playback_is_unavailable)
+{
+    TestDirectory directory("nomad_audio_script_unavailable");
+    directory.write("audio/hit.wav", makeWaveFile());
+    directory.write("text/text.csv", "key,en\ntitle,Test\n");
+    directory.write(
+        "scripts/init.nomad",
+        "sound = game.audio.load \"audio.hit\"\n"
+        "game.volume = 0.5\n"
+    );
+    std::filesystem::create_directories(directory.getPath() / "mods");
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "nomad-invalid-audio-driver");
+    AudioDriverHintReset hintReset;
+    ScopedLogCapture logCapture;
+
+    GameOptions options;
+    options.resourcePath = directory.getPath().string();
+    auto game = Game::create(std::move(options));
+    const auto* audio = game->getResources()->getAudio();
+
+    BOOST_TEST(!audio->isAvailable());
+    BOOST_TEST(audio->getAudioObjectCount() == 0U);
+    BOOST_TEST(audio->getMasterVolume() == 0.5, boost::test_tools::tolerance(0.001));
+    BOOST_TEST(std::ranges::any_of(logCapture.getEntries(), [](const LogEntry& entry) {
+        return entry.level == LogLevel::Error &&
+            entry.message.find("Audio playback is unavailable") != NomadString::npos;
+    }));
 }
 
 BOOST_AUTO_TEST_CASE(preloads_and_finds_discovered_audio_resources)

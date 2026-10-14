@@ -2,6 +2,8 @@
 
 #include <nomad/game/Game.hpp>
 
+#include <nomad/log/Logger.hpp>
+
 #include <nomad/resource/Audio.hpp>
 #include <nomad/resource/ResourceManager.hpp>
 
@@ -57,7 +59,9 @@ void Game::initAudioFunctions() {
             auto* audio = m_resourceManager->getAudio();
 
             if (!audio->isAvailable()) {
-                virtualMachine->fault("Audio playback is unavailable");
+                log::error("Audio playback is unavailable");
+                virtualMachine->setIdResult(NOMAD_INVALID_ID);
+                return;
             }
 
             executeAudioAction(virtualMachine, [&] {
@@ -159,36 +163,95 @@ void Game::initAudioFunctions() {
         NomadDoc("Whether the sound effect will repeat indefinitely.")
     );
 
-    const auto registerAudioMethod = [this, audioType](
-        const NomadString& name,
-        const auto method,
-        const NomadString& documentation
-    ) {
-        m_runtime->registerIntrinsicMethod(
-            audioType,
-            name,
-            [this, method](VirtualMachine* virtualMachine) {
-                executeAudioAction(virtualMachine, [&] {
-                    auto* audioObject = getAudioObject(
-                        this,
-                        virtualMachine,
-                        virtualMachine->getIntrinsicReceiver()
-                    );
-                    (audioObject->*method)();
-                });
-            },
-            {},
-            m_runtime->getVoidType(),
-            false,
-            documentation
-        );
-    };
+    m_runtime->registerIntrinsicMethod(
+        audioType,
+        "play",
+        [this](VirtualMachine* virtualMachine) {
+            executeAudioAction(virtualMachine, [&] {
+                getAudioObject(
+                    this,
+                    virtualMachine,
+                    virtualMachine->getIntrinsicReceiver()
+                )->playOnce();
+            });
+        },
+        {},
+        m_runtime->getVoidType(),
+        false,
+        NomadDoc("Plays the sound effect once from the beginning.")
+    );
 
-    registerAudioMethod("play", &AudioObject::playOnce, NomadDoc("Plays the sound effect once from the beginning."));
-    registerAudioMethod("playLoop", &AudioObject::playLoop, NomadDoc("Plays the sound effect repeatedly."));
-    registerAudioMethod("pause", &AudioObject::pause, NomadDoc("Pauses the sound effect."));
-    registerAudioMethod("resume", &AudioObject::resume, NomadDoc("Resumes the paused sound effect."));
-    registerAudioMethod("stop", &AudioObject::stop, NomadDoc("Stops the sound effect."));
+    m_runtime->registerIntrinsicMethod(
+        audioType,
+        "playLoop",
+        [this](VirtualMachine* virtualMachine) {
+            executeAudioAction(virtualMachine, [&] {
+                getAudioObject(
+                    this,
+                    virtualMachine,
+                    virtualMachine->getIntrinsicReceiver()
+                )->playLoop();
+            });
+        },
+        {},
+        m_runtime->getVoidType(),
+        false,
+        NomadDoc("Plays the sound effect repeatedly.")
+    );
+
+    m_runtime->registerIntrinsicMethod(
+        audioType,
+        "pause",
+        [this](VirtualMachine* virtualMachine) {
+            executeAudioAction(virtualMachine, [&] {
+                getAudioObject(
+                    this,
+                    virtualMachine,
+                    virtualMachine->getIntrinsicReceiver()
+                )->pause();
+            });
+        },
+        {},
+        m_runtime->getVoidType(),
+        false,
+        NomadDoc("Pauses the sound effect.")
+    );
+
+    m_runtime->registerIntrinsicMethod(
+        audioType,
+        "resume",
+        [this](VirtualMachine* virtualMachine) {
+            executeAudioAction(virtualMachine, [&] {
+                getAudioObject(
+                    this,
+                    virtualMachine,
+                    virtualMachine->getIntrinsicReceiver()
+                )->resume();
+            });
+        },
+        {},
+        m_runtime->getVoidType(),
+        false,
+        NomadDoc("Resumes the paused sound effect.")
+    );
+
+    m_runtime->registerIntrinsicMethod(
+        audioType,
+        "stop",
+        [this](VirtualMachine* virtualMachine) {
+            executeAudioAction(virtualMachine, [&] {
+                getAudioObject(
+                    this,
+                    virtualMachine,
+                    virtualMachine->getIntrinsicReceiver()
+                )->stop();
+            });
+        },
+        {},
+        m_runtime->getVoidType(),
+        false,
+        NomadDoc("Stops the sound effect.")
+    );
 }
 
 } // namespace nomad

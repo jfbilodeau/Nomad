@@ -55,12 +55,10 @@ public:
 
     void setVolume(NomadFloat volume);
     [[nodiscard]] NomadFloat getVolume() const;
+    void setCategoryVolume(NomadFloat volume);
 
 private:
-    friend class AudioManager;
-
     void play(NomadInteger loops);
-    void setCategoryVolume(NomadFloat volume);
     void applyVolume();
 
     const AudioResource* m_resource;
