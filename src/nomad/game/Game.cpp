@@ -1446,8 +1446,15 @@ void Game::compileScripts() {
     NomadString exceptionMessage;
 
     try {
-        compiler->loadScriptsFromPath(m_options.resourcePath + "scripts");
-        compiler->loadScriptsFromPath(m_options.resourcePath + "mods");
+        const auto directories = m_options.scripts.directories.value_or(
+            std::vector<NomadPath>{"scripts"}
+        );
+
+        for (const auto& directory : directories) {
+            compiler->loadScriptsFromPath(
+                pathToUtf8(pathFromUtf8(m_options.resourcePath) / directory)
+            );
+        }
 
         compiled = compiler->compileFunctions(&context);
     } catch (NomadException& e) {

@@ -41,6 +41,12 @@ directories = [
     "text/expansion.csv",
 ]
 
+[scripts]
+directories = [
+    "scripts",
+    "mods",
+]
+
 [sprites]
 directories = [
     "sprites",
@@ -75,13 +81,14 @@ exclude = [
 | `window.splash-image` | Image displayed while resources and scripts load, relative to the resource directory. | Optional |
 | `audio.directories` | Resource-relative directories recursively scanned for sound effects. | Optional; `["audio"]` |
 | `text.directories` | Resource-relative CSV localization files loaded in order. | Optional; `["text/text.csv"]` |
+| `scripts.directories` | Resource-relative directories recursively scanned for Nomad scripts. | Optional; `["scripts"]` |
 | `sprites.directories` | Resource-relative directories recursively scanned for sprite PNG files. | Optional; `["sprites"]` |
 | `sprites.max-texture-size` | Maximum width and height of each packed texture page. | Optional; `2048` |
 | `sprites.padding` | Transparent pixels reserved between adjacent packed sprites. | Optional; `1` |
 | `package.output` | Package output directory relative to the project root. | Optional; `"dist"` |
 | `package.exclude` | Resource-relative exclusion patterns; omitted or `[]` includes all resources. | Optional; `[]` |
 
-The `[game]`, `[resources]`, `[window]`, `[audio]`, `[text]`, `[sprites]`, and `[package]` tables may be omitted. Defaults apply
+The `[game]`, `[resources]`, `[window]`, `[audio]`, `[text]`, `[scripts]`, `[sprites]`, and `[package]` tables may be omitted. Defaults apply
 only to missing fields; invalid types and empty strings are rejected.
 Development projects are identified by `project.executable`. A configuration
 without it is a packaged configuration and must omit `[resources]` and `[package]`.
@@ -129,6 +136,17 @@ rejected. When `[text]` is omitted, Nomad loads `text/text.csv`.
 See the [text and localization guide](text.md) for the CSV format, script
 constants, override order, and long-form text files.
 
+## Script directories
+
+`scripts.directories` contains directories relative to `resources.directory`.
+Nomad recursively loads `.nomad` files from each directory before compiling
+the configured entry function. Set the property to an empty array to disable
+script loading.
+
+Configured directories must be non-empty resource-relative paths. Absolute
+paths, paths that escape through `..`, duplicates, and overlapping directories
+are rejected. When `[scripts]` is omitted, Nomad uses `["scripts"]`.
+
 ## Sprite directories
 
 `sprites.directories` contains directories relative to `resources.directory`.
@@ -167,7 +185,7 @@ the outer edge of a texture page.
 
 Game packages contain a reduced `nomad.toml`. It retains the schema,
 project identity and version, entry function, required Nomad version, explicit
-game and window settings, and explicit audio, text, and sprite configuration. It omits `project.executable`,
+game and window settings, and explicit audio, text, script, and sprite configuration. It omits `project.executable`,
 `[resources]`, and `[package]`.
 Packaged resources always live in `res`.
 

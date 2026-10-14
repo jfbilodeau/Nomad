@@ -100,6 +100,7 @@ struct CompilationPaths {
     std::optional<NomadString> entryFunction;
     NomadPath projectFile;
     std::optional<SpriteOptions> sprites;
+    std::optional<ScriptOptions> scripts;
     bool missingSpriteDirectoriesAllowed = false;
 };
 
@@ -117,11 +118,13 @@ CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const b
             resourcePath = resolveProjectResourcePath(project);
 
             if (!explicitPath) {
-                sourcePaths = {resourcePath / "scripts"};
-                const auto modsPath = resourcePath / "mods";
+                const auto directories = project.gameOptions.scripts.directories.value_or(
+                    std::vector<NomadPath>{"scripts"}
+                );
 
-                if (std::filesystem::is_directory(modsPath)) {
-                    sourcePaths.push_back(modsPath);
+                sourcePaths.clear();
+                for (const auto& directory : directories) {
+                    sourcePaths.push_back(resourcePath / directory);
                 }
 
                 return CompilationPaths{
@@ -130,6 +133,7 @@ CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const b
                     project.gameOptions.entryFunction,
                     *projectRoot / NOMAD_PROJECT_FILE_NAME,
                     project.gameOptions.sprites,
+                    project.gameOptions.scripts,
                     project.configuration.type == ProjectConfigurationType::Release
                 };
             }
@@ -145,6 +149,7 @@ CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const b
         resourcePath,
         std::nullopt,
         {},
+        std::nullopt,
         std::nullopt,
         false
     };

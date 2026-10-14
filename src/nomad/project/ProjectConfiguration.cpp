@@ -410,6 +410,25 @@ NomadString serializeTextConfiguration(const TextOptions& options) {
     return result;
 }
 
+NomadString serializeScriptConfiguration(const ScriptOptions& options) {
+    if (!options.directories) {
+        return {};
+    }
+
+    NomadString result = "\n[scripts]\ndirectories = [";
+
+    for (NomadIndex index = 0; index < options.directories->size(); ++index) {
+        if (index != 0) {
+            result += ", ";
+        }
+
+        result += "\"" + escapeTomlString(pathToGenericUtf8((*options.directories)[index])) + "\"";
+    }
+
+    result += "]\n";
+    return result;
+}
+
 NomadString serializeWindowConfiguration(const GameOptions& options) {
     if (
         !options.title &&
@@ -553,6 +572,7 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
     const auto* audio = optionalTable(document, "audio");
     const auto* sprites = optionalTable(document, "sprites");
     const auto* text = optionalTable(document, "text");
+    const auto* scripts = optionalTable(document, "scripts");
     const auto* package = optionalTable(document, "package");
     const auto hasExecutable = project.contains("executable");
 
@@ -619,6 +639,9 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
     }
     if (text != nullptr && text->contains("directories")) {
         gameOptions.text.directories = readTextDirectories(*text);
+    }
+    if (scripts != nullptr && scripts->contains("directories")) {
+        gameOptions.scripts.directories = readAssetDirectories(*scripts, "scripts");
     }
 
     if (configuration.type == ProjectConfigurationType::Development) {
@@ -699,7 +722,8 @@ NomadString serializeReleaseProject(const NomadProject& project) {
         serializeWindowConfiguration(project.gameOptions) +
         serializeAudioConfiguration(project.gameOptions.audio) +
         serializeSpriteConfiguration(project.gameOptions.sprites) +
-        serializeTextConfiguration(project.gameOptions.text);
+        serializeTextConfiguration(project.gameOptions.text) +
+        serializeScriptConfiguration(project.gameOptions.scripts);
 }
 
 void validateNomadVersionCompatibility(
