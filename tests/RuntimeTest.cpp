@@ -204,6 +204,33 @@ BOOST_AUTO_TEST_CASE(documentation_includes_registered_type_descriptions)
     BOOST_TEST(documentation.find("undocumented") == NomadString::npos);
 }
 
+BOOST_AUTO_TEST_CASE(documentation_renders_function_parameters_as_a_markdown_list)
+{
+    Runtime runtime;
+    runtime.registerNativeFunction(
+        "game.loadFont",
+        [](VirtualMachine*) {},
+        {
+            defParameter("fontName", runtime.getStringRefType(), NomadParamDoc("Name of the font to load.")),
+            defParameter("fontSize", runtime.getIntegerType(), NomadParamDoc("Size of the font in point to load.")),
+        },
+        runtime.getIntegerType(),
+        NomadDoc("Loads a font from a file. Returns the ID of the font.")
+    );
+
+    std::ostringstream output;
+    generateDocumentation(&runtime, output);
+
+    const auto documentation = output.str();
+    BOOST_TEST(
+        documentation.find(
+            "parameters:\n\n"
+            "- `fontName:string` - Name of the font to load.\n"
+            "- `fontSize:int` - Size of the font in point to load.\n"
+        ) != NomadString::npos
+    );
+}
+
 BOOST_AUTO_TEST_CASE(id_validation_helpers_distinguish_values_from_ranges)
 {
     BOOST_TEST(isValidId(NOMAD_ID_MIN));

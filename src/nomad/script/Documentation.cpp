@@ -387,6 +387,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
             out << std::endl;
         } else {
             out << "parameters:" << std::endl;
+            out << std::endl;
 
             for (const auto& parameter: function.parameters) {
                 // Callers pass a regular string to a `$stringref` parameter.
@@ -509,6 +510,8 @@ void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& 
                 out << "No parameters." << std::endl;
             } else {
                 out << "parameters:" << std::endl;
+                out << std::endl;
+
                 for (const auto& parameter : definition.parameters) {
                     out << "- `" << parameter.name << ":" << getDocumentedTypeName(runtime, parameter.type) << "`";
                     if (!parameter.doc.empty()) {
