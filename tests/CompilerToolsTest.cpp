@@ -196,6 +196,9 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     directory.write(
         "start.nomad",
         "window.setTitle \"Nomad\"\n"
+        "font = game.loadFont \"font.ttf\" 16\n"
+        "this.text.font = font\n"
+        "this.setText font \"Nomad\"\n"
         "this.text.alignment = alignment.topLeft\n"
         "this.body.circle body.dynamic 1.0\n"
         "return cardinal.north == cardinal.north\n"
@@ -220,11 +223,14 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     const auto* verticalAlignmentType = runtime->getTypeByName("verticalAlignment")->asEnum();
     const auto* bodyType = runtime->getTypeByName("body")->asEnum();
     const auto* cardinalType = runtime->getTypeByName("cardinal")->asEnum();
+    const auto* fontType = runtime->getTypeByName("font");
     BOOST_REQUIRE(alignmentType != nullptr);
     BOOST_REQUIRE(horizontalAlignmentType != nullptr);
     BOOST_REQUIRE(verticalAlignmentType != nullptr);
     BOOST_REQUIRE(bodyType != nullptr);
     BOOST_REQUIRE(cardinalType != nullptr);
+    BOOST_REQUIRE(fontType != nullptr);
+    BOOST_TEST(fontType->getDocumentation() == "A loaded font at a specific point size.");
     BOOST_TEST(alignmentType->getValueCount() == 9U);
     BOOST_TEST(horizontalAlignmentType->getValueCount() == 3U);
     BOOST_TEST(verticalAlignmentType->getValueCount() == 3U);
@@ -241,21 +247,38 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
 
     NativeFunctionDefinition thisCircleBody;
     NativeFunctionDefinition otherRectangleBody;
+    NativeFunctionDefinition thisSetText;
+    NativeFunctionDefinition otherSetText;
+    NativeFunctionDefinition loadFont;
     BOOST_REQUIRE(runtime->getNativeFunctionDefinition("this.body.circle", thisCircleBody));
     BOOST_REQUIRE(runtime->getNativeFunctionDefinition("other.body.rectangle", otherRectangleBody));
+    BOOST_REQUIRE(runtime->getNativeFunctionDefinition("this.setText", thisSetText));
+    BOOST_REQUIRE(runtime->getNativeFunctionDefinition("other.setText", otherSetText));
+    BOOST_REQUIRE(runtime->getNativeFunctionDefinition("game.loadFont", loadFont));
     BOOST_REQUIRE(!thisCircleBody.parameters.empty());
     BOOST_REQUIRE(!otherRectangleBody.parameters.empty());
+    BOOST_REQUIRE(!thisSetText.parameters.empty());
+    BOOST_REQUIRE(!otherSetText.parameters.empty());
     BOOST_TEST(thisCircleBody.parameters[0].type == bodyType);
     BOOST_TEST(otherRectangleBody.parameters[0].type == bodyType);
+    BOOST_TEST(thisSetText.parameters[0].type == fontType);
+    BOOST_TEST(otherSetText.parameters[0].type == fontType);
+    BOOST_TEST(loadFont.returnType == fontType);
 
     const auto thisAlignmentId = runtime->getDynamicVariableId("this.text.alignment");
     const auto otherAlignmentId = runtime->getDynamicVariableId("other.text.alignment");
+    const auto thisFontId = runtime->getDynamicVariableId("this.text.font");
+    const auto otherFontId = runtime->getDynamicVariableId("other.text.font");
     const auto debugDrawVisibleId = runtime->getDynamicVariableId(DEBUG_DRAW_VISIBLE_VARIABLE);
     BOOST_REQUIRE(thisAlignmentId != NOMAD_INVALID_ID);
     BOOST_REQUIRE(otherAlignmentId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(thisFontId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(otherFontId != NOMAD_INVALID_ID);
     BOOST_REQUIRE(debugDrawVisibleId != NOMAD_INVALID_ID);
     BOOST_TEST(runtime->getDynamicVariableType(thisAlignmentId) == alignmentType);
     BOOST_TEST(runtime->getDynamicVariableType(otherAlignmentId) == alignmentType);
+    BOOST_TEST(runtime->getDynamicVariableType(thisFontId) == fontType);
+    BOOST_TEST(runtime->getDynamicVariableType(otherFontId) == fontType);
     BOOST_TEST(runtime->getDynamicVariableType(debugDrawVisibleId) == runtime->getBooleanType());
     BOOST_TEST(!game->isDebugDrawVisible());
     game->setDebugDrawVisible(true);
@@ -269,6 +292,11 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
 
     BOOST_TEST(result.succeeded());
     BOOST_TEST(result.errorCount == 0U);
+
+    directory.write("invalid-font.nomad", "this.text.font = 1\n");
+    const auto invalidFontResult = checkPath(directory.getPath(), runtime);
+    BOOST_TEST(!invalidFontResult.succeeded());
+    BOOST_TEST(invalidFontResult.errorCount > 0U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

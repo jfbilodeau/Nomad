@@ -685,17 +685,19 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
         )
     );
 
+    std::vector<const Type*> types;
+    runtime->getTypes(types);
+
+    std::vector<NomadString> typeNames;
+    typeNames.reserve(types.size());
+    for (const auto* type : types) {
+        if (!type->isInternal()) {
+            typeNames.push_back(type->getTypeName());
+        }
+    }
+
     repository["types"] = createPatternRepositoryEntry(
-        createMatchPattern(
-            "storage.type.nomad",
-            createWordPattern({
-                runtime->getBooleanType()->getTypeName(),
-                runtime->getFloatType()->getTypeName(),
-                runtime->getIntegerType()->getTypeName(),
-                runtime->getStringType()->getTypeName(),
-                runtime->getVoidType()->getTypeName()
-            })
-        )
+        createMatchPattern("storage.type.nomad", createWordPattern(typeNames))
     );
 
     root["repository"] = std::move(repository);

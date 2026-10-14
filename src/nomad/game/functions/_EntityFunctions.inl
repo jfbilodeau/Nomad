@@ -607,7 +607,7 @@ BEGIN_ENTITY_FUNCTION(setText)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("fontId", m_runtime->getIntegerType(), NomadParamDoc("ID of the font to use")),
+        defParameter("font", m_runtime->getTypeByName("font"), NomadParamDoc("Font to use")),
         defParameter("text", m_runtime->getStringRefType(), NomadParamDoc("Text to set")),
     },
     m_runtime->getVoidType(),

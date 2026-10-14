@@ -75,6 +75,7 @@ void Game::initEngine()
     initSdlTtf();
     initResourcePath();
     initRuntime();
+    initObjects();
     initEnums();
     initWindowCallbacks();
     initEvents();
@@ -1196,6 +1197,24 @@ void Game::initRuntime() {
     m_runtime = std::make_unique<Runtime>();
 
     m_runtime->setDebug(isDebug());
+}
+
+void Game::initObjects() {
+    log::info("Initializing objects");
+
+    if (m_runtime->registerOpaqueIdType(
+        "audio",
+        NomadDoc("An instance of a audio file.")
+    ) == nullptr) {
+        raiseError("Failed to register the audio type");
+    }
+
+    if (m_runtime->registerOpaqueIdType(
+        "font",
+        NomadDoc("A font at a specific point size.")
+    ) == nullptr) {
+        raiseError("Failed to register the font type");
+    }
 }
 
 void Game::initEvents() const {

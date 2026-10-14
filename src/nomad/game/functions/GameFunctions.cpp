@@ -16,6 +16,11 @@ namespace nomad {
 void Game::initGameFunctions() {
     log::debug("Initializing game functions");
 
+    const auto* fontType = m_runtime->getTypeByName("font");
+    if (fontType == nullptr) {
+        raiseError("Font type is not registered");
+    }
+
     m_runtime->registerNativeFunction(
         "game.createScene",
         [this](VirtualMachine* interpreter) {
@@ -174,8 +179,8 @@ void Game::initGameFunctions() {
             defParameter("fontName", m_runtime->getStringRefType(), NomadParamDoc("Name of the font to load.")),
             defParameter("fontSize", m_runtime->getIntegerType(), NomadParamDoc("Size of the font in point to load.")),
         },
-        m_runtime->getIntegerType(),
-        NomadDoc("Loads a font from a file. Returns the ID of the font.")
+        fontType,
+        NomadDoc("Loads a font from a file and returns a font handle.")
     );
 
     m_runtime->registerNativeFunction(

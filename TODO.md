@@ -2,6 +2,7 @@
 Things the author wants to do.
 
 ## Open
+[ ] Sample game
 [ ] Make `font` an intrinsic instead of ID.
 [ ] `this.wait`, `scene.wait`, `game.wait`
 [ ] Support to tween properties

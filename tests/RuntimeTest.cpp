@@ -207,6 +207,12 @@ BOOST_AUTO_TEST_CASE(documentation_includes_registered_type_descriptions)
 BOOST_AUTO_TEST_CASE(documentation_renders_function_parameters_as_a_markdown_list)
 {
     Runtime runtime;
+    const auto* fontType = runtime.registerOpaqueIdType(
+        "font",
+        NomadDoc("A loaded font at a specific point size.")
+    );
+    BOOST_REQUIRE(fontType != nullptr);
+
     runtime.registerNativeFunction(
         "game.loadFont",
         [](VirtualMachine*) {},
@@ -214,12 +220,14 @@ BOOST_AUTO_TEST_CASE(documentation_renders_function_parameters_as_a_markdown_lis
             defParameter("fontName", runtime.getStringRefType(), NomadParamDoc("Name of the font to load.")),
             defParameter("fontSize", runtime.getIntegerType(), NomadParamDoc("Size of the font in point to load.")),
         },
-        runtime.getIntegerType(),
-        NomadDoc("Loads a font from a file. Returns the ID of the font.")
+        fontType,
+        NomadDoc("Loads a font from a file and returns a font handle.")
     );
 
     std::ostringstream output;
     generateDocumentation(&runtime, output);
+    std::ostringstream grammar;
+    generateTextMateGrammar(&runtime, grammar);
 
     const auto documentation = output.str();
     BOOST_TEST(
@@ -229,6 +237,15 @@ BOOST_AUTO_TEST_CASE(documentation_renders_function_parameters_as_a_markdown_lis
             "- `fontSize:int` - Size of the font in point to load.\n"
         ) != NomadString::npos
     );
+    BOOST_TEST(documentation.find("`returns font`") != NomadString::npos);
+
+    const auto grammarText = grammar.str();
+    const auto typeScopePosition = grammarText.find("\"storage.type.nomad\"");
+    const auto typePatternEndPosition = grammarText.find(")\\\\b", typeScopePosition);
+    const auto fontTypePosition = grammarText.find("font", typeScopePosition);
+    BOOST_REQUIRE(typeScopePosition != NomadString::npos);
+    BOOST_REQUIRE(typePatternEndPosition != NomadString::npos);
+    BOOST_TEST(fontTypePosition < typePatternEndPosition);
 }
 
 BOOST_AUTO_TEST_CASE(id_validation_helpers_distinguish_values_from_ranges)

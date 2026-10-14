@@ -230,6 +230,8 @@ private:
     void initRuntime();
     void initWindowCallbacks();
 
+    void initObjects();
+
     void initEvents() const;
 
     void initEnums();

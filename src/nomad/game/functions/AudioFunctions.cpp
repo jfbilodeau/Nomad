@@ -89,13 +89,9 @@ void executeAudioAction(VirtualMachine* virtualMachine, Fn&& action) {
 void Game::initAudioFunctions() {
     log::debug("Initializing audio functions");
 
-    const auto* audioType = m_runtime->registerOpaqueIdType(
-        "audio",
-        NomadDoc("A controllable instance of a preloaded sound effect.")
-    );
-
+    const auto* audioType = m_runtime->getTypeByName("audio");
     if (audioType == nullptr) {
-        raiseError("Failed to register the audio type");
+        raiseError("Audio type is not registered");
     }
 
     m_runtime->registerNativeFunction(
