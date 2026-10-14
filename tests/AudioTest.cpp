@@ -166,7 +166,10 @@ BOOST_AUTO_TEST_CASE(game_scripts_control_preloaded_audio_instances)
     const auto* audioType = game->getRuntime()->getTypeByName("audio");
 
     BOOST_REQUIRE(audioType != nullptr);
-    BOOST_TEST(audioType->getDocumentation() == "A controllable instance of a preloaded sound effect.");
+    BOOST_TEST(
+        audioType->getDocumentation() ==
+        "A sound effect that can be played, paused, resumed, stopped, looped, and adjusted independently."
+    );
     BOOST_TEST(audio->getMasterVolume() == 0.8, boost::test_tools::tolerance(0.001));
     BOOST_TEST(audio->getVolume() == 0.5, boost::test_tools::tolerance(0.001));
     BOOST_REQUIRE(audio->getAudioObjectCount() == 1U);

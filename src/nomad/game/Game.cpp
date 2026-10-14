@@ -1206,14 +1206,14 @@ void Game::initObjects() {
 
     if (m_runtime->registerOpaqueIdType(
         "audio",
-        NomadDoc("An instance of a audio file.")
+        NomadDoc("A sound effect that can be played, paused, resumed, stopped, looped, and adjusted independently.")
     ) == nullptr) {
         raiseError("Failed to register the audio type");
     }
 
     if (m_runtime->registerOpaqueIdType(
         "font",
-        NomadDoc("A font at a specific point size.")
+        NomadDoc("A font at a specific point size for displaying text.")
     ) == nullptr) {
         raiseError("Failed to register the font type");
     }

@@ -230,7 +230,7 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     BOOST_REQUIRE(bodyType != nullptr);
     BOOST_REQUIRE(cardinalType != nullptr);
     BOOST_REQUIRE(fontType != nullptr);
-    BOOST_TEST(fontType->getDocumentation() == "A loaded font at a specific point size.");
+    BOOST_TEST(fontType->getDocumentation() == "A font at a specific point size for displaying text.");
     BOOST_TEST(alignmentType->getValueCount() == 9U);
     BOOST_TEST(horizontalAlignmentType->getValueCount() == 3U);
     BOOST_TEST(verticalAlignmentType->getValueCount() == 3U);
