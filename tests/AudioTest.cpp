@@ -157,7 +157,7 @@ BOOST_AUTO_TEST_CASE(game_scripts_control_preloaded_audio_instances)
     BOOST_TEST(!object->isPaused());
 }
 
-BOOST_AUTO_TEST_CASE(game_scripts_reject_invalid_audio_volume)
+BOOST_AUTO_TEST_CASE(game_scripts_log_invalid_audio_volume)
 {
     TestDirectory directory("nomad_audio_script_volume");
     directory.write("text/text.csv", "key,en\ntitle,Test\n");
@@ -169,13 +169,8 @@ BOOST_AUTO_TEST_CASE(game_scripts_reject_invalid_audio_volume)
     GameOptions options;
     options.resourcePath = directory.getPath().string();
 
-    BOOST_CHECK_EXCEPTION(
-        (void)Game::create(std::move(options)),
-        GameException,
-        [](const GameException& error) {
-            return NomadString(error.what()).find("between 0.0 and 1.0") != NomadString::npos;
-        }
-    );
+    auto game = Game::create(std::move(options));
+    BOOST_TEST(game->getResources()->getAudio()->getVolume() == 1.0);
 }
 
 BOOST_AUTO_TEST_CASE(game_audio_load_logs_when_playback_is_unavailable)
@@ -237,10 +232,7 @@ BOOST_AUTO_TEST_CASE(rejects_decode_failures_without_partial_registration)
     auto* audio = game->getResources()->getAudio();
 
     BOOST_REQUIRE(audio->isAvailable());
-    BOOST_CHECK_THROW(
-        (void)audio->loadAudioRoots(directory.getPath(), {"audio"}, true),
-        AudioException
-    );
+    BOOST_TEST(audio->loadAudioRoots(directory.getPath(), {"audio"}, true) == 0U);
     BOOST_TEST(audio->getResourceCount() == 0U);
 }
 
@@ -263,8 +255,9 @@ BOOST_AUTO_TEST_CASE(audio_objects_control_one_reusable_track)
 
     object->setVolume(0.5);
     BOOST_TEST(object->getVolume() == 0.5, boost::test_tools::tolerance(0.001));
-    BOOST_CHECK_THROW(object->setVolume(-0.1), AudioException);
-    BOOST_CHECK_THROW(object->setVolume(1.1), AudioException);
+    object->setVolume(-0.1);
+    object->setVolume(1.1);
+    BOOST_TEST(object->getVolume() == 0.5, boost::test_tools::tolerance(0.001));
 
     object->playLoop();
     BOOST_TEST(object->isPlaying());
@@ -303,8 +296,9 @@ BOOST_AUTO_TEST_CASE(audio_manager_controls_all_tracks_and_master_volume)
 
     audio->setMasterVolume(0.75);
     BOOST_TEST(audio->getMasterVolume() == 0.75, boost::test_tools::tolerance(0.001));
-    BOOST_CHECK_THROW(audio->setMasterVolume(-0.1), AudioException);
-    BOOST_CHECK_THROW(audio->setMasterVolume(1.1), AudioException);
+    audio->setMasterVolume(-0.1);
+    audio->setMasterVolume(1.1);
+    BOOST_TEST(audio->getMasterVolume() == 0.75, boost::test_tools::tolerance(0.001));
 
     audio->setVolume(0.5);
     BOOST_TEST(audio->getVolume() == 0.5, boost::test_tools::tolerance(0.001));
@@ -331,8 +325,8 @@ BOOST_AUTO_TEST_CASE(rejects_unknown_resources_and_invalid_object_ids)
     auto* audio = game->getResources()->getAudio();
 
     BOOST_REQUIRE(audio->isAvailable());
-    BOOST_CHECK_THROW((void)audio->createAudioObject("audio.missing"), AudioException);
-    BOOST_CHECK_THROW((void)audio->createAudioObject(NOMAD_INVALID_ID), AudioException);
+    BOOST_TEST(audio->createAudioObject("audio.missing") == NOMAD_INVALID_ID);
+    BOOST_TEST(audio->createAudioObject(NOMAD_INVALID_ID) == NOMAD_INVALID_ID);
     BOOST_TEST(audio->getAudioObject(NOMAD_INVALID_ID) == nullptr);
 }
 

@@ -17,10 +17,13 @@ namespace nomad {
 
 namespace {
 
-void validateVolume(const NomadFloat volume) {
+bool validateVolume(const NomadFloat volume) {
     if (!std::isfinite(volume) || volume < 0.0 || volume > 1.0) {
-        throw AudioException("Audio volume must be between 0.0 and 1.0");
+        log::error("Audio volume must be between 0.0 and 1.0");
+        return false;
     }
+
+    return true;
 }
 
 NomadString getMixerError(const NomadStringView operation) {
@@ -76,12 +79,10 @@ AudioObject::AudioObject(
         throw AudioException(getMixerError("Failed to assign audio to a track"));
     }
 
-    try {
-        applyVolume();
-    } catch (...) {
+    if (!applyVolume()) {
         MIX_DestroyTrack(m_track);
         m_track = nullptr;
-        throw;
+        throw AudioException("Failed to initialize audio track volume");
     }
 }
 
@@ -103,19 +104,19 @@ void AudioObject::playLoop() {
 
 void AudioObject::pause() {
     if (!MIX_PauseTrack(m_track)) {
-        throw AudioException(getMixerError("Failed to pause an audio track"));
+        log::error(getMixerError("Failed to pause an audio track"));
     }
 }
 
 void AudioObject::resume() {
     if (!MIX_ResumeTrack(m_track)) {
-        throw AudioException(getMixerError("Failed to resume an audio track"));
+        log::error(getMixerError("Failed to resume an audio track"));
     }
 }
 
 void AudioObject::stop() {
     if (!MIX_StopTrack(m_track, 0)) {
-        throw AudioException(getMixerError("Failed to stop an audio track"));
+        log::error(getMixerError("Failed to stop an audio track"));
     }
 }
 
@@ -132,15 +133,15 @@ bool AudioObject::isLooping() const {
 }
 
 void AudioObject::setVolume(const NomadFloat volume) {
-    validateVolume(volume);
+    if (!validateVolume(volume)) {
+        return;
+    }
+
     const auto previousVolume = m_volume;
     m_volume = volume;
 
-    try {
-        applyVolume();
-    } catch (...) {
+    if (!applyVolume()) {
         m_volume = previousVolume;
-        throw;
     }
 }
 
@@ -149,34 +150,39 @@ NomadFloat AudioObject::getVolume() const {
 }
 
 void AudioObject::setCategoryVolume(const NomadFloat volume) {
+    if (!validateVolume(volume)) {
+        return;
+    }
+
     const auto previousVolume = m_categoryVolume;
     m_categoryVolume = volume;
 
-    try {
-        applyVolume();
-    } catch (...) {
+    if (!applyVolume()) {
         m_categoryVolume = previousVolume;
-        throw;
     }
 }
 
-void AudioObject::applyVolume() {
+bool AudioObject::applyVolume() {
     if (!MIX_SetTrackGain(m_track, static_cast<float>(m_volume * m_categoryVolume))) {
-        throw AudioException(getMixerError("Failed to set audio track volume"));
+        log::error(getMixerError("Failed to set audio track volume"));
+        return false;
     }
+
+    return true;
 }
 
 void AudioObject::play(const NomadInteger loops) {
     const auto properties = SDL_CreateProperties();
 
     if (properties == 0) {
-        throw AudioException(getMixerError("Failed to create audio playback options"));
+        log::error(getMixerError("Failed to create audio playback options"));
+        return;
     }
 
     if (!SDL_SetNumberProperty(properties, MIX_PROP_PLAY_LOOPS_NUMBER, loops)) {
-        const auto message = getMixerError("Failed to configure audio playback");
+        log::error(getMixerError("Failed to configure audio playback"));
         SDL_DestroyProperties(properties);
-        throw AudioException(message);
+        return;
     }
 
     const auto played = MIX_PlayTrack(m_track, properties);
@@ -184,7 +190,7 @@ void AudioObject::play(const NomadInteger loops) {
     SDL_DestroyProperties(properties);
 
     if (!played) {
-        throw AudioException(message);
+        log::error(message);
     }
 }
 
@@ -235,7 +241,8 @@ NomadIndex AudioManager::loadAudioRoots(
     const bool missingDirectoriesAllowed
 ) {
     if (!isAvailable()) {
-        throw AudioException("Cannot load audio resources because audio playback is unavailable");
+        log::error("Cannot load audio resources because audio playback is unavailable");
+        return 0;
     }
 
     const auto sources = discoverAudioSources(
@@ -254,16 +261,18 @@ NomadIndex AudioManager::loadAudioRoots(
 
     for (const auto& source : sources) {
         if (!resourceNames.insert(stringToLowerAscii(source.name)).second) {
-            throw AudioException("Audio resource name is already registered: '" + source.name + "'");
+            log::error("Audio resource name is already registered: '" + source.name + "'");
+            return 0;
         }
 
         auto* audio = MIX_LoadAudio(m_mixer, pathToUtf8(source.filePath).c_str(), true);
 
         if (audio == nullptr) {
-            throw AudioException(
+            log::error(
                 "Failed to preload audio resource '" + source.name + "' from '" +
                 pathToUtf8(source.filePath) + "': " + SDL_GetError()
             );
+            return 0;
         }
 
         resources.push_back(std::make_unique<AudioResource>(source.name, source.filePath, audio));
@@ -306,11 +315,18 @@ NomadId AudioManager::createAudioObject(const NomadId resourceId) {
     const auto* resource = getResource(resourceId);
 
     if (resource == nullptr) {
-        throw AudioException("Cannot create an audio object for an invalid resource ID");
+        log::error("Cannot create an audio object for an invalid resource ID");
+        return NOMAD_INVALID_ID;
     }
 
     const auto audioObjectId = toNomadId(m_audioObjects.size());
-    m_audioObjects.push_back(std::make_unique<AudioObject>(resource, m_mixer, m_volume));
+    try {
+        m_audioObjects.push_back(std::make_unique<AudioObject>(resource, m_mixer, m_volume));
+    } catch (const AudioException& error) {
+        log::error(error.what());
+        return NOMAD_INVALID_ID;
+    }
+
     return audioObjectId;
 }
 
@@ -318,7 +334,8 @@ NomadId AudioManager::createAudioObject(const NomadString& resourceName) {
     const auto resourceId = getResourceId(resourceName);
 
     if (resourceId == NOMAD_INVALID_ID) {
-        throw AudioException("Audio resource does not exist: '" + resourceName + "'");
+        log::error("Audio resource does not exist: '" + resourceName + "'");
+        return NOMAD_INVALID_ID;
     }
 
     return createAudioObject(resourceId);
@@ -357,7 +374,9 @@ void AudioManager::stopAll() {
 }
 
 void AudioManager::setVolume(const NomadFloat volume) {
-    validateVolume(volume);
+    if (!validateVolume(volume)) {
+        return;
+    }
 
     for (auto& audioObject : m_audioObjects) {
         audioObject->setCategoryVolume(volume);
@@ -371,10 +390,13 @@ NomadFloat AudioManager::getVolume() const {
 }
 
 void AudioManager::setMasterVolume(const NomadFloat volume) {
-    validateVolume(volume);
+    if (!validateVolume(volume)) {
+        return;
+    }
 
     if (isAvailable() && !MIX_SetMixerGain(m_mixer, static_cast<float>(volume))) {
-        throw AudioException(getMixerError("Failed to set master audio volume"));
+        log::error(getMixerError("Failed to set master audio volume"));
+        return;
     }
 
     m_masterVolume = volume;

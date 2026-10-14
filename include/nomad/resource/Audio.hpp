@@ -59,7 +59,7 @@ public:
 
 private:
     void play(NomadInteger loops);
-    void applyVolume();
+    [[nodiscard]] bool applyVolume();
 
     const AudioResource* m_resource;
     MIX_Track* m_track;
