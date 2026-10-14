@@ -562,6 +562,12 @@ void DebugConsole::renderToolbar() {
     }
 
     ImGui::SameLine();
+    auto debugDrawVisible = m_game->isDebugDrawVisible();
+    if (ImGui::Checkbox("Physics debug draw", &debugDrawVisible)) {
+        m_game->setDebugDrawVisible(debugDrawVisible);
+    }
+
+    ImGui::SameLine();
     ImGui::TextUnformatted("~ closes |");
     ImGui::SameLine();
     const auto* scene = getSelectedScene();

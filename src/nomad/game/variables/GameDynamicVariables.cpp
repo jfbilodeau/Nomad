@@ -80,6 +80,19 @@ void Game::initGameDynamicVariables() {
         m_runtime->getFloatType(),
         NomadDoc("The debug console UI scale, clamped between 0.8 and 2.0. Saved to `debug.json` when changed.")
     );
+
+    m_runtime->registerDynamicVariable(
+        DEBUG_DRAW_VISIBLE_VARIABLE,
+        [this](VirtualMachine* /*interpreter*/, const RuntimeValue& value) {
+            setDebugDrawVisible(value.getBooleanValue());
+        },
+        [this](VirtualMachine* /*interpreter*/, RuntimeValue& value) {
+            ensureDebugSettingsLoaded();
+            value.setBooleanValue(m_debugDrawVisible);
+        },
+        m_runtime->getBooleanType(),
+        NomadDoc("Whether physics debug drawing is visible. Only has an effect in debug mode. Saved to `debug.json` when changed.")
+    );
 }
 
 } // nomad

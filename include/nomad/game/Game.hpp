@@ -67,6 +67,7 @@ constexpr NomadFloat DEBUG_CONSOLE_DEFAULT_SCALE = 1.25f;
 
 const NomadString DEBUG_CONSOLE_VISIBLE_VARIABLE = "game.debug.console.visible";
 const NomadString DEBUG_CONSOLE_SCALE_VARIABLE = "game.debug.console.scale";
+const NomadString DEBUG_DRAW_VISIBLE_VARIABLE = "game.debug.draw.visible";
 
 class Game {
 public:
@@ -134,6 +135,8 @@ public:
     [[nodiscard]] bool isDebugConsoleVisible() const;
     void setDebugConsoleScale(NomadFloat scale);
     [[nodiscard]] NomadFloat getDebugConsoleScale() const;
+    void setDebugDrawVisible(bool visible);
+    [[nodiscard]] bool isDebugDrawVisible() const;
 
     void run();
     void quit();
@@ -255,6 +258,7 @@ private:
     void saveDebugSettings() const;
     void applyDebugConsoleVisible(bool visible);
     void applyDebugConsoleScale(NomadFloat scale);
+    void applyDebugDrawVisible(bool visible);
 
     void createPathToFile(const NomadString& fileName) const;
     void loadTextIntoConst(const NomadString& languageCode) const;
@@ -318,6 +322,7 @@ private:
     bool m_debugSettingsLoaded = false;
     bool m_debugConsoleVisible = false;
     NomadFloat m_debugConsoleScale = DEBUG_CONSOLE_DEFAULT_SCALE;
+    bool m_debugDrawVisible = true;
 
     PointF m_mousePosition;
     struct MouseButtonState {

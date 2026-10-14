@@ -252,10 +252,16 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
 
     const auto thisAlignmentId = runtime->getDynamicVariableId("this.text.alignment");
     const auto otherAlignmentId = runtime->getDynamicVariableId("other.text.alignment");
+    const auto debugDrawVisibleId = runtime->getDynamicVariableId(DEBUG_DRAW_VISIBLE_VARIABLE);
     BOOST_REQUIRE(thisAlignmentId != NOMAD_INVALID_ID);
     BOOST_REQUIRE(otherAlignmentId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(debugDrawVisibleId != NOMAD_INVALID_ID);
     BOOST_TEST(runtime->getDynamicVariableType(thisAlignmentId) == alignmentType);
     BOOST_TEST(runtime->getDynamicVariableType(otherAlignmentId) == alignmentType);
+    BOOST_TEST(runtime->getDynamicVariableType(debugDrawVisibleId) == runtime->getBooleanType());
+    BOOST_TEST(game->isDebugDrawVisible());
+    game->setDebugDrawVisible(false);
+    BOOST_TEST(!game->isDebugDrawVisible());
 
     const auto result = checkPath(directory.getPath(), runtime);
 

@@ -38,7 +38,7 @@ void Scene::render(Canvas* canvas) const {
         }
     }
 
-    if (m_game->isDebug()) {
+    if (m_game->isDebug() && m_game->isDebugDrawVisible()) {
         b2DebugDraw debugDraw;
         createDebugDraw(canvas, &debugDraw);
 

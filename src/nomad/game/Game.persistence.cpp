@@ -156,6 +156,22 @@ NomadFloat Game::getDebugConsoleScale() const {
     return m_debugConsoleScale;
 }
 
+void Game::setDebugDrawVisible(const bool visible) {
+    ensureDebugSettingsLoaded();
+
+    const auto changed = visible != m_debugDrawVisible;
+
+    applyDebugDrawVisible(visible);
+
+    if (changed) {
+        saveDebugSettings();
+    }
+}
+
+bool Game::isDebugDrawVisible() const {
+    return m_debugDrawVisible;
+}
+
 NomadString Game::getSettingsFilePath() const {
     const auto statePath = getStatePath();
 
@@ -215,6 +231,10 @@ void Game::loadDebugSettings() {
         const auto scale = value.getFloatValue();
         applyDebugConsoleScale(std::clamp(scale, DEBUG_CONSOLE_MINIMUM_SCALE, DEBUG_CONSOLE_MAXIMUM_SCALE));
     }
+
+    if (readJsonVariable(m_runtime.get(), *root, DEBUG_DRAW_VISIBLE_VARIABLE, m_runtime->getBooleanType(), value)) {
+        applyDebugDrawVisible(value.getBooleanValue());
+    }
 }
 
 void Game::saveDebugSettings() const {
@@ -239,6 +259,13 @@ void Game::saveDebugSettings() const {
             DEBUG_CONSOLE_SCALE_VARIABLE,
             m_runtime->getFloatType(),
             RuntimeValue(m_debugConsoleScale)
+        ) &&
+        writeJsonVariable(
+            m_runtime.get(),
+            root,
+            DEBUG_DRAW_VISIBLE_VARIABLE,
+            m_runtime->getBooleanType(),
+            RuntimeValue(m_debugDrawVisible)
         );
 
     if (!written) {
@@ -272,6 +299,10 @@ void Game::applyDebugConsoleScale(const NomadFloat scale) {
     if (m_debugConsole != nullptr) {
         m_debugConsole->setUiScale(scale);
     }
+}
+
+void Game::applyDebugDrawVisible(const bool visible) {
+    m_debugDrawVisible = visible;
 }
 
 } // namespace nomad
