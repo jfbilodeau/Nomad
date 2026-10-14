@@ -17,13 +17,25 @@ namespace nomad {
 
 namespace {
 
-bool validateVolume(const NomadFloat volume) {
-    if (!std::isfinite(volume) || volume < 0.0 || volume > 1.0) {
-        log::error("Audio volume must be between 0.0 and 1.0");
-        return false;
+NomadFloat clampVolume(const NomadFloat volume) {
+    if (!std::isfinite(volume)) {
+        log::warning("Audio volume must be finite; clamping to the valid range");
+
+        if (std::isnan(volume)) {
+            return 0.0;
+        }
     }
 
-    return true;
+    if (volume < 0.0) {
+        log::warning("Audio volume cannot be less than 0.0; clamping to 0.0");
+        return 0.0;
+    }
+    if (volume > 1.0) {
+        log::warning("Audio volume cannot be greater than 1.0; clamping to 1.0");
+        return 1.0;
+    }
+
+    return volume;
 }
 
 NomadString getMixerError(const NomadStringView operation) {
@@ -133,12 +145,8 @@ bool AudioObject::isLooping() const {
 }
 
 void AudioObject::setVolume(const NomadFloat volume) {
-    if (!validateVolume(volume)) {
-        return;
-    }
-
     const auto previousVolume = m_volume;
-    m_volume = volume;
+    m_volume = clampVolume(volume);
 
     if (!applyVolume()) {
         m_volume = previousVolume;
@@ -150,12 +158,8 @@ NomadFloat AudioObject::getVolume() const {
 }
 
 void AudioObject::setCategoryVolume(const NomadFloat volume) {
-    if (!validateVolume(volume)) {
-        return;
-    }
-
     const auto previousVolume = m_categoryVolume;
-    m_categoryVolume = volume;
+    m_categoryVolume = clampVolume(volume);
 
     if (!applyVolume()) {
         m_categoryVolume = previousVolume;
@@ -374,15 +378,13 @@ void AudioManager::stopAll() {
 }
 
 void AudioManager::setVolume(const NomadFloat volume) {
-    if (!validateVolume(volume)) {
-        return;
-    }
+    const auto clampedVolume = clampVolume(volume);
 
     for (auto& audioObject : m_audioObjects) {
-        audioObject->setCategoryVolume(volume);
+        audioObject->setCategoryVolume(clampedVolume);
     }
 
-    m_volume = volume;
+    m_volume = clampedVolume;
 }
 
 NomadFloat AudioManager::getVolume() const {
@@ -390,16 +392,14 @@ NomadFloat AudioManager::getVolume() const {
 }
 
 void AudioManager::setMasterVolume(const NomadFloat volume) {
-    if (!validateVolume(volume)) {
-        return;
-    }
+    const auto clampedVolume = clampVolume(volume);
 
-    if (isAvailable() && !MIX_SetMixerGain(m_mixer, static_cast<float>(volume))) {
+    if (isAvailable() && !MIX_SetMixerGain(m_mixer, static_cast<float>(clampedVolume))) {
         log::error(getMixerError("Failed to set master audio volume"));
         return;
     }
 
-    m_masterVolume = volume;
+    m_masterVolume = clampedVolume;
 }
 
 NomadFloat AudioManager::getMasterVolume() const {

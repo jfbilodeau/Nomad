@@ -11,6 +11,9 @@ Things the author wants to do.
 [ ] First decompiled script should start at index 1 instead of 0 in decompiler (instructions.txt).
 [ ] LSP
 [ ] Command overloading (WIP)
+[ ] Auto publish Nomad plugin to VS Code extensions
+[ ] Compile to binary
+[ ] LLVM
 
 ## Completed
 [X] Display physics bodies in debug mode

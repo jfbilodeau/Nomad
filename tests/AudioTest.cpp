@@ -256,8 +256,9 @@ BOOST_AUTO_TEST_CASE(audio_objects_control_one_reusable_track)
     object->setVolume(0.5);
     BOOST_TEST(object->getVolume() == 0.5, boost::test_tools::tolerance(0.001));
     object->setVolume(-0.1);
+    BOOST_TEST(object->getVolume() == 0.0, boost::test_tools::tolerance(0.001));
     object->setVolume(1.1);
-    BOOST_TEST(object->getVolume() == 0.5, boost::test_tools::tolerance(0.001));
+    BOOST_TEST(object->getVolume() == 1.0, boost::test_tools::tolerance(0.001));
 
     object->playLoop();
     BOOST_TEST(object->isPlaying());
@@ -297,8 +298,9 @@ BOOST_AUTO_TEST_CASE(audio_manager_controls_all_tracks_and_master_volume)
     audio->setMasterVolume(0.75);
     BOOST_TEST(audio->getMasterVolume() == 0.75, boost::test_tools::tolerance(0.001));
     audio->setMasterVolume(-0.1);
+    BOOST_TEST(audio->getMasterVolume() == 0.0, boost::test_tools::tolerance(0.001));
     audio->setMasterVolume(1.1);
-    BOOST_TEST(audio->getMasterVolume() == 0.75, boost::test_tools::tolerance(0.001));
+    BOOST_TEST(audio->getMasterVolume() == 1.0, boost::test_tools::tolerance(0.001));
 
     audio->setVolume(0.5);
     BOOST_TEST(audio->getVolume() == 0.5, boost::test_tools::tolerance(0.001));
