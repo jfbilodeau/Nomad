@@ -51,7 +51,7 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
     const auto result = initializeProject(destination, getProjectTemplateDirectory());
 
     BOOST_TEST(result.root == std::filesystem::absolute(destination));
-    BOOST_REQUIRE(result.createdFiles.size() == 7U);
+    BOOST_REQUIRE(result.createdFiles.size() == 8U);
     BOOST_TEST(std::filesystem::is_regular_file(destination / ".gitignore"));
     BOOST_TEST(std::filesystem::is_regular_file(destination / "README.md"));
     BOOST_TEST(std::filesystem::is_regular_file(destination / "nomadw"));
@@ -63,6 +63,7 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
     );
     BOOST_TEST(std::filesystem::is_regular_file(destination / "nomad.toml"));
     BOOST_TEST(std::filesystem::is_regular_file(destination / "res/scripts/init.nomad"));
+    BOOST_TEST(std::filesystem::is_regular_file(destination / "res/text/text.csv"));
 
     const auto project = loadNomadProject(destination / "nomad.toml");
     BOOST_TEST(project.configuration.project.name == "Example Game");
@@ -71,6 +72,9 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
     BOOST_TEST(project.gameOptions.entryFunction == "init");
     BOOST_TEST(project.configuration.sdk.version == getNomadVersion());
     BOOST_TEST(project.configuration.resources.directory == NomadPath("res"));
+    BOOST_REQUIRE(project.gameOptions.text.directories.has_value());
+    BOOST_REQUIRE(project.gameOptions.text.directories->size() == 1U);
+    BOOST_TEST((*project.gameOptions.text.directories)[0] == NomadPath("text/text.csv"));
 
     const auto readme = readFile(destination / "README.md");
     BOOST_TEST(readme.find("# Example Game") != NomadString::npos);
@@ -89,7 +93,7 @@ BOOST_AUTO_TEST_CASE(can_omit_project_wrappers)
 
     const auto result = initializeProject(destination, getProjectTemplateDirectory(), false);
 
-    BOOST_REQUIRE(result.createdFiles.size() == 4U);
+    BOOST_REQUIRE(result.createdFiles.size() == 5U);
     BOOST_TEST(!std::filesystem::exists(destination / "nomadw"));
     BOOST_TEST(!std::filesystem::exists(destination / "nomadw.cmd"));
     BOOST_TEST(!std::filesystem::exists(destination / "nomadw.ps1"));

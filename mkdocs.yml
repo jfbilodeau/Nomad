@@ -21,6 +21,7 @@ nav:
   - Engine API: engine-api.md
   - Sprites: sprites.md
   - Sound and music: sound.md
+  - Text and localization: text.md
   - Debugging: debugging.md
   - CLI: cli.md
   - Project configuration: configuration.md

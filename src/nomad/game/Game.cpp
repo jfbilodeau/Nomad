@@ -92,7 +92,9 @@ void Game::initialize()
     initText();
     initConstants();
 
-    setLanguage("en");
+    if (!m_options.text.directories || !m_options.text.directories->empty()) {
+        setLanguage("en");
+    }
 
     if (m_resourceManager->getAudio()->isAvailable()) {
         log::info("Loading audio...");
@@ -1345,16 +1347,37 @@ void Game::initConstants() const {
 void Game::initText() const {
     log::info("Loading text...");
 
-    m_resourceManager->getText()->loadTextFromCsv(this, m_options.resourcePath + "text/text.csv");
+    const auto directories = m_options.text.directories.value_or(
+        std::vector<NomadPath>{"text/text.csv"}
+    );
+    auto* textManager = m_resourceManager->getText();
+    textManager->clear();
+
+    for (const auto& directory : directories) {
+        textManager->loadTextFromCsv(
+            this,
+            pathToUtf8(pathFromUtf8(m_options.resourcePath) / directory)
+        );
+    }
 }
 
 bool Game::tryInitText() const {
-    const auto textPath = m_options.resourcePath + "text/text.csv";
+    const auto directories = m_options.text.directories.value_or(
+        std::vector<NomadPath>{"text/text.csv"}
+    );
 
-    if (!std::filesystem::exists(textPath)) {
-        log::info("No text catalogue at '" + textPath + "', skipping");
-
+    if (directories.empty()) {
         return false;
+    }
+
+    for (const auto& directory : directories) {
+        const auto textPath = pathFromUtf8(m_options.resourcePath) / directory;
+
+        if (!std::filesystem::exists(textPath)) {
+            log::info("No text catalogue at '" + pathToUtf8(textPath) + "', skipping");
+
+            return false;
+        }
     }
 
     try {

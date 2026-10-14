@@ -11,6 +11,7 @@
 #include <boost/tokenizer.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
+#include <algorithm>
 #include <fstream>
 #include <filesystem>
 
@@ -18,10 +19,12 @@
 
 namespace nomad {
 
-void TextManager::loadTextFromCsv(const Game* game, const NomadString& path) {
+void TextManager::clear() {
     m_languageCodes.clear();
     m_texts.clear();
+}
 
+void TextManager::loadTextFromCsv(const Game* game, const NomadString& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
         NomadString message = "Could not open text file: " + path;
@@ -36,6 +39,8 @@ void TextManager::loadTextFromCsv(const Game* game, const NomadString& path) {
 
     boost::trim(line);
 
+    std::vector<NomadString> languageCodes;
+
     { // Read headers
         boost::tokenizer<boost::escaped_list_separator<NomadChar>> tokens(line);
 
@@ -45,7 +50,11 @@ void TextManager::loadTextFromCsv(const Game* game, const NomadString& path) {
                 continue;
             }
 
-            m_languageCodes.push_back(token);
+            languageCodes.push_back(token);
+
+            if (std::ranges::find(m_languageCodes, token) == m_languageCodes.end()) {
+                m_languageCodes.push_back(token);
+            }
         }
     }
 
@@ -65,19 +74,19 @@ void TextManager::loadTextFromCsv(const Game* game, const NomadString& path) {
                 continue;
             }
 
-            auto language_code = m_languageCodes.at(columnIndex - 1);
+            const auto& languageCode = languageCodes.at(columnIndex - 1);
 
-            m_texts[language_code][key] = token;
+            m_texts[languageCode][key] = token;
 
             if (token == "#") {
-                auto textFileName = std::format("text/{}-{}.txt", key, language_code);
+                auto textFileName = std::format("text/{}-{}.txt", key, languageCode);
                 const auto fileName = game->makeResourcePath(textFileName);
 
                 if (std::filesystem::exists(fileName)) {
                     if (std::ifstream fileStream(fileName); fileStream.is_open()) {
                         std::stringstream buffer;
                         buffer << fileStream.rdbuf();
-                        m_texts[language_code][key] = buffer.str();
+                        m_texts[languageCode][key] = buffer.str();
                     }
                 }
             }

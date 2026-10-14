@@ -16,6 +16,9 @@ debug = false
 [resources]
 directory = "res"
 
+[text]
+directories = ["text/text.csv"]
+
 [window]
 title = "{{project_name_toml}}"
 resolution = [800, 600]

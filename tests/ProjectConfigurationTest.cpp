@@ -33,6 +33,9 @@ debug = true
 [audio]
 directories = ["audio", "mod/audio"]
 
+[text]
+directories = ["text/text.csv", "text/expansion.csv"]
+
 [sprites]
 directories = ["sprites", "mod/sprites"]
 max-texture-size = 1024
@@ -101,6 +104,10 @@ BOOST_AUTO_TEST_CASE(loads_typed_project_configuration)
     BOOST_REQUIRE(configuration.gameOptions.audio.directories->size() == 2U);
     BOOST_TEST((*configuration.gameOptions.audio.directories)[0] == NomadPath("audio"));
     BOOST_TEST((*configuration.gameOptions.audio.directories)[1] == NomadPath("mod/audio"));
+    BOOST_REQUIRE(configuration.gameOptions.text.directories.has_value());
+    BOOST_REQUIRE(configuration.gameOptions.text.directories->size() == 2U);
+    BOOST_TEST((*configuration.gameOptions.text.directories)[0] == NomadPath("text/text.csv"));
+    BOOST_TEST((*configuration.gameOptions.text.directories)[1] == NomadPath("text/expansion.csv"));
     BOOST_REQUIRE(configuration.gameOptions.sprites.directories.has_value());
     BOOST_REQUIRE(configuration.gameOptions.sprites.directories->size() == 2U);
     BOOST_TEST((*configuration.gameOptions.sprites.directories)[0] == NomadPath("sprites"));
@@ -133,6 +140,7 @@ BOOST_AUTO_TEST_CASE(loads_and_serializes_release_configuration)
     BOOST_TEST(releaseText.find("[package]") == NomadString::npos);
     BOOST_TEST(releaseText.find("[window]") != NomadString::npos);
     BOOST_TEST(releaseText.find("[audio]") != NomadString::npos);
+    BOOST_TEST(releaseText.find("[text]") != NomadString::npos);
     BOOST_TEST(releaseText.find("[sprites]") != NomadString::npos);
 
     const auto release = loadNomadProject(releaseFile);
@@ -180,6 +188,12 @@ BOOST_AUTO_TEST_CASE(loads_and_serializes_release_configuration)
     BOOST_TEST(
         (*release.gameOptions.audio.directories)[1] ==
         (*development.gameOptions.audio.directories)[1]
+    );
+    BOOST_REQUIRE(release.gameOptions.text.directories.has_value());
+    BOOST_REQUIRE(development.gameOptions.text.directories.has_value());
+    BOOST_TEST(
+        *release.gameOptions.text.directories ==
+        *development.gameOptions.text.directories
     );
     BOOST_REQUIRE(release.gameOptions.sprites.directories.has_value());
     BOOST_REQUIRE(development.gameOptions.sprites.directories.has_value());

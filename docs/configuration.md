@@ -35,6 +35,12 @@ directories = [
     "mod/audio",
 ]
 
+[text]
+directories = [
+    "text/text.csv",
+    "text/expansion.csv",
+]
+
 [sprites]
 directories = [
     "sprites",
@@ -68,13 +74,14 @@ exclude = [
 | `window.fullscreen` | Whether the game starts in fullscreen mode. | Optional; `false` |
 | `window.splash-image` | Image displayed while resources and scripts load, relative to the resource directory. | Optional |
 | `audio.directories` | Resource-relative directories recursively scanned for sound effects. | Optional; `["audio"]` |
+| `text.directories` | Resource-relative CSV localization files loaded in order. | Optional; `["text/text.csv"]` |
 | `sprites.directories` | Resource-relative directories recursively scanned for sprite PNG files. | Optional; `["sprites"]` |
 | `sprites.max-texture-size` | Maximum width and height of each packed texture page. | Optional; `2048` |
 | `sprites.padding` | Transparent pixels reserved between adjacent packed sprites. | Optional; `1` |
 | `package.output` | Package output directory relative to the project root. | Optional; `"dist"` |
 | `package.exclude` | Resource-relative exclusion patterns; omitted or `[]` includes all resources. | Optional; `[]` |
 
-The `[game]`, `[resources]`, `[window]`, `[audio]`, `[sprites]`, and `[package]` tables may be omitted. Defaults apply
+The `[game]`, `[resources]`, `[window]`, `[audio]`, `[text]`, `[sprites]`, and `[package]` tables may be omitted. Defaults apply
 only to missing fields; invalid types and empty strings are rejected.
 Development projects are identified by `project.executable`. A configuration
 without it is a packaged configuration and must omit `[resources]` and `[package]`.
@@ -107,6 +114,20 @@ Resource names omit the file extension and replace directory separators with
 dots. For example, `audio/player/jump.ogg` is named `audio.player.jump`.
 Names are unique case-insensitively across every configured root and supported
 format, so `audio/hit.mp3` and `audio/Hit.wav` cannot coexist.
+
+## Text directories
+
+`text.directories` contains CSV localization files relative to
+`resources.directory`. Files are loaded in order, and values in later files
+replace values with the same language and key from earlier files. Set the
+property to an empty array to disable text loading.
+
+Each configured path must be a non-empty resource-relative path to a `.csv`
+file. Absolute paths, paths that escape through `..`, and duplicate paths are
+rejected. When `[text]` is omitted, Nomad loads `text/text.csv`.
+
+See the [text and localization guide](text.md) for the CSV format, script
+constants, override order, and long-form text files.
 
 ## Sprite directories
 
@@ -146,7 +167,7 @@ the outer edge of a texture page.
 
 Game packages contain a reduced `nomad.toml`. It retains the schema,
 project identity and version, entry function, required Nomad version, explicit
-game and window settings, and explicit audio and sprite configuration. It omits `project.executable`,
+game and window settings, and explicit audio, text, and sprite configuration. It omits `project.executable`,
 `[resources]`, and `[package]`.
 Packaged resources always live in `res`.
 

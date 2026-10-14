@@ -195,6 +195,54 @@ std::vector<NomadPath> readAssetDirectories(
     return result;
 }
 
+std::vector<NomadPath> readTextDirectories(const toml::table& text) {
+    const auto* directories = text["directories"].as_array();
+    constexpr auto field = "text.directories";
+
+    if (directories == nullptr) {
+        throw ProjectConfigurationError("Configuration field 'text.directories' must be an array of strings");
+    }
+
+    std::vector<NomadPath> result;
+    std::vector<NomadString> normalizedKeys;
+    result.reserve(directories->size());
+    normalizedKeys.reserve(directories->size());
+
+    for (const auto& directory : *directories) {
+        const auto value = directory.value<NomadString>();
+
+        if (!value || value->empty()) {
+            throw ProjectConfigurationError(
+                "Configuration field 'text.directories' must contain only non-empty strings"
+            );
+        }
+
+        auto normalizedValue = *value;
+        std::ranges::replace(normalizedValue, '\\', '/');
+        const auto path = pathFromUtf8(normalizedValue).lexically_normal();
+        validateProjectRelativePath(path, field, false);
+
+        if (path.extension() != ".csv") {
+            throw ProjectConfigurationError(
+                "Configuration field 'text.directories' must contain only CSV files"
+            );
+        }
+
+        const auto key = normalizedDirectoryKey(path);
+
+        if (std::ranges::find(normalizedKeys, key) != normalizedKeys.end()) {
+            throw ProjectConfigurationError(
+                "Configuration field 'text.directories' contains duplicate files"
+            );
+        }
+
+        normalizedKeys.push_back(key);
+        result.push_back(path);
+    }
+
+    return result;
+}
+
 NomadPath readResourceRelativeFile(
     const toml::table& table,
     const NomadStringView tableName,
@@ -330,6 +378,25 @@ NomadString serializeAudioConfiguration(const AudioOptions& options) {
     }
 
     NomadString result = "\n[audio]\ndirectories = [";
+
+    for (NomadIndex index = 0; index < options.directories->size(); ++index) {
+        if (index != 0) {
+            result += ", ";
+        }
+
+        result += "\"" + escapeTomlString(pathToGenericUtf8((*options.directories)[index])) + "\"";
+    }
+
+    result += "]\n";
+    return result;
+}
+
+NomadString serializeTextConfiguration(const TextOptions& options) {
+    if (!options.directories) {
+        return {};
+    }
+
+    NomadString result = "\n[text]\ndirectories = [";
 
     for (NomadIndex index = 0; index < options.directories->size(); ++index) {
         if (index != 0) {
@@ -485,6 +552,7 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
     const auto* window = optionalTable(document, "window");
     const auto* audio = optionalTable(document, "audio");
     const auto* sprites = optionalTable(document, "sprites");
+    const auto* text = optionalTable(document, "text");
     const auto* package = optionalTable(document, "package");
     const auto hasExecutable = project.contains("executable");
 
@@ -548,6 +616,9 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
     }
     if (sprites != nullptr && sprites->contains("padding")) {
         gameOptions.sprites.padding = readSpriteInteger(*sprites, "padding", 0);
+    }
+    if (text != nullptr && text->contains("directories")) {
+        gameOptions.text.directories = readTextDirectories(*text);
     }
 
     if (configuration.type == ProjectConfigurationType::Development) {
@@ -627,7 +698,8 @@ NomadString serializeReleaseProject(const NomadProject& project) {
         serializeGameConfiguration(project.gameOptions) +
         serializeWindowConfiguration(project.gameOptions) +
         serializeAudioConfiguration(project.gameOptions.audio) +
-        serializeSpriteConfiguration(project.gameOptions.sprites);
+        serializeSpriteConfiguration(project.gameOptions.sprites) +
+        serializeTextConfiguration(project.gameOptions.text);
 }
 
 void validateNomadVersionCompatibility(

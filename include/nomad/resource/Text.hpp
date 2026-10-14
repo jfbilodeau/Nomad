@@ -18,6 +18,7 @@ public:
 
     ~TextManager() = default;
 
+    void clear();
     void loadTextFromCsv(const Game* game, const NomadString& path);
 
     [[nodiscard]]

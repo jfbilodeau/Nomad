@@ -54,6 +54,10 @@ struct AudioOptions {
     bool missingDirectoriesAllowed = false;
 };
 
+struct TextOptions {
+    std::optional<std::vector<NomadPath>> directories;
+};
+
 struct GameOptions {
     NomadString resourcePath;
     NomadString entryFunction = "init";
@@ -63,6 +67,7 @@ struct GameOptions {
     std::optional<NomadPath> splashImage;
     AudioOptions audio;
     SpriteOptions sprites;
+    TextOptions text;
     std::optional<bool> fullscreen;
     std::optional<bool> debug;
 };
