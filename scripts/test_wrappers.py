@@ -197,6 +197,16 @@ exit "${NOMAD_TEST_EXIT_CODE:-0}"
             self.assertEqual(arguments_file.read_text(encoding="utf-8").strip(), "version")
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        output = result.stdout + result.stderr
+        self.assertIn(
+            f"Downloading Nomad SDK {self.version} for {self.platform}", output
+        )
+        self.assertIn(
+            f"Verifying Nomad SDK {self.version} for {self.platform}", output
+        )
+        self.assertIn(
+            f"Installed Nomad SDK {self.version} for {self.platform}", output
+        )
         self.assertTrue((self.sdk_path() / "runtime" / "runtime.json").is_file())
         self.assert_no_installation_temporary_paths()
 
@@ -238,6 +248,42 @@ exit "${NOMAD_TEST_EXIT_CODE:-0}"
             },
         )
         self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.sdk_path().exists())
+        self.assert_no_installation_temporary_paths()
+
+    def test_reports_missing_sdk_release_with_context(self):
+        release = self.root / "release"
+        release.mkdir()
+        handler = lambda *args, **kwargs: QuietRequestHandler(
+            *args, directory=str(release), **kwargs
+        )
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+
+        release_url = f"http://127.0.0.1:{server.server_port}"
+        result = self.run_wrapper(
+            ["--version"],
+            {
+                "NOMAD_DOWNLOAD_POLICY": "allow",
+                "NOMAD_RELEASE_BASE_URL": release_url,
+            },
+        )
+
+        output = result.stdout + result.stderr
+        expected_url = f"{release_url}/v{self.version}/SHA256SUMS.txt"
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            f"Downloading Nomad SDK {self.version} for {self.platform}", output
+        )
+        self.assertIn("Failed to download release checksums", output)
+        self.assertIn(expected_url, output)
+        self.assertIn(
+            f"Confirm that Nomad SDK {self.version} for {self.platform} is published",
+            output,
+        )
         self.assertFalse(self.sdk_path().exists())
         self.assert_no_installation_temporary_paths()
 

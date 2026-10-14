@@ -6,6 +6,10 @@ fail() {
     exit 1
 }
 
+status() {
+    echo "nomadw: $*" >&2
+}
+
 script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project_file="$script_directory/nomad.toml"
 [[ -f "$project_file" ]] || fail "Missing project configuration: $project_file"
@@ -121,11 +125,17 @@ if ! validate_sdk "$sdk"; then
     name="nomad-sdk-$target-$version.zip"
     release_root="${NOMAD_RELEASE_BASE_URL:-https://github.com/jfbilodeau/Nomad/releases/download}"
     base="${release_root%/}/v$version"
-    curl --fail --silent --show-error --location --connect-timeout 15 --max-time 180 \
-        "$base/SHA256SUMS.txt" -o "$staging/SHA256SUMS.txt"
-    curl --fail --silent --show-error --location --connect-timeout 15 --max-time 180 \
-        "$base/$name" -o "$staging/$name"
+    status "Downloading Nomad SDK $version for $target..."
+    if ! curl --fail --silent --show-error --location --connect-timeout 15 --max-time 180 \
+        "$base/SHA256SUMS.txt" -o "$staging/SHA256SUMS.txt"; then
+        fail "Failed to download release checksums from $base/SHA256SUMS.txt. Confirm that Nomad SDK $version for $target is published and that the URL is reachable."
+    fi
+    if ! curl --fail --silent --show-error --location --connect-timeout 15 --max-time 180 \
+        "$base/$name" -o "$staging/$name"; then
+        fail "Failed to download Nomad SDK archive from $base/$name. Confirm that Nomad SDK $version for $target is published and that the URL is reachable."
+    fi
 
+    status "Verifying Nomad SDK $version for $target..."
     awk -v name="$name" '$2 == name && length($1) == 64 && $1 !~ /[^0-9a-fA-F]/ { print }' \
         "$staging/SHA256SUMS.txt" > "$staging/checksum"
     [[ "$(wc -l < "$staging/checksum")" -eq 1 ]] ||
@@ -155,6 +165,7 @@ if ! validate_sdk "$sdk"; then
     mv "$extracted" "$sdk"
     cleanup
     trap - EXIT
+    status "Installed Nomad SDK $version for $target in $sdk."
 fi
 
 exec "$sdk/nomad" "$@"

@@ -5,6 +5,10 @@ function Stop-NomadWrapper([string]$Message) {
     throw "nomadw: $Message"
 }
 
+function Write-NomadWrapperStatus([string]$Message) {
+    Write-Host "nomadw: $Message"
+}
+
 $projectFile = Join-Path $PSScriptRoot 'nomad.toml'
 if (-not (Test-Path -LiteralPath $projectFile -PathType Leaf)) {
     Stop-NomadWrapper "Missing project configuration: $projectFile"
@@ -115,9 +119,19 @@ if (-not (Test-NomadSdk $sdk)) {
         $base = "$releaseRoot/v$version"
         $archive = Join-Path $staging $name
         $checksums = Join-Path $staging 'SHA256SUMS.txt'
-        Invoke-WebRequest "$base/SHA256SUMS.txt" -OutFile $checksums -UseBasicParsing -TimeoutSec 180
-        Invoke-WebRequest "$base/$name" -OutFile $archive -UseBasicParsing -TimeoutSec 180
+        Write-NomadWrapperStatus "Downloading Nomad SDK $version for $target..."
+        try {
+            Invoke-WebRequest "$base/SHA256SUMS.txt" -OutFile $checksums -UseBasicParsing -TimeoutSec 180
+        } catch {
+            Stop-NomadWrapper "Failed to download release checksums from $base/SHA256SUMS.txt. Confirm that Nomad SDK $version for $target is published and that the URL is reachable."
+        }
+        try {
+            Invoke-WebRequest "$base/$name" -OutFile $archive -UseBasicParsing -TimeoutSec 180
+        } catch {
+            Stop-NomadWrapper "Failed to download Nomad SDK archive from $base/$name. Confirm that Nomad SDK $version for $target is published and that the URL is reachable."
+        }
 
+        Write-NomadWrapperStatus "Verifying Nomad SDK $version for $target..."
         $entries = @(Get-Content -LiteralPath $checksums | Where-Object {
             $_ -match ('^[0-9a-fA-F]{64}  ' + [regex]::Escape($name) + '$')
         })
@@ -160,6 +174,7 @@ if (-not (Test-NomadSdk $sdk)) {
             Stop-NomadWrapper "Invalid SDK installation already exists: $sdk"
         }
         [System.IO.Directory]::Move($extracted, $sdk)
+        Write-NomadWrapperStatus "Installed Nomad SDK $version for $target in $sdk."
     } finally {
         Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $lock -Force -ErrorAction SilentlyContinue
