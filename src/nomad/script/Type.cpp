@@ -14,6 +14,15 @@ namespace nomad {
 
 ///////////////////////////////////////////////////////////////////////////////
 // Type
+Type::Type(NomadString documentation):
+    m_documentation(std::move(documentation))
+{
+}
+
+const NomadString& Type::getDocumentation() const {
+    return m_documentation;
+}
+
 void Type::initValue(RuntimeValue& /*value*/) const {
     // Default implementation does nothing
 }
@@ -135,6 +144,30 @@ void IdType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinatio
 
 void IdType::toString(const RuntimeValue& value, NomadString& string) const {
     string = nomad::toString(value.getIdValue());
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// OpaqueIdType
+OpaqueIdType::OpaqueIdType(NomadString name, NomadString documentation):
+    Type(std::move(documentation)),
+    m_name(std::move(name))
+{
+}
+
+NomadString OpaqueIdType::getTypeName() const {
+    return m_name;
+}
+
+void OpaqueIdType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
+    destinationValue.setIdValue(sourceValue.getIdValue());
+}
+
+void OpaqueIdType::toString(const RuntimeValue& value, NomadString& string) const {
+    string = m_name + "(" + nomad::toString(value.getIdValue()) + ")";
+}
+
+bool OpaqueIdType::sameType(const Type* other) const {
+    return other == this;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -165,6 +165,10 @@ void info(const NomadStringView message, const Location& location) {
     getGlobalLogger().info(message, location);
 }
 
+void warn(const NomadStringView message, const Location& location) {
+    getGlobalLogger().warning(message, location);
+}
+
 void warning(const NomadStringView message, const Location& location) {
     getGlobalLogger().warning(message, location);
 }

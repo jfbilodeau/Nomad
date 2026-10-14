@@ -93,7 +93,8 @@ nomad run my-game
 
 The generated project contains `nomad.toml` and `res/scripts/init.nomad`.
 Edit the script to change your game. Start with the
-[language guide](language.md), [sprite guide](sprites.md), and
+[language guide](language.md), [sprite guide](sprites.md),
+[sound guide](sound.md), and
 [engine API](engine-api.md). Use the [debugging guide](debugging.md) when
 inspecting runtime behavior.
 

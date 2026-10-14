@@ -63,9 +63,11 @@ struct TypeOpCodes {
 
 class Type {
 public:
+    explicit Type(NomadString documentation = {});
     virtual ~Type() = default;
 
     [[nodiscard]] virtual NomadString getTypeName() const = 0;
+    [[nodiscard]] const NomadString& getDocumentation() const;
     virtual void initValue(RuntimeValue& value) const;
     virtual void freeValue(RuntimeValue& value) const;
     virtual void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const = 0;
@@ -107,6 +109,9 @@ public:
 protected:
     // Types owning heap memory replace the defaults in their constructor.
     TypeOpCodes m_typeOpCodes;
+
+private:
+    NomadString m_documentation;
 };
 
 [[nodiscard]] NomadString getTypeDisplayName(const Type* type);
@@ -127,6 +132,21 @@ public:
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
+};
+
+class OpaqueIdType final : public Type {
+public:
+    OpaqueIdType(NomadString name, NomadString documentation);
+
+    using Type::toString;
+
+    [[nodiscard]] NomadString getTypeName() const override;
+    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    void toString(const RuntimeValue& value, NomadString& string) const override;
+    [[nodiscard]] bool sameType(const Type* other) const override;
+
+private:
+    NomadString m_name;
 };
 
 const NomadString INTEGER_TYPE_NAME = "int";

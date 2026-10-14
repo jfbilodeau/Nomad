@@ -8,6 +8,11 @@ namespace nomad {
 
 class ResourceManager;
 
+class ResourceException : public NomadException {
+public:
+    explicit ResourceException(const NomadString& message) : NomadException(message) {}
+};
+
 class Resource {
 public:
     explicit Resource(const NomadString& name);

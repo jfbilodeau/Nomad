@@ -35,6 +35,7 @@ class FunctionBuilder;
 class Tokenizer;
 class Type;
 class EnumType;
+class OpaqueIdType;
 struct EnumValueDefinition;
 
 enum class Operand {
@@ -107,6 +108,8 @@ public:
     [[nodiscard]] NomadId getTypeId(const NomadString& typeName) const;
     [[nodiscard]] std::optional<const Type*> getType(NomadId id) const;
     [[nodiscard]] const Type* getTypeByName(const NomadString& name) const;
+    void getTypes(std::vector<const Type*>& types) const;
+    [[nodiscard]] const OpaqueIdType* registerOpaqueIdType(const NomadString& name, NomadDocArg);
     [[nodiscard]] const EnumType* registerEnum(
         const NomadString& name,
         const std::vector<EnumValueDefinition>& values

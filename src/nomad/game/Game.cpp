@@ -93,6 +93,16 @@ void Game::initialize()
 
     setLanguage("en");
 
+    if (m_resourceManager->getAudio()->isAvailable()) {
+        log::info("Loading audio...");
+        const auto audioStartTicks = SDL_GetTicks();
+        const auto audioCount = loadAudio();
+        log::info(
+            "Loaded " + toString(audioCount) + " audio resources in " +
+            toString(static_cast<NomadInteger>(SDL_GetTicks() - audioStartTicks)) + "ms"
+        );
+    }
+
     loadSpritesAndCompileScripts();
 
     if (isDebug()) {
@@ -409,11 +419,21 @@ bool Game::isPaused() const {
 }
 
 void Game::pause() {
+    if (m_paused) {
+        return;
+    }
+
+    m_resourceManager->getAudio()->pauseAutomatically();
     m_paused = true;
 }
 
 void Game::resume() {
+    if (!m_paused) {
+        return;
+    }
+
     m_paused = false;
+    m_resourceManager->getAudio()->resumeAutomatically();
 }
 
 NomadInteger Game::getTicks() const {
@@ -556,6 +576,8 @@ void Game::run() {
 
         const auto inputEndTime = getTicks();
         frameProfile.inputDuration = inputEndTime - inputStartTime;
+
+        m_resourceManager->getAudio()->processCallbacks();
 
         // Time management for fixed timestep
         const auto current = getTicks();
@@ -1187,6 +1209,7 @@ void Game::initEvents() const {
 void Game::initFunctions() {
     log::info("Initializing functions");
 
+    initAudioFunctions();
     initGameFunctions();
     initInputFunctions();
     initOtherEntityFunctions();
@@ -1438,6 +1461,19 @@ NomadIndex Game::loadSprites() {
         m_options.sprites.maxTextureSize.value_or(2048),
         m_options.sprites.padding.value_or(1),
         m_options.sprites.missingDirectoriesAllowed
+    );
+}
+
+NomadIndex Game::loadAudio() {
+    const auto directories = m_options.audio.directories.value_or(
+        std::vector<NomadPath>{"audio"}
+    );
+
+    return m_resourceManager->getAudio()->loadAudioRoots(
+        pathFromUtf8(m_options.resourcePath),
+        directories,
+        m_options.audio.directories.has_value(),
+        m_options.audio.missingDirectoriesAllowed
     );
 }
 

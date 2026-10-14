@@ -558,6 +558,31 @@ const Type* Runtime::getTypeByName(const NomadString& name) const {
     return nullptr;
 }
 
+void Runtime::getTypes(std::vector<const Type*>& types) const {
+    types.reserve(types.size() + m_types.size());
+
+    for (const auto& type : m_types) {
+        types.push_back(type.get());
+    }
+}
+
+const OpaqueIdType* Runtime::registerOpaqueIdType(const NomadString& name, const NomadString& doc) {
+    if (name.empty()) {
+        log::error("Cannot register an opaque ID type with an empty name");
+        return nullptr;
+    }
+
+    if (getTypeByName(name) != nullptr) {
+        log::error("Type with name '" + name + "' already registered");
+        return nullptr;
+    }
+
+    auto opaqueType = std::make_unique<OpaqueIdType>(name, doc);
+    const auto* registeredType = opaqueType.get();
+    registerType(std::move(opaqueType));
+    return registeredType;
+}
+
 const EnumType* Runtime::registerEnum(
     const NomadString& name,
     const std::vector<EnumValueDefinition>& values

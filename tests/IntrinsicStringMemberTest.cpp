@@ -65,6 +65,13 @@ BOOST_AUTO_TEST_CASE(exports_string_members_to_documentation_and_textmate_gramma
     BOOST_TEST(documentation.str().find("## Intrinsic Members") != NomadString::npos);
     BOOST_TEST(documentation.str().find("#### `length` (*read-only property*)") != NomadString::npos);
     BOOST_TEST(documentation.str().find("#### `contains` (*method*)") != NomadString::npos);
+    BOOST_TEST(
+        documentation.str().find(
+            "#### `contains` (*method*)\n\n"
+            "parameters:\n\n"
+            "- `text:string` - The text to find\n"
+        ) != NomadString::npos
+    );
     BOOST_TEST(keywords.str().find("--- IntrinsicMembers ---") != NomadString::npos);
     BOOST_TEST(keywords.str().find("toUpper") != NomadString::npos);
     BOOST_TEST(grammar.str().find("\"scopeName\":\"source.nomad\"") != NomadString::npos);

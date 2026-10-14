@@ -144,11 +144,15 @@ bool directoriesOverlap(const NomadStringView left, const NomadStringView right)
         (right.size() < left.size() && left.starts_with(right) && left[right.size()] == '/');
 }
 
-std::vector<NomadPath> readSpriteDirectories(const toml::table& sprites) {
-    const auto* directories = sprites["directories"].as_array();
+std::vector<NomadPath> readAssetDirectories(
+    const toml::table& table,
+    const NomadStringView tableName
+) {
+    const auto* directories = table["directories"].as_array();
+    const auto field = NomadString(tableName) + ".directories";
 
     if (directories == nullptr) {
-        throw ProjectConfigurationError("Configuration field 'sprites.directories' must be an array of strings");
+        throw ProjectConfigurationError("Configuration field '" + field + "' must be an array of strings");
     }
 
     std::vector<NomadPath> result;
@@ -161,7 +165,7 @@ std::vector<NomadPath> readSpriteDirectories(const toml::table& sprites) {
 
         if (!value || value->empty()) {
             throw ProjectConfigurationError(
-                "Configuration field 'sprites.directories' must contain only non-empty strings"
+                "Configuration field '" + field + "' must contain only non-empty strings"
             );
         }
 
@@ -173,13 +177,13 @@ std::vector<NomadPath> readSpriteDirectories(const toml::table& sprites) {
             path = path.parent_path();
         }
 
-        validateProjectRelativePath(path, "sprites.directories", false);
+        validateProjectRelativePath(path, field, false);
         const auto key = normalizedDirectoryKey(path);
 
         for (const auto& existing : normalizedKeys) {
             if (directoriesOverlap(existing, key)) {
                 throw ProjectConfigurationError(
-                    "Configuration field 'sprites.directories' contains duplicate or overlapping directories"
+                    "Configuration field '" + field + "' contains duplicate or overlapping directories"
                 );
             }
         }
@@ -317,6 +321,25 @@ NomadString serializeSpriteConfiguration(const SpriteOptions& options) {
         result += "padding = " + std::to_string(*options.padding) + "\n";
     }
 
+    return result;
+}
+
+NomadString serializeAudioConfiguration(const AudioOptions& options) {
+    if (!options.directories) {
+        return {};
+    }
+
+    NomadString result = "\n[audio]\ndirectories = [";
+
+    for (NomadIndex index = 0; index < options.directories->size(); ++index) {
+        if (index != 0) {
+            result += ", ";
+        }
+
+        result += "\"" + escapeTomlString(pathToGenericUtf8((*options.directories)[index])) + "\"";
+    }
+
+    result += "]\n";
     return result;
 }
 
@@ -460,6 +483,7 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
     const auto* game = optionalTable(document, "game");
     const auto* resources = optionalTable(document, "resources");
     const auto* window = optionalTable(document, "window");
+    const auto* audio = optionalTable(document, "audio");
     const auto* sprites = optionalTable(document, "sprites");
     const auto* package = optionalTable(document, "package");
     const auto hasExecutable = project.contains("executable");
@@ -513,8 +537,11 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
             readResourceRelativeFile(*window, "window", "splash-image");
     }
 
+    if (audio != nullptr && audio->contains("directories")) {
+        gameOptions.audio.directories = readAssetDirectories(*audio, "audio");
+    }
     if (sprites != nullptr && sprites->contains("directories")) {
-        gameOptions.sprites.directories = readSpriteDirectories(*sprites);
+        gameOptions.sprites.directories = readAssetDirectories(*sprites, "sprites");
     }
     if (sprites != nullptr && sprites->contains("max-texture-size")) {
         gameOptions.sprites.maxTextureSize = readSpriteInteger(*sprites, "max-texture-size", 1);
@@ -558,6 +585,8 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
     }
 
     gameOptions.resourcePath = pathToUtf8(resolveProjectResourcePath(result));
+    gameOptions.audio.missingDirectoriesAllowed =
+        configuration.type == ProjectConfigurationType::Release;
     gameOptions.sprites.missingDirectoriesAllowed =
         configuration.type == ProjectConfigurationType::Release;
 
@@ -597,6 +626,7 @@ NomadString serializeReleaseProject(const NomadProject& project) {
         "version = \"" + configuration.sdk.version.toString() + "\"\n" +
         serializeGameConfiguration(project.gameOptions) +
         serializeWindowConfiguration(project.gameOptions) +
+        serializeAudioConfiguration(project.gameOptions.audio) +
         serializeSpriteConfiguration(project.gameOptions.sprites);
 }
 

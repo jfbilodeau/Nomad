@@ -2,15 +2,21 @@
 Things the author wants to do.
 
 ## Open
+[ ] Make `font` an intrinsic instead of ID.
+[ ] `this.wait`, `scene.wait`, `game.wait`
+[ ] Support to tween properties
 [ ] `args`
 [ ] MacOS
 [ ] WASM
-[ ] Sound!!!
 [ ] Indexer notation.
 [ ] Persist scene
 [ ] First decompiled script should start at index 1 instead of 0 in decompiler (instructions.txt).
 [ ] LSP
 [ ] Command overloading (WIP)
+[ ] Auto publish Nomad plugin to VS Code extensions
+[ ] Compile to binary
+[ ] LLVM
+[ ] Gen game docs for modding
 
 ## Completed
 [X] Display physics bodies in debug mode
@@ -28,6 +34,7 @@ Things the author wants to do.
 [X] Save/load variable context/dynamic
 [X] Window events
 [X] Enums
+[X] Sound!!!
 
 ## Defered
 [ ] Strings might leak if a script faults

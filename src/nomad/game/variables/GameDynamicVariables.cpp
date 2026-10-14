@@ -5,6 +5,9 @@
 #include <nomad/game/Entity.hpp>
 #include <nomad/game/Scene.hpp>
 
+#include <nomad/resource/Audio.hpp>
+#include <nomad/resource/ResourceManager.hpp>
+
 #include <nomad/script/VirtualMachine.hpp>
 #include <nomad/script/Runtime.hpp>
 
@@ -12,6 +15,104 @@ namespace nomad {
 
 void Game::initGameDynamicVariables() {
     log::debug("Initializing game dynamic variables");
+
+    m_runtime->registerDynamicVariable(
+        "game.volume",
+        [this](VirtualMachine* virtualMachine, const RuntimeValue& value) {
+            try {
+                m_resourceManager->getAudio()->setMasterVolume(value.getFloatValue());
+            } catch (const AudioException& error) {
+                virtualMachine->fault(error.what());
+            }
+        },
+        [this](VirtualMachine* /*virtualMachine*/, RuntimeValue& value) {
+            value.setFloatValue(m_resourceManager->getAudio()->getMasterVolume());
+        },
+        m_runtime->getFloatType(),
+        NomadDoc("The master game volume from 0.0 to 1.0.")
+    );
+
+    m_runtime->registerDynamicVariable(
+        "game.audio.volume",
+        [this](VirtualMachine* virtualMachine, const RuntimeValue& value) {
+            try {
+                m_resourceManager->getAudio()->setVolume(value.getFloatValue());
+            } catch (const AudioException& error) {
+                virtualMachine->fault(error.what());
+            }
+        },
+        [this](VirtualMachine* /*virtualMachine*/, RuntimeValue& value) {
+            value.setFloatValue(m_resourceManager->getAudio()->getVolume());
+        },
+        m_runtime->getFloatType(),
+        NomadDoc("The sound-effect volume from 0.0 to 1.0.")
+    );
+
+    m_runtime->registerDynamicVariable(
+        "game.audio.pauseAutomatically",
+        [this](VirtualMachine* /*virtualMachine*/, const RuntimeValue& value) {
+            m_resourceManager->getAudio()->setAudioPauseAutomatically(value.getBooleanValue());
+        },
+        [this](VirtualMachine* /*virtualMachine*/, RuntimeValue& value) {
+            value.setBooleanValue(m_resourceManager->getAudio()->getAudioPauseAutomatically());
+        },
+        m_runtime->getBooleanType(),
+        NomadDoc("Whether pausing the game automatically pauses playing sound effects.")
+    );
+
+    m_runtime->registerDynamicVariable(
+        "game.music.volume",
+        [this](VirtualMachine* /*virtualMachine*/, const RuntimeValue& value) {
+            m_resourceManager->getAudio()->setMusicVolume(value.getFloatValue());
+        },
+        [this](VirtualMachine* /*virtualMachine*/, RuntimeValue& value) {
+            value.setFloatValue(m_resourceManager->getAudio()->getMusicVolume());
+        },
+        m_runtime->getFloatType(),
+        NomadDoc("The music volume from 0.0 to 1.0.")
+    );
+
+    m_runtime->registerDynamicVariable(
+        "game.music.playing",
+        nullptr,
+        [this](VirtualMachine* /*virtualMachine*/, RuntimeValue& value) {
+            value.setBooleanValue(m_resourceManager->getAudio()->isMusicPlaying());
+        },
+        m_runtime->getBooleanType(),
+        NomadDoc("Whether music is currently playing.")
+    );
+
+    m_runtime->registerDynamicVariable(
+        "game.music.paused",
+        nullptr,
+        [this](VirtualMachine* /*virtualMachine*/, RuntimeValue& value) {
+            value.setBooleanValue(m_resourceManager->getAudio()->isMusicPaused());
+        },
+        m_runtime->getBooleanType(),
+        NomadDoc("Whether music is currently paused.")
+    );
+
+    m_runtime->registerDynamicVariable(
+        "game.music.looping",
+        nullptr,
+        [this](VirtualMachine* /*virtualMachine*/, RuntimeValue& value) {
+            value.setBooleanValue(m_resourceManager->getAudio()->isMusicLooping());
+        },
+        m_runtime->getBooleanType(),
+        NomadDoc("Whether the current music track repeats indefinitely.")
+    );
+
+    m_runtime->registerDynamicVariable(
+        "game.music.pauseAutomatically",
+        [this](VirtualMachine* /*virtualMachine*/, const RuntimeValue& value) {
+            m_resourceManager->getAudio()->setMusicPauseAutomatically(value.getBooleanValue());
+        },
+        [this](VirtualMachine* /*virtualMachine*/, RuntimeValue& value) {
+            value.setBooleanValue(m_resourceManager->getAudio()->getMusicPauseAutomatically());
+        },
+        m_runtime->getBooleanType(),
+        NomadDoc("Whether pausing the game automatically pauses playing music.")
+    );
 
     m_runtime->registerDynamicVariable(
         "game.clearColor",

@@ -190,6 +190,7 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/game/TileMapData.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/VariablePersistence.cpp
 
+        ${NOMAD_SOURCE_DIR}/nomad/game/functions/AudioFunctions.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/functions/GameFunctions.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/functions/InputFunctions.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/functions/OtherEntityFunctions.cpp
@@ -218,6 +219,8 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectPackager.cpp
 
         ${NOMAD_SOURCE_DIR}/nomad/resource/Animation.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/resource/Audio.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/resource/AudioDiscovery.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Font.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/RectanglePacker.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Resource.cpp
