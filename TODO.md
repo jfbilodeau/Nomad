@@ -1,5 +1,5 @@
 # TODO
-This the author wants to do
+Things the author wants to do.
 
 ## Open
 [ ] `args`
@@ -8,7 +8,7 @@ This the author wants to do
 [ ] Sound!!!
 [ ] Indexer notation.
 [ ] Persist scene
-[ ] First script should start at index 1 instead of 0 in decompiler (instructions.txt).
+[ ] First decompiled script should start at index 1 instead of 0 in decompiler (instructions.txt).
 [ ] LSP
 [ ] Command overloading (WIP)
 
