@@ -2,6 +2,7 @@ add_executable(
     nomad_test
     ./main.cpp
     ./ColorTest.cpp
+    ./DebugDrawTest.cpp
     ./EntityTextTest.cpp
     ./CallableCatalogTest.cpp
     ./CompilerToolsTest.cpp

@@ -240,6 +240,8 @@ void debug_draw_string(
 } // namespace (anonymous)
 
 void createDebugDraw(nomad::Canvas* canvas, b2DebugDraw* debugDraw) {
+    *debugDraw = b2DefaultDebugDraw();
+
     debugDraw->DrawPolygonFcn = debug_draw_polygon;
     debugDraw->DrawSolidPolygonFcn = debug_draw_solid_polygon;
     debugDraw->DrawCircleFcn = debug_draw_circle;
@@ -248,11 +250,6 @@ void createDebugDraw(nomad::Canvas* canvas, b2DebugDraw* debugDraw) {
     debugDraw->DrawTransformFcn = debug_draw_transform;
     debugDraw->DrawPointFcn = debug_draw_point;
     debugDraw->DrawStringFcn = debug_draw_string;
-    debugDraw->drawingBounds = {
-        {0, 0},
-        {0, 0}
-    };
-    // debugDraw->useDrawingBounds = false;
     debugDraw->drawShapes = true;
     debugDraw->drawJoints = true;
     debugDraw->drawJointExtras = false;
@@ -261,8 +258,6 @@ void createDebugDraw(nomad::Canvas* canvas, b2DebugDraw* debugDraw) {
     debugDraw->drawContacts = false;
     debugDraw->drawGraphColors = false;
     debugDraw->drawContactNormals = false;
-    // debugDraw->drawContactImpulses = false;
-    // debugDraw->drawFrictionImpulses = false;
     debugDraw->context = canvas;
 }
 
