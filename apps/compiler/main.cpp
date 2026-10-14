@@ -99,7 +99,7 @@ struct CompilationPaths {
     NomadPath resources;
     std::optional<NomadString> entryFunction;
     NomadPath projectFile;
-    std::optional<SpriteConfiguration> sprites;
+    std::optional<SpriteOptions> sprites;
     bool missingSpriteDirectoriesAllowed = false;
 };
 
@@ -113,8 +113,8 @@ CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const b
         const auto projectRoot = findProjectRoot(requestedPath);
 
         if (projectRoot) {
-            const auto configuration = loadProjectConfiguration(*projectRoot / NOMAD_PROJECT_FILE_NAME);
-            resourcePath = resolveProjectResourcePath(configuration);
+            const auto project = loadNomadProject(*projectRoot / NOMAD_PROJECT_FILE_NAME);
+            resourcePath = resolveProjectResourcePath(project);
 
             if (!explicitPath) {
                 sourcePaths = {resourcePath / "scripts"};
@@ -127,10 +127,10 @@ CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const b
                 return CompilationPaths{
                     std::move(sourcePaths),
                     resourcePath,
-                    configuration.project.entry,
+                    project.gameOptions.entryFunction,
                     *projectRoot / NOMAD_PROJECT_FILE_NAME,
-                    configuration.sprites,
-                    configuration.type == ProjectConfigurationType::Release
+                    project.gameOptions.sprites,
+                    project.configuration.type == ProjectConfigurationType::Release
                 };
             }
         }
@@ -185,18 +185,21 @@ bool checkSprites(const CompilationPaths& paths) {
         return true;
     }
 
-    if (paths.sprites->directories.empty()) {
+    if (paths.sprites->directories && paths.sprites->directories->empty()) {
         std::cout << "Sprites: disabled\n";
         return true;
     }
 
     try {
+        const auto directories = paths.sprites->directories.value_or(
+            std::vector<NomadPath>{"sprites"}
+        );
         const auto report = analyzeSpritePacking(
             paths.resources,
-            paths.sprites->directories,
-            paths.sprites->directoriesExplicitlyConfigured,
-            paths.sprites->maxTextureSize,
-            paths.sprites->padding,
+            directories,
+            paths.sprites->directories.has_value(),
+            paths.sprites->maxTextureSize.value_or(2048),
+            paths.sprites->padding.value_or(1),
             paths.missingSpriteDirectoriesAllowed
         );
 

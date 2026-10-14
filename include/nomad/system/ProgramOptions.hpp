@@ -80,6 +80,36 @@ public:
     }
 
     template<typename Value>
+    VerbOptions& addFlag(
+        const std::string& name, const std::string& alias,
+        Value Parameters::* member, const Value value, const Value unspecified,
+        const std::string& description
+    ) {
+        cli::reserveName(m_names, name, alias);
+        m_bindings.emplace_back([=](auto& options, Parameters& parameters) {
+            const auto key = alias.empty() ? name : name + "," + alias;
+            options.add_options()(key.c_str(),
+                boost::program_options::value<bool>()
+                    ->zero_tokens()
+                    ->implicit_value(true)
+                    ->notifier([&parameters, member, value, unspecified, name](const bool enabled) {
+                        if (!enabled) {
+                            return;
+                        }
+                        auto& selected = parameters.*member;
+                        if (selected != unspecified && selected != value) {
+                            throw boost::program_options::error(
+                                "Conflicting option '--" + name + "'"
+                            );
+                        }
+                        selected = value;
+                    }),
+                description.c_str());
+        });
+        return *this;
+    }
+
+    template<typename Value>
     VerbOptions& addOption(
         const std::string& name, const std::string& alias,
         std::optional<Value> Parameters::* member, const std::string& description

@@ -10,12 +10,16 @@ entry = "init"
 [nomad]
 version = "{{nomad_version}}"
 
+[game]
+debug = false
+
 [resources]
 directory = "res"
 
 [window]
 title = "{{project_name_toml}}"
 resolution = [800, 600]
+fullscreen = false
 # splash-image = "splash.png"
 
 [package]

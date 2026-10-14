@@ -64,13 +64,13 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
     BOOST_TEST(std::filesystem::is_regular_file(destination / "nomad.toml"));
     BOOST_TEST(std::filesystem::is_regular_file(destination / "res/scripts/init.nomad"));
 
-    const auto configuration = loadProjectConfiguration(destination / "nomad.toml");
-    BOOST_TEST(configuration.project.name == "Example Game");
-    BOOST_TEST(configuration.project.identifier == "com.example.example-game");
-    BOOST_TEST(configuration.project.executable == "example-game");
-    BOOST_TEST(configuration.project.entry == "init");
-    BOOST_TEST(configuration.nomad.version == getNomadVersion());
-    BOOST_TEST(configuration.resources.directory == NomadPath("res"));
+    const auto project = loadNomadProject(destination / "nomad.toml");
+    BOOST_TEST(project.configuration.project.name == "Example Game");
+    BOOST_TEST(project.configuration.project.identifier == "com.example.example-game");
+    BOOST_TEST(project.configuration.project.executable == "example-game");
+    BOOST_TEST(project.gameOptions.entryFunction == "init");
+    BOOST_TEST(project.configuration.sdk.version == getNomadVersion());
+    BOOST_TEST(project.configuration.resources.directory == NomadPath("res"));
 
     const auto readme = readFile(destination / "README.md");
     BOOST_TEST(readme.find("# Example Game") != NomadString::npos);

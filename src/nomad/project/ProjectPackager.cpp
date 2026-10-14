@@ -152,14 +152,14 @@ void copyFile(const NomadPath& source, const NomadPath& destination) {
     }
 }
 
-void writeReleaseManifest(const ProjectConfiguration& configuration, const NomadPath& destination) {
+void writeReleaseManifest(const NomadProject& project, const NomadPath& destination) {
     std::ofstream output(destination, std::ios::binary | std::ios::trunc);
 
     if (!output.is_open()) {
         throw ProjectPackagingError("Failed to create release manifest '" + pathToUtf8(destination) + "'");
     }
 
-    output << serializeReleaseProjectConfiguration(configuration);
+    output << serializeReleaseProject(project);
 
     if (!output) {
         throw ProjectPackagingError("Failed to write release manifest '" + pathToUtf8(destination) + "'");
@@ -173,12 +173,16 @@ struct CompiledSpriteRoot {
     bool generateCatalog;
 };
 
-std::vector<CompiledSpriteRoot> compileSpriteRoots(const ProjectConfiguration& configuration) {
-    const auto resources = resolveProjectResourcePath(configuration);
+std::vector<CompiledSpriteRoot> compileSpriteRoots(const NomadProject& project) {
+    const auto resources = resolveProjectResourcePath(project);
+    const auto& sprites = project.gameOptions.sprites;
+    const auto directories = sprites.directories.value_or(
+        std::vector<NomadPath>{"sprites"}
+    );
     std::vector<CompiledSpriteRoot> compiledRoots;
 
     try {
-        for (const auto& configuredDirectory : configuration.sprites.directories) {
+        for (const auto& configuredDirectory : directories) {
             const auto sourceDirectory = (resources / configuredDirectory).lexically_normal();
 
             if (hasSpriteCatalog(sourceDirectory)) {
@@ -194,7 +198,7 @@ std::vector<CompiledSpriteRoot> compileSpriteRoots(const ProjectConfiguration& c
             const auto sources = discoverSpriteSources(
                 resources,
                 {configuredDirectory},
-                configuration.sprites.directoriesExplicitlyConfigured
+                sprites.directories.has_value()
             );
 
             if (sources.empty()) {
@@ -206,8 +210,8 @@ std::vector<CompiledSpriteRoot> compileSpriteRoots(const ProjectConfiguration& c
                 sourceDirectory,
                 packSpriteGroups(
                     sources,
-                    configuration.sprites.maxTextureSize,
-                    configuration.sprites.padding
+                    sprites.maxTextureSize.value_or(2048),
+                    sprites.padding.value_or(1)
                 ),
                 true
             });
@@ -297,12 +301,12 @@ std::vector<NomadPath> writeCompiledSpriteRoots(
 }
 
 std::vector<NomadPath> copyResources(
-    const ProjectConfiguration& configuration,
+    const NomadProject& project,
     const NomadPath& staging,
     const std::vector<CompiledSpriteRoot>& compiledSpriteRoots,
     const bool dryRun
 ) {
-    const auto resources = resolveProjectResourcePath(configuration);
+    const auto resources = resolveProjectResourcePath(project);
     std::error_code error;
 
     if (!std::filesystem::is_directory(resources, error)) {
@@ -341,7 +345,7 @@ std::vector<NomadPath> copyResources(
                 raiseFilesystemError("Failed to resolve resource", entry.path(), error);
             }
 
-            const auto excluded = isExcluded(relative, configuration.package.exclude);
+            const auto excluded = isExcluded(relative, project.configuration.package.exclude);
 
             if (excluded && isRequiredCompiledSpriteFile(entry.path(), compiledSpriteRoots)) {
                 throw ProjectPackagingError(
@@ -383,7 +387,7 @@ struct RuntimeBundle {
     std::vector<RuntimeBundleFile> files;
 };
 
-RuntimeBundle loadRuntimeBundle(const ProjectConfiguration& configuration, const NomadPath& directory) {
+RuntimeBundle loadRuntimeBundle(const NomadProject& project, const NomadPath& directory) {
     const auto manifest = directory / "runtime.json";
     std::error_code manifestError;
     if (std::filesystem::is_symlink(std::filesystem::symlink_status(manifest, manifestError))) {
@@ -412,7 +416,7 @@ RuntimeBundle loadRuntimeBundle(const ProjectConfiguration& configuration, const
         !entries || !entries->is_array()) {
         throw ProjectPackagingError("Runtime manifest requires schema 1, version, target, and files");
     }
-    if (version->as_string() != configuration.nomad.version.toString()) {
+    if (version->as_string() != project.configuration.sdk.version.toString()) {
         throw ProjectPackagingError("Runtime bundle version does not match the project's required Nomad version");
     }
     RuntimeBundle bundle{NomadString(target->as_string()), {}};
@@ -475,7 +479,7 @@ RuntimeBundle loadRuntimeBundle(const ProjectConfiguration& configuration, const
 }
 
 std::vector<NomadPath> copyRuntime(
-    const ProjectConfiguration& configuration,
+    const NomadProject& project,
     const NomadPath& runtimeDirectory,
     const RuntimeBundle& bundle,
     const NomadPath& staging,
@@ -486,7 +490,7 @@ std::vector<NomadPath> copyRuntime(
     for (const auto& entry : bundle.files) {
         auto destinationName = entry.path;
         if (entry.role == "runtime") {
-            destinationName = pathFromUtf8(configuration.project.executable);
+            destinationName = pathFromUtf8(project.configuration.project.executable);
             destinationName += entry.path.extension();
         }
         if (!destinations.insert(destinationName).second || *destinationName.begin() == "res") {
@@ -582,11 +586,13 @@ NomadStringView getPackagePlatform() {
 }
 
 ProjectPackageResult packageProject(
-    const ProjectConfiguration& configuration,
+    const NomadProject& project,
     const NomadPath& runtimeDirectory,
     const bool force,
     const bool dryRun
 ) {
+    const auto& configuration = project.configuration;
+
     if (configuration.type != ProjectConfigurationType::Development) {
         throw ProjectPackagingError("A release manifest cannot be used to create another package");
     }
@@ -595,11 +601,11 @@ ProjectPackageResult packageProject(
         throw ProjectPackagingError("Configuration field 'package.output' must be a project-relative directory");
     }
 
-    const auto outputDirectory = (configuration.root / configuration.package.output).lexically_normal();
-    const auto resources = resolveProjectResourcePath(configuration);
+    const auto outputDirectory = (project.root / configuration.package.output).lexically_normal();
+    const auto resources = resolveProjectResourcePath(project);
 
     if (
-        outputDirectory == configuration.root ||
+        outputDirectory == project.root ||
         isWithin(outputDirectory, resources) ||
         isWithin(resources, outputDirectory)
     ) {
@@ -613,7 +619,7 @@ ProjectPackageResult packageProject(
     if (!validComponent(configuration.project.executable) || !validComponent(configuration.project.version)) {
         throw ProjectPackagingError("Project executable and version must be valid archive filename components");
     }
-    const auto bundle = loadRuntimeBundle(configuration, runtimeDirectory);
+    const auto bundle = loadRuntimeBundle(project, runtimeDirectory);
     const auto output = outputDirectory / pathFromUtf8(configuration.project.executable + "-" +
         bundle.target + "-" + configuration.project.version + ".zip");
     auto staging = output;
@@ -673,17 +679,17 @@ ProjectPackageResult packageProject(
             createDirectories(staging);
         }
 
-        const auto compiledSpriteRoots = compileSpriteRoots(configuration);
-        auto resourceFiles = copyResources(configuration, staging, compiledSpriteRoots, dryRun);
+        const auto compiledSpriteRoots = compileSpriteRoots(project);
+        auto resourceFiles = copyResources(project, staging, compiledSpriteRoots, dryRun);
         stagedFiles.insert(stagedFiles.end(), resourceFiles.begin(), resourceFiles.end());
         auto compiledSpriteFiles = writeCompiledSpriteRoots(compiledSpriteRoots, staging, dryRun);
         stagedFiles.insert(stagedFiles.end(), compiledSpriteFiles.begin(), compiledSpriteFiles.end());
-        auto runtimeFiles = copyRuntime(configuration, runtimeDirectory, bundle, staging, dryRun);
+        auto runtimeFiles = copyRuntime(project, runtimeDirectory, bundle, staging, dryRun);
         stagedFiles.insert(stagedFiles.end(), runtimeFiles.begin(), runtimeFiles.end());
         const auto manifest = staging / NOMAD_PROJECT_FILE_NAME;
 
         if (!dryRun) {
-            writeReleaseManifest(configuration, manifest);
+            writeReleaseManifest(project, manifest);
         }
 
         stagedFiles.push_back(manifest);

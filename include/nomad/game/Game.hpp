@@ -43,21 +43,22 @@ public:
 };
 
 struct SpriteOptions {
-    std::vector<NomadPath> directories{"sprites"};
-    NomadInteger maxTextureSize = 2048;
-    NomadInteger padding = 1;
-    bool directoriesExplicitlyConfigured = false;
+    std::optional<std::vector<NomadPath>> directories;
+    std::optional<NomadInteger> maxTextureSize;
+    std::optional<NomadInteger> padding;
     bool missingDirectoriesAllowed = false;
 };
 
 struct GameOptions {
     NomadString resourcePath;
     NomadString entryFunction = "init";
-    NomadString windowTitle = "Nomad";
-    Point resolution{800, 600};
+    std::optional<NomadString> title;
+    std::optional<Point> resolution;
+    std::optional<Point> size;
     std::optional<NomadPath> splashImage;
     SpriteOptions sprites;
-    bool debug = false;
+    std::optional<bool> fullscreen;
+    std::optional<bool> debug;
 };
 
 constexpr NomadFloat DEBUG_CONSOLE_MINIMUM_SCALE = 0.8f;

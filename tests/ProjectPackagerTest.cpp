@@ -104,7 +104,7 @@ BOOST_AUTO_TEST_CASE(dry_run_lists_package_files_without_writing_output)
     writeRuntimeManifest(directory, "nomad-runtime.exe", true);
     directory.write("runtime/ignored.txt", "must not ship");
 
-    const auto configuration = loadProjectConfiguration(projectFile);
+    const auto configuration = loadNomadProject(projectFile);
     const auto result = packageProject(configuration, runtimeDirectory, false, true);
     const auto output = archivePath(directory);
 
@@ -147,7 +147,7 @@ BOOST_AUTO_TEST_CASE(packages_runtime_resources_and_release_manifest)
     directory.write("runtime/SDL3.dll", "library");
     writeRuntimeManifest(directory, "nomad-runtime.exe", true);
 
-    const auto configuration = loadProjectConfiguration(projectFile);
+    const auto configuration = loadNomadProject(projectFile);
     const auto result = packageProject(configuration, runtimeDirectory, false);
 
     const auto output = directory.getPath() / "extracted";
@@ -168,9 +168,9 @@ BOOST_AUTO_TEST_CASE(packages_runtime_resources_and_release_manifest)
     BOOST_TEST(releaseText.find("[resources]") == NomadString::npos);
     BOOST_TEST(releaseText.find("[package]") == NomadString::npos);
 
-    const auto release = loadProjectConfiguration(output / NOMAD_PROJECT_FILE_NAME);
+    const auto release = loadNomadProject(output / NOMAD_PROJECT_FILE_NAME);
     BOOST_TEST(
-        static_cast<int>(release.type) ==
+        static_cast<int>(release.configuration.type) ==
         static_cast<int>(ProjectConfigurationType::Release)
     );
     BOOST_TEST(resolveProjectResourcePath(release) == output / "res");
@@ -190,7 +190,7 @@ BOOST_AUTO_TEST_CASE(requires_force_to_replace_nonempty_output)
     directory.write("runtime/nomad-runtime", "runtime");
     writeRuntimeManifest(directory, "nomad-runtime");
     directory.write("dist/keep.txt", "unrelated");
-    const auto configuration = loadProjectConfiguration(projectFile);
+    const auto configuration = loadNomadProject(projectFile);
     const auto original = packageProject(configuration, runtimeDirectory, false);
     const auto originalBytes = readFile(original.output);
 
@@ -221,7 +221,7 @@ BOOST_AUTO_TEST_CASE(cleans_staging_directory_after_failure)
     const auto runtimeDirectory = directory.getPath() / "runtime";
     directory.write("runtime/not-the-runtime.txt", "wrong");
     writeRuntimeManifest(directory, "nomad-runtime");
-    const auto configuration = loadProjectConfiguration(projectFile);
+    const auto configuration = loadNomadProject(projectFile);
 
     BOOST_CHECK_THROW(
         (void)packageProject(configuration, runtimeDirectory, false),
@@ -245,7 +245,7 @@ BOOST_AUTO_TEST_CASE(uses_manifest_roles_and_target_and_ignores_undeclared_files
     directory.write("runtime/engine", "runtime");
     directory.write("runtime/undeclared.dll", "not distributable");
     writeRuntimeManifest(directory, "engine", false, "linux-arm64");
-    const auto configuration = loadProjectConfiguration(projectFile);
+    const auto configuration = loadNomadProject(projectFile);
     const auto preview = packageProject(configuration, directory.getPath() / "runtime", false, true);
     BOOST_TEST(preview.output.filename() == "package-test-linux-arm64-1.2.3.zip");
     const auto result = packageProject(configuration, directory.getPath() / "runtime", false);
@@ -262,7 +262,7 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_manifest_without_writing_package)
     directory.write("assets/scripts/start.nomad", "return\n");
     directory.write("runtime/engine", "runtime");
     directory.write("runtime/licenses/Nomad.txt", "license");
-    const auto configuration = loadProjectConfiguration(projectFile);
+    const auto configuration = loadNomadProject(projectFile);
     const auto runtime = directory.getPath() / "runtime";
     const std::vector<NomadString> manifests{
         "not JSON",
@@ -300,7 +300,7 @@ BOOST_AUTO_TEST_CASE(rejects_renamed_runtime_destination_collision)
             {"path":"engine.exe","role":"runtime"},
             {"path":"package-test.exe","role":"library"},
             {"path":"licenses/Nomad.txt","role":"license"}]})");
-    const auto configuration = loadProjectConfiguration(projectFile);
+    const auto configuration = loadNomadProject(projectFile);
     BOOST_CHECK_THROW(
         (void)packageProject(configuration, directory.getPath() / "runtime", false, true),
         ProjectPackagingError

@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <nomad/game/Game.hpp>
+
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -27,33 +29,14 @@ struct ProjectMetadata {
     NomadString identifier;
     NomadString version;
     NomadString executable;
-    NomadString entry = "init";
 };
 
-struct NomadSdkConfiguration {
+struct SdkConfiguration {
     NomadVersion version{0, 0, 0};
 };
 
 struct ResourceConfiguration {
     NomadPath directory = "res";
-};
-
-struct WindowConfiguration {
-    NomadString title;
-    NomadInteger resolutionWidth = 800;
-    NomadInteger resolutionHeight = 600;
-    std::optional<NomadPath> splashImage;
-    bool titleExplicitlyConfigured = false;
-    bool resolutionExplicitlyConfigured = false;
-};
-
-struct SpriteConfiguration {
-    std::vector<NomadPath> directories{"sprites"};
-    NomadInteger maxTextureSize = 2048;
-    NomadInteger padding = 1;
-    bool directoriesExplicitlyConfigured = false;
-    bool maxTextureSizeExplicitlyConfigured = false;
-    bool paddingExplicitlyConfigured = false;
 };
 
 struct PackageConfiguration {
@@ -65,11 +48,14 @@ struct ProjectConfiguration {
     NomadInteger schema = NOMAD_PROJECT_SCHEMA_VERSION;
     ProjectConfigurationType type = ProjectConfigurationType::Development;
     ProjectMetadata project;
-    NomadSdkConfiguration nomad;
+    SdkConfiguration sdk;
     ResourceConfiguration resources;
-    WindowConfiguration window;
-    SpriteConfiguration sprites;
     PackageConfiguration package;
+};
+
+struct NomadProject {
+    ProjectConfiguration configuration;
+    GameOptions gameOptions;
     NomadPath root;
 };
 
@@ -83,20 +69,20 @@ std::optional<NomadPath> findProjectRoot(
     const NomadPath& startPath
 );
 
-[[nodiscard]] ProjectConfiguration loadProjectConfiguration(
+[[nodiscard]] NomadProject loadNomadProject(
     const NomadPath& projectFile
 );
 
-[[nodiscard]] ProjectConfiguration discoverProjectConfiguration(
+[[nodiscard]] NomadProject discoverNomadProject(
     const NomadPath& startPath
 );
 
 [[nodiscard]] NomadPath resolveProjectResourcePath(
-    const ProjectConfiguration& configuration
+    const NomadProject& project
 );
 
-[[nodiscard]] NomadString serializeReleaseProjectConfiguration(
-    const ProjectConfiguration& configuration
+[[nodiscard]] NomadString serializeReleaseProject(
+    const NomadProject& project
 );
 
 void validateNomadVersionCompatibility(

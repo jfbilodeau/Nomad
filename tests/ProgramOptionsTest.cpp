@@ -21,6 +21,16 @@ struct DocumentationParameters {
     std::string output;
 };
 
+enum class DebugOption {
+    Unspecified = 1,
+    Debug,
+    NoDebug
+};
+
+struct RunParameters {
+    DebugOption debug = DebugOption::Unspecified;
+};
+
 int runArguments(const ProgramOptions& program, std::initializer_list<std::string> arguments, std::ostream& output) {
     const std::vector<std::string> tokens(arguments);
     return program.run(tokens, output);
@@ -81,6 +91,38 @@ BOOST_AUTO_TEST_CASE(global_actions_stand_alone_and_do_not_leak_into_verbs)
     BOOST_CHECK_THROW(runArguments(program, {"run", "--force"}, output), boost::program_options::error);
     BOOST_CHECK_THROW(runArguments(program, {"missing"}, output), boost::program_options::error);
     BOOST_TEST(calls == 3);
+}
+
+BOOST_AUTO_TEST_CASE(binds_mutually_exclusive_enum_flags)
+{
+    std::ostringstream output;
+    ProgramOptions program("nomad", "Project manager");
+    RunParameters captured;
+    program.addVerb<RunParameters>("run", [&captured](RunParameters& parameters) {
+        captured = parameters;
+        return EXIT_SUCCESS;
+    }, "Run project")
+        .addFlag(
+            "debug", "", &RunParameters::debug,
+            DebugOption::Debug, DebugOption::Unspecified,
+            "Enable debug mode"
+        )
+        .addFlag(
+            "no-debug", "", &RunParameters::debug,
+            DebugOption::NoDebug, DebugOption::Unspecified,
+            "Disable debug mode"
+        );
+
+    BOOST_TEST(runArguments(program, {"run"}, output) == EXIT_SUCCESS);
+    BOOST_TEST(static_cast<int>(captured.debug) == static_cast<int>(DebugOption::Unspecified));
+    BOOST_TEST(runArguments(program, {"run", "--debug"}, output) == EXIT_SUCCESS);
+    BOOST_TEST(static_cast<int>(captured.debug) == static_cast<int>(DebugOption::Debug));
+    BOOST_TEST(runArguments(program, {"run", "--no-debug"}, output) == EXIT_SUCCESS);
+    BOOST_TEST(static_cast<int>(captured.debug) == static_cast<int>(DebugOption::NoDebug));
+    BOOST_CHECK_THROW(
+        runArguments(program, {"run", "--debug", "--no-debug"}, output),
+        boost::program_options::error
+    );
 }
 
 BOOST_AUTO_TEST_CASE(help_is_generated_from_registrations_and_bypasses_required_values)

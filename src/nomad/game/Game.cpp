@@ -52,9 +52,9 @@ NomadString getExceptionMessage(const std::exception_ptr& exception) {
 } // namespace
 
 Game::Game(GameOptions options) :
-    m_title(options.windowTitle),
-    m_resolution(options.resolution),
-    m_windowSize(options.resolution),
+    m_title(options.title.value_or("Nomad")),
+    m_resolution(options.resolution.value_or(Point{800, 600})),
+    m_windowSize(options.size.value_or(m_resolution)),
     m_options(std::move(options))
 {}
 
@@ -95,7 +95,7 @@ void Game::initialize()
 
     loadSpritesAndCompileScripts();
 
-    if (m_options.debug) {
+    if (isDebug()) {
         log::setLogLevel(LogLevel::Debug);
     }
 
@@ -167,7 +167,7 @@ void Game::initializeHeadless()
         setLanguage("en");
     }
 
-    if (m_options.debug) {
+    if (isDebug()) {
         log::setLogLevel(LogLevel::Debug);
     }
 
@@ -226,7 +226,7 @@ void Game::setDebug(const bool debug) {
 }
 
 bool Game::isDebug() const {
-    return m_options.debug;
+    return m_options.debug.value_or(false);
 }
 
 const VariableMap* Game::getSceneVariables() const {
@@ -1066,11 +1066,17 @@ void Game::initSdl() {
         log::warning("Failed to initialize SDL audio subsystem: " + NomadString(SDL_GetError()));
     }
 
+    auto windowFlags = SDL_WINDOW_RESIZABLE;
+
+    if (m_options.fullscreen.value_or(false)) {
+        windowFlags |= SDL_WINDOW_FULLSCREEN;
+    }
+
     const auto result = SDL_CreateWindowAndRenderer(
         m_title.c_str(),
         static_cast<int>(m_windowSize.getX()),
         static_cast<int>(m_windowSize.getY()),
-        SDL_WINDOW_RESIZABLE,
+        windowFlags,
         &m_window,
         &m_renderer
     );
@@ -1167,7 +1173,7 @@ void Game::initRuntime() {
 
     m_runtime = std::make_unique<Runtime>();
 
-    m_runtime->setDebug(m_options.debug);
+    m_runtime->setDebug(isDebug());
 }
 
 void Game::initEvents() const {
@@ -1321,7 +1327,7 @@ bool Game::tryInitText() const {
 }
 
 void Game::initDebugConsole() {
-    if (m_options.debug) {
+    if (isDebug()) {
         log::info("Initializing debug console");
         m_debugConsole = std::make_unique<DebugConsole>(this, m_window, m_renderer);
 
@@ -1422,11 +1428,15 @@ void Game::compileScripts() {
 }
 
 NomadIndex Game::loadSprites() {
+    const auto directories = m_options.sprites.directories.value_or(
+        std::vector<NomadPath>{"sprites"}
+    );
+
     return m_resourceManager->loadSpriteRoots(
-        m_options.sprites.directories,
-        m_options.sprites.directoriesExplicitlyConfigured,
-        m_options.sprites.maxTextureSize,
-        m_options.sprites.padding,
+        directories,
+        m_options.sprites.directories.has_value(),
+        m_options.sprites.maxTextureSize.value_or(2048),
+        m_options.sprites.padding.value_or(1),
         m_options.sprites.missingDirectoriesAllowed
     );
 }

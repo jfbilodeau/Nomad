@@ -27,7 +27,7 @@ void writeDeterministicZipArchive(
 );
 
 [[nodiscard]] ProjectPackageResult packageProject(
-    const ProjectConfiguration& configuration,
+    const NomadProject& project,
     const NomadPath& runtimeDirectory,
     bool force,
     bool dryRun = false

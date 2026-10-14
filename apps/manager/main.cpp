@@ -35,9 +35,15 @@ struct InitializeParameters {
     bool noWrapper = false;
 };
 
+enum class DebugOption {
+    Unspecified = 1,
+    Debug,
+    NoDebug
+};
+
 struct RunParameters {
     std::optional<NomadString> directory;
-    bool debug = false;
+    DebugOption debug = DebugOption::Unspecified;
 };
 
 struct PackageParameters {
@@ -129,10 +135,10 @@ NomadPath getRequestedDirectory(const std::optional<NomadString>& directory) {
         : std::filesystem::current_path();
 }
 
-ProjectConfiguration loadCompatibleProject(const std::optional<NomadString>& directory) {
-    const auto configuration = discoverProjectConfiguration(getRequestedDirectory(directory));
-    validateNomadVersionCompatibility(configuration.nomad.version, getNomadVersion());
-    return configuration;
+NomadProject loadCompatibleProject(const std::optional<NomadString>& directory) {
+    const auto project = discoverNomadProject(getRequestedDirectory(directory));
+    validateNomadVersionCompatibility(project.configuration.sdk.version, getNomadVersion());
+    return project;
 }
 
 int versionCommand(EmptyParameters&) {
@@ -155,31 +161,38 @@ int initializeCommand(InitializeParameters& parameters) {
 }
 
 int checkCommand(ProjectParameters& parameters) {
-    const auto configuration = loadCompatibleProject(parameters.directory);
-    return runSiblingExecutable("nomadc", configuration.root, {"check"});
+    const auto project = loadCompatibleProject(parameters.directory);
+    return runSiblingExecutable("nomadc", project.root, {"check"});
 }
 
 int runCommand(RunParameters& parameters) {
-    const auto configuration = loadCompatibleProject(parameters.directory);
+    const auto project = loadCompatibleProject(parameters.directory);
     std::vector<NomadString> runtimeArguments;
 
-    if (parameters.debug) {
-        runtimeArguments.emplace_back("--debug");
+    switch (parameters.debug) {
+        case DebugOption::Debug:
+            runtimeArguments.emplace_back("--debug");
+            break;
+        case DebugOption::NoDebug:
+            runtimeArguments.emplace_back("--no-debug");
+            break;
+        case DebugOption::Unspecified:
+            break;
     }
 
-    return runSiblingExecutable("nomad-runtime", configuration.root, runtimeArguments);
+    return runSiblingExecutable("nomad-runtime", project.root, runtimeArguments);
 }
 
 int packageCommand(PackageParameters& parameters) {
-    const auto configuration = loadCompatibleProject(parameters.directory);
-    const auto checkResult = runSiblingExecutable("nomadc", configuration.root, {"check"});
+    const auto project = loadCompatibleProject(parameters.directory);
+    const auto checkResult = runSiblingExecutable("nomadc", project.root, {"check"});
 
     if (checkResult != EXIT_SUCCESS) {
         return checkResult;
     }
 
     const auto result = packageProject(
-        configuration,
+        project,
         resolveRuntimeBundle(),
         parameters.force,
         parameters.dryRun
@@ -227,7 +240,16 @@ int main(int argc, char** argv) {
             .addOptionalPositional("directory", &ProjectParameters::directory, "Project directory (default: current directory)");
         program.addVerb<RunParameters>("run", &runCommand, "Launch a project using the installed runtime")
             .addOptionalPositional("directory", &RunParameters::directory, "Project directory (default: current directory)")
-            .addFlag("debug", "", &RunParameters::debug, "Enable runtime debug mode");
+            .addFlag(
+                "debug", "", &RunParameters::debug,
+                DebugOption::Debug, DebugOption::Unspecified,
+                "Enable runtime debug mode"
+            )
+            .addFlag(
+                "no-debug", "", &RunParameters::debug,
+                DebugOption::NoDebug, DebugOption::Unspecified,
+                "Disable runtime debug mode"
+            );
         program.addVerb<PackageParameters>("package", &packageCommand, "Create a standalone game package")
             .addOptionalPositional("directory", &PackageParameters::directory, "Project directory (default: current directory)")
             .addFlag("force", "f", &PackageParameters::force, "Replace a nonempty package output directory")

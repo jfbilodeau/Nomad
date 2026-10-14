@@ -216,32 +216,54 @@ NomadPath readResourceRelativeFile(
     return path;
 }
 
-std::pair<NomadInteger, NomadInteger> readResolution(const toml::table& window) {
-    const auto* resolution = window["resolution"].as_array();
+std::pair<NomadInteger, NomadInteger> readPositiveDimensions(
+    const toml::table& window,
+    const NomadStringView key
+) {
+    const auto* dimensions = window[key].as_array();
+    const auto field = "window." + NomadString(key);
 
-    if (resolution == nullptr || resolution->size() != 2) {
+    if (dimensions == nullptr || dimensions->size() != 2) {
         throw ProjectConfigurationError(
-            "Configuration field 'window.resolution' must be an array of two positive integers"
+            "Configuration field '" + field + "' must be an array of two positive integers"
         );
     }
 
-    const auto width = (*resolution)[0].value<NomadInteger>();
-    const auto height = (*resolution)[1].value<NomadInteger>();
+    const auto width = (*dimensions)[0].value<NomadInteger>();
+    const auto height = (*dimensions)[1].value<NomadInteger>();
 
     if (
-        !(*resolution)[0].is_integer() ||
-        !(*resolution)[1].is_integer() ||
+        !(*dimensions)[0].is_integer() ||
+        !(*dimensions)[1].is_integer() ||
         !width ||
         !height ||
         *width <= 0 ||
         *height <= 0
     ) {
         throw ProjectConfigurationError(
-            "Configuration field 'window.resolution' must be an array of two positive integers"
+            "Configuration field '" + field + "' must be an array of two positive integers"
         );
     }
 
     return {*width, *height};
+}
+
+bool readBoolean(
+    const toml::table& table,
+    const NomadStringView tableName,
+    const NomadStringView key
+) {
+    const auto& node = table[key];
+    const auto value = node.value<bool>();
+
+    if (!node.is_boolean() || !value) {
+        throw ProjectConfigurationError(
+            "Configuration field '" + NomadString(tableName) + "." + NomadString(key) +
+            "' must be a boolean"
+        );
+    }
+
+    return *value;
 }
 
 NomadInteger readSpriteInteger(
@@ -266,68 +288,82 @@ NomadInteger readSpriteInteger(
     return *value;
 }
 
-NomadString serializeSpriteConfiguration(const SpriteConfiguration& configuration) {
-    if (
-        !configuration.directoriesExplicitlyConfigured &&
-        !configuration.maxTextureSizeExplicitlyConfigured &&
-        !configuration.paddingExplicitlyConfigured
-    ) {
+NomadString serializeSpriteConfiguration(const SpriteOptions& options) {
+    if (!options.directories && !options.maxTextureSize && !options.padding) {
         return {};
     }
 
     NomadString result = "\n[sprites]\n";
 
-    if (configuration.directoriesExplicitlyConfigured) {
+    if (options.directories) {
         result += "directories = [";
 
-        for (NomadIndex index = 0; index < configuration.directories.size(); ++index) {
+        for (NomadIndex index = 0; index < options.directories->size(); ++index) {
             if (index != 0) {
                 result += ", ";
             }
 
-            result += "\"" + escapeTomlString(pathToGenericUtf8(configuration.directories[index])) + "\"";
+            result += "\"" + escapeTomlString(pathToGenericUtf8((*options.directories)[index])) + "\"";
         }
 
         result += "]\n";
     }
 
-    if (configuration.maxTextureSizeExplicitlyConfigured) {
-        result += "max-texture-size = " + std::to_string(configuration.maxTextureSize) + "\n";
+    if (options.maxTextureSize) {
+        result += "max-texture-size = " + std::to_string(*options.maxTextureSize) + "\n";
     }
 
-    if (configuration.paddingExplicitlyConfigured) {
-        result += "padding = " + std::to_string(configuration.padding) + "\n";
+    if (options.padding) {
+        result += "padding = " + std::to_string(*options.padding) + "\n";
     }
 
     return result;
 }
 
-NomadString serializeWindowConfiguration(const WindowConfiguration& configuration) {
+NomadString serializeWindowConfiguration(const GameOptions& options) {
     if (
-        !configuration.titleExplicitlyConfigured &&
-        !configuration.resolutionExplicitlyConfigured &&
-        !configuration.splashImage
+        !options.title &&
+        !options.resolution &&
+        !options.size &&
+        !options.fullscreen &&
+        !options.splashImage
     ) {
         return {};
     }
 
     NomadString result = "\n[window]\n";
 
-    if (configuration.titleExplicitlyConfigured) {
-        result += "title = \"" + escapeTomlString(configuration.title) + "\"\n";
+    if (options.title) {
+        result += "title = \"" + escapeTomlString(*options.title) + "\"\n";
     }
-    if (configuration.resolutionExplicitlyConfigured) {
+    if (options.resolution) {
         result +=
-            "resolution = [" + std::to_string(configuration.resolutionWidth) + ", " +
-            std::to_string(configuration.resolutionHeight) + "]\n";
+            "resolution = [" + std::to_string(options.resolution->getX()) + ", " +
+            std::to_string(options.resolution->getY()) + "]\n";
     }
-    if (configuration.splashImage) {
+    if (options.size) {
+        result +=
+            "size = [" + std::to_string(options.size->getX()) + ", " +
+            std::to_string(options.size->getY()) + "]\n";
+    }
+    if (options.fullscreen) {
+        result += "fullscreen = " + NomadString(*options.fullscreen ? "true" : "false") + "\n";
+    }
+    if (options.splashImage) {
         result +=
             "splash-image = \"" +
-            escapeTomlString(pathToGenericUtf8(*configuration.splashImage)) + "\"\n";
+            escapeTomlString(pathToGenericUtf8(*options.splashImage)) + "\"\n";
     }
 
     return result;
+}
+
+NomadString serializeGameConfiguration(const GameOptions& options) {
+    if (!options.debug) {
+        return {};
+    }
+
+    return "\n[game]\ndebug = " + NomadString(*options.debug ? "true" : "false") + "\n";
 }
 
 NomadString formatParseError(const toml::parse_error& error) {
@@ -389,7 +425,7 @@ std::optional<NomadPath> findProjectRoot(const NomadPath& startPath) {
     }
 }
 
-ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
+NomadProject loadNomadProject(const NomadPath& projectFile) {
     toml::table document;
 
     std::ifstream input(projectFile, std::ios::binary);
@@ -421,6 +457,7 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
 
     const auto& project = requiredTable(document, "project");
     const auto& nomad = requiredTable(document, "nomad");
+    const auto* game = optionalTable(document, "game");
     const auto* resources = optionalTable(document, "resources");
     const auto* window = optionalTable(document, "window");
     const auto* sprites = optionalTable(document, "sprites");
@@ -433,7 +470,9 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
         );
     }
 
-    ProjectConfiguration configuration;
+    NomadProject result;
+    auto& configuration = result.configuration;
+    auto& gameOptions = result.gameOptions;
     configuration.schema = *schema;
     configuration.type = hasExecutable
         ? ProjectConfigurationType::Development
@@ -441,44 +480,47 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
     configuration.project.name = requiredString(project, "project", "name");
     configuration.project.identifier = requiredString(project, "project", "identifier");
     configuration.project.version = requiredString(project, "project", "version");
-    configuration.project.entry = optionalString(project, "project", "entry", configuration.project.entry);
-    configuration.window.title = configuration.project.name;
+    gameOptions.entryFunction = optionalString(project, "project", "entry", gameOptions.entryFunction);
     const auto nomadVersion = requiredString(nomad, "nomad", "version");
 
     try {
-        configuration.nomad.version = NomadVersion::parse(nomadVersion);
+        configuration.sdk.version = NomadVersion::parse(nomadVersion);
     } catch (const NomadVersionError& error) {
         throw ProjectConfigurationError(
             "Configuration field 'nomad.version' is invalid: " + NomadString(error.what())
         );
     }
 
+    if (game != nullptr && game->contains("debug")) {
+        gameOptions.debug = readBoolean(*game, "game", "debug");
+    }
     if (window != nullptr && window->contains("title")) {
-        configuration.window.title = requiredString(*window, "window", "title");
-        configuration.window.titleExplicitlyConfigured = true;
+        gameOptions.title = requiredString(*window, "window", "title");
     }
     if (window != nullptr && window->contains("resolution")) {
-        const auto [width, height] = readResolution(*window);
-        configuration.window.resolutionWidth = width;
-        configuration.window.resolutionHeight = height;
-        configuration.window.resolutionExplicitlyConfigured = true;
+        const auto [width, height] = readPositiveDimensions(*window, "resolution");
+        gameOptions.resolution = Point{width, height};
+    }
+    if (window != nullptr && window->contains("size")) {
+        const auto [width, height] = readPositiveDimensions(*window, "size");
+        gameOptions.size = Point{width, height};
+    }
+    if (window != nullptr && window->contains("fullscreen")) {
+        gameOptions.fullscreen = readBoolean(*window, "window", "fullscreen");
     }
     if (window != nullptr && window->contains("splash-image")) {
-        configuration.window.splashImage =
+        gameOptions.splashImage =
             readResourceRelativeFile(*window, "window", "splash-image");
     }
 
     if (sprites != nullptr && sprites->contains("directories")) {
-        configuration.sprites.directories = readSpriteDirectories(*sprites);
-        configuration.sprites.directoriesExplicitlyConfigured = true;
+        gameOptions.sprites.directories = readSpriteDirectories(*sprites);
     }
     if (sprites != nullptr && sprites->contains("max-texture-size")) {
-        configuration.sprites.maxTextureSize = readSpriteInteger(*sprites, "max-texture-size", 1);
-        configuration.sprites.maxTextureSizeExplicitlyConfigured = true;
+        gameOptions.sprites.maxTextureSize = readSpriteInteger(*sprites, "max-texture-size", 1);
     }
     if (sprites != nullptr && sprites->contains("padding")) {
-        configuration.sprites.padding = readSpriteInteger(*sprites, "padding", 0);
-        configuration.sprites.paddingExplicitlyConfigured = true;
+        gameOptions.sprites.padding = readSpriteInteger(*sprites, "padding", 0);
     }
 
     if (configuration.type == ProjectConfigurationType::Development) {
@@ -502,12 +544,12 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
         configuration.package.exclude.clear();
     }
 
-    if (configuration.project.entry.empty()) {
+    if (gameOptions.entryFunction.empty()) {
         throw ProjectConfigurationError("Configuration field 'project.entry' must be a non-empty string");
     }
 
     std::error_code error;
-    configuration.root = std::filesystem::absolute(projectFile.parent_path(), error);
+    result.root = std::filesystem::absolute(projectFile.parent_path(), error);
 
     if (error) {
         throw ProjectConfigurationError(
@@ -515,10 +557,14 @@ ProjectConfiguration loadProjectConfiguration(const NomadPath& projectFile) {
         );
     }
 
-    return configuration;
+    gameOptions.resourcePath = pathToUtf8(resolveProjectResourcePath(result));
+    gameOptions.sprites.missingDirectoriesAllowed =
+        configuration.type == ProjectConfigurationType::Release;
+
+    return result;
 }
 
-ProjectConfiguration discoverProjectConfiguration(const NomadPath& startPath) {
+NomadProject discoverNomadProject(const NomadPath& startPath) {
     const auto root = findProjectRoot(startPath);
 
     if (!root) {
@@ -528,14 +574,16 @@ ProjectConfiguration discoverProjectConfiguration(const NomadPath& startPath) {
         );
     }
 
-    return loadProjectConfiguration(*root / NOMAD_PROJECT_FILE_NAME);
+    return loadNomadProject(*root / NOMAD_PROJECT_FILE_NAME);
 }
 
-NomadPath resolveProjectResourcePath(const ProjectConfiguration& configuration) {
-    return (configuration.root / configuration.resources.directory).lexically_normal();
+NomadPath resolveProjectResourcePath(const NomadProject& project) {
+    return (project.root / project.configuration.resources.directory).lexically_normal();
 }
 
-NomadString serializeReleaseProjectConfiguration(const ProjectConfiguration& configuration) {
+NomadString serializeReleaseProject(const NomadProject& project) {
+    const auto& configuration = project.configuration;
+
     return
         "schema = " + std::to_string(configuration.schema) + "\n"
         "\n"
@@ -543,12 +591,13 @@ NomadString serializeReleaseProjectConfiguration(const ProjectConfiguration& con
         "name = \"" + escapeTomlString(configuration.project.name) + "\"\n"
         "identifier = \"" + escapeTomlString(configuration.project.identifier) + "\"\n"
         "version = \"" + escapeTomlString(configuration.project.version) + "\"\n"
-        "entry = \"" + escapeTomlString(configuration.project.entry) + "\"\n"
+        "entry = \"" + escapeTomlString(project.gameOptions.entryFunction) + "\"\n"
         "\n"
         "[nomad]\n"
-        "version = \"" + configuration.nomad.version.toString() + "\"\n" +
-        serializeWindowConfiguration(configuration.window) +
-        serializeSpriteConfiguration(configuration.sprites);
+        "version = \"" + configuration.sdk.version.toString() + "\"\n" +
+        serializeGameConfiguration(project.gameOptions) +
+        serializeWindowConfiguration(project.gameOptions) +
+        serializeSpriteConfiguration(project.gameOptions.sprites);
 }
 
 void validateNomadVersionCompatibility(

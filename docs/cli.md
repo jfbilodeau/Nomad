@@ -11,7 +11,7 @@ command-specific help. Options belong to individual verbs.
 | --- | --- |
 | `nomad init [directory]` | Create a minimal project; refuse to overwrite generated files. |
 | `nomad check [directory]` | Validate project scripts and sprite packing through the sibling `nomadc`. |
-| `nomad run [directory] [--debug]` | Launch the sibling runtime from the project root. |
+| `nomad run [directory] [--debug\|--no-debug]` | Launch the sibling runtime from the project root. |
 | `nomad package [directory] [--force] [--dry-run]` | Create a standalone game ZIP using the included runtime bundle. |
 | `nomad version` | Print the SDK version. |
 
@@ -61,7 +61,8 @@ collision, size, and packing failures produce a nonzero exit code. An explicit
 
 `nomad-runtime` discovers the current project's configuration and executes
 `project.entry`. `--resource-path <directory>` overrides the configured
-resource directory; `--debug` enables diagnostic logging and the debug console.
+resource directory. `--debug` enables diagnostic logging and the debug console;
+`--no-debug` disables project-configured debug mode.
 
 Run `nomad run --debug` and press `F12` in the game window to open the debug
 console. Runtime log messages appear in its **Logs** panel. Press `F12` again

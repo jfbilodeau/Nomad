@@ -26,12 +26,17 @@ entry = "start"
 [nomad]
 version = "0.1.0"
 
+[game]
+debug = true
+
 [resources]
 directory = "assets"
 
 [window]
 title = "Runtime Window"
 resolution = [1280, 720]
+size = [1600, 900]
+fullscreen = true
 splash-image = "images/splash.png"
 
 [sprites]
@@ -60,7 +65,8 @@ BOOST_AUTO_TEST_CASE(runtime_options_accept_debug_and_resource_path)
     parseCommandLine(4, arguments, &options);
 
     BOOST_TEST(options.resourcePath == "project-resources");
-    BOOST_TEST(options.debug);
+    BOOST_REQUIRE(options.debug.has_value());
+    BOOST_TEST(*options.debug);
 }
 
 BOOST_AUTO_TEST_CASE(runtime_options_load_project_resources_and_entry_function)
@@ -74,17 +80,28 @@ BOOST_AUTO_TEST_CASE(runtime_options_load_project_resources_and_entry_function)
 
     BOOST_TEST(options.resourcePath == (directory.getPath() / "assets").lexically_normal().string());
     BOOST_TEST(options.entryFunction == "start");
-    BOOST_TEST(options.windowTitle == "Runtime Window");
-    BOOST_TEST(options.resolution.getX() == 1280);
-    BOOST_TEST(options.resolution.getY() == 720);
+    BOOST_REQUIRE(options.title.has_value());
+    BOOST_TEST(*options.title == "Runtime Window");
+    BOOST_REQUIRE(options.resolution.has_value());
+    BOOST_TEST(options.resolution->getX() == 1280);
+    BOOST_TEST(options.resolution->getY() == 720);
+    BOOST_REQUIRE(options.size.has_value());
+    BOOST_TEST(options.size->getX() == 1600);
+    BOOST_TEST(options.size->getY() == 900);
+    BOOST_REQUIRE(options.fullscreen.has_value());
+    BOOST_TEST(*options.fullscreen);
+    BOOST_REQUIRE(options.debug.has_value());
+    BOOST_TEST(*options.debug);
     BOOST_REQUIRE(options.splashImage.has_value());
     BOOST_TEST(*options.splashImage == NomadPath("images/splash.png"));
-    BOOST_REQUIRE(options.sprites.directories.size() == 2U);
-    BOOST_TEST(options.sprites.directories[0] == NomadPath("sprites"));
-    BOOST_TEST(options.sprites.directories[1] == NomadPath("mods/sprites"));
-    BOOST_TEST(options.sprites.maxTextureSize == 1024);
-    BOOST_TEST(options.sprites.padding == 2);
-    BOOST_TEST(options.sprites.directoriesExplicitlyConfigured);
+    BOOST_REQUIRE(options.sprites.directories.has_value());
+    BOOST_REQUIRE(options.sprites.directories->size() == 2U);
+    BOOST_TEST((*options.sprites.directories)[0] == NomadPath("sprites"));
+    BOOST_TEST((*options.sprites.directories)[1] == NomadPath("mods/sprites"));
+    BOOST_REQUIRE(options.sprites.maxTextureSize.has_value());
+    BOOST_TEST(*options.sprites.maxTextureSize == 1024);
+    BOOST_REQUIRE(options.sprites.padding.has_value());
+    BOOST_TEST(*options.sprites.padding == 2);
 }
 
 BOOST_AUTO_TEST_CASE(runtime_options_load_release_manifest_defaults)
@@ -111,10 +128,30 @@ version = "0.1.0"
 
     BOOST_TEST(options.resourcePath == (directory.getPath() / "res").lexically_normal().string());
     BOOST_TEST(options.entryFunction == "start");
-    BOOST_TEST(options.windowTitle == "Runtime Test");
-    BOOST_TEST(options.resolution.getX() == 800);
-    BOOST_TEST(options.resolution.getY() == 600);
+    BOOST_REQUIRE(options.title.has_value());
+    BOOST_TEST(*options.title == "Runtime Test");
+    BOOST_TEST(!options.resolution.has_value());
+    BOOST_TEST(!options.size.has_value());
+    BOOST_TEST(!options.fullscreen.has_value());
+    BOOST_TEST(!options.debug.has_value());
     BOOST_TEST(!options.splashImage.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(command_line_debug_override_takes_precedence)
+{
+    TestDirectory directory("nomad_game_factory_debug_override");
+    directory.write("nomad.toml", PROJECT_CONFIGURATION);
+    directory.write("assets/scripts/start.nomad", "return 0");
+    char program[] = "nomad-runtime";
+    char noDebugOption[] = "--no-debug";
+    char* arguments[] = {program, noDebugOption};
+    GameOptions options;
+
+    parseCommandLine(2, arguments, &options);
+    loadProjectOptions(directory.getPath(), &options);
+
+    BOOST_REQUIRE(options.debug.has_value());
+    BOOST_TEST(!*options.debug);
 }
 
 BOOST_AUTO_TEST_CASE(runtime_options_reject_newer_nomad_versions)

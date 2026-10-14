@@ -2,10 +2,11 @@
 This the author wants to do
 
 ## Open
-[ ] Splash image / default titles & resolution
+[ ] `args`
+[ ] MacOS
+[ ] WASM
 [ ] Sound!!!
 [ ] Display physics bodies in debug mode
-[ ] Debug mode should only come up when the `--debug` parameter is passed.
 [ ] Indexer notation.
 [ ] Persist scene
 [ ] First script should start at index 1 instead of 0 in decompiler (instructions.txt).

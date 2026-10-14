@@ -28,6 +28,7 @@ void parseCommandLine(const int argc, char **argv, GameOptions *options)
     desc.add_options()
         ("help", "Display help and exit")
         ("debug", "Enable debug mode")
+        ("no-debug", "Disable debug mode")
         ("resource-path", boost::program_options::value<NomadString>(&options->resourcePath),
          "Path to resource directory");
 
@@ -40,37 +41,40 @@ void parseCommandLine(const int argc, char **argv, GameOptions *options)
         std::exit(EXIT_SUCCESS);
     }
 
+    if (vm.contains("debug") && vm.contains("no-debug")) {
+        throw boost::program_options::error("--debug and --no-debug cannot be used together");
+    }
+
     if (vm.contains("debug")) {
         log::info("Debug mode enabled");
         log::setLogLevel(LogLevel::Debug);
         options->debug = true;
     }
-    else {
+    else if (vm.contains("no-debug")) {
         log::setLogLevel(LogLevel::Info);
         options->debug = false;
+    }
+    else {
+        log::setLogLevel(LogLevel::Info);
     }
 
 }
 
 void loadProjectOptions(const NomadPath& startPath, GameOptions* options) {
-    const auto configuration = discoverProjectConfiguration(startPath);
-    validateNomadVersionCompatibility(configuration.nomad.version, getNomadVersion());
-    options->entryFunction = configuration.project.entry;
-    options->windowTitle = configuration.window.title;
-    options->resolution.set(
-        configuration.window.resolutionWidth,
-        configuration.window.resolutionHeight
-    );
-    options->splashImage = configuration.window.splashImage;
-    options->sprites.directories = configuration.sprites.directories;
-    options->sprites.maxTextureSize = configuration.sprites.maxTextureSize;
-    options->sprites.padding = configuration.sprites.padding;
-    options->sprites.directoriesExplicitlyConfigured = configuration.sprites.directoriesExplicitlyConfigured;
-    options->sprites.missingDirectoriesAllowed =
-        configuration.type == ProjectConfigurationType::Release;
+    auto project = discoverNomadProject(startPath);
+    validateNomadVersionCompatibility(project.configuration.sdk.version, getNomadVersion());
+    const auto resourcePathOverride = std::move(options->resourcePath);
+    const auto debugOverride = options->debug;
+    *options = std::move(project.gameOptions);
 
-    if (options->resourcePath.empty()) {
-        options->resourcePath = pathToUtf8(resolveProjectResourcePath(configuration));
+    if (!resourcePathOverride.empty()) {
+        options->resourcePath = resourcePathOverride;
+    }
+    if (debugOverride) {
+        options->debug = debugOverride;
+    }
+    if (!options->title) {
+        options->title = project.configuration.project.name;
     }
 
     std::error_code error;

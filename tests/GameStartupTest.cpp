@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 using namespace nomad;
 using namespace nomad::test;
@@ -75,16 +76,34 @@ BOOST_AUTO_TEST_CASE(displays_the_configured_splash_at_the_configured_resolution
     selectDummyDrivers();
 
     auto options = makeOptions(directory);
-    options.windowTitle = "Configured title";
-    options.resolution.set(1280, 720);
+    options.title = "Configured title";
+    options.resolution = Point{1280, 720};
+    options.size = Point{1600, 900};
     options.splashImage = "splash.png";
     auto game = Game::create(std::move(options));
 
     BOOST_TEST(game->getResolution().getX() == 1280);
     BOOST_TEST(game->getResolution().getY() == 720);
-    BOOST_TEST(game->getWindowSize().getX() == 1280);
-    BOOST_TEST(game->getWindowSize().getY() == 720);
+    BOOST_TEST(game->getWindowSize().getX() == 1600);
+    BOOST_TEST(game->getWindowSize().getY() == 900);
     BOOST_TEST(game->getName() == "Splash configured");
+}
+
+BOOST_AUTO_TEST_CASE(uses_resolution_as_window_size_when_size_is_unconfigured)
+{
+    TestDirectory directory("nomad_game_startup_resolution_size");
+    writeTextCatalogue(directory);
+    directory.write("scripts/init.nomad", "game.name = \"Resolution fallback\"\n");
+    selectDummyDrivers();
+
+    auto options = makeOptions(directory);
+    options.resolution = Point{1024, 576};
+    auto game = Game::create(std::move(options));
+
+    BOOST_TEST(game->getResolution().getX() == 1024);
+    BOOST_TEST(game->getResolution().getY() == 576);
+    BOOST_TEST(game->getWindowSize().getX() == 1024);
+    BOOST_TEST(game->getWindowSize().getY() == 576);
 }
 
 BOOST_AUTO_TEST_CASE(loads_sprites_before_executing_the_entry_function)
@@ -116,8 +135,7 @@ BOOST_AUTO_TEST_CASE(loads_compiled_sprite_catalog_instead_of_raw_pngs)
     selectDummyDrivers();
 
     auto options = makeOptions(directory);
-    options.sprites.directories = {"sprites", "mod/sprites"};
-    options.sprites.directoriesExplicitlyConfigured = true;
+    options.sprites.directories = std::vector<NomadPath>{"sprites", "mod/sprites"};
     auto game = Game::create(std::move(options));
 
     BOOST_TEST(game->getResources()->getSprites()->getSpriteByName("sprites.core") != nullptr);
