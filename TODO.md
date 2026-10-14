@@ -6,7 +6,6 @@ This the author wants to do
 [ ] MacOS
 [ ] WASM
 [ ] Sound!!!
-[ ] Display physics bodies in debug mode
 [ ] Indexer notation.
 [ ] Persist scene
 [ ] First script should start at index 1 instead of 0 in decompiler (instructions.txt).
@@ -14,6 +13,7 @@ This the author wants to do
 [ ] Command overloading (WIP)
 
 ## Completed
+[X] Display physics bodies in debug mode
 [X] Automatic sprite texture packing
 [X] Objects (intrinsic)
 [X] Switch from `const NomadString&` to `NomadStringView`
