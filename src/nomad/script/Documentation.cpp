@@ -302,6 +302,8 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     out << std::endl;
 
+    generateTypeDocumentation(runtime, out);
+
     generateIntrinsicMemberDocumentation(runtime, out);
 
     out << "## Functions" << std::endl;
@@ -430,6 +432,31 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     // }
 
     out.flush();
+}
+
+void generateTypeDocumentation(const Runtime* runtime, std::ostream& out) {
+    std::vector<const Type*> types;
+    runtime->getTypes(types);
+
+    std::erase_if(types, [](const Type* type) {
+        return type->isInternal() || type->getDocumentation().empty();
+    });
+    std::ranges::sort(types, {}, &Type::getTypeName);
+
+    if (types.empty()) {
+        return;
+    }
+
+    out << "## Types" << std::endl;
+
+    for (const auto* type : types) {
+        out << std::endl;
+        out << "### `" << type->getTypeName() << "`" << std::endl;
+        out << std::endl;
+        out << type->getDocumentation() << std::endl;
+    }
+
+    out << std::endl;
 }
 
 void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& out) {

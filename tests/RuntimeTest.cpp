@@ -5,9 +5,12 @@
 #include "nomad/game/Entity.hpp"
 #include "nomad/game/EntityVariableContext.hpp"
 #include "nomad/game/Scene.hpp"
+#include "nomad/script/Documentation.hpp"
 #include "nomad/script/Runtime.hpp"
 #include "nomad/script/Type.hpp"
 #include "nomad/script/Variable.hpp"
+
+#include <sstream>
 
 using namespace nomad;
 
@@ -147,6 +150,58 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_enum_definitions_without_partial_re
     BOOST_TEST(runtime.getConstantId("valid.second") == NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getTypeByName("duplicateName") == nullptr);
     BOOST_TEST(runtime.getConstantId("duplicateName.value") == NOMAD_INVALID_ID);
+}
+
+BOOST_AUTO_TEST_CASE(runtime_registers_nominal_opaque_id_types)
+{
+    Runtime runtime;
+
+    const auto* soundType = runtime.registerOpaqueIdType("sound", NomadDoc("A loaded sound effect."));
+    const auto* musicType = runtime.registerOpaqueIdType("music", NomadDoc("A music stream."));
+
+    BOOST_REQUIRE(soundType != nullptr);
+    BOOST_REQUIRE(musicType != nullptr);
+    BOOST_TEST(runtime.getTypeByName("sound") == soundType);
+    BOOST_TEST(runtime.getTypeByName("music") == musicType);
+    BOOST_TEST(soundType->getDocumentation() == "A loaded sound effect.");
+    BOOST_TEST(!soundType->sameType(musicType));
+    BOOST_TEST(!soundType->sameType(runtime.getTypeByName("id")));
+
+    RuntimeValue source;
+    source.setIdValue(42);
+    RuntimeValue destination;
+    soundType->copyValue(source, destination);
+
+    BOOST_TEST(destination.getIdValue() == 42);
+    BOOST_TEST(soundType->toString(destination) == "sound(42)");
+}
+
+BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_opaque_id_types)
+{
+    Runtime runtime;
+
+    BOOST_TEST(runtime.registerOpaqueIdType("", NomadDoc("Invalid.")) == nullptr);
+    BOOST_TEST(runtime.registerOpaqueIdType("int", NomadDoc("Duplicate.")) == nullptr);
+    BOOST_REQUIRE(runtime.registerOpaqueIdType("resource", NomadDoc("A resource.")) != nullptr);
+    BOOST_TEST(runtime.registerOpaqueIdType("resource", NomadDoc("Duplicate.")) == nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(documentation_includes_registered_type_descriptions)
+{
+    Runtime runtime;
+    BOOST_REQUIRE(
+        runtime.registerOpaqueIdType("resource", NomadDoc("An opaque resource handle.")) != nullptr
+    );
+    BOOST_REQUIRE(runtime.registerOpaqueIdType("undocumented", NomadDoc("")) != nullptr);
+
+    std::ostringstream output;
+    generateTypeDocumentation(&runtime, output);
+
+    const auto documentation = output.str();
+    BOOST_TEST(documentation.find("## Types") != NomadString::npos);
+    BOOST_TEST(documentation.find("### `resource`") != NomadString::npos);
+    BOOST_TEST(documentation.find("An opaque resource handle.") != NomadString::npos);
+    BOOST_TEST(documentation.find("undocumented") == NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(id_validation_helpers_distinguish_values_from_ranges)
