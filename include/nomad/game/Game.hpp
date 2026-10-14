@@ -271,6 +271,7 @@ private:
 
     void loadSpritesAndCompileScripts();
     void compileScripts();
+    [[nodiscard]] NomadIndex loadAudio();
     [[nodiscard]] NomadIndex loadSprites();
 
     void runInitFunction();

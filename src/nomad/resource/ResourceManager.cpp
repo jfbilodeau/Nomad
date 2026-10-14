@@ -3,6 +3,7 @@
 #include <nomad/resource/ResourceManager.hpp>
 
 #include <nomad/resource/Animation.hpp>
+#include <nomad/resource/Audio.hpp>
 #include <nomad/resource/Font.hpp>
 #include <nomad/resource/Sprite.hpp>
 #include <nomad/resource/SpriteCatalog.hpp>
@@ -87,6 +88,10 @@ NomadString ResourceManager::makeResourcePath(const NomadString& resourceName) c
 
 AnimationManager* ResourceManager::getAnimations() {
     return &m_animations;
+}
+
+AudioManager* ResourceManager::getAudio() {
+    return &m_audio;
 }
 
 FontManager* ResourceManager::getFonts() {

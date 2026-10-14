@@ -2,6 +2,7 @@ add_executable(
     nomad_test
     ./main.cpp
     ./AudioDiscoveryTest.cpp
+    ./AudioTest.cpp
     ./ColorTest.cpp
     ./DebugDrawTest.cpp
     ./EntityTextTest.cpp

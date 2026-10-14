@@ -93,6 +93,16 @@ void Game::initialize()
 
     setLanguage("en");
 
+    if (m_resourceManager->getAudio()->isAvailable()) {
+        log::info("Loading audio...");
+        const auto audioStartTicks = SDL_GetTicks();
+        const auto audioCount = loadAudio();
+        log::info(
+            "Loaded " + toString(audioCount) + " audio resources in " +
+            toString(static_cast<NomadInteger>(SDL_GetTicks() - audioStartTicks)) + "ms"
+        );
+    }
+
     loadSpritesAndCompileScripts();
 
     if (isDebug()) {
@@ -1438,6 +1448,19 @@ NomadIndex Game::loadSprites() {
         m_options.sprites.maxTextureSize.value_or(2048),
         m_options.sprites.padding.value_or(1),
         m_options.sprites.missingDirectoriesAllowed
+    );
+}
+
+NomadIndex Game::loadAudio() {
+    const auto directories = m_options.audio.directories.value_or(
+        std::vector<NomadPath>{"audio"}
+    );
+
+    return m_resourceManager->getAudio()->loadAudioRoots(
+        pathFromUtf8(m_options.resourcePath),
+        directories,
+        m_options.audio.directories.has_value(),
+        m_options.audio.missingDirectoriesAllowed
     );
 }
 

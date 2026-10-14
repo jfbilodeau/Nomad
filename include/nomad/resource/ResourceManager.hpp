@@ -5,6 +5,7 @@
 #include <nomad/resource/Resource.hpp>
 
 #include <nomad/resource/Animation.hpp>
+#include <nomad/resource/Audio.hpp>
 #include <nomad/resource/Font.hpp>
 #include <nomad/resource/Sprite.hpp>
 #include <nomad/resource/SpritePacker.hpp>
@@ -18,11 +19,6 @@
 namespace nomad {
 
 class Game;
-
-class ResourceException : public NomadException {
-public:
-    explicit ResourceException(const NomadString& message) : NomadException(message) {}
-};
 
 class ResourceManager {
 public:
@@ -39,6 +35,7 @@ public:
 
     // Individual resource managers
     AnimationManager* getAnimations();
+    AudioManager* getAudio();
     FontManager* getFonts();
     SpriteManager* getSprites();
     TextManager* getText();
@@ -59,6 +56,7 @@ private:
     Game* m_game;
     NomadString m_basePath;
     AnimationManager m_animations;
+    AudioManager m_audio;
     FontManager m_fonts;
     SpriteManager m_sprites;
     TextManager m_text;
