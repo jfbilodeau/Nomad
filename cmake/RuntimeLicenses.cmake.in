@@ -8,6 +8,7 @@ set(NOMAD_RUNTIME_LICENSES
     "@zlib_SOURCE_DIR@/LICENSE|zlib.txt"
     "@sdl_SOURCE_DIR@/LICENSE.txt|SDL.txt"
     "@sdl_image_SOURCE_DIR@/LICENSE.txt|SDL_image.txt"
+    "@sdl_mixer_SOURCE_DIR@/LICENSE.txt|SDL_mixer.txt"
     "@sdl_ttf_SOURCE_DIR@/LICENSE.txt|SDL_ttf.txt"
     "@sdl_ttf_SOURCE_DIR@/external/freetype/docs/FTL.TXT|FreeType.txt"
     "@sdl_ttf_SOURCE_DIR@/external/harfbuzz/COPYING|HarfBuzz.txt"

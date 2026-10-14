@@ -71,6 +71,7 @@ target_link_libraries(
     Nomad::Language
     SDL3::SDL3
     SDL3_image::SDL3_image
+    SDL3_mixer::SDL3_mixer
     SDL3_ttf::SDL3_ttf
     box2d
     PRIVATE
