@@ -190,6 +190,7 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/game/TileMapData.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/VariablePersistence.cpp
 
+        ${NOMAD_SOURCE_DIR}/nomad/game/functions/AudioFunctions.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/functions/GameFunctions.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/functions/InputFunctions.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/functions/OtherEntityFunctions.cpp

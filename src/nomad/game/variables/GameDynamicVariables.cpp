@@ -5,6 +5,9 @@
 #include <nomad/game/Entity.hpp>
 #include <nomad/game/Scene.hpp>
 
+#include <nomad/resource/Audio.hpp>
+#include <nomad/resource/ResourceManager.hpp>
+
 #include <nomad/script/VirtualMachine.hpp>
 #include <nomad/script/Runtime.hpp>
 
@@ -12,6 +15,38 @@ namespace nomad {
 
 void Game::initGameDynamicVariables() {
     log::debug("Initializing game dynamic variables");
+
+    m_runtime->registerDynamicVariable(
+        "game.volume",
+        [this](VirtualMachine* virtualMachine, const RuntimeValue& value) {
+            try {
+                m_resourceManager->getAudio()->setMasterVolume(value.getFloatValue());
+            } catch (const AudioException& error) {
+                virtualMachine->fault(error.what());
+            }
+        },
+        [this](VirtualMachine* /*virtualMachine*/, RuntimeValue& value) {
+            value.setFloatValue(m_resourceManager->getAudio()->getMasterVolume());
+        },
+        m_runtime->getFloatType(),
+        NomadDoc("The master game volume from 0.0 to 1.0.")
+    );
+
+    m_runtime->registerDynamicVariable(
+        "game.audio.volume",
+        [this](VirtualMachine* virtualMachine, const RuntimeValue& value) {
+            try {
+                m_resourceManager->getAudio()->setVolume(value.getFloatValue());
+            } catch (const AudioException& error) {
+                virtualMachine->fault(error.what());
+            }
+        },
+        [this](VirtualMachine* /*virtualMachine*/, RuntimeValue& value) {
+            value.setFloatValue(m_resourceManager->getAudio()->getVolume());
+        },
+        m_runtime->getFloatType(),
+        NomadDoc("The sound-effect volume from 0.0 to 1.0.")
+    );
 
     m_runtime->registerDynamicVariable(
         "game.clearColor",

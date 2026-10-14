@@ -36,7 +36,7 @@ private:
 
 class AudioObject final {
 public:
-    AudioObject(const AudioResource* resource, MIX_Mixer* mixer);
+    AudioObject(const AudioResource* resource, MIX_Mixer* mixer, NomadFloat categoryVolume);
     AudioObject(const AudioObject&) = delete;
     AudioObject& operator=(const AudioObject&) = delete;
     ~AudioObject();
@@ -57,10 +57,16 @@ public:
     [[nodiscard]] NomadFloat getVolume() const;
 
 private:
+    friend class AudioManager;
+
     void play(NomadInteger loops);
+    void setCategoryVolume(NomadFloat volume);
+    void applyVolume();
 
     const AudioResource* m_resource;
     MIX_Track* m_track;
+    NomadFloat m_volume = 1.0;
+    NomadFloat m_categoryVolume;
 };
 
 class AudioManager final {
@@ -95,10 +101,14 @@ public:
     void stopAll();
     void setVolume(NomadFloat volume);
     [[nodiscard]] NomadFloat getVolume() const;
+    void setMasterVolume(NomadFloat volume);
+    [[nodiscard]] NomadFloat getMasterVolume() const;
 
 private:
     MIX_Mixer* m_mixer = nullptr;
     bool m_mixerInitialized = false;
+    NomadFloat m_volume = 1.0;
+    NomadFloat m_masterVolume = 1.0;
     std::vector<std::unique_ptr<AudioResource>> m_resources;
     std::vector<std::unique_ptr<AudioObject>> m_audioObjects;
 };

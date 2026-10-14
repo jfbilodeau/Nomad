@@ -22,4 +22,8 @@ set(NOMAD_RUNTIME_EMBEDDED_LICENSES
     "@sdl_image_SOURCE_DIR@/src/qoi.h|QOI.txt|-- LICENSE:|-- About"
     "@sdl_image_SOURCE_DIR@/src/tiny_jpeg.h|tiny_jpeg.txt|==== License ====|*/"
     "@sdl_image_SOURCE_DIR@/src/miniz.h|miniz.txt|This is free and unencumbered software|*/"
+    "@sdl_mixer_SOURCE_DIR@/src/dr_libs/dr_flac.h|dr_flac.txt|ALTERNATIVE 1 - Public Domain (www.unlicense.org)|*/"
+    "@sdl_mixer_SOURCE_DIR@/src/dr_libs/dr_mp3.h|dr_mp3.txt|ALTERNATIVE 1 - Public Domain (www.unlicense.org)|*/"
+    "@sdl_mixer_SOURCE_DIR@/src/dr_libs/dr_mp3.h|minimp3.txt|    https://github.com/lieff/minimp3|*/"
+    "@sdl_mixer_SOURCE_DIR@/src/stb_vorbis/stb_vorbis.h|stb_vorbis.txt|ALTERNATIVE A - MIT License|*/"
 )

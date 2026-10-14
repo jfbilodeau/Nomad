@@ -55,9 +55,14 @@ MIX_Audio* AudioResource::getSdlAudio() const {
     return m_audio;
 }
 
-AudioObject::AudioObject(const AudioResource* resource, MIX_Mixer* mixer):
+AudioObject::AudioObject(
+    const AudioResource* resource,
+    MIX_Mixer* mixer,
+    const NomadFloat categoryVolume
+):
     m_resource(resource),
-    m_track(MIX_CreateTrack(mixer))
+    m_track(MIX_CreateTrack(mixer)),
+    m_categoryVolume(categoryVolume)
 {
     if (m_resource == nullptr) {
         throw AudioException("Cannot create an audio object without a resource");
@@ -69,6 +74,14 @@ AudioObject::AudioObject(const AudioResource* resource, MIX_Mixer* mixer):
         MIX_DestroyTrack(m_track);
         m_track = nullptr;
         throw AudioException(getMixerError("Failed to assign audio to a track"));
+    }
+
+    try {
+        applyVolume();
+    } catch (...) {
+        MIX_DestroyTrack(m_track);
+        m_track = nullptr;
+        throw;
     }
 }
 
@@ -120,14 +133,37 @@ bool AudioObject::isLooping() const {
 
 void AudioObject::setVolume(const NomadFloat volume) {
     validateVolume(volume);
+    const auto previousVolume = m_volume;
+    m_volume = volume;
 
-    if (!MIX_SetTrackGain(m_track, static_cast<float>(volume))) {
-        throw AudioException(getMixerError("Failed to set audio track volume"));
+    try {
+        applyVolume();
+    } catch (...) {
+        m_volume = previousVolume;
+        throw;
     }
 }
 
 NomadFloat AudioObject::getVolume() const {
-    return MIX_GetTrackGain(m_track);
+    return m_volume;
+}
+
+void AudioObject::setCategoryVolume(const NomadFloat volume) {
+    const auto previousVolume = m_categoryVolume;
+    m_categoryVolume = volume;
+
+    try {
+        applyVolume();
+    } catch (...) {
+        m_categoryVolume = previousVolume;
+        throw;
+    }
+}
+
+void AudioObject::applyVolume() {
+    if (!MIX_SetTrackGain(m_track, static_cast<float>(m_volume * m_categoryVolume))) {
+        throw AudioException(getMixerError("Failed to set audio track volume"));
+    }
 }
 
 void AudioObject::play(const NomadInteger loops) {
@@ -274,7 +310,7 @@ NomadId AudioManager::createAudioObject(const NomadId resourceId) {
     }
 
     const auto audioObjectId = toNomadId(m_audioObjects.size());
-    m_audioObjects.push_back(std::make_unique<AudioObject>(resource, m_mixer));
+    m_audioObjects.push_back(std::make_unique<AudioObject>(resource, m_mixer, m_volume));
     return audioObjectId;
 }
 
@@ -303,33 +339,49 @@ NomadIndex AudioManager::getAudioObjectCount() const {
 }
 
 void AudioManager::pauseAll() {
-    if (!MIX_PauseAllTracks(m_mixer)) {
-        throw AudioException(getMixerError("Failed to pause all audio tracks"));
+    for (auto& audioObject : m_audioObjects) {
+        audioObject->pause();
     }
 }
 
 void AudioManager::resumeAll() {
-    if (!MIX_ResumeAllTracks(m_mixer)) {
-        throw AudioException(getMixerError("Failed to resume all audio tracks"));
+    for (auto& audioObject : m_audioObjects) {
+        audioObject->resume();
     }
 }
 
 void AudioManager::stopAll() {
-    if (!MIX_StopAllTracks(m_mixer, 0)) {
-        throw AudioException(getMixerError("Failed to stop all audio tracks"));
+    for (auto& audioObject : m_audioObjects) {
+        audioObject->stop();
     }
 }
 
 void AudioManager::setVolume(const NomadFloat volume) {
     validateVolume(volume);
 
-    if (!MIX_SetMixerGain(m_mixer, static_cast<float>(volume))) {
-        throw AudioException(getMixerError("Failed to set audio volume"));
+    for (auto& audioObject : m_audioObjects) {
+        audioObject->setCategoryVolume(volume);
     }
+
+    m_volume = volume;
 }
 
 NomadFloat AudioManager::getVolume() const {
-    return MIX_GetMixerGain(m_mixer);
+    return m_volume;
+}
+
+void AudioManager::setMasterVolume(const NomadFloat volume) {
+    validateVolume(volume);
+
+    if (isAvailable() && !MIX_SetMixerGain(m_mixer, static_cast<float>(volume))) {
+        throw AudioException(getMixerError("Failed to set master audio volume"));
+    }
+
+    m_masterVolume = volume;
+}
+
+NomadFloat AudioManager::getMasterVolume() const {
+    return m_masterVolume;
 }
 
 } // namespace nomad

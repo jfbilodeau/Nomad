@@ -5,6 +5,9 @@
 #include <nomad/resource/Audio.hpp>
 #include <nomad/resource/ResourceManager.hpp>
 
+#include <nomad/script/Runtime.hpp>
+#include <nomad/script/Type.hpp>
+
 #include <TestDirectory.hpp>
 
 #include <boost/test/unit_test.hpp>
@@ -76,6 +79,68 @@ BOOST_AUTO_TEST_CASE(game_startup_preloads_configured_audio_roots)
     BOOST_REQUIRE(audio->isAvailable());
     BOOST_TEST(audio->getResourceCount() == 1U);
     BOOST_TEST(audio->getResourceByName("sounds.hit") != nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(game_scripts_control_preloaded_audio_instances)
+{
+    TestDirectory directory("nomad_audio_script_api");
+    directory.write("audio/hit.wav", makeWaveFile());
+    directory.write("text/text.csv", "key,en\ntitle,Test\n");
+    directory.write(
+        "scripts/init.nomad",
+        "sound = game.audio.load \"audio.hit\"\n"
+        "game.volume = 0.8\n"
+        "game.audio.volume = 0.5\n"
+        "sound.volume = 0.25\n"
+        "sound.playLoop\n"
+        "sound.pause\n"
+        "sound.resume\n"
+        "game.audio.pauseAll\n"
+        "game.audio.resumeAll\n"
+        "game.audio.stopAll\n"
+    );
+    std::filesystem::create_directories(directory.getPath() / "mods");
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+
+    GameOptions options;
+    options.resourcePath = directory.getPath().string();
+    auto game = Game::create(std::move(options));
+    auto* audio = game->getResources()->getAudio();
+    const auto* audioType = game->getRuntime()->getTypeByName("audio");
+
+    BOOST_REQUIRE(audioType != nullptr);
+    BOOST_TEST(audioType->getDocumentation() == "A controllable instance of a preloaded sound effect.");
+    BOOST_TEST(audio->getMasterVolume() == 0.8, boost::test_tools::tolerance(0.001));
+    BOOST_TEST(audio->getVolume() == 0.5, boost::test_tools::tolerance(0.001));
+    BOOST_REQUIRE(audio->getAudioObjectCount() == 1U);
+
+    const auto* object = audio->getAudioObject(0);
+    BOOST_REQUIRE(object != nullptr);
+    BOOST_TEST(object->getVolume() == 0.25, boost::test_tools::tolerance(0.001));
+    BOOST_TEST(!object->isPlaying());
+    BOOST_TEST(!object->isPaused());
+}
+
+BOOST_AUTO_TEST_CASE(game_scripts_reject_invalid_audio_volume)
+{
+    TestDirectory directory("nomad_audio_script_volume");
+    directory.write("text/text.csv", "key,en\ntitle,Test\n");
+    directory.write("scripts/init.nomad", "game.audio.volume = 1.5\n");
+    std::filesystem::create_directories(directory.getPath() / "mods");
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+
+    GameOptions options;
+    options.resourcePath = directory.getPath().string();
+
+    BOOST_CHECK_EXCEPTION(
+        (void)Game::create(std::move(options)),
+        GameException,
+        [](const GameException& error) {
+            return NomadString(error.what()).find("between 0.0 and 1.0") != NomadString::npos;
+        }
+    );
 }
 
 BOOST_AUTO_TEST_CASE(preloads_and_finds_discovered_audio_resources)
@@ -171,10 +236,13 @@ BOOST_AUTO_TEST_CASE(audio_manager_controls_all_tracks_and_master_volume)
     BOOST_REQUIRE(first != nullptr);
     BOOST_REQUIRE(second != nullptr);
 
-    audio->setVolume(0.75);
-    BOOST_TEST(audio->getVolume() == 0.75, boost::test_tools::tolerance(0.001));
-    BOOST_CHECK_THROW(audio->setVolume(-0.1), AudioException);
-    BOOST_CHECK_THROW(audio->setVolume(1.1), AudioException);
+    audio->setMasterVolume(0.75);
+    BOOST_TEST(audio->getMasterVolume() == 0.75, boost::test_tools::tolerance(0.001));
+    BOOST_CHECK_THROW(audio->setMasterVolume(-0.1), AudioException);
+    BOOST_CHECK_THROW(audio->setMasterVolume(1.1), AudioException);
+
+    audio->setVolume(0.5);
+    BOOST_TEST(audio->getVolume() == 0.5, boost::test_tools::tolerance(0.001));
 
     first->playLoop();
     second->playLoop();

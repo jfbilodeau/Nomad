@@ -1197,6 +1197,7 @@ void Game::initEvents() const {
 void Game::initFunctions() {
     log::info("Initializing functions");
 
+    initAudioFunctions();
     initGameFunctions();
     initInputFunctions();
     initOtherEntityFunctions();

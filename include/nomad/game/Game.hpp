@@ -236,6 +236,7 @@ private:
     void initConstants() const;
 
     void initFunctions();
+    void initAudioFunctions();
     void initGameFunctions();
     void initInputFunctions();
     void initOtherEntityFunctions();
