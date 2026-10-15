@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace nomad {
@@ -71,8 +72,9 @@ public:
     [[nodiscard]] const TypedValue* getResult() const;
 
     void setError(const NomadString& error);
-    void setDiagnostic(const Diagnostic& diagnostic);
-    [[nodiscard]] const Diagnostic* getDiagnostic() const;
+    void addDiagnostic(const Diagnostic& diagnostic);
+    // Includes warnings and errors in reporting order. clearError clears this collection too.
+    [[nodiscard]] std::span<const Diagnostic> getDiagnostics() const;
     void clearError();
     [[nodiscard]] NomadBoolean hasError() const;
     [[nodiscard]] const NomadString* getError() const;
@@ -99,7 +101,7 @@ private:
     NomadIndex m_frameVariableCount = 0;
     std::optional<TypedValue> m_result;
     std::optional<NomadString> m_error;
-    std::optional<Diagnostic> m_diagnostic;
+    std::vector<Diagnostic> m_diagnostics;
     // Indexed by resolution variable id; borrowed frame slots remain empty.
     std::vector<std::unique_ptr<TypedValue>> m_variables;
 };

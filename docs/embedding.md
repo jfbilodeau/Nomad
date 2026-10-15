@@ -52,6 +52,12 @@ expression, or a supported function call. `evaluateExpression(source, context)`
 requires exactly one non-void expression; assignments and statements are rejected.
 Each entry point clears the context's previous result and error.
 
+`getDiagnostics()` exposes the compiler warnings and errors from the latest
+evaluation in reporting order. Hosts can append diagnostics with `addDiagnostic`.
+`getError()` retains the first error for compatibility; warnings alone do not
+make `hasError()` true. `clearError()` clears both the error and diagnostics,
+as does starting another evaluation.
+
 Results are owned by the context. Copy a result using `TypedValue` if it must
 survive another evaluation; do not free the context's result manually.
 `listVariables()` lists interpreter-owned variables, not borrowed frame slots.

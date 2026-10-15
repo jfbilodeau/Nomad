@@ -12,6 +12,8 @@
 
 #include <nomad/system/String.hpp>
 
+#include <algorithm>
+
 namespace nomad {
 
 DynamicFormatResult formatDynamicString(const NomadStringView format, InterpreterContext& context,
@@ -39,8 +41,11 @@ DynamicFormatResult formatDynamicString(const NomadStringView format, Interprete
             const auto* value = context.getResult();
             result.text += value->getType()->toString(value->getValue());
         } else {
-            const auto* diagnostic = context.getDiagnostic();
-            auto message = diagnostic != nullptr ? diagnostic->message : *context.getError();
+            const auto diagnostics = context.getDiagnostics();
+            const auto error = std::ranges::find_if(diagnostics, [](const Diagnostic& diagnostic) {
+                return diagnostic.severity == DiagnosticSeverity::Error;
+            });
+            auto message = error != diagnostics.end() ? error->message : *context.getError();
             constexpr NomadStringView unknownIdentifier = "Unknown identifier: ";
             if (message.starts_with(unknownIdentifier)) {
                 message = "invalid identifier: '" + message.substr(unknownIdentifier.size()) + "'";

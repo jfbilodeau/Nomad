@@ -269,6 +269,38 @@ BOOST_AUTO_TEST_CASE(interpreter_context_stores_and_clears_errors)
     BOOST_TEST(*context.getError() == "A later input error");
 }
 
+BOOST_AUTO_TEST_CASE(interpreter_context_retains_multiple_diagnostics_and_first_error)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    context.addDiagnostic({DiagnosticSeverity::Warning, "warning", "test.nomad", 1, 2});
+    BOOST_TEST(!context.hasError());
+    context.addDiagnostic({DiagnosticSeverity::Error, "first error", "test.nomad", 2, 3});
+    context.addDiagnostic({DiagnosticSeverity::Error, "second error", "test.nomad", 3, 4});
+    BOOST_REQUIRE_EQUAL(context.getDiagnostics().size(), 3);
+    BOOST_TEST(context.getDiagnostics()[0].message == "warning");
+    BOOST_TEST(context.getDiagnostics()[1].message == "first error");
+    BOOST_TEST(context.getDiagnostics()[2].message == "second error");
+    BOOST_REQUIRE(context.getError() != nullptr);
+    BOOST_TEST(*context.getError() == "test.nomad:2:3: error: first error");
+    context.clearError();
+    BOOST_TEST(context.getDiagnostics().empty());
+    BOOST_TEST(!context.hasError());
+    for (const auto expressionOnly : {false, true}) {
+        const auto succeeded = expressionOnly
+            ? Interpreter{}.evaluateExpression("missingLeft + missingRight", context)
+            : Interpreter{}.execute("missingLeft + missingRight", context);
+        BOOST_TEST(!succeeded);
+        BOOST_REQUIRE_EQUAL(context.getDiagnostics().size(), 2);
+        BOOST_TEST(context.getDiagnostics()[0].message == "Unknown identifier: missingLeft");
+        BOOST_TEST(context.getDiagnostics()[1].message == "Unknown identifier: missingRight");
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("1 + 2", context));
+        BOOST_TEST(context.getDiagnostics().empty());
+        BOOST_TEST(!context.hasError());
+    }
+}
+
 BOOST_AUTO_TEST_CASE(interpreter_context_executes_single_line_assignments_and_expressions)
 {
     Runtime runtime;

@@ -45,8 +45,10 @@ bool Interpreter::evaluateExpression(const NomadString& source, InterpreterConte
     CompilerContext context(compiler.get(), CompilerMode::Interpreter, &evaluation);
     auto* function = evaluation.m_function.get();
     Tokenizer tokens(&context, function->getPath(), source);
-    if (const auto* error = context.getFirstError()) {
-        evaluation.setDiagnostic(*error);
+    for (const auto& diagnostic : context.getDiagnostics()) {
+        evaluation.addDiagnostic(diagnostic);
+    }
+    if (context.hasError()) {
         return false;
     }
     if (tokens.getLineCount() != 1 || !tokens.nextLine()) {
@@ -57,8 +59,12 @@ bool Interpreter::evaluateExpression(const NomadString& source, InterpreterConte
     if (expression != nullptr && parser::expectEndOfLine(&context, function, &tokens)) {
         (void)expression->resolve(&context, function);
     }
-    if (const auto* error = context.getFirstError()) {
-        evaluation.setDiagnostic(*error);
+    // Tokenization diagnostics were already retained above.
+    const auto retainedDiagnostics = evaluation.getDiagnostics().size();
+    for (const auto& diagnostic : context.getDiagnostics().subspan(retainedDiagnostics)) {
+        evaluation.addDiagnostic(diagnostic);
+    }
+    if (context.hasError()) {
         return false;
     }
     if (expression == nullptr || expression->getType() == nullptr || expression->getType()->isVoid()) {
@@ -91,6 +97,9 @@ NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext&
         }
         if (const auto* lexingError = compilerContext.getFirstError(); lexingError != nullptr) {
             evaluation.setError(lexingError->message);
+            for (const auto& diagnostic : compilerContext.getDiagnostics()) {
+                evaluation.addDiagnostic(diagnostic);
+            }
             return false;
         }
         if (tokenizer.endOfLine()) {
@@ -141,6 +150,9 @@ NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext&
 
         if (const auto* parseError = compilerContext.getFirstError(); parseError != nullptr) {
             evaluation.setError(parseError->message);
+            for (const auto& diagnostic : compilerContext.getDiagnostics()) {
+                evaluation.addDiagnostic(diagnostic);
+            }
             return false;
         }
 
@@ -152,9 +164,15 @@ NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext&
         if (!statement->resolve(&compilerContext, evaluation.m_function.get())) {
             const auto* firstError = compilerContext.getFirstError();
             evaluation.setError(firstError != nullptr ? firstError->message : "Failed to resolve interpreter input");
+            for (const auto& diagnostic : compilerContext.getDiagnostics()) {
+                evaluation.addDiagnostic(diagnostic);
+            }
             return false;
         }
 
+        for (const auto& diagnostic : compilerContext.getDiagnostics()) {
+            evaluation.addDiagnostic(diagnostic);
+        }
         statement->evaluate(evaluation);
         return !evaluation.hasError();
     } catch (const NomadException& exception) {
