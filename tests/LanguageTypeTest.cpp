@@ -3,7 +3,9 @@
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
@@ -428,29 +430,31 @@ BOOST_AUTO_TEST_CASE(context_variables_reject_conflicting_types_across_functions
 BOOST_AUTO_TEST_CASE(interpreter_locals_can_change_type)
 {
     Runtime runtime;
-    Interpreter interpreter(&runtime);
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext interpreter(*machine);
 
-    BOOST_REQUIRE(interpreter.execute("value = 10"));
+    BOOST_REQUIRE(Interpreter{}.execute("value = 10", interpreter));
     BOOST_TEST(interpreter.getVariableType("value") == runtime.getIntegerType());
 
     BOOST_REQUIRE_MESSAGE(
-        interpreter.execute("value = \"text\""),
+        Interpreter{}.execute("value = \"text\"", interpreter),
         (interpreter.getError() ? *interpreter.getError() : NomadString{})
     );
     BOOST_TEST(interpreter.getVariableType("value") == runtime.getStringType());
     BOOST_TEST(NomadString(interpreter.getVariableValue("value")->getStringValue()) == "text");
 
-    BOOST_REQUIRE(interpreter.execute("value = 1.5"));
+    BOOST_REQUIRE(Interpreter{}.execute("value = 1.5", interpreter));
     BOOST_TEST(interpreter.getVariableType("value") == runtime.getFloatType());
 }
 
 BOOST_AUTO_TEST_CASE(interpreter_context_variables_keep_their_type)
 {
     Runtime runtime;
-    Interpreter interpreter(&runtime);
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext interpreter(*machine);
 
-    BOOST_REQUIRE(interpreter.execute("global.interpreterTyped = 10"));
-    BOOST_TEST(!interpreter.execute("global.interpreterTyped = \"text\""));
+    BOOST_REQUIRE(Interpreter{}.execute("global.interpreterTyped = 10", interpreter));
+    BOOST_TEST(!Interpreter{}.execute("global.interpreterTyped = \"text\"", interpreter));
     BOOST_TEST(interpreter.hasError());
 }
 

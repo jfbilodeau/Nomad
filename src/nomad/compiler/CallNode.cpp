@@ -38,11 +38,11 @@ const Type* Argument::getPushedType() const {
     return m_type;
 }
 
-TypedValue Argument::evaluate(Interpreter& context) const {
+TypedValue Argument::evaluate(InterpreterContext& context) const {
     return onEvaluate(context);
 }
 
-TypedValue Argument::onEvaluate(Interpreter& /*context*/) const {
+TypedValue Argument::onEvaluate(InterpreterContext& /*context*/) const {
     throw AstException("Argument kind is not supported by the interpreter", getLine(), getColumn());
 }
 
@@ -152,7 +152,7 @@ void ArgumentList::compile(Compiler* compiler, ScriptFunction* function) const {
 }
 
 void ArgumentList::evaluate(
-    Interpreter& context,
+    InterpreterContext& context,
     std::vector<TypedValue>& evaluatedArguments,
     std::vector<RuntimeValue>& values
 ) const {
@@ -280,7 +280,7 @@ void NativeFunctionStatementNode::onCompile(Compiler* compiler, ScriptFunction* 
     compiler->addFreeValue(m_definition.returnType->getTypeOpCodes()->freeResult);
 }
 
-void NativeFunctionStatementNode::onEvaluate(Interpreter& context) const {
+void NativeFunctionStatementNode::onEvaluate(InterpreterContext& context) const {
     std::vector<TypedValue> evaluatedArguments;
     std::vector<RuntimeValue> values;
     getArguments()->evaluate(context, evaluatedArguments, values);
@@ -310,7 +310,7 @@ void FunctionCallStatementNode::onResolve(CompilerContext* context, ScriptFuncti
         return;
     }
 
-    if (context->getMode() == CompilerMode::Interpreter &&
+    if (context->getMode() != CompilerMode::Script &&
         runtime->getFunction(m_functionId)->getFunctionStart() == NOMAD_INVALID_INDEX) {
         reportError(context, function, "Function '" + m_name + "' has not been compiled");
         return;
@@ -331,7 +331,7 @@ void FunctionCallStatementNode::onCompile(Compiler* compiler, ScriptFunction* fu
     }
 }
 
-void FunctionCallStatementNode::onEvaluate(Interpreter& context) const {
+void FunctionCallStatementNode::onEvaluate(InterpreterContext& context) const {
     if (m_functionId == NOMAD_INVALID_ID) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
@@ -343,7 +343,7 @@ void FunctionCallStatementNode::onEvaluate(Interpreter& context) const {
         return;
     }
 
-    context.getRuntime()->executeFunction(m_functionId, values);
+    context.evaluateFunctionCall(m_functionId, values);
     context.setVoidResult();
 }
 

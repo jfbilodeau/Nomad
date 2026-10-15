@@ -35,7 +35,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function) override;
-    [[nodiscard]] TypedValue onEvaluate(Interpreter& context) const override;
+    [[nodiscard]] TypedValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     // Resolves `m_expression`, so overload resolution and the regular resolve pass can both ask for its type.
@@ -76,7 +76,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function) override;
-    [[nodiscard]] TypedValue onEvaluate(Interpreter& context) const override;
+    [[nodiscard]] TypedValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadId m_functionId;
@@ -123,7 +123,7 @@ public:
 
 protected:
     void onCompile(Compiler* compiler, ScriptFunction* function) override;
-    [[nodiscard]] TypedValue onEvaluate(Interpreter& context) const override;
+    [[nodiscard]] TypedValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_fileName;
@@ -138,7 +138,7 @@ public:
 
 protected:
     void onCompile(Compiler* compiler, ScriptFunction* function) override;
-    [[nodiscard]] TypedValue onEvaluate(Interpreter& context) const override;
+    [[nodiscard]] TypedValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_functionName;
@@ -153,7 +153,7 @@ public:
 
 protected:
     void onCompile(Compiler* compiler, ScriptFunction* function) override;
-    [[nodiscard]] TypedValue onEvaluate(Interpreter& context) const override;
+    [[nodiscard]] TypedValue onEvaluate(InterpreterContext& context) const override;
 
 private:
 
@@ -241,7 +241,7 @@ void ExpressionArgument::onCompile(Compiler* compiler, ScriptFunction* function)
     }
 }
 
-TypedValue ExpressionArgument::onEvaluate(Interpreter& context) const {
+TypedValue ExpressionArgument::onEvaluate(InterpreterContext& context) const {
     m_expression->evaluate(context);
     const auto* value = context.getResult();
 
@@ -319,7 +319,7 @@ void CallbackArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*
     compiler->addIndex(m_functionId);
 }
 
-TypedValue CallbackArgument::onEvaluate(Interpreter& context) const {
+TypedValue CallbackArgument::onEvaluate(InterpreterContext& context) const {
     const auto* runtime = context.getRuntime();
     const auto* function = runtime->getFunction(m_functionId);
     const auto* callbackType = getType() == nullptr ? nullptr : getType()->asCallback();
@@ -415,7 +415,7 @@ void FileNameArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*
     compiler->addLoadStringReference(m_fileName, ExpressionTarget::Stack);
 }
 
-TypedValue FileNameArgument::onEvaluate(Interpreter& /*context*/) const {
+TypedValue FileNameArgument::onEvaluate(InterpreterContext& /*context*/) const {
     // Borrows `m_fileName`, which outlives the nativeFunction call.
     RuntimeValue value;
     value.setStringRefValue(m_fileName.c_str());
@@ -440,7 +440,7 @@ void FunctionNameArgument::onCompile(Compiler* compiler, ScriptFunction* /*funct
     compiler->addLoadStringReference(m_functionName, ExpressionTarget::Stack);
 }
 
-TypedValue FunctionNameArgument::onEvaluate(Interpreter& /*context*/) const {
+TypedValue FunctionNameArgument::onEvaluate(InterpreterContext& /*context*/) const {
     // Borrows `m_functionName`, which outlives the nativeFunction call.
     RuntimeValue value;
     value.setStringRefValue(m_functionName.c_str());
@@ -456,7 +456,7 @@ void LineNumberArgument::onCompile(Compiler* compiler, ScriptFunction* /*functio
     compiler->addLoadIntegerValue(static_cast<NomadInteger>(getLine()), ExpressionTarget::Stack);
 }
 
-TypedValue LineNumberArgument::onEvaluate(Interpreter& /*context*/) const {
+TypedValue LineNumberArgument::onEvaluate(InterpreterContext& /*context*/) const {
     return TypedValue(getType(), RuntimeValue{static_cast<NomadInteger>(getLine())});
 }
 

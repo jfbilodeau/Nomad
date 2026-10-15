@@ -315,7 +315,8 @@ DebugConsole::DebugConsole(Game* game, SDL_Window* window, SDL_Renderer* rendere
     m_game(game),
     m_window(window),
     m_renderer(renderer),
-    m_interpreter(game->getRuntime()),
+    m_interpreterVirtualMachine(game->getRuntime()->createVirtualMachine()),
+    m_interpreterContext(*m_interpreterVirtualMachine),
     m_inspectionVirtualMachine(game->getRuntime()->createVirtualMachine())
 {
     IMGUI_CHECKVERSION();
@@ -1243,7 +1244,7 @@ void DebugConsole::collectConsoleVariableRows(std::vector<VariableRow>& rows) co
         return;
     }
 
-    for (const auto& variable : m_interpreter.listVariables()) {
+    for (const auto& variable : m_interpreterContext.listVariables()) {
         const auto name = "console." + variable.name;
         if (!containsText(name, m_variableFilter.data())) {
             continue;
@@ -1311,7 +1312,7 @@ bool DebugConsole::applyVariableEdit(const VariableRow& row, const NomadString& 
     case VariableRow::Source::Console: {
         // `Interpreter` copies the value, so the temporary is released here.
         const auto name = row.name.substr(std::strlen("console."));
-        m_interpreter.setVariable(name, row.type, value);
+        m_interpreterContext.setVariable(name, row.type, value);
         row.type->freeValue(value);
         return true;
     }
@@ -1645,10 +1646,10 @@ void DebugConsole::executeNativeFunction() {
     m_consoleEntries.push_back({false, "> " + nativeFunction});
 
     ExecutionContextGuard contextGuard(m_game, getSelectedScene(), getSelectedEntity());
-    if (!m_interpreter.execute(nativeFunction)) {
-        const auto* error = m_interpreter.getError();
+    if (!Interpreter{}.execute(nativeFunction, m_interpreterContext)) {
+        const auto* error = m_interpreterContext.getError();
         m_consoleEntries.push_back({true, error != nullptr ? *error : "NativeFunction failed"});
-    } else if (const auto* result = m_interpreter.getResult(); result != nullptr) {
+    } else if (const auto* result = m_interpreterContext.getResult(); result != nullptr) {
         if (!result->getType()->isVoid()) {
             m_consoleEntries.push_back({
                 false,

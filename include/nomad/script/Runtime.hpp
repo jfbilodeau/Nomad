@@ -29,7 +29,7 @@ class Compiler;
 class Closure;
 class FormatString;
 class VirtualMachine;
-class Interpreter;
+class InterpreterContext;
 class Parser;
 class FunctionBuilder;
 class Tokenizer;
@@ -300,7 +300,7 @@ public:
     void executeFunction(NomadId functionId);
     void executeFunction(NomadId functionId, const std::vector<RuntimeValue> &args);
     void executeFunction(NomadId functionId, const std::vector<RuntimeValue> &args, RuntimeValue& returnValue);
-    void executeNativeFunction(NomadId nativeFunctionId, const std::vector<RuntimeValue>& args, Interpreter& context);
+    void executeNativeFunction(NomadId nativeFunctionId, const std::vector<RuntimeValue>& args, InterpreterContext& context);
 
     // Debug
     void dumpInstructions(std::ostream& out) const;

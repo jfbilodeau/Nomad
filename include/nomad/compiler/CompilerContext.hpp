@@ -10,6 +10,7 @@
 namespace nomad {
 
 class Compiler;
+class InterpreterContext;
 class Runtime;
 class Tokenizer;
 
@@ -18,9 +19,9 @@ enum class DiagnosticSeverity {
     Error,
 };
 
-// Function: source files compiled to bytecode. Interpreter: single console lines evaluated from the AST.
+// Script: compiled source. Interpreter: AST evaluation without changing compiled function definitions.
 enum class CompilerMode {
-    Function = 1,
+    Script = 1,
     Interpreter,
 };
 
@@ -39,7 +40,8 @@ struct Diagnostic {
 // each diagnostic records the source (file path) it was reported against.
 class CompilerContext {
 public:
-    explicit CompilerContext(Compiler* compiler, CompilerMode mode = CompilerMode::Function);
+    explicit CompilerContext(Compiler* compiler, CompilerMode mode = CompilerMode::Script,
+        const InterpreterContext* interpreterContext = nullptr);
     CompilerContext(const CompilerContext&) = delete;
     CompilerContext& operator=(const CompilerContext&) = delete;
     ~CompilerContext();
@@ -47,6 +49,7 @@ public:
     [[nodiscard]] Compiler* getCompiler() const;
     [[nodiscard]] Runtime* getRuntime() const;
     [[nodiscard]] CompilerMode getMode() const;
+    [[nodiscard]] const InterpreterContext* getInterpreterContext() const;
 
     void reportError(NomadStringView message);
     void reportError(NomadStringView message, NomadStringView sourceName, NomadIndex line, NomadIndex column);
@@ -76,6 +79,7 @@ private:
 
     Compiler* m_compiler;
     CompilerMode m_mode;
+    const InterpreterContext* m_interpreterContext;
     std::vector<Diagnostic> m_diagnostics;
     NomadIndex m_errorCount = 0;
     NomadIndex m_warningCount = 0;

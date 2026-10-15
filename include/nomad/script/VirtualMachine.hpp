@@ -20,6 +20,7 @@ class VirtualMachine;
 class Runtime;
 class ScriptFunction;
 class Closure;
+class TypedValue;
 
 struct Instruction {
     explicit Instruction(const InstructionFn fn) : fn(fn) {}
@@ -65,12 +66,16 @@ public:
     void callIntrinsicMethod(NomadId memberId);
     void returnFunction(NomadIndex variableCount);
     void runIntrinsicMethod(NomadId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
+    void runNativeFunction(NomadId nativeFunctionId, const std::vector<RuntimeValue>& args);
 
     [[nodiscard]] const RuntimeValue& getIntrinsicReceiver() const;
     [[nodiscard]] RuntimeValue& getIntrinsicReceiver();
 
     [[nodiscard]]
     std::unique_ptr<Closure> createClosure(const Runtime* runtime, NomadId functionId) const;
+
+    // Copies captures from the active script frame, not an enclosing native-call parameter frame.
+    [[nodiscard]] std::vector<TypedValue> captureCurrentFrame(const ScriptFunction* function) const;
 
     void setResult(const RuntimeValue& result) { m_result = result; }
     void setIntegerResult(NomadInteger result) { m_result.setIntegerValue(result); }
@@ -207,9 +212,9 @@ public:
 
 private:
     friend class Runtime;
+    friend class InterpreterContext;
 
     void initializeFunctionVariables(const ScriptFunction* function);
-    void runNativeFunction(NomadId nativeFunctionId, const std::vector<RuntimeValue>& args);
 
     Runtime* m_runtime;
     NomadIndex m_instructionIndex = 0;

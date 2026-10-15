@@ -168,7 +168,9 @@ Nomad supports three variable kinds:
 - Context variables: bound to a named context; identified by a prefix and a dot (for example `global.score`). Contexts are provided by the embedding engine and have engine‑specific semantics for storage and persistence. The `global.` context is pre-defined by the default Nomad runtime. The game engine provides `inventory.*` for saved game state and `settings.*` for user preferences. The `global.*`, `scene.*`, `this.*`, and `other.*` contexts are not persisted by the save and settings native functions.
 - Dynamic variables: engine‑defined identifiers (for example `this.x`) managed directly by engine code; the engine decides read/write permissions and behavior.
 
-The interactive interpreter is an exception to compiled-code typing rules. Local variables created in the interpreter may be reassigned with a value of a different type. Context variables and engine-defined dynamic variables continue to follow the type rules of their contexts and definitions.
+The interactive interpreter is an exception to compiled-code typing rules. Interpreter variables may be created by assignment and reassigned with a value of a different type. Parameters remain read-only, and frame variables retain their compiled types. Runtime context variables and engine-defined dynamic variables continue to follow the type rules of their contexts and definitions.
+
+See [Embedding Nomad in C++](embedding.md) for the interpreter context API and ownership rules.
 
 ---
 
@@ -303,7 +305,16 @@ Assertions are compiled into the function and are intended for detecting invalid
 
 ## Format strings
 
-Format strings allow embedding values using `$"..."`. Each `{name}` placeholder must be a variable, parameter, constant, or a function that takes no parameters (the function is called and its return value is inserted). Expressions, native functions and functions with parameters are not allowed inside placeholders.
+Format strings allow embedding values using `$"..."`. Simple `{name}` placeholders
+use direct lookup of variables, parameters, constants, or parameterless script
+functions. Other placeholders accept normal expressions, including operators,
+parentheses, native and script function calls with arguments, and intrinsic members.
+Each expression must return a non-void value. Placeholders are evaluated from left
+to right using current values; expression results are converted to text.
+
+Empty placeholders and missing closing braces are compilation errors. A closing
+brace outside a placeholder is ordinary literal text. Backslashes do not escape
+placeholder braces; the supported string escape sequences apply to literal text.
 
 ```nomad
 name = "J-F"
@@ -311,6 +322,64 @@ score = 10
 text = $"Player {name} got {score} points"
 # text is now "Player J-F got 10 points"
 ```
+
+```nomad
+x = 10
+y = 20
+log.info $"total = {x + y}"
+log.info $"doubled = {(x + y) * 2}"
+log.info $"nested = {$"total {x + y}"}"
+log.info $"player = {name.toUpper}"
+```
+
+Expressions are compiled in the containing function's lexical scope, including
+its parameters and captured variables. Quoted strings inside expressions may
+contain braces, and nested format strings are supported. Invalid expressions
+are compilation errors, not inline error text. Bare native function names still
+use the simple-placeholder rules; use a call with arguments or a parenthesized
+expression to select expression parsing. Intrinsic members such as `{name.toUpper}`
+and `{name.length}` do not require parentheses. An exact qualified identifier takes
+precedence over intrinsic member access.
+
+### Format string operator
+
+The format string operator `$` interprets the value of a string-valued expression
+as a dynamic format string at runtime:
+
+```nomad
+score = 10
+message = "Score: {score}"
+this.text = $message
+```
+
+The string operand is evaluated once. Placeholders are evaluated in order using
+the current function's locals, parameters, existing captures, and runtime APIs.
+The interpreter also supports this operator using its caller-maintained variables.
+Each placeholder must be one value-producing expression; assignments are not allowed.
+
+`$"..."` remains a compiled format literal. Use `$("...")` to dynamically format
+a string literal, or `$(expression)` to group a string-valued expression.
+Templates are parsed on each use; results and values are not cached. Runtime
+formatting is slower than compiled literals and does not decode string escapes again.
+
+Malformed dynamic placeholders preserve the surrounding text and insert an
+inline error:
+
+```nomad
+score = 10
+message = "Score: {sore}"
+this.text = $message # "Score: {invalid identifier: 'sore'}"
+
+message = "Score: {score"
+this.text = $message # "Score: {missing `}`}"
+```
+
+Closed bad placeholders do not prevent later placeholders from being evaluated.
+An unclosed trailing placeholder produces a marker and ends processing. Syntax,
+name, and type errors are logged with the source location and template byte offset.
+A placeholder is parsed and resolved completely before any of its calls execute.
+Exceptions thrown by called functions are not converted into inline template errors.
+Compiled format literals remain strict: malformed expressions are compilation errors.
 
 ---
 
@@ -339,6 +408,8 @@ Nomad evaluates operators according to the following precedence order, from high
 | 12 | `=` | Assignment | matching types | No implicit type conversion in compiled code |
 
 Following standard arithmetic precedence, multiplication, division and modulo are evaluated before addition and subtraction.
+
+Logical `&&` and `||` are short-circuited.
 
 Examples:
 

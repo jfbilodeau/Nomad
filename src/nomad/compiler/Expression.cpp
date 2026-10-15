@@ -1,13 +1,19 @@
 // Copyright (c) 2024-2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/compiler/Expression.hpp>
+
 #include <nomad/compiler/Argument.hpp>
 #include <nomad/compiler/CallNode.hpp>
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/FormatStringCompiler.hpp>
+#include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
+#include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/compiler/statements/ReturnStatement.hpp>
+
+#include <nomad/script/FormatString.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptFunction.hpp>
@@ -15,6 +21,7 @@
 
 #include <algorithm>
 #include <any>
+#include <cctype>
 #include <ranges>
 
 namespace nomad {
@@ -93,7 +100,7 @@ void Expression::onCompileBorrowed(Compiler* compiler, ScriptFunction* /*functio
     compiler->reportInternalError("BUG: Expression does not implement borrowed compilation");
 }
 
-void Expression::evaluate(Interpreter& context) const {
+void Expression::evaluate(InterpreterContext& context) const {
     context.clearResult();
     if (context.hasError()) {
         return;
@@ -125,7 +132,7 @@ void Expression::evaluate(Interpreter& context) const {
     }
 }
 
-void Expression::onEvaluate(Interpreter& /*context*/) const {
+void Expression::onEvaluate(InterpreterContext& /*context*/) const {
     raiseException("Expression is not supported by the interpreter");
 }
 
@@ -240,7 +247,7 @@ void UnaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, Ex
     compiler->addOpCode(opcode);
 }
 
-void UnaryExpression::onEvaluate(Interpreter& context) const {
+void UnaryExpression::onEvaluate(InterpreterContext& context) const {
     m_expression->evaluate(context);
     const auto* evaluatedOperand = context.getResult();
     if (evaluatedOperand == nullptr) {
@@ -254,6 +261,52 @@ void UnaryExpression::onEvaluate(Interpreter& context) const {
     }
 
     context.setResult(getType(), result);
+}
+
+DynamicFormatExpression::DynamicFormatExpression(const Expression* parent, const NomadIndex line,
+    const NomadIndex column, std::unique_ptr<Expression> expression):
+    Expression(parent, line, column), m_expression(std::move(expression)) {}
+
+bool DynamicFormatExpression::isTerminal() const {
+    return false;
+}
+
+void DynamicFormatExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+    if (!m_expression->resolve(context, function) || m_expression->getType() == nullptr) {
+        return;
+    }
+    if (!m_expression->getType()->isString()) {
+        reportError(context, function, "Dynamic format operator requires a string operand");
+        return;
+    }
+    setType(context->getRuntime()->getStringType());
+}
+
+void DynamicFormatExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+    m_expression->compile(compiler, function, ExpressionTarget::Result);
+    compiler->addOpCode(op_dynamic_format_execute);
+    compiler->addIndex(getLine());
+    compiler->addIndex(getColumn());
+    compiler->addMoveResult(getType(), target);
+}
+
+void DynamicFormatExpression::onEvaluate(InterpreterContext& context) const {
+    m_expression->evaluate(context);
+    const auto* value = context.getResult();
+    if (value == nullptr) {
+        return;
+    }
+    const auto format = value->getType()->toString(value->getValue());
+    const auto result = formatDynamicString(format, context, context.getFunction()->getPath(), getLine(), getColumn());
+    RuntimeValue formatted;
+    formatted.setStringValue(result.text);
+    try {
+        context.setResult(getType(), formatted);
+    } catch (...) {
+        getType()->freeValue(formatted);
+        throw;
+    }
+    getType()->freeValue(formatted);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -349,21 +402,20 @@ void BinaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, c
     const auto* stringRefType = compiler->getRuntime()->getStringRefType();
 
     if (stringRefType->acceptsArgument(m_left->getType()) && stringRefType->acceptsArgument(m_right->getType())) {
-        // String operators borrow their operands. Operands that cannot be borrowed are evaluated into owned copies
-        // on the stack, then released once the operator has run.
-        const auto borrowLeft = m_left->canBorrow();
         const auto borrowRight = m_right->canBorrow();
-
-        if (!borrowRight) {
-            m_right->compile(compiler, function, ExpressionTarget::Stack);
-        }
+        // A computed right operand may modify a borrowed left value, so snapshot the left first.
+        const auto borrowLeft = m_left->canBorrow() && borrowRight;
 
         if (!borrowLeft) {
             m_left->compile(compiler, function, ExpressionTarget::Stack);
         }
 
-        const NomadIndex leftOffset = 0;
-        const NomadIndex rightOffset = borrowLeft ? 0 : 1;
+        if (!borrowRight) {
+            m_right->compile(compiler, function, ExpressionTarget::Stack);
+        }
+
+        const NomadIndex leftOffset = borrowRight ? 0 : 1;
+        const NomadIndex rightOffset = 0;
 
         if (borrowRight) {
             m_right->compileBorrowed(compiler, function, ExpressionTarget::Intermediate);
@@ -407,14 +459,9 @@ void BinaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, c
         return;
     }
 
+    m_left->compile(compiler, function, ExpressionTarget::Stack);
     m_right->compile(compiler, function, ExpressionTarget::Intermediate);
-    if (m_left->isTerminal() == false) {
-        compiler->addPushIntermediate(m_right->getType());
-    }
-    m_left->compile(compiler, function, ExpressionTarget::Result);
-    if (m_left->isTerminal() == false) {
-        compiler->addPopIntermediate(m_right->getType());
-    }
+    compiler->addPopResult(m_left->getType());
 
     const auto leftType = m_left->getType();
     const auto rightType = m_right->getType();
@@ -434,7 +481,7 @@ void BinaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, c
     compiler->addMoveResult(getType(), target);
 }
 
-void BinaryExpression::onEvaluate(Interpreter& context) const {
+void BinaryExpression::onEvaluate(InterpreterContext& context) const {
     m_left->evaluate(context);
     const auto* evaluatedLhs = context.getResult();
     if (evaluatedLhs == nullptr) {
@@ -537,7 +584,7 @@ void CallNativeFunctionExpression::onCompile(Compiler* compiler, ScriptFunction*
     compiler->addMoveResult(getType(), target);
 }
 
-void CallNativeFunctionExpression::onEvaluate(Interpreter& context) const {
+void CallNativeFunctionExpression::onEvaluate(InterpreterContext& context) const {
     std::vector<TypedValue> evaluatedArguments;
     std::vector<RuntimeValue> values;
     m_arguments.evaluate(context, evaluatedArguments, values);
@@ -545,7 +592,7 @@ void CallNativeFunctionExpression::onEvaluate(Interpreter& context) const {
         return;
     }
 
-    context.getRuntime()->executeNativeFunction(m_nativeFunctionId, values, context);
+    context.evaluateNativeFunctionCall(m_nativeFunctionId, values);
 }
 
 void CallNativeFunctionExpression::addArgument(std::unique_ptr<Argument> argument) {
@@ -589,14 +636,14 @@ void FunctionCallExpression::onResolve(CompilerContext* context, ScriptFunction*
     const auto* callFunction = runtime->getFunction(m_functionId);
     const auto* returnType = callFunction->getReturnType();
 
-    if (context->getMode() == CompilerMode::Interpreter && callFunction->getFunctionStart() == NOMAD_INVALID_INDEX) {
+    if (context->getMode() != CompilerMode::Script && callFunction->getFunctionStart() == NOMAD_INVALID_INDEX) {
         reportError(context, function, "Function '" + m_name + "' has not been compiled");
         return;
     }
 
     auto* compiler = context->getCompiler();
 
-    if (context->getMode() == CompilerMode::Function && function != nullptr) {
+    if (context->getMode() == CompilerMode::Script && function != nullptr) {
         compiler->addFunctionCallDependency(function->getId(), m_functionId);
     }
 
@@ -646,7 +693,7 @@ NomadIndex FunctionCallExpression::getArgumentCount() const {
     return m_arguments.getArgumentCount();
 }
 
-void FunctionCallExpression::onEvaluate(Interpreter& context) const {
+void FunctionCallExpression::onEvaluate(InterpreterContext& context) const {
     std::vector<TypedValue> evaluatedArguments;
     std::vector<RuntimeValue> values;
     m_arguments.evaluate(context, evaluatedArguments, values);
@@ -654,17 +701,7 @@ void FunctionCallExpression::onEvaluate(Interpreter& context) const {
         return;
     }
 
-    const auto* returnType = getType();
-    RuntimeValue result;
-    returnType->initValue(result);
-    try {
-        context.getRuntime()->executeFunction(m_functionId, values, result);
-        context.setResult(returnType, result);
-        returnType->freeValue(result);
-    } catch (...) {
-        returnType->freeValue(result);
-        throw;
-    }
+    context.evaluateFunctionCall(m_functionId, values);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -845,7 +882,7 @@ void IntrinsicMemberExpression::onCompile(Compiler* compiler, ScriptFunction* fu
     }
 }
 
-void IntrinsicMemberExpression::onEvaluate(Interpreter& context) const {
+void IntrinsicMemberExpression::onEvaluate(InterpreterContext& context) const {
     m_receiver->evaluate(context);
     const auto* evaluatedReceiver = context.getResult();
     if (evaluatedReceiver == nullptr) {
@@ -949,7 +986,7 @@ void IntrinsicMemberExpression::compileAssignment(Compiler* compiler, ScriptFunc
     writableReceiver->compileStore(compiler);
 }
 
-void IntrinsicMemberExpression::evaluateAssignment(Interpreter& context, const Expression* expression) const {
+void IntrinsicMemberExpression::evaluateAssignment(InterpreterContext& context, const Expression* expression) const {
     m_receiver->evaluate(context);
     const auto* evaluatedReceiver = context.getResult();
     if (evaluatedReceiver == nullptr) {
@@ -1136,18 +1173,110 @@ FormatStringLiteral::FormatStringLiteral(
     const NomadString& formatString
 ):
     Expression(parent, line, column),
-    m_formatString(formatString) {
+    m_formatString(formatString),
+    m_variableFormat(formatString) {
+}
+
+bool FormatStringLiteral::parsePlaceholders(
+    CompilerContext* context,
+    ScriptFunction* function,
+    const NomadStringView sourceContent
+) {
+    if (context->getMode() != CompilerMode::Script || function == nullptr) {
+        return true;
+    }
+
+    const auto parsed = parseFormatTemplate(sourceContent);
+    for (const auto& diagnostic : parsed.diagnostics) {
+        context->reportError(diagnostic.message, function->getPath(), getLine(), getColumn() + 2 + diagnostic.offset);
+    }
+    if (!parsed.diagnostics.empty()) {
+        return false;
+    }
+
+    m_segments = parsed.segments;
+    m_variableFormat.clear();
+    for (auto segmentIndex = NomadIndex{0}; segmentIndex < m_segments.size(); ++segmentIndex) {
+        auto& segment = m_segments[segmentIndex];
+        if (segment.type == FormatTemplateSegmentType::Literal) {
+            segment.text = decodeFormatStringLiteral(segment.text);
+            m_variableFormat += segment.text;
+            continue;
+        }
+
+        auto identifier = !segment.text.empty();
+        auto needsFirstCharacter = true;
+        for (const auto character : segment.text) {
+            const auto byte = static_cast<unsigned char>(character);
+            if (needsFirstCharacter) {
+                if (!std::isalpha(byte) && character != '_') {
+                    identifier = false;
+                    break;
+                }
+                needsFirstCharacter = false;
+            } else if (character == '.') {
+                needsFirstCharacter = true;
+            } else if (!std::isalnum(byte) && character != '_') {
+                identifier = false;
+                break;
+            }
+        }
+        if (identifier && !needsFirstCharacter &&
+            !parser::isIntrinsicMemberCandidate(context->getCompiler(), function, segment.text)) {
+            m_variableFormat += "{" + segment.text + "}";
+            continue;
+        }
+
+        auto* compiler = context->getCompiler();
+        const auto name = compiler->generateFunctionName("formatExpression", function, getLine());
+        const auto functionId = compiler->registerFunctionSource(name, function->getPath(), function->getSource());
+        auto* expressionFunction = context->getRuntime()->getFunction(functionId);
+        expressionFunction->setParentId(function->getId());
+
+        const auto column = getColumn() + 3 + segment.offset;
+        // Padding keeps every child AST node and nested format literal in host-source coordinates.
+        const auto source = NomadString(getLine() - 1, '\n') + NomadString(column - 1, ' ') + segment.text;
+        Tokenizer tokens(context, function->getPath(), source);
+        if (context->hasError()) {
+            return false;
+        }
+        if (!tokens.nextLine()) {
+            context->reportError("Empty expression in format string", function->getPath(), getLine(), column);
+            return false;
+        }
+        auto expression = parser::parseExpression(context, expressionFunction, &tokens);
+        if (expression == nullptr || !parser::expectEndOfLine(context, expressionFunction, &tokens)) {
+            return false;
+        }
+
+        auto node = std::make_unique<FunctionNode>(getLine(), column);
+        node->addStatement(std::make_unique<ReturnStatementNode>(getLine(), column, std::move(expression)));
+        node->setEndSpan(getLine(), column + segment.text.size());
+        compiler->setFunctionNode(functionId, std::move(node));
+        m_expressionPlaceholders.push_back({functionId, column, segmentIndex});
+    }
+
+    return true;
 }
 
 void FormatStringLiteral::onResolve(CompilerContext* context, ScriptFunction* function) {
-    if (context->getMode() == CompilerMode::Interpreter) {
-        reportError(context, function, "Format strings are not supported by the interpreter");
+    if (context->getMode() != CompilerMode::Script) {
+        setType(context->getRuntime()->getStringType());
         return;
     }
 
-    if (const auto error = compileFormatString(context->getCompiler(), function, m_formatString, nullptr)) {
+    if (const auto error = compileFormatString(context->getCompiler(), function, m_variableFormat, nullptr)) {
         reportError(context, function, *error);
         return;
+    }
+
+    for (const auto& placeholder : m_expressionPlaceholders) {
+        const auto* expressionFunction = context->getRuntime()->getFunction(placeholder.functionId);
+        const auto* returnType = expressionFunction->getReturnType();
+        if (returnType != nullptr && returnType->isVoid()) {
+            context->reportError("Format string expression must return a value", function->getPath(),
+                getLine(), placeholder.column);
+        }
     }
 
     setType(context->getRuntime()->getStringType());
@@ -1163,8 +1292,29 @@ void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function
 
         const auto format_string = compiler->getRuntime()->getFormatString(formatStringId);
 
-        if (const auto error = compileFormatString(compiler, function, m_formatString, format_string)) {
-            compiler->reportInternalError("Format string failed to compile after resolving: " + *error);
+        if (m_expressionPlaceholders.empty()) {
+            if (const auto error = compileFormatString(compiler, function, m_formatString, format_string)) {
+                compiler->reportInternalError("Format string failed to compile after resolving: " + *error);
+            }
+        } else {
+            auto expressionIndex = NomadIndex{0};
+            for (auto segmentIndex = NomadIndex{0}; segmentIndex < m_segments.size(); ++segmentIndex) {
+                const auto& segment = m_segments[segmentIndex];
+                if (segment.type == FormatTemplateSegmentType::Literal) {
+                    format_string->addLiteral(segment.text);
+                } else if (expressionIndex < m_expressionPlaceholders.size() &&
+                           m_expressionPlaceholders[expressionIndex].segmentIndex == segmentIndex) {
+                    const auto id = m_expressionPlaceholders[expressionIndex++].functionId;
+                    const auto* expressionFunction = compiler->getRuntime()->getFunction(id);
+                    const auto* returnType = expressionFunction->getReturnType();
+                    if (returnType == nullptr || returnType->isVoid()) {
+                        compiler->reportInternalError("Format string expression has no resolved value type");
+                    }
+                    format_string->addExpression(returnType, id);
+                } else if (const auto error = compileFormatString(compiler, function, "{" + segment.text + "}", format_string)) {
+                    compiler->reportInternalError("Format string placeholder failed to compile after resolving: " + *error);
+                }
+            }
         }
     }
 
@@ -1172,6 +1322,20 @@ void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function
     compiler->addId(formatStringId);
 
     compiler->addMoveResult(getType(), target);
+}
+
+void FormatStringLiteral::onEvaluate(InterpreterContext& context) const {
+    const auto result = formatDynamicString(m_formatString, context, context.getFunction()->getPath(),
+        getLine(), getColumn());
+    RuntimeValue value;
+    value.setStringValue(result.text);
+    try {
+        context.setResult(getType(), value);
+    } catch (...) {
+        getType()->freeValue(value);
+        throw;
+    }
+    getType()->freeValue(value);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1195,7 +1359,8 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
     // Check for invalid identifier type.
     switch (m_identifierDefinition.identifierType) {
         case IdentifierType::Unknown:
-            if (function == nullptr || !parseCapture(compiler, function)) {
+            if (context->getMode() == CompilerMode::Interpreter ||
+                function == nullptr || !parseCapture(compiler, function)) {
                 reportError(context, function, "Unknown identifier: " + m_identifier);
                 return;
             }
@@ -1233,16 +1398,17 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
             break;
     }
 
-    if (context->getMode() == CompilerMode::Interpreter &&
+    if (context->getMode() != CompilerMode::Script &&
         m_identifierDefinition.identifierType != IdentifierType::FunctionVariable &&
         m_identifierDefinition.identifierType != IdentifierType::Constant &&
         m_identifierDefinition.identifierType != IdentifierType::DynamicVariable &&
-        m_identifierDefinition.identifierType != IdentifierType::ContextVariable) {
+        m_identifierDefinition.identifierType != IdentifierType::ContextVariable &&
+        m_identifierDefinition.identifierType != IdentifierType::Parameter) {
         reportError(context, function, "Identifier '" + m_identifier + "' is not supported by the interpreter");
         return;
     }
 
-    if (context->getMode() == CompilerMode::Interpreter &&
+    if (context->getMode() != CompilerMode::Script &&
         m_identifierDefinition.identifierType == IdentifierType::DynamicVariable &&
         !context->getRuntime()->canGetDynamicVariable(m_identifierDefinition.variableId)) {
         reportError(context, function, "Dynamic variable '" + m_identifier + "' cannot be read");
@@ -1256,7 +1422,8 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
         return;
     }
 
-    if (m_identifierDefinition.identifierType == IdentifierType::FunctionVariable) {
+    if (m_identifierDefinition.identifierType == IdentifierType::FunctionVariable &&
+        context->getMode() == CompilerMode::Script) {
         function->registerVariable(m_identifier, m_identifierDefinition.valueType);
     }
 
@@ -1367,7 +1534,7 @@ void IdentifierExpression::compileStore(Compiler* compiler) const {
     }
 }
 
-void IdentifierExpression::evaluateStore(Interpreter& context, const RuntimeValue& value) const {
+void IdentifierExpression::evaluateStore(InterpreterContext& context, const RuntimeValue& value) const {
     auto* runtime = context.getRuntime();
     const auto* type = m_identifierDefinition.valueType;
 
@@ -1413,8 +1580,11 @@ void IdentifierExpression::onCompileBorrowed(Compiler* compiler, ScriptFunction*
     }
 }
 
-void IdentifierExpression::onEvaluate(Interpreter& context) const {
+void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
     switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::Parameter:
+        context.setParameterResult(m_identifierDefinition.variableId);
+        break;
     case IdentifierType::FunctionVariable: {
         const auto* value = context.getVariableValueById(m_identifierDefinition.variableId);
         if (value == nullptr) {
@@ -1465,7 +1635,11 @@ void IdentifierExpression::onEvaluate(Interpreter& context) const {
 
         // The context owns the value, so it is read without taking ownership.
         RuntimeValue value;
-        runtime->getVariableContext(contextId)->getValue(m_identifierDefinition.variableId, value);
+        if (context.isFrameBacked()) {
+            runtime->getContextVariableValue(m_identifierDefinition.variableId, value);
+        } else {
+            runtime->getVariableContext(contextId)->getValue(m_identifierDefinition.variableId, value);
+        }
 
         if (type->isString() && value.getStringValue() == nullptr) {
             RuntimeValue emptyValue;
@@ -1553,6 +1727,11 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
         intermediateFunctions.push_back(parentFunction);
 
         currentFunction = parentFunction;
+    }
+
+    // A later inference pass may establish the source type; do not permanently register an untyped capture.
+    if (captureType == nullptr) {
+        return false;
     }
 
     // We've found the capture. Walk back up and ensure the capture is propagated through all intermediate functions.

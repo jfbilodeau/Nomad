@@ -2,6 +2,7 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -93,6 +94,111 @@ bool closeTo(NomadFloat actual, NomadFloat expected) {
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(language_operators)
+
+BOOST_AUTO_TEST_CASE(binary_operands_evaluate_left_first_in_compiled_and_interpreted_expressions)
+{
+    const std::vector<std::pair<NomadString, NomadString>> cases{
+        {"(test.left) - (test.right)", "5"},
+        {"(leftScript) - (rightScript)", "5"},
+        {"test.leftValue - test.rightValue", "5"},
+        {"(test.left) / (test.right)", "2"},
+        {"(test.left) > (test.right)", "true"},
+        {"((test.left) - (test.right)) * (test.right)", "15"},
+    };
+    for (const auto& [expression, expected] : cases) {
+        BOOST_TEST_CONTEXT(expression) {
+            LanguageTestFixture fixture;
+            auto& runtime = fixture.getRuntime();
+            std::vector<NomadInteger> order;
+            runtime.registerNativeFunction("test.left", [&](VirtualMachine* machine) {
+                order.push_back(1);
+                machine->setIntegerResult(8);
+            }, {}, runtime.getIntegerType(), NomadDoc("Left operand"));
+            runtime.registerNativeFunction("test.right", [&](VirtualMachine* machine) {
+                order.push_back(2);
+                machine->setIntegerResult(3);
+            }, {}, runtime.getIntegerType(), NomadDoc("Right operand"));
+            runtime.registerDynamicVariable("test.leftValue", {},
+                [&](VirtualMachine*, RuntimeValue& value) {
+                    order.push_back(1);
+                    value.setIntegerValue(8);
+                }, runtime.getIntegerType(), NomadDoc("Left value"));
+            runtime.registerDynamicVariable("test.rightValue", {},
+                [&](VirtualMachine*, RuntimeValue& value) {
+                    order.push_back(2);
+                    value.setIntegerValue(3);
+                }, runtime.getIntegerType(), NomadDoc("Right value"));
+            fixture.addFunction("leftScript", "return test.left");
+            fixture.addFunction("rightScript", "return test.right");
+            fixture.addFunction("main", "return " + expression);
+            fixture.addFunction("formatted", "return $\"value={" + expression + "}\"");
+            BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+            const std::vector<NomadInteger> expectedOrder = expression.starts_with("((")
+                ? std::vector<NomadInteger>{1, 2, 2} : std::vector<NomadInteger>{1, 2};
+            for (const auto* function : {"main", "formatted"}) {
+                order.clear();
+                const auto outcome = fixture.execute(function);
+                BOOST_REQUIRE(!outcome.fault.has_value());
+                BOOST_TEST(outcome.text == (NomadString{function} == "main" ? expected : "value=" + expected));
+                BOOST_TEST(order == expectedOrder, boost::test_tools::per_element());
+            }
+            order.clear();
+            auto machine = runtime.createVirtualMachine();
+            InterpreterContext context(*machine);
+            BOOST_REQUIRE(Interpreter{}.evaluateExpression(expression, context));
+            BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getValue()) == expected);
+            BOOST_TEST(order == expectedOrder, boost::test_tools::per_element());
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(string_operands_evaluate_left_first_and_snapshot_before_right_side_effects)
+{
+    for (const auto* operation : {"==", "!="}) {
+        BOOST_TEST_CONTEXT(operation) {
+            LanguageTestFixture fixture;
+            auto& runtime = fixture.getRuntime();
+            std::vector<NomadInteger> order;
+            runtime.registerNativeFunction("test.leftText", [&](VirtualMachine* machine) {
+                order.push_back(1);
+                machine->setStringResult("before");
+            }, {}, runtime.getStringType(), NomadDoc("Left string"));
+            runtime.registerNativeFunction("test.rightText", [&](VirtualMachine* machine) {
+                order.push_back(2);
+                machine->setStringResult("before");
+            }, {}, runtime.getStringType(), NomadDoc("Right string"));
+            runtime.registerNativeFunction("test.replaceLocal", [&](VirtualMachine* machine) {
+                auto previous = machine->getFunctionVariableValue(0);
+                runtime.getStringType()->freeValue(previous);
+                RuntimeValue replacement;
+                replacement.setStringValue("after");
+                machine->setFunctionVariableValue(0, replacement);
+                machine->setStringResult("before");
+            }, {}, runtime.getStringType(), NomadDoc("Replace the left local"));
+            const auto expression = NomadString{"(test.leftText) "} + operation + " (test.rightText)";
+            fixture.addFunction("main", "return " + expression);
+            fixture.addFunction("snapshot", NomadString{"text = \"before\"\nreturn text "} +
+                operation + " (test.replaceLocal)");
+            BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+            const auto expected = NomadString{operation} == "==";
+            const auto outcome = fixture.execute("main");
+            BOOST_REQUIRE(!outcome.fault.has_value());
+            BOOST_TEST(outcome.booleanValue == expected);
+            const std::vector<NomadInteger> expectedOrder{1, 2};
+            BOOST_TEST(order == expectedOrder, boost::test_tools::per_element());
+            const auto snapshot = fixture.execute("snapshot");
+            BOOST_REQUIRE(!snapshot.fault.has_value());
+            BOOST_TEST(snapshot.booleanValue == expected);
+            BOOST_TEST(snapshot.leakedStrings == 0);
+            order.clear();
+            auto machine = runtime.createVirtualMachine();
+            InterpreterContext context(*machine);
+            BOOST_REQUIRE(Interpreter{}.evaluateExpression(expression, context));
+            BOOST_TEST(context.getResult()->getValue().getBooleanValue() == expected);
+            BOOST_TEST(order == expectedOrder, boost::test_tools::per_element());
+        }
+    }
+}
 
 BOOST_AUTO_TEST_CASE(integer_binary_operators)
 {

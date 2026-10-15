@@ -3,6 +3,7 @@
 #pragma once
 
 #include <nomad/compiler/CallNode.hpp>
+#include <nomad/compiler/FormatStringCompiler.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 
 #include <nomad/Nomad.hpp>
@@ -25,9 +26,25 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
-    void onEvaluate(Interpreter& context) const override;
+    void onEvaluate(InterpreterContext& context) const override;
 
     UnaryOperator m_unaryOperator;
+    std::unique_ptr<Expression> m_expression;
+};
+
+class DynamicFormatExpression final : public Expression {
+public:
+    DynamicFormatExpression(const Expression* parent, NomadIndex line, NomadIndex column,
+        std::unique_ptr<Expression> expression);
+
+    [[nodiscard]] bool isTerminal() const override;
+
+protected:
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onEvaluate(InterpreterContext& context) const override;
+
+private:
     std::unique_ptr<Expression> m_expression;
 };
 
@@ -44,7 +61,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
-    void onEvaluate(Interpreter& context) const override;
+    void onEvaluate(InterpreterContext& context) const override;
 
     BinaryOperator m_binaryOperator;
     std::unique_ptr<Expression> m_left;
@@ -69,7 +86,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
-    void onEvaluate(Interpreter& context) const override;
+    void onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_name;
@@ -93,7 +110,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
-    void onEvaluate(Interpreter& context) const override;
+    void onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_name;
@@ -120,12 +137,12 @@ public:
     void setAccess(IntrinsicMemberAccess access);
     void setAllowVoid(bool allowVoid);
     void compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression);
-    void evaluateAssignment(Interpreter& context, const Expression* expression) const;
+    void evaluateAssignment(InterpreterContext& context, const Expression* expression) const;
 
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
-    void onEvaluate(Interpreter& context) const override;
+    void onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_qualifiedName;
@@ -203,12 +220,24 @@ class FormatStringLiteral : public Expression {
 public:
     FormatStringLiteral(const Expression* parent, NomadIndex line, NomadIndex column, const NomadString& formatString);
 
+    [[nodiscard]] bool parsePlaceholders(CompilerContext* context, ScriptFunction* function, NomadStringView sourceContent);
+
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onEvaluate(InterpreterContext& context) const override;
 
 private:
+    struct ExpressionPlaceholder {
+        NomadId functionId;
+        NomadIndex column;
+        NomadIndex segmentIndex;
+    };
+
     NomadString m_formatString;
+    std::vector<ExpressionPlaceholder> m_expressionPlaceholders;
+    std::vector<FormatTemplateSegment> m_segments;
+    NomadString m_variableFormat;
 };
 
 class ConstantValueExpression : public PrimaryExpression {
@@ -236,13 +265,13 @@ public:
     [[nodiscard]] IdentifierExpression* asIdentifierExpression() override;
     [[nodiscard]] const IdentifierExpression* asIdentifierExpression() const override;
     void compileStore(Compiler* compiler) const;
-    void evaluateStore(Interpreter& context, const RuntimeValue& value) const;
+    void evaluateStore(InterpreterContext& context, const RuntimeValue& value) const;
 
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
     void onCompileBorrowed(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
-    void onEvaluate(Interpreter& context) const override;
+    void onEvaluate(InterpreterContext& context) const override;
 
 private:
     bool parseCapture(const Compiler* compiler, ScriptFunction* function);
