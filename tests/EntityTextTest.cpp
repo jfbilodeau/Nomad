@@ -61,7 +61,7 @@ PixelBounds readTextBounds(Canvas* canvas) {
 
 BOOST_AUTO_TEST_SUITE(entity_text)
 
-BOOST_AUTO_TEST_CASE(all_anchors_render_at_expected_positions_with_single_offsets)
+BOOST_AUTO_TEST_CASE(all_alignments_place_text_on_expected_sides_with_single_offsets)
 {
     TestDirectory directory("nomad_entity_text_alignment");
     std::filesystem::copy_file(NOMAD_TEST_FONT_FILE, directory.getPath() / "font.ttf");
@@ -110,9 +110,9 @@ BOOST_AUTO_TEST_CASE(all_anchors_render_at_expected_positions_with_single_offset
                 entity.render(canvas);
                 const auto bounds = readTextBounds(canvas);
                 const auto expectedX = static_cast<int>(std::round(
-                    200 + offset.getX() - width * static_cast<Coord>(column) / 2));
+                    200 + offset.getX() - width * static_cast<Coord>(2 - column) / 2));
                 const auto expectedY = static_cast<int>(std::round(
-                    150 + offset.getY() - height * static_cast<Coord>(row) / 2));
+                    150 + offset.getY() - height * static_cast<Coord>(2 - row) / 2));
                 BOOST_TEST(bounds.left == expectedX + reference.left);
                 BOOST_TEST(bounds.top == expectedY + reference.top);
                 BOOST_TEST(bounds.right == expectedX + reference.right);
@@ -170,6 +170,57 @@ BOOST_AUTO_TEST_CASE(fixed_width_text_applies_horizontal_alignment)
         );
         BOOST_TEST(bounds.left == expectedX + reference.left);
         BOOST_TEST(bounds.right == expectedX + reference.right);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(changing_alignment_refreshes_fixed_width_text_layout)
+{
+    TestDirectory directory("nomad_entity_text_alignment_changes");
+    std::filesystem::copy_file(NOMAD_TEST_FONT_FILE, directory.getPath() / "font.ttf");
+    GameOptions options;
+    options.resourcePath = directory.getPath().string();
+    auto game = Game::createHeadless(options);
+    auto* canvas = game->getCanvas();
+    const auto fontId = game->getResources()->getFonts()->registerFont("font.ttf", 13.0f);
+    const auto* font = game->getResources()->getFonts()->getFont(fontId);
+    const auto white = Color{255, 255, 255, 255};
+    const auto black = Color{0, 0, 0, 255};
+    constexpr NomadInteger textureWidth = 100;
+
+    Entity entity(nullptr, game->getEntityVariables(), 1, 200.0f, 150.0f, 1);
+    entity.setFontById(fontId);
+    entity.setTextColor(white);
+    entity.setText("Aligned");
+    entity.setTextWidth(textureWidth);
+    entity.setTextPosition(17, -9);
+
+    const auto alignments = std::array{
+        Alignment::TopLeft, Alignment::CenterMiddle, Alignment::BottomRight,
+        Alignment::TopLeft};
+    const auto horizontalOffsets = std::array<NomadInteger, 4>{
+        textureWidth, textureWidth / 2, 0, textureWidth};
+
+    for (auto index = 0U; index < alignments.size(); ++index) {
+        const auto alignment = alignments[index];
+        const auto texture = std::unique_ptr<Texture>(
+            font->generateTexture(
+                canvas, "Aligned", white, getHorizontalAlignment(alignment), textureWidth, 0, 1.0f));
+        const auto height = static_cast<Coord>(texture->getHeight());
+        canvas->clear(black);
+        canvas->renderTexture(texture.get(), {0, 0, textureWidth, height}, {0, 0, textureWidth, height});
+        const auto reference = readTextBounds(canvas);
+
+        entity.setTextAlignment(alignment);
+        canvas->clear(black);
+        entity.render(canvas);
+        const auto bounds = readTextBounds(canvas);
+        const auto expectedX = 217 - horizontalOffsets[index];
+        const auto expectedY = static_cast<int>(std::round(
+            141 - (index == 0 || index == 3 ? height : index == 1 ? height / 2 : 0)));
+        BOOST_TEST(bounds.left == expectedX + reference.left);
+        BOOST_TEST(bounds.top == expectedY + reference.top);
+        BOOST_TEST(bounds.right == expectedX + reference.right);
+        BOOST_TEST(bounds.bottom == expectedY + reference.bottom);
     }
 }
 

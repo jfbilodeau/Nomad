@@ -184,19 +184,19 @@ void Entity::render(Canvas* canvas) {
 
         switch (m_textAlignment) {
         case Alignment::TopLeft:
-            textAnchor.set(textX, textY);
+            textAnchor.set(textX - textWidth, textY - textHeight);
             break;
 
         case Alignment::TopMiddle:
-            textAnchor.set(textX - (textWidth / 2), textY);
+            textAnchor.set(textX - (textWidth / 2), textY - textHeight);
             break;
 
         case Alignment::TopRight:
-            textAnchor.set(textX - textWidth, textY);
+            textAnchor.set(textX, textY - textHeight);
             break;
 
         case Alignment::CenterLeft:
-            textAnchor.set(textX, textY - (textHeight / 2));
+            textAnchor.set(textX - textWidth, textY - (textHeight / 2));
             break;
 
         case Alignment::CenterMiddle:
@@ -204,19 +204,19 @@ void Entity::render(Canvas* canvas) {
             break;
 
         case Alignment::CenterRight:
-            textAnchor.set(textX - textWidth, textY - (textHeight / 2));
+            textAnchor.set(textX, textY - (textHeight / 2));
             break;
 
         case Alignment::BottomLeft:
-            textAnchor.set(textX, textY - textHeight);
+            textAnchor.set(textX - textWidth, textY);
             break;
 
         case Alignment::BottomMiddle:
-            textAnchor.set(textX - (textWidth / 2), textY - textHeight);
+            textAnchor.set(textX - (textWidth / 2), textY);
             break;
 
         case Alignment::BottomRight:
-            textAnchor.set(textX - textWidth, textY - textHeight);
+            textAnchor.set(textX, textY);
             break;
 
         default:
@@ -1181,7 +1181,13 @@ const NomadString& Entity::getText() {
 }
 
 void Entity::setTextAlignment(Alignment alignment) {
+    if (alignment == m_textAlignment) {
+        return;
+    }
+
     m_textAlignment = alignment;
+
+    invalidateTextTexture();
 }
 
 Alignment Entity::getTextAlignment() const {

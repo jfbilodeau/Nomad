@@ -224,25 +224,6 @@ next = state.idle + state.walking # enums do not support arithmetic
 
 The embedding engine may register enum members with explicit internal values rather than compiler-assigned sequential values. This preserves corresponding C++ enum values without weakening Nomad's type rules.
 
-The game engine provides these enums:
-
-| Enum | Members |
-| --- | --- |
-| `alignment` | `topLeft`, `topMiddle`, `topRight`, `centerLeft`, `centerMiddle`, `centerRight`, `bottomLeft`, `bottomMiddle`, `bottomRight` |
-| `horizontalAlignment` | `left`, `middle`, `right` |
-| `verticalAlignment` | `top`, `center`, `bottom` |
-| `body` | `static`, `dynamic`, `kinematic` |
-| `cardinal` | `north`, `east`, `south`, `west` |
-
-For example:
-
-```nomad
-this.text.alignment = alignment.centerMiddle
-this.body.circle body.dynamic 16.0
-```
-
-The `this.*` and `other.*` text alignment variables use the `alignment` type. The `this.body.circle`, `other.body.circle`, `this.body.rectangle`, and `other.body.rectangle` functions require a `body` value.
-
 In the DebugConsole variable inspector, an enum is displayed as `enum <name>`, its value is shown by member name, and editable enum variables use a member selector rather than accepting arbitrary text or integers.
 
 ---
