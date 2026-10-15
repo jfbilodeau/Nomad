@@ -6,7 +6,11 @@
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/FormatStringCompiler.hpp>
+#include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
+#include <nomad/compiler/Tokenizer.hpp>
+
+#include <nomad/compiler/statements/ReturnStatement.hpp>
 
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -15,6 +19,7 @@
 
 #include <algorithm>
 #include <any>
+#include <cctype>
 #include <ranges>
 
 namespace nomad {
@@ -1136,7 +1141,86 @@ FormatStringLiteral::FormatStringLiteral(
     const NomadString& formatString
 ):
     Expression(parent, line, column),
-    m_formatString(formatString) {
+    m_formatString(formatString),
+    m_variableFormat(formatString) {
+}
+
+bool FormatStringLiteral::parsePlaceholders(
+    CompilerContext* context,
+    ScriptFunction* function,
+    const NomadStringView sourceContent
+) {
+    if (context->getMode() == CompilerMode::Interpreter || function == nullptr) {
+        return true;
+    }
+
+    const auto parsed = parseFormatTemplate(sourceContent);
+    for (const auto& diagnostic : parsed.diagnostics) {
+        context->reportError(diagnostic.message, function->getPath(), getLine(), getColumn() + 2 + diagnostic.offset);
+    }
+    if (!parsed.diagnostics.empty()) {
+        return false;
+    }
+
+    m_variableFormat.clear();
+    for (const auto& segment : parsed.segments) {
+        if (segment.type == FormatTemplateSegmentType::Literal) {
+            m_variableFormat += decodeFormatStringLiteral(segment.text);
+            continue;
+        }
+
+        auto identifier = !segment.text.empty();
+        auto needsFirstCharacter = true;
+        for (const auto character : segment.text) {
+            const auto byte = static_cast<unsigned char>(character);
+            if (needsFirstCharacter) {
+                if (!std::isalpha(byte) && character != '_') {
+                    identifier = false;
+                    break;
+                }
+                needsFirstCharacter = false;
+            } else if (character == '.') {
+                needsFirstCharacter = true;
+            } else if (!std::isalnum(byte) && character != '_') {
+                identifier = false;
+                break;
+            }
+        }
+        if (identifier && !needsFirstCharacter) {
+            m_variableFormat += "{" + segment.text + "}";
+            continue;
+        }
+
+        auto* compiler = context->getCompiler();
+        const auto name = compiler->generateFunctionName("formatExpression", function, getLine());
+        const auto functionId = compiler->registerFunctionSource(name, function->getPath(), function->getSource());
+        auto* expressionFunction = context->getRuntime()->getFunction(functionId);
+        expressionFunction->setParentId(function->getId());
+
+        const auto column = getColumn() + 3 + segment.offset;
+        // Padding keeps every child AST node and nested format literal in host-source coordinates.
+        const auto source = NomadString(getLine() - 1, '\n') + NomadString(column - 1, ' ') + segment.text;
+        Tokenizer tokens(context, function->getPath(), source);
+        if (context->hasError()) {
+            return false;
+        }
+        if (!tokens.nextLine()) {
+            context->reportError("Empty expression in format string", function->getPath(), getLine(), column);
+            return false;
+        }
+        auto expression = parser::parseExpression(context, expressionFunction, &tokens);
+        if (expression == nullptr || !parser::expectEndOfLine(context, expressionFunction, &tokens)) {
+            return false;
+        }
+
+        auto node = std::make_unique<FunctionNode>(getLine(), column);
+        node->addStatement(std::make_unique<ReturnStatementNode>(getLine(), column, std::move(expression)));
+        node->setEndSpan(getLine(), column + segment.text.size());
+        compiler->setFunctionNode(functionId, std::move(node));
+        m_expressionPlaceholders.push_back({functionId, column});
+    }
+
+    return true;
 }
 
 void FormatStringLiteral::onResolve(CompilerContext* context, ScriptFunction* function) {
@@ -1145,15 +1229,27 @@ void FormatStringLiteral::onResolve(CompilerContext* context, ScriptFunction* fu
         return;
     }
 
-    if (const auto error = compileFormatString(context->getCompiler(), function, m_formatString, nullptr)) {
+    if (const auto error = compileFormatString(context->getCompiler(), function, m_variableFormat, nullptr)) {
         reportError(context, function, *error);
         return;
+    }
+
+    for (const auto& placeholder : m_expressionPlaceholders) {
+        const auto* expressionFunction = context->getRuntime()->getFunction(placeholder.functionId);
+        const auto* returnType = expressionFunction->getReturnType();
+        if (returnType != nullptr && returnType->isVoid()) {
+            context->reportError("Format string expression must return a value", function->getPath(),
+                getLine(), placeholder.column);
+        }
     }
 
     setType(context->getRuntime()->getStringType());
 }
 
 void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) {
+    if (!m_expressionPlaceholders.empty()) {
+        raiseException("Format string expression execution is not implemented yet");
+    }
     const NomadId functionId = function->getId();
 
     auto formatStringId = compiler->getRuntime()->getFormatStringId(m_formatString, functionId);

@@ -8,6 +8,7 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Expression.hpp>
+#include <nomad/compiler/FormatStringCompiler.hpp>
 #include <nomad/compiler/StatementParsers.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
@@ -837,12 +838,23 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
     auto& token = tokens->next();
 
     if (token.type == TokenType::FormatString) {
-        return std::make_unique<FormatStringLiteral>(
+        auto expression = std::make_unique<FormatStringLiteral>(
             parent,
             tokens->getLineIndex(),
-            tokens->getColumnIndex(),
+            token.column,
             token.textValue
         );
+        const auto offset = token.column - 1;
+        const auto& sourceLine = tokens->getLine();
+        const auto end = findFormatStringLiteralEnd(sourceLine, offset);
+        if (!end) {
+            return expression;
+        }
+        if (!expression->parsePlaceholders(context, function,
+                NomadStringView(sourceLine).substr(offset + 2, *end - offset - 2))) {
+            return nullptr;
+        }
+        return expression;
     }
 
     if (token.type == TokenType::String) {

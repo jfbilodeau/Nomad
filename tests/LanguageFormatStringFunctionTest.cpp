@@ -182,6 +182,42 @@ BOOST_AUTO_TEST_CASE(format_string_rejects_malformed_placeholders)
     }
 }
 
+BOOST_AUTO_TEST_CASE(format_string_expression_ast_reaches_execution_checkpoint)
+{
+    for (const auto* source : {
+        "x = 10\ny = 20\nreturn $\"total = {x + y}\"",
+        "fun add a:int b:int\n    return a + b\nend\nreturn $\"{add 10 20}\"",
+        "fun describe value:int\n    local = 2\n    return $\"{value + local}\"\nend\nreturn describe 10",
+        R"(score = 10
+return $"outer {$"inner {score + 1}"}")",
+    }) {
+        BOOST_TEST_CONTEXT(source) {
+            const auto errors = compileErrors(source);
+            BOOST_TEST(errors.find("Format string expression execution is not implemented yet") != std::string::npos, errors);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(format_string_expression_reports_type_and_syntax_errors)
+{
+    const std::vector<std::pair<std::string, std::string>> cases = {
+        {"return $\"{1 +}\"", "Unexpected end of line"},
+        {"return $\"{(1 + 2}\"", "Expected ')'"},
+        {"return $\"{1 2}\"", "Expected end of line"},
+        {"return $\"{missing + 1}\"", "Unknown identifier"},
+        {"return $\"{1 + true}\"", "operator"},
+        {"fun noValue\nend\nreturn $\"{(noValue)}\"", "does not return a value"},
+    };
+
+    for (const auto& [source, expected] : cases) {
+        BOOST_TEST_CONTEXT(source) {
+            const auto errors = compileErrors(source);
+            BOOST_TEST(errors.find(expected) != std::string::npos, errors);
+            BOOST_TEST(errors.find("execution is not implemented") == std::string::npos, errors);
+        }
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(language_nativeFunctions)

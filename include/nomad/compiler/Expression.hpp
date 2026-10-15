@@ -203,12 +203,21 @@ class FormatStringLiteral : public Expression {
 public:
     FormatStringLiteral(const Expression* parent, NomadIndex line, NomadIndex column, const NomadString& formatString);
 
+    [[nodiscard]] bool parsePlaceholders(CompilerContext* context, ScriptFunction* function, NomadStringView sourceContent);
+
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
 
 private:
+    struct ExpressionPlaceholder {
+        NomadId functionId;
+        NomadIndex column;
+    };
+
     NomadString m_formatString;
+    std::vector<ExpressionPlaceholder> m_expressionPlaceholders;
+    NomadString m_variableFormat;
 };
 
 class ConstantValueExpression : public PrimaryExpression {
