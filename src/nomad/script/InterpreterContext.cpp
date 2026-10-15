@@ -292,21 +292,16 @@ const TypedValue* InterpreterContext::getResult() const {
 }
 
 void InterpreterContext::setError(const NomadString& error) {
-    if (!m_error) {
-        m_error = error;
-    }
+    addDiagnostic({DiagnosticSeverity::Error, error, m_function->getPath(),
+        NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX});
 }
 
 void InterpreterContext::clearError() {
-    m_error.reset();
     m_diagnostics.clear();
 }
 
 void InterpreterContext::addDiagnostic(const Diagnostic& diagnostic) {
     m_diagnostics.push_back(diagnostic);
-    if (diagnostic.severity == DiagnosticSeverity::Error) {
-        setError(formatDiagnostic(diagnostic));
-    }
 }
 
 std::span<const Diagnostic> InterpreterContext::getDiagnostics() const {
@@ -314,11 +309,22 @@ std::span<const Diagnostic> InterpreterContext::getDiagnostics() const {
 }
 
 NomadBoolean InterpreterContext::hasError() const {
-    return m_error.has_value();
+    return std::ranges::any_of(m_diagnostics, [](const Diagnostic& diagnostic) {
+        return diagnostic.severity == DiagnosticSeverity::Error;
+    });
+}
+
+NomadBoolean InterpreterContext::hasWarning() const {
+    return std::ranges::any_of(m_diagnostics, [](const Diagnostic& diagnostic) {
+        return diagnostic.severity == DiagnosticSeverity::Warning;
+    });
 }
 
 const NomadString* InterpreterContext::getError() const {
-    return m_error ? &*m_error : nullptr;
+    const auto error = std::ranges::find_if(m_diagnostics, [](const Diagnostic& diagnostic) {
+        return diagnostic.severity == DiagnosticSeverity::Error;
+    });
+    return error != m_diagnostics.end() ? &error->message : nullptr;
 }
 
 void InterpreterContext::setParameterResult(const NomadId parameterId) {

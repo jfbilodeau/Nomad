@@ -54,9 +54,12 @@ Each entry point clears the context's previous result and error.
 
 `getDiagnostics()` exposes the compiler warnings and errors from the latest
 evaluation in reporting order. Hosts can append diagnostics with `addDiagnostic`.
-`getError()` retains the first error for compatibility; warnings alone do not
-make `hasError()` true. `clearError()` clears both the error and diagnostics,
-as does starting another evaluation.
+Diagnostics are the sole error and warning storage. `setError()` appends an error
+diagnostic; `hasError()` and `hasWarning()` check for their respective severities.
+`getError()` returns the first error's message, or null when there are no errors.
+Use `formatDiagnostic()` on a diagnostic when source location formatting is needed.
+Pointers and spans into the collection are invalidated when it changes.
+`clearError()` clears all diagnostics, as does starting another evaluation.
 
 Results are owned by the context. Copy a result using `TypedValue` if it must
 survive another evaluation; do not free the context's result manually.

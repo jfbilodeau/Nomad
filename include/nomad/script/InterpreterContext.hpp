@@ -77,6 +77,8 @@ public:
     [[nodiscard]] std::span<const Diagnostic> getDiagnostics() const;
     void clearError();
     [[nodiscard]] NomadBoolean hasError() const;
+    [[nodiscard]] NomadBoolean hasWarning() const;
+    // First error message, or nullptr. Invalidated by changes to the diagnostics collection.
     [[nodiscard]] const NomadString* getError() const;
 
     void setVariable(const NomadString& name, const Type* type, const RuntimeValue& value);
@@ -100,7 +102,6 @@ private:
     NomadIndex m_variableIndex = 0;
     NomadIndex m_frameVariableCount = 0;
     std::optional<TypedValue> m_result;
-    std::optional<NomadString> m_error;
     std::vector<Diagnostic> m_diagnostics;
     // Indexed by resolution variable id; borrowed frame slots remain empty.
     std::vector<std::unique_ptr<TypedValue>> m_variables;

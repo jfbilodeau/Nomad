@@ -258,9 +258,12 @@ BOOST_AUTO_TEST_CASE(interpreter_context_stores_and_clears_errors)
 
     context.setError("A later nested error");
     BOOST_TEST(*context.getError() == "Unknown variable 'score'");
+    BOOST_REQUIRE_EQUAL(context.getDiagnostics().size(), 2);
+    BOOST_TEST(context.getDiagnostics()[1].message == "A later nested error");
 
     context.clearError();
     BOOST_TEST(!context.hasError());
+    BOOST_TEST(!context.hasWarning());
     BOOST_TEST(context.getError() == nullptr);
 
     context.setError("A later input error");
@@ -276,6 +279,8 @@ BOOST_AUTO_TEST_CASE(interpreter_context_retains_multiple_diagnostics_and_first_
     InterpreterContext context(*machine);
     context.addDiagnostic({DiagnosticSeverity::Warning, "warning", "test.nomad", 1, 2});
     BOOST_TEST(!context.hasError());
+    BOOST_TEST(context.hasWarning());
+    BOOST_TEST(context.getError() == nullptr);
     context.addDiagnostic({DiagnosticSeverity::Error, "first error", "test.nomad", 2, 3});
     context.addDiagnostic({DiagnosticSeverity::Error, "second error", "test.nomad", 3, 4});
     BOOST_REQUIRE_EQUAL(context.getDiagnostics().size(), 3);
@@ -283,10 +288,13 @@ BOOST_AUTO_TEST_CASE(interpreter_context_retains_multiple_diagnostics_and_first_
     BOOST_TEST(context.getDiagnostics()[1].message == "first error");
     BOOST_TEST(context.getDiagnostics()[2].message == "second error");
     BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "test.nomad:2:3: error: first error");
+    BOOST_TEST(*context.getError() == "first error");
+    BOOST_TEST(context.hasError());
+    BOOST_TEST(context.hasWarning());
     context.clearError();
     BOOST_TEST(context.getDiagnostics().empty());
     BOOST_TEST(!context.hasError());
+    BOOST_TEST(!context.hasWarning());
     for (const auto expressionOnly : {false, true}) {
         const auto succeeded = expressionOnly
             ? Interpreter{}.evaluateExpression("missingLeft + missingRight", context)

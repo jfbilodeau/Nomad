@@ -95,8 +95,7 @@ NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext&
             evaluation.setError("Interpreter accepts a single line of input");
             return false;
         }
-        if (const auto* lexingError = compilerContext.getFirstError(); lexingError != nullptr) {
-            evaluation.setError(lexingError->message);
+        if (compilerContext.hasError()) {
             for (const auto& diagnostic : compilerContext.getDiagnostics()) {
                 evaluation.addDiagnostic(diagnostic);
             }
@@ -148,8 +147,7 @@ NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext&
             statement = parser::parseLine(&compilerContext, evaluation.m_function.get(), &tokenizer);
         }
 
-        if (const auto* parseError = compilerContext.getFirstError(); parseError != nullptr) {
-            evaluation.setError(parseError->message);
+        if (compilerContext.hasError()) {
             for (const auto& diagnostic : compilerContext.getDiagnostics()) {
                 evaluation.addDiagnostic(diagnostic);
             }
@@ -162,10 +160,11 @@ NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext&
         }
 
         if (!statement->resolve(&compilerContext, evaluation.m_function.get())) {
-            const auto* firstError = compilerContext.getFirstError();
-            evaluation.setError(firstError != nullptr ? firstError->message : "Failed to resolve interpreter input");
             for (const auto& diagnostic : compilerContext.getDiagnostics()) {
                 evaluation.addDiagnostic(diagnostic);
+            }
+            if (!evaluation.hasError()) {
+                evaluation.setError("Failed to resolve interpreter input");
             }
             return false;
         }
