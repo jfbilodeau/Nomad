@@ -309,15 +309,6 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     generateIntrinsicMemberDocumentation(runtime, out);
 
-    out << "## Format strings\n\n"
-        << "Use `$\"...\"` to embed values and expressions, for example `$\"total = {x + y}\"`.\n"
-        << "Intrinsic members need no extra parentheses: `$\"{name.toUpper}: {name.length}\"`.\n"
-        << "Exact qualified identifiers take precedence over intrinsic member access.\n"
-        << "Bare native function names still require a parenthesized expression or a call with arguments.\n"
-        << "Expressions use the containing function's lexical scope and must return a value.\n"
-        << "Placeholders are evaluated from left to right using current values.\n"
-        << "Use `$message` to interpret a string value as a format string at runtime.\n\n";
-
     out << "## Functions" << std::endl;
 
     enum class FunctionType {
