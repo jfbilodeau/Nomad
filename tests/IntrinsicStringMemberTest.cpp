@@ -10,6 +10,10 @@
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <boost/json.hpp>
+
+#include <algorithm>
+#include <regex>
 #include <sstream>
 
 using namespace nomad;
@@ -79,6 +83,49 @@ BOOST_AUTO_TEST_CASE(exports_string_members_to_documentation_and_textmate_gramma
     BOOST_TEST(grammar.str().find("\"repository\"") != NomadString::npos);
     BOOST_TEST(grammar.str().find("\"support.function.member.nomad\"") != NomadString::npos);
     BOOST_TEST(grammar.str().find("trimStart") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(textmate_grammar_supports_expression_interpolation_and_format_string_operator) {
+    Runtime runtime;
+    std::ostringstream output;
+    generateTextMateGrammar(&runtime, output);
+    const auto grammar = boost::json::parse(output.str()).as_object();
+    const auto& repository = grammar.at("repository").as_object();
+    const auto& format = repository.at("formatStrings").as_object().at("patterns").as_array()[0].as_object();
+    BOOST_TEST(format.at("begin").as_string() == "\\$\"");
+    BOOST_TEST(format.at("end").as_string() == "\"");
+    const auto& formatPatterns = format.at("patterns").as_array();
+    const auto& interpolation = formatPatterns[1].as_object();
+    BOOST_TEST(interpolation.at("begin").as_string() == "\\{");
+    BOOST_TEST(interpolation.at("end").as_string() == "\\}");
+    BOOST_TEST(interpolation.at("beginCaptures").as_object().at("0").as_object().at("name").as_string() ==
+        "punctuation.section.interpolation.begin.nomad");
+    BOOST_TEST(interpolation.at("endCaptures").as_object().at("0").as_object().at("name").as_string() ==
+        "punctuation.section.interpolation.end.nomad");
+    const auto& patterns = interpolation.at("patterns").as_array();
+    BOOST_REQUIRE(patterns.size() >= 2);
+    BOOST_TEST(patterns[0].as_object().at("include").as_string() == "#formatStrings");
+    BOOST_TEST(patterns[1].as_object().at("include").as_string() == "#strings");
+    for (const auto* name : {"formatStrings", "strings", "keywords", "numbers", "functions",
+             "intrinsicMembers", "literals", "types", "operators"}) {
+        const auto expected = NomadString{"#"} + name;
+        BOOST_TEST(std::ranges::any_of(patterns, [&](const boost::json::value& pattern) {
+            return pattern.as_object().at("include").as_string() == expected;
+        }));
+    }
+    const auto& operatorPattern = repository.at("operators").as_object().at("patterns").as_array()[0].as_object();
+    const std::regex operators(NomadString{operatorPattern.at("match").as_string()});
+    for (const auto* symbol : {"$", "+", "-", "*", "/", "%", "^", "==", "!=", "&&", "||", "<="}) {
+        BOOST_TEST(std::regex_match(symbol, operators));
+    }
+    BOOST_TEST(std::ranges::any_of(grammar.at("patterns").as_array(), [](const boost::json::value& pattern) {
+        return pattern.as_object().at("include").as_string() == "#operators";
+    }));
+    const std::regex escapes(NomadString{formatPatterns[0].as_object().at("match").as_string()});
+    for (const auto* escape : {"\\n", "\\r", "\\t", "\\\"", "\\\\"}) {
+        BOOST_TEST(std::regex_match(escape, escapes));
+    }
+    BOOST_TEST(!std::regex_match("\\{", escapes));
 }
 
 BOOST_AUTO_TEST_CASE(compiled_length_counts_unicode_code_points) {
