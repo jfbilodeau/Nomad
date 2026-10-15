@@ -8,6 +8,7 @@
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <sstream>
 
@@ -103,10 +104,11 @@ BOOST_AUTO_TEST_CASE(compiled_to_upper_uses_unicode_casing) {
 
 BOOST_AUTO_TEST_CASE(to_upper_does_not_modify_receiver) {
     Runtime runtime;
-    Interpreter interpreter(&runtime);
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext interpreter(*machine);
 
-    BOOST_REQUIRE(interpreter.execute("name = \"h\xC3\xA9llo\""));
-    BOOST_REQUIRE(interpreter.execute("upper = name.toUpper"));
+    BOOST_REQUIRE(Interpreter{}.execute("name = \"h\xC3\xA9llo\"", interpreter));
+    BOOST_REQUIRE(Interpreter{}.execute("upper = name.toUpper", interpreter));
     BOOST_REQUIRE(interpreter.getVariableValue("name") != nullptr);
     BOOST_REQUIRE(interpreter.getVariableValue("upper") != nullptr);
 
@@ -116,17 +118,18 @@ BOOST_AUTO_TEST_CASE(to_upper_does_not_modify_receiver) {
 
 BOOST_AUTO_TEST_CASE(exposes_byte_length_and_empty_properties) {
     Runtime runtime;
-    Interpreter interpreter(&runtime);
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext interpreter(*machine);
 
-    BOOST_REQUIRE(interpreter.execute("\"h\xC3\xA9\".byteLength"));
+    BOOST_REQUIRE(Interpreter{}.execute("\"h\xC3\xA9\".byteLength", interpreter));
     BOOST_REQUIRE(interpreter.getResult() != nullptr);
     BOOST_TEST(interpreter.getResult()->getValue().getIntegerValue() == 3);
 
-    BOOST_REQUIRE(interpreter.execute("\"\".isEmpty"));
+    BOOST_REQUIRE(Interpreter{}.execute("\"\".isEmpty", interpreter));
     BOOST_REQUIRE(interpreter.getResult() != nullptr);
     BOOST_TEST(interpreter.getResult()->getValue().getBooleanValue());
 
-    BOOST_REQUIRE(interpreter.execute("\"Nomad\".isEmpty"));
+    BOOST_REQUIRE(Interpreter{}.execute("\"Nomad\".isEmpty", interpreter));
     BOOST_REQUIRE(interpreter.getResult() != nullptr);
     BOOST_TEST(!interpreter.getResult()->getValue().getBooleanValue());
 }
@@ -144,62 +147,65 @@ BOOST_AUTO_TEST_CASE(to_lower_uses_unicode_casing) {
 
 BOOST_AUTO_TEST_CASE(trim_methods_remove_locale_whitespace) {
     Runtime runtime;
-    Interpreter interpreter(&runtime);
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext interpreter(*machine);
 
-    BOOST_REQUIRE(interpreter.execute("\" \\tNomad\\n \".trim"));
+    BOOST_REQUIRE(Interpreter{}.execute("\" \\tNomad\\n \".trim", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getStringValue() == "Nomad");
 
-    BOOST_REQUIRE(interpreter.execute("\" \\tNomad \".trimStart"));
+    BOOST_REQUIRE(Interpreter{}.execute("\" \\tNomad \".trimStart", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getStringValue() == "Nomad ");
 
-    BOOST_REQUIRE(interpreter.execute("\" Nomad\\n \".trimEnd"));
+    BOOST_REQUIRE(Interpreter{}.execute("\" Nomad\\n \".trimEnd", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getStringValue() == " Nomad");
 
-    BOOST_REQUIRE(interpreter.execute("\"\xC2\xA0Nomad\xE2\x80\x83\".trim"));
+    BOOST_REQUIRE(Interpreter{}.execute("\"\xC2\xA0Nomad\xE2\x80\x83\".trim", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getStringValue() == "Nomad");
 }
 
 BOOST_AUTO_TEST_CASE(search_methods_are_case_sensitive) {
     Runtime runtime;
-    Interpreter interpreter(&runtime);
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext interpreter(*machine);
 
-    BOOST_REQUIRE(interpreter.execute("\"Nomad Engine\".startsWith \"Nomad\""));
+    BOOST_REQUIRE(Interpreter{}.execute("\"Nomad Engine\".startsWith \"Nomad\"", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getBooleanValue());
 
-    BOOST_REQUIRE(interpreter.execute("\"Nomad Engine\".endsWith \"Engine\""));
+    BOOST_REQUIRE(Interpreter{}.execute("\"Nomad Engine\".endsWith \"Engine\"", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getBooleanValue());
 
-    BOOST_REQUIRE(interpreter.execute("\"Nomad Engine\".contains \"ad En\""));
+    BOOST_REQUIRE(Interpreter{}.execute("\"Nomad Engine\".contains \"ad En\"", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getBooleanValue());
 
-    BOOST_REQUIRE(interpreter.execute("\"Nomad Engine\".contains \"nomad\""));
+    BOOST_REQUIRE(Interpreter{}.execute("\"Nomad Engine\".contains \"nomad\"", interpreter));
     BOOST_TEST(!interpreter.getResult()->getValue().getBooleanValue());
 }
 
 BOOST_AUTO_TEST_CASE(string_members_reject_malformed_utf8) {
     Runtime runtime;
-    Interpreter interpreter(&runtime);
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext interpreter(*machine);
     RuntimeValue invalidValue;
     invalidValue.setStringValue(NomadString("\xC3\x28", 2));
     interpreter.setVariable("text", runtime.getStringType(), invalidValue);
     runtime.getStringType()->freeValue(invalidValue);
 
-    BOOST_REQUIRE(interpreter.execute("text.byteLength"));
+    BOOST_REQUIRE(Interpreter{}.execute("text.byteLength", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getIntegerValue() == 2);
 
-    BOOST_TEST(!interpreter.execute("text.length"));
+    BOOST_TEST(!Interpreter{}.execute("text.length", interpreter));
     BOOST_REQUIRE(interpreter.getError() != nullptr);
     BOOST_TEST(interpreter.getError()->find("valid UTF-8") != NomadString::npos);
 
-    BOOST_TEST(!interpreter.execute("text.toUpper"));
+    BOOST_TEST(!Interpreter{}.execute("text.toUpper", interpreter));
     BOOST_REQUIRE(interpreter.getError() != nullptr);
     BOOST_TEST(interpreter.getError()->find("valid UTF-8") != NomadString::npos);
 
-    BOOST_TEST(!interpreter.execute("text.trim"));
+    BOOST_TEST(!Interpreter{}.execute("text.trim", interpreter));
     BOOST_REQUIRE(interpreter.getError() != nullptr);
     BOOST_TEST(interpreter.getError()->find("valid UTF-8") != NomadString::npos);
 
-    BOOST_TEST(!interpreter.execute("\"valid\".contains text"));
+    BOOST_TEST(!Interpreter{}.execute("\"valid\".contains text", interpreter));
     BOOST_REQUIRE(interpreter.getError() != nullptr);
     BOOST_TEST(interpreter.getError()->find("valid UTF-8") != NomadString::npos);
 }

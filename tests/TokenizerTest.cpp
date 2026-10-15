@@ -7,6 +7,7 @@
 #include <nomad/compiler/Tokenizer.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 using namespace nomad;
 
@@ -170,9 +171,10 @@ BOOST_AUTO_TEST_CASE(compile_functions_reports_tokenizer_errors)
 BOOST_AUTO_TEST_CASE(interpreter_context_reports_tokenizer_errors)
 {
     Runtime runtime;
-    Interpreter context(&runtime);
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
 
-    BOOST_TEST(!context.execute("score = \"unterminated"));
+    BOOST_TEST(!Interpreter{}.execute("score = \"unterminated", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(context.getError()->find("Unrecognized token `\"unterminated`") != NomadString::npos);
     BOOST_TEST(context.getVariableValue("score") == nullptr);

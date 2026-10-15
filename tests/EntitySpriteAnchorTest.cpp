@@ -7,6 +7,8 @@
 #include <nomad/game/GameExecutionContext.hpp>
 
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/Runtime.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
@@ -24,8 +26,9 @@ BOOST_AUTO_TEST_CASE(script_setter_changes_anchor_without_moving_entity)
     Entity entity(nullptr, game->getEntityVariables(), 1, 100.0f, 75.0f, 1);
     game->getCurrentContext()->reset(nullptr, &entity);
 
-    Interpreter interpreter(game->getRuntime());
-    BOOST_REQUIRE(interpreter.execute("this.setSpriteAnchor 12.0 8.0"));
+    auto machine = game->getRuntime()->createVirtualMachine();
+    InterpreterContext interpreter(*machine);
+    BOOST_REQUIRE(Interpreter{}.execute("this.setSpriteAnchor 12.0 8.0", interpreter));
 
     BOOST_TEST(entity.getX() == 100.0f);
     BOOST_TEST(entity.getY() == 75.0f);

@@ -18,6 +18,7 @@ validation:
 nav:
   - Getting started: index.md
   - Language: language.md
+  - C++ embedding: embedding.md
   - Engine API: engine-api.md
   - Sprites: sprites.md
   - Sound and music: sound.md

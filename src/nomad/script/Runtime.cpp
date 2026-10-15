@@ -2054,7 +2054,7 @@ void Runtime::executeFunction(const NomadId functionId, const std::vector<Runtim
 void Runtime::executeNativeFunction(
     const NomadId nativeFunctionId,
     const std::vector<RuntimeValue>& args,
-    Interpreter& context
+    InterpreterContext& context
 ) {
     if (context.hasError()) {
         return;
@@ -2084,30 +2084,11 @@ void Runtime::executeNativeFunction(
         return;
     }
 
-    VirtualMachine virtualMachine(this);
     try {
-        virtualMachine.runNativeFunction(nativeFunctionId, args);
-        if (definition.returnType->isVoid()) {
-            context.setVoidResult();
-        } else {
-            context.setResult(definition.returnType, virtualMachine.getResult());
-        }
+        context.evaluateNativeFunctionCall(nativeFunctionId, args);
     } catch (const NomadException& exception) {
         context.clearResult();
         context.setError(exception.what());
-        if (!definition.returnType->isVoid()) {
-            definition.returnType->freeValue(virtualMachine.m_result);
-        }
-        return;
-    } catch (...) {
-        if (!definition.returnType->isVoid()) {
-            definition.returnType->freeValue(virtualMachine.m_result);
-        }
-        throw;
-    }
-
-    if (!definition.returnType->isVoid()) {
-        definition.returnType->freeValue(virtualMachine.m_result);
     }
 }
 

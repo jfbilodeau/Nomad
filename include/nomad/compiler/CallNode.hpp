@@ -33,7 +33,7 @@ public:
     // Evaluates arguments in order. The entries of values share the storage owned by evaluatedArguments.
     // Stops at the first argument that reports an error through the context->
     void evaluate(
-        Interpreter& context,
+        InterpreterContext& context,
         std::vector<TypedValue>& evaluatedArguments,
         std::vector<RuntimeValue>& values
     ) const;
@@ -91,7 +91,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function) override;
-    void onEvaluate(Interpreter& context) const override;
+    void onEvaluate(InterpreterContext& context) const override;
 
 private:
     NativeFunctionDefinition m_definition;
@@ -107,7 +107,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function) override;
-    void onEvaluate(Interpreter& context) const override;
+    void onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_name;

@@ -117,7 +117,7 @@ NomadBoolean Statement::isDeclaration() const {
 void Statement::checkReachability(CompilerContext* /*context*/, const ScriptFunction* /*function*/) const {
 }
 
-void Statement::evaluate(Interpreter& context) const {
+void Statement::evaluate(InterpreterContext& context) const {
     context.clearResult();
     if (context.hasError()) {
         return;
@@ -139,7 +139,7 @@ void Statement::onCompile(Compiler* /*compiler*/, ScriptFunction* /*function*/) 
     // Default implementation does nothing
 }
 
-void Statement::onEvaluate(Interpreter& /*context*/) const {
+void Statement::onEvaluate(InterpreterContext& /*context*/) const {
     raiseException("Statement evaluation is not supported by the interpreter");
 }
 
@@ -154,7 +154,7 @@ void NullStatement::onCompile(nomad::Compiler* /*compiler*/, ScriptFunction* /*f
     // Nothing to do...
 }
 
-void NullStatement::onEvaluate(Interpreter& context) const {
+void NullStatement::onEvaluate(InterpreterContext& context) const {
     context.setVoidResult();
 }
 
@@ -201,6 +201,19 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
         auto* interpreterRuntime = context->getRuntime();
 
         switch (identifier.identifierType) {
+        case IdentifierType::Parameter:
+            reportError(context, function, "Cannot assign value to parameter '" + m_identifier +
+                "': parameters are read-only. Copy it to a local variable first");
+            return;
+        case IdentifierType::FunctionVariable: {
+            const auto* interpreterContext = context->getInterpreterContext();
+            if (interpreterContext != nullptr && interpreterContext->isFrameVariable(identifier.variableId) &&
+                function->getVariableType(identifier.variableId) != expressionType) {
+                reportError(context, function, "Cannot change type of frame variable '" + m_identifier + "'");
+                return;
+            }
+            break;
+        }
         case IdentifierType::DynamicVariable: {
             if (!interpreterRuntime->canSetDynamicVariable(identifier.variableId)) {
                 reportError(context, function, "Dynamic variable '" + m_identifier + "' is read-only");
@@ -241,8 +254,9 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
         }
 
         default: {
-            // Console variables are defined when assigned and may change type, so only the target kind is checked.
+            // New unqualified names belong to the interpreter context, not the script frame.
             const auto isNewConsoleVariable = identifier.identifierType == IdentifierType::Unknown &&
+                m_identifier.find('.') == NomadString::npos &&
                 interpreterRuntime->getVariableContextIdByPrefix(m_identifier) == NOMAD_INVALID_ID;
 
             if (identifier.identifierType != IdentifierType::FunctionVariable && !isNewConsoleVariable) {
@@ -384,7 +398,7 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptFunction* function
     }
 }
 
-void AssignmentStatement::onEvaluate(Interpreter& context) const {
+void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
     m_expression->evaluate(context);
     const auto* value = context.getResult();
     if (value == nullptr) {
@@ -471,7 +485,7 @@ void MemberAssignmentStatement::onCompile(Compiler* compiler, ScriptFunction* fu
     target->compileAssignment(compiler, function, m_expression.get());
 }
 
-void MemberAssignmentStatement::onEvaluate(Interpreter& context) const {
+void MemberAssignmentStatement::onEvaluate(InterpreterContext& context) const {
     const auto* target = m_target->asIntrinsicExpression();
     if (target == nullptr) {
         raiseException("Invalid intrinsic property assignment target");
@@ -498,7 +512,7 @@ void ExpressionStatement::onCompile(Compiler* compiler, ScriptFunction* function
     }
 }
 
-void ExpressionStatement::onEvaluate(Interpreter& context) const {
+void ExpressionStatement::onEvaluate(InterpreterContext& context) const {
     m_expression->evaluate(context);
 }
 
@@ -522,7 +536,7 @@ void StatementList::compile(Compiler* compiler, ScriptFunction* function) const 
     }
 }
 
-void StatementList::evaluate(Interpreter& context) const {
+void StatementList::evaluate(InterpreterContext& context) const {
     if (context.hasError()) {
         context.clearResult();
         return;

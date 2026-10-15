@@ -212,6 +212,7 @@ public:
 
 private:
     friend class Runtime;
+    friend class InterpreterContext;
 
     void initializeFunctionVariables(const ScriptFunction* function);
 

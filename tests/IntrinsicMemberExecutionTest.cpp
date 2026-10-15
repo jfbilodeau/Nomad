@@ -130,13 +130,14 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_properties_and_methods) {
         NomadDoc("Increment receiver")
     );
 
-    Interpreter interpreter(&runtime);
-    BOOST_REQUIRE(interpreter.execute("value = 4"));
-    const auto methodExecuted = interpreter.execute("value.increment 3");
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext interpreter(*machine);
+    BOOST_REQUIRE(Interpreter{}.execute("value = 4", interpreter));
+    const auto methodExecuted = Interpreter{}.execute("value.increment 3", interpreter);
     const auto* error = interpreter.getError();
     const auto message = error == nullptr ? NomadString("Unknown interpreter error") : *error;
     BOOST_REQUIRE_MESSAGE(methodExecuted, message);
-    BOOST_REQUIRE(interpreter.execute("value.doubled"));
+    BOOST_REQUIRE(Interpreter{}.execute("value.doubled", interpreter));
     BOOST_REQUIRE(interpreter.getResult() != nullptr);
 
     BOOST_TEST(interpreter.getResult()->getValue().getIntegerValue() == 14);
@@ -159,9 +160,10 @@ BOOST_AUTO_TEST_CASE(failed_mutating_method_does_not_commit_receiver) {
         NomadDoc("Fail")
     );
 
-    Interpreter interpreter(&runtime);
-    BOOST_REQUIRE(interpreter.execute("value = 4"));
-    BOOST_TEST(!interpreter.execute("value.fail"));
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext interpreter(*machine);
+    BOOST_REQUIRE(Interpreter{}.execute("value = 4", interpreter));
+    BOOST_TEST(!Interpreter{}.execute("value.fail", interpreter));
     BOOST_REQUIRE(interpreter.getVariableValue("value") != nullptr);
     BOOST_TEST(interpreter.getVariableValue("value")->getIntegerValue() == 4);
 }

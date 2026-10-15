@@ -98,7 +98,7 @@ void Expression::onCompileBorrowed(Compiler* compiler, ScriptFunction* /*functio
     compiler->reportInternalError("BUG: Expression does not implement borrowed compilation");
 }
 
-void Expression::evaluate(Interpreter& context) const {
+void Expression::evaluate(InterpreterContext& context) const {
     context.clearResult();
     if (context.hasError()) {
         return;
@@ -130,7 +130,7 @@ void Expression::evaluate(Interpreter& context) const {
     }
 }
 
-void Expression::onEvaluate(Interpreter& /*context*/) const {
+void Expression::onEvaluate(InterpreterContext& /*context*/) const {
     raiseException("Expression is not supported by the interpreter");
 }
 
@@ -245,7 +245,7 @@ void UnaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, Ex
     compiler->addOpCode(opcode);
 }
 
-void UnaryExpression::onEvaluate(Interpreter& context) const {
+void UnaryExpression::onEvaluate(InterpreterContext& context) const {
     m_expression->evaluate(context);
     const auto* evaluatedOperand = context.getResult();
     if (evaluatedOperand == nullptr) {
@@ -439,7 +439,7 @@ void BinaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, c
     compiler->addMoveResult(getType(), target);
 }
 
-void BinaryExpression::onEvaluate(Interpreter& context) const {
+void BinaryExpression::onEvaluate(InterpreterContext& context) const {
     m_left->evaluate(context);
     const auto* evaluatedLhs = context.getResult();
     if (evaluatedLhs == nullptr) {
@@ -542,7 +542,7 @@ void CallNativeFunctionExpression::onCompile(Compiler* compiler, ScriptFunction*
     compiler->addMoveResult(getType(), target);
 }
 
-void CallNativeFunctionExpression::onEvaluate(Interpreter& context) const {
+void CallNativeFunctionExpression::onEvaluate(InterpreterContext& context) const {
     std::vector<TypedValue> evaluatedArguments;
     std::vector<RuntimeValue> values;
     m_arguments.evaluate(context, evaluatedArguments, values);
@@ -598,14 +598,14 @@ void FunctionCallExpression::onResolve(CompilerContext* context, ScriptFunction*
     const auto* callFunction = runtime->getFunction(m_functionId);
     const auto* returnType = callFunction->getReturnType();
 
-    if (context->getMode() != CompilerMode::Function && callFunction->getFunctionStart() == NOMAD_INVALID_INDEX) {
+    if (context->getMode() != CompilerMode::Script && callFunction->getFunctionStart() == NOMAD_INVALID_INDEX) {
         reportError(context, function, "Function '" + m_name + "' has not been compiled");
         return;
     }
 
     auto* compiler = context->getCompiler();
 
-    if (context->getMode() == CompilerMode::Function && function != nullptr) {
+    if (context->getMode() == CompilerMode::Script && function != nullptr) {
         compiler->addFunctionCallDependency(function->getId(), m_functionId);
     }
 
@@ -655,7 +655,7 @@ NomadIndex FunctionCallExpression::getArgumentCount() const {
     return m_arguments.getArgumentCount();
 }
 
-void FunctionCallExpression::onEvaluate(Interpreter& context) const {
+void FunctionCallExpression::onEvaluate(InterpreterContext& context) const {
     std::vector<TypedValue> evaluatedArguments;
     std::vector<RuntimeValue> values;
     m_arguments.evaluate(context, evaluatedArguments, values);
@@ -663,21 +663,7 @@ void FunctionCallExpression::onEvaluate(Interpreter& context) const {
         return;
     }
 
-    if (context.isFrameBacked()) {
-        context.evaluateFunctionCall(m_functionId, values);
-        return;
-    }
-    const auto* returnType = getType();
-    RuntimeValue result;
-    returnType->initValue(result);
-    try {
-        context.getRuntime()->executeFunction(m_functionId, values, result);
-        context.setResult(returnType, result);
-        returnType->freeValue(result);
-    } catch (...) {
-        returnType->freeValue(result);
-        throw;
-    }
+    context.evaluateFunctionCall(m_functionId, values);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -858,7 +844,7 @@ void IntrinsicMemberExpression::onCompile(Compiler* compiler, ScriptFunction* fu
     }
 }
 
-void IntrinsicMemberExpression::onEvaluate(Interpreter& context) const {
+void IntrinsicMemberExpression::onEvaluate(InterpreterContext& context) const {
     m_receiver->evaluate(context);
     const auto* evaluatedReceiver = context.getResult();
     if (evaluatedReceiver == nullptr) {
@@ -962,7 +948,7 @@ void IntrinsicMemberExpression::compileAssignment(Compiler* compiler, ScriptFunc
     writableReceiver->compileStore(compiler);
 }
 
-void IntrinsicMemberExpression::evaluateAssignment(Interpreter& context, const Expression* expression) const {
+void IntrinsicMemberExpression::evaluateAssignment(InterpreterContext& context, const Expression* expression) const {
     m_receiver->evaluate(context);
     const auto* evaluatedReceiver = context.getResult();
     if (evaluatedReceiver == nullptr) {
@@ -1158,7 +1144,7 @@ bool FormatStringLiteral::parsePlaceholders(
     ScriptFunction* function,
     const NomadStringView sourceContent
 ) {
-    if (context->getMode() != CompilerMode::Function || function == nullptr) {
+    if (context->getMode() != CompilerMode::Script || function == nullptr) {
         return true;
     }
 
@@ -1235,7 +1221,7 @@ bool FormatStringLiteral::parsePlaceholders(
 }
 
 void FormatStringLiteral::onResolve(CompilerContext* context, ScriptFunction* function) {
-    if (context->getMode() != CompilerMode::Function) {
+    if (context->getMode() != CompilerMode::Script) {
         reportError(context, function, "Format strings are not supported by the interpreter");
         return;
     }
@@ -1359,7 +1345,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
             break;
     }
 
-    if (context->getMode() != CompilerMode::Function &&
+    if (context->getMode() != CompilerMode::Script &&
         m_identifierDefinition.identifierType != IdentifierType::FunctionVariable &&
         m_identifierDefinition.identifierType != IdentifierType::Constant &&
         m_identifierDefinition.identifierType != IdentifierType::DynamicVariable &&
@@ -1369,7 +1355,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
         return;
     }
 
-    if (context->getMode() != CompilerMode::Function &&
+    if (context->getMode() != CompilerMode::Script &&
         m_identifierDefinition.identifierType == IdentifierType::DynamicVariable &&
         !context->getRuntime()->canGetDynamicVariable(m_identifierDefinition.variableId)) {
         reportError(context, function, "Dynamic variable '" + m_identifier + "' cannot be read");
@@ -1384,7 +1370,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
     }
 
     if (m_identifierDefinition.identifierType == IdentifierType::FunctionVariable &&
-        context->getMode() == CompilerMode::Function) {
+        context->getMode() == CompilerMode::Script) {
         function->registerVariable(m_identifier, m_identifierDefinition.valueType);
     }
 
@@ -1495,7 +1481,7 @@ void IdentifierExpression::compileStore(Compiler* compiler) const {
     }
 }
 
-void IdentifierExpression::evaluateStore(Interpreter& context, const RuntimeValue& value) const {
+void IdentifierExpression::evaluateStore(InterpreterContext& context, const RuntimeValue& value) const {
     auto* runtime = context.getRuntime();
     const auto* type = m_identifierDefinition.valueType;
 
@@ -1541,7 +1527,7 @@ void IdentifierExpression::onCompileBorrowed(Compiler* compiler, ScriptFunction*
     }
 }
 
-void IdentifierExpression::onEvaluate(Interpreter& context) const {
+void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::Parameter:
         context.setParameterResult(m_identifierDefinition.variableId);

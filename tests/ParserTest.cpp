@@ -8,6 +8,7 @@
 #include <nomad/compiler/Tokenizer.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 using namespace nomad;
 
@@ -111,18 +112,19 @@ BOOST_AUTO_TEST_CASE(compile_functions_reports_parse_errors_with_location)
 BOOST_AUTO_TEST_CASE(interpreter_context_reports_parse_errors)
 {
     Runtime runtime;
-    Interpreter context(&runtime);
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
 
-    BOOST_TEST(!context.execute("score = (1 + 2"));
+    BOOST_TEST(!Interpreter{}.execute("score = (1 + 2", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(*context.getError() == "Expected ')'");
     BOOST_TEST(context.getVariableValue("score") == nullptr);
 
-    BOOST_TEST(!context.execute("1 +"));
+    BOOST_TEST(!Interpreter{}.execute("1 +", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(*context.getError() == "Unexpected end of line");
 
-    BOOST_TEST(context.execute("score = 3"));
+    BOOST_TEST(Interpreter{}.execute("score = 3", context));
     BOOST_TEST(!context.hasError());
 }
 

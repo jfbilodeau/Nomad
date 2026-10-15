@@ -168,9 +168,9 @@ Nomad supports three variable kinds:
 - Context variables: bound to a named context; identified by a prefix and a dot (for example `global.score`). Contexts are provided by the embedding engine and have engine‑specific semantics for storage and persistence. The `global.` context is pre-defined by the default Nomad runtime. The game engine provides `inventory.*` for saved game state and `settings.*` for user preferences. The `global.*`, `scene.*`, `this.*`, and `other.*` contexts are not persisted by the save and settings native functions.
 - Dynamic variables: engine‑defined identifiers (for example `this.x`) managed directly by engine code; the engine decides read/write permissions and behavior.
 
-The interactive interpreter is an exception to compiled-code typing rules. Local variables created in the interpreter may be reassigned with a value of a different type. Context variables and engine-defined dynamic variables continue to follow the type rules of their contexts and definitions.
+The interactive interpreter is an exception to compiled-code typing rules. Interpreter variables may be created by assignment and reassigned with a value of a different type. Parameters remain read-only, and frame variables retain their compiled types. Runtime context variables and engine-defined dynamic variables continue to follow the type rules of their contexts and definitions.
 
-For C++ embedding, `Interpreter(VirtualMachine&)` borrows the VM's active script frame. Its `evaluateExpression` entry point reads existing locals, parameters, and captures without registering variables or captures in the compiled function. Both console and live-frame evaluation use `CompilerMode::Interpreter`; the evaluation environment is managed by the interpreter, not a separate compiler mode. The borrowed interpreter must not outlive the active frame. This API does not yet expose a dynamic `$expression` operator in scripts.
+See [Embedding Nomad in C++](embedding.md) for the interpreter context API and ownership rules.
 
 ---
 

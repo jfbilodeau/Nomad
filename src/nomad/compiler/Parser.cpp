@@ -379,7 +379,7 @@ NomadId parseCallbackParameter(
     const auto isFun = tokens->is("fun");
 
     if (isFun || tokens->is("then")) {
-        if (context->getMode() != CompilerMode::Function) {
+        if (context->getMode() != CompilerMode::Script) {
             context->reportError(
                 NomadString("Inline `") + (isFun ? "fun" : "then") + "` callbacks are not supported by the interpreter"
             , tokens);
@@ -796,8 +796,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     }
 
     if (identifierDefinition.identifierType == IdentifierType::Unknown && function != nullptr) {
-        // VirtualMachine input has no function: console variables are defined when the assignment is evaluated.
-        // Context variable?
+        // Runtime context variables keep their normal registration path.
         const auto contextId = context->getRuntime()->getVariableContextIdByPrefix(variableName);
 
         if (contextId != NOMAD_INVALID_ID) {
@@ -807,8 +806,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
             if (variableId == NOMAD_INVALID_ID) {
                 context->getCompiler()->reportInternalError("Failed to register context variable: " + variableName);
             }
-        } else {
-            // Regular function variable.
+        } else if (context->getMode() == CompilerMode::Script) {
             function->registerVariable(variableName, nullptr);
         }
     }
@@ -932,7 +930,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
             }
         }
 
-        if (context->getMode() != CompilerMode::Function &&
+        if (context->getMode() != CompilerMode::Script &&
             context->getCompiler()->getIdentifierType(token.textValue, function) == IdentifierType::Unknown &&
             !tokens->endOfLine()) {
             const auto nextType = tokens->currentToken().type;

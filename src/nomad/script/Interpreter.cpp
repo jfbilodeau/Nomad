@@ -6,427 +6,95 @@
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/Parser.hpp>
-#include <nomad/compiler/Tokenizer.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
+#include <nomad/compiler/Tokenizer.hpp>
 
-#include <nomad/script/Runtime.hpp>
 #include <nomad/script/NativeFunction.hpp>
+#include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>
-
-#include <algorithm>
-#include <stdexcept>
+#include <nomad/script/VirtualMachine.hpp>
 
 namespace nomad {
 
 namespace {
 
-// Name and path of the console function; identifies console input in diagnostics.
-constexpr auto CONSOLE_SOURCE_NAME = "<console>";
+class RegisterRestoration {
+public:
+    explicit RegisterRestoration(VirtualMachine& machine):
+        m_machine(machine), m_result(machine.getResult()), m_intermediate(machine.getIntermediate()) {}
+
+    ~RegisterRestoration() {
+        m_machine.setResult(m_result);
+        m_machine.setIntermediate(m_intermediate);
+    }
+
+private:
+    VirtualMachine& m_machine;
+    RuntimeValue m_result;
+    RuntimeValue m_intermediate;
+};
 
 } // namespace
 
-TypedValue::TypedValue(const Type* type, const RuntimeValue& value):
-    m_type(type)
-{
-    if (m_type == nullptr) {
-        throw std::invalid_argument("VirtualMachine value type cannot be null");
-    }
-
-    if (m_type->isVoid()) {
-        return;
-    }
-
-    m_type->initValue(m_value);
-
-    try {
-        m_type->copyValue(value, m_value);
-    } catch (...) {
-        m_type->freeValue(m_value);
-        m_type = nullptr;
-        throw;
-    }
-}
-
-TypedValue::TypedValue(const TypedValue& other):
-    TypedValue(other.m_type, other.m_value)
-{
-}
-
-TypedValue::TypedValue(TypedValue&& other) noexcept:
-    m_type(other.m_type),
-    m_value(other.m_value)
-{
-    other.m_type = nullptr;
-}
-
-TypedValue& TypedValue::operator=(const TypedValue& other) {
-    if (this != &other) {
-        TypedValue copy(other);
-        std::swap(m_type, copy.m_type);
-        std::swap(m_value, copy.m_value);
-    }
-
-    return *this;
-}
-
-TypedValue& TypedValue::operator=(TypedValue&& other) noexcept {
-    if (this != &other) {
-        release();
-        m_type = other.m_type;
-        m_value = other.m_value;
-        other.m_type = nullptr;
-    }
-
-    return *this;
-}
-
-TypedValue::~TypedValue() {
-    release();
-}
-
-const Type* TypedValue::getType() const {
-    return m_type;
-}
-
-const RuntimeValue& TypedValue::getValue() const {
-    return m_value;
-}
-
-void TypedValue::release() noexcept {
-    if (m_type != nullptr && !m_type->isVoid()) {
-        m_type->freeValue(m_value);
-    }
-    m_type = nullptr;
-}
-
-void Interpreter::setVariable(
-    const NomadString& name,
-    const Type* type,
-    const RuntimeValue& value
-) {
-    if (isFrameBacked()) {
-        const auto id = m_frameFunction->getVariableId(name);
-        if (!isIdInRange(id, m_frameFunction->getVariableCount()) ||
-            m_frameFunction->getVariableType(id) != type) {
-            throw NomadBug("Invalid frame-backed variable assignment");
-        }
-        RuntimeValue replacement;
-        type->initValue(replacement);
-        try {
-            type->copyValue(value, replacement);
-        } catch (...) {
-            type->freeValue(replacement);
-            throw;
-        }
-        auto previous = m_frameVirtualMachine->getFunctionVariableValue(id);
-        type->freeValue(previous);
-        m_frameVirtualMachine->setFunctionVariableValue(id, replacement);
-        return;
-    }
-    if (name.empty()) {
-        throw std::invalid_argument("Interpreter variable name cannot be empty");
-    }
-    if (type == nullptr || type->isVoid()) {
-        throw std::invalid_argument("Interpreter variables must have a non-void type");
-    }
-
-    auto replacement = std::make_unique<TypedValue>(type, value);
-
-    auto variableId = m_function->getVariableId(name);
-    if (variableId == NOMAD_INVALID_ID) {
-        variableId = m_function->registerVariable(name, type);
-    } else {
-        // Unlike compiled functions, console variables may change type on reassignment.
-        m_function->setVariableType(variableId, type);
-    }
-
-    const auto index = toNomadIndex(variableId);
-    if (index >= m_variables.size()) {
-        m_variables.resize(index + 1);
-    }
-    m_variables[index] = std::move(replacement);
-}
-
-const Type* Interpreter::getVariableType(const NomadString& name) const {
-    return getVariableTypeById(getFunction()->getVariableId(name));
-}
-
-const Type* Interpreter::getVariableTypeById(const NomadId variableId) const {
-    if (isFrameBacked()) {
-        return isIdInRange(variableId, m_frameFunction->getVariableCount())
-            ? m_frameFunction->getVariableType(variableId) : nullptr;
-    }
-    if (variableId == NOMAD_INVALID_ID) {
-        return nullptr;
-    }
-
-    const auto index = toNomadIndex(variableId);
-    if (index >= m_variables.size()) {
-        return nullptr;
-    }
-
-    const auto& variable = m_variables[index];
-    return variable != nullptr ? variable->getType() : nullptr;
-}
-
-const RuntimeValue* Interpreter::getVariableValue(const NomadString& name) const {
-    return getVariableValueById(getFunction()->getVariableId(name));
-}
-
-const RuntimeValue* Interpreter::getVariableValueById(const NomadId variableId) const {
-    if (isFrameBacked()) {
-        return isIdInRange(variableId, m_frameFunction->getVariableCount())
-            ? &m_frameVirtualMachine->getFunctionVariableValue(variableId) : nullptr;
-    }
-    if (variableId == NOMAD_INVALID_ID) {
-        return nullptr;
-    }
-
-    const auto index = toNomadIndex(variableId);
-    if (index >= m_variables.size()) {
-        return nullptr;
-    }
-
-    const auto& variable = m_variables[index];
-    return variable != nullptr ? &variable->getValue() : nullptr;
-}
-
-std::vector<InterpreterVariableInfo> Interpreter::listVariables() const {
-    if (isFrameBacked()) {
-        throw NomadBug("Console variable listing is not available for a script frame");
-    }
-    std::vector<InterpreterVariableInfo> variables;
-    variables.reserve(m_variables.size());
-
-    for (NomadIndex variableIndex = 0; variableIndex < m_variables.size(); ++variableIndex) {
-        const auto& variable = m_variables[variableIndex];
-        if (variable == nullptr) {
-            continue;
-        }
-
-        const auto variableId = toNomadId(variableIndex);
-        variables.push_back({
-            m_function->getVariableName(variableId),
-            variable->getType(),
-            variable->getType()->toString(variable->getValue())
-        });
-    }
-
-    std::ranges::sort(variables, {}, &InterpreterVariableInfo::name);
-
-    return variables;
-}
-
-Interpreter::Interpreter(Runtime* runtime):
-    m_runtime(runtime),
-    m_function(std::make_unique<ScriptFunction>(NOMAD_INVALID_ID, CONSOLE_SOURCE_NAME, CONSOLE_SOURCE_NAME, ""))
-{
-}
-
-Interpreter::~Interpreter() = default;
-
-Interpreter::Interpreter(VirtualMachine& virtualMachine):
-    m_runtime(virtualMachine.getRuntime()),
-    m_frameVirtualMachine(&virtualMachine),
-    m_frameFunction(virtualMachine.getCurrentFunction())
-{
-    if (m_frameFunction == nullptr || m_frameFunction->getFunctionStart() == NOMAD_INVALID_INDEX) {
-        throw NomadBug("Frame interpretation requires an active compiled script function");
-    }
-}
-
-bool Interpreter::isFrameBacked() const {
-    return m_frameVirtualMachine != nullptr;
-}
-
-const ScriptFunction* Interpreter::getFunction() const {
-    return isFrameBacked() ? m_frameFunction : m_function.get();
-}
-
-Runtime* Interpreter::getRuntime() const {
-    if (m_runtime == nullptr) {
-        throw std::logic_error("Interpreter requires a Runtime for evaluation");
-    }
-
-    return m_runtime;
-}
-
-VirtualMachine* Interpreter::getVirtualMachine() {
-    if (isFrameBacked()) {
-        return m_frameVirtualMachine;
-    }
-    if (m_virtualMachine == nullptr) {
-        m_virtualMachine = getRuntime()->createVirtualMachine();
-    }
-
-    return m_virtualMachine.get();
-}
-
-void Interpreter::setResult(const Type* type, const RuntimeValue& value) {
-    m_result.emplace(type, value);
-}
-
-void Interpreter::setResult(const TypedValue& value) {
-    m_result.emplace(value);
-}
-
-void Interpreter::clearResult() {
-    m_result.reset();
-}
-
-void Interpreter::setVoidResult() {
-    setResult(getRuntime()->getVoidType(), RuntimeValue{});
-}
-
-const TypedValue* Interpreter::getResult() const {
-    return m_result ? &*m_result : nullptr;
-}
-
-void Interpreter::setError(const NomadString& error) {
-    if (!m_error) {
-        m_error = error;
-    }
-}
-
-void Interpreter::clearError() {
-    m_error.reset();
-}
-
-NomadBoolean Interpreter::hasError() const {
-    return m_error.has_value();
-}
-
-const NomadString* Interpreter::getError() const {
-    return m_error ? &*m_error : nullptr;
-}
-
-void Interpreter::setParameterResult(const NomadId parameterId) {
-    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameFunction->getParameterCount())) {
-        throw NomadBug("Invalid frame-backed parameter access");
-    }
-    setResult(m_frameFunction->getParameterType(parameterId), m_frameVirtualMachine->getParameter(parameterId));
-}
-
-bool Interpreter::evaluateExpression(const NomadString& source) {
-    clearError();
-    clearResult();
-    if (!isFrameBacked()) {
-        throw NomadBug("Expression-only frame evaluation requires a script frame");
-    }
-    auto compiler = m_runtime->createCompiler();
-    CompilerContext context(compiler.get(), CompilerMode::Interpreter);
-    Tokenizer tokens(&context, m_frameFunction->getPath(), source);
+bool Interpreter::evaluateExpression(const NomadString& source, InterpreterContext& evaluation) const {
+    evaluation.clearError();
+    evaluation.clearResult();
+    evaluation.validateFrame();
+    auto compiler = evaluation.m_runtime->createCompiler();
+    CompilerContext context(compiler.get(), CompilerMode::Interpreter, &evaluation);
+    auto* function = evaluation.m_function.get();
+    Tokenizer tokens(&context, function->getPath(), source);
     if (const auto* error = context.getFirstError()) {
-        setError(formatDiagnostic(*error));
+        evaluation.setError(formatDiagnostic(*error));
         return false;
     }
     if (tokens.getLineCount() != 1 || !tokens.nextLine()) {
-        setError("Frame interpretation requires one non-empty expression");
+        evaluation.setError("Interpreter requires one non-empty expression");
         return false;
     }
-    auto expression = parser::parseExpression(&context, m_frameFunction, &tokens);
-    if (expression != nullptr && parser::expectEndOfLine(&context, m_frameFunction, &tokens)) {
-        (void)expression->resolve(&context, m_frameFunction);
+    auto expression = parser::parseExpression(&context, function, &tokens);
+    if (expression != nullptr && parser::expectEndOfLine(&context, function, &tokens)) {
+        (void)expression->resolve(&context, function);
     }
     if (const auto* error = context.getFirstError()) {
-        setError(formatDiagnostic(*error));
+        evaluation.setError(formatDiagnostic(*error));
         return false;
     }
     if (expression == nullptr || expression->getType() == nullptr || expression->getType()->isVoid()) {
-        setError("Frame expression must return a value");
+        evaluation.setError("Interpreter expression must return a value");
         return false;
     }
-    const auto result = m_frameVirtualMachine->getResult();
-    const auto intermediate = m_frameVirtualMachine->getIntermediate();
+    auto* machine = evaluation.getVirtualMachine();
+    const RegisterRestoration registers(*machine);
     try {
-        expression->evaluate(*this);
+        expression->evaluate(evaluation);
     } catch (...) {
-        m_frameVirtualMachine->setResult(result);
-        m_frameVirtualMachine->setIntermediate(intermediate);
-        clearResult();
+        evaluation.clearResult();
         throw;
     }
-    m_frameVirtualMachine->setResult(result);
-    m_frameVirtualMachine->setIntermediate(intermediate);
-    return !hasError();
+    return !evaluation.hasError();
 }
 
-void Interpreter::evaluateFunctionCall(const NomadId functionId, const std::vector<RuntimeValue>& arguments) {
-    const auto* function = getRuntime()->getFunction(functionId);
-    if (function == nullptr || function->getReturnType() == nullptr) {
-        throw NomadBug("Invalid interpreted function call");
-    }
-    const auto* type = function->getReturnType();
-    auto* machine = getVirtualMachine();
-    const auto savedResult = machine->getResult();
-    const auto savedIntermediate = machine->getIntermediate();
-    machine->setResult(RuntimeValue{});
+NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext& evaluation) const {
+    evaluation.validateFrame();
+    evaluation.clearError();
+    evaluation.clearResult();
+    const RegisterRestoration registers(*evaluation.getVirtualMachine());
     try {
-        machine->run(function, arguments);
-        try {
-            setResult(type, machine->getResult());
-        } catch (...) {
-            type->freeValue(machine->getResult());
-            throw;
-        }
-        type->freeValue(machine->getResult());
-    } catch (...) {
-        machine->setResult(savedResult);
-        machine->setIntermediate(savedIntermediate);
-        throw;
-    }
-    machine->setResult(savedResult);
-    machine->setIntermediate(savedIntermediate);
-}
-
-void Interpreter::evaluateNativeFunctionCall(const NomadId functionId, const std::vector<RuntimeValue>& arguments) {
-    NativeFunctionDefinition definition;
-    if (!getRuntime()->getNativeFunctionDefinition(functionId, definition) || definition.returnType == nullptr) {
-        throw NomadBug("Invalid interpreted native function call");
-    }
-    auto* machine = getVirtualMachine();
-    const auto savedResult = machine->getResult();
-    const auto savedIntermediate = machine->getIntermediate();
-    machine->setResult(RuntimeValue{});
-    try {
-        machine->runNativeFunction(functionId, arguments);
-        setResult(definition.returnType, machine->getResult());
-        definition.returnType->freeValue(machine->getResult());
-    } catch (...) {
-        definition.returnType->freeValue(machine->getResult());
-        machine->setResult(savedResult);
-        machine->setIntermediate(savedIntermediate);
-        throw;
-    }
-    machine->setResult(savedResult);
-    machine->setIntermediate(savedIntermediate);
-}
-
-NomadBoolean Interpreter::execute(const NomadString& source) {
-    if (isFrameBacked()) {
-        throw NomadBug("Frame interpretation accepts expressions, not console statements");
-    }
-    clearError();
-    clearResult();
-    if (m_runtime == nullptr) {
-        setError("Interpreter requires a Runtime to execute input");
-        return false;
-    }
-    try {
-        auto compiler = m_runtime->createCompiler();
-        CompilerContext compilerContext(compiler.get(), CompilerMode::Interpreter);
-        Tokenizer tokenizer(&compilerContext, CONSOLE_SOURCE_NAME, source);
+        auto compiler = evaluation.m_runtime->createCompiler();
+        CompilerContext compilerContext(compiler.get(), CompilerMode::Interpreter, &evaluation);
+        Tokenizer tokenizer(&compilerContext, evaluation.m_function->getPath(), source);
         if (tokenizer.getLineCount() > 1) {
-            setError("Interpreter accepts a single line of input");
+            evaluation.setError("Interpreter accepts a single line of input");
             return false;
         }
         if (const auto* lexingError = compilerContext.getFirstError(); lexingError != nullptr) {
-            setError(lexingError->message);
+            evaluation.setError(lexingError->message);
             return false;
         }
         if (tokenizer.endOfLine()) {
-            setVoidResult();
+            evaluation.setVoidResult();
             return true;
         }
 
@@ -437,11 +105,11 @@ NomadBoolean Interpreter::execute(const NomadString& source) {
                                  compiler->isStatement(firstToken.textValue);
         NativeFunctionDefinition nativeFunction;
         const auto isNativeFunction = firstToken.type == TokenType::Identifier &&
-                               m_runtime->getNativeFunctionDefinition(firstToken.textValue, nativeFunction);
+                               evaluation.m_runtime->getNativeFunctionDefinition(firstToken.textValue, nativeFunction);
         const auto functionId = firstToken.type == TokenType::Identifier
-            ? m_runtime->getFunctionId(firstToken.textValue)
+            ? evaluation.m_runtime->getFunctionId(firstToken.textValue)
             : NOMAD_INVALID_ID;
-        const auto* function = functionId == NOMAD_INVALID_ID ? nullptr : m_runtime->getFunction(functionId);
+        const auto* function = functionId == NOMAD_INVALID_ID ? nullptr : evaluation.m_runtime->getFunction(functionId);
         const auto isValueReturningCall =
             (isNativeFunction && nativeFunction.returnType != nullptr && !nativeFunction.returnType->isVoid()) ||
             (function != nullptr && function->getReturnType() != nullptr && !function->getReturnType()->isVoid());
@@ -452,9 +120,9 @@ NomadBoolean Interpreter::execute(const NomadString& source) {
 
         std::unique_ptr<Statement> statement;
         if (parseAsExpression) {
-            auto expression = parser::parseExpression(&compilerContext, m_function.get(), &tokenizer);
+            auto expression = parser::parseExpression(&compilerContext, evaluation.m_function.get(), &tokenizer);
             if (expression != nullptr &&
-                parser::expectEndOfLine(&compilerContext, m_function.get(), &tokenizer)) {
+                parser::expectEndOfLine(&compilerContext, evaluation.m_function.get(), &tokenizer)) {
                 if (auto* member = expression->asIntrinsicExpression()) {
                     member->setAllowVoid(true);
                 }
@@ -465,37 +133,37 @@ NomadBoolean Interpreter::execute(const NomadString& source) {
                 );
             }
         } else if (isStatement && !isAssignment) {
-            setError("Statement '" + firstToken.textValue + "' is not supported by the interpreter");
+            evaluation.setError("Statement '" + firstToken.textValue + "' is not supported by the interpreter");
             return false;
         } else {
-            statement = parser::parseLine(&compilerContext, m_function.get(), &tokenizer);
+            statement = parser::parseLine(&compilerContext, evaluation.m_function.get(), &tokenizer);
         }
 
         if (const auto* parseError = compilerContext.getFirstError(); parseError != nullptr) {
-            setError(parseError->message);
+            evaluation.setError(parseError->message);
             return false;
         }
 
         if (statement == nullptr) {
-            setVoidResult();
+            evaluation.setVoidResult();
             return true;
         }
 
-        if (!statement->resolve(&compilerContext, m_function.get())) {
+        if (!statement->resolve(&compilerContext, evaluation.m_function.get())) {
             const auto* firstError = compilerContext.getFirstError();
-            setError(firstError != nullptr ? firstError->message : "Failed to resolve interpreter input");
+            evaluation.setError(firstError != nullptr ? firstError->message : "Failed to resolve interpreter input");
             return false;
         }
 
-        statement->evaluate(*this);
-        return !hasError();
+        statement->evaluate(evaluation);
+        return !evaluation.hasError();
     } catch (const NomadException& exception) {
-        clearResult();
-        setError(exception.what());
+        evaluation.clearResult();
+        evaluation.setError(exception.what());
         return false;
     } catch (const std::exception& exception) {
-        clearResult();
-        setError(exception.what());
+        evaluation.clearResult();
+        evaluation.setError(exception.what());
         return false;
     }
 }
