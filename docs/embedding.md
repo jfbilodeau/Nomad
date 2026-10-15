@@ -52,14 +52,24 @@ expression, or a supported function call. `evaluateExpression(source, context)`
 requires exactly one non-void expression; assignments and statements are rejected.
 Each entry point clears the context's previous result and error.
 
-`getDiagnostics()` exposes the compiler warnings and errors from the latest
-evaluation in reporting order. Hosts can append diagnostics with `addDiagnostic`.
-Diagnostics are the sole error and warning storage. `setError()` appends an error
-diagnostic; `hasError()` and `hasWarning()` check for their respective severities.
-`getError()` returns the first error's message, or null when there are no errors.
-Use `formatDiagnostic()` on a diagnostic when source location formatting is needed.
-Pointers and spans into the collection are invalidated when it changes.
-`clearError()` clears all diagnostics, as does starting another evaluation.
+Use `hasError()` to check for errors and `hasWarning()` to check for warnings.
+Warnings alone do not indicate failure. To display all diagnostics from the latest
+evaluation, iterate over `getDiagnostics()`:
+
+```cpp
+const auto succeeded = interpreter.execute(input, context);
+for (const auto& diagnostic : context.getDiagnostics()) {
+    std::cerr << nomad::formatDiagnostic(diagnostic) << '\n';
+}
+if (!succeeded) {
+    return;
+}
+```
+
+`getError()` provides the first error message, or null when there are no errors.
+Each new evaluation clears previous diagnostics; inspect or copy them before
+executing more input. Call `clearError()` to dismiss both errors and warnings
+without starting another evaluation.
 
 Results are owned by the context. Copy a result using `TypedValue` if it must
 survive another evaluation; do not free the context's result manually.
