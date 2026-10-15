@@ -1733,13 +1733,14 @@ bool Game::processGameEventCreateEntity(const GameEventCreateEntity &event) {
         }
 
         if (event.initFunctionId != NOMAD_INVALID_ID) {
-            executeFunction(event.initFunctionId, scene, entityPtr);
-
+            // Set entity name to be the name of its init function.
             auto function = m_runtime->getFunction(event.initFunctionId);
-
+            
             if (function) {
                 entityPtr->setName(function->getName());
             }
+            
+            executeFunction(event.initFunctionId, scene, entityPtr);
         } else {
             log::error("No init function for entity " + toString(event.entityId) + " in scene " + toString(event.sceneId));
         }

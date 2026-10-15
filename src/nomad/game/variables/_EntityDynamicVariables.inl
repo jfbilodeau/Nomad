@@ -330,6 +330,28 @@ m_runtime->registerDynamicVariable(
 );
 
 m_runtime->registerDynamicVariable(
+    VARIABLE_NAME_PREFIX ".paused",
+    [this](VirtualMachine* /*interpreter*/, const RuntimeValue& value) {
+        BEGIN_ENTITY_BLOCK("Attempted to set paused state of null entity")
+
+        auto paused = value.getBooleanValue();
+
+        entity->setPause(paused);
+
+        END_ENTITY_BLOCK
+    },
+    [this](VirtualMachine* /*interpreter*/, RuntimeValue& value) {
+        BEGIN_SINGLE_ENTITY_BLOCK("Attempted to get paused state of null entity")
+
+        value.setBooleanValue(entity->isPaused());
+
+        END_SINGLE_ENTITY_BLOCK(NOMAD_DEFAULT_BOOLEAN)
+    },
+    m_runtime->getBooleanType(),
+    NomadDoc("Whether the entity is paused.")
+);
+
+m_runtime->registerDynamicVariable(
     VARIABLE_NAME_PREFIX ".previousX",
     [this](VirtualMachine* /*interpreter*/, const RuntimeValue& value) {
         BEGIN_ENTITY_BLOCK("Attempted to set previous.x of null entity")
