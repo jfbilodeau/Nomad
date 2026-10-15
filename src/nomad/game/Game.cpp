@@ -1714,23 +1714,31 @@ bool Game::processGameEventCreateEntity(const GameEventCreateEntity &event) {
             event.y,
             event.layer
         );
-        auto entityPtr = entity.get();
 
-        entityPtr->setSize(event.width, event.height);
+        entity->setSize(event.width, event.height);
 
         if (event.text.empty() == false) {
-            entityPtr->setText(event.text);
+            entity->setText(event.text);
         }
 
         scene->addEntity(std::move(entity));
+        auto entityPtr = scene->getEntityById(event.entityId);
+
+        if (entityPtr == nullptr) {
+            log::error(
+                "Failed to retrieve entity " + toString(event.entityId) +
+                " after adding it to scene " + toString(event.sceneId)
+            );
+            return true;
+        }
 
         if (event.initFunctionId != NOMAD_INVALID_ID) {
             executeFunction(event.initFunctionId, scene, entityPtr);
 
-            auto script = m_runtime->getFunction(event.initFunctionId);
+            auto function = m_runtime->getFunction(event.initFunctionId);
 
-            if (script) {
-                entity->setName(script->getName());
+            if (function) {
+                entityPtr->setName(function->getName());
             }
         } else {
             log::error("No init function for entity " + toString(event.entityId) + " in scene " + toString(event.sceneId));

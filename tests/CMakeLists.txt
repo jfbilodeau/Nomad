@@ -5,6 +5,7 @@ add_executable(
     ./AudioTest.cpp
     ./ColorTest.cpp
     ./DebugDrawTest.cpp
+    ./EntitySpriteAnchorTest.cpp
     ./EntityTextTest.cpp
     ./CallableCatalogTest.cpp
     ./CompilerToolsTest.cpp

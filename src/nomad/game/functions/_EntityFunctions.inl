@@ -583,7 +583,6 @@ BEGIN_ENTITY_FUNCTION(setSpriteAnchor)
 
         BEGIN_ENTITY_BLOCK()
 
-        entity->setLocation(entity->getX() - x, entity->getY() - y);
         entity->setSpriteAnchor(x, y);
 
         END_ENTITY_BLOCK()
