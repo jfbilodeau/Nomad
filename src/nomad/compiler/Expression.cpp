@@ -1162,10 +1162,13 @@ bool FormatStringLiteral::parsePlaceholders(
         return false;
     }
 
+    m_segments = parsed.segments;
     m_variableFormat.clear();
-    for (const auto& segment : parsed.segments) {
+    for (auto segmentIndex = NomadIndex{0}; segmentIndex < m_segments.size(); ++segmentIndex) {
+        auto& segment = m_segments[segmentIndex];
         if (segment.type == FormatTemplateSegmentType::Literal) {
-            m_variableFormat += decodeFormatStringLiteral(segment.text);
+            segment.text = decodeFormatStringLiteral(segment.text);
+            m_variableFormat += segment.text;
             continue;
         }
 
@@ -1217,7 +1220,7 @@ bool FormatStringLiteral::parsePlaceholders(
         node->addStatement(std::make_unique<ReturnStatementNode>(getLine(), column, std::move(expression)));
         node->setEndSpan(getLine(), column + segment.text.size());
         compiler->setFunctionNode(functionId, std::move(node));
-        m_expressionPlaceholders.push_back({functionId, column});
+        m_expressionPlaceholders.push_back({functionId, column, segmentIndex});
     }
 
     return true;
@@ -1247,9 +1250,6 @@ void FormatStringLiteral::onResolve(CompilerContext* context, ScriptFunction* fu
 }
 
 void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) {
-    if (!m_expressionPlaceholders.empty()) {
-        raiseException("Format string expression execution is not implemented yet");
-    }
     const NomadId functionId = function->getId();
 
     auto formatStringId = compiler->getRuntime()->getFormatStringId(m_formatString, functionId);
@@ -1259,8 +1259,29 @@ void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function
 
         const auto format_string = compiler->getRuntime()->getFormatString(formatStringId);
 
-        if (const auto error = compileFormatString(compiler, function, m_formatString, format_string)) {
-            compiler->reportInternalError("Format string failed to compile after resolving: " + *error);
+        if (m_expressionPlaceholders.empty()) {
+            if (const auto error = compileFormatString(compiler, function, m_formatString, format_string)) {
+                compiler->reportInternalError("Format string failed to compile after resolving: " + *error);
+            }
+        } else {
+            auto expressionIndex = NomadIndex{0};
+            for (auto segmentIndex = NomadIndex{0}; segmentIndex < m_segments.size(); ++segmentIndex) {
+                const auto& segment = m_segments[segmentIndex];
+                if (segment.type == FormatTemplateSegmentType::Literal) {
+                    format_string->addLiteral(segment.text);
+                } else if (expressionIndex < m_expressionPlaceholders.size() &&
+                           m_expressionPlaceholders[expressionIndex].segmentIndex == segmentIndex) {
+                    const auto id = m_expressionPlaceholders[expressionIndex++].functionId;
+                    const auto* expressionFunction = compiler->getRuntime()->getFunction(id);
+                    const auto* returnType = expressionFunction->getReturnType();
+                    if (returnType == nullptr || returnType->isVoid()) {
+                        compiler->reportInternalError("Format string expression has no resolved value type");
+                    }
+                    format_string->addExpression(returnType, id);
+                } else if (const auto error = compileFormatString(compiler, function, "{" + segment.text + "}", format_string)) {
+                    compiler->reportInternalError("Format string placeholder failed to compile after resolving: " + *error);
+                }
+            }
         }
     }
 
@@ -1649,6 +1670,11 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
         intermediateFunctions.push_back(parentFunction);
 
         currentFunction = parentFunction;
+    }
+
+    // A later inference pass may establish the source type; do not permanently register an untyped capture.
+    if (captureType == nullptr) {
+        return false;
     }
 
     // We've found the capture. Walk back up and ensure the capture is propagated through all intermediate functions.

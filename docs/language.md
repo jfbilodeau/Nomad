@@ -303,7 +303,12 @@ Assertions are compiled into the function and are intended for detecting invalid
 
 ## Format strings
 
-Format strings allow embedding values using `$"..."`. Each `{name}` placeholder must be a variable, parameter, constant, or a function that takes no parameters (the function is called and its return value is inserted). Expressions, native functions and functions with parameters are not allowed inside placeholders.
+Format strings allow embedding values using `$"..."`. Simple `{name}` placeholders
+use direct lookup of variables, parameters, constants, or parameterless script
+functions. Other placeholders accept normal expressions, including operators,
+parentheses, native and script function calls with arguments, and intrinsic members.
+Each expression must return a non-void value. Placeholders are evaluated from left
+to right using current values; expression results are converted to text.
 
 Empty placeholders and missing closing braces are compilation errors. A closing
 brace outside a placeholder is ordinary literal text. Backslashes do not escape
@@ -315,6 +320,23 @@ score = 10
 text = $"Player {name} got {score} points"
 # text is now "Player J-F got 10 points"
 ```
+
+```nomad
+x = 10
+y = 20
+log.info $"total = {x + y}"
+log.info $"doubled = {(x + y) * 2}"
+log.info $"nested = {$"total {x + y}"}"
+```
+
+Expressions are compiled in the containing function's lexical scope, including
+its parameters and captured variables. Quoted strings inside expressions may
+contain braces, and nested format strings are supported. Invalid expressions
+are compilation errors, not inline error text. Bare native function names still
+use the simple-placeholder rules; use a call with arguments or a parenthesized
+expression to select expression parsing. Likewise, parenthesize a bare intrinsic
+member, for example `{(name.toUpper)}`, to distinguish it from qualified-variable
+lookup.
 
 ---
 

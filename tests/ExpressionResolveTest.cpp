@@ -280,9 +280,8 @@ BOOST_AUTO_TEST_CASE(format_expression_infers_return_type_and_captures_before_co
         "params value:int\nlocal = 2\nreturn $\"{value + local}\"");
     CompilerContext context(compiler.get());
 
-    BOOST_TEST(!compiler->compileFunctions(&context));
-    BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
-    BOOST_TEST(context.getFirstError()->message == "Format string expression execution is not implemented yet");
+    BOOST_REQUIRE(compiler->compileFunctions(&context));
+    BOOST_TEST(context.getErrorCount() == 0);
 
     std::vector<ScriptFunction*> functions;
     runtime.getFunctions(functions);

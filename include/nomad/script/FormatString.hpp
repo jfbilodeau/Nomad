@@ -19,6 +19,7 @@ class FormatString {
     enum class SegmentType {
         Literal = 1,
         Variable,
+        Expression,
     };
 
     struct Segment {
@@ -43,6 +44,7 @@ public:
 
     void addLiteral(const NomadString& literal);
     void addVariable(IdentifierType identifierType, const Type* valueType, NomadId variableId);
+    void addExpression(const Type* valueType, NomadId functionId);
 
     NomadString format(VirtualMachine* interpreter) const;
 

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <nomad/compiler/CallNode.hpp>
+#include <nomad/compiler/FormatStringCompiler.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 
 #include <nomad/Nomad.hpp>
@@ -213,10 +214,12 @@ private:
     struct ExpressionPlaceholder {
         NomadId functionId;
         NomadIndex column;
+        NomadIndex segmentIndex;
     };
 
     NomadString m_formatString;
     std::vector<ExpressionPlaceholder> m_expressionPlaceholders;
+    std::vector<FormatTemplateSegment> m_segments;
     NomadString m_variableFormat;
 };
 

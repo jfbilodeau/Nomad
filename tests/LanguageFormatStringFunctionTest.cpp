@@ -182,18 +182,29 @@ BOOST_AUTO_TEST_CASE(format_string_rejects_malformed_placeholders)
     }
 }
 
-BOOST_AUTO_TEST_CASE(format_string_expression_ast_reaches_execution_checkpoint)
+BOOST_AUTO_TEST_CASE(format_string_executes_compiled_expressions)
 {
-    for (const auto* source : {
-        "x = 10\ny = 20\nreturn $\"total = {x + y}\"",
-        "fun add a:int b:int\n    return a + b\nend\nreturn $\"{add 10 20}\"",
-        "fun describe value:int\n    local = 2\n    return $\"{value + local}\"\nend\nreturn describe 10",
-        R"(score = 10
-return $"outer {$"inner {score + 1}"}")",
-    }) {
+    const std::vector<std::pair<std::string, std::string>> cases = {
+        {"x = 10\ny = 20\nreturn $\"total = {x + y}\"", "total = 30"},
+        {"fun add a:int b:int\n    return a + b\nend\nreturn $\"{add 10 20}\"", "30"},
+        {"fun describe value:int\n    local = 2\n    return $\"{value + local}\"\nend\nreturn describe 10", "12"},
+        {R"(score = 10
+return $"outer {$"inner {score + 1}"}")", "outer inner 11"},
+        {"x = 3\nreturn $\"{x}:{x + 2}:{x}:{(x + 2) * 4}\"", "3:5:3:20"},
+        {"flag = true\nx = 3\nreturn $\"{!flag}:{x > 2 && flag}:{x & 1}:{-x}\"", "false:true:1:-3"},
+        {"text = \" hi \"\nreturn $\"{(text.trim)}:{(text.length)}\"", "hi:4"},
+        {"x = 1.5\nreturn $\"{x * 2.0}\"", "3"},
+        {"return $\"{1 + 2}:{true}:{\"}\"}\"", "3:true:}"},
+        {"fun describe value:int\n    return $\"{value + 1}\"\nend\nfirst = describe 1\nsecond = describe 9\nreturn $\"{first}:{second}\"", "2:10"},
+        {"x = 1\nfirst = $\"{x + 1}\"\nx = 5\nsecond = $\"{x + 1}\"\nreturn $\"{first}:{second}\"", "2:6"},
+    };
+    for (const auto& [source, expected] : cases) {
         BOOST_TEST_CONTEXT(source) {
-            const auto errors = compileErrors(source);
-            BOOST_TEST(errors.find("Format string expression execution is not implemented yet") != std::string::npos, errors);
+            const auto outcome = runSource(source);
+            BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+            BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+            BOOST_TEST(outcome.text == expected);
+            BOOST_TEST(outcome.leakedStrings == 0);
         }
     }
 }
@@ -213,9 +224,138 @@ BOOST_AUTO_TEST_CASE(format_string_expression_reports_type_and_syntax_errors)
         BOOST_TEST_CONTEXT(source) {
             const auto errors = compileErrors(source);
             BOOST_TEST(errors.find(expected) != std::string::npos, errors);
-            BOOST_TEST(errors.find("execution is not implemented") == std::string::npos, errors);
         }
     }
+}
+
+BOOST_AUTO_TEST_CASE(format_string_expression_calls_native_functions)
+{
+    std::vector<NomadInteger> recorded;
+    LanguageTestFixture fixture;
+    registerTestNativeFunctions(fixture.getRuntime(), recorded);
+    fixture.addFunction("main",
+        "name = \"hello\"\nvalue = 4\nreturn $\"{test.add value 3}:{test.echo name}\"");
+
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto outcome = fixture.execute("main");
+    BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+    BOOST_TEST(outcome.text == "7:hello");
+    BOOST_TEST(outcome.leakedStrings == 0);
+}
+
+BOOST_AUTO_TEST_CASE(format_string_expression_uses_forward_inferred_local_type)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main", "value = zAnswer\nreturn $\"{value + 1}\"");
+    fixture.addFunction("zAnswer", "return 41");
+
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    const auto outcome = fixture.execute("main");
+    BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+    BOOST_TEST(outcome.text == "42");
+}
+
+BOOST_AUTO_TEST_CASE(format_string_expression_reads_dynamic_values_at_execution)
+{
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto current = NomadInteger{3};
+    runtime.registerDynamicVariable(
+        "test.current",
+        [&current](VirtualMachine*, const RuntimeValue& value) { current = value.getIntegerValue(); },
+        [&current](VirtualMachine*, RuntimeValue& value) { value.setIntegerValue(current); },
+        runtime.getIntegerType(),
+        NomadDoc("Current test value")
+    );
+    fixture.addFunction("main", "return $\"{test.current + 1}\"");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    BOOST_TEST(fixture.execute("main").text == "4");
+    current = 10;
+    BOOST_TEST(fixture.execute("main").text == "11");
+}
+
+BOOST_AUTO_TEST_CASE(format_string_expression_placeholders_execute_in_source_order)
+{
+    const auto outcome = runSource(
+        "fun advance\n    global.score = global.score + 1\n    return global.score\nend\n"
+        "global.score = 0\n"
+        "return $\"{global.score}:{advance + 0}:{global.score}:{advance}:{global.score + 0}\""
+    );
+
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+    BOOST_TEST(outcome.text == "0:1:1:2:2");
+}
+
+BOOST_AUTO_TEST_CASE(format_string_expression_preserves_enclosing_operands)
+{
+    const auto outcome = runSource(
+        "x = 5\n"
+        "same = $\"{x + 1}\" == $\"{x * 2 - 4}\"\n"
+        "different = $\"{$\"{x}\"}\" != \"other\"\n"
+        "return $\"{same && different}:{x}\""
+    );
+
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+    BOOST_TEST(outcome.text == "true:5");
+    BOOST_TEST(outcome.leakedStrings == 0);
+}
+
+BOOST_AUTO_TEST_CASE(format_string_expression_short_circuits_without_calling_faulting_function)
+{
+    std::vector<NomadInteger> recorded;
+    LanguageTestFixture fixture;
+    registerTestNativeFunctions(fixture.getRuntime(), recorded);
+    fixture.addFunction("main",
+        "fun fail\n    test.fail\n    return true\nend\n"
+        "flag = false\nreturn $\"{flag && fail}:{!flag || fail}\"");
+
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto outcome = fixture.execute("main");
+    BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+    BOOST_TEST(outcome.text == "false:true");
+}
+
+BOOST_AUTO_TEST_CASE(format_string_expression_fault_releases_captures_and_restores_registers)
+{
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    runtime.registerNativeFunction(
+        "test.explode",
+        [](VirtualMachine* machine) { machine->fault("expression failed"); },
+        {defParameter("text", runtime.getStringRefType(), NomadParamDoc("Captured text"))},
+        runtime.getIntegerType(),
+        NomadDoc("Fail expression execution")
+    );
+    fixture.addFunction("main", "params text:string\nreturn $\"{test.explode text}\"");
+    fixture.addFunction("healthy", "return $\"{1 + 2}\"");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+
+    auto machine = runtime.createVirtualMachine();
+    RuntimeValue argument;
+    argument.setStringValue("capture");
+#ifdef NOMAD_DEBUG
+    const auto liveBefore = RuntimeValue::getLiveStringCount();
+#endif
+    machine->setIntegerResult(77);
+    machine->setIntegerIntermediate(88);
+    BOOST_CHECK_EXCEPTION(
+        machine->run(runtime.getFunction(runtime.getFunctionId("main")), {argument}),
+        VirtualMachineException,
+        [](const VirtualMachineException& exception) { return std::string(exception.what()) == "expression failed"; }
+    );
+    BOOST_TEST(machine->getIntegerResult() == 77);
+    BOOST_TEST(machine->getIntegerIntermediate() == 88);
+#ifdef NOMAD_DEBUG
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == liveBefore);
+#endif
+    argument.freeStringValue();
+
+    machine->run(runtime.getFunction(runtime.getFunctionId("healthy")), {});
+    BOOST_TEST(machine->getStringResult() == "3");
+    runtime.getStringType()->freeValue(machine->getResult());
 }
 
 BOOST_AUTO_TEST_SUITE_END()
