@@ -305,6 +305,10 @@ Assertions are compiled into the function and are intended for detecting invalid
 
 Format strings allow embedding values using `$"..."`. Each `{name}` placeholder must be a variable, parameter, constant, or a function that takes no parameters (the function is called and its return value is inserted). Expressions, native functions and functions with parameters are not allowed inside placeholders.
 
+Empty placeholders and missing closing braces are compilation errors. A closing
+brace outside a placeholder is ordinary literal text. Backslashes do not escape
+placeholder braces; the supported string escape sequences apply to literal text.
+
 ```nomad
 name = "J-F"
 score = 10

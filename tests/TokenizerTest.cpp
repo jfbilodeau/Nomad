@@ -30,6 +30,65 @@ BOOST_AUTO_TEST_CASE(tokenizer_requires_compiler_context)
     BOOST_CHECK_THROW(Tokenizer(nullptr, "test.nomad", "score = 1"), NomadBug);
 }
 
+BOOST_AUTO_TEST_CASE(tokenizer_preserves_expression_strings_inside_format_tokens)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    Tokenizer tokens(
+        &context,
+        "nested.nomad",
+        R"(return $"line\n{echo "a\"}"} {$"inner {score}"}" == "after")"
+    );
+
+    BOOST_TEST(!context.hasError());
+    BOOST_REQUIRE_EQUAL(tokens.getTokenCount(), 4);
+    BOOST_TEST(tokens.getTokenTypeAt(1) == TokenType::FormatString);
+    const NomadString expected = "line\n" R"({echo "a\"}"} {$"inner {score}"})";
+    BOOST_TEST(tokens.getTokenAt(1) == expected);
+    BOOST_TEST(tokens.getTokenAt(2) == "==");
+    BOOST_TEST(tokens.getTokenAt(3) == "after");
+}
+
+BOOST_AUTO_TEST_CASE(tokenizer_preserves_format_token_column_after_decoding)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    const NomadString source = R"(    $"a\n{x}")";
+    Tokenizer tokens(&context, "offset.nomad", source);
+
+    BOOST_TEST(!context.hasError());
+    BOOST_REQUIRE_EQUAL(tokens.getTokenCount(), 1);
+    const auto& token = tokens.currentToken();
+    BOOST_TEST(token.textValue == "a\n{x}");
+    BOOST_TEST(token.column == 5);
+}
+
+BOOST_AUTO_TEST_CASE(tokenizer_preserves_legacy_literal_escape_decoding)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    Tokenizer tokens(&context, "escape.nomad", R"($"a\n\r\t\"\\\q")");
+
+    BOOST_TEST(!context.hasError());
+    BOOST_REQUIRE_EQUAL(tokens.getTokenCount(), 1);
+    BOOST_TEST(tokens.getTokenAt(0) == "a\n\r\t\"\\\\q");
+}
+
+BOOST_AUTO_TEST_CASE(tokenizer_retains_malformed_placeholder_for_compiler_diagnostics)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    Tokenizer tokens(&context, "broken.nomad", R"(return $"Score: {score")");
+
+    BOOST_TEST(!context.hasError());
+    BOOST_REQUIRE_EQUAL(tokens.getTokenCount(), 2);
+    BOOST_TEST(tokens.getTokenAt(1) == "Score: {score");
+}
+
 BOOST_AUTO_TEST_CASE(tokenizer_captures_token_columns)
 {
     Runtime runtime;
