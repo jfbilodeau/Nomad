@@ -114,6 +114,11 @@ Native and script calls use the caller-supplied VM. The host must initialize the
 runtime and any engine execution context required by its registered APIs.
 Context-owned typed values manage their own string lifetimes.
 
+Binary operands are evaluated left-first in both compiled and interpreted
+expressions. Logical operators retain their short-circuit behavior. In
+particular, the left value is retained before a right-hand function call can
+change its source variable.
+
 `CompilerMode::Script` selects compiled script resolution; `CompilerMode::Interpreter`
 selects interpreted resolution without changing compiled function definitions.
 Console and frame evaluation do not require separate compiler modes.

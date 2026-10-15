@@ -354,21 +354,20 @@ void BinaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, c
     const auto* stringRefType = compiler->getRuntime()->getStringRefType();
 
     if (stringRefType->acceptsArgument(m_left->getType()) && stringRefType->acceptsArgument(m_right->getType())) {
-        // String operators borrow their operands. Operands that cannot be borrowed are evaluated into owned copies
-        // on the stack, then released once the operator has run.
-        const auto borrowLeft = m_left->canBorrow();
         const auto borrowRight = m_right->canBorrow();
-
-        if (!borrowRight) {
-            m_right->compile(compiler, function, ExpressionTarget::Stack);
-        }
+        // A computed right operand may modify a borrowed left value, so snapshot the left first.
+        const auto borrowLeft = m_left->canBorrow() && borrowRight;
 
         if (!borrowLeft) {
             m_left->compile(compiler, function, ExpressionTarget::Stack);
         }
 
-        const NomadIndex leftOffset = 0;
-        const NomadIndex rightOffset = borrowLeft ? 0 : 1;
+        if (!borrowRight) {
+            m_right->compile(compiler, function, ExpressionTarget::Stack);
+        }
+
+        const NomadIndex leftOffset = borrowRight ? 0 : 1;
+        const NomadIndex rightOffset = 0;
 
         if (borrowRight) {
             m_right->compileBorrowed(compiler, function, ExpressionTarget::Intermediate);
@@ -412,14 +411,9 @@ void BinaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, c
         return;
     }
 
+    m_left->compile(compiler, function, ExpressionTarget::Stack);
     m_right->compile(compiler, function, ExpressionTarget::Intermediate);
-    if (m_left->isTerminal() == false) {
-        compiler->addPushIntermediate(m_right->getType());
-    }
-    m_left->compile(compiler, function, ExpressionTarget::Result);
-    if (m_left->isTerminal() == false) {
-        compiler->addPopIntermediate(m_right->getType());
-    }
+    compiler->addPopResult(m_left->getType());
 
     const auto leftType = m_left->getType();
     const auto rightType = m_right->getType();

@@ -368,6 +368,12 @@ Nomad evaluates operators according to the following precedence order, from high
 
 Following standard arithmetic precedence, multiplication, division and modulo are evaluated before addition and subtraction.
 
+Within a binary expression, the left operand is evaluated before the right operand,
+in both compiled scripts and interpreted expressions. The left value is retained
+even if evaluating the right operand changes its source variable. Logical `&&`
+and `||` evaluate the right operand only when needed. This left-first rule also
+applies inside compiled format-string placeholders.
+
 Examples:
 
 ```nomad
