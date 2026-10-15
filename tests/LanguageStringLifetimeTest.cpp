@@ -228,6 +228,17 @@ BOOST_AUTO_TEST_CASE(format_string_function_segments_do_not_leak)
     });
 }
 
+BOOST_AUTO_TEST_CASE(format_string_expression_captures_and_results_do_not_leak)
+{
+    checkCases({
+        {"name = \"n\"\nreturn $\"{test.echo name}\"", "n"},
+        {"fun describe text:string\n    return $\"{test.echo text}\"\nend\nreturn describe \"p\"", "p"},
+        {"name = \"n\"\nreturn $\"{$\"<{name}>\"}\"", "<n>"},
+        {"name = \"n\"\nreturn $\"{$\"{$\"{test.echo name}\"}\"}\"", "n"},
+        {"name = \"n\"\nfirst = $\"{test.echo name}\"\nname = \"m\"\nsecond = $\"{test.echo name}\"\nreturn $\"{first}:{second}\"", "n:m"},
+    });
+}
+
 BOOST_AUTO_TEST_CASE(stringref_parameters_accept_any_string_expression)
 {
     std::vector<NomadString> consumed;

@@ -1,14 +1,16 @@
 // Copyright (c) 2024-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/script/VirtualMachine.hpp>
+#include <nomad/script/OpCode.hpp>
 
 #include <nomad/system/Boolean.hpp>
 #include <nomad/system/Float.hpp>
 #include <nomad/system/Integer.hpp>
 #include <nomad/script/FormatString.hpp>
+#include <nomad/script/InterpreterContext.hpp>
 
-#include <nomad/script/OpCode.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <cassert>
 
@@ -983,6 +985,27 @@ void op_format_string_execute(VirtualMachine* interpreter) {
     const auto string = formatString->format(interpreter);
 
     interpreter->setStringResult(string);
+}
+
+void op_dynamic_format_execute(VirtualMachine* machine) {
+    const auto line = machine->nextIndex();
+    const auto column = machine->nextIndex();
+    auto* function = machine->getCurrentFunction();
+
+    if (function == nullptr) {
+        machine->fault("Dynamic formatting requires an active script function");
+    }
+
+    const auto* type = machine->getRuntime()->getStringType();
+    const TypedValue operand(type, machine->getResult());
+
+    type->freeValue(machine->getResult());
+    machine->setResult(RuntimeValue{});
+    InterpreterContext context(*machine, *function);
+
+    const auto result = formatDynamicString(operand.getValue().getStringValue(), context, function->getPath(), line, column);
+
+    machine->setStringResult(result.text);
 }
 
 void op_id_push_r(VirtualMachine* interpreter) {

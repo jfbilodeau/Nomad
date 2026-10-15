@@ -35,7 +35,7 @@ public:
     [[nodiscard]]
     virtual NomadIndex getStackValueCount() const { return 1; }
 
-    [[nodiscard]] TypedValue evaluate(Interpreter& context) const;
+    [[nodiscard]] TypedValue evaluate(InterpreterContext& context) const;
     // Resolves the argument's expression (if any). Returns false if errors were reported.
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptFunction* function);
     void generateCode(Compiler* compiler, ScriptFunction* function);
@@ -43,7 +43,7 @@ public:
 protected:
     virtual void onResolve(CompilerContext* context, ScriptFunction* function);
     virtual void onCompile(Compiler* compiler, ScriptFunction* function) = 0;
-    [[nodiscard]] virtual TypedValue onEvaluate(Interpreter& context) const;
+    [[nodiscard]] virtual TypedValue onEvaluate(InterpreterContext& context) const;
 
 private:
     const Type* m_type = nullptr;

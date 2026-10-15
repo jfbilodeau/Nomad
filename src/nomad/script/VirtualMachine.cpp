@@ -3,6 +3,7 @@
 #include <ranges>
 
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>
@@ -356,6 +357,38 @@ void VirtualMachine::runIntrinsicMethod(const NomadId memberId, const std::vecto
 
     m_intrinsicReceiver = previousReceiver;
     releaseArguments();
+}
+
+std::vector<TypedValue> VirtualMachine::captureCurrentFrame(const ScriptFunction* function) const {
+    if (function == nullptr || function->getParentId() == NOMAD_INVALID_ID) {
+        fault("Invalid function for current-frame capture");
+    }
+    const auto* parent = m_runtime->getFunction(function->getParentId());
+    if (parent == nullptr || parent != getCurrentFunction()) {
+        fault("Format expression does not belong to the current script frame");
+    }
+
+    std::vector<TypedValue> values;
+    values.reserve(function->getCaptureCount());
+    for (const auto& capture : function->getCaptures()) {
+        if (capture.type == nullptr || capture.type->isVoid()) {
+            fault("Invalid value type for current-frame capture");
+        }
+        if (capture.source == CaptureSource::Parameter) {
+            if (!isIdInRange(capture.id, parent->getParameterCount())) {
+                fault("Invalid parameter for current-frame capture");
+            }
+            values.emplace_back(capture.type, getParameter(capture.id));
+        } else if (capture.source == CaptureSource::Variable) {
+            if (!isIdInRange(capture.id, parent->getVariableCount())) {
+                fault("Invalid variable for current-frame capture");
+            }
+            values.emplace_back(capture.type, getFunctionVariableValue(capture.id));
+        } else {
+            fault("Invalid source for current-frame capture");
+        }
+    }
+    return values;
 }
 
 std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, const NomadId functionId) const {

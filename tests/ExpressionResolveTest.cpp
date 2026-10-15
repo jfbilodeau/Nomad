@@ -241,6 +241,63 @@ BOOST_AUTO_TEST_CASE(expression_resolve_reports_unknown_nativeFunction)
     BOOST_TEST(context.getDiagnostics().front().message == "Unknown native function 'missingNativeFunction'");
 }
 
+BOOST_AUTO_TEST_CASE(format_expression_parse_diagnostic_uses_host_source_column)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    compiler->registerScriptFile("formatSyntax", "formatSyntax.nomad",
+        "x = 1\ntext = $\"line\\n{x + (2}\"");
+    CompilerContext context(compiler.get());
+
+    BOOST_TEST(!compiler->compileFunctions(&context));
+    BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
+    BOOST_TEST(context.getFirstError()->sourceName == "formatSyntax.nomad");
+    BOOST_TEST(context.getFirstError()->line == 2);
+    BOOST_TEST(context.getFirstError()->message == "Expected ')'");
+}
+
+BOOST_AUTO_TEST_CASE(format_expression_empty_placeholder_uses_raw_source_offset)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    compiler->registerScriptFile("formatEmpty", "formatEmpty.nomad",
+        "x = 1\ntext = $\"line\\n{}\"");
+    CompilerContext context(compiler.get());
+
+    BOOST_TEST(!compiler->compileFunctions(&context));
+    BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
+    BOOST_TEST(context.getFirstError()->sourceName == "formatEmpty.nomad");
+    BOOST_TEST(context.getFirstError()->line == 2);
+    BOOST_TEST(context.getFirstError()->column == 16);
+    BOOST_TEST(context.getFirstError()->message == "Empty placeholder in format string");
+}
+
+BOOST_AUTO_TEST_CASE(format_expression_infers_return_type_and_captures_before_compilation)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto hostId = compiler->registerScriptFile("formatCapture", "formatCapture.nomad",
+        "params value:int\nlocal = 2\nreturn $\"{value + local}\"");
+    CompilerContext context(compiler.get());
+
+    BOOST_REQUIRE(compiler->compileFunctions(&context));
+    BOOST_TEST(context.getErrorCount() == 0);
+
+    std::vector<ScriptFunction*> functions;
+    runtime.getFunctions(functions);
+    auto generatedCount = NomadIndex{0};
+    for (const auto* function : functions) {
+        if (function->getParentId() == hostId) {
+            ++generatedCount;
+            BOOST_TEST(function->getReturnType() == runtime.getIntegerType());
+            BOOST_TEST(function->getCaptureCount() == 2);
+            BOOST_TEST(function->getCaptureId("value") != NOMAD_INVALID_ID);
+            BOOST_TEST(function->getCaptureId("local") != NOMAD_INVALID_ID);
+        }
+    }
+    BOOST_TEST(generatedCount == 1);
+}
+
 BOOST_AUTO_TEST_CASE(expression_resolve_reports_unknown_function)
 {
     Runtime runtime;

@@ -139,6 +139,7 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/script/FormatString.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterContext.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/IntrinsicMembers.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunction.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunctions.cpp

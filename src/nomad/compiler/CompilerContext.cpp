@@ -27,9 +27,11 @@ NomadString formatDiagnostic(const Diagnostic& diagnostic) {
     return location + ": " + severity + ": " + diagnostic.message;
 }
 
-CompilerContext::CompilerContext(Compiler* compiler, const CompilerMode mode):
+CompilerContext::CompilerContext(Compiler* compiler, const CompilerMode mode,
+    const InterpreterContext* interpreterContext):
     m_compiler(compiler),
-    m_mode(mode)
+    m_mode(mode),
+    m_interpreterContext(interpreterContext)
 {
     if (m_compiler == nullptr) {
         throw NomadBug("CompilerContext requires a compiler");
@@ -48,6 +50,10 @@ Runtime* CompilerContext::getRuntime() const {
 
 CompilerMode CompilerContext::getMode() const {
     return m_mode;
+}
+
+const InterpreterContext* CompilerContext::getInterpreterContext() const {
+    return m_interpreterContext;
 }
 
 void CompilerContext::reportError(const NomadStringView message) {

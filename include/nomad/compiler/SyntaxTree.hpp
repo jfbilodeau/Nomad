@@ -21,7 +21,7 @@ class AstNode;
 class Compiler;
 class CompilerContext;
 class FunStatementNode;  // Defined in StatementParsers.hpp
-class Interpreter;
+class InterpreterContext;
 class TypedValue;
 class Runtime;
 class FunctionBuilder;
@@ -111,7 +111,7 @@ public:
     // Load a borrowed string pointer into `target`. Only valid when `canBorrow()` is true.
     void compileBorrowed(Compiler* compiler, ScriptFunction* function, ExpressionTarget target);
     // The expression must have been resolved first.
-    void evaluate(Interpreter& context) const;
+    void evaluate(InterpreterContext& context) const;
 
     [[nodiscard]] const Type* getType() const;
     [[nodiscard]] const RuntimeValue& getValue() const;
@@ -135,7 +135,7 @@ protected:
     virtual void onResolve(CompilerContext* context, ScriptFunction* function) = 0;
     virtual void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) = 0;
     virtual void onCompileBorrowed(Compiler* compiler, ScriptFunction* function, ExpressionTarget target);
-    virtual void onEvaluate(Interpreter& context) const;
+    virtual void onEvaluate(InterpreterContext& context) const;
     [[nodiscard]]
     virtual const Statement* onGetStatement() const;
 
@@ -158,7 +158,7 @@ public:
     // Resolves identifiers and expression types. Returns false if errors were reported.
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptFunction* function);
     void compile(Compiler* compiler, ScriptFunction* function);
-    void evaluate(Interpreter& context) const;
+    void evaluate(InterpreterContext& context) const;
 
     // True when every execution path through this statement ends with a `return`.
     [[nodiscard]] virtual NomadBoolean alwaysReturns() const;
@@ -170,7 +170,7 @@ public:
 protected:
     virtual void onResolve(CompilerContext* context, ScriptFunction* function);
     virtual void onCompile(Compiler* compiler, ScriptFunction* function);
-    virtual void onEvaluate(Interpreter& context) const;
+    virtual void onEvaluate(InterpreterContext& context) const;
 };
 
 class NullStatement : public Statement {
@@ -179,7 +179,7 @@ public:
 
 protected:
     void onCompile(Compiler* compiler, ScriptFunction* function) override;
-    void onEvaluate(Interpreter& context) const override;
+    void onEvaluate(InterpreterContext& context) const override;
 };
 
 class AssignmentStatement : public Statement {
@@ -189,7 +189,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function) override;
-    void onEvaluate(Interpreter& context) const override;
+    void onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_identifier;
@@ -205,7 +205,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function) override;
-    void onEvaluate(Interpreter& context) const override;
+    void onEvaluate(InterpreterContext& context) const override;
 
 private:
     std::unique_ptr<Expression> m_target;
@@ -219,7 +219,7 @@ public:
   protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function) override;
-    void onEvaluate(Interpreter& context) const override;
+    void onEvaluate(InterpreterContext& context) const override;
 
 private:
     std::unique_ptr<Expression> m_expression;
@@ -237,7 +237,7 @@ public:
 
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptFunction* function) const;
     void compile(Compiler* compiler, ScriptFunction* function) const;
-    void evaluate(Interpreter& context) const;
+    void evaluate(InterpreterContext& context) const;
 
     void addStatement(std::unique_ptr<Statement> statement);
 

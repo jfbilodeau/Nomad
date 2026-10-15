@@ -8,6 +8,7 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Expression.hpp>
+#include <nomad/compiler/FormatStringCompiler.hpp>
 #include <nomad/compiler/StatementParsers.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
@@ -186,6 +187,21 @@ bool isPotentialMemberExpression(CompilerContext* context, ScriptFunction* funct
 }
 
 } // namespace
+
+bool isIntrinsicMemberCandidate(const Compiler* compiler, const ScriptFunction* function, const NomadString& name) {
+    if (!splitIntrinsicMemberName(compiler->getRuntime(), name)) {
+        return false;
+    }
+
+    // Exact qualified identifiers take precedence, including those captured from an enclosing scope.
+    for (auto* scope = function; scope != nullptr;) {
+        if (compiler->getIdentifierType(name, scope) != IdentifierType::Unknown) {
+            return false;
+        }
+        scope = compiler->getRuntime()->getFunction(scope->getParentId());
+    }
+    return compiler->getIdentifierType(name, nullptr) == IdentifierType::Unknown;
+}
 
 std::unique_ptr<Expression> parseBinaryOperatorExpression(CompilerContext* context, ScriptFunction* function,
                                                           Tokenizer* tokens, const Expression* parent,
@@ -378,7 +394,7 @@ NomadId parseCallbackParameter(
     const auto isFun = tokens->is("fun");
 
     if (isFun || tokens->is("then")) {
-        if (context->getMode() == CompilerMode::Interpreter) {
+        if (context->getMode() != CompilerMode::Script) {
             context->reportError(
                 NomadString("Inline `") + (isFun ? "fun" : "then") + "` callbacks are not supported by the interpreter"
             , tokens);
@@ -617,6 +633,16 @@ std::unique_ptr<Expression> parseUnaryOperatorExpression(CompilerContext* contex
 
     auto token = tokens->currentToken();
 
+    if (token.type == TokenType::Operator && token.textValue == "$") {
+        const auto line = tokens->getLineIndex();
+        tokens->next();
+        auto expression = parseUnaryOperatorExpression(context, function, tokens, parent);
+        if (expression == nullptr) {
+            return nullptr;
+        }
+        return std::make_unique<DynamicFormatExpression>(parent, line, token.column, std::move(expression));
+    }
+
     auto op = getUnaryOperator(token.textValue);
 
     if (op == UnaryOperator::Unknown) {
@@ -795,8 +821,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     }
 
     if (identifierDefinition.identifierType == IdentifierType::Unknown && function != nullptr) {
-        // VirtualMachine input has no function: console variables are defined when the assignment is evaluated.
-        // Context variable?
+        // Runtime context variables keep their normal registration path.
         const auto contextId = context->getRuntime()->getVariableContextIdByPrefix(variableName);
 
         if (contextId != NOMAD_INVALID_ID) {
@@ -806,8 +831,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
             if (variableId == NOMAD_INVALID_ID) {
                 context->getCompiler()->reportInternalError("Failed to register context variable: " + variableName);
             }
-        } else {
-            // Regular function variable.
+        } else if (context->getMode() == CompilerMode::Script) {
             function->registerVariable(variableName, nullptr);
         }
     }
@@ -837,12 +861,23 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
     auto& token = tokens->next();
 
     if (token.type == TokenType::FormatString) {
-        return std::make_unique<FormatStringLiteral>(
+        auto expression = std::make_unique<FormatStringLiteral>(
             parent,
             tokens->getLineIndex(),
-            tokens->getColumnIndex(),
+            token.column,
             token.textValue
         );
+        const auto offset = token.column - 1;
+        const auto& sourceLine = tokens->getLine();
+        const auto end = findFormatStringLiteralEnd(sourceLine, offset);
+        if (!end) {
+            return expression;
+        }
+        if (context->getMode() == CompilerMode::Script && function != nullptr) {
+            context->getCompiler()->deferFormatString(expression.get(), function->getId(),
+                sourceLine.substr(offset + 2, *end - offset - 2));
+        }
+        return expression;
     }
 
     if (token.type == TokenType::String) {
@@ -904,7 +939,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
                                                              token.textValue);
         }
 
-        if (context->getCompiler()->getIdentifierType(token.textValue, function) == IdentifierType::Unknown) {
+        if (isIntrinsicMemberCandidate(context->getCompiler(), function, token.textValue)) {
             const auto memberParts = splitIntrinsicMemberName(context->getRuntime(), token.textValue);
 
             if (memberParts) {
@@ -920,7 +955,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
             }
         }
 
-        if (context->getMode() == CompilerMode::Interpreter &&
+        if (context->getMode() != CompilerMode::Script &&
             context->getCompiler()->getIdentifierType(token.textValue, function) == IdentifierType::Unknown &&
             !tokens->endOfLine()) {
             const auto nextType = tokens->currentToken().type;

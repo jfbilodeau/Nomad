@@ -98,6 +98,9 @@ Edit the script to change your game. Start with the
 [engine API](engine-api.md). Use the [debugging guide](debugging.md) when
 inspecting runtime behavior.
 
+For C++ hosts integrating the scripting language, see
+[Embedding Nomad in C++](embedding.md).
+
 ## Package your game
 
 ```console

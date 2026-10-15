@@ -1089,6 +1089,10 @@ void Compiler::loadScriptsFromPath(const NomadString& path) {
     scanDirectoryForScripts(path, "", 10);
 }
 
+void Compiler::deferFormatString(FormatStringLiteral* literal, const NomadId functionId, NomadString sourceContent) {
+    m_pendingFormatStrings.push_back({literal, functionId, std::move(sourceContent)});
+}
+
 bool Compiler::compileFunctions(CompilerContext* context) {
     const auto errorCount = context->getErrorCount();
     const auto hasNewErrors = [context, errorCount] {
@@ -1118,6 +1122,7 @@ bool Compiler::compileFunctions(CompilerContext* context) {
         m_functionLinks.clear();
         m_functionCallDependencies.clear();
         m_returningFunctions.clear();
+        m_pendingFormatStrings.clear();
 
         return !hasNewErrors();
     };
@@ -1163,6 +1168,21 @@ bool Compiler::compileFunctions(CompilerContext* context) {
     if (hasNewErrors()) {
         return finish();
     }
+
+    log::info("Preparing format strings");
+
+    // Parsing a placeholder can append nested format literals to the queue.
+    for (auto index = NomadIndex{0}; index < m_pendingFormatStrings.size(); ++index) {
+        const auto pending = std::move(m_pendingFormatStrings[index]);
+        auto* function = m_runtime->getFunction(pending.functionId);
+        reportExceptions(function->getPath(), [&] {
+            (void)pending.literal->parsePlaceholders(context, function, pending.sourceContent);
+        });
+        if (hasNewErrors()) {
+            return finish();
+        }
+    }
+    m_pendingFormatStrings.clear();
 
     log::info("Syntax checking functions");
 

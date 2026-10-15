@@ -24,10 +24,12 @@ class Runtime;
 #define NomadParamDoc(param_doc) \
     param_doc
 
+// Generates the registered script API reference.
 void generateDocumentation(const Runtime* runtime, std::ostream& out);
 void generateTypeDocumentation(const Runtime* runtime, std::ostream& out);
 void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& out);
 void generateKeywords(Runtime* runtime, std::ostream& out);
+// Includes expression interpolation, nested format literals, and the format string operator.
 void generateTextMateGrammar(Runtime* runtime, std::ostream& out);
 
 } // namespace nomad

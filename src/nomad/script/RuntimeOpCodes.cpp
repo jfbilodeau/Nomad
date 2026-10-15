@@ -322,6 +322,8 @@ void Runtime::registerDefaultInstructions() {
         OpCodes::op_format_string_execute, op_format_string_execute, "Execute the format string in the `r` register",
         {Operand::FormatString}
     );
+    registerInstruction(OpCodes::op_dynamic_format_execute, op_dynamic_format_execute,
+        "Interpret a string template in the current script frame", {Operand::Index, Operand::Index});
 
     // ID operators
     registerInstruction(OpCodes::op_id_push_r, op_id_push_r, "Push the result value to the stack", {});

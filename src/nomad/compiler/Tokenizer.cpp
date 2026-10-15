@@ -3,6 +3,8 @@
 #include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/FormatStringCompiler.hpp>
+
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptFunction.hpp>
 
@@ -107,6 +109,7 @@ struct LineGrammar : boost::spirit::qi::grammar<Iterator, std::vector<Token>()> 
             qi::string("^") |
             qi::string("|") |
             qi::string("!") |
+            qi::string("$") |
             qi::string("=") |
             qi::string("+") |
             qi::string("-") |
@@ -388,7 +391,21 @@ void Tokenizer::tokenizeLines() {
 
             const auto tokenStart = first;
             Token token;
-            success = qi::parse(first, line.cend(), lineGrammar.basic_token, token);
+            const auto offset = static_cast<NomadIndex>(tokenStart - line.cbegin());
+            const auto isFormatString = line.size() - offset >= 2 && line.compare(offset, 2, "$\"") == 0;
+            const auto formatEnd = isFormatString ? findFormatStringLiteralEnd(line, offset) : std::nullopt;
+            if (formatEnd) {
+                token = Token(TokenType::FormatString,
+                    decodeFormatStringLiteral(NomadStringView(line).substr(offset + 2, *formatEnd - offset - 2)));
+                first = line.cbegin() + *formatEnd + 1;
+            } else {
+                // Preserve lexing of malformed placeholders so the format compiler can diagnose missing braces.
+                success = qi::parse(first, line.cend(), lineGrammar.basic_token, token);
+                if (success && token.type == TokenType::FormatString) {
+                    const auto end = static_cast<NomadIndex>(first - line.cbegin()) - 1;
+                    token.textValue = decodeFormatStringLiteral(NomadStringView(line).substr(offset + 2, end - offset - 2));
+                }
+            }
             if (!success) {
                 first = tokenStart;
                 break;

@@ -137,6 +137,9 @@ boost::json::object createPatternRepositoryEntry(boost::json::object pattern) {
 void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     out << "# Nomad Engine Reference" << std::endl;
     out << std::endl;
+    out << "This reference describes registered script APIs."
+        << std::endl;
+    out << std::endl;
 
     out << "## Constants" << std::endl;
 
@@ -593,16 +596,19 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
         "literals",
         "functions",
         "intrinsicMembers",
-        "types"
+        "types",
+        "operators"
     }) {
         rootPatterns.push_back(createInclude(repositoryName));
     }
-    rootPatterns.push_back(createMatchPattern("punctuation.operator.nomad", "[+\\-*/%=&|<>!]+"));
     root["patterns"] = std::move(rootPatterns);
 
     object repository;
     repository["comments"] = createPatternRepositoryEntry(
         createMatchPattern("comment.line.number-sign.nomad", "#.*$")
+    );
+    repository["operators"] = createPatternRepositoryEntry(
+        createMatchPattern("punctuation.operator.nomad", "[+\\-*/%=&|<>!^$]+")
     );
 
     object formatString;
@@ -613,19 +619,24 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
     formatString["endCaptures"] = object({{"0", object({{"name", "punctuation.definition.string.end.nomad"}})}});
 
     array interpolationPatterns;
-    for (const auto& repositoryName : {"keywords", "numbers", "functions", "intrinsicMembers", "literals"}) {
+    for (const auto& repositoryName : {
+        "formatStrings", "strings", "keywords", "numbers", "functions", "intrinsicMembers", "literals",
+        "types", "operators"
+    }) {
         interpolationPatterns.push_back(createInclude(repositoryName));
     }
 
     object interpolation;
     interpolation["name"] = "meta.interpolation.nomad";
     interpolation["begin"] = "\\{";
+    interpolation["beginCaptures"] = object({{"0", object({{"name", "punctuation.section.interpolation.begin.nomad"}})}});
     interpolation["end"] = "\\}";
+    interpolation["endCaptures"] = object({{"0", object({{"name", "punctuation.section.interpolation.end.nomad"}})}});
     interpolation["patterns"] = std::move(interpolationPatterns);
 
     array formatStringPatterns;
     formatStringPatterns.push_back(
-        createMatchPattern("constant.character.escape.nomad", "\\\\.")
+        createMatchPattern("constant.character.escape.nomad", R"(\\["\\nrt])")
     );
     formatStringPatterns.push_back(std::move(interpolation));
     formatString["patterns"] = std::move(formatStringPatterns);
