@@ -299,6 +299,18 @@ void InterpreterContext::setError(const NomadString& error) {
 
 void InterpreterContext::clearError() {
     m_error.reset();
+    m_diagnostic.reset();
+}
+
+void InterpreterContext::setDiagnostic(const Diagnostic& diagnostic) {
+    if (!hasError()) {
+        m_diagnostic = diagnostic;
+        setError(formatDiagnostic(diagnostic));
+    }
+}
+
+const Diagnostic* InterpreterContext::getDiagnostic() const {
+    return m_diagnostic ? &*m_diagnostic : nullptr;
 }
 
 NomadBoolean InterpreterContext::hasError() const {

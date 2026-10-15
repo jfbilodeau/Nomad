@@ -2,12 +2,56 @@
 
 #include <nomad/script/FormatString.hpp>
 
+#include <nomad/compiler/FormatStringCompiler.hpp>
+
+#include <nomad/log/Logger.hpp>
+
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 
 #include <nomad/system/String.hpp>
 
 namespace nomad {
+
+DynamicFormatResult formatDynamicString(const NomadStringView format, InterpreterContext& context,
+    const NomadStringView sourceName, const NomadIndex line, const NomadIndex column) {
+    DynamicFormatResult result;
+    const auto parsed = parseFormatTemplate(format);
+    const Interpreter interpreter;
+    const auto appendError = [&](const FormatTemplateSegment& segment, const NomadString& message) {
+        result.text += "{" + message + "}";
+        result.diagnostics.push_back({message, NomadString{sourceName}, line, column,
+            segment.offset, segment.length});
+        log::error("Dynamic format error: source=" + NomadString{sourceName} +
+            ", line=" + std::to_string(line) + ", column=" + std::to_string(column) +
+            ", offset=" + std::to_string(segment.offset) + ", length=" + std::to_string(segment.length) +
+            ", message=" + message);
+    };
+    for (const auto& segment : parsed.segments) {
+        if (segment.type == FormatTemplateSegmentType::Literal) {
+            result.text += segment.text;
+        } else if (segment.type == FormatTemplateSegmentType::Error) {
+            const auto& diagnostic = parsed.diagnostics.at(*segment.diagnosticIndex);
+            appendError(segment, diagnostic.message == "Missing '}' in format string"
+                ? "missing `}`" : "empty expression");
+        } else if (interpreter.evaluateExpression(segment.text, context)) {
+            const auto* value = context.getResult();
+            result.text += value->getType()->toString(value->getValue());
+        } else {
+            const auto* diagnostic = context.getDiagnostic();
+            auto message = diagnostic != nullptr ? diagnostic->message : *context.getError();
+            constexpr NomadStringView unknownIdentifier = "Unknown identifier: ";
+            if (message.starts_with(unknownIdentifier)) {
+                message = "invalid identifier: '" + message.substr(unknownIdentifier.size()) + "'";
+            }
+            appendError(segment, message);
+        }
+        context.clearError();
+        context.clearResult();
+    }
+    return result;
+}
 
 FormatString::FormatString(const NomadString& formatString, NomadId functionId):
     m_formatString(formatString),

@@ -618,6 +618,16 @@ std::unique_ptr<Expression> parseUnaryOperatorExpression(CompilerContext* contex
 
     auto token = tokens->currentToken();
 
+    if (token.type == TokenType::Operator && token.textValue == "$") {
+        const auto line = tokens->getLineIndex();
+        tokens->next();
+        auto expression = parseUnaryOperatorExpression(context, function, tokens, parent);
+        if (expression == nullptr) {
+            return nullptr;
+        }
+        return std::make_unique<DynamicFormatExpression>(parent, line, token.column, std::move(expression));
+    }
+
     auto op = getUnaryOperator(token.textValue);
 
     if (op == UnaryOperator::Unknown) {

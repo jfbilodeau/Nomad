@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <nomad/Nomad.hpp>
+
 namespace nomad {
 
 class VirtualMachine;
@@ -177,6 +179,7 @@ DECLARE_OP_CODE(op_stringref_peek_i)
 
 // Format string operators
 DECLARE_OP_CODE(op_format_string_execute)
+DECLARE_OP_CODE(op_dynamic_format_execute)
 
 // ID operators
 DECLARE_OP_CODE(op_id_push_r)

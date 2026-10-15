@@ -32,6 +32,22 @@ protected:
     std::unique_ptr<Expression> m_expression;
 };
 
+class DynamicFormatExpression final : public Expression {
+public:
+    DynamicFormatExpression(const Expression* parent, NomadIndex line, NomadIndex column,
+        std::unique_ptr<Expression> expression);
+
+    [[nodiscard]] bool isTerminal() const override;
+
+protected:
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onEvaluate(InterpreterContext& context) const override;
+
+private:
+    std::unique_ptr<Expression> m_expression;
+};
+
 ///////////////////////////////////////////////////////////////////////////////
 // Binary expressions
 ///////////////////////////////////////////////////////////////////////////////
@@ -209,6 +225,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onEvaluate(InterpreterContext& context) const override;
 
 private:
     struct ExpressionPlaceholder {

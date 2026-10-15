@@ -123,5 +123,18 @@ change its source variable.
 selects interpreted resolution without changing compiled function definitions.
 Console and frame evaluation do not require separate compiler modes.
 
-The dynamic script `$expression` formatting operator is not implemented yet.
-This context API provides the environment needed for that later feature.
+## Dynamic format strings
+
+The script format string operator `$expression` and interpreted format literals use the same
+runtime template evaluator. C++ hosts can call `formatDynamicString` (declared in
+`nomad/script/FormatString.hpp`) with a template, context, source name, line, and column.
+Its `DynamicFormatResult` contains partial text plus structured diagnostics for
+that template. Each diagnostic includes a message, source location, and zero-based
+byte offset and length in the template. Diagnostics are also logged; nested
+templates emit their own diagnostics.
+
+Syntax and resolution errors become inline markers and processing continues after
+a closed bad placeholder. Execution exceptions from called code propagate,
+including native expression calls. The console `execute` entry point still
+reports execution exceptions in the context. No template or evaluated-value cache
+is used.

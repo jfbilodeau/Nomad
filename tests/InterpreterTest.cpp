@@ -45,6 +45,7 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
         {"test.native text", "hello"},
         {"test.parameter", "40"},
         {"false && test.fail", "false"},
+        {"$(\"value {value} local {local} captured {captured}\")", "value 40 local 2 captured 6"},
     };
     for (const auto& [source, expected] : cases) {
         const auto succeeded = Interpreter{}.evaluateExpression(source, context);
@@ -53,7 +54,9 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
         BOOST_REQUIRE(context.getResult() != nullptr);
         BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getValue()) == expected);
     }
-    for (const auto* source : {"", "value = 1", "missing + 1", "1 +", "1\n2", "test.void", "$\"{value}\"", "uncaptured"}) {
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("$\"{value}\"", context));
+    BOOST_TEST(context.getResult()->getValue().getStringValue() == "40");
+    for (const auto* source : {"", "value = 1", "missing + 1", "1 +", "1\n2", "test.void", "uncaptured"}) {
         BOOST_TEST_CONTEXT(source) {
             BOOST_TEST(!Interpreter{}.evaluateExpression(source, context));
             BOOST_TEST(context.hasError());
@@ -135,6 +138,7 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
     function->setParentId(parentId);
     function->addParameter("value", runtime.getIntegerType());
     function->addParameter("text", runtime.getStringType());
+    function->createCapture(0, "captured", CaptureSource::Variable, runtime.getIntegerType());
     function->registerVariable("local", runtime.getIntegerType());
     function->registerVariable("localText", runtime.getStringType());
     function->setReturnType(runtime.getVoidType());
@@ -159,7 +163,7 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
 #ifdef NOMAD_DEBUG
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
 #endif
-    machine->run(function, {RuntimeValue{NomadInteger{40}}, text});
+    machine->run(function, {RuntimeValue{NomadInteger{40}}, text}, {RuntimeValue{NomadInteger{6}}});
 #ifdef NOMAD_DEBUG
     BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
 #endif

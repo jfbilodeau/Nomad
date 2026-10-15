@@ -238,7 +238,7 @@ BOOST_AUTO_TEST_CASE(statement_execution_calls_registered_void_nativeFunctions)
     BOOST_TEST(!context.hasError());
 }
 
-BOOST_AUTO_TEST_CASE(nativeFunction_execution_reports_callback_errors_through_context)
+BOOST_AUTO_TEST_CASE(native_function_expression_faults_propagate_but_execute_reports_them_through_context)
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
@@ -258,7 +258,9 @@ BOOST_AUTO_TEST_CASE(nativeFunction_execution_reports_callback_errors_through_co
     Tokenizer tokenizer(&tokenizerContext, "test.nomad", "fail");
     auto expression = parser::parseExpression(&tokenizerContext, nullptr, &tokenizer);
     resolveForInterpreter(compiler.get(), *expression);
-    expression->evaluate(context);
+    BOOST_CHECK_THROW(expression->evaluate(context), VirtualMachineException);
+    BOOST_TEST(context.getResult() == nullptr);
+    BOOST_TEST(!Interpreter{}.execute("fail", context));
 
     BOOST_TEST(context.hasError());
     BOOST_REQUIRE(context.getError() != nullptr);

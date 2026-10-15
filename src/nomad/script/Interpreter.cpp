@@ -46,7 +46,7 @@ bool Interpreter::evaluateExpression(const NomadString& source, InterpreterConte
     auto* function = evaluation.m_function.get();
     Tokenizer tokens(&context, function->getPath(), source);
     if (const auto* error = context.getFirstError()) {
-        evaluation.setError(formatDiagnostic(*error));
+        evaluation.setDiagnostic(*error);
         return false;
     }
     if (tokens.getLineCount() != 1 || !tokens.nextLine()) {
@@ -58,7 +58,7 @@ bool Interpreter::evaluateExpression(const NomadString& source, InterpreterConte
         (void)expression->resolve(&context, function);
     }
     if (const auto* error = context.getFirstError()) {
-        evaluation.setError(formatDiagnostic(*error));
+        evaluation.setDiagnostic(*error);
         return false;
     }
     if (expression == nullptr || expression->getType() == nullptr || expression->getType()->isVoid()) {

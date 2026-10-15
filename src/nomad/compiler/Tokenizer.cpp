@@ -109,6 +109,7 @@ struct LineGrammar : boost::spirit::qi::grammar<Iterator, std::vector<Token>()> 
             qi::string("^") |
             qi::string("|") |
             qi::string("!") |
+            qi::string("$") |
             qi::string("=") |
             qi::string("+") |
             qi::string("-") |

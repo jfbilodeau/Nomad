@@ -14,6 +14,25 @@ namespace nomad {
 
 // Forward declarations
 class VirtualMachine;
+class InterpreterContext;
+
+struct DynamicFormatDiagnostic {
+    NomadString message;
+    NomadString sourceName;
+    NomadIndex line;
+    NomadIndex column;
+    NomadIndex offset;
+    NomadIndex length;
+};
+
+struct DynamicFormatResult {
+    NomadString text;
+    std::vector<DynamicFormatDiagnostic> diagnostics;
+};
+
+// Syntax/resolution failures produce inline markers and logged diagnostics; execution faults propagate.
+[[nodiscard]] DynamicFormatResult formatDynamicString(NomadStringView format, InterpreterContext& context,
+    NomadStringView sourceName, NomadIndex line, NomadIndex column);
 
 class FormatString {
     enum class SegmentType {

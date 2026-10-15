@@ -1,10 +1,11 @@
 // Copyright (c) 2024-2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/compiler/Expression.hpp>
+
 #include <nomad/compiler/Argument.hpp>
 #include <nomad/compiler/CallNode.hpp>
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/FormatStringCompiler.hpp>
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
@@ -12,6 +13,7 @@
 
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
+#include <nomad/script/FormatString.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptFunction.hpp>
@@ -259,6 +261,52 @@ void UnaryExpression::onEvaluate(InterpreterContext& context) const {
     }
 
     context.setResult(getType(), result);
+}
+
+DynamicFormatExpression::DynamicFormatExpression(const Expression* parent, const NomadIndex line,
+    const NomadIndex column, std::unique_ptr<Expression> expression):
+    Expression(parent, line, column), m_expression(std::move(expression)) {}
+
+bool DynamicFormatExpression::isTerminal() const {
+    return false;
+}
+
+void DynamicFormatExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+    if (!m_expression->resolve(context, function) || m_expression->getType() == nullptr) {
+        return;
+    }
+    if (!m_expression->getType()->isString()) {
+        reportError(context, function, "Dynamic format operator requires a string operand");
+        return;
+    }
+    setType(context->getRuntime()->getStringType());
+}
+
+void DynamicFormatExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+    m_expression->compile(compiler, function, ExpressionTarget::Result);
+    compiler->addOpCode(op_dynamic_format_execute);
+    compiler->addIndex(getLine());
+    compiler->addIndex(getColumn());
+    compiler->addMoveResult(getType(), target);
+}
+
+void DynamicFormatExpression::onEvaluate(InterpreterContext& context) const {
+    m_expression->evaluate(context);
+    const auto* value = context.getResult();
+    if (value == nullptr) {
+        return;
+    }
+    const auto format = value->getType()->toString(value->getValue());
+    const auto result = formatDynamicString(format, context, context.getFunction()->getPath(), getLine(), getColumn());
+    RuntimeValue formatted;
+    formatted.setStringValue(result.text);
+    try {
+        context.setResult(getType(), formatted);
+    } catch (...) {
+        getType()->freeValue(formatted);
+        throw;
+    }
+    getType()->freeValue(formatted);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -544,11 +592,7 @@ void CallNativeFunctionExpression::onEvaluate(InterpreterContext& context) const
         return;
     }
 
-    if (context.isFrameBacked()) {
-        context.evaluateNativeFunctionCall(m_nativeFunctionId, values);
-    } else {
-        context.getRuntime()->executeNativeFunction(m_nativeFunctionId, values, context);
-    }
+    context.evaluateNativeFunctionCall(m_nativeFunctionId, values);
 }
 
 void CallNativeFunctionExpression::addArgument(std::unique_ptr<Argument> argument) {
@@ -1216,7 +1260,7 @@ bool FormatStringLiteral::parsePlaceholders(
 
 void FormatStringLiteral::onResolve(CompilerContext* context, ScriptFunction* function) {
     if (context->getMode() != CompilerMode::Script) {
-        reportError(context, function, "Format strings are not supported by the interpreter");
+        setType(context->getRuntime()->getStringType());
         return;
     }
 
@@ -1277,6 +1321,20 @@ void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function
     compiler->addId(formatStringId);
 
     compiler->addMoveResult(getType(), target);
+}
+
+void FormatStringLiteral::onEvaluate(InterpreterContext& context) const {
+    const auto result = formatDynamicString(m_formatString, context, context.getFunction()->getPath(),
+        getLine(), getColumn());
+    RuntimeValue value;
+    value.setStringValue(result.text);
+    try {
+        context.setResult(getType(), value);
+    } catch (...) {
+        getType()->freeValue(value);
+        throw;
+    }
+    getType()->freeValue(value);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

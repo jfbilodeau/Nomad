@@ -340,6 +340,46 @@ expression to select expression parsing. Likewise, parenthesize a bare intrinsic
 member, for example `{(name.toUpper)}`, to distinguish it from qualified-variable
 lookup.
 
+### Format string operator
+
+The format string operator `$` interprets the value of a string-valued expression
+as a dynamic format string at runtime:
+
+```nomad
+score = 10
+message = "Score: {score}"
+this.text = $message
+```
+
+The string operand is evaluated once. Placeholders are evaluated in order using
+the current function's locals, parameters, existing captures, and runtime APIs.
+The interpreter also supports this operator using its caller-maintained variables.
+Each placeholder must be one value-producing expression; assignments are not allowed.
+
+`$"..."` remains a compiled format literal. Use `$("...")` to dynamically format
+a string literal, or `$(expression)` to group a string-valued expression.
+Templates are parsed on each use; results and values are not cached. Runtime
+formatting is slower than compiled literals and does not decode string escapes again.
+
+Malformed dynamic placeholders preserve the surrounding text and insert an
+inline error:
+
+```nomad
+score = 10
+message = "Score: {sore}"
+this.text = $message # "Score: {invalid identifier: 'sore'}"
+
+message = "Score: {score"
+this.text = $message # "Score: {missing `}`}"
+```
+
+Closed bad placeholders do not prevent later placeholders from being evaluated.
+An unclosed trailing placeholder produces a marker and ends processing. Syntax,
+name, and type errors are logged with the source location and template byte offset.
+A placeholder is parsed and resolved completely before any of its calls execute.
+Exceptions thrown by called functions are not converted into inline template errors.
+Compiled format literals remain strict: malformed expressions are compilation errors.
+
 ---
 
 ## Operators
@@ -368,11 +408,7 @@ Nomad evaluates operators according to the following precedence order, from high
 
 Following standard arithmetic precedence, multiplication, division and modulo are evaluated before addition and subtraction.
 
-Within a binary expression, the left operand is evaluated before the right operand,
-in both compiled scripts and interpreted expressions. The left value is retained
-even if evaluating the right operand changes its source variable. Logical `&&`
-and `||` evaluate the right operand only when needed. This left-first rule also
-applies inside compiled format-string placeholders.
+Logical `&&` and `||` are short-circuited.
 
 Examples:
 

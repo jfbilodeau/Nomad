@@ -137,8 +137,7 @@ boost::json::object createPatternRepositoryEntry(boost::json::object pattern) {
 void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     out << "# Nomad Engine Reference" << std::endl;
     out << std::endl;
-    out << "This reference describes registered script APIs. C++ hosts own the Runtime and VirtualMachine; "
-           "the stateless Interpreter evaluates input using a caller-maintained InterpreterContext."
+    out << "This reference describes registered script APIs."
         << std::endl;
     out << std::endl;
 

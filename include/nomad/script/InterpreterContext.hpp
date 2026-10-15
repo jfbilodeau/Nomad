@@ -4,6 +4,8 @@
 
 #include <nomad/Nomad.hpp>
 
+#include <nomad/compiler/CompilerContext.hpp>
+
 #include <nomad/script/RuntimeValue.hpp>
 
 #include <memory>
@@ -69,6 +71,8 @@ public:
     [[nodiscard]] const TypedValue* getResult() const;
 
     void setError(const NomadString& error);
+    void setDiagnostic(const Diagnostic& diagnostic);
+    [[nodiscard]] const Diagnostic* getDiagnostic() const;
     void clearError();
     [[nodiscard]] NomadBoolean hasError() const;
     [[nodiscard]] const NomadString* getError() const;
@@ -95,6 +99,7 @@ private:
     NomadIndex m_frameVariableCount = 0;
     std::optional<TypedValue> m_result;
     std::optional<NomadString> m_error;
+    std::optional<Diagnostic> m_diagnostic;
     // Indexed by resolution variable id; borrowed frame slots remain empty.
     std::vector<std::unique_ptr<TypedValue>> m_variables;
 };

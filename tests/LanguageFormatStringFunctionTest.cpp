@@ -2,6 +2,8 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/script/FormatString.hpp>
+#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -71,6 +73,218 @@ void registerTestNativeFunctions(Runtime& runtime, std::vector<NomadInteger>& re
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(language_format_strings)
+
+BOOST_AUTO_TEST_CASE(dynamic_format_operator_uses_live_expression_context)
+{
+    const std::vector<std::pair<NomadString, NomadString>> cases{
+        {"score = 10\nmessage = \"Score: {score}\"\nreturn $message", "Score: 10"},
+        {"score = 10\nmessage = \"Score: {score}\"\nscore = 20\nreturn $message", "Score: 20"},
+        {"x = 10\ny = 20\nmessage = \"total = {x + y}\"\nreturn $message", "total = 30"},
+        {"fun render value:int\n    template = \"Value: {value}\"\n    return $template\nend\nreturn render 42", "Value: 42"},
+        {"fun answer\n    return 42\nend\ntemplate = \"{answer}\"\nreturn $template", "42"},
+        {"global.score = 9\ntemplate = \"{global.score + 1}\"\nreturn $template", "10"},
+        {"name = \"nomad\"\ntemplate = \"{(name.toUpper)}\"\nreturn $template", "NOMAD"},
+        {"score = 10\nreturn $(\"{false && missing}\")", "{invalid identifier: 'missing'}"},
+        {"score = 10\nreturn $\"compiled {$(\"dynamic {1 + 10}\")}\"", "compiled dynamic 11"},
+        {"template = \"unchanged \\\\n }\"\nreturn $template", "unchanged \\n }"},
+        {"template = \"\"\nreturn $template", ""},
+    };
+    for (const auto& [source, expected] : cases) {
+        BOOST_TEST_CONTEXT(source) {
+            const auto outcome = runSource(source);
+            BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+            BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+            BOOST_TEST(outcome.text == expected);
+            BOOST_TEST(outcome.leakedStrings == 0);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(dynamic_format_operator_recovers_from_bad_placeholders)
+{
+    const std::vector<std::pair<NomadString, NomadString>> cases{
+        {"Score: {sore}", "Score: {invalid identifier: 'sore'}"},
+        {"before {missing} after {score + 1}", "before {invalid identifier: 'missing'} after 11"},
+        {"Score: {score", "Score: {missing `}`}"},
+        {"before {} after {score}", "before {empty expression} after 10"},
+        {"before {   } after {score}", "before {empty expression} after 10"},
+        {"{score} tail {", "10 tail {missing `}`}"},
+        {"{missing}{alsoMissing}{score}", "{invalid identifier: 'missing'}{invalid identifier: 'alsoMissing'}10"},
+    };
+    for (const auto& [format, expected] : cases) {
+        BOOST_TEST_CONTEXT(format) {
+            LanguageTestFixture fixture;
+            fixture.addFunction("main", "params message:string\nscore = 10\nreturn $message");
+            BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+            RuntimeValue argument;
+            argument.setStringValue(format);
+            const auto outcome = fixture.execute("main", {argument});
+            argument.freeStringValue();
+            BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+            BOOST_TEST(outcome.text == expected);
+            BOOST_TEST(outcome.leakedStrings == 0);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(dynamic_format_reports_structured_diagnostics_and_continues)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{10}});
+    const auto compiler = runtime.createCompiler();
+    const auto before = runtime.getInstructions().size();
+    const auto result = formatDynamicString("A{missing}B{score + 1}C{", context, "localized.nomad", 4, 7);
+    BOOST_TEST(result.text == "A{invalid identifier: 'missing'}B11C{missing `}`}");
+    BOOST_REQUIRE_EQUAL(result.diagnostics.size(), 2);
+    BOOST_TEST(result.diagnostics[0].message == "invalid identifier: 'missing'");
+    BOOST_TEST(result.diagnostics[0].sourceName == "localized.nomad");
+    BOOST_TEST(result.diagnostics[0].line == 4);
+    BOOST_TEST(result.diagnostics[0].column == 7);
+    BOOST_TEST(result.diagnostics[0].offset == 1);
+    BOOST_TEST(result.diagnostics[0].length == 9);
+    BOOST_TEST(result.diagnostics[1].offset == 23);
+    BOOST_TEST(result.diagnostics[1].length == 1);
+    BOOST_TEST(!context.hasError());
+    BOOST_TEST(runtime.getInstructions().size() == before);
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("$(\"{score}\")", context));
+    BOOST_TEST(context.getResult()->getValue().getStringValue() == "10");
+}
+
+BOOST_AUTO_TEST_CASE(dynamic_format_operator_validates_string_type_and_retains_strict_literals)
+{
+    for (const auto* source : {"return $10", "value = true\nreturn $value", "return $"}) {
+        const auto outcome = runSource(source);
+        BOOST_TEST(!outcome.compiled);
+    }
+    BOOST_TEST(!runSource("return $\"{missing}\"").compiled);
+    BOOST_TEST(!runSource("return $\"{value\"").compiled);
+}
+
+BOOST_AUTO_TEST_CASE(dynamic_format_supports_nested_templates_and_quoted_braces)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{10}});
+    const std::vector<std::pair<NomadString, NomadString>> cases{
+        {"nested {$\"inner {score + 1}\"}", "nested inner 11"},
+        {"quoted {\"{braces}\"}", "quoted {braces}"},
+        {"nested bad {$\"bad {missing} good {score}\"} tail {score}",
+            "nested bad bad {invalid identifier: 'missing'} good 10 tail 10"},
+        {"{false && (1 == 2)}", "false"},
+    };
+    for (const auto& [format, expected] : cases) {
+        const auto result = formatDynamicString(format, context, "nested.nomad", 1, 1);
+        BOOST_TEST(result.text == expected);
+        BOOST_TEST(!context.hasError());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(dynamic_format_recovers_from_syntax_type_and_void_errors_before_side_effects)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    NomadInteger calls = 0;
+    runtime.registerNativeFunction("test.count", [&](VirtualMachine* calledMachine) {
+        ++calls;
+        calledMachine->setIntegerResult(1);
+    }, {}, runtime.getIntegerType(), NomadDoc("Count calls"));
+    runtime.registerNativeFunction("test.void", [&](VirtualMachine*) {
+        ++calls;
+    }, {}, runtime.getVoidType(), NomadDoc("Void call"));
+    context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{10}});
+    for (const auto* expression : {"1 +", "score = 1", "(test.count) + true", "test.void", "1\n2"}) {
+        BOOST_TEST_CONTEXT(expression) {
+            const auto result = formatDynamicString(NomadString{"before {"} + expression + "} after {score}",
+                context, "invalid.nomad", 1, 1);
+            BOOST_REQUIRE_EQUAL(result.diagnostics.size(), 1);
+            BOOST_TEST(result.text.starts_with("before {"));
+            BOOST_TEST(result.text.ends_with("} after 10"));
+            BOOST_TEST(calls == 0);
+            BOOST_TEST(!context.hasError());
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(dynamic_format_propagates_called_function_faults_and_preserves_vm_usability)
+{
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    runtime.registerNativeFunction("test.failValue", [](VirtualMachine* machine) {
+        machine->fault("dynamic formatting call failed");
+    }, {}, runtime.getIntegerType(), NomadDoc("Fault"));
+    fixture.addFunction("main", "params message:string\nreturn $message");
+    fixture.addFunction("failingScript", "return test.failValue");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto machine = runtime.createVirtualMachine();
+    for (const auto* format : {"{test.failValue}", "{failingScript}"}) {
+        RuntimeValue argument;
+        argument.setStringValue(format);
+#ifdef NOMAD_DEBUG
+        const auto liveBefore = RuntimeValue::getLiveStringCount();
+#endif
+        const auto* function = runtime.getFunction(runtime.getFunctionId("main"));
+        BOOST_CHECK_THROW(machine->run(function, {argument}), VirtualMachineException);
+#ifdef NOMAD_DEBUG
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == liveBefore);
+#endif
+        argument.freeStringValue();
+        InterpreterContext context(*machine);
+        BOOST_CHECK_THROW(static_cast<void>(formatDynamicString(format, context, "fault.nomad", 1, 1)),
+            VirtualMachineException);
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("2 + 3", context));
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 5);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(dynamic_format_reads_current_values_in_order_and_restores_operands)
+{
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    NomadInteger count = 0;
+    runtime.registerDynamicVariable("test.next", {}, [&](VirtualMachine*, RuntimeValue& value) {
+        value.setIntegerValue(++count);
+    }, runtime.getIntegerType(), NomadDoc("Next value"));
+    fixture.addFunction("main", "template = \"{test.next}:{test.next}\"\n"
+        "first = $template\nsecond = $template\nreturn $\"{first}|{second}\"");
+    fixture.addFunction("comparison", "template = \"value {test.next}\"\nreturn $template == $template");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto outcome = fixture.execute("main");
+    BOOST_REQUIRE(!outcome.fault.has_value());
+    BOOST_TEST(outcome.text == "1:2|3:4");
+    BOOST_TEST(outcome.leakedStrings == 0);
+    const auto comparison = fixture.execute("comparison");
+    BOOST_REQUIRE(!comparison.fault.has_value());
+    BOOST_TEST(!comparison.booleanValue);
+    BOOST_TEST(count == 6);
+    BOOST_TEST(comparison.leakedStrings == 0);
+}
+
+BOOST_AUTO_TEST_CASE(dynamic_format_evaluates_operand_once_and_does_not_execute_invalid_placeholder)
+{
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    NomadInteger templateCalls = 0;
+    NomadInteger expressionCalls = 0;
+    runtime.registerNativeFunction("test.template", [&](VirtualMachine* machine) {
+        ++templateCalls;
+        machine->setStringResult("{(test.count) + missing}|{test.count}");
+    }, {}, runtime.getStringType(), NomadDoc("Return template"));
+    runtime.registerNativeFunction("test.count", [&](VirtualMachine* machine) {
+        machine->setIntegerResult(++expressionCalls);
+    }, {}, runtime.getIntegerType(), NomadDoc("Count calls"));
+    fixture.addFunction("main", "return $(test.template)");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto outcome = fixture.execute("main");
+    BOOST_REQUIRE(!outcome.fault.has_value());
+    BOOST_TEST(outcome.text == "{invalid identifier: 'missing'}|1");
+    BOOST_TEST(templateCalls == 1);
+    BOOST_TEST(expressionCalls == 1);
+    BOOST_TEST(outcome.leakedStrings == 0);
+}
 
 BOOST_AUTO_TEST_CASE(format_string_substitutes_variables)
 {
