@@ -1221,7 +1221,8 @@ bool FormatStringLiteral::parsePlaceholders(
                 break;
             }
         }
-        if (identifier && !needsFirstCharacter) {
+        if (identifier && !needsFirstCharacter &&
+            !parser::isIntrinsicMemberCandidate(context->getCompiler(), function, segment.text)) {
             m_variableFormat += "{" + segment.text + "}";
             continue;
         }

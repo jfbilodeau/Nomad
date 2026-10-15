@@ -70,6 +70,8 @@ BOOST_AUTO_TEST_CASE(exports_string_members_to_documentation_and_textmate_gramma
     BOOST_TEST(documentation.str().find("## Intrinsic Members") != NomadString::npos);
     BOOST_TEST(documentation.str().find("#### `length` (*read-only property*)") != NomadString::npos);
     BOOST_TEST(documentation.str().find("#### `contains` (*method*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("## Format strings") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("{name.toUpper}: {name.length}") != NomadString::npos);
     BOOST_TEST(
         documentation.str().find(
             "#### `contains` (*method*)\n\n"

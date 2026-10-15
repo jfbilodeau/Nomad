@@ -442,6 +442,82 @@ BOOST_AUTO_TEST_CASE(format_string_expression_reports_type_and_syntax_errors)
     }
 }
 
+BOOST_AUTO_TEST_CASE(format_string_resolves_bare_intrinsic_members_in_lexical_scope)
+{
+    const std::vector<std::pair<NomadString, NomadString>> cases{
+        {"name = \"nomad\"\nreturn $\"{name.toUpper}:{name.length}\"", "NOMAD:5"},
+        {"name = \" nomad \"\nreturn $\"{name.trim.toUpper}:{name.trim.length}\"", "NOMAD:5"},
+        {"fun render name:string\n    return $\"{name.toUpper}\"\nend\nreturn render \"nomad\"", "NOMAD"},
+        {"name = \"nomad\"\nreturn $\"outer {$\"inner {$\"{name.toUpper}\"}\"}\"", "outer inner NOMAD"},
+        {"name.toUpper = 7\nreturn $\"{$\"{name.toUpper}:{name.toUpper + 1}\"}\"", "7:8"},
+        {"name.toUpper = 7\nreturn $\"{name.toUpper}\"", "7"},
+        {"text = $\"{label.toUpper}:{add 10 20}\"\n"
+            "fun label\n    return \"nomad\"\nend\n"
+            "fun add left:int right:int\n    return left + right\nend\nreturn text", "NOMAD:30"},
+    };
+    for (const auto& [source, expected] : cases) {
+        BOOST_TEST_CONTEXT(source) {
+            const auto outcome = runSource(source);
+            BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+            BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+            BOOST_TEST(outcome.text == expected);
+            BOOST_TEST(outcome.leakedStrings == 0);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(format_string_bare_members_use_forward_inferred_function_types)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main", "name = zLabel\nreturn $\"{name.toUpper}:{zLabel.length}\"");
+    fixture.addFunction("zLabel", "return \"nomad\"");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto outcome = fixture.execute("main");
+    BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+    BOOST_TEST(outcome.text == "NOMAD:5");
+    BOOST_TEST(outcome.leakedStrings == 0);
+}
+
+BOOST_AUTO_TEST_CASE(format_string_bare_members_reject_invalid_receivers_and_preserve_native_rules)
+{
+    for (const auto* source : {
+             "name = 10\nreturn $\"{name.toUpper}\"",
+             "return $\"{missing.toUpper}\"",
+             "name = \"nomad\"\nreturn $\"{name.unknownMember}\"",
+             "name = \"nomad\"\nreturn $\"{name.contains}\"",
+             "return $\"{math.floor}\"",
+         }) {
+        BOOST_TEST_CONTEXT(source) {
+            BOOST_TEST(!compileErrors(source).empty());
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(format_string_direct_lookup_does_not_create_expression_functions)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "if false\n    message = $\"{name.toUpper}\"\nend\n"
+        "name.toUpper = 7\nscore = 10\nreturn $\"{name.toUpper}:{score}\"");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    std::vector<ScriptFunction*> functions;
+    fixture.getRuntime().getFunctions(functions);
+    BOOST_TEST(functions.size() == 1);
+    const auto outcome = fixture.execute("main");
+    BOOST_TEST(outcome.text == "7:10");
+}
+
+BOOST_AUTO_TEST_CASE(format_string_deferred_nested_errors_preserve_source_locations)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main", "name = \"nomad\"\nreturn $\"outer {$\"{missing + 1}\"}\"");
+    BOOST_TEST(!fixture.compile());
+    const auto* error = fixture.findError("Unknown identifier: missing");
+    BOOST_REQUIRE_MESSAGE(error != nullptr, fixture.getDiagnostics());
+    BOOST_TEST(error->line == 2);
+    BOOST_TEST(error->column == 28);
+}
+
 BOOST_AUTO_TEST_CASE(format_string_expression_calls_native_functions)
 {
     std::vector<NomadInteger> recorded;

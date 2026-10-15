@@ -24,7 +24,7 @@ class Runtime;
 #define NomadParamDoc(param_doc) \
     param_doc
 
-// Generates registered script API reference and format-string usage notes.
+// Generates registered script API reference and format-string usage notes, including bare intrinsic members.
 void generateDocumentation(const Runtime* runtime, std::ostream& out);
 void generateTypeDocumentation(const Runtime* runtime, std::ostream& out);
 void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& out);

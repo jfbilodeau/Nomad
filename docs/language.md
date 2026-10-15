@@ -329,6 +329,7 @@ y = 20
 log.info $"total = {x + y}"
 log.info $"doubled = {(x + y) * 2}"
 log.info $"nested = {$"total {x + y}"}"
+log.info $"player = {name.toUpper}"
 ```
 
 Expressions are compiled in the containing function's lexical scope, including
@@ -336,9 +337,9 @@ its parameters and captured variables. Quoted strings inside expressions may
 contain braces, and nested format strings are supported. Invalid expressions
 are compilation errors, not inline error text. Bare native function names still
 use the simple-placeholder rules; use a call with arguments or a parenthesized
-expression to select expression parsing. Likewise, parenthesize a bare intrinsic
-member, for example `{(name.toUpper)}`, to distinguish it from qualified-variable
-lookup.
+expression to select expression parsing. Intrinsic members such as `{name.toUpper}`
+and `{name.length}` do not require parentheses. An exact qualified identifier takes
+precedence over intrinsic member access.
 
 ### Format string operator
 

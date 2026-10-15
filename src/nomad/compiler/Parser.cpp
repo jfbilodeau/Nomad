@@ -188,6 +188,21 @@ bool isPotentialMemberExpression(CompilerContext* context, ScriptFunction* funct
 
 } // namespace
 
+bool isIntrinsicMemberCandidate(const Compiler* compiler, const ScriptFunction* function, const NomadString& name) {
+    if (!splitIntrinsicMemberName(compiler->getRuntime(), name)) {
+        return false;
+    }
+
+    // Exact qualified identifiers take precedence, including those captured from an enclosing scope.
+    for (auto* scope = function; scope != nullptr;) {
+        if (compiler->getIdentifierType(name, scope) != IdentifierType::Unknown) {
+            return false;
+        }
+        scope = compiler->getRuntime()->getFunction(scope->getParentId());
+    }
+    return compiler->getIdentifierType(name, nullptr) == IdentifierType::Unknown;
+}
+
 std::unique_ptr<Expression> parseBinaryOperatorExpression(CompilerContext* context, ScriptFunction* function,
                                                           Tokenizer* tokens, const Expression* parent,
                                                           std::vector<BinaryOperator> operators,
@@ -858,9 +873,9 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
         if (!end) {
             return expression;
         }
-        if (!expression->parsePlaceholders(context, function,
-                NomadStringView(sourceLine).substr(offset + 2, *end - offset - 2))) {
-            return nullptr;
+        if (context->getMode() == CompilerMode::Script && function != nullptr) {
+            context->getCompiler()->deferFormatString(expression.get(), function->getId(),
+                sourceLine.substr(offset + 2, *end - offset - 2));
         }
         return expression;
     }
@@ -924,7 +939,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
                                                              token.textValue);
         }
 
-        if (context->getCompiler()->getIdentifierType(token.textValue, function) == IdentifierType::Unknown) {
+        if (isIntrinsicMemberCandidate(context->getCompiler(), function, token.textValue)) {
             const auto memberParts = splitIntrinsicMemberName(context->getRuntime(), token.textValue);
 
             if (memberParts) {
