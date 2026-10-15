@@ -20,7 +20,7 @@ namespace {
 void evaluateFrameExpressions(VirtualMachine* machine) {
     auto* function = machine->getCurrentFunction();
     BOOST_REQUIRE(function != nullptr);
-    Interpreter context(*machine, *function);
+    Interpreter context(*machine);
     BOOST_TEST(context.getVirtualMachine() == machine);
     BOOST_TEST(context.getFunction() == function);
     BOOST_TEST(context.isFrameBacked());
@@ -73,6 +73,13 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
 }
 
 } // namespace
+
+BOOST_AUTO_TEST_CASE(frame_interpreter_requires_an_active_script_function)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    BOOST_CHECK_THROW(Interpreter{*machine}, NomadBug);
+}
 
 BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on_active_vm)
 {

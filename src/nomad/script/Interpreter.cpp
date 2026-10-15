@@ -226,13 +226,13 @@ Interpreter::Interpreter(Runtime* runtime):
 
 Interpreter::~Interpreter() = default;
 
-Interpreter::Interpreter(VirtualMachine& virtualMachine, ScriptFunction& function):
+Interpreter::Interpreter(VirtualMachine& virtualMachine):
     m_runtime(virtualMachine.getRuntime()),
     m_frameVirtualMachine(&virtualMachine),
-    m_frameFunction(&function)
+    m_frameFunction(virtualMachine.getCurrentFunction())
 {
-    if (function.getFunctionStart() == NOMAD_INVALID_INDEX) {
-        throw NomadBug("Frame interpretation requires a compiled script function");
+    if (m_frameFunction == nullptr || m_frameFunction->getFunctionStart() == NOMAD_INVALID_INDEX) {
+        throw NomadBug("Frame interpretation requires an active compiled script function");
     }
 }
 
@@ -315,7 +315,7 @@ bool Interpreter::evaluateExpression(const NomadString& source) {
         throw NomadBug("Expression-only frame evaluation requires a script frame");
     }
     auto compiler = m_runtime->createCompiler();
-    CompilerContext context(compiler.get(), CompilerMode::FrameInterpreter);
+    CompilerContext context(compiler.get(), CompilerMode::Interpreter);
     Tokenizer tokens(&context, m_frameFunction->getPath(), source);
     if (const auto* error = context.getFirstError()) {
         setError(formatDiagnostic(*error));

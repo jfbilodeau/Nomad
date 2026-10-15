@@ -170,6 +170,8 @@ Nomad supports three variable kinds:
 
 The interactive interpreter is an exception to compiled-code typing rules. Local variables created in the interpreter may be reassigned with a value of a different type. Context variables and engine-defined dynamic variables continue to follow the type rules of their contexts and definitions.
 
+For C++ embedding, `Interpreter(VirtualMachine&)` borrows the VM's active script frame. Its `evaluateExpression` entry point reads existing locals, parameters, and captures without registering variables or captures in the compiled function. Both console and live-frame evaluation use `CompilerMode::Interpreter`; the evaluation environment is managed by the interpreter, not a separate compiler mode. The borrowed interpreter must not outlive the active frame. This API does not yet expose a dynamic `$expression` operator in scripts.
+
 ---
 
 ## Constants and predefined values

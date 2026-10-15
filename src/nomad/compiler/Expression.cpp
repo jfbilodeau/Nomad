@@ -1320,7 +1320,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
     // Check for invalid identifier type.
     switch (m_identifierDefinition.identifierType) {
         case IdentifierType::Unknown:
-            if (context->getMode() == CompilerMode::FrameInterpreter ||
+            if (context->getMode() == CompilerMode::Interpreter ||
                 function == nullptr || !parseCapture(compiler, function)) {
                 reportError(context, function, "Unknown identifier: " + m_identifier);
                 return;
@@ -1364,8 +1364,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
         m_identifierDefinition.identifierType != IdentifierType::Constant &&
         m_identifierDefinition.identifierType != IdentifierType::DynamicVariable &&
         m_identifierDefinition.identifierType != IdentifierType::ContextVariable &&
-        !(context->getMode() == CompilerMode::FrameInterpreter &&
-          m_identifierDefinition.identifierType == IdentifierType::Parameter)) {
+        m_identifierDefinition.identifierType != IdentifierType::Parameter) {
         reportError(context, function, "Identifier '" + m_identifier + "' is not supported by the interpreter");
         return;
     }
@@ -1385,7 +1384,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
     }
 
     if (m_identifierDefinition.identifierType == IdentifierType::FunctionVariable &&
-        context->getMode() != CompilerMode::FrameInterpreter) {
+        context->getMode() == CompilerMode::Function) {
         function->registerVariable(m_identifier, m_identifierDefinition.valueType);
     }
 
