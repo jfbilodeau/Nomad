@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.30)
 set(CMAKE_POLICY_VERSION 3.30)
 
-project(Nomad VERSION 0.1.5 LANGUAGES CXX)
+project(Nomad VERSION 0.1.6 LANGUAGES CXX)
 
 include(CTest)
 
