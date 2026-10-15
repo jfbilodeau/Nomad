@@ -10,6 +10,7 @@
 #include <nomad/compiler/SyntaxTree.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>
 
@@ -104,6 +105,25 @@ void Interpreter::setVariable(
     const Type* type,
     const RuntimeValue& value
 ) {
+    if (isFrameBacked()) {
+        const auto id = m_frameFunction->getVariableId(name);
+        if (!isIdInRange(id, m_frameFunction->getVariableCount()) ||
+            m_frameFunction->getVariableType(id) != type) {
+            throw NomadBug("Invalid frame-backed variable assignment");
+        }
+        RuntimeValue replacement;
+        type->initValue(replacement);
+        try {
+            type->copyValue(value, replacement);
+        } catch (...) {
+            type->freeValue(replacement);
+            throw;
+        }
+        auto previous = m_frameVirtualMachine->getFunctionVariableValue(id);
+        type->freeValue(previous);
+        m_frameVirtualMachine->setFunctionVariableValue(id, replacement);
+        return;
+    }
     if (name.empty()) {
         throw std::invalid_argument("Interpreter variable name cannot be empty");
     }
@@ -129,10 +149,14 @@ void Interpreter::setVariable(
 }
 
 const Type* Interpreter::getVariableType(const NomadString& name) const {
-    return getVariableTypeById(m_function->getVariableId(name));
+    return getVariableTypeById(getFunction()->getVariableId(name));
 }
 
 const Type* Interpreter::getVariableTypeById(const NomadId variableId) const {
+    if (isFrameBacked()) {
+        return isIdInRange(variableId, m_frameFunction->getVariableCount())
+            ? m_frameFunction->getVariableType(variableId) : nullptr;
+    }
     if (variableId == NOMAD_INVALID_ID) {
         return nullptr;
     }
@@ -147,10 +171,14 @@ const Type* Interpreter::getVariableTypeById(const NomadId variableId) const {
 }
 
 const RuntimeValue* Interpreter::getVariableValue(const NomadString& name) const {
-    return getVariableValueById(m_function->getVariableId(name));
+    return getVariableValueById(getFunction()->getVariableId(name));
 }
 
 const RuntimeValue* Interpreter::getVariableValueById(const NomadId variableId) const {
+    if (isFrameBacked()) {
+        return isIdInRange(variableId, m_frameFunction->getVariableCount())
+            ? &m_frameVirtualMachine->getFunctionVariableValue(variableId) : nullptr;
+    }
     if (variableId == NOMAD_INVALID_ID) {
         return nullptr;
     }
@@ -165,6 +193,9 @@ const RuntimeValue* Interpreter::getVariableValueById(const NomadId variableId) 
 }
 
 std::vector<InterpreterVariableInfo> Interpreter::listVariables() const {
+    if (isFrameBacked()) {
+        throw NomadBug("Console variable listing is not available for a script frame");
+    }
     std::vector<InterpreterVariableInfo> variables;
     variables.reserve(m_variables.size());
 
@@ -195,8 +226,22 @@ Interpreter::Interpreter(Runtime* runtime):
 
 Interpreter::~Interpreter() = default;
 
+Interpreter::Interpreter(VirtualMachine& virtualMachine, ScriptFunction& function):
+    m_runtime(virtualMachine.getRuntime()),
+    m_frameVirtualMachine(&virtualMachine),
+    m_frameFunction(&function)
+{
+    if (function.getFunctionStart() == NOMAD_INVALID_INDEX) {
+        throw NomadBug("Frame interpretation requires a compiled script function");
+    }
+}
+
+bool Interpreter::isFrameBacked() const {
+    return m_frameVirtualMachine != nullptr;
+}
+
 const ScriptFunction* Interpreter::getFunction() const {
-    return m_function.get();
+    return isFrameBacked() ? m_frameFunction : m_function.get();
 }
 
 Runtime* Interpreter::getRuntime() const {
@@ -208,6 +253,9 @@ Runtime* Interpreter::getRuntime() const {
 }
 
 VirtualMachine* Interpreter::getVirtualMachine() {
+    if (isFrameBacked()) {
+        return m_frameVirtualMachine;
+    }
     if (m_virtualMachine == nullptr) {
         m_virtualMachine = getRuntime()->createVirtualMachine();
     }
@@ -253,15 +301,118 @@ const NomadString* Interpreter::getError() const {
     return m_error ? &*m_error : nullptr;
 }
 
-NomadBoolean Interpreter::execute(const NomadString& source) {
+void Interpreter::setParameterResult(const NomadId parameterId) {
+    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameFunction->getParameterCount())) {
+        throw NomadBug("Invalid frame-backed parameter access");
+    }
+    setResult(m_frameFunction->getParameterType(parameterId), m_frameVirtualMachine->getParameter(parameterId));
+}
+
+bool Interpreter::evaluateExpression(const NomadString& source) {
     clearError();
     clearResult();
+    if (!isFrameBacked()) {
+        throw NomadBug("Expression-only frame evaluation requires a script frame");
+    }
+    auto compiler = m_runtime->createCompiler();
+    CompilerContext context(compiler.get(), CompilerMode::FrameInterpreter);
+    Tokenizer tokens(&context, m_frameFunction->getPath(), source);
+    if (const auto* error = context.getFirstError()) {
+        setError(formatDiagnostic(*error));
+        return false;
+    }
+    if (tokens.getLineCount() != 1 || !tokens.nextLine()) {
+        setError("Frame interpretation requires one non-empty expression");
+        return false;
+    }
+    auto expression = parser::parseExpression(&context, m_frameFunction, &tokens);
+    if (expression != nullptr && parser::expectEndOfLine(&context, m_frameFunction, &tokens)) {
+        (void)expression->resolve(&context, m_frameFunction);
+    }
+    if (const auto* error = context.getFirstError()) {
+        setError(formatDiagnostic(*error));
+        return false;
+    }
+    if (expression == nullptr || expression->getType() == nullptr || expression->getType()->isVoid()) {
+        setError("Frame expression must return a value");
+        return false;
+    }
+    const auto result = m_frameVirtualMachine->getResult();
+    const auto intermediate = m_frameVirtualMachine->getIntermediate();
+    try {
+        expression->evaluate(*this);
+    } catch (...) {
+        m_frameVirtualMachine->setResult(result);
+        m_frameVirtualMachine->setIntermediate(intermediate);
+        clearResult();
+        throw;
+    }
+    m_frameVirtualMachine->setResult(result);
+    m_frameVirtualMachine->setIntermediate(intermediate);
+    return !hasError();
+}
 
+void Interpreter::evaluateFunctionCall(const NomadId functionId, const std::vector<RuntimeValue>& arguments) {
+    const auto* function = getRuntime()->getFunction(functionId);
+    if (function == nullptr || function->getReturnType() == nullptr) {
+        throw NomadBug("Invalid interpreted function call");
+    }
+    const auto* type = function->getReturnType();
+    auto* machine = getVirtualMachine();
+    const auto savedResult = machine->getResult();
+    const auto savedIntermediate = machine->getIntermediate();
+    machine->setResult(RuntimeValue{});
+    try {
+        machine->run(function, arguments);
+        try {
+            setResult(type, machine->getResult());
+        } catch (...) {
+            type->freeValue(machine->getResult());
+            throw;
+        }
+        type->freeValue(machine->getResult());
+    } catch (...) {
+        machine->setResult(savedResult);
+        machine->setIntermediate(savedIntermediate);
+        throw;
+    }
+    machine->setResult(savedResult);
+    machine->setIntermediate(savedIntermediate);
+}
+
+void Interpreter::evaluateNativeFunctionCall(const NomadId functionId, const std::vector<RuntimeValue>& arguments) {
+    NativeFunctionDefinition definition;
+    if (!getRuntime()->getNativeFunctionDefinition(functionId, definition) || definition.returnType == nullptr) {
+        throw NomadBug("Invalid interpreted native function call");
+    }
+    auto* machine = getVirtualMachine();
+    const auto savedResult = machine->getResult();
+    const auto savedIntermediate = machine->getIntermediate();
+    machine->setResult(RuntimeValue{});
+    try {
+        machine->runNativeFunction(functionId, arguments);
+        setResult(definition.returnType, machine->getResult());
+        definition.returnType->freeValue(machine->getResult());
+    } catch (...) {
+        definition.returnType->freeValue(machine->getResult());
+        machine->setResult(savedResult);
+        machine->setIntermediate(savedIntermediate);
+        throw;
+    }
+    machine->setResult(savedResult);
+    machine->setIntermediate(savedIntermediate);
+}
+
+NomadBoolean Interpreter::execute(const NomadString& source) {
+    if (isFrameBacked()) {
+        throw NomadBug("Frame interpretation accepts expressions, not console statements");
+    }
+    clearError();
+    clearResult();
     if (m_runtime == nullptr) {
         setError("Interpreter requires a Runtime to execute input");
         return false;
     }
-
     try {
         auto compiler = m_runtime->createCompiler();
         CompilerContext compilerContext(compiler.get(), CompilerMode::Interpreter);

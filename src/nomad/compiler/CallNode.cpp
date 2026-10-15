@@ -310,7 +310,7 @@ void FunctionCallStatementNode::onResolve(CompilerContext* context, ScriptFuncti
         return;
     }
 
-    if (context->getMode() == CompilerMode::Interpreter &&
+    if (context->getMode() != CompilerMode::Function &&
         runtime->getFunction(m_functionId)->getFunctionStart() == NOMAD_INVALID_INDEX) {
         reportError(context, function, "Function '" + m_name + "' has not been compiled");
         return;

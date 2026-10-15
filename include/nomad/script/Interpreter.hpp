@@ -45,6 +45,8 @@ struct InterpreterVariableInfo {
 class Interpreter {
 public:
     explicit Interpreter(Runtime* runtime = nullptr);
+    // Borrows a live script frame; this interpreter must not outlive its execution.
+    Interpreter(VirtualMachine& virtualMachine, ScriptFunction& function);
     Interpreter(const Interpreter&) = delete;
     Interpreter& operator=(const Interpreter&) = delete;
     ~Interpreter();
@@ -55,6 +57,12 @@ public:
     [[nodiscard]] VirtualMachine* getVirtualMachine();
     // Console function holding variable definitions (names and types). Not registered with the Runtime.
     [[nodiscard]] const ScriptFunction* getFunction() const;
+    [[nodiscard]] bool isFrameBacked() const;
+    // Parses and resolves one non-void expression. Syntax/type errors are retained; execution faults propagate.
+    [[nodiscard]] bool evaluateExpression(const NomadString& source);
+    void evaluateFunctionCall(NomadId functionId, const std::vector<RuntimeValue>& arguments);
+    void evaluateNativeFunctionCall(NomadId functionId, const std::vector<RuntimeValue>& arguments);
+    void setParameterResult(NomadId parameterId);
 
     void setResult(const Type* type, const RuntimeValue& value);
     void setResult(const TypedValue& value);
@@ -81,6 +89,8 @@ private:
     Runtime* m_runtime;
     std::unique_ptr<ScriptFunction> m_function;
     std::unique_ptr<VirtualMachine> m_virtualMachine;
+    VirtualMachine* m_frameVirtualMachine = nullptr;
+    ScriptFunction* m_frameFunction = nullptr;
     std::optional<TypedValue> m_result;
     std::optional<NomadString> m_error;
     // Indexed by the console function's variable id.

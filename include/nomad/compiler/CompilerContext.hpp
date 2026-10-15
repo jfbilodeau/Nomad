@@ -18,10 +18,11 @@ enum class DiagnosticSeverity {
     Error,
 };
 
-// Function: source files compiled to bytecode. Interpreter: single console lines evaluated from the AST.
+// Function: compiled source. Interpreter: console AST evaluation. FrameInterpreter: expression ASTs in a live script frame.
 enum class CompilerMode {
     Function = 1,
     Interpreter,
+    FrameInterpreter,
 };
 
 struct Diagnostic {

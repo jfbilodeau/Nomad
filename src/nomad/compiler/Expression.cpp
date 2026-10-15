@@ -550,7 +550,11 @@ void CallNativeFunctionExpression::onEvaluate(Interpreter& context) const {
         return;
     }
 
-    context.getRuntime()->executeNativeFunction(m_nativeFunctionId, values, context);
+    if (context.isFrameBacked()) {
+        context.evaluateNativeFunctionCall(m_nativeFunctionId, values);
+    } else {
+        context.getRuntime()->executeNativeFunction(m_nativeFunctionId, values, context);
+    }
 }
 
 void CallNativeFunctionExpression::addArgument(std::unique_ptr<Argument> argument) {
@@ -594,7 +598,7 @@ void FunctionCallExpression::onResolve(CompilerContext* context, ScriptFunction*
     const auto* callFunction = runtime->getFunction(m_functionId);
     const auto* returnType = callFunction->getReturnType();
 
-    if (context->getMode() == CompilerMode::Interpreter && callFunction->getFunctionStart() == NOMAD_INVALID_INDEX) {
+    if (context->getMode() != CompilerMode::Function && callFunction->getFunctionStart() == NOMAD_INVALID_INDEX) {
         reportError(context, function, "Function '" + m_name + "' has not been compiled");
         return;
     }
@@ -659,6 +663,10 @@ void FunctionCallExpression::onEvaluate(Interpreter& context) const {
         return;
     }
 
+    if (context.isFrameBacked()) {
+        context.evaluateFunctionCall(m_functionId, values);
+        return;
+    }
     const auto* returnType = getType();
     RuntimeValue result;
     returnType->initValue(result);
@@ -1150,7 +1158,7 @@ bool FormatStringLiteral::parsePlaceholders(
     ScriptFunction* function,
     const NomadStringView sourceContent
 ) {
-    if (context->getMode() == CompilerMode::Interpreter || function == nullptr) {
+    if (context->getMode() != CompilerMode::Function || function == nullptr) {
         return true;
     }
 
@@ -1227,7 +1235,7 @@ bool FormatStringLiteral::parsePlaceholders(
 }
 
 void FormatStringLiteral::onResolve(CompilerContext* context, ScriptFunction* function) {
-    if (context->getMode() == CompilerMode::Interpreter) {
+    if (context->getMode() != CompilerMode::Function) {
         reportError(context, function, "Format strings are not supported by the interpreter");
         return;
     }
@@ -1312,7 +1320,8 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
     // Check for invalid identifier type.
     switch (m_identifierDefinition.identifierType) {
         case IdentifierType::Unknown:
-            if (function == nullptr || !parseCapture(compiler, function)) {
+            if (context->getMode() == CompilerMode::FrameInterpreter ||
+                function == nullptr || !parseCapture(compiler, function)) {
                 reportError(context, function, "Unknown identifier: " + m_identifier);
                 return;
             }
@@ -1350,16 +1359,18 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
             break;
     }
 
-    if (context->getMode() == CompilerMode::Interpreter &&
+    if (context->getMode() != CompilerMode::Function &&
         m_identifierDefinition.identifierType != IdentifierType::FunctionVariable &&
         m_identifierDefinition.identifierType != IdentifierType::Constant &&
         m_identifierDefinition.identifierType != IdentifierType::DynamicVariable &&
-        m_identifierDefinition.identifierType != IdentifierType::ContextVariable) {
+        m_identifierDefinition.identifierType != IdentifierType::ContextVariable &&
+        !(context->getMode() == CompilerMode::FrameInterpreter &&
+          m_identifierDefinition.identifierType == IdentifierType::Parameter)) {
         reportError(context, function, "Identifier '" + m_identifier + "' is not supported by the interpreter");
         return;
     }
 
-    if (context->getMode() == CompilerMode::Interpreter &&
+    if (context->getMode() != CompilerMode::Function &&
         m_identifierDefinition.identifierType == IdentifierType::DynamicVariable &&
         !context->getRuntime()->canGetDynamicVariable(m_identifierDefinition.variableId)) {
         reportError(context, function, "Dynamic variable '" + m_identifier + "' cannot be read");
@@ -1373,7 +1384,8 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
         return;
     }
 
-    if (m_identifierDefinition.identifierType == IdentifierType::FunctionVariable) {
+    if (m_identifierDefinition.identifierType == IdentifierType::FunctionVariable &&
+        context->getMode() != CompilerMode::FrameInterpreter) {
         function->registerVariable(m_identifier, m_identifierDefinition.valueType);
     }
 
@@ -1532,6 +1544,9 @@ void IdentifierExpression::onCompileBorrowed(Compiler* compiler, ScriptFunction*
 
 void IdentifierExpression::onEvaluate(Interpreter& context) const {
     switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::Parameter:
+        context.setParameterResult(m_identifierDefinition.variableId);
+        break;
     case IdentifierType::FunctionVariable: {
         const auto* value = context.getVariableValueById(m_identifierDefinition.variableId);
         if (value == nullptr) {
@@ -1582,7 +1597,11 @@ void IdentifierExpression::onEvaluate(Interpreter& context) const {
 
         // The context owns the value, so it is read without taking ownership.
         RuntimeValue value;
-        runtime->getVariableContext(contextId)->getValue(m_identifierDefinition.variableId, value);
+        if (context.isFrameBacked()) {
+            runtime->getContextVariableValue(m_identifierDefinition.variableId, value);
+        } else {
+            runtime->getVariableContext(contextId)->getValue(m_identifierDefinition.variableId, value);
+        }
 
         if (type->isString() && value.getStringValue() == nullptr) {
             RuntimeValue emptyValue;

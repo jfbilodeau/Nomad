@@ -3,6 +3,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptFunction.hpp>
@@ -13,6 +14,124 @@
 #include <stdexcept>
 
 using namespace nomad;
+
+namespace {
+
+void evaluateFrameExpressions(VirtualMachine* machine) {
+    auto* function = machine->getCurrentFunction();
+    BOOST_REQUIRE(function != nullptr);
+    Interpreter context(*machine, *function);
+    BOOST_TEST(context.getVirtualMachine() == machine);
+    BOOST_TEST(context.getFunction() == function);
+    BOOST_TEST(context.isFrameBacked());
+    const auto savedResult = machine->getResult();
+    const auto savedIntermediate = machine->getIntermediate();
+    const auto functionsBefore = [&] {
+        std::vector<ScriptFunction*> functions;
+        machine->getRuntime()->getFunctions(functions);
+        return functions.size();
+    }();
+    const auto variableCount = function->getVariableCount();
+    const auto parameterCount = function->getParameterCount();
+    const auto instructionCount = machine->getRuntime()->getInstructions().size();
+    const auto captures = function->getCaptureCount();
+
+    const std::vector<std::pair<NomadString, NomadString>> cases{
+        {"value + local", "42"},
+        {"text.toUpper", "HELLO"},
+        {"answer + value", "43"},
+        {"global.score + value", "45"},
+        {"test.native text", "hello"},
+        {"test.parameter", "40"},
+        {"false && test.fail", "false"},
+    };
+    for (const auto& [source, expected] : cases) {
+        const auto succeeded = context.evaluateExpression(source);
+        const auto diagnostic = context.getError() ? *context.getError() : source;
+        BOOST_REQUIRE_MESSAGE(succeeded, diagnostic);
+        BOOST_REQUIRE(context.getResult() != nullptr);
+        BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getValue()) == expected);
+    }
+    for (const auto* source : {"", "value = 1", "missing + 1", "1 +", "1\n2", "test.void", "$\"{value}\"", "uncaptured"}) {
+        BOOST_TEST_CONTEXT(source) {
+            BOOST_TEST(!context.evaluateExpression(source));
+            BOOST_TEST(context.hasError());
+            BOOST_TEST(context.getResult() == nullptr);
+        }
+    }
+    BOOST_CHECK_THROW(static_cast<void>(context.evaluateExpression("test.fail")), VirtualMachineException);
+    BOOST_TEST(machine->getResult().getIntegerValue() == savedResult.getIntegerValue());
+    BOOST_TEST(machine->getIntermediate().getIntegerValue() == savedIntermediate.getIntegerValue());
+    BOOST_TEST(function->getVariableCount() == variableCount);
+    BOOST_TEST(function->getParameterCount() == parameterCount);
+    BOOST_TEST(function->getCaptureCount() == captures);
+    BOOST_TEST(machine->getRuntime()->getInstructions().size() == instructionCount);
+    std::vector<ScriptFunction*> functions;
+    machine->getRuntime()->getFunctions(functions);
+    BOOST_TEST(functions.size() == functionsBefore);
+    BOOST_TEST(context.evaluateExpression("value + 2"));
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on_active_vm)
+{
+    Runtime runtime;
+    runtime.registerNativeFunction("test.native",
+        [](VirtualMachine* machine) { machine->setStringResult(machine->getStringParameter(0)); },
+        {defParameter("text", runtime.getStringRefType(), NomadParamDoc("Text"))},
+        runtime.getStringType(), NomadDoc("Echo"));
+    runtime.registerNativeFunction("test.fail",
+        [](VirtualMachine* machine) { machine->fault("frame failure"); },
+        {}, runtime.getBooleanType(), NomadDoc("Fail"));
+    runtime.registerNativeFunction("test.void",
+        [](VirtualMachine*) {}, {}, runtime.getVoidType(), NomadDoc("No value"));
+    runtime.registerDynamicVariable("test.parameter",
+        [](VirtualMachine*, const RuntimeValue&) {},
+        [](VirtualMachine* machine, RuntimeValue& value) { value = machine->getParameter(0); },
+        runtime.getIntegerType(), NomadDoc("Current frame parameter"));
+
+    auto compiler = runtime.createCompiler();
+    compiler->registerScriptFile("answer", "answer.nomad", "return 3");
+    CompilerContext compilation(compiler.get());
+    BOOST_REQUIRE(compiler->compileFunctions(&compilation));
+    const auto parentId = runtime.registerFunction("parent", "frame.nomad", "");
+    auto* parent = runtime.getFunction(parentId);
+    parent->registerVariable("uncaptured", runtime.getIntegerType());
+    const auto id = runtime.registerFunction("frame", "frame.nomad", "");
+    auto* function = runtime.getFunction(id);
+    function->setParentId(parentId);
+    function->addParameter("value", runtime.getIntegerType());
+    function->addParameter("text", runtime.getStringType());
+    function->registerVariable("local", runtime.getIntegerType());
+    function->setReturnType(runtime.getVoidType());
+    function->setFunctionStart(runtime.getInstructions().size());
+    const auto initializeFrame = runtime.registerInstruction("test.initializeFrame", [](VirtualMachine* machine) {
+        machine->setFunctionVariableValue(0, RuntimeValue{NomadInteger{2}});
+        machine->setIntegerResult(77);
+        machine->setIntegerIntermediate(88);
+    }, NomadDoc("Initialize the test frame"), {});
+    const auto evaluateFrame = runtime.registerInstruction("test.evaluateFrame", evaluateFrameExpressions,
+        NomadDoc("Evaluate expressions in the test frame"), {});
+    compiler->addOpCode(initializeFrame);
+    compiler->addOpCode(evaluateFrame);
+    compiler->addFunctionReturn(function);
+    function->setFunctionEnd(runtime.getInstructions().size());
+    const auto contextId = runtime.registerOrUpdateContextVariable("global.score", runtime.getIntegerType());
+    runtime.setContextVariableValue(contextId, RuntimeValue{NomadInteger{5}});
+
+    auto machine = runtime.createVirtualMachine();
+    RuntimeValue text;
+    text.setStringValue("hello");
+#ifdef NOMAD_DEBUG
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+#endif
+    machine->run(function, {RuntimeValue{NomadInteger{40}}, text});
+#ifdef NOMAD_DEBUG
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+#endif
+    text.freeStringValue();
+}
 
 BOOST_AUTO_TEST_CASE(interpreter_context_stores_persistent_typed_variables)
 {

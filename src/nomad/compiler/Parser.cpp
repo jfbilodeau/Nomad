@@ -379,7 +379,7 @@ NomadId parseCallbackParameter(
     const auto isFun = tokens->is("fun");
 
     if (isFun || tokens->is("then")) {
-        if (context->getMode() == CompilerMode::Interpreter) {
+        if (context->getMode() != CompilerMode::Function) {
             context->reportError(
                 NomadString("Inline `") + (isFun ? "fun" : "then") + "` callbacks are not supported by the interpreter"
             , tokens);
@@ -932,7 +932,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
             }
         }
 
-        if (context->getMode() == CompilerMode::Interpreter &&
+        if (context->getMode() != CompilerMode::Function &&
             context->getCompiler()->getIdentifierType(token.textValue, function) == IdentifierType::Unknown &&
             !tokens->endOfLine()) {
             const auto nextType = tokens->currentToken().type;

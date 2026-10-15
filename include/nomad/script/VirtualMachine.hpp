@@ -66,6 +66,7 @@ public:
     void callIntrinsicMethod(NomadId memberId);
     void returnFunction(NomadIndex variableCount);
     void runIntrinsicMethod(NomadId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
+    void runNativeFunction(NomadId nativeFunctionId, const std::vector<RuntimeValue>& args);
 
     [[nodiscard]] const RuntimeValue& getIntrinsicReceiver() const;
     [[nodiscard]] RuntimeValue& getIntrinsicReceiver();
@@ -213,7 +214,6 @@ private:
     friend class Runtime;
 
     void initializeFunctionVariables(const ScriptFunction* function);
-    void runNativeFunction(NomadId nativeFunctionId, const std::vector<RuntimeValue>& args);
 
     Runtime* m_runtime;
     NomadIndex m_instructionIndex = 0;
