@@ -191,6 +191,7 @@ BOOST_AUTO_TEST_CASE(changing_alignment_refreshes_fixed_width_text_layout)
     entity.setFontById(fontId);
     entity.setTextColor(white);
     entity.setText("Aligned");
+    entity.setTextLineSpacing(1.0f);
     entity.setTextWidth(textureWidth);
     entity.setTextPosition(17, -9);
 
