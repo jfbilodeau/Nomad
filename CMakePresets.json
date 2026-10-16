@@ -103,6 +103,7 @@
       "hidden": true,
       "targets": [
         "nomad-cli",
+        "nomad-lsp",
         "nomad-runtime",
         "nomadc",
         "nomad_test"
@@ -139,6 +140,7 @@
       "name": "linux-sanitizers",
       "configurePreset": "linux-sanitizers",
       "targets": [
+        "nomad-lsp",
         "nomad_test"
       ]
     }
