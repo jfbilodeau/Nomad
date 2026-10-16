@@ -1,6 +1,6 @@
 # CLI reference
 
-Both tools use `program <verb> [arguments] [options]`.
+The project manager and compiler use `program <verb> [arguments] [options]`.
 `--help`/`-h` and `--version`/`-v` are standalone top-level actions.
 `help [verb]` and `version` are also verbs. Use `<verb> --help` for
 command-specific help. Options belong to individual verbs.
@@ -56,6 +56,19 @@ report lists each physical texture page, its dimensions, logical and unique
 sprite counts, and pixel occupancy. Sprite discovery, image decoding, naming,
 collision, size, and packing failures produce a nonzero exit code. An explicit
 `nomadc check <path>` remains a script-only check.
+
+## Language server
+
+`nomad-lsp` is a separate application, not a `nomadc` verb. With no arguments it
+speaks LSP over standard input/output using `Content-Length` framing. Logs go to
+standard error. `--help`/`-h` prints usage and `--version`/`-v` prints the version;
+unknown arguments are rejected.
+
+The diagnostics-only server supports full-text document synchronization and
+UTF-16 positions. It reuses compiler source batches, applies open editor buffers
+over files on disk, and discovers the nearest project configuration. It never
+executes scripts. See the [VS Code extension guide](../editor/README.md) for setup
+and current limitations.
 
 ## Runtime
 

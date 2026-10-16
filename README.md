@@ -13,9 +13,13 @@ The engine uses C++20, SDL3, and Box2D. The SDK includes:
 
 - `nomad` to create, check, run, and package projects.
 - `nomadc` to compile scripts and inspect generated instructions.
+- `nomad-lsp` to provide compiler diagnostics in editors over LSP.
 - `nomad-runtime` to run games during development and in packaged builds.
 
 Windows x64 and Linux x64 SDK releases are currently available.
+
+The [VS Code extension](editor/README.md) provides syntax highlighting and
+diagnostics, including unsaved changes to scripts in a project.
 
 ## Quick start
 

@@ -30,6 +30,7 @@ add_executable(
     ./LanguageFormatStringFunctionTest.cpp
     ./LanguageFunctionTest.cpp
     ./LanguageLexicalTest.cpp
+    ./LanguageServerTest.cpp
     ./LanguageOperatorTest.cpp
     ./LanguageScriptDiscoveryTest.cpp
     ./LanguageStringLifetimeTest.cpp
@@ -85,5 +86,15 @@ endif()
 nomad_copy_runtime_dependencies(nomad_test)
 
 add_test(NAME nomad_test COMMAND nomad_test)
+
+if(TARGET nomad-lsp)
+    add_test(NAME nomad_lsp_process
+        COMMAND "${CMAKE_COMMAND}"
+            "-DNOMAD_LSP=$<TARGET_FILE:nomad-lsp>"
+            "-DNOMAD_VERSION=${PROJECT_VERSION}"
+            "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/lsp-process/$<CONFIG>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/LanguageServerProcessTest.cmake")
+    set_tests_properties(nomad_lsp_process PROPERTIES TIMEOUT 60)
+endif()
 
 include(IntegrationTests.cmake)

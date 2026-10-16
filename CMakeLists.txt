@@ -163,6 +163,8 @@ set(
         NOMAD_ENGINE_SOURCES
         ${DEAR_IMGUI_SOURCE}
 
+        ${NOMAD_SOURCE_DIR}/nomad/lsp/LanguageServer.cpp
+
         ${NOMAD_SOURCE_DIR}/nomad/debug/DebugConsole.cpp
         ${NOMAD_SOURCE_DIR}/nomad/debug/DebugDraw.cpp
 
@@ -314,6 +316,14 @@ option(NOMAD_BUILD_COMPILER "Build the Nomad compiler tooling" ON)
 if(NOMAD_BUILD_COMPILER)
     add_executable(nomadc apps/compiler/main.cpp)
     target_link_libraries(nomadc PRIVATE Nomad::Engine Nomad::CliOptions Boost::nowide)
+endif()
+
+option(NOMAD_BUILD_LSP "Build the Nomad language server" ON)
+if(NOMAD_BUILD_LSP)
+    add_executable(nomad-lsp apps/lsp/main.cpp)
+    target_link_libraries(nomad-lsp PRIVATE Nomad::Engine Boost::program_options Boost::nowide)
+    nomad_configure_runtime_target(nomad-lsp)
+    nomad_copy_runtime_dependencies(nomad-lsp)
 endif()
 
 include(cmake/NomadDistribution.cmake)
