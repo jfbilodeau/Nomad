@@ -7,12 +7,18 @@ Nomad (`.nomad`) scripts. Requires VS Code 1.82 or newer.
 
 - Release builds include a `nomad-language-<version>.vsix` package. Install it with
   `code --install-extension nomad-language-<version>.vsix`.
-- Install a Nomad SDK containing `nomad-lsp`. The extension searches the standard
-  SDK installation directory and selects the newest installed version, then falls
-  back to `PATH`. Set `nomad.languageServer.path` to the full executable path to
+- Install a Nomad SDK containing `nomad-lsp`. For scripts in a project, the extension
+  reads the nearest `nomad.toml` and selects the newest installed SDK satisfying
+  `nomad.version` (a minimum version, matching compiler compatibility rules).
+  If none is installed, it reports an error with installation/configuration guidance
+  rather than launching an older SDK. It does not download SDKs automatically.
+  Without a project, it selects the newest installed SDK, then falls back to `PATH`.
+  Set `nomad.languageServer.path` to the full executable path to
   override discovery. Keep the executable alongside its SDK dependencies.
   The default SDK roots are `%LOCALAPPDATA%\Nomad\sdks` on Windows and
   `$XDG_DATA_HOME/nomad/sdks` (or `~/.local/share/nomad/sdks`) on Linux.
+  `NOMAD_HOME` overrides the SDK home, with versions located under its `sdks` directory.
+  Custom installation locations require an explicit executable path.
 - Open a saved `.nomad` file. Diagnostics appear in the editor and Problems panel.
   The **Nomad Language Server** output channel contains server messages.
 - Set `nomad.languageServer.enabled` to `false` for highlighting only.
@@ -32,6 +38,9 @@ not need to be written to disk. Closing a document restores its disk content for
 other open scripts in the same project.
 
 The nearest `nomad.toml` determines project resources and script directories.
+Separate project roots use separate server processes, including nested projects
+and multi-root workspaces. Saving, creating, or deleting `nomad.toml` restarts the
+clients and reselects their SDKs. Unsaved configuration edits do not change SDK selection.
 Project analysis includes scripts on disk, all open script buffers in that
 project, the engine API, and entry-function validation. Standalone files without
 a project are checked individually with language built-ins only.

@@ -15,10 +15,11 @@
   "main": "./extension.js",
   "activationEvents": ["onLanguage:nomad"],
   "dependencies": {
+    "@iarna/toml": "2.2.5",
     "vscode-languageclient": "9.0.1"
   },
   "scripts": {
-    "check": "node --check extension.js && node --test serverPath.test.js"
+    "check": "node --check extension.js && node --test serverPath.test.js extension.test.js"
   },
   "files": [
     "extension.js",
