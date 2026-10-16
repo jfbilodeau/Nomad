@@ -540,4 +540,88 @@ directory = "res"
     }
 }
 
+BOOST_AUTO_TEST_CASE(local_completion_uses_compiler_scope_and_types_on_an_incomplete_line)
+{
+    TestDirectory directory("nomad_lsp_local_symbols");
+    const auto uri = uriFor(directory.getPath() / "locals.nomad");
+    const auto text = NomadString(
+        "fun first title:string\n"
+        "name = title\n"
+        "count = 42\n"
+        "name.\n"
+        "end\n"
+        "fun second other:int\n"
+        "value = other + 1\n"
+        "end");
+    const auto query = [&](const int id, const char* method, const int line, const int character) {
+        return frame({{"jsonrpc", "2.0"}, {"id", id}, {"method", method},
+            {"params", {{"textDocument", {{"uri", uri}}},
+                {"position", {{"line", line}, {"character", character}}}}}});
+    };
+    const auto change = [&](const int version, const NomadString& source) {
+        return frame({{"jsonrpc", "2.0"}, {"method", "textDocument/didChange"},
+            {"params", {{"textDocument", {{"uri", uri}, {"version", version}}},
+                {"contentChanges", json::array{json::object{{"text", source}}}}}}});
+    };
+    const auto valid = NomadString(
+        "fun first title:string\n"
+        "name = title\n"
+        "count = 42\n"
+        "name = name.trim\n"
+        "end\n"
+        "fun second other:int\n"
+        "value = other + 1\n"
+        "end");
+    std::istringstream input(start() + frame(openDocument(uri, text)) +
+        query(10, "textDocument/completion", 3, 5) +
+        change(2, valid) + query(11, "textDocument/completion", 3, 0) +
+        query(12, "textDocument/hover", 3, 2) + query(13, "textDocument/hover", 3, 14) +
+        query(14, "textDocument/completion", 6, 0) +
+        change(3, "fun first title:string\ncount = 42\ncount.\nend") +
+        query(16, "textDocument/completion", 2, 6) +
+        change(4, "fun first title:string\ntitle.\nend") +
+        query(17, "textDocument/completion", 1, 6) +
+        change(5, "name = \"Nomad\"\nname.length.\n") +
+        query(18, "textDocument/completion", 1, 12) +
+        change(6, "name = \"Nomad\"\ncount = name.length\n") +
+        query(19, "textDocument/hover", 1, 16) +
+        change(7, "name = 42\nname.\n") +
+        query(20, "textDocument/completion", 1, 5) +
+        change(8, valid) + query(21, "textDocument/completion", 0, 12) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    BOOST_REQUIRE_MESSAGE(errors.str().empty(), errors.str());
+    std::map<std::int64_t, json::object> replies;
+    for (const auto& message : responses(output.str())) {
+        if (message.contains("id")) replies.emplace(message.at("id").as_int64(), message);
+    }
+    const auto labels = [&](const int id) {
+        std::set<NomadString> names;
+        for (const auto& item : replies.at(id).at("result").as_object().at("items").as_array()) {
+            names.emplace(item.as_object().at("label").as_string());
+        }
+        return names;
+    };
+    BOOST_TEST(labels(10).contains("trim"));
+    BOOST_TEST(labels(10).contains("length"));
+    BOOST_TEST(!labels(10).contains("play"));
+    BOOST_TEST(labels(11).contains("name"));
+    BOOST_TEST(labels(11).contains("count"));
+    BOOST_TEST(labels(11).contains("title"));
+    BOOST_TEST(!labels(11).contains("other"));
+    BOOST_TEST(labels(14).contains("other"));
+    BOOST_TEST(!labels(14).contains("name"));
+    BOOST_TEST(!labels(14).contains("title"));
+    BOOST_TEST(json::serialize(replies.at(12).at("result")).find("name:string") != NomadString::npos);
+    BOOST_TEST(json::serialize(replies.at(13).at("result")).find("string.trim") != NomadString::npos);
+    BOOST_TEST(!labels(16).contains("trim"));
+    BOOST_TEST(labels(17).contains("trim"));
+    BOOST_TEST(!labels(17).contains("play"));
+    BOOST_TEST(!labels(18).contains("trim"));
+    BOOST_TEST(json::serialize(replies.at(19).at("result")).find("string.length:int") != NomadString::npos);
+    BOOST_TEST(!labels(20).contains("trim"));
+    BOOST_TEST(labels(21).contains("title"));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

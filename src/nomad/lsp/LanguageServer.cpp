@@ -2,6 +2,7 @@
 
 #include <nomad/lsp/LanguageServer.hpp>
 
+#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
@@ -26,6 +27,7 @@
 #include <set>
 #include <stdexcept>
 #include <string_view>
+#include <tuple>
 
 namespace nomad {
 namespace {
@@ -64,16 +66,20 @@ NomadPath documentPath(const NomadString& uri);
 
 std::vector<ApiSymbol> createApiSymbols(
     const NomadPath& path,
-    const LanguageDocuments& documents
+    const LanguageDocuments& documents,
+    const NomadString& uri,
+    const NomadIndex line,
+    const bool completion,
+    const bool omitCurrentLine = false
 ) {
     std::unique_ptr<Game> game;
     std::unique_ptr<Runtime> language;
     const auto root = findProjectRoot(path.parent_path());
     LanguageDocuments relatedDocuments;
-    for (const auto& [uri, document] : documents) {
-        const auto candidate = documentPath(uri);
+    for (const auto& [documentUri, document] : documents) {
+        const auto candidate = documentPath(documentUri);
         if (root ? findProjectRoot(candidate.parent_path()) == root : candidate == path) {
-            relatedDocuments.emplace(uri, document);
+            relatedDocuments.emplace(documentUri, document);
         }
     }
     const auto groups = collectAnalysisGroups(relatedDocuments);
@@ -86,9 +92,32 @@ std::vector<ApiSymbol> createApiSymbols(
         language = std::make_unique<Runtime>();
     }
     auto* runtime = game ? game->getRuntime() : language.get();
-    const auto batch = loadSourcePaths(group.roots, group.overrides);
+    auto batch = loadSourcePaths(group.roots, group.overrides);
+    if (omitCurrentLine) {
+        for (auto& script : batch.sources) {
+            if (script.source.sourceName != uri) continue;
+            auto start = std::size_t{0};
+            for (auto index = NomadIndex{1}; index < line; ++index) {
+                const auto newline = script.source.text.find('\n', start);
+                if (newline == NomadString::npos) break;
+                start = newline + 1;
+            }
+            const auto newline = script.source.text.find('\n', start);
+            const auto end = newline == NomadString::npos ? script.source.text.size() : newline;
+            std::fill(script.source.text.begin() + static_cast<std::ptrdiff_t>(start),
+                script.source.text.begin() + static_cast<std::ptrdiff_t>(end), ' ');
+        }
+    }
     // Failed compilations still retain declarations collected by the compiler's earlier passes.
-    (void)checkSources(batch, runtime);
+    auto compiler = runtime->createCompiler();
+    CompilerContext compilerContext(compiler.get());
+    compiler->registerSources(&compilerContext, batch);
+    const auto compiled = compiler->compileFunctions(&compilerContext);
+    const auto& diagnostics = compilerContext.getDiagnostics();
+    const auto currentLineError = std::ranges::any_of(diagnostics, [&](const auto& diagnostic) {
+        return diagnostic.sourceName == uri && diagnostic.line == line &&
+            diagnostic.severity == DiagnosticSeverity::Error;
+    });
     std::vector<ApiSymbol> symbols;
     std::vector<KeywordDefinition> keywords;
     runtime->getKeywords(keywords);
@@ -194,6 +223,25 @@ std::vector<ApiSymbol> createApiSymbols(
         symbols.push_back({function->getName(), CompletionItemKind::Function,
             std::move(signature), "Defined in `" + function->getPath() + "`."});
     }
+    std::set<NomadString> localNames;
+    for (auto* function = compiler->getFunctionAtLine(uri, line); function;
+        function = runtime->getFunction(function->getParentId())) {
+        const auto addLocal = [&](const NomadString& name, const Type* type) {
+            if (!localNames.insert(name).second) return;
+            const auto typeName = type ? type->getTypeName() : "unknown";
+            std::erase_if(symbols, [&](const auto& symbol) {
+                return symbol.receiverType.empty() && symbol.name == name;
+            });
+            symbols.push_back({name, CompletionItemKind::Variable, name + ":" + typeName,
+                "Local to `" + function->getName() + "`.", type ? typeName : NomadString{}});
+        };
+        for (auto index = NomadIndex{0}; index < function->getVariableCount(); ++index) {
+            addLocal(function->getVariableName(toNomadId(index)), function->getVariableType(toNomadId(index)));
+        }
+        for (auto index = NomadIndex{0}; index < function->getParameterCount(); ++index) {
+            addLocal(function->getParameterName(toNomadId(index)), function->getParameterType(toNomadId(index)));
+        }
+    }
     std::set<NomadString> namespaces;
     for (const auto& symbol : symbols) {
         if (!symbol.receiverType.empty()) continue;
@@ -202,6 +250,20 @@ std::vector<ApiSymbol> createApiSymbols(
     }
     for (const auto& name : namespaces) {
         symbols.push_back({name, CompletionItemKind::Module, name, "Symbol namespace."});
+    }
+    if (!compiled && currentLineError && completion && !omitCurrentLine) {
+        compiler.reset();
+        game.reset();
+        language.reset();
+        auto recovered = createApiSymbols(path, documents, uri, line, completion, true);
+        for (auto& symbol : symbols) {
+            if (localNames.contains(symbol.name)) continue;
+            const auto present = std::ranges::any_of(recovered, [&](const auto& candidate) {
+                return candidate.name == symbol.name && candidate.receiverType == symbol.receiverType;
+            });
+            if (!present) recovered.push_back(std::move(symbol));
+        }
+        symbols = std::move(recovered);
     }
     std::ranges::sort(symbols, [](const auto& left, const auto& right) {
         return left.name == right.name ? left.signature < right.signature : left.name < right.name;
@@ -212,6 +274,27 @@ std::vector<ApiSymbol> createApiSymbols(
 bool isNameCharacter(const char character) {
     return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
         (character >= '0' && character <= '9') || character == '_' || character == '.';
+}
+
+NomadString symbolValueType(
+    const std::vector<ApiSymbol>& symbols,
+    const NomadString& name
+) {
+    for (auto iterator = symbols.rbegin(); iterator != symbols.rend(); ++iterator) {
+        if (iterator->receiverType.empty() && iterator->name == name && !iterator->valueType.empty()) {
+            return iterator->valueType;
+        }
+    }
+    const auto separator = name.rfind('.');
+    if (separator == NomadString::npos) return {};
+    const auto receiverType = symbolValueType(symbols, name.substr(0, separator));
+    if (receiverType.empty()) return {};
+    for (const auto& symbol : symbols) {
+        if (symbol.receiverType == receiverType && symbol.name == name.substr(separator + 1)) {
+            return symbol.valueType;
+        }
+    }
+    return {};
 }
 
 struct DocumentWord {
@@ -500,7 +583,7 @@ int runLanguageServer(
     const LanguageAnalyzer& analyze
 ) {
     LanguageDocuments documents;
-    std::map<NomadPath, std::vector<ApiSymbol>> apiCatalogs;
+    std::map<std::tuple<NomadString, NomadIndex, bool>, std::vector<ApiSymbol>> apiCatalogs;
     std::set<NomadString> previousUris;
     auto initialized = false;
     auto ready = false;
@@ -583,10 +666,12 @@ int runLanguageServer(
                     const auto& document = documents.at(uri);
                     const auto word = documentWord(document.text, params.at("position").as_object());
                     const auto path = documentPath(uri);
-                    const auto key = findProjectRoot(path.parent_path()).value_or(path);
+                    const auto line = static_cast<NomadIndex>(params.at("position").as_object().at("line").as_int64()) + 1;
+                    const auto completion = method == "textDocument/completion";
+                    const auto key = std::make_tuple(uri, line, completion);
                     auto found = apiCatalogs.find(key);
                     if (found == apiCatalogs.end() && !word.suppressed) {
-                        found = apiCatalogs.emplace(key, createApiSymbols(path, documents)).first;
+                        found = apiCatalogs.emplace(key, createApiSymbols(path, documents, uri, line, completion)).first;
                     }
                     json::value result;
                     if (method == "textDocument/completion") {
@@ -595,12 +680,9 @@ int runLanguageServer(
                             const auto separator = word.prefix.rfind('.');
                             const auto receiver = separator == NomadString::npos
                                 ? NomadString{} : word.prefix.substr(0, separator);
-                            NomadString receiverType;
+                            const auto receiverType = symbolValueType(found->second, receiver);
                             auto namespacePrefix = false;
                             for (const auto& symbol : found->second) {
-                                if (symbol.receiverType.empty() && symbol.name == receiver) {
-                                    receiverType = symbol.valueType;
-                                }
                                 if (!receiver.empty() && symbol.receiverType.empty() &&
                                     symbol.name.starts_with(receiver + ".")) namespacePrefix = true;
                             }
@@ -629,9 +711,14 @@ int runLanguageServer(
                         result = json::object{{"isIncomplete", false}, {"items", std::move(items)}};
                     } else if (!word.suppressed && !word.name.empty()) {
                         NomadString markdown;
+                        const auto separator = word.name.rfind('.');
+                        const auto receiverType = separator == NomadString::npos ? NomadString{}
+                            : symbolValueType(found->second, word.name.substr(0, separator));
                         for (const auto& symbol : found->second) {
-                            if (!symbol.receiverType.empty()) continue;
-                            if (symbol.name != word.name) continue;
+                            if (!symbol.receiverType.empty()) {
+                                if (receiverType != symbol.receiverType ||
+                                    symbol.name != word.name.substr(separator + 1)) continue;
+                            } else if (symbol.name != word.name) continue;
                             if (!markdown.empty()) markdown += "\n\n---\n\n";
                             markdown += stringField(symbolDocumentation(symbol), "value");
                         }

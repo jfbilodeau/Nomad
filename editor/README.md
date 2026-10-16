@@ -51,10 +51,16 @@ Project scripts include engine APIs and functions from the configured script roo
 standalone scripts use language built-ins and functions from that document only.
 Registered engine variables (including `this.` and `other.`) and discovered script
 context variables are included. Intrinsic properties and methods are suggested
-after a receiver dot; known registered variable types filter the candidates.
+after a receiver dot; compiler-inferred local and parameter types, as well as
+registered variable types, filter the candidates. Local variables and parameters
+are scoped to the current function and enclosing callbacks, and hover shows their
+types. Intrinsic hover shows the member signature and documentation. Named
+receivers can include chains of intrinsic properties, such as `this.name.length`.
 For unknown receiver types, candidates list their receiver type in the details.
-This version does not infer local variable types for completion, and member
-completion after string literals or arbitrary expressions is not yet supported.
+When an error is on the completion line, the server retries the compiler with that
+line blanked in a temporary snapshot. This does not change editor text or published
+diagnostics. Other errors can still prevent local type inference.
+Member completion after string literals or arbitrary expressions is not yet supported.
 It does not provide signature-help popups or inlay hints.
 
 ## Diagnostics

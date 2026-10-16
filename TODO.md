@@ -8,8 +8,8 @@ Things the author wants to do.
 
 ## Open
 [ ] Sample game
-[ ] Select language
-[ ] Make `font` an intrinsic instead of ID.
+[ ] Select text language
+[ ] Make runtime plugable (Game, system, etc...)
 [ ] `this.wait`, `scene.wait`, `game.wait`
 [ ] Support to tween properties
 [ ] `args`
@@ -26,6 +26,7 @@ Things the author wants to do.
 [ ] Gen game docs for modding
 
 ## Completed
+[X] Make `font` an intrinsic instead of ID.
 [X] Display physics bodies in debug mode
 [X] Automatic sprite texture packing
 [X] Objects (intrinsic)

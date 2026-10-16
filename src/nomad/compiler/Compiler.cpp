@@ -1052,6 +1052,25 @@ const ScriptSource& Compiler::getScript(const NomadId scriptId) const {
     return m_scripts[toNomadIndex(scriptId)].script;
 }
 
+const ScriptFunction* Compiler::getFunctionAtLine(
+    const NomadString& sourceName,
+    const NomadIndex line
+) const {
+    const ScriptFunction* selected = nullptr;
+    auto selectedSpan = NOMAD_INVALID_INDEX;
+    for (const auto& source : m_functions) {
+        if (!source.ast || source.function->getPath() != sourceName) continue;
+        const auto start = source.ast->getLine();
+        const auto end = source.ast->getEndLine();
+        if (line < start || line > end) continue;
+        if (end - start <= selectedSpan) {
+            selected = source.function;
+            selectedSpan = end - start;
+        }
+    }
+    return selected;
+}
+
 void Compiler::setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode> ast) {
     for (auto& source: m_functions) {
         if (source.function->getId() == functionId) {

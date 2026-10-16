@@ -50,10 +50,20 @@ void parseFunParameters(ScriptFunction* function, CompilerContext* context, Toke
 [[nodiscard]] bool parseCallbackFunParameters(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const FunctionType* callbackType);
 
 // Not a nativeFunction. Just a helper to compile the body of a function. Consumes the closing `end`. Returns nullptr on error.
-std::unique_ptr<FunctionNode> parseFunBody(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
+std::unique_ptr<FunctionNode> parseFunBody(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    NomadIndex startLine
+);
 
 // Helper to compile the body of a `then` callback (consumes remaining function body). Returns nullptr on error.
-std::unique_ptr<FunctionNode> parseThenBody(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
+std::unique_ptr<FunctionNode> parseThenBody(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    NomadIndex startLine
+);
 
 // Statement parsers. Errors are reported to the tokenizer's context; pre-parse functions return false and parse
 // functions return nullptr on error.

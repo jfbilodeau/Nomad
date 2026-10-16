@@ -416,6 +416,7 @@ NomadId parseCallbackParameter(
         // Wire the nested function's parent reference.
         callbackFunction->setParentId(function->getId());
 
+        const auto declarationLine = tokens->getLineIndex();
         auto parametersParsed = parseCallbackFunParameters(context, callbackFunction, tokens, callbackType);
 
         if (parametersParsed) {
@@ -426,8 +427,8 @@ NomadId parseCallbackParameter(
         }
 
         auto callbackBody = isFun
-            ? parseFunBody(context, callbackFunction, tokens)
-            : parseThenBody(context, callbackFunction, tokens);
+            ? parseFunBody(context, callbackFunction, tokens, declarationLine)
+            : parseThenBody(context, callbackFunction, tokens, declarationLine);
 
         if (!parametersParsed || callbackBody == nullptr) {
             return NOMAD_INVALID_ID;

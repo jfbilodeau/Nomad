@@ -132,8 +132,13 @@ bool parseCallbackFunParameters(CompilerContext* context, ScriptFunction* functi
     return true;
 }
 
-std::unique_ptr<FunctionNode> parseFunBody(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
-    auto fun = std::make_unique<FunctionNode>(tokens->getLineIndex(), 0);
+std::unique_ptr<FunctionNode> parseFunBody(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    const NomadIndex startLine
+) {
+    auto fun = std::make_unique<FunctionNode>(startLine, 0);
 
     const auto valid = parser::parseBlock(context, function, tokens, {"end"}, fun->getStatements());
 
@@ -153,10 +158,15 @@ std::unique_ptr<FunctionNode> parseFunBody(CompilerContext* context, ScriptFunct
     return fun;
 }
 
-std::unique_ptr<FunctionNode> parseThenBody(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+std::unique_ptr<FunctionNode> parseThenBody(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    const NomadIndex startLine
+) {
     const auto errorCount = context->getErrorCount();
 
-    auto thenBody = std::make_unique<FunctionNode>(tokens->getLineIndex(), 0);
+    auto thenBody = std::make_unique<FunctionNode>(startLine, 0);
 
     while (!tokens->isEndOfFile()) {
         auto statement = parser::parseLine(context, function, tokens);
@@ -187,6 +197,7 @@ std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptFun
 
     funName = tokens->next().textValue;
 
+    const auto declarationLine = tokens->getLineIndex();
     // Fun is already registered by pre_parse_fun_statement
     tokens->nextLine();
 
@@ -200,7 +211,7 @@ std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptFun
         return nullptr;
     }
 
-    auto funBody = parseFunBody(context, funFunction, tokens);
+    auto funBody = parseFunBody(context, funFunction, tokens, declarationLine);
 
     if (funBody == nullptr) {
         return nullptr;
@@ -832,9 +843,10 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
         auto handlerFunction = context->getRuntime()->getFunction(handlerFunctionId);
 
         // Parse parameters (names only for now)
+        const auto declarationLine = tokens->getLineIndex();
         const auto parametersParsed = preParseParamsStatement(context, handlerFunction, tokens);
 
-        auto handlerBody = parseFunBody(context, handlerFunction, tokens);
+        auto handlerBody = parseFunBody(context, handlerFunction, tokens, declarationLine);
 
         if (!parametersParsed || handlerBody == nullptr) {
             return nullptr;
