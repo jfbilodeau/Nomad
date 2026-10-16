@@ -24,11 +24,11 @@ Compiler& LanguageTestFixture::getCompiler() {
 }
 
 void LanguageTestFixture::addFunction(const NomadString& name, const NomadString& source) {
-    (void)m_compiler->registerScriptFile(m_context.get(), name, name + ".nomad", source);
+    m_compiler->registerScripts(m_context.get(), {{{name, {name + ".nomad", source}}}, {}});
 }
 
 void LanguageTestFixture::addSources(const SourceBatch& batch) {
-    m_compiler->registerSources(m_context.get(), batch);
+    m_compiler->registerScripts(m_context.get(), batch);
 }
 
 bool LanguageTestFixture::compile() {

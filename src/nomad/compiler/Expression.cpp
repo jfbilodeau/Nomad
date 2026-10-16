@@ -1229,7 +1229,10 @@ bool FormatStringLiteral::parsePlaceholders(
 
         auto* compiler = context->getCompiler();
         const auto name = compiler->generateFunctionName("formatExpression", function, getLine());
-        const auto functionId = compiler->registerFunctionSource(name, function->getPath(), function->getSource());
+        const auto functionId = compiler->createFunction(context, compiler->getScriptId(function->getId()), name);
+        if (functionId == NOMAD_INVALID_ID) {
+            return false;
+        }
         auto* expressionFunction = context->getRuntime()->getFunction(functionId);
         expressionFunction->setParentId(function->getId());
 

@@ -45,10 +45,22 @@ BOOST_AUTO_TEST_CASE(checks_editor_text_instead_of_disk_contents)
     BOOST_REQUIRE(batch.diagnostics.empty());
     BOOST_REQUIRE(batch.sources.size() == 1U);
     BOOST_TEST(batch.sources.front().source.sourceName == file.generic_string());
+    BOOST_REQUIRE(batch.sources.front().source.filePath.has_value());
+    BOOST_TEST(*batch.sources.front().source.filePath == file);
     batch.sources.front().source.text = "return 42";
 
     BOOST_TEST(checkSources(batch).succeeded());
     BOOST_TEST(!checkPath(file).succeeded());
+}
+
+BOOST_AUTO_TEST_CASE(backing_path_is_metadata_not_a_compilation_input)
+{
+    TestDirectory directory("nomad_compilation_test_backing_path");
+    const auto missing = directory.getPath() / "not-created.nomad";
+    const SourceBatch batch{{{"answer", {"editor:answer", "return 42", missing}}}, {}};
+
+    BOOST_TEST(checkSources(batch).succeeded());
+    BOOST_TEST(!std::filesystem::exists(missing));
 }
 
 BOOST_AUTO_TEST_CASE(in_memory_diagnostics_keep_source_names_and_locations)

@@ -42,7 +42,7 @@ CompilationArtifacts compileSources(
     auto compiler = runtime->createCompiler();
     CompilerContext context(compiler.get());
 
-    compiler->registerSources(&context, batch);
+    compiler->registerScripts(&context, batch);
     (void)compiler->compileFunctions(&context);
 
     const auto diagnostics = context.getDiagnostics();

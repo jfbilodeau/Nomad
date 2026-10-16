@@ -827,7 +827,7 @@ void Compiler::setIndex(NomadIndex index, NomadIndex value) {
     m_instructions[index].value.setIndexValue(value);
 }
 
-void Compiler::preParseFunction(CompilerContext* context, ScriptFile& scriptFile) {
+void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scriptFile) {
     auto function = m_runtime->getFunction(scriptFile.functionId);
     auto& tokens = *scriptFile.tokens;
 
@@ -846,7 +846,7 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptFile& scriptFile
 }
 
 
-void Compiler::parseFunction(CompilerContext* context, ScriptFile& file) {
+void Compiler::parseFunction(CompilerContext* context, ScriptCompilation& file) {
     auto ast = std::make_unique<FunctionNode>(0, 0);
     auto& tokens = *file.tokens;
 
@@ -868,11 +868,11 @@ void Compiler::parseFunction(CompilerContext* context, ScriptFile& file) {
     setFunctionNode(file.functionId, std::move(ast));
 }
 
-bool Compiler::resolveFunction(CompilerContext* context, const FunctionSource& source) {
+bool Compiler::resolveFunction(CompilerContext* context, const FunctionCompilation& source) {
     return source.ast->resolve(context, source.function);
 }
 
-void Compiler::checkReturnPaths(CompilerContext* context, const FunctionSource& source) const {
+void Compiler::checkReturnPaths(CompilerContext* context, const FunctionCompilation& source) const {
     const auto* returnType = source.function->getReturnType();
 
     if (returnType == nullptr || returnType->isVoid() || source.ast->alwaysReturns()) {
@@ -894,10 +894,10 @@ void Compiler::inferTypes(CompilerContext* context) {
     // resolve pass reports errors once, when every type that can be inferred is known.
     auto inferredTypes = collectInferredTypes();
 
-    for (NomadIndex pass = 0; pass <= m_sources.size(); ++pass) {
+    for (NomadIndex pass = 0; pass <= m_functions.size(); ++pass) {
         CompilerContext inferenceContext(this, context->getMode());
 
-        for (const auto& source: m_sources) {
+        for (const auto& source: m_functions) {
             try {
                 (void)resolveFunction(&inferenceContext, source);
             } catch (const NomadBug&) {
@@ -917,7 +917,7 @@ void Compiler::inferTypes(CompilerContext* context) {
     }
 
     // Functions without a `return` statement return void.
-    for (const auto& source: m_sources) {
+    for (const auto& source: m_functions) {
         if (source.function->getReturnType() == nullptr && !m_returningFunctions.contains(source.function->getId())) {
             source.function->setReturnType(m_runtime->getVoidType());
         }
@@ -927,7 +927,7 @@ void Compiler::inferTypes(CompilerContext* context) {
 std::vector<const Type*> Compiler::collectInferredTypes() const {
     std::vector<const Type*> types;
 
-    for (const auto& source: m_sources) {
+    for (const auto& source: m_functions) {
         types.push_back(source.function->getReturnType());
 
         for (NomadIndex variableIndex = 0; variableIndex < source.function->getVariableCount(); ++variableIndex) {
@@ -948,7 +948,7 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
     return types;
 }
 
-void Compiler::compileFunction(const FunctionSource& source) {
+void Compiler::compileFunction(const FunctionCompilation& source) {
     ScriptFunction* function = source.function;
 
     function->setFunctionStart(m_instructions.size());
@@ -984,67 +984,46 @@ void Compiler::addFunctionReturn(const ScriptFunction* function) {
     addIndex(variableCount);
 }
 
-NomadId Compiler::registerScriptFile(
+void Compiler::registerScript(CompilerContext* context, const ScriptSource& script) {
+    const auto scriptId = ScriptId{m_scripts.size()};
+    m_scripts.push_back({script, nullptr, NOMAD_INVALID_ID});
+    const auto functionId = createFunction(context, scriptId, script.scriptName);
+    if (functionId == NOMAD_INVALID_ID) {
+        m_scripts.pop_back();
+        return;
+    }
+    m_scripts.back().functionId = functionId;
+}
+
+NomadId Compiler::createFunction(
     CompilerContext* context,
-    const NomadString& scriptName,
-    const NomadString& sourceName,
-    const NomadString& source
+    const ScriptId scriptId,
+    const NomadString& functionName
 ) {
     if (context == nullptr || context->getCompiler() != this) {
-        throw NomadBug("Script registration requires this compiler's context");
+        throw NomadBug("Function creation requires this compiler's context");
     }
-
-    const auto existingFunctionId = m_runtime->getFunctionId(scriptName);
-
+    const auto& source = getScript(scriptId).source;
+    const auto existingFunctionId = m_runtime->getFunctionId(functionName);
     if (existingFunctionId != NOMAD_INVALID_ID) {
         const auto* existingFunction = m_runtime->getFunction(existingFunctionId);
-
         context->reportError(
-            "Function name '" + scriptName + "' is already used by '" + existingFunction->getPath() + "'",
-            sourceName,
-            NOMAD_INVALID_INDEX,
-            NOMAD_INVALID_INDEX
-        );
-
+            "Function name '" + functionName + "' is already used by '" + existingFunction->getPath() + "'",
+            source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
         return NOMAD_INVALID_ID;
     }
 
-    auto scriptFile = ScriptFile {
-        scriptName,
-        sourceName,
-        source,
-        nullptr,
-        NOMAD_INVALID_ID,
-    };
-
-    // Also register function so it is available for linking
-    scriptFile.functionId = registerFunctionSource(scriptName, sourceName, source);
-
-    m_files.emplace_back(std::move(scriptFile));
-
-    // Sort functions alphabetically to ensure consistent order in compiling across systems.
-    std::sort(m_files.begin(), m_files.end(), [](const ScriptFile& a, const ScriptFile& b) {
-        return a.scriptName < b.scriptName;
-    });
-
-    return scriptFile.functionId;
-}
-
-NomadId Compiler::registerFunctionSource(
-    const NomadString& functionName,
-    const NomadString& fileName,
-    const NomadString& source
-) {
-    auto functionId = m_runtime->registerFunction(functionName, fileName, source);
-
+    const auto functionId = m_runtime->registerFunction(functionName, source.sourceName, source.text);
     if (functionId == NOMAD_INVALID_ID) {
-        reportError("Could not register function '" + functionName + "' (" + fileName + ")");
+        context->reportError("Could not register function '" + functionName + "'",
+            source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
+        return NOMAD_INVALID_ID;
     }
 
     auto function = m_runtime->getFunction(functionId);
 
-    m_sources.emplace_back(FunctionSource {
-        functionName,
+    m_functions.emplace_back(FunctionCompilation {
+        scriptId,
         {},
         function
     });
@@ -1052,8 +1031,24 @@ NomadId Compiler::registerFunctionSource(
     return functionId;
 }
 
+ScriptId Compiler::getScriptId(const NomadId functionId) const {
+    for (const auto& function : m_functions) {
+        if (function.function->getId() == functionId) {
+            return function.scriptId;
+        }
+    }
+    throw NomadBug("Function does not belong to a registered script: " + toString(functionId));
+}
+
+const ScriptSource& Compiler::getScript(const ScriptId scriptId) const {
+    if (scriptId.index >= m_scripts.size()) {
+        throw NomadBug("Unknown script id");
+    }
+    return m_scripts[scriptId.index].script;
+}
+
 void Compiler::setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode> ast) {
-    for (auto& source: m_sources) {
+    for (auto& source: m_functions) {
         if (source.function->getId() == functionId) {
             source.ast = std::move(ast);
 
@@ -1064,14 +1059,14 @@ void Compiler::setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode>
     reportInternalError("Unknown function id: " + toString(functionId));
 }
 
-void Compiler::registerSources(CompilerContext* context, const SourceBatch& batch) {
+void Compiler::registerScripts(CompilerContext* context, const SourceBatch& batch) {
     if (context == nullptr || context->getCompiler() != this) {
         throw NomadBug("Source registration requires this compiler's context");
     }
 
     context->reportDiagnostics(batch.diagnostics);
     for (const auto& script : batch.sources) {
-        (void)registerScriptFile(context, script.scriptName, script.source.sourceName, script.source.text);
+        registerScript(context, script);
     }
 }
 
@@ -1108,7 +1103,7 @@ bool Compiler::compileFunctions(CompilerContext* context) {
 
     const auto finish = [this, &hasNewErrors] {
         // Tokenizers report to the caller's context, so they must not outlive this call.
-        for (auto& scriptFile: m_files) {
+        for (auto& scriptFile: m_scripts) {
             scriptFile.tokens.reset();
         }
 
@@ -1122,13 +1117,21 @@ bool Compiler::compileFunctions(CompilerContext* context) {
 
     log::info("Pre-Parsing functions");
 
-    for (auto& scriptFile: m_files) {
-        log::debug("Pre-Parsing '" + scriptFile.scriptName + "' (" + scriptFile.fileName + ")");
+    std::vector<ScriptCompilation*> orderedScripts;
+    for (auto& script : m_scripts) {
+        orderedScripts.push_back(&script);
+    }
+    std::sort(orderedScripts.begin(), orderedScripts.end(), [](const auto* left, const auto* right) {
+        return left->script.scriptName < right->script.scriptName;
+    });
 
-        reportExceptions(scriptFile.fileName, [&] {
-            scriptFile.tokens = std::make_unique<Tokenizer>(context, scriptFile.fileName, scriptFile.source);
+    for (auto* script : orderedScripts) {
+        const auto& source = script->script.source;
+        log::debug("Pre-Parsing '" + script->script.scriptName + "' (" + source.sourceName + ")");
+        reportExceptions(source.sourceName, [&] {
+            script->tokens = std::make_unique<Tokenizer>(context, source.sourceName, source.text);
 
-            preParseFunction(context, scriptFile);
+            preParseFunction(context, *script);
         });
     }
 
@@ -1140,11 +1143,12 @@ bool Compiler::compileFunctions(CompilerContext* context) {
 
     log::info("Parsing functions");
 
-    for (auto& scriptFile: m_files) {
-        log::debug("Parsing '" + scriptFile.scriptName + "' (" + scriptFile.fileName + ")");
+    for (auto* script : orderedScripts) {
+        const auto& source = script->script.source;
+        log::debug("Parsing '" + script->script.scriptName + "' (" + source.sourceName + ")");
 
-        reportExceptions(scriptFile.fileName, [&] {
-            parseFunction(context, scriptFile);
+        reportExceptions(source.sourceName, [&] {
+            parseFunction(context, *script);
         });
     }
 
@@ -1173,7 +1177,7 @@ bool Compiler::compileFunctions(CompilerContext* context) {
         inferTypes(context);
     });
 
-    for (const auto& source: m_sources) {
+    for (const auto& source: m_functions) {
         log::debug("Syntax checking function '" + source.function->getName() + "' (" + source.function->getPath() + ")");
 
         reportExceptions(source.function->getPath(), [&] {
@@ -1189,7 +1193,7 @@ bool Compiler::compileFunctions(CompilerContext* context) {
 
     log::info("Compiling functions");
 
-    for (auto& source: m_sources) {
+    for (auto& source: m_functions) {
         log::debug("Compiling function '" + source.function->getName() + "' (" + source.function->getPath() + ")");
 
         reportExceptions(source.function->getPath(), [&] {

@@ -38,7 +38,7 @@ void readSource(SourceBatch& batch, const std::filesystem::path& path, NomadStri
         return;
     }
 
-    batch.sources.push_back({std::move(scriptName), {pathToGenericUtf8(path), std::move(text)}});
+    batch.sources.push_back({std::move(scriptName), {pathToGenericUtf8(path), std::move(text), path}});
 }
 
 void scanDirectory(SourceBatch& batch, const std::filesystem::path& root,

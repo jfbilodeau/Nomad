@@ -48,14 +48,11 @@ void SelectStatement::onResolve(CompilerContext* context, ScriptFunction* functi
 std::unique_ptr<Statement> parseSelectStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
     const auto functionName = context->getCompiler()->generateFunctionName("select", function, tokens->getLineIndex());
 
-    const auto functionId = context->getCompiler()->registerFunctionSource(
-        functionName,
-        function->getPath(),
-        tokens->getLine()
-    );
-
-    if (context->getRuntime()->getFunction(functionId) == nullptr) {
-        context->getCompiler()->reportInternalError("could not create `select` function");
+    auto* compiler = context->getCompiler();
+    const auto functionId = compiler->createFunction(
+        context, compiler->getScriptId(function->getId()), functionName);
+    if (functionId == NOMAD_INVALID_ID) {
+        return nullptr;
     }
 
     auto predicate = parser::parseExpression(context, function, tokens);

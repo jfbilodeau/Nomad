@@ -4,6 +4,8 @@
 
 #include <nomad/compiler/CompilerContext.hpp>
 
+#include <filesystem>
+#include <optional>
 #include <vector>
 
 namespace nomad {
@@ -12,6 +14,8 @@ namespace nomad {
 struct SourceText {
     NomadString sourceName;
     NomadString text;
+    // Identifies the backing file, if any. The supplied text remains authoritative.
+    std::optional<std::filesystem::path> filePath = std::nullopt;
 };
 
 struct ScriptSource {

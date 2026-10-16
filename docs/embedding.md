@@ -24,8 +24,12 @@ Neither the interpreter nor its context creates or owns a VM.
 ## Source input and compilation
 
 The compiler consumes source text, not filesystem paths. `SourceText` owns a
-`sourceName` (used in diagnostics) and `text`; the name does not need to exist on
-disk. `ScriptSource` pairs that text with an explicit `scriptName`. This is the
+`sourceName` (used in diagnostics), `text`, and an optional `filePath`. The name
+does not need to exist on disk and is never interpreted as a path. `filePath`
+identifies a backing file, not a request to read it: the supplied text is always
+authoritative, including unsaved editor changes and files not yet created.
+Untitled documents and interpreter input can leave it unset.
+`ScriptSource` pairs that text with an explicit `scriptName`. This is the
 source-level name used to register the script's compiled runtime function.
 `SourceBatch` holds script sources and any diagnostics from loading them.
 
@@ -42,20 +46,36 @@ void compileSources() {
         {"helpers.answer", {"untitled:answer", "return 42"}}
     }, {}};
     nomad::CompilerContext context(compiler.get());
-    compiler->registerSources(&context, batch);
+    compiler->registerScripts(&context, batch);
     const auto compiled = compiler->compileFunctions(&context);
     // Inspect context.getDiagnostics() if compilation fails.
     (void)compiled;
 }
 ```
 
-`registerSources` copies the input, so the batch may be changed or destroyed
+`registerScripts` is the only script-input API. A single script is a batch with
+one entry; the former `registerSources` and `registerScriptFile` APIs are replaced
+by this entry point. It copies the input, so the batch may be changed or destroyed
 after registration. It appends sources; it does not replace already registered
 functions. Duplicate script names are reported immediately to the supplied
 `CompilerContext`. That same context collects loading and compilation diagnostics;
 compilation refuses to proceed if it already contains errors. Use a fresh runtime
 for independent analysis snapshots, or provide a runtime containing the host APIs
 needed by the scripts. Compilation does not execute scripts.
+
+The compiler owns `ScriptSource` snapshots alongside per-script tokenizers and
+top-level function IDs. Its function compilation records separately hold ASTs
+and a compiler-local `ScriptId` referring to the owning script. Script IDs remain
+stable when more batches are registered and when scripts are processed in sorted
+order; references returned by `getScript(id)` should be reacquired after
+registration.
+
+Parser integrations use `createFunction(context, scriptId, functionName)` for
+declared or generated functions, replacing `registerFunctionSource`. This creates
+a function within an existing script, not another script input. The script ID can
+be obtained from a compiled or currently compiling function with
+`getScriptId(functionId)`. Function creation inherits the script's source name
+and full text and reports name collisions to the supplied context.
 
 For disk input, call `loadSourcePaths(paths)` with a vector or span of filesystem
 paths, then register the returned batch. This replaces the former
@@ -69,8 +89,11 @@ reads; they prevent compilation rather than silently compiling an incomplete
 project.
 
 An editor can load a batch, replace selected `source.text` values with unsaved
-buffers, add sources that do not exist on disk, and submit it without changing
-the compiler. `checkSources(batch, runtime)` from
+buffers while preserving their `filePath`, add scripts that do not exist on disk,
+and submit it without changing the compiler. Submit one entry per script, not
+separate disk and editor entries. Document URI/path matching, versions and
+choosing editor text over disk snapshots belong to the editor adapter, not the
+compiler. `checkSources(batch, runtime)` from
 `<nomad/compiler/CompilerTools.hpp>` returns the same `CompilationResult` as
 `checkPaths`, without reading files. Loading warnings permit compilation; loading
 errors stop it before parsing.

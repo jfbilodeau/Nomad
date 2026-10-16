@@ -98,11 +98,11 @@ bool preParseFunStatement(CompilerContext* context, ScriptFunction* function, To
     }
 
     // Generate `fun`
-    auto funId = context->getCompiler()->registerFunctionSource(
-        funName,
-        function->getPath(),
-        function->getSource()
-    );
+    auto* compiler = context->getCompiler();
+    const auto funId = compiler->createFunction(context, compiler->getScriptId(function->getId()), funName);
+    if (funId == NOMAD_INVALID_ID) {
+        return false;
+    }
 
     auto fun = context->getRuntime()->getFunction(funId);
 
@@ -823,7 +823,12 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
 
         // Inline handler: parse parameters and body as a generated function
         const auto handlerFunctionName = generateFunFunctionName(context, function, tokens->getLineIndex());
-        auto handlerFunctionId = context->getCompiler()->registerFunctionSource(handlerFunctionName, function->getPath(), function->getSource());
+        auto* compiler = context->getCompiler();
+        const auto handlerFunctionId = compiler->createFunction(
+            context, compiler->getScriptId(function->getId()), handlerFunctionName);
+        if (handlerFunctionId == NOMAD_INVALID_ID) {
+            return nullptr;
+        }
         auto handlerFunction = context->getRuntime()->getFunction(handlerFunctionId);
 
         // Parse parameters (names only for now)

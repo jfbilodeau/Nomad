@@ -405,10 +405,11 @@ NomadId parseCallbackParameter(
         tokens->next();
 
         const auto functionName = generateFunFunctionName(context, function, tokens->getLineIndex());
-        auto& functionPath = function->getPath();
-        auto& functionSource = function->getSource();
-
-        const auto functionId = context->getCompiler()->registerFunctionSource(functionName, functionPath, functionSource);
+        auto* compiler = context->getCompiler();
+        const auto functionId = compiler->createFunction(context, compiler->getScriptId(function->getId()), functionName);
+        if (functionId == NOMAD_INVALID_ID) {
+            return NOMAD_INVALID_ID;
+        }
 
         const auto callbackFunction = context->getRuntime()->getFunction(functionId);
 
@@ -1334,11 +1335,12 @@ std::unique_ptr<Argument> parsePredicateArgument(
 ) {
     const auto predicateFunctionName = context->getCompiler()->generateFunctionName("predicate", function, tokens->getLineIndex());
 
-    const auto predicateFunctionId = context->getCompiler()->registerFunctionSource(
-        predicateFunctionName,
-        function->getPath(),
-        tokens->getLine()
-    );
+    auto* compiler = context->getCompiler();
+    const auto predicateFunctionId = compiler->createFunction(
+        context, compiler->getScriptId(function->getId()), predicateFunctionName);
+    if (predicateFunctionId == NOMAD_INVALID_ID) {
+        return nullptr;
+    }
 
     auto predicateExpression = parser::parseExpression(context, function, tokens);
 

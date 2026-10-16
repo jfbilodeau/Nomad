@@ -52,6 +52,12 @@ private:
     ScriptFunction* m_function;
 };
 
+struct ScriptId {
+    NomadIndex index = NOMAD_INVALID_INDEX;
+
+    bool operator==(const ScriptId&) const = default;
+};
+
 class Compiler {
 public:
     explicit Compiler(Runtime* runtime, std::vector<Instruction>& instructions);
@@ -158,15 +164,16 @@ public:
     void setId(NomadIndex index, NomadId id);
     void setIndex(NomadIndex index, NomadIndex value);
 
-    // Returns NOMAD_INVALID_ID and reports to context if the script name is already used.
-    NomadId registerScriptFile(CompilerContext* context, const NomadString& scriptName,
-        const NomadString& sourceName, const NomadString& source);
-    NomadId registerFunctionSource(const NomadString& functionName, const NomadString& fileName, const NomadString& source);
+    // The only script-input API. Copies snapshots and immediately reports loading and registration diagnostics.
+    void registerScripts(CompilerContext* context, const SourceBatch& batch);
+    // Parser interface: creates a function belonging to an already registered script.
+    // Returns NOMAD_INVALID_ID and reports to context if the function name is already used.
+    [[nodiscard]] NomadId createFunction(CompilerContext* context, ScriptId scriptId, const NomadString& functionName);
+    [[nodiscard]] ScriptId getScriptId(NomadId functionId) const;
+    [[nodiscard]] const ScriptSource& getScript(ScriptId scriptId) const;
     void setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode> ast);
     // Borrows an AST node until placeholder preparation, before type inference.
     void deferFormatString(FormatStringLiteral* literal, NomadId functionId, NomadString sourceContent);
-    // Registers owned script snapshots and immediately reports loading and registration diagnostics.
-    void registerSources(CompilerContext* context, const SourceBatch& batch);
     // Compiles every registered script file. Errors and warnings are reported to context. Returns false if errors
     // exist in context. A pass that reports errors stops compilation before the next pass to avoid cascading errors.
     [[nodiscard]] bool compileFunctions(CompilerContext* context);
@@ -185,20 +192,18 @@ public:
     NomadString generateFunctionName(const NomadString& name, const ScriptFunction* function, NomadIndex line);
 
 private:
-    struct FunctionSource {
-        NomadString source;
+    struct FunctionCompilation {
+        ScriptId scriptId;
         std::unique_ptr<FunctionNode> ast;
         ScriptFunction* function;
     };
 
-    struct ScriptFile {
-        NomadString scriptName;
-        NomadString fileName;
-        NomadString source;
+    struct ScriptCompilation {
+        ScriptSource script;
         // Only exists while compileFunctions() runs so lexing errors are reported once.
         std::unique_ptr<Tokenizer> tokens;
 
-        NomadId functionId;
+        NomadId functionId = NOMAD_INVALID_ID;
     };
 
     struct PendingFormatString {
@@ -208,14 +213,15 @@ private:
     };
 
 //    void compile_init_function(Function* function);
-    void preParseFunction(CompilerContext* context, ScriptFile& scriptFile);
-    void parseFunction(CompilerContext* context, ScriptFile& file);
-    [[nodiscard]] bool resolveFunction(CompilerContext* context, const FunctionSource& source);
+    void registerScript(CompilerContext* context, const ScriptSource& script);
+    void preParseFunction(CompilerContext* context, ScriptCompilation& script);
+    void parseFunction(CompilerContext* context, ScriptCompilation& script);
+    [[nodiscard]] bool resolveFunction(CompilerContext* context, const FunctionCompilation& function);
     // Reports functions returning a value that can reach their end without a `return`.
-    void checkReturnPaths(CompilerContext* context, const FunctionSource& source) const;
+    void checkReturnPaths(CompilerContext* context, const FunctionCompilation& function) const;
     void inferTypes(CompilerContext* context);
     [[nodiscard]] std::vector<const Type*> collectInferredTypes() const;
-    void compileFunction(const FunctionSource& source);
+    void compileFunction(const FunctionCompilation& function);
 
     Runtime* m_runtime;
 
@@ -238,8 +244,8 @@ private:
 //    Function* m_current_function;
     std::unordered_map<NomadString, ParseStatementFnRegistration> m_statements;
     std::vector<OpCodeRegistration> m_opCodeRegistrations;
-    std::vector<ScriptFile> m_files;
-    std::vector<FunctionSource> m_sources;
+    std::vector<ScriptCompilation> m_scripts;
+    std::vector<FunctionCompilation> m_functions;
     std::vector<PendingFormatString> m_pendingFormatStrings;
     std::vector<FunctionLink> m_functionLinks;
     std::unordered_map<NomadId, std::unordered_set<NomadId>> m_functionCallDependencies;
