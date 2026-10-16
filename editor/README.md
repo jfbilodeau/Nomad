@@ -39,55 +39,48 @@ variables, and namespace prefixes such as `game.` and `this.`. Types and constan
 appear when you type a matching prefix rather than cluttering the blank-line list.
 Typing a dot also triggers suggestions, such as the available `game.` APIs.
 Hover over a registered symbol to see its signature and documentation, including
-function overloads and parameter descriptions. Completion details use the same
-runtime metadata as the generated API reference.
+function overloads and parameter descriptions.
 
 Suggestions use the current editor text, including all open buffers in the project.
 Closing an edited script restores its disk definitions. Project functions show
 their parameters, inferred return type when available, and source location on hover.
-The compiler's collected declarations remain available after compilation errors;
-errors that prevent declaration discovery can limit the suggestions.
+Suggestions remain available with incomplete code, though some errors can limit
+the available symbols and inferred types.
 Project scripts include engine APIs and functions from the configured script roots;
 standalone scripts use language built-ins and functions from that document only.
 Registered engine variables (including `this.` and `other.`) and discovered script
 context variables are included. Intrinsic properties and methods are suggested
-after a receiver dot; compiler-inferred local and parameter types, as well as
+after a receiver dot; inferred local and parameter types, as well as
 registered variable types, filter the candidates. Local variables and parameters
 are scoped to the current function and enclosing callbacks, and hover shows their
 types. Intrinsic hover shows the member signature and documentation. Named
 receivers can include chains of intrinsic properties, such as `this.name.length`.
 For unknown receiver types, candidates list their receiver type in the details.
-When an error is on the completion line, the server retries the compiler with that
-line blanked in a temporary snapshot. This does not change editor text or published
-diagnostics. Other errors can still prevent local type inference.
+Completion also works on unfinished member expressions such as `name.`.
+Other errors can still prevent local type inference.
 Member completion after string literals or arbitrary expressions is not yet supported.
 It does not provide signature-help popups or inlay hints.
 
 ## Diagnostics
 
-The server uses the compiler's existing source batch and filesystem adapter.
-Editor text overrides disk content until the document closes; unsaved edits do
-not need to be written to disk. Closing a document restores its disk content for
-other open scripts in the same project.
+Diagnostics reflect unsaved editor text; you do not need to save to see errors.
+Closing a document restores its disk content for other open scripts in the same
+project.
 
 The nearest `nomad.toml` determines project resources and script directories.
-Separate project roots use separate server processes, including nested projects
-and multi-root workspaces. Saving, creating, or deleting `nomad.toml` restarts the
-clients and reselects their SDKs. Unsaved configuration edits do not change SDK selection.
+Nested projects and multi-root workspaces are supported. Each project uses its
+own configuration and SDK selection. Saving, creating, or deleting `nomad.toml`
+updates SDK selection. Unsaved configuration edits do not change SDK selection.
 Project analysis includes scripts on disk, all open script buffers in that
 project, the engine API, and entry-function validation. Standalone files without
 a project are checked individually with language built-ins only.
 
-This first version analyzes synchronously on full-text changes, saves, and file
-watcher events. It does not execute scripts or validate sprite packing. Only
-`file:` documents are supported; untitled buffers, navigation, and
-incremental compilation are not implemented. Some compiler diagnostics contain
+Diagnostics update as you edit, save, or change script files on disk.
+Scripts are not executed, and sprite packing is not validated. Only saved files
+are supported; untitled buffers and navigation are not implemented. Some diagnostics contain
 only a line number and therefore highlight the start of that line.
 
 ## Syntax grammar
 
-- The grammar is intentionally simple and based on TextMate regex rules.
 - Regenerate `syntaxes/nomad.tmLanguage.json` with
   `nomadc textmate --output editor/syntaxes/nomad.tmLanguage.json` from the repository root.
-  The compiler supplies registered keywords, statements, native functions, intrinsic members,
-  and built-in types from the same runtime metadata used by the generated reference documentation.

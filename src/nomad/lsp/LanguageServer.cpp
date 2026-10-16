@@ -2,7 +2,6 @@
 
 #include <nomad/lsp/LanguageServer.hpp>
 
-#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
@@ -19,6 +18,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <compare>
 #include <istream>
 #include <limits>
 #include <memory>
@@ -27,7 +27,6 @@
 #include <set>
 #include <stdexcept>
 #include <string_view>
-#include <tuple>
 
 namespace nomad {
 namespace {
@@ -53,6 +52,14 @@ struct ApiSymbol {
     NomadString documentation;
     NomadString valueType = {};
     NomadString receiverType = {};
+};
+
+struct ApiCatalogKey {
+    NomadString documentUri;
+    NomadIndex line;
+    bool completion;
+
+    auto operator<=>(const ApiCatalogKey&) const = default;
 };
 
 struct AnalysisGroup {
@@ -109,12 +116,8 @@ std::vector<ApiSymbol> createApiSymbols(
         }
     }
     // Failed compilations still retain declarations collected by the compiler's earlier passes.
-    auto compiler = runtime->createCompiler();
-    CompilerContext compilerContext(compiler.get());
-    compiler->registerSources(&compilerContext, batch);
-    const auto compiled = compiler->compileFunctions(&compilerContext);
-    const auto& diagnostics = compilerContext.getDiagnostics();
-    const auto currentLineError = std::ranges::any_of(diagnostics, [&](const auto& diagnostic) {
+    const auto compilation = checkSources(batch, runtime);
+    const auto currentLineError = std::ranges::any_of(compilation.diagnostics, [&](const auto& diagnostic) {
         return diagnostic.sourceName == uri && diagnostic.line == line &&
             diagnostic.severity == DiagnosticSeverity::Error;
     });
@@ -224,7 +227,7 @@ std::vector<ApiSymbol> createApiSymbols(
             std::move(signature), "Defined in `" + function->getPath() + "`."});
     }
     std::set<NomadString> localNames;
-    for (auto* function = compiler->getFunctionAtLine(uri, line); function;
+    for (auto* function = runtime->getFunctionAtLine(uri, line); function;
         function = runtime->getFunction(function->getParentId())) {
         const auto addLocal = [&](const NomadString& name, const Type* type) {
             if (!localNames.insert(name).second) return;
@@ -251,8 +254,7 @@ std::vector<ApiSymbol> createApiSymbols(
     for (const auto& name : namespaces) {
         symbols.push_back({name, CompletionItemKind::Module, name, "Symbol namespace."});
     }
-    if (!compiled && currentLineError && completion && !omitCurrentLine) {
-        compiler.reset();
+    if (!compilation.succeeded() && currentLineError && completion && !omitCurrentLine) {
         game.reset();
         language.reset();
         auto recovered = createApiSymbols(path, documents, uri, line, completion, true);
@@ -583,7 +585,7 @@ int runLanguageServer(
     const LanguageAnalyzer& analyze
 ) {
     LanguageDocuments documents;
-    std::map<std::tuple<NomadString, NomadIndex, bool>, std::vector<ApiSymbol>> apiCatalogs;
+    std::map<ApiCatalogKey, std::vector<ApiSymbol>> apiCatalogs;
     std::set<NomadString> previousUris;
     auto initialized = false;
     auto ready = false;
@@ -668,7 +670,7 @@ int runLanguageServer(
                     const auto path = documentPath(uri);
                     const auto line = static_cast<NomadIndex>(params.at("position").as_object().at("line").as_int64()) + 1;
                     const auto completion = method == "textDocument/completion";
-                    const auto key = std::make_tuple(uri, line, completion);
+                    const auto key = ApiCatalogKey{uri, line, completion};
                     auto found = apiCatalogs.find(key);
                     if (found == apiCatalogs.end() && !word.suppressed) {
                         found = apiCatalogs.emplace(key, createApiSymbols(path, documents, uri, line, completion)).first;

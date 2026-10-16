@@ -65,11 +65,10 @@ speaks LSP over standard input/output using `Content-Length` framing. The explic
 standard error. `--help`/`-h` prints usage and `--version`/`-v` prints the version;
 unknown arguments are rejected.
 
-The server supports compiler diagnostics, registered API and project-function completion, hover
-documentation, full-text document synchronization, and UTF-16 positions.
-It reuses compiler source batches, applies open editor buffers
-over files on disk, and discovers the nearest project configuration. It never
-executes scripts. See the
+The server supports compiler diagnostics, API and project-function completion,
+local variable and parameter suggestions, intrinsic member completion, and hover
+documentation. Suggestions and diagnostics reflect unsaved editor changes and
+use the nearest project configuration. Scripts are never executed. See the
 [VS Code extension guide](https://github.com/jfbilodeau/Nomad/blob/main/editor/README.md)
 for setup and current limitations.
 

@@ -1,8 +1,8 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <utility>
-
 #include <nomad/script/ScriptFunction.hpp>
+
+#include <utility>
 
 namespace nomad {
 ScriptFunction::ScriptFunction(
@@ -20,6 +20,34 @@ ScriptFunction::ScriptFunction(
 
 ScriptFunction::~ScriptFunction() = default;
 
+NomadId ScriptFunction::getId() const {
+    return m_id;
+}
+
+const NomadString& ScriptFunction::getName() const {
+    return m_name;
+}
+
+const NomadString& ScriptFunction::getPath() const {
+    return m_path;
+}
+
+const NomadString& ScriptFunction::getSource() const {
+    return m_source;
+}
+
+void ScriptFunction::setSourceLineRange(const NomadIndex startLine, const NomadIndex endLine) {
+    m_sourceStartLine = startLine;
+    m_sourceEndLine = endLine;
+}
+
+NomadIndex ScriptFunction::getSourceStartLine() const {
+    return m_sourceStartLine;
+}
+
+NomadIndex ScriptFunction::getSourceEndLine() const {
+    return m_sourceEndLine;
+}
 
 NomadId ScriptFunction::addParameter(const NomadString& parameterName, const Type* type) {
     m_parameters.registerVariable(parameterName, type);

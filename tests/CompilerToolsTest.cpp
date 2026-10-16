@@ -53,6 +53,64 @@ BOOST_AUTO_TEST_CASE(checks_editor_text_instead_of_disk_contents)
     BOOST_TEST(!checkPath(file).succeeded());
 }
 
+BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_compilation)
+{
+    Runtime runtime;
+    runtime.registerNativeFunction(
+        "test.accept",
+        [](VirtualMachine*) {},
+        {defParameter("callback", runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()), "")},
+        runtime.getVoidType(),
+        ""
+    );
+    const SourceBatch batch{{
+        {"main", {"editor:main",
+            "fun outer title:string\n"
+            "offset = 42\n"
+            "test.accept fun value\n"
+            "return value + offset\n"
+            "end\n"
+            "end\n"
+            "result = 1"}},
+        {"other", {"editor:other", "return 42"}}
+    }, {}};
+
+    BOOST_REQUIRE(checkSources(batch, &runtime).succeeded());
+    const auto* main = runtime.getFunction(runtime.getFunctionId("main"));
+    const auto* outer = runtime.getFunction(runtime.getFunctionId("outer"));
+    const auto* callback = runtime.getFunctionAtLine("editor:main", 4);
+    BOOST_REQUIRE(callback != nullptr);
+    BOOST_TEST(callback->getParentId() == outer->getId());
+    BOOST_TEST(outer->getSourceStartLine() == 1U);
+    BOOST_TEST(outer->getSourceEndLine() == 6U);
+    BOOST_TEST(callback->getSourceStartLine() == 3U);
+    BOOST_TEST(callback->getSourceEndLine() == 5U);
+    BOOST_TEST(runtime.getFunctionAtLine("editor:main", 1) == outer);
+    BOOST_TEST(runtime.getFunctionAtLine("editor:main", 2) == outer);
+    BOOST_TEST(runtime.getFunctionAtLine("editor:main", 3) == callback);
+    BOOST_TEST(runtime.getFunctionAtLine("editor:main", 5) == callback);
+    BOOST_TEST(runtime.getFunctionAtLine("editor:main", 6) == outer);
+    BOOST_TEST(runtime.getFunctionAtLine("editor:main", 7) == main);
+    BOOST_TEST(runtime.getFunctionAtLine("editor:main", 8) == nullptr);
+    BOOST_TEST(runtime.getFunctionAtLine("editor:missing", 1) == nullptr);
+    BOOST_TEST(runtime.getFunctionAtLine("editor:other", 1) ==
+        runtime.getFunction(runtime.getFunctionId("other")));
+}
+
+BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_type_errors)
+{
+    Runtime runtime;
+    const SourceBatch batch{{{"main", {"editor:main",
+        "fun broken\nreturn missing\nend"}}}, {}};
+
+    BOOST_TEST(!checkSources(batch, &runtime).succeeded());
+    const auto* function = runtime.getFunctionAtLine("editor:main", 2);
+    BOOST_REQUIRE(function != nullptr);
+    BOOST_TEST(function->getName() == "broken");
+    BOOST_TEST(function->getSourceStartLine() == 1U);
+    BOOST_TEST(function->getSourceEndLine() == 3U);
+}
+
 BOOST_AUTO_TEST_CASE(backing_path_is_metadata_not_a_compilation_input)
 {
     TestDirectory directory("nomad_compilation_test_backing_path");

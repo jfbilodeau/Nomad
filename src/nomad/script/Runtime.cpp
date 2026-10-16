@@ -1884,6 +1884,25 @@ ScriptFunction* Runtime::getFunction(NomadId function_id) const {
     return m_functions[static_cast<NomadIndex>(function_id)].get();
 }
 
+ScriptFunction* Runtime::getFunctionAtLine(
+    const NomadString& sourceName,
+    const NomadIndex line
+) const {
+    ScriptFunction* selected = nullptr;
+    auto selectedSpan = NOMAD_INVALID_INDEX;
+    for (const auto& function : m_functions) {
+        if (function->getPath() != sourceName) continue;
+        const auto start = function->getSourceStartLine();
+        const auto end = function->getSourceEndLine();
+        if (start == NOMAD_INVALID_INDEX || end == NOMAD_INVALID_INDEX || line < start || line > end) continue;
+        if (end - start <= selectedSpan) {
+            selected = function.get();
+            selectedSpan = end - start;
+        }
+    }
+    return selected;
+}
+
 std::optional<NomadString> Runtime::getFunctionName(NomadId functionId) const {
     if (isIdOutOfRange(functionId, m_functions.size())) {
         return std::nullopt;

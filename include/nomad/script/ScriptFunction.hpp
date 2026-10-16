@@ -37,13 +37,19 @@ public:
     ~ScriptFunction();
 
     [[nodiscard]]
-    NomadId getId() const { return m_id; }
+    NomadId getId() const;
     [[nodiscard]]
-    const NomadString& getName() const { return m_name; }
+    const NomadString& getName() const;
     [[nodiscard]]
-    const NomadString& getPath() const { return m_path; }
+    const NomadString& getPath() const;
     [[nodiscard]]
-    const NomadString& getSource() const { return m_source; }
+    const NomadString& getSource() const;
+
+    void setSourceLineRange(NomadIndex startLine, NomadIndex endLine);
+    [[nodiscard]]
+    NomadIndex getSourceStartLine() const;
+    [[nodiscard]]
+    NomadIndex getSourceEndLine() const;
 
     // Parameters
     NomadId addParameter(const NomadString& parameterName, const Type* type);
@@ -115,6 +121,8 @@ private:
     NomadString m_name;
     NomadString m_path;
     NomadString m_source;
+    NomadIndex m_sourceStartLine = NOMAD_INVALID_INDEX;
+    NomadIndex m_sourceEndLine = NOMAD_INVALID_INDEX;
     NomadIndex m_functionStartIndex = NOMAD_INVALID_INDEX;
     NomadIndex m_functionEndIndex = NOMAD_INVALID_INDEX;
 

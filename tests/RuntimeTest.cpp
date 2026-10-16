@@ -56,6 +56,35 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_and_duplicate_function_ids)
     BOOST_TEST(!runtime.getFunctionName(1).has_value());
 }
 
+BOOST_AUTO_TEST_CASE(runtime_source_lookup_ignores_unknown_ranges_and_prefers_inner_functions)
+{
+    Runtime runtime;
+    const auto outerId = runtime.registerFunction("outer", "source.nomad", "");
+    const auto innerId = runtime.registerFunction("inner", "source.nomad", "");
+    const auto unparsedId = runtime.registerFunction("unparsed", "source.nomad", "");
+    const auto* unparsed = runtime.getFunction(unparsedId);
+
+    BOOST_TEST(unparsed->getSourceStartLine() == NOMAD_INVALID_INDEX);
+    BOOST_TEST(unparsed->getSourceEndLine() == NOMAD_INVALID_INDEX);
+    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 1) == nullptr);
+    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", NOMAD_INVALID_INDEX) == nullptr);
+
+    auto* outer = runtime.getFunction(outerId);
+    auto* inner = runtime.getFunction(innerId);
+    outer->setSourceLineRange(1, 4);
+    inner->setSourceLineRange(2, 3);
+    inner->setParentId(outerId);
+    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 1) == outer);
+    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 2) == inner);
+    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 3) == inner);
+    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 4) == outer);
+    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 5) == nullptr);
+    BOOST_TEST(runtime.getFunctionAtLine("other.nomad", 2) == nullptr);
+
+    inner->setSourceLineRange(1, 4);
+    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 2) == inner);
+}
+
 BOOST_AUTO_TEST_CASE(runtime_registers_strongly_typed_enums_with_explicit_values)
 {
     Runtime runtime;
