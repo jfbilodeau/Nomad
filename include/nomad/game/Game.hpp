@@ -12,6 +12,7 @@
 #include <nomad/game/GameEvent.hpp>
 #include <nomad/game/GameEventQueue.hpp>
 #include <nomad/game/GameExecutionContext.hpp>
+#include <nomad/game/GameOptions.hpp>
 #include <nomad/game/InputManager.hpp>
 
 #include <nomad/script/RuntimeValue.hpp>
@@ -42,41 +43,6 @@ public:
     explicit GameException(const NomadString& message) : NomadException(message) {}
 };
 
-struct SpriteOptions {
-    std::optional<std::vector<NomadPath>> directories;
-    std::optional<NomadInteger> maxTextureSize;
-    std::optional<NomadInteger> padding;
-    bool missingDirectoriesAllowed = false;
-};
-
-struct AudioOptions {
-    std::optional<std::vector<NomadPath>> directories;
-    bool missingDirectoriesAllowed = false;
-};
-
-struct TextOptions {
-    std::optional<std::vector<NomadPath>> directories;
-};
-
-struct ScriptOptions {
-    std::optional<std::vector<NomadPath>> directories;
-};
-
-struct GameOptions {
-    NomadString resourcePath;
-    NomadString entryFunction = "init";
-    std::optional<NomadString> title;
-    std::optional<Point> resolution;
-    std::optional<Point> size;
-    std::optional<NomadPath> splashImage;
-    AudioOptions audio;
-    SpriteOptions sprites;
-    TextOptions text;
-    ScriptOptions scripts;
-    std::optional<bool> fullscreen;
-    std::optional<bool> debug;
-};
-
 constexpr NomadFloat DEBUG_CONSOLE_MINIMUM_SCALE = 0.8f;
 constexpr NomadFloat DEBUG_CONSOLE_MAXIMUM_SCALE = 2.0f;
 constexpr NomadFloat DEBUG_CONSOLE_DEFAULT_SCALE = 1.25f;
@@ -93,6 +59,12 @@ public:
     // server or visible window, but a valid window, renderer and canvas. The complete script API is
     // registered without compiling or running the game's own scripts.
     [[nodiscard]] static std::unique_ptr<Game> createHeadless(GameOptions options);
+
+    [[nodiscard]] static std::unique_ptr<Game> createForRuntime(
+        Runtime* runtime,
+        GameOptions options,
+        bool headless
+    );
 
     Game(const Game&) = delete;
     Game& operator=(const Game&) = delete;
@@ -156,6 +128,13 @@ public:
 
     void run();
     void quit();
+    void prepareScripts(std::function<void()> compile);
+    void onEntryExecuted();
+    void releaseScriptState();
+    void setExitHandler(
+        std::function<void()> requestExit,
+        std::function<bool()> pollExit
+    );
 
     [[nodiscard]] uint64_t getUpdateDuration() const;
     [[nodiscard]] uint64_t getRenderDuration() const;
@@ -226,7 +205,7 @@ public:
 private:
     explicit Game(GameOptions options);
 
-    void initialize();
+    void initialize(bool executeEntry = true);
     void initializeHeadless();
 
     void initEngine();
@@ -283,6 +262,7 @@ private:
     void loadTextIntoConst(const NomadString& languageCode) const;
 
     void loadSpritesAndCompileScripts();
+    void loadSpritesAndCompileScripts(std::function<void()> compile);
     void compileScripts();
     [[nodiscard]] NomadIndex loadAudio();
     [[nodiscard]] NomadIndex loadSprites();
@@ -368,6 +348,8 @@ private:
     GameOptions m_options;
     bool m_running = false;
     bool m_paused = false;
+    std::function<void()> m_requestExit;
+    std::function<bool()> m_pollExit;
 
     SDL_Window* m_window = nullptr;
     SDL_Renderer* m_renderer = nullptr;
@@ -393,7 +375,8 @@ private:
 
     std::unique_ptr<DebugConsole> m_debugConsole;
 
-    std::unique_ptr<Runtime> m_runtime;
+    std::unique_ptr<Runtime> m_ownedRuntime;
+    Runtime* m_runtime = nullptr;
     GameExecutionContext m_currentContext;
 
     NomadString m_language = "en";

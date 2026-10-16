@@ -7,6 +7,7 @@ include(CTest)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(BUILD_SHARED_LIBS ON)
 
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
 if(CMAKE_GENERATOR MATCHES "^Visual Studio")
@@ -143,7 +144,6 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterContext.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/IntrinsicMembers.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunction.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunctions.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/OpCode.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/Runtime.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeOpCodes.cpp
@@ -155,6 +155,7 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/script/VirtualMachine.cpp
 
         ${NOMAD_SOURCE_DIR}/nomad/system/Memory.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/system/ModuleHost.cpp
         ${NOMAD_SOURCE_DIR}/nomad/system/ModuleManifest.cpp
         ${NOMAD_SOURCE_DIR}/nomad/system/NomadConfiguration.cpp
         ${NOMAD_SOURCE_DIR}/nomad/system/String.cpp
@@ -181,6 +182,9 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/game/GameEventQueue.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/GameExecutionContext.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/GameFactory.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/game/GameModule.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/game/GamePackaging.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/game/GameResourceCheck.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/GameStatementParsers.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/InputManager.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/Layer.cpp
@@ -237,6 +241,8 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/resource/SpritePacker.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Text.cpp
         ${NOMAD_SOURCE_DIR}/nomad/resource/Texture.cpp
+
+        ${NOMAD_SOURCE_DIR}/nomad/system/ProjectSession.cpp
 )
 
 include(cmake/NomadLibrary.cmake)
@@ -293,7 +299,6 @@ endif()
 option(NOMAD_BUILD_RUNTIME "Build the Nomad game runtime" ON)
 if(NOMAD_BUILD_RUNTIME)
     add_executable(nomad-runtime apps/runtime/main.cpp)
-    set_target_properties(nomad-runtime PROPERTIES WIN32_EXECUTABLE TRUE)
     target_link_libraries(nomad-runtime PRIVATE Nomad::Engine)
 
     nomad_copy_runtime_dependencies(nomad-runtime)
@@ -333,4 +338,8 @@ include(cmake/NomadDistribution.cmake)
 option(NOMAD_BUILD_TESTS "Build Nomad unit tests" ON)
 if(NOMAD_BUILD_TESTS AND BUILD_TESTING)
     add_subdirectory(tests)
+endif()
+
+if(TARGET nomad-runtime)
+    include(cmake/NomadModules.cmake)
 endif()

@@ -2,11 +2,9 @@
 
 #include <nomad/project/ProjectPackager.hpp>
 
-#include <nomad/resource/SpriteCatalog.hpp>
-#include <nomad/resource/SpriteDiscovery.hpp>
-#include <nomad/resource/SpritePacker.hpp>
-
+#include <nomad/system/ModuleHost.hpp>
 #include <nomad/system/Path.hpp>
+#include <nomad/system/ProjectSession.hpp>
 #include <nomad/system/String.hpp>
 
 #include <boost/json.hpp>
@@ -20,6 +18,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <map>
 #include <memory>
 #include <set>
 #include <system_error>
@@ -152,159 +151,10 @@ void copyFile(const NomadPath& source, const NomadPath& destination) {
     }
 }
 
-void writeReleaseManifest(const NomadProject& project, const NomadPath& destination) {
-    std::ofstream output(destination, std::ios::binary | std::ios::trunc);
-
-    if (!output.is_open()) {
-        throw ProjectPackagingError("Failed to create release manifest '" + pathToUtf8(destination) + "'");
-    }
-
-    output << serializeReleaseProject(project);
-
-    if (!output) {
-        throw ProjectPackagingError("Failed to write release manifest '" + pathToUtf8(destination) + "'");
-    }
-}
-
-struct CompiledSpriteRoot {
-    NomadPath configuredDirectory;
-    NomadPath sourceDirectory;
-    std::vector<PackedSpriteGroup> groups;
-    bool generateCatalog;
-};
-
-std::vector<CompiledSpriteRoot> compileSpriteRoots(const NomadProject& project) {
-    const auto resources = resolveProjectResourcePath(project);
-    const auto& sprites = project.gameOptions.sprites;
-    const auto directories = sprites.directories.value_or(
-        std::vector<NomadPath>{"sprites"}
-    );
-    std::vector<CompiledSpriteRoot> compiledRoots;
-
-    try {
-        for (const auto& configuredDirectory : directories) {
-            const auto sourceDirectory = (resources / configuredDirectory).lexically_normal();
-
-            if (hasSpriteCatalog(sourceDirectory)) {
-                compiledRoots.push_back({
-                    configuredDirectory,
-                    sourceDirectory,
-                    loadSpriteCatalog(sourceDirectory),
-                    false
-                });
-                continue;
-            }
-
-            const auto sources = discoverSpriteSources(
-                resources,
-                {configuredDirectory},
-                sprites.directories.has_value()
-            );
-
-            if (sources.empty()) {
-                continue;
-            }
-
-            compiledRoots.push_back({
-                configuredDirectory,
-                sourceDirectory,
-                packSpriteGroups(
-                    sources,
-                    sprites.maxTextureSize.value_or(2048),
-                    sprites.padding.value_or(1)
-                ),
-                true
-            });
-        }
-    } catch (const std::exception& error) {
-        throw ProjectPackagingError("Failed to compile sprite resources: " + NomadString(error.what()));
-    }
-
-    return compiledRoots;
-}
-
-bool isCompiledSpriteSource(
-    const NomadPath& source,
-    const std::vector<CompiledSpriteRoot>& compiledRoots
-) {
-    if (stringToLowerAscii(pathToUtf8(source.extension())) != ".png") {
-        return false;
-    }
-
-    return std::ranges::any_of(compiledRoots, [&](const auto& root) {
-        return root.generateCatalog && isWithin(source, root.sourceDirectory);
-    });
-}
-
-bool isRequiredCompiledSpriteFile(
-    const NomadPath& source,
-    const std::vector<CompiledSpriteRoot>& compiledRoots
-) {
-    return std::ranges::any_of(compiledRoots, [&](const auto& root) {
-        if (root.generateCatalog || source.parent_path() != root.sourceDirectory) {
-            return false;
-        }
-        if (pathToUtf8(source.filename()) == NOMAD_SPRITE_CATALOG_FILE_NAME) {
-            return true;
-        }
-
-        for (const auto& group : root.groups) {
-            for (NomadIndex pageIndex = 0; pageIndex < group.pages.size(); ++pageIndex) {
-                if (source.filename() == makePackedSpritePageFileName(group.name, pageIndex)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    });
-}
-
-std::vector<NomadPath> writeCompiledSpriteRoots(
-    const std::vector<CompiledSpriteRoot>& compiledRoots,
-    const NomadPath& staging,
-    const bool dryRun
-) {
-    std::vector<NomadPath> files;
-
-    for (const auto& root : compiledRoots) {
-        if (!root.generateCatalog) {
-            continue;
-        }
-
-        const auto destinationRoot = staging / "res" / root.configuredDirectory;
-
-        if (!dryRun) {
-            try {
-                writeSpriteCatalog(destinationRoot, root.groups);
-            } catch (const std::exception& error) {
-                throw ProjectPackagingError(
-                    "Failed to write compiled sprite root '" +
-                    pathToUtf8(root.configuredDirectory) + "': " + error.what()
-                );
-            }
-        }
-
-        files.push_back(destinationRoot / NOMAD_SPRITE_CATALOG_FILE_NAME);
-
-        for (const auto& group : root.groups) {
-            for (NomadIndex pageIndex = 0; pageIndex < group.pages.size(); ++pageIndex) {
-                files.push_back(
-                    destinationRoot /
-                    pathFromUtf8(makePackedSpritePageFileName(group.name, pageIndex))
-                );
-            }
-        }
-    }
-
-    return files;
-}
-
-std::vector<NomadPath> copyResources(
+void copyResources(
     const NomadProject& project,
-    const NomadPath& staging,
-    const std::vector<CompiledSpriteRoot>& compiledSpriteRoots,
-    const bool dryRun
+    const std::set<NomadPath>& excludedResources,
+    const std::function<void(const NomadPath&, const NomadPath&)>& copyResource
 ) {
     const auto resources = resolveProjectResourcePath(project);
     std::error_code error;
@@ -317,7 +167,6 @@ std::vector<NomadPath> copyResources(
         throw ProjectPackagingError("Resource directory does not exist: '" + pathToUtf8(resources) + "'");
     }
 
-    std::vector<NomadPath> files;
     std::filesystem::recursive_directory_iterator iterator(resources, error);
     const std::filesystem::recursive_directory_iterator end;
 
@@ -345,23 +194,9 @@ std::vector<NomadPath> copyResources(
                 raiseFilesystemError("Failed to resolve resource", entry.path(), error);
             }
 
-            const auto excluded = isExcluded(relative, project.configuration.package.exclude);
-
-            if (excluded && isRequiredCompiledSpriteFile(entry.path(), compiledSpriteRoots)) {
-                throw ProjectPackagingError(
-                    "Package exclusions must not remove compiled sprite file: '" +
-                    pathToUtf8(relative) + "'"
-                );
-            }
-
-            if (!excluded && !isCompiledSpriteSource(entry.path(), compiledSpriteRoots)) {
-                const auto destination = staging / "res" / relative;
-
-                if (!dryRun) {
-                    copyFile(entry.path(), destination);
-                }
-
-                files.push_back(destination);
+            if (!isExcluded(relative, project.configuration.package.exclude) &&
+                !excludedResources.contains(relative.lexically_normal())) {
+                copyResource(entry.path(), NomadPath("res") / relative);
             }
         } else if (!entry.is_directory(error)) {
             throw ProjectPackagingError("Unsupported project resource: '" + pathToUtf8(entry.path()) + "'");
@@ -373,8 +208,9 @@ std::vector<NomadPath> copyResources(
 
         iterator.increment(error);
     }
-
-    return files;
+    if (error) {
+        raiseFilesystemError("Failed to read resource directory", resources, error);
+    }
 }
 
 struct RuntimeBundleFile {
@@ -387,7 +223,11 @@ struct RuntimeBundle {
     std::vector<RuntimeBundleFile> files;
 };
 
-RuntimeBundle loadRuntimeBundle(const NomadProject& project, const NomadPath& directory) {
+RuntimeBundle loadRuntimeBundle(
+    const NomadProject& project,
+    const NomadPath& directory,
+    const bool module = false
+) {
     const auto manifest = directory / "runtime.json";
     std::error_code manifestError;
     if (std::filesystem::is_symlink(std::filesystem::symlink_status(manifest, manifestError))) {
@@ -412,15 +252,16 @@ RuntimeBundle loadRuntimeBundle(const NomadProject& project, const NomadPath& di
     const auto* target = object.if_contains("target");
     const auto* entries = object.if_contains("files");
     if (!schema || !schema->is_int64() || schema->as_int64() != 1 ||
-        !version || !version->is_string() || !target || !target->is_string() ||
+        (!module && (!version || !target)) ||
+        (version && !version->is_string()) || (target && !target->is_string()) ||
         !entries || !entries->is_array()) {
-        throw ProjectPackagingError("Runtime manifest requires schema 1, version, target, and files");
+        throw ProjectPackagingError("Runtime manifest requires schema 1 and files (host bundles also require version and target)");
     }
-    if (version->as_string() != project.configuration.sdk.version.toString()) {
+    if (version && version->as_string() != project.configuration.sdk.version.toString()) {
         throw ProjectPackagingError("Runtime bundle version does not match the project's required Nomad version");
     }
-    RuntimeBundle bundle{NomadString(target->as_string()), {}};
-    if (bundle.target.empty() || std::ranges::any_of(bundle.target, [](const unsigned char character) {
+    RuntimeBundle bundle{target ? NomadString(target->as_string()) : NomadString{}, {}};
+    if ((target && bundle.target.empty()) || std::ranges::any_of(bundle.target, [](const unsigned char character) {
         return !(character >= 'a' && character <= 'z') && !(character >= '0' && character <= '9') && character != '-';
     })) {
         throw ProjectPackagingError("Runtime manifest target must contain only lowercase letters, digits, and hyphens");
@@ -449,6 +290,9 @@ RuntimeBundle loadRuntimeBundle(const NomadProject& project, const NomadPath& di
         }
         const NomadString role(roleValue->as_string());
         if (role == "runtime") {
+            if (module) {
+                throw ProjectPackagingError("Module runtime manifests must not declare a runtime executable");
+            }
             ++runtimeCount;
             if (path.has_parent_path()) {
                 throw ProjectPackagingError("Runtime executable must be at the bundle root");
@@ -472,38 +316,139 @@ RuntimeBundle loadRuntimeBundle(const NomadProject& project, const NomadPath& di
         }
         bundle.files.push_back({path, role});
     }
-    if (runtimeCount != 1 || licenseCount == 0) {
+    if (!module && (runtimeCount != 1 || licenseCount == 0)) {
         throw ProjectPackagingError("Runtime manifest must declare exactly one runtime executable and at least one license");
     }
     return bundle;
 }
 
-std::vector<NomadPath> copyRuntime(
-    const NomadProject& project,
-    const NomadPath& runtimeDirectory,
-    const RuntimeBundle& bundle,
-    const NomadPath& staging,
-    const bool dryRun
-) {
-    std::vector<NomadPath> files;
-    std::set<NomadPath> destinations{"nomad.toml"};
-    for (const auto& entry : bundle.files) {
-        auto destinationName = entry.path;
-        if (entry.role == "runtime") {
-            destinationName = pathFromUtf8(project.configuration.project.executable);
-            destinationName += entry.path.extension();
-        }
-        if (!destinations.insert(destinationName).second || *destinationName.begin() == "res") {
-            throw ProjectPackagingError("Runtime file collides with a package entry: '" + pathToUtf8(destinationName) + "'");
-        }
-        const auto destination = staging / destinationName;
-        if (!dryRun) {
-            copyFile(runtimeDirectory / entry.path, destination);
-        }
-        files.push_back(destination);
+void validatePackagePath(const NomadPath& path) {
+    const auto name = pathToGenericUtf8(path);
+    if (name.empty() || path.is_absolute() || path.has_root_name() ||
+        name.find_first_of("\\:<>\"|?*") != NomadString::npos ||
+        std::ranges::any_of(name, [](const unsigned char character) { return character < 32; }) ||
+        path.lexically_normal() != path || std::ranges::any_of(path, [](const auto& part) {
+            return part == "." || part == ".." || part.empty();
+        })) {
+        throw ProjectPackagingError("Unsafe package entry: '" + name + "'");
     }
-    return files;
 }
+
+void validateSourceFile(const NomadPath& source) {
+    auto current = NomadPath{};
+    for (const auto& part : std::filesystem::absolute(source)) {
+        current /= part;
+        std::error_code error;
+        const auto status = std::filesystem::symlink_status(current, error);
+        if (error || std::filesystem::is_symlink(status)) {
+            throw ProjectPackagingError("Missing or symbolic-linked package source: '" + pathToUtf8(source) + "'");
+        }
+    }
+    if (!std::filesystem::is_regular_file(source)) {
+        throw ProjectPackagingError("Package source is not a regular file: '" + pathToUtf8(source) + "'");
+    }
+}
+
+bool haveIdenticalContent(const NomadPath& first, const NomadPath& second) {
+    if (std::filesystem::file_size(first) != std::filesystem::file_size(second)) {
+        return false;
+    }
+    std::ifstream firstInput(first, std::ios::binary);
+    std::ifstream secondInput(second, std::ios::binary);
+    if (!firstInput || !secondInput) {
+        throw ProjectPackagingError("Failed to compare native runtime dependencies");
+    }
+    std::array<char, 65536> firstBuffer{};
+    std::array<char, 65536> secondBuffer{};
+    while (firstInput) {
+        firstInput.read(firstBuffer.data(), static_cast<std::streamsize>(firstBuffer.size()));
+        secondInput.read(secondBuffer.data(), static_cast<std::streamsize>(secondBuffer.size()));
+        if (firstInput.gcount() != secondInput.gcount() ||
+            !std::equal(firstBuffer.begin(), firstBuffer.begin() + firstInput.gcount(), secondBuffer.begin())) {
+            return false;
+        }
+    }
+    if (!firstInput.eof() || !secondInput.eof()) {
+        throw ProjectPackagingError("Failed to compare native runtime dependencies");
+    }
+    return true;
+}
+
+class PackageFiles {
+public:
+    PackageFiles(NomadPath staging, const bool dryRun) :
+        m_staging(std::move(staging)), m_dryRun(dryRun) {}
+
+    void copy(const NomadPath& source, const NomadPath& relative, const bool nativeDependency = false) {
+        validateSourceFile(source);
+        validatePackagePath(relative);
+        const auto key = stringToLowerAscii(pathToGenericUtf8(relative));
+        const auto existing = m_entries.find(key);
+        if (existing != m_entries.end() && nativeDependency && existing->second.nativeDependency &&
+            haveIdenticalContent(existing->second.source, source)) {
+            return;
+        }
+        reserve(relative, source, nativeDependency);
+        if (!m_dryRun) {
+            copyFile(source, m_staging / relative);
+        }
+    }
+
+    void write(const NomadPath& relative, const NomadStringView content) {
+        reserve(relative);
+        if (!m_dryRun) {
+            const auto destination = m_staging / relative;
+            createDirectories(destination.parent_path());
+            std::ofstream output(destination, std::ios::binary | std::ios::trunc);
+            output.write(content.data(), static_cast<std::streamsize>(content.size()));
+            output.close();
+            if (!output) {
+                throw ProjectPackagingError("Failed to write package entry: '" + pathToUtf8(relative) + "'");
+            }
+        }
+    }
+
+    void reserve(
+        const NomadPath& relative,
+        const NomadPath& source = {},
+        const bool nativeDependency = false
+    ) {
+        validatePackagePath(relative);
+        const auto key = stringToLowerAscii(pathToGenericUtf8(relative));
+        const auto next = m_entries.lower_bound(key);
+        if (next != m_entries.end() && (next->first == key || next->first.starts_with(key + "/"))) {
+            throw ProjectPackagingError("Package entry collision: '" + pathToUtf8(relative) + "'");
+        }
+        for (auto parent = relative.parent_path(); !parent.empty(); parent = parent.parent_path()) {
+            if (m_entries.contains(stringToLowerAscii(pathToGenericUtf8(parent)))) {
+                throw ProjectPackagingError("Package entry collision: '" + pathToUtf8(relative) + "'");
+            }
+        }
+        m_entries.emplace(key, Entry{relative, source, nativeDependency});
+    }
+
+    [[nodiscard]] std::vector<NomadPath> getFiles() const {
+        std::vector<NomadPath> files;
+        for (const auto& [key, entry] : m_entries) {
+            const auto file = m_staging / entry.relative;
+            if (!m_dryRun) {
+                validateSourceFile(file);
+            }
+            files.push_back(file);
+        }
+        return files;
+    }
+
+private:
+    struct Entry {
+        NomadPath relative;
+        NomadPath source;
+        bool nativeDependency;
+    };
+    NomadPath m_staging;
+    bool m_dryRun;
+    std::map<NomadString, Entry> m_entries;
+};
 
 void checkArchive(const int result, archive* writer) {
     if (result != ARCHIVE_OK) {
@@ -620,6 +565,24 @@ ProjectPackageResult packageProject(
         throw ProjectPackagingError("Project executable and version must be valid archive filename components");
     }
     const auto bundle = loadRuntimeBundle(project, runtimeDirectory);
+    std::vector<ModuleManifest> modules;
+    std::vector<RuntimeBundle> moduleBundles;
+    std::unique_ptr<ModuleHost> moduleHost;
+    try {
+        modules = resolveProjectModules(project, runtimeDirectory.parent_path());
+        for (const auto& module : modules) {
+            auto dependencies = loadRuntimeBundle(project, module.directory, true);
+            if (!dependencies.target.empty() && dependencies.target != bundle.target) {
+                throw ProjectPackagingError("Module runtime bundle target does not match the host bundle");
+            }
+            moduleBundles.push_back(std::move(dependencies));
+        }
+        moduleHost = std::make_unique<ModuleHost>(
+            project.document, project.root, resources, modules, std::vector<NomadString>{}, ModuleMode::Packaging
+        );
+    } catch (const ModuleError& error) {
+        throw ProjectPackagingError("Failed to load packaging modules: " + NomadString(error.what()));
+    }
     const auto output = outputDirectory / pathFromUtf8(configuration.project.executable + "-" +
         bundle.target + "-" + configuration.project.version + ".zip");
     auto staging = output;
@@ -679,20 +642,65 @@ ProjectPackageResult packageProject(
             createDirectories(staging);
         }
 
-        const auto compiledSpriteRoots = compileSpriteRoots(project);
-        auto resourceFiles = copyResources(project, staging, compiledSpriteRoots, dryRun);
-        stagedFiles.insert(stagedFiles.end(), resourceFiles.begin(), resourceFiles.end());
-        auto compiledSpriteFiles = writeCompiledSpriteRoots(compiledSpriteRoots, staging, dryRun);
-        stagedFiles.insert(stagedFiles.end(), compiledSpriteFiles.begin(), compiledSpriteFiles.end());
-        auto runtimeFiles = copyRuntime(project, runtimeDirectory, bundle, staging, dryRun);
-        stagedFiles.insert(stagedFiles.end(), runtimeFiles.begin(), runtimeFiles.end());
-        const auto manifest = staging / NOMAD_PROJECT_FILE_NAME;
-
-        if (!dryRun) {
-            writeReleaseManifest(project, manifest);
+        PackageFiles packageFiles(staging, dryRun);
+        const auto copyNativeBundle = [&](const RuntimeBundle& nativeBundle, const NomadPath& directory) {
+            for (const auto& entry : nativeBundle.files) {
+                auto relative = entry.path;
+                if (entry.role == "runtime") {
+                    relative = pathFromUtf8(configuration.project.executable);
+                    relative += entry.path.extension();
+                }
+                if (stringToLowerAscii(pathToUtf8(*relative.begin())) == "res") {
+                    throw ProjectPackagingError("Runtime file collides with package resources: '" + pathToUtf8(relative) + "'");
+                }
+                packageFiles.copy(directory / entry.path, relative, entry.role != "runtime");
+            }
+        };
+        copyNativeBundle(bundle, runtimeDirectory);
+        std::vector<NomadString> moduleNames;
+        for (auto index = NomadIndex{0}; index < modules.size(); ++index) {
+            const auto& module = modules[index];
+            const auto library = getModuleLibraryName(module.name);
+            packageFiles.copy(module.directory / library, library, true);
+            copyNativeBundle(moduleBundles[index], module.directory);
+            moduleNames.push_back(module.name);
         }
 
-        stagedFiles.push_back(manifest);
+        auto release = NomadConfiguration::parse(serializeReleaseProject(project));
+        release.setStringArray("nomad.modules", moduleNames);
+        std::set<NomadPath> excludedResources;
+        ModulePackageContext context{};
+        context.source = &project.document;
+        context.release = &release;
+        context.projectDirectory = project.root;
+        context.resourceDirectory = resources;
+        context.stagingDirectory = staging;
+        context.dryRun = dryRun;
+        context.copyFile = [&](const NomadPath& source, const NomadPath& relative) {
+            packageFiles.copy(source, relative);
+        };
+        context.writeFile = [&](const NomadPath& relative, const NomadStringView content) {
+            packageFiles.write(relative, content);
+        };
+        context.recordFile = [&](const NomadPath& relative) {
+            packageFiles.reserve(relative);
+        };
+        context.excludeResource = [&](const NomadPath& relative) {
+            validatePackagePath(relative);
+            excludedResources.insert(relative.lexically_normal());
+        };
+        context.isResourceExcluded = [&](const NomadPath& relative) {
+            return isExcluded(relative, configuration.package.exclude);
+        };
+        try {
+            moduleHost->package(context);
+        } catch (const std::exception& moduleError) {
+            throw ProjectPackagingError("Module packaging failed: " + NomadString(moduleError.what()));
+        }
+        copyResources(project, excludedResources, context.copyFile);
+        release.setStringArray("nomad.modules", moduleNames);
+        packageFiles.write(pathFromUtf8(NOMAD_PROJECT_FILE_NAME), release.serialize());
+        stagedFiles = packageFiles.getFiles();
         std::ranges::sort(stagedFiles, {}, [&](const auto& file) {
             return pathToGenericUtf8(file.lexically_relative(staging));
         });

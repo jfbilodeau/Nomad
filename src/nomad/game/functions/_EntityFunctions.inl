@@ -140,7 +140,7 @@ BEGIN_ENTITY_FUNCTION(moveToThen)
         auto speed = interpreter->getFloatParameter(2);
         auto functionId = interpreter->getIdParameter(3);
 
-        auto closure = interpreter->createClosure(m_runtime.get(), functionId);
+        auto closure = interpreter->createClosure(m_runtime, functionId);
 
         BEGIN_ENTITY_BLOCK()
 
@@ -209,7 +209,7 @@ BEGIN_ENTITY_FUNCTION(on)
         auto eventId = interpreter->getParameter(0).getIdValue();
         auto functionId = interpreter->getParameter(1).getIdValue();
 
-        auto closure = interpreter->createClosure(m_runtime.get(), functionId);
+        auto closure = interpreter->createClosure(m_runtime, functionId);
 
         BEGIN_ENTITY_BLOCK()
 
@@ -443,7 +443,7 @@ BEGIN_ENTITY_FUNCTION(playAnimationAndThen)
         auto reverse = interpreter->getBooleanParameter(3);
         auto functionId = interpreter->getIdParameter(4);
 
-        auto closure = interpreter->createClosure(m_runtime.get(), functionId);
+        auto closure = interpreter->createClosure(m_runtime, functionId);
 
         BEGIN_ENTITY_BLOCK()
 

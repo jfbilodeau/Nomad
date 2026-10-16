@@ -2,6 +2,7 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/script/NativeFunctions.hpp>
 #include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -11,6 +12,7 @@ namespace nomad::test {
 LanguageTestFixture::LanguageTestFixture() :
     m_compiler(m_runtime.createCompiler()),
     m_context(std::make_unique<CompilerContext>(m_compiler.get())) {
+    registerBuildInNativeFunctions(&m_runtime);
 }
 
 LanguageTestFixture::~LanguageTestFixture() = default;

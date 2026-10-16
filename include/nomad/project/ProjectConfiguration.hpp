@@ -5,7 +5,7 @@
 #include <nomad/Nomad.hpp>
 #include <nomad/NomadVersion.hpp>
 
-#include <nomad/game/Game.hpp>
+#include <nomad/game/GameOptions.hpp>
 
 #include <nomad/system/NomadConfiguration.hpp>
 
@@ -75,6 +75,10 @@ std::optional<NomadPath> findProjectRoot(
 
 [[nodiscard]] NomadProject loadNomadProject(
     const NomadPath& projectFile
+);
+
+[[nodiscard]] GameOptions readGameOptions(
+    const NomadConfiguration& configuration
 );
 
 [[nodiscard]] NomadProject discoverNomadProject(

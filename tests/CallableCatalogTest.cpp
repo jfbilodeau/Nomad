@@ -6,6 +6,7 @@
 
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/NativeFunction.hpp>
+#include <nomad/script/NativeFunctions.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <vector>
@@ -160,8 +161,8 @@ BOOST_AUTO_TEST_CASE(duplicate_function_name_is_rejected)
 BOOST_AUTO_TEST_CASE(function_cannot_shadow_native_function)
 {
     Runtime runtime;
+    registerBuildInNativeFunctions(&runtime);
 
-    // `log.info` is registered as a built-in native function when the runtime is constructed.
     BOOST_REQUIRE(runtime.getNativeFunctionId("log.info") != NOMAD_INVALID_ID);
 
     BOOST_TEST(runtime.registerFunction("log.info", "log/info.nomad", "return 1") == NOMAD_INVALID_ID);

@@ -51,6 +51,6 @@ nomadRunTestCommand("Packaged runtime startup"
         "PATH=${SYSTEM_PATH}"
         "${RUNTIME}" --help
     WORKING_DIRECTORY "${NOMAD_PACKAGE_DIRECTORY}"
-    OUTPUT_MATCH "Allowed options"
+    OUTPUT_MATCH "nomad-runtime.*--project-path"
 )
 message(STATUS "Packaged runtime starts with only package-local and system dependency search paths")

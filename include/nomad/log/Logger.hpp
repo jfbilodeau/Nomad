@@ -98,6 +98,7 @@ private:
 
 namespace log {
 
+[[nodiscard]] Logger& getLogger();
 void setLogLevel(LogLevel level);
 [[nodiscard]] LogLevel getLogLevel();
 

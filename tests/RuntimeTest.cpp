@@ -14,6 +14,21 @@
 
 using namespace nomad;
 
+BOOST_AUTO_TEST_CASE(bare_runtime_has_core_string_intrinsics_without_standard_native_functions)
+{
+    Runtime runtime;
+
+    for (const auto* name : {"toFloat", "toInt", "log.info", "math.floor"}) {
+        BOOST_TEST_CONTEXT(name) {
+            BOOST_TEST(runtime.getNativeFunctionId(name) == NOMAD_INVALID_ID);
+            BOOST_TEST(!runtime.getCallableId(name).isValid());
+        }
+    }
+    BOOST_TEST(runtime.getIntrinsicMemberId(runtime.getStringType(), "length") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getIntrinsicMemberId(runtime.getStringType(), "toUpper") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getIntrinsicMemberId(runtime.getStringType(), "contains") != NOMAD_INVALID_ID);
+}
+
 BOOST_AUTO_TEST_CASE(runtime_owns_registered_functions_and_exposes_observer_views)
 {
     {

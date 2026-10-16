@@ -5,14 +5,13 @@
 #include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
-#include <nomad/game/Game.hpp>
-
 #include <nomad/project/ProjectConfiguration.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <nomad/system/Path.hpp>
+#include <nomad/system/ProjectSession.hpp>
 
 #include <boost/json.hpp>
 
@@ -68,37 +67,37 @@ struct AnalysisGroup {
     std::optional<NomadProject> project;
 };
 
+struct ApiAnalysis {
+    std::vector<ApiSymbol> symbols;
+    std::set<NomadString> localNames;
+    bool recover;
+};
+
 std::map<NomadPath, AnalysisGroup> collectAnalysisGroups(const LanguageDocuments& documents);
 NomadPath documentPath(const NomadString& uri);
 
-std::vector<ApiSymbol> createApiSymbols(
+std::unique_ptr<ModuleHost> createAnalysisSession(const AnalysisGroup& group, const NomadPath& path) {
+    if (group.project) {
+        return createProjectSession(*group.project, ModuleMode::Analysis);
+    }
+    NomadProject project;
+    project.root = path.parent_path();
+    project.configuration.resources.directory = ".";
+    project.configuration.sdk.modules = {"nomad-system"};
+    return createProjectSession(project, ModuleMode::Analysis);
+}
+
+ApiAnalysis analyzeApiSymbols(
+    const AnalysisGroup& group,
     const NomadPath& path,
-    const LanguageDocuments& documents,
     const NomadString& uri,
     const NomadIndex line,
     const bool completion,
-    const bool omitCurrentLine = false
+    const bool omitCurrentLine
 ) {
-    std::unique_ptr<Game> game;
-    std::unique_ptr<Runtime> language;
-    const auto root = findProjectRoot(path.parent_path());
-    LanguageDocuments relatedDocuments;
-    for (const auto& [documentUri, document] : documents) {
-        const auto candidate = documentPath(documentUri);
-        if (root ? findProjectRoot(candidate.parent_path()) == root : candidate == path) {
-            relatedDocuments.emplace(documentUri, document);
-        }
-    }
-    const auto groups = collectAnalysisGroups(relatedDocuments);
-    const auto& group = groups.at(root.value_or(path));
-    if (group.project) {
-        GameOptions options;
-        options.resourcePath = pathToUtf8(resolveProjectResourcePath(*group.project));
-        game = Game::createHeadless(std::move(options));
-    } else {
-        language = std::make_unique<Runtime>();
-    }
-    auto* runtime = game ? game->getRuntime() : language.get();
+    // Destroy callback metadata before unloading modules, and the complete session before recovery.
+    const auto session = createAnalysisSession(group, path);
+    auto* runtime = session->getRuntime();
     auto batch = loadSourcePaths(group.roots, group.overrides);
     if (omitCurrentLine) {
         for (auto& script : batch.sources) {
@@ -116,7 +115,7 @@ std::vector<ApiSymbol> createApiSymbols(
         }
     }
     // Failed compilations still retain declarations collected by the compiler's earlier passes.
-    const auto compilation = checkSources(batch, runtime);
+    const auto compilation = analyzeSources(batch, runtime);
     const auto currentLineError = std::ranges::any_of(compilation.diagnostics, [&](const auto& diagnostic) {
         return diagnostic.sourceName == uri && diagnostic.line == line &&
             diagnostic.severity == DiagnosticSeverity::Error;
@@ -254,12 +253,34 @@ std::vector<ApiSymbol> createApiSymbols(
     for (const auto& name : namespaces) {
         symbols.push_back({name, CompletionItemKind::Module, name, "Symbol namespace."});
     }
-    if (!compilation.succeeded() && currentLineError && completion && !omitCurrentLine) {
-        game.reset();
-        language.reset();
+    return {std::move(symbols), std::move(localNames),
+        !compilation.succeeded() && currentLineError && completion && !omitCurrentLine};
+}
+
+std::vector<ApiSymbol> createApiSymbols(
+    const NomadPath& path,
+    const LanguageDocuments& documents,
+    const NomadString& uri,
+    const NomadIndex line,
+    const bool completion,
+    const bool omitCurrentLine = false
+) {
+    const auto root = findProjectRoot(path.parent_path());
+    LanguageDocuments relatedDocuments;
+    for (const auto& [documentUri, document] : documents) {
+        const auto candidate = documentPath(documentUri);
+        if (root ? findProjectRoot(candidate.parent_path()) == root : candidate == path) {
+            relatedDocuments.emplace(documentUri, document);
+        }
+    }
+    const auto groups = collectAnalysisGroups(relatedDocuments);
+    const auto& group = groups.at(root.value_or(path));
+    auto analysis = analyzeApiSymbols(group, path, uri, line, completion, omitCurrentLine);
+    auto& symbols = analysis.symbols;
+    if (analysis.recover) {
         auto recovered = createApiSymbols(path, documents, uri, line, completion, true);
         for (auto& symbol : symbols) {
-            if (localNames.contains(symbol.name)) continue;
+            if (analysis.localNames.contains(symbol.name)) continue;
             const auto present = std::ranges::any_of(recovered, [&](const auto& candidate) {
                 return candidate.name == symbol.name && candidate.receiverType == symbol.receiverType;
             });
@@ -270,7 +291,7 @@ std::vector<ApiSymbol> createApiSymbols(
     std::ranges::sort(symbols, [](const auto& left, const auto& right) {
         return left.name == right.name ? left.signature < right.signature : left.name < right.name;
     });
-    return symbols;
+    return std::move(analysis.symbols);
 }
 
 bool isNameCharacter(const char character) {
@@ -539,17 +560,11 @@ LanguageDiagnostics analyzeLanguageDocuments(const LanguageDocuments& documents)
     const auto groups = collectAnalysisGroups(documents);
     LanguageDiagnostics published;
     for (const auto& [key, group] : groups) {
-        (void)key;
         const auto batch = loadSourcePaths(group.roots, group.overrides);
-        std::unique_ptr<Game> game;
+        const auto session = createAnalysisSession(group, key);
+        auto result = analyzeSources(batch, session->getRuntime());
         if (group.project) {
-            GameOptions options;
-            options.resourcePath = pathToUtf8(resolveProjectResourcePath(*group.project));
-            game = Game::createHeadless(std::move(options));
-        }
-        auto result = checkSources(batch, game ? game->getRuntime() : nullptr);
-        if (group.project) {
-            validateEntryFunction(result, game->getRuntime(), group.project->gameOptions.entryFunction,
+            validateEntryFunction(result, session->getRuntime(), group.project->gameOptions.entryFunction,
                 group.project->root / NOMAD_PROJECT_FILE_NAME);
         }
         std::map<NomadString, NomadString> sourceUris;

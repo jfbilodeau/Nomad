@@ -73,6 +73,18 @@ table = {}
     BOOST_CHECK_THROW((void)configuration.getString("integer.nested"), NomadConfigurationError);
 }
 
+BOOST_AUTO_TEST_CASE(rejects_wrong_type_intermediate_module_tables)
+{
+    const auto malformed = NomadConfiguration::parse("nomad = 1");
+    BOOST_CHECK_THROW((void)malformed.getStringArray("nomad.modules"), NomadConfigurationError);
+    BOOST_CHECK_THROW((void)malformed.requireStringArray("nomad.modules"), NomadConfigurationError);
+    BOOST_CHECK_THROW((void)malformed.contains("nomad.modules"), NomadConfigurationError);
+
+    const auto missing = NomadConfiguration::parse("[nomad]");
+    BOOST_TEST(!missing.getStringArray("nomad.modules").has_value());
+    BOOST_TEST(!missing.contains("nomad.modules"));
+}
+
 BOOST_AUTO_TEST_CASE(owns_deep_copies_and_mutable_nested_values)
 {
     auto original = NomadConfiguration::parse("[module]\nname = 'original'\nvalues = ['first']\n");

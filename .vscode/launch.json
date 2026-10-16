@@ -8,11 +8,11 @@
       "preLaunchTask": "CMake: build runtime",
       "program": "${workspaceFolder}/out/build/linux-debug/nomad-runtime",
       "args": [
-        "--resource-path",
-        "${input:nomadResourcePath}"
+        "--project-path",
+        "${input:nomadProjectPath}"
       ],
       "stopAtEntry": false,
-      "cwd": "${input:nomadResourcePath}",
+      "cwd": "${workspaceFolder}",
       "environment": [],
       "externalConsole": false,
       "MIMode": "gdb",
@@ -36,11 +36,11 @@
       "preLaunchTask": "CMake: build runtime",
       "program": "${workspaceFolder}/out/build/linux-release/nomad-runtime",
       "args": [
-        "--resource-path",
-        "${input:nomadResourcePath}"
+        "--project-path",
+        "${input:nomadProjectPath}"
       ],
       "stopAtEntry": false,
-      "cwd": "${input:nomadResourcePath}",
+      "cwd": "${workspaceFolder}",
       "environment": [],
       "externalConsole": false,
       "MIMode": "gdb",
@@ -59,12 +59,12 @@
       "preLaunchTask": "CMake: build runtime",
       "program": "${workspaceFolder}/out/build/windows-debug/Debug/nomad-runtime.exe",
       "args": [
-        "--resource-path",
-        "${input:nomadResourcePath}",
+        "--project-path",
+        "${input:nomadProjectPath}",
         "--debug"
       ],
       "stopAtEntry": false,
-      "cwd": "${input:nomadResourcePath}",
+      "cwd": "${workspaceFolder}",
       "environment": [],
       "console": "integratedTerminal"
     },
@@ -75,11 +75,11 @@
       "preLaunchTask": "CMake: build runtime",
       "program": "${workspaceFolder}/out/build/windows-release/Release/nomad-runtime.exe",
       "args": [
-        "--resource-path",
-        "${input:nomadResourcePath}"
+        "--project-path",
+        "${input:nomadProjectPath}"
       ],
       "stopAtEntry": false,
-      "cwd": "${input:nomadResourcePath}",
+      "cwd": "${workspaceFolder}",
       "environment": [],
       "console": "integratedTerminal"
     },
@@ -167,9 +167,9 @@
   ],
   "inputs": [
     {
-      "id": "nomadResourcePath",
+      "id": "nomadProjectPath",
       "type": "promptString",
-      "description": "Absolute path to a Nomad project's resource directory"
+      "description": "Absolute path to a Nomad project directory or nomad.toml"
     }
   ]
 }

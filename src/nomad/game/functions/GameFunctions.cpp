@@ -81,7 +81,7 @@ void Game::initGameFunctions() {
             const NomadString functionName = interpreter->getStringParameter(0);
             const NomadId postCreateFunction = interpreter->getIdParameter(1);
 
-            auto postCreateClosure = interpreter->createClosure(m_runtime.get(), postCreateFunction);
+            auto postCreateClosure = interpreter->createClosure(m_runtime, postCreateFunction);
 
             const auto functionId = getFunctionId(functionName);
 
@@ -116,7 +116,7 @@ void Game::initGameFunctions() {
             const NomadId functionId = interpreter->getIdParameter(0);
             const NomadId postCreateFunction = interpreter->getIdParameter(1);
 
-            auto postCreateClosure = interpreter->createClosure(m_runtime.get(), postCreateFunction);
+            auto postCreateClosure = interpreter->createClosure(m_runtime, postCreateFunction);
 
             const auto result = m_runtime->getFunctionName(functionId);
 

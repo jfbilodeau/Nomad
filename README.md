@@ -114,5 +114,6 @@ command-specific usage.
 - [Debugging](docs/debugging.md)
 - [CLI reference](docs/cli.md)
 - [Project configuration](docs/configuration.md)
+- [Runtime modules](docs/modules.md)
 - [Building from source](docs/building.md)
 - [Release and installation details](docs/releases.md)

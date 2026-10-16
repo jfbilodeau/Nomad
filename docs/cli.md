@@ -75,8 +75,9 @@ for setup and current limitations.
 ## Runtime
 
 `nomad-runtime` discovers the current project's configuration and executes
-`project.entry`. `--resource-path <directory>` overrides the configured
-resource directory. `--debug` enables diagnostic logging and the debug console;
+`project.entry`. `--project-path <directory-or-nomad.toml>` selects a project
+instead of discovering one from the current directory. Resource paths are
+resolved from that project's configuration. `--debug` enables diagnostic logging and the debug console;
 `--no-debug` disables project-configured debug mode.
 
 Run `nomad run --debug` and press the grave/tilde key (`~`) in the game window
@@ -84,11 +85,9 @@ to open the debug console. Runtime log messages appear in its **Logs** panel.
 Press `~` again to close it. The key has no special effect when debug mode is
 disabled.
 
-On Linux, runtime messages are also written to the terminal that launched
-`nomad run`. On Windows the runtime is a GUI application, so it has no terminal
-output even when the console-based `nomad` manager launches it. Use the in-game
-debug console to inspect runtime logs on Windows. The manager and compiler
-remain console applications on every platform.
+Runtime messages are written to the terminal that launched `nomad run`,
+including on Windows. Game applications also expose logs through the in-game
+debug console.
 
 See the [debugging guide](debugging.md) for console controls, physics debug
 drawing, and persisted debug settings.

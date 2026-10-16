@@ -15,6 +15,7 @@ entry = "init"
 
 [nomad]
 version = "0.1.0"
+modules = ["nomad-game"]
 
 [game]
 debug = false
@@ -72,6 +73,7 @@ exclude = [
 | `project.executable` | Executable file name without extension or directory. | Required for development projects |
 | `project.entry` | Script entry function taking no arguments and returning `void`. | Optional; `"init"` |
 | `nomad.version` | Required SDK version in canonical `major.minor.patch` form; packaging requires this exact runtime version. | Required |
+| `nomad.modules` | Requested native modules; dependencies are included automatically. | Optional; `["nomad-game"]` |
 | `game.debug` | Whether diagnostic logging and the in-game debug console are enabled. | Optional; `false` |
 | `resources.directory` | Resource directory relative to the project root. | Optional; `"res"` |
 | `window.title` | Initial game window title. Scripts may change it after startup. | Optional; `project.name` |
@@ -92,6 +94,11 @@ The `[game]`, `[resources]`, `[window]`, `[audio]`, `[text]`, `[scripts]`, `[spr
 only to missing fields; invalid types and empty strings are rejected.
 Development projects are identified by `project.executable`. A configuration
 without it is a packaged configuration and must omit `[resources]` and `[package]`.
+
+See [runtime modules](modules.md) for module selection, dependency ordering,
+SDK layout, and packaged applications. Set `nomad.modules` to
+`["nomad-system"]` for a non-graphical application or `[]` for the fundamental
+language runtime only.
 
 `window.resolution` and `window.size` must each contain exactly two positive
 integers. When `window.size` is omitted, the window uses the configured logical

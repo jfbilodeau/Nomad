@@ -6,9 +6,9 @@ function(nomad_configure_archive_dependencies)
     set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(zlib)
     set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR};${zlib_BINARY_DIR}")
-    set(ZLIB_LIBRARY zlibstatic)
+    set(ZLIB_LIBRARY zlib)
 
-    set(BUILD_SHARED_LIBS OFF)
+    set(BUILD_SHARED_LIBS ON)
     foreach(FEATURE IN ITEMS
         ACL BZip2 CAT CNG COVERAGE CPIO EXPAT ICONV INSTALL LIBB2
         LIBGCC LIBXML2 LZ4 LZMA LZO MBEDTLS NETTLE OPENSSL PCRE2POSIX
@@ -23,7 +23,6 @@ function(nomad_configure_archive_dependencies)
     set(POSIX_REGEX_LIB NONE CACHE STRING "" FORCE)
 
     FetchContent_MakeAvailable(libarchive)
-    target_compile_definitions(archive_static INTERFACE LIBARCHIVE_STATIC)
 endfunction()
 
 nomad_configure_archive_dependencies()

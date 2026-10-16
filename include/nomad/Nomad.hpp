@@ -16,6 +16,16 @@
 #include <crtdbg.h>
 #endif
 
+#if defined(_WIN32)
+#if defined(NOMAD_LANGUAGE_BUILD)
+#define NOMAD_LANGUAGE_DATA __declspec(dllexport)
+#else
+#define NOMAD_LANGUAGE_DATA __declspec(dllimport)
+#endif
+#else
+#define NOMAD_LANGUAGE_DATA
+#endif
+
 namespace nomad {
 
 // Basic type definitions
@@ -52,7 +62,7 @@ struct NomadStringEqual {
 };
 
 // Updated to fix the constant expression issue
-extern const NomadString NOMAD_EMPTY_STRING;
+extern NOMAD_LANGUAGE_DATA const NomadString NOMAD_EMPTY_STRING;
 
 using NomadShort = std::int16_t;
 
@@ -110,6 +120,6 @@ public:
 constexpr NomadInteger NOMAD_DEFAULT_INTEGER = 0;
 constexpr NomadFloat NOMAD_DEFAULT_FLOAT = 0.0;
 constexpr NomadBoolean NOMAD_DEFAULT_BOOLEAN = false;
-extern const NomadString NOMAD_DEFAULT_STRING;
+extern NOMAD_LANGUAGE_DATA const NomadString NOMAD_DEFAULT_STRING;
 
 } // namespace nomad

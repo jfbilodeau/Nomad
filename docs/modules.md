@@ -1,0 +1,111 @@
+# Runtime modules
+
+Nomad projects select native modules in `nomad.toml`:
+
+```toml
+[nomad]
+version = "0.1.8"
+modules = ["nomad-game"]
+```
+
+The SDK provides:
+
+| Module | Features |
+| --- | --- |
+| `nomad-system` | Logging, math functions, conversions, and `system.exit`. |
+| `nomad-game` | Windows, input, graphics, audio, scenes, entities, and game resources. Requires `nomad-system`. |
+
+Dependencies are selected automatically. Listing only `nomad-game` also
+loads `nomad-system`. A system-only project can select `["nomad-system"]`
+without opening a game window. An empty list selects only the fundamental
+language runtime, including built-in strings.
+
+For compatibility, omitting `nomad.modules` selects `["nomad-game"]`.
+New projects include the property explicitly.
+
+## SDK modules
+
+Development commands use the modules in the selected SDK:
+
+```text
+modules/
+  nomad-system/
+    module.toml
+    ...
+  nomad-game/
+    module.toml
+    ...
+```
+
+Each module directory contains its native library, supporting libraries,
+packaging inventory, licenses, and a `module.toml` manifest. For example:
+
+```toml
+schema = 1
+
+[module]
+name = "nomad-game"
+
+[nomad]
+modules = ["nomad-system"]
+```
+
+Module names start with a lowercase ASCII letter and contain only lowercase
+ASCII letters, digits, and hyphens. Names do not contain paths or extensions.
+Native filenames follow the platform convention: `nomad-game.dll` on Windows,
+`libnomad-game.so` on Linux, and `libnomad-game.dylib` on macOS.
+
+Modules must be built for the same Nomad SDK, platform, architecture, and
+compatible compiler/runtime settings. Native modules execute trusted native
+code; only use SDKs and modules you trust.
+
+## Ordering and startup
+
+Nomad visits the requested modules in listed order, visits their dependencies
+in manifest order, and initializes dependencies before their dependents.
+Shared dependencies are initialized once. Missing modules, invalid manifests,
+and dependency cycles are errors.
+
+All modules register their script features before compilation. The configured
+`project.entry` function, or `init` by default, executes after successful
+compilation and resource preparation. It must take no arguments and return
+`void`.
+
+A game module runs the application's main-thread event loop. Only one
+configured module may provide that loop. Without an event-loop provider, the
+application finishes after its entry function returns.
+
+`system.exit` requests orderly shutdown after the current script invocation.
+Modules stop their background work before the application releases them.
+
+The runtime accepts module command-line arguments. For games, `--debug` and
+`--no-debug` override `game.debug`; supplying both is an error. Runtime startup
+errors are reported to the console and produce a nonzero process exit status.
+Use `--project-path <directory-or-nomad.toml>` to select a project explicitly
+when launching the runtime from another directory.
+
+## Checking and editor diagnostics
+
+The compiler and language server use the project's resolved modules and
+configuration to expose the same script API as the running application.
+They do not execute the entry function or start the application loop.
+Editor analysis resolves scripts without generating executable instructions.
+
+Opening a project for analysis can load its configured native modules. Do not
+enable language-server analysis for projects or SDKs you do not trust.
+
+## Packaging
+
+`nomad package` includes only the requested modules, their transitive module
+dependencies, and required native libraries. It does not include every module
+installed in the SDK.
+
+Modules can transform their release settings and contribute generated or
+copied files. Game packaging retains the existing automatic sprite packing.
+Conflicting package outputs or failed module contributions fail the package
+operation rather than publishing a partial archive.
+
+The packaged `nomad.toml` contains the complete resolved module list in startup
+order. Packaged applications load those libraries beside that configuration;
+they do not need an SDK or the development module manifests. Module settings
+are preserved unless explicitly transformed for release.
