@@ -10,6 +10,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <set>
 #include <sstream>
 
 using namespace nomad;
@@ -253,6 +254,116 @@ directories = ["scripts", "mods"]
     const auto editorErrors = analyzeLanguageDocuments(documents);
     BOOST_REQUIRE(editorErrors.contains(answerUri));
     BOOST_REQUIRE(!editorErrors.at(answerUri).empty());
+}
+
+BOOST_AUTO_TEST_CASE(completion_and_hover_use_api_metadata_on_incomplete_unsaved_text)
+{
+    TestDirectory directory("nomad_lsp_completion");
+    const auto uri = uriFor(directory.getPath() / "answer.nomad");
+    const auto text = NomadString("math.fl\r\nlog.info \"") + "\xF0\x9F\x98\x80" +
+        "\"\r\nvalue = \"" + "\xF0\x9F\x98\x80" +
+        "\" + toFloat 1\r\n# math.fl\r\ntext = \"math.fl\"\r\nunknown";
+    const auto query = [&](const int id, const char* method, const int line, const int character) {
+        return frame({{"jsonrpc", "2.0"}, {"id", id}, {"method", method},
+            {"params", {{"textDocument", {{"uri", uri}}},
+                {"position", {{"line", line}, {"character", character}}}}}});
+    };
+    const auto change = json::object{{"jsonrpc", "2.0"}, {"method", "textDocument/didChange"},
+        {"params", {{"textDocument", {{"uri", uri}, {"version", 2}}},
+            {"contentChanges", json::array{json::object{{"text", "math.ce"}}}}}}};
+    std::istringstream input(start() + frame(openDocument(uri, text)) +
+        query(10, "textDocument/completion", 0, 7) +
+        query(11, "textDocument/hover", 2, 19) +
+        query(12, "textDocument/completion", 3, 9) +
+        query(13, "textDocument/hover", 4, 12) +
+        query(14, "textDocument/hover", 5, 3) +
+        query(15, "textDocument/hover", 1, 4) +
+        query(16, "textDocument/completion", 0, 100) +
+        query(18, "textDocument/completion", 0, 0) +
+        frame(change) + query(17, "textDocument/completion", 0, 7) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    const auto messages = responses(output.str());
+    std::map<std::int64_t, json::object> replies;
+    for (const auto& message : messages) {
+        if (message.contains("id")) replies.emplace(message.at("id").as_int64(), message);
+    }
+    const auto& capabilities = replies.at(1).at("result").as_object().at("capabilities").as_object();
+    BOOST_TEST(capabilities.at("hoverProvider").as_bool());
+    BOOST_TEST(capabilities.contains("completionProvider"));
+    const auto& items = replies.at(10).at("result").as_object().at("items").as_array();
+    BOOST_REQUIRE(items.size() == 1U);
+    const auto& item = items[0].as_object();
+    BOOST_TEST(item.at("label").as_string() == "math.floor");
+    BOOST_TEST(!item.at("documentation").as_object().at("value").as_string().empty());
+    const auto& edit = item.at("textEdit").as_object();
+    BOOST_TEST(edit.at("newText").as_string() == "math.floor");
+    BOOST_TEST(edit.at("range").as_object().at("start").as_object().at("character").as_int64() == 0);
+    BOOST_TEST(edit.at("range").as_object().at("end").as_object().at("character").as_int64() == 7);
+    const auto& hover = replies.at(11).at("result").as_object();
+    const auto markdown = NomadString(hover.at("contents").as_object().at("value").as_string());
+    BOOST_TEST(markdown.find("toFloat") != NomadString::npos);
+    BOOST_TEST(markdown.find("---") != NomadString::npos);
+    BOOST_TEST(hover.at("range").as_object().at("start").as_object().at("character").as_int64() == 15);
+    BOOST_TEST(hover.at("range").as_object().at("end").as_object().at("character").as_int64() == 22);
+    std::set<NomadString> labels;
+    for (const auto& value : replies.at(18).at("result").as_object().at("items").as_array()) {
+        labels.insert(NomadString(value.as_object().at("label").as_string()));
+    }
+    BOOST_TEST(labels.contains("if"));
+    BOOST_TEST(labels.contains("int"));
+    BOOST_TEST(!labels.contains("game.createScene"));
+    BOOST_TEST(replies.at(12).at("result").as_object().at("items").as_array().empty());
+    BOOST_TEST(replies.at(13).at("result").is_null());
+    BOOST_TEST(replies.at(14).at("result").is_null());
+    const auto logDocumentation = json::serialize(replies.at(15).at("result"));
+    BOOST_TEST(logDocumentation.find("$file") == NomadString::npos);
+    BOOST_TEST(logDocumentation.find("$line") == NomadString::npos);
+    BOOST_TEST(replies.at(16).at("error").as_object().at("code").as_int64() == -32602);
+    const auto& updated = replies.at(17).at("result").as_object().at("items").as_array();
+    BOOST_REQUIRE(updated.size() == 1U);
+    BOOST_TEST(updated[0].as_object().at("label").as_string() == "math.ceiling");
+}
+
+BOOST_AUTO_TEST_CASE(project_completion_includes_engine_api_without_compiling_the_script)
+{
+    TestDirectory directory("nomad_lsp_engine_completion");
+    directory.write("nomad.toml", R"(schema = 1
+[project]
+name = "LSP completion"
+identifier = "org.nomad.completion"
+version = "0.1.0"
+executable = "completion"
+entry = "init"
+[nomad]
+version = "0.1.0"
+[resources]
+directory = "res"
+)");
+    const auto uri = uriFor(directory.getPath() / "res" / "scripts" / "init.nomad");
+    const auto request = [&](const int id, const char* method, const int character) {
+        return frame({{"jsonrpc", "2.0"}, {"id", id}, {"method", method},
+            {"params", {{"textDocument", {{"uri", uri}}},
+                {"position", {{"line", 0}, {"character", character}}}}}});
+    };
+    std::istringstream input(start() + frame(openDocument(uri, "game.createScene")) +
+        request(10, "textDocument/completion", 5) + request(11, "textDocument/hover", 8) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    const auto messages = responses(output.str());
+    BOOST_REQUIRE(messages.size() == 5U);
+    const auto& items = messages[2].at("result").as_object().at("items").as_array();
+    BOOST_REQUIRE(!items.empty());
+    for (const auto& item : items) {
+        BOOST_TEST(NomadString(item.as_object().at("label").as_string()).starts_with("game."));
+        BOOST_TEST(item.as_object().at("textEdit").as_object().at("range").as_object()
+            .at("end").as_object().at("character").as_int64() == 16);
+    }
+    const auto hoverText = json::serialize(messages[3].at("result"));
+    BOOST_TEST(hoverText.find("game.createScene") != NomadString::npos);
+    BOOST_TEST(errors.str().empty());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

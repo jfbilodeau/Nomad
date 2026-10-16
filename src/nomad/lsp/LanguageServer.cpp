@@ -9,6 +9,9 @@
 
 #include <nomad/project/ProjectConfiguration.hpp>
 
+#include <nomad/script/Runtime.hpp>
+#include <nomad/script/Type.hpp>
+
 #include <nomad/system/Path.hpp>
 
 #include <boost/json.hpp>
@@ -29,6 +32,130 @@ namespace {
 
 namespace json = boost::json;
 constexpr std::size_t maximumMessageSize = 16 * 1024 * 1024;
+
+struct ApiSymbol {
+    NomadString name;
+    int kind;
+    NomadString signature;
+    NomadString documentation;
+};
+
+std::vector<ApiSymbol> createApiSymbols(const NomadPath& path) {
+    std::unique_ptr<Game> game;
+    std::unique_ptr<Runtime> language;
+    if (const auto root = findProjectRoot(path.parent_path())) {
+        const auto project = loadNomadProject(*root / NOMAD_PROJECT_FILE_NAME);
+        GameOptions options;
+        options.resourcePath = pathToUtf8(resolveProjectResourcePath(project));
+        game = Game::createHeadless(std::move(options));
+    } else {
+        language = std::make_unique<Runtime>();
+    }
+    const auto* runtime = game ? game->getRuntime() : language.get();
+    std::vector<ApiSymbol> symbols;
+    std::vector<KeywordDefinition> keywords;
+    runtime->getKeywords(keywords);
+    for (const auto& keyword : keywords) {
+        symbols.push_back({keyword.keyword, 14, keyword.keyword, keyword.doc});
+    }
+    std::vector<const Type*> types;
+    runtime->getTypes(types);
+    for (const auto* type : types) {
+        if (!type->isInternal()) {
+            symbols.push_back({type->getTypeName(), 7, type->getTypeName(), type->getDocumentation()});
+        }
+    }
+    std::vector<NativeFunctionDefinition> functions;
+    runtime->getNativeFunctions(functions);
+    for (const auto& function : functions) {
+        auto signature = function.name;
+        auto documentation = function.doc;
+        for (const auto& parameter : function.parameters) {
+            const auto shape = runtime->getParameterShape(parameter.type);
+            if (shape == ParameterShape::SourceFile || shape == ParameterShape::SourceFunction ||
+                shape == ParameterShape::SourceLine) continue;
+            const auto typeName = parameter.type == runtime->getStringRefType()
+                ? runtime->getStringType()->getTypeName() : parameter.type->getTypeName();
+            signature += " " + parameter.name + ":" + typeName;
+            if (!parameter.doc.empty()) {
+                documentation += "\n\n- `" + parameter.name + "`: " + parameter.doc;
+            }
+        }
+        signature += " -> " + function.returnType->getTypeName();
+        symbols.push_back({function.name, 3, std::move(signature), std::move(documentation)});
+    }
+    for (auto id = runtime->getFirstConstantId(); id != NOMAD_INVALID_ID;
+        id = runtime->getNextConstantId(id)) {
+        const auto& name = runtime->getConstantName(id);
+        symbols.push_back({name, 21, name + ":" + runtime->getConstantType(id)->getTypeName(), ""});
+    }
+    std::ranges::sort(symbols, [](const auto& left, const auto& right) {
+        return left.name == right.name ? left.signature < right.signature : left.name < right.name;
+    });
+    return symbols;
+}
+
+bool isNameCharacter(const char character) {
+    return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+        (character >= '0' && character <= '9') || character == '_' || character == '.';
+}
+
+struct DocumentWord {
+    NomadString prefix;
+    NomadString name;
+    json::object range;
+    bool suppressed;
+};
+
+DocumentWord documentWord(const NomadString& text, const json::object& position) {
+    const auto requestedLine = position.at("line").as_int64();
+    const auto requestedCharacter = position.at("character").as_int64();
+    if (requestedLine < 0 || requestedCharacter < 0) throw std::invalid_argument("Negative document position");
+    auto lineStart = std::size_t{0};
+    for (auto line = std::int64_t{0}; line < requestedLine; ++line) {
+        const auto newline = text.find('\n', lineStart);
+        if (newline == NomadString::npos) throw std::invalid_argument("Line is outside document");
+        lineStart = newline + 1;
+    }
+    const auto newline = text.find('\n', lineStart);
+    auto lineEnd = newline == NomadString::npos ? text.size() : newline;
+    if (lineEnd > lineStart && text[lineEnd - 1] == '\r') --lineEnd;
+    auto offset = lineStart;
+    auto character = std::int64_t{0};
+    while (offset < lineEnd && character < requestedCharacter) {
+        const auto byte = static_cast<unsigned char>(text[offset]);
+        const auto units = byte >= 0xF0 ? 2 : 1;
+        if (character + units > requestedCharacter) throw std::invalid_argument("Position splits a UTF-16 character");
+        const auto bytes = byte >= 0xF0 ? 4U : byte >= 0xE0 ? 3U : byte >= 0xC0 ? 2U : 1U;
+        offset = std::min(offset + bytes, lineEnd);
+        character += units;
+    }
+    if (character != requestedCharacter) throw std::invalid_argument("Character is outside document");
+    auto quoted = false;
+    auto escaped = false;
+    auto comment = false;
+    for (auto index = lineStart; index < offset; ++index) {
+        if (escaped) { escaped = false; continue; }
+        if (quoted && text[index] == '\\') { escaped = true; continue; }
+        if (text[index] == '"') quoted = !quoted;
+        if (!quoted && text[index] == '#') { comment = true; break; }
+    }
+    auto start = offset;
+    auto end = offset;
+    while (start > lineStart && isNameCharacter(text[start - 1])) --start;
+    while (end < lineEnd && isNameCharacter(text[end])) ++end;
+    const auto startCharacter = requestedCharacter - static_cast<std::int64_t>(offset - start);
+    const auto endCharacter = requestedCharacter + static_cast<std::int64_t>(end - offset);
+    return {text.substr(start, offset - start), text.substr(start, end - start),
+        {{"start", {{"line", requestedLine}, {"character", startCharacter}}},
+            {"end", {{"line", requestedLine}, {"character", endCharacter}}}},
+        quoted || comment};
+}
+
+json::object symbolDocumentation(const ApiSymbol& symbol) {
+    return {{"kind", "markdown"},
+        {"value", "```nomad\n" + symbol.signature + "\n```\n\n" + symbol.documentation}};
+}
 
 NomadString stringField(const json::object& object, const char* name) {
     return NomadString(object.at(name).as_string());
@@ -260,6 +387,7 @@ int runLanguageServer(
     const LanguageAnalyzer& analyze
 ) {
     LanguageDocuments documents;
+    std::map<NomadPath, std::vector<ApiSymbol>> apiCatalogs;
     std::set<NomadString> previousUris;
     auto initialized = false;
     auto ready = false;
@@ -321,6 +449,8 @@ int runLanguageServer(
                     sendMessage(output, {{"jsonrpc", "2.0"}, {"id", id},
                         {"result", {{"capabilities", {
                             {"positionEncoding", "utf-16"},
+                            {"completionProvider", {{"triggerCharacters", json::array{"."}}}},
+                            {"hoverProvider", true},
                             {"textDocumentSync", {{"openClose", true}, {"change", 1}, {"save", true}}}
                         }}, {"serverInfo", {{"name", "Nomad"}}}}}});
                 } else if (!initialized) {
@@ -334,6 +464,44 @@ int runLanguageServer(
                     ready = true;
                 } else if (!ready) {
                     fail(-32002, "Waiting for initialized notification");
+                } else if ((method == "textDocument/completion" || method == "textDocument/hover") && request) {
+                    const auto& params = object.at("params").as_object();
+                    const auto uri = stringField(params.at("textDocument").as_object(), "uri");
+                    const auto& document = documents.at(uri);
+                    const auto word = documentWord(document.text, params.at("position").as_object());
+                    const auto path = documentPath(uri);
+                    const auto key = findProjectRoot(path.parent_path()).value_or(NomadPath{});
+                    auto found = apiCatalogs.find(key);
+                    if (found == apiCatalogs.end() && !word.suppressed) {
+                        found = apiCatalogs.emplace(key, createApiSymbols(path)).first;
+                    }
+                    json::value result;
+                    if (method == "textDocument/completion") {
+                        json::array items;
+                        if (!word.suppressed) {
+                            for (const auto& symbol : found->second) {
+                                if (!symbol.name.starts_with(word.prefix)) continue;
+                                items.push_back(json::object{
+                                    {"label", symbol.name}, {"kind", symbol.kind},
+                                    {"detail", symbol.signature}, {"documentation", symbolDocumentation(symbol)},
+                                    {"textEdit", {{"range", word.range}, {"newText", symbol.name}}}
+                                });
+                            }
+                        }
+                        result = json::object{{"isIncomplete", false}, {"items", std::move(items)}};
+                    } else if (!word.suppressed && !word.name.empty()) {
+                        NomadString markdown;
+                        for (const auto& symbol : found->second) {
+                            if (symbol.name != word.name) continue;
+                            if (!markdown.empty()) markdown += "\n\n---\n\n";
+                            markdown += stringField(symbolDocumentation(symbol), "value");
+                        }
+                        if (!markdown.empty()) {
+                            result = json::object{{"contents", {{"kind", "markdown"}, {"value", markdown}}},
+                                {"range", word.range}};
+                        }
+                    }
+                    sendMessage(output, {{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}});
                 } else if (method == "textDocument/didOpen") {
                     const auto& document = object.at("params").as_object().at("textDocument").as_object();
                     const auto uri = stringField(document, "uri");
@@ -362,6 +530,7 @@ int runLanguageServer(
                     previousUris.insert(uri);
                     publish();
                 } else if (method == "textDocument/didSave" || method == "workspace/didChangeWatchedFiles") {
+                    apiCatalogs.clear();
                     publish();
                 } else if (request) {
                     fail(-32601, "Method not supported");

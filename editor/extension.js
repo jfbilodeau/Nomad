@@ -39,7 +39,11 @@ async function activate(context) {
                     didOpen: (candidate, next) => ownsDocument(candidate) ? next(candidate) : undefined,
                     didChange: (event, next) => ownsDocument(event.document) ? next(event) : undefined,
                     didClose: (candidate, next) => ownsDocument(candidate) ? next(candidate) : undefined,
-                    didSave: (candidate, next) => ownsDocument(candidate) ? next(candidate) : undefined
+                    didSave: (candidate, next) => ownsDocument(candidate) ? next(candidate) : undefined,
+                    provideCompletionItem: (candidate, position, completionContext, token, next) =>
+                        ownsDocument(candidate) ? next(candidate, position, completionContext, token) : null,
+                    provideHover: (candidate, position, token, next) =>
+                        ownsDocument(candidate) ? next(candidate, position, token) : null
                 }
             }
         );

@@ -86,6 +86,14 @@ test('routes documents to separate project clients and reselects on configuratio
                 client.options.middleware.didChange({ document: other }, () => changes++);
             }
             assert.equal(changes, 1);
+            let completions = 0;
+            let hovers = 0;
+            for (const other of documents) {
+                client.options.middleware.provideCompletionItem(other, {}, {}, {}, () => completions++);
+                client.options.middleware.provideHover(other, {}, {}, () => hovers++);
+            }
+            assert.equal(completions, 1);
+            assert.equal(hovers, 1);
         }
         await onOpen(first);
         assert.equal(instances.length, 3);
