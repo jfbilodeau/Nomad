@@ -115,7 +115,7 @@ BOOST_AUTO_TEST_CASE(interpreter_uses_named_source_text_and_compiled_source_batc
     auto compiler = runtime.createCompiler();
     const SourceBatch batch{{{"answer", {"untitled:answer", "return 42"}}}, {}};
     CompilerContext compilation(compiler.get());
-    compiler->registerScripts(&compilation, batch);
+    compiler->registerSources(&compilation, batch);
     BOOST_REQUIRE(compiler->compileFunctions(&compilation));
 
     auto machine = runtime.createVirtualMachine();
@@ -160,7 +160,7 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
 
     auto compiler = runtime.createCompiler();
     CompilerContext compilation(compiler.get());
-    compiler->registerScripts(&compilation, {{{"answer", {"answer.nomad", "return 3"}}}, {}});
+    compiler->registerSources(&compilation, {{{"answer", {"answer.nomad", "return 3"}}}, {}});
     BOOST_REQUIRE(compiler->compileFunctions(&compilation));
     const auto parentId = runtime.registerFunction("parent", "frame.nomad", "");
     auto* parent = runtime.getFunction(parentId);
@@ -561,7 +561,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_compiled_value_returning_funct
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext compileContext(compiler.get());
-    compiler->registerScripts(&compileContext, {{{"increment", {"increment.nomad",
+    compiler->registerSources(&compileContext, {{{"increment", {"increment.nomad",
         "params value:int\nreturn value + 1"}}}, {}});
     const auto functionId = runtime.getFunctionId("increment");
     BOOST_REQUIRE(functionId != NOMAD_INVALID_ID);

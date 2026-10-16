@@ -131,7 +131,7 @@ BOOST_AUTO_TEST_CASE(statement_execution_calls_compiled_functions_with_interpret
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext compileContext(compiler.get());
-    compiler->registerScripts(&compileContext, {{{"incrementScore", {"incrementScore.nomad",
+    compiler->registerSources(&compileContext, {{{"incrementScore", {"incrementScore.nomad",
         "params value:int\nreturn value + 1"}}}, {}});
     BOOST_REQUIRE(compiler->compileFunctions(&compileContext));
 
@@ -270,7 +270,7 @@ BOOST_AUTO_TEST_CASE(nativeFunction_execution_accepts_named_compiled_callback_fu
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext compileContext(compiler.get());
-    compiler->registerScripts(&compileContext, {{{"callbackFunction", {"callbackFunction.nomad",
+    compiler->registerSources(&compileContext, {{{"callbackFunction", {"callbackFunction.nomad",
         "params value:int\nreturn value"}}}, {}});
     const auto callbackFunctionId = runtime.getFunctionId("callbackFunction");
     BOOST_REQUIRE(compiler->compileFunctions(&compileContext));
@@ -316,7 +316,7 @@ BOOST_AUTO_TEST_CASE(callback_argument_rejects_uncompiled_inline_callback_functi
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext compilation(compiler.get());
-    compiler->registerScripts(&compilation, {{{"uncompiledCallback", {"uncompiledCallback.nomad",
+    compiler->registerSources(&compilation, {{{"uncompiledCallback", {"uncompiledCallback.nomad",
         "params value:int\nreturn value"}}}, {}});
     const auto callbackFunctionId = runtime.getFunctionId("uncompiledCallback");
     BOOST_REQUIRE(callbackFunctionId != NOMAD_INVALID_ID);

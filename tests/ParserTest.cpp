@@ -95,7 +95,7 @@ BOOST_AUTO_TEST_CASE(compile_functions_reports_parse_errors_with_location)
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    compiler->registerScripts(&context, {{{"broken", {"broken.nomad", "total = 1\ntotal = (2"}}}, {}});
+    compiler->registerSources(&context, {{{"broken", {"broken.nomad", "total = 1\ntotal = (2"}}}, {}});
 
     bool compiled = true;
     BOOST_REQUIRE_NO_THROW(compiled = compiler->compileFunctions(&context));
@@ -165,7 +165,7 @@ BOOST_AUTO_TEST_CASE(compile_functions_stops_after_pass_with_errors)
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     // The `fun` header is invalid, so its body must not be parsed as top-level code.
-    compiler->registerScripts(&context, {{
+    compiler->registerSources(&context, {{
         {"broken", {"broken.nomad", "fun 1\n    total = missing\nend"}},
         {"other", {"other.nomad", "fun 2\nend"}}
     }, {}});

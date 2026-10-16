@@ -165,7 +165,7 @@ public:
     void setIndex(NomadIndex index, NomadIndex value);
 
     // The only script-input API. Copies snapshots and immediately reports loading and registration diagnostics.
-    void registerScripts(CompilerContext* context, const SourceBatch& batch);
+    void registerSources(CompilerContext* context, const SourceBatch& batch);
     // Parser interface: creates a function belonging to an already registered script.
     // Returns NOMAD_INVALID_ID and reports to context if the function name is already used.
     [[nodiscard]] NomadId createFunction(CompilerContext* context, ScriptId scriptId, const NomadString& functionName);

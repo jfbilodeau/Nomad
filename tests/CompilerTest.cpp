@@ -14,9 +14,9 @@ BOOST_AUTO_TEST_CASE(script_registration_reports_collisions_immediately)
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    compiler->registerScripts(&context, {{{"answer", {"first.nomad", "return 1"}}}, {}});
+    compiler->registerSources(&context, {{{"answer", {"first.nomad", "return 1"}}}, {}});
     BOOST_REQUIRE(runtime.getFunctionId("answer") != NOMAD_INVALID_ID);
-    compiler->registerScripts(&context, {{{"answer", {"second.nomad", "return 2"}}}, {}});
+    compiler->registerSources(&context, {{{"answer", {"second.nomad", "return 2"}}}, {}});
 
     BOOST_REQUIRE(context.getErrorCount() == 1U);
     BOOST_TEST(context.getFirstError()->sourceName == "second.nomad");
@@ -36,7 +36,7 @@ BOOST_AUTO_TEST_CASE(source_registration_reports_loading_diagnostics_immediately
          {DiagnosticSeverity::Error, "Loading error", "loader", 3, 4}}
     };
 
-    compiler->registerScripts(&context, batch);
+    compiler->registerSources(&context, batch);
 
     BOOST_TEST(context.getWarningCount() == 1U);
     BOOST_TEST(context.getErrorCount() == 1U);
@@ -52,7 +52,7 @@ BOOST_AUTO_TEST_CASE(compilation_does_not_ignore_preexisting_context_errors)
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    compiler->registerScripts(&context, {{{"broken", {"broken.nomad", "return missing"}}}, {}});
+    compiler->registerSources(&context, {{{"broken", {"broken.nomad", "return missing"}}}, {}});
     context.reportError("Existing error");
 
     BOOST_TEST(!compiler->compileFunctions(&context));
@@ -68,8 +68,8 @@ BOOST_AUTO_TEST_CASE(script_registration_and_compilation_require_matching_contex
     CompilerContext otherContext(otherCompiler.get());
     const SourceBatch batch;
 
-    BOOST_CHECK_THROW(compiler->registerScripts(nullptr, batch), NomadBug);
-    BOOST_CHECK_THROW(compiler->registerScripts(&otherContext, batch), NomadBug);
+    BOOST_CHECK_THROW(compiler->registerSources(nullptr, batch), NomadBug);
+    BOOST_CHECK_THROW(compiler->registerSources(&otherContext, batch), NomadBug);
     BOOST_CHECK_THROW((void)compiler->createFunction(nullptr, {}, "test"), NomadBug);
     BOOST_CHECK_THROW((void)compiler->createFunction(&otherContext, {}, "test"), NomadBug);
     CompilerContext context(compiler.get());
@@ -101,7 +101,7 @@ BOOST_AUTO_TEST_CASE(registered_source_batches_are_owned_by_the_compiler)
     CompilerContext context(compiler.get());
     {
         SourceBatch batch{{{"answer", {"untitled:answer", "return 42"}}}, {}};
-        compiler->registerScripts(&context, batch);
+        compiler->registerSources(&context, batch);
         batch.sources.front().source.text = "return missing";
     }
     BOOST_REQUIRE(compiler->compileFunctions(&context));
@@ -116,7 +116,7 @@ BOOST_AUTO_TEST_CASE(context_variables_compile_and_execute_with_global_ids)
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    compiler->registerScripts(&context, {{{"contextVariable", {"contextVariable.nomad",
+    compiler->registerSources(&context, {{{"contextVariable", {"contextVariable.nomad",
         "global.value = 17\nreturn global.value"}}}, {}});
     const auto functionId = runtime.getFunctionId("contextVariable");
     BOOST_REQUIRE(compiler->compileFunctions(&context));
@@ -132,7 +132,7 @@ BOOST_AUTO_TEST_CASE(context_variables_in_format_strings_use_global_ids)
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    compiler->registerScripts(&context, {{{"contextFormatString", {"contextFormatString.nomad",
+    compiler->registerSources(&context, {{{"contextFormatString", {"contextFormatString.nomad",
         "global.value = 17\nreturn $\"value {global.value}\""}}}, {}});
     const auto functionId = runtime.getFunctionId("contextFormatString");
     BOOST_REQUIRE(compiler->compileFunctions(&context));
@@ -158,11 +158,11 @@ BOOST_AUTO_TEST_CASE(functions_keep_their_script_identity_across_registration_an
         "return $\"{declared 41}\"";
     {
         SourceBatch batch{{{"z", {"editor:z", text, path}}}, {}};
-        compiler->registerScripts(&context, batch);
+        compiler->registerSources(&context, batch);
         batch.sources.front().source.filePath.reset();
     }
     const auto scriptId = compiler->getScriptId(runtime.getFunctionId("z"));
-    compiler->registerScripts(&context, {{{"a", {"untitled:a", "return 1"}}}, {}});
+    compiler->registerSources(&context, {{{"a", {"untitled:a", "return 1"}}}, {}});
     BOOST_REQUIRE(compiler->compileFunctions(&context));
 
     const auto& script = compiler->getScript(scriptId);
@@ -198,7 +198,7 @@ BOOST_AUTO_TEST_CASE(function_creation_reports_collisions_against_its_own_script
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    compiler->registerScripts(&context, {{
+    compiler->registerSources(&context, {{
         {"first", {"untitled:first", "return 1"}},
         {"second", {"untitled:second", "return 2"}}
     }, {}});

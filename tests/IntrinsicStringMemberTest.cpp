@@ -23,7 +23,7 @@ namespace {
 NomadId compileFunction(Runtime& runtime, const NomadString& source) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    compiler->registerScripts(&context, {{{"test", {"test.nomad", source}}}, {}});
+    compiler->registerSources(&context, {{{"test", {"test.nomad", source}}}, {}});
     const auto functionId = runtime.getFunctionId("test");
 
     const auto compiled = compiler->compileFunctions(&context);

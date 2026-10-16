@@ -1455,7 +1455,7 @@ void Game::compileScripts() {
         for (const auto& directory : directories) {
             paths.push_back(pathFromUtf8(m_options.resourcePath) / directory);
         }
-        compiler->registerScripts(&context, loadSourcePaths(paths));
+        compiler->registerSources(&context, loadSourcePaths(paths));
 
         compiled = compiler->compileFunctions(&context);
     } catch (NomadException& e) {

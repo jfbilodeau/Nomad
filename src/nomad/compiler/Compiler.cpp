@@ -1059,7 +1059,7 @@ void Compiler::setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode>
     reportInternalError("Unknown function id: " + toString(functionId));
 }
 
-void Compiler::registerScripts(CompilerContext* context, const SourceBatch& batch) {
+void Compiler::registerSources(CompilerContext* context, const SourceBatch& batch) {
     if (context == nullptr || context->getCompiler() != this) {
         throw NomadBug("Source registration requires this compiler's context");
     }

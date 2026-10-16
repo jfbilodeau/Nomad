@@ -46,16 +46,16 @@ void compileSources() {
         {"helpers.answer", {"untitled:answer", "return 42"}}
     }, {}};
     nomad::CompilerContext context(compiler.get());
-    compiler->registerScripts(&context, batch);
+    compiler->registerSources(&context, batch);
     const auto compiled = compiler->compileFunctions(&context);
     // Inspect context.getDiagnostics() if compilation fails.
     (void)compiled;
 }
 ```
 
-`registerScripts` is the only script-input API. A single script is a batch with
-one entry; the former `registerSources` and `registerScriptFile` APIs are replaced
-by this entry point. It copies the input, so the batch may be changed or destroyed
+`registerSources` is the only script-input API. A single script is a batch with
+one entry; the former `registerScriptFile` API is replaced by this entry point.
+It copies the input, so the batch may be changed or destroyed
 after registration. It appends sources; it does not replace already registered
 functions. Duplicate script names are reported immediately to the supplied
 `CompilerContext`. That same context collects loading and compilation diagnostics;
