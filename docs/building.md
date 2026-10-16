@@ -34,4 +34,5 @@ CMake preset before building or debugging the runtime and tests.
 The `nomad-lsp` target builds the standalone stdio language server and is included
 in SDK distributions. It is enabled by default; configure with
 `-DNOMAD_BUILD_LSP=OFF` to omit the executable. See the
-[extension instructions](../editor/README.md) to connect a local build to VS Code.
+[extension instructions](https://github.com/jfbilodeau/Nomad/blob/main/editor/README.md)
+to connect a local build to VS Code.

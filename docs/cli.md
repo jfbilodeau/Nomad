@@ -67,8 +67,9 @@ unknown arguments are rejected.
 The diagnostics-only server supports full-text document synchronization and
 UTF-16 positions. It reuses compiler source batches, applies open editor buffers
 over files on disk, and discovers the nearest project configuration. It never
-executes scripts. See the [VS Code extension guide](../editor/README.md) for setup
-and current limitations.
+executes scripts. See the
+[VS Code extension guide](https://github.com/jfbilodeau/Nomad/blob/main/editor/README.md)
+for setup and current limitations.
 
 ## Runtime
 
