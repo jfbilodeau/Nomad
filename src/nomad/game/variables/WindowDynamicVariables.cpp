@@ -84,6 +84,50 @@ void Game::initWindowDynamicVariables() {
     );
 
     m_runtime->registerDynamicVariable(
+        "window.mouse.x",
+        [this](VirtualMachine* /*interpreter*/, const RuntimeValue& value) {
+            m_mousePosition.setX(value.getFloatValue());
+        },
+        [this](VirtualMachine* /*interpreter*/, RuntimeValue& value) {
+            value.setFloatValue(m_mousePosition.getX());
+        },
+        m_runtime->getFloatType(),
+        NomadDoc("The x position of the mouse.")
+    );
+
+    m_runtime->registerDynamicVariable(
+        "window.mouse.y",
+        [this](VirtualMachine* /*interpreter*/, const RuntimeValue& value) {
+            m_mousePosition.setY(value.getFloatValue());
+        },
+        [this](VirtualMachine* /*interpreter*/, RuntimeValue& value) {
+            value.setFloatValue(m_mousePosition.getY());
+        },
+        m_runtime->getFloatType(),
+        NomadDoc("The y position of the mouse.")
+    );
+
+    m_runtime->registerDynamicVariable(
+        "window.mouse.deltaX",
+        nullptr,
+        [this](VirtualMachine* /*interpreter*/, RuntimeValue& value) {
+            value.setFloatValue(m_mouseLastPosition.getX() - m_mousePosition.getX());
+        },
+        m_runtime->getFloatType(),
+        NomadDoc("The change in x position of the mouse since last frame.")
+    );
+
+    m_runtime->registerDynamicVariable(
+        "window.mouse.deltaY",
+        nullptr,
+        [this](VirtualMachine* /*interpreter*/, RuntimeValue& value) {
+            value.setFloatValue(m_mouseLastPosition.getY() - m_mousePosition.getY());
+        },
+        m_runtime->getFloatType(),
+        NomadDoc("The change in y position of the mouse since last frame.")
+    );
+
+    m_runtime->registerDynamicVariable(
         "window.resolution.height",
         [this](VirtualMachine* /*interpreter*/, const RuntimeValue& value) {
             const auto width = getResolution().getX();

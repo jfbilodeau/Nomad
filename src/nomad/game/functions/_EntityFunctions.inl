@@ -594,6 +594,26 @@ BEGIN_ENTITY_FUNCTION(setSpriteAnchor)
     NomadDoc("Set the anchor point of the sprite of the entity.")
 END_ENTITY_FUNCTION()
 
+BEGIN_ENTITY_FUNCTION(centerSprite)
+    [this, ENTITY_FUNCTION_NAME](VirtualMachine* /*interpreter*/) {
+        BEGIN_ENTITY_BLOCK()
+
+        const auto sprite = entity->getSprite();
+        if (sprite == nullptr) {
+            log::warning(std::format("{} called for an entity without a sprite", ENTITY_FUNCTION_NAME));
+            return;
+        }
+
+        entity->setSpriteX(static_cast<NomadFloat>(sprite->getWidth()) / 2.0f);
+        entity->setSpriteY(static_cast<NomadFloat>(sprite->getHeight()) / 2.0f);
+
+        END_ENTITY_BLOCK()
+    },
+    {},
+    m_runtime->getVoidType(),
+    NomadDoc("Center the sprite on the entity by setting its x and y offsets.")
+END_ENTITY_FUNCTION()
+
 BEGIN_ENTITY_FUNCTION(setText)
     [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
         auto fontId = interpreter->getIdParameter(0);
