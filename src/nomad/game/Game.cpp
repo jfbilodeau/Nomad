@@ -4,6 +4,7 @@
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/debug/DebugConsole.hpp>
 
@@ -1450,11 +1451,11 @@ void Game::compileScripts() {
             std::vector<NomadPath>{"scripts"}
         );
 
+        std::vector<NomadPath> paths;
         for (const auto& directory : directories) {
-            compiler->loadScriptsFromPath(
-                pathToUtf8(pathFromUtf8(m_options.resourcePath) / directory)
-            );
+            paths.push_back(pathFromUtf8(m_options.resourcePath) / directory);
         }
+        compiler->registerSources(loadSourcePaths(paths));
 
         compiled = compiler->compileFunctions(&context);
     } catch (NomadException& e) {

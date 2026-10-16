@@ -22,6 +22,23 @@ BOOST_AUTO_TEST_CASE(statement_parsers_register_without_interpreter_metadata)
     BOOST_TEST(compiler->isStatement("console.test"));
 }
 
+BOOST_AUTO_TEST_CASE(registered_source_batches_are_owned_by_the_compiler)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    {
+        SourceBatch batch{{{"answer", {"untitled:answer", "return 42"}}}, {}};
+        compiler->registerSources(batch);
+        batch.sources.front().source.text = "return missing";
+    }
+    CompilerContext context(compiler.get());
+    BOOST_REQUIRE(compiler->compileFunctions(&context));
+
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("answer"), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 42);
+}
+
 BOOST_AUTO_TEST_CASE(context_variables_compile_and_execute_with_global_ids)
 {
     Runtime runtime;

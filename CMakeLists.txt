@@ -121,6 +121,7 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/compiler/FormatStringCompiler.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/Operators.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/Parser.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/SourceLoader.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/StatementParsers.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/SyntaxTree.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/Tokenizer.cpp

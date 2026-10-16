@@ -21,6 +21,57 @@ Types and function definitions used by a context must remain valid.
 
 Neither the interpreter nor its context creates or owns a VM.
 
+## Source input and compilation
+
+The compiler consumes source text, not filesystem paths. `SourceText` owns a
+`sourceName` (used in diagnostics) and `text`; the name does not need to exist on
+disk. `ScriptSource` pairs that text with an explicit `functionName`.
+`SourceBatch` holds script sources and any diagnostics from loading them.
+
+```cpp
+#include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/SourceLoader.hpp>
+#include <nomad/script/Runtime.hpp>
+
+void compileSources() {
+    nomad::Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    nomad::SourceBatch batch{{
+        {"init", {"untitled:init", "return helpers.answer"}},
+        {"helpers.answer", {"untitled:answer", "return 42"}}
+    }, {}};
+    compiler->registerSources(batch);
+    nomad::CompilerContext context(compiler.get());
+    const auto compiled = compiler->compileFunctions(&context);
+    // Inspect context.getDiagnostics() if compilation fails.
+    (void)compiled;
+}
+```
+
+`registerSources` copies the input, so the batch may be changed or destroyed
+after registration. It appends sources; it does not replace already registered
+functions. Duplicate function names are compilation errors. Use a fresh runtime
+for independent analysis snapshots, or provide a runtime containing the host APIs
+needed by the scripts. Compilation does not execute scripts.
+
+For disk input, call `loadSourcePaths(paths)` with a vector or span of filesystem
+paths, then register the returned batch. This replaces the former
+`Compiler::loadScriptsFromPath` API. The CLI tools and game use this same adapter.
+Each directory is a separate compile root; relative paths become dotted function
+names. Individual files use their filename stem. Discovery ignores non-`.nomad`
+files, skips symbolic links within directories, and visits at most ten directory
+levels, counting the root. Sources are sorted by function name and source name.
+Filesystem failures are diagnostics, including inaccessible paths and failed
+reads; they prevent compilation rather than silently compiling an incomplete
+project.
+
+An editor can load a batch, replace selected `source.text` values with unsaved
+buffers, add sources that do not exist on disk, and submit it without changing
+the compiler. `checkSources(batch, runtime)` from
+`<nomad/compiler/CompilerTools.hpp>` returns the same `CompilationResult` as
+`checkPaths`, without reading files. Loading warnings permit compilation; loading
+errors stop it before parsing.
+
 ## Persistent interpretation
 
 ```cpp
@@ -51,6 +102,17 @@ void interpretInput() {
 expression, or a supported function call. `evaluateExpression(source, context)`
 requires exactly one non-void expression; assignments and statements are rejected.
 Each entry point clears the context's previous result and error.
+
+Both entry points also accept `SourceText`, using its name for input diagnostics:
+
+```cpp
+const nomad::SourceText input{"console:input", "score + 5"};
+const auto succeeded = interpreter.evaluateExpression(input, context);
+```
+
+The string overloads preserve the existing context source name. Interpretation
+continues to share the compiler's tokenizer, parser, and type resolver; it does
+not register input as a compiled function or relax its single-line restrictions.
 
 Use `hasError()` to check for errors and `hasWarning()` to check for warnings.
 Warnings alone do not indicate failure. To display all diagnostics from the latest

@@ -7,6 +7,7 @@
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Operators.hpp>
 #include <nomad/compiler/Parser.hpp>
+#include <nomad/compiler/Source.hpp>
 #include <nomad/compiler/StatementParsers.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
@@ -163,7 +164,8 @@ public:
     void setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode> ast);
     // Borrows an AST node until placeholder preparation, before type inference.
     void deferFormatString(FormatStringLiteral* literal, NomadId functionId, NomadString sourceContent);
-    void loadScriptsFromPath(const NomadString& path);
+    // Registers owned source snapshots; loading diagnostics are reported by compileFunctions().
+    void registerSources(const SourceBatch& batch);
     // Compiles every registered script file. Errors and warnings are reported to context. Returns false if errors
     // were reported. A pass that reports errors stops the compilation before the next pass to avoid cascading errors.
     [[nodiscard]] bool compileFunctions(CompilerContext* context);
@@ -198,12 +200,6 @@ private:
         NomadId functionId;
     };
 
-    // Errors found while loading script files, before a CompilerContext is available.
-    struct LoadError {
-        NomadString message;
-        NomadString sourceName;
-    };
-
     struct PendingFormatString {
         FormatStringLiteral* literal;
         NomadId functionId;
@@ -219,7 +215,6 @@ private:
     void inferTypes(CompilerContext* context);
     [[nodiscard]] std::vector<const Type*> collectInferredTypes() const;
     void compileFunction(const FunctionSource& source);
-    void scanDirectoryForScripts(const NomadString& basePath, const NomadString& sub_path, NomadIndex max_depth);
 
     Runtime* m_runtime;
 
@@ -243,7 +238,7 @@ private:
     std::unordered_map<NomadString, ParseStatementFnRegistration> m_statements;
     std::vector<OpCodeRegistration> m_opCodeRegistrations;
     std::vector<ScriptFile> m_files;
-    std::vector<LoadError> m_loadErrors;
+    std::vector<Diagnostic> m_loadDiagnostics;
     std::vector<FunctionSource> m_sources;
     std::vector<PendingFormatString> m_pendingFormatStrings;
     std::vector<FunctionLink> m_functionLinks;

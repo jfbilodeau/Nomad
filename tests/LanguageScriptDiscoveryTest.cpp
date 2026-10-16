@@ -3,6 +3,8 @@
 #include <LanguageTestFixture.hpp>
 #include <TestDirectory.hpp>
 
+#include <nomad/compiler/SourceLoader.hpp>
+
 #include <boost/test/unit_test.hpp>
 
 #include <filesystem>
@@ -22,7 +24,7 @@ BOOST_AUTO_TEST_CASE(function_names_are_derived_from_relative_paths)
     directory.write("entities/readme.md", "neither is this");
 
     LanguageTestFixture fixture;
-    fixture.getCompiler().loadScriptsFromPath(directory.getPath().generic_string());
+    fixture.getCompiler().registerSources(loadSourcePaths(std::vector{directory.getPath()}));
 
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
 
@@ -45,7 +47,7 @@ BOOST_AUTO_TEST_CASE(discovered_functions_call_each_other)
     directory.write("entities/player/speed.nomad", "params factor:int\nreturn factor * 5");
 
     LanguageTestFixture fixture;
-    fixture.getCompiler().loadScriptsFromPath(directory.getPath().generic_string());
+    fixture.getCompiler().registerSources(loadSourcePaths(std::vector{directory.getPath()}));
 
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     BOOST_TEST(fixture.execute("init").integerValue == 15);
@@ -58,7 +60,7 @@ BOOST_AUTO_TEST_CASE(compile_errors_report_source_file)
     directory.write("sub/bad.nomad", "a = 1\nreturn missing");
 
     LanguageTestFixture fixture;
-    fixture.getCompiler().loadScriptsFromPath(directory.getPath().generic_string());
+    fixture.getCompiler().registerSources(loadSourcePaths(std::vector{directory.getPath()}));
 
     BOOST_REQUIRE(!fixture.compile());
 
@@ -75,7 +77,7 @@ BOOST_AUTO_TEST_CASE(file_and_directory_name_collision_is_rejected)
     directory.write("scene.play.intro.nomad", "return 2");
 
     LanguageTestFixture fixture;
-    BOOST_CHECK_NO_THROW(fixture.getCompiler().loadScriptsFromPath(directory.getPath().generic_string()));
+    BOOST_CHECK_NO_THROW(fixture.getCompiler().registerSources(loadSourcePaths(std::vector{directory.getPath()})));
 
     // Both files map to the function name `scene.play.intro`.
     BOOST_REQUIRE(!fixture.compile());
@@ -92,7 +94,7 @@ BOOST_AUTO_TEST_CASE(function_colliding_with_function_file_is_rejected)
     directory.write("init.nomad", "fun scene.play.intro\nend");
 
     LanguageTestFixture fixture;
-    fixture.getCompiler().loadScriptsFromPath(directory.getPath().generic_string());
+    fixture.getCompiler().registerSources(loadSourcePaths(std::vector{directory.getPath()}));
 
     BOOST_TEST(!fixture.compile());
 }
@@ -115,9 +117,25 @@ BOOST_AUTO_TEST_CASE(symbolic_linked_directories_are_not_scanned)
     }
 
     LanguageTestFixture fixture;
-    BOOST_CHECK_NO_THROW(fixture.getCompiler().loadScriptsFromPath(directory.getPath().generic_string()));
+    BOOST_CHECK_NO_THROW(fixture.getCompiler().registerSources(loadSourcePaths(std::vector{directory.getPath()})));
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     BOOST_TEST(fixture.getRuntime().getFunctionId("init") != NOMAD_INVALID_ID);
+}
+
+BOOST_AUTO_TEST_CASE(directory_depth_limit_is_preserved)
+{
+    TestDirectory directory("nomad_language_test_depth");
+    auto relative = std::filesystem::path{};
+    for (auto index = 0; index < 9; ++index) {
+        relative /= "nested";
+    }
+    directory.write(relative / "included.nomad", "return 1");
+    directory.write(relative / "nested" / "excluded.nomad", "return missing");
+
+    const auto batch = loadSourcePaths(std::vector{directory.getPath()});
+    BOOST_REQUIRE(batch.diagnostics.empty());
+    BOOST_REQUIRE(batch.sources.size() == 1U);
+    BOOST_TEST(batch.sources.front().functionName.ends_with(".included"));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -1,48 +1,20 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/compiler/Tokenizer.hpp>
+#include <nomad/compiler/Compiler.hpp>
+
+#include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/CompilerException.hpp>
 #include <nomad/compiler/StatementParsers.hpp>
+#include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/compiler/statements/EventStatement.hpp>
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
 #include <nomad/script/Runtime.hpp>
 
-#include <nomad/system/Path.hpp>
 #include <nomad/system/String.hpp>
 
-#include <nomad/compiler/Compiler.hpp>
-#include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/compiler/CompilerException.hpp>
-
-#include <filesystem>
-#include <fstream>
-
 namespace nomad {
-
-// Utility to concatenate directory / filename
-NomadString concatPath(const NomadString& directory, const NomadString& filename) {
-    if (filename.empty() && directory.empty()) {
-        // I feel like this should be an error...
-        return "";
-    }
-
-    if (filename.empty()) {
-        return directory;
-    }
-
-    if (directory.empty()) {
-        return filename;
-    }
-
-    auto lastChar = directory.back();
-
-    if (lastChar == '/' || lastChar == '\\') {
-        return directory + filename;
-    }
-
-    return directory + '/' + filename;
-}
 
 Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
     m_runtime(runtime),
@@ -1022,9 +994,12 @@ NomadId Compiler::registerScriptFile(
     if (existingFunctionId != NOMAD_INVALID_ID) {
         const auto* existingFunction = m_runtime->getFunction(existingFunctionId);
 
-        m_loadErrors.push_back(LoadError {
+        m_loadDiagnostics.push_back(Diagnostic {
+            DiagnosticSeverity::Error,
             "Function name '" + functionName + "' is already used by '" + existingFunction->getPath() + "'",
             fileName,
+            NOMAD_INVALID_INDEX,
+            NOMAD_INVALID_INDEX,
         });
 
         return NOMAD_INVALID_ID;
@@ -1085,8 +1060,11 @@ void Compiler::setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode>
     reportInternalError("Unknown function id: " + toString(functionId));
 }
 
-void Compiler::loadScriptsFromPath(const NomadString& path) {
-    scanDirectoryForScripts(path, "", 10);
+void Compiler::registerSources(const SourceBatch& batch) {
+    m_loadDiagnostics.insert(m_loadDiagnostics.end(), batch.diagnostics.begin(), batch.diagnostics.end());
+    for (const auto& script : batch.sources) {
+        (void)registerScriptFile(script.functionName, script.source.sourceName, script.source.text);
+    }
 }
 
 void Compiler::deferFormatString(FormatStringLiteral* literal, const NomadId functionId, NomadString sourceContent) {
@@ -1127,11 +1105,15 @@ bool Compiler::compileFunctions(CompilerContext* context) {
         return !hasNewErrors();
     };
 
-    for (const auto& loadError: m_loadErrors) {
-        context->reportError(loadError.message, loadError.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
+    for (const auto& diagnostic: m_loadDiagnostics) {
+        if (diagnostic.severity == DiagnosticSeverity::Error) {
+            context->reportError(diagnostic.message, diagnostic.sourceName, diagnostic.line, diagnostic.column);
+        } else {
+            context->reportWarning(diagnostic.message, diagnostic.sourceName, diagnostic.line, diagnostic.column);
+        }
     }
 
-    m_loadErrors.clear();
+    m_loadDiagnostics.clear();
 
     if (hasNewErrors()) {
         return finish();
@@ -1313,87 +1295,6 @@ void Compiler::postCompile(CompilerContext* compilerContext) {
         }
 
         contextId = m_runtime->getNextVariableContextId(contextId);
-    }
-}
-
-void Compiler::scanDirectoryForScripts(const NomadString& basePath, const NomadString& sub_path, NomadIndex max_depth) {
-    if (max_depth == 0) {
-        log::debug("Skipping directory '" + sub_path + "' (max depth reached)");
-
-        return;
-    }
-
-    const NomadString extension = ".nomad";
-
-    const auto pathString = concatPath(basePath, sub_path);
-    const auto path = pathFromUtf8(pathString);
-
-    std::error_code iteratorError;
-    auto iterator = std::filesystem::directory_iterator(
-        path,
-        std::filesystem::directory_options::skip_permission_denied,
-        iteratorError
-    );
-
-    if (iteratorError) {
-        m_loadErrors.push_back(LoadError{
-            "Failed to scan directory '" + pathToGenericUtf8(path) + "': " + iteratorError.message(),
-            pathToGenericUtf8(path)
-        });
-        return;
-    }
-
-    const auto end = std::filesystem::directory_iterator();
-
-    while (iterator != end) {
-        const auto entry = *iterator;
-        std::error_code statusError;
-
-        if (entry.is_symlink(statusError)) {
-            log::debug("Skipping symbolic link '" + pathToGenericUtf8(entry.path()) + "'");
-        } else if (statusError) {
-            log::debug(
-                "Skipping inaccessible path '" + pathToGenericUtf8(entry.path()) + "': " + statusError.message()
-            );
-        } else if (entry.is_directory(statusError)) {
-            const auto directoryName = pathToUtf8(entry.path().filename());
-            const auto newSubPath = concatPath(sub_path, directoryName);
-            scanDirectoryForScripts(basePath, newSubPath, max_depth - 1);
-        } else if (statusError) {
-            log::debug(
-                "Skipping inaccessible path '" + pathToGenericUtf8(entry.path()) + "': " + statusError.message()
-            );
-        } else if (entry.is_regular_file(statusError) && entry.path().extension() == extension) {
-            const auto fileName = pathToGenericUtf8(entry.path());
-            auto functionName = concatPath(sub_path, pathToUtf8(entry.path().stem()));
-            std::replace(functionName.begin(), functionName.end(), '\\', '.');
-            std::replace(functionName.begin(), functionName.end(), '/', '.');
-
-            // Read source
-            std::ifstream file(entry.path(), std::ios::binary);
-            if (!file.is_open()) {
-                m_loadErrors.push_back(LoadError {"Failed to open file '" + fileName + "'", fileName});
-
-                continue;
-            }
-
-            NomadString source{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-
-            registerScriptFile(functionName, fileName, source);
-        } else if (statusError) {
-            log::debug(
-                "Skipping inaccessible path '" + pathToGenericUtf8(entry.path()) + "': " + statusError.message()
-            );
-        }
-
-        iterator.increment(iteratorError);
-
-        if (iteratorError) {
-            log::debug(
-                "Failed to continue scanning directory '" + pathToGenericUtf8(path) + "': " + iteratorError.message()
-            );
-            break;
-        }
     }
 }
 

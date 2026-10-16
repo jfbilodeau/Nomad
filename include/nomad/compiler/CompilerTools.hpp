@@ -3,6 +3,7 @@
 #pragma once
 
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/Source.hpp>
 
 #include <filesystem>
 #include <optional>
@@ -37,6 +38,9 @@ struct DocumentationResult {
     const std::vector<std::filesystem::path>& paths,
     Runtime* runtime = nullptr
 );
+// Uses the same compilation pipeline without accessing the filesystem or executing scripts.
+[[nodiscard]] CompilationResult checkSources(const SourceBatch& batch, Runtime* runtime = nullptr);
+
 void validateEntryFunction(
     CompilationResult& result,
     const Runtime* runtime,

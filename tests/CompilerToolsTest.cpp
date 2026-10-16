@@ -1,12 +1,14 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
 #include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/game/Alignment.hpp>
 #include <nomad/game/BodyType.hpp>
 #include <nomad/game/Cardinal.hpp>
 #include <nomad/game/Game.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <TestDirectory.hpp>
@@ -20,6 +22,123 @@ using namespace nomad;
 using namespace nomad::test;
 
 BOOST_AUTO_TEST_SUITE(compilation)
+
+BOOST_AUTO_TEST_CASE(checks_named_in_memory_sources_without_reading_files)
+{
+    const SourceBatch batch{{
+        {"init", {"untitled:init", "return helpers.answer"}},
+        {"helpers.answer", {"untitled:answer", "return 42"}}
+    }, {}};
+    Runtime runtime;
+    const auto result = checkSources(batch, &runtime);
+
+    BOOST_REQUIRE(result.succeeded());
+    BOOST_TEST(runtime.getFunctionId("helpers.answer") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getFunction(runtime.getFunctionId("init"))->getPath() == "untitled:init");
+}
+
+BOOST_AUTO_TEST_CASE(checks_editor_text_instead_of_disk_contents)
+{
+    TestDirectory directory("nomad_compilation_test_overlay");
+    const auto file = directory.write("answer.nomad", "return missing");
+    auto batch = loadSourcePaths(std::vector{directory.getPath()});
+    BOOST_REQUIRE(batch.diagnostics.empty());
+    BOOST_REQUIRE(batch.sources.size() == 1U);
+    BOOST_TEST(batch.sources.front().source.sourceName == file.generic_string());
+    batch.sources.front().source.text = "return 42";
+
+    BOOST_TEST(checkSources(batch).succeeded());
+    BOOST_TEST(!checkPath(file).succeeded());
+}
+
+BOOST_AUTO_TEST_CASE(in_memory_diagnostics_keep_source_names_and_locations)
+{
+    const SourceBatch batch{{{"broken", {"untitled:broken", "value = 1\nreturn missing"}}}, {}};
+    const auto result = checkSources(batch);
+
+    BOOST_TEST(!result.succeeded());
+    BOOST_REQUIRE(!result.diagnostics.empty());
+    BOOST_TEST(result.diagnostics.front().sourceName == "untitled:broken");
+    BOOST_TEST(result.diagnostics.front().line == 2U);
+    BOOST_TEST(result.diagnostics.front().column != NOMAD_INVALID_INDEX);
+}
+
+BOOST_AUTO_TEST_CASE(batch_loading_errors_prevent_compilation)
+{
+    const SourceBatch batch{
+        {{"broken", {"untitled:broken", "return missing"}}},
+        {{DiagnosticSeverity::Error, "Could not load dependency", "untitled:dependency", 3, 4}}
+    };
+    const auto result = checkSources(batch);
+
+    BOOST_TEST(!result.succeeded());
+    BOOST_TEST(result.errorCount == 1U);
+    BOOST_REQUIRE(result.diagnostics.size() == 1U);
+    BOOST_TEST(result.diagnostics.front().message == "Could not load dependency");
+    BOOST_TEST(result.diagnostics.front().sourceName == "untitled:dependency");
+    BOOST_TEST(result.diagnostics.front().line == 3U);
+    BOOST_TEST(result.diagnostics.front().column == 4U);
+}
+
+BOOST_AUTO_TEST_CASE(batch_loading_warnings_allow_compilation)
+{
+    const SourceBatch batch{
+        {{"answer", {"untitled:answer", "return 42"}}},
+        {{DiagnosticSeverity::Warning, "Source warning", "untitled:answer", 1, 1}}
+    };
+    const auto result = checkSources(batch);
+
+    BOOST_TEST(result.succeeded());
+    BOOST_TEST(result.warningCount == 1U);
+    BOOST_REQUIRE(result.diagnostics.size() == 1U);
+    BOOST_TEST(result.diagnostics.front().sourceName == "untitled:answer");
+}
+
+BOOST_AUTO_TEST_CASE(in_memory_function_name_collisions_are_rejected)
+{
+    const SourceBatch batch{{
+        {"answer", {"untitled:first", "return 1"}},
+        {"answer", {"untitled:second", "return 2"}}
+    }, {}};
+    const auto result = checkSources(batch);
+
+    BOOST_TEST(!result.succeeded());
+    BOOST_REQUIRE(result.diagnostics.size() == 1U);
+    BOOST_TEST(result.diagnostics.front().sourceName == "untitled:second");
+    BOOST_TEST(result.diagnostics.front().message.find("already used") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(filesystem_adapter_retains_loading_errors_and_valid_sources)
+{
+    TestDirectory directory("nomad_compilation_test_load_errors");
+    const auto valid = directory.write("answer.nomad", "return 42");
+    const auto invalid = directory.write("notes.txt", "not a script");
+    const auto missing = directory.getPath() / "missing.nomad";
+    const auto batch = loadSourcePaths(std::vector{missing, valid, invalid});
+
+    BOOST_REQUIRE(batch.sources.size() == 1U);
+    BOOST_TEST(batch.sources.front().functionName == "answer");
+    BOOST_TEST(batch.sources.front().source.text == "return 42");
+    BOOST_REQUIRE(batch.diagnostics.size() == 2U);
+    BOOST_TEST(batch.diagnostics[0].sourceName == missing.generic_string());
+    BOOST_TEST(batch.diagnostics[1].sourceName == invalid.generic_string());
+    BOOST_TEST(!checkSources(batch).succeeded());
+}
+
+BOOST_AUTO_TEST_CASE(filesystem_adapter_returns_deterministically_ordered_snapshots)
+{
+    TestDirectory directory("nomad_compilation_test_load_order");
+    directory.write("z.nomad", "return 3");
+    directory.write("a.nomad", "return 1");
+    directory.write("nested/b.nomad", "return 2");
+    const auto batch = loadSourcePaths(std::vector{directory.getPath()});
+
+    BOOST_REQUIRE(batch.diagnostics.empty());
+    BOOST_REQUIRE(batch.sources.size() == 3U);
+    BOOST_TEST(batch.sources[0].functionName == "a");
+    BOOST_TEST(batch.sources[1].functionName == "nested.b");
+    BOOST_TEST(batch.sources[2].functionName == "z");
+}
 
 BOOST_AUTO_TEST_CASE(checks_a_single_source_file)
 {

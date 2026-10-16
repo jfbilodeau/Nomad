@@ -19,6 +19,19 @@ namespace nomad {
 
 namespace {
 
+void retainDiagnostics(InterpreterContext& evaluation, std::span<const Diagnostic> diagnostics,
+    const NomadString& sourceName) {
+    for (auto diagnostic : diagnostics) {
+        diagnostic.sourceName = sourceName;
+        evaluation.addDiagnostic(diagnostic);
+    }
+}
+
+void reportInputError(InterpreterContext& evaluation, const SourceText& source, const NomadString& message) {
+    evaluation.addDiagnostic({DiagnosticSeverity::Error, message, source.sourceName,
+        NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX});
+}
+
 class RegisterRestoration {
 public:
     explicit RegisterRestoration(VirtualMachine& machine):
@@ -38,21 +51,23 @@ private:
 } // namespace
 
 bool Interpreter::evaluateExpression(const NomadString& source, InterpreterContext& evaluation) const {
+    return evaluateExpression(SourceText{evaluation.m_function->getPath(), source}, evaluation);
+}
+
+bool Interpreter::evaluateExpression(const SourceText& source, InterpreterContext& evaluation) const {
     evaluation.clearError();
     evaluation.clearResult();
     evaluation.validateFrame();
     auto compiler = evaluation.m_runtime->createCompiler();
     CompilerContext context(compiler.get(), CompilerMode::Interpreter, &evaluation);
     auto* function = evaluation.m_function.get();
-    Tokenizer tokens(&context, function->getPath(), source);
-    for (const auto& diagnostic : context.getDiagnostics()) {
-        evaluation.addDiagnostic(diagnostic);
-    }
+    Tokenizer tokens(&context, source.sourceName, source.text);
+    retainDiagnostics(evaluation, context.getDiagnostics(), source.sourceName);
     if (context.hasError()) {
         return false;
     }
     if (tokens.getLineCount() != 1 || !tokens.nextLine()) {
-        evaluation.setError("Interpreter requires one non-empty expression");
+        reportInputError(evaluation, source, "Interpreter requires one non-empty expression");
         return false;
     }
     auto expression = parser::parseExpression(&context, function, &tokens);
@@ -61,14 +76,12 @@ bool Interpreter::evaluateExpression(const NomadString& source, InterpreterConte
     }
     // Tokenization diagnostics were already retained above.
     const auto retainedDiagnostics = evaluation.getDiagnostics().size();
-    for (const auto& diagnostic : context.getDiagnostics().subspan(retainedDiagnostics)) {
-        evaluation.addDiagnostic(diagnostic);
-    }
+    retainDiagnostics(evaluation, context.getDiagnostics().subspan(retainedDiagnostics), source.sourceName);
     if (context.hasError()) {
         return false;
     }
     if (expression == nullptr || expression->getType() == nullptr || expression->getType()->isVoid()) {
-        evaluation.setError("Interpreter expression must return a value");
+        reportInputError(evaluation, source, "Interpreter expression must return a value");
         return false;
     }
     auto* machine = evaluation.getVirtualMachine();
@@ -83,6 +96,10 @@ bool Interpreter::evaluateExpression(const NomadString& source, InterpreterConte
 }
 
 NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext& evaluation) const {
+    return execute(SourceText{evaluation.m_function->getPath(), source}, evaluation);
+}
+
+NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& evaluation) const {
     evaluation.validateFrame();
     evaluation.clearError();
     evaluation.clearResult();
@@ -90,15 +107,13 @@ NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext&
     try {
         auto compiler = evaluation.m_runtime->createCompiler();
         CompilerContext compilerContext(compiler.get(), CompilerMode::Interpreter, &evaluation);
-        Tokenizer tokenizer(&compilerContext, evaluation.m_function->getPath(), source);
+        Tokenizer tokenizer(&compilerContext, source.sourceName, source.text);
         if (tokenizer.getLineCount() > 1) {
-            evaluation.setError("Interpreter accepts a single line of input");
+            reportInputError(evaluation, source, "Interpreter accepts a single line of input");
             return false;
         }
         if (compilerContext.hasError()) {
-            for (const auto& diagnostic : compilerContext.getDiagnostics()) {
-                evaluation.addDiagnostic(diagnostic);
-            }
+            retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
             return false;
         }
         if (tokenizer.endOfLine()) {
@@ -141,16 +156,14 @@ NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext&
                 );
             }
         } else if (isStatement && !isAssignment) {
-            evaluation.setError("Statement '" + firstToken.textValue + "' is not supported by the interpreter");
+            reportInputError(evaluation, source, "Statement '" + firstToken.textValue + "' is not supported by the interpreter");
             return false;
         } else {
             statement = parser::parseLine(&compilerContext, evaluation.m_function.get(), &tokenizer);
         }
 
         if (compilerContext.hasError()) {
-            for (const auto& diagnostic : compilerContext.getDiagnostics()) {
-                evaluation.addDiagnostic(diagnostic);
-            }
+            retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
             return false;
         }
 
@@ -160,27 +173,23 @@ NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext&
         }
 
         if (!statement->resolve(&compilerContext, evaluation.m_function.get())) {
-            for (const auto& diagnostic : compilerContext.getDiagnostics()) {
-                evaluation.addDiagnostic(diagnostic);
-            }
+            retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
             if (!evaluation.hasError()) {
-                evaluation.setError("Failed to resolve interpreter input");
+                reportInputError(evaluation, source, "Failed to resolve interpreter input");
             }
             return false;
         }
 
-        for (const auto& diagnostic : compilerContext.getDiagnostics()) {
-            evaluation.addDiagnostic(diagnostic);
-        }
+        retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
         statement->evaluate(evaluation);
         return !evaluation.hasError();
     } catch (const NomadException& exception) {
         evaluation.clearResult();
-        evaluation.setError(exception.what());
+        reportInputError(evaluation, source, exception.what());
         return false;
     } catch (const std::exception& exception) {
         evaluation.clearResult();
-        evaluation.setError(exception.what());
+        reportInputError(evaluation, source, exception.what());
         return false;
     }
 }

@@ -109,6 +109,38 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_requires_an_active_script_function)
     BOOST_CHECK_THROW((InterpreterContext{*machine, function}), NomadBug);
 }
 
+BOOST_AUTO_TEST_CASE(interpreter_uses_named_source_text_and_compiled_source_batches)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const SourceBatch batch{{{"answer", {"untitled:answer", "return 42"}}}, {}};
+    compiler->registerSources(batch);
+    CompilerContext compilation(compiler.get());
+    BOOST_REQUIRE(compiler->compileFunctions(&compilation));
+
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    const Interpreter interpreter;
+    BOOST_REQUIRE(interpreter.execute(SourceText{"console:input", "value = answer"}, context));
+    BOOST_REQUIRE(interpreter.evaluateExpression(SourceText{"console:input", "value + 1"}, context));
+    BOOST_REQUIRE(context.getResult() != nullptr);
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 43);
+
+    for (const auto* text : {"missing", "\"unterminated", "1 +", "1\n2"}) {
+        const SourceText source{"console:input", text};
+        BOOST_TEST(!interpreter.execute(source, context));
+        BOOST_REQUIRE(!context.getDiagnostics().empty());
+        for (const auto& diagnostic : context.getDiagnostics()) {
+            BOOST_TEST(diagnostic.sourceName == source.sourceName);
+        }
+        BOOST_TEST(!interpreter.evaluateExpression(source, context));
+        BOOST_REQUIRE(!context.getDiagnostics().empty());
+        for (const auto& diagnostic : context.getDiagnostics()) {
+            BOOST_TEST(diagnostic.sourceName == source.sourceName);
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on_active_vm)
 {
     Runtime runtime;
