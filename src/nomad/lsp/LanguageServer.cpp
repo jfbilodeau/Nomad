@@ -33,9 +33,16 @@ namespace {
 namespace json = boost::json;
 constexpr std::size_t maximumMessageSize = 16 * 1024 * 1024;
 
+enum class CompletionItemKind {
+    Function = 3,
+    Class = 7,
+    Keyword = 14,
+    Constant = 21,
+};
+
 struct ApiSymbol {
     NomadString name;
-    int kind;
+    CompletionItemKind kind;
     NomadString signature;
     NomadString documentation;
 };
@@ -56,13 +63,14 @@ std::vector<ApiSymbol> createApiSymbols(const NomadPath& path) {
     std::vector<KeywordDefinition> keywords;
     runtime->getKeywords(keywords);
     for (const auto& keyword : keywords) {
-        symbols.push_back({keyword.keyword, 14, keyword.keyword, keyword.doc});
+        symbols.push_back({keyword.keyword, CompletionItemKind::Keyword, keyword.keyword, keyword.doc});
     }
     std::vector<const Type*> types;
     runtime->getTypes(types);
     for (const auto* type : types) {
         if (!type->isInternal()) {
-            symbols.push_back({type->getTypeName(), 7, type->getTypeName(), type->getDocumentation()});
+            symbols.push_back({type->getTypeName(), CompletionItemKind::Class,
+                type->getTypeName(), type->getDocumentation()});
         }
     }
     std::vector<NativeFunctionDefinition> functions;
@@ -82,12 +90,14 @@ std::vector<ApiSymbol> createApiSymbols(const NomadPath& path) {
             }
         }
         signature += " -> " + function.returnType->getTypeName();
-        symbols.push_back({function.name, 3, std::move(signature), std::move(documentation)});
+        symbols.push_back({function.name, CompletionItemKind::Function,
+            std::move(signature), std::move(documentation)});
     }
     for (auto id = runtime->getFirstConstantId(); id != NOMAD_INVALID_ID;
         id = runtime->getNextConstantId(id)) {
         const auto& name = runtime->getConstantName(id);
-        symbols.push_back({name, 21, name + ":" + runtime->getConstantType(id)->getTypeName(), ""});
+        symbols.push_back({name, CompletionItemKind::Constant,
+            name + ":" + runtime->getConstantType(id)->getTypeName(), ""});
     }
     std::ranges::sort(symbols, [](const auto& left, const auto& right) {
         return left.name == right.name ? left.signature < right.signature : left.name < right.name;
@@ -482,7 +492,7 @@ int runLanguageServer(
                             for (const auto& symbol : found->second) {
                                 if (!symbol.name.starts_with(word.prefix)) continue;
                                 items.push_back(json::object{
-                                    {"label", symbol.name}, {"kind", symbol.kind},
+                                    {"label", symbol.name}, {"kind", static_cast<int>(symbol.kind)},
                                     {"detail", symbol.signature}, {"documentation", symbolDocumentation(symbol)},
                                     {"textEdit", {{"range", word.range}, {"newText", symbol.name}}}
                                 });
