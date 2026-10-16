@@ -13,12 +13,15 @@
 
 #include <nomad/Version.hpp>
 
+#include <boost/nowide/args.hpp>
+
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <vector>
 
-int main(const int argc, char** argv) {
+int main(int argc, char** argv) {
+    boost::nowide::args nowideArgs(argc, argv);
     using namespace nomad;
     try {
         std::vector<NomadString> arguments;

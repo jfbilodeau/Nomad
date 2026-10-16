@@ -299,7 +299,7 @@ endif()
 option(NOMAD_BUILD_RUNTIME "Build the Nomad game runtime" ON)
 if(NOMAD_BUILD_RUNTIME)
     add_executable(nomad-runtime apps/runtime/main.cpp)
-    target_link_libraries(nomad-runtime PRIVATE Nomad::Engine)
+    target_link_libraries(nomad-runtime PRIVATE Nomad::Engine Boost::nowide)
 
     nomad_copy_runtime_dependencies(nomad-runtime)
     if(APPLE)

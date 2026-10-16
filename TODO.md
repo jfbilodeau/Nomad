@@ -6,6 +6,7 @@ Things the author wants to do.
 
 
 ## Open
+[ ] Configure logging via `nomad.toml`
 [ ] Sample game
 [ ] Select text language
 [ ] Make runtime plugable (Game, system, etc...)
