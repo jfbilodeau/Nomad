@@ -155,6 +155,8 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/script/VirtualMachine.cpp
 
         ${NOMAD_SOURCE_DIR}/nomad/system/Memory.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/system/ModuleManifest.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/system/NomadConfiguration.cpp
         ${NOMAD_SOURCE_DIR}/nomad/system/String.cpp
         ${NOMAD_SOURCE_DIR}/nomad/system/TempHeap.cpp
 )

@@ -108,22 +108,24 @@ int run(const int argc, char **argv) {
         }
         catch (const NomadException &e) {
             SDL_ShowSimpleMessageBox((SDL_MESSAGEBOX_ERROR), "Internal Error", e.what(), nullptr);
-            log::fatal(e.what());
+            log::error(e.what());
+            return EXIT_FAILURE;
         }
         catch (const std::bad_alloc &e) {
             SDL_ShowSimpleMessageBox((SDL_MESSAGEBOX_ERROR), "Out of memory", e.what(), nullptr);
-            log::fatal(e.what());
+            log::error(e.what());
+            return EXIT_FAILURE;
         }
     }
     catch (std::exception &e) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", e.what(), nullptr);
-        log::fatal(e.what());
+        log::error(e.what());
 
         return EXIT_FAILURE;
     }
     catch (...) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", "An unknown error occurred", nullptr);
-        log::fatal("Unknown error");
+        log::error("Unknown error");
 
         return EXIT_FAILURE;
     }

@@ -29,7 +29,7 @@ void Logger::setLogLevel(const LogLevel level) {
 }
 
 LogLevel Logger::getLogLevel() const {
-    return m_logLevel;
+    return m_logLevel.load();
 }
 
 void Logger::debug(const NomadStringView message, const Location& location) {
@@ -58,38 +58,52 @@ void Logger::fatal(const NomadStringView message, const Location& location) {
     // Make sure the error is logged immediately.
     flush();
 
-    exit(1);
+    throw NomadException(NomadString(message));
 }
 
 void Logger::addSink(LogSink* sink) {
+    const auto lock = std::lock_guard(m_deliveryMutex);
+    if (sink == nullptr) {
+        throw NomadBug("Cannot register a null log sink");
+    }
     m_sinks.push_back(sink);
 }
 
 void Logger::removeSink(LogSink* sink) {
+    const auto lock = std::lock_guard(m_deliveryMutex);
     m_sinks.erase(std::ranges::remove(m_sinks, sink).begin(), m_sinks.end());
 }
 
 void Logger::clear() {
+    const auto lock = std::lock_guard(m_entriesMutex);
     m_entries.clear();
 }
 
 void Logger::flush() {
-    for (auto& sink: m_sinks) {
+    const auto deliveryLock = std::lock_guard(m_deliveryMutex);
+    std::vector<LogEntry> entries;
+    {
+        const auto entriesLock = std::lock_guard(m_entriesMutex);
+        entries.swap(m_entries);
+    }
+    const auto sinks = m_sinks;
+    for (auto* sink: sinks) {
+        if (std::ranges::find(m_sinks, sink) == m_sinks.end()) {
+            continue;
+        }
         sink->begin();
 
-        for (auto& entry: m_entries) {
+        for (const auto& entry: entries) {
             sink->log(&entry);
         }
 
         sink->end();
     }
 
-    m_entries.clear();
-
 }
 
 void Logger::log(const LogLevel level, const NomadStringView message, const Location& location) {
-    if (level < m_logLevel) {
+    if (level < m_logLevel.load()) {
         // Skip!
         return;
     }
@@ -130,6 +144,7 @@ void Logger::log(const LogLevel level, const NomadStringView message, const Loca
         message
     );
 
+    const auto lock = std::lock_guard(m_entriesMutex);
     m_entries.emplace_back(LogEntry{
         time,
         level,

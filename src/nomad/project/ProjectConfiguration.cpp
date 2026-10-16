@@ -2,6 +2,7 @@
 
 #include <nomad/project/ProjectConfiguration.hpp>
 
+#include <nomad/system/ModuleManifest.hpp>
 #include <nomad/system/Path.hpp>
 #include <nomad/system/String.hpp>
 
@@ -553,7 +554,7 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
 
     const auto schema = document["schema"].value<NomadInteger>();
 
-    if (!schema) {
+    if (!document["schema"].is_integer() || !schema) {
         throw ProjectConfigurationError("Configuration field 'schema' must be an integer");
     }
 
@@ -583,6 +584,9 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
     }
 
     NomadProject result;
+    std::ostringstream retainedDocument;
+    retainedDocument << toml::toml_formatter{document};
+    result.document = NomadConfiguration::parse(retainedDocument.str());
     auto& configuration = result.configuration;
     auto& gameOptions = result.gameOptions;
     configuration.schema = *schema;
@@ -601,6 +605,29 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
         throw ProjectConfigurationError(
             "Configuration field 'nomad.version' is invalid: " + NomadString(error.what())
         );
+    }
+
+    if (result.document.contains("nomad.modules")) {
+        try {
+            configuration.sdk.modules = result.document.requireStringArray("nomad.modules");
+        } catch (const NomadConfigurationError& error) {
+            throw ProjectConfigurationError(error.what());
+        }
+
+        std::vector<NomadString> names;
+        for (const auto& name : configuration.sdk.modules) {
+            if (!isValidModuleName(name)) {
+                throw ProjectConfigurationError(
+                    "Configuration field 'nomad.modules' must contain only logical module names"
+                );
+            }
+            if (std::ranges::find(names, name) != names.end()) {
+                throw ProjectConfigurationError(
+                    "Configuration field 'nomad.modules' contains duplicate module '" + name + "'"
+                );
+            }
+            names.push_back(name);
+        }
     }
 
     if (game != nullptr && game->contains("debug")) {
@@ -707,7 +734,7 @@ NomadPath resolveProjectResourcePath(const NomadProject& project) {
 NomadString serializeReleaseProject(const NomadProject& project) {
     const auto& configuration = project.configuration;
 
-    return
+    const auto typedConfiguration =
         "schema = " + std::to_string(configuration.schema) + "\n"
         "\n"
         "[project]\n"
@@ -724,6 +751,30 @@ NomadString serializeReleaseProject(const NomadProject& project) {
         serializeSpriteConfiguration(project.gameOptions.sprites) +
         serializeTextConfiguration(project.gameOptions.text) +
         serializeScriptConfiguration(project.gameOptions.scripts);
+
+    auto document = project.document;
+    document.erase("project.executable");
+    document.erase("resources");
+    document.erase("package");
+    for (const auto field : {
+        "game.debug",
+        "window.title",
+        "window.resolution",
+        "window.size",
+        "window.fullscreen",
+        "window.splash-image",
+        "audio.directories",
+        "sprites.directories",
+        "sprites.max-texture-size",
+        "sprites.padding",
+        "text.directories",
+        "scripts.directories"
+    }) {
+        document.erase(field);
+    }
+    document.merge(NomadConfiguration::parse(typedConfiguration));
+    document.setStringArray("nomad.modules", configuration.sdk.modules);
+    return document.serialize();
 }
 
 void validateNomadVersionCompatibility(

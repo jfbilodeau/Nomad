@@ -64,6 +64,8 @@ target_link_libraries(
     Boost::json
     Boost::locale
     Boost::spirit
+    PRIVATE
+    tomlplusplus::tomlplusplus
 )
 
 target_link_libraries(

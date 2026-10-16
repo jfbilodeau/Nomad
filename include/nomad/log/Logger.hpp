@@ -4,7 +4,9 @@
 
 #include <nomad/Nomad.hpp>
 
+#include <atomic>
 #include <chrono>
+#include <mutex>
 #include <source_location>
 #include <string>
 #include <vector>
@@ -76,7 +78,7 @@ public:
     void info(NomadStringView message, const Location& location = Location());
     void warning(NomadStringView message, const Location& location = Location());
     void error(NomadStringView message, const Location& location = Location());
-    void fatal(NomadStringView message, const Location& location = Location());
+    [[noreturn]] void fatal(NomadStringView message, const Location& location = Location());
 
     void addSink(LogSink* sink);
     void removeSink(LogSink* sink);
@@ -87,7 +89,9 @@ public:
 private:
     void log(LogLevel level, NomadStringView message, const Location& location);
 
-    LogLevel m_logLevel = LogLevel::Info;
+    std::atomic<LogLevel> m_logLevel = LogLevel::Info;
+    std::mutex m_entriesMutex;
+    std::recursive_mutex m_deliveryMutex;
     std::vector<LogSink*> m_sinks;
     std::vector<LogEntry> m_entries;
 };
@@ -102,7 +106,7 @@ void info(NomadStringView message, const Location& location = Location());
 // void warn(NomadStringView message, const Location& location = Location());
 void warning(NomadStringView message, const Location& location = Location());
 void error(NomadStringView message, const Location& location = Location());
-void fatal(NomadStringView message, const Location& location = Location());
+[[noreturn]] void fatal(NomadStringView message, const Location& location = Location());
 
 void addSink(LogSink* sink);
 void removeSink(LogSink* sink);

@@ -5,6 +5,7 @@ add_executable(
     ./CallableCatalogTest.cpp
     ./ColorTest.cpp
     ./CompilerContextTest.cpp
+    ./CompilerHooksTest.cpp
     ./CompilerTest.cpp
     ./CompilerToolsTest.cpp
     ./DebugDrawTest.cpp
@@ -36,6 +37,8 @@ add_executable(
     ./LanguageTestFixture.cpp
     ./LanguageTypeTest.cpp
     ./LogTest.cpp
+    ./ModuleManifestTest.cpp
+    ./NomadConfigurationTest.cpp
     ./main.cpp
     ./NomadVersionTest.cpp
     ./PackedSpriteRegistrationTest.cpp
