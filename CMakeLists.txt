@@ -9,6 +9,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(BUILD_SHARED_LIBS ON)
 
+# Bundled dependencies must find sibling libraries after relocation, including indirect dependencies.
+if(UNIX AND NOT APPLE)
+        list(APPEND CMAKE_BUILD_RPATH "$ORIGIN")
+        set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+endif()
+
 add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/utf-8>)
 if(CMAKE_GENERATOR MATCHES "^Visual Studio")
         add_compile_options(
