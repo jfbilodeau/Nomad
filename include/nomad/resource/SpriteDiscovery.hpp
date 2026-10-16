@@ -8,7 +8,7 @@
 
 namespace nomad {
 
-class SpriteDiscoveryError final : public NomadException {
+class SpriteDiscoveryException final : public NomadException {
 public:
     using NomadException::NomadException;
 };

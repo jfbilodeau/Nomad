@@ -173,8 +173,8 @@ BOOST_AUTO_TEST_CASE(reports_sprite_failure_after_successful_script_compilation)
 
     BOOST_CHECK_EXCEPTION(
         createGameDiscardingResult(directory),
-        SpritePackerError,
-        [](const SpritePackerError& error) {
+        SpritePackerException,
+        [](const SpritePackerException& error) {
             return NomadString(error.what()).find("Failed to load image for sprite") != NomadString::npos;
         }
     );

@@ -11,7 +11,7 @@
 
 namespace nomad {
 
-class NomadVersionError final : public NomadException {
+class NomadVersionException final : public NomadException {
 public:
     using NomadException::NomadException;
 };
@@ -28,7 +28,7 @@ public:
         m_patch(patch)
     {
         if (major < 0 || minor < 0 || patch < 0) {
-            throw NomadVersionError("Nomad version components cannot be negative");
+            throw NomadVersionException("Nomad version components cannot be negative");
         }
     }
 
@@ -43,7 +43,7 @@ public:
             secondSeparator == NomadStringView::npos ||
             value.find('.', secondSeparator + 1U) != NomadStringView::npos
         ) {
-            throw NomadVersionError(
+            throw NomadVersionException(
                 "Invalid Nomad version '" + NomadString(value) + "'; expected major.minor.patch"
             );
         }
@@ -95,7 +95,7 @@ private:
             error != std::errc() ||
             position != end
         ) {
-            throw NomadVersionError(
+            throw NomadVersionException(
                 "Invalid Nomad version '" + NomadString(version) + "'; expected major.minor.patch"
             );
         }

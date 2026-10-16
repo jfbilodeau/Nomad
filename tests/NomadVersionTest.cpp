@@ -28,11 +28,11 @@ BOOST_AUTO_TEST_CASE(compares_versions_by_components)
 
 BOOST_AUTO_TEST_CASE(rejects_non_canonical_versions)
 {
-    BOOST_CHECK_THROW((void)NomadVersion::parse("1.2"), NomadVersionError);
-    BOOST_CHECK_THROW((void)NomadVersion::parse("1.2.3.4"), NomadVersionError);
-    BOOST_CHECK_THROW((void)NomadVersion::parse("1.02.3"), NomadVersionError);
-    BOOST_CHECK_THROW((void)NomadVersion::parse("1.2.beta"), NomadVersionError);
-    BOOST_CHECK_THROW((void)NomadVersion::parse("-1.2.3"), NomadVersionError);
+    BOOST_CHECK_THROW((void)NomadVersion::parse("1.2"), NomadVersionException);
+    BOOST_CHECK_THROW((void)NomadVersion::parse("1.2.3.4"), NomadVersionException);
+    BOOST_CHECK_THROW((void)NomadVersion::parse("1.02.3"), NomadVersionException);
+    BOOST_CHECK_THROW((void)NomadVersion::parse("1.2.beta"), NomadVersionException);
+    BOOST_CHECK_THROW((void)NomadVersion::parse("-1.2.3"), NomadVersionException);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

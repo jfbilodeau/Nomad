@@ -15,7 +15,7 @@ struct SDL_Surface;
 
 namespace nomad {
 
-class SpritePackerError final : public NomadException {
+class SpritePackerException final : public NomadException {
 public:
     using NomadException::NomadException;
 };

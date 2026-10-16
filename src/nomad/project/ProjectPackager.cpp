@@ -33,7 +33,7 @@ namespace {
     const NomadPath& path,
     const std::error_code& error
 ) {
-    throw ProjectPackagingError(
+    throw ProjectPackagingException(
         NomadString(operation) + " '" + pathToUtf8(path) + "': " + error.message()
     );
 }
@@ -164,7 +164,7 @@ void copyResources(
             raiseFilesystemError("Failed to inspect resource directory", resources, error);
         }
 
-        throw ProjectPackagingError("Resource directory does not exist: '" + pathToUtf8(resources) + "'");
+        throw ProjectPackagingException("Resource directory does not exist: '" + pathToUtf8(resources) + "'");
     }
 
     std::filesystem::recursive_directory_iterator iterator(resources, error);
@@ -178,7 +178,7 @@ void copyResources(
         const auto& entry = *iterator;
 
         if (entry.is_symlink(error)) {
-            throw ProjectPackagingError(
+            throw ProjectPackagingException(
                 "Project resources must not contain symbolic links: '" + pathToUtf8(entry.path()) + "'"
             );
         }
@@ -199,7 +199,7 @@ void copyResources(
                 copyResource(entry.path(), NomadPath("res") / relative);
             }
         } else if (!entry.is_directory(error)) {
-            throw ProjectPackagingError("Unsupported project resource: '" + pathToUtf8(entry.path()) + "'");
+            throw ProjectPackagingException("Unsupported project resource: '" + pathToUtf8(entry.path()) + "'");
         }
 
         if (error) {
@@ -231,20 +231,20 @@ RuntimeBundle loadRuntimeBundle(
     const auto manifest = directory / "runtime.json";
     std::error_code manifestError;
     if (std::filesystem::is_symlink(std::filesystem::symlink_status(manifest, manifestError))) {
-        throw ProjectPackagingError("Runtime manifest must not be a symbolic link");
+        throw ProjectPackagingException("Runtime manifest must not be a symbolic link");
     }
     std::ifstream input(manifest, std::ios::binary);
     if (!input) {
-        throw ProjectPackagingError("Failed to open runtime manifest '" + pathToUtf8(manifest) + "'");
+        throw ProjectPackagingException("Failed to open runtime manifest '" + pathToUtf8(manifest) + "'");
     }
     const NomadString text{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     if (input.bad()) {
-        throw ProjectPackagingError("Failed to read runtime manifest '" + pathToUtf8(manifest) + "'");
+        throw ProjectPackagingException("Failed to read runtime manifest '" + pathToUtf8(manifest) + "'");
     }
     boost::system::error_code parseError;
     const auto value = boost::json::parse(text, parseError);
     if (parseError || !value.is_object()) {
-        throw ProjectPackagingError("Invalid runtime manifest JSON: '" + pathToUtf8(manifest) + "'");
+        throw ProjectPackagingException("Invalid runtime manifest JSON: '" + pathToUtf8(manifest) + "'");
     }
     const auto& object = value.as_object();
     const auto* schema = object.if_contains("schema");
@@ -255,28 +255,28 @@ RuntimeBundle loadRuntimeBundle(
         (!module && (!version || !target)) ||
         (version && !version->is_string()) || (target && !target->is_string()) ||
         !entries || !entries->is_array()) {
-        throw ProjectPackagingError("Runtime manifest requires schema 1 and files (host bundles also require version and target)");
+        throw ProjectPackagingException("Runtime manifest requires schema 1 and files (host bundles also require version and target)");
     }
     if (version && version->as_string() != project.configuration.sdk.version.toString()) {
-        throw ProjectPackagingError("Runtime bundle version does not match the project's required Nomad version");
+        throw ProjectPackagingException("Runtime bundle version does not match the project's required Nomad version");
     }
     RuntimeBundle bundle{target ? NomadString(target->as_string()) : NomadString{}, {}};
     if ((target && bundle.target.empty()) || std::ranges::any_of(bundle.target, [](const unsigned char character) {
         return !(character >= 'a' && character <= 'z') && !(character >= '0' && character <= '9') && character != '-';
     })) {
-        throw ProjectPackagingError("Runtime manifest target must contain only lowercase letters, digits, and hyphens");
+        throw ProjectPackagingException("Runtime manifest target must contain only lowercase letters, digits, and hyphens");
     }
     auto runtimeCount = 0;
     auto licenseCount = 0;
     std::set<NomadString> paths;
     for (const auto& entry : entries->as_array()) {
         if (!entry.is_object()) {
-            throw ProjectPackagingError("Runtime manifest file entries must be objects");
+            throw ProjectPackagingException("Runtime manifest file entries must be objects");
         }
         const auto* pathValue = entry.as_object().if_contains("path");
         const auto* roleValue = entry.as_object().if_contains("role");
         if (!pathValue || !pathValue->is_string() || !roleValue || !roleValue->is_string()) {
-            throw ProjectPackagingError("Runtime manifest files require string path and role fields");
+            throw ProjectPackagingException("Runtime manifest files require string path and role fields");
         }
         const NomadString name(pathValue->as_string());
         const auto path = pathFromUtf8(name);
@@ -286,21 +286,21 @@ RuntimeBundle loadRuntimeBundle(
             path.is_absolute() || path.has_root_name() || std::ranges::any_of(path, [](const auto& part) {
                 return part == ".." || part == ".";
             }) || !paths.insert(name).second) {
-            throw ProjectPackagingError("Unsafe or duplicate runtime manifest path: '" + name + "'");
+            throw ProjectPackagingException("Unsafe or duplicate runtime manifest path: '" + name + "'");
         }
         const NomadString role(roleValue->as_string());
         if (role == "runtime") {
             if (module) {
-                throw ProjectPackagingError("Module runtime manifests must not declare a runtime executable");
+                throw ProjectPackagingException("Module runtime manifests must not declare a runtime executable");
             }
             ++runtimeCount;
             if (path.has_parent_path()) {
-                throw ProjectPackagingError("Runtime executable must be at the bundle root");
+                throw ProjectPackagingException("Runtime executable must be at the bundle root");
             }
         } else if (role == "license") {
             ++licenseCount;
         } else if (role != "library") {
-            throw ProjectPackagingError("Unknown runtime manifest file role: '" + role + "'");
+            throw ProjectPackagingException("Unknown runtime manifest file role: '" + role + "'");
         }
         auto current = directory;
         for (const auto& part : path) {
@@ -308,16 +308,16 @@ RuntimeBundle loadRuntimeBundle(
             std::error_code error;
             const auto status = std::filesystem::symlink_status(current, error);
             if (error || std::filesystem::is_symlink(status)) {
-                throw ProjectPackagingError("Missing or symbolic-linked runtime file: '" + name + "'");
+                throw ProjectPackagingException("Missing or symbolic-linked runtime file: '" + name + "'");
             }
         }
         if (!std::filesystem::is_regular_file(directory / path)) {
-            throw ProjectPackagingError("Declared runtime file is not a regular file: '" + name + "'");
+            throw ProjectPackagingException("Declared runtime file is not a regular file: '" + name + "'");
         }
         bundle.files.push_back({path, role});
     }
     if (!module && (runtimeCount != 1 || licenseCount == 0)) {
-        throw ProjectPackagingError("Runtime manifest must declare exactly one runtime executable and at least one license");
+        throw ProjectPackagingException("Runtime manifest must declare exactly one runtime executable and at least one license");
     }
     return bundle;
 }
@@ -330,7 +330,7 @@ void validatePackagePath(const NomadPath& path) {
         path.lexically_normal() != path || std::ranges::any_of(path, [](const auto& part) {
             return part == "." || part == ".." || part.empty();
         })) {
-        throw ProjectPackagingError("Unsafe package entry: '" + name + "'");
+        throw ProjectPackagingException("Unsafe package entry: '" + name + "'");
     }
 }
 
@@ -341,11 +341,11 @@ void validateSourceFile(const NomadPath& source) {
         std::error_code error;
         const auto status = std::filesystem::symlink_status(current, error);
         if (error || std::filesystem::is_symlink(status)) {
-            throw ProjectPackagingError("Missing or symbolic-linked package source: '" + pathToUtf8(source) + "'");
+            throw ProjectPackagingException("Missing or symbolic-linked package source: '" + pathToUtf8(source) + "'");
         }
     }
     if (!std::filesystem::is_regular_file(source)) {
-        throw ProjectPackagingError("Package source is not a regular file: '" + pathToUtf8(source) + "'");
+        throw ProjectPackagingException("Package source is not a regular file: '" + pathToUtf8(source) + "'");
     }
 }
 
@@ -356,7 +356,7 @@ bool haveIdenticalContent(const NomadPath& first, const NomadPath& second) {
     std::ifstream firstInput(first, std::ios::binary);
     std::ifstream secondInput(second, std::ios::binary);
     if (!firstInput || !secondInput) {
-        throw ProjectPackagingError("Failed to compare native runtime dependencies");
+        throw ProjectPackagingException("Failed to compare native runtime dependencies");
     }
     std::array<char, 65536> firstBuffer{};
     std::array<char, 65536> secondBuffer{};
@@ -369,7 +369,7 @@ bool haveIdenticalContent(const NomadPath& first, const NomadPath& second) {
         }
     }
     if (!firstInput.eof() || !secondInput.eof()) {
-        throw ProjectPackagingError("Failed to compare native runtime dependencies");
+        throw ProjectPackagingException("Failed to compare native runtime dependencies");
     }
     return true;
 }
@@ -403,7 +403,7 @@ public:
             output.write(content.data(), static_cast<std::streamsize>(content.size()));
             output.close();
             if (!output) {
-                throw ProjectPackagingError("Failed to write package entry: '" + pathToUtf8(relative) + "'");
+                throw ProjectPackagingException("Failed to write package entry: '" + pathToUtf8(relative) + "'");
             }
         }
     }
@@ -417,11 +417,11 @@ public:
         const auto key = stringToLowerAscii(pathToGenericUtf8(relative));
         const auto next = m_entries.lower_bound(key);
         if (next != m_entries.end() && (next->first == key || next->first.starts_with(key + "/"))) {
-            throw ProjectPackagingError("Package entry collision: '" + pathToUtf8(relative) + "'");
+            throw ProjectPackagingException("Package entry collision: '" + pathToUtf8(relative) + "'");
         }
         for (auto parent = relative.parent_path(); !parent.empty(); parent = parent.parent_path()) {
             if (m_entries.contains(stringToLowerAscii(pathToGenericUtf8(parent)))) {
-                throw ProjectPackagingError("Package entry collision: '" + pathToUtf8(relative) + "'");
+                throw ProjectPackagingException("Package entry collision: '" + pathToUtf8(relative) + "'");
             }
         }
         m_entries.emplace(key, Entry{relative, source, nativeDependency});
@@ -453,7 +453,7 @@ private:
 void checkArchive(const int result, archive* writer) {
     if (result != ARCHIVE_OK) {
         const auto* message = archive_error_string(writer);
-        throw ProjectPackagingError("Failed to write ZIP archive: " + NomadString(message ? message : "unknown archive error"));
+        throw ProjectPackagingException("Failed to write ZIP archive: " + NomadString(message ? message : "unknown archive error"));
     }
 }
 
@@ -476,11 +476,11 @@ void writeDeterministicZipArchive(
 ) {
     std::ofstream output(destination, std::ios::binary | std::ios::trunc);
     if (!output) {
-        throw ProjectPackagingError("Failed to open ZIP archive '" + pathToUtf8(destination) + "'");
+        throw ProjectPackagingException("Failed to open ZIP archive '" + pathToUtf8(destination) + "'");
     }
     const std::unique_ptr<archive, decltype(&archive_write_free)> writer(archive_write_new(), &archive_write_free);
     if (!writer) {
-        throw ProjectPackagingError("Failed to allocate ZIP writer");
+        throw ProjectPackagingException("Failed to allocate ZIP writer");
     }
     checkArchive(archive_write_set_format_zip(writer.get()), writer.get());
     checkArchive(archive_write_set_options(writer.get(), "zip:compression=deflate,zip:compression-level=6,zip:hdrcharset=UTF-8"), writer.get());
@@ -491,11 +491,11 @@ void writeDeterministicZipArchive(
     for (const auto& file : files) {
         std::ifstream input(file, std::ios::binary);
         if (!input) {
-            throw ProjectPackagingError("Failed to read staged file '" + pathToUtf8(file) + "'");
+            throw ProjectPackagingException("Failed to read staged file '" + pathToUtf8(file) + "'");
         }
         const std::unique_ptr<archive_entry, decltype(&archive_entry_free)> entry(archive_entry_new(), &archive_entry_free);
         if (!entry) {
-            throw ProjectPackagingError("Failed to allocate ZIP entry");
+            throw ProjectPackagingException("Failed to allocate ZIP entry");
         }
         const auto name = pathToGenericUtf8(file.lexically_relative(root));
         archive_entry_set_pathname_utf8(entry.get(), name.c_str());
@@ -511,18 +511,18 @@ void writeDeterministicZipArchive(
             input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
             const auto size = input.gcount();
             if (size > 0 && archive_write_data(writer.get(), buffer.data(), static_cast<size_t>(size)) != size) {
-                throw ProjectPackagingError("Failed to write ZIP entry '" + name + "'");
+                throw ProjectPackagingException("Failed to write ZIP entry '" + name + "'");
             }
         }
         if (!input.eof()) {
-            throw ProjectPackagingError("Failed to read staged file '" + pathToUtf8(file) + "'");
+            throw ProjectPackagingException("Failed to read staged file '" + pathToUtf8(file) + "'");
         }
         checkArchive(archive_write_finish_entry(writer.get()), writer.get());
     }
     checkArchive(archive_write_close(writer.get()), writer.get());
     output.close();
     if (!output) {
-        throw ProjectPackagingError("Failed to close ZIP archive '" + pathToUtf8(destination) + "'");
+        throw ProjectPackagingException("Failed to close ZIP archive '" + pathToUtf8(destination) + "'");
     }
 }
 
@@ -539,11 +539,11 @@ ProjectPackageResult packageProject(
     const auto& configuration = project.configuration;
 
     if (configuration.type != ProjectConfigurationType::Development) {
-        throw ProjectPackagingError("A release manifest cannot be used to create another package");
+        throw ProjectPackagingException("A release manifest cannot be used to create another package");
     }
 
     if (!isProjectRelativeDirectory(configuration.package.output)) {
-        throw ProjectPackagingError("Configuration field 'package.output' must be a project-relative directory");
+        throw ProjectPackagingException("Configuration field 'package.output' must be a project-relative directory");
     }
 
     const auto outputDirectory = (project.root / configuration.package.output).lexically_normal();
@@ -554,7 +554,7 @@ ProjectPackageResult packageProject(
         isWithin(outputDirectory, resources) ||
         isWithin(resources, outputDirectory)
     ) {
-        throw ProjectPackagingError("Package output must not contain or replace the project resources");
+        throw ProjectPackagingException("Package output must not contain or replace the project resources");
     }
 
     const auto validComponent = [](const NomadString& value) {
@@ -562,7 +562,7 @@ ProjectPackageResult packageProject(
             std::ranges::none_of(value, [](const unsigned char character) { return character < 32; });
     };
     if (!validComponent(configuration.project.executable) || !validComponent(configuration.project.version)) {
-        throw ProjectPackagingError("Project executable and version must be valid archive filename components");
+        throw ProjectPackagingException("Project executable and version must be valid archive filename components");
     }
     const auto bundle = loadRuntimeBundle(project, runtimeDirectory);
     std::vector<ModuleManifest> modules;
@@ -573,15 +573,15 @@ ProjectPackageResult packageProject(
         for (const auto& module : modules) {
             auto dependencies = loadRuntimeBundle(project, module.directory, true);
             if (!dependencies.target.empty() && dependencies.target != bundle.target) {
-                throw ProjectPackagingError("Module runtime bundle target does not match the host bundle");
+                throw ProjectPackagingException("Module runtime bundle target does not match the host bundle");
             }
             moduleBundles.push_back(std::move(dependencies));
         }
         moduleHost = std::make_unique<ModuleHost>(
             project.document, project.root, resources, modules, std::vector<NomadString>{}, ModuleMode::Packaging
         );
-    } catch (const ModuleError& error) {
-        throw ProjectPackagingError("Failed to load packaging modules: " + NomadString(error.what()));
+    } catch (const ModuleException& error) {
+        throw ProjectPackagingException("Failed to load packaging modules: " + NomadString(error.what()));
     }
     const auto output = outputDirectory / pathFromUtf8(configuration.project.executable + "-" +
         bundle.target + "-" + configuration.project.version + ".zip");
@@ -594,7 +594,7 @@ ProjectPackageResult packageProject(
     std::error_code error;
 
     if (std::filesystem::exists(staging, error)) {
-        throw ProjectPackagingError("Package staging directory already exists: '" + pathToUtf8(staging) + "'");
+        throw ProjectPackagingException("Package staging directory already exists: '" + pathToUtf8(staging) + "'");
     }
 
     if (error) {
@@ -602,7 +602,7 @@ ProjectPackageResult packageProject(
     }
 
     if (std::filesystem::exists(backup, error)) {
-        throw ProjectPackagingError("Package backup directory already exists: '" + pathToUtf8(backup) + "'");
+        throw ProjectPackagingException("Package backup directory already exists: '" + pathToUtf8(backup) + "'");
     }
 
     if (error) {
@@ -616,13 +616,13 @@ ProjectPackageResult packageProject(
     }
 
     if (std::filesystem::exists(temporaryArchive, error)) {
-        throw ProjectPackagingError("Temporary ZIP archive already exists: '" + pathToUtf8(temporaryArchive) + "'");
+        throw ProjectPackagingException("Temporary ZIP archive already exists: '" + pathToUtf8(temporaryArchive) + "'");
     }
     if (error) {
         raiseFilesystemError("Failed to inspect temporary ZIP archive", temporaryArchive, error);
     }
     if (outputExists && !std::filesystem::is_regular_file(output, error)) {
-        throw ProjectPackagingError("Package output is not a regular file: '" + pathToUtf8(output) + "'");
+        throw ProjectPackagingException("Package output is not a regular file: '" + pathToUtf8(output) + "'");
     }
 
     if (error) {
@@ -630,7 +630,7 @@ ProjectPackageResult packageProject(
     }
 
     if (outputExists && !force) {
-        throw ProjectPackagingError(
+        throw ProjectPackagingException(
             "Package archive already exists; use --force to replace it: '" + pathToUtf8(output) + "'"
         );
     }
@@ -651,7 +651,7 @@ ProjectPackageResult packageProject(
                     relative += entry.path.extension();
                 }
                 if (stringToLowerAscii(pathToUtf8(*relative.begin())) == "res") {
-                    throw ProjectPackagingError("Runtime file collides with package resources: '" + pathToUtf8(relative) + "'");
+                    throw ProjectPackagingException("Runtime file collides with package resources: '" + pathToUtf8(relative) + "'");
                 }
                 packageFiles.copy(directory / entry.path, relative, entry.role != "runtime");
             }
@@ -695,7 +695,7 @@ ProjectPackageResult packageProject(
         try {
             moduleHost->package(context);
         } catch (const std::exception& moduleError) {
-            throw ProjectPackagingError("Module packaging failed: " + NomadString(moduleError.what()));
+            throw ProjectPackagingException("Module packaging failed: " + NomadString(moduleError.what()));
         }
         copyResources(project, excludedResources, context.copyFile);
         release.setStringArray("nomad.modules", moduleNames);

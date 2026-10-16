@@ -228,8 +228,8 @@ BOOST_AUTO_TEST_CASE(requires_force_to_replace_nonempty_output)
 
     BOOST_CHECK_EXCEPTION(
         (void)packageProject(configuration, runtimeDirectory, false),
-        ProjectPackagingError,
-        [](const ProjectPackagingError& error) {
+        ProjectPackagingException,
+        [](const ProjectPackagingException& error) {
             return NomadString(error.what()).find("use --force") != NomadString::npos;
         }
     );
@@ -257,7 +257,7 @@ BOOST_AUTO_TEST_CASE(cleans_staging_directory_after_failure)
 
     BOOST_CHECK_THROW(
         (void)packageProject(configuration, runtimeDirectory, false),
-        ProjectPackagingError
+        ProjectPackagingException
     );
     const auto output = archivePath(directory);
     BOOST_TEST(!std::filesystem::exists(output));
@@ -310,11 +310,11 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_manifest_without_writing_package)
         R"({"schema":1,"version":"0.1.0","target":"windows-x64","files":[{"path":"engine","role":"runtime"},{"path":"missing.txt","role":"license"}]})",
         R"({"schema":1,"version":"0.1.0","target":"windows-x64","files":[{"path":"engine","role":"runtime"}]})"
     };
-    BOOST_CHECK_THROW((void)packageProject(configuration, runtime, false, true), ProjectPackagingError);
+    BOOST_CHECK_THROW((void)packageProject(configuration, runtime, false, true), ProjectPackagingException);
     for (const auto& manifest : manifests) {
         directory.write("runtime/runtime.json", manifest);
-        BOOST_CHECK_THROW((void)packageProject(configuration, runtime, false, true), ProjectPackagingError);
-        BOOST_CHECK_THROW((void)packageProject(configuration, runtime, false), ProjectPackagingError);
+        BOOST_CHECK_THROW((void)packageProject(configuration, runtime, false, true), ProjectPackagingException);
+        BOOST_CHECK_THROW((void)packageProject(configuration, runtime, false), ProjectPackagingException);
         BOOST_TEST(!std::filesystem::exists(directory.getPath() / "dist"));
     }
 }
@@ -335,7 +335,7 @@ BOOST_AUTO_TEST_CASE(rejects_renamed_runtime_destination_collision)
     const auto configuration = loadNomadProject(projectFile);
     BOOST_CHECK_THROW(
         (void)packageProject(configuration, directory.getPath() / "runtime", false, true),
-        ProjectPackagingError
+        ProjectPackagingException
     );
     BOOST_TEST(!std::filesystem::exists(directory.getPath() / "dist"));
 }
@@ -350,7 +350,7 @@ BOOST_AUTO_TEST_CASE(requires_configured_modules_without_a_legacy_runtime_fallba
     const auto project = loadNomadProject(projectFile);
     BOOST_CHECK_THROW(
         (void)packageProject(project, directory.getPath() / "runtime", false, true),
-        ProjectPackagingError
+        ProjectPackagingException
     );
     BOOST_TEST(!std::filesystem::exists(directory.getPath() / "dist"));
 }
@@ -399,8 +399,8 @@ BOOST_AUTO_TEST_CASE(packages_only_selected_modules_and_deduplicates_identical_n
 
     const auto previousArchive = readFile(result.output);
     directory.write("modules/nomad-system/shared.dll", "different native dependency");
-    BOOST_CHECK_THROW((void)packageProject(project, runtime, true, true), ProjectPackagingError);
-    BOOST_CHECK_THROW((void)packageProject(project, runtime, true), ProjectPackagingError);
+    BOOST_CHECK_THROW((void)packageProject(project, runtime, true, true), ProjectPackagingException);
+    BOOST_CHECK_THROW((void)packageProject(project, runtime, true), ProjectPackagingException);
     BOOST_TEST(readFile(result.output) == previousArchive);
     BOOST_TEST(!std::filesystem::exists(NomadPath(pathToUtf8(result.output) + ".staging")));
 }
@@ -456,7 +456,7 @@ BOOST_AUTO_TEST_CASE(game_packaging_hook_plans_generated_sprites_without_writing
     context.isResourceExcluded = [](const NomadPath& path) {
         return path.filename() == NOMAD_SPRITE_CATALOG_FILE_NAME;
     };
-    BOOST_CHECK_THROW(packageGameResources(&context), ModuleError);
+    BOOST_CHECK_THROW(packageGameResources(&context), ModuleException);
 }
 
 BOOST_AUTO_TEST_CASE(failed_game_generation_preserves_previous_archive_and_cleans_staging)
@@ -484,8 +484,8 @@ BOOST_AUTO_TEST_CASE(failed_game_generation_preserves_previous_archive_and_clean
     const auto original = packageProject(project, runtime, false);
     const auto originalBytes = readFile(original.output);
     directory.write("assets/sprites/broken.png", "invalid PNG");
-    BOOST_CHECK_THROW((void)packageProject(project, runtime, true, true), ProjectPackagingError);
-    BOOST_CHECK_THROW((void)packageProject(project, runtime, true), ProjectPackagingError);
+    BOOST_CHECK_THROW((void)packageProject(project, runtime, true, true), ProjectPackagingException);
+    BOOST_CHECK_THROW((void)packageProject(project, runtime, true), ProjectPackagingException);
     BOOST_TEST(readFile(original.output) == originalBytes);
     BOOST_TEST(!std::filesystem::exists(NomadPath(pathToUtf8(original.output) + ".staging")));
     BOOST_TEST(!std::filesystem::exists(NomadPath(pathToUtf8(original.output) + ".tmp")));

@@ -34,7 +34,7 @@ BOOST_AUTO_TEST_CASE(reports_cycles_with_dependency_chain) {
         "schema = 1\n[module]\nname = 'second'\n[nomad]\nmodules = ['first']\n");
     BOOST_CHECK_EXCEPTION(
         resolveModules(directory.getPath(), {"first"}),
-        ModuleError,
+        ModuleException,
         [](const auto& error) {
             return NomadString(error.what()).find("first -> second -> first") != NomadString::npos;
         }
@@ -57,10 +57,10 @@ BOOST_AUTO_TEST_CASE(resolves_transitive_dependencies_and_explicit_roots_without
 
 BOOST_AUTO_TEST_CASE(rejects_invalid_missing_and_mismatched_modules) {
     TestDirectory directory("nomad_module_invalid");
-    BOOST_CHECK_THROW(resolveModules(directory.getPath(), {"../outside"}), ModuleError);
-    BOOST_CHECK_THROW(resolveModules(directory.getPath(), {"missing"}), ModuleError);
+    BOOST_CHECK_THROW(resolveModules(directory.getPath(), {"../outside"}), ModuleException);
+    BOOST_CHECK_THROW(resolveModules(directory.getPath(), {"missing"}), ModuleException);
     directory.write("wrong/module.toml", "schema = 1\n[module]\nname = 'different'\n");
-    BOOST_CHECK_THROW(resolveModules(directory.getPath(), {"wrong"}), ModuleError);
+    BOOST_CHECK_THROW(resolveModules(directory.getPath(), {"wrong"}), ModuleException);
 }
 
 BOOST_AUTO_TEST_CASE(rejects_invalid_manifest_fields) {
@@ -72,7 +72,7 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_manifest_fields) {
         "schema = 1\n[module]\nname = 'module'\n[nomad]\nmodules = ['other', 'other']\n"
     }) {
         directory.write("module/module.toml", content);
-        BOOST_CHECK_THROW(resolveModules(directory.getPath(), {"module"}), ModuleError);
+        BOOST_CHECK_THROW(resolveModules(directory.getPath(), {"module"}), ModuleException);
     }
 }
 

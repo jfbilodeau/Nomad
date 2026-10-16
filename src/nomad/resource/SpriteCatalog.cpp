@@ -26,7 +26,7 @@ namespace {
     const NomadPath& catalog,
     const NomadStringView message
 ) {
-    throw SpriteCatalogError(
+    throw SpriteCatalogException(
         "Invalid sprite catalog '" + pathToUtf8(catalog) + "': " + NomadString(message)
     );
 }
@@ -148,7 +148,7 @@ void validateSpriteRoot(
         relativeDirectory.is_absolute() ||
         *relativeDirectory.begin() == ".."
     ) {
-        throw SpriteCatalogError(
+        throw SpriteCatalogException(
             "Sprite directory must remain within the resource directory: '" +
             pathToUtf8(configuredDirectory) + "'"
         );
@@ -165,15 +165,15 @@ void validateSpriteRoot(
             return;
         }
 
-        throw SpriteCatalogError("Sprite directory does not exist: '" + pathToUtf8(directory) + "'");
+        throw SpriteCatalogException("Sprite directory does not exist: '" + pathToUtf8(directory) + "'");
     }
     if (error) {
-        throw SpriteCatalogError(
+        throw SpriteCatalogException(
             "Failed to inspect sprite directory '" + pathToUtf8(directory) + "': " + error.message()
         );
     }
     if (std::filesystem::is_symlink(status) || !std::filesystem::is_directory(status)) {
-        throw SpriteCatalogError("Sprite directory is invalid: '" + pathToUtf8(directory) + "'");
+        throw SpriteCatalogException("Sprite directory is invalid: '" + pathToUtf8(directory) + "'");
     }
 }
 
@@ -195,12 +195,12 @@ bool hasSpriteCatalog(const NomadPath& spriteRoot) {
         return false;
     }
     if (error) {
-        throw SpriteCatalogError(
+        throw SpriteCatalogException(
             "Failed to inspect sprite catalog '" + pathToUtf8(catalog) + "': " + error.message()
         );
     }
     if (std::filesystem::is_symlink(status) || !std::filesystem::is_regular_file(status)) {
-        throw SpriteCatalogError("Sprite catalog is not a regular file: '" + pathToUtf8(catalog) + "'");
+        throw SpriteCatalogException("Sprite catalog is not a regular file: '" + pathToUtf8(catalog) + "'");
     }
 
     return true;
@@ -211,7 +211,7 @@ std::vector<PackedSpriteGroup> loadSpriteCatalog(const NomadPath& spriteRoot) {
     std::ifstream input(catalog, std::ios::binary);
 
     if (!input) {
-        throw SpriteCatalogError("Failed to open sprite catalog '" + pathToUtf8(catalog) + "'");
+        throw SpriteCatalogException("Failed to open sprite catalog '" + pathToUtf8(catalog) + "'");
     }
 
     const NomadString text{
@@ -220,7 +220,7 @@ std::vector<PackedSpriteGroup> loadSpriteCatalog(const NomadPath& spriteRoot) {
     };
 
     if (input.bad()) {
-        throw SpriteCatalogError("Failed to read sprite catalog '" + pathToUtf8(catalog) + "'");
+        throw SpriteCatalogException("Failed to read sprite catalog '" + pathToUtf8(catalog) + "'");
     }
 
     boost::system::error_code parseError;
@@ -364,7 +364,7 @@ void writeSpriteCatalog(
     std::filesystem::create_directories(spriteRoot, error);
 
     if (error) {
-        throw SpriteCatalogError(
+        throw SpriteCatalogException(
             "Failed to create compiled sprite directory '" +
             pathToUtf8(spriteRoot) + "': " + error.message()
         );
@@ -382,7 +382,7 @@ void writeSpriteCatalog(
             const auto pagePath = spriteRoot / pathFromUtf8(fileName);
 
             if (!IMG_SavePNG(group.pages[pageIndex].surface.get(), pathToUtf8(pagePath).c_str())) {
-                throw SpriteCatalogError(
+                throw SpriteCatalogException(
                     "Failed to write packed sprite page '" +
                     pathToUtf8(pagePath) + "': " + SDL_GetError()
                 );
@@ -412,7 +412,7 @@ void writeSpriteCatalog(
     std::ofstream output(catalog, std::ios::binary | std::ios::trunc);
 
     if (!output) {
-        throw SpriteCatalogError("Failed to create sprite catalog '" + pathToUtf8(catalog) + "'");
+        throw SpriteCatalogException("Failed to create sprite catalog '" + pathToUtf8(catalog) + "'");
     }
 
     output << boost::json::serialize(boost::json::object{
@@ -421,7 +421,7 @@ void writeSpriteCatalog(
     });
 
     if (!output) {
-        throw SpriteCatalogError("Failed to write sprite catalog '" + pathToUtf8(catalog) + "'");
+        throw SpriteCatalogException("Failed to write sprite catalog '" + pathToUtf8(catalog) + "'");
     }
 }
 

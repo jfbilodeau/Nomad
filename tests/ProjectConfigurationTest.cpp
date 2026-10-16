@@ -69,7 +69,7 @@ BOOST_AUTO_TEST_CASE(requires_modules_and_accepts_explicit_module_lists)
     const auto legacyFile = directory.write("missing.toml", missingModules);
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(legacyFile),
-        ProjectConfigurationError,
+        ProjectConfigurationException,
         [](const auto& error) {
             return NomadString(error.what()).find("nomad.modules") != NomadString::npos;
         }
@@ -79,7 +79,7 @@ BOOST_AUTO_TEST_CASE(requires_modules_and_accepts_explicit_module_lists)
     missingModules.erase(missingModules.find("[package]"));
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(directory.write("missing-release.toml", missingModules)),
-        ProjectConfigurationError,
+        ProjectConfigurationException,
         [](const auto& error) {
             return NomadString(error.what()).find("nomad.modules") != NomadString::npos;
         }
@@ -115,7 +115,7 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_module_types_names_and_duplicates)
         const auto file = directory.write("invalid.toml", text);
         BOOST_CHECK_EXCEPTION(
             (void)loadNomadProject(file),
-            ProjectConfigurationError,
+            ProjectConfigurationException,
             [](const auto& error) {
                 return NomadString(error.what()).find("nomad.modules") != NomadString::npos;
             }
@@ -435,8 +435,8 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_audio_directories)
 
         BOOST_CHECK_EXCEPTION(
             (void)loadNomadProject(projectFile),
-            ProjectConfigurationError,
-            [](const ProjectConfigurationError& error) {
+            ProjectConfigurationException,
+            [](const ProjectConfigurationException& error) {
                 return NomadString(error.what()).find("audio.directories") != NomadString::npos;
             }
         );
@@ -513,8 +513,8 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_sprite_directories)
 
         BOOST_CHECK_EXCEPTION(
             (void)loadNomadProject(projectFile),
-            ProjectConfigurationError,
-            [](const ProjectConfigurationError& error) {
+            ProjectConfigurationException,
+            [](const ProjectConfigurationException& error) {
                 return NomadString(error.what()).find("sprites.directories") != NomadString::npos;
             }
         );
@@ -531,8 +531,8 @@ BOOST_AUTO_TEST_CASE(rejects_partial_development_configuration)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(projectFile),
-        ProjectConfigurationError,
-        [](const ProjectConfigurationError& error) {
+        ProjectConfigurationException,
+        [](const ProjectConfigurationException& error) {
             return NomadString(error.what()).find("requires 'project.executable'") != NomadString::npos;
         }
     );
@@ -652,7 +652,7 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_optional_fields_instead_of_defaulting)
         text.replace(text.find(replacement.first), std::string(replacement.first).size(), replacement.second);
         const auto file = directory.write(NOMAD_PROJECT_FILE_NAME, text);
         BOOST_TEST_CONTEXT("replacement: " << replacement.first << " -> " << replacement.second) {
-            BOOST_CHECK_THROW((void)loadNomadProject(file), ProjectConfigurationError);
+            BOOST_CHECK_THROW((void)loadNomadProject(file), ProjectConfigurationException);
         }
     }
 }
@@ -692,8 +692,8 @@ BOOST_AUTO_TEST_CASE(reports_invalid_schema_and_required_fields)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(unsupportedFile),
-        ProjectConfigurationError,
-        [](const ProjectConfigurationError& error) {
+        ProjectConfigurationException,
+        [](const ProjectConfigurationException& error) {
             return std::string(error.what()).find("Unsupported project schema 2") != std::string::npos;
         }
     );
@@ -704,8 +704,8 @@ BOOST_AUTO_TEST_CASE(reports_invalid_schema_and_required_fields)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(missingNameFile),
-        ProjectConfigurationError,
-        [](const ProjectConfigurationError& error) {
+        ProjectConfigurationException,
+        [](const ProjectConfigurationException& error) {
             return std::string(error.what()).find("project.name") != std::string::npos;
         }
     );
@@ -724,8 +724,8 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_nomad_versions)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(projectFile),
-        ProjectConfigurationError,
-        [](const ProjectConfigurationError& error) {
+        ProjectConfigurationException,
+        [](const ProjectConfigurationException& error) {
             return std::string(error.what()).find("nomad.version") != std::string::npos;
         }
     );
@@ -741,8 +741,8 @@ BOOST_AUTO_TEST_CASE(validates_nomad_version_compatibility)
     );
     BOOST_CHECK_EXCEPTION(
         validateNomadVersionCompatibility(NomadVersion(1, 3, 0), NomadVersion(1, 2, 3)),
-        ProjectConfigurationError,
-        [](const ProjectConfigurationError& error) {
+        ProjectConfigurationException,
+        [](const ProjectConfigurationException& error) {
             const auto message = std::string(error.what());
             return
                 message.find("requires Nomad 1.3.0") != std::string::npos &&
@@ -764,8 +764,8 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_executable_names_and_exclusions)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(executableFile),
-        ProjectConfigurationError,
-        [](const ProjectConfigurationError& error) {
+        ProjectConfigurationException,
+        [](const ProjectConfigurationException& error) {
             return std::string(error.what()).find("extensionless file name") != std::string::npos;
         }
     );
@@ -780,8 +780,8 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_executable_names_and_exclusions)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(exclusionsFile),
-        ProjectConfigurationError,
-        [](const ProjectConfigurationError& error) {
+        ProjectConfigurationException,
+        [](const ProjectConfigurationException& error) {
             return std::string(error.what()).find("package.exclude") != std::string::npos;
         }
     );
@@ -794,8 +794,8 @@ BOOST_AUTO_TEST_CASE(reports_parse_locations_and_missing_projects)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(malformed),
-        ProjectConfigurationError,
-        [](const ProjectConfigurationError& error) {
+        ProjectConfigurationException,
+        [](const ProjectConfigurationException& error) {
             const auto message = std::string(error.what());
             return message.find("Failed to parse project configuration at 1:") != std::string::npos;
         }
@@ -805,7 +805,7 @@ BOOST_AUTO_TEST_CASE(reports_parse_locations_and_missing_projects)
     BOOST_TEST(!findProjectRoot(missingDirectory.getPath()).has_value());
     BOOST_CHECK_THROW(
         (void)discoverNomadProject(missingDirectory.getPath()),
-        ProjectConfigurationError
+        ProjectConfigurationException
     );
 }
 

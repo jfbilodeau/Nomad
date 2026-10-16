@@ -13,7 +13,7 @@ struct ProjectPackageResult {
     std::vector<NomadPath> files;
 };
 
-class ProjectPackagingError final : public NomadException {
+class ProjectPackagingException final : public NomadException {
 public:
     using NomadException::NomadException;
 };

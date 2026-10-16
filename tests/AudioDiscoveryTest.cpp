@@ -78,8 +78,8 @@ BOOST_AUTO_TEST_CASE(rejects_a_missing_explicit_directory)
             {NomadPath("audio")},
             true
         ),
-        AudioDiscoveryError,
-        [](const AudioDiscoveryError& error) {
+        AudioDiscoveryException,
+        [](const AudioDiscoveryException& error) {
             return NomadString(error.what()).find("does not exist") != NomadString::npos;
         }
     );
@@ -97,8 +97,8 @@ BOOST_AUTO_TEST_CASE(rejects_case_and_extension_name_collisions)
             {NomadPath("audio")},
             true
         ),
-        AudioDiscoveryError,
-        [](const AudioDiscoveryError& error) {
+        AudioDiscoveryException,
+        [](const AudioDiscoveryException& error) {
             return NomadString(error.what()).find("name collision") != NomadString::npos;
         }
     );
@@ -116,8 +116,8 @@ BOOST_AUTO_TEST_CASE(rejects_collisions_across_configured_roots)
             {NomadPath("audio"), NomadPath("audio.ui")},
             true
         ),
-        AudioDiscoveryError,
-        [](const AudioDiscoveryError& error) {
+        AudioDiscoveryException,
+        [](const AudioDiscoveryException& error) {
             return NomadString(error.what()).find("name collision") != NomadString::npos;
         }
     );
@@ -133,7 +133,7 @@ BOOST_AUTO_TEST_CASE(rejects_paths_outside_the_resource_directory)
             {NomadPath("../audio")},
             true
         ),
-        AudioDiscoveryError
+        AudioDiscoveryException
     );
 }
 
@@ -161,8 +161,8 @@ BOOST_AUTO_TEST_CASE(rejects_symbolic_links_when_supported)
             {NomadPath("audio")},
             true
         ),
-        AudioDiscoveryError,
-        [](const AudioDiscoveryError& exception) {
+        AudioDiscoveryException,
+        [](const AudioDiscoveryException& exception) {
             return NomadString(exception.what()).find("symbolic links") != NomadString::npos;
         }
     );

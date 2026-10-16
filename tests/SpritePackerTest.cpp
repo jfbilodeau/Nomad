@@ -239,8 +239,8 @@ BOOST_AUTO_TEST_CASE(reports_invalid_image_sources)
             16,
             1
         ),
-        SpritePackerError,
-        [](const SpritePackerError& error) {
+        SpritePackerException,
+        [](const SpritePackerException& error) {
             const auto message = NomadString(error.what());
             return
                 message.find("sprites.invalid") != NomadString::npos &&

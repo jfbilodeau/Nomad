@@ -13,7 +13,7 @@ namespace nomad {
 inline constexpr NomadInteger NOMAD_SPRITE_CATALOG_SCHEMA_VERSION = 1;
 inline constexpr NomadStringView NOMAD_SPRITE_CATALOG_FILE_NAME = "catalog.json";
 
-class SpriteCatalogError final : public NomadException {
+class SpriteCatalogException final : public NomadException {
 public:
     using NomadException::NomadException;
 };

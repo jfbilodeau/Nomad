@@ -136,7 +136,7 @@ NomadIndex ResourceManager::loadSpriteRoots(
 
         for (const auto& group : rootGroups) {
             if (!groupNames.insert(stringToLowerAscii(group.name)).second) {
-                throw SpriteCatalogError(
+                throw SpriteCatalogException(
                     "Sprite group name collision across configured roots: '" + group.name + "'"
                 );
             }
@@ -145,7 +145,7 @@ NomadIndex ResourceManager::loadSpriteRoots(
 
             for (const auto& sprite : group.sprites) {
                 if (!spriteNames.insert(stringToLowerAscii(sprite.name)).second) {
-                    throw SpriteCatalogError(
+                    throw SpriteCatalogException(
                         "Sprite resource name collision across configured roots: '" +
                         sprite.name + "'"
                     );

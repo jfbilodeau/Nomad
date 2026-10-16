@@ -489,7 +489,7 @@ bool AudioManager::playMusic(
 
     try {
         sources = discoverAudioSources(resourcePath, {"music"}, false);
-    } catch (const AudioDiscoveryError& error) {
+    } catch (const AudioDiscoveryException& error) {
         log::error(error.what());
         return false;
     }

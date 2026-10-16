@@ -41,7 +41,7 @@ BOOST_AUTO_TEST_CASE(normalizes_project_names_for_executables)
     BOOST_TEST(makeProjectExecutableName("My Example Game") == "my-example-game");
     BOOST_TEST(makeProjectExecutableName("Wishlair 1") == "wishlair-1");
     BOOST_TEST(makeProjectExecutableName("  Multiple---Separators  ") == "multiple-separators");
-    BOOST_CHECK_THROW((void)makeProjectExecutableName("---"), ProjectInitializationError);
+    BOOST_CHECK_THROW((void)makeProjectExecutableName("---"), ProjectInitializationException);
 }
 
 BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
@@ -109,8 +109,8 @@ BOOST_AUTO_TEST_CASE(refuses_to_overwrite_existing_project_files)
 
     BOOST_CHECK_EXCEPTION(
         (void)initializeProject(destination, getProjectTemplateDirectory()),
-        ProjectInitializationError,
-        [](const ProjectInitializationError& error) {
+        ProjectInitializationException,
+        [](const ProjectInitializationException& error) {
             return NomadString(error.what()).find("Refusing to overwrite existing file") != NomadString::npos;
         }
     );
@@ -129,8 +129,8 @@ BOOST_AUTO_TEST_CASE(rejects_unknown_template_placeholders_and_rolls_back)
 
     BOOST_CHECK_EXCEPTION(
         (void)initializeProject(destination, templateDirectory),
-        ProjectInitializationError,
-        [](const ProjectInitializationError& error) {
+        ProjectInitializationException,
+        [](const ProjectInitializationException& error) {
             return NomadString(error.what()).find("Unknown placeholder '{{unknown}}'") != NomadString::npos;
         }
     );

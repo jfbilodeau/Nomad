@@ -10,7 +10,7 @@
 
 namespace nomad {
 
-class RectanglePackerError final : public NomadException {
+class RectanglePackerException final : public NomadException {
 public:
     using NomadException::NomadException;
 };

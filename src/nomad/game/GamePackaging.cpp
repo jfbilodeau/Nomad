@@ -19,7 +19,7 @@ namespace {
 
 void requireIncluded(ModulePackageContext& context, const NomadPath& relative) {
     if (context.isResourceExcluded(relative)) {
-        throw ModuleError(
+        throw ModuleException(
             "Package exclusions must not remove compiled sprite file: '" +
             pathToUtf8(relative) + "'"
         );
@@ -32,7 +32,7 @@ void packageGameResources(ModulePackageContext* context) {
     if (context == nullptr || context->source == nullptr || context->release == nullptr ||
         (!context->dryRun && context->stagingDirectory.empty()) ||
         !context->recordFile || !context->excludeResource || !context->isResourceExcluded) {
-        throw ModuleError("Game packaging requires a complete module package context");
+        throw ModuleException("Game packaging requires a complete module package context");
     }
 
     const auto configuredDirectories = context->source->getStringArray("sprites.directories");
@@ -40,7 +40,7 @@ void packageGameResources(ModulePackageContext* context) {
     const auto maxTextureSize = context->source->getInteger("sprites.max-texture-size").value_or(2048);
     const auto padding = context->source->getInteger("sprites.padding").value_or(1);
     if (maxTextureSize < 1 || padding < 0) {
-        throw ModuleError("Sprite maximum texture size must be positive and padding must not be negative");
+        throw ModuleException("Sprite maximum texture size must be positive and padding must not be negative");
     }
 
     try {
@@ -50,7 +50,7 @@ void packageGameResources(ModulePackageContext* context) {
             const auto relativeRoot = sourceDirectory.lexically_relative(context->resourceDirectory);
             if (configuredDirectory.empty() || configuredDirectory.is_absolute() ||
                 relativeRoot.empty() || relativeRoot.is_absolute() || *relativeRoot.begin() == "..") {
-                throw ModuleError("Sprite directory must remain within the resource directory: '" + directory + "'");
+                throw ModuleException("Sprite directory must remain within the resource directory: '" + directory + "'");
             }
 
             if (hasSpriteCatalog(sourceDirectory)) {
@@ -92,7 +92,7 @@ void packageGameResources(ModulePackageContext* context) {
             }
         }
     } catch (const std::exception& error) {
-        throw ModuleError("Failed to compile sprite resources: " + NomadString(error.what()));
+        throw ModuleException("Failed to compile sprite resources: " + NomadString(error.what()));
     }
 }
 

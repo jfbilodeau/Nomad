@@ -10,7 +10,7 @@
 
 namespace nomad {
 
-class NomadConfigurationError final : public NomadException {
+class NomadConfigurationException final : public NomadException {
 public:
     using NomadException::NomadException;
 };

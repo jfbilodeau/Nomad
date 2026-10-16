@@ -39,7 +39,7 @@ NomadString readFile(const NomadPath& path) {
     std::ifstream input(path, std::ios::binary);
 
     if (!input.is_open()) {
-        throw ProjectInitializationError("Failed to open project template file '" + pathToUtf8(path) + "'");
+        throw ProjectInitializationException("Failed to open project template file '" + pathToUtf8(path) + "'");
     }
 
     NomadString content{
@@ -48,7 +48,7 @@ NomadString readFile(const NomadPath& path) {
     };
 
     if (input.bad()) {
-        throw ProjectInitializationError("Failed to read project template file '" + pathToUtf8(path) + "'");
+        throw ProjectInitializationException("Failed to read project template file '" + pathToUtf8(path) + "'");
     }
 
     return content;
@@ -58,13 +58,13 @@ void writeFile(const NomadPath& path, const NomadStringView content) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
 
     if (!output.is_open()) {
-        throw ProjectInitializationError("Failed to create '" + pathToUtf8(path) + "'");
+        throw ProjectInitializationException("Failed to create '" + pathToUtf8(path) + "'");
     }
 
     output << content;
 
     if (!output) {
-        throw ProjectInitializationError("Failed to write '" + pathToUtf8(path) + "'");
+        throw ProjectInitializationException("Failed to write '" + pathToUtf8(path) + "'");
     }
 }
 
@@ -81,7 +81,7 @@ NomadString renderTemplate(
         const auto closing = content.find("}}", position);
 
         if (closing != NomadStringView::npos && (opening == NomadStringView::npos || closing < opening)) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Unexpected '}}' in project template file '" + pathToUtf8(source) + "'"
             );
         }
@@ -95,7 +95,7 @@ NomadString renderTemplate(
         const auto end = content.find("}}", opening + 2U);
 
         if (end == NomadStringView::npos) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Unterminated placeholder in project template file '" + pathToUtf8(source) + "'"
             );
         }
@@ -104,7 +104,7 @@ NomadString renderTemplate(
         const auto variable = variables.find(name);
 
         if (variable == variables.end()) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Unknown placeholder '{{" + NomadString(name) + "}}' in project template file '" +
                 pathToUtf8(source) + "'"
             );
@@ -131,13 +131,13 @@ std::vector<ProjectTemplateFile> collectTemplateFiles(
 
     if (!std::filesystem::is_directory(templateDirectory, error)) {
         if (error) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Failed to inspect project template directory '" + pathToUtf8(templateDirectory) +
                 "': " + error.message()
             );
         }
 
-        throw ProjectInitializationError(
+        throw ProjectInitializationException(
             "Project template directory does not exist: '" + pathToUtf8(templateDirectory) + "'"
         );
     }
@@ -149,7 +149,7 @@ std::vector<ProjectTemplateFile> collectTemplateFiles(
 
     while (iterator != end) {
         if (error) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Failed to read project template directory '" + pathToUtf8(templateDirectory) +
                 "': " + error.message()
             );
@@ -158,13 +158,13 @@ std::vector<ProjectTemplateFile> collectTemplateFiles(
         const auto& entry = *iterator;
 
         if (entry.is_symlink(error)) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Project templates must not contain symbolic links: '" + pathToUtf8(entry.path()) + "'"
             );
         }
 
         if (error) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Failed to inspect project template entry '" + pathToUtf8(entry.path()) +
                 "': " + error.message()
             );
@@ -174,7 +174,7 @@ std::vector<ProjectTemplateFile> collectTemplateFiles(
             auto relative = std::filesystem::relative(entry.path(), templateDirectory, error);
 
             if (error) {
-                throw ProjectInitializationError(
+                throw ProjectInitializationException(
                     "Failed to resolve project template entry '" + pathToUtf8(entry.path()) +
                     "': " + error.message()
                 );
@@ -189,20 +189,20 @@ std::vector<ProjectTemplateFile> collectTemplateFiles(
             auto output = destination / relative;
 
             if (!destinations.insert(output).second) {
-                throw ProjectInitializationError(
+                throw ProjectInitializationException(
                     "Project template contains multiple files for '" + pathToUtf8(output) + "'"
                 );
             }
 
             files.push_back(ProjectTemplateFile{entry.path(), std::move(output), render});
         } else if (!entry.is_directory(error)) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Unsupported project template entry: '" + pathToUtf8(entry.path()) + "'"
             );
         }
 
         if (error) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Failed to inspect project template entry '" + pathToUtf8(entry.path()) +
                 "': " + error.message()
             );
@@ -224,7 +224,7 @@ void createDirectories(const NomadPath& directory, std::vector<NomadPath>& creat
 
     while (!std::filesystem::exists(current, error)) {
         if (error) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Failed to inspect project directory '" + pathToUtf8(current) + "': " + error.message()
             );
         }
@@ -233,7 +233,7 @@ void createDirectories(const NomadPath& directory, std::vector<NomadPath>& creat
         const auto parent = current.parent_path();
 
         if (parent == current || parent.empty()) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Could not find an existing parent for project directory '" + pathToUtf8(directory) + "'"
             );
         }
@@ -242,26 +242,26 @@ void createDirectories(const NomadPath& directory, std::vector<NomadPath>& creat
     }
 
     if (error) {
-        throw ProjectInitializationError(
+        throw ProjectInitializationException(
             "Failed to inspect project directory '" + pathToUtf8(current) + "': " + error.message()
         );
     }
 
     if (!std::filesystem::is_directory(current, error)) {
-        throw ProjectInitializationError(
+        throw ProjectInitializationException(
             "Project directory parent is not a directory: '" + pathToUtf8(current) + "'"
         );
     }
 
     if (error) {
-        throw ProjectInitializationError(
+        throw ProjectInitializationException(
             "Failed to inspect project directory '" + pathToUtf8(current) + "': " + error.message()
         );
     }
 
     for (auto path = missing.rbegin(); path != missing.rend(); ++path) {
         if (!std::filesystem::create_directory(*path, error) || error) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Failed to create project directory '" + pathToUtf8(*path) + "': " + error.message()
             );
         }
@@ -295,7 +295,7 @@ NomadString makeProjectExecutableName(const NomadStringView projectName) {
     }
 
     if (executable.empty()) {
-        throw ProjectInitializationError(
+        throw ProjectInitializationException(
             "Project name must contain at least one ASCII letter or number to derive an executable name"
         );
     }
@@ -312,17 +312,17 @@ ProjectInitializationResult initializeProject(
     auto root = std::filesystem::absolute(destination, error).lexically_normal();
 
     if (error) {
-        throw ProjectInitializationError(
+        throw ProjectInitializationException(
             "Failed to resolve project directory '" + pathToUtf8(destination) + "': " + error.message()
         );
     }
 
     if (std::filesystem::exists(root, error) && !std::filesystem::is_directory(root, error)) {
-        throw ProjectInitializationError("Project destination is not a directory: '" + pathToUtf8(root) + "'");
+        throw ProjectInitializationException("Project destination is not a directory: '" + pathToUtf8(root) + "'");
     }
 
     if (error) {
-        throw ProjectInitializationError(
+        throw ProjectInitializationException(
             "Failed to inspect project directory '" + pathToUtf8(root) + "': " + error.message()
         );
     }
@@ -332,7 +332,7 @@ ProjectInitializationResult initializeProject(
     const auto templateRoot = std::filesystem::absolute(templateDirectory, error).lexically_normal();
 
     if (error) {
-        throw ProjectInitializationError(
+        throw ProjectInitializationException(
             "Failed to resolve project template directory '" + pathToUtf8(templateDirectory) +
             "': " + error.message()
         );
@@ -355,13 +355,13 @@ ProjectInitializationResult initializeProject(
 
     for (const auto& file : files) {
         if (std::filesystem::exists(file.destination, error)) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Refusing to overwrite existing file '" + pathToUtf8(file.destination) + "'"
             );
         }
 
         if (error) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Failed to inspect '" + pathToUtf8(file.destination) + "': " + error.message()
             );
         }
@@ -370,13 +370,13 @@ ProjectInitializationResult initializeProject(
         temporary += ".tmp";
 
         if (std::filesystem::exists(temporary, error)) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Temporary initialization file already exists: '" + pathToUtf8(temporary) + "'"
             );
         }
 
         if (error) {
-            throw ProjectInitializationError(
+            throw ProjectInitializationException(
                 "Failed to inspect '" + pathToUtf8(temporary) + "': " + error.message()
             );
         }
@@ -411,7 +411,7 @@ ProjectInitializationResult initializeProject(
                 );
 
                 if (error) {
-                    throw ProjectInitializationError(
+                    throw ProjectInitializationException(
                         "Failed to make wrapper executable '" + pathToUtf8(file.destination) +
                         "': " + error.message()
                     );

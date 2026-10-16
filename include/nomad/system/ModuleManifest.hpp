@@ -14,7 +14,7 @@ struct ModuleManifest {
     std::vector<NomadString> dependencies;
 };
 
-class ModuleError final : public NomadException {
+class ModuleException final : public NomadException {
 public:
     using NomadException::NomadException;
 };

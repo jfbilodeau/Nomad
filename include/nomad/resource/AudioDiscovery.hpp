@@ -8,7 +8,7 @@
 
 namespace nomad {
 
-class AudioDiscoveryError final : public NomadException {
+class AudioDiscoveryException final : public NomadException {
 public:
     using NomadException::NomadException;
 };

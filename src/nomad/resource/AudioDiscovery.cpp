@@ -32,7 +32,7 @@ constexpr std::array<NomadStringView, 4> NOMAD_AUDIO_FILE_EXTENSIONS = {
         message += ": " + error.message();
     }
 
-    throw AudioDiscoveryError(message);
+    throw AudioDiscoveryException(message);
 }
 
 bool isAudioFile(const NomadPath& path) {
@@ -45,7 +45,7 @@ NomadString makeDottedName(const NomadPath& path) {
     std::ranges::replace(name, '/', '.');
 
     if (name.empty()) {
-        throw AudioDiscoveryError("Audio path must produce a non-empty resource name");
+        throw AudioDiscoveryException("Audio path must produce a non-empty resource name");
     }
 
     return name;
@@ -65,7 +65,7 @@ void addDirectorySources(
         relativeDirectory.is_absolute() ||
         *relativeDirectory.begin() == ".."
     ) {
-        throw AudioDiscoveryError(
+        throw AudioDiscoveryException(
             "Audio directory must remain within the resource directory: '" +
             pathToUtf8(configuredDirectory) + "'"
         );
@@ -80,7 +80,7 @@ void addDirectorySources(
                 return;
             }
 
-            throw AudioDiscoveryError("Audio directory does not exist: '" + pathToUtf8(directory) + "'");
+            throw AudioDiscoveryException("Audio directory does not exist: '" + pathToUtf8(directory) + "'");
         }
 
         raiseFilesystemError("Failed to inspect audio directory", directory, error);
@@ -91,15 +91,15 @@ void addDirectorySources(
             return;
         }
 
-        throw AudioDiscoveryError("Audio directory does not exist: '" + pathToUtf8(directory) + "'");
+        throw AudioDiscoveryException("Audio directory does not exist: '" + pathToUtf8(directory) + "'");
     }
 
     if (std::filesystem::is_symlink(status)) {
-        throw AudioDiscoveryError("Audio directory must not be a symbolic link: '" + pathToUtf8(directory) + "'");
+        throw AudioDiscoveryException("Audio directory must not be a symbolic link: '" + pathToUtf8(directory) + "'");
     }
 
     if (!std::filesystem::is_directory(status)) {
-        throw AudioDiscoveryError("Audio directory does not exist: '" + pathToUtf8(directory) + "'");
+        throw AudioDiscoveryException("Audio directory does not exist: '" + pathToUtf8(directory) + "'");
     }
 
     std::filesystem::recursive_directory_iterator iterator(directory, error);
@@ -119,7 +119,7 @@ void addDirectorySources(
         }
 
         if (std::filesystem::is_symlink(entryStatus)) {
-            throw AudioDiscoveryError(
+            throw AudioDiscoveryException(
                 "Audio directories must not contain symbolic links: '" + pathToUtf8(entry.path()) + "'"
             );
         }
@@ -130,7 +130,7 @@ void addDirectorySources(
             resourceRelativeFile.replace_extension();
 
             if (!resourceRelativeFile.has_filename()) {
-                throw AudioDiscoveryError(
+                throw AudioDiscoveryException(
                     "Audio file must produce a non-empty resource name: '" + pathToUtf8(entry.path()) + "'"
                 );
             }
@@ -172,7 +172,7 @@ std::vector<AudioSourceDefinition> discoverAudioSources(
 
     for (NomadIndex index = 1; index < sources.size(); ++index) {
         if (stringToLowerAscii(sources[index - 1].name) == stringToLowerAscii(sources[index].name)) {
-            throw AudioDiscoveryError(
+            throw AudioDiscoveryException(
                 "Audio resource name collision for '" + sources[index].name + "': '" +
                 pathToUtf8(sources[index - 1].filePath) + "' and '" +
                 pathToUtf8(sources[index].filePath) + "'"

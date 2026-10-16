@@ -128,11 +128,11 @@ ModuleHost::ModuleHost(
         try {
             loaded->library.load(libraryPath.native(), boost::dll::load_mode::load_with_altered_search_path);
         } catch (const std::exception& error) {
-            throw ModuleError("Failed to load module '" + manifest.name + "' at '" +
+            throw ModuleException("Failed to load module '" + manifest.name + "' at '" +
                 pathToUtf8(libraryPath) + "': " + error.what());
         }
         if (!loaded->library.has("registerModule")) {
-            throw ModuleError("Module '" + manifest.name + "' does not export registerModule");
+            throw ModuleException("Module '" + manifest.name + "' does not export registerModule");
         }
         loaded->context = {
             implementation.runtime.get(), &implementation.configuration, &log::getLogger(), mode,
@@ -149,7 +149,7 @@ ModuleHost::ModuleHost(
         } catch (const NomadBug&) {
             throw;
         } catch (const NomadException& error) {
-            throw ModuleError("Module '" + loaded->name + "' registration failed: " + error.what());
+            throw ModuleException("Module '" + loaded->name + "' registration failed: " + error.what());
         }
     }
     auto runProviders = 0;
@@ -159,7 +159,7 @@ ModuleHost::ModuleHost(
         }
     }
     if (runProviders > 1) {
-        throw ModuleError("Only one configured module may provide an application run callback");
+        throw ModuleException("Only one configured module may provide an application run callback");
     }
     if (implementation.runtime != nullptr) {
         implementation.runtime->registerCompilerSetup([&implementation](Compiler* compiler) {
@@ -175,7 +175,7 @@ ModuleHost::ModuleHost(
                             } catch (const NomadBug&) {
                                 throw;
                             } catch (const NomadException& error) {
-                                throw ModuleError("Module '" + module->name + "' compiler hook failed: " + error.what());
+                                throw ModuleException("Module '" + module->name + "' compiler hook failed: " + error.what());
                             }
                         }
                     }
@@ -202,12 +202,12 @@ bool ModuleHost::pollExit() {
 int ModuleHost::run(const NomadStringView entry) {
     auto& implementation = *m_implementation;
     if (implementation.runtime == nullptr) {
-        throw ModuleError("Cannot execute scripts in a packaging session");
+        throw ModuleException("Cannot execute scripts in a packaging session");
     }
     CompilationResult result;
     validateEntryFunction(result, implementation.runtime.get(), NomadString(entry), {});
     if (!result.succeeded()) {
-        throw ModuleError(result.diagnostics.front().message);
+        throw ModuleException(result.diagnostics.front().message);
     }
     implementation.runtime->executeFunction(implementation.runtime->getFunctionId(NomadString(entry)));
     if (!pollExit()) {
@@ -244,7 +244,7 @@ void ModuleHost::compile(const std::function<void()>& compileScripts) {
             continue;
         }
         if (coordinator != nullptr) {
-            throw ModuleError("Only one module may coordinate compilation");
+            throw ModuleException("Only one module may coordinate compilation");
         }
         coordinator = module.get();
     }
@@ -255,7 +255,7 @@ void ModuleHost::compile(const std::function<void()>& compileScripts) {
     auto invoked = std::atomic<bool>{false};
     coordinator->context.compileScripts = [&] {
         if (invoked.exchange(true)) {
-            throw ModuleError("Compilation coordinator invoked compilation more than once");
+            throw ModuleException("Compilation coordinator invoked compilation more than once");
         }
         compileScripts();
     };
@@ -267,7 +267,7 @@ void ModuleHost::compile(const std::function<void()>& compileScripts) {
     }
     coordinator->context.compileScripts = {};
     if (!invoked.load()) {
-        throw ModuleError("Compilation coordinator did not compile scripts");
+        throw ModuleException("Compilation coordinator did not compile scripts");
     }
 }
 

@@ -10,7 +10,7 @@ namespace nomad {
 // NomadConfiguration owns a mutable TOML document. Copies are independent. readFile() and
 // parse() create documents; serialize() preserves arbitrary tables, arrays and values.
 // Typed getters use dotted paths: an absent value returns std::nullopt, but a present value
-// of the wrong type throws NomadConfigurationError. Required getters also reject absence.
+// of the wrong type throws NomadConfigurationException. Required getters also reject absence.
 // Setters, erase() and merge() support constructing release configuration without changing
 // the source document. Initialization code should receive a const NomadConfiguration&.
 //
@@ -18,7 +18,7 @@ namespace nomad {
 // reads module.toml manifests without loading libraries, returning each module once, dependencies
 // first. Request and dependency array order determine traversal order. Invalid names, missing
 // manifests, name mismatches, unsupported schemas, duplicate dependencies and cycles throw
-// ModuleError. getModuleLibraryName() uses .dll, lib*.so or lib*.dylib for the host platform.
+// ModuleException. getModuleLibraryName() uses .dll, lib*.so or lib*.dylib for the host platform.
 //
 // Logger accepts concurrent submissions and serializes flushes and sink registration/removal.
 // A sink must be removed before it is destroyed or its module is unloaded. Consumers must

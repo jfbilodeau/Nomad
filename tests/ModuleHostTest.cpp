@@ -99,7 +99,7 @@ BOOST_AUTO_TEST_CASE(missing_library_is_an_explicit_startup_failure) {
     BOOST_CHECK_THROW(
         ModuleHost({}, directory.getPath(), directory.getPath(),
             {{"missing", directory.getPath(), {}}}, {}, ModuleMode::Application),
-        ModuleError
+        ModuleException
     );
 }
 
@@ -122,7 +122,7 @@ BOOST_AUTO_TEST_CASE(missing_registration_entry_is_an_explicit_startup_failure) 
     BOOST_CHECK_EXCEPTION(
         ModuleHost({}, directory.getPath(), directory.getPath(),
             {{"nomad-language", NOMAD_TEST_CORE_DIRECTORY, {}}}, {}, ModuleMode::Analysis),
-        ModuleError,
+        ModuleException,
         [](const auto& error) {
             return NomadString(error.what()).find("does not export registerModule") != NomadString::npos;
         }

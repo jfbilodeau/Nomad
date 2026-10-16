@@ -55,30 +55,30 @@ table = {}
     BOOST_TEST(configuration.requireString("string").empty());
     BOOST_CHECK_EXCEPTION(
         (void)configuration.requireString("absent"),
-        NomadConfigurationError,
+        NomadConfigurationException,
         [](const auto& error) {
             return NomadString(error.what()).find("is required") != NomadString::npos;
         }
     );
-    BOOST_CHECK_THROW((void)configuration.requireInteger("absent"), NomadConfigurationError);
-    BOOST_CHECK_THROW((void)configuration.requireBoolean("absent"), NomadConfigurationError);
-    BOOST_CHECK_THROW((void)configuration.requireStringArray("absent"), NomadConfigurationError);
-    BOOST_CHECK_THROW((void)configuration.getString("integer"), NomadConfigurationError);
-    BOOST_CHECK_THROW((void)configuration.getInteger("floating"), NomadConfigurationError);
-    BOOST_CHECK_THROW((void)configuration.getInteger("boolean"), NomadConfigurationError);
-    BOOST_CHECK_THROW((void)configuration.getBoolean("integer"), NomadConfigurationError);
-    BOOST_CHECK_THROW((void)configuration.getStringArray("string"), NomadConfigurationError);
-    BOOST_CHECK_THROW((void)configuration.getStringArray("array"), NomadConfigurationError);
-    BOOST_CHECK_THROW((void)configuration.getString("table"), NomadConfigurationError);
-    BOOST_CHECK_THROW((void)configuration.getString("integer.nested"), NomadConfigurationError);
+    BOOST_CHECK_THROW((void)configuration.requireInteger("absent"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)configuration.requireBoolean("absent"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)configuration.requireStringArray("absent"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)configuration.getString("integer"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)configuration.getInteger("floating"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)configuration.getInteger("boolean"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)configuration.getBoolean("integer"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)configuration.getStringArray("string"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)configuration.getStringArray("array"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)configuration.getString("table"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)configuration.getString("integer.nested"), NomadConfigurationException);
 }
 
 BOOST_AUTO_TEST_CASE(rejects_wrong_type_intermediate_module_tables)
 {
     const auto malformed = NomadConfiguration::parse("nomad = 1");
-    BOOST_CHECK_THROW((void)malformed.getStringArray("nomad.modules"), NomadConfigurationError);
-    BOOST_CHECK_THROW((void)malformed.requireStringArray("nomad.modules"), NomadConfigurationError);
-    BOOST_CHECK_THROW((void)malformed.contains("nomad.modules"), NomadConfigurationError);
+    BOOST_CHECK_THROW((void)malformed.getStringArray("nomad.modules"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)malformed.requireStringArray("nomad.modules"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)malformed.contains("nomad.modules"), NomadConfigurationException);
 
     const auto missing = NomadConfiguration::parse("[nomad]");
     BOOST_TEST(!missing.getStringArray("nomad.modules").has_value());
@@ -113,10 +113,10 @@ BOOST_AUTO_TEST_CASE(owns_deep_copies_and_mutable_nested_values)
     BOOST_TEST(!copy.erase("missing.nested"));
     BOOST_TEST(copy.erase("module"));
     BOOST_TEST(!copy.contains("module"));
-    BOOST_CHECK_THROW(copy.setInteger("new..count", 1), NomadConfigurationError);
-    BOOST_CHECK_THROW(assigned.setString("module.name.child", "invalid"), NomadConfigurationError);
-    BOOST_CHECK_THROW((void)assigned.erase("module.name.child"), NomadConfigurationError);
-    BOOST_CHECK_THROW((void)assigned.contains(""), NomadConfigurationError);
+    BOOST_CHECK_THROW(copy.setInteger("new..count", 1), NomadConfigurationException);
+    BOOST_CHECK_THROW(assigned.setString("module.name.child", "invalid"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)assigned.erase("module.name.child"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)assigned.contains(""), NomadConfigurationException);
 }
 
 BOOST_AUTO_TEST_CASE(preserves_unknown_tables_and_native_toml_values)
@@ -155,11 +155,11 @@ BOOST_AUTO_TEST_CASE(reads_files_and_reports_io_and_parse_errors)
     BOOST_TEST(configuration.requireInteger("settings.value") == 9);
     BOOST_CHECK_THROW(
         (void)NomadConfiguration::readFile(directory.getPath() / "missing.toml"),
-        NomadConfigurationError
+        NomadConfigurationException
     );
     BOOST_CHECK_EXCEPTION(
         (void)NomadConfiguration::parse("invalid = ["),
-        NomadConfigurationError,
+        NomadConfigurationException,
         [](const auto& error) {
             return NomadString(error.what()).find("at 1:") != NomadString::npos;
         }

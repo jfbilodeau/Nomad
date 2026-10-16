@@ -23,7 +23,7 @@ std::vector<NomadStringView> splitPath(const NomadStringView path) {
         const auto end = path.find('.', begin);
         const auto key = path.substr(begin, end == NomadStringView::npos ? end : end - begin);
         if (key.empty()) {
-            throw NomadConfigurationError("Configuration path '" + NomadString(path) + "' is invalid");
+            throw NomadConfigurationException("Configuration path '" + NomadString(path) + "' is invalid");
         }
         keys.push_back(key);
         if (end == NomadStringView::npos) {
@@ -34,8 +34,8 @@ std::vector<NomadStringView> splitPath(const NomadStringView path) {
     return keys;
 }
 
-NomadConfigurationError wrongType(const NomadStringView path, const NomadStringView expected) {
-    return NomadConfigurationError(
+NomadConfigurationException wrongType(const NomadStringView path, const NomadStringView expected) {
+    return NomadConfigurationException(
         "Configuration field '" + NomadString(path) + "' must be " + NomadString(expected)
     );
 }
@@ -78,7 +78,7 @@ std::optional<Value> readValue(const toml::table& document, const NomadStringVie
 template<typename Value>
 Value requireValue(std::optional<Value> value, const NomadStringView path) {
     if (!value) {
-        throw NomadConfigurationError("Configuration field '" + NomadString(path) + "' is required");
+        throw NomadConfigurationException("Configuration field '" + NomadString(path) + "' is required");
     }
     return std::move(*value);
 }
@@ -155,7 +155,7 @@ NomadConfiguration NomadConfiguration::parse(const NomadStringView text) {
         std::ostringstream message;
         message << "Failed to parse configuration at " << error.source().begin.line
                 << ':' << error.source().begin.column << ": " << error.description();
-        throw NomadConfigurationError(message.str());
+        throw NomadConfigurationException(message.str());
     }
     return result;
 }
@@ -163,14 +163,14 @@ NomadConfiguration NomadConfiguration::parse(const NomadStringView text) {
 NomadConfiguration NomadConfiguration::readFile(const NomadPath& path) {
     std::ifstream input(path, std::ios::binary);
     if (!input) {
-        throw NomadConfigurationError(
+        throw NomadConfigurationException(
             "Failed to open configuration '" + pathToUtf8(path) + "' for reading"
         );
     }
     std::ostringstream text;
     text << input.rdbuf();
     if (input.bad()) {
-        throw NomadConfigurationError("Failed to read configuration '" + pathToUtf8(path) + "'");
+        throw NomadConfigurationException("Failed to read configuration '" + pathToUtf8(path) + "'");
     }
     return parse(text.str());
 }

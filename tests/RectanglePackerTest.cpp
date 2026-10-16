@@ -65,12 +65,12 @@ BOOST_AUTO_TEST_CASE(splits_rectangles_across_pages)
 
 BOOST_AUTO_TEST_CASE(rejects_invalid_inputs)
 {
-    BOOST_CHECK_THROW((void)packRectangles({{0, 1, 1}}, 0, 1), RectanglePackerError);
-    BOOST_CHECK_THROW((void)packRectangles({{0, 1, 1}}, 8, -1), RectanglePackerError);
-    BOOST_CHECK_THROW((void)packRectangles({{0, 0, 1}}, 8, 1), RectanglePackerError);
-    BOOST_CHECK_THROW((void)packRectangles({{0, 1, 0}}, 8, 1), RectanglePackerError);
-    BOOST_CHECK_THROW((void)packRectangles({{0, 9, 1}}, 8, 1), RectanglePackerError);
-    BOOST_CHECK_THROW((void)packRectangles({{0, 1, 1}, {0, 1, 1}}, 8, 1), RectanglePackerError);
+    BOOST_CHECK_THROW((void)packRectangles({{0, 1, 1}}, 0, 1), RectanglePackerException);
+    BOOST_CHECK_THROW((void)packRectangles({{0, 1, 1}}, 8, -1), RectanglePackerException);
+    BOOST_CHECK_THROW((void)packRectangles({{0, 0, 1}}, 8, 1), RectanglePackerException);
+    BOOST_CHECK_THROW((void)packRectangles({{0, 1, 0}}, 8, 1), RectanglePackerException);
+    BOOST_CHECK_THROW((void)packRectangles({{0, 9, 1}}, 8, 1), RectanglePackerException);
+    BOOST_CHECK_THROW((void)packRectangles({{0, 1, 1}, {0, 1, 1}}, 8, 1), RectanglePackerException);
 }
 
 BOOST_AUTO_TEST_CASE(produces_the_same_layout_for_shuffled_inputs)

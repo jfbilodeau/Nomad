@@ -13,7 +13,7 @@ struct ProjectInitializationResult {
     std::vector<NomadPath> createdFiles;
 };
 
-class ProjectInitializationError final : public NomadException {
+class ProjectInitializationException final : public NomadException {
 public:
     using NomadException::NomadException;
 };

@@ -128,7 +128,7 @@ BOOST_AUTO_TEST_CASE(sprite_loading_is_deferred_until_script_preparation)
         game->prepareScripts([&compiled] {
             compiled = true;
         }),
-        SpritePackerError
+        SpritePackerException
     );
     BOOST_TEST(compiled);
 }

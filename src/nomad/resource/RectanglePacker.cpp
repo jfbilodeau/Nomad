@@ -155,13 +155,13 @@ std::vector<RectanglePackingPage> packRectangles(
     const NomadInteger padding
 ) {
     if (maxTextureSize <= 0) {
-        throw RectanglePackerError("Maximum texture size must be greater than zero");
+        throw RectanglePackerException("Maximum texture size must be greater than zero");
     }
     if (padding < 0) {
-        throw RectanglePackerError("Sprite padding must not be negative");
+        throw RectanglePackerException("Sprite padding must not be negative");
     }
     if (padding > std::numeric_limits<NomadInteger>::max() - maxTextureSize) {
-        throw RectanglePackerError("Maximum texture size and padding overflow");
+        throw RectanglePackerException("Maximum texture size and padding overflow");
     }
 
     auto sortedInputs = inputs;
@@ -169,22 +169,22 @@ std::vector<RectanglePackingPage> packRectangles(
 
     for (const auto& input : sortedInputs) {
         if (input.width <= 0 || input.height <= 0) {
-            throw RectanglePackerError("Packed rectangle dimensions must be greater than zero");
+            throw RectanglePackerException("Packed rectangle dimensions must be greater than zero");
         }
         if (input.width > maxTextureSize || input.height > maxTextureSize) {
-            throw RectanglePackerError(
+            throw RectanglePackerException(
                 "Packed rectangle " + std::to_string(input.id) +
                 " exceeds the maximum texture size"
             );
         }
         if (!ids.insert(input.id).second) {
-            throw RectanglePackerError("Packed rectangle IDs must be unique");
+            throw RectanglePackerException("Packed rectangle IDs must be unique");
         }
         if (
             input.width > std::numeric_limits<NomadInteger>::max() - padding ||
             input.height > std::numeric_limits<NomadInteger>::max() - padding
         ) {
-            throw RectanglePackerError("Packed rectangle dimensions and padding overflow");
+            throw RectanglePackerException("Packed rectangle dimensions and padding overflow");
         }
     }
 

@@ -63,7 +63,7 @@ struct NomadProject {
     NomadConfiguration document;
 };
 
-class ProjectConfigurationError final : public NomadException {
+class ProjectConfigurationException final : public NomadException {
 public:
     using NomadException::NomadException;
 };

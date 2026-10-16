@@ -129,8 +129,8 @@ BOOST_AUTO_TEST_CASE(malformed_catalog_does_not_fall_back_to_raw_images)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadSpriteRoot(directory.getPath(), "sprites", true, 64, 1),
-        SpriteCatalogError,
-        [](const SpriteCatalogError& error) {
+        SpriteCatalogException,
+        [](const SpriteCatalogException& error) {
             return NomadString(error.what()).find("field 'groups' must be an array") != NomadString::npos;
         }
     );
@@ -145,7 +145,7 @@ BOOST_AUTO_TEST_CASE(packaged_projects_allow_missing_mod_roots)
     BOOST_TEST(groups.empty());
     BOOST_CHECK_THROW(
         (void)loadSpriteRoot(directory.getPath(), "mod/sprites", true, 64, 1),
-        SpriteCatalogError
+        SpriteCatalogException
     );
 }
 

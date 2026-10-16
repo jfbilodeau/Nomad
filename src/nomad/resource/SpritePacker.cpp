@@ -51,7 +51,7 @@ struct GroupPreparation {
     const SpriteSourceDefinition& source,
     const NomadStringView operation
 ) {
-    throw SpritePackerError(
+    throw SpritePackerException(
         NomadString(operation) + " for sprite '" + source.name + "' from '" +
         pathToUtf8(source.filePath) + "': " + SDL_GetError()
     );
@@ -193,7 +193,7 @@ PreparedImage prepareImage(const SpriteSourceDefinition& source) {
         raiseImageError(source, "Failed to convert image to RGBA");
     }
     if (converted->w <= 0 || converted->h <= 0) {
-        throw SpritePackerError(
+        throw SpritePackerException(
             "Sprite image must have positive dimensions: '" + pathToUtf8(source.filePath) + "'"
         );
     }
@@ -265,7 +265,7 @@ SdlSurfacePtr createAtlasSurface(
         layout.width > std::numeric_limits<int>::max() ||
         layout.height > std::numeric_limits<int>::max()
     ) {
-        throw SpritePackerError("Packed texture dimensions exceed SDL surface limits");
+        throw SpritePackerException("Packed texture dimensions exceed SDL surface limits");
     }
 
     SdlSurfacePtr surface(SDL_CreateSurface(
@@ -275,10 +275,10 @@ SdlSurfacePtr createAtlasSurface(
     ));
 
     if (!surface) {
-        throw SpritePackerError("Failed to create packed texture surface: " + NomadString(SDL_GetError()));
+        throw SpritePackerException("Failed to create packed texture surface: " + NomadString(SDL_GetError()));
     }
     if (!SDL_FillSurfaceRect(surface.get(), nullptr, SDL_MapSurfaceRGBA(surface.get(), 0, 0, 0, 0))) {
-        throw SpritePackerError("Failed to clear packed texture surface: " + NomadString(SDL_GetError()));
+        throw SpritePackerException("Failed to clear packed texture surface: " + NomadString(SDL_GetError()));
     }
 
     for (const auto& placement : layout.rectangles) {
@@ -381,14 +381,14 @@ std::vector<PackedSpriteGroup> loadSpriteRootsForAnalysis(
 
         for (const auto& group : rootGroups) {
             if (!groupNames.insert(stringToLowerAscii(group.name)).second) {
-                throw SpriteCatalogError(
+                throw SpriteCatalogException(
                     "Sprite group name collision across configured roots: '" + group.name + "'"
                 );
             }
 
             for (const auto& sprite : group.sprites) {
                 if (!spriteNames.insert(stringToLowerAscii(sprite.name)).second) {
-                    throw SpriteCatalogError(
+                    throw SpriteCatalogException(
                         "Sprite resource name collision across configured roots: '" +
                         sprite.name + "'"
                     );

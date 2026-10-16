@@ -25,7 +25,7 @@ NomadString requiredString(
     const auto value = table[key].value<NomadString>();
 
     if (!value || value->empty()) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Configuration field '" + NomadString(tableName) + "." + NomadString(key) +
             "' must be a non-empty string"
         );
@@ -38,7 +38,7 @@ const toml::table& requiredTable(const toml::table& document, const NomadStringV
     const auto* table = document[name].as_table();
 
     if (table == nullptr) {
-        throw ProjectConfigurationError("Configuration table '[" + NomadString(name) + "]' is required");
+        throw ProjectConfigurationException("Configuration table '[" + NomadString(name) + "]' is required");
     }
 
     return *table;
@@ -84,7 +84,7 @@ void validateExecutable(const NomadString& executable) {
         executable.find('/') != NomadString::npos || executable.find('\\') != NomadString::npos;
 
     if (containsSeparator || path.has_extension() || executable == "." || executable == "..") {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Configuration field 'project.executable' must be an extensionless file name"
         );
     }
@@ -103,7 +103,7 @@ void validateProjectRelativePath(
         (!allowProjectRoot && normalized == ".") ||
         *normalized.begin() == ".."
     ) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Configuration field '" + NomadString(field) + "' must be a project-relative directory"
         );
     }
@@ -113,7 +113,7 @@ std::vector<NomadString> readExclusions(const toml::table& package) {
     const auto* exclusions = package["exclude"].as_array();
 
     if (exclusions == nullptr) {
-        throw ProjectConfigurationError("Configuration field 'package.exclude' must be an array of strings");
+        throw ProjectConfigurationException("Configuration field 'package.exclude' must be an array of strings");
     }
 
     std::vector<NomadString> result;
@@ -123,7 +123,7 @@ std::vector<NomadString> readExclusions(const toml::table& package) {
         const auto value = exclusion.value<NomadString>();
 
         if (!value || value->empty()) {
-            throw ProjectConfigurationError(
+            throw ProjectConfigurationException(
                 "Configuration field 'package.exclude' must contain only non-empty strings"
             );
         }
@@ -153,7 +153,7 @@ std::vector<NomadPath> readAssetDirectories(
     const auto field = NomadString(tableName) + ".directories";
 
     if (directories == nullptr) {
-        throw ProjectConfigurationError("Configuration field '" + field + "' must be an array of strings");
+        throw ProjectConfigurationException("Configuration field '" + field + "' must be an array of strings");
     }
 
     std::vector<NomadPath> result;
@@ -165,7 +165,7 @@ std::vector<NomadPath> readAssetDirectories(
         const auto value = directory.value<NomadString>();
 
         if (!value || value->empty()) {
-            throw ProjectConfigurationError(
+            throw ProjectConfigurationException(
                 "Configuration field '" + field + "' must contain only non-empty strings"
             );
         }
@@ -183,7 +183,7 @@ std::vector<NomadPath> readAssetDirectories(
 
         for (const auto& existing : normalizedKeys) {
             if (directoriesOverlap(existing, key)) {
-                throw ProjectConfigurationError(
+                throw ProjectConfigurationException(
                     "Configuration field '" + field + "' contains duplicate or overlapping directories"
                 );
             }
@@ -201,7 +201,7 @@ std::vector<NomadPath> readTextDirectories(const toml::table& text) {
     constexpr auto field = "text.directories";
 
     if (directories == nullptr) {
-        throw ProjectConfigurationError("Configuration field 'text.directories' must be an array of strings");
+        throw ProjectConfigurationException("Configuration field 'text.directories' must be an array of strings");
     }
 
     std::vector<NomadPath> result;
@@ -213,7 +213,7 @@ std::vector<NomadPath> readTextDirectories(const toml::table& text) {
         const auto value = directory.value<NomadString>();
 
         if (!value || value->empty()) {
-            throw ProjectConfigurationError(
+            throw ProjectConfigurationException(
                 "Configuration field 'text.directories' must contain only non-empty strings"
             );
         }
@@ -224,7 +224,7 @@ std::vector<NomadPath> readTextDirectories(const toml::table& text) {
         validateProjectRelativePath(path, field, false);
 
         if (path.extension() != ".csv") {
-            throw ProjectConfigurationError(
+            throw ProjectConfigurationException(
                 "Configuration field 'text.directories' must contain only CSV files"
             );
         }
@@ -232,7 +232,7 @@ std::vector<NomadPath> readTextDirectories(const toml::table& text) {
         const auto key = normalizedDirectoryKey(path);
 
         if (std::ranges::find(normalizedKeys, key) != normalizedKeys.end()) {
-            throw ProjectConfigurationError(
+            throw ProjectConfigurationException(
                 "Configuration field 'text.directories' contains duplicate files"
             );
         }
@@ -261,7 +261,7 @@ NomadPath readResourceRelativeFile(
         *path.begin() == ".." ||
         !path.has_filename()
     ) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Configuration field '" + field + "' must be a resource-relative file"
         );
     }
@@ -277,7 +277,7 @@ std::pair<NomadInteger, NomadInteger> readPositiveDimensions(
     const auto field = "window." + NomadString(key);
 
     if (dimensions == nullptr || dimensions->size() != 2) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Configuration field '" + field + "' must be an array of two positive integers"
         );
     }
@@ -293,7 +293,7 @@ std::pair<NomadInteger, NomadInteger> readPositiveDimensions(
         *width <= 0 ||
         *height <= 0
     ) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Configuration field '" + field + "' must be an array of two positive integers"
         );
     }
@@ -310,7 +310,7 @@ bool readBoolean(
     const auto value = node.value<bool>();
 
     if (!node.is_boolean() || !value) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Configuration field '" + NomadString(tableName) + "." + NomadString(key) +
             "' must be a boolean"
         );
@@ -329,11 +329,11 @@ NomadInteger readSpriteInteger(
     const auto field = "sprites." + NomadString(key);
 
     if (!node.is_integer() || !value) {
-        throw ProjectConfigurationError("Configuration field '" + field + "' must be an integer");
+        throw ProjectConfigurationException("Configuration field '" + field + "' must be an integer");
     }
 
     if (*value < minimum) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Configuration field '" + field + "' must be at least " + std::to_string(minimum)
         );
     }
@@ -495,7 +495,7 @@ std::optional<NomadPath> findProjectRoot(const NomadPath& startPath) {
     auto current = std::filesystem::absolute(startPath, error);
 
     if (error) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Failed to resolve project search path '" + pathToUtf8(startPath) + "': " + error.message()
         );
     }
@@ -503,7 +503,7 @@ std::optional<NomadPath> findProjectRoot(const NomadPath& startPath) {
     if (std::filesystem::is_regular_file(current, error)) {
         current = current.parent_path();
     } else if (error) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Failed to inspect project search path '" + pathToUtf8(current) + "': " + error.message()
         );
     }
@@ -520,7 +520,7 @@ std::optional<NomadPath> findProjectRoot(const NomadPath& startPath) {
         }
 
         if (error) {
-            throw ProjectConfigurationError(
+            throw ProjectConfigurationException(
                 "Failed to inspect project directory '" + pathToUtf8(current) + "': " + error.message()
             );
         }
@@ -597,7 +597,7 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
     std::ifstream input(projectFile, std::ios::binary);
 
     if (!input) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Failed to open project configuration '" + pathToUtf8(projectFile) + "' for reading"
         );
     }
@@ -605,17 +605,17 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
     try {
         document = toml::parse(input, pathToUtf8(projectFile));
     } catch (const toml::parse_error& error) {
-        throw ProjectConfigurationError(formatParseError(error));
+        throw ProjectConfigurationException(formatParseError(error));
     }
 
     const auto schema = document["schema"].value<NomadInteger>();
 
     if (!document["schema"].is_integer() || !schema) {
-        throw ProjectConfigurationError("Configuration field 'schema' must be an integer");
+        throw ProjectConfigurationException("Configuration field 'schema' must be an integer");
     }
 
     if (*schema != NOMAD_PROJECT_SCHEMA_VERSION) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Unsupported project schema " + std::to_string(*schema) +
             "; expected " + std::to_string(NOMAD_PROJECT_SCHEMA_VERSION)
         );
@@ -628,7 +628,7 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
     const auto hasExecutable = project.contains("executable");
 
     if (!hasExecutable && (resources != nullptr || package != nullptr)) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Development configuration requires 'project.executable' when '[resources]' or '[package]' is supplied"
         );
     }
@@ -651,8 +651,8 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
 
     try {
         configuration.sdk.version = NomadVersion::parse(nomadVersion);
-    } catch (const NomadVersionError& error) {
-        throw ProjectConfigurationError(
+    } catch (const NomadVersionException& error) {
+        throw ProjectConfigurationException(
             "Configuration field 'nomad.version' is invalid: " + NomadString(error.what())
         );
     }
@@ -660,19 +660,19 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
     {
         try {
             configuration.sdk.modules = result.document.requireStringArray("nomad.modules");
-        } catch (const NomadConfigurationError& error) {
-            throw ProjectConfigurationError(error.what());
+        } catch (const NomadConfigurationException& error) {
+            throw ProjectConfigurationException(error.what());
         }
 
         std::vector<NomadString> names;
         for (const auto& name : configuration.sdk.modules) {
             if (!isValidModuleName(name)) {
-                throw ProjectConfigurationError(
+                throw ProjectConfigurationException(
                     "Configuration field 'nomad.modules' must contain only logical module names"
                 );
             }
             if (std::ranges::find(names, name) != names.end()) {
-                throw ProjectConfigurationError(
+                throw ProjectConfigurationException(
                     "Configuration field 'nomad.modules' contains duplicate module '" + name + "'"
                 );
             }
@@ -702,14 +702,14 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
     }
 
     if (gameOptions.entryFunction.empty()) {
-        throw ProjectConfigurationError("Configuration field 'project.entry' must be a non-empty string");
+        throw ProjectConfigurationException("Configuration field 'project.entry' must be a non-empty string");
     }
 
     std::error_code error;
     result.root = std::filesystem::absolute(projectFile.parent_path(), error);
 
     if (error) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Failed to resolve project root '" + pathToUtf8(projectFile.parent_path()) + "': " + error.message()
         );
     }
@@ -727,7 +727,7 @@ NomadProject discoverNomadProject(const NomadPath& startPath) {
     const auto root = findProjectRoot(startPath);
 
     if (!root) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Could not find " + NomadString(NOMAD_PROJECT_FILE_NAME) +
             " from '" + pathToUtf8(startPath) + "' or any parent directory"
         );
@@ -791,7 +791,7 @@ void validateNomadVersionCompatibility(
     const NomadVersion& availableVersion
 ) {
     if (requiredVersion > availableVersion) {
-        throw ProjectConfigurationError(
+        throw ProjectConfigurationException(
             "Project requires Nomad " + requiredVersion.toString() +
             ", but this CLI provides Nomad " + availableVersion.toString()
         );

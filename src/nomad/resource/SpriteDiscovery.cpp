@@ -24,7 +24,7 @@ namespace {
         message += ": " + error.message();
     }
 
-    throw SpriteDiscoveryError(message);
+    throw SpriteDiscoveryException(message);
 }
 
 bool isPngFile(const NomadPath& path) {
@@ -36,7 +36,7 @@ NomadString makeDottedName(const NomadPath& path) {
     std::ranges::replace(name, '/', '.');
 
     if (name.empty()) {
-        throw SpriteDiscoveryError("Sprite path must produce a non-empty resource name");
+        throw SpriteDiscoveryException("Sprite path must produce a non-empty resource name");
     }
 
     return name;
@@ -46,7 +46,7 @@ NomadPath firstPathComponent(const NomadPath& path) {
     const auto component = path.begin();
 
     if (component == path.end()) {
-        throw SpriteDiscoveryError("Sprite path must contain a file name");
+        throw SpriteDiscoveryException("Sprite path must contain a file name");
     }
 
     return *component;
@@ -66,7 +66,7 @@ void addDirectorySources(
         relativeDirectory.is_absolute() ||
         *relativeDirectory.begin() == ".."
     ) {
-        throw SpriteDiscoveryError(
+        throw SpriteDiscoveryException(
             "Sprite directory must remain within the resource directory: '" +
             pathToUtf8(configuredDirectory) + "'"
         );
@@ -81,7 +81,7 @@ void addDirectorySources(
                 return;
             }
 
-            throw SpriteDiscoveryError("Sprite directory does not exist: '" + pathToUtf8(directory) + "'");
+            throw SpriteDiscoveryException("Sprite directory does not exist: '" + pathToUtf8(directory) + "'");
         }
 
         raiseFilesystemError("Failed to inspect sprite directory", directory, error);
@@ -92,15 +92,15 @@ void addDirectorySources(
             return;
         }
 
-        throw SpriteDiscoveryError("Sprite directory does not exist: '" + pathToUtf8(directory) + "'");
+        throw SpriteDiscoveryException("Sprite directory does not exist: '" + pathToUtf8(directory) + "'");
     }
 
     if (std::filesystem::is_symlink(status)) {
-        throw SpriteDiscoveryError("Sprite directory must not be a symbolic link: '" + pathToUtf8(directory) + "'");
+        throw SpriteDiscoveryException("Sprite directory must not be a symbolic link: '" + pathToUtf8(directory) + "'");
     }
 
     if (!std::filesystem::is_directory(status)) {
-        throw SpriteDiscoveryError("Sprite directory does not exist: '" + pathToUtf8(directory) + "'");
+        throw SpriteDiscoveryException("Sprite directory does not exist: '" + pathToUtf8(directory) + "'");
     }
 
     std::filesystem::recursive_directory_iterator iterator(directory, error);
@@ -120,7 +120,7 @@ void addDirectorySources(
         }
 
         if (std::filesystem::is_symlink(entryStatus)) {
-            throw SpriteDiscoveryError(
+            throw SpriteDiscoveryException(
                 "Sprite directories must not contain symbolic links: '" + pathToUtf8(entry.path()) + "'"
             );
         }
@@ -131,7 +131,7 @@ void addDirectorySources(
             resourceRelativeFile.replace_extension();
 
             if (!resourceRelativeFile.has_filename()) {
-                throw SpriteDiscoveryError(
+                throw SpriteDiscoveryException(
                     "Sprite file must produce a non-empty resource name: '" + pathToUtf8(entry.path()) + "'"
                 );
             }
@@ -182,7 +182,7 @@ std::vector<SpriteSourceDefinition> discoverSpriteSources(
 
     for (NomadIndex index = 1; index < sources.size(); ++index) {
         if (stringToLowerAscii(sources[index - 1].name) == stringToLowerAscii(sources[index].name)) {
-            throw SpriteDiscoveryError(
+            throw SpriteDiscoveryException(
                 "Sprite resource name collision for '" + sources[index].name + "': '" +
                 pathToUtf8(sources[index - 1].filePath) + "' and '" +
                 pathToUtf8(sources[index].filePath) + "'"

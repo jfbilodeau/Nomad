@@ -83,8 +83,8 @@ BOOST_AUTO_TEST_CASE(rejects_a_missing_explicit_directory)
             {NomadPath("sprites")},
             true
         ),
-        SpriteDiscoveryError,
-        [](const SpriteDiscoveryError& error) {
+        SpriteDiscoveryException,
+        [](const SpriteDiscoveryException& error) {
             return NomadString(error.what()).find("does not exist") != NomadString::npos;
         }
     );
@@ -102,8 +102,8 @@ BOOST_AUTO_TEST_CASE(rejects_case_only_name_collisions)
             {NomadPath("sprites")},
             true
         ),
-        SpriteDiscoveryError,
-        [](const SpriteDiscoveryError& error) {
+        SpriteDiscoveryException,
+        [](const SpriteDiscoveryException& error) {
             return NomadString(error.what()).find("name collision") != NomadString::npos;
         }
     );
@@ -119,7 +119,7 @@ BOOST_AUTO_TEST_CASE(rejects_paths_outside_the_resource_directory)
             {NomadPath("../sprites")},
             true
         ),
-        SpriteDiscoveryError
+        SpriteDiscoveryException
     );
 }
 
@@ -147,8 +147,8 @@ BOOST_AUTO_TEST_CASE(rejects_symbolic_links_when_supported)
             {NomadPath("sprites")},
             true
         ),
-        SpriteDiscoveryError,
-        [](const SpriteDiscoveryError& exception) {
+        SpriteDiscoveryException,
+        [](const SpriteDiscoveryException& exception) {
             return NomadString(exception.what()).find("symbolic links") != NomadString::npos;
         }
     );

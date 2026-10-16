@@ -24,7 +24,7 @@ std::vector<ModuleManifest> resolveProjectModules(
     std::vector<ModuleManifest> modules;
     for (const auto& name : project.configuration.sdk.modules) {
         if (!isValidModuleName(name)) {
-            throw ModuleError("Invalid packaged module name '" + name + "'");
+            throw ModuleException("Invalid packaged module name '" + name + "'");
         }
         modules.push_back({name, project.root, {}});
     }

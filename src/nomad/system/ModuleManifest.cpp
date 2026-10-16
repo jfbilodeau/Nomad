@@ -22,7 +22,7 @@ bool isValidModuleName(const NomadStringView name) {
 
 NomadPath getModuleLibraryName(const NomadStringView name) {
     if (!isValidModuleName(name)) {
-        throw ModuleError("Invalid module name: '" + NomadString(name) + "'");
+        throw ModuleException("Invalid module name: '" + NomadString(name) + "'");
     }
 #if defined(_WIN32)
     return pathFromUtf8(NomadString(name) + ".dll");
@@ -39,28 +39,28 @@ ModuleManifest loadModuleManifest(const NomadPath& directory) {
     try {
         document = NomadConfiguration::readFile(path);
         if (document.requireInteger("schema") != 1) {
-            throw ModuleError("Module manifest '" + pathToUtf8(path) + "' requires schema = 1");
+            throw ModuleException("Module manifest '" + pathToUtf8(path) + "' requires schema = 1");
         }
         const auto name = document.requireString("module.name");
         if (!isValidModuleName(name)) {
-            throw ModuleError("Module manifest '" + pathToUtf8(path) + "' requires a valid module.name");
+            throw ModuleException("Module manifest '" + pathToUtf8(path) + "' requires a valid module.name");
         }
         ModuleManifest result{name, directory, {}};
         const auto dependencies = document.getStringArray("nomad.modules");
         if (dependencies) {
             for (const auto& dependency : *dependencies) {
                 if (!isValidModuleName(dependency)) {
-                    throw ModuleError("Module manifest '" + pathToUtf8(path) + "' contains an invalid dependency");
+                    throw ModuleException("Module manifest '" + pathToUtf8(path) + "' contains an invalid dependency");
                 }
                 if (std::ranges::find(result.dependencies, dependency) != result.dependencies.end()) {
-                    throw ModuleError("Module manifest '" + pathToUtf8(path) + "' repeats dependency '" + dependency + "'");
+                    throw ModuleException("Module manifest '" + pathToUtf8(path) + "' repeats dependency '" + dependency + "'");
                 }
                 result.dependencies.push_back(dependency);
             }
         }
         return result;
-    } catch (const NomadConfigurationError& error) {
-        throw ModuleError("Invalid module manifest '" + pathToUtf8(path) + "': " +
+    } catch (const NomadConfigurationException& error) {
+        throw ModuleException("Invalid module manifest '" + pathToUtf8(path) + "': " +
             NomadString(error.what()));
     }
 }
@@ -78,7 +78,7 @@ std::vector<ModuleManifest> resolveModules(
     std::vector<ModuleManifest> result;
     const std::function<void(const NomadString&)> visit = [&](const auto& name) {
         if (!isValidModuleName(name)) {
-            throw ModuleError("Invalid module name: '" + name + "'");
+            throw ModuleException("Invalid module name: '" + name + "'");
         }
         if (const auto entry = visited.find(name); entry != visited.end()) {
             if (entry->second == VisitState::Complete) {
@@ -88,13 +88,13 @@ std::vector<ModuleManifest> resolveModules(
             for (const auto& dependency : chain) {
                 message += dependency + " -> ";
             }
-            throw ModuleError(message + name);
+            throw ModuleException(message + name);
         }
         visited.emplace(name, VisitState::Visiting);
         chain.push_back(name);
         auto manifest = loadModuleManifest(modulesDirectory / pathFromUtf8(name));
         if (manifest.name != name) {
-            throw ModuleError("Module '" + name + "' has mismatched manifest name '" + manifest.name + "'");
+            throw ModuleException("Module '" + name + "' has mismatched manifest name '" + manifest.name + "'");
         }
         for (const auto& dependency : manifest.dependencies) {
             visit(dependency);
