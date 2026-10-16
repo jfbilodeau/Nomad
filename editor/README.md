@@ -32,16 +32,22 @@ Nomad (`.nomad`) scripts. Requires VS Code 1.82 or newer.
 
 ## Completion and hover
 
-Press Ctrl+Space for registered keywords, types, constants, and native functions.
+Press Ctrl+Space for registered keywords, types, constants, native functions,
+script names, and project-defined functions.
 Typing a dot also triggers suggestions, such as the available `game.` APIs.
 Hover over a registered symbol to see its signature and documentation, including
 function overloads and parameter descriptions. Completion details use the same
 runtime metadata as the generated API reference.
 
-Suggestions use the current editor text and work even when compilation fails.
-Project scripts include engine APIs; standalone scripts use language built-ins.
-This first version does not suggest local variables, project-defined functions,
-or type-aware instance members. It does not provide signature-help popups or inlay hints.
+Suggestions use the current editor text, including all open buffers in the project.
+Closing an edited script restores its disk definitions. Project functions show
+their parameters, inferred return type when available, and source location on hover.
+The compiler's collected declarations remain available after compilation errors;
+errors that prevent declaration discovery can limit the suggestions.
+Project scripts include engine APIs and functions from the configured script roots;
+standalone scripts use language built-ins and functions from that document only.
+This version does not suggest local variables or type-aware instance members.
+It does not provide signature-help popups or inlay hints.
 
 ## Diagnostics
 

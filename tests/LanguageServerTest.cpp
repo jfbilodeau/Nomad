@@ -367,4 +367,98 @@ directory = "res"
     BOOST_TEST(errors.str().empty());
 }
 
+BOOST_AUTO_TEST_CASE(project_symbols_follow_disk_editor_changes_and_close)
+{
+    TestDirectory directory("nomad_lsp_project_symbols");
+    directory.write("nomad.toml", R"(schema = 1
+[project]
+name = "Project symbols"
+identifier = "org.nomad.symbols"
+version = "0.1.0"
+executable = "symbols"
+entry = "init"
+[nomad]
+version = "0.1.0"
+[resources]
+directory = "res"
+)");
+    const auto initUri = uriFor(directory.write("res/scripts/init.nomad", "log.info \"ready\""));
+    const auto libraryUri = uriFor(directory.write("res/scripts/helpers/library.nomad",
+        "fun doubleValue value:int\nreturn value * 2\nend"));
+    const auto request = [&](const int id, const char* method, const int character) {
+        return frame({{"jsonrpc", "2.0"}, {"id", id}, {"method", method},
+            {"params", {{"textDocument", {{"uri", initUri}}},
+                {"position", {{"line", 0}, {"character", character}}}}}});
+    };
+    const auto change = [&](const NomadString& uri, const int version, const NomadString& text) {
+        return frame({{"jsonrpc", "2.0"}, {"method", "textDocument/didChange"},
+            {"params", {{"textDocument", {{"uri", uri}, {"version", version}}},
+                {"contentChanges", json::array{json::object{{"text", text}}}}}}});
+    };
+    std::istringstream input(start() + frame(openDocument(initUri, "doubleValue")) +
+        request(10, "textDocument/completion", 0) + request(11, "textDocument/hover", 4) +
+        frame(openDocument(libraryUri, "fun tripleValue value:int\nreturn value * 3\nend")) +
+        request(12, "textDocument/completion", 0) +
+        change(libraryUri, 2, "fun quadrupleValue value:int\nreturn value * 4\nend") +
+        request(13, "textDocument/completion", 0) +
+        frame({{"jsonrpc", "2.0"}, {"method", "textDocument/didClose"},
+            {"params", {{"textDocument", {{"uri", libraryUri}}}}}}) +
+        request(14, "textDocument/completion", 0) +
+        change(initUri, 2, "helpers.lib") + request(15, "textDocument/completion", 11) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    BOOST_REQUIRE_MESSAGE(errors.str().empty(), errors.str());
+    std::map<std::int64_t, json::object> replies;
+    for (const auto& message : responses(output.str())) {
+        if (message.contains("id")) replies.emplace(message.at("id").as_int64(), message);
+    }
+    const auto labels = [&](const int id) {
+        std::set<NomadString> names;
+        for (const auto& item : replies.at(id).at("result").as_object().at("items").as_array()) {
+            names.emplace(item.as_object().at("label").as_string());
+        }
+        return names;
+    };
+    BOOST_TEST(labels(10).contains("doubleValue"));
+    BOOST_TEST(labels(10).contains("helpers.library"));
+    const auto hover = json::serialize(replies.at(11).at("result"));
+    BOOST_TEST(hover.find("value:int") != NomadString::npos);
+    BOOST_TEST(hover.find("Defined in") != NomadString::npos);
+    BOOST_TEST(labels(12).contains("tripleValue"));
+    BOOST_TEST(!labels(12).contains("doubleValue"));
+    BOOST_TEST(labels(13).contains("quadrupleValue"));
+    BOOST_TEST(!labels(13).contains("tripleValue"));
+    BOOST_TEST(labels(14).contains("doubleValue"));
+    BOOST_TEST(!labels(14).contains("quadrupleValue"));
+    BOOST_TEST(labels(15).contains("helpers.library"));
+}
+
+BOOST_AUTO_TEST_CASE(standalone_symbols_remain_isolated_between_documents)
+{
+    TestDirectory directory("nomad_lsp_standalone_symbols");
+    const auto firstUri = uriFor(directory.getPath() / "first.nomad");
+    const auto secondUri = uriFor(directory.getPath() / "second.nomad");
+    const auto request = [&](const int id, const NomadString& uri) {
+        return frame({{"jsonrpc", "2.0"}, {"id", id}, {"method", "textDocument/completion"},
+            {"params", {{"textDocument", {{"uri", uri}}},
+                {"position", {{"line", 0}, {"character", 0}}}}}});
+    };
+    std::istringstream input(start() +
+        frame(openDocument(firstUri, "fun firstFunction count:int\nreturn count\nend\nunknown")) +
+        frame(openDocument(secondUri, "fun secondFunction\nend")) +
+        request(10, firstUri) + request(11, secondUri) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    BOOST_REQUIRE_MESSAGE(errors.str().empty(), errors.str());
+    for (const auto& message : responses(output.str())) {
+        if (!message.contains("id") || message.at("id").as_int64() < 10) continue;
+        const auto first = message.at("id").as_int64() == 10;
+        const auto serialized = json::serialize(message.at("result"));
+        BOOST_TEST(serialized.find(first ? "firstFunction" : "secondFunction") != NomadString::npos);
+        BOOST_TEST(serialized.find(first ? "secondFunction" : "firstFunction") == NomadString::npos);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

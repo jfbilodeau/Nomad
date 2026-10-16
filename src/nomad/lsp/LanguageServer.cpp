@@ -47,18 +47,42 @@ struct ApiSymbol {
     NomadString documentation;
 };
 
-std::vector<ApiSymbol> createApiSymbols(const NomadPath& path) {
+struct AnalysisGroup {
+    std::vector<NomadPath> roots;
+    std::vector<ScriptSource> overrides;
+    std::optional<NomadProject> project;
+};
+
+std::map<NomadPath, AnalysisGroup> collectAnalysisGroups(const LanguageDocuments& documents);
+NomadPath documentPath(const NomadString& uri);
+
+std::vector<ApiSymbol> createApiSymbols(
+    const NomadPath& path,
+    const LanguageDocuments& documents
+) {
     std::unique_ptr<Game> game;
     std::unique_ptr<Runtime> language;
-    if (const auto root = findProjectRoot(path.parent_path())) {
-        const auto project = loadNomadProject(*root / NOMAD_PROJECT_FILE_NAME);
+    const auto root = findProjectRoot(path.parent_path());
+    LanguageDocuments relatedDocuments;
+    for (const auto& [uri, document] : documents) {
+        const auto candidate = documentPath(uri);
+        if (root ? findProjectRoot(candidate.parent_path()) == root : candidate == path) {
+            relatedDocuments.emplace(uri, document);
+        }
+    }
+    const auto groups = collectAnalysisGroups(relatedDocuments);
+    const auto& group = groups.at(root.value_or(path));
+    if (group.project) {
         GameOptions options;
-        options.resourcePath = pathToUtf8(resolveProjectResourcePath(project));
+        options.resourcePath = pathToUtf8(resolveProjectResourcePath(*group.project));
         game = Game::createHeadless(std::move(options));
     } else {
         language = std::make_unique<Runtime>();
     }
-    const auto* runtime = game ? game->getRuntime() : language.get();
+    auto* runtime = game ? game->getRuntime() : language.get();
+    const auto batch = loadSourcePaths(group.roots, group.overrides);
+    // Failed compilations still retain declarations collected by the compiler's earlier passes.
+    (void)checkSources(batch, runtime);
     std::vector<ApiSymbol> symbols;
     std::vector<KeywordDefinition> keywords;
     runtime->getKeywords(keywords);
@@ -98,6 +122,21 @@ std::vector<ApiSymbol> createApiSymbols(const NomadPath& path) {
         const auto& name = runtime->getConstantName(id);
         symbols.push_back({name, CompletionItemKind::Constant,
             name + ":" + runtime->getConstantType(id)->getTypeName(), ""});
+    }
+    std::vector<ScriptFunction*> scriptFunctions;
+    runtime->getFunctions(scriptFunctions);
+    for (const auto* function : scriptFunctions) {
+        if (function->isNested()) continue;
+        auto signature = function->getName();
+        for (auto index = NomadIndex{0}; index < function->getParameterCount(); ++index) {
+            const auto parameterId = toNomadId(index);
+            signature += " " + function->getParameterName(parameterId) + ":" +
+                function->getParameterType(parameterId)->getTypeName();
+        }
+        const auto* returnType = function->getReturnType();
+        signature += " -> " + (returnType ? returnType->getTypeName() : "unknown");
+        symbols.push_back({function->getName(), CompletionItemKind::Function,
+            std::move(signature), "Defined in `" + function->getPath() + "`."});
     }
     std::ranges::sort(symbols, [](const auto& left, const auto& right) {
         return left.name == right.name ? left.signature < right.signature : left.name < right.name;
@@ -305,14 +344,7 @@ std::optional<NomadString> readMessage(std::istream& input) {
     return std::nullopt;
 }
 
-} // namespace
-
-LanguageDiagnostics analyzeLanguageDocuments(const LanguageDocuments& documents) {
-    struct AnalysisGroup {
-        std::vector<NomadPath> roots;
-        std::vector<ScriptSource> overrides;
-        std::optional<NomadProject> project;
-    };
+std::map<NomadPath, AnalysisGroup> collectAnalysisGroups(const LanguageDocuments& documents) {
     std::map<NomadPath, AnalysisGroup> groups;
     for (const auto& [uri, document] : documents) {
         const auto path = documentPath(uri);
@@ -348,7 +380,13 @@ LanguageDiagnostics analyzeLanguageDocuments(const LanguageDocuments& documents)
         }
         group.overrides.push_back({scriptName, {uri, document.text, path}});
     }
+    return groups;
+}
 
+} // namespace
+
+LanguageDiagnostics analyzeLanguageDocuments(const LanguageDocuments& documents) {
+    const auto groups = collectAnalysisGroups(documents);
     LanguageDiagnostics published;
     for (const auto& [key, group] : groups) {
         (void)key;
@@ -480,10 +518,10 @@ int runLanguageServer(
                     const auto& document = documents.at(uri);
                     const auto word = documentWord(document.text, params.at("position").as_object());
                     const auto path = documentPath(uri);
-                    const auto key = findProjectRoot(path.parent_path()).value_or(NomadPath{});
+                    const auto key = findProjectRoot(path.parent_path()).value_or(path);
                     auto found = apiCatalogs.find(key);
                     if (found == apiCatalogs.end() && !word.suppressed) {
-                        found = apiCatalogs.emplace(key, createApiSymbols(path)).first;
+                        found = apiCatalogs.emplace(key, createApiSymbols(path, documents)).first;
                     }
                     json::value result;
                     if (method == "textDocument/completion") {
@@ -518,6 +556,7 @@ int runLanguageServer(
                     (void)documentPath(uri);
                     if (documents.contains(uri)) throw std::invalid_argument("Document is already open");
                     documents.emplace(uri, LanguageDocument{stringField(document, "text"), document.at("version").as_int64()});
+                    apiCatalogs.clear();
                     publish();
                 } else if (method == "textDocument/didChange") {
                     const auto& params = object.at("params").as_object();
@@ -532,11 +571,13 @@ int runLanguageServer(
                         text = stringField(change.as_object(), "text");
                     }
                     current = {std::move(text), version};
+                    apiCatalogs.clear();
                     publish();
                 } else if (method == "textDocument/didClose") {
                     const auto& document = object.at("params").as_object().at("textDocument").as_object();
                     const auto uri = stringField(document, "uri");
                     if (documents.erase(uri) == 0) throw std::invalid_argument("Document is not open");
+                    apiCatalogs.clear();
                     previousUris.insert(uri);
                     publish();
                 } else if (method == "textDocument/didSave" || method == "workspace/didChangeWatchedFiles") {

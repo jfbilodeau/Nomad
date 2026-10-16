@@ -65,7 +65,7 @@ speaks LSP over standard input/output using `Content-Length` framing. The explic
 standard error. `--help`/`-h` prints usage and `--version`/`-v` prints the version;
 unknown arguments are rejected.
 
-The server supports compiler diagnostics, registered API completion, hover
+The server supports compiler diagnostics, registered API and project-function completion, hover
 documentation, full-text document synchronization, and UTF-16 positions.
 It reuses compiler source batches, applies open editor buffers
 over files on disk, and discovers the nearest project configuration. It never
