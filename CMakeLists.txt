@@ -187,7 +187,6 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/game/GameEvent.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/GameEventQueue.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/GameExecutionContext.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/game/GameFactory.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/GameModule.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/GamePackaging.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/GameResourceCheck.cpp

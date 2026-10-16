@@ -114,8 +114,6 @@ target_link_libraries(nomad-game
     SDL3_mixer::SDL3_mixer
     SDL3_ttf::SDL3_ttf
     box2d
-    PRIVATE
-    Boost::program_options
 )
 target_include_directories(nomad-game PRIVATE ${dearimgui_SOURCE_DIR})
 foreach(TARGET IN ITEMS nomad-language nomad nomad-system nomad-game)
