@@ -251,8 +251,12 @@ LanguageDiagnostics analyzeLanguageDocuments(const LanguageDocuments& documents)
     return published;
 }
 
-int runLanguageServer(std::istream& input, std::ostream& output, std::ostream& errors,
-    const LanguageAnalyzer& analyze) {
+int runLanguageServer(
+    std::istream& input,
+    std::ostream& output,
+    std::ostream& errors,
+    const LanguageAnalyzer& analyze
+) {
     LanguageDocuments documents;
     std::set<NomadString> previousUris;
     auto initialized = false;

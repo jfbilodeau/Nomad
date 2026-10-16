@@ -163,8 +163,6 @@ set(
         NOMAD_ENGINE_SOURCES
         ${DEAR_IMGUI_SOURCE}
 
-        ${NOMAD_SOURCE_DIR}/nomad/lsp/LanguageServer.cpp
-
         ${NOMAD_SOURCE_DIR}/nomad/debug/DebugConsole.cpp
         ${NOMAD_SOURCE_DIR}/nomad/debug/DebugDraw.cpp
 
@@ -217,6 +215,8 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/geometry/PointF.cpp
         ${NOMAD_SOURCE_DIR}/nomad/geometry/Rectangle.cpp
         ${NOMAD_SOURCE_DIR}/nomad/geometry/RectangleF.cpp
+
+        ${NOMAD_SOURCE_DIR}/nomad/lsp/LanguageServer.cpp
 
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectConfiguration.cpp
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectInitializer.cpp

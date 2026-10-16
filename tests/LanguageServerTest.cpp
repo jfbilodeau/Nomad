@@ -58,7 +58,11 @@ NomadString finish() {
         frame({{"jsonrpc", "2.0"}, {"method", "exit"}});
 }
 
-json::object openDocument(const NomadString& uri, const NomadString& text, const int version = 1) {
+json::object openDocument(
+    const NomadString& uri,
+    const NomadString& text,
+    const int version = 1
+) {
     return {{"jsonrpc", "2.0"}, {"method", "textDocument/didOpen"},
         {"params", {{"textDocument", {
             {"uri", uri}, {"languageId", "nomad"}, {"version", version}, {"text", text}

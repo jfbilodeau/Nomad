@@ -1,16 +1,15 @@
 add_executable(
     nomad_test
-    ./main.cpp
     ./AudioDiscoveryTest.cpp
     ./AudioTest.cpp
+    ./CallableCatalogTest.cpp
     ./ColorTest.cpp
+    ./CompilerContextTest.cpp
+    ./CompilerTest.cpp
+    ./CompilerToolsTest.cpp
     ./DebugDrawTest.cpp
     ./EntitySpriteAnchorTest.cpp
     ./EntityTextTest.cpp
-    ./CallableCatalogTest.cpp
-    ./CompilerToolsTest.cpp
-    ./CompilerContextTest.cpp
-    ./CompilerTest.cpp
     ./EventRegistrationTest.cpp
     ./ExpressionEvaluationTest.cpp
     ./ExpressionResolveTest.cpp
@@ -22,34 +21,35 @@ add_executable(
     ./InterpreterTest.cpp
     ./IntrinsicMemberConflictTest.cpp
     ./IntrinsicMemberExecutionTest.cpp
-    ./IntrinsicMemberTest.cpp
     ./IntrinsicMemberSyntaxTest.cpp
+    ./IntrinsicMemberTest.cpp
     ./IntrinsicStringMemberTest.cpp
     ./LanguageCallbackEventTest.cpp
     ./LanguageControlFlowTest.cpp
     ./LanguageFormatStringFunctionTest.cpp
     ./LanguageFunctionTest.cpp
     ./LanguageLexicalTest.cpp
-    ./LanguageServerTest.cpp
     ./LanguageOperatorTest.cpp
     ./LanguageScriptDiscoveryTest.cpp
+    ./LanguageServerTest.cpp
     ./LanguageStringLifetimeTest.cpp
     ./LanguageTestFixture.cpp
     ./LanguageTypeTest.cpp
     ./LogTest.cpp
+    ./main.cpp
     ./NomadVersionTest.cpp
-    ./ParserTest.cpp
     ./PackedSpriteRegistrationTest.cpp
+    ./ParserTest.cpp
     ./ProgramOptionsTest.cpp
     ./ProjectConfigurationTest.cpp
     ./ProjectInitializerTest.cpp
     ./ProjectPackagerTest.cpp
     ./RectanglePackerTest.cpp
     ./RuntimeTest.cpp
-    ./SpriteDiscoveryTest.cpp
-    ./SpriteCatalogTest.cpp
-    ./SpritePackerTest.cpp
     ./SourceLoaderTest.cpp
+    ./SpriteCatalogTest.cpp
+    ./SpriteDiscoveryTest.cpp
+    ./SpritePackerTest.cpp
     ./StatementExecutionTest.cpp
     ./SystemTest.cpp
     ./TestDirectory.hpp
