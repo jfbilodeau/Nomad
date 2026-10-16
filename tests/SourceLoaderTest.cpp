@@ -79,13 +79,13 @@ BOOST_AUTO_TEST_CASE(explicit_missing_file_uses_editor_snapshot_without_loading_
 
 BOOST_AUTO_TEST_CASE(path_identity_handles_relative_and_lexically_equivalent_paths)
 {
-    TestDirectory directory("nomad_overlay_normalized");
-    const auto path = directory.write("answer.nomad", "return missing");
-    const auto relative = path.lexically_relative(std::filesystem::current_path());
+    const auto root = std::filesystem::current_path();
+    const auto path = root / "nomad_overlay_normalized" / "answer.nomad";
+    const auto relative = path.lexically_relative(root);
     BOOST_REQUIRE(!relative.empty());
     const auto alternate = relative.parent_path() / "unused" / ".." / relative.filename();
     const std::vector<ScriptSource> overrides{{"unused", {"editor:answer", "return 42", alternate}}};
-    const auto batch = loadSourcePaths(std::vector{directory.getPath()}, overrides);
+    const auto batch = loadSourcePaths(std::vector{path}, overrides);
 
     BOOST_REQUIRE(batch.diagnostics.empty());
     BOOST_REQUIRE(batch.sources.size() == 1U);
