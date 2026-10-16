@@ -92,7 +92,7 @@ void Game::initWindowDynamicVariables() {
             value.setFloatValue(m_mousePosition.getX());
         },
         m_runtime->getFloatType(),
-        NomadDoc("The x position of the mouse.")
+        NomadDoc("The x position of the mouse on the window. Not adjusted to the window's resolution.")
     );
 
     m_runtime->registerDynamicVariable(
@@ -104,7 +104,7 @@ void Game::initWindowDynamicVariables() {
             value.setFloatValue(m_mousePosition.getY());
         },
         m_runtime->getFloatType(),
-        NomadDoc("The y position of the mouse.")
+        NomadDoc("The y position of the mouse on the window. Not adjusted to the window's resolution.")
     );
 
     m_runtime->registerDynamicVariable(

@@ -116,7 +116,7 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
             retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
             return false;
         }
-        if (tokenizer.endOfLine()) {
+        if (!tokenizer.nextLine()) {
             evaluation.setVoidResult();
             return true;
         }

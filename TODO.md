@@ -3,7 +3,6 @@ Things the author wants to do.
 
 ## Problems
 [ ] Mouse x,y not property calculate when window is scaled
-[ ] `$"{1+2}"` in interpreter causes fault
 
 
 ## Open
@@ -26,6 +25,7 @@ Things the author wants to do.
 [ ] Gen game docs for modding
 
 ## Completed
+[X] `$"{1+2}"` in interpreter causes fault
 [X] Make `font` an intrinsic instead of ID.
 [X] Display physics bodies in debug mode
 [X] Automatic sprite texture packing
