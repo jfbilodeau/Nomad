@@ -620,6 +620,7 @@ int runLanguageServer(
                                 }
                                 items.push_back(json::object{
                                     {"label", symbol.name}, {"kind", static_cast<int>(symbol.kind)},
+                                    {"filterText", replacement},
                                     {"detail", symbol.signature}, {"documentation", symbolDocumentation(symbol)},
                                     {"textEdit", {{"range", word.range}, {"newText", replacement}}}
                                 });

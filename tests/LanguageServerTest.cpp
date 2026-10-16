@@ -477,10 +477,11 @@ version = "0.1.0"
 directory = "res"
 )");
     const auto uri = uriFor(directory.write("res/scripts/init.nomad", ""));
-    const auto text = NomadString("\nthis.\nvalue.tr\nali");
+    const auto text = NomadString("\nthis.\nvalue.tr\nali\nthis.name.\nthis.name.tr");
     NomadString requests;
-    for (auto line = 0; line < 4; ++line) {
-        const auto character = line == 1 ? 5 : line == 2 ? 8 : line == 3 ? 3 : 0;
+    const std::vector<int> characters{0, 5, 8, 3, 10, 12};
+    for (auto line = 0; line < 6; ++line) {
+        const auto character = characters[static_cast<std::size_t>(line)];
         requests += frame({{"jsonrpc", "2.0"}, {"id", 10 + line}, {"method", "textDocument/completion"},
             {"params", {{"textDocument", {{"uri", uri}}},
                 {"position", {{"line", line}, {"character", character}}}}}});
@@ -518,12 +519,25 @@ directory = "res"
         if (value.at("label").as_string() == "trim") {
             trimFound = true;
             BOOST_TEST(value.at("textEdit").as_object().at("newText").as_string() == "value.trim");
+            BOOST_TEST(value.at("filterText").as_string() == "value.trim");
             BOOST_TEST(NomadString(value.at("detail").as_string()).starts_with("string.trim"));
         }
     }
     BOOST_TEST(trimFound);
     BOOST_REQUIRE(!results.at(13).empty());
     BOOST_TEST(results.at(13)[0].as_object().at("label").as_string() == "alignment");
+    for (const auto id : {14, 15}) {
+        BOOST_REQUIRE(!results.at(id).empty());
+        auto nameTrimFound = false;
+        for (const auto& item : results.at(id)) {
+            const auto& value = item.as_object();
+            const auto replacement = NomadString(value.at("textEdit").as_object().at("newText").as_string());
+            BOOST_TEST(replacement.starts_with("this.name."));
+            BOOST_TEST(value.at("filterText").as_string() == replacement);
+            if (value.at("label").as_string() == "trim") nameTrimFound = true;
+        }
+        BOOST_TEST(nameTrimFound);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
