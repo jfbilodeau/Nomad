@@ -101,7 +101,11 @@ function(run_success)
         WORKING_DIRECTORY "${NOMAD_TEST_ROOT}")
 endfunction()
 
-foreach(PROGRAM IN ITEMS nomad nomadc)
+set(SDK_PROGRAMS nomad nomadc)
+if(NOMAD_DISTRIBUTION_LSP OR EXISTS "${SDK}/nomad-lsp${SUFFIX}")
+    list(APPEND SDK_PROGRAMS nomad-lsp)
+endif()
+foreach(PROGRAM IN LISTS SDK_PROGRAMS)
     nomadRunTestCommand("Extracted ${PROGRAM} version"
         COMMAND "${SDK}/${PROGRAM}${SUFFIX}" --version
         WORKING_DIRECTORY "${NOMAD_TEST_ROOT}"

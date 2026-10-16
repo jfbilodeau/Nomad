@@ -95,7 +95,7 @@ try {
     }
     $sdk = Join-Path $staging 'sdk'
     [System.IO.Compression.ZipFile]::ExtractToDirectory($archive, $sdk)
-    foreach ($required in @('nomad.exe', 'nomadc.exe', 'nomad-runtime.exe', 'templates', 'runtime\runtime.json')) {
+    foreach ($required in @('nomad.exe', 'nomad-lsp.exe', 'nomadc.exe', 'nomad-runtime.exe', 'templates', 'runtime\runtime.json')) {
         if (-not (Test-Path -LiteralPath (Join-Path $sdk $required))) {
             throw "Missing SDK file: $required"
         }

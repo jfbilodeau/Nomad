@@ -36,8 +36,8 @@ struct Diagnostic {
 // Formats as `source:line:column: error: message`, omitting unknown location parts.
 [[nodiscard]] NomadString formatDiagnostic(const Diagnostic& diagnostic);
 
-// Collects errors and warnings while parsing and resolving source code. A single context can span many functions:
-// each diagnostic records the source (file path) it was reported against.
+// Collects loading, registration, parsing and resolution diagnostics. A single context can span many scripts:
+// each diagnostic records the source name it was reported against.
 class CompilerContext {
 public:
     explicit CompilerContext(Compiler* compiler, CompilerMode mode = CompilerMode::Script,
@@ -50,6 +50,8 @@ public:
     [[nodiscard]] Runtime* getRuntime() const;
     [[nodiscard]] CompilerMode getMode() const;
     [[nodiscard]] const InterpreterContext* getInterpreterContext() const;
+
+    void reportDiagnostics(std::span<const Diagnostic> diagnostics);
 
     void reportError(NomadStringView message);
     void reportError(NomadStringView message, NomadStringView sourceName, NomadIndex line, NomadIndex column);

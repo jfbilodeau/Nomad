@@ -22,8 +22,9 @@ namespace {
 
 NomadId compileFunction(Runtime& runtime, const NomadString& source) {
     auto compiler = runtime.createCompiler();
-    const auto functionId = compiler->registerScriptFile("test", "test.nomad", source);
     CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"test", {"test.nomad", source}}}, {}});
+    const auto functionId = runtime.getFunctionId("test");
 
     const auto compiled = compiler->compileFunctions(&context);
     const auto* error = context.getFirstError();

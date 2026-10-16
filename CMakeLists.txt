@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.30)
 set(CMAKE_POLICY_VERSION 3.30)
 
-project(Nomad VERSION 0.1.6 LANGUAGES CXX)
+project(Nomad VERSION 0.1.7 LANGUAGES CXX)
 
 include(CTest)
 
@@ -121,6 +121,7 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/compiler/FormatStringCompiler.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/Operators.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/Parser.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/compiler/SourceLoader.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/StatementParsers.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/SyntaxTree.cpp
         ${NOMAD_SOURCE_DIR}/nomad/compiler/Tokenizer.cpp
@@ -214,6 +215,8 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/geometry/PointF.cpp
         ${NOMAD_SOURCE_DIR}/nomad/geometry/Rectangle.cpp
         ${NOMAD_SOURCE_DIR}/nomad/geometry/RectangleF.cpp
+
+        ${NOMAD_SOURCE_DIR}/nomad/lsp/LanguageServer.cpp
 
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectConfiguration.cpp
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectInitializer.cpp
@@ -313,6 +316,14 @@ option(NOMAD_BUILD_COMPILER "Build the Nomad compiler tooling" ON)
 if(NOMAD_BUILD_COMPILER)
     add_executable(nomadc apps/compiler/main.cpp)
     target_link_libraries(nomadc PRIVATE Nomad::Engine Nomad::CliOptions Boost::nowide)
+endif()
+
+option(NOMAD_BUILD_LSP "Build the Nomad language server" ON)
+if(NOMAD_BUILD_LSP)
+    add_executable(nomad-lsp apps/lsp/main.cpp)
+    target_link_libraries(nomad-lsp PRIVATE Nomad::Engine Boost::program_options Boost::nowide)
+    nomad_configure_runtime_target(nomad-lsp)
+    nomad_copy_runtime_dependencies(nomad-lsp)
 endif()
 
 include(cmake/NomadDistribution.cmake)

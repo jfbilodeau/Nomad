@@ -13,3 +13,4 @@ CMakeUserPresets.json
 /out/
 
 __pycache__/
+/editor/node_modules/

@@ -3,6 +3,8 @@
 #include <nomad/compiler/CompilerTools.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/SourceLoader.hpp>
+
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptFunction.hpp>
@@ -10,8 +12,6 @@
 
 #include <nomad/system/Path.hpp>
 
-#include <fstream>
-#include <iterator>
 #include <memory>
 #include <sstream>
 
@@ -27,8 +27,8 @@ struct CompilationArtifacts {
 
 // When `externalRuntime` is null a bare runtime is created, exposing only the language built-ins.
 // Tools that need the engine API pass the runtime of a headless `Game`.
-CompilationArtifacts compilePaths(
-    const std::vector<std::filesystem::path>& paths,
+CompilationArtifacts compileSources(
+    const SourceBatch& batch,
     Runtime* externalRuntime
 ) {
     std::unique_ptr<Runtime> ownedRuntime;
@@ -42,56 +42,8 @@ CompilationArtifacts compilePaths(
     auto compiler = runtime->createCompiler();
     CompilerContext context(compiler.get());
 
-    for (const auto& path : paths) {
-        const auto sourceName = pathToGenericUtf8(path);
-
-        try {
-            if (!std::filesystem::exists(path)) {
-                context.reportError("Path does not exist", sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
-            } else if (std::filesystem::is_regular_file(path)) {
-                if (path.extension() != ".nomad") {
-                    context.reportError(
-                        "Expected a .nomad source file",
-                        sourceName,
-                        NOMAD_INVALID_INDEX,
-                        NOMAD_INVALID_INDEX
-                    );
-                } else {
-                    std::ifstream sourceFile(path, std::ios::binary);
-
-                    if (!sourceFile.is_open()) {
-                        context.reportError(
-                            "Failed to open source file",
-                            sourceName,
-                            NOMAD_INVALID_INDEX,
-                            NOMAD_INVALID_INDEX
-                        );
-                    } else {
-                        const NomadString source{
-                            std::istreambuf_iterator<char>(sourceFile),
-                            std::istreambuf_iterator<char>()
-                        };
-                        (void)compiler->registerScriptFile(pathToUtf8(path.stem()), sourceName, source);
-                    }
-                }
-            } else if (std::filesystem::is_directory(path)) {
-                compiler->loadScriptsFromPath(sourceName);
-            } else {
-                context.reportError(
-                    "Path is not a regular file or directory",
-                    sourceName,
-                    NOMAD_INVALID_INDEX,
-                    NOMAD_INVALID_INDEX
-                );
-            }
-        } catch (const std::filesystem::filesystem_error& exception) {
-            context.reportError(exception.what(), sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
-        }
-    }
-
-    if (!context.hasError()) {
-        (void)compiler->compileFunctions(&context);
-    }
+    compiler->registerSources(&context, batch);
+    (void)compiler->compileFunctions(&context);
 
     const auto diagnostics = context.getDiagnostics();
 
@@ -106,6 +58,13 @@ CompilationArtifacts compilePaths(
     };
 }
 
+CompilationArtifacts compilePaths(
+    const std::vector<std::filesystem::path>& paths,
+    Runtime* runtime
+) {
+    return compileSources(loadSourcePaths(paths), runtime);
+}
+
 } // namespace
 
 bool CompilationResult::succeeded() const {
@@ -118,6 +77,10 @@ CompilationResult checkPath(const std::filesystem::path& path, Runtime* runtime)
 
 CompilationResult checkPaths(const std::vector<std::filesystem::path>& paths, Runtime* runtime) {
     return compilePaths(paths, runtime).result;
+}
+
+CompilationResult checkSources(const SourceBatch& batch, Runtime* runtime) {
+    return compileSources(batch, runtime).result;
 }
 
 void validateEntryFunction(

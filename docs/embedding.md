@@ -21,6 +21,112 @@ Types and function definitions used by a context must remain valid.
 
 Neither the interpreter nor its context creates or owns a VM.
 
+## Source input and compilation
+
+The compiler consumes source text, not filesystem paths. `SourceText` owns a
+`sourceName` (used in diagnostics), `text`, and an optional `filePath`. The name
+does not need to exist on disk and is never interpreted as a path. `filePath`
+identifies a backing file, not a request to read it: the supplied text is always
+authoritative, including unsaved editor changes and files not yet created.
+Untitled documents and interpreter input can leave it unset.
+`ScriptSource` pairs that text with an explicit `scriptName`. This is the
+source-level name used to register the script's compiled runtime function.
+`SourceBatch` holds script sources and any diagnostics from loading them.
+
+```cpp
+#include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/SourceLoader.hpp>
+#include <nomad/script/Runtime.hpp>
+
+void compileSources() {
+    nomad::Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    nomad::SourceBatch batch{{
+        {"init", {"untitled:init", "return helpers.answer"}},
+        {"helpers.answer", {"untitled:answer", "return 42"}}
+    }, {}};
+    nomad::CompilerContext context(compiler.get());
+    compiler->registerSources(&context, batch);
+    const auto compiled = compiler->compileFunctions(&context);
+    // Inspect context.getDiagnostics() if compilation fails.
+    (void)compiled;
+}
+```
+
+`registerSources` is the only script-input API. A single script is a batch with
+one entry; the former `registerScriptFile` API is replaced by this entry point.
+It copies the input, so the batch may be changed or destroyed
+after registration. It appends sources; it does not replace already registered
+functions. Duplicate script names are reported immediately to the supplied
+`CompilerContext`. That same context collects loading and compilation diagnostics;
+compilation refuses to proceed if it already contains errors. Use a fresh runtime
+for independent analysis snapshots, or provide a runtime containing the host APIs
+needed by the scripts. Compilation does not execute scripts.
+
+The compiler owns `ScriptSource` snapshots alongside per-script tokenizers and
+top-level function IDs. Its function compilation records separately hold ASTs
+and a compiler-local `NomadId` referring to the owning script. Script IDs remain
+stable when more batches are registered and when scripts are processed in sorted
+order; references returned by `getScript(id)` should be reacquired after
+registration.
+
+Parser integrations use `createFunction(context, scriptId, functionName)` for
+declared or generated functions, replacing `registerFunctionSource`. This creates
+a function within an existing script, not another script input. The script ID can
+be obtained from a compiled or currently compiling function with
+`getScriptId(functionId)`. Function creation inherits the script's source name
+and full text and reports name collisions to the supplied context.
+
+For disk input, call `loadSourcePaths(paths)` with a vector or span of filesystem
+paths, then register the returned batch. This replaces the former
+`Compiler::loadScriptsFromPath` API. The CLI tools and game use this same adapter.
+Each directory is a separate compile root; relative paths become dotted script
+names. Individual files use their filename stem. Discovery ignores non-`.nomad`
+files, skips symbolic links within directories, and visits at most ten directory
+levels, counting the root. Scripts are sorted by script name and source name.
+Filesystem failures are diagnostics, including inaccessible paths and failed
+reads; they prevent compilation rather than silently compiling an incomplete
+project.
+
+For editor buffers, pass a span or vector of `ScriptSource` overrides as the
+second argument to `loadSourcePaths(paths, overrides)`. Matching buffers replace
+disk snapshots **before their contents are read**, so a locked disk file does
+not block analysis. An explicit missing `.nomad` file also uses its matching
+buffer without a missing-path error. Other loading failures are still reported.
+
+File-backed overrides match by absolute, lexically normalized `filePath`, not by
+`scriptName` or `sourceName`. Relative paths use the current working directory.
+Matching is case-insensitive on Windows and case-sensitive elsewhere. This is a
+lexical policy: it does not resolve symbolic links, hard links, or filesystem
+case-sensitivity settings (including case-sensitive Windows directories).
+The caller decodes document URIs into filesystem paths.
+
+A discovered file keeps its disk-derived script name and takes the override's
+complete `SourceText`, including its diagnostic name and backing path. Unmatched
+overrides, including untitled and not-yet-saved scripts, are added using their
+explicit script names. The caller is responsible for project membership and
+naming those scripts; overrides are not restricted to the supplied disk roots.
+Duplicate file identities or duplicate untitled `sourceName` values produce
+loading errors, not last-write-wins behavior. Different documents with the same
+script name remain ordinary compiler collisions.
+
+```cpp
+const std::vector<nomad::ScriptSource> buffers{
+    {"entities.player", {"editor:player", unsavedText, playerPath}}
+};
+const auto batch = nomad::loadSourcePaths(scriptRoots, buffers);
+const auto result = nomad::checkSources(batch);
+```
+
+The loader returns owned, sorted snapshots without changing the disk or buffers.
+Rebuild a batch with the latest buffers for each analysis; remove an override
+when its document closes to use disk text again. Document versions, project
+association and stale-analysis rejection belong to the editor adapter, not the
+compiler. `checkSources(batch, runtime)` from
+`<nomad/compiler/CompilerTools.hpp>` returns the same `CompilationResult` as
+`checkPaths`, without reading files. Loading warnings permit compilation; loading
+errors stop it before parsing.
+
 ## Persistent interpretation
 
 ```cpp
@@ -51,6 +157,17 @@ void interpretInput() {
 expression, or a supported function call. `evaluateExpression(source, context)`
 requires exactly one non-void expression; assignments and statements are rejected.
 Each entry point clears the context's previous result and error.
+
+Both entry points also accept `SourceText`, using its name for input diagnostics:
+
+```cpp
+const nomad::SourceText input{"console:input", "score + 5"};
+const auto succeeded = interpreter.evaluateExpression(input, context);
+```
+
+The string overloads preserve the existing context source name. Interpretation
+continues to share the compiler's tokenizer, parser, and type resolver; it does
+not register input as a compiled function or relax its single-line restrictions.
 
 Use `hasError()` to check for errors and `hasWarning()` to check for warnings.
 Warnings alone do not indicate failure. To display all diagnostics from the latest

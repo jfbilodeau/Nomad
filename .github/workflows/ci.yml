@@ -244,6 +244,8 @@ jobs:
           test -n "$version"
           mkdir -p out/extension
           cd editor
+          npm ci
+          npm run check
           npx --yes @vscode/vsce@4.0.0 package "$version" \
             --out "../out/extension/nomad-language-$version.vsix"
 

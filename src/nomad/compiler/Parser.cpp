@@ -405,16 +405,18 @@ NomadId parseCallbackParameter(
         tokens->next();
 
         const auto functionName = generateFunFunctionName(context, function, tokens->getLineIndex());
-        auto& functionPath = function->getPath();
-        auto& functionSource = function->getSource();
-
-        const auto functionId = context->getCompiler()->registerFunctionSource(functionName, functionPath, functionSource);
+        auto* compiler = context->getCompiler();
+        const auto functionId = compiler->createFunction(context, compiler->getScriptId(function->getId()), functionName);
+        if (functionId == NOMAD_INVALID_ID) {
+            return NOMAD_INVALID_ID;
+        }
 
         const auto callbackFunction = context->getRuntime()->getFunction(functionId);
 
         // Wire the nested function's parent reference.
         callbackFunction->setParentId(function->getId());
 
+        const auto declarationLine = tokens->getLineIndex();
         auto parametersParsed = parseCallbackFunParameters(context, callbackFunction, tokens, callbackType);
 
         if (parametersParsed) {
@@ -425,8 +427,8 @@ NomadId parseCallbackParameter(
         }
 
         auto callbackBody = isFun
-            ? parseFunBody(context, callbackFunction, tokens)
-            : parseThenBody(context, callbackFunction, tokens);
+            ? parseFunBody(context, callbackFunction, tokens, declarationLine)
+            : parseThenBody(context, callbackFunction, tokens, declarationLine);
 
         if (!parametersParsed || callbackBody == nullptr) {
             return NOMAD_INVALID_ID;
@@ -1334,11 +1336,12 @@ std::unique_ptr<Argument> parsePredicateArgument(
 ) {
     const auto predicateFunctionName = context->getCompiler()->generateFunctionName("predicate", function, tokens->getLineIndex());
 
-    const auto predicateFunctionId = context->getCompiler()->registerFunctionSource(
-        predicateFunctionName,
-        function->getPath(),
-        tokens->getLine()
-    );
+    auto* compiler = context->getCompiler();
+    const auto predicateFunctionId = compiler->createFunction(
+        context, compiler->getScriptId(function->getId()), predicateFunctionName);
+    if (predicateFunctionId == NOMAD_INVALID_ID) {
+        return nullptr;
+    }
 
     auto predicateExpression = parser::parseExpression(context, function, tokens);
 

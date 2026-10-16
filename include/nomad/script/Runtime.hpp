@@ -281,6 +281,10 @@ public:
     NomadId registerFunction(const NomadString& name, const NomadString& path, const NomadString& source);
     [[nodiscard]] NomadId getFunctionId(const NomadString& name) const;
     [[nodiscard]] ScriptFunction* getFunction(NomadId function_id) const;
+    [[nodiscard]] ScriptFunction* getFunctionAtLine(
+        const NomadString& sourceName,
+        NomadIndex line
+    ) const;
     [[nodiscard]] std::optional<NomadString> getFunctionName(NomadId functionId) const;
     [[nodiscard]] ScriptFunction* getFunctionByStartAddress(NomadIndex startAddress) const;
     [[nodiscard]] NomadIndex getFunctionCount() const;

@@ -10,6 +10,14 @@ foreach(PROGRAM IN ITEMS nomad-cli nomadc)
     endif()
 endforeach()
 
+if(TARGET nomad-lsp)
+    if(APPLE)
+        set_target_properties(nomad-lsp PROPERTIES BUILD_RPATH "@loader_path")
+    elseif(UNIX)
+        set_target_properties(nomad-lsp PROPERTIES BUILD_RPATH "$ORIGIN" BUILD_RPATH_USE_ORIGIN TRUE)
+    endif()
+endif()
+
 set(NOMAD_DISTRIBUTION_CONFIG "${CMAKE_CURRENT_BINARY_DIR}/Distribution-$<CONFIG>.cmake")
 set(NOMAD_DISTRIBUTION_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/distribution/$<CONFIG>")
 set(NOMAD_DISTRIBUTION_SETTINGS
@@ -32,6 +40,16 @@ if(WIN32)
         "set(NOMAD_DISTRIBUTION_RUNTIME_DLLS \"$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-runtime>,|>\")\n"
     )
 endif()
+if(TARGET nomad-lsp)
+    list(APPEND NOMAD_DISTRIBUTION_SETTINGS
+        "set(NOMAD_DISTRIBUTION_LSP \"$<TARGET_FILE:nomad-lsp>\")\n"
+    )
+    if(WIN32)
+        list(APPEND NOMAD_DISTRIBUTION_SETTINGS
+            "set(NOMAD_DISTRIBUTION_LSP_DLLS \"$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-lsp>,|>\")\n"
+        )
+    endif()
+endif()
 list(JOIN NOMAD_DISTRIBUTION_SETTINGS "" NOMAD_DISTRIBUTION_SETTINGS)
 file(GENERATE OUTPUT "${NOMAD_DISTRIBUTION_CONFIG}" CONTENT "${NOMAD_DISTRIBUTION_SETTINGS}")
 
@@ -41,3 +59,6 @@ add_custom_target(nomad-distribution
     DEPENDS nomad-cli nomadc nomad-runtime-bundle
     VERBATIM
 )
+if(TARGET nomad-lsp)
+    add_dependencies(nomad-distribution nomad-lsp)
+endif()

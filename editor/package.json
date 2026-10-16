@@ -1,7 +1,7 @@
 {
   "name": "nomad-language",
   "displayName": "Nomad Language",
-  "description": "Syntax highlighting for Nomad (.nomad) scripts",
+  "description": "Syntax highlighting and compiler diagnostics for Nomad (.nomad) scripts",
   "version": "0.1.2",
   "license": "MIT",
   "publisher": "Chronogears",
@@ -10,9 +10,21 @@
     "url": "https://github.com/jfbilodeau/Nomad.git"
   },
   "engines": {
-    "vscode": "^1.60.0"
+    "vscode": "^1.82.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": ["onLanguage:nomad"],
+  "dependencies": {
+    "@iarna/toml": "2.2.5",
+    "vscode-languageclient": "9.0.1"
+  },
+  "scripts": {
+    "check": "node --check extension.js && node --test serverPath.test.js extension.test.js"
   },
   "files": [
+    "extension.js",
+    "serverPath.js",
+    "node_modules/**",
     "language-configuration.json",
     "syntaxes/**",
     "README.md",
@@ -22,6 +34,21 @@
     "Programming Languages"
   ],
   "contributes": {
+    "configuration": {
+      "title": "Nomad",
+      "properties": {
+        "nomad.languageServer.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable compiler diagnostics. Reload the window after changing this setting."
+        },
+        "nomad.languageServer.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the nomad-lsp executable. By default, the extension searches installed Nomad SDKs and then PATH. Reload the window after changing this setting."
+        }
+      }
+    },
     "languages": [
       {
         "id": "nomad",

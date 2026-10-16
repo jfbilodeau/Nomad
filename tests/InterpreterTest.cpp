@@ -45,6 +45,7 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
         {"test.native text", "hello"},
         {"test.parameter", "40"},
         {"false && test.fail", "false"},
+        {"$\"{1+2}\"", "3"},
         {"$(\"value {value} local {local} captured {captured}\")", "value 40 local 2 captured 6"},
     };
     for (const auto& [source, expected] : cases) {
@@ -56,6 +57,8 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
     }
     BOOST_REQUIRE(Interpreter{}.evaluateExpression("$\"{value}\"", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "40");
+    BOOST_REQUIRE(Interpreter{}.execute("$\"{value + local}\"", context));
+    BOOST_TEST(context.getResult()->getValue().getStringValue() == "42");
     for (const auto* source : {"", "value = 1", "missing + 1", "1 +", "1\n2", "test.void", "uncaptured"}) {
         BOOST_TEST_CONTEXT(source) {
             BOOST_TEST(!Interpreter{}.evaluateExpression(source, context));
@@ -109,6 +112,38 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_requires_an_active_script_function)
     BOOST_CHECK_THROW((InterpreterContext{*machine, function}), NomadBug);
 }
 
+BOOST_AUTO_TEST_CASE(interpreter_uses_named_source_text_and_compiled_source_batches)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const SourceBatch batch{{{"answer", {"untitled:answer", "return 42"}}}, {}};
+    CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, batch);
+    BOOST_REQUIRE(compiler->compileFunctions(&compilation));
+
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    const Interpreter interpreter;
+    BOOST_REQUIRE(interpreter.execute(SourceText{"console:input", "value = answer"}, context));
+    BOOST_REQUIRE(interpreter.evaluateExpression(SourceText{"console:input", "value + 1"}, context));
+    BOOST_REQUIRE(context.getResult() != nullptr);
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 43);
+
+    for (const auto* text : {"missing", "\"unterminated", "1 +", "1\n2"}) {
+        const SourceText source{"console:input", text};
+        BOOST_TEST(!interpreter.execute(source, context));
+        BOOST_REQUIRE(!context.getDiagnostics().empty());
+        for (const auto& diagnostic : context.getDiagnostics()) {
+            BOOST_TEST(diagnostic.sourceName == source.sourceName);
+        }
+        BOOST_TEST(!interpreter.evaluateExpression(source, context));
+        BOOST_REQUIRE(!context.getDiagnostics().empty());
+        for (const auto& diagnostic : context.getDiagnostics()) {
+            BOOST_TEST(diagnostic.sourceName == source.sourceName);
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on_active_vm)
 {
     Runtime runtime;
@@ -127,8 +162,8 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
         runtime.getIntegerType(), NomadDoc("Current frame parameter"));
 
     auto compiler = runtime.createCompiler();
-    compiler->registerScriptFile("answer", "answer.nomad", "return 3");
     CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, {{{"answer", {"answer.nomad", "return 3"}}}, {}});
     BOOST_REQUIRE(compiler->compileFunctions(&compilation));
     const auto parentId = runtime.registerFunction("parent", "frame.nomad", "");
     auto* parent = runtime.getFunction(parentId);
@@ -334,6 +369,46 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_single_line_assignments_and_ex
     BOOST_TEST(context.getResult()->getValue().getFloatValue() == 4.0f);
 }
 
+BOOST_AUTO_TEST_CASE(interpreter_evaluates_format_literal_arithmetic)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+
+    BOOST_REQUIRE(Interpreter{}.execute("number = 4", context));
+    const std::vector<std::pair<NomadString, NomadString>> cases{
+        {R"($"{1+2}")", "3"},
+        {R"(    $"{1+2}")", "3"},
+        {R"($"literal")", "literal"},
+        {R"($"value {number + 2}")", "value 6"},
+        {R"($"nested {$"sum {1+2}"}")", "nested sum 3"},
+        {R"($"{"hello".toUpper}")", "HELLO"},
+        {R"($"line\n{1+2}")", "line\n3"},
+    };
+    for (const auto& [source, expected] : cases) {
+        BOOST_TEST_CONTEXT(source) {
+            for (const auto expressionOnly : {false, true}) {
+                const auto succeeded = expressionOnly
+                    ? Interpreter{}.evaluateExpression(source, context)
+                    : Interpreter{}.execute(source, context);
+                BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : source));
+                BOOST_REQUIRE(context.getResult() != nullptr);
+                BOOST_TEST(context.getResult()->getType() == runtime.getStringType());
+                BOOST_TEST(context.getResult()->getValue().getStringValue() == expected);
+            }
+        }
+    }
+    BOOST_REQUIRE(Interpreter{}.execute(R"(text = $"{1+2}")", context));
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("text", context));
+    BOOST_TEST(context.getResult()->getValue().getStringValue() == "3");
+
+    for (const auto* source : {"", "   ", "# comment"}) {
+        BOOST_REQUIRE(Interpreter{}.execute(source, context));
+        BOOST_REQUIRE(context.getResult() != nullptr);
+        BOOST_TEST(context.getResult()->getType()->isVoid());
+    }
+}
+
 BOOST_AUTO_TEST_CASE(interpreter_reports_unknown_function_calls)
 {
     Runtime runtime;
@@ -528,13 +603,11 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_compiled_value_returning_funct
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    const auto functionId = compiler->registerScriptFile(
-        "increment",
-        "increment.nomad",
-        "params value:int\nreturn value + 1"
-    );
-    BOOST_REQUIRE(functionId != NOMAD_INVALID_ID);
     CompilerContext compileContext(compiler.get());
+    compiler->registerSources(&compileContext, {{{"increment", {"increment.nomad",
+        "params value:int\nreturn value + 1"}}}, {}});
+    const auto functionId = runtime.getFunctionId("increment");
+    BOOST_REQUIRE(functionId != NOMAD_INVALID_ID);
     BOOST_REQUIRE(compiler->compileFunctions(&compileContext));
 
     auto machine = runtime.createVirtualMachine();
@@ -581,8 +654,11 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_nativeFunctions_with_hidden_so
     BOOST_TEST(Interpreter{}.execute("test.hiddenSource(\"payload\")", context));
     BOOST_TEST(fileName == "<console>");
     BOOST_TEST(functionName == "<console>");
-    BOOST_TEST(lineNumber == 0);
+    BOOST_TEST(lineNumber == 1);
     BOOST_TEST(message == "payload");
+    BOOST_REQUIRE(Interpreter{}.execute(R"(test.hiddenSource $"{1+2}")", context));
+    BOOST_TEST(lineNumber == 1);
+    BOOST_TEST(message == "3");
 }
 
 BOOST_AUTO_TEST_CASE(interpreter_context_reports_line_errors_and_clears_them_on_next_execute)

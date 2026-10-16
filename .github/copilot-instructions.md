@@ -18,6 +18,14 @@ The Nomad game engine is a 2D game engine written in C++ using modern C++20 feat
 	- Keep headers sorted alphabetically within each group.
 - Prefer C++20 standard library types and features over Boost equivalents when one exists (for example, `std::optional` instead of `boost::optional`). Use Boost only for utilities that have no C++20 standard equivalent. Do not replace existing Boost usage unless the task asks for it.
 - Use K&R style for formatting and indentation. Enforce via `.clang-format` or equivalent.
+- When a C++ function or method parameter list is too long for one line, put each parameter on its own indented line, with the closing parenthesis on a separate line. Apply this to both declarations and definitions:
+  ```cpp
+  void myFunc(
+      int param1,
+      int param2,
+      int param3
+  );
+  ```
 - Use PascalCase for class names and camelCase for functions and variables. Acronyms should not be fully capitalized (e.g., `SdlManager`).
 - Prefix member variables with `m_` and static member variables with `s_`.
 - Name accessors and mutators `getXXX` and `setXXX`; mark getters with `[[nodiscard]]`.
@@ -39,6 +47,7 @@ The Nomad game engine is a 2D game engine written in C++ using modern C++20 feat
 - Link against libraries using CMake's `find_package` and `target_link_libraries`.
 - Use SDL3 and Boost libraries as specified in CMake; Do not use SDL2
 - Pin dependency versions in CMake to ensure reproducible builds.
+- Keep source lists in `CMakeLists.txt` sorted alphabetically, preserving module groups and sorting both the groups and the files within each group.
 
 ## Project Structure
 

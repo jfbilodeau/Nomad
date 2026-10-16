@@ -17,14 +17,12 @@ BOOST_AUTO_TEST_CASE(compiled_function_rejects_existing_qualified_identifier) {
     Runtime runtime;
 
     auto compiler = runtime.createCompiler();
-    compiler->registerScriptFile(
-        "test",
-        "test.nomad",
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"test", {"test.nomad",
         "name.length = 10\n"
         "name = \"J-F\"\n"
         "return name"
-    );
-    CompilerContext context(compiler.get());
+    }}}, {}});
 
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE(context.getFirstError() != nullptr);
@@ -51,14 +49,13 @@ BOOST_AUTO_TEST_CASE(unrelated_qualified_identifier_does_not_conflict) {
     Runtime runtime;
 
     auto compiler = runtime.createCompiler();
-    const auto functionId = compiler->registerScriptFile(
-        "test",
-        "test.nomad",
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"test", {"test.nomad",
         "name.other = 10\n"
         "name = \"J-F\"\n"
         "return name"
-    );
-    CompilerContext context(compiler.get());
+    }}}, {}});
+    const auto functionId = runtime.getFunctionId("test");
 
     BOOST_REQUIRE(compiler->compileFunctions(&context));
 

@@ -130,12 +130,9 @@ BOOST_AUTO_TEST_CASE(statement_execution_calls_compiled_functions_with_interpret
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    compiler->registerScriptFile(
-        "incrementScore",
-        "incrementScore.nomad",
-        "params value:int\nreturn value + 1"
-    );
     CompilerContext compileContext(compiler.get());
+    compiler->registerSources(&compileContext, {{{"incrementScore", {"incrementScore.nomad",
+        "params value:int\nreturn value + 1"}}}, {}});
     BOOST_REQUIRE(compiler->compileFunctions(&compileContext));
 
     auto machine = runtime.createVirtualMachine();
@@ -272,12 +269,10 @@ BOOST_AUTO_TEST_CASE(nativeFunction_execution_accepts_named_compiled_callback_fu
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    const auto callbackFunctionId = compiler->registerScriptFile(
-        "callbackFunction",
-        "callbackFunction.nomad",
-        "params value:int\nreturn value"
-    );
     CompilerContext compileContext(compiler.get());
+    compiler->registerSources(&compileContext, {{{"callbackFunction", {"callbackFunction.nomad",
+        "params value:int\nreturn value"}}}, {}});
+    const auto callbackFunctionId = runtime.getFunctionId("callbackFunction");
     BOOST_REQUIRE(compiler->compileFunctions(&compileContext));
 
     const auto* callbackType = runtime.getCallbackType(
@@ -320,11 +315,10 @@ BOOST_AUTO_TEST_CASE(callback_argument_rejects_uncompiled_inline_callback_functi
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    const auto callbackFunctionId = compiler->registerFunctionSource(
-        "uncompiledCallback",
-        "uncompiledCallback.nomad",
-        "params value:int\nreturn value"
-    );
+    CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, {{{"uncompiledCallback", {"uncompiledCallback.nomad",
+        "params value:int\nreturn value"}}}, {}});
+    const auto callbackFunctionId = runtime.getFunctionId("uncompiledCallback");
     BOOST_REQUIRE(callbackFunctionId != NOMAD_INVALID_ID);
     const auto* callbackType = runtime.getCallbackType(
         {runtime.getIntegerType()},

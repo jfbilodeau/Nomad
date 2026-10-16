@@ -293,6 +293,8 @@ parentheses, native and script function calls with arguments, and intrinsic memb
 Each expression must return a non-void value. Placeholders are evaluated from left
 to right using current values; expression results are converted to text.
 
+Format literals also work in the debug console: `$"{1+2}"` evaluates to `"3"`.
+
 Empty placeholders and missing closing braces are compilation errors. A closing
 brace outside a placeholder is ordinary literal text. Backslashes do not escape
 placeholder braces; the supported string escape sequences apply to literal text.

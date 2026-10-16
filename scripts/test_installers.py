@@ -27,11 +27,12 @@ class InstallerTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def write_archive(self, extra=None, version="0.1.0"):
+    def write_archive(self, extra=None, version="0.1.0", excluded_tools=()):
         suffix = ".exe" if os.name == "nt" else ""
         files = {
             f"{name}{suffix}": b"fixture"
-            for name in ("nomad", "nomadc", "nomad-runtime")
+            for name in ("nomad", "nomad-lsp", "nomadc", "nomad-runtime")
+            if name not in excluded_tools
         }
         files["templates/project.txt"] = b"template"
         template = Path(__file__).resolve().parents[1] / "templates" / "projects" / "default"
@@ -149,6 +150,20 @@ bash "$installer" "${1:-latest}" "$destination" "${@:2}"
         (self.fixture / "release.json").unlink()
         result = self.install("v0.1.0")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        suffix = ".exe" if os.name == "nt" else ""
+        server = self.destination / f"nomad-lsp{suffix}"
+        self.assertTrue(server.is_file())
+        if os.name != "nt":
+            self.assertTrue(os.access(server, os.X_OK))
+        self.assert_no_staging()
+
+    def test_missing_language_server(self):
+        self.write_archive(excluded_tools=("nomad-lsp",))
+        self.write_checksums()
+        result = self.install("0.1.0")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("nomad-lsp", result.stdout + result.stderr)
+        self.assertFalse(self.destination.exists())
         self.assert_no_staging()
 
     def test_optionally_installs_project_wrappers(self):
