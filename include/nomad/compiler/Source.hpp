@@ -15,7 +15,7 @@ struct SourceText {
 };
 
 struct ScriptSource {
-    NomadString functionName;
+    NomadString scriptName;
     SourceText source;
 };
 

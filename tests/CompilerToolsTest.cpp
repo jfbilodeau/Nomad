@@ -117,7 +117,7 @@ BOOST_AUTO_TEST_CASE(filesystem_adapter_retains_loading_errors_and_valid_sources
     const auto batch = loadSourcePaths(std::vector{missing, valid, invalid});
 
     BOOST_REQUIRE(batch.sources.size() == 1U);
-    BOOST_TEST(batch.sources.front().functionName == "answer");
+    BOOST_TEST(batch.sources.front().scriptName == "answer");
     BOOST_TEST(batch.sources.front().source.text == "return 42");
     BOOST_REQUIRE(batch.diagnostics.size() == 2U);
     BOOST_TEST(batch.diagnostics[0].sourceName == missing.generic_string());
@@ -135,9 +135,9 @@ BOOST_AUTO_TEST_CASE(filesystem_adapter_returns_deterministically_ordered_snapsh
 
     BOOST_REQUIRE(batch.diagnostics.empty());
     BOOST_REQUIRE(batch.sources.size() == 3U);
-    BOOST_TEST(batch.sources[0].functionName == "a");
-    BOOST_TEST(batch.sources[1].functionName == "nested.b");
-    BOOST_TEST(batch.sources[2].functionName == "z");
+    BOOST_TEST(batch.sources[0].scriptName == "a");
+    BOOST_TEST(batch.sources[1].scriptName == "nested.b");
+    BOOST_TEST(batch.sources[2].scriptName == "z");
 }
 
 BOOST_AUTO_TEST_CASE(checks_a_single_source_file)

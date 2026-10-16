@@ -9,7 +9,8 @@
 namespace nomad::test {
 
 LanguageTestFixture::LanguageTestFixture() :
-    m_compiler(m_runtime.createCompiler()) {
+    m_compiler(m_runtime.createCompiler()),
+    m_context(std::make_unique<CompilerContext>(m_compiler.get())) {
 }
 
 LanguageTestFixture::~LanguageTestFixture() = default;
@@ -23,11 +24,14 @@ Compiler& LanguageTestFixture::getCompiler() {
 }
 
 void LanguageTestFixture::addFunction(const NomadString& name, const NomadString& source) {
-    (void)m_compiler->registerScriptFile(name, name + ".nomad", source);
+    (void)m_compiler->registerScriptFile(m_context.get(), name, name + ".nomad", source);
+}
+
+void LanguageTestFixture::addSources(const SourceBatch& batch) {
+    m_compiler->registerSources(m_context.get(), batch);
 }
 
 bool LanguageTestFixture::compile() {
-    m_context = std::make_unique<CompilerContext>(m_compiler.get());
     m_compiled = m_compiler->compileFunctions(m_context.get()) && !m_context->hasError();
 
     return m_compiled;

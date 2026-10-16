@@ -156,9 +156,8 @@ BOOST_AUTO_TEST_CASE(compile_functions_reports_tokenizer_errors)
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    compiler->registerScriptFile("broken", "broken.nomad", "total = 1\ntotal = \"unterminated");
-
     CompilerContext context(compiler.get());
+    compiler->registerScriptFile(&context, "broken", "broken.nomad", "total = 1\ntotal = \"unterminated");
 
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);

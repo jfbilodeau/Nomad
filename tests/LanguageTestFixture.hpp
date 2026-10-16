@@ -42,6 +42,7 @@ public:
     [[nodiscard]] Compiler& getCompiler();
 
     void addFunction(const NomadString& name, const NomadString& source);
+    void addSources(const SourceBatch& batch);
     [[nodiscard]] bool compile();
 
     [[nodiscard]] NomadString getDiagnostics() const;

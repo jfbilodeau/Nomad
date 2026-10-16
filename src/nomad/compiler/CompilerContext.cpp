@@ -56,6 +56,12 @@ const InterpreterContext* CompilerContext::getInterpreterContext() const {
     return m_interpreterContext;
 }
 
+void CompilerContext::reportDiagnostics(std::span<const Diagnostic> diagnostics) {
+    for (const auto& diagnostic : diagnostics) {
+        report(diagnostic.severity, diagnostic.message, diagnostic.sourceName, diagnostic.line, diagnostic.column);
+    }
+}
+
 void CompilerContext::reportError(const NomadStringView message) {
     report(DiagnosticSeverity::Error, message, {}, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
 }

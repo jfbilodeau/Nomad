@@ -9,6 +9,34 @@
 
 using namespace nomad;
 
+BOOST_AUTO_TEST_CASE(compiler_context_imports_owned_diagnostics_with_counts_and_locations)
+{
+    Runtime runtime;
+    const auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    std::vector<Diagnostic> diagnostics{
+        {DiagnosticSeverity::Warning, "Loading warning", "first.nomad", 2, 3},
+        {DiagnosticSeverity::Error, "Loading error", "second.nomad", 4, 5}
+    };
+    context.reportDiagnostics(diagnostics);
+    diagnostics.clear();
+
+    BOOST_TEST(context.getWarningCount() == 1U);
+    BOOST_TEST(context.getErrorCount() == 1U);
+    BOOST_REQUIRE(context.getDiagnostics().size() == 2U);
+    BOOST_TEST(context.getDiagnostics()[0].message == "Loading warning");
+    BOOST_TEST(context.getDiagnostics()[0].sourceName == "first.nomad");
+    BOOST_TEST(context.getDiagnostics()[0].line == 2U);
+    BOOST_TEST(context.getDiagnostics()[0].column == 3U);
+    BOOST_TEST(context.getFirstError()->message == "Loading error");
+    BOOST_TEST(context.getFirstError()->sourceName == "second.nomad");
+    BOOST_TEST(context.getFirstError()->line == 4U);
+    BOOST_TEST(context.getFirstError()->column == 5U);
+    context.clearDiagnostics();
+    BOOST_TEST(!context.hasError());
+    BOOST_TEST(!context.hasWarning());
+}
+
 BOOST_AUTO_TEST_CASE(compiler_context_starts_without_diagnostics)
 {
     Runtime runtime;

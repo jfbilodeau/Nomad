@@ -9,7 +9,7 @@
 
 namespace nomad {
 
-// Reads .nomad files or script roots. Each root defines its own relative function names.
+// Reads .nomad files or script roots. Each root defines its own relative script names.
 // Directory traversal skips symbolic links and stops after ten directory levels.
 // Loading failures are retained in the batch and prevent compilation.
 [[nodiscard]] SourceBatch loadSourcePaths(std::span<const std::filesystem::path> paths);

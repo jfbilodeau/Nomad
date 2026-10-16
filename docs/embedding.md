@@ -25,7 +25,8 @@ Neither the interpreter nor its context creates or owns a VM.
 
 The compiler consumes source text, not filesystem paths. `SourceText` owns a
 `sourceName` (used in diagnostics) and `text`; the name does not need to exist on
-disk. `ScriptSource` pairs that text with an explicit `functionName`.
+disk. `ScriptSource` pairs that text with an explicit `scriptName`. This is the
+source-level name used to register the script's compiled runtime function.
 `SourceBatch` holds script sources and any diagnostics from loading them.
 
 ```cpp
@@ -40,8 +41,8 @@ void compileSources() {
         {"init", {"untitled:init", "return helpers.answer"}},
         {"helpers.answer", {"untitled:answer", "return 42"}}
     }, {}};
-    compiler->registerSources(batch);
     nomad::CompilerContext context(compiler.get());
+    compiler->registerSources(&context, batch);
     const auto compiled = compiler->compileFunctions(&context);
     // Inspect context.getDiagnostics() if compilation fails.
     (void)compiled;
@@ -50,17 +51,19 @@ void compileSources() {
 
 `registerSources` copies the input, so the batch may be changed or destroyed
 after registration. It appends sources; it does not replace already registered
-functions. Duplicate function names are compilation errors. Use a fresh runtime
+functions. Duplicate script names are reported immediately to the supplied
+`CompilerContext`. That same context collects loading and compilation diagnostics;
+compilation refuses to proceed if it already contains errors. Use a fresh runtime
 for independent analysis snapshots, or provide a runtime containing the host APIs
 needed by the scripts. Compilation does not execute scripts.
 
 For disk input, call `loadSourcePaths(paths)` with a vector or span of filesystem
 paths, then register the returned batch. This replaces the former
 `Compiler::loadScriptsFromPath` API. The CLI tools and game use this same adapter.
-Each directory is a separate compile root; relative paths become dotted function
+Each directory is a separate compile root; relative paths become dotted script
 names. Individual files use their filename stem. Discovery ignores non-`.nomad`
 files, skips symbolic links within directories, and visits at most ten directory
-levels, counting the root. Sources are sorted by function name and source name.
+levels, counting the root. Scripts are sorted by script name and source name.
 Filesystem failures are diagnostics, including inaccessible paths and failed
 reads; they prevent compilation rather than silently compiling an incomplete
 project.

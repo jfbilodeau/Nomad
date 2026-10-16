@@ -158,16 +158,17 @@ public:
     void setId(NomadIndex index, NomadId id);
     void setIndex(NomadIndex index, NomadIndex value);
 
-    // Returns NOMAD_INVALID_ID if the function name is already used. The error is reported by compileFunctions().
-    NomadId registerScriptFile(const NomadString& functionName, const NomadString& fileName, const NomadString& source);
+    // Returns NOMAD_INVALID_ID and reports to context if the script name is already used.
+    NomadId registerScriptFile(CompilerContext* context, const NomadString& scriptName,
+        const NomadString& sourceName, const NomadString& source);
     NomadId registerFunctionSource(const NomadString& functionName, const NomadString& fileName, const NomadString& source);
     void setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode> ast);
     // Borrows an AST node until placeholder preparation, before type inference.
     void deferFormatString(FormatStringLiteral* literal, NomadId functionId, NomadString sourceContent);
-    // Registers owned source snapshots; loading diagnostics are reported by compileFunctions().
-    void registerSources(const SourceBatch& batch);
+    // Registers owned script snapshots and immediately reports loading and registration diagnostics.
+    void registerSources(CompilerContext* context, const SourceBatch& batch);
     // Compiles every registered script file. Errors and warnings are reported to context. Returns false if errors
-    // were reported. A pass that reports errors stops the compilation before the next pass to avoid cascading errors.
+    // exist in context. A pass that reports errors stops compilation before the next pass to avoid cascading errors.
     [[nodiscard]] bool compileFunctions(CompilerContext* context);
     void addFunctionLink(NomadId functionId, NomadIndex callIndex);
     // Function calls used in expressions, recorded while resolving. Explains return types that cannot be inferred.
@@ -191,7 +192,7 @@ private:
     };
 
     struct ScriptFile {
-        NomadString functionName;
+        NomadString scriptName;
         NomadString fileName;
         NomadString source;
         // Only exists while compileFunctions() runs so lexing errors are reported once.
@@ -238,7 +239,6 @@ private:
     std::unordered_map<NomadString, ParseStatementFnRegistration> m_statements;
     std::vector<OpCodeRegistration> m_opCodeRegistrations;
     std::vector<ScriptFile> m_files;
-    std::vector<Diagnostic> m_loadDiagnostics;
     std::vector<FunctionSource> m_sources;
     std::vector<PendingFormatString> m_pendingFormatStrings;
     std::vector<FunctionLink> m_functionLinks;

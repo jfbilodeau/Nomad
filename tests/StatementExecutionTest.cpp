@@ -130,12 +130,13 @@ BOOST_AUTO_TEST_CASE(statement_execution_calls_compiled_functions_with_interpret
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
+    CompilerContext compileContext(compiler.get());
     compiler->registerScriptFile(
+        &compileContext,
         "incrementScore",
         "incrementScore.nomad",
         "params value:int\nreturn value + 1"
     );
-    CompilerContext compileContext(compiler.get());
     BOOST_REQUIRE(compiler->compileFunctions(&compileContext));
 
     auto machine = runtime.createVirtualMachine();
@@ -272,12 +273,13 @@ BOOST_AUTO_TEST_CASE(nativeFunction_execution_accepts_named_compiled_callback_fu
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
+    CompilerContext compileContext(compiler.get());
     const auto callbackFunctionId = compiler->registerScriptFile(
+        &compileContext,
         "callbackFunction",
         "callbackFunction.nomad",
         "params value:int\nreturn value"
     );
-    CompilerContext compileContext(compiler.get());
     BOOST_REQUIRE(compiler->compileFunctions(&compileContext));
 
     const auto* callbackType = runtime.getCallbackType(

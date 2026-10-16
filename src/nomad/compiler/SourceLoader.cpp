@@ -25,7 +25,7 @@ void reportLoadError(SourceBatch& batch, const std::filesystem::path& path, Noma
     });
 }
 
-void readSource(SourceBatch& batch, const std::filesystem::path& path, NomadString functionName) {
+void readSource(SourceBatch& batch, const std::filesystem::path& path, NomadString scriptName) {
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) {
         reportLoadError(batch, path, "Failed to open source file");
@@ -38,7 +38,7 @@ void readSource(SourceBatch& batch, const std::filesystem::path& path, NomadStri
         return;
     }
 
-    batch.sources.push_back({std::move(functionName), {pathToGenericUtf8(path), std::move(text)}});
+    batch.sources.push_back({std::move(scriptName), {pathToGenericUtf8(path), std::move(text)}});
 }
 
 void scanDirectory(SourceBatch& batch, const std::filesystem::path& root,
@@ -67,10 +67,10 @@ void scanDirectory(SourceBatch& batch, const std::filesystem::path& root,
         } else if (std::filesystem::is_directory(status)) {
             scanDirectory(batch, root, relative / entry.path().filename(), remainingDepth - 1);
         } else if (std::filesystem::is_regular_file(status) && entry.path().extension() == ".nomad") {
-            auto functionName = pathToGenericUtf8(relative / entry.path().stem());
-            std::replace(functionName.begin(), functionName.end(), '/', '.');
-            std::replace(functionName.begin(), functionName.end(), '\\', '.');
-            readSource(batch, entry.path(), std::move(functionName));
+            auto scriptName = pathToGenericUtf8(relative / entry.path().stem());
+            std::replace(scriptName.begin(), scriptName.end(), '/', '.');
+            std::replace(scriptName.begin(), scriptName.end(), '\\', '.');
+            readSource(batch, entry.path(), std::move(scriptName));
         }
 
         iterator.increment(error);
@@ -106,8 +106,8 @@ SourceBatch loadSourcePaths(std::span<const std::filesystem::path> paths) {
     }
 
     std::stable_sort(batch.sources.begin(), batch.sources.end(), [](const ScriptSource& left, const ScriptSource& right) {
-        if (left.functionName != right.functionName) {
-            return left.functionName < right.functionName;
+        if (left.scriptName != right.scriptName) {
+            return left.scriptName < right.scriptName;
         }
         return left.source.sourceName < right.source.sourceName;
     });

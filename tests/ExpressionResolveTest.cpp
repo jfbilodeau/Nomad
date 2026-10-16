@@ -113,9 +113,9 @@ BOOST_AUTO_TEST_CASE(compile_functions_reports_resolve_errors_from_every_functio
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    compiler->registerScriptFile("broken", "broken.nomad", "total = missing + 1");
-    compiler->registerScriptFile("other", "other.nomad", "count = 1\ncount = alsoMissing");
     CompilerContext context(compiler.get());
+    compiler->registerScriptFile(&context, "broken", "broken.nomad", "total = missing + 1");
+    compiler->registerScriptFile(&context, "other", "other.nomad", "count = 1\ncount = alsoMissing");
 
     bool compiled = true;
     BOOST_REQUIRE_NO_THROW(compiled = compiler->compileFunctions(&context));
@@ -141,9 +141,9 @@ BOOST_AUTO_TEST_CASE(compile_functions_infers_return_type_of_function_resolved_l
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    compiler->registerScriptFile("a", "a.nomad", "total = b\nnext = total + 1");
-    compiler->registerScriptFile("b", "b.nomad", "return 42");
     CompilerContext context(compiler.get());
+    compiler->registerScriptFile(&context, "a", "a.nomad", "total = b\nnext = total + 1");
+    compiler->registerScriptFile(&context, "b", "b.nomad", "return 42");
 
     BOOST_TEST(compiler->compileFunctions(&context));
     BOOST_TEST(context.getErrorCount() == 0);
@@ -154,8 +154,8 @@ BOOST_AUTO_TEST_CASE(compile_functions_infers_recursive_return_type_from_later_r
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    compiler->registerScriptFile("countdown", "countdown.nomad", "value = countdown\nreturn 1");
     CompilerContext context(compiler.get());
+    compiler->registerScriptFile(&context, "countdown", "countdown.nomad", "value = countdown\nreturn 1");
 
     BOOST_TEST(compiler->compileFunctions(&context));
     BOOST_TEST(context.getErrorCount() == 0);
@@ -165,8 +165,8 @@ BOOST_AUTO_TEST_CASE(compile_functions_reports_recursive_function_without_typed_
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    compiler->registerScriptFile("loop", "loop.nomad", "return loop");
     CompilerContext context(compiler.get());
+    compiler->registerScriptFile(&context, "loop", "loop.nomad", "return loop");
 
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
@@ -178,8 +178,8 @@ BOOST_AUTO_TEST_CASE(compile_functions_reports_return_type_mismatch_while_resolv
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    compiler->registerScriptFile("mixed", "mixed.nomad", "if true\n    return 1\nend\nreturn true");
     CompilerContext context(compiler.get());
+    compiler->registerScriptFile(&context, "mixed", "mixed.nomad", "if true\n    return 1\nend\nreturn true");
 
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
@@ -191,9 +191,9 @@ BOOST_AUTO_TEST_CASE(compile_functions_treats_function_without_return_as_void)
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    compiler->registerScriptFile("noValue", "noValue.nomad", "x = 1");
-    compiler->registerScriptFile("user", "user.nomad", "y = noValue");
     CompilerContext context(compiler.get());
+    compiler->registerScriptFile(&context, "noValue", "noValue.nomad", "x = 1");
+    compiler->registerScriptFile(&context, "user", "user.nomad", "y = noValue");
 
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
@@ -205,8 +205,8 @@ BOOST_AUTO_TEST_CASE(compile_functions_reports_non_boolean_if_condition_while_re
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    compiler->registerScriptFile("condition", "condition.nomad", "x = 1\nif x\nend");
     CompilerContext context(compiler.get());
+    compiler->registerScriptFile(&context, "condition", "condition.nomad", "x = 1\nif x\nend");
 
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
@@ -218,8 +218,8 @@ BOOST_AUTO_TEST_CASE(compile_functions_reports_format_string_errors_with_locatio
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    compiler->registerScriptFile("format", "format.nomad", "x = 1\ntext = $\"value {missing}\"");
     CompilerContext context(compiler.get());
+    compiler->registerScriptFile(&context, "format", "format.nomad", "x = 1\ntext = $\"value {missing}\"");
 
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
@@ -245,9 +245,9 @@ BOOST_AUTO_TEST_CASE(format_expression_parse_diagnostic_uses_host_source_column)
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    compiler->registerScriptFile("formatSyntax", "formatSyntax.nomad",
-        "x = 1\ntext = $\"line\\n{x + (2}\"");
     CompilerContext context(compiler.get());
+    compiler->registerScriptFile(&context, "formatSyntax", "formatSyntax.nomad",
+        "x = 1\ntext = $\"line\\n{x + (2}\"");
 
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
@@ -260,9 +260,9 @@ BOOST_AUTO_TEST_CASE(format_expression_empty_placeholder_uses_raw_source_offset)
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    compiler->registerScriptFile("formatEmpty", "formatEmpty.nomad",
-        "x = 1\ntext = $\"line\\n{}\"");
     CompilerContext context(compiler.get());
+    compiler->registerScriptFile(&context, "formatEmpty", "formatEmpty.nomad",
+        "x = 1\ntext = $\"line\\n{}\"");
 
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
@@ -276,9 +276,9 @@ BOOST_AUTO_TEST_CASE(format_expression_infers_return_type_and_captures_before_co
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    const auto hostId = compiler->registerScriptFile("formatCapture", "formatCapture.nomad",
-        "params value:int\nlocal = 2\nreturn $\"{value + local}\"");
     CompilerContext context(compiler.get());
+    const auto hostId = compiler->registerScriptFile(&context, "formatCapture", "formatCapture.nomad",
+        "params value:int\nlocal = 2\nreturn $\"{value + local}\"");
 
     BOOST_REQUIRE(compiler->compileFunctions(&context));
     BOOST_TEST(context.getErrorCount() == 0);

@@ -985,42 +985,46 @@ void Compiler::addFunctionReturn(const ScriptFunction* function) {
 }
 
 NomadId Compiler::registerScriptFile(
-    const NomadString& functionName,
-    const NomadString& fileName,
+    CompilerContext* context,
+    const NomadString& scriptName,
+    const NomadString& sourceName,
     const NomadString& source
 ) {
-    const auto existingFunctionId = m_runtime->getFunctionId(functionName);
+    if (context == nullptr || context->getCompiler() != this) {
+        throw NomadBug("Script registration requires this compiler's context");
+    }
+
+    const auto existingFunctionId = m_runtime->getFunctionId(scriptName);
 
     if (existingFunctionId != NOMAD_INVALID_ID) {
         const auto* existingFunction = m_runtime->getFunction(existingFunctionId);
 
-        m_loadDiagnostics.push_back(Diagnostic {
-            DiagnosticSeverity::Error,
-            "Function name '" + functionName + "' is already used by '" + existingFunction->getPath() + "'",
-            fileName,
+        context->reportError(
+            "Function name '" + scriptName + "' is already used by '" + existingFunction->getPath() + "'",
+            sourceName,
             NOMAD_INVALID_INDEX,
-            NOMAD_INVALID_INDEX,
-        });
+            NOMAD_INVALID_INDEX
+        );
 
         return NOMAD_INVALID_ID;
     }
 
     auto scriptFile = ScriptFile {
-        functionName,
-        fileName,
+        scriptName,
+        sourceName,
         source,
         nullptr,
         NOMAD_INVALID_ID,
     };
 
     // Also register function so it is available for linking
-    scriptFile.functionId = registerFunctionSource(functionName, fileName, source);
+    scriptFile.functionId = registerFunctionSource(scriptName, sourceName, source);
 
     m_files.emplace_back(std::move(scriptFile));
 
     // Sort functions alphabetically to ensure consistent order in compiling across systems.
     std::sort(m_files.begin(), m_files.end(), [](const ScriptFile& a, const ScriptFile& b) {
-        return a.functionName < b.functionName;
+        return a.scriptName < b.scriptName;
     });
 
     return scriptFile.functionId;
@@ -1060,10 +1064,14 @@ void Compiler::setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode>
     reportInternalError("Unknown function id: " + toString(functionId));
 }
 
-void Compiler::registerSources(const SourceBatch& batch) {
-    m_loadDiagnostics.insert(m_loadDiagnostics.end(), batch.diagnostics.begin(), batch.diagnostics.end());
+void Compiler::registerSources(CompilerContext* context, const SourceBatch& batch) {
+    if (context == nullptr || context->getCompiler() != this) {
+        throw NomadBug("Source registration requires this compiler's context");
+    }
+
+    context->reportDiagnostics(batch.diagnostics);
     for (const auto& script : batch.sources) {
-        (void)registerScriptFile(script.functionName, script.source.sourceName, script.source.text);
+        (void)registerScriptFile(context, script.scriptName, script.source.sourceName, script.source.text);
     }
 }
 
@@ -1072,6 +1080,13 @@ void Compiler::deferFormatString(FormatStringLiteral* literal, const NomadId fun
 }
 
 bool Compiler::compileFunctions(CompilerContext* context) {
+    if (context == nullptr || context->getCompiler() != this) {
+        throw NomadBug("Compilation requires this compiler's context");
+    }
+    if (context->hasError()) {
+        return false;
+    }
+
     const auto errorCount = context->getErrorCount();
     const auto hasNewErrors = [context, errorCount] {
         return context->getErrorCount() != errorCount;
@@ -1105,24 +1120,10 @@ bool Compiler::compileFunctions(CompilerContext* context) {
         return !hasNewErrors();
     };
 
-    for (const auto& diagnostic: m_loadDiagnostics) {
-        if (diagnostic.severity == DiagnosticSeverity::Error) {
-            context->reportError(diagnostic.message, diagnostic.sourceName, diagnostic.line, diagnostic.column);
-        } else {
-            context->reportWarning(diagnostic.message, diagnostic.sourceName, diagnostic.line, diagnostic.column);
-        }
-    }
-
-    m_loadDiagnostics.clear();
-
-    if (hasNewErrors()) {
-        return finish();
-    }
-
     log::info("Pre-Parsing functions");
 
     for (auto& scriptFile: m_files) {
-        log::debug("Pre-Parsing '" + scriptFile.functionName + "' (" + scriptFile.fileName + ")");
+        log::debug("Pre-Parsing '" + scriptFile.scriptName + "' (" + scriptFile.fileName + ")");
 
         reportExceptions(scriptFile.fileName, [&] {
             scriptFile.tokens = std::make_unique<Tokenizer>(context, scriptFile.fileName, scriptFile.source);
@@ -1140,7 +1141,7 @@ bool Compiler::compileFunctions(CompilerContext* context) {
     log::info("Parsing functions");
 
     for (auto& scriptFile: m_files) {
-        log::debug("Parsing '" + scriptFile.functionName + "' (" + scriptFile.fileName + ")");
+        log::debug("Parsing '" + scriptFile.scriptName + "' (" + scriptFile.fileName + ")");
 
         reportExceptions(scriptFile.fileName, [&] {
             parseFunction(context, scriptFile);
