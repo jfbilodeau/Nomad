@@ -4,7 +4,7 @@
 
 #include <nomad/Nomad.hpp>
 
-#include <boost/json.hpp>
+#include <boost/json/array.hpp>
 
 #include <functional>
 #include <iosfwd>

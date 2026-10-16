@@ -6,6 +6,8 @@
 
 #include <TestDirectory.hpp>
 
+#include <boost/json.hpp>
+
 #include <boost/test/unit_test.hpp>
 
 #include <sstream>

@@ -11,6 +11,8 @@
 
 #include <nomad/system/Path.hpp>
 
+#include <boost/json.hpp>
+
 #include <algorithm>
 #include <charconv>
 #include <istream>
