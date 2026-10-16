@@ -1,6 +1,11 @@
 # TODO
 Things the author wants to do.
 
+## Problems
+[ ] Mouse x,y not property calculate when window is scaled
+[ ] `$"{1+2}"` in interpreter causes fault
+
+
 ## Open
 [ ] Sample game
 [ ] Select language

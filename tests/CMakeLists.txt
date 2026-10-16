@@ -48,6 +48,7 @@ add_executable(
     ./SpriteDiscoveryTest.cpp
     ./SpriteCatalogTest.cpp
     ./SpritePackerTest.cpp
+    ./SourceLoaderTest.cpp
     ./StatementExecutionTest.cpp
     ./SystemTest.cpp
     ./TestDirectory.hpp

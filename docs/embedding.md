@@ -88,11 +88,40 @@ Filesystem failures are diagnostics, including inaccessible paths and failed
 reads; they prevent compilation rather than silently compiling an incomplete
 project.
 
-An editor can load a batch, replace selected `source.text` values with unsaved
-buffers while preserving their `filePath`, add scripts that do not exist on disk,
-and submit it without changing the compiler. Submit one entry per script, not
-separate disk and editor entries. Document URI/path matching, versions and
-choosing editor text over disk snapshots belong to the editor adapter, not the
+For editor buffers, pass a span or vector of `ScriptSource` overrides as the
+second argument to `loadSourcePaths(paths, overrides)`. Matching buffers replace
+disk snapshots **before their contents are read**, so a locked disk file does
+not block analysis. An explicit missing `.nomad` file also uses its matching
+buffer without a missing-path error. Other loading failures are still reported.
+
+File-backed overrides match by absolute, lexically normalized `filePath`, not by
+`scriptName` or `sourceName`. Relative paths use the current working directory.
+Matching is case-insensitive on Windows and case-sensitive elsewhere. This is a
+lexical policy: it does not resolve symbolic links, hard links, or filesystem
+case-sensitivity settings (including case-sensitive Windows directories).
+The caller decodes document URIs into filesystem paths.
+
+A discovered file keeps its disk-derived script name and takes the override's
+complete `SourceText`, including its diagnostic name and backing path. Unmatched
+overrides, including untitled and not-yet-saved scripts, are added using their
+explicit script names. The caller is responsible for project membership and
+naming those scripts; overrides are not restricted to the supplied disk roots.
+Duplicate file identities or duplicate untitled `sourceName` values produce
+loading errors, not last-write-wins behavior. Different documents with the same
+script name remain ordinary compiler collisions.
+
+```cpp
+const std::vector<nomad::ScriptSource> buffers{
+    {"entities.player", {"editor:player", unsavedText, playerPath}}
+};
+const auto batch = nomad::loadSourcePaths(scriptRoots, buffers);
+const auto result = nomad::checkSources(batch);
+```
+
+The loader returns owned, sorted snapshots without changing the disk or buffers.
+Rebuild a batch with the latest buffers for each analysis; remove an override
+when its document closes to use disk text again. Document versions, project
+association and stale-analysis rejection belong to the editor adapter, not the
 compiler. `checkSources(batch, runtime)` from
 `<nomad/compiler/CompilerTools.hpp>` returns the same `CompilationResult` as
 `checkPaths`, without reading files. Loading warnings permit compilation; loading
