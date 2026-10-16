@@ -236,6 +236,7 @@ executable = "lsp-test"
 entry = "init"
 [nomad]
 version = "0.1.0"
+modules = ["nomad-game"]
 [resources]
 directory = "res"
 [scripts]
@@ -338,6 +339,7 @@ executable = "completion"
 entry = "init"
 [nomad]
 version = "0.1.0"
+modules = ["nomad-game"]
 [resources]
 directory = "res"
 )");
@@ -428,6 +430,7 @@ executable = "symbols"
 entry = "init"
 [nomad]
 version = "0.1.0"
+modules = ["nomad-game"]
 [resources]
 directory = "res"
 )");
@@ -522,6 +525,7 @@ executable = "members"
 entry = "init"
 [nomad]
 version = "0.1.0"
+modules = ["nomad-game"]
 [resources]
 directory = "res"
 )");

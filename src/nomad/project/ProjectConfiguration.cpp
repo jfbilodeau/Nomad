@@ -657,7 +657,7 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
         );
     }
 
-    if (result.document.contains("nomad.modules")) {
+    {
         try {
             configuration.sdk.modules = result.document.requireStringArray("nomad.modules");
         } catch (const NomadConfigurationError& error) {

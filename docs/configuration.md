@@ -73,7 +73,7 @@ exclude = [
 | `project.executable` | Executable file name without extension or directory. | Required for development projects |
 | `project.entry` | Script entry function taking no arguments and returning `void`. | Optional; `"init"` |
 | `nomad.version` | Required SDK version in canonical `major.minor.patch` form; packaging requires this exact runtime version. | Required |
-| `nomad.modules` | Requested native modules; dependencies are included automatically. | Optional; `["nomad-game"]` |
+| `nomad.modules` | Requested native modules; dependencies are included automatically. Use `[]` for the bare runtime. | Required |
 | `game.debug` | Whether diagnostic logging and the in-game debug console are enabled. | Optional; `false` |
 | `resources.directory` | Resource directory relative to the project root. | Optional; `"res"` |
 | `window.title` | Initial game window title. Scripts may change it after startup. | Optional; `project.name` |

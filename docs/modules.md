@@ -20,8 +20,8 @@ loads `nomad-system`. A system-only project can select `["nomad-system"]`
 without opening a game window. An empty list selects only the fundamental
 language runtime, including built-in strings.
 
-For compatibility, omitting `nomad.modules` selects `["nomad-game"]`.
-New projects include the property explicitly.
+`nomad.modules` is required in development and packaged configurations.
+There is no implicit module.
 
 ## SDK modules
 

@@ -35,7 +35,7 @@ struct ProjectMetadata {
 
 struct SdkConfiguration {
     NomadVersion version{0, 0, 0};
-    std::vector<NomadString> modules{"nomad-game"};
+    std::vector<NomadString> modules;
 };
 
 struct ResourceConfiguration {
