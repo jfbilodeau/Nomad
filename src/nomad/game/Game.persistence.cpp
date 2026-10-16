@@ -25,7 +25,7 @@ bool Game::saveGame(const NomadString& saveName) {
 
     boost::json::object root;
 
-    if (!saveVariableContext(m_runtime.get(), *m_inventoryContext, root)) {
+    if (!saveVariableContext(m_runtime, *m_inventoryContext, root)) {
         log::error("Game not saved to '" + path + "'");
         return false;
     }
@@ -57,7 +57,7 @@ bool Game::loadGame(const NomadString& saveName) {
         return false;
     }
 
-    loadVariableContext(m_runtime.get(), *m_inventoryContext, *root);
+    loadVariableContext(m_runtime, *m_inventoryContext, *root);
 
     log::info("Game loaded from '" + path + "'");
 
@@ -79,7 +79,7 @@ bool Game::saveSettings() {
 
     boost::json::object root;
 
-    if (!saveVariableContext(m_runtime.get(), *m_settingsContext, root)) {
+    if (!saveVariableContext(m_runtime, *m_settingsContext, root)) {
         log::error("Settings not saved to '" + path + "'");
         return false;
     }
@@ -111,7 +111,7 @@ bool Game::loadSettings() {
         return false;
     }
 
-    loadVariableContext(m_runtime.get(), *m_settingsContext, *root);
+    loadVariableContext(m_runtime, *m_settingsContext, *root);
 
     log::info("Settings loaded from '" + path + "'");
 
@@ -223,16 +223,16 @@ void Game::loadDebugSettings() {
 
     RuntimeValue value;
 
-    if (readJsonVariable(m_runtime.get(), *root, DEBUG_CONSOLE_VISIBLE_VARIABLE, m_runtime->getBooleanType(), value)) {
+    if (readJsonVariable(m_runtime, *root, DEBUG_CONSOLE_VISIBLE_VARIABLE, m_runtime->getBooleanType(), value)) {
         applyDebugConsoleVisible(value.getBooleanValue());
     }
 
-    if (readJsonVariable(m_runtime.get(), *root, DEBUG_CONSOLE_SCALE_VARIABLE, m_runtime->getFloatType(), value)) {
+    if (readJsonVariable(m_runtime, *root, DEBUG_CONSOLE_SCALE_VARIABLE, m_runtime->getFloatType(), value)) {
         const auto scale = value.getFloatValue();
         applyDebugConsoleScale(std::clamp(scale, DEBUG_CONSOLE_MINIMUM_SCALE, DEBUG_CONSOLE_MAXIMUM_SCALE));
     }
 
-    if (readJsonVariable(m_runtime.get(), *root, DEBUG_DRAW_VISIBLE_VARIABLE, m_runtime->getBooleanType(), value)) {
+    if (readJsonVariable(m_runtime, *root, DEBUG_DRAW_VISIBLE_VARIABLE, m_runtime->getBooleanType(), value)) {
         applyDebugDrawVisible(value.getBooleanValue());
     }
 }
@@ -247,21 +247,21 @@ void Game::saveDebugSettings() const {
 
     const auto written =
         writeJsonVariable(
-            m_runtime.get(),
+            m_runtime,
             root,
             DEBUG_CONSOLE_VISIBLE_VARIABLE,
             m_runtime->getBooleanType(),
             RuntimeValue(m_debugConsoleVisible)
         ) &&
         writeJsonVariable(
-            m_runtime.get(),
+            m_runtime,
             root,
             DEBUG_CONSOLE_SCALE_VARIABLE,
             m_runtime->getFloatType(),
             RuntimeValue(m_debugConsoleScale)
         ) &&
         writeJsonVariable(
-            m_runtime.get(),
+            m_runtime,
             root,
             DEBUG_DRAW_VISIBLE_VARIABLE,
             m_runtime->getBooleanType(),

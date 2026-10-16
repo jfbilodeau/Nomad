@@ -5,6 +5,7 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/NativeFunctions.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>
@@ -347,6 +348,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_retains_multiple_diagnostics_and_first_
 BOOST_AUTO_TEST_CASE(interpreter_context_executes_single_line_assignments_and_expressions)
 {
     Runtime runtime;
+    registerBuildInNativeFunctions(&runtime);
     auto machine = runtime.createVirtualMachine();
     InterpreterContext context(*machine);
 
@@ -412,6 +414,7 @@ BOOST_AUTO_TEST_CASE(interpreter_evaluates_format_literal_arithmetic)
 BOOST_AUTO_TEST_CASE(interpreter_reports_unknown_function_calls)
 {
     Runtime runtime;
+    registerBuildInNativeFunctions(&runtime);
     auto machine = runtime.createVirtualMachine();
     InterpreterContext context(*machine);
 
@@ -621,6 +624,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_compiled_value_returning_funct
 BOOST_AUTO_TEST_CASE(interpreter_context_executes_nativeFunctions_with_hidden_source_arguments)
 {
     Runtime runtime;
+    registerBuildInNativeFunctions(&runtime);
     auto machine = runtime.createVirtualMachine();
     InterpreterContext context(*machine);
     NomadString fileName;

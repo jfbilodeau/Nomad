@@ -2,7 +2,12 @@
 
 #pragma once
 
-#include <nomad/game/Game.hpp>
+#include <nomad/Nomad.hpp>
+#include <nomad/NomadVersion.hpp>
+
+#include <nomad/game/GameOptions.hpp>
+
+#include <nomad/system/NomadConfiguration.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -10,9 +15,6 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-
-#include "nomad/Nomad.hpp"
-#include "nomad/NomadVersion.hpp"
 
 namespace nomad {
 
@@ -33,6 +35,7 @@ struct ProjectMetadata {
 
 struct SdkConfiguration {
     NomadVersion version{0, 0, 0};
+    std::vector<NomadString> modules;
 };
 
 struct ResourceConfiguration {
@@ -57,6 +60,7 @@ struct NomadProject {
     ProjectConfiguration configuration;
     GameOptions gameOptions;
     NomadPath root;
+    NomadConfiguration document;
 };
 
 class ProjectConfigurationError final : public NomadException {
@@ -71,6 +75,10 @@ std::optional<NomadPath> findProjectRoot(
 
 [[nodiscard]] NomadProject loadNomadProject(
     const NomadPath& projectFile
+);
+
+[[nodiscard]] GameOptions readGameOptions(
+    const NomadConfiguration& configuration
 );
 
 [[nodiscard]] NomadProject discoverNomadProject(

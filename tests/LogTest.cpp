@@ -6,6 +6,8 @@
 #include "nomad/log/MemorySink.hpp"
 
 #include <string>
+#include <thread>
+#include <vector>
 
 using namespace nomad;
 
@@ -130,6 +132,41 @@ BOOST_AUTO_TEST_CASE(ClearingPendingEntries)
     const auto& entries = memorySink.getEntries();
     BOOST_REQUIRE(entries.size() == 1U);
     BOOST_TEST(entries.front().message.find("retained") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(ConcurrentSubmissionAndDelivery)
+{
+    MemorySink sink;
+    Logger logger(&sink);
+    logger.clear();
+    std::vector<std::jthread> writers;
+    for (auto index = 0; index < 4; ++index) {
+        writers.emplace_back([&logger] {
+            for (auto message = 0; message < 100; ++message) {
+                logger.info("concurrent-message");
+                if (message % 10 == 0) {
+                    logger.flush();
+                }
+            }
+        });
+    }
+    writers.clear();
+    logger.flush();
+    BOOST_TEST(sink.getEntries().size() == 400U);
+}
+
+BOOST_AUTO_TEST_CASE(FatalReportsFailureWithoutTerminatingTheProcess)
+{
+    MemorySink sink;
+    Logger logger(&sink);
+    logger.clear();
+    BOOST_CHECK_EXCEPTION(
+        logger.fatal("fatal-message"),
+        NomadException,
+        [](const auto& error) { return NomadString(error.what()) == "fatal-message"; }
+    );
+    BOOST_REQUIRE_EQUAL(sink.getEntries().size(), 1U);
+    BOOST_TEST(sink.getEntries().front().message.find("fatal-message") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

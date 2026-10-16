@@ -59,15 +59,17 @@ void Game::initSystemFunctions() {
         NomadDoc("Creates an RGBA color from red, green, blue and alpha components (0-255).")
     );
 
-    m_runtime->registerNativeFunction(
-        "system.exit",
-        [this](VirtualMachine* /*interpreter*/) {
-            quit();
-        },
-        {},
-        m_runtime->getVoidType(),
-        NomadDoc("Exits the game.")
-    );
+    if (m_ownedRuntime) {
+        m_runtime->registerNativeFunction(
+            "system.exit",
+            [this](VirtualMachine* /*interpreter*/) {
+                quit();
+            },
+            {},
+            m_runtime->getVoidType(),
+            NomadDoc("Exits the game.")
+        );
+    }
 }
 
 } // nomad

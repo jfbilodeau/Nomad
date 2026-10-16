@@ -29,7 +29,8 @@ struct CompilationArtifacts {
 // Tools that need the engine API pass the runtime of a headless `Game`.
 CompilationArtifacts compileSources(
     const SourceBatch& batch,
-    Runtime* externalRuntime
+    Runtime* externalRuntime,
+    CompilationTarget target = CompilationTarget::Executable
 ) {
     std::unique_ptr<Runtime> ownedRuntime;
 
@@ -43,7 +44,7 @@ CompilationArtifacts compileSources(
     CompilerContext context(compiler.get());
 
     compiler->registerSources(&context, batch);
-    (void)compiler->compileFunctions(&context);
+    (void)compiler->compileScripts(&context, target);
 
     const auto diagnostics = context.getDiagnostics();
 
@@ -81,6 +82,10 @@ CompilationResult checkPaths(const std::vector<std::filesystem::path>& paths, Ru
 
 CompilationResult checkSources(const SourceBatch& batch, Runtime* runtime) {
     return compileSources(batch, runtime).result;
+}
+
+CompilationResult analyzeSources(const SourceBatch& batch, Runtime* runtime) {
+    return compileSources(batch, runtime, CompilationTarget::Analysis).result;
 }
 
 void validateEntryFunction(

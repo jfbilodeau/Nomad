@@ -29,7 +29,7 @@ void Logger::setLogLevel(const LogLevel level) {
 }
 
 LogLevel Logger::getLogLevel() const {
-    return m_logLevel;
+    return m_logLevel.load();
 }
 
 void Logger::debug(const NomadStringView message, const Location& location) {
@@ -58,38 +58,52 @@ void Logger::fatal(const NomadStringView message, const Location& location) {
     // Make sure the error is logged immediately.
     flush();
 
-    exit(1);
+    throw NomadException(NomadString(message));
 }
 
 void Logger::addSink(LogSink* sink) {
+    const auto lock = std::lock_guard(m_deliveryMutex);
+    if (sink == nullptr) {
+        throw NomadBug("Cannot register a null log sink");
+    }
     m_sinks.push_back(sink);
 }
 
 void Logger::removeSink(LogSink* sink) {
+    const auto lock = std::lock_guard(m_deliveryMutex);
     m_sinks.erase(std::ranges::remove(m_sinks, sink).begin(), m_sinks.end());
 }
 
 void Logger::clear() {
+    const auto lock = std::lock_guard(m_entriesMutex);
     m_entries.clear();
 }
 
 void Logger::flush() {
-    for (auto& sink: m_sinks) {
+    const auto deliveryLock = std::lock_guard(m_deliveryMutex);
+    std::vector<LogEntry> entries;
+    {
+        const auto entriesLock = std::lock_guard(m_entriesMutex);
+        entries.swap(m_entries);
+    }
+    const auto sinks = m_sinks;
+    for (auto* sink: sinks) {
+        if (std::ranges::find(m_sinks, sink) == m_sinks.end()) {
+            continue;
+        }
         sink->begin();
 
-        for (auto& entry: m_entries) {
+        for (const auto& entry: entries) {
             sink->log(&entry);
         }
 
         sink->end();
     }
 
-    m_entries.clear();
-
 }
 
 void Logger::log(const LogLevel level, const NomadStringView message, const Location& location) {
-    if (level < m_logLevel) {
+    if (level < m_logLevel.load()) {
         // Skip!
         return;
     }
@@ -130,6 +144,7 @@ void Logger::log(const LogLevel level, const NomadStringView message, const Loca
         message
     );
 
+    const auto lock = std::lock_guard(m_entriesMutex);
     m_entries.emplace_back(LogEntry{
         time,
         level,
@@ -139,62 +154,58 @@ void Logger::log(const LogLevel level, const NomadStringView message, const Loca
 
 namespace log {
 
-namespace {
-
-Logger& getGlobalLogger() {
+Logger& getLogger() {
     static ConsoleSink consoleSink;
     static Logger logger(&consoleSink);
     return logger;
 }
 
-} // namespace
-
 void setLogLevel(const LogLevel level) {
-    getGlobalLogger().setLogLevel(level);
+    getLogger().setLogLevel(level);
 }
 
 LogLevel getLogLevel() {
-    return getGlobalLogger().getLogLevel();
+    return getLogger().getLogLevel();
 }
 
 void debug(const NomadStringView message, const Location& location) {
-    getGlobalLogger().debug(message, location);
+    getLogger().debug(message, location);
 }
 
 void info(const NomadStringView message, const Location& location) {
-    getGlobalLogger().info(message, location);
+    getLogger().info(message, location);
 }
 
 void warn(const NomadStringView message, const Location& location) {
-    getGlobalLogger().warning(message, location);
+    getLogger().warning(message, location);
 }
 
 void warning(const NomadStringView message, const Location& location) {
-    getGlobalLogger().warning(message, location);
+    getLogger().warning(message, location);
 }
 
 void error(const NomadStringView message, const Location& location) {
-    getGlobalLogger().error(message, location);
+    getLogger().error(message, location);
 }
 
 void fatal(const NomadStringView message, const Location& location) {
-    getGlobalLogger().fatal(message, location);
+    getLogger().fatal(message, location);
 }
 
 void addSink(LogSink* sink) {
-    getGlobalLogger().addSink(sink);
+    getLogger().addSink(sink);
 }
 
 void removeSink(LogSink* sink) {
-    getGlobalLogger().removeSink(sink);
+    getLogger().removeSink(sink);
 }
 
 void clear() {
-    getGlobalLogger().clear();
+    getLogger().clear();
 }
 
 void flush() {
-    getGlobalLogger().flush();
+    getLogger().flush();
 }
 
 } // log

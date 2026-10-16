@@ -9,6 +9,7 @@ entry = "init"
 
 [nomad]
 version = "@PROJECT_VERSION@"
+modules = ["nomad-game"]
 
 [resources]
 directory = "res"

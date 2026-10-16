@@ -1083,7 +1083,17 @@ void Compiler::deferFormatString(FormatStringLiteral* literal, const NomadId fun
     m_pendingFormatStrings.push_back({literal, functionId, std::move(sourceContent)});
 }
 
+void Compiler::registerPhaseHook(std::function<void(CompilerContext*, CompilationPhase)> hook) {
+    if (hook) {
+        m_phaseHooks.push_back(std::move(hook));
+    }
+}
+
 bool Compiler::compileFunctions(CompilerContext* context) {
+    return compileScripts(context);
+}
+
+bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget target) {
     if (context == nullptr || context->getCompiler() != this) {
         throw NomadBug("Compilation requires this compiler's context");
     }
@@ -1110,7 +1120,7 @@ bool Compiler::compileFunctions(CompilerContext* context) {
         }
     };
 
-    const auto finish = [this, &hasNewErrors] {
+    const auto cleanup = [this](Compiler*) {
         // Tokenizers report to the caller's context, so they must not outlive this call.
         for (auto& scriptFile: m_scripts) {
             scriptFile.tokens.reset();
@@ -1120,9 +1130,28 @@ bool Compiler::compileFunctions(CompilerContext* context) {
         m_functionCallDependencies.clear();
         m_returningFunctions.clear();
         m_pendingFormatStrings.clear();
-
-        return !hasNewErrors();
     };
+    const auto cleanupGuard = std::unique_ptr<Compiler, decltype(cleanup)>(this, cleanup);
+
+    const auto beginPhase = [this, context, &reportExceptions, &hasNewErrors](const CompilationPhase phase) {
+        if (hasNewErrors()) {
+            return false;
+        }
+        const auto hookCount = m_phaseHooks.size();
+        for (auto index = std::size_t{0}; index < hookCount; ++index) {
+            reportExceptions({}, [&] {
+                m_phaseHooks[index](context, phase);
+            });
+            if (hasNewErrors()) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    if (!beginPhase(CompilationPhase::Configure) || !beginPhase(CompilationPhase::PreParse)) {
+        return false;
+    }
 
     log::info("Pre-Parsing functions");
 
@@ -1147,9 +1176,12 @@ bool Compiler::compileFunctions(CompilerContext* context) {
     // Each pass depends on the declarations collected by the previous one. Stop after a pass that reported errors so
     // they do not cascade into unrelated errors (e.g. unknown `fun` names or `fun` bodies parsed as top-level code).
     if (hasNewErrors()) {
-        return finish();
+        return false;
     }
 
+    if (!beginPhase(CompilationPhase::Parse)) {
+        return false;
+    }
     log::info("Parsing functions");
 
     for (auto* script : orderedScripts) {
@@ -1162,9 +1194,12 @@ bool Compiler::compileFunctions(CompilerContext* context) {
     }
 
     if (hasNewErrors()) {
-        return finish();
+        return false;
     }
 
+    if (!beginPhase(CompilationPhase::PrepareFormatStrings)) {
+        return false;
+    }
     log::info("Preparing format strings");
 
     // Parsing a placeholder can append nested format literals to the queue.
@@ -1175,11 +1210,14 @@ bool Compiler::compileFunctions(CompilerContext* context) {
             (void)pending.literal->parsePlaceholders(context, function, pending.sourceContent);
         });
         if (hasNewErrors()) {
-            return finish();
+            return false;
         }
     }
     m_pendingFormatStrings.clear();
 
+    if (!beginPhase(CompilationPhase::Resolve)) {
+        return false;
+    }
     log::info("Syntax checking functions");
 
     reportExceptions({}, [&] {
@@ -1197,9 +1235,16 @@ bool Compiler::compileFunctions(CompilerContext* context) {
     }
 
     if (hasNewErrors()) {
-        return finish();
+        return false;
     }
 
+    if (target == CompilationTarget::Analysis) {
+        return beginPhase(CompilationPhase::Completed);
+    }
+
+    if (!beginPhase(CompilationPhase::Emit)) {
+        return false;
+    }
     log::info("Compiling functions");
 
     for (auto& source: m_functions) {
@@ -1211,24 +1256,33 @@ bool Compiler::compileFunctions(CompilerContext* context) {
     }
 
     if (hasNewErrors()) {
-        return finish();
+        return false;
     }
 
+    if (!beginPhase(CompilationPhase::Link)) {
+        return false;
+    }
     log::info("Linking functions");
 
     reportExceptions({}, [&] {
         linkFunctions();
     });
 
+    if (!beginPhase(CompilationPhase::Verify)) {
+        return false;
+    }
     log::info("Verification");
 
-    postCompile(context);
+    reportExceptions({}, [&] {
+        postCompile(context);
+    });
 
-    if (!hasNewErrors()) {
-        log::info("Functions compiled");
+    if (!beginPhase(CompilationPhase::Completed)) {
+        return false;
     }
+    log::info("Functions compiled");
 
-    return finish();
+    return true;
 }
 void Compiler::addFunctionLink(NomadId functionId, NomadIndex callIndex) {
     m_functionLinks.emplace_back(FunctionLink{functionId, callIndex});

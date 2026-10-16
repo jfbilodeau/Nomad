@@ -161,7 +161,7 @@ void Game::initSceneFunctions() {
             const auto entityY = interpreter->getFloatParameter(2);
             const auto layer = interpreter->getIntegerParameter(3);
             const auto functionId = interpreter->getIdParameter(4);
-            auto postFunctionClosure = interpreter->createClosure(m_runtime.get(), functionId);
+            auto postFunctionClosure = interpreter->createClosure(m_runtime, functionId);
 
             addEntityToScene(
                 scene->getId(),
@@ -198,7 +198,7 @@ void Game::initSceneFunctions() {
             const auto entityY = interpreter->getFloatParameter(2);
             const auto layer = interpreter->getIntegerParameter(3);
             const auto postFunctionId = interpreter->getIdParameter(4);
-            auto postFunctionClosure = interpreter->createClosure(m_runtime.get(), postFunctionId);
+            auto postFunctionClosure = interpreter->createClosure(m_runtime, postFunctionId);
 
             addEntityToScene(
                 scene->getId(),
@@ -308,7 +308,7 @@ void Game::initSceneFunctions() {
             const auto layer = interpreter->getIntegerParameter(3);
             const auto text = interpreter->getStringParameter(4);
             const auto functionId = interpreter->getIdParameter(5);
-            auto postFunctionClosure = interpreter->createClosure(m_runtime.get(), functionId);
+            auto postFunctionClosure = interpreter->createClosure(m_runtime, functionId);
 
             addEntityToScene(
                 scene->getId(),

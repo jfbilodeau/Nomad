@@ -3,18 +3,15 @@
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/CompilerTools.hpp>
 
-#include <nomad/game/Game.hpp>
-
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/project/ProjectConfiguration.hpp>
-
-#include <nomad/resource/SpritePacker.hpp>
 
 #include <nomad/script/Documentation.hpp>
 
 #include <nomad/system/Path.hpp>
 #include <nomad/system/ProgramOptions.hpp>
+#include <nomad/system/ProjectSession.hpp>
 
 #include <nomad/Version.hpp>
 
@@ -23,7 +20,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -99,9 +95,7 @@ struct CompilationPaths {
     NomadPath resources;
     std::optional<NomadString> entryFunction;
     NomadPath projectFile;
-    std::optional<SpriteOptions> sprites;
-    std::optional<ScriptOptions> scripts;
-    bool missingSpriteDirectoriesAllowed = false;
+    std::optional<NomadProject> project;
 };
 
 CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const bool explicitPath) {
@@ -109,16 +103,17 @@ CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const b
         ? requestedPath.parent_path()
         : requestedPath;
     std::vector<NomadPath> sourcePaths{requestedPath};
+    std::optional<NomadProject> project;
 
     if (std::filesystem::exists(requestedPath)) {
         const auto projectRoot = findProjectRoot(requestedPath);
 
         if (projectRoot) {
-            const auto project = loadNomadProject(*projectRoot / NOMAD_PROJECT_FILE_NAME);
-            resourcePath = resolveProjectResourcePath(project);
+            project = loadNomadProject(*projectRoot / NOMAD_PROJECT_FILE_NAME);
+            resourcePath = resolveProjectResourcePath(*project);
 
             if (!explicitPath) {
-                const auto directories = project.gameOptions.scripts.directories.value_or(
+                const auto directories = project->gameOptions.scripts.directories.value_or(
                     std::vector<NomadPath>{"scripts"}
                 );
 
@@ -130,11 +125,9 @@ CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const b
                 return CompilationPaths{
                     std::move(sourcePaths),
                     resourcePath,
-                    project.gameOptions.entryFunction,
+                    project->gameOptions.entryFunction,
                     *projectRoot / NOMAD_PROJECT_FILE_NAME,
-                    project.gameOptions.sprites,
-                    project.gameOptions.scripts,
-                    project.configuration.type == ProjectConfigurationType::Release
+                    std::move(project)
                 };
             }
         }
@@ -149,27 +142,23 @@ CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const b
         resourcePath,
         std::nullopt,
         {},
-        std::nullopt,
-        std::nullopt,
-        false
+        std::move(project)
     };
 }
 
-// Stands up the real engine against SDL's dummy drivers so compiled sources resolve the same
-// `game.*`, `window.*`, `scene.*` and `t.*` symbols a windowed build would expose.
-class HeadlessGame {
-public:
-    explicit HeadlessGame(const NomadPath& resourcePath) {
-        GameOptions options;
-        options.resourcePath = pathToUtf8(resourcePath);
-        m_game = Game::createHeadless(std::move(options));
+std::unique_ptr<ModuleHost> createCompilerSession(
+    const CompilationPaths& paths,
+    const std::vector<NomadString>& arguments
+) {
+    if (paths.project) {
+        return createProjectSession(*paths.project, ModuleMode::Analysis, arguments);
     }
-
-    [[nodiscard]] Runtime* getRuntime() const { return m_game->getRuntime(); }
-
-private:
-    std::unique_ptr<Game> m_game;
-};
+    NomadProject project;
+    project.root = paths.resources;
+    project.configuration.resources.directory = ".";
+    project.configuration.sdk.modules = {"nomad-game"};
+    return createProjectSession(project, ModuleMode::Analysis, arguments);
+}
 
 CompilationPaths resolveRequestedPaths(const std::optional<NomadString>& requestedPath) {
     const auto explicitPath = requestedPath.has_value();
@@ -185,52 +174,13 @@ int versionCommand(EmptyParameters&) {
     return EXIT_SUCCESS;
 }
 
-bool checkSprites(const CompilationPaths& paths) {
-    if (!paths.sprites) {
-        return true;
-    }
-
-    if (paths.sprites->directories && paths.sprites->directories->empty()) {
-        std::cout << "Sprites: disabled\n";
+bool checkResources(const CompilationPaths& paths, ModuleHost& session) {
+    if (paths.projectFile.empty()) {
         return true;
     }
 
     try {
-        const auto directories = paths.sprites->directories.value_or(
-            std::vector<NomadPath>{"sprites"}
-        );
-        const auto report = analyzeSpritePacking(
-            paths.resources,
-            directories,
-            paths.sprites->directories.has_value(),
-            paths.sprites->maxTextureSize.value_or(2048),
-            paths.sprites->padding.value_or(1),
-            paths.missingSpriteDirectoriesAllowed
-        );
-
-        std::cout
-            << "Sprites: " << report.sourceCount
-            << " logical sprites, " << report.groupCount
-            << " groups, " << report.pageCount
-            << " texture pages\n";
-
-        for (const auto& page : report.pages) {
-            const auto totalPixelCount =
-                page.width * page.height;
-            const auto occupancy = totalPixelCount == 0
-                ? 0.0
-                : static_cast<double>(page.usedPixelCount) * 100.0 /
-                    static_cast<double>(totalPixelCount);
-            std::ostringstream line;
-            line
-                << "  " << page.name << ": "
-                << page.width << 'x' << page.height << ", "
-                << page.spriteCount << " sprites ("
-                << page.uniqueSpriteCount << " unique), "
-                << std::fixed << std::setprecision(1) << occupancy << "% occupancy\n";
-            std::cout << line.str();
-        }
-
+        std::cout << session.checkResources();
         return true;
     } catch (const std::exception& error) {
         std::cerr
@@ -241,24 +191,24 @@ bool checkSprites(const CompilationPaths& paths) {
     }
 }
 
-int checkCommand(CheckParameters& parameters) {
+int checkCommand(CheckParameters& parameters, const std::vector<NomadString>& arguments) {
     const auto paths = resolveRequestedPaths(parameters.path);
-    const HeadlessGame game(paths.resources);
-    auto result = checkPaths(paths.sources, game.getRuntime());
+    const auto session = createCompilerSession(paths, arguments);
+    auto result = checkPaths(paths.sources, session->getRuntime());
 
     if (paths.entryFunction) {
-        validateEntryFunction(result, game.getRuntime(), *paths.entryFunction, paths.projectFile);
+        validateEntryFunction(result, session->getRuntime(), *paths.entryFunction, paths.projectFile);
     }
 
     printDiagnostics(result);
-    const auto spritesSucceeded = checkSprites(paths);
-    return result.succeeded() && spritesSucceeded ? EXIT_SUCCESS : EXIT_FAILURE;
+    const auto resourcesSucceeded = checkResources(paths, *session);
+    return result.succeeded() && resourcesSucceeded ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
-int dumpCommand(DumpParameters& parameters) {
+int dumpCommand(DumpParameters& parameters, const std::vector<NomadString>& arguments) {
     const auto paths = resolveRequestedPaths(parameters.path);
-    const HeadlessGame game(paths.resources);
-    const auto result = dumpInstructions(paths.sources, parameters.function, game.getRuntime());
+    const auto session = createCompilerSession(paths, arguments);
+    const auto result = dumpInstructions(paths.sources, parameters.function, session->getRuntime());
     printDiagnostics(result.compilation);
 
     if (!result.compilation.succeeded()) {
@@ -269,7 +219,7 @@ int dumpCommand(DumpParameters& parameters) {
     return EXIT_SUCCESS;
 }
 
-int documentationCommand(DocumentationParameters& parameters) {
+int documentationCommand(DocumentationParameters& parameters, const std::vector<NomadString>& arguments) {
     const auto outputPath = resolveDocumentationOutputPath(parameters.output);
 
     if (!parameters.path) {
@@ -281,16 +231,16 @@ int documentationCommand(DocumentationParameters& parameters) {
                 << pathToUtf8(currentPath)
                 << "; generating engine-only documentation.\n";
 
-            const HeadlessGame game(currentPath);
+            const auto session = createCompilerSession(resolveCompilationPaths(currentPath, true), arguments);
             std::ostringstream output;
-            generateDocumentation(game.getRuntime(), output);
+            generateDocumentation(session->getRuntime(), output);
             return writeOutputFile(outputPath, "documentation", output.str());
         }
     }
 
     const auto paths = resolveRequestedPaths(parameters.path);
-    const HeadlessGame game(paths.resources);
-    const auto result = generateDocumentationForPaths(paths.sources, game.getRuntime());
+    const auto session = createCompilerSession(paths, arguments);
+    const auto result = generateDocumentationForPaths(paths.sources, session->getRuntime());
     printDiagnostics(result.compilation);
 
     if (!result.compilation.succeeded()) {
@@ -300,11 +250,11 @@ int documentationCommand(DocumentationParameters& parameters) {
     return writeOutputFile(outputPath, "documentation", result.documentation);
 }
 
-int textMateCommand(TextMateParameters& parameters) {
+int textMateCommand(TextMateParameters& parameters, const std::vector<NomadString>& arguments) {
     const auto paths = resolveRequestedPaths(parameters.path);
-    const HeadlessGame game(paths.resources);
+    const auto session = createCompilerSession(paths, arguments);
     std::ostringstream output;
-    generateTextMateGrammar(game.getRuntime(), output);
+    generateTextMateGrammar(session->getRuntime(), output);
     return writeOutputFile(pathFromUtf8(parameters.output), "TextMate grammar", output.str());
 }
 
@@ -312,6 +262,7 @@ int textMateCommand(TextMateParameters& parameters) {
 
 int main(int argc, char** argv) {
     boost::nowide::args utf8Arguments(argc, argv);
+    const std::vector<NomadString> arguments(argv, argv + argc);
 
     log::setLogLevel(LogLevel::Warning);
     log::clear();
@@ -332,12 +283,18 @@ int main(int argc, char** argv) {
         }, "Show general or command help")
             .addOptionalPositional("verb", &HelpParameters::verb, "Command to describe");
         program.addVerb<EmptyParameters>("version", &versionCommand, "Show the Nomad version");
-        program.addVerb<CheckParameters>("check", &checkCommand, "Compile scripts without executing them")
+        program.addVerb<CheckParameters>("check", [&arguments](CheckParameters& parameters) {
+            return checkCommand(parameters, arguments);
+        }, "Compile scripts without executing them")
             .addOptionalPositional("path", &CheckParameters::path, "Source path (default: discover the current project)");
-        program.addVerb<DumpParameters>("dump", &dumpCommand, "Print generated VM instructions without execution")
+        program.addVerb<DumpParameters>("dump", [&arguments](DumpParameters& parameters) {
+            return dumpCommand(parameters, arguments);
+        }, "Print generated VM instructions without execution")
             .addOptionalPositional("path", &DumpParameters::path, "Source path (default: discover the current project)")
             .addOption("function", "", &DumpParameters::function, "Function to dump (default: all functions)");
-        program.addVerb<DocumentationParameters>("docs", &documentationCommand, "Generate language and engine API documentation")
+        program.addVerb<DocumentationParameters>("docs", [&arguments](DocumentationParameters& parameters) {
+            return documentationCommand(parameters, arguments);
+        }, "Generate language and engine API documentation")
             .addOptionalPositional("path", &DocumentationParameters::path, "Source path (default: discover the current project)")
             .addRequiredOption(
                 "output",
@@ -345,7 +302,9 @@ int main(int argc, char** argv) {
                 &DocumentationParameters::output,
                 "Output Markdown file or directory (required)"
             );
-        program.addVerb<TextMateParameters>("textmate", &textMateCommand, "Generate a VS Code TextMate grammar")
+        program.addVerb<TextMateParameters>("textmate", [&arguments](TextMateParameters& parameters) {
+            return textMateCommand(parameters, arguments);
+        }, "Generate a VS Code TextMate grammar")
             .addOptionalPositional("path", &TextMateParameters::path, "Project path (default: discover the current project)")
             .addRequiredOption("output", "o", &TextMateParameters::output, "Output .tmLanguage.json file (required)");
         return program.run(argc, argv, std::cout);

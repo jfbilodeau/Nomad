@@ -4,6 +4,7 @@
 
 #include <nomad/Nomad.hpp>
 
+#include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Operators.hpp>
 #include <nomad/compiler/Parser.hpp>
@@ -15,6 +16,7 @@
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/Type.hpp>
 
+#include <functional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -168,8 +170,11 @@ public:
     void setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode> ast);
     // Borrows an AST node until placeholder preparation, before type inference.
     void deferFormatString(FormatStringLiteral* literal, NomadId functionId, NomadString sourceContent);
-    // Compiles every registered script file. Errors and warnings are reported to context. Returns false if errors
-    // exist in context. A pass that reports errors stops compilation before the next pass to avoid cascading errors.
+    void registerPhaseHook(std::function<void(CompilerContext*, CompilationPhase)> hook);
+    [[nodiscard]] bool compileScripts(
+        CompilerContext* context,
+        CompilationTarget target = CompilationTarget::Executable
+    );
     [[nodiscard]] bool compileFunctions(CompilerContext* context);
     void addFunctionLink(NomadId functionId, NomadIndex callIndex);
     // Function calls used in expressions, recorded while resolving. Explains return types that cannot be inferred.
@@ -194,7 +199,7 @@ private:
 
     struct ScriptCompilation {
         ScriptSource script;
-        // Only exists while compileFunctions() runs so lexing errors are reported once.
+        // Only exists while compileScripts() runs so lexing errors are reported once.
         std::unique_ptr<Tokenizer> tokens;
 
         NomadId functionId = NOMAD_INVALID_ID;
@@ -238,6 +243,7 @@ private:
 //    Function* m_current_function;
     std::unordered_map<NomadString, ParseStatementFnRegistration> m_statements;
     std::vector<OpCodeRegistration> m_opCodeRegistrations;
+    std::vector<std::function<void(CompilerContext*, CompilationPhase)>> m_phaseHooks;
     std::vector<ScriptCompilation> m_scripts;
     std::vector<FunctionCompilation> m_functions;
     std::vector<PendingFormatString> m_pendingFormatStrings;

@@ -8,6 +8,18 @@ if(
 endif()
 
 add_test(
+    NAME nomad_module_runtime_integration
+    COMMAND "${CMAKE_COMMAND}"
+        "-DNOMAD_CLI=$<TARGET_FILE:nomad-cli>"
+        "-DNOMAD_RUNTIME_SUFFIX=$<TARGET_FILE_SUFFIX:nomad-runtime>"
+        "-DNOMAD_SYSTEM_LIBRARY=$<TARGET_FILE_NAME:nomad-system>"
+        "-DNOMAD_GAME_LIBRARY=$<TARGET_FILE_NAME:nomad-game>"
+        "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/module-runtime/$<CONFIG>"
+        -P "${CMAKE_CURRENT_LIST_DIR}/ModuleRuntimeIntegrationTest.cmake"
+)
+set_tests_properties(nomad_module_runtime_integration PROPERTIES LABELS integration TIMEOUT 90)
+
+add_test(
     NAME nomad_distribution_integration
     COMMAND
         "${CMAKE_COMMAND}"

@@ -5,6 +5,7 @@
 #include <nomad/project/ProjectInitializer.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/system/Path.hpp>
+#include <nomad/system/ProjectSession.hpp>
 #include <nomad/Version.hpp>
 
 #include <TestDirectory.hpp>
@@ -80,9 +81,9 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
     BOOST_TEST(readme.find("# Example Game") != NomadString::npos);
     BOOST_TEST(readme.find("{{") == NomadString::npos);
 
-    Runtime runtime;
-    auto compilation = checkPath(destination / "res/scripts/init.nomad", &runtime);
-    validateEntryFunction(compilation, &runtime, "init", destination / "nomad.toml");
+    const auto session = createProjectSession(project, ModuleMode::Analysis);
+    auto compilation = checkPath(destination / "res/scripts/init.nomad", session->getRuntime());
+    validateEntryFunction(compilation, session->getRuntime(), "init", destination / "nomad.toml");
     BOOST_TEST(compilation.succeeded());
 }
 

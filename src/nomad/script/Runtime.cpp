@@ -108,7 +108,6 @@ Runtime::Runtime() {
     registerBinaryOperator(BinaryOperator::BangEqual, typeString, typeString, typeBoolean, OpCodes::op_string_not_equal, foldStringBinaryBangEqual);
 
     // Register build-in nativeFunctions
-    registerBuildInNativeFunctions(this);
     registerBuiltInIntrinsicMembers(this);
 
 //    register_keyword("stringId" NomadDoc("Load the string id of the given string"));
@@ -1964,7 +1963,18 @@ NomadIndex Runtime::getFunctionSize() const {
 }
 
 std::unique_ptr<Compiler> Runtime::createCompiler() {
-    return std::make_unique<Compiler>(this, m_instructions);
+    auto compiler = std::make_unique<Compiler>(this, m_instructions);
+    for (const auto& setup : m_compilerSetups) {
+        setup(compiler.get());
+    }
+    return compiler;
+}
+
+void Runtime::registerCompilerSetup(std::function<void(Compiler*)> setup) {
+    if (!setup) {
+        throw NomadBug("Cannot register an empty compiler setup callback");
+    }
+    m_compilerSetups.push_back(std::move(setup));
 }
 
 std::unique_ptr<VirtualMachine> Runtime::createVirtualMachine() {

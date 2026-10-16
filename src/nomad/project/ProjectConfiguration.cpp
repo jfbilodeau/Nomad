@@ -2,6 +2,7 @@
 
 #include <nomad/project/ProjectConfiguration.hpp>
 
+#include <nomad/system/ModuleManifest.hpp>
 #include <nomad/system/Path.hpp>
 #include <nomad/system/String.hpp>
 
@@ -534,6 +535,62 @@ std::optional<NomadPath> findProjectRoot(const NomadPath& startPath) {
     }
 }
 
+GameOptions readGameOptions(const NomadConfiguration& configuration) {
+    const auto document = toml::parse(configuration.serialize());
+    const auto* project = optionalTable(document, "project");
+    const auto* game = optionalTable(document, "game");
+    const auto* window = optionalTable(document, "window");
+    const auto* audio = optionalTable(document, "audio");
+    const auto* sprites = optionalTable(document, "sprites");
+    const auto* text = optionalTable(document, "text");
+    const auto* scripts = optionalTable(document, "scripts");
+    GameOptions options;
+
+    if (project != nullptr) {
+        options.entryFunction = optionalString(*project, "project", "entry", options.entryFunction);
+    }
+    if (game != nullptr && game->contains("debug")) {
+        options.debug = readBoolean(*game, "game", "debug");
+    }
+    if (window != nullptr && window->contains("title")) {
+        options.title = requiredString(*window, "window", "title");
+    }
+    if (window != nullptr && window->contains("resolution")) {
+        const auto [width, height] = readPositiveDimensions(*window, "resolution");
+        options.resolution = Point{width, height};
+    }
+    if (window != nullptr && window->contains("size")) {
+        const auto [width, height] = readPositiveDimensions(*window, "size");
+        options.size = Point{width, height};
+    }
+    if (window != nullptr && window->contains("fullscreen")) {
+        options.fullscreen = readBoolean(*window, "window", "fullscreen");
+    }
+    if (window != nullptr && window->contains("splash-image")) {
+        options.splashImage = readResourceRelativeFile(*window, "window", "splash-image");
+    }
+    if (audio != nullptr && audio->contains("directories")) {
+        options.audio.directories = readAssetDirectories(*audio, "audio");
+    }
+    if (sprites != nullptr && sprites->contains("directories")) {
+        options.sprites.directories = readAssetDirectories(*sprites, "sprites");
+    }
+    if (sprites != nullptr && sprites->contains("max-texture-size")) {
+        options.sprites.maxTextureSize = readSpriteInteger(*sprites, "max-texture-size", 1);
+    }
+    if (sprites != nullptr && sprites->contains("padding")) {
+        options.sprites.padding = readSpriteInteger(*sprites, "padding", 0);
+    }
+    if (text != nullptr && text->contains("directories")) {
+        options.text.directories = readTextDirectories(*text);
+    }
+    if (scripts != nullptr && scripts->contains("directories")) {
+        options.scripts.directories = readAssetDirectories(*scripts, "scripts");
+    }
+
+    return options;
+}
+
 NomadProject loadNomadProject(const NomadPath& projectFile) {
     toml::table document;
 
@@ -553,7 +610,7 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
 
     const auto schema = document["schema"].value<NomadInteger>();
 
-    if (!schema) {
+    if (!document["schema"].is_integer() || !schema) {
         throw ProjectConfigurationError("Configuration field 'schema' must be an integer");
     }
 
@@ -566,13 +623,7 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
 
     const auto& project = requiredTable(document, "project");
     const auto& nomad = requiredTable(document, "nomad");
-    const auto* game = optionalTable(document, "game");
     const auto* resources = optionalTable(document, "resources");
-    const auto* window = optionalTable(document, "window");
-    const auto* audio = optionalTable(document, "audio");
-    const auto* sprites = optionalTable(document, "sprites");
-    const auto* text = optionalTable(document, "text");
-    const auto* scripts = optionalTable(document, "scripts");
     const auto* package = optionalTable(document, "package");
     const auto hasExecutable = project.contains("executable");
 
@@ -583,6 +634,9 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
     }
 
     NomadProject result;
+    std::ostringstream retainedDocument;
+    retainedDocument << toml::toml_formatter{document};
+    result.document = NomadConfiguration::parse(retainedDocument.str());
     auto& configuration = result.configuration;
     auto& gameOptions = result.gameOptions;
     configuration.schema = *schema;
@@ -592,7 +646,7 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
     configuration.project.name = requiredString(project, "project", "name");
     configuration.project.identifier = requiredString(project, "project", "identifier");
     configuration.project.version = requiredString(project, "project", "version");
-    gameOptions.entryFunction = optionalString(project, "project", "entry", gameOptions.entryFunction);
+    gameOptions = readGameOptions(result.document);
     const auto nomadVersion = requiredString(nomad, "nomad", "version");
 
     try {
@@ -603,45 +657,27 @@ NomadProject loadNomadProject(const NomadPath& projectFile) {
         );
     }
 
-    if (game != nullptr && game->contains("debug")) {
-        gameOptions.debug = readBoolean(*game, "game", "debug");
-    }
-    if (window != nullptr && window->contains("title")) {
-        gameOptions.title = requiredString(*window, "window", "title");
-    }
-    if (window != nullptr && window->contains("resolution")) {
-        const auto [width, height] = readPositiveDimensions(*window, "resolution");
-        gameOptions.resolution = Point{width, height};
-    }
-    if (window != nullptr && window->contains("size")) {
-        const auto [width, height] = readPositiveDimensions(*window, "size");
-        gameOptions.size = Point{width, height};
-    }
-    if (window != nullptr && window->contains("fullscreen")) {
-        gameOptions.fullscreen = readBoolean(*window, "window", "fullscreen");
-    }
-    if (window != nullptr && window->contains("splash-image")) {
-        gameOptions.splashImage =
-            readResourceRelativeFile(*window, "window", "splash-image");
-    }
+    {
+        try {
+            configuration.sdk.modules = result.document.requireStringArray("nomad.modules");
+        } catch (const NomadConfigurationError& error) {
+            throw ProjectConfigurationError(error.what());
+        }
 
-    if (audio != nullptr && audio->contains("directories")) {
-        gameOptions.audio.directories = readAssetDirectories(*audio, "audio");
-    }
-    if (sprites != nullptr && sprites->contains("directories")) {
-        gameOptions.sprites.directories = readAssetDirectories(*sprites, "sprites");
-    }
-    if (sprites != nullptr && sprites->contains("max-texture-size")) {
-        gameOptions.sprites.maxTextureSize = readSpriteInteger(*sprites, "max-texture-size", 1);
-    }
-    if (sprites != nullptr && sprites->contains("padding")) {
-        gameOptions.sprites.padding = readSpriteInteger(*sprites, "padding", 0);
-    }
-    if (text != nullptr && text->contains("directories")) {
-        gameOptions.text.directories = readTextDirectories(*text);
-    }
-    if (scripts != nullptr && scripts->contains("directories")) {
-        gameOptions.scripts.directories = readAssetDirectories(*scripts, "scripts");
+        std::vector<NomadString> names;
+        for (const auto& name : configuration.sdk.modules) {
+            if (!isValidModuleName(name)) {
+                throw ProjectConfigurationError(
+                    "Configuration field 'nomad.modules' must contain only logical module names"
+                );
+            }
+            if (std::ranges::find(names, name) != names.end()) {
+                throw ProjectConfigurationError(
+                    "Configuration field 'nomad.modules' contains duplicate module '" + name + "'"
+                );
+            }
+            names.push_back(name);
+        }
     }
 
     if (configuration.type == ProjectConfigurationType::Development) {
@@ -707,7 +743,7 @@ NomadPath resolveProjectResourcePath(const NomadProject& project) {
 NomadString serializeReleaseProject(const NomadProject& project) {
     const auto& configuration = project.configuration;
 
-    return
+    const auto typedConfiguration =
         "schema = " + std::to_string(configuration.schema) + "\n"
         "\n"
         "[project]\n"
@@ -724,6 +760,30 @@ NomadString serializeReleaseProject(const NomadProject& project) {
         serializeSpriteConfiguration(project.gameOptions.sprites) +
         serializeTextConfiguration(project.gameOptions.text) +
         serializeScriptConfiguration(project.gameOptions.scripts);
+
+    auto document = project.document;
+    document.erase("project.executable");
+    document.erase("resources");
+    document.erase("package");
+    for (const auto field : {
+        "game.debug",
+        "window.title",
+        "window.resolution",
+        "window.size",
+        "window.fullscreen",
+        "window.splash-image",
+        "audio.directories",
+        "sprites.directories",
+        "sprites.max-texture-size",
+        "sprites.padding",
+        "text.directories",
+        "scripts.directories"
+    }) {
+        document.erase(field);
+    }
+    document.merge(NomadConfiguration::parse(typedConfiguration));
+    document.setStringArray("nomad.modules", configuration.sdk.modules);
+    return document.serialize();
 }
 
 void validateNomadVersionCompatibility(

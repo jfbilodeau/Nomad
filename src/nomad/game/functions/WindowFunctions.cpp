@@ -140,7 +140,7 @@ void Game::initWindowCallbacks() {
             name,
             [this, callback](VirtualMachine* interpreter) {
                 const auto functionId = interpreter->getIdParameter(0);
-                this->*callback = interpreter->createClosure(m_runtime.get(), functionId);
+                this->*callback = interpreter->createClosure(m_runtime, functionId);
             }, {
                 defParameter(
                     "callback",

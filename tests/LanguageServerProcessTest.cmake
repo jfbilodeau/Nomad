@@ -13,7 +13,7 @@ file(MAKE_DIRECTORY "${NOMAD_TEST_ROOT}/project with spaces/res/scripts")
 file(WRITE "${NOMAD_TEST_ROOT}/project with spaces/nomad.toml"
     "schema = 1\n[project]\nname = \"LSP test\"\nidentifier = \"org.nomad.lsp\"\n"
     "version = \"0.1.0\"\nexecutable = \"lsp-test\"\nentry = \"init\"\n"
-    "[nomad]\nversion = \"${NOMAD_VERSION}\"\n[resources]\ndirectory = \"res\"\n")
+    "[nomad]\nversion = \"${NOMAD_VERSION}\"\nmodules = [\"nomad-game\"]\n[resources]\ndirectory = \"res\"\n")
 set(SCRIPT "${NOMAD_TEST_ROOT}/project with spaces/res/scripts/init.nomad")
 file(WRITE "${SCRIPT}" "log.info \"disk\"")
 set(URI_PATH "${SCRIPT}")

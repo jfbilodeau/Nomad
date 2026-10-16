@@ -30,6 +30,24 @@ else()
         message(FATAL_ERROR "Extracted regular resource must not be executable")
     endif()
     if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+        find_program(READELF_PROGRAM readelf REQUIRED)
+        file(GLOB SHARED_LIBRARIES "${NOMAD_PACKAGE_DIRECTORY}/*.so*")
+        foreach(LIBRARY IN LISTS SHARED_LIBRARIES)
+            execute_process(COMMAND "${READELF_PROGRAM}" -d "${LIBRARY}"
+                RESULT_VARIABLE READELF_RESULT OUTPUT_VARIABLE DYNAMIC_SECTION ERROR_VARIABLE READELF_ERROR)
+            if(NOT READELF_RESULT STREQUAL "0")
+                message(FATAL_ERROR "Could not inspect ${LIBRARY}: ${READELF_ERROR}")
+            endif()
+            string(REGEX MATCHALL "\\(NEEDED\\)[^\n]*\\[[^]\n]+\\]" DEPENDENCIES "${DYNAMIC_SECTION}")
+            foreach(DEPENDENCY IN LISTS DEPENDENCIES)
+                string(REGEX REPLACE ".*\\[([^]]+)\\]" "\\1" DEPENDENCY_NAME "${DEPENDENCY}")
+                if(EXISTS "${NOMAD_PACKAGE_DIRECTORY}/${DEPENDENCY_NAME}" AND
+                   NOT DYNAMIC_SECTION MATCHES "\\((RUNPATH|RPATH)\\)[^\n]*\\[([^]\n]*:)?\\$ORIGIN(:|\\])")
+                    message(FATAL_ERROR
+                        "Packaged library cannot find its sibling ${DEPENDENCY_NAME}: ${LIBRARY}")
+                endif()
+            endforeach()
+        endforeach()
         foreach(FILE_MODE IN ITEMS "${RUNTIME}|755" "${NOMAD_PACKAGE_DIRECTORY}/res/keep.txt|644")
             string(REPLACE "|" ";" PARTS "${FILE_MODE}")
             list(GET PARTS 0 FILE_PATH)
@@ -51,6 +69,6 @@ nomadRunTestCommand("Packaged runtime startup"
         "PATH=${SYSTEM_PATH}"
         "${RUNTIME}" --help
     WORKING_DIRECTORY "${NOMAD_PACKAGE_DIRECTORY}"
-    OUTPUT_MATCH "Allowed options"
+    OUTPUT_MATCH "nomad-runtime.*--project-path"
 )
 message(STATUS "Packaged runtime starts with only package-local and system dependency search paths")

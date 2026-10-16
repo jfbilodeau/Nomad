@@ -236,6 +236,7 @@ executable = "lsp-test"
 entry = "init"
 [nomad]
 version = "0.1.0"
+modules = ["nomad-game"]
 [resources]
 directory = "res"
 [scripts]
@@ -338,6 +339,7 @@ executable = "completion"
 entry = "init"
 [nomad]
 version = "0.1.0"
+modules = ["nomad-game"]
 [resources]
 directory = "res"
 )");
@@ -367,6 +369,55 @@ directory = "res"
     BOOST_TEST(errors.str().empty());
 }
 
+BOOST_AUTO_TEST_CASE(project_analysis_and_completion_respect_configured_modules)
+{
+    TestDirectory directory("nomad_lsp_system_project");
+    directory.write("nomad.toml", R"(schema = 1
+[project]
+name = "System project"
+identifier = "org.nomad.system-project"
+version = "0.1.0"
+executable = "system-project"
+entry = "init"
+[nomad]
+version = "0.1.0"
+modules = ["nomad-system"]
+[resources]
+directory = "res"
+)");
+    const auto valid = NomadString("value = math.floor 1.5\nlog.info \"ready\"");
+    const auto uri = uriFor(directory.write("res/scripts/init.nomad", valid));
+    BOOST_TEST(analyzeLanguageDocuments({{uri, {valid, 1}}}).empty());
+    const auto diagnostics = analyzeLanguageDocuments({{uri, {"game.createScene", 2}}});
+    BOOST_REQUIRE(diagnostics.contains(uri));
+    BOOST_TEST(!diagnostics.at(uri).empty());
+    const auto query = [&](const int id, const int line, const int character) {
+        return frame({{"jsonrpc", "2.0"}, {"id", id}, {"method", "textDocument/completion"},
+            {"params", {{"textDocument", {{"uri", uri}}},
+                {"position", {{"line", line}, {"character", character}}}}}});
+    };
+    std::istringstream input(start() + frame(openDocument(uri, "game.\nmath.fl")) +
+        query(10, 0, 5) + query(11, 1, 7) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    BOOST_REQUIRE_MESSAGE(errors.str().empty(), errors.str());
+    std::map<std::int64_t, json::object> replies;
+    for (const auto& message : responses(output.str())) {
+        if (message.contains("id")) replies.emplace(message.at("id").as_int64(), message);
+    }
+    // Unknown receivers retain intrinsic candidates, but must not expose unconfigured game APIs.
+    for (const auto& item : replies.at(10).at("result").as_object().at("items").as_array()) {
+        const auto& candidate = item.as_object();
+        BOOST_TEST(!NomadString(candidate.at("label").as_string()).starts_with("game."));
+        const auto kind = candidate.at("kind").as_int64();
+        BOOST_TEST((kind == 2 || kind == 10));
+    }
+    const auto& items = replies.at(11).at("result").as_object().at("items").as_array();
+    BOOST_REQUIRE(items.size() == 1U);
+    BOOST_TEST(items[0].as_object().at("label").as_string() == "math.floor");
+}
+
 BOOST_AUTO_TEST_CASE(project_symbols_follow_disk_editor_changes_and_close)
 {
     TestDirectory directory("nomad_lsp_project_symbols");
@@ -379,6 +430,7 @@ executable = "symbols"
 entry = "init"
 [nomad]
 version = "0.1.0"
+modules = ["nomad-game"]
 [resources]
 directory = "res"
 )");
@@ -473,6 +525,7 @@ executable = "members"
 entry = "init"
 [nomad]
 version = "0.1.0"
+modules = ["nomad-game"]
 [resources]
 directory = "res"
 )");

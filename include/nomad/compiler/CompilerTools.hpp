@@ -40,6 +40,7 @@ struct DocumentationResult {
 );
 // Uses the same compilation pipeline without accessing the filesystem or executing scripts.
 [[nodiscard]] CompilationResult checkSources(const SourceBatch& batch, Runtime* runtime = nullptr);
+[[nodiscard]] CompilationResult analyzeSources(const SourceBatch& batch, Runtime* runtime = nullptr);
 
 void validateEntryFunction(
     CompilationResult& result,

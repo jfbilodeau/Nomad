@@ -295,6 +295,7 @@ public:
     [[nodiscard]] NomadIndex getFunctionSize() const;
 
     std::unique_ptr<Compiler> createCompiler();
+    void registerCompilerSetup(std::function<void(Compiler*)> setup);
 
     std::unique_ptr<VirtualMachine> createVirtualMachine();
     // Overloads taking `returnValue` hand the caller an owned copy of the result; the caller must free it
@@ -383,5 +384,6 @@ private:
     std::unordered_map<NomadString, std::vector<NomadId>> m_intrinsicMembersByName;
     bool m_debug = false;
     std::unique_ptr<VirtualMachine> m_virtualMachine = nullptr;
+    std::vector<std::function<void(Compiler*)>> m_compilerSetups;
 };
 } // namespace nomad

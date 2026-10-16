@@ -17,6 +17,7 @@
 #include <nomad/resource/ResourceManager.hpp>
 
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/NativeFunctions.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
@@ -71,6 +72,25 @@ std::unique_ptr<Game> Game::createHeadless(GameOptions options) {
     return game;
 }
 
+std::unique_ptr<Game> Game::createForRuntime(
+    Runtime* runtime,
+    GameOptions options,
+    const bool headless
+) {
+    if (runtime == nullptr) {
+        throw GameException("A runtime is required");
+    }
+
+    auto game = std::unique_ptr<Game>(new Game(std::move(options)));
+    game->m_runtime = runtime;
+    if (headless) {
+        game->initializeHeadless();
+    } else {
+        game->initialize(false);
+    }
+    return game;
+}
+
 void Game::initEngine()
 {
     initSdlTtf();
@@ -86,7 +106,7 @@ void Game::initEngine()
     initResourceManager();
 }
 
-void Game::initialize()
+void Game::initialize(const bool executeEntry)
 {
     initSdl();
     initEngine();
@@ -107,16 +127,18 @@ void Game::initialize()
         );
     }
 
-    loadSpritesAndCompileScripts();
+    if (executeEntry) {
+        loadSpritesAndCompileScripts();
+    }
 
     if (isDebug()) {
         log::setLogLevel(LogLevel::Debug);
     }
 
-    runInitFunction();
-
-    // Debug console must be initialized after the init function has been run
-    initDebugConsole();
+    if (executeEntry) {
+        runInitFunction();
+        onEntryExecuted();
+    }
 
     log::info("Game initialized");
 
@@ -124,12 +146,22 @@ void Game::initialize()
 }
 
 void Game::loadSpritesAndCompileScripts() {
+    loadSpritesAndCompileScripts([this] {
+        compileScripts();
+    });
+}
+
+void Game::prepareScripts(std::function<void()> compile) {
+    loadSpritesAndCompileScripts(std::move(compile));
+}
+
+void Game::loadSpritesAndCompileScripts(std::function<void()> compile) {
     log::info("Loading sprites...");
 
     std::exception_ptr compilationFailure;
-    std::jthread compilationThread([this, &compilationFailure] {
+    std::jthread compilationThread([&compile, &compilationFailure] {
         try {
-            compileScripts();
+            compile();
         } catch (...) {
             compilationFailure = std::current_exception();
         }
@@ -191,8 +223,7 @@ void Game::initializeHeadless()
 }
 
 Game::~Game() {
-    m_debugConsole.reset();
-    m_scenes.clear();
+    releaseScriptState();
     m_resourceManager.reset();
     m_canvas.reset();
 
@@ -216,6 +247,24 @@ Game::~Game() {
     // (including the error message buffer), which is allocated even when no subsystem was initialized.
     SDL_Quit();
 
+    m_ownedRuntime.reset();
+    m_runtime = nullptr;
+}
+
+void Game::onEntryExecuted() {
+    if (m_debugConsole == nullptr) {
+        initDebugConsole();
+    }
+}
+
+void Game::releaseScriptState() {
+    m_running = false;
+    m_debugConsole.reset();
+    m_eventQueue.processFrame([](const GameEvent&) {
+        return true;
+    });
+    m_scenes.clear();
+    m_currentContext.reset(nullptr, nullptr);
     m_onWindowClose.reset();
     m_onWindowGainFocus.reset();
     m_onWindowLoseFocus.reset();
@@ -224,11 +273,10 @@ Game::~Game() {
     m_onWindowMove.reset();
     m_onWindowResize.reset();
     m_onWindowRestore.reset();
-    m_runtime.reset();
 }
 
 Runtime* Game::getRuntime() const {
-    return m_runtime.get();
+    return m_runtime;
 }
 
 ResourceManager* Game::getResources() const {
@@ -470,6 +518,11 @@ void Game::run() {
     auto previous = getTicks();
 
     while (m_running) {
+        if (m_pollExit && m_pollExit()) {
+            m_running = false;
+            break;
+        }
+
         FrameProfile frameProfile;
         const auto inputStartTime = getTicks();
 
@@ -699,6 +752,17 @@ void Game::executeWindowCallback(const std::shared_ptr<Closure>& callback, const
 
 void Game::quit() {
     m_running = false;
+    if (m_requestExit) {
+        m_requestExit();
+    }
+}
+
+void Game::setExitHandler(
+    std::function<void()> requestExit,
+    std::function<bool()> pollExit
+) {
+    m_requestExit = std::move(requestExit);
+    m_pollExit = std::move(pollExit);
 }
 
 uint64_t Game::getUpdateDuration() const {
@@ -1197,7 +1261,11 @@ void Game::initResourcePath() {
 void Game::initRuntime() {
     log::info("Initializing function runtime");
 
-    m_runtime = std::make_unique<Runtime>();
+    if (m_runtime == nullptr) {
+        m_ownedRuntime = std::make_unique<Runtime>();
+        m_runtime = m_ownedRuntime.get();
+        registerBuildInNativeFunctions(m_runtime);
+    }
 
     m_runtime->setDebug(isDebug());
 }

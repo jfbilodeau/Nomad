@@ -26,6 +26,7 @@ entry = "start"
 
 [nomad]
 version = "0.1.0"
+modules = ["nomad-game"]
 
 [game]
 debug = true
@@ -59,6 +60,120 @@ exclude = ["**/*.psd", "development/**"]
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(project_configuration)
+
+BOOST_AUTO_TEST_CASE(requires_modules_and_accepts_explicit_module_lists)
+{
+    TestDirectory directory("nomad_project_configuration_modules");
+    auto missingModules = NomadString(COMPLETE_CONFIGURATION);
+    missingModules.erase(missingModules.find("modules = "), NomadString("modules = [\"nomad-game\"]\n").size());
+    const auto legacyFile = directory.write("missing.toml", missingModules);
+    BOOST_CHECK_EXCEPTION(
+        (void)loadNomadProject(legacyFile),
+        ProjectConfigurationError,
+        [](const auto& error) {
+            return NomadString(error.what()).find("nomad.modules") != NomadString::npos;
+        }
+    );
+    missingModules.erase(missingModules.find("executable = "), NomadString("executable = \"test-game\"\n").size());
+    missingModules.erase(missingModules.find("[resources]"), missingModules.find("[window]") - missingModules.find("[resources]"));
+    missingModules.erase(missingModules.find("[package]"));
+    BOOST_CHECK_EXCEPTION(
+        (void)loadNomadProject(directory.write("missing-release.toml", missingModules)),
+        ProjectConfigurationError,
+        [](const auto& error) {
+            return NomadString(error.what()).find("nomad.modules") != NomadString::npos;
+        }
+    );
+
+    for (const auto& modules : {"[]", "[\"nomad-game\", \"custom-module\"]"}) {
+        auto text = NomadString(COMPLETE_CONFIGURATION);
+        text.replace(text.find("modules = "), NomadString("modules = [\"nomad-game\"]").size(),
+            "modules = " + NomadString(modules));
+        const auto file = directory.write("explicit.toml", text);
+        const auto project = loadNomadProject(file);
+        const auto release = NomadConfiguration::parse(serializeReleaseProject(project));
+        BOOST_TEST(
+            project.configuration.sdk.modules == project.document.requireStringArray("nomad.modules")
+        );
+        BOOST_TEST(
+            release.requireStringArray("nomad.modules") == project.configuration.sdk.modules
+        );
+    }
+}
+
+BOOST_AUTO_TEST_CASE(rejects_invalid_module_types_names_and_duplicates)
+{
+    TestDirectory directory("nomad_project_configuration_invalid_modules");
+    for (const auto& modules : {
+        "false", "\"nomad-game\"", "[1]", "[\"nomad-game\", false]", "[\"\"]",
+        "[\"Nomad-game\"]", "[\"../nomad-game\"]", "[\"nomad_game\"]",
+        "[\"1module\"]", "[\"nomad-game\", \"nomad-game\"]"
+    }) {
+        auto text = NomadString(COMPLETE_CONFIGURATION);
+        text.replace(text.find("modules = "), NomadString("modules = [\"nomad-game\"]").size(),
+            "modules = " + NomadString(modules));
+        const auto file = directory.write("invalid.toml", text);
+        BOOST_CHECK_EXCEPTION(
+            (void)loadNomadProject(file),
+            ProjectConfigurationError,
+            [](const auto& error) {
+                return NomadString(error.what()).find("nomad.modules") != NomadString::npos;
+            }
+        );
+    }
+}
+
+BOOST_AUTO_TEST_CASE(preserves_module_settings_and_source_document_in_release)
+{
+    TestDirectory directory("nomad_project_configuration_document");
+    auto text = NomadString(COMPLETE_CONFIGURATION);
+    text.replace(text.find("modules = "), NomadString("modules = [\"nomad-game\"]").size(),
+        "modules = [\"nomad-game\", \"custom-module\"]\ncustom = \"sdk-setting\"");
+    text.insert(text.find("[project]") + NomadString("[project]").size(),
+        "\ncustom = \"project-setting\"");
+    text.insert(text.find("[window]") + NomadString("[window]").size(),
+        "\ncustom = \"window-setting\"");
+    text += R"(
+[custom-module]
+enabled = true
+count = 9
+names = ["one", "two"]
+ratio = 1.5
+
+[custom-module.settings]
+label = "untouched"
+)";
+    const auto file = directory.write(NOMAD_PROJECT_FILE_NAME, text);
+    auto project = loadNomadProject(file);
+    const auto original = project.document.serialize();
+    project.gameOptions.title = "Updated Window";
+    project.gameOptions.sprites.padding = 5;
+    const auto releaseText = serializeReleaseProject(project);
+    const auto release = NomadConfiguration::parse(releaseText);
+
+    BOOST_TEST(project.document.serialize() == original);
+    BOOST_TEST(project.document.contains("project.executable"));
+    BOOST_TEST(project.document.contains("resources"));
+    BOOST_TEST(project.document.contains("package"));
+    BOOST_TEST(!release.contains("project.executable"));
+    BOOST_TEST(!release.contains("resources"));
+    BOOST_TEST(!release.contains("package"));
+    BOOST_TEST(release.requireString("project.custom") == "project-setting");
+    BOOST_TEST(release.requireString("nomad.custom") == "sdk-setting");
+    BOOST_TEST(release.requireString("window.custom") == "window-setting");
+    BOOST_TEST(release.requireString("window.title") == "Updated Window");
+    BOOST_TEST(release.requireInteger("sprites.padding") == 5);
+    BOOST_TEST(release.requireBoolean("custom-module.enabled"));
+    BOOST_TEST(release.requireInteger("custom-module.count") == 9);
+    BOOST_TEST(release.requireStringArray("custom-module.names").size() == 2U);
+    BOOST_TEST(release.requireString("custom-module.settings.label") == "untouched");
+    BOOST_TEST(releaseText.find("ratio = 1.5") != NomadString::npos);
+    BOOST_TEST(release.requireStringArray("nomad.modules") == project.configuration.sdk.modules);
+    const auto releaseFile = directory.write("release/nomad.toml", releaseText);
+    const auto loadedRelease = loadNomadProject(releaseFile);
+    BOOST_TEST(loadedRelease.configuration.sdk.modules == project.configuration.sdk.modules);
+    BOOST_TEST(loadedRelease.document.requireString("custom-module.settings.label") == "untouched");
+}
 
 BOOST_AUTO_TEST_CASE(converts_utf8_paths_without_using_the_system_code_page)
 {
