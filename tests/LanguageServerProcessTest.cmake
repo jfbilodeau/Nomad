@@ -43,6 +43,15 @@ execute_process(COMMAND "${NOMAD_LSP}" INPUT_FILE "${NOMAD_TEST_ROOT}/input"
 if(NOT RESULT STREQUAL "0")
     message(FATAL_ERROR "LSP process failed (${RESULT}): ${ERRORS}")
 endif()
+execute_process(COMMAND "${NOMAD_LSP}" --stdio INPUT_FILE "${NOMAD_TEST_ROOT}/input"
+    OUTPUT_VARIABLE STDIO_OUTPUT ERROR_VARIABLE STDIO_ERRORS RESULT_VARIABLE STDIO_RESULT
+    TIMEOUT 30 ENCODING UTF-8)
+if(NOT STDIO_RESULT STREQUAL "0")
+    message(FATAL_ERROR "LSP --stdio process failed (${STDIO_RESULT}): ${STDIO_ERRORS}")
+endif()
+if(NOT STDIO_OUTPUT STREQUAL OUTPUT)
+    message(FATAL_ERROR "Explicit --stdio transport differs from the default transport")
+endif()
 
 set(MESSAGES "")
 while(NOT OUTPUT STREQUAL "")

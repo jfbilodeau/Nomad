@@ -22,6 +22,7 @@ int main(int argc, char** argv) {
     options::options_description description("Nomad language server options");
     description.add_options()
         ("help,h", "Show help")
+        ("stdio", "Use standard input/output transport (default)")
         ("version,v", "Show the Nomad version");
     try {
         options::variables_map parameters;

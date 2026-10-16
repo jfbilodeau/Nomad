@@ -60,7 +60,8 @@ collision, size, and packing failures produce a nonzero exit code. An explicit
 ## Language server
 
 `nomad-lsp` is a separate application, not a `nomadc` verb. With no arguments it
-speaks LSP over standard input/output using `Content-Length` framing. Logs go to
+speaks LSP over standard input/output using `Content-Length` framing. The explicit
+`--stdio` flag is also supported, as used by the VS Code language client. Logs go to
 standard error. `--help`/`-h` prints usage and `--version`/`-v` prints the version;
 unknown arguments are rejected.
 
