@@ -34,6 +34,9 @@ Nomad (`.nomad`) scripts. Requires VS Code 1.82 or newer.
 
 Press Ctrl+Space for registered keywords, types, constants, native functions,
 script names, and project-defined functions.
+On an empty prefix, suggestions include keywords, callables, registered/context
+variables, and namespace prefixes such as `game.` and `this.`. Types and constants
+appear when you type a matching prefix rather than cluttering the blank-line list.
 Typing a dot also triggers suggestions, such as the available `game.` APIs.
 Hover over a registered symbol to see its signature and documentation, including
 function overloads and parameter descriptions. Completion details use the same
@@ -46,7 +49,12 @@ The compiler's collected declarations remain available after compilation errors;
 errors that prevent declaration discovery can limit the suggestions.
 Project scripts include engine APIs and functions from the configured script roots;
 standalone scripts use language built-ins and functions from that document only.
-This version does not suggest local variables or type-aware instance members.
+Registered engine variables (including `this.` and `other.`) and discovered script
+context variables are included. Intrinsic properties and methods are suggested
+after a receiver dot; known registered variable types filter the candidates.
+For unknown receiver types, candidates list their receiver type in the details.
+This version does not infer local variable types for completion, and member
+completion after string literals or arbitrary expressions is not yet supported.
 It does not provide signature-help popups or inlay hints.
 
 ## Diagnostics

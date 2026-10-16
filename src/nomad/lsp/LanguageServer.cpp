@@ -34,8 +34,12 @@ namespace json = boost::json;
 constexpr std::size_t maximumMessageSize = 16 * 1024 * 1024;
 
 enum class CompletionItemKind {
+    Method = 2,
     Function = 3,
+    Variable = 6,
     Class = 7,
+    Module = 9,
+    Property = 10,
     Keyword = 14,
     Constant = 21,
 };
@@ -45,6 +49,8 @@ struct ApiSymbol {
     CompletionItemKind kind;
     NomadString signature;
     NomadString documentation;
+    NomadString valueType = {};
+    NomadString receiverType = {};
 };
 
 struct AnalysisGroup {
@@ -123,6 +129,56 @@ std::vector<ApiSymbol> createApiSymbols(
         symbols.push_back({name, CompletionItemKind::Constant,
             name + ":" + runtime->getConstantType(id)->getTypeName(), ""});
     }
+    for (auto id = runtime->getFirstDynamicVariableId(); id != NOMAD_INVALID_ID;
+        id = runtime->getNextDynamicVariableId(id)) {
+        const auto name = runtime->getDynamicVariableName(id);
+        const auto typeName = runtime->getDynamicVariableType(id)->getTypeName();
+        symbols.push_back({name, CompletionItemKind::Variable, name + ":" + typeName,
+            "Registered engine variable.", typeName});
+    }
+    for (auto contextId = runtime->getFirstVariableContextId(); contextId != NOMAD_INVALID_ID;
+        contextId = runtime->getNextVariableContextId(contextId)) {
+        const auto* context = runtime->getVariableContext(contextId);
+        for (auto id = context->getFirstVariableId(); id != NOMAD_INVALID_ID;
+            id = context->getNextVariableId(id)) {
+            const auto name = context->getVariableName(id);
+            const auto* type = context->getVariableType(id);
+            const auto typeName = type ? type->getTypeName() : "unknown";
+            symbols.push_back({name, CompletionItemKind::Variable, name + ":" + typeName,
+                "Script context variable.", typeName});
+        }
+    }
+    std::vector<NomadId> members;
+    runtime->getIntrinsicMembers(members);
+    for (const auto id : members) {
+        if (runtime->getIntrinsicMemberType(id) == IntrinsicMemberType::Property) {
+            IntrinsicPropertyDefinition definition;
+            if (!runtime->getIntrinsicPropertyDefinition(id, definition)) {
+                throw std::runtime_error("Registered intrinsic property is unavailable");
+            }
+            const auto receiver = definition.objectType->getTypeName();
+            const auto value = definition.valueType->getTypeName();
+            symbols.push_back({definition.name, CompletionItemKind::Property,
+                receiver + "." + definition.name + ":" + value, definition.doc, value, receiver});
+        } else if (runtime->getIntrinsicMemberType(id) == IntrinsicMemberType::Method) {
+            IntrinsicMethodDefinition definition;
+            if (!runtime->getIntrinsicMethodDefinition(id, definition)) {
+                throw std::runtime_error("Registered intrinsic method is unavailable");
+            }
+            const auto receiver = definition.objectType->getTypeName();
+            auto signature = receiver + "." + definition.name;
+            auto documentation = definition.doc;
+            for (const auto& parameter : definition.parameters) {
+                const auto typeName = parameter.type == runtime->getStringRefType()
+                    ? runtime->getStringType()->getTypeName() : parameter.type->getTypeName();
+                signature += " " + parameter.name + ":" + typeName;
+                if (!parameter.doc.empty()) documentation += "\n\n- `" + parameter.name + "`: " + parameter.doc;
+            }
+            signature += " -> " + definition.returnType->getTypeName();
+            symbols.push_back({definition.name, CompletionItemKind::Method,
+                std::move(signature), std::move(documentation), "", receiver});
+        }
+    }
     std::vector<ScriptFunction*> scriptFunctions;
     runtime->getFunctions(scriptFunctions);
     for (const auto* function : scriptFunctions) {
@@ -137,6 +193,15 @@ std::vector<ApiSymbol> createApiSymbols(
         signature += " -> " + (returnType ? returnType->getTypeName() : "unknown");
         symbols.push_back({function->getName(), CompletionItemKind::Function,
             std::move(signature), "Defined in `" + function->getPath() + "`."});
+    }
+    std::set<NomadString> namespaces;
+    for (const auto& symbol : symbols) {
+        if (!symbol.receiverType.empty()) continue;
+        const auto separator = symbol.name.find('.');
+        if (separator != NomadString::npos) namespaces.insert(symbol.name.substr(0, separator + 1));
+    }
+    for (const auto& name : namespaces) {
+        symbols.push_back({name, CompletionItemKind::Module, name, "Symbol namespace."});
     }
     std::ranges::sort(symbols, [](const auto& left, const auto& right) {
         return left.name == right.name ? left.signature < right.signature : left.name < right.name;
@@ -527,12 +592,36 @@ int runLanguageServer(
                     if (method == "textDocument/completion") {
                         json::array items;
                         if (!word.suppressed) {
+                            const auto separator = word.prefix.rfind('.');
+                            const auto receiver = separator == NomadString::npos
+                                ? NomadString{} : word.prefix.substr(0, separator);
+                            NomadString receiverType;
+                            auto namespacePrefix = false;
                             for (const auto& symbol : found->second) {
-                                if (!symbol.name.starts_with(word.prefix)) continue;
+                                if (symbol.receiverType.empty() && symbol.name == receiver) {
+                                    receiverType = symbol.valueType;
+                                }
+                                if (!receiver.empty() && symbol.receiverType.empty() &&
+                                    symbol.name.starts_with(receiver + ".")) namespacePrefix = true;
+                            }
+                            for (const auto& symbol : found->second) {
+                                auto replacement = symbol.name;
+                                if (!symbol.receiverType.empty()) {
+                                    if (separator == NomadString::npos || namespacePrefix) continue;
+                                    if (!receiverType.empty() && symbol.receiverType != receiverType) continue;
+                                    if (!symbol.name.starts_with(word.prefix.substr(separator + 1))) continue;
+                                    replacement = receiver + "." + symbol.name;
+                                } else {
+                                    if (!symbol.name.starts_with(word.prefix)) continue;
+                                    if (word.prefix.empty() && symbol.kind != CompletionItemKind::Function &&
+                                        symbol.kind != CompletionItemKind::Keyword &&
+                                        symbol.kind != CompletionItemKind::Variable &&
+                                        symbol.kind != CompletionItemKind::Module) continue;
+                                }
                                 items.push_back(json::object{
                                     {"label", symbol.name}, {"kind", static_cast<int>(symbol.kind)},
                                     {"detail", symbol.signature}, {"documentation", symbolDocumentation(symbol)},
-                                    {"textEdit", {{"range", word.range}, {"newText", symbol.name}}}
+                                    {"textEdit", {{"range", word.range}, {"newText", replacement}}}
                                 });
                             }
                         }
@@ -540,6 +629,7 @@ int runLanguageServer(
                     } else if (!word.suppressed && !word.name.empty()) {
                         NomadString markdown;
                         for (const auto& symbol : found->second) {
+                            if (!symbol.receiverType.empty()) continue;
                             if (symbol.name != word.name) continue;
                             if (!markdown.empty()) markdown += "\n\n---\n\n";
                             markdown += stringField(symbolDocumentation(symbol), "value");

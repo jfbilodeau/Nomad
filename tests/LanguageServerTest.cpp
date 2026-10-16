@@ -312,7 +312,7 @@ BOOST_AUTO_TEST_CASE(completion_and_hover_use_api_metadata_on_incomplete_unsaved
         labels.insert(NomadString(value.as_object().at("label").as_string()));
     }
     BOOST_TEST(labels.contains("if"));
-    BOOST_TEST(labels.contains("int"));
+    BOOST_TEST(!labels.contains("int"));
     BOOST_TEST(!labels.contains("game.createScene"));
     BOOST_TEST(replies.at(12).at("result").as_object().at("items").as_array().empty());
     BOOST_TEST(replies.at(13).at("result").is_null());
@@ -459,6 +459,71 @@ BOOST_AUTO_TEST_CASE(standalone_symbols_remain_isolated_between_documents)
         BOOST_TEST(serialized.find(first ? "firstFunction" : "secondFunction") != NomadString::npos);
         BOOST_TEST(serialized.find(first ? "secondFunction" : "firstFunction") == NomadString::npos);
     }
+}
+
+BOOST_AUTO_TEST_CASE(completion_includes_variables_namespaces_and_intrinsic_candidates)
+{
+    TestDirectory directory("nomad_lsp_member_suggestions");
+    directory.write("nomad.toml", R"(schema = 1
+[project]
+name = "Member suggestions"
+identifier = "org.nomad.members"
+version = "0.1.0"
+executable = "members"
+entry = "init"
+[nomad]
+version = "0.1.0"
+[resources]
+directory = "res"
+)");
+    const auto uri = uriFor(directory.write("res/scripts/init.nomad", ""));
+    const auto text = NomadString("\nthis.\nvalue.tr\nali");
+    NomadString requests;
+    for (auto line = 0; line < 4; ++line) {
+        const auto character = line == 1 ? 5 : line == 2 ? 8 : line == 3 ? 3 : 0;
+        requests += frame({{"jsonrpc", "2.0"}, {"id", 10 + line}, {"method", "textDocument/completion"},
+            {"params", {{"textDocument", {{"uri", uri}}},
+                {"position", {{"line", line}, {"character", character}}}}}});
+    }
+    std::istringstream input(start() + frame(openDocument(uri, text)) + requests + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    BOOST_REQUIRE_MESSAGE(errors.str().empty(), errors.str());
+    std::map<std::int64_t, json::array> results;
+    for (const auto& message : responses(output.str())) {
+        if (message.contains("id") && message.at("id").as_int64() >= 10) {
+            results.emplace(message.at("id").as_int64(),
+                message.at("result").as_object().at("items").as_array());
+        }
+    }
+    std::set<NomadString> blankLabels;
+    for (const auto& item : results.at(10)) blankLabels.emplace(item.as_object().at("label").as_string());
+    BOOST_TEST(blankLabels.contains("game."));
+    BOOST_TEST(blankLabels.contains("this."));
+    BOOST_TEST(!blankLabels.contains("alignment"));
+    auto variableFound = false;
+    for (const auto& item : results.at(11)) {
+        const auto& value = item.as_object();
+        if (value.at("kind").as_int64() == 6) {
+            variableFound = true;
+            BOOST_TEST(NomadString(value.at("label").as_string()).starts_with("this."));
+            BOOST_TEST(blankLabels.contains(NomadString(value.at("label").as_string())));
+        }
+    }
+    BOOST_TEST(variableFound);
+    auto trimFound = false;
+    for (const auto& item : results.at(12)) {
+        const auto& value = item.as_object();
+        if (value.at("label").as_string() == "trim") {
+            trimFound = true;
+            BOOST_TEST(value.at("textEdit").as_object().at("newText").as_string() == "value.trim");
+            BOOST_TEST(NomadString(value.at("detail").as_string()).starts_with("string.trim"));
+        }
+    }
+    BOOST_TEST(trimFound);
+    BOOST_REQUIRE(!results.at(13).empty());
+    BOOST_TEST(results.at(13)[0].as_object().at("label").as_string() == "alignment");
 }
 
 BOOST_AUTO_TEST_SUITE_END()
