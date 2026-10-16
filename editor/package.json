@@ -18,10 +18,11 @@
     "vscode-languageclient": "9.0.1"
   },
   "scripts": {
-    "check": "node --check extension.js"
+    "check": "node --check extension.js && node --test serverPath.test.js"
   },
   "files": [
     "extension.js",
+    "serverPath.js",
     "node_modules/**",
     "language-configuration.json",
     "syntaxes/**",
@@ -42,8 +43,8 @@
         },
         "nomad.languageServer.path": {
           "type": "string",
-          "default": "nomad-lsp",
-          "description": "Path to the nomad-lsp executable. Reload the window after changing this setting."
+          "default": "",
+          "description": "Path to the nomad-lsp executable. By default, the extension searches installed Nomad SDKs and then PATH. Reload the window after changing this setting."
         }
       }
     },

@@ -7,9 +7,12 @@ Nomad (`.nomad`) scripts. Requires VS Code 1.82 or newer.
 
 - Release builds include a `nomad-language-<version>.vsix` package. Install it with
   `code --install-extension nomad-language-<version>.vsix`.
-- Install a Nomad SDK containing `nomad-lsp` and add its directory to `PATH`, or
-  set `nomad.languageServer.path` to the full executable path. Keep the executable
-  alongside its SDK dependencies.
+- Install a Nomad SDK containing `nomad-lsp`. The extension searches the standard
+  SDK installation directory and selects the newest installed version, then falls
+  back to `PATH`. Set `nomad.languageServer.path` to the full executable path to
+  override discovery. Keep the executable alongside its SDK dependencies.
+  The default SDK roots are `%LOCALAPPDATA%\Nomad\sdks` on Windows and
+  `$XDG_DATA_HOME/nomad/sdks` (or `~/.local/share/nomad/sdks`) on Linux.
 - Open a saved `.nomad` file. Diagnostics appear in the editor and Problems panel.
   The **Nomad Language Server** output channel contains server messages.
 - Set `nomad.languageServer.enabled` to `false` for highlighting only.

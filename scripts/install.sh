@@ -106,7 +106,7 @@ if grep -q '^l' "$staging/metadata"; then
 fi
 mkdir "$staging/sdk"
 unzip -q "$staging/$name" -d "$staging/sdk"
-for tool in nomad nomadc nomad-runtime; do
+for tool in nomad nomad-lsp nomadc nomad-runtime; do
     [[ -x "$staging/sdk/$tool" ]] || { echo "Missing executable SDK tool: $tool" >&2; exit 1; }
 done
 [[ -d "$staging/sdk/templates" && -f "$staging/sdk/runtime/runtime.json" ]] || {
