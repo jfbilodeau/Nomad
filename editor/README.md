@@ -1,6 +1,6 @@
 # Nomad language support for Visual Studio Code
 
-This extension provides TextMate syntax highlighting and compiler diagnostics for
+This extension provides TextMate syntax highlighting, API completion, hover documentation, and compiler diagnostics for
 Nomad (`.nomad`) scripts. Requires VS Code 1.82 or newer.
 
 ## Installation
@@ -30,6 +30,19 @@ Nomad (`.nomad`) scripts. Requires VS Code 1.82 or newer.
 - Run `npm run check`, then press F5 to launch an Extension Development Host.
 - Point `nomad.languageServer.path` at your built `nomad-lsp` executable.
 
+## Completion and hover
+
+Press Ctrl+Space for registered keywords, types, constants, and native functions.
+Typing a dot also triggers suggestions, such as the available `game.` APIs.
+Hover over a registered symbol to see its signature and documentation, including
+function overloads and parameter descriptions. Completion details use the same
+runtime metadata as the generated API reference.
+
+Suggestions use the current editor text and work even when compilation fails.
+Project scripts include engine APIs; standalone scripts use language built-ins.
+This first version does not suggest local variables, project-defined functions,
+or type-aware instance members. It does not provide signature-help popups or inlay hints.
+
 ## Diagnostics
 
 The server uses the compiler's existing source batch and filesystem adapter.
@@ -47,7 +60,7 @@ a project are checked individually with language built-ins only.
 
 This first version analyzes synchronously on full-text changes, saves, and file
 watcher events. It does not execute scripts or validate sprite packing. Only
-`file:` documents are supported; untitled buffers, completion, navigation, and
+`file:` documents are supported; untitled buffers, navigation, and
 incremental compilation are not implemented. Some compiler diagnostics contain
 only a line number and therefore highlight the start of that line.
 

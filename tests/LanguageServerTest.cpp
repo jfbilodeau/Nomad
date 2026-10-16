@@ -341,7 +341,7 @@ version = "0.1.0"
 [resources]
 directory = "res"
 )");
-    const auto uri = uriFor(directory.getPath() / "res" / "scripts" / "init.nomad");
+    const auto uri = uriFor(directory.write("res/scripts/init.nomad", "game."));
     const auto request = [&](const int id, const char* method, const int character) {
         return frame({{"jsonrpc", "2.0"}, {"id", id}, {"method", method},
             {"params", {{"textDocument", {{"uri", uri}}},
@@ -354,6 +354,7 @@ directory = "res"
     BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
     const auto messages = responses(output.str());
     BOOST_REQUIRE(messages.size() == 5U);
+    BOOST_REQUIRE_MESSAGE(errors.str().empty(), errors.str());
     const auto& items = messages[2].at("result").as_object().at("items").as_array();
     BOOST_REQUIRE(!items.empty());
     for (const auto& item : items) {

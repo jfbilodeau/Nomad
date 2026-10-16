@@ -1274,9 +1274,8 @@ void Runtime::getNativeFunctions(std::vector<NativeFunctionDefinition>& nativeFu
         definition.name = nativeFunction.name;
         definition.fn = nativeFunction.fn;
         definition.parameters = nativeFunction.parameters;
-#if defined(NOMAD_FUNCTION_DOC)
+        definition.returnType = nativeFunction.returnType;
         definition.doc = nativeFunction.doc;
-#endif
 
         nativeFunctions.push_back(definition);
     }
