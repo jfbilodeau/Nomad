@@ -2,6 +2,7 @@
 Things the author wants to do.
 
 ## Problems
+[ ] `$"{1+2}"` in interpreter causes fault
 [ ] Mouse x,y not property calculate when window is scaled
 
 
@@ -9,7 +10,6 @@ Things the author wants to do.
 [ ] Configure logging via `nomad.toml`
 [ ] Sample game
 [ ] Select text language
-[ ] Make runtime plugable (Game, system, etc...)
 [ ] `this.wait`, `scene.wait`, `game.wait`
 [ ] Support to tween properties
 [ ] `args`
@@ -26,7 +26,7 @@ Things the author wants to do.
 [ ] Gen game docs for modding
 
 ## Completed
-[X] `$"{1+2}"` in interpreter causes fault
+[X] Make runtime plugable (Game, system, etc...)
 [X] Make `font` an intrinsic instead of ID.
 [X] Display physics bodies in debug mode
 [X] Automatic sprite texture packing
