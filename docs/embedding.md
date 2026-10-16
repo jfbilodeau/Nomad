@@ -65,7 +65,7 @@ needed by the scripts. Compilation does not execute scripts.
 
 The compiler owns `ScriptSource` snapshots alongside per-script tokenizers and
 top-level function IDs. Its function compilation records separately hold ASTs
-and a compiler-local `ScriptId` referring to the owning script. Script IDs remain
+and a compiler-local `NomadId` referring to the owning script. Script IDs remain
 stable when more batches are registered and when scripts are processed in sorted
 order; references returned by `getScript(id)` should be reacquired after
 registration.

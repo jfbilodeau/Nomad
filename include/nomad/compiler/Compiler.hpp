@@ -52,12 +52,6 @@ private:
     ScriptFunction* m_function;
 };
 
-struct ScriptId {
-    NomadIndex index = NOMAD_INVALID_INDEX;
-
-    bool operator==(const ScriptId&) const = default;
-};
-
 class Compiler {
 public:
     explicit Compiler(Runtime* runtime, std::vector<Instruction>& instructions);
@@ -168,9 +162,9 @@ public:
     void registerSources(CompilerContext* context, const SourceBatch& batch);
     // Parser interface: creates a function belonging to an already registered script.
     // Returns NOMAD_INVALID_ID and reports to context if the function name is already used.
-    [[nodiscard]] NomadId createFunction(CompilerContext* context, ScriptId scriptId, const NomadString& functionName);
-    [[nodiscard]] ScriptId getScriptId(NomadId functionId) const;
-    [[nodiscard]] const ScriptSource& getScript(ScriptId scriptId) const;
+    [[nodiscard]] NomadId createFunction(CompilerContext* context, NomadId scriptId, const NomadString& functionName);
+    [[nodiscard]] NomadId getScriptId(NomadId functionId) const;
+    [[nodiscard]] const ScriptSource& getScript(NomadId scriptId) const;
     void setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode> ast);
     // Borrows an AST node until placeholder preparation, before type inference.
     void deferFormatString(FormatStringLiteral* literal, NomadId functionId, NomadString sourceContent);
@@ -193,7 +187,7 @@ public:
 
 private:
     struct FunctionCompilation {
-        ScriptId scriptId;
+        NomadId scriptId = NOMAD_INVALID_ID;
         std::unique_ptr<FunctionNode> ast;
         ScriptFunction* function;
     };

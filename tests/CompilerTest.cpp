@@ -70,11 +70,11 @@ BOOST_AUTO_TEST_CASE(script_registration_and_compilation_require_matching_contex
 
     BOOST_CHECK_THROW(compiler->registerSources(nullptr, batch), NomadBug);
     BOOST_CHECK_THROW(compiler->registerSources(&otherContext, batch), NomadBug);
-    BOOST_CHECK_THROW((void)compiler->createFunction(nullptr, {}, "test"), NomadBug);
-    BOOST_CHECK_THROW((void)compiler->createFunction(&otherContext, {}, "test"), NomadBug);
+    BOOST_CHECK_THROW((void)compiler->createFunction(nullptr, NOMAD_INVALID_ID, "test"), NomadBug);
+    BOOST_CHECK_THROW((void)compiler->createFunction(&otherContext, NOMAD_INVALID_ID, "test"), NomadBug);
     CompilerContext context(compiler.get());
-    BOOST_CHECK_THROW((void)compiler->createFunction(&context, {}, "test"), NomadBug);
-    BOOST_CHECK_THROW((void)compiler->getScript({}), NomadBug);
+    BOOST_CHECK_THROW((void)compiler->createFunction(&context, NOMAD_INVALID_ID, "test"), NomadBug);
+    BOOST_CHECK_THROW((void)compiler->getScript(NOMAD_INVALID_ID), NomadBug);
     BOOST_CHECK_THROW((void)compiler->getScriptId(NOMAD_INVALID_ID), NomadBug);
     BOOST_CHECK_THROW(compiler->compileFunctions(nullptr), NomadBug);
     BOOST_CHECK_THROW(compiler->compileFunctions(&otherContext), NomadBug);
@@ -171,8 +171,8 @@ BOOST_AUTO_TEST_CASE(functions_keep_their_script_identity_across_registration_an
     BOOST_TEST(script.source.text == text);
     BOOST_REQUIRE(script.source.filePath.has_value());
     BOOST_TEST(*script.source.filePath == path);
-    BOOST_TEST(compiler->getScriptId(runtime.getFunctionId("declared")).index == scriptId.index);
-    BOOST_TEST(compiler->getScriptId(runtime.getFunctionId("a")).index != scriptId.index);
+    BOOST_TEST(compiler->getScriptId(runtime.getFunctionId("declared")) == scriptId);
+    BOOST_TEST(compiler->getScriptId(runtime.getFunctionId("a")) != scriptId);
     BOOST_TEST(!compiler->getScript(compiler->getScriptId(runtime.getFunctionId("a"))).source.filePath.has_value());
 
     std::vector<ScriptFunction*> functions;
@@ -181,7 +181,7 @@ BOOST_AUTO_TEST_CASE(functions_keep_their_script_identity_across_registration_an
     for (const auto* function : functions) {
         if (function->getParentId() == runtime.getFunctionId("z")) {
             ++generatedCount;
-            BOOST_TEST(compiler->getScriptId(function->getId()).index == scriptId.index);
+            BOOST_TEST(compiler->getScriptId(function->getId()) == scriptId);
             BOOST_TEST(function->getPath() == "editor:z");
             BOOST_TEST(function->getSource() == text);
         }
@@ -191,6 +191,24 @@ BOOST_AUTO_TEST_CASE(functions_keep_their_script_identity_across_registration_an
     runtime.executeFunction(runtime.getFunctionId("z"), {}, result);
     BOOST_TEST(result.getStringValue() == "42");
     runtime.getStringType()->freeValue(result);
+}
+
+BOOST_AUTO_TEST_CASE(script_lookup_rejects_invalid_and_out_of_range_ids)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"answer", {"answer.nomad", "return 42"}}}, {}});
+    const auto scriptId = compiler->getScriptId(runtime.getFunctionId("answer"));
+    BOOST_TEST(isValidId(scriptId));
+    BOOST_TEST(compiler->getScript(scriptId).scriptName == "answer");
+
+    for (const auto invalidId : {NOMAD_INVALID_ID, NomadId{-2}, NomadId{1}, NOMAD_ID_MAX}) {
+        BOOST_CHECK_THROW((void)compiler->getScript(invalidId), NomadBug);
+        BOOST_CHECK_THROW((void)compiler->createFunction(&context, invalidId, "invalid"), NomadBug);
+    }
+    BOOST_TEST(runtime.getFunctionId("invalid") == NOMAD_INVALID_ID);
+    BOOST_TEST(!context.hasError());
 }
 
 BOOST_AUTO_TEST_CASE(function_creation_reports_collisions_against_its_own_script)

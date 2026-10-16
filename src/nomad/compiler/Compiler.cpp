@@ -985,7 +985,12 @@ void Compiler::addFunctionReturn(const ScriptFunction* function) {
 }
 
 void Compiler::registerScript(CompilerContext* context, const ScriptSource& script) {
-    const auto scriptId = ScriptId{m_scripts.size()};
+    if (m_scripts.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+        context->reportError("Maximum number of scripts reached", script.source.sourceName,
+            NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
+        return;
+    }
+    const auto scriptId = toNomadId(m_scripts.size());
     m_scripts.push_back({script, nullptr, NOMAD_INVALID_ID});
     const auto functionId = createFunction(context, scriptId, script.scriptName);
     if (functionId == NOMAD_INVALID_ID) {
@@ -997,7 +1002,7 @@ void Compiler::registerScript(CompilerContext* context, const ScriptSource& scri
 
 NomadId Compiler::createFunction(
     CompilerContext* context,
-    const ScriptId scriptId,
+    const NomadId scriptId,
     const NomadString& functionName
 ) {
     if (context == nullptr || context->getCompiler() != this) {
@@ -1031,7 +1036,7 @@ NomadId Compiler::createFunction(
     return functionId;
 }
 
-ScriptId Compiler::getScriptId(const NomadId functionId) const {
+NomadId Compiler::getScriptId(const NomadId functionId) const {
     for (const auto& function : m_functions) {
         if (function.function->getId() == functionId) {
             return function.scriptId;
@@ -1040,11 +1045,11 @@ ScriptId Compiler::getScriptId(const NomadId functionId) const {
     throw NomadBug("Function does not belong to a registered script: " + toString(functionId));
 }
 
-const ScriptSource& Compiler::getScript(const ScriptId scriptId) const {
-    if (scriptId.index >= m_scripts.size()) {
+const ScriptSource& Compiler::getScript(const NomadId scriptId) const {
+    if (isIdOutOfRange(scriptId, m_scripts.size())) {
         throw NomadBug("Unknown script id");
     }
-    return m_scripts[scriptId.index].script;
+    return m_scripts[toNomadIndex(scriptId)].script;
 }
 
 void Compiler::setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode> ast) {
