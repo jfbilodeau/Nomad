@@ -120,12 +120,11 @@ end
 event changed items:List<int>
 ```
 
-The module providing the type must be loaded. The `nomad-collections` module currently
-provides the `List` type family, which requires one type argument. `List<int>` and
-`List<string>` are distinct, incompatible types. Type arguments cannot be `void` or
-internal types. Type annotations must fit on one line; nesting is limited to 64 types.
-
-Collection construction, storage, members, and indexing are not available yet.
+Each type family defines its required number of type arguments and must be registered
+before use. Parameterized types are not restricted to any particular module.
+Different specializations, such as `List<int>` and `List<string>`, are distinct,
+incompatible types. Type arguments cannot be `void` or internal types. Type annotations
+must fit on one line; nesting is limited to 64 types.
 
 String literal notes:
 
@@ -140,6 +139,30 @@ Numeric literal notes:
 ---
 
 ## Object types and intrinsic members
+
+### Object construction
+
+Use `new` followed by a constructible type to create an object, without constructor
+parentheses:
+
+```nomad
+first = new List<int>
+second = new List<int>
+alias = first
+nested = new List<List<string>>
+```
+
+Each `new` creates a distinct object. Assignment copies the reference, not the
+object: `alias` and `first` refer to the same instance. Reassigning `first` does not
+change `alias`. References are retained through function arguments and return
+values, and an object is released when its last reference is discarded.
+
+The `nomad-collections` module currently supports constructing empty `List<T>`
+objects only. Constructor arguments, collection storage, members, and indexing are
+not available yet. Primitive types and strings cannot be constructed with `new`.
+Construction is also available in interpreter expressions.
+
+### Intrinsic members
 
 Built-in and host-defined types may register intrinsic properties and methods. A value of that type exposes those members through postfix dot syntax:
 

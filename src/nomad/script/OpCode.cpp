@@ -819,6 +819,19 @@ void op_object_init_r(VirtualMachine* interpreter) {
     interpreter->getResult().setObjectValue(nullptr);
 }
 
+void op_object_new(VirtualMachine* interpreter) {
+    const auto type = interpreter->getRuntime()->getType(interpreter->nextId());
+    const auto* objectType = type ? dynamic_cast<const ObjectTypeBase*>(*type) : nullptr;
+    if (objectType == nullptr || !objectType->isConstructible()) {
+        interpreter->fault("Cannot construct object: invalid or nonconstructible type");
+    }
+    auto* object = objectType->createObject();
+    if (object == nullptr) {
+        interpreter->fault("Object factory for '" + objectType->getTypeName() + "' returned null");
+    }
+    interpreter->getResult().setObjectValue(object);
+}
+
 void op_object_init_i(VirtualMachine* interpreter) {
     interpreter->getIntermediate().setObjectValue(nullptr);
 }

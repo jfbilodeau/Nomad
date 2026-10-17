@@ -35,6 +35,24 @@ private:
 
 BOOST_AUTO_TEST_SUITE(NomadObjectTests)
 
+BOOST_AUTO_TEST_CASE(ObjectFactoriesAreOptionalAndMustReturnObjects) {
+    ObjectType abstractType("Abstract");
+    BOOST_TEST(!abstractType.isConstructible());
+    BOOST_CHECK_THROW(static_cast<void>(abstractType.createObject()), NomadException);
+    ObjectType brokenType("Broken", {}, [] { return nullptr; });
+    BOOST_TEST(brokenType.isConstructible());
+    BOOST_CHECK_THROW(static_cast<void>(brokenType.createObject()), NomadException);
+
+    NomadIndex destroyed = 0;
+    ObjectType type("Constructible", {}, [&] { return new CountingObject(destroyed); });
+    BOOST_TEST(type.isConstructible());
+    auto* object = type.createObject();
+    BOOST_REQUIRE(object != nullptr);
+    BOOST_TEST(object->getReferenceCount() == 1u);
+    object->releaseRef();
+    BOOST_TEST(destroyed == 1u);
+}
+
 BOOST_AUTO_TEST_CASE(ObjectTypeSharesAndReleasesReferences) {
     ObjectType type("Example");
     const auto before = NomadObject::getLiveObjectCount();

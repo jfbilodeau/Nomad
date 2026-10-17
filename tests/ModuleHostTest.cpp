@@ -3,8 +3,10 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
+#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/ModuleHost.hpp>
 #include <nomad/system/ProjectSession.hpp>
@@ -42,6 +44,136 @@ bool compileFixture(ModuleHost& host, const CompilationTarget target) {
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(module_host)
+
+BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
+    TestDirectory directory("nomad_host_list_construction");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    BOOST_TEST(runtime.getKeywordId("new") != NOMAD_INVALID_ID);
+    const auto* listType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
+    BOOST_REQUIRE(listType != nullptr);
+    runtime.registerIntrinsicProperty(
+        listType,
+        "testPresent",
+        runtime.getBooleanType(),
+        [](VirtualMachine*, const RuntimeValue& receiver, RuntimeValue& result) {
+            result.setBooleanValue(receiver.getObjectValue() != nullptr);
+        },
+        {},
+        ""
+    );
+    runtime.registerNativeFunction(
+        "test.distinct",
+        [](VirtualMachine* machine) {
+            machine->setBooleanResult(
+                machine->getParameter(0).getObjectValue() != machine->getParameter(1).getObjectValue()
+            );
+        },
+        {{"left", listType}, {"right", listType}},
+        runtime.getBooleanType(),
+        ""
+    );
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"init", {"init.nomad",
+        "fun identity value:List<int>\n"
+        "    return value\n"
+        "end\n"
+        "fun build\n"
+        "    first = new List<int>\n"
+        "    alias = first\n"
+        "    first = new List<int>\n"
+        "    unused = new List<List<string>>\n"
+        "    return identity alias\n"
+        "end\n"
+        "return build"
+    }}, {"distinct", {"distinct.nomad", "return test.distinct (new List<int>) (new List<int>)"}},
+        {"postfix", {"postfix.nomad", "return new List<int>.testPresent"}}}, {}});
+    BOOST_REQUIRE(compiler->compileScripts(&context, CompilationTarget::Executable));
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue first;
+    RuntimeValue second;
+    runtime.executeFunction(runtime.getFunctionId("init"), {}, first);
+    BOOST_REQUIRE(first.getObjectValue() != nullptr);
+    BOOST_TEST(first.getObjectValue()->getReferenceCount() == 1u);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before + 1);
+    runtime.executeFunction(runtime.getFunctionId("init"), {}, second);
+    BOOST_TEST(first.getObjectValue() != second.getObjectValue());
+    BOOST_TEST(second.getObjectValue()->getReferenceCount() == 1u);
+    RuntimeValue distinct;
+    runtime.executeFunction(runtime.getFunctionId("distinct"), {}, distinct);
+    BOOST_TEST(distinct.getBooleanValue());
+    RuntimeValue postfix;
+    runtime.executeFunction(runtime.getFunctionId("postfix"), {}, postfix);
+    BOOST_TEST(postfix.getBooleanValue());
+    listType->freeValue(first);
+    listType->freeValue(second);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+
+    {
+        VirtualMachine machine(&runtime);
+        InterpreterContext interpreterContext(machine);
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("new List<int>.testPresent", interpreterContext));
+        BOOST_TEST(interpreterContext.getResult()->getValue().getBooleanValue());
+        BOOST_REQUIRE(Interpreter{}.execute("value = new List<int>", interpreterContext));
+        const auto* original = interpreterContext.getVariableValue("value")->getObjectValue();
+        BOOST_REQUIRE(Interpreter{}.execute("alias = value", interpreterContext));
+        BOOST_REQUIRE(Interpreter{}.execute("value = new List<int>", interpreterContext));
+        BOOST_TEST(original == interpreterContext.getVariableValue("alias")->getObjectValue());
+        BOOST_TEST(original != interpreterContext.getVariableValue("value")->getObjectValue());
+        BOOST_TEST(NomadObject::getLiveObjectCount() == before + 2);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(compiler_rejects_invalid_object_construction) {
+    for (const auto* source : {
+        "return new int", "return new string", "return new void", "return new",
+        "return new Missing", "return new List", "return new List<>", "return new List<int> 1",
+        "return new Unconstructible"
+    }) {
+        BOOST_TEST_CONTEXT(source) {
+            TestDirectory directory("nomad_host_bad_construction");
+            const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+            ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+            host.getRuntime()->registerType(std::make_unique<ObjectType>("Unconstructible"));
+            auto compiler = host.getRuntime()->createCompiler();
+            CompilerContext context(compiler.get());
+            compiler->registerSources(&context, {{{"init", {"init.nomad", source}}}, {}});
+            BOOST_TEST(!compiler->compileScripts(&context, CompilationTarget::Analysis));
+            BOOST_TEST(context.hasError());
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(object_construction_reports_factory_failures) {
+    Runtime runtime;
+    runtime.registerType(std::make_unique<ObjectType>("Broken", std::vector<const Type*>{}, [] { return nullptr; }));
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"main", {"main.nomad", "return new Broken"}}}, {}});
+    BOOST_REQUIRE(compiler->compileScripts(&context, CompilationTarget::Executable));
+    RuntimeValue result;
+    BOOST_CHECK_EXCEPTION(
+        runtime.executeFunction(runtime.getFunctionId("main"), {}, result),
+        NomadException,
+        [](const NomadException& exception) {
+            return NomadString(exception.what()).find("returned null") != NomadString::npos;
+        }
+    );
+    VirtualMachine machine(&runtime);
+    InterpreterContext interpreterContext(machine);
+    BOOST_CHECK_THROW(
+        static_cast<void>(Interpreter{}.evaluateExpression("new Broken", interpreterContext)),
+        NomadException
+    );
+    BOOST_TEST(interpreterContext.getResult() == nullptr);
+    BOOST_TEST(!Interpreter{}.execute("new Broken", interpreterContext));
+    BOOST_REQUIRE(interpreterContext.getError() != nullptr);
+    BOOST_TEST(interpreterContext.getError()->find("returned null") != NomadString::npos);
+    BOOST_TEST(interpreterContext.getResult() == nullptr);
+}
 
 BOOST_AUTO_TEST_CASE(compiler_resolves_parameterized_annotations_from_collections) {
     for (const auto target : {CompilationTarget::Analysis, CompilationTarget::Executable}) {

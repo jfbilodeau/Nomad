@@ -61,6 +61,7 @@ std::unique_ptr<Expression> parseProductExpression(CompilerContext* context, Scr
 std::unique_ptr<Expression> parseParenthesesExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);
 std::unique_ptr<Expression> parseUnaryOperatorExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);
 std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);
+std::unique_ptr<Expression> parseNewExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);
 std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);
 std::unique_ptr<Expression> parseFunctionCallExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent, const NomadString& functionName);
 [[nodiscard]] bool parseFunctionArguments(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const ScriptFunction* targetFunction, ArgumentList* arguments);

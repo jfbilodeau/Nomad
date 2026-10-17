@@ -210,13 +210,34 @@ The collections module currently registers only `List` with one type argument.
 Hosts can request `getParameterizedType("List", {runtime.getIntegerType()})`.
 This creates a descriptor, not a list object. The compiler resolves parameterized
 annotations in script parameters, function parameters, and event declarations
-through the same registration API. Collection construction is not available yet.
+through the same registration API. Scripts can construct an empty list with
+`new List<int>`; each evaluation creates a distinct object.
 
 `ObjectTypeBase` provides shared reference-counted value handling and object
 opcodes. `ObjectType` supplies a name and type-argument metadata; its text
 representation is its type name. Its initial value is a null object reference,
 not a constructed collection. Specialized descriptors may override initialization
 and formatting. Strings reuse the base while retaining empty-string initialization.
+
+To make a configurable object type constructible, provide its third constructor
+argument, an `ObjectType::ObjectFactory`:
+
+```cpp
+auto descriptor = std::make_unique<nomad::ObjectType>(
+    "Example",
+    std::vector<const nomad::Type*>{},
+    [] { return new ExampleObject; }
+);
+runtime.registerType(std::move(descriptor));
+```
+
+The factory returns a new `NomadObject` with one owned reference. A missing factory
+means the type is not constructible; a factory returning null raises an error.
+The compiler checks `ObjectTypeBase::isConstructible()` before emitting construction.
+Specialized descriptors may override `isConstructible()` and `createObject()`, obeying
+the same ownership contract. Construction runs at evaluation time, not compilation
+time, in both compiled scripts and the interpreter. Constructor arguments are not
+supported yet.
 
 ## Typed intrinsic methods
 

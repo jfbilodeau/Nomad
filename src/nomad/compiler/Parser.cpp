@@ -735,6 +735,29 @@ std::unique_ptr<Expression> parseUnaryOperatorExpression(CompilerContext* contex
                                              std::move(expression));
 }
 
+std::unique_ptr<Expression> parseNewExpression(
+    CompilerContext* context,
+    ScriptFunction* /*function*/,
+    Tokenizer* tokens,
+    const Expression* parent
+) {
+    const auto line = tokens->getLineIndex();
+    const auto column = tokens->getColumnIndex();
+    if (!tokens->expect("new")) {
+        return nullptr;
+    }
+    const auto* type = parseType(context, tokens);
+    if (type == nullptr) {
+        return nullptr;
+    }
+    const auto* objectType = dynamic_cast<const ObjectTypeBase*>(type);
+    if (objectType == nullptr || !objectType->isConstructible()) {
+        context->reportError("Type '" + type->getTypeName() + "' is not constructible", tokens);
+        return nullptr;
+    }
+    return std::make_unique<NewObjectExpression>(parent, line, column, objectType);
+}
+
 std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
                                                    const Expression* parent) {
     std::unique_ptr<Expression> expression;
@@ -744,6 +767,11 @@ std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, Scr
         expression = parseExpression(context, function, tokens);
 
         if (expression == nullptr || !tokens->expect(")")) {
+            return nullptr;
+        }
+    } else if (tokens->is("new")) {
+        expression = parseNewExpression(context, function, tokens, parent);
+        if (expression == nullptr) {
             return nullptr;
         }
     } else {

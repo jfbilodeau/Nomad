@@ -10,6 +10,8 @@
 
 namespace nomad {
 
+class ObjectTypeBase;
+
 ///////////////////////////////////////////////////////////////////////////////
 // Unary expressions
 ///////////////////////////////////////////////////////////////////////////////
@@ -202,6 +204,20 @@ protected:
 
 private:
     NomadFloat m_value;
+};
+
+class NewObjectExpression final : public Expression {
+public:
+    NewObjectExpression(const Expression* parent, NomadIndex line, NomadIndex column, const ObjectTypeBase* type);
+    [[nodiscard]] bool isTerminal() const override;
+
+protected:
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onEvaluate(InterpreterContext& context) const override;
+
+private:
+    const ObjectTypeBase* m_objectType;
 };
 
 class StringLiteral : public PrimaryExpression {

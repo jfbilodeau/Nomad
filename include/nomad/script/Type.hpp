@@ -11,6 +11,7 @@
 
 #include <nomad/script/OpCode.hpp>
 
+#include <functional>
 #include <vector>
 
 namespace nomad {
@@ -198,10 +199,12 @@ public:
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 
-// Base string type.
 class ObjectTypeBase : public Type {
 public:
     ObjectTypeBase();
+    [[nodiscard]] virtual bool isConstructible() const;
+    // Returns a new object with one owned reference.
+    [[nodiscard]] virtual NomadObject* createObject() const;
     void initValue(RuntimeValue& value) const override;
     void freeValue(RuntimeValue& value) const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
@@ -210,7 +213,14 @@ public:
 
 class ObjectType final : public ObjectTypeBase {
 public:
-    explicit ObjectType(NomadString name, std::vector<const Type*> typeArguments = {});
+    using ObjectFactory = std::function<NomadObject*()>;
+    explicit ObjectType(
+        NomadString name,
+        std::vector<const Type*> typeArguments = {},
+        ObjectFactory factory = {}
+    );
+    [[nodiscard]] bool isConstructible() const override;
+    [[nodiscard]] NomadObject* createObject() const override;
     using Type::toString;
     [[nodiscard]] NomadString getTypeName() const override;
     [[nodiscard]] const std::vector<const Type*>& getTypeArguments() const;
@@ -219,6 +229,7 @@ public:
 private:
     NomadString m_name;
     std::vector<const Type*> m_typeArguments;
+    ObjectFactory m_factory;
 };
 
 class BaseStringType : public ObjectTypeBase {

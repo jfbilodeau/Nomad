@@ -111,6 +111,7 @@ Runtime::Runtime() {
 
 //    register_keyword("stringId" NomadDoc("Load the string id of the given string"));
     registerKeyword("fun", NomadDoc("Function declaration"));
+    registerKeyword("new", NomadDoc("Constructs a new object"));
     registerKeyword("if", NomadDoc("if statement"));
     registerKeyword("else", NomadDoc("`else` branch of an `if` statement"));
     registerKeyword("end", NomadDoc("End of a `fun` or `if` statement"));

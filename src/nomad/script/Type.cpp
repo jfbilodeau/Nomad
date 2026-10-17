@@ -331,10 +331,38 @@ bool ObjectTypeBase::sameType(const Type* other) const {
     return this == other;
 }
 
-ObjectType::ObjectType(NomadString name, std::vector<const Type*> typeArguments):
+bool ObjectTypeBase::isConstructible() const {
+    return false;
+}
+
+NomadObject* ObjectTypeBase::createObject() const {
+    throw NomadException("Type '" + getTypeName() + "' is not constructible");
+}
+
+ObjectType::ObjectType(
+    NomadString name,
+    std::vector<const Type*> typeArguments,
+    ObjectFactory factory
+):
     m_name(std::move(name)),
-    m_typeArguments(std::move(typeArguments))
+    m_typeArguments(std::move(typeArguments)),
+    m_factory(std::move(factory))
 {
+}
+
+bool ObjectType::isConstructible() const {
+    return static_cast<bool>(m_factory);
+}
+
+NomadObject* ObjectType::createObject() const {
+    if (!m_factory) {
+        return ObjectTypeBase::createObject();
+    }
+    auto* object = m_factory();
+    if (object == nullptr) {
+        throw NomadException("Object factory for '" + getTypeName() + "' returned null");
+    }
+    return object;
 }
 
 NomadString ObjectType::getTypeName() const {
