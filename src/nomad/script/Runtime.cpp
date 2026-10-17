@@ -7,7 +7,6 @@
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/IntrinsicMembers.hpp>
-#include <nomad/script/NativeFunctions.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>

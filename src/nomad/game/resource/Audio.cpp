@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/resource/Audio.hpp>
+#include <nomad/game/resource/Audio.hpp>
 
 #include <nomad/log/Logger.hpp>
 

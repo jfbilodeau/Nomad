@@ -1,12 +1,12 @@
 // Copyright (c) 2024-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/resource/Text.hpp>
+#include <nomad/game/resource/Text.hpp>
 
 #include <nomad/game/Game.hpp>
 
 #include <nomad/log/Logger.hpp>
 
-#include <nomad/resource/ResourceManager.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
 
 #include <boost/tokenizer.hpp>
 #include <boost/algorithm/string/trim.hpp>

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/debug/DebugConsole.hpp>
+#include <nomad/game/debug/DebugConsole.hpp>
 
 #include <nomad/game/Entity.hpp>
 #include <nomad/game/EntityVariableContext.hpp>

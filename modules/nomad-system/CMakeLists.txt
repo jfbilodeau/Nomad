@@ -1,5 +1,5 @@
 add_library(nomad-system SHARED
-    ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunctions.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/system/NativeFunctions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/system/SystemModule.cpp
 )
 

@@ -2,8 +2,8 @@
 
 #pragma once
 
-#include <nomad/resource/AudioDiscovery.hpp>
-#include <nomad/resource/Resource.hpp>
+#include <nomad/game/resource/AudioDiscovery.hpp>
+#include <nomad/game/resource/Resource.hpp>
 
 #include <SDL3_mixer/SDL_mixer.h>
 

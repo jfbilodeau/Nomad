@@ -5,7 +5,7 @@
 #include <nomad/game/Game.hpp>
 #include <nomad/game/TileMapData.hpp>
 
-#include <nomad/resource/ResourceManager.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
 
 #include <fstream>
 #include <sstream>

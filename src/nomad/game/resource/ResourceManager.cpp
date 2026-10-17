@@ -1,13 +1,13 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/resource/ResourceManager.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
 
-#include <nomad/resource/Animation.hpp>
-#include <nomad/resource/Audio.hpp>
-#include <nomad/resource/Font.hpp>
-#include <nomad/resource/Sprite.hpp>
-#include <nomad/resource/SpriteCatalog.hpp>
-#include <nomad/resource/Texture.hpp>
+#include <nomad/game/resource/Animation.hpp>
+#include <nomad/game/resource/Audio.hpp>
+#include <nomad/game/resource/Font.hpp>
+#include <nomad/game/resource/Sprite.hpp>
+#include <nomad/game/resource/SpriteCatalog.hpp>
+#include <nomad/game/resource/Texture.hpp>
 
 #include <nomad/game/Canvas.hpp>
 #include <nomad/game/Game.hpp>

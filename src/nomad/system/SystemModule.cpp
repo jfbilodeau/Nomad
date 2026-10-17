@@ -2,8 +2,9 @@
 
 #include <nomad/system/Module.hpp>
 
-#include <nomad/script/NativeFunctions.hpp>
 #include <nomad/script/Runtime.hpp>
+
+#include <nomad/system/NativeFunctions.hpp>
 
 NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::ModuleCallbacks*) noexcept(false) {
     using nomad::NomadString;

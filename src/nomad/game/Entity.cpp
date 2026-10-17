@@ -12,10 +12,10 @@
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>
 
-#include <nomad/resource/Animation.hpp>
-#include <nomad/resource/Font.hpp>
-#include <nomad/resource/ResourceManager.hpp>
-#include <nomad/resource/Sprite.hpp>
+#include <nomad/game/resource/Animation.hpp>
+#include <nomad/game/resource/Font.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
+#include <nomad/game/resource/Sprite.hpp>
 
 #include <algorithm>
 

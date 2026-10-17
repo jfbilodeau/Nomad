@@ -1,9 +1,9 @@
 // Copyright (c) 2024-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/resource/Animation.hpp>
+#include <nomad/game/resource/Animation.hpp>
 
-#include <nomad/resource/ResourceManager.hpp>
-#include <nomad/resource/Sprite.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
+#include <nomad/game/resource/Sprite.hpp>
 
 #include <nomad/log/Logger.hpp>
 

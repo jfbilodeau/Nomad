@@ -6,7 +6,7 @@
 
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/NativeFunction.hpp>
-#include <nomad/script/NativeFunctions.hpp>
+#include <nomad/system/NativeFunctions.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <vector>

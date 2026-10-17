@@ -5,7 +5,7 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/script/Interpreter.hpp>
-#include <nomad/script/NativeFunctions.hpp>
+#include <nomad/system/NativeFunctions.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>

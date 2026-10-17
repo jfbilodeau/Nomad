@@ -4,7 +4,7 @@
 
 #include <nomad/game/Game.hpp>
 
-#include <nomad/resource/ResourceManager.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
 
 #include <nomad/script/Runtime.hpp>
 

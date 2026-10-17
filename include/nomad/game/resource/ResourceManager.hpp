@@ -2,15 +2,15 @@
 
 #pragma once
 
-#include <nomad/resource/Resource.hpp>
+#include <nomad/game/resource/Resource.hpp>
 
-#include <nomad/resource/Animation.hpp>
-#include <nomad/resource/Audio.hpp>
-#include <nomad/resource/Font.hpp>
-#include <nomad/resource/Sprite.hpp>
-#include <nomad/resource/SpritePacker.hpp>
-#include <nomad/resource/Text.hpp>
-#include <nomad/resource/Texture.hpp>
+#include <nomad/game/resource/Animation.hpp>
+#include <nomad/game/resource/Audio.hpp>
+#include <nomad/game/resource/Font.hpp>
+#include <nomad/game/resource/Sprite.hpp>
+#include <nomad/game/resource/SpritePacker.hpp>
+#include <nomad/game/resource/Text.hpp>
+#include <nomad/game/resource/Texture.hpp>
 
 #include <nomad/Nomad.hpp>
 

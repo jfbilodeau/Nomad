@@ -2,10 +2,10 @@
 
 #include <nomad/game/Game.hpp>
 
-#include <nomad/resource/ResourceManager.hpp>
-#include <nomad/resource/Sprite.hpp>
-#include <nomad/resource/SpritePacker.hpp>
-#include <nomad/resource/Texture.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
+#include <nomad/game/resource/Sprite.hpp>
+#include <nomad/game/resource/SpritePacker.hpp>
+#include <nomad/game/resource/Texture.hpp>
 
 #include <TestDirectory.hpp>
 

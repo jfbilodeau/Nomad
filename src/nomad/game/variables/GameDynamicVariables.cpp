@@ -5,8 +5,8 @@
 #include <nomad/game/Entity.hpp>
 #include <nomad/game/Scene.hpp>
 
-#include <nomad/resource/Audio.hpp>
-#include <nomad/resource/ResourceManager.hpp>
+#include <nomad/game/resource/Audio.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
 
 #include <nomad/script/VirtualMachine.hpp>
 #include <nomad/script/Runtime.hpp>

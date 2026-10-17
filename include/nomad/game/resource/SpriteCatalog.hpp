@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nomad/resource/SpritePacker.hpp>
+#include <nomad/game/resource/SpritePacker.hpp>
 
 #include <nomad/Nomad.hpp>
 

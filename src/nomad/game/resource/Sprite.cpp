@@ -1,9 +1,9 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/resource/Sprite.hpp>
+#include <nomad/game/resource/Sprite.hpp>
 
-#include <nomad/resource/Texture.hpp>
-#include <nomad/resource/ResourceManager.hpp>
+#include <nomad/game/resource/Texture.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
 
 #include <cassert>
 #include <utility>

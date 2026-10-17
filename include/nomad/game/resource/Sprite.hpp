@@ -5,7 +5,7 @@
 #include <nomad/geometry/Point.hpp>
 #include <nomad/geometry/Rectangle.hpp>
 
-#include <nomad/resource/Resource.hpp>
+#include <nomad/game/resource/Resource.hpp>
 
 namespace nomad {
 

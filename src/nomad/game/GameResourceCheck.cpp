@@ -4,7 +4,7 @@
 
 #include <nomad/project/ProjectConfiguration.hpp>
 
-#include <nomad/resource/SpritePacker.hpp>
+#include <nomad/game/resource/SpritePacker.hpp>
 
 #include <iomanip>
 #include <sstream>

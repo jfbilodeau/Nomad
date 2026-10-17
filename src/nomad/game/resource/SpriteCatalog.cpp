@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/resource/SpriteCatalog.hpp>
+#include <nomad/game/resource/SpriteCatalog.hpp>
 
-#include <nomad/resource/SpriteDiscovery.hpp>
+#include <nomad/game/resource/SpriteDiscovery.hpp>
 
 #include <nomad/system/Path.hpp>
 #include <nomad/system/String.hpp>

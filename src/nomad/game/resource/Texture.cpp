@@ -1,11 +1,11 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/resource/Texture.hpp>
+#include <nomad/game/resource/Texture.hpp>
 
 #include <nomad/game/Canvas.hpp>
 #include <nomad/game/Game.hpp>
 
-#include <nomad/resource/ResourceManager.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
 
 #include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>

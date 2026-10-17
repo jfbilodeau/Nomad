@@ -1,6 +1,6 @@
 // Copyright (c) 2025-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/debug/DebugDraw.hpp>
+#include <nomad/game/debug/DebugDraw.hpp>
 
 #include <nomad/game/Canvas.hpp>
 

@@ -1,14 +1,14 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <cmath>
+#include <nomad/system/NativeFunctions.hpp>
 
-#include <nomad/script/NativeFunctions.hpp>
-
-#include <nomad/script/VirtualMachine.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/VirtualMachine.hpp>
+
 #include <nomad/system/Float.hpp>
 #include <nomad/system/Integer.hpp>
 
+#include <cmath>
 #include <cstdlib>
 
 namespace nomad {

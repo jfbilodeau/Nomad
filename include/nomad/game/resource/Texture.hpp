@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nomad/resource/Resource.hpp>
+#include <nomad/game/resource/Resource.hpp>
 
 #include <nomad/game/Color.hpp>
 

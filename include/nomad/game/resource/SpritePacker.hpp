@@ -4,7 +4,7 @@
 
 #include <nomad/geometry/Rectangle.hpp>
 
-#include <nomad/resource/SpriteDiscovery.hpp>
+#include <nomad/game/resource/SpriteDiscovery.hpp>
 
 #include <nomad/Nomad.hpp>
 

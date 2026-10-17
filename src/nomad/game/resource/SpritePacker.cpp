@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/resource/SpritePacker.hpp>
+#include <nomad/game/resource/SpritePacker.hpp>
 
-#include <nomad/resource/RectanglePacker.hpp>
-#include <nomad/resource/SpriteCatalog.hpp>
+#include <nomad/game/resource/RectanglePacker.hpp>
+#include <nomad/game/resource/SpriteCatalog.hpp>
 
 #include <nomad/system/Path.hpp>
 #include <nomad/system/String.hpp>

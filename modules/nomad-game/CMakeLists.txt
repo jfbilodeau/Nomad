@@ -11,9 +11,6 @@ set(DEAR_IMGUI_SOURCE
 add_library(nomad-game SHARED
     ${DEAR_IMGUI_SOURCE}
 
-    ${NOMAD_SOURCE_DIR}/nomad/debug/DebugConsole.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/debug/DebugDraw.cpp
-
     ${NOMAD_SOURCE_DIR}/nomad/game/ActionManager.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/Alignment.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/Canvas.cpp
@@ -42,6 +39,9 @@ add_library(nomad-game SHARED
     ${NOMAD_SOURCE_DIR}/nomad/game/TileMapData.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/VariablePersistence.cpp
 
+    ${NOMAD_SOURCE_DIR}/nomad/game/debug/DebugConsole.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/debug/DebugDraw.cpp
+
     ${NOMAD_SOURCE_DIR}/nomad/game/functions/AudioFunctions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/functions/GameFunctions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/functions/InputFunctions.cpp
@@ -51,26 +51,26 @@ add_library(nomad-game SHARED
     ${NOMAD_SOURCE_DIR}/nomad/game/functions/ThisEntityFunctions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/functions/WindowFunctions.cpp
 
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/Animation.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/Audio.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/AudioDiscovery.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/Font.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/RectanglePacker.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/Resource.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/ResourceManager.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/Sprite.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/SpriteCatalog.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/SpriteDiscovery.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/SpritePacker.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/Text.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/Texture.cpp
+
     ${NOMAD_SOURCE_DIR}/nomad/game/variables/GameDynamicVariables.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/variables/InputDynamicVariables.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/variables/OtherDynamicVariables.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/variables/SceneDynamicVariables.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/variables/ThisDynamicVariables.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/variables/WindowDynamicVariables.cpp
-
-    ${NOMAD_SOURCE_DIR}/nomad/resource/Animation.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/resource/Audio.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/resource/AudioDiscovery.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/resource/Font.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/resource/RectanglePacker.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/resource/Resource.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/resource/ResourceManager.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/resource/Sprite.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteCatalog.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteDiscovery.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/resource/SpritePacker.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/resource/Text.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/resource/Texture.cpp
 )
 nomad_configure_library_target(nomad-game)
 target_link_libraries(nomad-game PUBLIC
@@ -95,8 +95,8 @@ else()
         ${NOMAD_SOURCE_DIR}/nomad/game/InputManager.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/TileMapData.cpp
         ${NOMAD_SOURCE_DIR}/nomad/game/VariablePersistence.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/resource/ResourceManager.cpp
-        ${NOMAD_SOURCE_DIR}/nomad/resource/SpriteCatalog.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/game/resource/ResourceManager.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/game/resource/SpriteCatalog.cpp
         PROPERTIES COMPILE_OPTIONS "-Wno-error=conversion"
     )
 endif()

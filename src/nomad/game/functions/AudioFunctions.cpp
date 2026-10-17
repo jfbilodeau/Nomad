@@ -7,8 +7,8 @@
 
 #include <nomad/log/Logger.hpp>
 
-#include <nomad/resource/Audio.hpp>
-#include <nomad/resource/ResourceManager.hpp>
+#include <nomad/game/resource/Audio.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>

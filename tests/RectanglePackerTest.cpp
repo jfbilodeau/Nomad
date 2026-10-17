@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/resource/RectanglePacker.hpp>
+#include <nomad/game/resource/RectanglePacker.hpp>
 
 #include <boost/test/unit_test.hpp>
 

@@ -7,8 +7,8 @@
 #include <nomad/project/ProjectConfiguration.hpp>
 #include <nomad/project/ProjectPackager.hpp>
 
-#include <nomad/resource/SpriteCatalog.hpp>
-#include <nomad/resource/SpritePacker.hpp>
+#include <nomad/game/resource/SpriteCatalog.hpp>
+#include <nomad/game/resource/SpritePacker.hpp>
 
 #include <nomad/system/Path.hpp>
 #include <nomad/system/ProjectSession.hpp>
