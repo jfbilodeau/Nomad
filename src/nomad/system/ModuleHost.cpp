@@ -210,7 +210,6 @@ int ModuleHost::run(const NomadStringView entry) {
         throw ModuleException(result.diagnostics.front().message);
     }
     implementation.runtime->executeFunction(implementation.runtime->getFunctionId(NomadString(entry)));
-    (void)implementation.runtime->processReclamation();
     if (!pollExit()) {
         for (const auto& module : implementation.modules) {
             if (module->callbacks.run) {

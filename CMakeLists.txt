@@ -151,6 +151,7 @@ set(
         ${NOMAD_SOURCE_DIR}/nomad/script/IntrinsicMembers.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunction.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/NomadObject.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/script/NomadStringObject.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/OpCode.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/Runtime.cpp
         ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeOpCodes.cpp

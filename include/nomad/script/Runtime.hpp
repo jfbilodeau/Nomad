@@ -5,9 +5,6 @@
 #include <optional>
 #include <unordered_map>
 
-#include <chrono>
-#include <mutex>
-
 #include <nomad/Nomad.hpp>
 
 #include <nomad/compiler/Operators.hpp>
@@ -39,7 +36,6 @@ class Tokenizer;
 class Type;
 class EnumType;
 class OpaqueIdType;
-class NomadObject;
 struct EnumValueDefinition;
 
 enum class Operand {
@@ -97,13 +93,6 @@ public:
     Runtime();
     Runtime(const Runtime&) = delete;
     ~Runtime();
-
-    void reclaimObject(NomadObject* object) noexcept;
-    [[nodiscard]] NomadIndex processReclamation(
-        std::chrono::microseconds budget = std::chrono::microseconds{500},
-        NomadIndex maximumSteps = 256
-    );
-    [[nodiscard]] NomadIndex getLiveObjectCount() const;
 
     // Generate opcodes that are easier to debug
     // ie: replace op_load_constant with op_load_value
@@ -324,11 +313,6 @@ public:
     void dumpDocumentation(std::ostream& out) const;
 
 private:
-    friend class NomadObject;
-    void registerObject(NomadObject* object);
-    void unregisterObject(NomadObject* object) noexcept;
-    void destroyObjects() noexcept;
-
     // Runs the closure's function and returns it, or nullptr when the closure is invalid.
     const ScriptFunction* runClosure(const Closure* closure, const std::vector<RuntimeValue>& args);
 
@@ -373,14 +357,6 @@ private:
     [[nodiscard]] bool canRegisterIntrinsicMember(const Type* objectType, const NomadString& name,
                                                   const std::vector<FunctionParameterDefinition>& parameters,
                                                   NomadString& error) const;
-
-    mutable std::mutex m_objectMutex;
-    NomadObject* m_objects = nullptr;
-    NomadObject* m_reclamationHead = nullptr;
-    NomadObject* m_reclamationTail = nullptr;
-    NomadIndex m_liveObjectCount = 0;
-    bool m_destroyingObjects = false;
-    bool m_processingReclamation = false;
 
     std::vector<Instruction> m_instructions;
     std::vector<OpCodeDefinition> m_opCodes;

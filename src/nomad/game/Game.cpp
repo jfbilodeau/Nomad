@@ -726,8 +726,6 @@ void Game::run() {
 
         m_canvas->present();
 
-        (void)m_runtime->processReclamation();
-
         // Simple frame limiting to avoid busy spin if we're ahead of schedule
         const auto frameElapsed = getTicks() - current;
         const auto targetMs = static_cast<NomadInteger>(fixedDeltaMs);
