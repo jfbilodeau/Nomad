@@ -37,7 +37,7 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 {},
                 NomadDoc("The number of elements in the list.")
             );
-            const auto pushId = runtime->registerObjectMethod(
+            const auto pushId = runtime->registerNativeMethod(
                 static_cast<const nomad::ObjectType*>(type),
                 "push",
                 [](nomad::VirtualMachine* vm) {

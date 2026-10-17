@@ -134,7 +134,7 @@ public:
     [[nodiscard]] const Type* getPredicateType();
 
     // Intrinsic members
-    NomadId registerObjectMethod(
+    NomadId registerNativeMethod(
         const ObjectTypeBase* objectType,
         const NomadString& name,
         NativeFunctionFn fn,
@@ -393,7 +393,16 @@ private:
     std::vector<TypeSpecialization> m_typeSpecializations;
     std::vector<UnaryOperatorRegistration> m_unaryOperators;
     std::vector<BinaryOperatorRegistration> m_binaryOperators;
-    std::vector<NativeFunctionDefinition> m_nativeFunctions;
+    NomadId registerNativeCallable(
+        const Type* objectType,
+        const NomadString& name,
+        NativeFunctionFn fn,
+        const std::vector<FunctionParameterDefinition>& parameters,
+        const Type* returnType,
+        bool mutatesReceiver,
+        const NomadString& doc
+    );
+    std::vector<NativeFunctionDefinition> m_nativeCallables;
     std::vector<KeywordDefinition> m_keywords;
     VariableMap m_constantsMap;
     std::vector<RuntimeValue> m_constants;
@@ -410,7 +419,6 @@ private:
     std::unordered_map<NomadString, NomadIndex> m_callablesByName;
     std::vector<IntrinsicMemberRegistration> m_intrinsicMembers;
     std::vector<IntrinsicPropertyDefinition> m_intrinsicProperties;
-    std::vector<IntrinsicMethodDefinition> m_intrinsicMethods;
     std::unordered_map<NomadString, std::vector<NomadId>> m_intrinsicMembersByName;
     bool m_debug = false;
     std::unique_ptr<VirtualMachine> m_virtualMachine = nullptr;

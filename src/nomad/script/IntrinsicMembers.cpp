@@ -73,7 +73,7 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         NomadDoc("True when the string is empty.")
     );
 
-    runtime->registerObjectMethod(
+    runtime->registerNativeMethod(
         stringType,
         "toUpper",
         [](VirtualMachine* virtualMachine) {
@@ -87,7 +87,7 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         NomadDoc("Return an uppercase copy of the string.")
     );
 
-    runtime->registerObjectMethod(
+    runtime->registerNativeMethod(
         stringType,
         "toLower",
         [](VirtualMachine* virtualMachine) {
@@ -101,7 +101,7 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         NomadDoc("Return a lowercase copy of the string.")
     );
 
-    runtime->registerObjectMethod(
+    runtime->registerNativeMethod(
         stringType,
         "trim",
         [](VirtualMachine* virtualMachine) {
@@ -115,7 +115,7 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         NomadDoc("Return a copy with whitespace removed from both ends.")
     );
 
-    runtime->registerObjectMethod(
+    runtime->registerNativeMethod(
         stringType,
         "trimStart",
         [](VirtualMachine* virtualMachine) {
@@ -129,7 +129,7 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         NomadDoc("Return a copy with whitespace removed from the beginning.")
     );
 
-    runtime->registerObjectMethod(
+    runtime->registerNativeMethod(
         stringType,
         "trimEnd",
         [](VirtualMachine* virtualMachine) {
@@ -147,7 +147,7 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         defParameter("text", runtime->getStringType(), NomadParamDoc("The text to find")),
     };
 
-    runtime->registerObjectMethod(
+    runtime->registerNativeMethod(
         stringType,
         "startsWith",
         [](VirtualMachine* virtualMachine) {
@@ -162,7 +162,7 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         NomadDoc("Return true when the string starts with the given text.")
     );
 
-    runtime->registerObjectMethod(
+    runtime->registerNativeMethod(
         stringType,
         "endsWith",
         [](VirtualMachine* virtualMachine) {
@@ -177,7 +177,7 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         NomadDoc("Return true when the string ends with the given text.")
     );
 
-    runtime->registerObjectMethod(
+    runtime->registerNativeMethod(
         stringType,
         "contains",
         [](VirtualMachine* virtualMachine) {

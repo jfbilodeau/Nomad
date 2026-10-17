@@ -99,7 +99,7 @@ BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) 
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
     auto* instance = new TestObject;
-    const auto memberId = runtime.registerObjectMethod(
+    const auto memberId = runtime.registerNativeMethod(
         type,
         "checkInstance",
         [instance](VirtualMachine* machine) {
@@ -122,6 +122,51 @@ BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) 
     BOOST_TEST(machine->getResult().getIntegerValue() == 42);
     receiver.freeObjectValue();
     BOOST_CHECK_THROW(machine->runIntrinsicMethod(memberId, {}, receiver), VirtualMachineException);
+}
+
+BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_catalog) {
+    Runtime runtime;
+    auto descriptor = std::make_unique<ObjectType>("CatalogObject");
+    const auto* type = descriptor.get();
+    runtime.registerType(std::move(descriptor));
+    const auto first = runtime.registerNativeFunction(
+        "catalog.first", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    );
+    const auto method = runtime.registerNativeMethod(
+        type, "catalogMethod", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    );
+    const auto last = runtime.registerNativeFunction(
+        "catalog.last", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    );
+    BOOST_REQUIRE(method != NOMAD_INVALID_ID);
+    BOOST_TEST(last > first + 1);
+    BOOST_TEST(runtime.getNextNativeFunctionId(first) == last);
+    BOOST_TEST(runtime.getNativeFunctionId("catalogMethod") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getIntrinsicMemberId(type, "catalogMethod") == method);
+    IntrinsicMethodDefinition methodDefinition;
+    BOOST_REQUIRE(runtime.getIntrinsicMethodDefinition(method, methodDefinition));
+    BOOST_TEST(methodDefinition.id == method);
+    BOOST_TEST(methodDefinition.objectType == type);
+    BOOST_TEST(!methodDefinition.mutatesReceiver);
+    std::vector<NativeFunctionDefinition> functions;
+    runtime.getNativeFunctions(functions);
+    NomadIndex enumerated = 0;
+    for (auto id = runtime.getFirstNativeFunctionId(); id != NOMAD_INVALID_ID;
+         id = runtime.getNextNativeFunctionId(id)) {
+        NativeFunctionDefinition definition;
+        BOOST_REQUIRE(runtime.getNativeFunctionDefinition(id, definition));
+        BOOST_TEST(definition.objectType == nullptr);
+        BOOST_TEST(definition.name != "catalogMethod");
+        ++enumerated;
+    }
+    BOOST_TEST(enumerated == functions.size());
+    for (const auto& definition : functions) {
+        BOOST_TEST(definition.objectType == nullptr);
+        BOOST_TEST(definition.name != "catalogMethod");
+    }
+    BOOST_TEST(runtime.registerNativeMethod(
+        nullptr, "invalid", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    ) == NOMAD_INVALID_ID);
 }
 
 BOOST_AUTO_TEST_CASE(compiled_property_getter_reads_temporary_receiver) {

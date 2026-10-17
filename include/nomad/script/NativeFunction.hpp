@@ -21,12 +21,14 @@ struct FunctionParameterDefinition {
 };
 
 struct NativeFunctionDefinition {
-    NomadId id;
+    NomadId id = NOMAD_INVALID_ID;
     NomadString name;
     NativeFunctionFn fn;
     std::vector<FunctionParameterDefinition> parameters;
-    const Type* returnType;
+    const Type* returnType = nullptr;
     NomadDocField;
+    const Type* objectType = nullptr;
+    bool mutatesReceiver = false;
 };
 
 

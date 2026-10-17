@@ -35,15 +35,6 @@ struct IntrinsicPropertyDefinition {
     NomadDocField;
 };
 
-struct IntrinsicMethodDefinition {
-    NomadId id = NOMAD_INVALID_ID;
-    const Type* objectType = nullptr;
-    NomadString name;
-    NativeFunctionFn fn;
-    std::vector<FunctionParameterDefinition> parameters;
-    const Type* returnType = nullptr;
-    bool mutatesReceiver = false;
-    NomadDocField;
-};
+using IntrinsicMethodDefinition = NativeFunctionDefinition;
 
 } // namespace nomad

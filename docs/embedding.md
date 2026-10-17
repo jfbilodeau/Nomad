@@ -241,9 +241,8 @@ supported yet.
 
 ## Native object methods
 
-Use `Runtime::registerObjectMethod(objectType, name, callback, parameters, returnType, doc)`
-for methods on an `ObjectTypeBase` descriptor. Registration reuses the existing member
-lookup, type checking, and dispatch infrastructure, without receiver replacement:
+Use `Runtime::registerNativeMethod(objectType, name, callback, parameters, returnType, doc)`
+for methods on an `ObjectTypeBase` descriptor. Read the instance inside the callback:
 
 ```cpp
 [](nomad::VirtualMachine* vm) {
@@ -251,6 +250,11 @@ lookup, type checking, and dispatch infrastructure, without receiver replacement
     list->push(vm->getParameter(0));
 }
 ```
+
+Use `registerNativeFunction` for a global function and `registerNativeMethod` for a
+method on a non-null object type.
+Global function lookup and enumeration exclude methods. Method registration returns
+a member ID, used with the member lookup APIs, not a global native-function ID.
 
 `getThis()` returns the borrowed instance; `getThisAs<T>()` performs a static cast.
 The host must pair the descriptor with the correct C++ class. Access without an
@@ -268,7 +272,7 @@ Built-in string methods use the same object-method API. Read the instance with
 `getThisAs<Object>()`:
 
 ```cpp
-runtime.registerObjectMethod(
+runtime.registerNativeMethod(
     static_cast<const nomad::ObjectTypeBase*>(runtime.getStringType()),
     "textSize",
     [](nomad::VirtualMachine* machine) {
@@ -298,9 +302,8 @@ members, including receiver replacement when `mutatesReceiver` is true. Its
 callbacks can still use `getIntrinsicReceiver()` and `getIntrinsicReceiverAs<T>()`.
 Object methods do not use receiver replacement. Properties are unchanged.
 
-The header accessor can be instantiated inside a DLL for a class unknown to the
-VM. RTTI is not required by the accessor. DLLs must use compatible C++ ABI settings
-and remain loaded while their callbacks or objects are alive.
+DLLs must use compatible C++ ABI settings and remain loaded while their callbacks
+or objects are alive.
 
 ## Variable categories
 
