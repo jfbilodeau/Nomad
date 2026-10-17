@@ -13,6 +13,9 @@ using namespace nomad;
 
 namespace {
 
+class TestObject : public NomadObject {
+};
+
 NomadId compileFunction(Runtime& runtime, const NomadString& source) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
@@ -29,6 +32,65 @@ NomadId compileFunction(Runtime& runtime, const NomadString& source) {
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(intrinsic_member_execution)
+
+BOOST_AUTO_TEST_CASE(typed_method_borrows_the_string_receiver) {
+    Runtime runtime;
+    bool called = false;
+    runtime.registerIntrinsicMethod(
+        runtime.getStringType(),
+        "typedLength",
+        [&called](VirtualMachine* virtualMachine) {
+            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<const NomadStringObject>();
+            called = true;
+            BOOST_TEST(receiver == virtualMachine->getIntrinsicReceiver().getStringObject());
+            virtualMachine->setIntegerResult(static_cast<NomadInteger>(receiver->getLength()));
+        },
+        {},
+        runtime.getIntegerType(),
+        false,
+        NomadDoc("Read the string length")
+    );
+
+    const auto functionId = compileFunction(runtime, "return \"Nomad\".typedLength");
+    RuntimeValue result;
+    runtime.executeFunction(functionId, {}, result);
+
+    BOOST_TEST(called);
+    BOOST_TEST(result.getIntegerValue() == 5);
+}
+
+BOOST_AUTO_TEST_CASE(typed_method_supports_a_host_defined_object) {
+    Runtime runtime;
+    const auto memberId = runtime.registerIntrinsicMethod(
+        runtime.getStringType(),
+        "hostObject",
+        [](VirtualMachine* virtualMachine) {
+            auto* receiver = virtualMachine->getIntrinsicReceiverAs<TestObject>();
+            BOOST_TEST(receiver->getReferenceCount() == 1);
+            virtualMachine->setIntegerResult(42);
+        },
+        {},
+        runtime.getIntegerType(),
+        false,
+        NomadDoc("Test a host-defined receiver")
+    );
+    BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
+    auto virtualMachine = runtime.createVirtualMachine();
+    RuntimeValue receiver;
+    receiver.setObjectValue(new TestObject);
+    virtualMachine->runIntrinsicMethod(memberId, {}, receiver);
+    BOOST_TEST(virtualMachine->getResult().getIntegerValue() == 42);
+    receiver.freeObjectValue();
+}
+
+BOOST_AUTO_TEST_CASE(typed_receiver_requires_an_active_method) {
+    Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
+    BOOST_CHECK_THROW(
+        virtualMachine->getIntrinsicReceiverAs<NomadStringObject>(),
+        VirtualMachineException
+    );
+}
 
 BOOST_AUTO_TEST_CASE(compiled_property_getter_reads_temporary_receiver) {
     Runtime runtime;

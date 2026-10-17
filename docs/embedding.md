@@ -194,6 +194,42 @@ survive another evaluation; do not free the context's result manually.
 Different contexts have independent interpreter variables even when borrowing
 the same VM. Access to a shared context or VM must be serialized by the host.
 
+## Typed intrinsic methods
+
+Register an object method with the usual `registerIntrinsicMethod(...)` callback
+and read its receiver with `getIntrinsicReceiverAs<Object>()`:
+
+```cpp
+runtime.registerIntrinsicMethod(
+    runtime.getStringType(),
+    "textSize",
+    [](nomad::VirtualMachine* machine) {
+        const auto* receiver = machine->getIntrinsicReceiverAs<nomad::NomadStringObject>();
+        machine->setIntegerResult(static_cast<nomad::NomadInteger>(receiver->getLength()));
+    },
+    {},
+    runtime.getIntegerType(),
+    false,
+    NomadDoc("Return the number of bytes in the string.")
+);
+```
+
+The callback borrows the receiver for the duration of the call. Keeping it
+requires `addRef()` and a corresponding `releaseRef()`.
+
+The accessor uses `static_cast`, with no runtime C++ type check. The host must
+pair the registered Nomad type with its correct C++ object class and provide a
+valid receiver when invoking methods directly. Script type checking selects the
+method for the receiver's Nomad type; it cannot validate the host's C++ pairing.
+An incorrect pairing causes undefined behaviour.
+
+Use `getIntrinsicReceiverAs<const Object>()` to obtain a pointer to const.
+Calling the accessor outside an active intrinsic method faults.
+
+The header accessor can be instantiated inside a DLL for a class unknown to the
+VM. RTTI is not required by the accessor. DLLs must use compatible C++ ABI settings
+and remain loaded while their callbacks or objects are alive.
+
 ## Variable categories
 
 | Category | Read | Assign | Change type | Add new |

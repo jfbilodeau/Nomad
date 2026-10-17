@@ -72,6 +72,12 @@ public:
     [[nodiscard]] const RuntimeValue& getIntrinsicReceiver() const;
     [[nodiscard]] RuntimeValue& getIntrinsicReceiver();
 
+    template<typename Object>
+    [[nodiscard]] Object* getIntrinsicReceiverAs() const {
+        static_assert(std::is_base_of_v<NomadObject, Object>);
+        return static_cast<Object*>(getIntrinsicReceiver().getObjectValue());
+    }
+
     [[nodiscard]]
     std::unique_ptr<Closure> createClosure(const Runtime* runtime, NomadId functionId) const;
 
