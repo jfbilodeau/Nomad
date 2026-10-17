@@ -18,11 +18,15 @@ add_library(nomad-system SHARED
     ${NOMAD_SOURCE_DIR}/nomad/system/SystemModule.cpp
 )
 add_library(nomad-game SHARED ${NOMAD_GAME_SOURCES})
+add_library(nomad-collections SHARED
+    ${NOMAD_SOURCE_DIR}/nomad/collections/CollectionsModule.cpp
+)
+nomad_configure_runtime_target(nomad-collections)
 nomad_configure_runtime_target(nomad-system)
 nomad_configure_runtime_target(nomad-game)
-set_target_properties(nomad-language nomad nomad-system nomad-game PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+set_target_properties(nomad-language nomad nomad-collections nomad-system nomad-game PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 if(WIN32)
-    set_target_properties(nomad-language nomad nomad-system nomad-game PROPERTIES PREFIX "")
+    set_target_properties(nomad-language nomad nomad-collections nomad-system nomad-game PROPERTIES PREFIX "")
 endif()
 target_compile_definitions(nomad-language PRIVATE NOMAD_LANGUAGE_BUILD)
 
@@ -105,6 +109,7 @@ target_link_libraries(
 )
 
 target_link_libraries(nomad-system PUBLIC Nomad::Language)
+target_link_libraries(nomad-collections PRIVATE Nomad::Language)
 target_link_libraries(nomad-game
     PUBLIC
     Nomad::Engine
@@ -116,7 +121,7 @@ target_link_libraries(nomad-game
     box2d
 )
 target_include_directories(nomad-game PRIVATE ${dearimgui_SOURCE_DIR})
-foreach(TARGET IN ITEMS nomad-language nomad nomad-system nomad-game)
+foreach(TARGET IN ITEMS nomad-language nomad nomad-collections nomad-system nomad-game)
     if(APPLE)
         set_target_properties(${TARGET} PROPERTIES BUILD_RPATH "@loader_path" INSTALL_RPATH "@loader_path")
     elseif(UNIX)

@@ -42,6 +42,18 @@ bool compileFixture(ModuleHost& host, const CompilationTarget target) {
 
 BOOST_AUTO_TEST_SUITE(module_host)
 
+BOOST_AUTO_TEST_CASE(collections_module_loads_in_all_modes) {
+    TestDirectory directory("nomad_host_collections");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    BOOST_REQUIRE_EQUAL(modules.size(), 1u);
+    BOOST_TEST(modules.front().name == "nomad-collections");
+
+    for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis, ModuleMode::Packaging}) {
+        ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, mode);
+        BOOST_TEST((host.getRuntime() != nullptr) == (mode != ModuleMode::Packaging));
+    }
+}
+
 BOOST_AUTO_TEST_CASE(loads_registers_compiles_and_shuts_down_in_lifetime_order) {
     TestDirectory directory("nomad_host_lifecycle");
     {
