@@ -28,6 +28,8 @@ using ParseStatementFn = std::unique_ptr<Statement> (*)(CompilerContext*, Script
 
 namespace parser {
 
+[[nodiscard]] const Type* parseType(CompilerContext* context, Tokenizer* tokens);
+
 [[nodiscard]] bool expectEndOfLine(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 
 IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& name, const ScriptFunction* function = nullptr);

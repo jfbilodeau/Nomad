@@ -1,7 +1,5 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/system/String.hpp>
-
 #include <nomad/compiler/Parser.hpp>
 
 #include <nomad/compiler/Argument.hpp>
@@ -15,6 +13,8 @@
 
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
+#include <nomad/system/String.hpp>
+
 #include <algorithm>
 #include <optional>
 
@@ -22,8 +22,81 @@ namespace nomad {
 
 namespace parser {
 
-using ParseExpressionFunction = std::unique_ptr<Expression> (*)(CompilerContext*, ScriptFunction*, Tokenizer*,
-                                                                const Expression*);
+namespace {
+
+const Type* parseTypeName(CompilerContext* context, Tokenizer* tokens, const NomadIndex depth) {
+    if (depth >= 64) {
+        context->reportError("Type nesting exceeds the maximum depth of 64", tokens);
+        return nullptr;
+    }
+    NomadString name;
+    if (!tokens->nextIdentifier(name)) {
+        return nullptr;
+    }
+    auto* runtime = context->getRuntime();
+    const auto argumentCount = runtime->getParameterizedTypeArgumentCount(name);
+    if (tokens->is("<")) {
+        tokens->next();
+        if (!argumentCount) {
+            context->reportError("Unknown parameterized type '" + name + "'", tokens);
+            return nullptr;
+        }
+        std::vector<const Type*> arguments;
+        while (!tokens->is(">")) {
+            if (tokens->endOfLine()) {
+                context->reportError("Expected '>' to close type arguments for '" + name + "'", tokens);
+                return nullptr;
+            }
+            const auto* argument = parseTypeName(context, tokens, depth + 1);
+            if (argument == nullptr) {
+                return nullptr;
+            }
+            if (argument->isVoid() || argument->isInternal()) {
+                context->reportError("Invalid type argument '" + argument->getTypeName() + "' for '" + name + "'", tokens);
+                return nullptr;
+            }
+            arguments.push_back(argument);
+        }
+        tokens->next();
+        if (arguments.size() != *argumentCount) {
+            context->reportError(
+                "Parameterized type '" + name + "' expects " + std::to_string(*argumentCount) +
+                " type arguments, got " + std::to_string(arguments.size()), tokens
+            );
+            return nullptr;
+        }
+        const auto* type = runtime->getParameterizedType(name, arguments);
+        if (type == nullptr) {
+            context->reportError("Cannot resolve parameterized type '" + name + "'", tokens);
+        }
+        return type;
+    }
+    if (argumentCount) {
+        context->reportError("Type arguments required for parameterized type '" + name + "'", tokens);
+        return nullptr;
+    }
+    const auto* type = runtime->getTypeByName(name);
+    if (type == nullptr) {
+        context->reportError("Unknown type '" + name + "' for parameter", tokens);
+    } else if (type->isInternal()) {
+        context->reportError("Internal type '" + name + "' cannot be used for parameter", tokens);
+        return nullptr;
+    }
+    return type;
+}
+
+} // namespace
+
+const Type* parseType(CompilerContext* context, Tokenizer* tokens) {
+    return parseTypeName(context, tokens, 0);
+}
+
+using ParseExpressionFunction = std::unique_ptr<Expression> (*)(
+    CompilerContext*, 
+    ScriptFunction*, 
+    Tokenizer*,
+    const Expression*
+);
 
 namespace {
 

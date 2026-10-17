@@ -104,6 +104,29 @@ Scripts and the embedding engine may also define strongly typed enumerations. Se
 
 Types whose names start with `$` (for example `$file`) are internal to the runtime and cannot be named in Nomad code.
 
+### Parameterized type annotations
+
+Registered parameterized types can be used in script parameters, function parameters,
+and event declarations. Type arguments go between `<` and `>`, separated by spaces,
+and may themselves be parameterized types:
+
+```nomad
+params values:List<int>
+
+fun process items:List<List<string>>
+    return items
+end
+
+event changed items:List<int>
+```
+
+The module providing the type must be loaded. The `nomad-collections` module currently
+provides the `List` type family, which requires one type argument. `List<int>` and
+`List<string>` are distinct, incompatible types. Type arguments cannot be `void` or
+internal types. Type annotations must fit on one line; nesting is limited to 64 types.
+
+Collection construction, storage, members, and indexing are not available yet.
+
 String literal notes:
 
 - The escape sequences `\n` (linefeed), `\r` (carriage return), `\t` (tab), `\"` (double quote) and `\\` (backslash) are supported inside double‑quoted strings and format strings.

@@ -194,7 +194,7 @@ survive another evaluation; do not free the context's result manually.
 Different contexts have independent interpreter variables even when borrowing
 the same VM. Access to a shared context or VM must be serialized by the host.
 
-## Parameterized type proof of concept
+## Parameterized types
 
 `Runtime::registerParameterizedType(name, argumentCount, factory)` registers a
 type family. The factory receives resolved type arguments and returns a
@@ -203,10 +203,14 @@ specialization on first use and reuses it on subsequent requests. Arguments must
 be non-void, public types owned by that runtime. Invalid requests are logged and
 return null.
 
+`getParameterizedTypeArgumentCount(name)` returns the registered family's arity,
+or an empty optional if the family is not registered.
+
 The collections module currently registers only `List` with one type argument.
 Hosts can request `getParameterizedType("List", {runtime.getIntegerType()})`.
-This creates a descriptor, not a list object. Script syntax and construction are
-not available yet.
+This creates a descriptor, not a list object. The compiler resolves parameterized
+annotations in script parameters, function parameters, and event declarations
+through the same registration API. Collection construction is not available yet.
 
 `ObjectTypeBase` provides shared reference-counted value handling and object
 opcodes. `ObjectType` supplies a name and type-argument metadata; its text

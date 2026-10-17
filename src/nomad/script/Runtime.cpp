@@ -681,6 +681,14 @@ bool Runtime::registerParameterizedType(
     return true;
 }
 
+std::optional<NomadIndex> Runtime::getParameterizedTypeArgumentCount(const NomadString& name) const {
+    const auto registration = std::ranges::find(m_parameterizedTypes, name, &ParameterizedTypeRegistration::name);
+    if (registration == m_parameterizedTypes.end()) {
+        return std::nullopt;
+    }
+    return registration->argumentCount;
+}
+
 const Type* Runtime::getParameterizedType(
     const NomadString& name,
     const std::vector<const Type*>& arguments

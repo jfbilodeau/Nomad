@@ -105,6 +105,7 @@ public:
 
     // Types
     using ParameterizedTypeFactory = std::function<std::unique_ptr<Type>(const std::vector<const Type*>&)>;
+    [[nodiscard]] std::optional<NomadIndex> getParameterizedTypeArgumentCount(const NomadString& name) const;
     bool registerParameterizedType(
         const NomadString& name,
         NomadIndex argumentCount,
