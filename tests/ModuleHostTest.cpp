@@ -4,6 +4,7 @@
 #include <nomad/compiler/CompilerContext.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/Type.hpp>
 
 #include <nomad/system/ModuleHost.hpp>
 #include <nomad/system/ProjectSession.hpp>
@@ -41,6 +42,61 @@ bool compileFixture(ModuleHost& host, const CompilationTarget target) {
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(module_host)
+
+BOOST_AUTO_TEST_CASE(collections_interns_list_specializations) {
+    TestDirectory directory("nomad_host_list_types");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    BOOST_TEST(runtime.getTypeByName("List<int>") == nullptr);
+    const auto* integers = runtime.getParameterizedType("List", {runtime.getIntegerType()});
+    BOOST_REQUIRE(integers != nullptr);
+    BOOST_TEST(integers == runtime.getParameterizedType("List", {runtime.getIntegerType()}));
+    BOOST_TEST(integers == runtime.getTypeByName("List<int>"));
+    const auto* descriptor = dynamic_cast<const ObjectType*>(integers);
+    BOOST_REQUIRE(descriptor != nullptr);
+    BOOST_REQUIRE_EQUAL(descriptor->getTypeArguments().size(), 1u);
+    BOOST_TEST(descriptor->getTypeArguments()[0] == runtime.getIntegerType());
+    const auto* strings = runtime.getParameterizedType("List", {runtime.getStringType()});
+    BOOST_REQUIRE(strings != nullptr);
+    BOOST_TEST(integers != strings);
+    BOOST_TEST(!integers->sameType(strings));
+    const auto* nested = runtime.getParameterizedType("List", {integers});
+    BOOST_REQUIRE(nested != nullptr);
+    BOOST_TEST(nested->getTypeName() == "List<List<int>>");
+    BOOST_TEST(runtime.getParameterizedType("List", {}) == nullptr);
+    BOOST_TEST(runtime.getParameterizedType("List", {runtime.getVoidType()}) == nullptr);
+    BOOST_TEST(runtime.getParameterizedType("List", {nullptr}) == nullptr);
+    Runtime other;
+    BOOST_TEST(runtime.getParameterizedType("List", {other.getIntegerType()}) == nullptr);
+    BOOST_TEST(runtime.getParameterizedType("Missing", {}) == nullptr);
+    BOOST_TEST(!runtime.registerParameterizedType("List", 1, [](const auto&) {
+        return std::make_unique<ObjectType>("Duplicate");
+    }));
+}
+
+BOOST_AUTO_TEST_CASE(parameterized_types_validate_factories_and_cache_by_arguments) {
+    Runtime runtime;
+    NomadIndex calls = 0;
+    BOOST_TEST(runtime.registerParameterizedType("Example", 1, [&calls](const auto& arguments) {
+        ++calls;
+        return std::make_unique<ObjectType>("Example<" + arguments[0]->getTypeName() + ">", arguments);
+    }));
+    const auto* first = runtime.getParameterizedType("Example", {runtime.getIntegerType()});
+    BOOST_REQUIRE(first != nullptr);
+    BOOST_TEST(first == runtime.getParameterizedType("Example", {runtime.getIntegerType()}));
+    BOOST_TEST(calls == 1u);
+    BOOST_TEST(!runtime.registerParameterizedType("Empty", 1, {}));
+    BOOST_TEST(!runtime.registerParameterizedType("", 1, {}));
+    BOOST_TEST(runtime.registerParameterizedType("Broken", 1, [](const auto&) {
+        return std::unique_ptr<Type>{};
+    }));
+    BOOST_TEST(runtime.getParameterizedType("Broken", {runtime.getIntegerType()}) == nullptr);
+    BOOST_TEST(runtime.registerParameterizedType("Collision", 1, [](const auto&) {
+        return std::make_unique<ObjectType>("int");
+    }));
+    BOOST_TEST(runtime.getParameterizedType("Collision", {runtime.getIntegerType()}) == nullptr);
+}
 
 BOOST_AUTO_TEST_CASE(collections_module_loads_in_all_modes) {
     TestDirectory directory("nomad_host_collections");

@@ -251,6 +251,9 @@ void Runtime::registerDefaultInstructions() {
         "Test if the `r` register float value is greater than or equal to the `i` register float value", {}
     );
 
+    registerInstruction(OpCodes::op_object_init_r, op_object_init_r, "Clear the object result register", {});
+    registerInstruction(OpCodes::op_object_init_i, op_object_init_i, "Clear the object intermediate register", {});
+
     // String operators
     registerInstruction(
         OpCodes::op_string_init_r, op_string_init_r, "Init an empty string in the `r` register", {}

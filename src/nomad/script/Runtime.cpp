@@ -667,6 +667,53 @@ const EnumType* Runtime::registerEnum(
     return registeredType;
 }
 
+bool Runtime::registerParameterizedType(
+    const NomadString& name,
+    const NomadIndex argumentCount,
+    ParameterizedTypeFactory factory
+) {
+    if (name.empty() || argumentCount == 0 || !factory || getTypeByName(name) != nullptr ||
+        std::ranges::any_of(m_parameterizedTypes, [&](const auto& entry) { return entry.name == name; })) {
+        log::error("Cannot register parameterized type '" + name + "': invalid or duplicate definition");
+        return false;
+    }
+    m_parameterizedTypes.push_back({name, argumentCount, std::move(factory)});
+    return true;
+}
+
+const Type* Runtime::getParameterizedType(
+    const NomadString& name,
+    const std::vector<const Type*>& arguments
+) {
+    const auto registration = std::ranges::find(m_parameterizedTypes, name, &ParameterizedTypeRegistration::name);
+    if (registration == m_parameterizedTypes.end()) {
+        log::error("Unknown parameterized type '" + name + "'");
+        return nullptr;
+    }
+    if (arguments.size() != registration->argumentCount ||
+        std::ranges::any_of(arguments, [this](const Type* type) {
+            return !ownsType(type) || type->isVoid() || type->isInternal();
+        })) {
+        log::error("Invalid type arguments for '" + name + "'");
+        return nullptr;
+    }
+    for (const auto& entry : m_typeSpecializations) {
+        if (entry.name == name && entry.arguments == arguments) {
+            return entry.type;
+        }
+    }
+    const auto factory = registration->factory;
+    auto type = factory(arguments);
+    if (type == nullptr || type->getTypeName().empty() || getTypeByName(type->getTypeName()) != nullptr) {
+        log::error("Factory for '" + name + "' returned an invalid or duplicate type");
+        return nullptr;
+    }
+    const auto* result = type.get();
+    registerType(std::move(type));
+    m_typeSpecializations.push_back({name, arguments, result});
+    return result;
+}
+
 const Type* Runtime::getCallbackType(const std::vector<const Type*>& parameterTypes, const Type* returnType) {
     auto test_type = std::make_unique<FunctionType>(parameterTypes, returnType);
 

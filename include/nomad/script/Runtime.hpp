@@ -104,6 +104,16 @@ public:
     [[nodiscard]] const std::vector<Instruction>& getInstructions() const;
 
     // Types
+    using ParameterizedTypeFactory = std::function<std::unique_ptr<Type>(const std::vector<const Type*>&)>;
+    bool registerParameterizedType(
+        const NomadString& name,
+        NomadIndex argumentCount,
+        ParameterizedTypeFactory factory
+    );
+    [[nodiscard]] const Type* getParameterizedType(
+        const NomadString& name,
+        const std::vector<const Type*>& arguments
+    );
     void registerType(std::unique_ptr<Type>&& type);
     // [[nodiscard]] const Type* getType(NomadId id) const;
     [[nodiscard]] NomadId getTypeId(const NomadString& typeName) const;
@@ -355,7 +365,19 @@ private:
 
     std::vector<Instruction> m_instructions;
     std::vector<OpCodeDefinition> m_opCodes;
+    struct ParameterizedTypeRegistration {
+        NomadString name;
+        NomadIndex argumentCount;
+        ParameterizedTypeFactory factory;
+    };
+    struct TypeSpecialization {
+        NomadString name;
+        std::vector<const Type*> arguments;
+        const Type* type;
+    };
     std::vector<std::unique_ptr<Type>> m_types;
+    std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;
+    std::vector<TypeSpecialization> m_typeSpecializations;
     std::vector<UnaryOperatorRegistration> m_unaryOperators;
     std::vector<BinaryOperatorRegistration> m_binaryOperators;
     std::vector<NativeFunctionDefinition> m_nativeFunctions;

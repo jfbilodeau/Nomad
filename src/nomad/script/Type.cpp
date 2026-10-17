@@ -272,9 +272,9 @@ void BooleanType::toString(const RuntimeValue& value, NomadString& string) const
 
 ///////////////////////////////////////////////////////////////////////////////
 // BaseStringType
-BaseStringType::BaseStringType() {
-    m_typeOpCodes.initResult = op_string_init_r;
-    m_typeOpCodes.initIntermediate = op_string_init_i;
+ObjectTypeBase::ObjectTypeBase() {
+    m_typeOpCodes.initResult = op_object_init_r;
+    m_typeOpCodes.initIntermediate = op_object_init_i;
 
     m_typeOpCodes.freeResult = op_object_free_r;
     m_typeOpCodes.freeIntermediate = op_object_free_i;
@@ -309,17 +309,57 @@ BaseStringType::BaseStringType() {
     m_typeOpCodes.setContextVariable = op_context_variable_set;
 }
 
+void ObjectTypeBase::initValue(RuntimeValue& value) const {
+    value.setObjectValue(nullptr);
+}
+
+void ObjectTypeBase::freeValue(RuntimeValue& value) const {
+    value.freeObjectValue();
+}
+
+void ObjectTypeBase::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
+    if (&sourceValue == &destinationValue) {
+        return;
+    }
+    RuntimeValue copy;
+    copy.copyObjectValue(sourceValue);
+    destinationValue.freeObjectValue();
+    destinationValue = copy;
+}
+
+bool ObjectTypeBase::sameType(const Type* other) const {
+    return this == other;
+}
+
+ObjectType::ObjectType(NomadString name, std::vector<const Type*> typeArguments):
+    m_name(std::move(name)),
+    m_typeArguments(std::move(typeArguments))
+{
+}
+
+NomadString ObjectType::getTypeName() const {
+    return m_name;
+}
+
+const std::vector<const Type*>& ObjectType::getTypeArguments() const {
+    return m_typeArguments;
+}
+
+void ObjectType::toString(const RuntimeValue&, NomadString& string) const {
+    string = m_name;
+}
+
+BaseStringType::BaseStringType() {
+    m_typeOpCodes.initResult = op_string_init_r;
+    m_typeOpCodes.initIntermediate = op_string_init_i;
+}
+
 void BaseStringType::initValue(RuntimeValue& value) const {
     value.initStringValue();
 }
 
-void BaseStringType::freeValue(RuntimeValue& value) const {
-    value.freeObjectValue();
-}
-
-void BaseStringType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.freeObjectValue();
-    destinationValue.copyObjectValue(sourceValue);
+bool BaseStringType::sameType(const Type* other) const {
+    return Type::sameType(other);
 }
 
 void BaseStringType::toString(const RuntimeValue& value, NomadString& string) const {

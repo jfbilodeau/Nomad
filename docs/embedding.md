@@ -194,6 +194,26 @@ survive another evaluation; do not free the context's result manually.
 Different contexts have independent interpreter variables even when borrowing
 the same VM. Access to a shared context or VM must be serialized by the host.
 
+## Parameterized type proof of concept
+
+`Runtime::registerParameterizedType(name, argumentCount, factory)` registers a
+type family. The factory receives resolved type arguments and returns a
+runtime-owned descriptor. `getParameterizedType(name, arguments)` registers a
+specialization on first use and reuses it on subsequent requests. Arguments must
+be non-void, public types owned by that runtime. Invalid requests are logged and
+return null.
+
+The collections module currently registers only `List` with one type argument.
+Hosts can request `getParameterizedType("List", {runtime.getIntegerType()})`.
+This creates a descriptor, not a list object. Script syntax and construction are
+not available yet.
+
+`ObjectTypeBase` provides shared reference-counted value handling and object
+opcodes. `ObjectType` supplies a name and type-argument metadata; its text
+representation is its type name. Its initial value is a null object reference,
+not a constructed collection. Specialized descriptors may override initialization
+and formatting. Strings reuse the base while retaining empty-string initialization.
+
 ## Typed intrinsic methods
 
 Register an object method with the usual `registerIntrinsicMethod(...)` callback

@@ -7,6 +7,7 @@
 #include <nomad/collections/MapObject.hpp>
 
 #include <nomad/script/NomadObject.hpp>
+#include <nomad/script/Type.hpp>
 
 #include <boost/test/unit_test.hpp>
 
@@ -33,6 +34,25 @@ private:
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(NomadObjectTests)
+
+BOOST_AUTO_TEST_CASE(ObjectTypeSharesAndReleasesReferences) {
+    ObjectType type("Example");
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue source;
+    source.setObjectValue(new ListObject);
+    RuntimeValue destination;
+    type.initValue(destination);
+    type.copyValue(source, destination);
+    BOOST_TEST(source.getObjectValue() == destination.getObjectValue());
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    type.copyValue(source, source);
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    type.freeValue(source);
+    BOOST_TEST(destination.getObjectValue()->getReferenceCount() == 1U);
+    BOOST_TEST(type.needsFree());
+    type.freeValue(destination);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
 
 BOOST_AUTO_TEST_CASE(CollectionObjectsUseReferenceCounting) {
     const auto before = NomadObject::getLiveObjectCount();

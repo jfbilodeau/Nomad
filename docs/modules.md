@@ -12,7 +12,7 @@ The SDK provides:
 
 | Module | Features |
 | --- | --- |
-| `nomad-collections` | Reserved for collection types. Currently provides no types or functions. |
+| `nomad-collections` | Collection support under development; no script-facing collection operations yet. |
 | `nomad-system` | Logging, math functions, conversions, and `system.exit`. |
 | `nomad-game` | Windows, input, graphics, audio, scenes, entities, and game resources. Requires `nomad-system`. |
 

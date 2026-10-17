@@ -199,14 +199,35 @@ public:
 };
 
 // Base string type.
-class BaseStringType : public Type {
+class ObjectTypeBase : public Type {
+public:
+    ObjectTypeBase();
+    void initValue(RuntimeValue& value) const override;
+    void freeValue(RuntimeValue& value) const override;
+    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    [[nodiscard]] bool sameType(const Type* other) const override;
+};
+
+class ObjectType final : public ObjectTypeBase {
+public:
+    explicit ObjectType(NomadString name, std::vector<const Type*> typeArguments = {});
+    using Type::toString;
+    [[nodiscard]] NomadString getTypeName() const override;
+    [[nodiscard]] const std::vector<const Type*>& getTypeArguments() const;
+    void toString(const RuntimeValue& value, NomadString& string) const override;
+
+private:
+    NomadString m_name;
+    std::vector<const Type*> m_typeArguments;
+};
+
+class BaseStringType : public ObjectTypeBase {
 public:
     BaseStringType();
 
     void initValue(RuntimeValue& value) const override;
-    void freeValue(RuntimeValue& value) const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
+    [[nodiscard]] bool sameType(const Type* other) const override;
     [[nodiscard]]
     bool isString() const final;
 };

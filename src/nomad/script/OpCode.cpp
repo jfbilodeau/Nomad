@@ -815,6 +815,14 @@ void op_string_init_r(VirtualMachine* interpreter) {
     interpreter->initStringResult();
 }
 
+void op_object_init_r(VirtualMachine* interpreter) {
+    interpreter->getResult().setObjectValue(nullptr);
+}
+
+void op_object_init_i(VirtualMachine* interpreter) {
+    interpreter->getIntermediate().setObjectValue(nullptr);
+}
+
 void op_string_init_i(VirtualMachine* interpreter) {
     interpreter->initStringIntermediate();
 }

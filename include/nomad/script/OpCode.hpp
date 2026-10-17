@@ -151,6 +151,8 @@ DECLARE_OP_CODE(op_float_greater_than_or_equal)
 // String operators
 DECLARE_OP_CODE(op_string_init_r)
 DECLARE_OP_CODE(op_string_init_i)
+DECLARE_OP_CODE(op_object_init_r)
+DECLARE_OP_CODE(op_object_init_i)
 DECLARE_OP_CODE(op_string_push_n)
 DECLARE_OP_CODE(op_string_load_r)
 DECLARE_OP_CODE(op_string_load_i)
