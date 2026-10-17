@@ -40,6 +40,7 @@ add_executable(
     ./ModuleHostTest.cpp
     ./ModuleManifestTest.cpp
     ./NomadConfigurationTest.cpp
+    ./NomadObjectTest.cpp
     ./main.cpp
     ./NomadVersionTest.cpp
     ./PackedSpriteRegistrationTest.cpp

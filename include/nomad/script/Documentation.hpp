@@ -71,6 +71,20 @@ namespace nomad {
 // state after Runtime destruction.
 // Libraries remain loaded through destruction, then unload in reverse dependency order.
 //
+// NomadObject is owned by its Runtime and starts with one strong reference. addRef() acquires
+// another reference; releaseRef() enqueues the object through Runtime::reclaimObject(this) at
+// zero. Zero-count objects cannot be resurrected. Allocation, retain and release support worker
+// handoff; object contents are not made thread-safe. Runtime must outlive all external references.
+// reclaimObject() is exclusively the last-release path, not a way to delete a live object.
+// Runtime::processReclamation(budget, maximumSteps) returns the number of objects destroyed.
+// Nonpositive time budgets or zero steps perform no work. Only one caller may process reclamation
+// at a time, with no concurrent runtime teardown. Each protected reclaimStep() releases a bounded
+// amount of owned state and returns true when destruction can complete; it must not throw.
+// Destructors must not recursively release large graphs. Cycles are retained during execution.
+// At teardown the runtime calls detachReferences() on every remaining object before destroying
+// any of them. This hook must clear owned edges without allocating, invoking scripts or throwing.
+// Module libraries and dependent services must remain alive until reclamation has completed.
+//
 // Optional NomadString checkResources() returns a tooling report or throws.
 // Optional void package(ModulePackageContext&) contributes configuration and files without
 // application initialization. It receives immutable source and mutable release documents, paths,

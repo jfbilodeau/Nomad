@@ -8,6 +8,7 @@
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/IntrinsicMembers.hpp>
 #include <nomad/script/NativeFunctions.hpp>
+#include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -126,12 +127,129 @@ Runtime::Runtime() {
 }
 
 Runtime::~Runtime() {
+    m_virtualMachine.reset();
+    m_variables.clear();
+    m_functions.clear();
+    m_formatStrings.clear();
+    m_compilerSetups.clear();
+    m_dynamicVariables.clear();
+    m_nativeFunctions.clear();
+    m_intrinsicProperties.clear();
+    m_intrinsicMethods.clear();
     for (NomadIndex constantIndex = 0; constantIndex < m_constants.size(); ++constantIndex) {
         if (const auto* type = m_constantsMap.getVariableType(toNomadId(constantIndex))) {
             type->freeValue(m_constants[constantIndex]);
         }
     }
+    destroyObjects();
 }
+
+void Runtime::registerObject(NomadObject* object) {
+        const auto lock = std::lock_guard(m_objectMutex);
+        if (m_destroyingObjects) {
+            throw NomadException("Cannot allocate objects during runtime teardown");
+        }
+        object->m_nextObject = m_objects;
+        if (m_objects != nullptr) {
+            m_objects->m_previousObject = object;
+        }
+        m_objects = object;
+        ++m_liveObjectCount;
+    }
+
+    void Runtime::unregisterObject(NomadObject* object) noexcept {
+        const auto lock = std::lock_guard(m_objectMutex);
+        if (object->m_previousObject != nullptr) {
+            object->m_previousObject->m_nextObject = object->m_nextObject;
+        } else {
+            m_objects = object->m_nextObject;
+        }
+        if (object->m_nextObject != nullptr) {
+            object->m_nextObject->m_previousObject = object->m_previousObject;
+        }
+        --m_liveObjectCount;
+    }
+
+    void Runtime::reclaimObject(NomadObject* object) noexcept {
+        const auto lock = std::lock_guard(m_objectMutex);
+        if (object == nullptr || &object->m_runtime != this || object->m_queued ||
+            object->getReferenceCount() != 0) {
+            std::terminate();
+        }
+        object->m_queued = true;
+        if (m_reclamationTail != nullptr) {
+            m_reclamationTail->m_nextReclamation = object;
+        } else {
+            m_reclamationHead = object;
+        }
+        m_reclamationTail = object;
+    }
+
+    NomadIndex Runtime::processReclamation(const std::chrono::microseconds budget, const NomadIndex maximumSteps) {
+        if (budget.count() <= 0 || maximumSteps == 0) {
+            return 0;
+        }
+        {
+            const auto lock = std::lock_guard(m_objectMutex);
+            if (m_processingReclamation || m_destroyingObjects) {
+                throw NomadException("Object reclamation cannot run concurrently or during teardown");
+            }
+            m_processingReclamation = true;
+        }
+
+        const auto start = std::chrono::steady_clock::now();
+        NomadIndex reclaimed = 0;
+        for (NomadIndex step = 0; step < maximumSteps && std::chrono::steady_clock::now() - start < budget; ++step) {
+            NomadObject* object;
+            {
+                const auto lock = std::lock_guard(m_objectMutex);
+                object = m_reclamationHead;
+                if (object == nullptr) {
+                    break;
+                }
+                m_reclamationHead = object->m_nextReclamation;
+                if (m_reclamationHead == nullptr) {
+                    m_reclamationTail = nullptr;
+                }
+                object->m_nextReclamation = nullptr;
+            }
+
+            if (object->reclaimStep()) {
+                delete object;
+                ++reclaimed;
+            } else {
+                const auto lock = std::lock_guard(m_objectMutex);
+                if (m_reclamationTail != nullptr) {
+                    m_reclamationTail->m_nextReclamation = object;
+                } else {
+                    m_reclamationHead = object;
+                }
+                m_reclamationTail = object;
+            }
+        }
+        {
+            const auto lock = std::lock_guard(m_objectMutex);
+            m_processingReclamation = false;
+        }
+        return reclaimed;
+    }
+
+    NomadIndex Runtime::getLiveObjectCount() const {
+        const auto lock = std::lock_guard(m_objectMutex);
+        return m_liveObjectCount;
+    }
+
+    void Runtime::destroyObjects() noexcept {
+        m_destroyingObjects = true;
+        for (auto* object = m_objects; object != nullptr; object = object->m_nextObject) {
+            object->detachReferences();
+        }
+        m_reclamationHead = nullptr;
+        m_reclamationTail = nullptr;
+        while (m_objects != nullptr) {
+            delete m_objects;
+        }
+    }
 
 void Runtime::setDebug(const bool debug) {
     m_debug = debug;
