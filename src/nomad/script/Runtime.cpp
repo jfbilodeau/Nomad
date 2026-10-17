@@ -862,6 +862,17 @@ NomadId Runtime::registerIntrinsicProperty(const Type* objectType, const NomadSt
     return id;
 }
 
+NomadId Runtime::registerObjectMethod(
+    const ObjectTypeBase* objectType,
+    const NomadString& name,
+    NativeFunctionFn fn,
+    const std::vector<FunctionParameterDefinition>& parameters,
+    const Type* returnType,
+    const NomadString& doc
+) {
+    return registerIntrinsicMethod(objectType, name, std::move(fn), parameters, returnType, false, doc);
+}
+
 NomadId Runtime::registerIntrinsicMethod(const Type* objectType, const NomadString& name, NativeFunctionFn fn,
                                          const std::vector<FunctionParameterDefinition>& parameters,
                                          const Type* returnType, const bool mutatesReceiver, const NomadString& doc) {

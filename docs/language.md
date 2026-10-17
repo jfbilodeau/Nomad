@@ -180,7 +180,22 @@ upperLength = name.toUpper.length
 literalLength = "Nomad".length
 ```
 
-Properties may be read-only, write-only or read/write. Methods may be non-mutating or mutating. A mutating member requires a writable variable receiver; it cannot be called on a literal, constant, parameter, function result or other temporary. Receiver mutation is transactional: the runtime commits the changed value only after the member callback completes successfully.
+Properties may be read-only, write-only or read/write. Native object methods act directly
+on their instance. They may change the object even when its reference comes from a
+read-only parameter or a temporary; this does not reassign the reference.
+
+Existing value-style intrinsic members that replace their receiver require a writable
+variable receiver, not a literal, constant, parameter, function result or other
+temporary. Receiver replacement is committed only after the callback succeeds.
+Changes to an object's contents are immediate and are not rolled back if a method fails.
+
+```nomad
+fun append values:List<int>
+    values.push 30 # Changes the caller's list.
+end
+```
+
+Assigning a new reference to the parameter itself remains invalid.
 
 Nomad does not currently support script-defined object types or script-defined intrinsic members.
 

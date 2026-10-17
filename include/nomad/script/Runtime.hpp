@@ -25,6 +25,7 @@
 namespace nomad {
 
 // Forward declarations
+class ObjectTypeBase;
 class Compiler;
 class Closure;
 class FormatString;
@@ -133,6 +134,14 @@ public:
     [[nodiscard]] const Type* getPredicateType();
 
     // Intrinsic members
+    NomadId registerObjectMethod(
+        const ObjectTypeBase* objectType,
+        const NomadString& name,
+        NativeFunctionFn fn,
+        const std::vector<FunctionParameterDefinition>& parameters,
+        const Type* returnType,
+        NomadDocArg
+    );
     NomadId registerIntrinsicProperty(const Type* objectType, const NomadString& name, const Type* valueType,
                                       IntrinsicPropertyGetFn getFn, IntrinsicPropertySetFn setFn, NomadDocArg);
     NomadId registerIntrinsicMethod(const Type* objectType, const NomadString& name, NativeFunctionFn fn,

@@ -233,6 +233,14 @@ void VirtualMachine::callIntrinsicMethod(const NomadId memberId) {
     m_intrinsicReceiver = previousReceiver;
 }
 
+NomadObject* VirtualMachine::getThis() const {
+    auto* instance = getIntrinsicReceiver().getObjectValue();
+    if (instance == nullptr) {
+        fault("Object method has no instance");
+    }
+    return instance;
+}
+
 const RuntimeValue& VirtualMachine::getIntrinsicReceiver() const {
     if (m_intrinsicReceiver == nullptr) {
         fault("Intrinsic method has no receiver");

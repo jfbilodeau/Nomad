@@ -90,6 +90,38 @@ BOOST_AUTO_TEST_CASE(typed_receiver_requires_an_active_method) {
         virtualMachine->getIntrinsicReceiverAs<NomadStringObject>(),
         VirtualMachineException
     );
+    BOOST_CHECK_THROW(virtualMachine->getThisAs<TestObject>(), VirtualMachineException);
+}
+
+BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) {
+    Runtime runtime;
+    auto descriptor = std::make_unique<ObjectType>("TestObject");
+    const auto* type = descriptor.get();
+    runtime.registerType(std::move(descriptor));
+    auto* instance = new TestObject;
+    const auto memberId = runtime.registerObjectMethod(
+        type,
+        "checkInstance",
+        [instance](VirtualMachine* machine) {
+            BOOST_TEST(machine->getThis() == instance);
+            BOOST_TEST(machine->getThisAs<TestObject>() == instance);
+            machine->setIntegerResult(42);
+        },
+        {},
+        runtime.getIntegerType(),
+        ""
+    );
+    BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
+    IntrinsicMethodDefinition definition;
+    BOOST_REQUIRE(runtime.getIntrinsicMethodDefinition(memberId, definition));
+    BOOST_TEST(!definition.mutatesReceiver);
+    auto machine = runtime.createVirtualMachine();
+    RuntimeValue receiver;
+    receiver.setObjectValue(instance);
+    machine->runIntrinsicMethod(memberId, {}, receiver);
+    BOOST_TEST(machine->getResult().getIntegerValue() == 42);
+    receiver.freeObjectValue();
+    BOOST_CHECK_THROW(machine->runIntrinsicMethod(memberId, {}, receiver), VirtualMachineException);
 }
 
 BOOST_AUTO_TEST_CASE(compiled_property_getter_reads_temporary_receiver) {

@@ -37,16 +37,15 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 {},
                 NomadDoc("The number of elements in the list.")
             );
-            const auto pushId = runtime->registerIntrinsicMethod(
-                type,
+            const auto pushId = runtime->registerObjectMethod(
+                static_cast<const nomad::ObjectType*>(type),
                 "push",
                 [](nomad::VirtualMachine* vm) {
-                    auto* list = vm->getIntrinsicReceiverAs<nomad::ListObject>();
+                    auto* list = vm->getThisAs<nomad::ListObject>();
                     list->push(vm->getParameter(0));
                 },
                 {nomad::defParameter("value", elementType, NomadDoc("The value to append."))},
                 runtime->getVoidType(),
-                true,
                 NomadDoc("Appends a value to the list.")
             );
             if (countId == nomad::NOMAD_INVALID_ID || pushId == nomad::NOMAD_INVALID_ID) {

@@ -54,8 +54,7 @@ BOOST_AUTO_TEST_CASE(collections_lists_store_typed_values_and_share_mutations) {
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad",
         "fun append values:List<int>\n"
-        "    local = values\n"
-        "    local.push 30\n"
+        "    values.push 30\n"
         "end\n"
         "values = new List<int>\n"
         "assert values.count == 0\n"
@@ -104,7 +103,8 @@ BOOST_AUTO_TEST_CASE(collections_lists_reject_invalid_member_operations) {
         "values = new List<List<int>>\nvalues.push new List<string>",
         "values = new List<int>\nvalues.count = 10",
         "values = new List<int>\nvalues.push",
-        "values = new List<int>\nreturn values.push 1"
+        "values = new List<int>\nreturn values.push 1",
+        "params values:List<int>\nvalues = new List<int>"
     }) {
         BOOST_TEST_CONTEXT(source) {
             TestDirectory directory("nomad_host_bad_list_values");

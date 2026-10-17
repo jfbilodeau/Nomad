@@ -71,6 +71,10 @@ public:
 
     [[nodiscard]] const RuntimeValue& getIntrinsicReceiver() const;
     [[nodiscard]] RuntimeValue& getIntrinsicReceiver();
+    [[nodiscard]] NomadObject* getThis() const;
+
+    template<typename Object>
+    [[nodiscard]] Object* getThisAs() const;
 
     template<typename Object>
     [[nodiscard]] Object* getIntrinsicReceiverAs() const {
@@ -243,5 +247,11 @@ private:
     NomadIndex m_variableIndex = 0;
     RuntimeValue* m_intrinsicReceiver = nullptr;
 };
+
+template<typename Object>
+Object* VirtualMachine::getThisAs() const {
+    static_assert(std::is_base_of_v<NomadObject, Object>);
+    return static_cast<Object*>(getThis());
+}
 
 } // nomad

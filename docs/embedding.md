@@ -239,6 +239,29 @@ the same ownership contract. Construction runs at evaluation time, not compilati
 time, in both compiled scripts and the interpreter. Constructor arguments are not
 supported yet.
 
+## Native object methods
+
+Use `Runtime::registerObjectMethod(objectType, name, callback, parameters, returnType, doc)`
+for methods on an `ObjectTypeBase` descriptor. Registration reuses the existing member
+lookup, type checking, and dispatch infrastructure, without receiver replacement:
+
+```cpp
+[](nomad::VirtualMachine* vm) {
+    auto* list = vm->getThisAs<nomad::ListObject>();
+    list->push(vm->getParameter(0));
+}
+```
+
+`getThis()` returns the borrowed instance; `getThisAs<T>()` performs a static cast.
+The host must pair the descriptor with the correct C++ class. Access without an
+active method or with a null instance faults. Retain a reference explicitly if the
+instance must outlive the call.
+
+Object methods may mutate the instance through parameter and temporary references.
+They do not replace the receiver binding or roll back changes to object contents.
+`List.push` uses this API. Properties and existing value-style intrinsic methods
+remain unchanged; script-defined methods are not supported yet.
+
 ## Typed intrinsic methods
 
 Register an object method with the usual `registerIntrinsicMethod(...)` callback
