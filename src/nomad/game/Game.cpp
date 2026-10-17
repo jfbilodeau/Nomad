@@ -6,7 +6,7 @@
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
-#include <nomad/debug/DebugConsole.hpp>
+#include <nomad/game/debug/DebugConsole.hpp>
 
 #include <nomad/game/Alignment.hpp>
 #include <nomad/game/Canvas.hpp>
@@ -14,10 +14,10 @@
 #include <nomad/game/Scene.hpp>
 #include <nomad/game/VariablePersistence.hpp>
 
-#include <nomad/resource/ResourceManager.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
 
 #include <nomad/script/Closure.hpp>
-#include <nomad/script/NativeFunctions.hpp>
+#include <nomad/system/NativeFunctions.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 

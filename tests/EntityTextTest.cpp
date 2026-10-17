@@ -9,9 +9,9 @@
 
 #include <nomad/geometry/RectangleF.hpp>
 
-#include <nomad/resource/Font.hpp>
-#include <nomad/resource/ResourceManager.hpp>
-#include <nomad/resource/Texture.hpp>
+#include <nomad/game/resource/Font.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
+#include <nomad/game/resource/Texture.hpp>
 
 #include <SDL3/SDL.h>
 

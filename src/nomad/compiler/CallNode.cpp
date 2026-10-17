@@ -34,10 +34,6 @@ const Type* Argument::resolveOverloadType(CompilerContext* /*context*/, ScriptFu
     return nullptr;
 }
 
-const Type* Argument::getPushedType() const {
-    return m_type;
-}
-
 TypedValue Argument::evaluate(InterpreterContext& context) const {
     return onEvaluate(context);
 }

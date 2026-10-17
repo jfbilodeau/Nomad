@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/resource/SpriteDiscovery.hpp>
+#include <nomad/game/resource/SpriteDiscovery.hpp>
 
 #include <TestDirectory.hpp>
 

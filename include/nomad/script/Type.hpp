@@ -11,6 +11,7 @@
 
 #include <nomad/script/OpCode.hpp>
 
+#include <functional>
 #include <vector>
 
 namespace nomad {
@@ -82,10 +83,6 @@ public:
     [[nodiscard]] const TypeOpCodes* getTypeOpCodes() const;
     [[nodiscard]] bool needsFree() const;
 
-    // Borrowed types (i.e. `$stringref`) never own their value. They are only used for nativeFunction parameters and
-    // operator operands, and are never stored.
-    [[nodiscard]] virtual bool isReference() const;
-
     // Can an expression of `argumentType` be passed where a value of this type is expected?
     [[nodiscard]] virtual bool acceptsArgument(const Type* argumentType) const;
 
@@ -95,7 +92,7 @@ public:
     // Can the type hold a value or is it void?
     [[nodiscard]] virtual bool isVoid() const;
 
-    // Is the type an owned string type? ie: `string`, `$function`
+    // Is the type a string type?
     [[nodiscard]] virtual bool isString() const;
 
     // Determine if two types are the same
@@ -202,15 +199,46 @@ public:
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 
-// Base string type.
-class BaseStringType : public Type {
+class ObjectTypeBase : public Type {
+public:
+    ObjectTypeBase();
+    [[nodiscard]] virtual bool isConstructible() const;
+    // Returns a new object with one owned reference.
+    [[nodiscard]] virtual NomadObject* createObject() const;
+    void initValue(RuntimeValue& value) const override;
+    void freeValue(RuntimeValue& value) const override;
+    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    [[nodiscard]] bool sameType(const Type* other) const override;
+};
+
+class ObjectType final : public ObjectTypeBase {
+public:
+    using ObjectFactory = std::function<NomadObject*()>;
+    explicit ObjectType(
+        NomadString name,
+        std::vector<const Type*> typeArguments = {},
+        ObjectFactory factory = {}
+    );
+    [[nodiscard]] bool isConstructible() const override;
+    [[nodiscard]] NomadObject* createObject() const override;
+    using Type::toString;
+    [[nodiscard]] NomadString getTypeName() const override;
+    [[nodiscard]] const std::vector<const Type*>& getTypeArguments() const;
+    void toString(const RuntimeValue& value, NomadString& string) const override;
+
+private:
+    NomadString m_name;
+    std::vector<const Type*> m_typeArguments;
+    ObjectFactory m_factory;
+};
+
+class BaseStringType : public ObjectTypeBase {
 public:
     BaseStringType();
 
     void initValue(RuntimeValue& value) const override;
-    void freeValue(RuntimeValue& value) const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
+    [[nodiscard]] bool sameType(const Type* other) const override;
     [[nodiscard]]
     bool isString() const final;
 };
@@ -223,32 +251,16 @@ public:
 
 // Internal types
 
-// Borrowed pointer to a string owned by someone else (string table, parameter, variable or a temporary held by the
-// caller). Valid only for the duration of the nativeFunction call or operator using it. Copying is shallow; nothing is freed.
-class BaseStringRefType : public Type {
-public:
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
-    [[nodiscard]] bool isReference() const final;
-    [[nodiscard]] bool acceptsArgument(const Type* argumentType) const override;
-};
-
-const NomadString STRING_REF_TYPE_NAME = "$stringref";
-class StringRefType final : public BaseStringRefType {
-public:
-    [[nodiscard]] NomadString getTypeName() const override;
-};
-
-// Hidden parameter: the compiler passes a reference to the calling function's file name.
+// Hidden parameter: the compiler passes the calling function's file name.
 const NomadString FILE_NAME_TYPE_NAME = "$file";
-class FileNameType final : public BaseStringRefType {
+class FileNameType final : public BaseStringType {
 public:
     [[nodiscard]] NomadString getTypeName() const override;
 };
 
-// Hidden parameter: the compiler passes a reference to the calling function's name.
+// Hidden parameter: the compiler passes the calling function's name.
 const NomadString FUNCTION_NAME_TYPE_NAME = "$function";
-class FunctionNameType final : public BaseStringRefType {
+class FunctionNameType final : public BaseStringType {
 public:
     [[nodiscard]] NomadString getTypeName() const override;
 };
@@ -324,42 +336,6 @@ public:
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
-};
-
-const NomadString MAP_TYPE_NAME = "map";
-class MapType final : public Type {
-public:
-    MapType(const Type* keyType, const Type* valueType);
-
-    [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
-    [[nodiscard]] bool sameType(const Type* other) const override;
-
-    [[nodiscard]] const Type* getKeyType() const;
-    [[nodiscard]] const Type* getValueType() const;
-
-private:
-    const Type* m_keyType;
-    const Type* m_valueType;
-};
-
-const NomadString ARRAY_TYPE_NAME = "array";
-class ArrayType final : public Type {
-public:
-    ArrayType(NomadIndex dimension, const Type* valueType);
-
-    [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
-    [[nodiscard]] bool sameType(const Type* other) const override;
-
-    [[nodiscard]] const Type* getDimension() const;
-    [[nodiscard]] const Type* getValueType() const;
-
-private:
-    const NomadIndex m_dimension;
-    const Type* m_valueType;
 };
 
 } // nomad

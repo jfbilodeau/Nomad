@@ -5,7 +5,7 @@
 
 #include <nomad/game/Game.hpp>
 
-#include <nomad/resource/SpritePacker.hpp>
+#include <nomad/game/resource/SpritePacker.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Interpreter.hpp>

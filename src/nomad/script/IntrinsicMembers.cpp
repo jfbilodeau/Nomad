@@ -21,16 +21,6 @@ void faultOnInvalidUtf8(VirtualMachine* virtualMachine, const NomadStringView te
     }
 }
 
-NomadString getReceiverText(const VirtualMachine* virtualMachine) {
-    const auto* receiver = virtualMachine->getIntrinsicReceiver().getStringValue();
-    return receiver != nullptr ? receiver : "";
-}
-
-NomadString getStringParameter(const VirtualMachine* virtualMachine, const NomadIndex index) {
-    const auto* parameter = virtualMachine->getStringParameter(index);
-    return parameter != nullptr ? parameter : "";
-}
-
 void validateSearchOperands(VirtualMachine* virtualMachine, const NomadString& receiver, const NomadString& search,
                             const NomadString& memberName) {
     faultOnInvalidUtf8(virtualMachine, receiver, memberName);
@@ -45,7 +35,7 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         "length",
         runtime->getIntegerType(),
         [](VirtualMachine* virtualMachine, const RuntimeValue& receiver, RuntimeValue& result) {
-            const NomadString text = receiver.getStringValue() != nullptr ? receiver.getStringValue() : "";
+            const auto& text = receiver.getStringObject()->getString();
 
             try {
                 const auto codePoints =
@@ -64,8 +54,7 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         "byteLength",
         runtime->getIntegerType(),
         [](VirtualMachine*, const RuntimeValue& receiver, RuntimeValue& result) {
-            const auto* text = receiver.getStringValue();
-            result.setIntegerValue(static_cast<NomadInteger>(text != nullptr ? std::char_traits<NomadChar>::length(text) : 0));
+            result.setIntegerValue(static_cast<NomadInteger>(receiver.getStringObject()->getLength()));
         },
         {},
         NomadDoc("The number of bytes in the UTF-8 encoding of the string.")
@@ -76,8 +65,7 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         "isEmpty",
         runtime->getBooleanType(),
         [](VirtualMachine*, const RuntimeValue& receiver, RuntimeValue& result) {
-            const auto* text = receiver.getStringValue();
-            result.setBooleanValue(text == nullptr || *text == '\0');
+            result.setBooleanValue(receiver.getStringObject()->getString().empty());
         },
         {},
         NomadDoc("True when the string is empty.")
@@ -87,8 +75,8 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         runtime->getStringType(),
         "toUpper",
         [](VirtualMachine* virtualMachine) {
-            const auto* receiver = virtualMachine->getIntrinsicReceiver().getStringValue();
-            const NomadString text = receiver != nullptr ? receiver : "";
+            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
+            const auto& text = receiver->getString();
             faultOnInvalidUtf8(virtualMachine, text, "toUpper");
             virtualMachine->setStringResult(stringToUpper(text));
         },
@@ -102,7 +90,8 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         runtime->getStringType(),
         "toLower",
         [](VirtualMachine* virtualMachine) {
-            const auto text = getReceiverText(virtualMachine);
+            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
+            const auto& text = receiver->getString();
             faultOnInvalidUtf8(virtualMachine, text, "toLower");
             virtualMachine->setStringResult(stringToLower(text));
         },
@@ -116,7 +105,8 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         runtime->getStringType(),
         "trim",
         [](VirtualMachine* virtualMachine) {
-            const auto text = getReceiverText(virtualMachine);
+            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
+            const auto& text = receiver->getString();
             faultOnInvalidUtf8(virtualMachine, text, "trim");
             virtualMachine->setStringResult(stringTrimCopy(text));
         },
@@ -130,7 +120,8 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         runtime->getStringType(),
         "trimStart",
         [](VirtualMachine* virtualMachine) {
-            const auto text = getReceiverText(virtualMachine);
+            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
+            const auto& text = receiver->getString();
             faultOnInvalidUtf8(virtualMachine, text, "trimStart");
             virtualMachine->setStringResult(stringLeftTrimCopy(text));
         },
@@ -144,7 +135,8 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         runtime->getStringType(),
         "trimEnd",
         [](VirtualMachine* virtualMachine) {
-            const auto text = getReceiverText(virtualMachine);
+            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
+            const auto& text = receiver->getString();
             faultOnInvalidUtf8(virtualMachine, text, "trimEnd");
             virtualMachine->setStringResult(stringRightTrimCopy(text));
         },
@@ -155,17 +147,18 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
     );
 
     const auto stringSearchParameters = std::vector{
-        defParameter("text", runtime->getStringRefType(), NomadParamDoc("The text to find")),
+        defParameter("text", runtime->getStringType(), NomadParamDoc("The text to find")),
     };
 
     runtime->registerIntrinsicMethod(
         runtime->getStringType(),
         "startsWith",
         [](VirtualMachine* virtualMachine) {
-            const auto receiver = getReceiverText(virtualMachine);
-            const auto search = getStringParameter(virtualMachine, 0);
-            validateSearchOperands(virtualMachine, receiver, search, "startsWith");
-            virtualMachine->setBooleanResult(receiver.starts_with(search));
+            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
+            const auto& text = receiver->getString();
+            const auto& search = virtualMachine->getStringParameter(0)->getString();
+            validateSearchOperands(virtualMachine, text, search, "startsWith");
+            virtualMachine->setBooleanResult(text.starts_with(search));
         },
         stringSearchParameters,
         runtime->getBooleanType(),
@@ -177,10 +170,11 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         runtime->getStringType(),
         "endsWith",
         [](VirtualMachine* virtualMachine) {
-            const auto receiver = getReceiverText(virtualMachine);
-            const auto search = getStringParameter(virtualMachine, 0);
-            validateSearchOperands(virtualMachine, receiver, search, "endsWith");
-            virtualMachine->setBooleanResult(receiver.ends_with(search));
+            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
+            const auto& text = receiver->getString();
+            const auto& search = virtualMachine->getStringParameter(0)->getString();
+            validateSearchOperands(virtualMachine, text, search, "endsWith");
+            virtualMachine->setBooleanResult(text.ends_with(search));
         },
         stringSearchParameters,
         runtime->getBooleanType(),
@@ -192,10 +186,11 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         runtime->getStringType(),
         "contains",
         [](VirtualMachine* virtualMachine) {
-            const auto receiver = getReceiverText(virtualMachine);
-            const auto search = getStringParameter(virtualMachine, 0);
-            validateSearchOperands(virtualMachine, receiver, search, "contains");
-            virtualMachine->setBooleanResult(receiver.find(search) != NomadString::npos);
+            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
+            const auto& text = receiver->getString();
+            const auto& search = virtualMachine->getStringParameter(0)->getString();
+            validateSearchOperands(virtualMachine, text, search, "contains");
+            virtualMachine->setBooleanResult(text.find(search) != NomadString::npos);
         },
         stringSearchParameters,
         runtime->getBooleanType(),

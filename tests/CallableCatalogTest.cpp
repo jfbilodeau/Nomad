@@ -6,7 +6,7 @@
 
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/NativeFunction.hpp>
-#include <nomad/script/NativeFunctions.hpp>
+#include <nomad/system/NativeFunctions.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <vector>
@@ -239,7 +239,7 @@ BOOST_AUTO_TEST_CASE(native_functions_can_be_overloaded_on_parameter_type)
     BOOST_TEST(selectedString.id == fromString);
 }
 
-// `$stringref` accepts a `string`, so both overloads are viable; the exact one has to win.
+// A `string` overload and an overload of another type are both candidates; the exact one has to win.
 BOOST_AUTO_TEST_CASE(overload_selection_prefers_an_exact_match)
 {
     Runtime runtime;
@@ -247,7 +247,7 @@ BOOST_AUTO_TEST_CASE(overload_selection_prefers_an_exact_match)
     registerNativeFunction(
         runtime,
         "test.pick",
-        {defParameter("text", runtime.getStringRefType(), NomadDoc("Text"))},
+        {defParameter("text", runtime.getIntegerType(), NomadDoc("Text"))},
         runtime.getIntegerType()
     );
     const auto takesString = registerNativeFunction(

@@ -28,6 +28,8 @@ using ParseStatementFn = std::unique_ptr<Statement> (*)(CompilerContext*, Script
 
 namespace parser {
 
+[[nodiscard]] const Type* parseType(CompilerContext* context, Tokenizer* tokens);
+
 [[nodiscard]] bool expectEndOfLine(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 
 IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& name, const ScriptFunction* function = nullptr);
@@ -59,6 +61,7 @@ std::unique_ptr<Expression> parseProductExpression(CompilerContext* context, Scr
 std::unique_ptr<Expression> parseParenthesesExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);
 std::unique_ptr<Expression> parseUnaryOperatorExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);
 std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);
+std::unique_ptr<Expression> parseNewExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);
 std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);
 std::unique_ptr<Expression> parseFunctionCallExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent, const NomadString& functionName);
 [[nodiscard]] bool parseFunctionArguments(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const ScriptFunction* targetFunction, ArgumentList* arguments);
@@ -69,8 +72,7 @@ std::unique_ptr<Argument> parseExpressionArgument(
     CompilerContext* context,
     const Type* argumentType,
     ScriptFunction* function,
-    Tokenizer* tokens,
-    ParameterAccess parameterAccess = ParameterAccess::Default
+    Tokenizer* tokens
 );
 std::unique_ptr<Argument> parsePredicateArgument(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 

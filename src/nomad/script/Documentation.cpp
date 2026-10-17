@@ -76,8 +76,8 @@ std::vector<NomadString> getIntrinsicMemberNames(const Runtime* runtime) {
     return names;
 }
 
-NomadString getDocumentedTypeName(const Runtime* runtime, const Type* type) {
-    return type == runtime->getStringRefType() ? runtime->getStringType()->getTypeName() : type->getTypeName();
+NomadString getDocumentedTypeName(const Runtime*, const Type* type) {
+    return type->getTypeName();
 }
 
 NomadString escapeRegularExpression(const NomadString& text) {
@@ -393,10 +393,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
             out << std::endl;
 
             for (const auto& parameter: function.parameters) {
-                // Callers pass a regular string to a `$stringref` parameter.
-                const auto parameterTypeName = parameter.type == runtime->getStringRefType()
-                    ? runtime->getStringType()->getTypeName()
-                    : parameter.type->getTypeName();
+                const auto parameterTypeName = parameter.type->getTypeName();
 
                 out << "- `" << parameter.name << ":" << parameterTypeName << "`";
 

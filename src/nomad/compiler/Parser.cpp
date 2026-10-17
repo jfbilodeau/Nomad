@@ -1,7 +1,5 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/system/String.hpp>
-
 #include <nomad/compiler/Parser.hpp>
 
 #include <nomad/compiler/Argument.hpp>
@@ -15,6 +13,8 @@
 
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
+#include <nomad/system/String.hpp>
+
 #include <algorithm>
 #include <optional>
 
@@ -22,8 +22,81 @@ namespace nomad {
 
 namespace parser {
 
-using ParseExpressionFunction = std::unique_ptr<Expression> (*)(CompilerContext*, ScriptFunction*, Tokenizer*,
-                                                                const Expression*);
+namespace {
+
+const Type* parseTypeName(CompilerContext* context, Tokenizer* tokens, const NomadIndex depth) {
+    if (depth >= 64) {
+        context->reportError("Type nesting exceeds the maximum depth of 64", tokens);
+        return nullptr;
+    }
+    NomadString name;
+    if (!tokens->nextIdentifier(name)) {
+        return nullptr;
+    }
+    auto* runtime = context->getRuntime();
+    const auto argumentCount = runtime->getParameterizedTypeArgumentCount(name);
+    if (tokens->is("<")) {
+        tokens->next();
+        if (!argumentCount) {
+            context->reportError("Unknown parameterized type '" + name + "'", tokens);
+            return nullptr;
+        }
+        std::vector<const Type*> arguments;
+        while (!tokens->is(">")) {
+            if (tokens->endOfLine()) {
+                context->reportError("Expected '>' to close type arguments for '" + name + "'", tokens);
+                return nullptr;
+            }
+            const auto* argument = parseTypeName(context, tokens, depth + 1);
+            if (argument == nullptr) {
+                return nullptr;
+            }
+            if (argument->isVoid() || argument->isInternal()) {
+                context->reportError("Invalid type argument '" + argument->getTypeName() + "' for '" + name + "'", tokens);
+                return nullptr;
+            }
+            arguments.push_back(argument);
+        }
+        tokens->next();
+        if (arguments.size() != *argumentCount) {
+            context->reportError(
+                "Parameterized type '" + name + "' expects " + std::to_string(*argumentCount) +
+                " type arguments, got " + std::to_string(arguments.size()), tokens
+            );
+            return nullptr;
+        }
+        const auto* type = runtime->getParameterizedType(name, arguments);
+        if (type == nullptr) {
+            context->reportError("Cannot resolve parameterized type '" + name + "'", tokens);
+        }
+        return type;
+    }
+    if (argumentCount) {
+        context->reportError("Type arguments required for parameterized type '" + name + "'", tokens);
+        return nullptr;
+    }
+    const auto* type = runtime->getTypeByName(name);
+    if (type == nullptr) {
+        context->reportError("Unknown type '" + name + "' for parameter", tokens);
+    } else if (type->isInternal()) {
+        context->reportError("Internal type '" + name + "' cannot be used for parameter", tokens);
+        return nullptr;
+    }
+    return type;
+}
+
+} // namespace
+
+const Type* parseType(CompilerContext* context, Tokenizer* tokens) {
+    return parseTypeName(context, tokens, 0);
+}
+
+using ParseExpressionFunction = std::unique_ptr<Expression> (*)(
+    CompilerContext*, 
+    ScriptFunction*, 
+    Tokenizer*,
+    const Expression*
+);
 
 namespace {
 
@@ -662,6 +735,29 @@ std::unique_ptr<Expression> parseUnaryOperatorExpression(CompilerContext* contex
                                              std::move(expression));
 }
 
+std::unique_ptr<Expression> parseNewExpression(
+    CompilerContext* context,
+    ScriptFunction* /*function*/,
+    Tokenizer* tokens,
+    const Expression* parent
+) {
+    const auto line = tokens->getLineIndex();
+    const auto column = tokens->getColumnIndex();
+    if (!tokens->expect("new")) {
+        return nullptr;
+    }
+    const auto* type = parseType(context, tokens);
+    if (type == nullptr) {
+        return nullptr;
+    }
+    const auto* objectType = dynamic_cast<const ObjectTypeBase*>(type);
+    if (objectType == nullptr || !objectType->isConstructible()) {
+        context->reportError("Type '" + type->getTypeName() + "' is not constructible", tokens);
+        return nullptr;
+    }
+    return std::make_unique<NewObjectExpression>(parent, line, column, objectType);
+}
+
 std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
                                                    const Expression* parent) {
     std::unique_ptr<Expression> expression;
@@ -671,6 +767,11 @@ std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, Scr
         expression = parseExpression(context, function, tokens);
 
         if (expression == nullptr || !tokens->expect(")")) {
+            return nullptr;
+        }
+    } else if (tokens->is("new")) {
+        expression = parseNewExpression(context, function, tokens, parent);
+        if (expression == nullptr) {
             return nullptr;
         }
     } else {
@@ -1057,8 +1158,7 @@ bool parseFunctionArguments(
 
             arguments->add(std::move(funArgument));
         } else {
-            // Functions cannot assign to their parameters, so borrowable strings are lent rather than copied.
-            auto argument = parseExpressionArgument(context, argumentType, function, tokens, ParameterAccess::ReadOnly);
+            auto argument = parseExpressionArgument(context, argumentType, function, tokens);
 
             if (argument == nullptr) {
                 return false;
@@ -1311,8 +1411,7 @@ std::unique_ptr<Argument> parseExpressionArgument(
     CompilerContext* context,
     const Type* argumentType,
     ScriptFunction* function,
-    Tokenizer* tokens,
-    const ParameterAccess parameterAccess
+    Tokenizer* tokens
 ) {
     auto expression = parseExpression(context, function, tokens);
 
@@ -1324,8 +1423,7 @@ std::unique_ptr<Argument> parseExpressionArgument(
         tokens->getLineIndex(),
         tokens->getColumnIndex(),
         argumentType,
-        std::move(expression),
-        parameterAccess
+        std::move(expression)
     );
 }
 

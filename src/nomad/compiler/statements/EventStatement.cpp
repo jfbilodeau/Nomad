@@ -3,6 +3,7 @@
 #include <nomad/compiler/statements/EventStatement.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
 namespace nomad {
@@ -42,25 +43,13 @@ bool preParseEventStatement(CompilerContext* context, ScriptFunction* /*function
             return false;
         }
 
-        const auto typeName = tokens->currentToken().textValue;
+        const auto* type = parser::parseType(context, tokens);
+        if (type == nullptr) {
+            return false;
+        }
 
-        // Consume typename
-        tokens->next();
-
+        const auto typeName = type->getTypeName();
         const auto typeId = context->getRuntime()->getTypeId(typeName);
-
-        if (typeId == NOMAD_INVALID_ID) {
-            context->reportError("Unknown type '" + typeName + "' for parameter '" + parameterName + "'", tokens);
-
-            return false;
-        }
-
-        if (const auto type = context->getRuntime()->getType(typeId); type && (*type)->isInternal()) {
-            context->reportError("Internal type '" + typeName + "' cannot be used for parameter '" + parameterName + "'", tokens);
-
-            return false;
-        }
-
         parameters.emplace_back(parameterName, typeId, typeName);
     }
 

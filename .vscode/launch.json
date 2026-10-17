@@ -148,7 +148,7 @@
       "name": "CMake: Run Tests",
       "type": "cppvsdbg",
       "request": "launch",
-      "preLaunchTask": "CMake: build tests",
+      // "preLaunchTask": "CMake: build tests",
       "program": "${env:ComSpec}",
       "args": [
         "/d",

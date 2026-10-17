@@ -5,8 +5,8 @@
 #include <nomad/geometry/Rectangle.hpp>
 #include <nomad/geometry/CircleF.hpp>
 
-#include <nomad/resource/ResourceManager.hpp>
-#include <nomad/resource/Texture.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
+#include <nomad/game/resource/Texture.hpp>
 
 #include <nomad/game/Game.hpp>
 

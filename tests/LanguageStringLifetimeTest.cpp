@@ -24,9 +24,6 @@ struct LifetimeCase {
     const char* expectedText;
 };
 
-// Live strings at the start of `execute`, so nativeFunctions can report allocations made by the function itself.
-NomadInteger s_liveStringBaseline = 0;
-
 void registerLifetimeNativeFunctions(Runtime& runtime, std::vector<NomadString>& consumed) {
     runtime.registerNativeFunction(
         "test.name",
@@ -41,7 +38,7 @@ void registerLifetimeNativeFunctions(Runtime& runtime, std::vector<NomadString>&
     runtime.registerNativeFunction(
         "test.echo",
         [](VirtualMachine* virtualMachine) {
-            virtualMachine->setStringResult(virtualMachine->getStringParameter(0));
+            virtualMachine->setStringResult(virtualMachine->getStringParameter(0)->getString());
         },
         {
             defParameter("text", runtime.getStringType(), NomadParamDoc("Text to return")),
@@ -53,50 +50,13 @@ void registerLifetimeNativeFunctions(Runtime& runtime, std::vector<NomadString>&
     runtime.registerNativeFunction(
         "test.consume",
         [&consumed](VirtualMachine* virtualMachine) {
-            consumed.emplace_back(virtualMachine->getStringParameter(0));
+            consumed.emplace_back(virtualMachine->getStringParameter(0)->getString());
         },
         {
             defParameter("text", runtime.getStringType(), NomadParamDoc("Text to record")),
         },
         runtime.getVoidType(),
         NomadDoc("Record a string")
-    );
-
-    runtime.registerNativeFunction(
-        "test.ref.consume",
-        [&consumed](VirtualMachine* virtualMachine) {
-            // A `$stringref` is only valid during the call: keep a copy.
-            consumed.emplace_back(virtualMachine->getStringParameter(0));
-        },
-        {
-            defParameter("text", runtime.getStringRefType(), NomadParamDoc("Text to record")),
-        },
-        runtime.getVoidType(),
-        NomadDoc("Record a borrowed string")
-    );
-
-    runtime.registerNativeFunction(
-        "test.ref.echo",
-        [](VirtualMachine* virtualMachine) {
-            virtualMachine->setStringResult(virtualMachine->getStringParameter(0));
-        },
-        {
-            defParameter("text", runtime.getStringRefType(), NomadParamDoc("Text to return")),
-        },
-        runtime.getStringType(),
-        NomadDoc("Return a copy of the borrowed string")
-    );
-
-    runtime.registerNativeFunction(
-        "test.ref.allocations",
-        [](VirtualMachine* virtualMachine) {
-            virtualMachine->setIntegerResult(RuntimeValue::getLiveStringCount() - s_liveStringBaseline);
-        },
-        {
-            defParameter("text", runtime.getStringRefType(), NomadParamDoc("Ignored")),
-        },
-        runtime.getIntegerType(),
-        NomadDoc("Return the number of strings allocated by the function so far")
     );
 }
 
@@ -111,8 +71,6 @@ FunctionOutcome runWithNativeFunctions(const NomadString& source, std::vector<No
 
         return outcome;
     }
-
-    s_liveStringBaseline = RuntimeValue::getLiveStringCount();
 
     return fixture.execute("main");
 }
@@ -149,11 +107,7 @@ BOOST_AUTO_TEST_CASE(live_string_counter_tracks_allocations)
     value.setStringValue("abc");
     BOOST_TEST(RuntimeValue::getLiveStringCount() == before + 1);
 
-    RuntimeValue reference;
-    reference.setStringRefValue(value.getStringValue());
-    BOOST_TEST(RuntimeValue::getLiveStringCount() == before + 1);
-
-    value.freeStringValue();
+    value.freeObjectValue();
     BOOST_TEST(RuntimeValue::getLiveStringCount() == before);
 }
 #endif
@@ -164,14 +118,13 @@ BOOST_AUTO_TEST_CASE(moving_string_values_transfers_ownership)
     source.setStringValue("abc");
 
     RuntimeValue destination;
-    destination.initStringValue();
-    destination.moveStringValue(source);
+    destination.moveObjectValue(source);
 
-    BOOST_TEST(source.getStringValue() == nullptr);
+    BOOST_TEST(source.getObjectValue() == nullptr);
     BOOST_TEST(destination.getStringValue() == "abc");
 
-    destination.freeStringValue();
-    BOOST_TEST(destination.getStringValue() == nullptr);
+    destination.freeObjectValue();
+    BOOST_TEST(destination.getObjectValue() == nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(discarded_string_results_are_freed)
@@ -239,90 +192,19 @@ BOOST_AUTO_TEST_CASE(format_string_expression_captures_and_results_do_not_leak)
     });
 }
 
-BOOST_AUTO_TEST_CASE(stringref_parameters_accept_any_string_expression)
+BOOST_AUTO_TEST_CASE(function_string_parameters_do_not_leak)
 {
-    std::vector<NomadString> consumed;
-    const auto outcome = runWithNativeFunctions(
-        "fun f a:string\n"
-        "    test.ref.consume a\n"
-        "    return a\n"
-        "end\n"
-        "s = \"variable\"\n"
-        "test.ref.consume \"literal\"\n"
-        "test.ref.consume s\n"
-        "test.ref.consume test.name\n"
-        "test.ref.consume $\"format {s}\"\n"
-        "test.ref.consume f \"function\"\n"
-        "return test.ref.echo s",
-        consumed
-    );
-
-    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
-    BOOST_TEST(!outcome.fault.has_value());
-    BOOST_TEST(outcome.text == "variable");
-    BOOST_TEST(outcome.leakedStrings == 0);
-
-    const std::vector<NomadString> expected{"literal", "variable", "name", "format variable", "function", "function"};
-    BOOST_TEST(consumed == expected, boost::test_tools::per_element());
-}
-
-#ifdef NOMAD_DEBUG
-BOOST_AUTO_TEST_CASE(stringref_arguments_borrow_without_copying)
-{
-    // A literal is borrowed from the string table: nothing is allocated.
-    BOOST_TEST(runWithNativeFunctions("return test.ref.allocations \"literal\"").integerValue == 0);
-
-    // A variable is borrowed: only the variable's own string is live.
-    BOOST_TEST(runWithNativeFunctions("s = \"a\"\nreturn test.ref.allocations s").integerValue == 1);
-
-    // A parameter is borrowed, and the literal was lent to the function: nothing is allocated.
-    BOOST_TEST(
-        runWithNativeFunctions("fun f a:string\n    return test.ref.allocations a\nend\nreturn f \"a\"").integerValue == 0
-    );
-
-    // An owned argument (a temporary) is still copied into the function: only it is live.
-    BOOST_TEST(
-        runWithNativeFunctions("fun f a:string\n    return test.ref.allocations a\nend\nreturn f test.name").integerValue == 1
-    );
-
-    // A temporary is owned for the duration of the call.
-    BOOST_TEST(runWithNativeFunctions("return test.ref.allocations test.name").integerValue == 1);
-}
-
-BOOST_AUTO_TEST_CASE(string_equality_on_borrowable_operands_allocates_nothing)
-{
-    // `test.ref.allocations` receives the borrowed literal, so only strings created by the comparison would count.
-    const auto outcome = runWithNativeFunctions(
-        "fun f a:string\n"
-        "    if a == \"x\"\n"
-        "        return test.ref.allocations \"\"\n"
-        "    end\n"
-        "    return -1\n"
-        "end\n"
-        "return f \"x\""
-    );
-
-    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
-    // The literal `"x"` is lent to `f`, so nothing is live.
-    BOOST_TEST(outcome.integerValue == 0);
-    BOOST_TEST(outcome.leakedStrings == 0);
-}
-#endif
-
-BOOST_AUTO_TEST_CASE(stringref_type_cannot_be_declared)
-{
-    BOOST_TEST(!compileErrors("fun f a:$stringref\n    return 1\nend\nreturn f \"x\"").empty());
-    BOOST_TEST(!compileErrors("params a:$stringref\nreturn 1").empty());
-    BOOST_TEST(!compileErrors("fun f a:$file\n    return 1\nend\nreturn 1").empty());
-}
-
-BOOST_AUTO_TEST_CASE(stringref_parameters_reject_non_string_arguments)
-{
-    std::vector<NomadString> consumed;
-    const auto outcome = runWithNativeFunctions("test.ref.consume 1\nreturn 1", consumed);
-
-    BOOST_TEST(!outcome.compiled);
-    BOOST_TEST(outcome.diagnostics.find("Argument type mismatch") != NomadString::npos);
+    checkCases({
+        {"fun id a:string\n    return a\nend\nreturn id \"x\"", "x"},
+        {"fun id a:string\n    return a\nend\ns = \"x\"\nreturn id s", "x"},
+        {"fun inner a:string\n    return a\nend\nfun outer a:string\n    return inner a\nend\nreturn outer \"x\"", "x"},
+        {"fun id a:string\n    return a\nend\nreturn id test.name", "name"},
+        {"fun id a:string\n    return a\nend\ns = \"x\"\nreturn id $\"[{s}]\"", "[x]"},
+        {"fun v\n    return \"v\"\nend\nfun id a:string\n    return a\nend\nreturn id v", "v"},
+        {"fun f a:string\n    b = a\n    return b\nend\nreturn f \"x\"", "x"},
+        {"fun join a:string b:string c:string\n    return $\"{a}{b}{c}\"\nend\ns = \"s\"\nreturn join s test.name \"l\"", "snamel"},
+        {"fun id a:string\n    return a\nend\nreturn (id \"x\") == \"x\"", "true"},
+    });
 }
 
 BOOST_AUTO_TEST_CASE(null_string_converts_to_empty_text)
@@ -332,6 +214,8 @@ BOOST_AUTO_TEST_CASE(null_string_converts_to_empty_text)
     fixture.getRuntime().getStringType()->initValue(value);
 
     BOOST_TEST(fixture.getRuntime().getStringType()->toString(value) == "");
+
+    fixture.getRuntime().getStringType()->freeValue(value);
 }
 
 BOOST_AUTO_TEST_CASE(discarded_closure_string_result_is_freed)
@@ -362,21 +246,19 @@ BOOST_AUTO_TEST_CASE(discarded_closure_string_result_is_freed)
     BOOST_TEST(RuntimeValue::getLiveStringCount() == before);
 }
 
-BOOST_AUTO_TEST_CASE(hidden_source_arguments_are_borrowed)
+BOOST_AUTO_TEST_CASE(hidden_source_arguments_are_passed_as_strings)
 {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     NomadString fileName;
     NomadString functionName;
     NomadInteger lineNumber = 0;
-    NomadInteger allocations = -1;
 
     runtime.registerNativeFunction(
         "test.source",
         [&](VirtualMachine* virtualMachine) {
-            allocations = RuntimeValue::getLiveStringCount() - s_liveStringBaseline;
-            fileName = virtualMachine->getStringParameter(0);
-            functionName = virtualMachine->getStringParameter(1);
+            fileName = virtualMachine->getStringParameter(0)->getString();
+            functionName = virtualMachine->getStringParameter(1)->getString();
             lineNumber = virtualMachine->getIntegerParameter(2);
         },
         {
@@ -391,38 +273,16 @@ BOOST_AUTO_TEST_CASE(hidden_source_arguments_are_borrowed)
     fixture.addFunction("main", "x = 1\ntest.source\nreturn 1");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
 
-    s_liveStringBaseline = RuntimeValue::getLiveStringCount();
     const auto outcome = fixture.execute("main");
 
     BOOST_TEST(!outcome.fault.has_value());
     BOOST_TEST(fileName == "main.nomad");
     BOOST_TEST(functionName == "main");
     BOOST_TEST(lineNumber == 2);
-    BOOST_TEST(allocations == 0);
     BOOST_TEST(outcome.leakedStrings == 0);
 }
 
-BOOST_AUTO_TEST_CASE(function_string_parameters_do_not_leak)
-{
-    checkCases({
-        // Borrowable arguments: literal, local variable, and the caller's own parameter.
-        {"fun id a:string\n    return a\nend\nreturn id \"x\"", "x"},
-        {"fun id a:string\n    return a\nend\ns = \"x\"\nreturn id s", "x"},
-        {"fun inner a:string\n    return a\nend\nfun outer a:string\n    return inner a\nend\nreturn outer \"x\"", "x"},
-        // Owned arguments: nativeFunction result, format string, function result, context variable.
-        {"fun id a:string\n    return a\nend\nreturn id test.name", "name"},
-        {"fun id a:string\n    return a\nend\ns = \"x\"\nreturn id $\"[{s}]\"", "[x]"},
-        {"fun v\n    return \"v\"\nend\nfun id a:string\n    return a\nend\nreturn id v", "v"},
-        // A borrowed parameter copied into a local.
-        {"fun f a:string\n    b = a\n    return b\nend\nreturn f \"x\"", "x"},
-        // Multiple string parameters mixing borrowed and owned arguments.
-        {"fun join a:string b:string c:string\n    return $\"{a}{b}{c}\"\nend\ns = \"s\"\nreturn join s test.name \"l\"", "snamel"},
-        // Function call as an expression inside a comparison.
-        {"fun id a:string\n    return a\nend\nreturn (id \"x\") == \"x\"", "true"},
-    });
-}
-
-BOOST_AUTO_TEST_CASE(function_parameters_borrowed_from_context_variables_are_copies)
+BOOST_AUTO_TEST_CASE(function_parameters_keep_their_value_when_context_variables_change)
 {
     std::vector<NomadString> consumed;
     const auto outcome = runWithNativeFunctions(
@@ -441,15 +301,15 @@ BOOST_AUTO_TEST_CASE(function_parameters_borrowed_from_context_variables_are_cop
     BOOST_TEST(!outcome.fault.has_value());
     BOOST_TEST(outcome.text == "B");
 #ifdef NOMAD_DEBUG
-    // `global.x` still owns "B"; nothing else is live.
-    BOOST_TEST(outcome.leakedStrings == 1);
+    // `global.x` holds the literal "B", which is owned by the string table; nothing else is live.
+    BOOST_TEST(outcome.leakedStrings == 0);
 #endif
 
     const std::vector<NomadString> expected{"A", "A"};
     BOOST_TEST(consumed == expected, boost::test_tools::per_element());
 }
 
-BOOST_AUTO_TEST_CASE(context_variables_passed_to_functions_are_copied)
+BOOST_AUTO_TEST_CASE(context_variables_passed_to_functions_are_shared)
 {
     const std::vector<LifetimeCase> cases = {
         {"global.text = \"g\"\nfun id a:string\n    return a\nend\nreturn id global.text", "g"},
@@ -465,14 +325,14 @@ BOOST_AUTO_TEST_CASE(context_variables_passed_to_functions_are_copied)
             BOOST_TEST(!outcome.fault.has_value());
             BOOST_TEST(outcome.text == expectedText);
 #ifdef NOMAD_DEBUG
-            // `global.text` still owns its string; nothing else is live.
-            BOOST_TEST(outcome.leakedStrings == 1);
+            // `global.text` may still own a string created at run time; nothing else is live.
+            BOOST_TEST(outcome.leakedStrings <= 1);
 #endif
         }
     }
 }
 
-BOOST_AUTO_TEST_CASE(closures_capture_copies_of_borrowed_parameters)
+BOOST_AUTO_TEST_CASE(closures_keep_captured_parameters_alive)
 {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
@@ -492,7 +352,6 @@ BOOST_AUTO_TEST_CASE(closures_capture_copies_of_borrowed_parameters)
         NomadDoc("Store a callback returning a string")
     );
 
-    // `s` is lent to `keep` and freed when `main` returns; the closure must hold its own copy.
     fixture.addFunction(
         "main",
         "fun keep a:string\n"
@@ -512,7 +371,7 @@ BOOST_AUTO_TEST_CASE(closures_capture_copies_of_borrowed_parameters)
     BOOST_REQUIRE(!fixture.execute("main").fault.has_value());
     BOOST_REQUIRE(closure != nullptr);
 #ifdef NOMAD_DEBUG
-    // Only the captured copy is live.
+    // Only the captured string is live.
     BOOST_TEST(RuntimeValue::getLiveStringCount() - before == 1);
 #endif
 
@@ -526,37 +385,6 @@ BOOST_AUTO_TEST_CASE(closures_capture_copies_of_borrowed_parameters)
     BOOST_TEST(RuntimeValue::getLiveStringCount() == before);
 #endif
 }
-
-#ifdef NOMAD_DEBUG
-BOOST_AUTO_TEST_CASE(function_string_arguments_are_lent)
-{
-    // A local variable is lent: only the variable's own string is live inside the callee.
-    BOOST_TEST(
-        runWithNativeFunctions("fun f a:string\n    return test.ref.allocations a\nend\ns = \"a\"\nreturn f s").integerValue
-        == 1
-    );
-
-    // A parameter is lent onward: still nothing allocated.
-    BOOST_TEST(
-        runWithNativeFunctions(
-            "fun inner a:string\n    return test.ref.allocations a\nend\n"
-            "fun outer a:string\n    return inner a\nend\n"
-            "return outer \"a\""
-        )
-            .integerValue
-        == 0
-    );
-
-    // A context variable is copied.
-    BOOST_TEST(
-        runWithNativeFunctions(
-            "fun f a:string\n    return test.ref.allocations a\nend\nglobal.lent = \"a\"\nreturn f global.lent"
-        )
-            .integerValue
-        == 2
-    );
-}
-#endif
 
 BOOST_AUTO_TEST_CASE(function_parameters_are_read_only)
 {

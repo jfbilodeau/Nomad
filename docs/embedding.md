@@ -194,6 +194,87 @@ survive another evaluation; do not free the context's result manually.
 Different contexts have independent interpreter variables even when borrowing
 the same VM. Access to a shared context or VM must be serialized by the host.
 
+## Parameterized types
+
+`Runtime::registerParameterizedType(name, argumentCount, factory)` registers a
+type family. The factory receives resolved type arguments and returns a
+runtime-owned descriptor. `getParameterizedType(name, arguments)` registers a
+specialization on first use and reuses it on subsequent requests. Arguments must
+be non-void, public types owned by that runtime. Invalid requests are logged and
+return null.
+
+`getParameterizedTypeArgumentCount(name)` returns the registered family's arity,
+or an empty optional if the family is not registered.
+
+The collections module currently registers only `List` with one type argument.
+Hosts can request `getParameterizedType("List", {runtime.getIntegerType()})`.
+This creates a descriptor, not a list object. The compiler resolves parameterized
+annotations in script parameters, function parameters, and event declarations
+through the same registration API. Scripts can construct an empty list with
+`new List<int>`; each evaluation creates a distinct object.
+
+`ObjectTypeBase` provides shared reference-counted value handling and object
+opcodes. `ObjectType` supplies a name and type-argument metadata; its text
+representation is its type name. Its initial value is a null object reference,
+not a constructed collection. Specialized descriptors may override initialization
+and formatting. Strings reuse the base while retaining empty-string initialization.
+
+To make a configurable object type constructible, provide its third constructor
+argument, an `ObjectType::ObjectFactory`:
+
+```cpp
+auto descriptor = std::make_unique<nomad::ObjectType>(
+    "Example",
+    std::vector<const nomad::Type*>{},
+    [] { return new ExampleObject; }
+);
+runtime.registerType(std::move(descriptor));
+```
+
+The factory returns a new `NomadObject` with one owned reference. A missing factory
+means the type is not constructible; a factory returning null raises an error.
+The compiler checks `ObjectTypeBase::isConstructible()` before emitting construction.
+Specialized descriptors may override `isConstructible()` and `createObject()`, obeying
+the same ownership contract. Construction runs at evaluation time, not compilation
+time, in both compiled scripts and the interpreter. Constructor arguments are not
+supported yet.
+
+## Typed intrinsic methods
+
+Register an object method with the usual `registerIntrinsicMethod(...)` callback
+and read its receiver with `getIntrinsicReceiverAs<Object>()`:
+
+```cpp
+runtime.registerIntrinsicMethod(
+    runtime.getStringType(),
+    "textSize",
+    [](nomad::VirtualMachine* machine) {
+        const auto* receiver = machine->getIntrinsicReceiverAs<nomad::NomadStringObject>();
+        machine->setIntegerResult(static_cast<nomad::NomadInteger>(receiver->getLength()));
+    },
+    {},
+    runtime.getIntegerType(),
+    false,
+    NomadDoc("Return the number of bytes in the string.")
+);
+```
+
+The callback borrows the receiver for the duration of the call. Keeping it
+requires `addRef()` and a corresponding `releaseRef()`.
+
+The accessor uses `static_cast`, with no runtime C++ type check. The host must
+pair the registered Nomad type with its correct C++ object class and provide a
+valid receiver when invoking methods directly. Script type checking selects the
+method for the receiver's Nomad type; it cannot validate the host's C++ pairing.
+An incorrect pairing causes undefined behaviour.
+
+Use `getIntrinsicReceiverAs<const Object>()` to obtain a pointer to const.
+Calling the accessor outside an active intrinsic method faults.
+
+The header accessor can be instantiated inside a DLL for a class unknown to the
+VM. RTTI is not required by the accessor. DLLs must use compatible C++ ABI settings
+and remain loaded while their callbacks or objects are alive.
+
 ## Variable categories
 
 | Category | Read | Assign | Change type | Add new |

@@ -12,6 +12,7 @@ The SDK provides:
 
 | Module | Features |
 | --- | --- |
+| `nomad-collections` | Parameterized `List<T>` annotations and empty-list construction with `new`; collection operations are not available yet. |
 | `nomad-system` | Logging, math functions, conversions, and `system.exit`. |
 | `nomad-game` | Windows, input, graphics, audio, scenes, entities, and game resources. Requires `nomad-system`. |
 
@@ -29,6 +30,9 @@ Development commands use the modules in the selected SDK:
 
 ```text
 modules/
+  nomad-collections/
+    module.toml
+    ...
   nomad-system/
     module.toml
     ...

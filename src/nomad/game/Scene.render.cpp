@@ -2,7 +2,7 @@
 
 #include <nomad/game/Scene.hpp>
 
-#include <nomad/debug/DebugDraw.hpp>
+#include <nomad/game/debug/DebugDraw.hpp>
 
 #include <nomad/game/Canvas.hpp>
 #include <nomad/game/Game.hpp>

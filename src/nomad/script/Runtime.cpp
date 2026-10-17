@@ -7,7 +7,7 @@
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/IntrinsicMembers.hpp>
-#include <nomad/script/NativeFunctions.hpp>
+#include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -49,7 +49,6 @@ Runtime::Runtime() {
     registerType(std::make_unique<IntegerType>());
     registerType(std::make_unique<BooleanType>());
     registerType(std::make_unique<StringType>());
-    registerType(std::make_unique<StringRefType>());
     registerType(std::make_unique<FileNameType>());
     registerType(std::make_unique<FunctionNameType>());
     registerType(std::make_unique<FunctionLineNumberType>());
@@ -112,6 +111,7 @@ Runtime::Runtime() {
 
 //    register_keyword("stringId" NomadDoc("Load the string id of the given string"));
     registerKeyword("fun", NomadDoc("Function declaration"));
+    registerKeyword("new", NomadDoc("Constructs a new object"));
     registerKeyword("if", NomadDoc("if statement"));
     registerKeyword("else", NomadDoc("`else` branch of an `if` statement"));
     registerKeyword("end", NomadDoc("End of a `fun` or `if` statement"));
@@ -130,6 +130,10 @@ Runtime::~Runtime() {
         if (const auto* type = m_constantsMap.getVariableType(toNomadId(constantIndex))) {
             type->freeValue(m_constants[constantIndex]);
         }
+    }
+
+    for (auto* string : m_strings) {
+        string->releaseRef();
     }
 }
 
@@ -664,6 +668,66 @@ const EnumType* Runtime::registerEnum(
     return registeredType;
 }
 
+bool Runtime::registerParameterizedType(
+    const NomadString& name,
+    const NomadIndex argumentCount,
+    ParameterizedTypeFactory factory,
+    ParameterizedTypeInitializer initializer
+) {
+    if (name.empty() || argumentCount == 0 || !factory || getTypeByName(name) != nullptr ||
+        std::ranges::any_of(m_parameterizedTypes, [&](const auto& entry) { return entry.name == name; })) {
+        log::error("Cannot register parameterized type '" + name + "': invalid or duplicate definition");
+        return false;
+    }
+    m_parameterizedTypes.push_back({name, argumentCount, std::move(factory), std::move(initializer)});
+    return true;
+}
+
+std::optional<NomadIndex> Runtime::getParameterizedTypeArgumentCount(const NomadString& name) const {
+    const auto registration = std::ranges::find(m_parameterizedTypes, name, &ParameterizedTypeRegistration::name);
+    if (registration == m_parameterizedTypes.end()) {
+        return std::nullopt;
+    }
+    return registration->argumentCount;
+}
+
+const Type* Runtime::getParameterizedType(
+    const NomadString& name,
+    const std::vector<const Type*>& arguments
+) {
+    const auto registration = std::ranges::find(m_parameterizedTypes, name, &ParameterizedTypeRegistration::name);
+    if (registration == m_parameterizedTypes.end()) {
+        log::error("Unknown parameterized type '" + name + "'");
+        return nullptr;
+    }
+    if (arguments.size() != registration->argumentCount ||
+        std::ranges::any_of(arguments, [this](const Type* type) {
+            return !ownsType(type) || type->isVoid() || type->isInternal();
+        })) {
+        log::error("Invalid type arguments for '" + name + "'");
+        return nullptr;
+    }
+    for (const auto& entry : m_typeSpecializations) {
+        if (entry.name == name && entry.arguments == arguments) {
+            return entry.type;
+        }
+    }
+    const auto factory = registration->factory;
+    const auto initializer = registration->initializer;
+    auto type = factory(arguments);
+    if (type == nullptr || type->getTypeName().empty() || getTypeByName(type->getTypeName()) != nullptr) {
+        log::error("Factory for '" + name + "' returned an invalid or duplicate type");
+        return nullptr;
+    }
+    const auto* result = type.get();
+    registerType(std::move(type));
+    if (initializer) {
+        initializer(result);
+    }
+    m_typeSpecializations.push_back({name, arguments, result});
+    return result;
+}
+
 const Type* Runtime::getCallbackType(const std::vector<const Type*>& parameterTypes, const Type* returnType) {
     auto test_type = std::make_unique<FunctionType>(parameterTypes, returnType);
 
@@ -1005,10 +1069,6 @@ const Type* Runtime::getFloatType() const {
 
 const Type* Runtime::getStringType() const {
     return getTypeByName(STRING_TYPE_NAME);
-}
-
-const Type* Runtime::getStringRefType() const {
-    return getTypeByName(STRING_REF_TYPE_NAME);
 }
 
 const Type* Runtime::getFunctionType() const {
@@ -1446,14 +1506,14 @@ NomadId Runtime::registerString(const NomadString& string) {
 
     id = toNomadId(m_strings.size());
 
-    m_strings.push_back(string);
+    m_strings.push_back(NomadStringObject::create(string));
 
     return id;
 }
 
 NomadId Runtime::getStringId(const NomadString& string) const {
     for (NomadIndex i = 0; i < m_strings.size(); ++i) {
-        if (m_strings[i] == string) {
+        if (m_strings[i]->getView() == string) {
             return toNomadId(i);
         }
     }
@@ -1461,12 +1521,12 @@ NomadId Runtime::getStringId(const NomadString& string) const {
     return NOMAD_INVALID_ID;
 }
 
-const NomadString& Runtime::getString(const NomadId stringId) const {
+NomadStringObject* Runtime::getString(const NomadId stringId) const {
     const auto stringIndex = toNomadIndex(stringId);
     return m_strings[stringIndex];
 }
 
-const NomadString& Runtime::getStringByName(const NomadString& name) const {
+NomadStringObject* Runtime::getStringByName(const NomadString& name) const {
     const auto stringId = getStringId(name);
 
     return getString(stringId);
@@ -1576,36 +1636,12 @@ void Runtime::getDynamicVariableValue(VirtualMachine* interpreter, const NomadId
 }
 
 void Runtime::setStringDynamicVariable(VirtualMachine* interpreter, const NomadId id, const NomadString& value) {
-    setStringDynamicVariable(interpreter, id, value.c_str());
-}
-
-void Runtime::setStringDynamicVariable(VirtualMachine* interpreter, const NomadId id, const NomadChar* value) {
-    // The setter copies what it keeps, so the string is only borrowed.
     RuntimeValue stringValue;
-    stringValue.setStringRefValue(value);
-    setStringDynamicVariable(interpreter, id, stringValue);
-}
+    stringValue.setStringValue(value);
 
-void Runtime::setStringDynamicVariable(VirtualMachine* interpreter, const NomadId id, const RuntimeValue& value) {
-    const auto dynamicVariableIndex = toNomadIndex(id);
-    m_dynamicVariables[dynamicVariableIndex].setFn(interpreter, value);
-}
+    setDynamicVariable(interpreter, id, stringValue);
 
-void Runtime::getStringDynamicVariableValue(VirtualMachine* interpreter, const NomadId id, NomadString& value) const {
-    // Dynamic getters hand over an owned string.
-    RuntimeValue stringValue;
-
-    getStringDynamicVariableValue(interpreter, id, stringValue);
-
-    const auto* characters = stringValue.getStringValue();
-    value = characters != nullptr ? characters : "";
-
-    stringValue.freeStringValue();
-}
-
-void Runtime::getStringDynamicVariableValue(VirtualMachine* interpreter, NomadId id, RuntimeValue& value) const {
-    const auto dynamicVariableIndex = toNomadIndex(id);
-    m_dynamicVariables[dynamicVariableIndex].getFn(interpreter, value);
+    stringValue.freeObjectValue();
 }
 
 NomadId Runtime::getFirstDynamicVariableId() const {
@@ -1788,15 +1824,12 @@ void Runtime::getContextVariableValue(const NomadId contextVariableId, RuntimeVa
 }
 
 void Runtime::setStringContextVariableValue(const NomadId contextVariableId, const NomadString& value) const {
-    setStringContextVariableValue(contextVariableId, value.c_str());
-}
-
-void Runtime::setStringContextVariableValue(const NomadId contextVariableId, const NomadChar* value) const {
-    // The variable context copies what it keeps, so the string is only borrowed.
     RuntimeValue stringValue;
-    stringValue.setStringRefValue(value);
+    stringValue.setStringValue(value);
 
     setContextVariableValue(contextVariableId, stringValue);
+
+    stringValue.freeObjectValue();
 }
 
 void Runtime::getStringContextVariableValue(const NomadId contextVariableId, NomadString& value) const {
@@ -2177,7 +2210,7 @@ void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function
                     textValue = std::to_string(value.getFloatValue());
                     break;
                 case Operand::String:
-                    textValue = "\"" + getString(value.getIdValue()) + "\" (" + std::to_string(value.getIdValue()) + ")";
+                    textValue = "\"" + getString(value.getIdValue())->getString() + "\" (" + std::to_string(value.getIdValue()) + ")";
                     break;
                 case Operand::Id:
                     textValue = std::to_string(value.getIdValue());

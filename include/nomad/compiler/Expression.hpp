@@ -10,6 +10,8 @@
 
 namespace nomad {
 
+class ObjectTypeBase;
+
 ///////////////////////////////////////////////////////////////////////////////
 // Unary expressions
 ///////////////////////////////////////////////////////////////////////////////
@@ -204,6 +206,20 @@ private:
     NomadFloat m_value;
 };
 
+class NewObjectExpression final : public Expression {
+public:
+    NewObjectExpression(const Expression* parent, NomadIndex line, NomadIndex column, const ObjectTypeBase* type);
+    [[nodiscard]] bool isTerminal() const override;
+
+protected:
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onEvaluate(InterpreterContext& context) const override;
+
+private:
+    const ObjectTypeBase* m_objectType;
+};
+
 class StringLiteral : public PrimaryExpression {
 public:
     StringLiteral(const Expression* parent, NomadIndex line, NomadIndex column, const NomadString& value);
@@ -260,7 +276,6 @@ class IdentifierExpression final : public PrimaryExpression {
 public:
     explicit IdentifierExpression(const Expression* parent, NomadIndex line, NomadIndex column, const NomadString& identifier);
 
-    [[nodiscard]] bool canBorrow() const override;
     [[nodiscard]] bool isWritable() const override;
     [[nodiscard]] IdentifierExpression* asIdentifierExpression() override;
     [[nodiscard]] const IdentifierExpression* asIdentifierExpression() const override;
@@ -270,7 +285,6 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
-    void onCompileBorrowed(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:

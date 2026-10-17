@@ -100,16 +100,11 @@ public:
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptFunction* function);
     // The expression must have been resolved first.
     void compile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target);
-    // Can the expression lend a pointer to a string it does not own (`$stringref`) instead of producing a copy?
-    // Only literals/constants, function variables and parameters can: their storage outlives the borrowing operation.
-    [[nodiscard]] virtual bool canBorrow() const;
     [[nodiscard]] virtual bool isWritable() const;
     [[nodiscard]] virtual IdentifierExpression* asIdentifierExpression();
     [[nodiscard]] virtual const IdentifierExpression* asIdentifierExpression() const;
     [[nodiscard]] virtual IntrinsicMemberExpression* asIntrinsicExpression();
     [[nodiscard]] virtual const IntrinsicMemberExpression* asIntrinsicExpression() const;
-    // Load a borrowed string pointer into `target`. Only valid when `canBorrow()` is true.
-    void compileBorrowed(Compiler* compiler, ScriptFunction* function, ExpressionTarget target);
     // The expression must have been resolved first.
     void evaluate(InterpreterContext& context) const;
 
@@ -134,7 +129,6 @@ protected:
 
     virtual void onResolve(CompilerContext* context, ScriptFunction* function) = 0;
     virtual void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) = 0;
-    virtual void onCompileBorrowed(Compiler* compiler, ScriptFunction* function, ExpressionTarget target);
     virtual void onEvaluate(InterpreterContext& context) const;
     [[nodiscard]]
     virtual const Statement* onGetStatement() const;

@@ -792,23 +792,15 @@ std::unique_ptr<Statement> parseEventStatement(CompilerContext* context, ScriptF
     auto eventDecl = std::make_unique<EventDeclaration>(tokens->getLineIndex(), tokens->getColumnIndex(), eventName);
 
     while (!tokens->endOfLine()) {
-        NomadString paramName, typeName;
+        NomadString paramName;
 
-        if (!tokens->nextIdentifier(paramName) || !tokens->expect(":") || !tokens->nextIdentifier(typeName)) {
+        if (!tokens->nextIdentifier(paramName) || !tokens->expect(":")) {
             return nullptr;
         }
 
-        const auto type = context->getRuntime()->getTypeByName(typeName);
+        const auto* type = parser::parseType(context, tokens);
 
         if (type == nullptr) {
-            context->reportError("Unknown type '" + typeName + "' for parameter '" + paramName + "'", tokens);
-
-            return nullptr;
-        }
-
-        if (type->isInternal()) {
-            context->reportError("Internal type '" + typeName + "' cannot be used for parameter '" + paramName + "'", tokens);
-
             return nullptr;
         }
 
@@ -1102,11 +1094,10 @@ bool preParseParamsStatement(CompilerContext* context, ScriptFunction* function,
     }
 
     while (!tokens->endOfLine()) {
-        NomadString parameterName, parameterTypeName;
+        NomadString parameterName;
 
         if (!tokens->nextIdentifier(parameterName) ||
-            !tokens->expect(":") ||
-            !tokens->nextIdentifier(parameterTypeName)) {
+            !tokens->expect(":")) {
             return false;
         }
 
@@ -1116,17 +1107,9 @@ bool preParseParamsStatement(CompilerContext* context, ScriptFunction* function,
             return false;
         }
 
-        auto parameterType = context->getRuntime()->getTypeByName(parameterTypeName);
+        const auto* parameterType = parser::parseType(context, tokens);
 
         if (parameterType == nullptr) {
-            context->reportError("Unknown type '" + parameterTypeName + "' for parameter", tokens);
-
-            return false;
-        }
-
-        if (parameterType->isInternal()) {
-            context->reportError("Internal type '" + parameterTypeName + "' cannot be used for parameter '" + parameterName + "'", tokens);
-
             return false;
         }
 

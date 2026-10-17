@@ -48,10 +48,6 @@ bool Type::needsFree() const {
     return m_typeOpCodes.freeResult != nullptr;
 }
 
-bool Type::isReference() const {
-    return false;
-}
-
 bool Type::acceptsArgument(const Type* argumentType) const {
     return sameType(argumentType);
 }
@@ -276,57 +272,126 @@ void BooleanType::toString(const RuntimeValue& value, NomadString& string) const
 
 ///////////////////////////////////////////////////////////////////////////////
 // BaseStringType
-BaseStringType::BaseStringType() {
-    m_typeOpCodes.initResult = op_string_init_r;
-    m_typeOpCodes.initIntermediate = op_string_init_i;
+ObjectTypeBase::ObjectTypeBase() {
+    m_typeOpCodes.initResult = op_object_init_r;
+    m_typeOpCodes.initIntermediate = op_object_init_i;
 
-    m_typeOpCodes.freeResult = op_string_free_r;
-    m_typeOpCodes.freeIntermediate = op_string_free_i;
-    m_typeOpCodes.freeStack = op_string_free_stack;
-    m_typeOpCodes.freeFunctionVariable = op_string_free_variable;
+    m_typeOpCodes.freeResult = op_object_free_r;
+    m_typeOpCodes.freeIntermediate = op_object_free_i;
+    m_typeOpCodes.freeStack = op_object_free_stack;
+    m_typeOpCodes.freeFunctionVariable = op_object_free_variable;
 
     m_typeOpCodes.loadFunctionVariable = {
-        op_function_variable_string_get_r, op_function_variable_string_get_i, op_function_variable_string_push
+        op_function_variable_object_get_r, op_function_variable_object_get_i, op_function_variable_object_push
     };
     m_typeOpCodes.loadParameter = {
-        op_string_parameter_load_r, op_string_parameter_load_i, op_string_parameter_push
+        op_object_parameter_load_r, op_object_parameter_load_i, op_object_parameter_push
     };
+    // Dynamic getters hand over an owned object.
     m_typeOpCodes.loadDynamicVariable = {
-        op_dynamic_variable_string_get_r, op_dynamic_variable_string_get_i, op_dynamic_variable_string_push
+        op_dynamic_variable_get_r, op_dynamic_variable_get_i, op_dynamic_variable_push
     };
     m_typeOpCodes.loadContextVariable = {
-        op_context_variable_string_get_r, op_context_variable_string_get_i, op_context_variable_string_push
+        op_context_variable_object_get_r, op_context_variable_object_get_i, op_context_variable_object_push
     };
 
-    m_typeOpCodes.copyResultToStack = op_string_push_r;
-    m_typeOpCodes.moveResultToIntermediate = op_string_move_r_to_i;
-    m_typeOpCodes.moveIntermediateToResult = op_string_move_i_to_r;
-    m_typeOpCodes.moveResultToStack = op_string_move_r_to_stack;
-    m_typeOpCodes.pushIntermediate = op_string_push_i;
-    m_typeOpCodes.popResult = op_string_pop_r;
-    m_typeOpCodes.popIntermediate = op_string_pop_i;
+    m_typeOpCodes.copyResultToStack = op_object_push_r;
+    m_typeOpCodes.moveResultToIntermediate = op_object_move_r_to_i;
+    m_typeOpCodes.moveIntermediateToResult = op_object_move_i_to_r;
+    m_typeOpCodes.moveResultToStack = op_object_move_r_to_stack;
+    m_typeOpCodes.pushIntermediate = op_object_push_i;
+    m_typeOpCodes.popResult = op_object_pop_r;
+    m_typeOpCodes.popIntermediate = op_object_pop_i;
 
     // The compiler frees the previous value, then `r` is moved into the variable.
     m_typeOpCodes.setFunctionVariable = op_function_variable_set;
-    m_typeOpCodes.setDynamicVariable = op_dynamic_variable_string_set;
-    m_typeOpCodes.setContextVariable = op_context_variable_string_set;
+    m_typeOpCodes.setDynamicVariable = op_dynamic_variable_set;
+    m_typeOpCodes.setContextVariable = op_context_variable_set;
+}
+
+void ObjectTypeBase::initValue(RuntimeValue& value) const {
+    value.setObjectValue(nullptr);
+}
+
+void ObjectTypeBase::freeValue(RuntimeValue& value) const {
+    value.freeObjectValue();
+}
+
+void ObjectTypeBase::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
+    if (&sourceValue == &destinationValue) {
+        return;
+    }
+    RuntimeValue copy;
+    copy.copyObjectValue(sourceValue);
+    destinationValue.freeObjectValue();
+    destinationValue = copy;
+}
+
+bool ObjectTypeBase::sameType(const Type* other) const {
+    return this == other;
+}
+
+bool ObjectTypeBase::isConstructible() const {
+    return false;
+}
+
+NomadObject* ObjectTypeBase::createObject() const {
+    throw NomadException("Type '" + getTypeName() + "' is not constructible");
+}
+
+ObjectType::ObjectType(
+    NomadString name,
+    std::vector<const Type*> typeArguments,
+    ObjectFactory factory
+):
+    m_name(std::move(name)),
+    m_typeArguments(std::move(typeArguments)),
+    m_factory(std::move(factory))
+{
+}
+
+bool ObjectType::isConstructible() const {
+    return static_cast<bool>(m_factory);
+}
+
+NomadObject* ObjectType::createObject() const {
+    if (!m_factory) {
+        return ObjectTypeBase::createObject();
+    }
+    auto* object = m_factory();
+    if (object == nullptr) {
+        throw NomadException("Object factory for '" + getTypeName() + "' returned null");
+    }
+    return object;
+}
+
+NomadString ObjectType::getTypeName() const {
+    return m_name;
+}
+
+const std::vector<const Type*>& ObjectType::getTypeArguments() const {
+    return m_typeArguments;
+}
+
+void ObjectType::toString(const RuntimeValue&, NomadString& string) const {
+    string = m_name;
+}
+
+BaseStringType::BaseStringType() {
+    m_typeOpCodes.initResult = op_string_init_r;
+    m_typeOpCodes.initIntermediate = op_string_init_i;
 }
 
 void BaseStringType::initValue(RuntimeValue& value) const {
-    value.setNullStringValue();
+    value.initStringValue();
 }
 
-void BaseStringType::freeValue(RuntimeValue& value) const {
-    value.freeStringValue();
-}
-
-void BaseStringType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.setStringValue(sourceValue.getStringValue());
+bool BaseStringType::sameType(const Type* other) const {
+    return Type::sameType(other);
 }
 
 void BaseStringType::toString(const RuntimeValue& value, NomadString& string) const {
-    const auto* text = value.getStringValue();
-    string = text == nullptr ? "" : text;
+    string = value.getStringValue();
 }
 
 bool BaseStringType::isString() const {
@@ -337,31 +402,6 @@ bool BaseStringType::isString() const {
 // StringType
 NomadString StringType::getTypeName() const {
     return STRING_TYPE_NAME;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// BaseStringRefType
-void BaseStringRefType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.setStringRefValue(sourceValue.getStringValue());
-}
-
-void BaseStringRefType::toString(const RuntimeValue& value, NomadString& string) const {
-    const auto* text = value.getStringValue();
-    string = text == nullptr ? "" : text;
-}
-
-bool BaseStringRefType::isReference() const {
-    return true;
-}
-
-bool BaseStringRefType::acceptsArgument(const Type* argumentType) const {
-    return sameType(argumentType) || (argumentType != nullptr && argumentType->isString());
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// StringRefType
-NomadString StringRefType::getTypeName() const {
-    return STRING_REF_TYPE_NAME;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
