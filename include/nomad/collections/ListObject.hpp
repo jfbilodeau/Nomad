@@ -2,12 +2,14 @@
 
 #pragma once
 
-#include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/NomadObject.hpp>
+#include <nomad/script/RuntimeValue.hpp>
 
 #include <vector>
 
 namespace nomad {
+
+class Type;
 
 class ListObject final : public NomadObject {
 public:
@@ -21,7 +23,7 @@ public:
 
 private:
     const Type* m_elementType;
-    std::vector<TypedValue> m_values;
+    std::vector<RuntimeValue> m_values;
 };
 
 } // namespace nomad

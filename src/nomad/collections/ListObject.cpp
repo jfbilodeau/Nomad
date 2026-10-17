@@ -14,7 +14,11 @@ ListObject::ListObject(const Type* elementType):
     }
 }
 
-ListObject::~ListObject() = default;
+ListObject::~ListObject() {
+    for (auto& value : m_values) {
+        m_elementType->freeValue(value);
+    }
+}
 
 const Type* ListObject::getElementType() const {
     return m_elementType;
@@ -25,7 +29,15 @@ NomadIndex ListObject::getCount() const {
 }
 
 void ListObject::push(const RuntimeValue& value) {
-    m_values.emplace_back(m_elementType, value);
+    RuntimeValue storedValue;
+    m_elementType->initValue(storedValue);
+    try {
+        m_elementType->copyValue(value, storedValue);
+        m_values.push_back(storedValue);
+    } catch (...) {
+        m_elementType->freeValue(storedValue);
+        throw;
+    }
 }
 
 } // namespace nomad

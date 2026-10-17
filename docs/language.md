@@ -13,7 +13,7 @@ Nomad is case‑sensitive.
 - [Comments](#comments)
 - [Identifiers and naming rules](#identifiers-and-naming-rules)
 - [Data types and numeric ranges](#data-types-and-numeric-ranges)
-- [Object types and intrinsic members](#object-types-and-intrinsic-members)
+- [Object types and members](#object-types-and-members)
 - [Variables and variable kinds](#variables-and-variable-kinds)
 - [Constants and predefined values](#constants-and-predefined-values)
 - [Enumerations (`enum`)](#enums)
@@ -138,7 +138,7 @@ Numeric literal notes:
 
 ---
 
-## Object types and intrinsic members
+## Object types and members
 
 ### Object construction
 
@@ -158,13 +158,13 @@ change `alias`. References are retained through function arguments and return
 values, and an object is released when its last reference is discarded.
 
 The `nomad-collections` module currently supports constructing empty `List<T>`
-objects only. Constructor arguments, collection storage, members, and indexing are
-not available yet. Primitive types and strings cannot be constructed with `new`.
+objects only. Lists support `push` and read-only `count`. Constructor arguments and
+indexing are not available yet. Primitive types and strings cannot be constructed with `new`.
 Construction is also available in interpreter expressions.
 
-### Intrinsic members
+### Properties and methods
 
-Built-in and host-defined types may register intrinsic properties and methods. A value of that type exposes those members through postfix dot syntax:
+Values expose the properties and methods provided by their type through dot syntax:
 
 ```nomad
 name = "Nomad"
@@ -180,14 +180,14 @@ upperLength = name.toUpper.length
 literalLength = "Nomad".length
 ```
 
-Properties may be read-only, write-only or read/write. Native object methods act directly
-on their instance. They may change the object even when its reference comes from a
+Properties may be read-only, write-only or read/write. Object methods may change
+their instance even when its reference comes from a
 read-only parameter or a temporary; this does not reassign the reference.
 
-Existing value-style intrinsic members that replace their receiver require a writable
-variable receiver, not a literal, constant, parameter, function result or other
-temporary. Receiver replacement is committed only after the callback succeeds.
-Changes to an object's contents are immediate and are not rolled back if a method fails.
+Members that replace a value require a writable variable, not a literal, constant,
+parameter, function result or other temporary. The replacement takes effect only
+if the operation succeeds. Changes to an object's contents are immediate and are
+not rolled back if a method fails.
 
 ```nomad
 fun append values:List<int>
@@ -197,11 +197,11 @@ end
 
 Assigning a new reference to the parameter itself remains invalid.
 
-Nomad does not currently support script-defined object types or script-defined intrinsic members.
+Nomad does not currently support defining object types, properties, or methods in scripts.
 
-The available members for each registered object type are listed in the generated [engine API](engine-api.md#intrinsic-members).
+The available members for each object type are listed in the [engine API](engine-api.md#intrinsic-members).
 
-Intrinsic member names share the identifier namespace with dotted identifiers. Assigning a type to a variable is rejected if that type would introduce a qualified member name that already exists:
+Member names share the identifier namespace with dotted identifiers. Assigning a type to a variable is rejected if that type would introduce a qualified member name that already exists:
 
 ```nomad
 name.length = 10
@@ -350,7 +350,7 @@ Assertions are compiled into the function and are intended for detecting invalid
 Format strings allow embedding values using `$"..."`. Simple `{name}` placeholders
 use direct lookup of variables, parameters, constants, or parameterless script
 functions. Other placeholders accept normal expressions, including operators,
-parentheses, native and script function calls with arguments, and intrinsic members.
+parentheses, native and script function calls with arguments, and object members.
 Each expression must return a non-void value. Placeholders are evaluated from left
 to right using current values; expression results are converted to text.
 
@@ -383,7 +383,7 @@ are compilation errors, not inline error text. Bare native function names still
 use the simple-placeholder rules; use a call with arguments or a parenthesized
 expression to select expression parsing. Intrinsic members such as `{name.toUpper}`
 and `{name.length}` do not require parentheses. An exact qualified identifier takes
-precedence over intrinsic member access.
+precedence over object member access.
 
 ### Format string operator
 
@@ -690,18 +690,11 @@ Because a call is parsed before its overload is chosen, every overload of a name
 
 Overloading applies to native functions. Functions written in Nomad are not overloadable: one name means one function.
 
-### String lifetime (host integration)
+### String lifetime
 
-Script authors only ever see `string`. Internally, the runtime manages string memory with these rules:
-
-- **Strings are reference-counted objects.** Copying a string value (assigning, passing, returning) shares the same string and never copies its text. The string is freed when the last reference to it is released.
-- **The compiler manages the lifetime of temporaries.** For strings held in registers, on the stack, in parameters, locals or return values, the compiler emits the instructions that retain and release them, using each type's `TypeOpCodes` (`getTypeOpCodes()`). Discarded string results, including native function and function results used as statements, are released.
-- **Containers own a reference.** Context, dynamic and constant variables keep a reference to their string. Assigning a new string to one releases the previous value.
-- **Native functions receive `NomadStringObject*`.** `getStringParameter(i)` returns the string passed to the function. It is valid for the duration of the call; code that keeps it must call `addRef()` and later `releaseRef()`, or copy the text. Use `getString()`, `getText()` or `getView()` to read it. Strings are never null: an uninitialized string is the shared empty string.
-- **Hidden source parameters** `$file` and `$function` are passed to native functions as strings. `$line` is an `int`.
-- **`Runtime::executeFunction` / `Game::executeFunction`:** overloads that take a `returnValue` give the caller a reference, which must be released through the function's return type. Overloads without `returnValue` release the result.
-
-Limitation: if a function faults (the VM throws), strings held by temporaries at that point are not freed.
+String memory is managed automatically. Assigning, passing, or returning a string
+preserves its value without requiring manual cleanup. An uninitialized string is
+empty, not null. Host integration details are covered in the [embedding guide](embedding.md).
 
 ---
 

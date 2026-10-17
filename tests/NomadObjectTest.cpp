@@ -31,9 +31,43 @@ private:
     NomadIndex& m_destroyed;
 };
 
+class FailingCopyType final : public ObjectTypeBase {
+public:
+    NomadString getTypeName() const override;
+    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override;
+};
+
+NomadString FailingCopyType::getTypeName() const {
+    return "FailingCopy";
+}
+
+void FailingCopyType::toString(const RuntimeValue&, NomadString& string) const {
+    string = getTypeName();
+}
+
+void FailingCopyType::copyValue(const RuntimeValue& source, RuntimeValue& destination) const {
+    ObjectTypeBase::copyValue(source, destination);
+    throw NomadException("Copy failed");
+}
+
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(NomadObjectTests)
+
+BOOST_AUTO_TEST_CASE(ListReleasesPartialCopyWhenPushFails) {
+    FailingCopyType elementType;
+    NomadIndex destroyed = 0;
+    auto* list = new ListObject(&elementType);
+    RuntimeValue value;
+    value.setObjectValue(new CountingObject(destroyed));
+    BOOST_CHECK_THROW(list->push(value), NomadException);
+    BOOST_TEST(list->getCount() == 0u);
+    BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
+    list->releaseRef();
+    elementType.freeValue(value);
+    BOOST_TEST(destroyed == 1u);
+}
 
 BOOST_AUTO_TEST_CASE(ListRetainsAndReleasesStoredObjects) {
     ObjectType elementType("Element");
