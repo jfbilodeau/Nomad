@@ -19,6 +19,12 @@ add_library(nomad-system SHARED
 )
 add_library(nomad-game SHARED ${NOMAD_GAME_SOURCES})
 add_library(nomad-collections SHARED
+    ${NOMAD_INCLUDE_DIR}/nomad/collections/Array1dObject.hpp
+    ${NOMAD_INCLUDE_DIR}/nomad/collections/Array2dObject.hpp
+    ${NOMAD_INCLUDE_DIR}/nomad/collections/Array3dObject.hpp
+    ${NOMAD_INCLUDE_DIR}/nomad/collections/ListObject.hpp
+    ${NOMAD_INCLUDE_DIR}/nomad/collections/MapObject.hpp
+
     ${NOMAD_SOURCE_DIR}/nomad/collections/CollectionsModule.cpp
 )
 nomad_configure_runtime_target(nomad-collections)

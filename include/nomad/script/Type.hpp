@@ -306,42 +306,6 @@ public:
     [[nodiscard]] bool sameType(const Type* other) const override;
 };
 
-const NomadString MAP_TYPE_NAME = "map";
-class MapType final : public Type {
-public:
-    MapType(const Type* keyType, const Type* valueType);
-
-    [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
-    [[nodiscard]] bool sameType(const Type* other) const override;
-
-    [[nodiscard]] const Type* getKeyType() const;
-    [[nodiscard]] const Type* getValueType() const;
-
-private:
-    const Type* m_keyType;
-    const Type* m_valueType;
-};
-
-const NomadString ARRAY_TYPE_NAME = "array";
-class ArrayType final : public Type {
-public:
-    ArrayType(NomadIndex dimension, const Type* valueType);
-
-    [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
-    [[nodiscard]] bool sameType(const Type* other) const override;
-
-    [[nodiscard]] const Type* getDimension() const;
-    [[nodiscard]] const Type* getValueType() const;
-
-private:
-    const NomadIndex m_dimension;
-    const Type* m_valueType;
-};
-
 } // nomad
 
 #endif // NOMAD_TYPE_HPP

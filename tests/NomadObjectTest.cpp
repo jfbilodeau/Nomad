@@ -1,5 +1,11 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/collections/Array1dObject.hpp>
+#include <nomad/collections/Array2dObject.hpp>
+#include <nomad/collections/Array3dObject.hpp>
+#include <nomad/collections/ListObject.hpp>
+#include <nomad/collections/MapObject.hpp>
+
 #include <nomad/script/NomadObject.hpp>
 
 #include <boost/test/unit_test.hpp>
@@ -27,6 +33,24 @@ private:
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(NomadObjectTests)
+
+BOOST_AUTO_TEST_CASE(CollectionObjectsUseReferenceCounting) {
+    const auto before = NomadObject::getLiveObjectCount();
+    for (auto* object : {
+        static_cast<NomadObject*>(new Array1dObject),
+        static_cast<NomadObject*>(new Array2dObject),
+        static_cast<NomadObject*>(new Array3dObject),
+        static_cast<NomadObject*>(new ListObject),
+        static_cast<NomadObject*>(new MapObject)
+    }) {
+        BOOST_TEST(object->getReferenceCount() == 1U);
+        object->addRef();
+        BOOST_TEST(object->getReferenceCount() == 2U);
+        object->releaseRef();
+        object->releaseRef();
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
 
 BOOST_AUTO_TEST_CASE(NewObjectHasOneReference) {
     NomadIndex destroyed = 0;
