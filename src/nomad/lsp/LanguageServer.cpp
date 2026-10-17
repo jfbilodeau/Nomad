@@ -143,8 +143,7 @@ ApiAnalysis analyzeApiSymbols(
             const auto shape = runtime->getParameterShape(parameter.type);
             if (shape == ParameterShape::SourceFile || shape == ParameterShape::SourceFunction ||
                 shape == ParameterShape::SourceLine) continue;
-            const auto typeName = parameter.type == runtime->getStringRefType()
-                ? runtime->getStringType()->getTypeName() : parameter.type->getTypeName();
+            const auto typeName = parameter.type->getTypeName();
             signature += " " + parameter.name + ":" + typeName;
             if (!parameter.doc.empty()) {
                 documentation += "\n\n- `" + parameter.name + "`: " + parameter.doc;
@@ -200,8 +199,7 @@ ApiAnalysis analyzeApiSymbols(
             auto signature = receiver + "." + definition.name;
             auto documentation = definition.doc;
             for (const auto& parameter : definition.parameters) {
-                const auto typeName = parameter.type == runtime->getStringRefType()
-                    ? runtime->getStringType()->getTypeName() : parameter.type->getTypeName();
+                const auto typeName = parameter.type->getTypeName();
                 signature += " " + parameter.name + ":" + typeName;
                 if (!parameter.doc.empty()) documentation += "\n\n- `" + parameter.name + "`: " + parameter.doc;
             }

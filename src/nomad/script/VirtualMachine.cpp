@@ -4,6 +4,7 @@
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>
@@ -448,30 +449,30 @@ void VirtualMachine::pushIntermediate() {
     m_stack[m_stackIndex] = m_intermediate;
 }
 
-void VirtualMachine::pushStringResult() {
+void VirtualMachine::pushObjectResult() {
     m_stackIndex++;
     TEST_STACK_OVERFLOW
-    m_stack[m_stackIndex].copyStringValue(m_result);
+    m_stack[m_stackIndex].copyObjectValue(m_result);
 }
 
-void VirtualMachine::pushStringIntermediate() {
+void VirtualMachine::pushObjectIntermediate() {
     m_stackIndex++;
     TEST_STACK_OVERFLOW
-    m_stack[m_stackIndex].moveStringValue(m_intermediate);
+    m_stack[m_stackIndex].moveObjectValue(m_intermediate);
 }
 
-void VirtualMachine::moveStringResultToStack() {
+void VirtualMachine::moveObjectResultToStack() {
     m_stackIndex++;
     TEST_STACK_OVERFLOW
-    m_stack[m_stackIndex].moveStringValue(m_result);
+    m_stack[m_stackIndex].moveObjectValue(m_result);
 }
 
-void VirtualMachine::freeStringVariable(const NomadIndex variable_index) {
-    m_stack[m_variableIndex + variable_index].freeStringValue();
+void VirtualMachine::freeObjectVariable(const NomadIndex variable_index) {
+    m_stack[m_variableIndex + variable_index].freeObjectValue();
 }
 
-void VirtualMachine::freeStringStack(const NomadIndex index) {
-    m_stack[m_stackIndex - index].freeStringValue();
+void VirtualMachine::freeObjectStack(const NomadIndex index) {
+    m_stack[m_stackIndex - index].freeObjectValue();
 }
 
 void VirtualMachine::popResult() {
@@ -486,14 +487,14 @@ void VirtualMachine::popIntermediate() {
     TEST_STACK_UNDERFLOW
 }
 
-void VirtualMachine::popStringResult() {
-    m_result.moveStringValue(m_stack[m_stackIndex]);
+void VirtualMachine::popObjectResult() {
+    m_result.moveObjectValue(m_stack[m_stackIndex]);
     m_stackIndex--;
     TEST_STACK_UNDERFLOW
 }
 
-void VirtualMachine::popStringIntermediate() {
-    m_intermediate.moveStringValue(m_stack[m_stackIndex]);
+void VirtualMachine::popObjectIntermediate() {
+    m_intermediate.moveObjectValue(m_stack[m_stackIndex]);
     m_stackIndex--;
     TEST_STACK_UNDERFLOW
 }
@@ -503,6 +504,12 @@ void VirtualMachine::pushValue(const RuntimeValue& value) {
     m_stackIndex++;
     m_stack[m_stackIndex] = value;
     TEST_STACK_OVERFLOW
+}
+
+void VirtualMachine::pushObjectValue(const RuntimeValue& value) {
+    m_stackIndex++;
+    TEST_STACK_OVERFLOW
+    m_stack[m_stackIndex].copyObjectValue(value);
 }
 
 void VirtualMachine::pushBoolean(const NomadBoolean value) {
@@ -539,6 +546,12 @@ void VirtualMachine::pushString(const NomadString& value) {
     m_stackIndex++;
     TEST_STACK_OVERFLOW
     m_stack[m_stackIndex].setStringValue(value);
+}
+
+void VirtualMachine::pushString(NomadStringObject* value) {
+    m_stackIndex++;
+    TEST_STACK_OVERFLOW
+    m_stack[m_stackIndex].setObjectValue(value);
 }
 
 void VirtualMachine::pushN(const NomadIndex count) {
@@ -603,7 +616,9 @@ NomadId VirtualMachine::popId() {
 }
 
 NomadString VirtualMachine::popString() {
-    const auto value = m_stack[m_stackIndex].getStringValue();
+    auto* object = m_stack[m_stackIndex].getStringObject();
+    auto value = object->getString();
+    object->releaseRef();
     m_stackIndex--;
     TEST_STACK_UNDERFLOW
     return value;

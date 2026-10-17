@@ -27,8 +27,7 @@ NomadString getReceiverText(const VirtualMachine* virtualMachine) {
 }
 
 NomadString getStringParameter(const VirtualMachine* virtualMachine, const NomadIndex index) {
-    const auto* parameter = virtualMachine->getStringParameter(index);
-    return parameter != nullptr ? parameter : "";
+    return virtualMachine->getStringParameter(index)->getString();
 }
 
 void validateSearchOperands(VirtualMachine* virtualMachine, const NomadString& receiver, const NomadString& search,
@@ -155,7 +154,7 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
     );
 
     const auto stringSearchParameters = std::vector{
-        defParameter("text", runtime->getStringRefType(), NomadParamDoc("The text to find")),
+        defParameter("text", runtime->getStringType(), NomadParamDoc("The text to find")),
     };
 
     runtime->registerIntrinsicMethod(

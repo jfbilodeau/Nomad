@@ -97,7 +97,7 @@ void Game::initAudioFunctions() {
     m_runtime->registerNativeFunction(
         "game.audio.load",
         [this](VirtualMachine* virtualMachine) {
-            const auto resourceName = NomadString(virtualMachine->getStringParameter(0));
+            const auto& resourceName = virtualMachine->getStringParameter(0)->getString();
             auto* audio = m_resourceManager->getAudio();
 
             if (!audio->isAvailable()) {
@@ -113,7 +113,7 @@ void Game::initAudioFunctions() {
         {
             defParameter(
                 "name",
-                m_runtime->getStringRefType(),
+                m_runtime->getStringType(),
                 NomadParamDoc("The extensionless dotted name of a preloaded sound effect.")
             )
         },
@@ -322,7 +322,7 @@ void Game::initAudioFunctions() {
     m_runtime->registerNativeFunction(
         "game.music.play",
         [this](VirtualMachine* virtualMachine) {
-            const auto resourceName = NomadString(virtualMachine->getStringParameter(0));
+            const auto& resourceName = virtualMachine->getStringParameter(0)->getString();
             (void)m_resourceManager->getAudio()->playMusic(
                 pathFromUtf8(m_options.resourcePath),
                 resourceName,
@@ -332,7 +332,7 @@ void Game::initAudioFunctions() {
         {
             defParameter(
                 "name",
-                m_runtime->getStringRefType(),
+                m_runtime->getStringType(),
                 NomadParamDoc("The extensionless dotted name of a streamed music resource.")
             )
         },
@@ -343,7 +343,7 @@ void Game::initAudioFunctions() {
     m_runtime->registerNativeFunction(
         "game.music.playOnce",
         [this](VirtualMachine* virtualMachine) {
-            const auto resourceName = NomadString(virtualMachine->getStringParameter(0));
+            const auto& resourceName = virtualMachine->getStringParameter(0)->getString();
             (void)m_resourceManager->getAudio()->playMusic(
                 pathFromUtf8(m_options.resourcePath),
                 resourceName,
@@ -353,7 +353,7 @@ void Game::initAudioFunctions() {
         {
             defParameter(
                 "name",
-                m_runtime->getStringRefType(),
+                m_runtime->getStringType(),
                 NomadParamDoc("The extensionless dotted name of a streamed music resource.")
             )
         },
@@ -364,7 +364,7 @@ void Game::initAudioFunctions() {
     m_runtime->registerNativeFunction(
         "game.music.playThen",
         [this](VirtualMachine* virtualMachine) {
-            const auto resourceName = NomadString(virtualMachine->getStringParameter(0));
+            const auto& resourceName = virtualMachine->getStringParameter(0)->getString();
             (void)m_resourceManager->getAudio()->playMusic(
                 pathFromUtf8(m_options.resourcePath),
                 resourceName,
@@ -375,7 +375,7 @@ void Game::initAudioFunctions() {
         {
             defParameter(
                 "name",
-                m_runtime->getStringRefType(),
+                m_runtime->getStringType(),
                 NomadParamDoc("The extensionless dotted name of a streamed music resource.")
             ),
             defParameter(

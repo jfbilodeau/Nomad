@@ -480,8 +480,8 @@ BOOST_AUTO_TEST_CASE(string_equality_with_parameters)
     BOOST_REQUIRE_MESSAGE(notEqual.compiled, notEqual.diagnostics);
     BOOST_TEST(notEqual.booleanValue == true);
 
-    same.freeStringValue();
-    other.freeStringValue();
+    same.freeObjectValue();
+    other.freeObjectValue();
 }
 
 BOOST_AUTO_TEST_CASE(string_equality_with_non_terminal_operands)

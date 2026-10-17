@@ -69,8 +69,7 @@ std::unique_ptr<Argument> parseExpressionArgument(
     CompilerContext* context,
     const Type* argumentType,
     ScriptFunction* function,
-    Tokenizer* tokens,
-    ParameterAccess parameterAccess = ParameterAccess::Default
+    Tokenizer* tokens
 );
 std::unique_ptr<Argument> parsePredicateArgument(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 

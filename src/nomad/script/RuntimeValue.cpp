@@ -2,6 +2,7 @@
 
 #include <nomad/script/RuntimeValue.hpp>
 
+#include <nomad/script/NomadObject.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 
 namespace nomad {
@@ -31,7 +32,6 @@ RuntimeValue::RuntimeValue(NomadId value) {
 }
 
 RuntimeValue::RuntimeValue(const NomadString& value) {
-    m_stringValue = nullptr;
     setStringValue(value);
 }
 
@@ -52,7 +52,7 @@ void RuntimeValue::setBooleanValue(NomadBoolean value) {
 }
 
 void RuntimeValue::setStringValue(const NomadString& value) {
-    setStringValue(value.c_str());
+    m_objectValue = NomadStringObject::create(value);
 }
 
 void RuntimeValue::setIdValue(NomadId value) {
@@ -60,20 +60,11 @@ void RuntimeValue::setIdValue(NomadId value) {
 }
 
 void RuntimeValue::setStringValue(const NomadChar* value) {
-    if (value == nullptr) {
-        m_stringValue = nullptr;
-        return;
-    }
-
-    m_stringValue = NomadStringObject::create(value)->getText();
+    m_objectValue = NomadStringObject::create(value);
 }
 
-void RuntimeValue::setNullStringValue() {
-    m_stringValue = nullptr;
-}
-
-void RuntimeValue::setStringRefValue(const NomadChar* value) {
-    m_stringValue = value;
+void RuntimeValue::setObjectValue(NomadObject* value) {
+    m_objectValue = value;
 }
 
 void RuntimeValue::set(NomadFloat value) {
@@ -93,17 +84,15 @@ void RuntimeValue::set(const NomadChar* value) {
 }
 
 void RuntimeValue::set(const NomadString& value) {
-    setStringValue(value.c_str());
+    setStringValue(value);
 }
 
-void RuntimeValue::copyStringValue(const RuntimeValue &other){
-    if (other.m_stringValue == nullptr) {
-        m_stringValue = nullptr;
-        return;
+void RuntimeValue::copyObjectValue(const RuntimeValue& other) {
+    if (other.m_objectValue != nullptr) {
+        other.m_objectValue->addRef();
     }
 
-    NomadStringObject::fromText(other.m_stringValue)->addRef();
-    m_stringValue = other.m_stringValue;
+    m_objectValue = other.m_objectValue;
 }
 
 NomadFloat RuntimeValue::getFloatValue() const {
@@ -126,29 +115,37 @@ NomadId RuntimeValue::getIdValue() const {
     return m_idValue;
 }
 
+NomadObject* RuntimeValue::getObjectValue() const {
+    return m_objectValue;
+}
+
+NomadStringObject* RuntimeValue::getStringObject() const {
+    return static_cast<NomadStringObject*>(m_objectValue);
+}
+
 const NomadChar* RuntimeValue::getStringValue() const {
-    return m_stringValue;
+    return m_objectValue == nullptr ? "" : getStringObject()->getText();
 }
 
 void RuntimeValue::initStringValue() {
-    m_stringValue = nullptr;
+    m_objectValue = NomadStringObject::createEmpty();
 }
 
 void RuntimeValue::initStringValue(const NomadString& value) {
     setStringValue(value);
 }
 
-void RuntimeValue::moveStringValue(RuntimeValue& other) {
-    m_stringValue = other.m_stringValue;
-    other.m_stringValue = nullptr;
+void RuntimeValue::moveObjectValue(RuntimeValue& other) {
+    m_objectValue = other.m_objectValue;
+    other.m_objectValue = nullptr;
 }
 
-void RuntimeValue::freeStringValue() {
-    if (m_stringValue != nullptr) {
-        NomadStringObject::fromText(m_stringValue)->releaseRef();
+void RuntimeValue::freeObjectValue() {
+    if (m_objectValue != nullptr) {
+        m_objectValue->releaseRef();
     }
 
-    m_stringValue = nullptr;
+    m_objectValue = nullptr;
 }
 
 NomadInteger RuntimeValue::getLiveStringCount() {

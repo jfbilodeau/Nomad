@@ -9,6 +9,9 @@
 
 namespace nomad {
 
+class NomadObject;
+class NomadStringObject;
+
 const NomadString FUNCTION_INTERNAL_NAME_PREFIX = "$";
 
 class RuntimeValue {
@@ -29,9 +32,8 @@ public:
     void setStringValue(const NomadString& value);
     void setIdValue(NomadId value);
     void setStringValue(const NomadChar* value);
-    void setNullStringValue();
-    // Store a borrowed pointer (`$stringref`). The value does not own the string and must never be freed.
-    void setStringRefValue(const NomadChar* value);
+    // Stores the object without changing its reference count: the value takes over the caller's reference.
+    void setObjectValue(NomadObject* value);
 
     // Overloaded setter
     void set(NomadFloat value);
@@ -40,7 +42,8 @@ public:
     void set(const NomadChar* value);
     void set(const NomadString& value);
 
-    void copyStringValue(const RuntimeValue& other);
+    // Adds a reference to the object held by `other` and stores it. The previous value is not released.
+    void copyObjectValue(const RuntimeValue& other);
 
     // Overloaded getter
     [[nodiscard]] NomadFloat getFloatValue() const;
@@ -48,16 +51,19 @@ public:
     [[nodiscard]] NomadIndex getIndexValue() const;
     [[nodiscard]] NomadBoolean getBooleanValue() const;
     [[nodiscard]] NomadId getIdValue() const;
+    [[nodiscard]] NomadObject* getObjectValue() const;
+    [[nodiscard]] NomadStringObject* getStringObject() const;
     [[nodiscard]] const NomadChar* getStringValue() const;
 
     void initStringValue();
     void initStringValue(const NomadString& value);
 
-    void moveStringValue(RuntimeValue& other);
+    // Transfers the object from `other`, which is left null.
+    void moveObjectValue(RuntimeValue& other);
 
-    void freeStringValue();
+    void freeObjectValue();
 
-    // Number of owned string buffers currently allocated. Only tracked in debug builds; always 0 otherwise.
+    // Number of non-empty string objects currently alive. Only tracked in debug builds; always 0 otherwise.
     [[nodiscard]] static NomadInteger getLiveStringCount();
 
 private:
@@ -67,7 +73,7 @@ private:
         NomadIndex m_indexValue;
         NomadBoolean m_booleanValue;
         NomadId m_idValue;
-        const NomadChar* m_stringValue;
+        NomadObject* m_objectValue;
     };
 };
 

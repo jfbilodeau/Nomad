@@ -415,19 +415,11 @@ void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::DynamicVariable: {
         auto* runtime = context.getRuntime();
-        if (type->isString()) {
-            runtime->setStringDynamicVariable(
-                context.getVirtualMachine(),
-                m_identifierDefinition.variableId,
-                assignedValue.getValue()
-            );
-        } else {
-            runtime->setDynamicVariable(
-                context.getVirtualMachine(),
-                m_identifierDefinition.variableId,
-                assignedValue.getValue()
-            );
-        }
+        runtime->setDynamicVariable(
+            context.getVirtualMachine(),
+            m_identifierDefinition.variableId,
+            assignedValue.getValue()
+        );
         break;
     }
 

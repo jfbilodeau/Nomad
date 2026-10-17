@@ -43,9 +43,9 @@ void registerBuildInNativeFunctions(Runtime *runtime) {
             const auto lineNumber = interpreter->getIntegerParameter(2);
             const auto messageValue = interpreter->getStringParameter(3);
 
-            const auto fileName = fileNameValue != nullptr ? fileNameValue : "<unknown>";
-            const auto functionName = functionNameValue != nullptr ? functionNameValue : "<unknown>";
-            const NomadString message = messageValue != nullptr ? messageValue : "";
+            const auto functionName = functionNameValue->getText();
+            const auto fileName = fileNameValue->getText();
+            const auto& message = messageValue->getString();
 
             const Location location(
                 functionName,
@@ -60,7 +60,7 @@ void registerBuildInNativeFunctions(Runtime *runtime) {
             defParameter("$file", runtime->getFileNameType(), NomadParamDoc("(hidden) The file name from which the log is issued")),
             defParameter("$function", runtime->getFunctionNameType(), NomadParamDoc("(hidden) The function name from which the log is issued")),
             defParameter("$line", runtime->getLineNumberType(), NomadParamDoc("(hidden) The line number from which the log is issued")),
-            defParameter("message", runtime->getStringRefType(), NomadParamDoc("The text to log"))
+            defParameter("message", runtime->getStringType(), NomadParamDoc("The text to log"))
         },
         runtime->getVoidType(),
         NomadDoc("Write a 'info' level string to the log.")
@@ -101,7 +101,7 @@ void registerBuildInNativeFunctions(Runtime *runtime) {
     runtime->registerNativeFunction(
         "toFloat",
         [](VirtualMachine* interpreter) {
-            const auto* value = interpreter->getStringParameter(0);
+            const auto* value = interpreter->getStringParameter(0)->getText();
 
             NomadChar* end = nullptr;
             const auto convertedValue = static_cast<NomadFloat>(std::strtod(value, &end));
@@ -151,7 +151,7 @@ void registerBuildInNativeFunctions(Runtime *runtime) {
     runtime->registerNativeFunction(
         "toInt",
         [](VirtualMachine* interpreter) {
-            const auto* value = interpreter->getStringParameter(0);
+            const auto* value = interpreter->getStringParameter(0)->getText();
 
             NomadChar* end = nullptr;
             const auto convertedValue = static_cast<NomadInteger>(std::strtoll(value, &end, 10));

@@ -60,10 +60,6 @@ void Expression::compile(Compiler* compiler, ScriptFunction* function, const Exp
     }
 }
 
-bool Expression::canBorrow() const {
-    return isParsed() && m_type->isString();
-}
-
 bool Expression::isWritable() const {
     return false;
 }
@@ -82,22 +78,6 @@ IntrinsicMemberExpression* Expression::asIntrinsicExpression() {
 
 const IntrinsicMemberExpression* Expression::asIntrinsicExpression() const {
     return nullptr;
-}
-
-void Expression::compileBorrowed(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
-    if (!canBorrow()) {
-        compiler->reportInternalError("BUG: Expression cannot lend a string reference");
-    }
-
-    if (isParsed()) {
-        compiler->addLoadStringReference(m_value.getStringValue(), target);
-    } else {
-        onCompileBorrowed(compiler, function, target);
-    }
-}
-
-void Expression::onCompileBorrowed(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget /*target*/) {
-    compiler->reportInternalError("BUG: Expression does not implement borrowed compilation");
 }
 
 void Expression::evaluate(InterpreterContext& context) const {
@@ -395,66 +375,6 @@ void BinaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, c
         if (target == ExpressionTarget::Stack) {
             compiler->addOpCode(OpCodes::op_push_r);
         }
-
-        return;
-    }
-
-    const auto* stringRefType = compiler->getRuntime()->getStringRefType();
-
-    if (stringRefType->acceptsArgument(m_left->getType()) && stringRefType->acceptsArgument(m_right->getType())) {
-        const auto borrowRight = m_right->canBorrow();
-        // A computed right operand may modify a borrowed left value, so snapshot the left first.
-        const auto borrowLeft = m_left->canBorrow() && borrowRight;
-
-        if (!borrowLeft) {
-            m_left->compile(compiler, function, ExpressionTarget::Stack);
-        }
-
-        if (!borrowRight) {
-            m_right->compile(compiler, function, ExpressionTarget::Stack);
-        }
-
-        const NomadIndex leftOffset = borrowRight ? 0 : 1;
-        const NomadIndex rightOffset = 0;
-
-        if (borrowRight) {
-            m_right->compileBorrowed(compiler, function, ExpressionTarget::Intermediate);
-        } else {
-            compiler->addOpCode(op_stringref_peek_i);
-            compiler->addIndex(rightOffset);
-        }
-
-        if (borrowLeft) {
-            m_left->compileBorrowed(compiler, function, ExpressionTarget::Result);
-        } else {
-            compiler->addOpCode(op_stringref_peek_r);
-            compiler->addIndex(leftOffset);
-        }
-
-        const auto opCodeId = compiler->getBinaryOperatorOpCodeId(m_binaryOperator, m_left->getType(), m_right->getType());
-
-        if (opCodeId == NOMAD_INVALID_ID) {
-            raiseException("Invalid binary operator for strings");
-        }
-
-        compiler->addOpCode(opCodeId);
-
-        const NomadIndex ownedCount = (borrowLeft ? 0 : 1) + (borrowRight ? 0 : 1);
-
-        if (!borrowLeft) {
-            compiler->addFreeValue(m_left->getType()->getTypeOpCodes()->freeStack, leftOffset);
-        }
-
-        if (!borrowRight) {
-            compiler->addFreeValue(m_right->getType()->getTypeOpCodes()->freeStack, rightOffset);
-        }
-
-        if (ownedCount != 0) {
-            compiler->addOpCode(OpCodes::op_pop_n);
-            compiler->addIndex(ownedCount);
-        }
-
-        compiler->addMoveResult(getType(), target);
 
         return;
     }
@@ -1483,20 +1403,6 @@ void IdentifierExpression::onCompile(Compiler* compiler, ScriptFunction* /*funct
     }
 }
 
-bool IdentifierExpression::canBorrow() const {
-    if (Expression::canBorrow()) {
-        return true;
-    }
-
-    // Literals, the caller's locals and the caller's (read-only) parameters cannot be changed by the nativeFunction or
-    // function being called. Dynamic and context variables are read through getters that allocate, and their storage
-    // can be replaced by the callee, so they are always copied.
-    const auto identifierType = m_identifierDefinition.identifierType;
-
-    return hasType() && getType()->isString() &&
-        (identifierType == IdentifierType::FunctionVariable || identifierType == IdentifierType::Parameter);
-}
-
 bool IdentifierExpression::isWritable() const {
     return m_writable;
 }
@@ -1547,11 +1453,7 @@ void IdentifierExpression::evaluateStore(InterpreterContext& context, const Runt
         break;
 
     case IdentifierType::DynamicVariable:
-        if (type->isString()) {
-            runtime->setStringDynamicVariable(context.getVirtualMachine(), m_identifierDefinition.variableId, value);
-        } else {
-            runtime->setDynamicVariable(context.getVirtualMachine(), m_identifierDefinition.variableId, value);
-        }
+        runtime->setDynamicVariable(context.getVirtualMachine(), m_identifierDefinition.variableId, value);
         break;
 
     case IdentifierType::ContextVariable:
@@ -1561,25 +1463,6 @@ void IdentifierExpression::evaluateStore(InterpreterContext& context, const Runt
 
     default:
         raiseException("Cannot store intrinsic receiver '" + m_identifier + "'");
-    }
-}
-
-void IdentifierExpression::onCompileBorrowed(Compiler* compiler, ScriptFunction* /*function*/,
-                                             const ExpressionTarget target) {
-    // Borrowing is a bitwise load of the pointer: the non-string load opcodes do exactly that.
-    const auto* referenceType = compiler->getRuntime()->getStringRefType();
-
-    switch (m_identifierDefinition.identifierType) {
-        case IdentifierType::FunctionVariable:
-            compiler->addLoadFunctionVariable(m_identifierDefinition.variableId, referenceType, target);
-            break;
-
-        case IdentifierType::Parameter:
-            compiler->addLoadParameter(m_identifierDefinition.variableId, referenceType, target);
-            break;
-
-        default:
-            compiler->reportInternalError("BUG: Identifier cannot lend a string reference: " + m_identifier);
     }
 }
 
@@ -1614,8 +1497,8 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
         );
 
         // Getters may leave a string untouched when the value is unavailable.
-        if (type->isString() && value.getStringValue() == nullptr) {
-            value.setStringValue("");
+        if (type->isString() && value.getObjectValue() == nullptr) {
+            value.initStringValue();
         }
 
         // `setResult` copies the value, so the temporary is released here.
@@ -1644,11 +1527,11 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
             runtime->getVariableContext(contextId)->getValue(m_identifierDefinition.variableId, value);
         }
 
-        if (type->isString() && value.getStringValue() == nullptr) {
+        if (type->isString() && value.getObjectValue() == nullptr) {
             RuntimeValue emptyValue;
-            emptyValue.setStringValue("");
+            emptyValue.initStringValue();
             context.setResult(type, emptyValue);
-            emptyValue.freeStringValue();
+            emptyValue.freeObjectValue();
             break;
         }
 

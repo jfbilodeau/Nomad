@@ -82,10 +82,6 @@ public:
     [[nodiscard]] const TypeOpCodes* getTypeOpCodes() const;
     [[nodiscard]] bool needsFree() const;
 
-    // Borrowed types (i.e. `$stringref`) never own their value. They are only used for nativeFunction parameters and
-    // operator operands, and are never stored.
-    [[nodiscard]] virtual bool isReference() const;
-
     // Can an expression of `argumentType` be passed where a value of this type is expected?
     [[nodiscard]] virtual bool acceptsArgument(const Type* argumentType) const;
 
@@ -95,7 +91,7 @@ public:
     // Can the type hold a value or is it void?
     [[nodiscard]] virtual bool isVoid() const;
 
-    // Is the type an owned string type? ie: `string`, `$function`
+    // Is the type a string type?
     [[nodiscard]] virtual bool isString() const;
 
     // Determine if two types are the same
@@ -223,32 +219,16 @@ public:
 
 // Internal types
 
-// Borrowed pointer to a string owned by someone else (string table, parameter, variable or a temporary held by the
-// caller). Valid only for the duration of the nativeFunction call or operator using it. Copying is shallow; nothing is freed.
-class BaseStringRefType : public Type {
-public:
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
-    [[nodiscard]] bool isReference() const final;
-    [[nodiscard]] bool acceptsArgument(const Type* argumentType) const override;
-};
-
-const NomadString STRING_REF_TYPE_NAME = "$stringref";
-class StringRefType final : public BaseStringRefType {
-public:
-    [[nodiscard]] NomadString getTypeName() const override;
-};
-
-// Hidden parameter: the compiler passes a reference to the calling function's file name.
+// Hidden parameter: the compiler passes the calling function's file name.
 const NomadString FILE_NAME_TYPE_NAME = "$file";
-class FileNameType final : public BaseStringRefType {
+class FileNameType final : public BaseStringType {
 public:
     [[nodiscard]] NomadString getTypeName() const override;
 };
 
-// Hidden parameter: the compiler passes a reference to the calling function's name.
+// Hidden parameter: the compiler passes the calling function's name.
 const NomadString FUNCTION_NAME_TYPE_NAME = "$function";
-class FunctionNameType final : public BaseStringRefType {
+class FunctionNameType final : public BaseStringType {
 public:
     [[nodiscard]] NomadString getTypeName() const override;
 };

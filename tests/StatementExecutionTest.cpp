@@ -180,10 +180,10 @@ BOOST_AUTO_TEST_CASE(expression_execution_calls_registered_nativeFunctions_witho
     runtime.registerNativeFunction(
         "identity",
         [](VirtualMachine* interpreter) {
-            interpreter->setStringResult(interpreter->getStringParameter(0));
+            interpreter->setStringResult(interpreter->getStringParameter(0)->getString());
         },
         {
-            defParameter("value", runtime.getStringRefType(), NomadParamDoc("Value to return"))
+            defParameter("value", runtime.getStringType(), NomadParamDoc("Value to return"))
         },
         runtime.getStringType(),
         NomadDoc("Return the provided string")

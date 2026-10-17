@@ -37,10 +37,10 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_pop_n, op_pop_n, "Pop `n` values from the stack", {Operand::Index});
     registerInstruction(OpCodes::op_copy_r_to_i, op_copy_r_to_i, "Copy the value of the `result` register into the `intermediate` register", {});
     registerInstruction(OpCodes::op_copy_i_to_r, op_copy_i_to_r, "Copy the value of the `intermediate` register into the `result` register", {});
-    registerInstruction(OpCodes::op_copy_string_r_to_i, op_copy_string_r_to_i, "Copy the string in the `result` register into the `intermediate` register", {});
-    registerInstruction(OpCodes::op_string_move_r_to_i, op_string_move_r_to_i, "Move the string in the `result` register into the `intermediate` register without copying it", {});
-    registerInstruction(OpCodes::op_string_move_i_to_r, op_string_move_i_to_r, "Move the string in the `intermediate` register into the `result` register without copying it", {});
-    registerInstruction(OpCodes::op_string_move_r_to_stack, op_string_move_r_to_stack, "Move the string in the `result` register onto the stack without copying it", {});
+    registerInstruction(OpCodes::op_object_copy_r_to_i, op_object_copy_r_to_i, "Copy the object in the `result` register into the `intermediate` register", {});
+    registerInstruction(OpCodes::op_object_move_r_to_i, op_object_move_r_to_i, "Move the object in the `result` register into the `intermediate` register", {});
+    registerInstruction(OpCodes::op_object_move_i_to_r, op_object_move_i_to_r, "Move the object in the `intermediate` register into the `result` register", {});
+    registerInstruction(OpCodes::op_object_move_r_to_stack, op_object_move_r_to_stack, "Move the object in the `result` register onto the stack", {});
 
     // Function and nativeFunction calls
     registerInstruction(
@@ -55,9 +55,9 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_parameter_load_r, op_parameter_load_r, "Load the `n`th parameter into result", {Operand::Id});
     registerInstruction(OpCodes::op_parameter_load_i, op_parameter_load_i, "Load the `n`th parameter into intermediate", {Operand::Id});
     registerInstruction(OpCodes::op_parameter_push, op_parameter_push, "Push the `n`th parameter onto the stack", {Operand::Id});
-    registerInstruction(OpCodes::op_string_parameter_load_r, op_string_parameter_load_r, "Load the `n`th string parameter into result", {Operand::Id});
-    registerInstruction(OpCodes::op_string_parameter_load_i, op_string_parameter_load_i, "Load the `n`th string parameter into intermediate", {Operand::Id});
-    registerInstruction(OpCodes::op_string_parameter_push, op_string_parameter_push, "Push the `n`th string parameter onto the stack", {Operand::Id});
+    registerInstruction(OpCodes::op_object_parameter_load_r, op_object_parameter_load_r, "Load the `n`th object parameter into result", {Operand::Id});
+    registerInstruction(OpCodes::op_object_parameter_load_i, op_object_parameter_load_i, "Load the `n`th object parameter into intermediate", {Operand::Id});
+    registerInstruction(OpCodes::op_object_parameter_push, op_object_parameter_push, "Push the `n`th object parameter onto the stack", {Operand::Id});
 
     // Variable operations
     registerInstruction(
@@ -65,27 +65,22 @@ void Runtime::registerDefaultInstructions() {
         "Set the `id` function variable from the `r` register value", {Operand::FunctionVariable}
     );
     registerInstruction(OpCodes::op_function_variable_get_r, op_function_variable_get_r, "Load the `id` function variable value to the `result` register", {Operand::FunctionVariable});
-    registerInstruction(OpCodes::op_function_variable_string_get_r, op_function_variable_string_get_r, "Load the `id` string function variable value to the `result` register", {Operand::FunctionVariable});
+    registerInstruction(OpCodes::op_function_variable_object_get_r, op_function_variable_object_get_r, "Load the `id` object function variable value to the `result` register", {Operand::FunctionVariable});
     registerInstruction(OpCodes::op_function_variable_get_i, op_function_variable_get_i, "Load the `id` function variable value to the `intermediate` register", {Operand::FunctionVariable});
-    registerInstruction(OpCodes::op_function_variable_string_get_i, op_function_variable_string_get_i, "Load the `id` string function variable value to the `intermediate` register", {Operand::FunctionVariable});
+    registerInstruction(OpCodes::op_function_variable_object_get_i, op_function_variable_object_get_i, "Load the `id` object function variable value to the `intermediate` register", {Operand::FunctionVariable});
     registerInstruction(OpCodes::op_function_variable_push, op_function_variable_push, "Push the `id` function variable value to the stack", {Operand::FunctionVariable});
-    registerInstruction(OpCodes::op_function_variable_string_push, op_function_variable_string_push, "Push the `id` string function variable to the stack", {Operand::FunctionVariable});
+    registerInstruction(OpCodes::op_function_variable_object_push, op_function_variable_object_push, "Push the `id` object function variable to the stack", {Operand::FunctionVariable});
     registerInstruction(OpCodes::op_dynamic_variable_set, op_dynamic_variable_set, "Set the dynamic variable `id` from the `result` register value", {Operand::DynamicVariable});
-    registerInstruction(OpCodes::op_dynamic_variable_string_set, op_dynamic_variable_string_set, "Set the string dynamic variable `id` from the `result` register value", {Operand::DynamicVariable});
     registerInstruction(OpCodes::op_dynamic_variable_get_r, op_dynamic_variable_get_r, "Load the dynamic variable `id` value to the `r` register", {Operand::DynamicVariable});
-    registerInstruction(OpCodes::op_dynamic_variable_string_get_r, op_dynamic_variable_string_get_r, "Load the dynamic string variable `id` value to the `s` register", {Operand::DynamicVariable});
     registerInstruction(OpCodes::op_dynamic_variable_get_i, op_dynamic_variable_get_i, "Load the dynamic variable `id` value to the `intermediate` register", {Operand::DynamicVariable});
-    registerInstruction(OpCodes::op_dynamic_variable_string_get_i, op_dynamic_variable_string_get_i, "Load the dynamic string variable `id` value to the `intermediate` register", {Operand::DynamicVariable});
     registerInstruction(OpCodes::op_dynamic_variable_push, op_dynamic_variable_push, "Push the dynamic variable `id` value to the stackr", {Operand::DynamicVariable});
-    registerInstruction(OpCodes::op_dynamic_variable_string_push, op_dynamic_variable_string_push, "Push the dynamic string variable `id` value to the stack", {Operand::DynamicVariable});
     registerInstruction(OpCodes::op_context_variable_set, op_context_variable_set, "Set the context variable `id` from the `result` register value", {Operand::ContextVariableId});
-    registerInstruction(OpCodes::op_context_variable_string_set, op_context_variable_string_set, "Set the context string variable `id` from the `intermediate` register value", {Operand::ContextVariableId});
     registerInstruction(OpCodes::op_context_variable_get_r, op_context_variable_get_r, "Load the context variable `id` value to the `result` register", {Operand::ContextVariableId});
-    registerInstruction(OpCodes::op_context_variable_string_get_r, op_context_variable_string_get_r, "Load the string context variable `id` value to the `result` register", {Operand::ContextVariableId});
+    registerInstruction(OpCodes::op_context_variable_object_get_r, op_context_variable_object_get_r, "Load the object context variable `id` value to the `result` register", {Operand::ContextVariableId});
     registerInstruction(OpCodes::op_context_variable_get_i, op_context_variable_get_i, "Load the context variable `id` value to the `intermediate` register", {Operand::ContextVariableId});
-    registerInstruction(OpCodes::op_context_variable_string_get_i, op_context_variable_string_get_i, "Load the string context variable `id` value to the `intermediate` register", {Operand::ContextVariableId});
+    registerInstruction(OpCodes::op_context_variable_object_get_i, op_context_variable_object_get_i, "Load the object context variable `id` value to the `intermediate` register", {Operand::ContextVariableId});
     registerInstruction(OpCodes::op_context_variable_push, op_context_variable_push, "Push the context variable `id` value to the stack", {Operand::ContextVariableId});
-    registerInstruction(OpCodes::op_context_variable_string_push, op_context_variable_string_push, "Push the string context variable `id` value to the stack", {Operand::ContextVariableId});
+    registerInstruction(OpCodes::op_context_variable_object_push, op_context_variable_object_push, "Push the object context variable `id` value to the stack", {Operand::ContextVariableId});
 
     // Boolean operators
     registerInstruction(
@@ -258,28 +253,12 @@ void Runtime::registerDefaultInstructions() {
 
     // String operators
     registerInstruction(
-        OpCodes::op_string_init_r, op_string_init_r, "Init an empty (null) string in the `r` register", {}
+        OpCodes::op_string_init_r, op_string_init_r, "Init an empty string in the `r` register", {}
     );
     registerInstruction(
-        OpCodes::op_string_init_i, op_string_init_i, "Init an empty (null) string in the `i` register", {}
-    );
-    registerInstruction(OpCodes::op_string_free_r, op_string_free_r, "Free the string in the `r` register", {});
-    registerInstruction(OpCodes::op_string_free_i, op_string_free_i, "Free the string in the `i` register", {});
-    registerInstruction(
-        OpCodes::op_string_free_variable, op_string_free_variable, "Free the string function variable", {Operand::Index}
-    );
-    registerInstruction(
-        OpCodes::op_string_free_stack, op_string_free_stack, "Free the string at stack offset (0 = top)", {Operand::Index}
-    );
-    registerInstruction(
-        OpCodes::op_string_push_r, op_string_push_r, "Push the `r` register string value to the stack", {}
-    );
-    registerInstruction(
-        OpCodes::op_string_push_i, op_string_push_i, "Move the `i` register string value to the stack. Pair with `op_string_pop_i`", {}
+        OpCodes::op_string_init_i, op_string_init_i, "Init an empty string in the `i` register", {}
     );
     registerInstruction(OpCodes::op_string_push_n, op_string_push_n, "Push the string value to the stack", {Operand::String});
-    registerInstruction(OpCodes::op_string_pop_r, op_string_pop_r, "Pop the string value to the `r` register", {});
-    registerInstruction(OpCodes::op_string_pop_i, op_string_pop_i, "Pop the string value to the `i` register", {});
     registerInstruction(
         OpCodes::op_string_load_r, op_string_load_r, "Load the string value to the `r` register", {Operand::String}
     );
@@ -288,34 +267,30 @@ void Runtime::registerDefaultInstructions() {
     );
     registerInstruction(
         OpCodes::op_string_equal, op_string_equal,
-        "Test if the `r` and `i` register string values are equal. Operands are borrowed and not freed", {}
+        "Test if the `r` and `i` register string values are equal. Operands are not freed", {}
     );
     registerInstruction(
         OpCodes::op_string_not_equal, op_string_not_equal,
-        "Test if the `r` and `i` register string values are not equal. Operands are borrowed and not freed", {}
+        "Test if the `r` and `i` register string values are not equal. Operands are not freed", {}
     );
 
-    // String reference operators
+    // Object operators
+    registerInstruction(OpCodes::op_object_free_r, op_object_free_r, "Release the object in the `r` register", {});
+    registerInstruction(OpCodes::op_object_free_i, op_object_free_i, "Release the object in the `i` register", {});
     registerInstruction(
-        OpCodes::op_stringref_load_r, op_stringref_load_r,
-        "Load a borrowed pointer to an interned string into the `r` register", {Operand::String}
+        OpCodes::op_object_free_variable, op_object_free_variable, "Release the object function variable", {Operand::Index}
     );
     registerInstruction(
-        OpCodes::op_stringref_load_i, op_stringref_load_i,
-        "Load a borrowed pointer to an interned string into the `i` register", {Operand::String}
+        OpCodes::op_object_free_stack, op_object_free_stack, "Release the object at stack offset (0 = top)", {Operand::Index}
     );
     registerInstruction(
-        OpCodes::op_stringref_push, op_stringref_push,
-        "Push a borrowed pointer to an interned string onto the stack", {Operand::String}
+        OpCodes::op_object_push_r, op_object_push_r, "Push the `r` register object to the stack", {}
     );
     registerInstruction(
-        OpCodes::op_stringref_peek_r, op_stringref_peek_r,
-        "Borrow the string at stack offset (0 = top) into the `r` register without copying", {Operand::Index}
+        OpCodes::op_object_push_i, op_object_push_i, "Move the `i` register object to the stack. Pair with `op_object_pop_i`", {}
     );
-    registerInstruction(
-        OpCodes::op_stringref_peek_i, op_stringref_peek_i,
-        "Borrow the string at stack offset (0 = top) into the `i` register without copying", {Operand::Index}
-    );
+    registerInstruction(OpCodes::op_object_pop_r, op_object_pop_r, "Pop the object to the `r` register", {});
+    registerInstruction(OpCodes::op_object_pop_i, op_object_pop_i, "Pop the object to the `i` register", {});
 
     // Format string operators
     registerInstruction(

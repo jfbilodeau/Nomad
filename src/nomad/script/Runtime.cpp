@@ -8,6 +8,7 @@
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/IntrinsicMembers.hpp>
 #include <nomad/script/NativeFunctions.hpp>
+#include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -49,7 +50,6 @@ Runtime::Runtime() {
     registerType(std::make_unique<IntegerType>());
     registerType(std::make_unique<BooleanType>());
     registerType(std::make_unique<StringType>());
-    registerType(std::make_unique<StringRefType>());
     registerType(std::make_unique<FileNameType>());
     registerType(std::make_unique<FunctionNameType>());
     registerType(std::make_unique<FunctionLineNumberType>());
@@ -130,6 +130,10 @@ Runtime::~Runtime() {
         if (const auto* type = m_constantsMap.getVariableType(toNomadId(constantIndex))) {
             type->freeValue(m_constants[constantIndex]);
         }
+    }
+
+    for (auto* string : m_strings) {
+        string->releaseRef();
     }
 }
 
@@ -1007,10 +1011,6 @@ const Type* Runtime::getStringType() const {
     return getTypeByName(STRING_TYPE_NAME);
 }
 
-const Type* Runtime::getStringRefType() const {
-    return getTypeByName(STRING_REF_TYPE_NAME);
-}
-
 const Type* Runtime::getFunctionType() const {
     return getTypeByName(FUNCTION_TYPE_NAME);
 }
@@ -1446,14 +1446,14 @@ NomadId Runtime::registerString(const NomadString& string) {
 
     id = toNomadId(m_strings.size());
 
-    m_strings.push_back(string);
+    m_strings.push_back(NomadStringObject::create(string));
 
     return id;
 }
 
 NomadId Runtime::getStringId(const NomadString& string) const {
     for (NomadIndex i = 0; i < m_strings.size(); ++i) {
-        if (m_strings[i] == string) {
+        if (m_strings[i]->getView() == string) {
             return toNomadId(i);
         }
     }
@@ -1461,12 +1461,12 @@ NomadId Runtime::getStringId(const NomadString& string) const {
     return NOMAD_INVALID_ID;
 }
 
-const NomadString& Runtime::getString(const NomadId stringId) const {
+NomadStringObject* Runtime::getString(const NomadId stringId) const {
     const auto stringIndex = toNomadIndex(stringId);
     return m_strings[stringIndex];
 }
 
-const NomadString& Runtime::getStringByName(const NomadString& name) const {
+NomadStringObject* Runtime::getStringByName(const NomadString& name) const {
     const auto stringId = getStringId(name);
 
     return getString(stringId);
@@ -1576,36 +1576,12 @@ void Runtime::getDynamicVariableValue(VirtualMachine* interpreter, const NomadId
 }
 
 void Runtime::setStringDynamicVariable(VirtualMachine* interpreter, const NomadId id, const NomadString& value) {
-    setStringDynamicVariable(interpreter, id, value.c_str());
-}
-
-void Runtime::setStringDynamicVariable(VirtualMachine* interpreter, const NomadId id, const NomadChar* value) {
-    // The setter copies what it keeps, so the string is only borrowed.
     RuntimeValue stringValue;
-    stringValue.setStringRefValue(value);
-    setStringDynamicVariable(interpreter, id, stringValue);
-}
+    stringValue.setStringValue(value);
 
-void Runtime::setStringDynamicVariable(VirtualMachine* interpreter, const NomadId id, const RuntimeValue& value) {
-    const auto dynamicVariableIndex = toNomadIndex(id);
-    m_dynamicVariables[dynamicVariableIndex].setFn(interpreter, value);
-}
+    setDynamicVariable(interpreter, id, stringValue);
 
-void Runtime::getStringDynamicVariableValue(VirtualMachine* interpreter, const NomadId id, NomadString& value) const {
-    // Dynamic getters hand over an owned string.
-    RuntimeValue stringValue;
-
-    getStringDynamicVariableValue(interpreter, id, stringValue);
-
-    const auto* characters = stringValue.getStringValue();
-    value = characters != nullptr ? characters : "";
-
-    stringValue.freeStringValue();
-}
-
-void Runtime::getStringDynamicVariableValue(VirtualMachine* interpreter, NomadId id, RuntimeValue& value) const {
-    const auto dynamicVariableIndex = toNomadIndex(id);
-    m_dynamicVariables[dynamicVariableIndex].getFn(interpreter, value);
+    stringValue.freeObjectValue();
 }
 
 NomadId Runtime::getFirstDynamicVariableId() const {
@@ -1788,15 +1764,12 @@ void Runtime::getContextVariableValue(const NomadId contextVariableId, RuntimeVa
 }
 
 void Runtime::setStringContextVariableValue(const NomadId contextVariableId, const NomadString& value) const {
-    setStringContextVariableValue(contextVariableId, value.c_str());
-}
-
-void Runtime::setStringContextVariableValue(const NomadId contextVariableId, const NomadChar* value) const {
-    // The variable context copies what it keeps, so the string is only borrowed.
     RuntimeValue stringValue;
-    stringValue.setStringRefValue(value);
+    stringValue.setStringValue(value);
 
     setContextVariableValue(contextVariableId, stringValue);
+
+    stringValue.freeObjectValue();
 }
 
 void Runtime::getStringContextVariableValue(const NomadId contextVariableId, NomadString& value) const {
@@ -2177,7 +2150,7 @@ void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function
                     textValue = std::to_string(value.getFloatValue());
                     break;
                 case Operand::String:
-                    textValue = "\"" + getString(value.getIdValue()) + "\" (" + std::to_string(value.getIdValue()) + ")";
+                    textValue = "\"" + getString(value.getIdValue())->getString() + "\" (" + std::to_string(value.getIdValue()) + ")";
                     break;
                 case Operand::Id:
                     textValue = std::to_string(value.getIdValue());

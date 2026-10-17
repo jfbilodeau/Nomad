@@ -30,6 +30,7 @@ class Closure;
 class FormatString;
 class VirtualMachine;
 class InterpreterContext;
+class NomadStringObject;
 class Parser;
 class FunctionBuilder;
 class Tokenizer;
@@ -139,7 +140,6 @@ public:
     [[nodiscard]] const Type* getIntegerType() const;
     [[nodiscard]] const Type* getFloatType() const;
     [[nodiscard]] const Type* getStringType() const;
-    [[nodiscard]] const Type* getStringRefType() const;
     [[nodiscard]] const Type* getFunctionType() const;
     [[nodiscard]] const Type* getEventCallbackType() const;
     [[nodiscard]] const Type* getEventDispatchType() const;
@@ -228,8 +228,8 @@ public:
     // values point directly into this table, so it must not grow or change once functions start executing.
     NomadId registerString(const NomadString& string);
     [[nodiscard]] NomadId getStringId(const NomadString& string) const;
-    [[nodiscard]] const NomadString& getString(NomadId stringId) const;
-    [[nodiscard]] const NomadString& getStringByName(const NomadString& name) const;
+    [[nodiscard]] NomadStringObject* getString(NomadId stringId) const;
+    [[nodiscard]] NomadStringObject* getStringByName(const NomadString& name) const;
 
     // Format strings
     NomadId registerFormatString(const NomadString& formatString, NomadId functionId);
@@ -246,11 +246,7 @@ public:
     void setDynamicVariable(VirtualMachine* interpreter, NomadId id, const RuntimeValue& value);
     void getDynamicVariableValue(VirtualMachine* interpreter, NomadId id, RuntimeValue& value) const;
     void setStringDynamicVariable(VirtualMachine* interpreter, NomadId id, const NomadString& value);
-    void setStringDynamicVariable(VirtualMachine* interpreter, NomadId id, const NomadChar* value);
-    void setStringDynamicVariable(VirtualMachine* interpreter, NomadId id, const RuntimeValue& value);
 
-    void getStringDynamicVariableValue(VirtualMachine* interpreter, NomadId id, NomadString& value) const;
-    void getStringDynamicVariableValue(VirtualMachine* interpreter, NomadId id, RuntimeValue& value) const;
 
     [[nodiscard]] NomadId getFirstDynamicVariableId() const;
     [[nodiscard]] NomadId getNextDynamicVariableId(NomadId currentId) const;
@@ -271,7 +267,6 @@ public:
     void setContextVariableValue(NomadId contextVariableId, const RuntimeValue& value) const;
     void getContextVariableValue(NomadId contextVariableId, RuntimeValue& value) const;
     void setStringContextVariableValue(NomadId contextVariableId, const NomadString& value) const;
-    void setStringContextVariableValue(NomadId contextVariableId, const NomadChar* value) const;
     void getStringContextVariableValue(NomadId contextVariableId, NomadString& value) const;
 
     [[nodiscard]] NomadId getFirstVariableContextId() const;
@@ -369,7 +364,7 @@ private:
     std::vector<RuntimeValue> m_constants;
     std::vector<EventDefinition> m_events;
     // Compile-time only; see `registerString`.
-    std::vector<NomadString> m_strings;
+    std::vector<NomadStringObject*> m_strings;
     std::vector<DynamicVariableRegistration> m_dynamicVariables;
     std::vector<VariableContextRegistration> m_variables;
     std::vector<ContextVariable> m_contextVariables;

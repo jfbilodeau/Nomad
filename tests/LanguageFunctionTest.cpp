@@ -231,7 +231,7 @@ BOOST_AUTO_TEST_CASE(function_parameters)
     );
 
     // The virtual machine borrows its arguments; the caller keeps ownership.
-    name.freeStringValue();
+    name.freeObjectValue();
 
     BOOST_TEST(!outcome.fault.has_value());
     BOOST_TEST(outcome.text.find("n 4") == 0u, outcome.text);

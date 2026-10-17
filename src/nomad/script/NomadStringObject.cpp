@@ -3,8 +3,7 @@
 #include <nomad/script/NomadStringObject.hpp>
 
 #include <atomic>
-#include <cstring>
-#include <new>
+#include <utility>
 
 namespace nomad {
 
@@ -16,7 +15,8 @@ std::atomic<NomadInteger> s_liveCount{0};
 
 } // namespace
 
-NomadStringObject::NomadStringObject(const bool counted) noexcept:
+NomadStringObject::NomadStringObject(NomadString text, const bool counted):
+    m_text(std::move(text)),
     m_counted(counted)
 {
 #ifdef NOMAD_DEBUG
@@ -34,37 +34,31 @@ NomadStringObject::~NomadStringObject() {
 #endif
 }
 
-NomadStringObject* NomadStringObject::create(const NomadChar* text) {
-    const auto length = std::strlen(text);
+NomadStringObject* NomadStringObject::createEmpty() {
+    // Intentionally never released: the shared empty string lives for the whole process.
+    static auto* const emptyString = [] {
+        return new NomadStringObject(NomadString(), false);
+    }();
 
-    if (length == 0) {
-        // Intentionally never released: the shared empty string lives for the whole process.
-        static auto* const emptyString = [] {
-            auto* memory = ::operator new(sizeof(NomadStringObject) + 1);
-            auto* object = new(memory) NomadStringObject(false);
-            *reinterpret_cast<NomadChar*>(object + 1) = '\0';
+    emptyString->addRef();
 
-            return object;
-        }();
+    return emptyString;
+}
 
-        emptyString->addRef();
-
-        return emptyString;
+NomadStringObject* NomadStringObject::create(const NomadStringView text) {
+    if (text.empty()) {
+        return createEmpty();
     }
 
-    auto* memory = ::operator new(sizeof(NomadStringObject) + length + 1);
-    auto* object = new(memory) NomadStringObject(true);
-    std::memcpy(object + 1, text, length + 1); // +1 to copy the null terminator
-
-    return object;
+    return new NomadStringObject(NomadString(text), true);
 }
 
-NomadStringObject* NomadStringObject::fromText(const NomadChar* text) noexcept {
-    return const_cast<NomadStringObject*>(reinterpret_cast<const NomadStringObject*>(text)) - 1;
+NomadStringObject* NomadStringObject::create(const NomadChar* text) {
+    return create(NomadStringView(text));
 }
 
-const NomadChar* NomadStringObject::getText() const noexcept {
-    return reinterpret_cast<const NomadChar*>(this + 1);
+NomadStringObject* NomadStringObject::create(const NomadString& text) {
+    return create(NomadStringView(text));
 }
 
 NomadInteger NomadStringObject::getLiveCount() noexcept {
@@ -73,10 +67,6 @@ NomadInteger NomadStringObject::getLiveCount() noexcept {
 #else
     return 0;
 #endif
-}
-
-void NomadStringObject::operator delete(void* memory) noexcept {
-    ::operator delete(memory);
 }
 
 } // namespace nomad

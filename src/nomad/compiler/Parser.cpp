@@ -1057,8 +1057,7 @@ bool parseFunctionArguments(
 
             arguments->add(std::move(funArgument));
         } else {
-            // Functions cannot assign to their parameters, so borrowable strings are lent rather than copied.
-            auto argument = parseExpressionArgument(context, argumentType, function, tokens, ParameterAccess::ReadOnly);
+            auto argument = parseExpressionArgument(context, argumentType, function, tokens);
 
             if (argument == nullptr) {
                 return false;
@@ -1311,8 +1310,7 @@ std::unique_ptr<Argument> parseExpressionArgument(
     CompilerContext* context,
     const Type* argumentType,
     ScriptFunction* function,
-    Tokenizer* tokens,
-    const ParameterAccess parameterAccess
+    Tokenizer* tokens
 ) {
     auto expression = parseExpression(context, function, tokens);
 
@@ -1324,8 +1322,7 @@ std::unique_ptr<Argument> parseExpressionArgument(
         tokens->getLineIndex(),
         tokens->getColumnIndex(),
         argumentType,
-        std::move(expression),
-        parameterAccess
+        std::move(expression)
     );
 }
 

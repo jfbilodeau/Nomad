@@ -192,7 +192,7 @@ NomadString valueToDisplayString(const Type* type, const RuntimeValue& value) {
         return "<unknown>";
     }
 
-    if (type->isString() && value.getStringValue() == nullptr) {
+    if (type->isString() && value.getObjectValue() == nullptr) {
         return "<null>";
     }
 
@@ -1220,7 +1220,7 @@ void DebugConsole::collectDynamicVariableRows(std::vector<VariableRow>& rows) co
         const auto* type = runtime->getDynamicVariableType(variableId);
         RuntimeValue value;
         if (type != nullptr && type->isString()) {
-            value.setNullStringValue();
+            value.setObjectValue(nullptr);
         }
 
         runtime->getDynamicVariableValue(m_inspectionVirtualMachine.get(), variableId, value);

@@ -261,7 +261,7 @@ BOOST_AUTO_TEST_CASE(documentation_renders_function_parameters_as_a_markdown_lis
         "game.loadFont",
         [](VirtualMachine*) {},
         {
-            defParameter("fontName", runtime.getStringRefType(), NomadParamDoc("Name of the font to load.")),
+            defParameter("fontName", runtime.getStringType(), NomadParamDoc("Name of the font to load.")),
             defParameter("fontSize", runtime.getIntegerType(), NomadParamDoc("Size of the font in point to load.")),
         },
         fontType,
