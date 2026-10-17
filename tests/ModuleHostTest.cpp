@@ -45,6 +45,78 @@ bool compileFixture(ModuleHost& host, const CompilationTarget target) {
 
 BOOST_AUTO_TEST_SUITE(module_host)
 
+BOOST_AUTO_TEST_CASE(collections_lists_store_typed_values_and_share_mutations) {
+    TestDirectory directory("nomad_host_list_values");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"main", {"main.nomad",
+        "fun append values:List<int>\n"
+        "    values.push 30\n"
+        "end\n"
+        "values = new List<int>\n"
+        "assert values.count == 0\n"
+        "values.push 10\n"
+        "alias = values\n"
+        "alias.push 20\n"
+        "append values\n"
+        "assert alias.count == 3\n"
+        "words = new List<string>\n"
+        "words.push \"hello\"\n"
+        "words.push \"world\".toUpper\n"
+        "assert words.count == 2\n"
+        "nested = new List<List<string>>\n"
+        "nested.push words\n"
+        "nested.push new List<string>\n"
+        "assert nested.count == 2\n"
+        "return values.count"
+    }}}, {}});
+    BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&context, CompilationTarget::Executable),
+        context.hasError());
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 3);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+
+    {
+        VirtualMachine machine(&runtime);
+        InterpreterContext interpreterContext(machine);
+        for (const auto* source : {
+            "values = new List<string>", "values.push \"hello\"", "alias = values",
+            "alias.push \"world\".toUpper", "values.count"
+        }) {
+            BOOST_REQUIRE(Interpreter{}.execute(source, interpreterContext));
+        }
+        BOOST_TEST(interpreterContext.getResult()->getValue().getIntegerValue() == 2);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(collections_lists_reject_invalid_member_operations) {
+    for (const auto* source : {
+        "values = new List<int>\nvalues.push \"wrong\"",
+        "values = new List<string>\nvalues.push 1",
+        "values = new List<List<int>>\nvalues.push new List<string>",
+        "values = new List<int>\nvalues.count = 10",
+        "values = new List<int>\nvalues.push",
+        "values = new List<int>\nreturn values.push 1"
+    }) {
+        BOOST_TEST_CONTEXT(source) {
+            TestDirectory directory("nomad_host_bad_list_values");
+            const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+            ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+            auto compiler = host.getRuntime()->createCompiler();
+            CompilerContext context(compiler.get());
+            compiler->registerSources(&context, {{{"main", {"main.nomad", source}}}, {}});
+            BOOST_TEST(!compiler->compileScripts(&context, CompilationTarget::Analysis));
+            BOOST_TEST(context.hasError());
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
     TestDirectory directory("nomad_host_list_construction");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});

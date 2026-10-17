@@ -89,6 +89,7 @@ target_link_libraries(
     nomad_test
     PRIVATE
     nomad
+    nomad-collections
     nomad-game
     nomad-system
     Nomad::CliOptions

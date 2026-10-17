@@ -671,14 +671,15 @@ const EnumType* Runtime::registerEnum(
 bool Runtime::registerParameterizedType(
     const NomadString& name,
     const NomadIndex argumentCount,
-    ParameterizedTypeFactory factory
+    ParameterizedTypeFactory factory,
+    ParameterizedTypeInitializer initializer
 ) {
     if (name.empty() || argumentCount == 0 || !factory || getTypeByName(name) != nullptr ||
         std::ranges::any_of(m_parameterizedTypes, [&](const auto& entry) { return entry.name == name; })) {
         log::error("Cannot register parameterized type '" + name + "': invalid or duplicate definition");
         return false;
     }
-    m_parameterizedTypes.push_back({name, argumentCount, std::move(factory)});
+    m_parameterizedTypes.push_back({name, argumentCount, std::move(factory), std::move(initializer)});
     return true;
 }
 
@@ -712,6 +713,7 @@ const Type* Runtime::getParameterizedType(
         }
     }
     const auto factory = registration->factory;
+    const auto initializer = registration->initializer;
     auto type = factory(arguments);
     if (type == nullptr || type->getTypeName().empty() || getTypeByName(type->getTypeName()) != nullptr) {
         log::error("Factory for '" + name + "' returned an invalid or duplicate type");
@@ -719,6 +721,9 @@ const Type* Runtime::getParameterizedType(
     }
     const auto* result = type.get();
     registerType(std::move(type));
+    if (initializer) {
+        initializer(result);
+    }
     m_typeSpecializations.push_back({name, arguments, result});
     return result;
 }

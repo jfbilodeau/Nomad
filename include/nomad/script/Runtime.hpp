@@ -105,11 +105,13 @@ public:
 
     // Types
     using ParameterizedTypeFactory = std::function<std::unique_ptr<Type>(const std::vector<const Type*>&)>;
+    using ParameterizedTypeInitializer = std::function<void(const Type*)>;
     [[nodiscard]] std::optional<NomadIndex> getParameterizedTypeArgumentCount(const NomadString& name) const;
     bool registerParameterizedType(
         const NomadString& name,
         NomadIndex argumentCount,
-        ParameterizedTypeFactory factory
+        ParameterizedTypeFactory factory,
+        ParameterizedTypeInitializer initializer = {}
     );
     [[nodiscard]] const Type* getParameterizedType(
         const NomadString& name,
@@ -370,6 +372,7 @@ private:
         NomadString name;
         NomadIndex argumentCount;
         ParameterizedTypeFactory factory;
+        ParameterizedTypeInitializer initializer;
     };
     struct TypeSpecialization {
         NomadString name;

@@ -35,6 +35,25 @@ private:
 
 BOOST_AUTO_TEST_SUITE(NomadObjectTests)
 
+BOOST_AUTO_TEST_CASE(ListRetainsAndReleasesStoredObjects) {
+    ObjectType elementType("Element");
+    NomadIndex destroyed = 0;
+    auto* list = new ListObject(&elementType);
+    BOOST_TEST(list->getElementType() == &elementType);
+    BOOST_TEST(list->getCount() == 0u);
+    RuntimeValue value;
+    value.setObjectValue(new CountingObject(destroyed));
+    for (auto index = 0; index < 100; ++index) {
+        list->push(value);
+    }
+    BOOST_TEST(list->getCount() == 100u);
+    BOOST_TEST(value.getObjectValue()->getReferenceCount() == 101u);
+    elementType.freeValue(value);
+    BOOST_TEST(destroyed == 0u);
+    list->releaseRef();
+    BOOST_TEST(destroyed == 1u);
+}
+
 BOOST_AUTO_TEST_CASE(ObjectFactoriesAreOptionalAndMustReturnObjects) {
     ObjectType abstractType("Abstract");
     BOOST_TEST(!abstractType.isConstructible());
@@ -54,10 +73,11 @@ BOOST_AUTO_TEST_CASE(ObjectFactoriesAreOptionalAndMustReturnObjects) {
 }
 
 BOOST_AUTO_TEST_CASE(ObjectTypeSharesAndReleasesReferences) {
+    IntegerType elementType;
     ObjectType type("Example");
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue source;
-    source.setObjectValue(new ListObject);
+    source.setObjectValue(new ListObject(&elementType));
     RuntimeValue destination;
     type.initValue(destination);
     type.copyValue(source, destination);
@@ -73,12 +93,13 @@ BOOST_AUTO_TEST_CASE(ObjectTypeSharesAndReleasesReferences) {
 }
 
 BOOST_AUTO_TEST_CASE(CollectionObjectsUseReferenceCounting) {
+    IntegerType elementType;
     const auto before = NomadObject::getLiveObjectCount();
     for (auto* object : {
         static_cast<NomadObject*>(new Array1dObject),
         static_cast<NomadObject*>(new Array2dObject),
         static_cast<NomadObject*>(new Array3dObject),
-        static_cast<NomadObject*>(new ListObject),
+        static_cast<NomadObject*>(new ListObject(&elementType)),
         static_cast<NomadObject*>(new MapObject)
     }) {
         BOOST_TEST(object->getReferenceCount() == 1U);

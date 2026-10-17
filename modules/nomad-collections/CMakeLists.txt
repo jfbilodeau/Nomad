@@ -6,6 +6,7 @@ add_library(nomad-collections SHARED
     ${NOMAD_INCLUDE_DIR}/nomad/collections/MapObject.hpp
 
     ${NOMAD_SOURCE_DIR}/nomad/collections/CollectionsModule.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/collections/ListObject.cpp
 )
 
 nomad_configure_library_target(nomad-collections)
