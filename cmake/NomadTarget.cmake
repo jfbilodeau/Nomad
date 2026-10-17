@@ -16,6 +16,24 @@ function(nomad_configure_target target)
     endif()
 endfunction()
 
+function(nomad_configure_library_target target)
+    nomad_configure_runtime_target(${target})
+    set_target_properties(${target} PROPERTIES
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    )
+    if(WIN32)
+        set_target_properties(${target} PROPERTIES PREFIX "")
+    endif()
+    if(APPLE)
+        set_target_properties(${target} PROPERTIES BUILD_RPATH "@loader_path" INSTALL_RPATH "@loader_path")
+    elseif(UNIX)
+        set_target_properties(${target} PROPERTIES BUILD_RPATH "$ORIGIN" BUILD_RPATH_USE_ORIGIN TRUE INSTALL_RPATH "$ORIGIN")
+    endif()
+endfunction()
+
 function(nomad_configure_runtime_target target)
     nomad_configure_target(${target})
     target_compile_definitions(
