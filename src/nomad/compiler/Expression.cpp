@@ -774,6 +774,7 @@ void IntrinsicMemberExpression::onCompile(Compiler* compiler, ScriptFunction* fu
         compiler->reportInternalError("Invalid intrinsic member: " + m_qualifiedName);
     }
 
+    compiler->addPushIntermediate(receiverType);
     compiler->addIntrinsicMethodCall(m_memberId, function, &m_arguments);
 
     if (definition.mutatesReceiver) {

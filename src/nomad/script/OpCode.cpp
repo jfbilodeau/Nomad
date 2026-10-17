@@ -170,7 +170,10 @@ void op_intrinsic_property_set(VirtualMachine* interpreter) {
 }
 
 void op_intrinsic_method_call(VirtualMachine* interpreter) {
-    interpreter->callIntrinsicMethod(interpreter->nextId());
+    const auto memberId = interpreter->nextId();
+    const auto receiverOffset = interpreter->nextIndex();
+    interpreter->setIntermediate(interpreter->peekStack(receiverOffset));
+    interpreter->callIntrinsicMethod(memberId);
 }
 
 void op_parameter_load_r(VirtualMachine* interpreter) {

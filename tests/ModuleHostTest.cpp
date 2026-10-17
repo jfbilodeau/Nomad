@@ -54,7 +54,8 @@ BOOST_AUTO_TEST_CASE(collections_lists_store_typed_values_and_share_mutations) {
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad",
         "fun append values:List<int>\n"
-        "    values.push 30\n"
+        "    local = values\n"
+        "    local.push 30\n"
         "end\n"
         "values = new List<int>\n"
         "assert values.count == 0\n"
@@ -73,8 +74,9 @@ BOOST_AUTO_TEST_CASE(collections_lists_store_typed_values_and_share_mutations) {
         "assert nested.count == 2\n"
         "return values.count"
     }}}, {}});
-    BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&context, CompilationTarget::Executable),
-        context.hasError());
+    const auto compiled = compiler->compileScripts(&context, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled,
+        (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);

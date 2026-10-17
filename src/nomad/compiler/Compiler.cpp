@@ -765,15 +765,17 @@ NomadIndex Compiler::addIntrinsicMethodCall(const NomadId memberId, ScriptFuncti
                                             const ArgumentList* arguments) {
     arguments->compile(this, function);
 
+    const auto argumentCount = arguments->getArgumentCount();
     addOpCode(op_intrinsic_method_call);
     addId(memberId);
+    addIndex(argumentCount);
 
-    const auto argumentCount = arguments->getArgumentCount();
     if (argumentCount != 0) {
         addFreeArguments(arguments);
-        addOpCode(op_pop_n);
-        addIndex(argumentCount);
     }
+    // The saved receiver's ownership moves back to the intermediate register at the call.
+    addOpCode(op_pop_n);
+    addIndex(argumentCount + 1);
 
     return m_instructions.size() - 1;
 }
