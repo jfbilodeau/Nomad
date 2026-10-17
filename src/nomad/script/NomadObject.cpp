@@ -2,9 +2,28 @@
 
 #include <nomad/script/NomadObject.hpp>
 
+#include <atomic>
 #include <exception>
 
 namespace nomad {
+
+namespace {
+
+std::atomic<NomadIndex> liveObjectCount{0};
+
+} // namespace
+
+NomadObject::NomadObject() noexcept {
+    liveObjectCount.fetch_add(1, std::memory_order_relaxed);
+}
+
+NomadObject::~NomadObject() {
+    liveObjectCount.fetch_sub(1, std::memory_order_relaxed);
+}
+
+NomadIndex NomadObject::getLiveObjectCount() noexcept {
+    return liveObjectCount.load(std::memory_order_relaxed);
+}
 
 void NomadObject::addRef() noexcept {
     m_referenceCount.fetch_add(1, std::memory_order_relaxed);

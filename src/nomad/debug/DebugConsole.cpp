@@ -10,6 +10,7 @@
 
 #include <nomad/log/Logger.hpp>
 
+#include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>
@@ -589,10 +590,11 @@ void DebugConsole::renderToolbar() {
     const auto* scene = getSelectedScene();
     const auto* entity = getSelectedEntity();
     ImGui::Text(
-        "Context: %s / %s | %.1f FPS",
+        "Context: %s / %s | %.1f FPS | %zu objects",
         scene != nullptr ? scene->getName().c_str() : "<no scene>",
         entity != nullptr ? entity->getName().c_str() : "<no entity>",
-        ImGui::GetIO().Framerate
+        ImGui::GetIO().Framerate,
+        static_cast<std::size_t>(NomadObject::getLiveObjectCount())
     );
 
     ImGui::End();

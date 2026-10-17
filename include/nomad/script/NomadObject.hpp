@@ -10,7 +10,7 @@ namespace nomad {
 
 class NomadObject {
 public:
-    NomadObject() = default;
+    NomadObject() noexcept;
     NomadObject(const NomadObject&) = delete;
     NomadObject& operator=(const NomadObject&) = delete;
 
@@ -19,8 +19,11 @@ public:
 
     [[nodiscard]] NomadIndex getReferenceCount() const noexcept;
 
+    // Number of objects currently alive (all types).
+    [[nodiscard]] static NomadIndex getLiveObjectCount() noexcept;
+
 protected:
-    virtual ~NomadObject() = default;
+    virtual ~NomadObject();
 
 private:
     std::atomic<NomadIndex> m_referenceCount{1};
