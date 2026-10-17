@@ -15,8 +15,10 @@ ListObject::ListObject(const Type* elementType):
 }
 
 ListObject::~ListObject() {
-    for (auto& value : m_values) {
-        m_elementType->freeValue(value);
+    if (m_elementType->needsFree()) {
+        for (auto& value : m_values) {
+            m_elementType->freeValue(value);
+        }
     }
 }
 

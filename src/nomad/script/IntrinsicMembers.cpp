@@ -3,6 +3,7 @@
 #include <nomad/script/IntrinsicMembers.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/String.hpp>
@@ -30,6 +31,7 @@ void validateSearchOperands(VirtualMachine* virtualMachine, const NomadString& r
 } // namespace
 
 void registerBuiltInIntrinsicMembers(Runtime* runtime) {
+    const auto* stringType = static_cast<const ObjectTypeBase*>(runtime->getStringType());
     runtime->registerIntrinsicProperty(
         runtime->getStringType(),
         "length",
@@ -71,78 +73,73 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         NomadDoc("True when the string is empty.")
     );
 
-    runtime->registerIntrinsicMethod(
-        runtime->getStringType(),
+    runtime->registerObjectMethod(
+        stringType,
         "toUpper",
         [](VirtualMachine* virtualMachine) {
-            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
-            const auto& text = receiver->getString();
+            const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
+            const auto& text = instance->getString();
             faultOnInvalidUtf8(virtualMachine, text, "toUpper");
             virtualMachine->setStringResult(stringToUpper(text));
         },
         {},
         runtime->getStringType(),
-        false,
         NomadDoc("Return an uppercase copy of the string.")
     );
 
-    runtime->registerIntrinsicMethod(
-        runtime->getStringType(),
+    runtime->registerObjectMethod(
+        stringType,
         "toLower",
         [](VirtualMachine* virtualMachine) {
-            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
-            const auto& text = receiver->getString();
+            const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
+            const auto& text = instance->getString();
             faultOnInvalidUtf8(virtualMachine, text, "toLower");
             virtualMachine->setStringResult(stringToLower(text));
         },
         {},
         runtime->getStringType(),
-        false,
         NomadDoc("Return a lowercase copy of the string.")
     );
 
-    runtime->registerIntrinsicMethod(
-        runtime->getStringType(),
+    runtime->registerObjectMethod(
+        stringType,
         "trim",
         [](VirtualMachine* virtualMachine) {
-            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
-            const auto& text = receiver->getString();
+            const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
+            const auto& text = instance->getString();
             faultOnInvalidUtf8(virtualMachine, text, "trim");
             virtualMachine->setStringResult(stringTrimCopy(text));
         },
         {},
         runtime->getStringType(),
-        false,
         NomadDoc("Return a copy with whitespace removed from both ends.")
     );
 
-    runtime->registerIntrinsicMethod(
-        runtime->getStringType(),
+    runtime->registerObjectMethod(
+        stringType,
         "trimStart",
         [](VirtualMachine* virtualMachine) {
-            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
-            const auto& text = receiver->getString();
+            const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
+            const auto& text = instance->getString();
             faultOnInvalidUtf8(virtualMachine, text, "trimStart");
             virtualMachine->setStringResult(stringLeftTrimCopy(text));
         },
         {},
         runtime->getStringType(),
-        false,
         NomadDoc("Return a copy with whitespace removed from the beginning.")
     );
 
-    runtime->registerIntrinsicMethod(
-        runtime->getStringType(),
+    runtime->registerObjectMethod(
+        stringType,
         "trimEnd",
         [](VirtualMachine* virtualMachine) {
-            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
-            const auto& text = receiver->getString();
+            const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
+            const auto& text = instance->getString();
             faultOnInvalidUtf8(virtualMachine, text, "trimEnd");
             virtualMachine->setStringResult(stringRightTrimCopy(text));
         },
         {},
         runtime->getStringType(),
-        false,
         NomadDoc("Return a copy with whitespace removed from the end.")
     );
 
@@ -150,51 +147,48 @@ void registerBuiltInIntrinsicMembers(Runtime* runtime) {
         defParameter("text", runtime->getStringType(), NomadParamDoc("The text to find")),
     };
 
-    runtime->registerIntrinsicMethod(
-        runtime->getStringType(),
+    runtime->registerObjectMethod(
+        stringType,
         "startsWith",
         [](VirtualMachine* virtualMachine) {
-            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
-            const auto& text = receiver->getString();
+            const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
+            const auto& text = instance->getString();
             const auto& search = virtualMachine->getStringParameter(0)->getString();
             validateSearchOperands(virtualMachine, text, search, "startsWith");
             virtualMachine->setBooleanResult(text.starts_with(search));
         },
         stringSearchParameters,
         runtime->getBooleanType(),
-        false,
         NomadDoc("Return true when the string starts with the given text.")
     );
 
-    runtime->registerIntrinsicMethod(
-        runtime->getStringType(),
+    runtime->registerObjectMethod(
+        stringType,
         "endsWith",
         [](VirtualMachine* virtualMachine) {
-            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
-            const auto& text = receiver->getString();
+            const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
+            const auto& text = instance->getString();
             const auto& search = virtualMachine->getStringParameter(0)->getString();
             validateSearchOperands(virtualMachine, text, search, "endsWith");
             virtualMachine->setBooleanResult(text.ends_with(search));
         },
         stringSearchParameters,
         runtime->getBooleanType(),
-        false,
         NomadDoc("Return true when the string ends with the given text.")
     );
 
-    runtime->registerIntrinsicMethod(
-        runtime->getStringType(),
+    runtime->registerObjectMethod(
+        stringType,
         "contains",
         [](VirtualMachine* virtualMachine) {
-            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<NomadStringObject>();
-            const auto& text = receiver->getString();
+            const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
+            const auto& text = instance->getString();
             const auto& search = virtualMachine->getStringParameter(0)->getString();
             validateSearchOperands(virtualMachine, text, search, "contains");
             virtualMachine->setBooleanResult(text.find(search) != NomadString::npos);
         },
         stringSearchParameters,
         runtime->getBooleanType(),
-        false,
         NomadDoc("Return true when the string contains the given text.")
     );
 }

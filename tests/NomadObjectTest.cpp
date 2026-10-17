@@ -38,6 +38,32 @@ public:
     void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override;
 };
 
+class UnmanagedType final : public Type {
+public:
+    NomadString getTypeName() const override;
+    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override;
+    void freeValue(RuntimeValue& value) const override;
+
+    mutable NomadIndex freeCalls = 0;
+};
+
+NomadString UnmanagedType::getTypeName() const {
+    return "Unmanaged";
+}
+
+void UnmanagedType::toString(const RuntimeValue&, NomadString& string) const {
+    string = getTypeName();
+}
+
+void UnmanagedType::copyValue(const RuntimeValue& source, RuntimeValue& destination) const {
+    destination = source;
+}
+
+void UnmanagedType::freeValue(RuntimeValue&) const {
+    ++freeCalls;
+}
+
 NomadString FailingCopyType::getTypeName() const {
     return "FailingCopy";
 }
@@ -54,6 +80,17 @@ void FailingCopyType::copyValue(const RuntimeValue& source, RuntimeValue& destin
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(NomadObjectTests)
+
+BOOST_AUTO_TEST_CASE(ListSkipsCleanupForUnmanagedElements) {
+    UnmanagedType elementType;
+    BOOST_TEST(!elementType.needsFree());
+    auto* list = new ListObject(&elementType);
+    for (auto index = 0; index < 100; ++index) {
+        list->push(RuntimeValue(NomadInteger{index}));
+    }
+    list->releaseRef();
+    BOOST_TEST(elementType.freeCalls == 0u);
+}
 
 BOOST_AUTO_TEST_CASE(ListReleasesPartialCopyWhenPushFails) {
     FailingCopyType elementType;

@@ -262,22 +262,21 @@ They do not replace the receiver binding or roll back changes to object contents
 `List.push` uses this API. Properties and existing value-style intrinsic methods
 remain unchanged; script-defined methods are not supported yet.
 
-## Typed intrinsic methods
+## Typed native object methods
 
-Register an object method with the usual `registerIntrinsicMethod(...)` callback
-and read its receiver with `getIntrinsicReceiverAs<Object>()`:
+Built-in string methods use the same object-method API. Read the instance with
+`getThisAs<Object>()`:
 
 ```cpp
-runtime.registerIntrinsicMethod(
-    runtime.getStringType(),
+runtime.registerObjectMethod(
+    static_cast<const nomad::ObjectTypeBase*>(runtime.getStringType()),
     "textSize",
     [](nomad::VirtualMachine* machine) {
-        const auto* receiver = machine->getIntrinsicReceiverAs<nomad::NomadStringObject>();
-        machine->setIntegerResult(static_cast<nomad::NomadInteger>(receiver->getLength()));
+        const auto* instance = machine->getThisAs<const nomad::NomadStringObject>();
+        machine->setIntegerResult(static_cast<nomad::NomadInteger>(instance->getLength()));
     },
     {},
     runtime.getIntegerType(),
-    false,
     NomadDoc("Return the number of bytes in the string.")
 );
 ```
@@ -291,8 +290,13 @@ valid receiver when invoking methods directly. Script type checking selects the
 method for the receiver's Nomad type; it cannot validate the host's C++ pairing.
 An incorrect pairing causes undefined behaviour.
 
-Use `getIntrinsicReceiverAs<const Object>()` to obtain a pointer to const.
-Calling the accessor outside an active intrinsic method faults.
+Use `getThisAs<const Object>()` to obtain a pointer to const.
+Calling the accessor outside an active method faults.
+
+The existing `registerIntrinsicMethod(...)` API remains available for value-style
+members, including receiver replacement when `mutatesReceiver` is true. Its
+callbacks can still use `getIntrinsicReceiver()` and `getIntrinsicReceiverAs<T>()`.
+Object methods do not use receiver replacement. Properties are unchanged.
 
 The header accessor can be instantiated inside a DLL for a class unknown to the
 VM. RTTI is not required by the accessor. DLLs must use compatible C++ ABI settings
