@@ -682,17 +682,18 @@ NomadIndex Compiler::addFunctionCall(const NomadId targetFunctionId, ScriptFunct
         addIndex(targetFunction->getFunctionStart());
     }
 
-    if (argumentCount != 0) {
-        addFreeArguments(arguments);
-
-        addOpCode(OpCodes::op_pop_n);
-        addIndex(argumentCount);
-    }
+    addFreeArguments(arguments);
 
     return m_instructions.size() - 1;
 }
 
 void Compiler::addFreeArguments(const ArgumentList* arguments) {
+    const auto argumentCount = arguments->getArgumentCount();
+
+    if (argumentCount == 0) {
+        return;
+    }
+
     // Arguments are pushed right-to-left, so the first argument is at the top of the stack. Offsets account for
     // arguments occupying more than one slot.
     NomadIndex stackOffset = 0;
@@ -703,6 +704,24 @@ void Compiler::addFreeArguments(const ArgumentList* arguments) {
         }
 
         stackOffset += argument->getStackValueCount();
+    }
+
+    switch (argumentCount) {
+    case 1:
+        addOpCode(OpCodes::op_pop_1);
+        break;
+
+    case 2:
+        addOpCode(OpCodes::op_pop_2);
+        break;
+
+    case 3:
+        addOpCode(OpCodes::op_pop_3);
+        break;
+
+    default:
+        addOpCode(OpCodes::op_pop_n);
+        addIndex(argumentCount);
     }
 }
 
@@ -720,29 +739,7 @@ NomadIndex Compiler::addNativeFunctionCall(const NomadId nativeFunctionId, Scrip
     addOpCode(OpCodes::op_call_native_function);
     addIndex(nativeFunctionId);
 
-    const auto argumentCount = arguments->getArgumentCount();
-
-    if (argumentCount != 0) {
-        addFreeArguments(arguments);
-
-        switch (argumentCount) {
-        case 1:
-            addOpCode(OpCodes::op_pop_1);
-            break;
-
-        case 2:
-            addOpCode(OpCodes::op_pop_2);
-            break;
-
-        case 3:
-            addOpCode(OpCodes::op_pop_3);
-            break;
-
-        default:
-            addOpCode(OpCodes::op_pop_n);
-            addIndex(argumentCount);
-        }
-    }
+    addFreeArguments(arguments);
 
     // if (!nativeFunction.parameters.empty()) {
     //     for (auto i = 0; i < nativeFunction.parameters.size(); i++) {
@@ -767,13 +764,7 @@ NomadIndex Compiler::addConstructorCall(const NomadId constructorId, ScriptFunct
     addOpCode(OpCodes::op_object_new);
     addId(constructorId);
 
-    const auto argumentCount = arguments->getArgumentCount();
-
-    if (argumentCount != 0) {
-        addFreeArguments(arguments);
-        addOpCode(op_pop_n);
-        addIndex(argumentCount);
-    }
+    addFreeArguments(arguments);
 
     return m_instructions.size() - 1;
 }
@@ -787,12 +778,10 @@ NomadIndex Compiler::addNativeMethodCall(const NomadId memberId, ScriptFunction*
     addId(memberId);
     addIndex(argumentCount);
 
-    if (argumentCount != 0) {
-        addFreeArguments(arguments);
-    }
+    addFreeArguments(arguments);
+
     // The saved receiver's ownership moves back to the intermediate register at the call.
-    addOpCode(op_pop_n);
-    addIndex(argumentCount + 1);
+    addOpCode(op_pop_1);
 
     return m_instructions.size() - 1;
 }
