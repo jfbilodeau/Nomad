@@ -12,7 +12,7 @@ The SDK provides:
 
 | Module | Features |
 | --- | --- |
-| `nomad-collections` | Parameterized `List<T>` annotations and empty-list construction with `new`; collection operations are not available yet. |
+| `nomad-collections` | Typed lists with construction, append, count, and indexed access. |
 | `nomad-system` | Logging, math functions, conversions, and `system.exit`. |
 | `nomad-game` | Windows, input, graphics, audio, scenes, entities, and game resources. Requires `nomad-system`. |
 
@@ -23,6 +23,30 @@ language runtime, including built-in strings.
 
 `nomad.modules` is required in development and packaged configurations.
 There is no implicit module.
+
+## Collections
+
+Select `nomad-collections` to use `List<T>`. Lists start empty, support `push`
+to append a value, and expose a read-only `count` property:
+
+```nomad
+words = new List<string>
+words.push "first"
+words.push "second"
+word = words[0]
+words[1] = "updated"
+length = words[1].length
+letter = words[1][0] # "u"
+```
+
+The index must be an `int`, and elements have type `T`. Indices start at zero.
+Negative indices and indices greater than or equal to `count` cause a runtime
+error. Indexed assignment replaces an existing element; it does not grow the
+list. Assignments share the same list instance, and methods and indexed
+assignments can change its contents through a parameter or another reference.
+
+See [Object types and members](language.md#object-types-and-members) for
+construction, reference semantics, and indexer syntax.
 
 ## SDK modules
 

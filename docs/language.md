@@ -10,6 +10,7 @@ Nomad is case‑sensitive.
 
 - [Core characteristics](#core-characteristics)
 - [Quick start](#quick-start)
+- [Modules](#modules)
 - [Comments](#comments)
 - [Identifiers and naming rules](#identifiers-and-naming-rules)
 - [Data types and numeric ranges](#data-types-and-numeric-ranges)
@@ -49,6 +50,23 @@ Nomad is case‑sensitive.
 2. The Nomad compiler is pointed at the compile root and scans all `*.nomad` scripts in the directory tree.
 3. Refer to section [Scripts: file layout and compilation model](#scripts-file-layout-and-compilation-model) for naming rules and collisions.
 4. The engine can execute a compiled function by name, for example the function compiled from `init.nomad`.
+
+---
+
+## Modules
+
+Modules extend the language runtime with types, functions, and other features.
+A project's module selection determines what functionality is loaded and exposed to scripts.
+The SDK includes:
+
+| Module | Purpose |
+| --- | --- |
+| `nomad-collections` | Typed collections. |
+| `nomad-system` | Logging, math, conversions, and application exit. |
+| `nomad-game` | Graphics, input, audio, scenes, entities, and game resources. |
+
+Core language features, including strings, do not require a module. See
+[Runtime modules](modules.md) for module selection, dependencies, and usage.
 
 ---
 
@@ -157,8 +175,7 @@ object: `alias` and `first` refer to the same instance. Reassigning `first` does
 change `alias`. References are retained through function arguments and return
 values, and an object is released when its last reference is discarded.
 
-The `nomad-collections` module currently supports constructing empty `List<T>`
-objects only. Lists support `push`, read-only `count`, and element indexing.
+Available constructible types depend on the selected modules.
 Constructor arguments are not available yet. Primitive types and strings cannot be constructed with `new`.
 Construction is also available in interpreter expressions.
 
@@ -188,12 +205,6 @@ Writable properties may also change an instance through a read-only parameter
 or temporary. Changes to an object's contents are immediate and are not rolled
 back if a property setter or method fails.
 
-```nomad
-fun append values:List<int>
-    values.push 30 # Changes the caller's list.
-end
-```
-
 Assigning a new reference to the parameter itself remains invalid.
 
 Nomad does not currently support defining object types, properties, or methods in scripts.
@@ -202,22 +213,11 @@ The available members for each object type are listed in the [engine API](engine
 
 ### Indexers
 
-Use brackets to read an element or assign to a writable element:
-
-```nomad
-words = new List<string>
-words.push "first"
-words.push "second"
-word = words[0]
-words[1] = "updated"
-length = words[1].length
-letter = words[1][0] # "u"
-```
-
-`List<T>` accepts one `int` index and reads or replaces a value of type `T`.
-Indices start at zero. Negative indices and indices greater than or equal to
-`count` cause a runtime error. Assignment replaces an existing element and does
-not grow the list; use `push` to append.
+Use `value[index]` to read an indexed value and `value[index] = expression`
+to assign through a writable indexer. The receiver's type determines the index
+and value types, access permissions, and bounds behavior. Reading a write-only
+indexer or assigning through a read-only indexer is a compile-time error.
+Indexers can be chained with other indexers, properties, and methods.
 
 Strings have a read-only `int` indexer. It returns one Unicode code point as a
 string, consistent with `length`, rather than one UTF-8 byte or a complete
