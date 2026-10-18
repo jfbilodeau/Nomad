@@ -235,7 +235,7 @@ public:
         const Expression* parent,
         NomadIndex line,
         NomadIndex column,
-        const ObjectTypeBase* type,
+        NomadString constructorName,
         ArgumentList arguments
     );
     [[nodiscard]] bool isTerminal() const override;
@@ -246,8 +246,9 @@ protected:
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
-    const ObjectTypeBase* m_objectType;
+    NomadString m_constructorName;
     ArgumentList m_arguments;
+    NomadId m_constructorId = NOMAD_INVALID_ID;
 };
 
 class StringLiteral : public PrimaryExpression {

@@ -1274,12 +1274,12 @@ void Game::initObjects() {
     log::info("Initializing objects");
 
     m_runtime->registerType(std::make_unique<ObjectType>(
-        "Audio", std::vector<const Type*>{}, ObjectType::ObjectFactory{},
+        "Audio", std::vector<const Type*>{},
         NomadDoc("A sound effect that can be played, paused, resumed, stopped, looped, and adjusted independently.")
     ));
 
     m_runtime->registerType(std::make_unique<ObjectType>(
-        "Font", std::vector<const Type*>{}, ObjectType::ObjectFactory{},
+        "Font", std::vector<const Type*>{},
         NomadDoc("A font at a specific point size for displaying text.")
     ));
 }

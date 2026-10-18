@@ -41,6 +41,17 @@ class EnumType;
 class OpaqueIdType;
 struct EnumValueDefinition;
 
+using ConstructorFactory = std::function<NomadObject*(std::span<const RuntimeValue>)>;
+
+struct ConstructorDefinition {
+    NomadId id = NOMAD_INVALID_ID;
+    NomadString name;
+    const ObjectTypeBase* returnType = nullptr;
+    std::vector<FunctionParameterDefinition> parameters;
+    ConstructorFactory factory;
+    NomadDocField;
+};
+
 enum class Operand {
     Boolean,
     Integer,
@@ -133,6 +144,28 @@ public:
     [[nodiscard]] const Type* getCallbackType(const std::vector<const Type*>& parameterTypes, const Type* returnType);
     [[nodiscard]] const Type* getEventType(const NomadString& name) const;
     [[nodiscard]] const Type* getPredicateType();
+
+    NomadId registerConstructor(
+        const NomadString& name,
+        const std::vector<FunctionParameterDefinition>& parameters,
+        const ObjectTypeBase* returnType,
+        ConstructorFactory factory,
+        NomadDocArg
+    );
+    [[nodiscard]] bool getConstructorDefinition(NomadId constructorId, ConstructorDefinition& definition) const;
+    [[nodiscard]] const std::vector<ConstructorDefinition>& getConstructors() const;
+    using ParameterizedConstructorInitializer =
+        std::function<void(const NomadString&, const std::vector<const Type*>&)>;
+    bool registerParameterizedConstructor(
+        const NomadString& name,
+        NomadIndex argumentCount,
+        ParameterizedConstructorInitializer initializer
+    );
+    [[nodiscard]] std::optional<NomadIndex> getParameterizedConstructorArgumentCount(const NomadString& name) const;
+    [[nodiscard]] NomadString getParameterizedConstructorName(
+        const NomadString& name,
+        const std::vector<const Type*>& arguments
+    );
 
     // Native members
     NomadId registerNativeIndexer1(
@@ -401,6 +434,14 @@ private:
     std::vector<std::unique_ptr<Type>> m_types;
     std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;
     std::vector<TypeSpecialization> m_typeSpecializations;
+    std::vector<ConstructorDefinition> m_constructors;
+    struct ParameterizedConstructorRegistration {
+        NomadString name;
+        NomadIndex argumentCount;
+        ParameterizedConstructorInitializer initializer;
+    };
+    std::vector<ParameterizedConstructorRegistration> m_parameterizedConstructors;
+    std::vector<NomadString> m_constructorSpecializations;
     std::vector<UnaryOperatorRegistration> m_unaryOperators;
     std::vector<BinaryOperatorRegistration> m_binaryOperators;
     NomadId registerNativeCallable(

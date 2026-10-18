@@ -254,7 +254,7 @@ void Runtime::registerDefaultInstructions() {
     );
 
     registerInstruction(OpCodes::op_object_init_r, op_object_init_r, "Clear the object result register", {});
-    registerInstruction(OpCodes::op_object_new, op_object_new, "Construct an object of the given type", {Operand::Id});
+    registerInstruction(OpCodes::op_object_new, op_object_new, "Invoke a registered object constructor", {Operand::Id});
     registerInstruction(OpCodes::op_object_init_i, op_object_init_i, "Clear the object intermediate register", {});
 
     // String operators

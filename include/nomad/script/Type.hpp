@@ -212,11 +212,6 @@ public:
 class ObjectTypeBase : public Type {
 public:
     explicit ObjectTypeBase(NomadString documentation = {});
-    [[nodiscard]] virtual bool isConstructible() const;
-    // Returns a new object with one owned reference.
-    [[nodiscard]] virtual NomadObject* createObject() const;
-    [[nodiscard]] virtual std::span<const Type* const> getConstructorParameterTypes() const;
-    [[nodiscard]] virtual NomadObject* createObject(std::span<const RuntimeValue> arguments) const;
     void initValue(RuntimeValue& value) const override;
     void freeValue(RuntimeValue& value) const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
@@ -225,15 +220,11 @@ public:
 
 class ObjectType : public ObjectTypeBase {
 public:
-    using ObjectFactory = std::function<NomadObject*()>;
     explicit ObjectType(
         NomadString name,
         std::vector<const Type*> typeArguments = {},
-        ObjectFactory factory = {},
         NomadString documentation = {}
     );
-    [[nodiscard]] bool isConstructible() const override;
-    [[nodiscard]] NomadObject* createObject() const override;
     using Type::toString;
     [[nodiscard]] NomadString getTypeName() const override;
     [[nodiscard]] const std::vector<const Type*>& getTypeArguments() const;
@@ -242,7 +233,6 @@ public:
 private:
     NomadString m_name;
     std::vector<const Type*> m_typeArguments;
-    ObjectFactory m_factory;
 };
 
 class BaseStringType : public ObjectTypeBase {

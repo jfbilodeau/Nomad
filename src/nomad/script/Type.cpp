@@ -361,51 +361,15 @@ bool ObjectTypeBase::sameType(const Type* other) const {
     return this == other;
 }
 
-bool ObjectTypeBase::isConstructible() const {
-    return false;
-}
-
-NomadObject* ObjectTypeBase::createObject() const {
-    throw NomadException("Type '" + getTypeName() + "' is not constructible");
-}
-
-std::span<const Type* const> ObjectTypeBase::getConstructorParameterTypes() const {
-    return {};
-}
-
-NomadObject* ObjectTypeBase::createObject(const std::span<const RuntimeValue> arguments) const {
-    if (!arguments.empty()) {
-        throw NomadException("Type '" + getTypeName() + "' does not accept constructor arguments");
-    }
-    return createObject();
-}
-
 ObjectType::ObjectType(
     NomadString name,
     std::vector<const Type*> typeArguments,
-    ObjectFactory factory,
     NomadString documentation
 ):
     ObjectTypeBase(std::move(documentation)),
     m_name(std::move(name)),
-    m_typeArguments(std::move(typeArguments)),
-    m_factory(std::move(factory))
+    m_typeArguments(std::move(typeArguments))
 {
-}
-
-bool ObjectType::isConstructible() const {
-    return static_cast<bool>(m_factory);
-}
-
-NomadObject* ObjectType::createObject() const {
-    if (!m_factory) {
-        return ObjectTypeBase::createObject();
-    }
-    auto* object = m_factory();
-    if (object == nullptr) {
-        throw NomadException("Object factory for '" + getTypeName() + "' returned null");
-    }
-    return object;
 }
 
 NomadString ObjectType::getTypeName() const {

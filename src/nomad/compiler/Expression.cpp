@@ -1131,18 +1131,53 @@ NewObjectExpression::NewObjectExpression(
     const Expression* parent,
     const NomadIndex line,
     const NomadIndex column,
-    const ObjectTypeBase* type,
+    NomadString constructorName,
     ArgumentList arguments
 ):
     Expression(parent, line, column),
-    m_objectType(type),
+    m_constructorName(std::move(constructorName)),
     m_arguments(std::move(arguments))
 {
 }
 
 void NewObjectExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+    m_constructorId = NOMAD_INVALID_ID;
+    std::vector<const Type*> argumentTypes;
+    for (const auto& argument : m_arguments.getArguments()) {
+        const auto* type = argument->resolveOverloadType(context, function);
+        if (type == nullptr) {
+            return;
+        }
+        argumentTypes.push_back(type);
+    }
+    ConstructorDefinition selected;
+    for (const auto& constructor : context->getRuntime()->getConstructors()) {
+        if (constructor.name != m_constructorName || constructor.parameters.size() != argumentTypes.size()) {
+            continue;
+        }
+        auto matches = true;
+        for (auto index = NomadIndex{0}; index < argumentTypes.size(); ++index) {
+            matches = matches && constructor.parameters[index].type->sameType(argumentTypes[index]);
+        }
+        if (!matches) {
+            continue;
+        }
+        if (m_constructorId != NOMAD_INVALID_ID) {
+            reportError(context, function, "Ambiguous constructor for '" + m_constructorName + "'");
+            return;
+        }
+        selected = constructor;
+        m_constructorId = constructor.id;
+    }
+    if (m_constructorId == NOMAD_INVALID_ID) {
+        reportError(context, function, "No matching constructor for '" + m_constructorName + "'");
+        return;
+    }
+    for (auto index = NomadIndex{0}; index < selected.parameters.size(); ++index) {
+        m_arguments.getArguments()[index]->setType(selected.parameters[index].type);
+    }
     if (m_arguments.resolve(context, function)) {
-        setType(m_objectType);
+        setType(selected.returnType);
     }
 }
 
@@ -1155,7 +1190,7 @@ void NewObjectExpression::onCompile(Compiler* compiler, ScriptFunction* function
         argument->generateCode(compiler, function);
     }
     compiler->addOpCode(OpCodes::op_object_new);
-    compiler->addId(compiler->getRuntime()->getTypeId(m_objectType->getTypeName()));
+    compiler->addId(m_constructorId);
     compiler->addMoveResult(getType(), target);
 }
 
@@ -1167,9 +1202,13 @@ void NewObjectExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
     const auto release = [](NomadObject* object) { object->releaseRef(); };
-    const std::unique_ptr<NomadObject, decltype(release)> object(m_objectType->createObject(values), release);
+    ConstructorDefinition constructor;
+    if (!context.getRuntime()->getConstructorDefinition(m_constructorId, constructor)) {
+        raiseException("Invalid constructor");
+    }
+    const std::unique_ptr<NomadObject, decltype(release)> object(constructor.factory(values), release);
     if (!object) {
-        raiseException("Object factory for '" + m_objectType->getTypeName() + "' returned null");
+        raiseException("Object factory for '" + m_constructorName + "' returned null");
     }
     RuntimeValue value;
     value.setObjectValue(object.get());

@@ -24,26 +24,17 @@ NomadString getArrayTypeName(const Type* elementType, const NomadIndex dimension
 
 ArrayType::ArrayType(
     const Type* elementType,
-    const NomadIndex dimensionCount,
-    const Type* dimensionType
+    const NomadIndex dimensionCount
 ):
     ObjectType(
-        getArrayTypeName(elementType, dimensionCount), {elementType}, {},
+        getArrayTypeName(elementType, dimensionCount), {elementType},
         "A fixed-size array. Explicit construction requires one positive int size per dimension."
     ),
     m_dimensionCount(dimensionCount)
-{
-    if (dynamic_cast<const IntegerType*>(dimensionType) == nullptr) {
-        throw NomadException("Array dimension type must be int");
-    }
-}
+{}
 
 ArrayType::~ArrayType() {
     releaseRef(m_emptyArray);
-}
-
-bool ArrayType::isConstructible() const {
-    return true;
 }
 
 void ArrayType::initValue(RuntimeValue& value) const {

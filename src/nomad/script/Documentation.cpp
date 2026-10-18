@@ -455,14 +455,16 @@ void generateTypeDocumentation(const Runtime* runtime, std::ostream& out) {
         out << "### `" << type->getTypeName() << "`" << std::endl;
         out << std::endl;
         out << type->getDocumentation() << std::endl;
-        const auto* objectType = dynamic_cast<const ObjectTypeBase*>(type);
-        if (objectType != nullptr && objectType->isConstructible()) {
-            out << std::endl << "Constructor: `new " << type->getTypeName();
-            const auto parameters = objectType->getConstructorParameterTypes();
-            for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
-                out << " argument" << index + 1 << ":" << getDocumentedTypeName(runtime, parameters[index]);
+        for (const auto& constructor : runtime->getConstructors()) {
+            if (constructor.returnType != type) {
+                continue;
             }
-            out << "`" << std::endl;
+            out << std::endl << "Constructor: `new " << constructor.name;
+            for (auto index = NomadIndex{0}; index < constructor.parameters.size(); ++index) {
+                out << " " << constructor.parameters[index].name << ":"
+                    << getDocumentedTypeName(runtime, constructor.parameters[index].type);
+            }
+            out << "` -> `" << type->getTypeName() << "`" << std::endl;
         }
     }
 

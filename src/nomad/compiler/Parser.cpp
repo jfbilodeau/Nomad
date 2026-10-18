@@ -760,33 +760,74 @@ std::unique_ptr<Expression> parseNewExpression(
     if (!tokens->expect("new")) {
         return nullptr;
     }
-    const auto* type = parseType(context, tokens);
-    if (type == nullptr) {
+    if (tokens->endOfLine()) {
+        context->reportError("Expected constructor name after 'new'", tokens);
         return nullptr;
     }
-    const auto* objectType = dynamic_cast<const ObjectTypeBase*>(type);
-    if (objectType == nullptr || !objectType->isConstructible()) {
-        context->reportError("Type '" + type->getTypeName() + "' is not constructible", tokens);
+    auto* runtime = context->getRuntime();
+    NomadString constructorName = tokens->currentToken().textValue;
+    if (const auto count = runtime->getParameterizedConstructorArgumentCount(constructorName)) {
+        tokens->next();
+        if (!tokens->expect("<")) {
+            return nullptr;
+        }
+        std::vector<const Type*> typeArguments;
+        while (!tokens->endOfLine() && !tokens->is(">")) {
+            const auto* argument = parseType(context, tokens);
+            if (argument == nullptr) {
+                return nullptr;
+            }
+            typeArguments.push_back(argument);
+        }
+        if (!tokens->expect(">")) {
+            return nullptr;
+        }
+        if (typeArguments.size() != *count) {
+            context->reportError("Incorrect number of constructor type arguments for '" + constructorName + "'", tokens);
+            return nullptr;
+        }
+        constructorName = runtime->getParameterizedConstructorName(constructorName, typeArguments);
+        if (constructorName.empty()) {
+            context->reportError("Cannot resolve parameterized constructor", tokens);
+            return nullptr;
+        }
+    } else if (runtime->getParameterizedTypeArgumentCount(constructorName)) {
+        const auto* type = parseType(context, tokens);
+        if (type == nullptr) {
+            return nullptr;
+        }
+        constructorName = type->getTypeName();
+    } else if (!tokens->nextIdentifier(constructorName)) {
+        return nullptr;
+    }
+    auto maximumArguments = NomadIndex{0};
+    auto constructible = false;
+    for (const auto& constructor : context->getRuntime()->getConstructors()) {
+        if (constructor.name == constructorName) {
+            constructible = true;
+            maximumArguments = std::max(maximumArguments, constructor.parameters.size());
+        }
+    }
+    if (!constructible) {
+        context->reportError("No registered constructor named '" + constructorName + "'", tokens);
         return nullptr;
     }
     ArgumentList arguments;
-    for (const auto* parameterType : objectType->getConstructorParameterTypes()) {
-        if (parameterType == nullptr || parameterType->isVoid() || parameterType->isInternal() ||
-            context->getRuntime()->getTypeByName(parameterType->getTypeName()) != parameterType) {
-            context->reportError("Invalid constructor parameter type for '" + type->getTypeName() + "'", tokens);
-            return nullptr;
-        }
+    for (auto index = NomadIndex{0}; index < maximumArguments; ++index) {
         if (tokens->endOfLine() || (tokens->is(TokenType::Operator) && (tokens->is(")") || tokens->is("]")))) {
-            context->reportError("Expected constructor argument of type '" + parameterType->getTypeName() + "'", tokens);
-            return nullptr;
+            break;
         }
-        auto argument = parseExpressionArgument(context, parameterType, function, tokens);
+        if (tokens->is(TokenType::Operator) && !tokens->is("(") &&
+            getUnaryOperator(tokens->currentToken().textValue) == UnaryOperator::Unknown && !tokens->is("$")) {
+            break;
+        }
+        auto argument = parseExpressionArgument(context, nullptr, function, tokens);
         if (argument == nullptr) {
             return nullptr;
         }
         arguments.add(std::move(argument));
     }
-    return std::make_unique<NewObjectExpression>(parent, line, column, objectType, std::move(arguments));
+    return std::make_unique<NewObjectExpression>(parent, line, column, constructorName, std::move(arguments));
 }
 
 std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,

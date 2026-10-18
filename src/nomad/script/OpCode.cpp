@@ -849,28 +849,27 @@ void op_object_init_r(VirtualMachine* interpreter) {
 }
 
 void op_object_new(VirtualMachine* interpreter) {
-    const auto type = interpreter->getRuntime()->getType(interpreter->nextId());
-    const auto* objectType = type ? dynamic_cast<const ObjectTypeBase*>(*type) : nullptr;
-    if (objectType == nullptr || !objectType->isConstructible()) {
-        interpreter->fault("Cannot construct object: invalid or nonconstructible type");
+    ConstructorDefinition constructor;
+    if (!interpreter->getRuntime()->getConstructorDefinition(interpreter->nextId(), constructor)) {
+        interpreter->fault("Cannot construct object: invalid constructor");
     }
-    const auto parameterTypes = objectType->getConstructorParameterTypes();
+    const auto& parameters = constructor.parameters;
     const auto releaseArguments = [&]() {
-        for (auto index = parameterTypes.size(); index > 0; --index) {
+        for (auto index = parameters.size(); index > 0; --index) {
             auto value = interpreter->popValue();
-            parameterTypes[index - 1]->freeValue(value);
+            parameters[index - 1].type->freeValue(value);
         }
     };
     NomadObject* object = nullptr;
     try {
         std::vector<RuntimeValue> arguments;
-        arguments.reserve(parameterTypes.size());
-        for (auto index = NomadIndex{0}; index < parameterTypes.size(); ++index) {
-            arguments.push_back(interpreter->peekStack(parameterTypes.size() - index - 1));
+        arguments.reserve(parameters.size());
+        for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
+            arguments.push_back(interpreter->peekStack(parameters.size() - index - 1));
         }
-        object = objectType->createObject(arguments);
+        object = constructor.factory(arguments);
         if (object == nullptr) {
-            interpreter->fault("Object factory for '" + objectType->getTypeName() + "' returned null");
+            interpreter->fault("Object factory for '" + constructor.name + "' returned null");
         }
     } catch (...) {
         releaseArguments();

@@ -24,7 +24,13 @@ Things the author wants to do.
 [ ] LLVM
 [ ] "Nomad Doc" strings for script functions, enums, events, etc...
 [ ] Gen game docs for modding
-
+[ ] Implicit constructor name:
+```nomad
+a = new Array<int> 10  # Type named, `a` now `Array<int>
+...
+a = new 20  # Type for `a` is known. Reused.
+```
+ 
 ## Completed
 [X] `$"{1+2}"` in interpreter causes fault
 [X] LSP

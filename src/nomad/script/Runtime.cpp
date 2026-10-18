@@ -711,6 +711,7 @@ bool Runtime::registerParameterizedType(
     ParameterizedTypeInitializer initializer
 ) {
     if (name.empty() || argumentCount == 0 || !factory || getTypeByName(name) != nullptr ||
+        getParameterizedConstructorArgumentCount(name) ||
         std::ranges::any_of(m_parameterizedTypes, [&](const auto& entry) { return entry.name == name; })) {
         log::error("Cannot register parameterized type '" + name + "': invalid or duplicate definition");
         return false;
@@ -859,6 +860,117 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
     }
 
     return true;
+}
+
+NomadId Runtime::registerConstructor(
+    const NomadString& name,
+    const std::vector<FunctionParameterDefinition>& parameters,
+    const ObjectTypeBase* returnType,
+    ConstructorFactory factory,
+    const NomadString& doc
+) {
+    if (name.empty() || !ownsType(returnType) || returnType->isInternal() || !factory ||
+        getParameterizedConstructorArgumentCount(name) || getParameterizedTypeArgumentCount(name)) {
+        log::error("Cannot register constructor: a name, registered public object return type, and factory are required");
+        return NOMAD_INVALID_ID;
+    }
+    for (const auto& parameter : parameters) {
+        if (!ownsType(parameter.type) || parameter.type->isVoid() || parameter.type->isInternal()) {
+            log::error("Cannot register constructor: parameter types must be registered, public, and non-void");
+            return NOMAD_INVALID_ID;
+        }
+    }
+    for (const auto& existing : m_constructors) {
+        if (existing.name != name || existing.parameters.size() != parameters.size()) {
+            continue;
+        }
+        const auto collides = std::ranges::equal(
+            existing.parameters, parameters,
+            [](const auto& left, const auto& right) { return left.type->sameType(right.type); }
+        );
+        if (collides) {
+            log::error("Cannot register constructor '" + name + "': duplicate signature");
+            return NOMAD_INVALID_ID;
+        }
+    }
+    const auto id = toNomadId(m_constructors.size());
+    m_constructors.push_back({id, name, returnType, parameters, std::move(factory), doc});
+    return id;
+}
+
+bool Runtime::getConstructorDefinition(const NomadId constructorId, ConstructorDefinition& definition) const {
+    if (isIdOutOfRange(constructorId, m_constructors.size())) {
+        return false;
+    }
+    definition = m_constructors[constructorId];
+    return true;
+}
+
+const std::vector<ConstructorDefinition>& Runtime::getConstructors() const {
+    return m_constructors;
+}
+
+bool Runtime::registerParameterizedConstructor(
+    const NomadString& name,
+    const NomadIndex argumentCount,
+    ParameterizedConstructorInitializer initializer
+) {
+    if (name.empty() || argumentCount == 0 || !initializer ||
+        getParameterizedConstructorArgumentCount(name) || getParameterizedTypeArgumentCount(name) ||
+        getTypeByName(name) != nullptr ||
+        std::ranges::any_of(m_constructors, [&](const auto& constructor) { return constructor.name == name; })) {
+        log::error("Cannot register parameterized constructor '" + name + "': invalid or duplicate definition");
+        return false;
+    }
+    m_parameterizedConstructors.push_back({name, argumentCount, std::move(initializer)});
+    return true;
+}
+
+std::optional<NomadIndex> Runtime::getParameterizedConstructorArgumentCount(const NomadString& name) const {
+    const auto registration = std::ranges::find(
+        m_parameterizedConstructors, name, &ParameterizedConstructorRegistration::name
+    );
+    if (registration == m_parameterizedConstructors.end()) {
+        return std::nullopt;
+    }
+    return registration->argumentCount;
+}
+
+NomadString Runtime::getParameterizedConstructorName(
+    const NomadString& name,
+    const std::vector<const Type*>& arguments
+) {
+    const auto registration = std::ranges::find(
+        m_parameterizedConstructors, name, &ParameterizedConstructorRegistration::name
+    );
+    if (registration == m_parameterizedConstructors.end() || arguments.size() != registration->argumentCount ||
+        std::ranges::any_of(arguments, [this](const auto* type) {
+            return !ownsType(type) || type->isVoid() || type->isInternal();
+        })) {
+        log::error("Cannot resolve parameterized constructor '" + name + "': invalid name or type arguments");
+        return {};
+    }
+    auto specializedName = name + "<";
+    for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
+        if (index != 0) {
+            specializedName += " ";
+        }
+        specializedName += arguments[index]->getTypeName();
+    }
+    specializedName += ">";
+    if (std::ranges::find(m_constructorSpecializations, specializedName) != m_constructorSpecializations.end()) {
+        return specializedName;
+    }
+    const auto initializer = registration->initializer;
+    initializer(specializedName, arguments);
+    if (std::ranges::none_of(m_constructors, [&](const auto& constructor) {
+        return constructor.name == specializedName;
+    })) {
+        log::error("No constructors registered for '" + specializedName + "'");
+        return {};
+    }
+    m_constructorSpecializations.push_back(specializedName);
+    return specializedName;
 }
 
 NomadId Runtime::registerNativeIndexer1(

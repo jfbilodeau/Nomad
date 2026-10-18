@@ -133,7 +133,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     std::ostringstream documentation;
     generateTypeDocumentation(&runtime, documentation);
-    BOOST_TEST(documentation.str().find("new Array2<string> argument1:int argument2:int") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("new Array2<string> size1:int size2:int") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(array_dimension_values_fail_at_runtime_not_compilation) {
@@ -162,6 +162,78 @@ BOOST_AUTO_TEST_CASE(array_dimension_values_fail_at_runtime_not_compilation) {
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
         }
     }
+}
+
+BOOST_AUTO_TEST_CASE(array_constructor_overloads_return_rank_specific_types) {
+    TestDirectory directory("nomad_host_array_overloads");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    NomadString calls;
+    runtime.registerNativeFunction(
+        "size",
+        [&calls](VirtualMachine* machine) {
+            const auto value = machine->getIntegerParameter(0);
+            calls += std::to_string(value);
+            machine->setIntegerResult(value);
+        },
+        {defParameter("value", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
+    );
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{
+        "main", {"main.nomad",
+            "line = new Array<int> (size 2)\n"
+            "grid = new Array<int> (size 3) (size 4)\n"
+            "volume = new Array<int> (size 5) (size 6) (size 7)\n"
+            "assert (lineCount line) == 2\n"
+            "assert (gridCount grid) == 12\n"
+            "assert (volumeCount volume) == 210\n"
+            "return grid"
+        }
+    }, {
+        "lineCount", {"lineCount.nomad", "params value:Array1<int>\nreturn value.count"}
+    }, {
+        "gridCount", {"gridCount.nomad", "params value:Array2<int>\nreturn value.count"}
+    }, {
+        "volumeCount", {"volumeCount.nomad", "params value:Array3<int>\nreturn value.count"}
+    }}, {}});
+    const auto compiled = compiler->compileScripts(&context, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled, (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.asObject<Array2dObject>()->getCount() == 12u);
+    result.freeObjectValue();
+    BOOST_TEST(calls == "234567");
+    const auto constructorCount = runtime.getConstructors().size();
+    BOOST_TEST(runtime.getParameterizedConstructorName("Array", {runtime.getIntegerType()}) == "Array<int>");
+    BOOST_TEST(runtime.getConstructors().size() == constructorCount);
+    {
+        VirtualMachine machine(&runtime);
+        InterpreterContext evaluation(machine);
+        for (const auto& [source, rank] : std::vector<std::pair<NomadString, NomadIndex>>{
+            {"new Array<int> 2", 1}, {"new Array<int> 3 4", 2}, {"new Array<int> 5 6 7", 3}
+        }) {
+            BOOST_REQUIRE(Interpreter{}.execute(source, evaluation));
+            const auto* type = dynamic_cast<const ArrayType*>(evaluation.getResult()->getType());
+            BOOST_REQUIRE(type != nullptr);
+            BOOST_TEST(type->getDimensionCount() == rank);
+        }
+        for (const auto* source : {
+            "new Array<int>", "new Array<int> 0", "new Array<int> 1 (-1)",
+            "new Array<int> 1 2 0", "new Array<int> 1 \"two\"",
+            "new Array<int> 1 2 true", "new Array<int> 1 2 3 4",
+            "new Array<> 1", "new Array<int string> 1", "new Array<void> 1"
+        }) {
+            BOOST_TEST_CONTEXT(source) {
+                BOOST_TEST(!Interpreter{}.execute(source, evaluation));
+                BOOST_REQUIRE(evaluation.getError() != nullptr);
+            }
+        }
+    }
+    std::ostringstream documentation;
+    generateTypeDocumentation(&runtime, documentation);
+    BOOST_TEST(documentation.str().find("new Array<int> size1:int size2:int` -> `Array2<int>") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(array_constructor_signatures_are_checked_by_compiler) {
@@ -457,7 +529,12 @@ BOOST_AUTO_TEST_CASE(compiler_rejects_invalid_object_construction) {
 
 BOOST_AUTO_TEST_CASE(object_construction_reports_factory_failures) {
     Runtime runtime;
-    runtime.registerType(std::make_unique<ObjectType>("Broken", std::vector<const Type*>{}, [] { return nullptr; }));
+    auto descriptor = std::make_unique<ObjectType>("Broken");
+    const auto* type = descriptor.get();
+    runtime.registerType(std::move(descriptor));
+    runtime.registerConstructor(
+        "Broken", {}, type, [](std::span<const RuntimeValue>) -> NomadObject* { return nullptr; }, ""
+    );
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad", "return new Broken"}}}, {}});

@@ -174,22 +174,12 @@ BOOST_AUTO_TEST_CASE(ListRetainsAndReleasesStoredObjects) {
     BOOST_TEST(destroyed == 1u);
 }
 
-BOOST_AUTO_TEST_CASE(ObjectFactoriesAreOptionalAndMustReturnObjects) {
-    ObjectType abstractType("Abstract");
-    BOOST_TEST(!abstractType.isConstructible());
-    BOOST_CHECK_THROW(static_cast<void>(abstractType.createObject()), NomadException);
-    ObjectType brokenType("Broken", {}, [] { return nullptr; });
-    BOOST_TEST(brokenType.isConstructible());
-    BOOST_CHECK_THROW(static_cast<void>(brokenType.createObject()), NomadException);
-
-    NomadIndex destroyed = 0;
-    ObjectType type("Constructible", {}, [&] { return new CountingObject(destroyed); });
-    BOOST_TEST(type.isConstructible());
-    auto* object = type.createObject();
-    BOOST_REQUIRE(object != nullptr);
-    BOOST_TEST(object->getReferenceCount() == 1u);
-    object->releaseRef();
-    BOOST_TEST(destroyed == 1u);
+BOOST_AUTO_TEST_CASE(ObjectDescriptorsInitializeNullReferences) {
+    ObjectType type("Example");
+    RuntimeValue value;
+    type.initValue(value);
+    BOOST_TEST(value.getObjectValue() == nullptr);
+    type.freeValue(value);
 }
 
 BOOST_AUTO_TEST_CASE(ObjectTypeSharesAndReleasesReferences) {

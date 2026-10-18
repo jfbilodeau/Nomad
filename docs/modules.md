@@ -50,19 +50,15 @@ construction, reference semantics, and indexer syntax.
 
 ### Fixed-size arrays
 
-`Array1<T>`, `Array2<T>`, and `Array3<T>` take one `int` size per dimension:
+Construct arrays with one `int` size per dimension. The result type is
+`Array1<T>`, `Array2<T>`, or `Array3<T>`, according to the number of sizes:
 
 ```nomad
-line = new Array1<int> 10
-grid = new Array2<string> 3 4
-volume = new Array3<float> 2 3 4
+line = new Array<int> 10
+grid = new Array<string> 3 4
+volume = new Array<float> 2 3 4
 total = grid.count # 12
 ```
-
-Each rank has its own fixed constructor signature, not a variadic constructor.
-The C++ descriptors are `Array1Type`, `Array2Type`, and `Array3Type`, sharing
-the `ArrayType` base. Each provides a typed `createObject` overload taking
-exactly one, two, or three `NomadInteger` sizes and returning one owned reference.
 
 Every explicit dimension must be positive. Zero, negative dimensions, and
 element-count overflow produce runtime errors, not compile-time errors.

@@ -20,13 +20,12 @@ NomadString getListTypeName(const Type* elementType) {
 ListType::ListType(const Type* elementType):
     ObjectType(
         getListTypeName(elementType),
-        {elementType},
-        [elementType] { return new ListObject(elementType); }
+        {elementType}
     )
 {}
 
 void ListType::initValue(RuntimeValue& value) const {
-    value.setObjectValue(createObject());
+    value.setObjectValue(new ListObject(getTypeArguments()[0]));
 }
 
 } // namespace nomad
