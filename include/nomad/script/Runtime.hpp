@@ -254,6 +254,32 @@ public:
         NomadString& error
     ) const;
 
+    // Function table
+    // Every native function, native method and constructor, in one id space. The table mirrors the registries
+    // above; script functions are not part of it yet.
+    [[nodiscard]] const FunctionDefinition* getFunctionDefinition(NomadId functionId) const;
+    // The id the callable has in its own registry (native callable, native member or constructor id).
+    [[nodiscard]] NomadId getFunctionRegistryId(NomadId functionId) const;
+    [[nodiscard]] NomadIndex getFunctionTableSize() const;
+    // `argumentTypes` is indexed by parameter and holds `nullptr` for parameters the compiler supplies. An overload
+    // matching every argument exactly wins over one that merely accepts them.
+    [[nodiscard]] ResolveResult resolveFunction(
+        const NomadString& name,
+        const std::vector<const Type*>& argumentTypes
+    ) const;
+    [[nodiscard]] ResolveResult resolveMethod(
+        const Type* objectType,
+        const NomadString& name,
+        const std::vector<const Type*>& argumentTypes
+    ) const;
+    // `objectType` is the class being constructed.
+    [[nodiscard]] ResolveResult resolveConstructor(
+        const Type* objectType,
+        const std::vector<const Type*>& argumentTypes
+    ) const;
+    // Describes why `result` is not resolved, e.g. "No overload of 'add' accepts arguments (string)".
+    [[nodiscard]] NomadString describeResolveFailure(const NomadString& name, const ResolveResult& result) const;
+
     // Keywords
     NomadId registerKeyword(const NomadString& keyword, NomadDocArg);
     [[nodiscard]] NomadId getKeywordId(const NomadString& keyword) const;
@@ -402,6 +428,11 @@ private:
     // Checks that `candidate` may join `overloadSet` as an overload.
     [[nodiscard]] bool canOverloadCallable(const CallableOverloadSet& overloadSet, CallableId candidate,
                                            NomadString& error) const;
+    void addFunctionDefinition(FunctionDefinition definition, NomadId registryId);
+    [[nodiscard]] ResolveResult resolveAmong(
+        std::vector<NomadId> candidates,
+        const std::vector<const Type*>& argumentTypes
+    ) const;
     [[nodiscard]] bool ownsType(const Type* type) const;
     [[nodiscard]] bool canRegisterNativeMember(const Type* objectType, const NomadString& name,
                                                   const std::vector<ParameterDefinition>& parameters,
@@ -442,6 +473,9 @@ private:
         const NomadString& doc
     );
     std::vector<NativeFunctionDefinition> m_nativeCallables;
+    std::vector<FunctionDefinition> m_functionTable;
+    std::vector<NomadId> m_functionRegistryIds;
+    std::unordered_map<NomadString, std::vector<NomadId>> m_functionsByName;
     std::vector<KeywordDefinition> m_keywords;
     VariableMap m_constantsMap;
     std::vector<RuntimeValue> m_constants;

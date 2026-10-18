@@ -202,6 +202,10 @@ NomadId Runtime::registerNativeCallable(
         const auto memberId = toNomadId(m_nativeMembers.size());
         m_nativeMembers.push_back({NativeMemberType::Method, toNomadIndex(id)});
         m_nativeMembersByName[name].push_back(memberId);
+        addFunctionDefinition(
+            {NOMAD_INVALID_ID, name, CallableType::Method, CallableSource::Native, parameters, returnType, objectType, doc},
+            memberId
+        );
         return memberId;
     }
 
@@ -219,8 +223,198 @@ NomadId Runtime::registerNativeCallable(
     }
 
     addCallable(name, callable);
+    addFunctionDefinition(
+        {NOMAD_INVALID_ID, name, CallableType::Function, CallableSource::Native, parameters, returnType, nullptr, doc},
+        id
+    );
 
     return id;
+}
+
+void Runtime::addFunctionDefinition(FunctionDefinition definition, const NomadId registryId) {
+    definition.id = toNomadId(m_functionTable.size());
+    m_functionsByName[definition.name].push_back(definition.id);
+    m_functionTable.push_back(std::move(definition));
+    m_functionRegistryIds.push_back(registryId);
+}
+
+const FunctionDefinition* Runtime::getFunctionDefinition(const NomadId functionId) const {
+    if (isIdOutOfRange(functionId, m_functionTable.size())) {
+        return nullptr;
+    }
+
+    return &m_functionTable[toNomadIndex(functionId)];
+}
+
+NomadId Runtime::getFunctionRegistryId(const NomadId functionId) const {
+    if (isIdOutOfRange(functionId, m_functionRegistryIds.size())) {
+        return NOMAD_INVALID_ID;
+    }
+
+    return m_functionRegistryIds[toNomadIndex(functionId)];
+}
+
+NomadIndex Runtime::getFunctionTableSize() const {
+    return m_functionTable.size();
+}
+
+ResolveResult Runtime::resolveAmong(
+    std::vector<NomadId> candidates,
+    const std::vector<const Type*>& argumentTypes
+) const {
+    ResolveResult result;
+    result.argumentTypes = argumentTypes;
+
+    if (candidates.empty()) {
+        result.status = ResolveStatus::UnknownName;
+
+        return result;
+    }
+
+    result.candidates = candidates;
+
+    std::vector<NomadId> exactMatches;
+    std::vector<NomadId> compatibleMatches;
+    auto hasArity = false;
+
+    for (const auto candidateId : candidates) {
+        const auto& parameters = m_functionTable[toNomadIndex(candidateId)].parameters;
+
+        if (parameters.size() != argumentTypes.size()) {
+            continue;
+        }
+
+        hasArity = true;
+
+        auto isExact = true;
+        auto isCompatible = true;
+
+        for (NomadIndex index = 0; index < argumentTypes.size(); ++index) {
+            const auto* argumentType = argumentTypes[index];
+
+            // The compiler supplies this argument, so it cannot tell the overloads apart.
+            if (argumentType == nullptr) {
+                continue;
+            }
+
+            const auto* parameterType = parameters[index].type;
+
+            if (parameterType == argumentType) {
+                continue;
+            }
+
+            isExact = false;
+
+            if (parameterType == nullptr || !parameterType->acceptsArgument(argumentType)) {
+                isCompatible = false;
+
+                break;
+            }
+        }
+
+        if (isExact) {
+            exactMatches.push_back(candidateId);
+        } else if (isCompatible) {
+            compatibleMatches.push_back(candidateId);
+        }
+    }
+
+    const auto& matches = exactMatches.empty() ? compatibleMatches : exactMatches;
+
+    if (matches.size() == 1) {
+        result.status = ResolveStatus::Resolved;
+        result.id = matches.front();
+    } else if (matches.size() > 1) {
+        result.status = ResolveStatus::Ambiguous;
+        result.candidates = matches;
+    } else {
+        result.status = hasArity ? ResolveStatus::NoMatchingTypes : ResolveStatus::NoMatchingArity;
+    }
+
+    return result;
+}
+
+ResolveResult Runtime::resolveFunction(
+    const NomadString& name,
+    const std::vector<const Type*>& argumentTypes
+) const {
+    std::vector<NomadId> candidates;
+
+    if (const auto entry = m_functionsByName.find(name); entry != m_functionsByName.end()) {
+        for (const auto id : entry->second) {
+            if (m_functionTable[toNomadIndex(id)].type == CallableType::Function) {
+                candidates.push_back(id);
+            }
+        }
+    }
+
+    return resolveAmong(std::move(candidates), argumentTypes);
+}
+
+ResolveResult Runtime::resolveMethod(
+    const Type* objectType,
+    const NomadString& name,
+    const std::vector<const Type*>& argumentTypes
+) const {
+    std::vector<NomadId> candidates;
+
+    if (const auto entry = m_functionsByName.find(name); entry != m_functionsByName.end()) {
+        for (const auto id : entry->second) {
+            const auto& definition = m_functionTable[toNomadIndex(id)];
+
+            if (definition.type == CallableType::Method && definition.objectType == objectType) {
+                candidates.push_back(id);
+            }
+        }
+    }
+
+    return resolveAmong(std::move(candidates), argumentTypes);
+}
+
+ResolveResult Runtime::resolveConstructor(
+    const Type* objectType,
+    const std::vector<const Type*>& argumentTypes
+) const {
+    std::vector<NomadId> candidates;
+
+    for (const auto& definition : m_functionTable) {
+        if (definition.type == CallableType::Constructor && definition.objectType == objectType) {
+            candidates.push_back(definition.id);
+        }
+    }
+
+    return resolveAmong(std::move(candidates), argumentTypes);
+}
+
+NomadString Runtime::describeResolveFailure(const NomadString& name, const ResolveResult& result) const {
+    NomadString argumentList;
+
+    for (const auto* argumentType : result.argumentTypes) {
+        if (argumentType == nullptr) {
+            continue;
+        }
+
+        if (!argumentList.empty()) {
+            argumentList += ", ";
+        }
+
+        argumentList += getTypeDisplayName(argumentType);
+    }
+
+    switch (result.status) {
+    case ResolveStatus::Resolved:
+        return {};
+    case ResolveStatus::UnknownName:
+        return "Unknown function '" + name + "'";
+    case ResolveStatus::NoMatchingArity:
+        return "No overload of '" + name + "' accepts " + std::to_string(result.argumentTypes.size()) + " argument(s)";
+    case ResolveStatus::NoMatchingTypes:
+        return "No overload of '" + name + "' accepts arguments (" + argumentList + ")";
+    case ResolveStatus::Ambiguous:
+        return "Ambiguous call to '" + name + "' with arguments (" + argumentList + ")";
+    }
+
+    return {};
 }
 
 void Runtime::addCallable(const NomadString& name, const CallableId callable) {
@@ -895,6 +1089,10 @@ NomadId Runtime::registerConstructor(
     }
     const auto id = toNomadId(m_constructors.size());
     m_constructors.push_back({id, name, returnType, parameters, std::move(factory), doc});
+    addFunctionDefinition(
+        {NOMAD_INVALID_ID, name, CallableType::Constructor, CallableSource::Native, parameters, returnType, returnType, doc},
+        id
+    );
     return id;
 }
 

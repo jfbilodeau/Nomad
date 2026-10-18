@@ -9,10 +9,14 @@
 #include <nomad/system/NativeFunctions.hpp>
 #include <nomad/script/Runtime.hpp>
 
+#include <span>
 #include <vector>
 
 using namespace nomad;
 using namespace nomad::test;
+
+BOOST_TEST_DONT_PRINT_LOG_VALUE(nomad::CallableType)
+BOOST_TEST_DONT_PRINT_LOG_VALUE(nomad::ResolveStatus)
 
 namespace {
 
@@ -434,6 +438,171 @@ BOOST_AUTO_TEST_CASE(call_matching_no_overload_is_a_compile_error)
 
     BOOST_TEST(!fixture.compile());
     BOOST_TEST(fixture.hasError("No overload of 'test.record'"));
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+///////////////////////////////////////////////////////////////////////////////
+/// Function table and resolve*
+///////////////////////////////////////////////////////////////////////////////
+BOOST_AUTO_TEST_SUITE(function_resolution)
+
+namespace {
+
+class ResolutionObject final : public NomadObject {
+};
+
+const ObjectType* registerResolutionType(Runtime& runtime, const NomadString& name) {
+    auto descriptor = std::make_unique<ObjectType>(name, std::vector<const Type*>{}, "A test object.");
+    const auto* type = descriptor.get();
+    runtime.registerType(std::move(descriptor));
+    return type;
+}
+
+NomadId registerResolutionConstructor(
+    Runtime& runtime,
+    const ObjectType* type,
+    const std::vector<ParameterDefinition>& parameters
+) {
+    return runtime.registerConstructor(
+        type->getTypeName(),
+        parameters,
+        type,
+        [](std::span<const RuntimeValue>) { return new ResolutionObject; },
+        ""
+    );
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(registered_callables_share_one_id_space)
+{
+    Runtime runtime;
+    const auto* type = registerResolutionType(runtime, "Thing");
+
+    const auto function = registerNativeFunction(runtime, "test.one", {}, runtime.getIntegerType());
+    const auto method = runtime.registerNativeMethod(
+        type, "size", [](VirtualMachine*) {}, {}, runtime.getIntegerType(), ""
+    );
+    const auto constructor = registerResolutionConstructor(runtime, type, {});
+
+    BOOST_REQUIRE(function != NOMAD_INVALID_ID && method != NOMAD_INVALID_ID && constructor != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(runtime.getFunctionTableSize() >= NomadIndex{3});
+
+    const auto functionResult = runtime.resolveFunction("test.one", {});
+    const auto methodResult = runtime.resolveMethod(type, "size", {});
+    const auto constructorResult = runtime.resolveConstructor(type, {});
+
+    BOOST_REQUIRE(functionResult.isResolved() && methodResult.isResolved() && constructorResult.isResolved());
+    BOOST_TEST(functionResult.id != methodResult.id);
+    BOOST_TEST(methodResult.id != constructorResult.id);
+    BOOST_TEST(functionResult.id != constructorResult.id);
+
+    BOOST_TEST(runtime.getFunctionRegistryId(functionResult.id) == function);
+    BOOST_TEST(runtime.getFunctionRegistryId(methodResult.id) == method);
+    BOOST_TEST(runtime.getFunctionRegistryId(constructorResult.id) == constructor);
+
+    BOOST_TEST(runtime.getFunctionDefinition(functionResult.id)->type == CallableType::Function);
+    BOOST_TEST(runtime.getFunctionDefinition(methodResult.id)->type == CallableType::Method);
+    BOOST_TEST(runtime.getFunctionDefinition(constructorResult.id)->type == CallableType::Constructor);
+    BOOST_TEST(runtime.getFunctionDefinition(NOMAD_INVALID_ID) == nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(resolve_function_reports_each_failure_status)
+{
+    Runtime runtime;
+
+    registerNativeFunction(
+        runtime, "test.convert", {defParameter("value", runtime.getFloatType(), "")}, runtime.getIntegerType()
+    );
+
+    BOOST_TEST(runtime.resolveFunction("test.missing", {}).status == ResolveStatus::UnknownName);
+    BOOST_TEST(runtime.resolveFunction("test.convert", {}).status == ResolveStatus::NoMatchingArity);
+    BOOST_TEST(
+        runtime.resolveFunction("test.convert", {runtime.getBooleanType()}).status == ResolveStatus::NoMatchingTypes
+    );
+
+    const auto resolved = runtime.resolveFunction("test.convert", {runtime.getFloatType()});
+    BOOST_TEST(resolved.status == ResolveStatus::Resolved);
+    BOOST_TEST(resolved.candidates.size() == 1u);
+    BOOST_TEST(runtime.describeResolveFailure("test.convert", resolved).empty());
+}
+
+BOOST_AUTO_TEST_CASE(resolve_function_picks_between_overloads)
+{
+    Runtime runtime;
+
+    const auto fromFloat = registerNativeFunction(
+        runtime, "test.convert", {defParameter("value", runtime.getFloatType(), "")}, runtime.getIntegerType()
+    );
+    const auto fromString = registerNativeFunction(
+        runtime, "test.convert", {defParameter("value", runtime.getStringType(), "")}, runtime.getIntegerType()
+    );
+
+    const auto floatResult = runtime.resolveFunction("test.convert", {runtime.getFloatType()});
+    const auto stringResult = runtime.resolveFunction("test.convert", {runtime.getStringType()});
+
+    BOOST_REQUIRE(floatResult.isResolved() && stringResult.isResolved());
+    BOOST_TEST(runtime.getFunctionRegistryId(floatResult.id) == fromFloat);
+    BOOST_TEST(runtime.getFunctionRegistryId(stringResult.id) == fromString);
+
+    // A compiler-supplied argument cannot tell the overloads apart.
+    const auto wildcard = runtime.resolveFunction("test.convert", {nullptr});
+    BOOST_TEST(wildcard.status == ResolveStatus::Ambiguous);
+    BOOST_TEST(wildcard.candidates.size() == 2u);
+    BOOST_TEST(runtime.describeResolveFailure("test.convert", wildcard).find("Ambiguous") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(resolve_method_is_scoped_to_the_object_type)
+{
+    Runtime runtime;
+    const auto* first = registerResolutionType(runtime, "First");
+    const auto* second = registerResolutionType(runtime, "Second");
+
+    BOOST_REQUIRE(
+        runtime.registerNativeMethod(first, "size", [](VirtualMachine*) {}, {}, runtime.getIntegerType(), "")
+        != NOMAD_INVALID_ID
+    );
+
+    BOOST_TEST(runtime.resolveMethod(first, "size", {}).isResolved());
+    BOOST_TEST(runtime.resolveMethod(second, "size", {}).status == ResolveStatus::UnknownName);
+    BOOST_TEST(runtime.resolveMethod(first, "size", {runtime.getIntegerType()}).status == ResolveStatus::NoMatchingArity);
+    // A method is not a free function.
+    BOOST_TEST(runtime.resolveFunction("size", {}).status == ResolveStatus::UnknownName);
+}
+
+BOOST_AUTO_TEST_CASE(resolve_constructor_selects_by_argument_types)
+{
+    Runtime runtime;
+    const auto* type = registerResolutionType(runtime, "Thing");
+
+    const auto empty = registerResolutionConstructor(runtime, type, {});
+    const auto fromInteger = registerResolutionConstructor(
+        runtime, type, {defParameter("value", runtime.getIntegerType(), "")}
+    );
+    const auto fromPair = registerResolutionConstructor(
+        runtime, type,
+        {defParameter("x", runtime.getIntegerType(), ""), defParameter("y", runtime.getIntegerType(), "")}
+    );
+
+    BOOST_REQUIRE(empty != NOMAD_INVALID_ID && fromInteger != NOMAD_INVALID_ID && fromPair != NOMAD_INVALID_ID);
+
+    const auto emptyResult = runtime.resolveConstructor(type, {});
+    const auto integerResult = runtime.resolveConstructor(type, {runtime.getIntegerType()});
+    const auto pairResult = runtime.resolveConstructor(type, {runtime.getIntegerType(), runtime.getIntegerType()});
+
+    BOOST_REQUIRE(emptyResult.isResolved() && integerResult.isResolved() && pairResult.isResolved());
+    BOOST_TEST(runtime.getFunctionRegistryId(emptyResult.id) == empty);
+    BOOST_TEST(runtime.getFunctionRegistryId(integerResult.id) == fromInteger);
+    BOOST_TEST(runtime.getFunctionRegistryId(pairResult.id) == fromPair);
+
+    BOOST_TEST(runtime.resolveConstructor(type, {runtime.getStringType()}).status == ResolveStatus::NoMatchingTypes);
+    BOOST_TEST(
+        runtime.resolveConstructor(type, {nullptr, nullptr, nullptr}).status == ResolveStatus::NoMatchingArity
+    );
+    BOOST_TEST(
+        runtime.resolveConstructor(registerResolutionType(runtime, "Other"), {}).status == ResolveStatus::UnknownName
+    );
 }
 
 BOOST_AUTO_TEST_SUITE_END()
