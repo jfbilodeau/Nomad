@@ -143,9 +143,11 @@ bool parseNativeMemberArguments(CompilerContext* context, ScriptFunction* functi
         context->getCompiler()->reportInternalError("Invalid native method shape: " + memberName);
     }
 
-    NativeFunctionDefinition parsingDefinition{
-        NOMAD_INVALID_ID, memberName, {}, definition.parameters, definition.returnType, definition.doc,
-    };
+    NativeFunctionDefinition parsingDefinition;
+    parsingDefinition.name = memberName;
+    parsingDefinition.parameters = definition.parameters;
+    parsingDefinition.returnType = definition.returnType;
+    parsingDefinition.doc = definition.doc;
 
     return parseNativeFunctionArguments(context, function, tokens, parsingDefinition, &arguments);
 }
@@ -820,10 +822,10 @@ std::unique_ptr<Expression> parseNewExpression(
         return nullptr;
     }
     const ConstructorDefinition* shape = nullptr;
-    for (const auto& constructor : runtime->getConstructors()) {
-        if (constructor.name == constructorName &&
-            (shape == nullptr || constructor.parameters.size() > shape->parameters.size())) {
-            shape = &constructor;
+    for (const auto* constructor : runtime->getConstructors()) {
+        if (constructor->name == constructorName &&
+            (shape == nullptr || constructor->parameters.size() > shape->parameters.size())) {
+            shape = constructor;
         }
     }
     if (shape == nullptr) {
@@ -832,9 +834,11 @@ std::unique_ptr<Expression> parseNewExpression(
     }
 
     // The overload with the most parameters shapes the argument list; shorter overloads omit trailing arguments.
-    const NativeFunctionDefinition parsingDefinition{
-        NOMAD_INVALID_ID, constructorName, {}, shape->parameters, shape->returnType, shape->doc,
-    };
+    NativeFunctionDefinition parsingDefinition;
+    parsingDefinition.name = constructorName;
+    parsingDefinition.parameters = shape->parameters;
+    parsingDefinition.returnType = shape->returnType;
+    parsingDefinition.doc = shape->doc;
     ArgumentList arguments;
     if (!parseNativeFunctionArguments(context, function, tokens, parsingDefinition, &arguments, true)) {
         return nullptr;

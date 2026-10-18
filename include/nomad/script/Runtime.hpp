@@ -142,7 +142,9 @@ public:
         NomadDocArg
     );
     [[nodiscard]] bool getConstructorDefinition(NomadId constructorId, ConstructorDefinition& definition) const;
-    [[nodiscard]] const std::vector<ConstructorDefinition>& getConstructors() const;
+    // Null unless `functionId` identifies a constructor.
+    [[nodiscard]] const ConstructorDefinition* getConstructorDefinition(NomadId functionId) const;
+    [[nodiscard]] std::vector<const ConstructorDefinition*> getConstructors() const;
     using ParameterizedConstructorInitializer =
         std::function<void(const NomadString&, const std::vector<const Type*>&)>;
     bool registerParameterizedConstructor(
@@ -224,6 +226,8 @@ public:
     [[nodiscard]] NativeFunctionFn getNativeFunctionFn(NomadId id) const;
 
     bool getNativeFunctionDefinition(NomadId id, NativeFunctionDefinition& definition) const;
+    // Null unless `functionId` identifies a native function or native method.
+    [[nodiscard]] const NativeFunctionDefinition* getNativeFunctionDefinition(NomadId functionId) const;
     bool getNativeFunctionDefinition(const NomadString& name, NativeFunctionDefinition& definition) const;
     void getNativeFunctions(std::vector<NativeFunctionDefinition>& nativeFunctions) const;
 
@@ -255,11 +259,9 @@ public:
     ) const;
 
     // Function table
-    // Every native function, native method and constructor, in one id space. The table mirrors the registries
-    // above; script functions are not part of it yet.
+    // Every native function, native method and constructor, in one id space. The ids returned when registering
+    // them are ids in this table. Script functions are not part of it yet.
     [[nodiscard]] const FunctionDefinition* getFunctionDefinition(NomadId functionId) const;
-    // The id the callable has in its own registry (native callable, native member or constructor id).
-    [[nodiscard]] NomadId getFunctionRegistryId(NomadId functionId) const;
     [[nodiscard]] NomadIndex getFunctionTableSize() const;
     // `argumentTypes` is indexed by parameter and holds `nullptr` for parameters the compiler supplies. An overload
     // matching every argument exactly wins over one that merely accepts them.
@@ -428,7 +430,8 @@ private:
     // Checks that `candidate` may join `overloadSet` as an overload.
     [[nodiscard]] bool canOverloadCallable(const CallableOverloadSet& overloadSet, CallableId candidate,
                                            NomadString& error) const;
-    void addFunctionDefinition(FunctionDefinition definition, NomadId registryId);
+    NomadId addFunctionDefinition(std::unique_ptr<FunctionDefinition> definition);
+    void removeLastFunctionDefinition();
     [[nodiscard]] ResolveResult resolveAmong(
         std::vector<NomadId> candidates,
         const std::vector<const Type*>& argumentTypes
@@ -454,7 +457,6 @@ private:
     std::vector<std::unique_ptr<Type>> m_types;
     std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;
     std::vector<TypeSpecialization> m_typeSpecializations;
-    std::vector<ConstructorDefinition> m_constructors;
     struct ParameterizedConstructorRegistration {
         NomadString name;
         NomadIndex argumentCount;
@@ -472,9 +474,7 @@ private:
         const Type* returnType,
         const NomadString& doc
     );
-    std::vector<NativeFunctionDefinition> m_nativeCallables;
-    std::vector<FunctionDefinition> m_functionTable;
-    std::vector<NomadId> m_functionRegistryIds;
+    std::vector<std::unique_ptr<FunctionDefinition>> m_functionTable;
     std::unordered_map<NomadString, std::vector<NomadId>> m_functionsByName;
     std::vector<KeywordDefinition> m_keywords;
     VariableMap m_constantsMap;

@@ -455,7 +455,8 @@ void generateTypeDocumentation(const Runtime* runtime, std::ostream& out) {
         out << "### `" << type->getTypeName() << "`" << std::endl;
         out << std::endl;
         out << type->getDocumentation() << std::endl;
-        for (const auto& constructor : runtime->getConstructors()) {
+        for (const auto* candidate : runtime->getConstructors()) {
+            const auto& constructor = *candidate;
             if (constructor.returnType != type) {
                 continue;
             }

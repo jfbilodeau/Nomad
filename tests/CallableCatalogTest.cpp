@@ -498,9 +498,14 @@ BOOST_AUTO_TEST_CASE(registered_callables_share_one_id_space)
     BOOST_TEST(methodResult.id != constructorResult.id);
     BOOST_TEST(functionResult.id != constructorResult.id);
 
-    BOOST_TEST(runtime.getFunctionRegistryId(functionResult.id) == function);
-    BOOST_TEST(runtime.getFunctionRegistryId(methodResult.id) == method);
-    BOOST_TEST(runtime.getFunctionRegistryId(constructorResult.id) == constructor);
+    BOOST_TEST(functionResult.id == function);
+    BOOST_TEST(constructorResult.id == constructor);
+    BOOST_TEST(runtime.getFunctionDefinition(methodResult.id)->objectType == type);
+    BOOST_TEST(runtime.getNativeFunctionDefinition(functionResult.id) != nullptr);
+    BOOST_TEST(runtime.getNativeFunctionDefinition(methodResult.id) != nullptr);
+    BOOST_TEST(runtime.getNativeFunctionDefinition(constructorResult.id) == nullptr);
+    BOOST_TEST(runtime.getConstructorDefinition(constructorResult.id) != nullptr);
+    BOOST_TEST(runtime.getConstructorDefinition(functionResult.id) == nullptr);
 
     BOOST_TEST(runtime.getFunctionDefinition(functionResult.id)->type == CallableType::Function);
     BOOST_TEST(runtime.getFunctionDefinition(methodResult.id)->type == CallableType::Method);
@@ -543,8 +548,8 @@ BOOST_AUTO_TEST_CASE(resolve_function_picks_between_overloads)
     const auto stringResult = runtime.resolveFunction("test.convert", {runtime.getStringType()});
 
     BOOST_REQUIRE(floatResult.isResolved() && stringResult.isResolved());
-    BOOST_TEST(runtime.getFunctionRegistryId(floatResult.id) == fromFloat);
-    BOOST_TEST(runtime.getFunctionRegistryId(stringResult.id) == fromString);
+    BOOST_TEST(floatResult.id == fromFloat);
+    BOOST_TEST(stringResult.id == fromString);
 
     // A compiler-supplied argument cannot tell the overloads apart.
     const auto wildcard = runtime.resolveFunction("test.convert", {nullptr});
@@ -592,9 +597,9 @@ BOOST_AUTO_TEST_CASE(resolve_constructor_selects_by_argument_types)
     const auto pairResult = runtime.resolveConstructor(type, {runtime.getIntegerType(), runtime.getIntegerType()});
 
     BOOST_REQUIRE(emptyResult.isResolved() && integerResult.isResolved() && pairResult.isResolved());
-    BOOST_TEST(runtime.getFunctionRegistryId(emptyResult.id) == empty);
-    BOOST_TEST(runtime.getFunctionRegistryId(integerResult.id) == fromInteger);
-    BOOST_TEST(runtime.getFunctionRegistryId(pairResult.id) == fromPair);
+    BOOST_TEST(emptyResult.id == empty);
+    BOOST_TEST(integerResult.id == fromInteger);
+    BOOST_TEST(pairResult.id == fromPair);
 
     BOOST_TEST(runtime.resolveConstructor(type, {runtime.getStringType()}).status == ResolveStatus::NoMatchingTypes);
     BOOST_TEST(

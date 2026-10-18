@@ -129,14 +129,15 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                     throw nomad::NomadException("Failed to resolve Array constructor return type");
                 }
                 nomad::ConstructorDefinition rankConstructor;
-                for (const auto& constructor : runtime->getConstructors()) {
-                    if (constructor.name == type->getTypeName()) {
-                        rankConstructor = constructor;
+                for (const auto* candidate : runtime->getConstructors()) {
+                    if (candidate->name == type->getTypeName()) {
+                        rankConstructor = *candidate;
                         break;
                     }
                 }
                 if (!rankConstructor.factory || runtime->registerConstructor(
-                    name, rankConstructor.parameters, rankConstructor.returnType, rankConstructor.factory, ""
+                    name, rankConstructor.parameters, static_cast<const nomad::ObjectTypeBase*>(rankConstructor.returnType),
+                    rankConstructor.factory, ""
                 ) == nomad::NOMAD_INVALID_ID) {
                     throw nomad::NomadException("Failed to register Array constructor");
                 }

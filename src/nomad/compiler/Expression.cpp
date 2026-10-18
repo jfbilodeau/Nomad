@@ -1153,7 +1153,8 @@ void NewObjectExpression::onResolve(CompilerContext* context, ScriptFunction* fu
 
     m_constructorId = NOMAD_INVALID_ID;
     ConstructorDefinition selected;
-    for (const auto& constructor : runtime->getConstructors()) {
+    for (const auto* candidate : runtime->getConstructors()) {
+        const auto& constructor = *candidate;
         if (constructor.name != m_constructorName || constructor.parameters.size() != argumentTypes.size()) {
             continue;
         }

@@ -28,25 +28,6 @@ struct ParameterDefinition {
     NomadDocField;
 };
 
-struct NativeFunctionDefinition {
-    NomadId id = NOMAD_INVALID_ID;
-    NomadString name;
-    NativeFunctionFn fn;
-    std::vector<ParameterDefinition> parameters;
-    const Type* returnType = nullptr;
-    NomadDocField;
-    const Type* objectType = nullptr;
-};
-
-struct ConstructorDefinition {
-    NomadId id = NOMAD_INVALID_ID;
-    NomadString name;
-    const ObjectTypeBase* returnType = nullptr;
-    std::vector<ParameterDefinition> parameters;
-    ConstructorFactory factory;
-    NomadDocField;
-};
-
 ParameterDefinition defParameter(const NomadString& name, const Type* type, NomadDocArg);
 
 enum class CallableType {
@@ -61,7 +42,13 @@ enum class CallableSource {
 };
 
 // Describes any callable, whatever its type or source. All callables share one id space.
+// Each source adds its own details in a derived class; `Runtime` hands them out through typed getters.
 struct FunctionDefinition {
+    FunctionDefinition() = default;
+    FunctionDefinition(const FunctionDefinition&) = default;
+    FunctionDefinition& operator=(const FunctionDefinition&) = default;
+    virtual ~FunctionDefinition() = default;
+
     NomadId id = NOMAD_INVALID_ID;
     NomadString name;
     CallableType type = CallableType::Function;
@@ -73,6 +60,24 @@ struct FunctionDefinition {
     // `returnType` (e.g. `Array1<int>`). Null for functions.
     const Type* objectType = nullptr;
     NomadDocField;
+};
+
+// Functions and methods implemented in C++. A method has an `objectType`.
+struct NativeFunctionDefinition : FunctionDefinition {
+    NativeFunctionDefinition() {
+        source = CallableSource::Native;
+    }
+
+    NativeFunctionFn fn;
+};
+
+struct ConstructorDefinition : FunctionDefinition {
+    ConstructorDefinition() {
+        type = CallableType::Constructor;
+        source = CallableSource::Native;
+    }
+
+    ConstructorFactory factory;
 };
 
 // Where a callable is implemented. Both kinds are called with the same syntax in Nomad code.
