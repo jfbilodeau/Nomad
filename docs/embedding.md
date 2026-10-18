@@ -206,12 +206,9 @@ return null.
 `getParameterizedTypeArgumentCount(name)` returns the registered family's arity,
 or an empty optional if the family is not registered.
 
-The collections module currently registers only `List` with one type argument.
-Hosts can request `getParameterizedType("List", {runtime.getIntegerType()})`.
-This creates a descriptor, not a list object. The compiler resolves parameterized
+Requesting a specialization creates a descriptor, not an object. The compiler resolves parameterized
 annotations in script parameters, function parameters, and event declarations
-through the same registration API. Scripts can construct an empty list with
-`new List<int>`; each evaluation creates a distinct object.
+through the same registration API.
 
 `ObjectTypeBase` provides shared reference-counted value handling and object
 opcodes. `ObjectType` supplies a name and type-argument metadata; its text
@@ -219,21 +216,11 @@ representation is its type name. Its initial value is a null object reference,
 not a constructed collection. Specialized descriptors may override initialization
 and formatting. Strings reuse the base while retaining empty-string initialization.
 
-`Type::initValue(value)` initializes fresh storage with an owned default value;
-it does not release existing contents. Release the initialized value through
-`freeValue` when it is no longer needed. The collection descriptors specialize
-this behavior: `ListType` creates a distinct empty list, while `ArrayType` lazily
-shares an empty array per descriptor. Array defaults have zero in every dimension
-and contain no elements.
-
-The C++ `Array1dObject`, `Array2dObject`, and `Array3dObject` classes provide fixed
-dimensions and typed element storage. Constructors taking dimensions require all
-sizes to be positive and reject element-count overflow. Their element-type-only
-constructors create internal empty defaults. Elements are initialized using their
-type's `initValue`, so arrays containing lists get distinct lists and arrays
-containing arrays get shared empty defaults. Keep element descriptors alive until
-all arrays using them have been released. Script construction with dimensions is
-not available yet.
+`Type::initValue(value)` is pure virtual and initializes fresh storage with an
+owned default value; it does not release existing contents. Implement it when
+defining a type descriptor, and release initialized values through `freeValue`
+when they are no longer needed. Keep descriptors alive until all values using
+them have been released.
 
 To make a configurable object type constructible, provide its third constructor
 argument, an `ObjectType::ObjectFactory`:
@@ -250,10 +237,19 @@ runtime.registerType(std::move(descriptor));
 The factory returns a new `NomadObject` with one owned reference. A missing factory
 means the type is not constructible; a factory returning null raises an error.
 The compiler checks `ObjectTypeBase::isConstructible()` before emitting construction.
+
+For constructors with arguments, derive a descriptor from `ObjectType` (or
+`ObjectTypeBase`) and override `isConstructible()`,
+`getConstructorParameterTypes()`, and `createObject(std::span<const RuntimeValue>)`.
+The parameter span describes the ordered, runtime-owned public value types.
+The factory receives borrowed argument values in that order and returns one owned
+object reference. Retain any argument object stored in the new instance.
+Validate type-specific value restrictions inside the factory; the compiler
+validates types and argument count, not values. The parameterless factory API
+continues to work unchanged.
 Specialized descriptors may override `isConstructible()` and `createObject()`, obeying
 the same ownership contract. Construction runs at evaluation time, not compilation
-time, in both compiled scripts and the interpreter. Constructor arguments are not
-supported yet.
+time, in both compiled scripts and the interpreter.
 
 ## Native object methods
 

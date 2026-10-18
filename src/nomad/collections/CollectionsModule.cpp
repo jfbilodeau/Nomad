@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/collections/ArrayObject.hpp>
+#include <nomad/collections/ArrayType.hpp>
 #include <nomad/collections/ListObject.hpp>
 #include <nomad/collections/ListType.hpp>
 
@@ -8,12 +10,40 @@
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/Module.hpp>
+#include <nomad/system/String.hpp>
 
 using nomad::NomadString;
 
 NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::ModuleCallbacks*) noexcept(false) {
     if (context->mode == nomad::ModuleMode::Packaging) {
         return;
+    }
+    for (auto dimensionCount = nomad::NomadIndex{1}; dimensionCount <= 3; ++dimensionCount) {
+        const auto name = "Array" + nomad::toString(dimensionCount);
+        if (!context->runtime->registerParameterizedType(
+            name,
+            1,
+            [runtime = context->runtime, dimensionCount](const std::vector<const nomad::Type*>& arguments) {
+                return std::make_unique<nomad::ArrayType>(arguments[0], dimensionCount, runtime->getIntegerType());
+            },
+            [runtime = context->runtime](const nomad::Type* type) {
+                const auto* objectType = static_cast<const nomad::ArrayType*>(type);
+                const auto countId = runtime->registerNativeProperty(
+                    objectType, "count", runtime->getIntegerType(),
+                    [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
+                        result.setIntegerValue(static_cast<nomad::NomadInteger>(
+                            machine->getThisAs<nomad::ArrayObject>()->getCount()
+                        ));
+                    },
+                    {}, NomadDoc("The total number of elements in the fixed-size array.")
+                );
+                if (countId == nomad::NOMAD_INVALID_ID) {
+                    throw nomad::NomadException("Failed to register Array members");
+                }
+            }
+        )) {
+            throw nomad::NomadException("Failed to register " + name);
+        }
     }
     if (!context->runtime->registerParameterizedType(
         "List",

@@ -1,5 +1,9 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/collections/Array1dObject.hpp>
+#include <nomad/collections/Array2dObject.hpp>
+#include <nomad/collections/Array3dObject.hpp>
+#include <nomad/collections/ArrayType.hpp>
 #include <nomad/collections/ListObject.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
@@ -19,6 +23,7 @@
 
 #include <fstream>
 #include <iterator>
+#include <sstream>
 
 using namespace nomad;
 using namespace nomad::test;
@@ -46,6 +51,126 @@ bool compileFixture(ModuleHost& host, const CompilationTarget target) {
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(module_host)
+
+BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
+    TestDirectory directory("nomad_host_array_construction");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    NomadString calls;
+    runtime.registerNativeFunction(
+        "size",
+        [&calls](VirtualMachine* machine) {
+            const auto value = machine->getIntegerParameter(0);
+            calls += std::to_string(value);
+            machine->setIntegerResult(value);
+        },
+        {defParameter("value", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
+    );
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"main", {"main.nomad",
+        "line = new Array1<int> 10\n"
+        "grid = new Array2<string> (size 2) (size 3)\n"
+        "volume = new Array3<float> 2 3 4\n"
+        "alias = grid\n"
+        "assert alias.count == 6\n"
+        "assert line.count == 10\n"
+        "assert volume.count == 24\n"
+        "assert (new Array1<int> (2 + 3)).count == 5\n"
+        "arrays = new List<Array1<int>>\n"
+        "arrays.push line\n"
+        "assert arrays[0].count == 10\n"
+        "return new Array1<Array2<int>> 2"
+    }}}, {}});
+    const auto compiled = compiler->compileScripts(&context, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled, (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
+    const auto* nestedType = runtime.getParameterizedType("Array2", {runtime.getIntegerType()});
+    RuntimeValue empty;
+    nestedType->initValue(empty);
+    nestedType->freeValue(empty);
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(calls == "23");
+    const auto* outer = result.asObject<Array1dObject>();
+    BOOST_TEST(outer->getCount() == 2u);
+    BOOST_TEST(outer->getValue(0).getObjectValue() == outer->getValue(1).getObjectValue());
+    BOOST_TEST(outer->getValue(0).asObject<Array2dObject>()->getCount() == 0u);
+    result.freeObjectValue();
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    calls.clear();
+    {
+        VirtualMachine machine(&runtime);
+        InterpreterContext evaluation(machine);
+        for (const auto* source : {
+            "line = new Array1<int> 10", "grid = new Array2<string> (size 2) (size 3)",
+            "volume = new Array3<float> 2 3 4", "grid.count"
+        }) {
+            const auto executed = Interpreter{}.execute(source, evaluation);
+            BOOST_REQUIRE_MESSAGE(executed, (evaluation.getError() ? *evaluation.getError() : source));
+        }
+        BOOST_TEST(calls == "23");
+        BOOST_TEST(evaluation.getResult()->getValue().getIntegerValue() == 6);
+        const auto* grid = evaluation.getVariableValue("grid")->asObject<Array2dObject>();
+        BOOST_TEST(grid->getDimensionSize(0) == 2u);
+        BOOST_TEST(grid->getDimensionSize(1) == 3u);
+        BOOST_TEST(runtime.getStringType()->toString(grid->getValue(1, 2)) == "");
+        BOOST_TEST(evaluation.getVariableValue("volume")->asObject<Array3dObject>()->getValue(1, 2, 3).getFloatValue() == 0.0f);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    std::ostringstream documentation;
+    generateTypeDocumentation(&runtime, documentation);
+    BOOST_TEST(documentation.str().find("new Array2<string> argument1:int argument2:int") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(array_dimension_values_fail_at_runtime_not_compilation) {
+    for (const auto* source : {
+        "return new Array1<int> 0", "return new Array2<int> 1 0",
+        "return new Array3<int> 1 0 1", "return new Array1<int> -1",
+        "return new Array2<int> 9223372036854775807 2"
+    }) {
+        BOOST_TEST_CONTEXT(source) {
+            TestDirectory directory("nomad_host_invalid_array_dimensions");
+            const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+            ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+            auto& runtime = *host.getRuntime();
+            auto compiler = runtime.createCompiler();
+            CompilerContext context(compiler.get());
+            compiler->registerSources(&context, {{{"main", {"main.nomad", source}}}, {}});
+            const auto compiled = compiler->compileScripts(&context, CompilationTarget::Executable);
+            BOOST_REQUIRE_MESSAGE(compiled, (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
+            const auto before = NomadObject::getLiveObjectCount();
+            auto machine = runtime.createVirtualMachine();
+            BOOST_CHECK_THROW(machine->run(runtime.getFunction(runtime.getFunctionId("main")), {}), NomadException);
+            BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+            InterpreterContext evaluation(*machine);
+            BOOST_TEST(!Interpreter{}.execute(NomadString(source).substr(7), evaluation));
+            BOOST_REQUIRE(evaluation.getError() != nullptr);
+            BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(array_constructor_signatures_are_checked_by_compiler) {
+    for (const auto* source : {
+        "return new Array1<int>", "return new Array2<int> 2", "return new Array3<int> 2 3",
+        "return new Array1<int> 1 2", "return new Array2<int> 1 \"two\"",
+        "return new Array3<int> 1 2 true", "return new Array1<int> 1.0",
+        "return new Array1<int string> 2"
+    }) {
+        BOOST_TEST_CONTEXT(source) {
+            TestDirectory directory("nomad_host_array_constructor_types");
+            const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+            ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+            auto compiler = host.getRuntime()->createCompiler();
+            CompilerContext context(compiler.get());
+            compiler->registerSources(&context, {{{"main", {"main.nomad", source}}}, {}});
+            BOOST_TEST(!compiler->compileScripts(&context, CompilationTarget::Analysis));
+            BOOST_REQUIRE(context.getFirstError() != nullptr);
+        }
+    }
+}
 
 BOOST_AUTO_TEST_CASE(collections_lists_store_typed_values_and_share_mutations) {
     TestDirectory directory("nomad_host_list_values");

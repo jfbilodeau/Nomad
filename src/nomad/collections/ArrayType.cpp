@@ -24,13 +24,50 @@ NomadString getArrayTypeName(const Type* elementType, const NomadIndex dimension
 
 } // namespace
 
-ArrayType::ArrayType(const Type* elementType, const NomadIndex dimensionCount):
-    ObjectType(getArrayTypeName(elementType, dimensionCount), {elementType}),
-    m_dimensionCount(dimensionCount)
-{}
+ArrayType::ArrayType(
+    const Type* elementType,
+    const NomadIndex dimensionCount,
+    const Type* dimensionType
+):
+    ObjectType(
+        getArrayTypeName(elementType, dimensionCount), {elementType}, {},
+        "A fixed-size array. Explicit construction requires one positive int size per dimension."
+    ),
+    m_dimensionCount(dimensionCount),
+    m_constructorParameterTypes(dimensionCount, dimensionType)
+{
+    if (dynamic_cast<const IntegerType*>(dimensionType) == nullptr) {
+        throw NomadException("Array dimension type must be int");
+    }
+}
 
 ArrayType::~ArrayType() {
     releaseRef(m_emptyArray);
+}
+
+bool ArrayType::isConstructible() const {
+    return true;
+}
+
+std::span<const Type* const> ArrayType::getConstructorParameterTypes() const {
+    return m_constructorParameterTypes;
+}
+
+NomadObject* ArrayType::createObject(const std::span<const RuntimeValue> arguments) const {
+    if (arguments.size() != m_dimensionCount) {
+        throw NomadException("Incorrect constructor argument count for '" + getTypeName() + "'");
+    }
+    switch (m_dimensionCount) {
+    case 1:
+        return new Array1dObject(getElementType(), arguments[0].getIntegerValue());
+    case 2:
+        return new Array2dObject(getElementType(), arguments[0].getIntegerValue(), arguments[1].getIntegerValue());
+    case 3:
+        return new Array3dObject(
+            getElementType(), arguments[0].getIntegerValue(), arguments[1].getIntegerValue(), arguments[2].getIntegerValue()
+        );
+    }
+    throw NomadBug("Invalid array dimension count");
 }
 
 void ArrayType::initValue(RuntimeValue& value) const {

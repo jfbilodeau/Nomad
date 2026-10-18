@@ -1131,30 +1131,43 @@ NewObjectExpression::NewObjectExpression(
     const Expression* parent,
     const NomadIndex line,
     const NomadIndex column,
-    const ObjectTypeBase* type
+    const ObjectTypeBase* type,
+    ArgumentList arguments
 ):
     Expression(parent, line, column),
-    m_objectType(type)
+    m_objectType(type),
+    m_arguments(std::move(arguments))
 {
 }
 
-void NewObjectExpression::onResolve(CompilerContext*, ScriptFunction*) {
-    setType(m_objectType);
+void NewObjectExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+    if (m_arguments.resolve(context, function)) {
+        setType(m_objectType);
+    }
 }
 
 bool NewObjectExpression::isTerminal() const {
     return false;
 }
 
-void NewObjectExpression::onCompile(Compiler* compiler, ScriptFunction*, const ExpressionTarget target) {
+void NewObjectExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+    for (const auto& argument : m_arguments.getArguments()) {
+        argument->generateCode(compiler, function);
+    }
     compiler->addOpCode(OpCodes::op_object_new);
     compiler->addId(compiler->getRuntime()->getTypeId(m_objectType->getTypeName()));
     compiler->addMoveResult(getType(), target);
 }
 
 void NewObjectExpression::onEvaluate(InterpreterContext& context) const {
+    std::vector<TypedValue> evaluatedArguments;
+    std::vector<RuntimeValue> values;
+    m_arguments.evaluate(context, evaluatedArguments, values);
+    if (context.hasError()) {
+        return;
+    }
     const auto release = [](NomadObject* object) { object->releaseRef(); };
-    const std::unique_ptr<NomadObject, decltype(release)> object(m_objectType->createObject(), release);
+    const std::unique_ptr<NomadObject, decltype(release)> object(m_objectType->createObject(values), release);
     if (!object) {
         raiseException("Object factory for '" + m_objectType->getTypeName() + "' returned null");
     }

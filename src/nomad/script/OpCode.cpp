@@ -854,10 +854,29 @@ void op_object_new(VirtualMachine* interpreter) {
     if (objectType == nullptr || !objectType->isConstructible()) {
         interpreter->fault("Cannot construct object: invalid or nonconstructible type");
     }
-    auto* object = objectType->createObject();
-    if (object == nullptr) {
-        interpreter->fault("Object factory for '" + objectType->getTypeName() + "' returned null");
+    const auto parameterTypes = objectType->getConstructorParameterTypes();
+    const auto releaseArguments = [&]() {
+        for (auto index = parameterTypes.size(); index > 0; --index) {
+            auto value = interpreter->popValue();
+            parameterTypes[index - 1]->freeValue(value);
+        }
+    };
+    NomadObject* object = nullptr;
+    try {
+        std::vector<RuntimeValue> arguments;
+        arguments.reserve(parameterTypes.size());
+        for (auto index = NomadIndex{0}; index < parameterTypes.size(); ++index) {
+            arguments.push_back(interpreter->peekStack(parameterTypes.size() - index - 1));
+        }
+        object = objectType->createObject(arguments);
+        if (object == nullptr) {
+            interpreter->fault("Object factory for '" + objectType->getTypeName() + "' returned null");
+        }
+    } catch (...) {
+        releaseArguments();
+        throw;
     }
+    releaseArguments();
     interpreter->getResult().setObjectValue(object);
 }
 

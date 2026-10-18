@@ -44,6 +44,7 @@ add_executable(
     ./NomadObjectTest.cpp
     ./main.cpp
     ./NomadVersionTest.cpp
+    ./ObjectConstructionTest.cpp
     ./PackedSpriteRegistrationTest.cpp
     ./ParserTest.cpp
     ./ProgramOptionsTest.cpp

@@ -43,6 +43,7 @@ public:
 
 class UnmanagedType final : public Type {
 public:
+    void initValue(RuntimeValue& value) const override;
     NomadString getTypeName() const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
     void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override;
@@ -50,6 +51,10 @@ public:
 
     mutable NomadIndex freeCalls = 0;
 };
+
+void UnmanagedType::initValue(RuntimeValue& value) const {
+    value = RuntimeValue{};
+}
 
 NomadString UnmanagedType::getTypeName() const {
     return "Unmanaged";

@@ -21,6 +21,10 @@ class TrackingType final : public Type {
 public:
     explicit TrackingType(bool& valueFreed) : m_valueFreed(valueFreed) {}
 
+    void initValue(RuntimeValue& value) const override {
+        value = RuntimeValue{};
+    }
+
     [[nodiscard]] NomadString getTypeName() const override {
         return "tracking";
     }

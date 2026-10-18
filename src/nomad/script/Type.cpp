@@ -23,10 +23,6 @@ const NomadString& Type::getDocumentation() const {
     return m_documentation;
 }
 
-void Type::initValue(RuntimeValue& value) const {
-    value = RuntimeValue{};
-}
-
 void Type::freeValue(RuntimeValue& /*value*/) const {
     // Default implementation does nothing
 }
@@ -115,6 +111,10 @@ NomadString getTypeDisplayName(const Type* type) {
 
 ///////////////////////////////////////////////////////////////////////////////
 // VoidType
+void VoidType::initValue(RuntimeValue& value) const {
+    value = RuntimeValue{};
+}
+
 NomadString VoidType::getTypeName() const {
     return VOID_TYPE_NAME;
 }
@@ -134,6 +134,10 @@ bool VoidType::isVoid() const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // IdType
+void IdType::initValue(RuntimeValue& value) const {
+    value.setIdValue(0);
+}
+
 NomadString IdType::getTypeName() const {
     return ID_TYPE_NAME;
 }
@@ -154,6 +158,10 @@ OpaqueIdType::OpaqueIdType(NomadString name, NomadString documentation):
 {
 }
 
+void OpaqueIdType::initValue(RuntimeValue& value) const {
+    value.setIdValue(0);
+}
+
 NomadString OpaqueIdType::getTypeName() const {
     return m_name;
 }
@@ -172,6 +180,10 @@ bool OpaqueIdType::sameType(const Type* other) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // FloatType
+void FloatType::initValue(RuntimeValue& value) const {
+    value.setFloatValue(0.0f);
+}
+
 NomadString FloatType::getTypeName() const {
     return FLOAT_TYPE_NAME;
 }
@@ -186,6 +198,10 @@ void FloatType::toString(const RuntimeValue& value, NomadString& string) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // IntegerType
+void IntegerType::initValue(RuntimeValue& value) const {
+    value.setIntegerValue(0);
+}
+
 NomadString IntegerType::getTypeName() const {
     return INTEGER_TYPE_NAME;
 }
@@ -204,6 +220,10 @@ EnumType::EnumType(NomadString name, std::vector<EnumValueDefinition> values):
     m_name(std::move(name)),
     m_values(std::move(values))
 {
+}
+
+void EnumType::initValue(RuntimeValue& value) const {
+    value.setIntegerValue(0);
 }
 
 NomadString EnumType::getTypeName() const {
@@ -260,6 +280,10 @@ bool EnumType::getNameByValue(const NomadInteger value, NomadString& name) const
 
 ///////////////////////////////////////////////////////////////////////////////
 // BooleanType
+void BooleanType::initValue(RuntimeValue& value) const {
+    value.setBooleanValue(NOMAD_FALSE);
+}
+
 NomadString BooleanType::getTypeName() const {
     return BOOLEAN_TYPE_NAME;
 }
@@ -345,6 +369,17 @@ NomadObject* ObjectTypeBase::createObject() const {
     throw NomadException("Type '" + getTypeName() + "' is not constructible");
 }
 
+std::span<const Type* const> ObjectTypeBase::getConstructorParameterTypes() const {
+    return {};
+}
+
+NomadObject* ObjectTypeBase::createObject(const std::span<const RuntimeValue> arguments) const {
+    if (!arguments.empty()) {
+        throw NomadException("Type '" + getTypeName() + "' does not accept constructor arguments");
+    }
+    return createObject();
+}
+
 ObjectType::ObjectType(
     NomadString name,
     std::vector<const Type*> typeArguments,
@@ -426,6 +461,10 @@ NomadString FunctionNameType::getTypeName() const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // FunctionLineNumberType
+void FunctionLineNumberType::initValue(RuntimeValue& value) const {
+    value.setIntegerValue(0);
+}
+
 NomadString FunctionLineNumberType::getTypeName() const {
     return FUNCTION_LINE_NUMBER_TYPE_NAME;
 }
@@ -455,6 +494,10 @@ FunctionType::FunctionType(const std::vector<const Type*>& parameter_types, cons
     }
 
     m_name += "):" + return_type->getTypeName();
+}
+
+void FunctionType::initValue(RuntimeValue& value) const {
+    value.setIdValue(0);
 }
 
 NomadString FunctionType::getTypeName() const {
@@ -516,6 +559,10 @@ EventType::EventType(const EventDefinition* declaration):
     m_event(*declaration)
 {}
 
+void EventType::initValue(RuntimeValue& value) const {
+    value.setIdValue(0);
+}
+
 NomadString EventType::getTypeName() const {
     return EVENT_TYPE_NAME;
 }
@@ -549,6 +596,10 @@ const NomadString & EventType::getEventName() const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // EventCallbackType
+void EventCallbackType::initValue(RuntimeValue& value) const {
+    value.setIdValue(0);
+}
+
 NomadString EventCallbackType::getTypeName() const {
     return EVENT_CALLBACK_TYPE_NAME;
 }
@@ -563,6 +614,10 @@ void EventCallbackType::toString(const RuntimeValue& value, NomadString& string)
 
 ///////////////////////////////////////////////////////////////////////////////
 // EventDispatchType
+void EventDispatchType::initValue(RuntimeValue& value) const {
+    value.setIdValue(0);
+}
+
 NomadString EventDispatchType::getTypeName() const {
     return EVENT_DISPATCH_TYPE_NAME;
 }
@@ -573,6 +628,10 @@ void EventDispatchType::copyValue(const RuntimeValue& sourceValue, RuntimeValue&
 
 void EventDispatchType::toString(const RuntimeValue& value, NomadString& string) const {
     string = std::format("{}({})", EVENT_DISPATCH_TYPE_NAME, value.getIdValue());
+}
+
+void IndexerType::initValue(RuntimeValue& value) const {
+    value.setIdValue(0);
 }
 
 } // namespace nomad

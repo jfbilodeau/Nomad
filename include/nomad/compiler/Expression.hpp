@@ -231,7 +231,13 @@ private:
 
 class NewObjectExpression final : public Expression {
 public:
-    NewObjectExpression(const Expression* parent, NomadIndex line, NomadIndex column, const ObjectTypeBase* type);
+    NewObjectExpression(
+        const Expression* parent,
+        NomadIndex line,
+        NomadIndex column,
+        const ObjectTypeBase* type,
+        ArgumentList arguments
+    );
     [[nodiscard]] bool isTerminal() const override;
 
 protected:
@@ -241,6 +247,7 @@ protected:
 
 private:
     const ObjectTypeBase* m_objectType;
+    ArgumentList m_arguments;
 };
 
 class StringLiteral : public PrimaryExpression {

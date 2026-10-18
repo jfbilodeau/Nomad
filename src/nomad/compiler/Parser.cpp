@@ -751,7 +751,7 @@ std::unique_ptr<Expression> parseUnaryOperatorExpression(CompilerContext* contex
 
 std::unique_ptr<Expression> parseNewExpression(
     CompilerContext* context,
-    ScriptFunction* /*function*/,
+    ScriptFunction* function,
     Tokenizer* tokens,
     const Expression* parent
 ) {
@@ -769,7 +769,24 @@ std::unique_ptr<Expression> parseNewExpression(
         context->reportError("Type '" + type->getTypeName() + "' is not constructible", tokens);
         return nullptr;
     }
-    return std::make_unique<NewObjectExpression>(parent, line, column, objectType);
+    ArgumentList arguments;
+    for (const auto* parameterType : objectType->getConstructorParameterTypes()) {
+        if (parameterType == nullptr || parameterType->isVoid() || parameterType->isInternal() ||
+            context->getRuntime()->getTypeByName(parameterType->getTypeName()) != parameterType) {
+            context->reportError("Invalid constructor parameter type for '" + type->getTypeName() + "'", tokens);
+            return nullptr;
+        }
+        if (tokens->endOfLine() || (tokens->is(TokenType::Operator) && (tokens->is(")") || tokens->is("]")))) {
+            context->reportError("Expected constructor argument of type '" + parameterType->getTypeName() + "'", tokens);
+            return nullptr;
+        }
+        auto argument = parseExpressionArgument(context, parameterType, function, tokens);
+        if (argument == nullptr) {
+            return nullptr;
+        }
+        arguments.add(std::move(argument));
+    }
+    return std::make_unique<NewObjectExpression>(parent, line, column, objectType, std::move(arguments));
 }
 
 std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,

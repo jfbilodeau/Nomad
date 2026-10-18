@@ -12,7 +12,7 @@ The SDK provides:
 
 | Module | Features |
 | --- | --- |
-| `nomad-collections` | Typed lists with construction, append, count, and indexed access. |
+| `nomad-collections` | Typed lists with indexed access and fixed-size 1D/2D/3D array construction. |
 | `nomad-system` | Logging, math functions, conversions, and `system.exit`. |
 | `nomad-game` | Windows, input, graphics, audio, scenes, entities, and game resources. Requires `nomad-system`. |
 
@@ -47,6 +47,25 @@ assignments can change its contents through a parameter or another reference.
 
 See [Object types and members](language.md#object-types-and-members) for
 construction, reference semantics, and indexer syntax.
+
+### Fixed-size arrays
+
+`Array1<T>`, `Array2<T>`, and `Array3<T>` take one `int` size per dimension:
+
+```nomad
+line = new Array1<int> 10
+grid = new Array2<string> 3 4
+volume = new Array3<float> 2 3 4
+total = grid.count # 12
+```
+
+Every explicit dimension must be positive. Zero, negative dimensions, and
+element-count overflow produce runtime errors, not compile-time errors.
+Elements start with their type's default value: zero, `false`, empty strings,
+distinct empty lists, or shared empty arrays. Internal empty-array defaults have
+zero in every dimension; they cannot be explicitly constructed with `new`.
+The read-only `count` property gives the total element count. Script-level array
+indexers are not available yet.
 
 ## SDK modules
 

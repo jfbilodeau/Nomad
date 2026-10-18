@@ -156,9 +156,10 @@ BOOST_AUTO_TEST_CASE(dimensions_and_element_types_are_validated_before_allocatio
     BOOST_CHECK_THROW(Array1dObject(nullptr, 1), NomadException);
     BOOST_CHECK_THROW(Array2dObject(&voidType, 1, 1), NomadException);
     BOOST_CHECK_THROW(Array3dObject(&internalType, 1, 1, 1), NomadException);
-    BOOST_CHECK_THROW(ArrayType(&integers, 0), NomadException);
-    BOOST_CHECK_THROW(ArrayType(&integers, 4), NomadException);
-    BOOST_CHECK_THROW(ArrayType(nullptr, 1), NomadException);
+    BOOST_CHECK_THROW(ArrayType(&integers, 0, &integers), NomadException);
+    BOOST_CHECK_THROW(ArrayType(&integers, 4, &integers), NomadException);
+    BOOST_CHECK_THROW(ArrayType(nullptr, 1, &integers), NomadException);
+    BOOST_CHECK_THROW(ArrayType(&integers, 1, nullptr), NomadException);
 }
 
 BOOST_AUTO_TEST_CASE(default_values_include_zero_primitives_and_empty_strings) {
@@ -198,8 +199,8 @@ BOOST_AUTO_TEST_CASE(array_defaults_are_lazy_shared_and_separate_by_descriptor) 
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue survivor;
     {
-        ArrayType type(&integers, 2);
-        ArrayType otherType(&integers, 2);
+        ArrayType type(&integers, 2, &integers);
+        ArrayType otherType(&integers, 2, &integers);
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
         BOOST_TEST(type.getTypeName() == "Array2<int>");
         BOOST_TEST(type.getDimensionCount() == 2u);
@@ -232,7 +233,7 @@ BOOST_AUTO_TEST_CASE(each_array_rank_has_an_empty_default_that_rejects_writes) {
     IntegerType integers;
     const auto before = NomadObject::getLiveObjectCount();
     for (auto dimensions = NomadIndex{1}; dimensions <= 3; ++dimensions) {
-        ArrayType type(&integers, dimensions);
+        ArrayType type(&integers, dimensions, &integers);
         RuntimeValue value;
         type.initValue(value);
         const auto* array = value.asObject<ArrayObject>();
@@ -270,7 +271,7 @@ BOOST_AUTO_TEST_CASE(nested_defaults_share_arrays_but_not_mutable_lists) {
         BOOST_TEST(firstList->getCount() == 1u);
         BOOST_TEST(secondList->getCount() == 0u);
 
-        ArrayType arrayType(&integers, 3);
+        ArrayType arrayType(&integers, 3, &integers);
         Array1dObject arrays(&arrayType, 2);
         BOOST_TEST(arrays.getValue(0).getObjectValue() == arrays.getValue(1).getObjectValue());
         BOOST_TEST(arrays.getValue(0).asObject<Array3dObject>()->getCount() == 0u);
@@ -314,7 +315,7 @@ BOOST_AUTO_TEST_CASE(copying_arrays_does_not_construct_unused_defaults) {
     IntegerType integers;
     const auto before = NomadObject::getLiveObjectCount();
     {
-        ArrayType type(&integers, 1);
+        ArrayType type(&integers, 1, &integers);
         RuntimeValue source;
         RuntimeValue destination;
         source.setObjectValue(new Array1dObject(&integers, 2));
@@ -332,7 +333,7 @@ BOOST_AUTO_TEST_CASE(empty_caches_do_not_access_destroyed_element_descriptors) {
     const auto before = NomadObject::getLiveObjectCount();
     {
         auto elementType = std::make_unique<IntegerType>();
-        auto type = std::make_unique<ArrayType>(elementType.get(), 1);
+        auto type = std::make_unique<ArrayType>(elementType.get(), 1, elementType.get());
         RuntimeValue value;
         type->initValue(value);
         type->freeValue(value);
