@@ -159,7 +159,7 @@ public:
     [[nodiscard]] const Type* getBooleanType() const;
     [[nodiscard]] const Type* getIntegerType() const;
     [[nodiscard]] const Type* getFloatType() const;
-    [[nodiscard]] const Type* getStringType() const;
+    [[nodiscard]] const StringType* getStringType() const;
     [[nodiscard]] const Type* getFunctionType() const;
     [[nodiscard]] const Type* getEventCallbackType() const;
     [[nodiscard]] const Type* getEventDispatchType() const;

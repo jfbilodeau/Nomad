@@ -1074,8 +1074,8 @@ const Type* Runtime::getFloatType() const {
     return getTypeByName(FLOAT_TYPE_NAME);
 }
 
-const Type* Runtime::getStringType() const {
-    return getTypeByName(STRING_TYPE_NAME);
+const StringType* Runtime::getStringType() const {
+    return static_cast<const StringType*>(getTypeByName(STRING_TYPE_NAME));
 }
 
 const Type* Runtime::getFunctionType() const {

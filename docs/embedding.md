@@ -272,7 +272,7 @@ Built-in string methods use the same object-method API. Read the instance with
 
 ```cpp
 runtime.registerNativeMethod(
-    static_cast<const nomad::ObjectTypeBase*>(runtime.getStringType()),
+    runtime.getStringType(),
     "textSize",
     [](nomad::VirtualMachine* machine) {
         const auto* instance = machine->getThisAs<const nomad::NomadStringObject>();

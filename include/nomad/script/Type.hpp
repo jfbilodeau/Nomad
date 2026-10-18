@@ -237,6 +237,7 @@ class BaseStringType : public ObjectTypeBase {
 public:
     BaseStringType();
 
+    using Type::toString;
     void initValue(RuntimeValue& value) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;

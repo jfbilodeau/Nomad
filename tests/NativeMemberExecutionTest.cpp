@@ -66,7 +66,7 @@ BOOST_AUTO_TEST_CASE(typed_method_borrows_the_string_receiver) {
     Runtime runtime;
     bool called = false;
     runtime.registerNativeMethod(
-        static_cast<const ObjectTypeBase*>(runtime.getStringType()),
+        runtime.getStringType(),
         "typedLength",
         [&called](VirtualMachine* virtualMachine) {
             const auto* receiver = virtualMachine->getThisAs<const NomadStringObject>();
