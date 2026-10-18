@@ -141,6 +141,10 @@ NomadBoolean ArgumentList::resolve(CompilerContext* context, ScriptFunction* fun
 }
 
 void ArgumentList::compile(Compiler* compiler, ScriptFunction* function) const {
+    if (m_receiverType != nullptr) {
+        compiler->addPushIntermediate(m_receiverType);
+    }
+
     // Push arguments right-to-left
     for (auto argument = m_arguments.rbegin(); argument != m_arguments.rend(); ++argument) {
         (*argument)->generateCode(compiler, function);
@@ -174,6 +178,18 @@ NomadIndex ArgumentList::getArgumentCount() const {
     }
 
     return total;
+}
+
+void ArgumentList::setReceiverType(const Type* receiverType) {
+    m_receiverType = receiverType;
+}
+
+const Type* ArgumentList::getReceiverType() const {
+    return m_receiverType;
+}
+
+NomadIndex ArgumentList::getStackCount() const {
+    return getArgumentCount() + (m_receiverType != nullptr ? 1 : 0);
 }
 
 std::vector<std::unique_ptr<Argument>>& ArgumentList::getArguments() {

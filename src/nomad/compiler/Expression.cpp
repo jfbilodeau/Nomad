@@ -792,7 +792,7 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptFunction* funct
         compiler->reportInternalError("Invalid native member: " + m_qualifiedName);
     }
 
-    compiler->addPushIntermediate(receiverType);
+    m_arguments.setReceiverType(receiverType);
     compiler->addNativeMethodCall(m_memberId, function, &m_arguments);
 
     compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);

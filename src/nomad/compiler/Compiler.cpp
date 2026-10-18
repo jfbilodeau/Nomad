@@ -688,14 +688,14 @@ NomadIndex Compiler::addFunctionCall(const NomadId targetFunctionId, ScriptFunct
 }
 
 void Compiler::addFreeArguments(const ArgumentList* arguments) {
-    const auto argumentCount = arguments->getArgumentCount();
+    const auto stackCount = arguments->getStackCount();
 
-    if (argumentCount == 0) {
+    if (stackCount == 0) {
         return;
     }
 
     // Arguments are pushed right-to-left, so the first argument is at the top of the stack. Offsets account for
-    // arguments occupying more than one slot.
+    // arguments occupying more than one slot. The optional `this` is below the arguments and is popped, not freed.
     NomadIndex stackOffset = 0;
 
     for (const auto& argument : arguments->getArguments()) {
@@ -706,7 +706,7 @@ void Compiler::addFreeArguments(const ArgumentList* arguments) {
         stackOffset += argument->getStackValueCount();
     }
 
-    switch (argumentCount) {
+    switch (stackCount) {
     case 1:
         addOpCode(OpCodes::op_pop_1);
         break;
@@ -721,7 +721,7 @@ void Compiler::addFreeArguments(const ArgumentList* arguments) {
 
     default:
         addOpCode(OpCodes::op_pop_n);
-        addIndex(argumentCount);
+        addIndex(stackCount);
     }
 }
 
@@ -779,9 +779,6 @@ NomadIndex Compiler::addNativeMethodCall(const NomadId memberId, ScriptFunction*
     addIndex(argumentCount);
 
     addFreeArguments(arguments);
-
-    // The saved receiver's ownership moves back to the intermediate register at the call.
-    addOpCode(op_pop_1);
 
     return m_instructions.size() - 1;
 }

@@ -41,6 +41,18 @@ public:
     [[nodiscard]]
     NomadIndex getArgumentCount() const;
 
+    // Optional `this` argument. The receiver value must be in the intermediate register when `compile` runs; it
+    // is pushed before the other arguments and shares ownership with the intermediate register (it is popped,
+    // never freed, with the arguments).
+    void setReceiverType(const Type* receiverType);
+
+    [[nodiscard]]
+    const Type* getReceiverType() const;
+
+    // Number of stack slots taken by the arguments, including `this`.
+    [[nodiscard]]
+    NomadIndex getStackCount() const;
+
     [[nodiscard]]
     std::vector<std::unique_ptr<Argument>>& getArguments();
 
@@ -49,6 +61,7 @@ public:
 
 private:
     std::vector<std::unique_ptr<Argument>> m_arguments;
+    const Type* m_receiverType = nullptr;
 };
 
 // Selects the overload of `name` that matches the already-parsed `arguments`, and assigns the selected parameter
