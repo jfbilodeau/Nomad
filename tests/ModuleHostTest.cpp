@@ -104,7 +104,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
-    BOOST_TEST(calls == "23");
+    BOOST_TEST(calls == "32");
     const auto* outer = result.asObject<Array1dObject>();
     BOOST_TEST(outer->getCount() == 2u);
     BOOST_TEST(outer->getValue(0).getObjectValue() == outer->getValue(1).getObjectValue());
@@ -204,7 +204,7 @@ BOOST_AUTO_TEST_CASE(array_constructor_overloads_return_rank_specific_types) {
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.asObject<Array2dObject>()->getCount() == 12u);
     result.freeObjectValue();
-    BOOST_TEST(calls == "234567");
+    BOOST_TEST(calls == "243765");
     const auto constructorCount = runtime.getConstructors().size();
     BOOST_TEST(runtime.getParameterizedConstructorName("Array", {runtime.getIntegerType()}) == "Array<int>");
     BOOST_TEST(runtime.getConstructors().size() == constructorCount);

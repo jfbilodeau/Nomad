@@ -212,8 +212,8 @@ void VirtualMachine::callNativeMethod(const NomadId memberId, const RuntimeValue
     }
     const auto previousParameterIndex = m_parameterIndex;
     const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
-    auto* previousReceiver = m_nativeReceiver;
-    m_nativeReceiver = &receiver;
+    const auto previousThis = m_this;
+    m_this = receiver;
     m_parameterIndex = m_stackIndex;
     m_enclosingParameterIndex = previousParameterIndex;
 
@@ -223,20 +223,17 @@ void VirtualMachine::callNativeMethod(const NomadId memberId, const RuntimeValue
     } catch (...) {
         m_parameterIndex = previousParameterIndex;
         m_enclosingParameterIndex = previousEnclosingParameterIndex;
-        m_nativeReceiver = previousReceiver;
+        m_this = previousThis;
         throw;
     }
 
     m_parameterIndex = previousParameterIndex;
     m_enclosingParameterIndex = previousEnclosingParameterIndex;
-    m_nativeReceiver = previousReceiver;
+    m_this = previousThis;
 }
 
 NomadObject* VirtualMachine::getThis() const {
-    if (m_nativeReceiver == nullptr) {
-        fault("Native member has no instance");
-    }
-    auto* instance = m_nativeReceiver->getObjectValue();
+    auto* instance = m_this.getObjectValue();
     if (instance == nullptr) {
         fault("Object method has no instance");
     }
@@ -244,16 +241,16 @@ NomadObject* VirtualMachine::getThis() const {
 }
 
 void VirtualMachine::invokeNativeMember(const NativeFunctionFn& callback, const RuntimeValue& receiver) {
-    auto* previousReceiver = m_nativeReceiver;
-    m_nativeReceiver = &receiver;
+    const auto previousThis = m_this;
+    m_this = receiver;
     try {
         (void)getThis();
         callback(this);
     } catch (...) {
-        m_nativeReceiver = previousReceiver;
+        m_this = previousThis;
         throw;
     }
-    m_nativeReceiver = previousReceiver;
+    m_this = previousThis;
 }
 
 void VirtualMachine::getNativeProperty(

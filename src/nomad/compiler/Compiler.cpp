@@ -761,6 +761,23 @@ NomadIndex Compiler::addNativeFunctionCall(const NomadId nativeFunctionId, Scrip
     return m_instructions.size() - 1;
 }
 
+NomadIndex Compiler::addConstructorCall(const NomadId constructorId, ScriptFunction* function, const ArgumentList* arguments) {
+    arguments->compile(this, function);
+
+    addOpCode(OpCodes::op_object_new);
+    addId(constructorId);
+
+    const auto argumentCount = arguments->getArgumentCount();
+
+    if (argumentCount != 0) {
+        addFreeArguments(arguments);
+        addOpCode(op_pop_n);
+        addIndex(argumentCount);
+    }
+
+    return m_instructions.size() - 1;
+}
+
 NomadIndex Compiler::addNativeMethodCall(const NomadId memberId, ScriptFunction* function,
                                             const ArgumentList* arguments) {
     arguments->compile(this, function);

@@ -243,7 +243,7 @@ private:
     NomadIndex m_enclosingParameterIndex = 0;  // Enclosing function's parameter frame for closure capture
     NomadIndex m_variableIndex = 0;
     void invokeNativeMember(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
-    const RuntimeValue* m_nativeReceiver = nullptr;
+    RuntimeValue m_this; // Receiver of the current member call; borrowed, not retained.
 };
 
 template<typename Object>

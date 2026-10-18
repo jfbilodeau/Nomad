@@ -854,29 +854,25 @@ void op_object_new(VirtualMachine* interpreter) {
         interpreter->fault("Cannot construct object: invalid constructor");
     }
     const auto& parameters = constructor.parameters;
-    // Arguments are pushed left to right, so the last argument is on top of the stack.
-    const auto releaseArguments = [&]() {
-        for (auto index = parameters.size(); index > 0; --index) {
-            auto value = interpreter->popValue();
-            parameters[index - 1].type->freeValue(value);
-        }
-    };
+    // Arguments are pushed right to left like any other call; the compiler frees and pops them afterwards.
+    std::vector<RuntimeValue> arguments;
+    arguments.reserve(parameters.size());
+    for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
+        arguments.push_back(interpreter->peekStack(index));
+    }
     NomadObject* object = nullptr;
     try {
-        std::vector<RuntimeValue> arguments;
-        arguments.reserve(parameters.size());
-        for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
-            arguments.push_back(interpreter->peekStack(parameters.size() - index - 1));
-        }
         object = constructor.factory(arguments);
         if (object == nullptr) {
             interpreter->fault("Object factory for '" + constructor.name + "' returned null");
         }
     } catch (...) {
-        releaseArguments();
+        // The compiler-emitted cleanup is skipped on failure, so release the arguments here.
+        for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
+            parameters[index].type->freeValue(arguments[index]);
+        }
         throw;
     }
-    releaseArguments();
     interpreter->getResult().setObjectValue(object);
 }
 

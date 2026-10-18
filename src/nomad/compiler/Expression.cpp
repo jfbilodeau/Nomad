@@ -1189,12 +1189,7 @@ bool NewObjectExpression::isTerminal() const {
 }
 
 void NewObjectExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
-    // Unlike native calls, constructor arguments are evaluated and pushed left to right.
-    for (const auto& argument : m_arguments.getArguments()) {
-        argument->generateCode(compiler, function);
-    }
-    compiler->addOpCode(OpCodes::op_object_new);
-    compiler->addId(m_constructorId);
+    compiler->addConstructorCall(m_constructorId, function, &m_arguments);
     compiler->addMoveResult(getType(), target);
 }
 
