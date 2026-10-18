@@ -49,6 +49,32 @@ struct ConstructorDefinition {
 
 ParameterDefinition defParameter(const NomadString& name, const Type* type, NomadDocArg);
 
+enum class CallableType {
+    Function = 1,
+    Method,
+    Constructor,
+};
+
+enum class CallableSource {
+    Script = 1, // Compiled from Nomad source.
+    Native,     // Implemented in C++ and registered by the host.
+};
+
+// Describes any callable, whatever its type or source. All callables share one id space.
+struct FunctionDefinition {
+    NomadId id = NOMAD_INVALID_ID;
+    NomadString name;
+    CallableType type = CallableType::Function;
+    CallableSource source = CallableSource::Native;
+    std::vector<ParameterDefinition> parameters;
+    // The type of the value the callable yields; void when it yields nothing.
+    const Type* returnType = nullptr;
+    // Method: the receiver's type. Constructor: the class being constructed (e.g. `Array`), which may differ from
+    // `returnType` (e.g. `Array1<int>`). Null for functions.
+    const Type* objectType = nullptr;
+    NomadDocField;
+};
+
 // Where a callable is implemented. Both kinds are called with the same syntax in Nomad code.
 enum class CallableKind {
     NativeFunction = 1, // Implemented in C++ and registered by the host runtime.

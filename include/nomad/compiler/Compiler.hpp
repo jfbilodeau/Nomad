@@ -44,16 +44,6 @@ private:
     AssignmentStatement* m_assignmentNode;
 };
 
-class FunctionDefinition {
-public:
-    FunctionDefinition(ScriptFunction* function);
-
-
-
-private:
-    ScriptFunction* m_function;
-};
-
 class Compiler {
 public:
     explicit Compiler(Runtime* runtime, std::vector<Instruction>& instructions);

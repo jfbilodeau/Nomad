@@ -2,7 +2,34 @@
 
 #pragma once
 
+#include <nomad/Nomad.hpp>
+
+#include <vector>
+
 namespace nomad {
+
+class Type;
+
+// Why a call could not be resolved to a single callable.
+enum class ResolveStatus {
+    Resolved = 1,
+    UnknownName,      // No callable is registered under that name (or for that object type).
+    NoMatchingArity,  // Callables exist, but none accepts this number of arguments.
+    NoMatchingTypes,  // Some accept this many arguments, but none accepts these types.
+    Ambiguous,        // Several callables match equally well.
+};
+
+struct ResolveResult {
+    ResolveStatus status = ResolveStatus::UnknownName;
+    // Valid only when `status` is Resolved.
+    NomadId id = NOMAD_INVALID_ID;
+    // The callables that were considered; when Ambiguous, the ones that tied.
+    std::vector<NomadId> candidates;
+    // The argument types supplied by the caller; null entries are compiler-supplied arguments.
+    std::vector<const Type*> argumentTypes;
+
+    [[nodiscard]] bool isResolved() const { return status == ResolveStatus::Resolved; }
+};
 
 // How the parser consumes the tokens of a parameter. A call is parsed before its overload is selected, so every
 // overload of a name must agree on the shape of each parameter.
