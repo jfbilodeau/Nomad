@@ -64,6 +64,8 @@ The Nomad game engine is a 2D game engine written in C++ using modern C++20 feat
 	
 ## Conventions & Anti-Patterns for AI
 
+- **Documentation:** Describe observable behavior and functionality, not implementation internals or design rationale, unless explicitly requested. Keep language and module references focused on what users can do; embedding documentation should cover public host APIs and their contracts.
+
 - **Follow existing style:** Respect the C++ guidelines above (K&R formatting, PascalCase for classes, camelCase for variables and parameters, `m_` prefix for members). Avoid using external tools like `clang-format`.
 - **Small, focused changes:** Prefer minimal edits that keep diffs readable; don't reformat large vendor or third-party directories.
 - **Rebuild after changes:** Always run the build task after making changes to ensure no compilation errors.

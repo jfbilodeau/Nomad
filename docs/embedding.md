@@ -222,34 +222,48 @@ defining a type descriptor, and release initialized values through `freeValue`
 when they are no longer needed. Keep descriptors alive until all values using
 them have been released.
 
-To make a configurable object type constructible, provide its third constructor
-argument, an `ObjectType::ObjectFactory`:
+Register a constructor with its name, parameters, return type, and factory:
 
 ```cpp
-auto descriptor = std::make_unique<nomad::ObjectType>(
-    "Example",
-    std::vector<const nomad::Type*>{},
-    [] { return new ExampleObject; }
-);
+auto descriptor = std::make_unique<nomad::ObjectType>("Example");
+const auto* type = descriptor.get();
 runtime.registerType(std::move(descriptor));
+const auto constructorId = runtime.registerConstructor(
+    "Example",
+    {nomad::defParameter("size", runtime.getIntegerType(), "")},
+    type,
+    [](std::span<const nomad::RuntimeValue> arguments) {
+        return new ExampleObject(arguments[0].getIntegerValue());
+    },
+    ""
+);
+if (constructorId == nomad::NOMAD_INVALID_ID) {
+    throw nomad::NomadException("Failed to register Example constructor");
+}
 ```
 
-The factory returns a new `NomadObject` with one owned reference. A missing factory
-means the type is not constructible; a factory returning null raises an error.
-The compiler checks `ObjectTypeBase::isConstructible()` before emitting construction.
+Parameters and return types must be types registered with that runtime. Parameters
+cannot be `void` or internal types such as `$file`, `$function`, or `$line`
+(hidden source parameters are not supported for constructors). The return type
+must be a public object type.
+Registration failures are logged and return `NOMAD_INVALID_ID`.
+Constructors sharing a name may differ in parameter count or types and may return
+different object types. Duplicate parameter signatures are rejected, even if
+their parameter names or return types differ. Use an empty parameter list for a
+parameterless constructor.
 
-For constructors with arguments, derive a descriptor from `ObjectType` (or
-`ObjectTypeBase`) and override `isConstructible()`,
-`getConstructorParameterTypes()`, and `createObject(std::span<const RuntimeValue>)`.
-The parameter span describes the ordered, runtime-owned public value types.
-The factory receives borrowed argument values in that order and returns one owned
-object reference. Retain any argument object stored in the new instance.
-Validate type-specific value restrictions inside the factory; the compiler
-validates types and argument count, not values. The parameterless factory API
-continues to work unchanged.
-Specialized descriptors may override `isConstructible()` and `createObject()`, obeying
-the same ownership contract. Construction runs at evaluation time, not compilation
-time, in both compiled scripts and the interpreter.
+The compiler checks argument types and count and uses the selected constructor's
+declared return type. The factory receives borrowed arguments in source order
+and returns an object of that type with one owned reference. Retain any argument
+object stored in the new instance. A null result raises an error.
+Validate value restrictions inside the factory: construction runs at evaluation
+time in both compiled scripts and the interpreter.
+
+For a constructor with type arguments, use
+`registerParameterizedConstructor(name, argumentCount, initializer)`. Its
+initializer receives the specialized constructor name and resolved type arguments;
+register its overloads with `registerConstructor`. Specializations are reused on
+subsequent requests through `getParameterizedConstructorName(name, arguments)`.
 
 ## Native object methods
 

@@ -160,8 +160,7 @@ Numeric literal notes:
 
 ### Object construction
 
-Use `new` followed by a constructible type to create an object, without constructor
-parentheses:
+Use `new` followed by a constructor name to create an object:
 
 ```nomad
 first = new List<int>
@@ -175,14 +174,21 @@ object: `alias` and `first` refer to the same instance. Reassigning `first` does
 change `alias`. References are retained through function arguments and return
 values, and an object is released when its last reference is discarded.
 
-Available constructible types depend on the selected modules.
-Constructor arguments follow the type, separated by spaces, using the same
+Available constructors depend on the selected modules.
+Constructor arguments follow the name and any type arguments, separated by spaces, using the same
 expression syntax as function arguments. Their number and types are checked at
 compile time; value restrictions are checked by the constructor at runtime.
 Arguments are evaluated once, from left to right. Parenthesize the entire
 construction to access its result's members, rather than a final argument's
 members. Primitive types and strings cannot be constructed with `new`.
 Construction is also available in interpreter expressions.
+
+Constructors can be overloaded by argument count or types. The selected
+constructor determines the result's type; overloads may return different types.
+For example, `new Array<int> 3 4` returns an `Array2<int>`.
+When passing a construction to another call, parenthesize it to delimit its
+arguments: `(new Array<int> 3)` is a one-dimensional array, while
+`(new Array<int> 3 4)` is two-dimensional.
 
 ### Properties and methods
 
