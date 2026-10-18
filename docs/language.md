@@ -177,10 +177,7 @@ values, and an object is released when its last reference is discarded.
 Available constructors depend on the selected modules.
 Constructor arguments follow the name and any type arguments, separated by spaces, using the same
 expression syntax as function arguments. Their number and types are checked at
-compile time; value restrictions are checked by the constructor at runtime.
-Arguments are evaluated once, from left to right. Parenthesize the entire
-construction to access its result's members, rather than a final argument's
-members. Primitive types and strings cannot be constructed with `new`.
+compile time; value restrictions are checked by the constructor at runtime. 
 Construction is also available in interpreter expressions.
 
 Constructors can be overloaded by argument count or types. The selected
