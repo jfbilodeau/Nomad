@@ -15,8 +15,8 @@
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
+#include <nomad/script/FunctionResolution.hpp>
 #include <nomad/script/NativeMember.hpp>
-#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
@@ -40,17 +40,6 @@ class Type;
 class EnumType;
 class OpaqueIdType;
 struct EnumValueDefinition;
-
-using ConstructorFactory = std::function<NomadObject*(std::span<const RuntimeValue>)>;
-
-struct ConstructorDefinition {
-    NomadId id = NOMAD_INVALID_ID;
-    NomadString name;
-    const ObjectTypeBase* returnType = nullptr;
-    std::vector<ParameterDefinition> parameters;
-    ConstructorFactory factory;
-    NomadDocField;
-};
 
 enum class Operand {
     Boolean,

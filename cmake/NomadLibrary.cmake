@@ -22,6 +22,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/log/Logger.cpp
     ${NOMAD_SOURCE_DIR}/nomad/log/MemorySink.cpp
 
+    ${NOMAD_SOURCE_DIR}/nomad/script/Callable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Closure.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Documentation.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/DynamicVariable.cpp
@@ -30,7 +31,6 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterContext.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunction.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeMembers.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NomadObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NomadStringObject.cpp
