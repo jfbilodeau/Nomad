@@ -6,7 +6,7 @@
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Interpreter.hpp>
-#include <nomad/script/IntrinsicMembers.hpp>
+#include <nomad/script/NativeMembers.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -23,7 +23,7 @@ namespace nomad {
 
 namespace {
 
-bool isIntrinsicMemberName(const NomadString& name) {
+bool isNativeMemberName(const NomadString& name) {
     if (name.empty()) {
         return false;
     }
@@ -107,7 +107,7 @@ Runtime::Runtime() {
     registerBinaryOperator(BinaryOperator::BangEqual, typeString, typeString, typeBoolean, OpCodes::op_string_not_equal, foldStringBinaryBangEqual);
 
     // Register build-in nativeFunctions
-    registerBuiltInIntrinsicMembers(this);
+    registerBuiltInNativeMembers(this);
 
 //    register_keyword("stringId" NomadDoc("Load the string id of the given string"));
     registerKeyword("fun", NomadDoc("Function declaration"));
@@ -156,7 +156,7 @@ NomadId Runtime::registerNativeFunction(
     const Type* returnType,
     NomadDocArg
 ) {
-    return registerNativeCallable(nullptr, name, std::move(nativeFunction_fn), parameters, returnType, false, doc);
+    return registerNativeCallable(nullptr, name, std::move(nativeFunction_fn), parameters, returnType, doc);
 }
 
 NomadId Runtime::registerNativeCallable(
@@ -165,7 +165,6 @@ NomadId Runtime::registerNativeCallable(
     NativeFunctionFn fn,
     const std::vector<FunctionParameterDefinition>& parameters,
     const Type* returnType,
-    const bool mutatesReceiver,
     const NomadString& doc
 ) {
     if (objectType != nullptr) {
@@ -180,7 +179,7 @@ NomadId Runtime::registerNativeCallable(
             }
         }
         NomadString error;
-        if (!canRegisterIntrinsicMember(objectType, name, parameters, error)) {
+        if (!canRegisterNativeMember(objectType, name, parameters, error)) {
             log::error("Cannot register native method '" + name + "': " + error);
             return NOMAD_INVALID_ID;
         }
@@ -195,15 +194,14 @@ NomadId Runtime::registerNativeCallable(
             parameters,
             returnType,
             doc,
-            objectType,
-            mutatesReceiver
+            objectType
         }
     );
 
     if (objectType != nullptr) {
-        const auto memberId = toNomadId(m_intrinsicMembers.size());
-        m_intrinsicMembers.push_back({IntrinsicMemberType::Method, toNomadIndex(id)});
-        m_intrinsicMembersByName[name].push_back(memberId);
+        const auto memberId = toNomadId(m_nativeMembers.size());
+        m_nativeMembers.push_back({NativeMemberType::Method, toNomadIndex(id)});
+        m_nativeMembersByName[name].push_back(memberId);
         return memberId;
     }
 
@@ -799,7 +797,7 @@ bool Runtime::ownsType(const Type* type) const {
            std::ranges::any_of(m_types, [type](const auto& registeredType) { return registeredType.get() == type; });
 }
 
-bool Runtime::canRegisterIntrinsicMember(const Type* objectType, const NomadString& name,
+bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString& name,
                                          const std::vector<FunctionParameterDefinition>& parameters,
                                          NomadString& error) const {
     if (!ownsType(objectType)) {
@@ -807,33 +805,33 @@ bool Runtime::canRegisterIntrinsicMember(const Type* objectType, const NomadStri
         return false;
     }
 
-    if (objectType->isVoid()) {
-        error = "void cannot have intrinsic members";
+    if (dynamic_cast<const ObjectTypeBase*>(objectType) == nullptr) {
+        error = "only object types can have native members";
         return false;
     }
 
-    if (!isIntrinsicMemberName(name)) {
+    if (!isNativeMemberName(name)) {
         error = "member name must be a simple identifier";
         return false;
     }
 
-    if (getIntrinsicMemberId(objectType, name) != NOMAD_INVALID_ID) {
+    if (getNativeMemberId(objectType, name) != NOMAD_INVALID_ID) {
         error = "the type already has a member with that name";
         return false;
     }
 
-    const auto existing = m_intrinsicMembersByName.find(name);
-    if (existing == m_intrinsicMembersByName.end()) {
+    const auto existing = m_nativeMembersByName.find(name);
+    if (existing == m_nativeMembersByName.end()) {
         return true;
     }
 
     for (const auto memberId : existing->second) {
         std::vector<FunctionParameterDefinition> existingParameters;
 
-        if (getIntrinsicMemberType(memberId) == IntrinsicMemberType::Method) {
-            IntrinsicMethodDefinition definition;
-            if (!getIntrinsicMethodDefinition(memberId, definition)) {
-                throw NomadBug("Invalid intrinsic method registration");
+        if (getNativeMemberType(memberId) == NativeMemberType::Method) {
+            NativeMethodDefinition definition;
+            if (!getNativeMethodDefinition(memberId, definition)) {
+                throw NomadBug("Invalid native method registration");
             }
 
             existingParameters = std::move(definition.parameters);
@@ -863,29 +861,29 @@ bool Runtime::canRegisterIntrinsicMember(const Type* objectType, const NomadStri
     return true;
 }
 
-NomadId Runtime::registerIntrinsicProperty(const Type* objectType, const NomadString& name, const Type* valueType,
-                                           IntrinsicPropertyGetFn getFn, IntrinsicPropertySetFn setFn,
+NomadId Runtime::registerNativeProperty(const Type* objectType, const NomadString& name, const Type* valueType,
+                                           NativePropertyGetFn getFn, NativePropertySetFn setFn,
                                            const NomadString& doc) {
     if (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
-        log::error("Cannot register intrinsic property '" + name + "': invalid value type");
+        log::error("Cannot register native property '" + name + "': invalid value type");
         return NOMAD_INVALID_ID;
     }
 
     if (!getFn && !setFn) {
-        log::error("Cannot register intrinsic property '" + name + "': property has no accessor or mutator");
+        log::error("Cannot register native property '" + name + "': property has no accessor or mutator");
         return NOMAD_INVALID_ID;
     }
 
     NomadString error;
-    if (!canRegisterIntrinsicMember(objectType, name, {}, error)) {
-        log::error("Cannot register intrinsic property '" + name + "': " + error);
+    if (!canRegisterNativeMember(objectType, name, {}, error)) {
+        log::error("Cannot register native property '" + name + "': " + error);
         return NOMAD_INVALID_ID;
     }
 
-    const auto id = toNomadId(m_intrinsicMembers.size());
-    const auto definitionIndex = m_intrinsicProperties.size();
+    const auto id = toNomadId(m_nativeMembers.size());
+    const auto definitionIndex = m_nativeProperties.size();
 
-    m_intrinsicProperties.push_back({
+    m_nativeProperties.push_back({
         id,
         objectType,
         name,
@@ -894,14 +892,14 @@ NomadId Runtime::registerIntrinsicProperty(const Type* objectType, const NomadSt
         std::move(setFn),
         doc,
     });
-    m_intrinsicMembers.push_back({IntrinsicMemberType::Property, definitionIndex});
-    m_intrinsicMembersByName[name].push_back(id);
+    m_nativeMembers.push_back({NativeMemberType::Property, definitionIndex});
+    m_nativeMembersByName[name].push_back(id);
 
     return id;
 }
 
 NomadId Runtime::registerNativeMethod(
-    const ObjectTypeBase* objectType,
+    const Type* objectType,
     const NomadString& name,
     NativeFunctionFn fn,
     const std::vector<FunctionParameterDefinition>& parameters,
@@ -912,44 +910,34 @@ NomadId Runtime::registerNativeMethod(
         log::error("Cannot register native method '" + name + "': object type is null");
         return NOMAD_INVALID_ID;
     }
-    return registerIntrinsicMethod(objectType, name, std::move(fn), parameters, returnType, false, doc);
+    return registerNativeCallable(objectType, name, std::move(fn), parameters, returnType, doc);
 }
 
-NomadId Runtime::registerIntrinsicMethod(const Type* objectType, const NomadString& name, NativeFunctionFn fn,
-                                         const std::vector<FunctionParameterDefinition>& parameters,
-                                         const Type* returnType, const bool mutatesReceiver, const NomadString& doc) {
-    if (objectType == nullptr) {
-        log::error("Cannot register intrinsic method '" + name + "': object type is null");
-        return NOMAD_INVALID_ID;
-    }
-    return registerNativeCallable(objectType, name, std::move(fn), parameters, returnType, mutatesReceiver, doc);
-}
-
-NomadId Runtime::getIntrinsicMemberId(const Type* objectType, const NomadString& name) const {
-    const auto overloads = m_intrinsicMembersByName.find(name);
-    if (overloads == m_intrinsicMembersByName.end()) {
+NomadId Runtime::getNativeMemberId(const Type* objectType, const NomadString& name) const {
+    const auto overloads = m_nativeMembersByName.find(name);
+    if (overloads == m_nativeMembersByName.end()) {
         return NOMAD_INVALID_ID;
     }
 
     for (const auto memberId : overloads->second) {
-        switch (getIntrinsicMemberType(memberId)) {
-        case IntrinsicMemberType::Property: {
-            IntrinsicPropertyDefinition definition;
-            if (getIntrinsicPropertyDefinition(memberId, definition) && definition.objectType == objectType) {
+        switch (getNativeMemberType(memberId)) {
+        case NativeMemberType::Property: {
+            NativePropertyDefinition definition;
+            if (getNativePropertyDefinition(memberId, definition) && definition.objectType == objectType) {
                 return memberId;
             }
             break;
         }
 
-        case IntrinsicMemberType::Method: {
-            IntrinsicMethodDefinition definition;
-            if (getIntrinsicMethodDefinition(memberId, definition) && definition.objectType == objectType) {
+        case NativeMemberType::Method: {
+            NativeMethodDefinition definition;
+            if (getNativeMethodDefinition(memberId, definition) && definition.objectType == objectType) {
                 return memberId;
             }
             break;
         }
 
-        case IntrinsicMemberType::Unknown:
+        case NativeMemberType::Unknown:
             break;
         }
     }
@@ -957,38 +945,38 @@ NomadId Runtime::getIntrinsicMemberId(const Type* objectType, const NomadString&
     return NOMAD_INVALID_ID;
 }
 
-IntrinsicMemberType Runtime::getIntrinsicMemberType(const NomadId memberId) const {
+NativeMemberType Runtime::getNativeMemberType(const NomadId memberId) const {
     const auto memberIndex = toNomadIndex(memberId);
-    if (memberIndex >= m_intrinsicMembers.size()) {
-        return IntrinsicMemberType::Unknown;
+    if (memberIndex >= m_nativeMembers.size()) {
+        return NativeMemberType::Unknown;
     }
 
-    return m_intrinsicMembers[memberIndex].type;
+    return m_nativeMembers[memberIndex].type;
 }
 
-bool Runtime::getIntrinsicPropertyDefinition(const NomadId memberId, IntrinsicPropertyDefinition& definition) const {
+bool Runtime::getNativePropertyDefinition(const NomadId memberId, NativePropertyDefinition& definition) const {
     const auto memberIndex = toNomadIndex(memberId);
-    if (memberIndex >= m_intrinsicMembers.size()) {
+    if (memberIndex >= m_nativeMembers.size()) {
         return false;
     }
 
-    const auto& member = m_intrinsicMembers[memberIndex];
-    if (member.type != IntrinsicMemberType::Property || member.definitionIndex >= m_intrinsicProperties.size()) {
+    const auto& member = m_nativeMembers[memberIndex];
+    if (member.type != NativeMemberType::Property || member.definitionIndex >= m_nativeProperties.size()) {
         return false;
     }
 
-    definition = m_intrinsicProperties[member.definitionIndex];
+    definition = m_nativeProperties[member.definitionIndex];
     return true;
 }
 
-bool Runtime::getIntrinsicMethodDefinition(const NomadId memberId, IntrinsicMethodDefinition& definition) const {
+bool Runtime::getNativeMethodDefinition(const NomadId memberId, NativeMethodDefinition& definition) const {
     const auto memberIndex = toNomadIndex(memberId);
-    if (memberIndex >= m_intrinsicMembers.size()) {
+    if (memberIndex >= m_nativeMembers.size()) {
         return false;
     }
 
-    const auto& member = m_intrinsicMembers[memberIndex];
-    if (member.type != IntrinsicMemberType::Method || member.definitionIndex >= m_nativeCallables.size()) {
+    const auto& member = m_nativeMembers[memberIndex];
+    if (member.type != NativeMemberType::Method || member.definitionIndex >= m_nativeCallables.size()) {
         return false;
     }
 
@@ -997,48 +985,48 @@ bool Runtime::getIntrinsicMethodDefinition(const NomadId memberId, IntrinsicMeth
     return true;
 }
 
-void Runtime::getIntrinsicMembers(const Type* objectType, std::vector<NomadId>& members) const {
+void Runtime::getNativeMembers(const Type* objectType, std::vector<NomadId>& members) const {
     members.clear();
 
-    for (NomadIndex index = 0; index < m_intrinsicMembers.size(); ++index) {
+    for (NomadIndex index = 0; index < m_nativeMembers.size(); ++index) {
         const auto memberId = toNomadId(index);
-        const auto type = getIntrinsicMemberType(memberId);
+        const auto type = getNativeMemberType(memberId);
 
-        if (type == IntrinsicMemberType::Property) {
-            IntrinsicPropertyDefinition definition;
-            if (getIntrinsicPropertyDefinition(memberId, definition) && definition.objectType == objectType) {
+        if (type == NativeMemberType::Property) {
+            NativePropertyDefinition definition;
+            if (getNativePropertyDefinition(memberId, definition) && definition.objectType == objectType) {
                 members.push_back(memberId);
             }
-        } else if (type == IntrinsicMemberType::Method) {
-            IntrinsicMethodDefinition definition;
-            if (getIntrinsicMethodDefinition(memberId, definition) && definition.objectType == objectType) {
+        } else if (type == NativeMemberType::Method) {
+            NativeMethodDefinition definition;
+            if (getNativeMethodDefinition(memberId, definition) && definition.objectType == objectType) {
                 members.push_back(memberId);
             }
         }
     }
 }
 
-void Runtime::getIntrinsicMembers(std::vector<NomadId>& members) const {
+void Runtime::getNativeMembers(std::vector<NomadId>& members) const {
     members.clear();
-    members.reserve(m_intrinsicMembers.size());
+    members.reserve(m_nativeMembers.size());
 
-    for (NomadIndex index = 0; index < m_intrinsicMembers.size(); ++index) {
+    for (NomadIndex index = 0; index < m_nativeMembers.size(); ++index) {
         members.push_back(toNomadId(index));
     }
 }
 
-void Runtime::getIntrinsicMemberOverloads(const NomadString& name, std::vector<NomadId>& overloads) const {
+void Runtime::getNativeMemberOverloads(const NomadString& name, std::vector<NomadId>& overloads) const {
     overloads.clear();
 
-    const auto members = m_intrinsicMembersByName.find(name);
-    if (members != m_intrinsicMembersByName.end()) {
+    const auto members = m_nativeMembersByName.find(name);
+    if (members != m_nativeMembersByName.end()) {
         overloads = members->second;
     }
 }
 
-NomadIndex Runtime::getIntrinsicMemberOverloadCount(const NomadString& name) const {
-    const auto members = m_intrinsicMembersByName.find(name);
-    return members == m_intrinsicMembersByName.end() ? 0 : members->second.size();
+NomadIndex Runtime::getNativeMemberOverloadCount(const NomadString& name) const {
+    const auto members = m_nativeMembersByName.find(name);
+    return members == m_nativeMembersByName.end() ? 0 : members->second.size();
 }
 
 NomadId Runtime::registerInstruction(const NomadString& name, const InstructionFn fn, const NomadString& doc,

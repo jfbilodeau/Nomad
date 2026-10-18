@@ -185,12 +185,12 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
 
     if (expressionType != nullptr) {
         NomadString conflictingIdentifier;
-        if (compiler->getIntrinsicMemberConflict(m_identifier, expressionType, function, conflictingIdentifier)) {
+        if (compiler->getNativeMemberConflict(m_identifier, expressionType, function, conflictingIdentifier)) {
             reportError(
                 context,
                 function,
                 "Assigning type '" + getTypeDisplayName(expressionType) + "' to variable '" + m_identifier +
-                    "' introduces intrinsic member '" + conflictingIdentifier +
+                    "' introduces native member '" + conflictingIdentifier +
                     "', which conflicts with an existing identifier"
             );
             return;
@@ -449,7 +449,11 @@ MemberAssignmentStatement::MemberAssignmentStatement(const NomadIndex line, cons
 }
 
 void MemberAssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
-    if (!m_target->resolve(context, function) || !m_expression->resolve(context, function)) {
+    auto* target = m_target->asNativeExpression();
+    if (target == nullptr) {
+        context->getCompiler()->reportInternalError("Invalid native property assignment target");
+    }
+    if (!target->resolveAssignmentTarget(context, function) || !m_expression->resolve(context, function)) {
         return;
     }
 
@@ -457,30 +461,30 @@ void MemberAssignmentStatement::onResolve(CompilerContext* context, ScriptFuncti
     const auto* expressionType = m_expression->getType();
 
     if (targetType == nullptr || expressionType == nullptr) {
-        reportError(context, function, "Cannot determine intrinsic property assignment type");
+        reportError(context, function, "Cannot determine native property assignment type");
         return;
     }
 
     if (targetType != expressionType) {
         reportError(context, function,
                     "Cannot assign value of type '" + getTypeDisplayName(expressionType) +
-                        "' to intrinsic property of type '" + getTypeDisplayName(targetType) + "'");
+                        "' to native property of type '" + getTypeDisplayName(targetType) + "'");
     }
 }
 
 void MemberAssignmentStatement::onCompile(Compiler* compiler, ScriptFunction* function) {
-    auto* target = m_target->asIntrinsicExpression();
+    auto* target = m_target->asNativeExpression();
     if (target == nullptr) {
-        compiler->reportInternalError("Invalid intrinsic property assignment target");
+        compiler->reportInternalError("Invalid native property assignment target");
     }
 
     target->compileAssignment(compiler, function, m_expression.get());
 }
 
 void MemberAssignmentStatement::onEvaluate(InterpreterContext& context) const {
-    const auto* target = m_target->asIntrinsicExpression();
+    const auto* target = m_target->asNativeExpression();
     if (target == nullptr) {
-        raiseException("Invalid intrinsic property assignment target");
+        raiseException("Invalid native property assignment target");
     }
 
     target->evaluateAssignment(context, m_expression.get());

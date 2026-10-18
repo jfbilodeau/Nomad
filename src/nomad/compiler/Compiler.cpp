@@ -318,39 +318,39 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
     definition.identifierType = IdentifierType::Unknown;
 }
 
-bool Compiler::getIntrinsicMemberConflict(const NomadString& identifier, const Type* type, const ScriptFunction* function,
+bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type* type, const ScriptFunction* function,
                                           NomadString& conflictingIdentifier) const {
     if (identifier.empty() || type == nullptr) {
         return false;
     }
 
     std::vector<NomadId> members;
-    m_runtime->getIntrinsicMembers(type, members);
+    m_runtime->getNativeMembers(type, members);
 
     for (const auto memberId : members) {
         NomadString memberName;
 
-        switch (m_runtime->getIntrinsicMemberType(memberId)) {
-        case IntrinsicMemberType::Property: {
-            IntrinsicPropertyDefinition definition;
-            if (!m_runtime->getIntrinsicPropertyDefinition(memberId, definition)) {
-                reportInternalError("Invalid intrinsic property id: " + toString(memberId));
+        switch (m_runtime->getNativeMemberType(memberId)) {
+        case NativeMemberType::Property: {
+            NativePropertyDefinition definition;
+            if (!m_runtime->getNativePropertyDefinition(memberId, definition)) {
+                reportInternalError("Invalid native property id: " + toString(memberId));
             }
             memberName = definition.name;
             break;
         }
 
-        case IntrinsicMemberType::Method: {
-            IntrinsicMethodDefinition definition;
-            if (!m_runtime->getIntrinsicMethodDefinition(memberId, definition)) {
-                reportInternalError("Invalid intrinsic method id: " + toString(memberId));
+        case NativeMemberType::Method: {
+            NativeMethodDefinition definition;
+            if (!m_runtime->getNativeMethodDefinition(memberId, definition)) {
+                reportInternalError("Invalid native method id: " + toString(memberId));
             }
             memberName = definition.name;
             break;
         }
 
-        case IntrinsicMemberType::Unknown:
-            reportInternalError("Invalid intrinsic member id: " + toString(memberId));
+        case NativeMemberType::Unknown:
+            reportInternalError("Invalid native member id: " + toString(memberId));
         }
 
         const auto candidate = identifier + "." + memberName;
@@ -761,12 +761,12 @@ NomadIndex Compiler::addNativeFunctionCall(const NomadId nativeFunctionId, Scrip
     return m_instructions.size() - 1;
 }
 
-NomadIndex Compiler::addIntrinsicMethodCall(const NomadId memberId, ScriptFunction* function,
+NomadIndex Compiler::addNativeMethodCall(const NomadId memberId, ScriptFunction* function,
                                             const ArgumentList* arguments) {
     arguments->compile(this, function);
 
     const auto argumentCount = arguments->getArgumentCount();
-    addOpCode(op_intrinsic_method_call);
+    addOpCode(op_native_method_call);
     addId(memberId);
     addIndex(argumentCount);
 

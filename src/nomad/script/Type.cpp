@@ -272,7 +272,9 @@ void BooleanType::toString(const RuntimeValue& value, NomadString& string) const
 
 ///////////////////////////////////////////////////////////////////////////////
 // BaseStringType
-ObjectTypeBase::ObjectTypeBase() {
+ObjectTypeBase::ObjectTypeBase(NomadString documentation):
+    Type(std::move(documentation))
+{
     m_typeOpCodes.initResult = op_object_init_r;
     m_typeOpCodes.initIntermediate = op_object_init_i;
 
@@ -342,8 +344,10 @@ NomadObject* ObjectTypeBase::createObject() const {
 ObjectType::ObjectType(
     NomadString name,
     std::vector<const Type*> typeArguments,
-    ObjectFactory factory
+    ObjectFactory factory,
+    NomadString documentation
 ):
+    ObjectTypeBase(std::move(documentation)),
     m_name(std::move(name)),
     m_typeArguments(std::move(typeArguments)),
     m_factory(std::move(factory))

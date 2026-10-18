@@ -5,6 +5,7 @@
 #include <nomad/game/Entity.hpp>
 #include <nomad/game/Scene.hpp>
 
+#include <nomad/game/resource/FontObject.hpp>
 #include <nomad/game/resource/ResourceManager.hpp>
 
 #include <nomad/script/NativeFunction.hpp>
@@ -16,7 +17,7 @@ namespace nomad {
 void Game::initGameFunctions() {
     log::debug("Initializing game functions");
 
-    const auto* fontType = m_runtime->getTypeByName("font");
+    const auto* fontType = m_runtime->getTypeByName("Font");
     if (fontType == nullptr) {
         raiseError("Font type is not registered");
     }
@@ -174,13 +175,14 @@ void Game::initGameFunctions() {
 
             const auto fontId = m_resourceManager->getFonts()->registerFont(fontName, static_cast<NomadFloat>(fontSize));
 
-            interpreter->setIdResult(fontId);
+            auto* font = m_resourceManager->getFonts()->getFont(fontId);
+            interpreter->getResult().setObjectValue(font);
         }, {
             defParameter("fontName", m_runtime->getStringType(), NomadParamDoc("Name of the font to load.")),
             defParameter("fontSize", m_runtime->getIntegerType(), NomadParamDoc("Size of the font in point to load.")),
         },
         fontType,
-        NomadDoc("Loads a font from a file and returns a font handle.")
+        NomadDoc("Loads a font from a file and returns a Font object.")
     );
 
     m_runtime->registerNativeFunction(

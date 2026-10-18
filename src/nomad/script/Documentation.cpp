@@ -17,39 +17,39 @@ namespace nomad {
 
 namespace {
 
-struct IntrinsicMemberDocumentationInfo {
+struct NativeMemberDocumentationInfo {
     NomadId id;
-    IntrinsicMemberType memberType;
+    NativeMemberType memberType;
     const Type* objectType;
     NomadString name;
 };
 
-std::vector<IntrinsicMemberDocumentationInfo> getIntrinsicMemberDocumentation(const Runtime* runtime) {
+std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Runtime* runtime) {
     std::vector<NomadId> memberIds;
-    runtime->getIntrinsicMembers(memberIds);
+    runtime->getNativeMembers(memberIds);
 
-    std::vector<IntrinsicMemberDocumentationInfo> members;
+    std::vector<NativeMemberDocumentationInfo> members;
     members.reserve(memberIds.size());
 
     for (const auto memberId : memberIds) {
-        switch (runtime->getIntrinsicMemberType(memberId)) {
-        case IntrinsicMemberType::Property: {
-            IntrinsicPropertyDefinition definition;
-            if (runtime->getIntrinsicPropertyDefinition(memberId, definition)) {
-                members.emplace_back(memberId, IntrinsicMemberType::Property, definition.objectType, definition.name);
+        switch (runtime->getNativeMemberType(memberId)) {
+        case NativeMemberType::Property: {
+            NativePropertyDefinition definition;
+            if (runtime->getNativePropertyDefinition(memberId, definition)) {
+                members.emplace_back(memberId, NativeMemberType::Property, definition.objectType, definition.name);
             }
             break;
         }
 
-        case IntrinsicMemberType::Method: {
-            IntrinsicMethodDefinition definition;
-            if (runtime->getIntrinsicMethodDefinition(memberId, definition)) {
-                members.emplace_back(memberId, IntrinsicMemberType::Method, definition.objectType, definition.name);
+        case NativeMemberType::Method: {
+            NativeMethodDefinition definition;
+            if (runtime->getNativeMethodDefinition(memberId, definition)) {
+                members.emplace_back(memberId, NativeMemberType::Method, definition.objectType, definition.name);
             }
             break;
         }
 
-        case IntrinsicMemberType::Unknown:
+        case NativeMemberType::Unknown:
             break;
         }
     }
@@ -63,10 +63,10 @@ std::vector<IntrinsicMemberDocumentationInfo> getIntrinsicMemberDocumentation(co
     return members;
 }
 
-std::vector<NomadString> getIntrinsicMemberNames(const Runtime* runtime) {
+std::vector<NomadString> getNativeMemberNames(const Runtime* runtime) {
     std::vector<NomadString> names;
 
-    for (const auto& member : getIntrinsicMemberDocumentation(runtime)) {
+    for (const auto& member : getNativeMemberDocumentation(runtime)) {
         if (std::ranges::find(names, member.name) == names.end()) {
             names.push_back(member.name);
         }
@@ -307,7 +307,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     generateTypeDocumentation(runtime, out);
 
-    generateIntrinsicMemberDocumentation(runtime, out);
+    generateNativeMemberDocumentation(runtime, out);
 
     out << "## Functions" << std::endl;
 
@@ -460,14 +460,14 @@ void generateTypeDocumentation(const Runtime* runtime, std::ostream& out) {
     out << std::endl;
 }
 
-void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& out) {
-    out << "## Intrinsic Members" << std::endl;
+void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out) {
+    out << "## Object Members" << std::endl;
     out << std::endl;
-    out << "Intrinsic properties and methods are available on values of the receiver type." << std::endl;
+    out << "Properties and methods are available on instances of each object type." << std::endl;
 
     const Type* currentType = nullptr;
 
-    for (const auto& member : getIntrinsicMemberDocumentation(runtime)) {
+    for (const auto& member : getNativeMemberDocumentation(runtime)) {
         if (member.objectType != currentType) {
             currentType = member.objectType;
             out << std::endl;
@@ -477,9 +477,9 @@ void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& 
 
         out << "#### `" << member.name << "`";
 
-        if (member.memberType == IntrinsicMemberType::Property) {
-            IntrinsicPropertyDefinition definition;
-            (void)runtime->getIntrinsicPropertyDefinition(member.id, definition);
+        if (member.memberType == NativeMemberType::Property) {
+            NativePropertyDefinition definition;
+            (void)runtime->getNativePropertyDefinition(member.id, definition);
 
             NomadString access;
             if (definition.getFn && definition.setFn) {
@@ -500,10 +500,10 @@ void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& 
                 out << std::endl;
             }
         } else {
-            IntrinsicMethodDefinition definition;
-            (void)runtime->getIntrinsicMethodDefinition(member.id, definition);
+            NativeMethodDefinition definition;
+            (void)runtime->getNativeMethodDefinition(member.id, definition);
 
-            out << " (*" << (definition.mutatesReceiver ? "mutating " : "") << "method*)" << std::endl;
+            out << " (*method*)" << std::endl;
             out << std::endl;
 
             if (definition.parameters.empty()) {
@@ -566,9 +566,9 @@ void generateKeywords(Runtime* runtime, std::ostream& out) {
         out << nativeFunction.name << "\n";
     }
 
-    out << "--- IntrinsicMembers ---\n";
+    out << "--- NativeMembers ---\n";
 
-    for (const auto& name : getIntrinsicMemberNames(runtime)) {
+    for (const auto& name : getNativeMemberNames(runtime)) {
         out << name << "\n";
     }
 }
@@ -592,7 +592,7 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
         "keywords",
         "literals",
         "functions",
-        "intrinsicMembers",
+        "nativeMembers",
         "types",
         "operators"
     }) {
@@ -617,7 +617,7 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
 
     array interpolationPatterns;
     for (const auto& repositoryName : {
-        "formatStrings", "strings", "keywords", "numbers", "functions", "intrinsicMembers", "literals",
+        "formatStrings", "strings", "keywords", "numbers", "functions", "nativeMembers", "literals",
         "types", "operators"
     }) {
         interpolationPatterns.push_back(createInclude(repositoryName));
@@ -686,10 +686,10 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
         createMatchPattern("support.function.nomad", createWordPattern(nativeFunctionNames))
     );
 
-    repository["intrinsicMembers"] = createPatternRepositoryEntry(
+    repository["nativeMembers"] = createPatternRepositoryEntry(
         createMatchPattern(
             "support.function.member.nomad",
-            "(?<=\\.)" + createWordPattern(getIntrinsicMemberNames(runtime))
+            "(?<=\\.)" + createWordPattern(getNativeMemberNames(runtime))
         )
     );
 

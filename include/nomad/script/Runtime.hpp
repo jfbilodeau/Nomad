@@ -15,7 +15,7 @@
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
-#include <nomad/script/IntrinsicMember.hpp>
+#include <nomad/script/NativeMember.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/ScriptFunction.hpp>
 #include <nomad/script/VariableContext.hpp>
@@ -133,28 +133,25 @@ public:
     [[nodiscard]] const Type* getEventType(const NomadString& name) const;
     [[nodiscard]] const Type* getPredicateType();
 
-    // Intrinsic members
+    // Native members
     NomadId registerNativeMethod(
-        const ObjectTypeBase* objectType,
+        const Type* objectType,
         const NomadString& name,
         NativeFunctionFn fn,
         const std::vector<FunctionParameterDefinition>& parameters,
         const Type* returnType,
         NomadDocArg
     );
-    NomadId registerIntrinsicProperty(const Type* objectType, const NomadString& name, const Type* valueType,
-                                      IntrinsicPropertyGetFn getFn, IntrinsicPropertySetFn setFn, NomadDocArg);
-    NomadId registerIntrinsicMethod(const Type* objectType, const NomadString& name, NativeFunctionFn fn,
-                                    const std::vector<FunctionParameterDefinition>& parameters,
-                                    const Type* returnType, bool mutatesReceiver, NomadDocArg);
-    [[nodiscard]] NomadId getIntrinsicMemberId(const Type* objectType, const NomadString& name) const;
-    [[nodiscard]] IntrinsicMemberType getIntrinsicMemberType(NomadId memberId) const;
-    [[nodiscard]] bool getIntrinsicPropertyDefinition(NomadId memberId, IntrinsicPropertyDefinition& definition) const;
-    [[nodiscard]] bool getIntrinsicMethodDefinition(NomadId memberId, IntrinsicMethodDefinition& definition) const;
-    void getIntrinsicMembers(const Type* objectType, std::vector<NomadId>& members) const;
-    void getIntrinsicMembers(std::vector<NomadId>& members) const;
-    void getIntrinsicMemberOverloads(const NomadString& name, std::vector<NomadId>& overloads) const;
-    [[nodiscard]] NomadIndex getIntrinsicMemberOverloadCount(const NomadString& name) const;
+    NomadId registerNativeProperty(const Type* objectType, const NomadString& name, const Type* valueType,
+                                      NativePropertyGetFn getFn, NativePropertySetFn setFn, NomadDocArg);
+    [[nodiscard]] NomadId getNativeMemberId(const Type* objectType, const NomadString& name) const;
+    [[nodiscard]] NativeMemberType getNativeMemberType(NomadId memberId) const;
+    [[nodiscard]] bool getNativePropertyDefinition(NomadId memberId, NativePropertyDefinition& definition) const;
+    [[nodiscard]] bool getNativeMethodDefinition(NomadId memberId, NativeMethodDefinition& definition) const;
+    void getNativeMembers(const Type* objectType, std::vector<NomadId>& members) const;
+    void getNativeMembers(std::vector<NomadId>& members) const;
+    void getNativeMemberOverloads(const NomadString& name, std::vector<NomadId>& overloads) const;
+    [[nodiscard]] NomadIndex getNativeMemberOverloadCount(const NomadString& name) const;
 
     // Convenience type access:
     [[nodiscard]] const Type* getVoidType() const;
@@ -356,8 +353,8 @@ private:
         std::unique_ptr<FormatString> formatString;
     };
 
-    struct IntrinsicMemberRegistration {
-        IntrinsicMemberType type;
+    struct NativeMemberRegistration {
+        NativeMemberType type;
         NomadIndex definitionIndex;
     };
 
@@ -371,7 +368,7 @@ private:
     [[nodiscard]] bool canOverloadCallable(const CallableOverloadSet& overloadSet, CallableId candidate,
                                            NomadString& error) const;
     [[nodiscard]] bool ownsType(const Type* type) const;
-    [[nodiscard]] bool canRegisterIntrinsicMember(const Type* objectType, const NomadString& name,
+    [[nodiscard]] bool canRegisterNativeMember(const Type* objectType, const NomadString& name,
                                                   const std::vector<FunctionParameterDefinition>& parameters,
                                                   NomadString& error) const;
 
@@ -399,7 +396,6 @@ private:
         NativeFunctionFn fn,
         const std::vector<FunctionParameterDefinition>& parameters,
         const Type* returnType,
-        bool mutatesReceiver,
         const NomadString& doc
     );
     std::vector<NativeFunctionDefinition> m_nativeCallables;
@@ -417,9 +413,9 @@ private:
     std::vector<CallableOverloadSet> m_callables;
     // Maps a callable name to its index in `m_callables`.
     std::unordered_map<NomadString, NomadIndex> m_callablesByName;
-    std::vector<IntrinsicMemberRegistration> m_intrinsicMembers;
-    std::vector<IntrinsicPropertyDefinition> m_intrinsicProperties;
-    std::unordered_map<NomadString, std::vector<NomadId>> m_intrinsicMembersByName;
+    std::vector<NativeMemberRegistration> m_nativeMembers;
+    std::vector<NativePropertyDefinition> m_nativeProperties;
+    std::unordered_map<NomadString, std::vector<NomadId>> m_nativeMembersByName;
     bool m_debug = false;
     std::unique_ptr<VirtualMachine> m_virtualMachine = nullptr;
     std::vector<std::function<void(Compiler*)>> m_compilerSetups;

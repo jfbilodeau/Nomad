@@ -17,19 +17,22 @@ namespace {
 
 class CountingObject final : public NomadObject {
 public:
-    explicit CountingObject(NomadIndex& destroyed):
-        m_destroyed(destroyed)
-    {
-    }
+    explicit CountingObject(NomadIndex& destroyed);
 
 protected:
-    ~CountingObject() override {
-        ++m_destroyed;
-    }
+    ~CountingObject() override;
 
 private:
     NomadIndex& m_destroyed;
 };
+
+CountingObject::CountingObject(NomadIndex& destroyed):
+    m_destroyed(destroyed)
+{}
+
+CountingObject::~CountingObject() {
+    ++m_destroyed;
+}
 
 class FailingCopyType final : public ObjectTypeBase {
 public:
@@ -80,6 +83,38 @@ void FailingCopyType::copyValue(const RuntimeValue& source, RuntimeValue& destin
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(NomadObjectTests)
+
+BOOST_AUTO_TEST_CASE(ReferenceHelpersHandleNullSelfAndReplacement) {
+    addRef(nullptr);
+    releaseRef(nullptr);
+    NomadIndex destroyed = 0;
+    auto* first = new CountingObject(destroyed);
+    auto* second = new CountingObject(destroyed);
+    auto* current = replace(first, first);
+    BOOST_TEST(current == first);
+    BOOST_TEST(first->getReferenceCount() == 1U);
+    current = replace(current, second);
+    BOOST_TEST(current == second);
+    BOOST_TEST(destroyed == 1U);
+    BOOST_TEST(second->getReferenceCount() == 2U);
+    releaseRef(second);
+    current = replace(current, nullptr);
+    BOOST_TEST(current == nullptr);
+    BOOST_TEST(destroyed == 2U);
+}
+
+BOOST_AUTO_TEST_CASE(RuntimeValueProvidesBorrowedTypedObjectAccess) {
+    RuntimeValue value;
+    BOOST_TEST(value.asObject<CountingObject>() == nullptr);
+    NomadIndex destroyed = 0;
+    auto* object = new CountingObject(destroyed);
+    value.setObjectValue(object);
+    BOOST_TEST(value.asObject<CountingObject>() == object);
+    BOOST_TEST(value.asObject<const CountingObject>() == object);
+    BOOST_TEST(object->getReferenceCount() == 1U);
+    value.freeObjectValue();
+    BOOST_TEST(destroyed == 1U);
+}
 
 BOOST_AUTO_TEST_CASE(ListSkipsCleanupForUnmanagedElements) {
     UnmanagedType elementType;

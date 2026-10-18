@@ -33,7 +33,7 @@ namespace parser {
 [[nodiscard]] bool expectEndOfLine(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 
 IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& name, const ScriptFunction* function = nullptr);
-[[nodiscard]] bool isIntrinsicMemberCandidate(const Compiler* compiler, const ScriptFunction* function,
+[[nodiscard]] bool isNativeMemberCandidate(const Compiler* compiler, const ScriptFunction* function,
                                                const NomadString& name);
 
 // Returns nullptr for empty lines, for statements that are only handled during pre-parsing, and on error.

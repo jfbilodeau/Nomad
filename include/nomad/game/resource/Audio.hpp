@@ -15,6 +15,7 @@
 namespace nomad {
 
 class AudioManager;
+class AudioObject;
 
 class AudioException final : public ResourceException {
 public:
@@ -34,52 +35,6 @@ public:
 private:
     NomadPath m_filePath;
     MIX_Audio* m_audio;
-};
-
-class AudioObject final {
-public:
-    using CompletionCallback = std::function<void()>;
-
-    AudioObject(const AudioResource* resource, MIX_Mixer* mixer, NomadFloat categoryVolume);
-    AudioObject(const AudioObject&) = delete;
-    AudioObject& operator=(const AudioObject&) = delete;
-    ~AudioObject();
-
-    [[nodiscard]] const AudioResource* getResource() const;
-
-    void playOnce();
-    void playOnceThen(CompletionCallback callback);
-    void playLoop();
-    void pause();
-    void resume();
-    void stop();
-    void pauseAutomatically();
-    void resumeAutomatically();
-    [[nodiscard]] CompletionCallback takeCompletionCallback();
-
-    [[nodiscard]] bool isPlaying() const;
-    [[nodiscard]] bool isPaused() const;
-    [[nodiscard]] bool isLooping() const;
-
-    void setVolume(NomadFloat volume);
-    [[nodiscard]] NomadFloat getVolume() const;
-    void setCategoryVolume(NomadFloat volume);
-
-private:
-    static void SDLCALL trackStoppedCallback(void* userdata, MIX_Track* track);
-
-    void play(NomadInteger loops, CompletionCallback callback = {});
-    void cancelCompletion();
-    [[nodiscard]] bool applyVolume();
-
-    const AudioResource* m_resource;
-    MIX_Track* m_track;
-    NomadFloat m_volume = 1.0;
-    NomadFloat m_categoryVolume;
-    bool m_automaticallyPaused = false;
-    std::atomic_bool m_completionArmed = false;
-    std::atomic_bool m_completionPending = false;
-    CompletionCallback m_completionCallback;
 };
 
 class AudioManager final {
@@ -144,6 +99,8 @@ public:
     [[nodiscard]] NomadFloat getMasterVolume() const;
 
 private:
+    friend class AudioObject;
+    void unregisterAudioObject(AudioObject* object);
     static void SDLCALL musicTrackStoppedCallback(void* userdata, MIX_Track* track);
 
     [[nodiscard]] bool ensureMusicTrack();
@@ -166,7 +123,7 @@ private:
     std::atomic_bool m_musicCompletionPending = false;
     CompletionCallback m_musicCompletionCallback;
     std::vector<std::unique_ptr<AudioResource>> m_resources;
-    std::vector<std::unique_ptr<AudioObject>> m_audioObjects;
+    std::vector<AudioObject*> m_audioObjects;
 };
 
 } // namespace nomad

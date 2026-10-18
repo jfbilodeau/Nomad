@@ -127,12 +127,12 @@ BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
     BOOST_TEST(runtime.getKeywordId("new") != NOMAD_INVALID_ID);
     const auto* listType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(listType != nullptr);
-    runtime.registerIntrinsicProperty(
+    runtime.registerNativeProperty(
         listType,
         "testPresent",
         runtime.getBooleanType(),
-        [](VirtualMachine*, const RuntimeValue& receiver, RuntimeValue& result) {
-            result.setBooleanValue(receiver.getObjectValue() != nullptr);
+        [](VirtualMachine* machine, RuntimeValue& result) {
+            result.setBooleanValue(machine->getThis() != nullptr);
         },
         {},
         ""

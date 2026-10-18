@@ -11,7 +11,7 @@
 
 using namespace nomad;
 
-BOOST_AUTO_TEST_SUITE(intrinsic_member_conflicts)
+BOOST_AUTO_TEST_SUITE(native_member_conflicts)
 
 BOOST_AUTO_TEST_CASE(compiled_function_rejects_existing_qualified_identifier) {
     Runtime runtime;

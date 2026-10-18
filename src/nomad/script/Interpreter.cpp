@@ -146,7 +146,7 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
             auto expression = parser::parseExpression(&compilerContext, evaluation.m_function.get(), &tokenizer);
             if (expression != nullptr &&
                 parser::expectEndOfLine(&compilerContext, evaluation.m_function.get(), &tokenizer)) {
-                if (auto* member = expression->asIntrinsicExpression()) {
+                if (auto* member = expression->asNativeExpression()) {
                     member->setAllowVoid(true);
                 }
                 statement = std::make_unique<ExpressionStatement>(

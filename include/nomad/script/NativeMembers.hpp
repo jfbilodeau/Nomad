@@ -6,6 +6,6 @@ namespace nomad {
 
 class Runtime;
 
-void registerBuiltInIntrinsicMembers(Runtime* runtime);
+void registerBuiltInNativeMembers(Runtime* runtime);
 
 } // namespace nomad

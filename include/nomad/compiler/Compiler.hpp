@@ -108,7 +108,7 @@ public:
     // Identifier identification
     IdentifierType getIdentifierType(const NomadString& name, const ScriptFunction* function) const;
     void getIdentifierDefinition(const NomadString& name, const ScriptFunction* function, IdentifierDefinition& definition) const;
-    [[nodiscard]] bool getIntrinsicMemberConflict(const NomadString& identifier, const Type* type,
+    [[nodiscard]] bool getNativeMemberConflict(const NomadString& identifier, const Type* type,
                                                   const ScriptFunction* function,
                                                   NomadString& conflictingIdentifier) const;
 
@@ -149,7 +149,7 @@ public:
 
     NomadIndex addFunctionCall(NomadId targetFunctionId, ScriptFunction* function, const ArgumentList* arguments);
     NomadIndex addNativeFunctionCall(NomadId nativeFunctionId, ScriptFunction* function, const ArgumentList* arguments);
-    NomadIndex addIntrinsicMethodCall(NomadId memberId, ScriptFunction* function, const ArgumentList* arguments);
+    NomadIndex addNativeMethodCall(NomadId memberId, ScriptFunction* function, const ArgumentList* arguments);
     // After a call returns, free the arguments still on the stack.
     void addFreeArguments(const ArgumentList* arguments);
 

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/script/IntrinsicMembers.hpp>
+#include <nomad/script/NativeMembers.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
@@ -18,7 +18,7 @@ namespace {
 
 void faultOnInvalidUtf8(VirtualMachine* virtualMachine, const NomadStringView text, const NomadString& memberName) {
     if (!isValidUtf8(text)) {
-        virtualMachine->fault("Intrinsic string member '" + memberName + "' requires valid UTF-8");
+        virtualMachine->fault("Native string member '" + memberName + "' requires valid UTF-8");
     }
 }
 
@@ -30,44 +30,44 @@ void validateSearchOperands(VirtualMachine* virtualMachine, const NomadString& r
 
 } // namespace
 
-void registerBuiltInIntrinsicMembers(Runtime* runtime) {
+void registerBuiltInNativeMembers(Runtime* runtime) {
     const auto* stringType = static_cast<const ObjectTypeBase*>(runtime->getStringType());
-    runtime->registerIntrinsicProperty(
+    runtime->registerNativeProperty(
         runtime->getStringType(),
         "length",
         runtime->getIntegerType(),
-        [](VirtualMachine* virtualMachine, const RuntimeValue& receiver, RuntimeValue& result) {
-            const auto& text = receiver.getStringObject()->getString();
+        [](VirtualMachine* virtualMachine, RuntimeValue& result) {
+            const auto& text = virtualMachine->getThisAs<NomadStringObject>()->getString();
 
             try {
                 const auto codePoints =
                     boost::locale::conv::utf_to_utf<char32_t>(text, boost::locale::conv::stop);
                 result.setIntegerValue(static_cast<NomadInteger>(codePoints.size()));
             } catch (const boost::locale::conv::conversion_error&) {
-                virtualMachine->fault("Intrinsic string member 'length' requires valid UTF-8");
+                virtualMachine->fault("Native string member 'length' requires valid UTF-8");
             }
         },
         {},
         NomadDoc("The number of characters (Unicode code points) in the string.")
     );
 
-    runtime->registerIntrinsicProperty(
+    runtime->registerNativeProperty(
         runtime->getStringType(),
         "byteLength",
         runtime->getIntegerType(),
-        [](VirtualMachine*, const RuntimeValue& receiver, RuntimeValue& result) {
-            result.setIntegerValue(static_cast<NomadInteger>(receiver.getStringObject()->getLength()));
+        [](VirtualMachine* machine, RuntimeValue& result) {
+            result.setIntegerValue(static_cast<NomadInteger>(machine->getThisAs<NomadStringObject>()->getLength()));
         },
         {},
         NomadDoc("The number of bytes in the UTF-8 encoding of the string.")
     );
 
-    runtime->registerIntrinsicProperty(
+    runtime->registerNativeProperty(
         runtime->getStringType(),
         "isEmpty",
         runtime->getBooleanType(),
-        [](VirtualMachine*, const RuntimeValue& receiver, RuntimeValue& result) {
-            result.setBooleanValue(receiver.getStringObject()->getString().empty());
+        [](VirtualMachine* machine, RuntimeValue& result) {
+            result.setBooleanValue(machine->getThisAs<NomadStringObject>()->getString().empty());
         },
         {},
         NomadDoc("True when the string is empty.")

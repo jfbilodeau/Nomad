@@ -19,11 +19,6 @@ add_executable(
     ./GameStartupTest.cpp
     ./GeometryTest.cpp
     ./InterpreterTest.cpp
-    ./IntrinsicMemberConflictTest.cpp
-    ./IntrinsicMemberExecutionTest.cpp
-    ./IntrinsicMemberSyntaxTest.cpp
-    ./IntrinsicMemberTest.cpp
-    ./IntrinsicStringMemberTest.cpp
     ./LanguageCallbackEventTest.cpp
     ./LanguageControlFlowTest.cpp
     ./LanguageFormatStringFunctionTest.cpp
@@ -39,6 +34,11 @@ add_executable(
     ./ModuleGameTest.cpp
     ./ModuleHostTest.cpp
     ./ModuleManifestTest.cpp
+    ./NativeMemberConflictTest.cpp
+    ./NativeMemberExecutionTest.cpp
+    ./NativeMemberSyntaxTest.cpp
+    ./NativeMemberTest.cpp
+    ./NativeStringMemberTest.cpp
     ./NomadConfigurationTest.cpp
     ./NomadObjectTest.cpp
     ./main.cpp

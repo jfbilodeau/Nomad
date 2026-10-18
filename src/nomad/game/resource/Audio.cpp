@@ -2,6 +2,9 @@
 
 #include <nomad/game/resource/Audio.hpp>
 
+#include <nomad/game/resource/AudioObject.hpp>
+#include <nomad/game/resource/AudioPlayback.hpp>
+
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/system/Path.hpp>
@@ -16,7 +19,7 @@
 
 namespace nomad {
 
-namespace {
+namespace audio {
 
 NomadFloat clampVolume(const NomadFloat volume) {
     if (!std::isfinite(volume)) {
@@ -96,199 +99,6 @@ MIX_Audio* AudioResource::getSdlAudio() const {
     return m_audio;
 }
 
-AudioObject::AudioObject(
-    const AudioResource* resource,
-    MIX_Mixer* mixer,
-    const NomadFloat categoryVolume
-):
-    m_resource(resource),
-    m_track(MIX_CreateTrack(mixer)),
-    m_categoryVolume(categoryVolume)
-{
-    if (m_resource == nullptr) {
-        throw AudioException("Cannot create an audio object without a resource");
-    }
-    if (m_track == nullptr) {
-        throw AudioException(getMixerError("Failed to create an audio track"));
-    }
-    if (!MIX_SetTrackAudio(m_track, m_resource->getSdlAudio())) {
-        MIX_DestroyTrack(m_track);
-        m_track = nullptr;
-        throw AudioException(getMixerError("Failed to assign audio to a track"));
-    }
-    if (!MIX_SetTrackStoppedCallback(m_track, trackStoppedCallback, this)) {
-        MIX_DestroyTrack(m_track);
-        m_track = nullptr;
-        throw AudioException(getMixerError("Failed to register the audio completion callback"));
-    }
-
-    if (!applyVolume()) {
-        MIX_DestroyTrack(m_track);
-        m_track = nullptr;
-        throw AudioException("Failed to initialize audio track volume");
-    }
-}
-
-AudioObject::~AudioObject() {
-    cancelCompletion();
-    (void)MIX_SetTrackStoppedCallback(m_track, nullptr, nullptr);
-    MIX_DestroyTrack(m_track);
-}
-
-const AudioResource* AudioObject::getResource() const {
-    return m_resource;
-}
-
-void AudioObject::playOnce() {
-    play(0);
-}
-
-void AudioObject::playOnceThen(CompletionCallback callback) {
-    play(0, std::move(callback));
-}
-
-void AudioObject::playLoop() {
-    play(-1);
-}
-
-void AudioObject::pause() {
-    m_automaticallyPaused = false;
-
-    if (!MIX_PauseTrack(m_track)) {
-        log::error(getMixerError("Failed to pause an audio track"));
-    }
-}
-
-void AudioObject::resume() {
-    m_automaticallyPaused = false;
-
-    if (!MIX_ResumeTrack(m_track)) {
-        log::error(getMixerError("Failed to resume an audio track"));
-    }
-}
-
-void AudioObject::stop() {
-    cancelCompletion();
-    m_automaticallyPaused = false;
-
-    if (!MIX_StopTrack(m_track, 0)) {
-        log::error(getMixerError("Failed to stop an audio track"));
-    }
-}
-
-void AudioObject::pauseAutomatically() {
-    if (!isPlaying() || isPaused()) {
-        return;
-    }
-
-    if (!MIX_PauseTrack(m_track)) {
-        log::error(getMixerError("Failed to automatically pause an audio track"));
-        return;
-    }
-
-    m_automaticallyPaused = true;
-}
-
-void AudioObject::resumeAutomatically() {
-    if (!m_automaticallyPaused) {
-        return;
-    }
-
-    m_automaticallyPaused = false;
-
-    if (!MIX_ResumeTrack(m_track)) {
-        log::error(getMixerError("Failed to automatically resume an audio track"));
-    }
-}
-
-AudioObject::CompletionCallback AudioObject::takeCompletionCallback() {
-    if (!m_completionPending.exchange(false, std::memory_order_acq_rel)) {
-        return {};
-    }
-
-    auto callback = std::move(m_completionCallback);
-    m_completionCallback = {};
-    return callback;
-}
-
-bool AudioObject::isPlaying() const {
-    return MIX_TrackPlaying(m_track);
-}
-
-bool AudioObject::isPaused() const {
-    return MIX_TrackPaused(m_track);
-}
-
-bool AudioObject::isLooping() const {
-    return MIX_GetTrackLoops(m_track) != 0;
-}
-
-void AudioObject::setVolume(const NomadFloat volume) {
-    const auto previousVolume = m_volume;
-    m_volume = clampVolume(volume);
-
-    if (!applyVolume()) {
-        m_volume = previousVolume;
-    }
-}
-
-NomadFloat AudioObject::getVolume() const {
-    return m_volume;
-}
-
-void AudioObject::setCategoryVolume(const NomadFloat volume) {
-    const auto previousVolume = m_categoryVolume;
-    m_categoryVolume = clampVolume(volume);
-
-    if (!applyVolume()) {
-        m_categoryVolume = previousVolume;
-    }
-}
-
-bool AudioObject::applyVolume() {
-    if (!MIX_SetTrackGain(m_track, static_cast<float>(m_volume * m_categoryVolume))) {
-        log::error(getMixerError("Failed to set audio track volume"));
-        return false;
-    }
-
-    return true;
-}
-
-void AudioObject::trackStoppedCallback(void* userdata, MIX_Track* /*track*/) {
-    auto* audioObject = static_cast<AudioObject*>(userdata);
-
-    if (audioObject->m_completionArmed.exchange(false, std::memory_order_acq_rel)) {
-        audioObject->m_completionPending.store(true, std::memory_order_release);
-    }
-}
-
-void AudioObject::play(const NomadInteger loops, CompletionCallback callback) {
-    cancelCompletion();
-    m_automaticallyPaused = false;
-
-    if (isPlaying() || isPaused()) {
-        if (!MIX_StopTrack(m_track, 0)) {
-            log::error(getMixerError("Failed to restart an audio track"));
-            return;
-        }
-    }
-
-    if (callback) {
-        m_completionCallback = std::move(callback);
-        m_completionArmed.store(true, std::memory_order_release);
-    }
-
-    if (!playTrack(m_track, loops)) {
-        cancelCompletion();
-    }
-}
-
-void AudioObject::cancelCompletion() {
-    m_completionArmed.store(false, std::memory_order_release);
-    m_completionPending.store(false, std::memory_order_release);
-    m_completionCallback = {};
-}
-
 AudioManager::AudioManager() {
     if (!SDL_WasInit(SDL_INIT_AUDIO)) {
         log::warning("Audio playback is unavailable because the SDL audio subsystem is not initialized");
@@ -296,7 +106,7 @@ AudioManager::AudioManager() {
     }
 
     if (!MIX_Init()) {
-        log::warning(getMixerError("Failed to initialize SDL_mixer"));
+        log::warning(audio::getMixerError("Failed to initialize SDL_mixer"));
         return;
     }
 
@@ -304,13 +114,18 @@ AudioManager::AudioManager() {
     m_mixer = MIX_CreateMixerDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
 
     if (m_mixer == nullptr) {
-        log::warning(getMixerError("Failed to create the audio mixer"));
+        log::warning(audio::getMixerError("Failed to create the audio mixer"));
         MIX_Quit();
         m_mixerInitialized = false;
     }
 }
 
 AudioManager::~AudioManager() {
+    for (auto* object : m_audioObjects) {
+        if (object != nullptr) {
+            object->detachManager();
+        }
+    }
     m_audioObjects.clear();
     m_resources.clear();
 
@@ -423,7 +238,10 @@ NomadId AudioManager::createAudioObject(const NomadId resourceId) {
 
     const auto audioObjectId = toNomadId(m_audioObjects.size());
     try {
-        m_audioObjects.push_back(std::make_unique<AudioObject>(resource, m_mixer, m_volume));
+        auto object = std::make_unique<AudioObject>(resource, m_mixer, m_volume);
+        m_audioObjects.push_back(object.get());
+        object->m_manager = this;
+        object.release();
     } catch (const AudioException& error) {
         log::error(error.what());
         return NOMAD_INVALID_ID;
@@ -445,32 +263,48 @@ NomadId AudioManager::createAudioObject(const NomadString& resourceName) {
 
 AudioObject* AudioManager::getAudioObject(const NomadId audioObjectId) {
     const auto index = toNomadIndex(audioObjectId);
-    return index < m_audioObjects.size() ? m_audioObjects[index].get() : nullptr;
+    return index < m_audioObjects.size() ? m_audioObjects[index] : nullptr;
 }
 
 const AudioObject* AudioManager::getAudioObject(const NomadId audioObjectId) const {
     const auto index = toNomadIndex(audioObjectId);
-    return index < m_audioObjects.size() ? m_audioObjects[index].get() : nullptr;
+    return index < m_audioObjects.size() ? m_audioObjects[index] : nullptr;
 }
 
 NomadIndex AudioManager::getAudioObjectCount() const {
-    return m_audioObjects.size();
+    return std::ranges::count_if(m_audioObjects, [](const auto* object) { return object != nullptr; });
+}
+
+void AudioManager::unregisterAudioObject(AudioObject* object) {
+    const auto found = std::ranges::find(m_audioObjects, object);
+    if (found != m_audioObjects.end()) {
+        *found = nullptr;
+    }
 }
 
 void AudioManager::pauseAll() {
-    for (auto& audioObject : m_audioObjects) {
+    for (auto* audioObject : m_audioObjects) {
+        if (audioObject == nullptr) {
+            continue;
+        }
         audioObject->pause();
     }
 }
 
 void AudioManager::resumeAll() {
-    for (auto& audioObject : m_audioObjects) {
+    for (auto* audioObject : m_audioObjects) {
+        if (audioObject == nullptr) {
+            continue;
+        }
         audioObject->resume();
     }
 }
 
 void AudioManager::stopAll() {
-    for (auto& audioObject : m_audioObjects) {
+    for (auto* audioObject : m_audioObjects) {
+        if (audioObject == nullptr) {
+            continue;
+        }
         audioObject->stop();
     }
 }
@@ -517,13 +351,13 @@ bool AudioManager::playMusic(
     m_musicAutomaticallyPaused = false;
 
     if (!MIX_StopTrack(m_musicTrack, 0)) {
-        log::error(getMixerError("Failed to stop the current music track"));
+        log::error(audio::getMixerError("Failed to stop the current music track"));
         SDL_CloseIO(stream);
         return false;
     }
 
     if (!MIX_SetTrackIOStream(m_musicTrack, stream, true)) {
-        log::error(getMixerError("Failed to stream music resource '" + resourceName + "'"));
+        log::error(audio::getMixerError("Failed to stream music resource '" + resourceName + "'"));
         SDL_CloseIO(stream);
         return false;
     }
@@ -534,7 +368,7 @@ bool AudioManager::playMusic(
     m_musicCompletionCallback = std::move(callback);
     m_musicCompletionArmed.store(true, std::memory_order_release);
 
-    if (!playTrack(m_musicTrack, 0)) {
+    if (!audio::playTrack(m_musicTrack, 0)) {
         cancelMusicCompletion();
         (void)MIX_SetTrackIOStream(m_musicTrack, nullptr, false);
         return false;
@@ -547,7 +381,7 @@ void AudioManager::pauseMusic() {
     m_musicAutomaticallyPaused = false;
 
     if (m_musicTrack != nullptr && !MIX_PauseTrack(m_musicTrack)) {
-        log::error(getMixerError("Failed to pause the music track"));
+        log::error(audio::getMixerError("Failed to pause the music track"));
     }
 }
 
@@ -555,7 +389,7 @@ void AudioManager::resumeMusic() {
     m_musicAutomaticallyPaused = false;
 
     if (m_musicTrack != nullptr && !MIX_ResumeTrack(m_musicTrack)) {
-        log::error(getMixerError("Failed to resume the music track"));
+        log::error(audio::getMixerError("Failed to resume the music track"));
     }
 }
 
@@ -571,11 +405,11 @@ void AudioManager::stopMusic() {
     m_musicResourceName.clear();
 
     if (!MIX_StopTrack(m_musicTrack, 0)) {
-        log::error(getMixerError("Failed to stop the music track"));
+        log::error(audio::getMixerError("Failed to stop the music track"));
     }
 
     if (!MIX_SetTrackIOStream(m_musicTrack, nullptr, false)) {
-        log::error(getMixerError("Failed to release the music stream"));
+        log::error(audio::getMixerError("Failed to release the music stream"));
     }
 }
 
@@ -594,7 +428,10 @@ bool AudioManager::isMusicLooping() const {
 void AudioManager::processCallbacks() {
     std::vector<CompletionCallback> callbacks;
 
-    for (auto& audioObject : m_audioObjects) {
+    for (auto* audioObject : m_audioObjects) {
+        if (audioObject == nullptr) {
+            continue;
+        }
         auto callback = audioObject->takeCompletionCallback();
 
         if (callback) {
@@ -627,7 +464,10 @@ bool AudioManager::getMusicPauseAutomatically() const {
 
 void AudioManager::pauseAutomatically() {
     if (m_audioPauseAutomatically) {
-        for (auto& audioObject : m_audioObjects) {
+        for (auto* audioObject : m_audioObjects) {
+        if (audioObject == nullptr) {
+            continue;
+        }
             audioObject->pauseAutomatically();
         }
     }
@@ -639,7 +479,7 @@ void AudioManager::pauseAutomatically() {
         !isMusicPaused()
     ) {
         if (!MIX_PauseTrack(m_musicTrack)) {
-            log::error(getMixerError("Failed to automatically pause the music track"));
+            log::error(audio::getMixerError("Failed to automatically pause the music track"));
         } else {
             m_musicAutomaticallyPaused = true;
         }
@@ -647,7 +487,10 @@ void AudioManager::pauseAutomatically() {
 }
 
 void AudioManager::resumeAutomatically() {
-    for (auto& audioObject : m_audioObjects) {
+    for (auto* audioObject : m_audioObjects) {
+        if (audioObject == nullptr) {
+            continue;
+        }
         audioObject->resumeAutomatically();
     }
 
@@ -655,15 +498,18 @@ void AudioManager::resumeAutomatically() {
         m_musicAutomaticallyPaused = false;
 
         if (!MIX_ResumeTrack(m_musicTrack)) {
-            log::error(getMixerError("Failed to automatically resume the music track"));
+            log::error(audio::getMixerError("Failed to automatically resume the music track"));
         }
     }
 }
 
 void AudioManager::setVolume(const NomadFloat volume) {
-    const auto clampedVolume = clampVolume(volume);
+    const auto clampedVolume = audio::clampVolume(volume);
 
-    for (auto& audioObject : m_audioObjects) {
+    for (auto* audioObject : m_audioObjects) {
+        if (audioObject == nullptr) {
+            continue;
+        }
         audioObject->setCategoryVolume(clampedVolume);
     }
 
@@ -675,13 +521,13 @@ NomadFloat AudioManager::getVolume() const {
 }
 
 void AudioManager::setMusicVolume(const NomadFloat volume) {
-    const auto clampedVolume = clampVolume(volume);
+    const auto clampedVolume = audio::clampVolume(volume);
 
     if (
         m_musicTrack != nullptr &&
         !MIX_SetTrackGain(m_musicTrack, static_cast<float>(clampedVolume))
     ) {
-        log::error(getMixerError("Failed to set music volume"));
+        log::error(audio::getMixerError("Failed to set music volume"));
         return;
     }
 
@@ -693,10 +539,10 @@ NomadFloat AudioManager::getMusicVolume() const {
 }
 
 void AudioManager::setMasterVolume(const NomadFloat volume) {
-    const auto clampedVolume = clampVolume(volume);
+    const auto clampedVolume = audio::clampVolume(volume);
 
     if (isAvailable() && !MIX_SetMixerGain(m_mixer, static_cast<float>(clampedVolume))) {
-        log::error(getMixerError("Failed to set master audio volume"));
+        log::error(audio::getMixerError("Failed to set master audio volume"));
         return;
     }
 
@@ -720,18 +566,18 @@ bool AudioManager::ensureMusicTrack() {
     m_musicTrack = MIX_CreateTrack(m_mixer);
 
     if (m_musicTrack == nullptr) {
-        log::error(getMixerError("Failed to create the music track"));
+        log::error(audio::getMixerError("Failed to create the music track"));
         return false;
     }
 
     if (!MIX_SetTrackGain(m_musicTrack, static_cast<float>(m_musicVolume))) {
-        log::error(getMixerError("Failed to initialize music volume"));
+        log::error(audio::getMixerError("Failed to initialize music volume"));
         MIX_DestroyTrack(m_musicTrack);
         m_musicTrack = nullptr;
         return false;
     }
     if (!MIX_SetTrackStoppedCallback(m_musicTrack, musicTrackStoppedCallback, this)) {
-        log::error(getMixerError("Failed to register the music completion callback"));
+        log::error(audio::getMixerError("Failed to register the music completion callback"));
         MIX_DestroyTrack(m_musicTrack);
         m_musicTrack = nullptr;
         return false;

@@ -205,56 +205,79 @@ void VirtualMachine::callNativeFunction(const NomadId nativeFunctionId) {
     m_enclosingParameterIndex = previousEnclosingParameterIndex;
 }
 
-void VirtualMachine::callIntrinsicMethod(const NomadId memberId) {
-    IntrinsicMethodDefinition definition;
-    if (!m_runtime->getIntrinsicMethodDefinition(memberId, definition) || !definition.fn) {
-        fault("Invalid intrinsic method id: " + toString(memberId));
+void VirtualMachine::callNativeMethod(const NomadId memberId, const RuntimeValue& receiver) {
+    NativeMethodDefinition definition;
+    if (!m_runtime->getNativeMethodDefinition(memberId, definition) || !definition.fn) {
+        fault("Invalid native method id: " + toString(memberId));
     }
     const auto previousParameterIndex = m_parameterIndex;
     const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
-    auto* previousReceiver = m_intrinsicReceiver;
-    if (m_intrinsicReceiver == nullptr) {
-        m_intrinsicReceiver = &m_intermediate;
-    }
+    auto* previousReceiver = m_nativeReceiver;
+    m_nativeReceiver = &receiver;
     m_parameterIndex = m_stackIndex;
     m_enclosingParameterIndex = previousParameterIndex;
 
     try {
+        (void)getThis();
         definition.fn(this);
     } catch (...) {
         m_parameterIndex = previousParameterIndex;
         m_enclosingParameterIndex = previousEnclosingParameterIndex;
-        m_intrinsicReceiver = previousReceiver;
+        m_nativeReceiver = previousReceiver;
         throw;
     }
 
     m_parameterIndex = previousParameterIndex;
     m_enclosingParameterIndex = previousEnclosingParameterIndex;
-    m_intrinsicReceiver = previousReceiver;
+    m_nativeReceiver = previousReceiver;
 }
 
 NomadObject* VirtualMachine::getThis() const {
-    auto* instance = getIntrinsicReceiver().getObjectValue();
+    if (m_nativeReceiver == nullptr) {
+        fault("Native member has no instance");
+    }
+    auto* instance = m_nativeReceiver->getObjectValue();
     if (instance == nullptr) {
         fault("Object method has no instance");
     }
     return instance;
 }
 
-const RuntimeValue& VirtualMachine::getIntrinsicReceiver() const {
-    if (m_intrinsicReceiver == nullptr) {
-        fault("Intrinsic method has no receiver");
+void VirtualMachine::invokeNativeMember(const NativeFunctionFn& callback, const RuntimeValue& receiver) {
+    auto* previousReceiver = m_nativeReceiver;
+    m_nativeReceiver = &receiver;
+    try {
+        (void)getThis();
+        callback(this);
+    } catch (...) {
+        m_nativeReceiver = previousReceiver;
+        throw;
     }
-
-    return *m_intrinsicReceiver;
+    m_nativeReceiver = previousReceiver;
 }
 
-RuntimeValue& VirtualMachine::getIntrinsicReceiver() {
-    if (m_intrinsicReceiver == nullptr) {
-        fault("Intrinsic method has no receiver");
+void VirtualMachine::getNativeProperty(
+    const NomadId memberId,
+    const RuntimeValue& receiver,
+    RuntimeValue& result
+) {
+    NativePropertyDefinition definition;
+    if (!m_runtime->getNativePropertyDefinition(memberId, definition) || !definition.getFn) {
+        fault("Invalid native property getter");
     }
+    invokeNativeMember([&](VirtualMachine* machine) { definition.getFn(machine, result); }, receiver);
+}
 
-    return *m_intrinsicReceiver;
+void VirtualMachine::setNativeProperty(
+    const NomadId memberId,
+    const RuntimeValue& receiver,
+    const RuntimeValue& value
+) {
+    NativePropertyDefinition definition;
+    if (!m_runtime->getNativePropertyDefinition(memberId, definition) || !definition.setFn) {
+        fault("Invalid native property setter");
+    }
+    invokeNativeMember([&](VirtualMachine* machine) { definition.setFn(machine, value); }, receiver);
 }
 
 void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std::vector<RuntimeValue>& args) {
@@ -310,20 +333,20 @@ void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std
     releaseArguments();
 }
 
-void VirtualMachine::runIntrinsicMethod(const NomadId memberId, const std::vector<RuntimeValue>& args,
+void VirtualMachine::runNativeMethod(const NomadId memberId, const std::vector<RuntimeValue>& args,
                                         RuntimeValue& receiver) {
-    IntrinsicMethodDefinition definition;
-    if (!m_runtime->getIntrinsicMethodDefinition(memberId, definition)) {
-        fault("Invalid intrinsic method id: " + toString(memberId));
+    NativeMethodDefinition definition;
+    if (!m_runtime->getNativeMethodDefinition(memberId, definition)) {
+        fault("Invalid native method id: " + toString(memberId));
     }
     if (definition.returnType == nullptr) {
-        fault("Intrinsic method '" + definition.name + "' has no return type");
+        fault("Native method '" + definition.name + "' has no return type");
     }
     if (!definition.returnType->isVoid()) {
         definition.returnType->initValue(m_result);
     }
     if (args.size() != definition.parameters.size()) {
-        fault("Incorrect argument count when calling intrinsic method '" + definition.name + "'");
+        fault("Incorrect argument count when calling native method '" + definition.name + "'");
     }
     if (m_stackIndex >= m_stack.size() || args.size() > m_stack.size() - m_stackIndex - 1) {
         fault("Stack overflow");
@@ -340,15 +363,12 @@ void VirtualMachine::runIntrinsicMethod(const NomadId memberId, const std::vecto
         m_stackIndex = initialStackIndex;
     };
 
-    auto* previousReceiver = m_intrinsicReceiver;
-    m_intrinsicReceiver = &receiver;
-
     try {
         for (NomadIndex index = args.size(); index > 0; --index) {
             const auto argumentIndex = index - 1;
             const auto* type = definition.parameters[argumentIndex].type;
             if (type == nullptr) {
-                fault("Intrinsic method '" + definition.name + "' has an invalid parameter type");
+                fault("Native method '" + definition.name + "' has an invalid parameter type");
             }
 
             ++m_stackIndex;
@@ -357,14 +377,12 @@ void VirtualMachine::runIntrinsicMethod(const NomadId memberId, const std::vecto
             type->copyValue(args[argumentIndex], m_stack[m_stackIndex]);
         }
 
-        callIntrinsicMethod(memberId);
+        callNativeMethod(memberId, receiver);
     } catch (...) {
-        m_intrinsicReceiver = previousReceiver;
         releaseArguments();
         throw;
     }
 
-    m_intrinsicReceiver = previousReceiver;
     releaseArguments();
 }
 

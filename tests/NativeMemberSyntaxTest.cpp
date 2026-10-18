@@ -14,8 +14,8 @@ using namespace nomad;
 
 namespace {
 
-IntrinsicPropertySetFn propertySetter() {
-    return [](VirtualMachine*, RuntimeValue&, const RuntimeValue&) {};
+NativePropertySetFn propertySetter() {
+    return [](VirtualMachine*, const RuntimeValue&) {};
 }
 
 NativeFunctionFn methodFunction() {
@@ -35,7 +35,7 @@ std::unique_ptr<Expression> parseExpression(CompilerContext& context, ScriptFunc
 
 } // namespace
 
-BOOST_AUTO_TEST_SUITE(intrinsic_member_syntax)
+BOOST_AUTO_TEST_SUITE(native_member_syntax)
 
 BOOST_AUTO_TEST_CASE(resolves_property_on_literal) {
     Runtime runtime;
@@ -98,7 +98,7 @@ BOOST_AUTO_TEST_CASE(rejects_reading_write_only_property) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    BOOST_REQUIRE(runtime.registerIntrinsicProperty(runtime.getStringType(), "sink", runtime.getIntegerType(), {},
+    BOOST_REQUIRE(runtime.registerNativeProperty(runtime.getStringType(), "sink", runtime.getIntegerType(), {},
                                                     propertySetter(), NomadDoc("Sink")) != NOMAD_INVALID_ID);
 
     auto expression = parseExpression(context, nullptr, "\"Nomad\".sink");
@@ -125,21 +125,70 @@ BOOST_AUTO_TEST_CASE(rejects_writing_read_only_property) {
     BOOST_TEST(context.getFirstError()->message.find("read-only") != NomadString::npos);
 }
 
-BOOST_AUTO_TEST_CASE(rejects_mutating_method_on_temporary) {
+BOOST_AUTO_TEST_CASE(allows_assigning_write_only_property) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    ScriptFunction function(NOMAD_INVALID_ID, "test", "test.nomad", "");
+    function.registerVariable("name", runtime.getStringType());
+    runtime.registerNativeProperty(
+        runtime.getStringType(), "sink", runtime.getIntegerType(), {}, propertySetter(), ""
+    );
+
+    Tokenizer tokens(&context, "test.nomad", "name.sink = 10");
+    auto statement = parser::parseLine(&context, &function, &tokens);
+
+    BOOST_REQUIRE(statement != nullptr);
+    BOOST_TEST(statement->resolve(&context, &function));
+    BOOST_TEST(context.getErrorCount() == 0);
+}
+
+BOOST_AUTO_TEST_CASE(chained_assignment_reads_receiver_but_only_requires_final_setter) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    runtime.registerNativeProperty(
+        runtime.getStringType(), "sink", runtime.getIntegerType(), {}, propertySetter(), ""
+    );
+
+    Tokenizer tokens(&context, "test.nomad", "\"Nomad\".toUpper.sink = 10");
+    auto statement = parser::parseLine(&context, nullptr, &tokens);
+
+    BOOST_REQUIRE(statement != nullptr);
+    BOOST_TEST(statement->resolve(&context, nullptr));
+    BOOST_TEST(context.getErrorCount() == 0);
+}
+
+BOOST_AUTO_TEST_CASE(rejects_assignment_to_method) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    ScriptFunction function(NOMAD_INVALID_ID, "test", "test.nomad", "");
+    function.registerVariable("name", runtime.getStringType());
+
+    Tokenizer tokens(&context, "test.nomad", "name.toUpper = \"Other\"");
+    auto statement = parser::parseLine(&context, &function, &tokens);
+
+    BOOST_REQUIRE(statement != nullptr);
+    BOOST_TEST(!statement->resolve(&context, &function));
+    BOOST_REQUIRE(context.getFirstError() != nullptr);
+    BOOST_TEST(context.getFirstError()->message.find("Cannot assign to native method") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(allows_object_method_on_temporary) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    BOOST_REQUIRE(runtime.registerIntrinsicMethod(runtime.getStringType(), "clear", methodFunction(), {},
-                                                  runtime.getVoidType(), true, NomadDoc("Clear")) != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(runtime.registerNativeMethod(runtime.getStringType(), "clear", methodFunction(), {},
+                                                  runtime.getVoidType(), NomadDoc("Clear")) != NOMAD_INVALID_ID);
 
     Tokenizer tokens(&context, "test.nomad", "\"Nomad\".clear");
     auto statement = parser::parseLine(&context, nullptr, &tokens);
 
     BOOST_REQUIRE(statement != nullptr);
-    BOOST_TEST(!statement->resolve(&context, nullptr));
-    BOOST_REQUIRE(context.getFirstError() != nullptr);
-    BOOST_TEST(context.getFirstError()->message.find("temporary or read-only receiver") != NomadString::npos);
+    BOOST_TEST(statement->resolve(&context, nullptr));
+    BOOST_TEST(context.getErrorCount() == 0);
 }
 
 BOOST_AUTO_TEST_CASE(preserves_existing_qualified_identifier) {

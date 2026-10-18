@@ -179,21 +179,21 @@ ApiAnalysis analyzeApiSymbols(
         }
     }
     std::vector<NomadId> members;
-    runtime->getIntrinsicMembers(members);
+    runtime->getNativeMembers(members);
     for (const auto id : members) {
-        if (runtime->getIntrinsicMemberType(id) == IntrinsicMemberType::Property) {
-            IntrinsicPropertyDefinition definition;
-            if (!runtime->getIntrinsicPropertyDefinition(id, definition)) {
-                throw std::runtime_error("Registered intrinsic property is unavailable");
+        if (runtime->getNativeMemberType(id) == NativeMemberType::Property) {
+            NativePropertyDefinition definition;
+            if (!runtime->getNativePropertyDefinition(id, definition)) {
+                throw std::runtime_error("Registered native property is unavailable");
             }
             const auto receiver = definition.objectType->getTypeName();
             const auto value = definition.valueType->getTypeName();
             symbols.push_back({definition.name, CompletionItemKind::Property,
                 receiver + "." + definition.name + ":" + value, definition.doc, value, receiver});
-        } else if (runtime->getIntrinsicMemberType(id) == IntrinsicMemberType::Method) {
-            IntrinsicMethodDefinition definition;
-            if (!runtime->getIntrinsicMethodDefinition(id, definition)) {
-                throw std::runtime_error("Registered intrinsic method is unavailable");
+        } else if (runtime->getNativeMemberType(id) == NativeMemberType::Method) {
+            NativeMethodDefinition definition;
+            if (!runtime->getNativeMethodDefinition(id, definition)) {
+                throw std::runtime_error("Registered native method is unavailable");
             }
             const auto receiver = definition.objectType->getTypeName();
             auto signature = receiver + "." + definition.name;

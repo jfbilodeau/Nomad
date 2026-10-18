@@ -31,7 +31,7 @@ class CallNativeFunctionExpression;
 class CallStatementNode;
 class Expression;
 class IdentifierExpression;
-class IntrinsicMemberExpression;
+class NativeMemberExpression;
 class Statement;
 class StatementList;
 
@@ -103,8 +103,8 @@ public:
     [[nodiscard]] virtual bool isWritable() const;
     [[nodiscard]] virtual IdentifierExpression* asIdentifierExpression();
     [[nodiscard]] virtual const IdentifierExpression* asIdentifierExpression() const;
-    [[nodiscard]] virtual IntrinsicMemberExpression* asIntrinsicExpression();
-    [[nodiscard]] virtual const IntrinsicMemberExpression* asIntrinsicExpression() const;
+    [[nodiscard]] virtual NativeMemberExpression* asNativeExpression();
+    [[nodiscard]] virtual const NativeMemberExpression* asNativeExpression() const;
     // The expression must have been resolved first.
     void evaluate(InterpreterContext& context) const;
 

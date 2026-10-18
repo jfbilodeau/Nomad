@@ -1273,19 +1273,15 @@ void Game::initRuntime() {
 void Game::initObjects() {
     log::info("Initializing objects");
 
-    if (m_runtime->registerOpaqueIdType(
-        "audio",
+    m_runtime->registerType(std::make_unique<ObjectType>(
+        "Audio", std::vector<const Type*>{}, ObjectType::ObjectFactory{},
         NomadDoc("A sound effect that can be played, paused, resumed, stopped, looped, and adjusted independently.")
-    ) == nullptr) {
-        raiseError("Failed to register the audio type");
-    }
+    ));
 
-    if (m_runtime->registerOpaqueIdType(
-        "font",
+    m_runtime->registerType(std::make_unique<ObjectType>(
+        "Font", std::vector<const Type*>{}, ObjectType::ObjectFactory{},
         NomadDoc("A font at a specific point size for displaying text.")
-    ) == nullptr) {
-        raiseError("Failed to register the font type");
-    }
+    ));
 }
 
 void Game::initEvents() const {

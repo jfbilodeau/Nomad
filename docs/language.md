@@ -184,10 +184,9 @@ Properties may be read-only, write-only or read/write. Object methods may change
 their instance even when its reference comes from a
 read-only parameter or a temporary; this does not reassign the reference.
 
-Members that replace a value require a writable variable, not a literal, constant,
-parameter, function result or other temporary. The replacement takes effect only
-if the operation succeeds. Changes to an object's contents are immediate and are
-not rolled back if a method fails.
+Writable properties may also change an instance through a read-only parameter
+or temporary. Changes to an object's contents are immediate and are not rolled
+back if a property setter or method fails.
 
 ```nomad
 fun append values:List<int>
@@ -199,7 +198,25 @@ Assigning a new reference to the parameter itself remains invalid.
 
 Nomad does not currently support defining object types, properties, or methods in scripts.
 
-The available members for each object type are listed in the [engine API](engine-api.md#intrinsic-members).
+The available members for each object type are listed in the [engine API](engine-api.md#object-members).
+
+### Audio and fonts
+
+`game.audio.load` returns an `Audio` object, and `game.loadFont` returns a `Font`
+object. These types cannot be created with `new`.
+
+```nomad
+sound = game.audio.load "audio.hit"
+sound.volume = 0.5
+sound.play
+font = game.loadFont "fonts/main.ttf" 16
+this.setText font "Hello"
+```
+
+Assignments share the same instance. Keep a reference to an `Audio` object for as
+long as it should play: releasing its last reference stops playback and cancels
+its completion callback. A font remains alive while any variable or entity uses
+it. Its font resource is released when the last reference is gone.
 
 Member names share the identifier namespace with dotted identifiers. Assigning a type to a variable is rejected if that type would introduce a qualified member name that already exists:
 
@@ -381,7 +398,7 @@ its parameters and captured variables. Quoted strings inside expressions may
 contain braces, and nested format strings are supported. Invalid expressions
 are compilation errors, not inline error text. Bare native function names still
 use the simple-placeholder rules; use a call with arguments or a parenthesized
-expression to select expression parsing. Intrinsic members such as `{name.toUpper}`
+expression to select expression parsing. Object members such as `{name.toUpper}`
 and `{name.length}` do not require parentheses. An exact qualified identifier takes
 precedence over object member access.
 

@@ -35,26 +35,25 @@ NomadId compileFunction(Runtime& runtime, const NomadString& source) {
 
 } // namespace
 
-BOOST_AUTO_TEST_SUITE(intrinsic_string_members)
+BOOST_AUTO_TEST_SUITE(native_string_members)
 
 BOOST_AUTO_TEST_CASE(registers_immutable_string_members) {
     Runtime runtime;
 
-    const auto lengthId = runtime.getIntrinsicMemberId(runtime.getStringType(), "length");
-    const auto toUpperId = runtime.getIntrinsicMemberId(runtime.getStringType(), "toUpper");
+    const auto lengthId = runtime.getNativeMemberId(runtime.getStringType(), "length");
+    const auto toUpperId = runtime.getNativeMemberId(runtime.getStringType(), "toUpper");
 
     BOOST_REQUIRE(lengthId != NOMAD_INVALID_ID);
     BOOST_REQUIRE(toUpperId != NOMAD_INVALID_ID);
 
-    IntrinsicPropertyDefinition length;
-    BOOST_REQUIRE(runtime.getIntrinsicPropertyDefinition(lengthId, length));
+    NativePropertyDefinition length;
+    BOOST_REQUIRE(runtime.getNativePropertyDefinition(lengthId, length));
     BOOST_TEST(static_cast<bool>(length.getFn));
     BOOST_TEST(!length.setFn);
     BOOST_TEST(length.valueType == runtime.getIntegerType());
 
-    IntrinsicMethodDefinition toUpper;
-    BOOST_REQUIRE(runtime.getIntrinsicMethodDefinition(toUpperId, toUpper));
-    BOOST_TEST(!toUpper.mutatesReceiver);
+    NativeMethodDefinition toUpper;
+    BOOST_REQUIRE(runtime.getNativeMethodDefinition(toUpperId, toUpper));
     BOOST_TEST(toUpper.returnType == runtime.getStringType());
 }
 
@@ -68,7 +67,7 @@ BOOST_AUTO_TEST_CASE(exports_string_members_to_documentation_and_textmate_gramma
     generateKeywords(&runtime, keywords);
     generateTextMateGrammar(&runtime, grammar);
 
-    BOOST_TEST(documentation.str().find("## Intrinsic Members") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("## Object Members") != NomadString::npos);
     BOOST_TEST(documentation.str().find("#### `length` (*read-only property*)") != NomadString::npos);
     BOOST_TEST(documentation.str().find("#### `contains` (*method*)") != NomadString::npos);
     BOOST_TEST(documentation.str().find("## Format strings") == NomadString::npos);
@@ -80,7 +79,7 @@ BOOST_AUTO_TEST_CASE(exports_string_members_to_documentation_and_textmate_gramma
             "- `text:string` - The text to find\n"
         ) != NomadString::npos
     );
-    BOOST_TEST(keywords.str().find("--- IntrinsicMembers ---") != NomadString::npos);
+    BOOST_TEST(keywords.str().find("--- NativeMembers ---") != NomadString::npos);
     BOOST_TEST(keywords.str().find("toUpper") != NomadString::npos);
     BOOST_TEST(grammar.str().find("\"scopeName\":\"source.nomad\"") != NomadString::npos);
     BOOST_TEST(grammar.str().find("\"repository\"") != NomadString::npos);
@@ -110,7 +109,7 @@ BOOST_AUTO_TEST_CASE(textmate_grammar_supports_expression_interpolation_and_form
     BOOST_TEST(patterns[0].as_object().at("include").as_string() == "#formatStrings");
     BOOST_TEST(patterns[1].as_object().at("include").as_string() == "#strings");
     for (const auto* name : {"formatStrings", "strings", "keywords", "numbers", "functions",
-             "intrinsicMembers", "literals", "types", "operators"}) {
+             "nativeMembers", "literals", "types", "operators"}) {
         const auto expected = NomadString{"#"} + name;
         BOOST_TEST(std::ranges::any_of(patterns, [&](const boost::json::value& pattern) {
             return pattern.as_object().at("include").as_string() == expected;

@@ -72,11 +72,11 @@ const IdentifierExpression* Expression::asIdentifierExpression() const {
     return nullptr;
 }
 
-IntrinsicMemberExpression* Expression::asIntrinsicExpression() {
+NativeMemberExpression* Expression::asNativeExpression() {
     return nullptr;
 }
 
-const IntrinsicMemberExpression* Expression::asIntrinsicExpression() const {
+const NativeMemberExpression* Expression::asNativeExpression() const {
     return nullptr;
 }
 
@@ -631,102 +631,107 @@ PrimaryExpression::PrimaryExpression(const Expression* parent, const NomadIndex 
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// IntrinsicMemberExpression
-IntrinsicMemberExpression::IntrinsicMemberExpression(const Expression* parent, const NomadIndex line,
+// NativeMemberExpression
+NativeMemberExpression::NativeMemberExpression(const Expression* parent, const NomadIndex line,
                                                      const NomadIndex column, NomadString qualifiedName,
                                                      NomadString memberName, std::unique_ptr<Expression> receiver,
-                                                     ArgumentList arguments, const IntrinsicMemberAccess access)
+                                                     ArgumentList arguments)
     : Expression(parent, line, column), m_qualifiedName(std::move(qualifiedName)), m_memberName(std::move(memberName)),
-      m_receiver(std::move(receiver)), m_arguments(std::move(arguments)), m_access(access) {
+      m_receiver(std::move(receiver)), m_arguments(std::move(arguments)) {
 }
 
-bool IntrinsicMemberExpression::isTerminal() const {
+bool NativeMemberExpression::isTerminal() const {
     return false;
 }
 
-bool IntrinsicMemberExpression::isWritable() const {
+bool NativeMemberExpression::isWritable() const {
     return false;
 }
 
-IntrinsicMemberExpression* IntrinsicMemberExpression::asIntrinsicExpression() {
+NativeMemberExpression* NativeMemberExpression::asNativeExpression() {
     return this;
 }
 
-const IntrinsicMemberExpression* IntrinsicMemberExpression::asIntrinsicExpression() const {
+const NativeMemberExpression* NativeMemberExpression::asNativeExpression() const {
     return this;
 }
 
-void IntrinsicMemberExpression::setAccess(const IntrinsicMemberAccess access) {
-    m_access = access;
-}
-
-void IntrinsicMemberExpression::setAllowVoid(const bool allowVoid) {
+void NativeMemberExpression::setAllowVoid(const bool allowVoid) {
     m_allowVoid = allowVoid;
 }
 
-void IntrinsicMemberExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+bool NativeMemberExpression::resolveMember(CompilerContext* context, ScriptFunction* function) {
     if (!m_receiver->resolve(context, function)) {
+        return false;
+    }
+
+    auto* runtime = context->getRuntime();
+    m_memberId = runtime->getNativeMemberId(m_receiver->getType(), m_memberName);
+
+    if (m_memberId == NOMAD_INVALID_ID) {
+        reportError(context, function,
+                    "Type '" + getTypeDisplayName(m_receiver->getType()) + "' has no native member '" +
+                        m_memberName + "'");
+        return false;
+    }
+
+    return true;
+}
+
+bool NativeMemberExpression::resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function) {
+    if (!resolveMember(context, function)) {
+        return false;
+    }
+
+    auto* runtime = context->getRuntime();
+    if (runtime->getNativeMemberType(m_memberId) == NativeMemberType::Method) {
+        reportError(context, function, "Cannot assign to native method '" + m_qualifiedName + "'");
+        return false;
+    }
+
+    NativePropertyDefinition definition;
+    if (!runtime->getNativePropertyDefinition(m_memberId, definition)) {
+        context->getCompiler()->reportInternalError("Invalid native property: " + m_qualifiedName);
+    }
+    if (!definition.setFn) {
+        reportError(context, function, "Native property '" + m_qualifiedName + "' is read-only");
+        return false;
+    }
+    setType(definition.valueType);
+    return true;
+}
+
+void NativeMemberExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+    if (!resolveMember(context, function)) {
         return;
     }
 
     auto* runtime = context->getRuntime();
-    m_memberId = runtime->getIntrinsicMemberId(m_receiver->getType(), m_memberName);
-
-    if (m_memberId == NOMAD_INVALID_ID) {
-        reportError(context, function,
-                    "Type '" + getTypeDisplayName(m_receiver->getType()) + "' has no intrinsic member '" +
-                        m_memberName + "'");
-        return;
-    }
-
-    switch (runtime->getIntrinsicMemberType(m_memberId)) {
-    case IntrinsicMemberType::Property: {
-        IntrinsicPropertyDefinition definition;
-        if (!runtime->getIntrinsicPropertyDefinition(m_memberId, definition)) {
-            context->getCompiler()->reportInternalError("Invalid intrinsic property: " + m_qualifiedName);
+    switch (runtime->getNativeMemberType(m_memberId)) {
+    case NativeMemberType::Property: {
+        NativePropertyDefinition definition;
+        if (!runtime->getNativePropertyDefinition(m_memberId, definition)) {
+            context->getCompiler()->reportInternalError("Invalid native property: " + m_qualifiedName);
         }
 
-        if (m_access == IntrinsicMemberAccess::Read && !definition.getFn) {
-            reportError(context, function, "Intrinsic property '" + m_qualifiedName + "' is write-only");
+        if (!definition.getFn) {
+            reportError(context, function, "Native property '" + m_qualifiedName + "' is write-only");
             return;
-        }
-
-        if (m_access == IntrinsicMemberAccess::Write) {
-            if (!definition.setFn) {
-                reportError(context, function, "Intrinsic property '" + m_qualifiedName + "' is read-only");
-                return;
-            }
-
-            if (!m_receiver->isWritable()) {
-                reportError(context, function, "Cannot assign intrinsic property on a read-only or temporary receiver");
-                return;
-            }
         }
 
         setType(definition.valueType);
         return;
     }
 
-    case IntrinsicMemberType::Method: {
-        IntrinsicMethodDefinition definition;
-        if (!runtime->getIntrinsicMethodDefinition(m_memberId, definition)) {
-            context->getCompiler()->reportInternalError("Invalid intrinsic method: " + m_qualifiedName);
-        }
-
-        if (m_access == IntrinsicMemberAccess::Write) {
-            reportError(context, function, "Cannot assign to intrinsic method '" + m_qualifiedName + "'");
-            return;
-        }
-
-        if (definition.mutatesReceiver && !m_receiver->isWritable()) {
-            reportError(context, function,
-                        "Cannot call mutating method '" + m_qualifiedName + "' on a temporary or read-only receiver");
-            return;
+    case NativeMemberType::Method: {
+        NativeMethodDefinition definition;
+        if (!runtime->getNativeMethodDefinition(m_memberId, definition)) {
+            context->getCompiler()->reportInternalError("Invalid native method: " + m_qualifiedName);
         }
 
         auto& arguments = m_arguments.getArguments();
         if (arguments.size() != definition.parameters.size()) {
-            context->getCompiler()->reportInternalError("Intrinsic method argument shape changed after parsing");
+            context->getCompiler()->reportInternalError("Native method argument shape changed after parsing");
         }
 
         for (NomadIndex index = 0; index < arguments.size(); ++index) {
@@ -739,7 +744,7 @@ void IntrinsicMemberExpression::onResolve(CompilerContext* context, ScriptFuncti
 
         if (definition.returnType->isVoid() && !m_allowVoid) {
             reportError(context, function,
-                        "Cannot use intrinsic method '" + m_qualifiedName +
+                        "Cannot use native method '" + m_qualifiedName +
                             "' in an expression because it does not return a value");
             return;
         }
@@ -748,67 +753,48 @@ void IntrinsicMemberExpression::onResolve(CompilerContext* context, ScriptFuncti
         return;
     }
 
-    case IntrinsicMemberType::Unknown:
-        context->getCompiler()->reportInternalError("Invalid intrinsic member: " + m_qualifiedName);
+    case NativeMemberType::Unknown:
+        context->getCompiler()->reportInternalError("Invalid native member: " + m_qualifiedName);
     }
 }
 
-void IntrinsicMemberExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+void NativeMemberExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
     auto* runtime = compiler->getRuntime();
-    const auto memberType = runtime->getIntrinsicMemberType(m_memberId);
+    const auto memberType = runtime->getNativeMemberType(m_memberId);
     const auto* receiverType = m_receiver->getType();
 
     m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
 
-    if (memberType == IntrinsicMemberType::Property) {
-        compiler->addOpCode(op_intrinsic_property_get);
+    if (memberType == NativeMemberType::Property) {
+        compiler->addOpCode(op_native_property_get);
         compiler->addId(m_memberId);
         compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
         compiler->addMoveResult(getType(), target);
         return;
     }
 
-    IntrinsicMethodDefinition definition;
-    if (memberType != IntrinsicMemberType::Method ||
-        !runtime->getIntrinsicMethodDefinition(m_memberId, definition)) {
-        compiler->reportInternalError("Invalid intrinsic member: " + m_qualifiedName);
+    NativeMethodDefinition definition;
+    if (memberType != NativeMemberType::Method ||
+        !runtime->getNativeMethodDefinition(m_memberId, definition)) {
+        compiler->reportInternalError("Invalid native member: " + m_qualifiedName);
     }
 
     compiler->addPushIntermediate(receiverType);
-    compiler->addIntrinsicMethodCall(m_memberId, function, &m_arguments);
+    compiler->addNativeMethodCall(m_memberId, function, &m_arguments);
 
-    if (definition.mutatesReceiver) {
-        const auto* receiver = m_receiver->asIdentifierExpression();
-        if (receiver == nullptr) {
-            compiler->reportInternalError("Mutating intrinsic method receiver is not directly writable");
-        }
-
-        if (!definition.returnType->isVoid()) {
-            compiler->addPushResult(definition.returnType);
-            compiler->addFreeValue(definition.returnType->getTypeOpCodes()->freeResult);
-        }
-
-        compiler->addMoveIntermediateToResult(receiverType);
-        receiver->compileStore(compiler);
-
-        if (!definition.returnType->isVoid()) {
-            compiler->addPopResult(definition.returnType);
-        }
-    } else {
-        compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
-    }
+    compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
 
     if (!definition.returnType->isVoid()) {
         compiler->addMoveResult(definition.returnType, target);
     }
 }
 
-void IntrinsicMemberExpression::onEvaluate(InterpreterContext& context) const {
+void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
     m_receiver->evaluate(context);
     const auto* evaluatedReceiver = context.getResult();
     if (evaluatedReceiver == nullptr) {
         if (!context.hasError()) {
-            context.setError("Intrinsic member receiver did not produce a value");
+            context.setError("Native member receiver did not produce a value");
         }
         return;
     }
@@ -819,20 +805,20 @@ void IntrinsicMemberExpression::onEvaluate(InterpreterContext& context) const {
     receiverType->copyValue(evaluatedReceiver->getValue(), receiver);
 
     auto* runtime = context.getRuntime();
-    const auto memberType = runtime->getIntrinsicMemberType(m_memberId);
+    const auto memberType = runtime->getNativeMemberType(m_memberId);
 
-    if (memberType == IntrinsicMemberType::Property) {
-        IntrinsicPropertyDefinition definition;
+    if (memberType == NativeMemberType::Property) {
+        NativePropertyDefinition definition;
         RuntimeValue result;
         definition.valueType = nullptr;
 
         try {
-            if (!runtime->getIntrinsicPropertyDefinition(m_memberId, definition) || !definition.getFn) {
-                raiseException("Invalid intrinsic property getter: " + m_qualifiedName);
+            if (!runtime->getNativePropertyDefinition(m_memberId, definition) || !definition.getFn) {
+                raiseException("Invalid native property getter: " + m_qualifiedName);
             }
 
             definition.valueType->initValue(result);
-            definition.getFn(context.getVirtualMachine(), receiver, result);
+            context.getVirtualMachine()->getNativeProperty(m_memberId, receiver, result);
             context.setResult(definition.valueType, result);
             definition.valueType->freeValue(result);
             receiverType->freeValue(receiver);
@@ -846,11 +832,11 @@ void IntrinsicMemberExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
 
-    IntrinsicMethodDefinition definition;
-    if (memberType != IntrinsicMemberType::Method ||
-        !runtime->getIntrinsicMethodDefinition(m_memberId, definition)) {
+    NativeMethodDefinition definition;
+    if (memberType != NativeMemberType::Method ||
+        !runtime->getNativeMethodDefinition(m_memberId, definition)) {
         receiverType->freeValue(receiver);
-        raiseException("Invalid intrinsic method: " + m_qualifiedName);
+        raiseException("Invalid native method: " + m_qualifiedName);
     }
 
     std::vector<TypedValue> evaluatedArguments;
@@ -863,15 +849,8 @@ void IntrinsicMemberExpression::onEvaluate(InterpreterContext& context) const {
 
     auto* virtualMachine = context.getVirtualMachine();
     try {
-        virtualMachine->runIntrinsicMethod(m_memberId, values, receiver);
+        virtualMachine->runNativeMethod(m_memberId, values, receiver);
 
-        if (definition.mutatesReceiver) {
-            const auto* writableReceiver = m_receiver->asIdentifierExpression();
-            if (writableReceiver == nullptr) {
-                raiseException("Mutating intrinsic method receiver is not directly writable");
-            }
-            writableReceiver->evaluateStore(context, receiver);
-        }
 
         if (definition.returnType->isVoid()) {
             context.setVoidResult();
@@ -890,29 +869,25 @@ void IntrinsicMemberExpression::onEvaluate(InterpreterContext& context) const {
     receiverType->freeValue(receiver);
 }
 
-void IntrinsicMemberExpression::compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression) {
+void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression) {
     const auto* receiverType = m_receiver->getType();
     const auto* propertyType = getType();
-    const auto* writableReceiver = m_receiver->asIdentifierExpression();
-    if (writableReceiver == nullptr) {
-        compiler->reportInternalError("Intrinsic property receiver is not directly writable");
-    }
-
     m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
+    compiler->addPushIntermediate(receiverType);
     expression->compile(compiler, function, ExpressionTarget::Result);
-    compiler->addOpCode(op_intrinsic_property_set);
+    compiler->addPopIntermediate(receiverType);
+    compiler->addOpCode(op_native_property_set);
     compiler->addId(m_memberId);
     compiler->addFreeValue(propertyType->getTypeOpCodes()->freeResult);
-    compiler->addMoveIntermediateToResult(receiverType);
-    writableReceiver->compileStore(compiler);
+    compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
 }
 
-void IntrinsicMemberExpression::evaluateAssignment(InterpreterContext& context, const Expression* expression) const {
+void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, const Expression* expression) const {
     m_receiver->evaluate(context);
     const auto* evaluatedReceiver = context.getResult();
     if (evaluatedReceiver == nullptr) {
         if (!context.hasError()) {
-            context.setError("Intrinsic property receiver did not produce a value");
+            context.setError("Native property receiver did not produce a value");
         }
         return;
     }
@@ -927,24 +902,19 @@ void IntrinsicMemberExpression::evaluateAssignment(InterpreterContext& context, 
     if (assignedValue == nullptr) {
         receiverType->freeValue(receiver);
         if (!context.hasError()) {
-            context.setError("Intrinsic property assignment did not produce a value");
+            context.setError("Native property assignment did not produce a value");
         }
         return;
     }
 
-    IntrinsicPropertyDefinition definition;
-    if (!context.getRuntime()->getIntrinsicPropertyDefinition(m_memberId, definition) || !definition.setFn) {
+    NativePropertyDefinition definition;
+    if (!context.getRuntime()->getNativePropertyDefinition(m_memberId, definition) || !definition.setFn) {
         receiverType->freeValue(receiver);
-        raiseException("Invalid intrinsic property setter: " + m_qualifiedName);
+        raiseException("Invalid native property setter: " + m_qualifiedName);
     }
 
     try {
-        definition.setFn(context.getVirtualMachine(), receiver, assignedValue->getValue());
-        const auto* writableReceiver = m_receiver->asIdentifierExpression();
-        if (writableReceiver == nullptr) {
-            raiseException("Intrinsic property receiver is not directly writable");
-        }
-        writableReceiver->evaluateStore(context, receiver);
+        context.getVirtualMachine()->setNativeProperty(m_memberId, receiver, assignedValue->getValue());
         context.setResult(definition.valueType, assignedValue->getValue());
     } catch (...) {
         receiverType->freeValue(receiver);
@@ -1182,7 +1152,7 @@ bool FormatStringLiteral::parsePlaceholders(
             }
         }
         if (identifier && !needsFirstCharacter &&
-            !parser::isIntrinsicMemberCandidate(context->getCompiler(), function, segment.text)) {
+            !parser::isNativeMemberCandidate(context->getCompiler(), function, segment.text)) {
             m_variableFormat += "{" + segment.text + "}";
             continue;
         }
@@ -1479,7 +1449,7 @@ void IdentifierExpression::compileStore(Compiler* compiler) const {
         break;
 
     default:
-        compiler->reportInternalError("Cannot store intrinsic receiver '" + m_identifier + "'");
+        compiler->reportInternalError("Cannot store native receiver '" + m_identifier + "'");
     }
 }
 
@@ -1502,7 +1472,7 @@ void IdentifierExpression::evaluateStore(InterpreterContext& context, const Runt
         break;
 
     default:
-        raiseException("Cannot store intrinsic receiver '" + m_identifier + "'");
+        raiseException("Cannot store native receiver '" + m_identifier + "'");
     }
 }
 

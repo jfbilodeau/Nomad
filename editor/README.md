@@ -49,12 +49,12 @@ the available symbols and inferred types.
 Project scripts include engine APIs and functions from the configured script roots;
 standalone scripts use language built-ins and functions from that document only.
 Registered engine variables (including `this.` and `other.`) and discovered script
-context variables are included. Intrinsic properties and methods are suggested
+context variables are included. Object properties and methods are suggested
 after a receiver dot; inferred local and parameter types, as well as
 registered variable types, filter the candidates. Local variables and parameters
 are scoped to the current function and enclosing callbacks, and hover shows their
-types. Intrinsic hover shows the member signature and documentation. Named
-receivers can include chains of intrinsic properties, such as `this.name.length`.
+types. Member hover shows the member signature and documentation. Named
+receivers can include chains of object properties, such as `this.name.length`.
 For unknown receiver types, candidates list their receiver type in the details.
 Completion also works on unfinished member expressions such as `name.`.
 Other errors can still prevent local type inference.

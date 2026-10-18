@@ -147,33 +147,21 @@ void op_call_native_function(VirtualMachine* interpreter) {
     interpreter->callNativeFunction(nativeFunctionId);
 }
 
-void op_intrinsic_property_get(VirtualMachine* interpreter) {
+void op_native_property_get(VirtualMachine* interpreter) {
     const auto memberId = interpreter->nextId();
-    IntrinsicPropertyDefinition definition;
-
-    if (!interpreter->getRuntime()->getIntrinsicPropertyDefinition(memberId, definition) || !definition.getFn) {
-        interpreter->fault("Invalid intrinsic property getter");
-    }
-
-    definition.getFn(interpreter, interpreter->getIntermediate(), interpreter->getResult());
+    interpreter->getNativeProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
 }
 
-void op_intrinsic_property_set(VirtualMachine* interpreter) {
+void op_native_property_set(VirtualMachine* interpreter) {
     const auto memberId = interpreter->nextId();
-    IntrinsicPropertyDefinition definition;
-
-    if (!interpreter->getRuntime()->getIntrinsicPropertyDefinition(memberId, definition) || !definition.setFn) {
-        interpreter->fault("Invalid intrinsic property setter");
-    }
-
-    definition.setFn(interpreter, interpreter->getIntermediate(), interpreter->getResult());
+    interpreter->setNativeProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
 }
 
-void op_intrinsic_method_call(VirtualMachine* interpreter) {
+void op_native_method_call(VirtualMachine* interpreter) {
     const auto memberId = interpreter->nextId();
     const auto receiverOffset = interpreter->nextIndex();
     interpreter->setIntermediate(interpreter->peekStack(receiverOffset));
-    interpreter->callIntrinsicMethod(memberId);
+    interpreter->callNativeMethod(memberId, interpreter->getIntermediate());
 }
 
 void op_parameter_load_r(VirtualMachine* interpreter) {

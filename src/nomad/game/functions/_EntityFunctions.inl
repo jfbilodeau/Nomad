@@ -616,17 +616,17 @@ END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(setText)
     [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto fontId = interpreter->getIdParameter(0);
+        auto* font = interpreter->getParameter(0).asObject<FontObject>();
         const auto& text = interpreter->getStringParameter(1)->getString();
 
         BEGIN_ENTITY_BLOCK()
 
-        entity->setFontById(fontId);
+        entity->setFont(font);
         entity->setText(text);
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("font", m_runtime->getTypeByName("font"), NomadParamDoc("Font to use")),
+        defParameter("font", m_runtime->getTypeByName("Font"), NomadParamDoc("Font to use")),
         defParameter("text", m_runtime->getStringType(), NomadParamDoc("Text to set")),
     },
     m_runtime->getVoidType(),

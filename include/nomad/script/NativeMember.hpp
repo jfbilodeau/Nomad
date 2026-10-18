@@ -16,25 +16,25 @@ namespace nomad {
 class Type;
 class VirtualMachine;
 
-enum class IntrinsicMemberType {
+enum class NativeMemberType {
     Unknown = 1,
     Property,
     Method,
 };
 
-using IntrinsicPropertyGetFn = std::function<void(VirtualMachine*, const RuntimeValue&, RuntimeValue&)>;
-using IntrinsicPropertySetFn = std::function<void(VirtualMachine*, RuntimeValue&, const RuntimeValue&)>;
+using NativePropertyGetFn = std::function<void(VirtualMachine*, RuntimeValue&)>;
+using NativePropertySetFn = std::function<void(VirtualMachine*, const RuntimeValue&)>;
 
-struct IntrinsicPropertyDefinition {
+struct NativePropertyDefinition {
     NomadId id = NOMAD_INVALID_ID;
     const Type* objectType = nullptr;
     NomadString name;
     const Type* valueType = nullptr;
-    IntrinsicPropertyGetFn getFn;
-    IntrinsicPropertySetFn setFn;
+    NativePropertyGetFn getFn;
+    NativePropertySetFn setFn;
     NomadDocField;
 };
 
-using IntrinsicMethodDefinition = NativeFunctionDefinition;
+using NativeMethodDefinition = NativeFunctionDefinition;
 
 } // namespace nomad

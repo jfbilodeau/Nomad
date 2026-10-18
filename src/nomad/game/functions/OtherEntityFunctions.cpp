@@ -6,6 +6,7 @@
 #include <nomad/game/Scene.hpp>
 
 #include <nomad/game/resource/Animation.hpp>
+#include <nomad/game/resource/FontObject.hpp>
 #include <nomad/game/resource/ResourceManager.hpp>
 #include <nomad/game/resource/Sprite.hpp>
 

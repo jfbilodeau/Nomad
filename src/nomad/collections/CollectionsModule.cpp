@@ -26,12 +26,12 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         },
         [runtime = context->runtime](const nomad::Type* type) {
             const auto* elementType = static_cast<const nomad::ObjectType*>(type)->getTypeArguments()[0];
-            const auto countId = runtime->registerIntrinsicProperty(
+            const auto countId = runtime->registerNativeProperty(
                 type,
                 "count",
                 runtime->getIntegerType(),
-                [](nomad::VirtualMachine*, const nomad::RuntimeValue& receiver, nomad::RuntimeValue& result) {
-                    const auto* list = static_cast<const nomad::ListObject*>(receiver.getObjectValue());
+                [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
+                    const auto* list = machine->getThisAs<nomad::ListObject>();
                     result.setIntegerValue(static_cast<nomad::NomadInteger>(list->getCount()));
                 },
                 {},

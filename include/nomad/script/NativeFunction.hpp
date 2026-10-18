@@ -28,7 +28,6 @@ struct NativeFunctionDefinition {
     const Type* returnType = nullptr;
     NomadDocField;
     const Type* objectType = nullptr;
-    bool mutatesReceiver = false;
 };
 
 

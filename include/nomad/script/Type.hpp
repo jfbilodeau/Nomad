@@ -201,7 +201,7 @@ public:
 
 class ObjectTypeBase : public Type {
 public:
-    ObjectTypeBase();
+    explicit ObjectTypeBase(NomadString documentation = {});
     [[nodiscard]] virtual bool isConstructible() const;
     // Returns a new object with one owned reference.
     [[nodiscard]] virtual NomadObject* createObject() const;
@@ -217,7 +217,8 @@ public:
     explicit ObjectType(
         NomadString name,
         std::vector<const Type*> typeArguments = {},
-        ObjectFactory factory = {}
+        ObjectFactory factory = {},
+        NomadString documentation = {}
     );
     [[nodiscard]] bool isConstructible() const override;
     [[nodiscard]] NomadObject* createObject() const override;

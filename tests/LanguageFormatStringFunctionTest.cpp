@@ -442,7 +442,7 @@ BOOST_AUTO_TEST_CASE(format_string_expression_reports_type_and_syntax_errors)
     }
 }
 
-BOOST_AUTO_TEST_CASE(format_string_resolves_bare_intrinsic_members_in_lexical_scope)
+BOOST_AUTO_TEST_CASE(format_string_resolves_bare_native_members_in_lexical_scope)
 {
     const std::vector<std::pair<NomadString, NomadString>> cases{
         {"name = \"nomad\"\nreturn $\"{name.toUpper}:{name.length}\"", "NOMAD:5"},

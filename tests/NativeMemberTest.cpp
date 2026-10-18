@@ -2,7 +2,7 @@
 
 #include <boost/test/unit_test.hpp>
 
-#include <nomad/script/IntrinsicMember.hpp>
+#include <nomad/script/NativeMember.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <algorithm>
@@ -12,38 +12,45 @@ using namespace nomad;
 
 namespace {
 
-IntrinsicPropertyGetFn propertyGetter() {
-    return [](VirtualMachine*, const RuntimeValue&, RuntimeValue&) {};
+NativePropertyGetFn propertyGetter() {
+    return [](VirtualMachine*, RuntimeValue&) {};
 }
 
-IntrinsicPropertySetFn propertySetter() {
-    return [](VirtualMachine*, RuntimeValue&, const RuntimeValue&) {};
+NativePropertySetFn propertySetter() {
+    return [](VirtualMachine*, const RuntimeValue&) {};
 }
 
 NativeFunctionFn methodFunction() {
     return [](VirtualMachine*) {};
 }
 
+const Type* registerTestType(Runtime& runtime) {
+    auto descriptor = std::make_unique<ObjectType>("TestObject");
+    const auto* type = descriptor.get();
+    runtime.registerType(std::move(descriptor));
+    return type;
+}
+
 } // namespace
 
-BOOST_AUTO_TEST_SUITE(intrinsic_members)
+BOOST_AUTO_TEST_SUITE(native_members)
 
 BOOST_AUTO_TEST_CASE(registers_read_only_write_only_and_read_write_properties) {
     Runtime runtime;
 
-    const auto readOnlyId = runtime.getIntrinsicMemberId(runtime.getStringType(), "length");
-    const auto writeOnlyId = runtime.registerIntrinsicProperty(
+    const auto readOnlyId = runtime.getNativeMemberId(runtime.getStringType(), "length");
+    const auto writeOnlyId = runtime.registerNativeProperty(
         runtime.getStringType(), "sink", runtime.getIntegerType(), {}, propertySetter(), NomadDoc("Write-only value"));
     const auto readWriteId =
-        runtime.registerIntrinsicProperty(runtime.getStringType(), "value", runtime.getIntegerType(), propertyGetter(),
+        runtime.registerNativeProperty(runtime.getStringType(), "value", runtime.getIntegerType(), propertyGetter(),
                                           propertySetter(), NomadDoc("Read/write value"));
 
     BOOST_REQUIRE(readOnlyId != NOMAD_INVALID_ID);
     BOOST_REQUIRE(writeOnlyId != NOMAD_INVALID_ID);
     BOOST_REQUIRE(readWriteId != NOMAD_INVALID_ID);
 
-    IntrinsicPropertyDefinition definition;
-    BOOST_REQUIRE(runtime.getIntrinsicPropertyDefinition(readOnlyId, definition));
+    NativePropertyDefinition definition;
+    BOOST_REQUIRE(runtime.getNativePropertyDefinition(readOnlyId, definition));
     BOOST_TEST(definition.id == readOnlyId);
     BOOST_TEST(definition.objectType == runtime.getStringType());
     BOOST_TEST(definition.name == "length");
@@ -51,11 +58,11 @@ BOOST_AUTO_TEST_CASE(registers_read_only_write_only_and_read_write_properties) {
     BOOST_TEST(static_cast<bool>(definition.getFn));
     BOOST_TEST(!definition.setFn);
 
-    BOOST_REQUIRE(runtime.getIntrinsicPropertyDefinition(writeOnlyId, definition));
+    BOOST_REQUIRE(runtime.getNativePropertyDefinition(writeOnlyId, definition));
     BOOST_TEST(!definition.getFn);
     BOOST_TEST(static_cast<bool>(definition.setFn));
 
-    BOOST_REQUIRE(runtime.getIntrinsicPropertyDefinition(readWriteId, definition));
+    BOOST_REQUIRE(runtime.getNativePropertyDefinition(readWriteId, definition));
     BOOST_TEST(static_cast<bool>(definition.getFn));
     BOOST_TEST(static_cast<bool>(definition.setFn));
 }
@@ -64,115 +71,118 @@ BOOST_AUTO_TEST_CASE(registers_method_metadata) {
     Runtime runtime;
 
     const auto methodId =
-        runtime.registerIntrinsicMethod(runtime.getStringType(), "replace", methodFunction(),
+        runtime.registerNativeMethod(runtime.getStringType(), "replace", methodFunction(),
                                         {
                                             defParameter("from", runtime.getStringType(), NomadDoc("Text to replace")),
                                             defParameter("to", runtime.getStringType(), NomadDoc("Replacement text")),
                                         },
-                                        runtime.getStringType(), false, NomadDoc("Return a replaced string"));
+                                        runtime.getStringType(), NomadDoc("Return a replaced string"));
 
     BOOST_REQUIRE(methodId != NOMAD_INVALID_ID);
-    BOOST_TEST((runtime.getIntrinsicMemberType(methodId) == IntrinsicMemberType::Method));
+    BOOST_TEST((runtime.getNativeMemberType(methodId) == NativeMemberType::Method));
 
-    IntrinsicMethodDefinition definition;
-    BOOST_REQUIRE(runtime.getIntrinsicMethodDefinition(methodId, definition));
+    NativeMethodDefinition definition;
+    BOOST_REQUIRE(runtime.getNativeMethodDefinition(methodId, definition));
     BOOST_TEST(definition.id == methodId);
     BOOST_TEST(definition.objectType == runtime.getStringType());
     BOOST_TEST(definition.name == "replace");
     BOOST_TEST(definition.parameters.size() == NomadIndex{2});
     BOOST_TEST(definition.returnType == runtime.getStringType());
-    BOOST_TEST(!definition.mutatesReceiver);
 }
 
 BOOST_AUTO_TEST_CASE(rejects_duplicate_member_name_on_same_type) {
     Runtime runtime;
 
-    BOOST_REQUIRE(runtime.registerIntrinsicProperty(runtime.getStringType(), "value", runtime.getIntegerType(),
+    BOOST_REQUIRE(runtime.registerNativeProperty(runtime.getStringType(), "value", runtime.getIntegerType(),
                                                     propertyGetter(), {}, NomadDoc("Property")) != NOMAD_INVALID_ID);
 
-    BOOST_TEST(runtime.registerIntrinsicMethod(runtime.getStringType(), "value", methodFunction(), {},
-                                               runtime.getIntegerType(), false,
+    BOOST_TEST(runtime.registerNativeMethod(runtime.getStringType(), "value", methodFunction(), {},
+                                               runtime.getIntegerType(),
                                                NomadDoc("Method")) == NOMAD_INVALID_ID);
 }
 
 BOOST_AUTO_TEST_CASE(allows_compatible_member_names_on_different_types) {
     Runtime runtime;
+    const auto* type = registerTestType(runtime);
 
     const auto stringId =
-        runtime.registerIntrinsicMethod(runtime.getStringType(), "find", methodFunction(),
+        runtime.registerNativeMethod(runtime.getStringType(), "find", methodFunction(),
                                         {defParameter("value", runtime.getStringType(), NomadDoc("Value"))},
-                                        runtime.getIntegerType(), false, NomadDoc("Find string"));
+                                        runtime.getIntegerType(), NomadDoc("Find string"));
     const auto integerId =
-        runtime.registerIntrinsicMethod(runtime.getIntegerType(), "find", methodFunction(),
+        runtime.registerNativeMethod(type, "find", methodFunction(),
                                         {defParameter("value", runtime.getIntegerType(), NomadDoc("Value"))},
-                                        runtime.getBooleanType(), false, NomadDoc("Find integer"));
+                                        runtime.getBooleanType(), NomadDoc("Find integer"));
 
     BOOST_REQUIRE(stringId != NOMAD_INVALID_ID);
     BOOST_REQUIRE(integerId != NOMAD_INVALID_ID);
 
     std::vector<NomadId> overloads;
-    runtime.getIntrinsicMemberOverloads("find", overloads);
+    runtime.getNativeMemberOverloads("find", overloads);
 
     BOOST_TEST(overloads == std::vector<NomadId>({stringId, integerId}));
-    BOOST_TEST(runtime.getIntrinsicMemberOverloadCount("find") == NomadIndex{2});
+    BOOST_TEST(runtime.getNativeMemberOverloadCount("find") == NomadIndex{2});
 }
 
 BOOST_AUTO_TEST_CASE(rejects_incompatible_member_shapes) {
     Runtime runtime;
+    const auto* type = registerTestType(runtime);
 
-    BOOST_REQUIRE(runtime.registerIntrinsicMethod(runtime.getStringType(), "find", methodFunction(),
+    BOOST_REQUIRE(runtime.registerNativeMethod(runtime.getStringType(), "find", methodFunction(),
                                                   {defParameter("value", runtime.getStringType(), NomadDoc("Value"))},
-                                                  runtime.getIntegerType(), false,
+                                                  runtime.getIntegerType(),
                                                   NomadDoc("Find string")) != NOMAD_INVALID_ID);
 
-    BOOST_TEST(runtime.registerIntrinsicMethod(runtime.getIntegerType(), "find", methodFunction(),
+    BOOST_TEST(runtime.registerNativeMethod(type, "find", methodFunction(),
                                                {
                                                    defParameter("value", runtime.getIntegerType(), NomadDoc("Value")),
                                                    defParameter("start", runtime.getIntegerType(), NomadDoc("Start")),
                                                },
-                                               runtime.getBooleanType(), false,
+                                               runtime.getBooleanType(),
                                                NomadDoc("Find integer")) == NOMAD_INVALID_ID);
 }
 
 BOOST_AUTO_TEST_CASE(rejects_invalid_member_definitions) {
     Runtime runtime;
 
-    BOOST_TEST(runtime.registerIntrinsicProperty(nullptr, "value", runtime.getIntegerType(), propertyGetter(), {},
+    BOOST_TEST(runtime.registerNativeProperty(nullptr, "value", runtime.getIntegerType(), propertyGetter(), {},
                                                  NomadDoc("Invalid owner")) == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerIntrinsicProperty(runtime.getVoidType(), "value", runtime.getIntegerType(),
+    BOOST_TEST(runtime.registerNativeProperty(runtime.getVoidType(), "value", runtime.getIntegerType(),
                                                  propertyGetter(), {}, NomadDoc("Void owner")) == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerIntrinsicProperty(runtime.getStringType(), "invalid.name", runtime.getIntegerType(),
+    BOOST_TEST(runtime.registerNativeProperty(runtime.getIntegerType(), "value", runtime.getIntegerType(),
+                                                 propertyGetter(), {}, NomadDoc("Primitive owner")) == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerNativeProperty(runtime.getStringType(), "invalid.name", runtime.getIntegerType(),
                                                  propertyGetter(), {}, NomadDoc("Invalid name")) == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerIntrinsicProperty(runtime.getStringType(), "value", runtime.getIntegerType(), {}, {},
+    BOOST_TEST(runtime.registerNativeProperty(runtime.getStringType(), "value", runtime.getIntegerType(), {}, {},
                                                  NomadDoc("No access")) == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerIntrinsicProperty(runtime.getStringType(), "value", runtime.getVoidType(),
+    BOOST_TEST(runtime.registerNativeProperty(runtime.getStringType(), "value", runtime.getVoidType(),
                                                  propertyGetter(), {}, NomadDoc("Void value")) == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerIntrinsicMethod(runtime.getStringType(), "convert", {}, {}, runtime.getStringType(),
-                                               false, NomadDoc("No function")) == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerIntrinsicMethod(runtime.getStringType(), "convert", methodFunction(), {}, nullptr, false,
+    BOOST_TEST(runtime.registerNativeMethod(runtime.getStringType(), "convert", {}, {}, runtime.getStringType(), NomadDoc("No function")) == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerNativeMethod(runtime.getStringType(), "convert", methodFunction(), {}, nullptr,
                                                NomadDoc("No return type")) == NOMAD_INVALID_ID);
 }
 
 BOOST_AUTO_TEST_CASE(iterates_members_by_type_and_globally) {
     Runtime runtime;
+    const auto* type = registerTestType(runtime);
 
-    const auto stringMethodId = runtime.registerIntrinsicMethod(
-        runtime.getStringType(), "convert", methodFunction(), {}, runtime.getStringType(), false, NomadDoc("Convert"));
-    const auto integerPropertyId = runtime.registerIntrinsicProperty(
-        runtime.getIntegerType(), "sign", runtime.getIntegerType(), propertyGetter(), {}, NomadDoc("Sign"));
+    const auto stringMethodId = runtime.registerNativeMethod(
+        runtime.getStringType(), "convert", methodFunction(), {}, runtime.getStringType(), NomadDoc("Convert"));
+    const auto integerPropertyId = runtime.registerNativeProperty(
+        type, "sign", runtime.getIntegerType(), propertyGetter(), {}, NomadDoc("Sign"));
 
     std::vector<NomadId> stringMembers;
-    runtime.getIntrinsicMembers(runtime.getStringType(), stringMembers);
+    runtime.getNativeMembers(runtime.getStringType(), stringMembers);
     BOOST_TEST(stringMembers.size() == NomadIndex{12});
     const auto hasCustomStringMethod = std::ranges::find(stringMembers, stringMethodId) != stringMembers.end();
     const auto hasLength =
-        std::ranges::find(stringMembers, runtime.getIntrinsicMemberId(runtime.getStringType(), "length")) !=
+        std::ranges::find(stringMembers, runtime.getNativeMemberId(runtime.getStringType(), "length")) !=
         stringMembers.end();
     BOOST_TEST(hasCustomStringMethod);
     BOOST_TEST(hasLength);
 
     std::vector<NomadId> allMembers;
-    runtime.getIntrinsicMembers(allMembers);
+    runtime.getNativeMembers(allMembers);
     BOOST_TEST(allMembers.size() == stringMembers.size() + 1);
     const auto hasIntegerProperty = std::ranges::find(allMembers, integerPropertyId) != allMembers.end();
     BOOST_TEST(hasIntegerProperty);

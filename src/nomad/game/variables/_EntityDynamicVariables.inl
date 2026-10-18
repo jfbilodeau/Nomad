@@ -585,19 +585,20 @@ m_runtime->registerDynamicVariable(
     [this](VirtualMachine* /*interpreter*/, const RuntimeValue& value) {
         BEGIN_ENTITY_BLOCK("Attempted to set font of null entity")
 
-        const auto fontId = value.getIdValue();
-        entity->setFontById(fontId);
+        entity->setFont(value.asObject<FontObject>());
 
         END_ENTITY_BLOCK
     },
     [this](VirtualMachine* /*interpreter*/, RuntimeValue& value) {
         BEGIN_SINGLE_ENTITY_BLOCK("Attempted to get font of null entity")
 
-        value.setIdValue(entity->getFontId());
+        auto* font = entity->getFont();
+        addRef(font);
+        value.setObjectValue(font);
 
         END_SINGLE_ENTITY_BLOCK(NOMAD_DEFAULT_INTEGER)
     },
-    m_runtime->getTypeByName("font"),
+    m_runtime->getTypeByName("Font"),
     NomadDoc("The font of the entity.")
 );
 

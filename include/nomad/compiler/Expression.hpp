@@ -120,23 +120,17 @@ private:
     ArgumentList m_arguments;
 };
 
-enum class IntrinsicMemberAccess {
-    Read = 1,
-    Write,
-};
-
-class IntrinsicMemberExpression final : public Expression {
+class NativeMemberExpression final : public Expression {
 public:
-    IntrinsicMemberExpression(const Expression* parent, NomadIndex line, NomadIndex column, NomadString qualifiedName,
-                              NomadString memberName, std::unique_ptr<Expression> receiver, ArgumentList arguments,
-                              IntrinsicMemberAccess access = IntrinsicMemberAccess::Read);
+    NativeMemberExpression(const Expression* parent, NomadIndex line, NomadIndex column, NomadString qualifiedName,
+                              NomadString memberName, std::unique_ptr<Expression> receiver, ArgumentList arguments);
 
     [[nodiscard]] bool isTerminal() const override;
     [[nodiscard]] bool isWritable() const override;
-    [[nodiscard]] IntrinsicMemberExpression* asIntrinsicExpression() override;
-    [[nodiscard]] const IntrinsicMemberExpression* asIntrinsicExpression() const override;
+    [[nodiscard]] NativeMemberExpression* asNativeExpression() override;
+    [[nodiscard]] const NativeMemberExpression* asNativeExpression() const override;
 
-    void setAccess(IntrinsicMemberAccess access);
+    [[nodiscard]] bool resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function);
     void setAllowVoid(bool allowVoid);
     void compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression);
     void evaluateAssignment(InterpreterContext& context, const Expression* expression) const;
@@ -147,11 +141,12 @@ protected:
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
+    [[nodiscard]] bool resolveMember(CompilerContext* context, ScriptFunction* function);
+
     NomadString m_qualifiedName;
     NomadString m_memberName;
     std::unique_ptr<Expression> m_receiver;
     ArgumentList m_arguments;
-    IntrinsicMemberAccess m_access;
     NomadId m_memberId = NOMAD_INVALID_ID;
     bool m_allowVoid = false;
 };

@@ -88,10 +88,7 @@ void RuntimeValue::set(const NomadString& value) {
 }
 
 void RuntimeValue::copyObjectValue(const RuntimeValue& other) {
-    if (other.m_objectValue != nullptr) {
-        other.m_objectValue->addRef();
-    }
-
+    addRef(other.m_objectValue);
     m_objectValue = other.m_objectValue;
 }
 
@@ -120,7 +117,7 @@ NomadObject* RuntimeValue::getObjectValue() const {
 }
 
 NomadStringObject* RuntimeValue::getStringObject() const {
-    return static_cast<NomadStringObject*>(m_objectValue);
+    return asObject<NomadStringObject>();
 }
 
 const NomadChar* RuntimeValue::getStringValue() const {
@@ -141,10 +138,7 @@ void RuntimeValue::moveObjectValue(RuntimeValue& other) {
 }
 
 void RuntimeValue::freeObjectValue() {
-    if (m_objectValue != nullptr) {
-        m_objectValue->releaseRef();
-    }
-
+    releaseRef(m_objectValue);
     m_objectValue = nullptr;
 }
 

@@ -13,7 +13,7 @@ Types and function definitions used by a context must remain valid.
 
 - `Runtime` holds registered APIs, types, function definitions, and bytecode.
 - `VirtualMachine` executes compiled functions and provides the execution
-  environment for native calls, intrinsic methods, and dynamic variables.
+  environment for native calls, object members, and dynamic variables.
 - `InterpreterContext` borrows a VM and owns interpreter variables, its latest
   typed result, and its latest error. It can additionally borrow a script frame.
 - `Interpreter` is stateless. Pass a context to each execution; keep that context
@@ -253,8 +253,7 @@ for methods on an `ObjectTypeBase` descriptor. Read the instance inside the call
 
 Use `registerNativeFunction` for a global function and `registerNativeMethod` for a
 method on a non-null object type.
-Global function lookup and enumeration exclude methods. Method registration returns
-a member ID, used with the member lookup APIs, not a global native-function ID.
+Global function lookup and enumeration exclude methods.
 
 `getThis()` returns the borrowed instance; `getThisAs<T>()` performs a static cast.
 The host must pair the descriptor with the correct C++ class. Access without an
@@ -263,8 +262,8 @@ instance must outlive the call.
 
 Object methods may mutate the instance through parameter and temporary references.
 They do not replace the receiver binding or roll back changes to object contents.
-`List.push` uses this API. Properties and existing value-style intrinsic methods
-remain unchanged; script-defined methods are not supported yet.
+`List.push` and the `Audio` controls use this API. Script-defined methods are not
+supported yet.
 
 ## Typed native object methods
 
@@ -297,10 +296,55 @@ An incorrect pairing causes undefined behaviour.
 Use `getThisAs<const Object>()` to obtain a pointer to const.
 Calling the accessor outside an active method faults.
 
-The existing `registerIntrinsicMethod(...)` API remains available for value-style
-members, including receiver replacement when `mutatesReceiver` is true. Its
-callbacks can still use `getIntrinsicReceiver()` and `getIntrinsicReceiverAs<T>()`.
-Object methods do not use receiver replacement. Properties are unchanged.
+## Native object properties
+
+Use `registerNativeProperty(objectType, name, valueType, getter, setter, doc)`.
+Either callback may be empty for a write-only or read-only property. Both
+callbacks access the borrowed instance through `getThisAs<T>()`.
+
+```cpp
+runtime.registerNativeProperty(
+    objectType, "volume", runtime.getFloatType(),
+    [](nomad::VirtualMachine* vm, nomad::RuntimeValue& result) {
+        result.setFloatValue(vm->getThisAs<nomad::AudioObject>()->getVolume());
+    },
+    [](nomad::VirtualMachine* vm, const nomad::RuntimeValue& value) {
+        vm->getThisAs<nomad::AudioObject>()->setVolume(value.getFloatValue());
+    },
+    NomadDoc("Instance volume.")
+);
+```
+
+Members require a registered object type. Property setters mutate that instance,
+not the variable holding its reference.
+
+## Object reference helpers
+
+`nomad::addRef(object)` and `nomad::releaseRef(object)` accept null pointers.
+Use `current = nomad::replace(current, next)` to retain a replacement before
+releasing the previous reference; self-replacement does not change the count.
+The returned pointer must be assigned by the caller. This shares `next` rather
+than adopting its existing reference.
+
+Use `value.asObject<T>()` to read a borrowed, typed object pointer from a
+`RuntimeValue`. It preserves null and does not change the reference count.
+Like `getThisAs<T>()`, it relies on the host supplying the correct C++ class.
+
+## Audio and font ownership
+
+Include `nomad/game/resource/AudioObject.hpp` and
+`nomad/game/resource/FontObject.hpp` when using their C++ object APIs. Their
+script type names remain `Audio` and `Font`; neither is script-constructible.
+
+`AudioManager::createAudioObject` and `FontManager::registerFont` create objects
+with one caller-owned reference. The manager lookup functions return borrowed
+pointers. Release the initial reference when finished; lookups become null
+after the last reference is released. `Entity::setFont` retains its `FontObject`,
+and `Entity::getFont` returns a borrowed pointer.
+
+Keep the game alive while using its resources. Game shutdown invalidates the
+underlying resources even if a C++ object reference survives; such references
+may still be released safely afterward.
 
 DLLs must use compatible C++ ABI settings and remain loaded while their callbacks
 or objects are alive.

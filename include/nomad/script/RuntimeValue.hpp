@@ -5,6 +5,8 @@
 
 #include <nomad/Nomad.hpp>
 
+#include <nomad/script/NomadObject.hpp>
+
 #include <type_traits>
 
 namespace nomad {
@@ -52,6 +54,8 @@ public:
     [[nodiscard]] NomadBoolean getBooleanValue() const;
     [[nodiscard]] NomadId getIdValue() const;
     [[nodiscard]] NomadObject* getObjectValue() const;
+    template<typename Object>
+    [[nodiscard]] Object* asObject() const;
     [[nodiscard]] NomadStringObject* getStringObject() const;
     [[nodiscard]] const NomadChar* getStringValue() const;
 
@@ -76,6 +80,12 @@ private:
         NomadObject* m_objectValue;
     };
 };
+
+template<typename Object>
+Object* RuntimeValue::asObject() const {
+    static_assert(std::is_base_of_v<NomadObject, Object>);
+    return static_cast<Object*>(m_objectValue);
+}
 
 static_assert(std::is_trivially_copyable_v<RuntimeValue>, "RuntimeValue must be trivially copyable for bitwise copy");
 

@@ -12,6 +12,7 @@
 #include <nomad/script/RuntimeValue.hpp>
 #include <nomad/script/ScriptFunction.hpp>
 
+#include <functional>
 #include <type_traits>
 #include <vector>
 
@@ -64,23 +65,17 @@ public:
 
     void callFunction(const ScriptFunction* function);
     void callNativeFunction(NomadId nativeFunctionId);
-    void callIntrinsicMethod(NomadId memberId);
+    void callNativeMethod(NomadId memberId, const RuntimeValue& receiver);
     void returnFunction(NomadIndex variableCount);
-    void runIntrinsicMethod(NomadId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
+    void runNativeMethod(NomadId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
     void runNativeFunction(NomadId nativeFunctionId, const std::vector<RuntimeValue>& args);
 
-    [[nodiscard]] const RuntimeValue& getIntrinsicReceiver() const;
-    [[nodiscard]] RuntimeValue& getIntrinsicReceiver();
+    void getNativeProperty(NomadId memberId, const RuntimeValue& receiver, RuntimeValue& result);
+    void setNativeProperty(NomadId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
     [[nodiscard]] NomadObject* getThis() const;
 
     template<typename Object>
     [[nodiscard]] Object* getThisAs() const;
-
-    template<typename Object>
-    [[nodiscard]] Object* getIntrinsicReceiverAs() const {
-        static_assert(std::is_base_of_v<NomadObject, Object>);
-        return static_cast<Object*>(getIntrinsicReceiver().getObjectValue());
-    }
 
     [[nodiscard]]
     std::unique_ptr<Closure> createClosure(const Runtime* runtime, NomadId functionId) const;
@@ -245,7 +240,8 @@ private:
     NomadIndex m_parameterIndex = 0;
     NomadIndex m_enclosingParameterIndex = 0;  // Enclosing function's parameter frame for closure capture
     NomadIndex m_variableIndex = 0;
-    RuntimeValue* m_intrinsicReceiver = nullptr;
+    void invokeNativeMember(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
+    const RuntimeValue* m_nativeReceiver = nullptr;
 };
 
 template<typename Object>

@@ -14,7 +14,36 @@ using namespace nomad;
 namespace {
 
 class TestObject : public NomadObject {
+public:
+    NomadInteger value = 4;
 };
+
+const Type* registerTestObject(Runtime& runtime) {
+    auto descriptor = std::make_unique<ObjectType>(
+        "TestObject", std::vector<const Type*>{}, [] { return new TestObject; }
+    );
+    const auto* type = descriptor.get();
+    runtime.registerType(std::move(descriptor));
+    runtime.registerNativeProperty(
+        type, "value", runtime.getIntegerType(),
+        [](VirtualMachine* machine, RuntimeValue& result) {
+            result.setIntegerValue(machine->getThisAs<TestObject>()->value);
+        },
+        [](VirtualMachine* machine, const RuntimeValue& value) {
+            machine->getThisAs<TestObject>()->value = value.getIntegerValue();
+        }, ""
+    );
+    runtime.registerNativeMethod(
+        type, "increment",
+        [](VirtualMachine* machine) {
+            auto* instance = machine->getThisAs<TestObject>();
+            instance->value += machine->getIntegerParameter(0);
+            machine->setIntegerResult(instance->value);
+        },
+        {defParameter("amount", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
+    );
+    return type;
+}
 
 NomadId compileFunction(Runtime& runtime, const NomadString& source) {
     auto compiler = runtime.createCompiler();
@@ -31,23 +60,22 @@ NomadId compileFunction(Runtime& runtime, const NomadString& source) {
 
 } // namespace
 
-BOOST_AUTO_TEST_SUITE(intrinsic_member_execution)
+BOOST_AUTO_TEST_SUITE(native_member_execution)
 
 BOOST_AUTO_TEST_CASE(typed_method_borrows_the_string_receiver) {
     Runtime runtime;
     bool called = false;
-    runtime.registerIntrinsicMethod(
+    runtime.registerNativeMethod(
         runtime.getStringType(),
         "typedLength",
         [&called](VirtualMachine* virtualMachine) {
-            const auto* receiver = virtualMachine->getIntrinsicReceiverAs<const NomadStringObject>();
+            const auto* receiver = virtualMachine->getThisAs<const NomadStringObject>();
             called = true;
-            BOOST_TEST(receiver == virtualMachine->getIntrinsicReceiver().getStringObject());
+            BOOST_TEST(receiver == virtualMachine->getThis());
             virtualMachine->setIntegerResult(static_cast<NomadInteger>(receiver->getLength()));
         },
         {},
         runtime.getIntegerType(),
-        false,
         NomadDoc("Read the string length")
     );
 
@@ -61,24 +89,24 @@ BOOST_AUTO_TEST_CASE(typed_method_borrows_the_string_receiver) {
 
 BOOST_AUTO_TEST_CASE(typed_method_supports_a_host_defined_object) {
     Runtime runtime;
-    const auto memberId = runtime.registerIntrinsicMethod(
-        runtime.getStringType(),
+    const auto* type = registerTestObject(runtime);
+    const auto memberId = runtime.registerNativeMethod(
+        type,
         "hostObject",
         [](VirtualMachine* virtualMachine) {
-            auto* receiver = virtualMachine->getIntrinsicReceiverAs<TestObject>();
+            auto* receiver = virtualMachine->getThisAs<TestObject>();
             BOOST_TEST(receiver->getReferenceCount() == 1);
             virtualMachine->setIntegerResult(42);
         },
         {},
         runtime.getIntegerType(),
-        false,
         NomadDoc("Test a host-defined receiver")
     );
     BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
     auto virtualMachine = runtime.createVirtualMachine();
     RuntimeValue receiver;
     receiver.setObjectValue(new TestObject);
-    virtualMachine->runIntrinsicMethod(memberId, {}, receiver);
+    virtualMachine->runNativeMethod(memberId, {}, receiver);
     BOOST_TEST(virtualMachine->getResult().getIntegerValue() == 42);
     receiver.freeObjectValue();
 }
@@ -87,7 +115,7 @@ BOOST_AUTO_TEST_CASE(typed_receiver_requires_an_active_method) {
     Runtime runtime;
     auto virtualMachine = runtime.createVirtualMachine();
     BOOST_CHECK_THROW(
-        virtualMachine->getIntrinsicReceiverAs<NomadStringObject>(),
+        virtualMachine->getThisAs<NomadStringObject>(),
         VirtualMachineException
     );
     BOOST_CHECK_THROW(virtualMachine->getThisAs<TestObject>(), VirtualMachineException);
@@ -112,16 +140,15 @@ BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) 
         ""
     );
     BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
-    IntrinsicMethodDefinition definition;
-    BOOST_REQUIRE(runtime.getIntrinsicMethodDefinition(memberId, definition));
-    BOOST_TEST(!definition.mutatesReceiver);
+    NativeMethodDefinition definition;
+    BOOST_REQUIRE(runtime.getNativeMethodDefinition(memberId, definition));
     auto machine = runtime.createVirtualMachine();
     RuntimeValue receiver;
     receiver.setObjectValue(instance);
-    machine->runIntrinsicMethod(memberId, {}, receiver);
+    machine->runNativeMethod(memberId, {}, receiver);
     BOOST_TEST(machine->getResult().getIntegerValue() == 42);
     receiver.freeObjectValue();
-    BOOST_CHECK_THROW(machine->runIntrinsicMethod(memberId, {}, receiver), VirtualMachineException);
+    BOOST_CHECK_THROW(machine->runNativeMethod(memberId, {}, receiver), VirtualMachineException);
 }
 
 BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_catalog) {
@@ -142,12 +169,11 @@ BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_ca
     BOOST_TEST(last > first + 1);
     BOOST_TEST(runtime.getNextNativeFunctionId(first) == last);
     BOOST_TEST(runtime.getNativeFunctionId("catalogMethod") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getIntrinsicMemberId(type, "catalogMethod") == method);
-    IntrinsicMethodDefinition methodDefinition;
-    BOOST_REQUIRE(runtime.getIntrinsicMethodDefinition(method, methodDefinition));
+    BOOST_TEST(runtime.getNativeMemberId(type, "catalogMethod") == method);
+    NativeMethodDefinition methodDefinition;
+    BOOST_REQUIRE(runtime.getNativeMethodDefinition(method, methodDefinition));
     BOOST_TEST(methodDefinition.id == method);
     BOOST_TEST(methodDefinition.objectType == type);
-    BOOST_TEST(!methodDefinition.mutatesReceiver);
     std::vector<NativeFunctionDefinition> functions;
     runtime.getNativeFunctions(functions);
     NomadIndex enumerated = 0;
@@ -181,131 +207,84 @@ BOOST_AUTO_TEST_CASE(compiled_property_getter_reads_temporary_receiver) {
 
 BOOST_AUTO_TEST_CASE(compiled_property_setter_commits_mutated_receiver) {
     Runtime runtime;
-    runtime.registerIntrinsicProperty(
-        runtime.getIntegerType(),
-        "scaled",
-        runtime.getIntegerType(),
-        {},
-        [](VirtualMachine*, RuntimeValue& receiver, const RuntimeValue& value) {
-            receiver.setIntegerValue(receiver.getIntegerValue() * value.getIntegerValue());
-        },
-        NomadDoc("Scale receiver")
-    );
+    registerTestObject(runtime);
 
-    const auto functionId = compileFunction(runtime, "value = 4\nvalue.scaled = 3\nreturn value");
+    const auto functionId = compileFunction(runtime,
+        "object = new TestObject\nalias = object\nobject.value = \"abc\".length\nreturn alias.value");
     RuntimeValue result;
     runtime.executeFunction(functionId, {}, result);
 
-    BOOST_TEST(result.getIntegerValue() == 12);
+    BOOST_TEST(result.getIntegerValue() == 3);
 }
 
 BOOST_AUTO_TEST_CASE(compiled_method_receives_receiver_and_arguments) {
     Runtime runtime;
-    runtime.registerIntrinsicMethod(
-        runtime.getIntegerType(),
-        "plus",
-        [](VirtualMachine* virtualMachine) {
-            virtualMachine->setIntegerResult(
-                virtualMachine->getIntrinsicReceiver().getIntegerValue() +
-                virtualMachine->getIntegerParameter(0)
-            );
-        },
-        {defParameter("value", runtime.getIntegerType(), NomadDoc("Value"))},
-        runtime.getIntegerType(),
-        false,
-        NomadDoc("Add value")
-    );
+    registerTestObject(runtime);
 
-    const auto functionId = compileFunction(runtime, "return (4).plus 3");
+    const auto functionId = compileFunction(runtime, "object = new TestObject\nreturn object.increment \"abc\".length");
     RuntimeValue result;
     runtime.executeFunction(functionId, {}, result);
 
     BOOST_TEST(result.getIntegerValue() == 7);
 }
 
-BOOST_AUTO_TEST_CASE(compiled_mutating_method_commits_receiver) {
+BOOST_AUTO_TEST_CASE(compiled_properties_and_methods_mutate_parameter_instances) {
     Runtime runtime;
-    runtime.registerIntrinsicMethod(
-        runtime.getIntegerType(),
-        "increment",
-        [](VirtualMachine* virtualMachine) {
-            auto& receiver = virtualMachine->getIntrinsicReceiver();
-            receiver.setIntegerValue(receiver.getIntegerValue() + virtualMachine->getIntegerParameter(0));
-        },
-        {defParameter("value", runtime.getIntegerType(), NomadDoc("Value"))},
-        runtime.getVoidType(),
-        true,
-        NomadDoc("Increment receiver")
-    );
+    registerTestObject(runtime);
 
-    const auto functionId = compileFunction(runtime, "value = 4\nvalue.increment 3\nreturn value");
+    const auto functionId = compileFunction(runtime,
+        "fun change object:TestObject\n"
+        " object.value = 10\n"
+        " object.increment 3\n"
+        "end\n"
+        "object = new TestObject\nchange object\nreturn object.value");
     RuntimeValue result;
     runtime.executeFunction(functionId, {}, result);
 
-    BOOST_TEST(result.getIntegerValue() == 7);
+    BOOST_TEST(result.getIntegerValue() == 13);
 }
 
 BOOST_AUTO_TEST_CASE(interpreter_executes_properties_and_methods) {
     Runtime runtime;
-    runtime.registerIntrinsicProperty(
-        runtime.getIntegerType(),
-        "doubled",
-        runtime.getIntegerType(),
-        [](VirtualMachine*, const RuntimeValue& receiver, RuntimeValue& result) {
-            result.setIntegerValue(receiver.getIntegerValue() * 2);
-        },
-        {},
-        NomadDoc("Double receiver")
-    );
-    runtime.registerIntrinsicMethod(
-        runtime.getIntegerType(),
-        "increment",
-        [](VirtualMachine* virtualMachine) {
-            auto& receiver = virtualMachine->getIntrinsicReceiver();
-            receiver.setIntegerValue(receiver.getIntegerValue() + virtualMachine->getIntegerParameter(0));
-        },
-        {defParameter("value", runtime.getIntegerType(), NomadDoc("Value"))},
-        runtime.getVoidType(),
-        true,
-        NomadDoc("Increment receiver")
-    );
+    registerTestObject(runtime);
 
     auto machine = runtime.createVirtualMachine();
     InterpreterContext interpreter(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute("value = 4", interpreter));
-    const auto methodExecuted = Interpreter{}.execute("value.increment 3", interpreter);
+    BOOST_REQUIRE(Interpreter{}.execute("object = new TestObject", interpreter));
+    BOOST_REQUIRE(Interpreter{}.execute("object.value = \"abc\".length", interpreter));
+    const auto methodExecuted = Interpreter{}.execute("object.increment 3", interpreter);
     const auto* error = interpreter.getError();
     const auto message = error == nullptr ? NomadString("Unknown interpreter error") : *error;
     BOOST_REQUIRE_MESSAGE(methodExecuted, message);
-    BOOST_REQUIRE(Interpreter{}.execute("value.doubled", interpreter));
+    BOOST_REQUIRE(Interpreter{}.execute("object.value", interpreter));
     BOOST_REQUIRE(interpreter.getResult() != nullptr);
 
-    BOOST_TEST(interpreter.getResult()->getValue().getIntegerValue() == 14);
-    BOOST_REQUIRE(interpreter.getVariableValue("value") != nullptr);
-    BOOST_TEST(interpreter.getVariableValue("value")->getIntegerValue() == 7);
+    BOOST_TEST(interpreter.getResult()->getValue().getIntegerValue() == 6);
+    BOOST_CHECK_THROW(machine->getThis(), VirtualMachineException);
 }
 
-BOOST_AUTO_TEST_CASE(failed_mutating_method_does_not_commit_receiver) {
+BOOST_AUTO_TEST_CASE(failed_method_preserves_object_mutations_and_restores_this) {
     Runtime runtime;
-    runtime.registerIntrinsicMethod(
-        runtime.getIntegerType(),
+    const auto* type = registerTestObject(runtime);
+    runtime.registerNativeMethod(
+        type,
         "fail",
         [](VirtualMachine* virtualMachine) {
-            virtualMachine->getIntrinsicReceiver().setIntegerValue(99);
+            virtualMachine->getThisAs<TestObject>()->value = 99;
             virtualMachine->fault("Expected failure");
         },
         {},
         runtime.getVoidType(),
-        true,
         NomadDoc("Fail")
     );
 
     auto machine = runtime.createVirtualMachine();
     InterpreterContext interpreter(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute("value = 4", interpreter));
-    BOOST_TEST(!Interpreter{}.execute("value.fail", interpreter));
-    BOOST_REQUIRE(interpreter.getVariableValue("value") != nullptr);
-    BOOST_TEST(interpreter.getVariableValue("value")->getIntegerValue() == 4);
+    BOOST_REQUIRE(Interpreter{}.execute("object = new TestObject", interpreter));
+    BOOST_TEST(!Interpreter{}.execute("object.fail", interpreter));
+    BOOST_REQUIRE(interpreter.getVariableValue("object") != nullptr);
+    BOOST_TEST(static_cast<TestObject*>(interpreter.getVariableValue("object")->getObjectValue())->value == 99);
+    BOOST_CHECK_THROW(machine->getThis(), VirtualMachineException);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -364,7 +364,7 @@ BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
     BOOST_TEST(result.documentation.find("# Nomad") != NomadString::npos);
     BOOST_TEST(result.documentation.find("## Enums") != NomadString::npos);
     BOOST_TEST(result.documentation.find("## Debugging") == NomadString::npos);
-    BOOST_TEST(result.documentation.find("## Intrinsic Members") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("## Object Members") != NomadString::npos);
     BOOST_TEST(result.documentation.find("## Functions") != NomadString::npos);
     BOOST_TEST(result.documentation.find("[Constants](#constants)") == NomadString::npos);
     BOOST_TEST(result.documentation.find("[Debugging](#debugging)") == NomadString::npos);
@@ -412,13 +412,15 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     const auto* verticalAlignmentType = runtime->getTypeByName("verticalAlignment")->asEnum();
     const auto* bodyType = runtime->getTypeByName("body")->asEnum();
     const auto* cardinalType = runtime->getTypeByName("cardinal")->asEnum();
-    const auto* fontType = runtime->getTypeByName("font");
+    const auto* fontType = runtime->getTypeByName("Font");
     BOOST_REQUIRE(alignmentType != nullptr);
     BOOST_REQUIRE(horizontalAlignmentType != nullptr);
     BOOST_REQUIRE(verticalAlignmentType != nullptr);
     BOOST_REQUIRE(bodyType != nullptr);
     BOOST_REQUIRE(cardinalType != nullptr);
     BOOST_REQUIRE(fontType != nullptr);
+    BOOST_TEST(runtime->getTypeByName("font") == nullptr);
+    BOOST_TEST(runtime->getTypeByName("audio") == nullptr);
     BOOST_TEST(fontType->getDocumentation() == "A font at a specific point size for displaying text.");
     BOOST_TEST(alignmentType->getValueCount() == 9U);
     BOOST_TEST(horizontalAlignmentType->getValueCount() == 3U);

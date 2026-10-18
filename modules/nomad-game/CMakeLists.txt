@@ -54,7 +54,9 @@ add_library(nomad-game SHARED
     ${NOMAD_SOURCE_DIR}/nomad/game/resource/Animation.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/resource/Audio.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/resource/AudioDiscovery.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/AudioObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/resource/Font.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/resource/FontObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/resource/RectanglePacker.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/resource/Resource.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/resource/ResourceManager.cpp
