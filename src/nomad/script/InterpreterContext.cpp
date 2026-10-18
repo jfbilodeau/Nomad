@@ -31,8 +31,6 @@ TypedValue::TypedValue(const Type* type, const RuntimeValue& value):
         return;
     }
 
-    m_type->initValue(m_value);
-
     try {
         m_type->copyValue(value, m_value);
     } catch (...) {
@@ -115,7 +113,6 @@ void InterpreterContext::setVariable(
             throw std::invalid_argument("Frame variables cannot change type");
         }
         RuntimeValue replacement;
-        type->initValue(replacement);
         try {
             type->copyValue(value, replacement);
         } catch (...) {

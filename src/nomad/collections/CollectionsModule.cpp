@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
 #include <nomad/collections/ListObject.hpp>
+#include <nomad/collections/ListType.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
@@ -18,11 +19,7 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         "List",
         1,
         [](const std::vector<const nomad::Type*>& arguments) {
-            return std::make_unique<nomad::ObjectType>(
-                "List<" + arguments[0]->getTypeName() + ">",
-                arguments,
-                [elementType = arguments[0]] { return new nomad::ListObject(elementType); }
-            );
+            return std::make_unique<nomad::ListType>(arguments[0]);
         },
         [runtime = context->runtime](const nomad::Type* type) {
             const auto* objectType = static_cast<const nomad::ObjectType*>(type);

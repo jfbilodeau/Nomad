@@ -1,5 +1,6 @@
 add_executable(
     nomad_test
+    ./ArrayObjectTest.cpp
     ./AudioDiscoveryTest.cpp
     ./AudioTest.cpp
     ./CallableCatalogTest.cpp

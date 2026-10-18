@@ -23,8 +23,8 @@ const NomadString& Type::getDocumentation() const {
     return m_documentation;
 }
 
-void Type::initValue(RuntimeValue& /*value*/) const {
-    // Default implementation does nothing
+void Type::initValue(RuntimeValue& value) const {
+    value = RuntimeValue{};
 }
 
 void Type::freeValue(RuntimeValue& /*value*/) const {
@@ -33,8 +33,12 @@ void Type::freeValue(RuntimeValue& /*value*/) const {
 
 void Type::assignValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
     RuntimeValue copy;
-    initValue(copy);
-    copyValue(sourceValue, copy);
+    try {
+        copyValue(sourceValue, copy);
+    } catch (...) {
+        freeValue(copy);
+        throw;
+    }
 
     freeValue(destinationValue);
     destinationValue = copy;

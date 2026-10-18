@@ -315,7 +315,7 @@ void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std
         fault("NativeFunction '" + definition.name + "' has no return type");
     }
     if (!definition.returnType->isVoid()) {
-        definition.returnType->initValue(m_result);
+        m_result = RuntimeValue{};
     }
     if (args.size() != definition.parameters.size()) {
         fault("Incorrect argument count when calling native function '" + definition.name + "'");
@@ -346,7 +346,7 @@ void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std
             }
             ++m_stackIndex;
             argumentTypes.push_back(type);
-            type->initValue(m_stack[m_stackIndex]);
+            m_stack[m_stackIndex] = RuntimeValue{};
             type->copyValue(args[argumentIndex], m_stack[m_stackIndex]);
         }
 
@@ -369,7 +369,7 @@ void VirtualMachine::runNativeMethod(const NomadId memberId, const std::vector<R
         fault("Native method '" + definition.name + "' has no return type");
     }
     if (!definition.returnType->isVoid()) {
-        definition.returnType->initValue(m_result);
+        m_result = RuntimeValue{};
     }
     if (args.size() != definition.parameters.size()) {
         fault("Incorrect argument count when calling native method '" + definition.name + "'");
@@ -399,7 +399,7 @@ void VirtualMachine::runNativeMethod(const NomadId memberId, const std::vector<R
 
             ++m_stackIndex;
             argumentTypes.push_back(type);
-            type->initValue(m_stack[m_stackIndex]);
+            m_stack[m_stackIndex] = RuntimeValue{};
             type->copyValue(args[argumentIndex], m_stack[m_stackIndex]);
         }
 

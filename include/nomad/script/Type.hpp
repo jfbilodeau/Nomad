@@ -69,8 +69,10 @@ public:
 
     [[nodiscard]] virtual NomadString getTypeName() const = 0;
     [[nodiscard]] const NomadString& getDocumentation() const;
+    // Initializes fresh storage with an owned default value. Does not release existing contents.
     virtual void initValue(RuntimeValue& value) const;
     virtual void freeValue(RuntimeValue& value) const;
+    // Copies into empty RuntimeValue storage or replaces an owned value; does not require initValue first.
     virtual void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const = 0;
 
     // Replace an owned value with a copy of `sourceValue`. Safe when `sourceValue` shares the destination's storage.
@@ -211,7 +213,7 @@ public:
     [[nodiscard]] bool sameType(const Type* other) const override;
 };
 
-class ObjectType final : public ObjectTypeBase {
+class ObjectType : public ObjectTypeBase {
 public:
     using ObjectFactory = std::function<NomadObject*()>;
     explicit ObjectType(

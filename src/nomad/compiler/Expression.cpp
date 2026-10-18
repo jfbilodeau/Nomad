@@ -814,7 +814,6 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
 
     const auto* receiverType = m_receiver->getType();
     RuntimeValue receiver;
-    receiverType->initValue(receiver);
     receiverType->copyValue(evaluatedReceiver->getValue(), receiver);
 
     auto* runtime = context.getRuntime();
@@ -830,7 +829,6 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
                 raiseException("Invalid native property getter: " + m_qualifiedName);
             }
 
-            definition.valueType->initValue(result);
             context.getVirtualMachine()->getNativeProperty(m_memberId, receiver, result);
             context.setResult(definition.valueType, result);
             definition.valueType->freeValue(result);
@@ -907,7 +905,6 @@ void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, con
 
     const auto* receiverType = m_receiver->getType();
     RuntimeValue receiver;
-    receiverType->initValue(receiver);
     receiverType->copyValue(evaluatedReceiver->getValue(), receiver);
 
     expression->evaluate(context);
@@ -1032,7 +1029,6 @@ void IndexerExpression::onEvaluate(InterpreterContext& context) const {
     }
     const TypedValue index(*context.getResult());
     RuntimeValue result;
-    getType()->initValue(result);
     try {
         context.getVirtualMachine()->getNativeIndex1(m_indexerId, receiver.getValue(), index.getValue(), result);
         context.setResult(getType(), result);
@@ -1638,7 +1634,6 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
         }
 
         RuntimeValue value;
-        type->initValue(value);
         runtime->getDynamicVariableValue(
             context.getVirtualMachine(),
             m_identifierDefinition.variableId,

@@ -34,7 +34,6 @@ NomadIndex ListObject::getCount() const {
 
 void ListObject::push(const RuntimeValue& value) {
     RuntimeValue storedValue;
-    m_elementType->initValue(storedValue);
     try {
         m_elementType->copyValue(value, storedValue);
         m_values.push_back(storedValue);
@@ -56,17 +55,7 @@ const RuntimeValue& ListObject::getValue(const NomadInteger index) const {
 }
 
 void ListObject::setValue(const NomadInteger index, const RuntimeValue& value) {
-    auto& destination = m_values[validateIndex(index)];
-    RuntimeValue replacement;
-    m_elementType->initValue(replacement);
-    try {
-        m_elementType->copyValue(value, replacement);
-    } catch (...) {
-        m_elementType->freeValue(replacement);
-        throw;
-    }
-    m_elementType->freeValue(destination);
-    destination = replacement;
+    m_elementType->assignValue(value, m_values[validateIndex(index)]);
 }
 
 } // namespace nomad

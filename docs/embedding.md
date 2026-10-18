@@ -219,6 +219,22 @@ representation is its type name. Its initial value is a null object reference,
 not a constructed collection. Specialized descriptors may override initialization
 and formatting. Strings reuse the base while retaining empty-string initialization.
 
+`Type::initValue(value)` initializes fresh storage with an owned default value;
+it does not release existing contents. Release the initialized value through
+`freeValue` when it is no longer needed. The collection descriptors specialize
+this behavior: `ListType` creates a distinct empty list, while `ArrayType` lazily
+shares an empty array per descriptor. Array defaults have zero in every dimension
+and contain no elements.
+
+The C++ `Array1dObject`, `Array2dObject`, and `Array3dObject` classes provide fixed
+dimensions and typed element storage. Constructors taking dimensions require all
+sizes to be positive and reject element-count overflow. Their element-type-only
+constructors create internal empty defaults. Elements are initialized using their
+type's `initValue`, so arrays containing lists get distinct lists and arrays
+containing arrays get shared empty defaults. Keep element descriptors alive until
+all arrays using them have been released. Script construction with dimensions is
+not available yet.
+
 To make a configurable object type constructible, provide its third constructor
 argument, an `ObjectType::ObjectFactory`:
 

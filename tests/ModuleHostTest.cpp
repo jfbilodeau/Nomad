@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/collections/ListObject.hpp>
+
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
@@ -474,6 +476,63 @@ BOOST_AUTO_TEST_CASE(collections_interns_list_specializations) {
     BOOST_TEST(!runtime.registerParameterizedType("List", 1, [](const auto&) {
         return std::make_unique<ObjectType>("Duplicate");
     }));
+}
+
+BOOST_AUTO_TEST_CASE(collections_list_defaults_are_distinct_empty_instances) {
+    TestDirectory directory("nomad_host_list_defaults");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    const auto* type = runtime.getParameterizedType("List", {runtime.getIntegerType()});
+    BOOST_REQUIRE(type != nullptr);
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue first;
+    RuntimeValue second;
+    type->initValue(first);
+    type->initValue(second);
+    BOOST_REQUIRE(first.getObjectValue() != nullptr);
+    BOOST_REQUIRE(second.getObjectValue() != nullptr);
+    BOOST_TEST(first.getObjectValue() != second.getObjectValue());
+    type->freeValue(first);
+    type->freeValue(second);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(collections_native_returns_do_not_allocate_unused_list_defaults) {
+    TestDirectory directory("nomad_host_list_native_defaults");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    const auto* type = runtime.getParameterizedType("List", {runtime.getIntegerType()});
+    BOOST_REQUIRE(type != nullptr);
+    runtime.registerNativeFunction(
+        "makeList",
+        [&runtime](VirtualMachine* machine) {
+            machine->getResult().setObjectValue(new ListObject(runtime.getIntegerType()));
+        },
+        {}, type, ""
+    );
+    const auto memberId = runtime.registerNativeMethod(
+        static_cast<const ObjectTypeBase*>(type),
+        "copyReference",
+        [](VirtualMachine* machine) {
+            addRef(machine->getThis());
+            machine->getResult().setObjectValue(machine->getThis());
+        },
+        {}, type, ""
+    );
+    BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
+    const auto before = NomadObject::getLiveObjectCount();
+    {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext context(*machine);
+        BOOST_REQUIRE(Interpreter{}.execute("list = makeList", context));
+        BOOST_REQUIRE(Interpreter{}.execute("alias = list.copyReference", context));
+        BOOST_REQUIRE(Interpreter{}.execute("alias.push 42", context));
+        BOOST_REQUIRE(Interpreter{}.execute("list[0]", context));
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 42);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
 BOOST_AUTO_TEST_CASE(parameterized_types_validate_factories_and_cache_by_arguments) {

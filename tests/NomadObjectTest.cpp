@@ -127,6 +127,15 @@ BOOST_AUTO_TEST_CASE(ListSkipsCleanupForUnmanagedElements) {
     BOOST_TEST(elementType.freeCalls == 0u);
 }
 
+BOOST_AUTO_TEST_CASE(ArraySkipsCleanupForUnmanagedElements) {
+    UnmanagedType elementType;
+    {
+        Array1dObject array(&elementType, 100);
+        BOOST_TEST(array.getCount() == 100u);
+    }
+    BOOST_TEST(elementType.freeCalls == 0u);
+}
+
 BOOST_AUTO_TEST_CASE(ListReleasesPartialCopyWhenPushFails) {
     FailingCopyType elementType;
     NomadIndex destroyed = 0;
@@ -202,9 +211,9 @@ BOOST_AUTO_TEST_CASE(CollectionObjectsUseReferenceCounting) {
     IntegerType elementType;
     const auto before = NomadObject::getLiveObjectCount();
     for (auto* object : {
-        static_cast<NomadObject*>(new Array1dObject),
-        static_cast<NomadObject*>(new Array2dObject),
-        static_cast<NomadObject*>(new Array3dObject),
+        static_cast<NomadObject*>(new Array1dObject(&elementType)),
+        static_cast<NomadObject*>(new Array2dObject(&elementType)),
+        static_cast<NomadObject*>(new Array3dObject(&elementType)),
         static_cast<NomadObject*>(new ListObject(&elementType)),
         static_cast<NomadObject*>(new MapObject)
     }) {
