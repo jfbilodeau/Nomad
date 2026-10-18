@@ -1,5 +1,8 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/collections/Array1Type.hpp>
+#include <nomad/collections/Array2Type.hpp>
+#include <nomad/collections/Array3Type.hpp>
 #include <nomad/collections/ArrayObject.hpp>
 #include <nomad/collections/ArrayType.hpp>
 #include <nomad/collections/ListObject.hpp>
@@ -10,7 +13,8 @@
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/Module.hpp>
-#include <nomad/system/String.hpp>
+
+#include <utility>
 
 using nomad::NomadString;
 
@@ -18,15 +22,15 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     if (context->mode == nomad::ModuleMode::Packaging) {
         return;
     }
-    for (auto dimensionCount = nomad::NomadIndex{1}; dimensionCount <= 3; ++dimensionCount) {
-        const auto name = "Array" + nomad::toString(dimensionCount);
-        if (!context->runtime->registerParameterizedType(
+    const auto registerArrayType = [runtime = context->runtime](
+        const NomadString& name,
+        nomad::Runtime::ParameterizedTypeFactory factory
+    ) {
+        if (!runtime->registerParameterizedType(
             name,
             1,
-            [runtime = context->runtime, dimensionCount](const std::vector<const nomad::Type*>& arguments) {
-                return std::make_unique<nomad::ArrayType>(arguments[0], dimensionCount, runtime->getIntegerType());
-            },
-            [runtime = context->runtime](const nomad::Type* type) {
+            std::move(factory),
+            [runtime](const nomad::Type* type) {
                 const auto* objectType = static_cast<const nomad::ArrayType*>(type);
                 const auto countId = runtime->registerNativeProperty(
                     objectType, "count", runtime->getIntegerType(),
@@ -44,7 +48,25 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         )) {
             throw nomad::NomadException("Failed to register " + name);
         }
-    }
+    };
+    registerArrayType(
+        "Array1",
+        [runtime = context->runtime](const std::vector<const nomad::Type*>& arguments) {
+            return std::make_unique<nomad::Array1Type>(arguments[0], runtime->getIntegerType());
+        }
+    );
+    registerArrayType(
+        "Array2",
+        [runtime = context->runtime](const std::vector<const nomad::Type*>& arguments) {
+            return std::make_unique<nomad::Array2Type>(arguments[0], runtime->getIntegerType());
+        }
+    );
+    registerArrayType(
+        "Array3",
+        [runtime = context->runtime](const std::vector<const nomad::Type*>& arguments) {
+            return std::make_unique<nomad::Array3Type>(arguments[0], runtime->getIntegerType());
+        }
+    );
     if (!context->runtime->registerParameterizedType(
         "List",
         1,

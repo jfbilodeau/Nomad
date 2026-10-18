@@ -8,23 +8,25 @@ namespace nomad {
 
 class ArrayObject;
 
-class ArrayType final : public ObjectType {
+class ArrayType : public ObjectType {
 public:
-    ArrayType(const Type* elementType, NomadIndex dimensionCount, const Type* dimensionType);
     ArrayType(const ArrayType&) = delete;
     ArrayType& operator=(const ArrayType&) = delete;
     ~ArrayType() override;
 
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] bool isConstructible() const override;
-    [[nodiscard]] std::span<const Type* const> getConstructorParameterTypes() const override;
-    [[nodiscard]] NomadObject* createObject(std::span<const RuntimeValue> arguments) const override;
+    [[nodiscard]] std::span<const Type* const> getConstructorParameterTypes() const override = 0;
+    [[nodiscard]] NomadObject* createObject(std::span<const RuntimeValue> arguments) const override = 0;
     [[nodiscard]] const Type* getElementType() const;
     [[nodiscard]] NomadIndex getDimensionCount() const;
 
+protected:
+    ArrayType(const Type* elementType, NomadIndex dimensionCount, const Type* dimensionType);
+    [[nodiscard]] virtual ArrayObject* createEmptyArray() const = 0;
+
 private:
     NomadIndex m_dimensionCount;
-    std::vector<const Type*> m_constructorParameterTypes;
     mutable ArrayObject* m_emptyArray = nullptr;
 };
 

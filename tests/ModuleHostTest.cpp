@@ -1,7 +1,10 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/collections/Array1Type.hpp>
 #include <nomad/collections/Array1dObject.hpp>
+#include <nomad/collections/Array2Type.hpp>
 #include <nomad/collections/Array2dObject.hpp>
+#include <nomad/collections/Array3Type.hpp>
 #include <nomad/collections/Array3dObject.hpp>
 #include <nomad/collections/ArrayType.hpp>
 #include <nomad/collections/ListObject.hpp>
@@ -57,6 +60,15 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
     ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host.getRuntime();
+    BOOST_REQUIRE(dynamic_cast<const Array1Type*>(
+        runtime.getParameterizedType("Array1", {runtime.getIntegerType()})
+    ) != nullptr);
+    BOOST_REQUIRE(dynamic_cast<const Array2Type*>(
+        runtime.getParameterizedType("Array2", {runtime.getStringType()})
+    ) != nullptr);
+    BOOST_REQUIRE(dynamic_cast<const Array3Type*>(
+        runtime.getParameterizedType("Array3", {runtime.getFloatType()})
+    ) != nullptr);
     NomadString calls;
     runtime.registerNativeFunction(
         "size",
