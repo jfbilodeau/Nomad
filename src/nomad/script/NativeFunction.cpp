@@ -4,7 +4,7 @@
 
 namespace nomad {
 
-FunctionParameterDefinition defParameter(const NomadString& name, const Type* type, const NomadString& doc) {
+ParameterDefinition defParameter(const NomadString& name, const Type* type, const NomadString& doc) {
     return {
         name,
         type,

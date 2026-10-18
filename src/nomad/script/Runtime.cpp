@@ -152,7 +152,7 @@ const std::vector<Instruction>& Runtime::getInstructions() const {
 NomadId Runtime::registerNativeFunction(
     const NomadString& name,
     NativeFunctionFn nativeFunction_fn,
-    const std::vector<FunctionParameterDefinition>& parameters,
+    const std::vector<ParameterDefinition>& parameters,
     const Type* returnType,
     NomadDocArg
 ) {
@@ -163,7 +163,7 @@ NomadId Runtime::registerNativeCallable(
     const ObjectTypeBase* objectType,
     const NomadString& name,
     NativeFunctionFn fn,
-    const std::vector<FunctionParameterDefinition>& parameters,
+    const std::vector<ParameterDefinition>& parameters,
     const Type* returnType,
     const NomadString& doc
 ) {
@@ -799,7 +799,7 @@ bool Runtime::ownsType(const Type* type) const {
 }
 
 bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString& name,
-                                         const std::vector<FunctionParameterDefinition>& parameters,
+                                         const std::vector<ParameterDefinition>& parameters,
                                          NomadString& error) const {
     if (!ownsType(objectType)) {
         error = "object type is not registered with this runtime";
@@ -827,7 +827,7 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
     }
 
     for (const auto memberId : existing->second) {
-        std::vector<FunctionParameterDefinition> existingParameters;
+        std::vector<ParameterDefinition> existingParameters;
 
         if (getNativeMemberType(memberId) == NativeMemberType::Method) {
             NativeMethodDefinition definition;
@@ -864,7 +864,7 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
 
 NomadId Runtime::registerConstructor(
     const NomadString& name,
-    const std::vector<FunctionParameterDefinition>& parameters,
+    const std::vector<ParameterDefinition>& parameters,
     const ObjectTypeBase* returnType,
     ConstructorFactory factory,
     const NomadString& doc
@@ -1061,7 +1061,7 @@ NomadId Runtime::registerNativeMethod(
     const ObjectTypeBase* objectType,
     const NomadString& name,
     NativeFunctionFn fn,
-    const std::vector<FunctionParameterDefinition>& parameters,
+    const std::vector<ParameterDefinition>& parameters,
     const Type* returnType,
     const NomadString& doc
 ) {

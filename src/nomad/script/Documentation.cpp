@@ -320,7 +320,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
         NomadString name;
         FunctionType functionType;
         NomadString doc;
-        std::vector<FunctionParameterDefinition> parameters;
+        std::vector<ParameterDefinition> parameters;
         const Type* returnType = nullptr;
     };
 
@@ -349,7 +349,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     runtime->getFunctions(scriptFunctions);
 
     for (auto function: scriptFunctions) {
-        std::vector<FunctionParameterDefinition> parameters;
+        std::vector<ParameterDefinition> parameters;
 
         for (NomadIndex i = 0; i < function->getParameterCount(); i++) {
             auto name = function->getParameterName(toNomadId(i));

@@ -14,7 +14,7 @@ namespace nomad {
 
 using NativeFunctionFn = std::function<void(VirtualMachine*)>;
 
-struct FunctionParameterDefinition {
+struct ParameterDefinition {
     NomadString name;
     const Type* type;
     NomadDocField;
@@ -24,14 +24,14 @@ struct NativeFunctionDefinition {
     NomadId id = NOMAD_INVALID_ID;
     NomadString name;
     NativeFunctionFn fn;
-    std::vector<FunctionParameterDefinition> parameters;
+    std::vector<ParameterDefinition> parameters;
     const Type* returnType = nullptr;
     NomadDocField;
     const Type* objectType = nullptr;
 };
 
 
-FunctionParameterDefinition defParameter(const NomadString& name, const Type* type, NomadDocArg);
+ParameterDefinition defParameter(const NomadString& name, const Type* type, NomadDocArg);
 
 using NativeFunctionFn = std::function<void(VirtualMachine*)>;
 

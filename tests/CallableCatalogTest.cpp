@@ -19,7 +19,7 @@ namespace {
 NomadId registerVoidNativeFunction(
     Runtime& runtime,
     const NomadString& name,
-    const std::vector<FunctionParameterDefinition>& parameters = {}
+    const std::vector<ParameterDefinition>& parameters = {}
 ) {
     return runtime.registerNativeFunction(
         name,
@@ -33,7 +33,7 @@ NomadId registerVoidNativeFunction(
 NomadId registerNativeFunction(
     Runtime& runtime,
     const NomadString& name,
-    const std::vector<FunctionParameterDefinition>& parameters,
+    const std::vector<ParameterDefinition>& parameters,
     const Type* returnType
 ) {
     return runtime.registerNativeFunction(

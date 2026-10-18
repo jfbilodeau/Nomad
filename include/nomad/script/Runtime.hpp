@@ -47,7 +47,7 @@ struct ConstructorDefinition {
     NomadId id = NOMAD_INVALID_ID;
     NomadString name;
     const ObjectTypeBase* returnType = nullptr;
-    std::vector<FunctionParameterDefinition> parameters;
+    std::vector<ParameterDefinition> parameters;
     ConstructorFactory factory;
     NomadDocField;
 };
@@ -147,7 +147,7 @@ public:
 
     NomadId registerConstructor(
         const NomadString& name,
-        const std::vector<FunctionParameterDefinition>& parameters,
+        const std::vector<ParameterDefinition>& parameters,
         const ObjectTypeBase* returnType,
         ConstructorFactory factory,
         NomadDocArg
@@ -184,7 +184,7 @@ public:
         const ObjectTypeBase* objectType,
         const NomadString& name,
         NativeFunctionFn fn,
-        const std::vector<FunctionParameterDefinition>& parameters,
+        const std::vector<ParameterDefinition>& parameters,
         const Type* returnType,
         NomadDocArg
     );
@@ -230,7 +230,7 @@ public:
     [[nodiscard]] const std::vector<Operand>& getInstructionOperands(NomadId id) const;
 
     // NativeFunctions
-    NomadId registerNativeFunction(const NomadString& name, NativeFunctionFn nativeFunction_fn, const std::vector<FunctionParameterDefinition>& parameters, const Type* returnType, NomadDocArg);
+    NomadId registerNativeFunction(const NomadString& name, NativeFunctionFn nativeFunction_fn, const std::vector<ParameterDefinition>& parameters, const Type* returnType, NomadDocArg);
     [[nodiscard]] NomadId getNativeFunctionId(const NomadString& name) const;
     [[nodiscard]] NativeFunctionFn getNativeFunctionFn(NomadId id) const;
 
@@ -415,7 +415,7 @@ private:
                                            NomadString& error) const;
     [[nodiscard]] bool ownsType(const Type* type) const;
     [[nodiscard]] bool canRegisterNativeMember(const Type* objectType, const NomadString& name,
-                                                  const std::vector<FunctionParameterDefinition>& parameters,
+                                                  const std::vector<ParameterDefinition>& parameters,
                                                   NomadString& error) const;
 
     std::vector<Instruction> m_instructions;
@@ -448,7 +448,7 @@ private:
         const ObjectTypeBase* objectType,
         const NomadString& name,
         NativeFunctionFn fn,
-        const std::vector<FunctionParameterDefinition>& parameters,
+        const std::vector<ParameterDefinition>& parameters,
         const Type* returnType,
         const NomadString& doc
     );

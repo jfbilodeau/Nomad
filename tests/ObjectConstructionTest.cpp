@@ -210,7 +210,7 @@ BOOST_AUTO_TEST_CASE(overloads_select_by_argument_types_and_count_with_distinct_
     const auto* textType = registerObjectType(runtime, "Text");
     const auto* emptyType = registerObjectType(runtime, "Empty");
     NomadString calls;
-    const auto registerFactory = [&](const std::vector<FunctionParameterDefinition>& parameters,
+    const auto registerFactory = [&](const std::vector<ParameterDefinition>& parameters,
                                      const ObjectType* type, const NomadString& marker) {
         BOOST_REQUIRE(runtime.registerConstructor(
             "Example", parameters, type,
