@@ -242,18 +242,19 @@ if (constructorId == nomad::NOMAD_INVALID_ID) {
 }
 ```
 
-Parameters and return types must be types registered with that runtime. Parameters
-cannot be `void` or internal types such as `$file`, `$function`, or `$line`
-(hidden source parameters are not supported for constructors). The return type
-must be a public object type.
+Parameters and return types must be types registered with that runtime;
+parameters cannot be `void` and the return type must be a public object type.
 Registration failures are logged and return `NOMAD_INVALID_ID`.
 Constructors sharing a name may differ in parameter count or types and may return
 different object types. Duplicate parameter signatures are rejected, even if
 their parameter names or return types differ. Use an empty parameter list for a
 parameterless constructor.
 
+Constructor parameters follow the same conventions as native function
+parameters, including `$file`, `$function`, and `$line`.
+
 The compiler checks argument types and count and uses the selected constructor's
-declared return type. The factory receives borrowed arguments in source order
+declared return type. The factory receives borrowed arguments in parameter order
 and returns an object of that type with one owned reference. Retain any argument
 object stored in the new instance. A null result raises an error.
 Validate value restrictions inside the factory: construction runs at evaluation

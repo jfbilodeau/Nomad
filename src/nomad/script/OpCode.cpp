@@ -854,6 +854,7 @@ void op_object_new(VirtualMachine* interpreter) {
         interpreter->fault("Cannot construct object: invalid constructor");
     }
     const auto& parameters = constructor.parameters;
+    // Arguments are pushed left to right, so the last argument is on top of the stack.
     const auto releaseArguments = [&]() {
         for (auto index = parameters.size(); index > 0; --index) {
             auto value = interpreter->popValue();

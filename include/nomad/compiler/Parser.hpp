@@ -67,7 +67,14 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
 std::unique_ptr<Expression> parseFunctionCallExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent, const NomadString& functionName);
 [[nodiscard]] bool parseFunctionArguments(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const ScriptFunction* targetFunction, ArgumentList* arguments);
 std::unique_ptr<Expression> parseNativeFunctionCallExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent, const NativeFunctionDefinition& nativeFunction);
-[[nodiscard]] bool parseNativeFunctionArguments(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const NativeFunctionDefinition& nativeFunction, ArgumentList* arguments);
+[[nodiscard]] bool parseNativeFunctionArguments(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    const NativeFunctionDefinition& nativeFunction,
+    ArgumentList* arguments,
+    bool allowOmittedArguments = false
+);
 [[nodiscard]] NomadId parseCallbackParameter(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const FunctionType* callbackType);
 std::unique_ptr<Argument> parseExpressionArgument(
     CompilerContext* context,

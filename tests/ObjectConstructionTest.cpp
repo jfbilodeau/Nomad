@@ -112,8 +112,53 @@ BOOST_AUTO_TEST_CASE(parameterless_constructors_are_explicitly_registered) {
     RuntimeValue result;
     runtime.executeFunction(id, {}, result);
     BOOST_REQUIRE(result.getObjectValue() != nullptr);
-    result.freeObjectValue();
+}
 
+BOOST_AUTO_TEST_CASE(source_parameters_are_supplied_by_the_compiler) {
+    Runtime runtime;
+    const auto* type = registerObjectType(runtime, "Located");
+    NomadString file;
+    NomadString functionName;
+    NomadInteger line = 0;
+    NomadInteger number = 0;
+    BOOST_REQUIRE(runtime.registerConstructor(
+        "Located",
+        {
+            defParameter("file", runtime.getFileNameType(), ""),
+            defParameter("number", runtime.getIntegerType(), ""),
+            defParameter("function", runtime.getFunctionNameType(), ""),
+            defParameter("line", runtime.getLineNumberType(), "")
+        },
+        type,
+        [&](const std::span<const RuntimeValue> arguments) {
+            BOOST_REQUIRE(arguments.size() == 4u);
+            file = arguments[0].getStringObject()->getString();
+            number = arguments[1].getIntegerValue();
+            functionName = arguments[2].getStringObject()->getString();
+            line = arguments[3].getIntegerValue();
+            return new ConstructedObject;
+        }, ""
+    ) != NOMAD_INVALID_ID);
+
+    const auto id = compileConstruction(runtime, "\nreturn new Located 42");
+    RuntimeValue result;
+    runtime.executeFunction(id, {}, result);
+    BOOST_REQUIRE(result.getObjectValue() != nullptr);
+    result.freeObjectValue();
+    BOOST_TEST(file == "main.nomad");
+    BOOST_TEST(number == 42);
+    BOOST_TEST(functionName == "main");
+    BOOST_TEST(line == 2);
+
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    BOOST_TEST(Interpreter{}.execute("new Located 7", context));
+    BOOST_TEST(number == 7);
+
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilerContext(compiler.get());
+    compiler->registerSources(&compilerContext, {{{"invalid", {"invalid.nomad", "return new Located 1 2"}}}, {}});
+    BOOST_TEST(!compiler->compileFunctions(&compilerContext));
 }
 
 BOOST_AUTO_TEST_CASE(registration_rejects_collisions_invalid_types_and_missing_factories) {
@@ -133,7 +178,7 @@ BOOST_AUTO_TEST_CASE(registration_rejects_collisions_invalid_types_and_missing_f
     BOOST_TEST(runtime.registerConstructor(
         "Example", {defParameter("value", other.getIntegerType(), "")}, type, factory, ""
     ) == NOMAD_INVALID_ID);
-    for (const auto* invalid : {runtime.getVoidType(), runtime.getFileNameType(), static_cast<const Type*>(nullptr)}) {
+    for (const auto* invalid : {runtime.getVoidType(), static_cast<const Type*>(nullptr)}) {
         BOOST_TEST(runtime.registerConstructor(
             "Invalid", {defParameter("value", invalid, "")}, type, factory, ""
         ) == NOMAD_INVALID_ID);

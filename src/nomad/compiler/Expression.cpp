@@ -1141,23 +1141,26 @@ NewObjectExpression::NewObjectExpression(
 }
 
 void NewObjectExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
-    m_constructorId = NOMAD_INVALID_ID;
+    const auto* runtime = context->getRuntime();
+    auto& arguments = m_arguments.getArguments();
+
+    // Arguments without a type of their own (such as source arguments) match any parameter.
     std::vector<const Type*> argumentTypes;
-    for (const auto& argument : m_arguments.getArguments()) {
-        const auto* type = argument->resolveOverloadType(context, function);
-        if (type == nullptr) {
-            return;
-        }
-        argumentTypes.push_back(type);
+    argumentTypes.reserve(arguments.size());
+    for (const auto& argument : arguments) {
+        argumentTypes.push_back(argument->resolveOverloadType(context, function));
     }
+
+    m_constructorId = NOMAD_INVALID_ID;
     ConstructorDefinition selected;
-    for (const auto& constructor : context->getRuntime()->getConstructors()) {
+    for (const auto& constructor : runtime->getConstructors()) {
         if (constructor.name != m_constructorName || constructor.parameters.size() != argumentTypes.size()) {
             continue;
         }
         auto matches = true;
         for (auto index = NomadIndex{0}; index < argumentTypes.size(); ++index) {
-            matches = matches && constructor.parameters[index].type->sameType(argumentTypes[index]);
+            matches = matches && (argumentTypes[index] == nullptr ||
+                                  constructor.parameters[index].type->sameType(argumentTypes[index]));
         }
         if (!matches) {
             continue;
@@ -1173,8 +1176,8 @@ void NewObjectExpression::onResolve(CompilerContext* context, ScriptFunction* fu
         reportError(context, function, "No matching constructor for '" + m_constructorName + "'");
         return;
     }
-    for (auto index = NomadIndex{0}; index < selected.parameters.size(); ++index) {
-        m_arguments.getArguments()[index]->setType(selected.parameters[index].type);
+    for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
+        arguments[index]->setType(selected.parameters[index].type);
     }
     if (m_arguments.resolve(context, function)) {
         setType(selected.returnType);
@@ -1186,6 +1189,7 @@ bool NewObjectExpression::isTerminal() const {
 }
 
 void NewObjectExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+    // Unlike native calls, constructor arguments are evaluated and pushed left to right.
     for (const auto& argument : m_arguments.getArguments()) {
         argument->generateCode(compiler, function);
     }

@@ -749,6 +749,25 @@ std::unique_ptr<Expression> parseUnaryOperatorExpression(CompilerContext* contex
                                              std::move(expression));
 }
 
+namespace {
+
+// True when the current token can begin an argument; false at the end of the line or at a closing/binary operator.
+bool isArgumentStart(const Tokenizer* tokens) {
+    if (tokens->endOfLine()) {
+        return false;
+    }
+    if (!tokens->is(TokenType::Operator)) {
+        return true;
+    }
+    if (tokens->is(")") || tokens->is("]")) {
+        return false;
+    }
+    return tokens->is("(") || tokens->is("$") ||
+           getUnaryOperator(tokens->currentToken().textValue) != UnaryOperator::Unknown;
+}
+
+} // namespace
+
 std::unique_ptr<Expression> parseNewExpression(
     CompilerContext* context,
     ScriptFunction* function,
@@ -800,32 +819,25 @@ std::unique_ptr<Expression> parseNewExpression(
     } else if (!tokens->nextIdentifier(constructorName)) {
         return nullptr;
     }
-    auto maximumArguments = NomadIndex{0};
-    auto constructible = false;
-    for (const auto& constructor : context->getRuntime()->getConstructors()) {
-        if (constructor.name == constructorName) {
-            constructible = true;
-            maximumArguments = std::max(maximumArguments, constructor.parameters.size());
+    const ConstructorDefinition* shape = nullptr;
+    for (const auto& constructor : runtime->getConstructors()) {
+        if (constructor.name == constructorName &&
+            (shape == nullptr || constructor.parameters.size() > shape->parameters.size())) {
+            shape = &constructor;
         }
     }
-    if (!constructible) {
+    if (shape == nullptr) {
         context->reportError("No registered constructor named '" + constructorName + "'", tokens);
         return nullptr;
     }
+
+    // The overload with the most parameters shapes the argument list; shorter overloads omit trailing arguments.
+    const NativeFunctionDefinition parsingDefinition{
+        NOMAD_INVALID_ID, constructorName, {}, shape->parameters, shape->returnType, shape->doc,
+    };
     ArgumentList arguments;
-    for (auto index = NomadIndex{0}; index < maximumArguments; ++index) {
-        if (tokens->endOfLine() || (tokens->is(TokenType::Operator) && (tokens->is(")") || tokens->is("]")))) {
-            break;
-        }
-        if (tokens->is(TokenType::Operator) && !tokens->is("(") &&
-            getUnaryOperator(tokens->currentToken().textValue) == UnaryOperator::Unknown && !tokens->is("$")) {
-            break;
-        }
-        auto argument = parseExpressionArgument(context, nullptr, function, tokens);
-        if (argument == nullptr) {
-            return nullptr;
-        }
-        arguments.add(std::move(argument));
+    if (!parseNativeFunctionArguments(context, function, tokens, parsingDefinition, &arguments, true)) {
+        return nullptr;
     }
     return std::make_unique<NewObjectExpression>(parent, line, column, constructorName, std::move(arguments));
 }
@@ -1341,9 +1353,11 @@ bool parseNativeFunctionArguments(
     ScriptFunction* function,
     Tokenizer* tokens,
     const NativeFunctionDefinition& nativeFunction,
-    ArgumentList* arguments
+    ArgumentList* arguments,
+    const bool allowOmittedArguments
 ) {
     const auto* runtime = context->getRuntime();
+    auto omitRemainingArguments = false;
 
     for (NomadIndex i = 0; i < nativeFunction.parameters.size(); ++i) {
         const auto& parameter = nativeFunction.parameters[i];
@@ -1353,6 +1367,13 @@ bool parseNativeFunctionArguments(
             parameter.type == runtime->getFileNameType() ||
             parameter.type == runtime->getFunctionNameType() ||
             parameter.type == runtime->getLineNumberType();
+
+        // Overloads with fewer parameters leave the trailing script-supplied arguments out.
+        if (allowOmittedArguments && !isSourceParameter &&
+            (omitRemainingArguments || !isArgumentStart(tokens))) {
+            omitRemainingArguments = true;
+            continue;
+        }
 
         if (!isSourceParameter && tokens->endOfLine()) {
             context->reportError("Expected arguments for `" + parameter.name + ":" + parameter.type->getTypeName() + "`", tokens);

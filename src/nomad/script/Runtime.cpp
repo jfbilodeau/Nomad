@@ -875,8 +875,8 @@ NomadId Runtime::registerConstructor(
         return NOMAD_INVALID_ID;
     }
     for (const auto& parameter : parameters) {
-        if (!ownsType(parameter.type) || parameter.type->isVoid() || parameter.type->isInternal()) {
-            log::error("Cannot register constructor: parameter types must be registered, public, and non-void");
+        if (!ownsType(parameter.type) || parameter.type->isVoid()) {
+            log::error("Cannot register constructor: parameter types must be registered and non-void");
             return NOMAD_INVALID_ID;
         }
     }
