@@ -287,4 +287,133 @@ BOOST_AUTO_TEST_CASE(failed_method_preserves_object_mutations_and_restores_this)
     BOOST_CHECK_THROW(machine->getThis(), VirtualMachineException);
 }
 
+BOOST_AUTO_TEST_CASE(string_indexing_handles_unicode_chains_and_precedence) {
+    for (const auto& [source, expected] : std::vector<std::pair<NomadString, NomadString>>{
+        {"return \"Nomad\"[1]", "o"},
+        {"return \"new\"[0]", "n"},
+        {"return \"[\"[0]", "["},
+        {"return \"]\"[0]", "]"},
+        {"return \"=\"[0]", "="},
+        {"return \"a\xC3\xA9\xF0\x9F\x98\x80\"[1]", "\xC3\xA9"},
+        {"return \"a\xC3\xA9\xF0\x9F\x98\x80\"[2]", "\xF0\x9F\x98\x80"},
+        {"return \"e\xCC\x81\"[1]", "\xCC\x81"},
+        {"return (\"nomad\".toUpper)[0]", "N"},
+        {"return \"Nomad\"[1 + 2].toUpper[0]", "A"},
+        {"fun name\nreturn \"Nomad\"\nend\nreturn (name)[4]", "d"},
+        {"return $\"letter={\"Nomad\"[1]}\"", "letter=o"},
+    }) {
+        BOOST_TEST_CONTEXT(source) {
+            Runtime runtime;
+            const auto id = compileFunction(runtime, source);
+            const auto before = NomadObject::getLiveObjectCount();
+            RuntimeValue result;
+            runtime.executeFunction(id, {}, result);
+            BOOST_TEST(result.getStringObject()->getString() == expected);
+            runtime.getStringType()->freeValue(result);
+            BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(string_indexer_faults_and_interpreter_recovers) {
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    const auto before = NomadObject::getLiveObjectCount();
+    for (const auto* source : {"\"\"[0]", "\"abc\"[-1]", "\"abc\"[3]"}) {
+        BOOST_TEST(!Interpreter{}.execute(source, context));
+        BOOST_REQUIRE(context.getError() != nullptr);
+        BOOST_TEST(context.getError()->find("out of bounds for size") != NomadString::npos);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    }
+    runtime.registerNativeFunction(
+        "invalidText", [](VirtualMachine* vm) { vm->setStringResult("\xFF"); }, {}, runtime.getStringType(), ""
+    );
+    BOOST_TEST(!Interpreter{}.execute("(invalidText)[0]", context));
+    BOOST_REQUIRE(context.getError() != nullptr);
+    BOOST_TEST(context.getError()->find("UTF-8") != NomadString::npos);
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("\"hello\"[1].length", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 1);
+}
+
+BOOST_AUTO_TEST_CASE(write_only_indexer_supports_assignment_but_not_reads) {
+    Runtime runtime;
+    const auto* type = registerTestObject(runtime);
+    runtime.registerNativeIndexer1(
+        type, runtime.getIntegerType(), runtime.getIntegerType(), {},
+        [](VirtualMachine* vm, const RuntimeValue& index, const RuntimeValue& value) {
+            vm->getThisAs<TestObject>()->value = index.getIntegerValue() + value.getIntegerValue();
+        }, ""
+    );
+    const auto id = compileFunction(runtime, "value = new TestObject\nvalue[2] = 5\nreturn value.value");
+    RuntimeValue result;
+    runtime.executeFunction(id, {}, result);
+    BOOST_TEST(result.getIntegerValue() == 7);
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    BOOST_REQUIRE(Interpreter{}.execute("value = new TestObject", context));
+    BOOST_REQUIRE(Interpreter{}.execute("value[3] = 8", context));
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("value.value", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 11);
+    BOOST_TEST(!Interpreter{}.evaluateExpression("value[0]", context));
+    BOOST_REQUIRE(context.getError() != nullptr);
+    BOOST_TEST(context.getError()->find("write-only") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(indexer_callbacks_release_operands_and_partial_results_on_fault) {
+    for (const auto* source : {"return (new TestObject)[0]", "(new TestObject)[0] = \"assigned\""}) {
+        Runtime runtime;
+        const auto* type = registerTestObject(runtime);
+        runtime.registerNativeIndexer1(
+            type, runtime.getIntegerType(), runtime.getStringType(),
+            [](VirtualMachine* vm, const RuntimeValue&, RuntimeValue& result) {
+                result.setStringValue("partial");
+                vm->fault("Indexer getter failed");
+            },
+            [](VirtualMachine* vm, const RuntimeValue&, const RuntimeValue&) {
+                vm->fault("Indexer setter failed");
+            }, ""
+        );
+        const auto id = compileFunction(runtime, source);
+        auto machine = runtime.createVirtualMachine();
+        const auto before = NomadObject::getLiveObjectCount();
+        for (auto attempt = 0; attempt < 2; ++attempt) {
+            BOOST_CHECK_THROW(machine->run(runtime.getFunction(id), {}), VirtualMachineException);
+            BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+            BOOST_CHECK_THROW(machine->getThis(), VirtualMachineException);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(indexers_support_object_valued_keys_and_literal_delimiters) {
+    Runtime runtime;
+    const auto* type = registerTestObject(runtime);
+    runtime.registerNativeIndexer1(
+        type, runtime.getStringType(), runtime.getIntegerType(),
+        [](VirtualMachine* vm, const RuntimeValue& index, RuntimeValue& result) {
+            BOOST_TEST(index.getStringObject()->getLength() == 1);
+            result.setIntegerValue(vm->getThisAs<TestObject>()->value);
+        },
+        [](VirtualMachine* vm, const RuntimeValue& index, const RuntimeValue& value) {
+            BOOST_TEST(index.getStringObject()->getString() == "]");
+            vm->getThisAs<TestObject>()->value = value.getIntegerValue();
+        }, ""
+    );
+    const auto id = compileFunction(runtime, "value = new TestObject\nvalue[\"]\"] = 9\nreturn value[\"[\"]");
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(id, {}, result);
+    BOOST_TEST(result.getIntegerValue() == 9);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext context(*machine);
+        BOOST_REQUIRE(Interpreter{}.execute("value = new TestObject", context));
+        BOOST_REQUIRE(Interpreter{}.execute("value[\"]\"] = 10", context));
+        BOOST_REQUIRE(Interpreter{}.execute("value[\"=\"]", context));
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 10);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

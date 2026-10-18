@@ -80,6 +80,19 @@ const NativeMemberExpression* Expression::asNativeExpression() const {
     return nullptr;
 }
 
+bool Expression::resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function) {
+    reportError(context, function, "Assignment target must be an identifier, native property, or indexer");
+    return false;
+}
+
+void Expression::compileAssignment(Compiler* compiler, ScriptFunction*, Expression*) {
+    compiler->reportInternalError("Invalid assignment target");
+}
+
+void Expression::evaluateAssignment(InterpreterContext&, const Expression*) const {
+    raiseException("Invalid assignment target");
+}
+
 void Expression::evaluate(InterpreterContext& context) const {
     context.clearResult();
     if (context.hasError()) {
@@ -922,6 +935,132 @@ void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, con
     }
 
     receiverType->freeValue(receiver);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// IndexerExpression
+IndexerExpression::IndexerExpression(
+    const Expression* parent,
+    const NomadIndex line,
+    const NomadIndex column,
+    std::unique_ptr<Expression> receiver,
+    std::unique_ptr<Expression> index
+):
+    Expression(parent, line, column),
+    m_receiver(std::move(receiver)),
+    m_index(std::move(index))
+{}
+
+bool IndexerExpression::isTerminal() const {
+    return false;
+}
+
+bool IndexerExpression::resolveIndexer(CompilerContext* context, ScriptFunction* function) {
+    if (!m_receiver->resolve(context, function) || !m_index->resolve(context, function)) {
+        return false;
+    }
+    auto* runtime = context->getRuntime();
+    m_indexerId = runtime->getNativeIndexerId1(m_receiver->getType());
+    NativeIndexerDefinition1 definition;
+    if (!runtime->getNativeIndexerDefinition1(m_indexerId, definition)) {
+        reportError(context, function, "Type '" + getTypeDisplayName(m_receiver->getType()) + "' has no one-dimensional indexer");
+        return false;
+    }
+    if (m_index->getType() != definition.indexType) {
+        reportError(context, function, "Indexer requires an index of type '" + getTypeDisplayName(definition.indexType) +
+            "', not '" + getTypeDisplayName(m_index->getType()) + "'");
+        return false;
+    }
+    setType(definition.valueType);
+    return true;
+}
+
+bool IndexerExpression::resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function) {
+    if (!resolveIndexer(context, function)) {
+        return false;
+    }
+    NativeIndexerDefinition1 definition;
+    (void)context->getRuntime()->getNativeIndexerDefinition1(m_indexerId, definition);
+    if (!definition.setFn) {
+        reportError(context, function, "Indexer for type '" + getTypeDisplayName(m_receiver->getType()) + "' is read-only");
+        return false;
+    }
+    return true;
+}
+
+void IndexerExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+    if (!resolveIndexer(context, function)) {
+        return;
+    }
+    NativeIndexerDefinition1 definition;
+    (void)context->getRuntime()->getNativeIndexerDefinition1(m_indexerId, definition);
+    if (!definition.getFn) {
+        reportError(context, function, "Indexer for type '" + getTypeDisplayName(m_receiver->getType()) + "' is write-only");
+    }
+}
+
+void IndexerExpression::compileOperands(Compiler* compiler, ScriptFunction* function) {
+    m_receiver->compile(compiler, function, ExpressionTarget::Stack);
+    m_index->compile(compiler, function, ExpressionTarget::Stack);
+}
+
+void IndexerExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+    compileOperands(compiler, function);
+    compiler->addFreeValue(getType()->getTypeOpCodes()->initResult);
+    compiler->addOpCode(op_native_index_get_1);
+    compiler->addId(m_indexerId);
+    compiler->addMoveResult(getType(), target);
+}
+
+void IndexerExpression::compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression) {
+    compileOperands(compiler, function);
+    expression->compile(compiler, function, ExpressionTarget::Result);
+    compiler->addOpCode(op_native_index_set_1);
+    compiler->addId(m_indexerId);
+    compiler->addFreeValue(getType()->getTypeOpCodes()->freeResult);
+}
+
+void IndexerExpression::onEvaluate(InterpreterContext& context) const {
+    m_receiver->evaluate(context);
+    if (context.hasError()) {
+        return;
+    }
+    const TypedValue receiver(*context.getResult());
+    m_index->evaluate(context);
+    if (context.hasError()) {
+        return;
+    }
+    const TypedValue index(*context.getResult());
+    RuntimeValue result;
+    getType()->initValue(result);
+    try {
+        context.getVirtualMachine()->getNativeIndex1(m_indexerId, receiver.getValue(), index.getValue(), result);
+        context.setResult(getType(), result);
+    } catch (...) {
+        getType()->freeValue(result);
+        throw;
+    }
+    getType()->freeValue(result);
+}
+
+void IndexerExpression::evaluateAssignment(InterpreterContext& context, const Expression* expression) const {
+    m_receiver->evaluate(context);
+    if (context.hasError()) {
+        return;
+    }
+    const TypedValue receiver(*context.getResult());
+    m_index->evaluate(context);
+    if (context.hasError()) {
+        return;
+    }
+    const TypedValue index(*context.getResult());
+    expression->evaluate(context);
+    if (context.hasError()) {
+        return;
+    }
+    const TypedValue value(*context.getResult());
+    context.getVirtualMachine()->setNativeIndex1(m_indexerId, receiver.getValue(), index.getValue(), value.getValue());
+    context.setResult(value);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -103,6 +103,9 @@ BOOST_AUTO_TEST_CASE(collections_lists_reject_invalid_member_operations) {
         "values = new List<List<int>>\nvalues.push new List<string>",
         "values = new List<int>\nvalues.count = 10",
         "values = new List<int>\nvalues.push",
+        "values = new List<int>\nvalues[0] = \"wrong\"",
+        "values = new List<int>\nreturn values[\"key\"]",
+        "values = new List<int>\nreturn values[0 1]",
         "values = new List<int>\nreturn values.push 1",
         "params values:List<int>\nvalues = new List<int>"
     }) {
@@ -117,6 +120,98 @@ BOOST_AUTO_TEST_CASE(collections_lists_reject_invalid_member_operations) {
             BOOST_TEST(context.hasError());
         }
     }
+}
+
+BOOST_AUTO_TEST_CASE(collections_indexers_read_replace_chain_and_preserve_evaluation_order) {
+    TestDirectory directory("nomad_host_indexers");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"main", {"main.nomad",
+        "fun receiver values:List<int>\n"
+        "    values.push 1\n"
+        "    return values\n"
+        "end\n"
+        "fun index values:List<int>\n"
+        "    values.push 2\n"
+        "    return 0\n"
+        "end\n"
+        "fun assigned values:List<int>\n"
+        "    values.push 3\n"
+        "    return 9\n"
+        "end\n"
+        "fun replace values:List<string>\n"
+        "    values[0] = \"changed\"\n"
+        "end\n"
+        "values = new List<int>\n"
+        "values.push 0\n"
+        "(receiver values)[index values] = assigned values\n"
+        "assert values.count == 4\n"
+        "assert values[0] == 9\n"
+        "assert values[1] == 1\n"
+        "assert values[2] == 2\n"
+        "assert values[3] == 3\n"
+        "words = new List<string>\n"
+        "words.push \"hello\"\n"
+        "words[0] = words[0]\n"
+        "assert words[0] == \"hello\"\n"
+        "replace words\n"
+        "assert words[0].length == 7\n"
+        "assert words[0][0] == \"c\"\n"
+        "nested = new List<List<string>>\n"
+        "nested.push words\n"
+        "nested[0][0] = \"updated\"\n"
+        "assert words[0] == \"updated\"\n"
+        "nested[0] = new List<string>\n"
+        "nested[0].push \"new\"\n"
+        "assert nested[0][0] == \"new\"\n"
+        "assert words[0] == \"updated\"\n"
+        "return $\"{words[0]}:{values[0]}\""
+    }}}, {}});
+    const auto compiled = compiler->compileScripts(&context, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled,
+        (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getStringObject()->getString() == "updated:9");
+    runtime.getStringType()->freeValue(result);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(collections_indexers_work_in_interpreter_and_fault_without_growing) {
+    TestDirectory directory("nomad_host_interpreter_indexers");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    const auto before = NomadObject::getLiveObjectCount();
+    {
+        VirtualMachine machine(&runtime);
+        InterpreterContext context(machine);
+        for (const auto* source : {
+            "words = new List<string>", "words.push \"first\"", "alias = words",
+            "alias[0] = \"second\"", "words[0] = words[0]", "words[0][0]"
+        }) {
+            const auto executed = Interpreter{}.execute(source, context);
+            BOOST_REQUIRE_MESSAGE(executed,
+                (context.getError() ? *context.getError() : "Interpreter failed"));
+        }
+        BOOST_TEST(context.getResult()->getValue().getStringObject()->getString() == "s");
+        for (const auto* source : {"words[-1]", "words[1]", "words[1] = \"third\""}) {
+            BOOST_TEST(!Interpreter{}.execute(source, context));
+            BOOST_REQUIRE(context.getError() != nullptr);
+            BOOST_TEST(context.getError()->find("out of bounds for size 1") != NomadString::npos);
+        }
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("words.count", context));
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 1);
+        BOOST_REQUIRE(Interpreter{}.execute("empty = new List<int>", context));
+        BOOST_TEST(!Interpreter{}.execute("empty[0]", context));
+        BOOST_REQUIRE(context.getError() != nullptr);
+        BOOST_TEST(context.getError()->find("size 0") != NomadString::npos);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
 BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {

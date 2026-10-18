@@ -861,6 +861,53 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
     return true;
 }
 
+NomadId Runtime::registerNativeIndexer1(
+    const ObjectTypeBase* objectType,
+    const Type* indexType,
+    const Type* valueType,
+    NativeIndexerGetFn1 getFn,
+    NativeIndexerSetFn1 setFn,
+    const NomadString& doc
+) {
+    if (!ownsType(objectType) || !ownsType(indexType) || !ownsType(valueType) ||
+        indexType->isVoid() || indexType->isInternal() || valueType->isVoid() || valueType->isInternal()) {
+        log::error("Cannot register native indexer: types must be registered, public, and non-void");
+        return NOMAD_INVALID_ID;
+    }
+    if (!getFn && !setFn) {
+        log::error("Cannot register native indexer: indexer has no accessor or mutator");
+        return NOMAD_INVALID_ID;
+    }
+    if (getNativeIndexerId1(objectType) != NOMAD_INVALID_ID) {
+        log::error("Cannot register native indexer: type already has a one-dimensional indexer");
+        return NOMAD_INVALID_ID;
+    }
+    const auto id = toNomadId(m_nativeIndexers1.size());
+    m_nativeIndexers1.push_back({id, objectType, indexType, valueType, std::move(getFn), std::move(setFn), doc});
+    return id;
+}
+
+NomadId Runtime::getNativeIndexerId1(const Type* objectType) const {
+    for (const auto& definition : m_nativeIndexers1) {
+        if (definition.objectType == objectType) {
+            return definition.id;
+        }
+    }
+    return NOMAD_INVALID_ID;
+}
+
+bool Runtime::getNativeIndexerDefinition1(const NomadId indexerId, NativeIndexerDefinition1& definition) const {
+    if (isIdOutOfRange(indexerId, m_nativeIndexers1.size())) {
+        return false;
+    }
+    definition = m_nativeIndexers1[indexerId];
+    return true;
+}
+
+const std::vector<NativeIndexerDefinition1>& Runtime::getNativeIndexers1() const {
+    return m_nativeIndexers1;
+}
+
 NomadId Runtime::registerNativeProperty(const ObjectTypeBase* objectType, const NomadString& name, const Type* valueType,
                                            NativePropertyGetFn getFn, NativePropertySetFn setFn,
                                            const NomadString& doc) {

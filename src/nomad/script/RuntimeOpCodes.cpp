@@ -51,6 +51,8 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_call_native_function, op_call_native_function, "Call the given native function id", {Operand::NativeFunction});
     registerInstruction(OpCodes::op_native_property_get, op_native_property_get, "Call an native property getter", {Operand::Id});
     registerInstruction(OpCodes::op_native_property_set, op_native_property_set, "Call an native property setter", {Operand::Id});
+    registerInstruction(OpCodes::op_native_index_get_1, op_native_index_get_1, "Read a one-dimensional indexer", {Operand::Id});
+    registerInstruction(OpCodes::op_native_index_set_1, op_native_index_set_1, "Write a one-dimensional indexer", {Operand::Id});
     registerInstruction(OpCodes::op_native_method_call, op_native_method_call, "Call an native method with a saved stack receiver", {Operand::Id, Operand::Index});
     registerInstruction(OpCodes::op_parameter_load_r, op_parameter_load_r, "Load the `n`th parameter into result", {Operand::Id});
     registerInstruction(OpCodes::op_parameter_load_i, op_parameter_load_i, "Load the `n`th parameter into intermediate", {Operand::Id});

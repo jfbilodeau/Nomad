@@ -135,6 +135,18 @@ public:
     [[nodiscard]] const Type* getPredicateType();
 
     // Native members
+    NomadId registerNativeIndexer1(
+        const ObjectTypeBase* objectType,
+        const Type* indexType,
+        const Type* valueType,
+        NativeIndexerGetFn1 getFn,
+        NativeIndexerSetFn1 setFn,
+        NomadDocArg
+    );
+    [[nodiscard]] NomadId getNativeIndexerId1(const Type* objectType) const;
+    [[nodiscard]] bool getNativeIndexerDefinition1(NomadId indexerId, NativeIndexerDefinition1& definition) const;
+    [[nodiscard]] const std::vector<NativeIndexerDefinition1>& getNativeIndexers1() const;
+
     NomadId registerNativeMethod(
         const ObjectTypeBase* objectType,
         const NomadString& name,
@@ -416,6 +428,7 @@ private:
     std::unordered_map<NomadString, NomadIndex> m_callablesByName;
     std::vector<NativeMemberRegistration> m_nativeMembers;
     std::vector<NativePropertyDefinition> m_nativeProperties;
+    std::vector<NativeIndexerDefinition1> m_nativeIndexers1;
     std::unordered_map<NomadString, std::vector<NomadId>> m_nativeMembersByName;
     bool m_debug = false;
     std::unique_ptr<VirtualMachine> m_virtualMachine = nullptr;

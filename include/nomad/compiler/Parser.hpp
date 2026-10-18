@@ -31,6 +31,7 @@ namespace parser {
 [[nodiscard]] const Type* parseType(CompilerContext* context, Tokenizer* tokens);
 
 [[nodiscard]] bool expectEndOfLine(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
+[[nodiscard]] bool hasAssignmentOperator(const Tokenizer* tokens);
 
 IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& name, const ScriptFunction* function = nullptr);
 [[nodiscard]] bool isNativeMemberCandidate(const Compiler* compiler, const ScriptFunction* function,

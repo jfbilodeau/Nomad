@@ -49,7 +49,21 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 runtime->getVoidType(),
                 NomadDoc("Appends a value to the list.")
             );
-            if (countId == nomad::NOMAD_INVALID_ID || pushId == nomad::NOMAD_INVALID_ID) {
+            const auto indexerId = runtime->registerNativeIndexer1(
+                objectType,
+                runtime->getIntegerType(),
+                elementType,
+                [elementType](nomad::VirtualMachine* machine, const nomad::RuntimeValue& index, nomad::RuntimeValue& result) {
+                    const auto* list = machine->getThisAs<nomad::ListObject>();
+                    elementType->copyValue(list->getValue(index.getIntegerValue()), result);
+                },
+                [](nomad::VirtualMachine* machine, const nomad::RuntimeValue& index, const nomad::RuntimeValue& value) {
+                    machine->getThisAs<nomad::ListObject>()->setValue(index.getIntegerValue(), value);
+                },
+                NomadDoc("Reads or replaces an element at a zero-based index. Out-of-range indices fault.")
+            );
+            if (countId == nomad::NOMAD_INVALID_ID || pushId == nomad::NOMAD_INVALID_ID ||
+                indexerId == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register List members");
             }
         }

@@ -130,10 +130,10 @@ public:
     [[nodiscard]] NativeMemberExpression* asNativeExpression() override;
     [[nodiscard]] const NativeMemberExpression* asNativeExpression() const override;
 
-    [[nodiscard]] bool resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function);
+    [[nodiscard]] bool resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function) override;
     void setAllowVoid(bool allowVoid);
-    void compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression);
-    void evaluateAssignment(InterpreterContext& context, const Expression* expression) const;
+    void compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression) override;
+    void evaluateAssignment(InterpreterContext& context, const Expression* expression) const override;
 
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
@@ -149,6 +149,34 @@ private:
     ArgumentList m_arguments;
     NomadId m_memberId = NOMAD_INVALID_ID;
     bool m_allowVoid = false;
+};
+
+class IndexerExpression final : public Expression {
+public:
+    IndexerExpression(
+        const Expression* parent,
+        NomadIndex line,
+        NomadIndex column,
+        std::unique_ptr<Expression> receiver,
+        std::unique_ptr<Expression> index
+    );
+    [[nodiscard]] bool isTerminal() const override;
+    [[nodiscard]] bool resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function) override;
+    void compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression) override;
+    void evaluateAssignment(InterpreterContext& context, const Expression* expression) const override;
+
+protected:
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onEvaluate(InterpreterContext& context) const override;
+
+private:
+    [[nodiscard]] bool resolveIndexer(CompilerContext* context, ScriptFunction* function);
+    void compileOperands(Compiler* compiler, ScriptFunction* function);
+
+    std::unique_ptr<Expression> m_receiver;
+    std::unique_ptr<Expression> m_index;
+    NomadId m_indexerId = NOMAD_INVALID_ID;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

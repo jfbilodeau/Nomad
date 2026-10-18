@@ -265,6 +265,34 @@ They do not replace the receiver binding or roll back changes to object contents
 `List.push` and the `Audio` controls use this API. Script-defined methods are not
 supported yet.
 
+## Native indexers
+
+Register a one-dimensional indexer with `registerNativeIndexer1`. Its index and
+value types must belong to the runtime and be public, non-void types. Each object
+type may have one such indexer. Omit the setter for read-only indexing, or omit
+the getter for write-only indexing. Invalid access is rejected during compilation.
+
+```cpp
+runtime.registerNativeIndexer1(
+    objectType,
+    runtime.getIntegerType(),
+    runtime.getStringType(),
+    [](nomad::VirtualMachine* machine, const nomad::RuntimeValue& index, nomad::RuntimeValue& result) {
+        const auto* object = machine->getThisAs<MyObject>();
+        result.setStringValue(object->getText(index.getIntegerValue()));
+    },
+    {},
+    NomadDoc("Read text at the given index.")
+);
+```
+
+Callbacks borrow the receiver, index, and assigned value. A getter writes an
+owned result into initialized storage; retain any existing object returned from
+the receiver. A setter must retain an object value it stores and release any
+replaced value. Use `machine->fault(...)` to report invalid indices or other
+access errors. The built-in string indexer is read-only and uses Unicode code
+points; `List<T>` provides read/write element access.
+
 ## Typed native object methods
 
 Built-in string methods use the same object-method API. Read the instance with

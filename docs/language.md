@@ -158,8 +158,8 @@ change `alias`. References are retained through function arguments and return
 values, and an object is released when its last reference is discarded.
 
 The `nomad-collections` module currently supports constructing empty `List<T>`
-objects only. Lists support `push` and read-only `count`. Constructor arguments and
-indexing are not available yet. Primitive types and strings cannot be constructed with `new`.
+objects only. Lists support `push`, read-only `count`, and element indexing.
+Constructor arguments are not available yet. Primitive types and strings cannot be constructed with `new`.
 Construction is also available in interpreter expressions.
 
 ### Properties and methods
@@ -199,6 +199,44 @@ Assigning a new reference to the parameter itself remains invalid.
 Nomad does not currently support defining object types, properties, or methods in scripts.
 
 The available members for each object type are listed in the [engine API](engine-api.md#object-members).
+
+### Indexers
+
+Use brackets to read an element or assign to a writable element:
+
+```nomad
+words = new List<string>
+words.push "first"
+words.push "second"
+word = words[0]
+words[1] = "updated"
+length = words[1].length
+letter = words[1][0] # "u"
+```
+
+`List<T>` accepts one `int` index and reads or replaces a value of type `T`.
+Indices start at zero. Negative indices and indices greater than or equal to
+`count` cause a runtime error. Assignment replaces an existing element and does
+not grow the list; use `push` to append.
+
+Strings have a read-only `int` indexer. It returns one Unicode code point as a
+string, consistent with `length`, rather than one UTF-8 byte or a complete
+grapheme cluster. Negative indices, out-of-range indices, and invalid UTF-8 cause
+a runtime error. Assigning to a string index is a compile-time error.
+
+```nomad
+text = "Nomad"
+letter = text[1] # "o"
+# text[1] = "a" # Invalid: string indexing is read-only.
+```
+
+Indexing binds more tightly than binary operators. Parenthesize a compound
+receiver when needed: `("hello".toUpper)[0]`.
+The receiver and index are evaluated once, in that order, before an assignment's
+right-hand side. Writable indexers can mutate an object through a parameter or
+temporary without rebinding that reference. Object-valued elements keep reference
+semantics. Only one index per pair of brackets is supported; multidimensional
+indexers are not yet available.
 
 ### Audio and fonts
 

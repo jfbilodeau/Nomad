@@ -32,6 +32,25 @@ void validateSearchOperands(VirtualMachine* virtualMachine, const NomadString& r
 
 void registerBuiltInNativeMembers(Runtime* runtime) {
     const auto* stringType = runtime->getStringType();
+    runtime->registerNativeIndexer1(
+        stringType,
+        runtime->getIntegerType(),
+        stringType,
+        [](VirtualMachine* machine, const RuntimeValue& indexValue, RuntimeValue& result) {
+            const auto& text = machine->getThisAs<NomadStringObject>()->getString();
+            faultOnInvalidUtf8(machine, text, "indexer");
+            const auto codePoints = boost::locale::conv::utf_to_utf<char32_t>(text, boost::locale::conv::stop);
+            const auto index = indexValue.getIntegerValue();
+            if (index < 0 || static_cast<NomadIndex>(index) >= codePoints.size()) {
+                machine->fault("String index " + toString(index) + " is out of bounds for size " + toString(codePoints.size()));
+            }
+            result.setStringValue(boost::locale::conv::utf_to_utf<char>(
+                codePoints.substr(static_cast<NomadIndex>(index), 1), boost::locale::conv::stop
+            ));
+        },
+        {},
+        NomadDoc("Returns one Unicode code point as a string at a zero-based index. Read-only; out-of-range indices fault.")
+    );
     runtime->registerNativeProperty(
         stringType,
         "length",

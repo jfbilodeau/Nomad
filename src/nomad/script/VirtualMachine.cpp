@@ -280,6 +280,32 @@ void VirtualMachine::setNativeProperty(
     invokeNativeMember([&](VirtualMachine* machine) { definition.setFn(machine, value); }, receiver);
 }
 
+void VirtualMachine::getNativeIndex1(
+    const NomadId indexerId,
+    const RuntimeValue& receiver,
+    const RuntimeValue& index,
+    RuntimeValue& result
+) {
+    NativeIndexerDefinition1 definition;
+    if (!m_runtime->getNativeIndexerDefinition1(indexerId, definition) || !definition.getFn) {
+        fault("Invalid native indexer getter");
+    }
+    invokeNativeMember([&](VirtualMachine* machine) { definition.getFn(machine, index, result); }, receiver);
+}
+
+void VirtualMachine::setNativeIndex1(
+    const NomadId indexerId,
+    const RuntimeValue& receiver,
+    const RuntimeValue& index,
+    const RuntimeValue& value
+) {
+    NativeIndexerDefinition1 definition;
+    if (!m_runtime->getNativeIndexerDefinition1(indexerId, definition) || !definition.setFn) {
+        fault("Invalid native indexer setter");
+    }
+    invokeNativeMember([&](VirtualMachine* machine) { definition.setFn(machine, index, value); }, receiver);
+}
+
 void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std::vector<RuntimeValue>& args) {
     NativeFunctionDefinition definition;
     if (!m_runtime->getNativeFunctionDefinition(nativeFunctionId, definition)) {

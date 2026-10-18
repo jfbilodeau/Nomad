@@ -121,6 +121,8 @@ struct LineGrammar : boost::spirit::qi::grammar<Iterator, std::vector<Token>()> 
             qi::string(":") |
             qi::string("(") |
             qi::string(")") |
+            qi::string("[") |
+            qi::string("]") |
             qi::string(".")
         ],
 //        keyword = qi::string("true") | qi::string("false") | qi::string("fun"),

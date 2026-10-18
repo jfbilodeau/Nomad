@@ -225,19 +225,25 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
                                            false, line, column);
 }
 
-bool hasAssignmentOperator(const Tokenizer* tokens) {
-    for (NomadIndex index = 0; index < tokens->getTokenCount(); ++index) {
-        if (tokens->getTokenAt(index) == "=") {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 bool isPotentialMemberExpression(CompilerContext* context, ScriptFunction* function, const Tokenizer* tokens) {
     if (tokens->getTokenCount() == 0) {
         return false;
+    }
+
+    if (context->getCompiler()->isStatement(tokens->getTokenAt(0))) {
+        return false;
+    }
+    if (tokens->getTokenTypeAt(0) == TokenType::Identifier) {
+        const auto kind = context->getCompiler()->getIdentifierType(tokens->getTokenAt(0), function);
+        if (kind == IdentifierType::NativeFunction || kind == IdentifierType::Function) {
+            return false;
+        }
+    }
+
+    for (NomadIndex index = 0; index < tokens->getTokenCount(); ++index) {
+        if (tokens->getTokenTypeAt(index) == TokenType::Operator && tokens->getTokenAt(index) == "[") {
+            return true;
+        }
     }
 
     if (tokens->getTokenTypeAt(0) == TokenType::Identifier) {
@@ -259,6 +265,15 @@ bool isPotentialMemberExpression(CompilerContext* context, ScriptFunction* funct
 }
 
 } // namespace
+
+bool hasAssignmentOperator(const Tokenizer* tokens) {
+    for (NomadIndex index = 0; index < tokens->getTokenCount(); ++index) {
+        if (tokens->getTokenTypeAt(index) == TokenType::Operator && tokens->getTokenAt(index) == "=") {
+            return true;
+        }
+    }
+    return false;
+}
 
 bool isNativeMemberCandidate(const Compiler* compiler, const ScriptFunction* function, const NomadString& name) {
     if (!splitNativeMemberName(compiler->getRuntime(), name)) {
@@ -761,14 +776,14 @@ std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, Scr
                                                    const Expression* parent) {
     std::unique_ptr<Expression> expression;
 
-    if (tokens->is("(")) {
+    if (tokens->is(TokenType::Operator) && tokens->is("(")) {
         tokens->next();
         expression = parseExpression(context, function, tokens);
 
         if (expression == nullptr || !tokens->expect(")")) {
             return nullptr;
         }
-    } else if (tokens->is("new")) {
+    } else if ((tokens->is(TokenType::Identifier) || tokens->is(TokenType::Keyword)) && tokens->is("new")) {
         expression = parseNewExpression(context, function, tokens, parent);
         if (expression == nullptr) {
             return nullptr;
@@ -780,7 +795,27 @@ std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, Scr
         }
     }
 
-    while (tokens->is(".")) {
+    while (tokens->is(TokenType::Operator) && (tokens->is(".") || tokens->is("["))) {
+        if (tokens->is("[")) {
+            const auto line = tokens->getLineIndex();
+            const auto column = tokens->getColumnIndex();
+            tokens->next();
+            if (tokens->is(TokenType::Operator) && tokens->is("]")) {
+                context->reportError("Indexer requires one index", tokens);
+                return nullptr;
+            }
+            auto index = parseExpression(context, function, tokens);
+            if (index == nullptr) {
+                return nullptr;
+            }
+            if (!tokens->is(TokenType::Operator) || !tokens->is("]")) {
+                context->reportError("Expected ']' after one index expression", tokens);
+                return nullptr;
+            }
+            tokens->next();
+            expression = std::make_unique<IndexerExpression>(parent, line, column, std::move(expression), std::move(index));
+            continue;
+        }
         tokens->next();
 
         NomadString memberPath;
@@ -869,10 +904,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
 
     if (!isDirectIdentifier) {
         auto target = parseExpression(context, function, tokens);
-        auto* memberTarget = target == nullptr ? nullptr : target->asNativeExpression();
-
-        if (memberTarget == nullptr) {
-            context->reportError("Assignment target must be an identifier or native property", tokens);
+        if (target == nullptr) {
             return nullptr;
         }
 

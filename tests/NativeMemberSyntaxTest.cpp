@@ -206,4 +206,24 @@ BOOST_AUTO_TEST_CASE(preserves_existing_qualified_identifier) {
     BOOST_TEST(expression->getType() == runtime.getIntegerType());
 }
 
+BOOST_AUTO_TEST_CASE(rejects_invalid_indexer_syntax_and_types) {
+    for (const auto* source : {
+        "return \"text\"[]", "return \"text\"[0 1]", "return \"text\"[0",
+        "return \"text\"[\"0\"]", "return \"text\"[1.0]", "return 1[0]",
+        "\"text\"[0] = \"x\"", "value = \"text\"\nvalue[0] = \"x\""
+    }) {
+        BOOST_TEST_CONTEXT(source) {
+            Runtime runtime;
+            auto compiler = runtime.createCompiler();
+            CompilerContext context(compiler.get());
+            compiler->registerSources(&context, {{{"test", {"test.nomad", source}}}, {}});
+            BOOST_TEST(!compiler->compileFunctions(&context));
+            BOOST_REQUIRE(context.getFirstError() != nullptr);
+            if (NomadString(source).find("= \"x\"") != NomadString::npos) {
+                BOOST_TEST(context.getFirstError()->message.find("read-only") != NomadString::npos);
+            }
+        }
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

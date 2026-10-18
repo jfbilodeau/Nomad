@@ -14,6 +14,7 @@
 namespace nomad {
 
 class Type;
+class ObjectTypeBase;
 class VirtualMachine;
 
 enum class NativeMemberType {
@@ -36,5 +37,18 @@ struct NativePropertyDefinition {
 };
 
 using NativeMethodDefinition = NativeFunctionDefinition;
+
+using NativeIndexerGetFn1 = std::function<void(VirtualMachine*, const RuntimeValue&, RuntimeValue&)>;
+using NativeIndexerSetFn1 = std::function<void(VirtualMachine*, const RuntimeValue&, const RuntimeValue&)>;
+
+struct NativeIndexerDefinition1 {
+    NomadId id = NOMAD_INVALID_ID;
+    const ObjectTypeBase* objectType = nullptr;
+    const Type* indexType = nullptr;
+    const Type* valueType = nullptr;
+    NativeIndexerGetFn1 getFn;
+    NativeIndexerSetFn1 setFn;
+    NomadDocField;
+};
 
 } // namespace nomad

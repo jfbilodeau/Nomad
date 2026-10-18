@@ -4,6 +4,8 @@
 
 #include <nomad/script/Type.hpp>
 
+#include <nomad/system/String.hpp>
+
 namespace nomad {
 
 ListObject::ListObject(const Type* elementType):
@@ -40,6 +42,31 @@ void ListObject::push(const RuntimeValue& value) {
         m_elementType->freeValue(storedValue);
         throw;
     }
+}
+
+NomadIndex ListObject::validateIndex(const NomadInteger index) const {
+    if (index < 0 || static_cast<NomadIndex>(index) >= m_values.size()) {
+        throw NomadException("List index " + toString(index) + " is out of bounds for size " + toString(m_values.size()));
+    }
+    return static_cast<NomadIndex>(index);
+}
+
+const RuntimeValue& ListObject::getValue(const NomadInteger index) const {
+    return m_values[validateIndex(index)];
+}
+
+void ListObject::setValue(const NomadInteger index, const RuntimeValue& value) {
+    auto& destination = m_values[validateIndex(index)];
+    RuntimeValue replacement;
+    m_elementType->initValue(replacement);
+    try {
+        m_elementType->copyValue(value, replacement);
+    } catch (...) {
+        m_elementType->freeValue(replacement);
+        throw;
+    }
+    m_elementType->freeValue(destination);
+    destination = replacement;
 }
 
 } // namespace nomad

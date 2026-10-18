@@ -122,8 +122,7 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         }
 
         const auto& firstToken = tokenizer.currentToken();
-        const auto isAssignment = tokenizer.getTokenCount() >= 3 &&
-                                  tokenizer.getTokenAt(1) == "=";
+        const auto isAssignment = parser::hasAssignmentOperator(&tokenizer);
         const auto isStatement = firstToken.type == TokenType::Identifier &&
                                  compiler->isStatement(firstToken.textValue);
         NativeFunctionDefinition nativeFunction;

@@ -20,8 +20,11 @@ public:
     [[nodiscard]] NomadIndex getCount() const;
 
     void push(const RuntimeValue& value);
+    [[nodiscard]] const RuntimeValue& getValue(NomadInteger index) const;
+    void setValue(NomadInteger index, const RuntimeValue& value);
 
 private:
+    [[nodiscard]] NomadIndex validateIndex(NomadInteger index) const;
     const Type* m_elementType;
     std::vector<RuntimeValue> m_values;
 };
