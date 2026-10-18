@@ -70,8 +70,8 @@ BOOST_AUTO_TEST_CASE(entity_keeps_font_alive_until_cleared)
     options.resourcePath = directory.getPath().string();
     auto game = Game::createHeadless(options);
     auto* fonts = game->getResources()->getFonts();
-    const auto fontId = fonts->registerFont("font.ttf", 13.0f);
-    auto* font = fonts->getFont(fontId);
+    const auto liveObjects = NomadObject::getLiveObjectCount();
+    auto* font = fonts->registerFont("font.ttf", 13.0f);
     BOOST_REQUIRE(font != nullptr);
     Entity entity(nullptr, game->getEntityVariables(), 1, 0, 0, 1);
     entity.setFont(font);
@@ -82,8 +82,7 @@ BOOST_AUTO_TEST_CASE(entity_keeps_font_alive_until_cleared)
     entity.setFont(font);
     BOOST_TEST(font->getReferenceCount() == 1U);
     entity.setFont(nullptr);
-    BOOST_TEST(fonts->getFont(fontId) == nullptr);
-    BOOST_TEST(fonts->getFontByName("font.ttf") == nullptr);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == liveObjects);
 }
 
 BOOST_AUTO_TEST_CASE(font_reference_can_be_released_after_manager_shutdown)
@@ -94,7 +93,7 @@ BOOST_AUTO_TEST_CASE(font_reference_can_be_released_after_manager_shutdown)
     options.resourcePath = directory.getPath().string();
     auto game = Game::createHeadless(options);
     auto* fonts = game->getResources()->getFonts();
-    auto* font = fonts->getFont(fonts->registerFont("font.ttf", 13.0f));
+    auto* font = fonts->registerFont("font.ttf", 13.0f);
     BOOST_REQUIRE(font != nullptr);
     game.reset();
     BOOST_TEST(font->getTtfFont() == nullptr);
@@ -109,8 +108,7 @@ BOOST_AUTO_TEST_CASE(all_alignments_place_text_on_expected_sides_with_single_off
     options.resourcePath = directory.getPath().string();
     auto game = Game::createHeadless(options);
     auto* canvas = game->getCanvas();
-    const auto fontId = game->getResources()->getFonts()->registerFont("font.ttf", 13.0f);
-    auto* font = game->getResources()->getFonts()->getFont(fontId);
+    auto* font = game->getResources()->getFonts()->registerFont("font.ttf", 13.0f);
     const auto releaseFont = [](FontObject* value) { value->releaseRef(); };
     const std::unique_ptr<FontObject, decltype(releaseFont)> ownedFont(font, releaseFont);
     const auto white = Color{255, 255, 255, 255};
@@ -172,8 +170,7 @@ BOOST_AUTO_TEST_CASE(fixed_width_text_applies_horizontal_alignment)
     options.resourcePath = directory.getPath().string();
     auto game = Game::createHeadless(options);
     auto* canvas = game->getCanvas();
-    const auto fontId = game->getResources()->getFonts()->registerFont("font.ttf", 13.0f);
-    auto* font = game->getResources()->getFonts()->getFont(fontId);
+    auto* font = game->getResources()->getFonts()->registerFont("font.ttf", 13.0f);
     const auto releaseFont = [](FontObject* value) { value->releaseRef(); };
     const std::unique_ptr<FontObject, decltype(releaseFont)> ownedFont(font, releaseFont);
     const auto white = Color{255, 255, 255, 255};
@@ -225,8 +222,7 @@ BOOST_AUTO_TEST_CASE(changing_alignment_refreshes_fixed_width_text_layout)
     options.resourcePath = directory.getPath().string();
     auto game = Game::createHeadless(options);
     auto* canvas = game->getCanvas();
-    const auto fontId = game->getResources()->getFonts()->registerFont("font.ttf", 13.0f);
-    auto* font = game->getResources()->getFonts()->getFont(fontId);
+    auto* font = game->getResources()->getFonts()->registerFont("font.ttf", 13.0f);
     const auto releaseFont = [](FontObject* value) { value->releaseRef(); };
     const std::unique_ptr<FontObject, decltype(releaseFont)> ownedFont(font, releaseFont);
     const auto white = Color{255, 255, 255, 255};

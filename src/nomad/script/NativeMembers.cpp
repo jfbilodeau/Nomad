@@ -33,7 +33,7 @@ void validateSearchOperands(VirtualMachine* virtualMachine, const NomadString& r
 void registerBuiltInNativeMembers(Runtime* runtime) {
     const auto* stringType = static_cast<const ObjectTypeBase*>(runtime->getStringType());
     runtime->registerNativeProperty(
-        runtime->getStringType(),
+        static_cast<const ObjectTypeBase*>(runtime->getStringType()),
         "length",
         runtime->getIntegerType(),
         [](VirtualMachine* virtualMachine, RuntimeValue& result) {
@@ -52,7 +52,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
     );
 
     runtime->registerNativeProperty(
-        runtime->getStringType(),
+        static_cast<const ObjectTypeBase*>(runtime->getStringType()),
         "byteLength",
         runtime->getIntegerType(),
         [](VirtualMachine* machine, RuntimeValue& result) {
@@ -63,7 +63,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
     );
 
     runtime->registerNativeProperty(
-        runtime->getStringType(),
+        static_cast<const ObjectTypeBase*>(runtime->getStringType()),
         "isEmpty",
         runtime->getBooleanType(),
         [](VirtualMachine* machine, RuntimeValue& result) {

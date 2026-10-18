@@ -128,7 +128,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
     const auto* listType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(listType != nullptr);
     runtime.registerNativeProperty(
-        listType,
+        static_cast<const ObjectTypeBase*>(listType),
         "testPresent",
         runtime.getBooleanType(),
         [](VirtualMachine* machine, RuntimeValue& result) {

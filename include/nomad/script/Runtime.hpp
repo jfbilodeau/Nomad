@@ -18,6 +18,7 @@
 #include <nomad/script/NativeMember.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
 
 #include <nomad/system/TempHeap.hpp>
@@ -135,14 +136,14 @@ public:
 
     // Native members
     NomadId registerNativeMethod(
-        const Type* objectType,
+        const ObjectTypeBase* objectType,
         const NomadString& name,
         NativeFunctionFn fn,
         const std::vector<FunctionParameterDefinition>& parameters,
         const Type* returnType,
         NomadDocArg
     );
-    NomadId registerNativeProperty(const Type* objectType, const NomadString& name, const Type* valueType,
+    NomadId registerNativeProperty(const ObjectTypeBase* objectType, const NomadString& name, const Type* valueType,
                                       NativePropertyGetFn getFn, NativePropertySetFn setFn, NomadDocArg);
     [[nodiscard]] NomadId getNativeMemberId(const Type* objectType, const NomadString& name) const;
     [[nodiscard]] NativeMemberType getNativeMemberType(NomadId memberId) const;
@@ -391,7 +392,7 @@ private:
     std::vector<UnaryOperatorRegistration> m_unaryOperators;
     std::vector<BinaryOperatorRegistration> m_binaryOperators;
     NomadId registerNativeCallable(
-        const Type* objectType,
+        const ObjectTypeBase* objectType,
         const NomadString& name,
         NativeFunctionFn fn,
         const std::vector<FunctionParameterDefinition>& parameters,

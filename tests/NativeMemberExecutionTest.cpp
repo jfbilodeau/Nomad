@@ -18,7 +18,7 @@ public:
     NomadInteger value = 4;
 };
 
-const Type* registerTestObject(Runtime& runtime) {
+const ObjectTypeBase* registerTestObject(Runtime& runtime) {
     auto descriptor = std::make_unique<ObjectType>(
         "TestObject", std::vector<const Type*>{}, [] { return new TestObject; }
     );
@@ -66,7 +66,7 @@ BOOST_AUTO_TEST_CASE(typed_method_borrows_the_string_receiver) {
     Runtime runtime;
     bool called = false;
     runtime.registerNativeMethod(
-        runtime.getStringType(),
+        static_cast<const ObjectTypeBase*>(runtime.getStringType()),
         "typedLength",
         [&called](VirtualMachine* virtualMachine) {
             const auto* receiver = virtualMachine->getThisAs<const NomadStringObject>();

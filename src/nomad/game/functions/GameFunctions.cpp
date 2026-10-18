@@ -173,9 +173,7 @@ void Game::initGameFunctions() {
             const auto& fontName = interpreter->getStringParameter(0)->getString();
             const auto fontSize = interpreter->getIntegerParameter(1);
 
-            const auto fontId = m_resourceManager->getFonts()->registerFont(fontName, static_cast<NomadFloat>(fontSize));
-
-            auto* font = m_resourceManager->getFonts()->getFont(fontId);
+            auto* font = m_resourceManager->getFonts()->registerFont(fontName, static_cast<NomadFloat>(fontSize));
             interpreter->getResult().setObjectValue(font);
         }, {
             defParameter("fontName", m_runtime->getStringType(), NomadParamDoc("Name of the font to load.")),

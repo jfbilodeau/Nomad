@@ -60,10 +60,8 @@ public:
     [[nodiscard]] const AudioResource* getResourceByName(const NomadString& name) const;
     [[nodiscard]] NomadId getResourceId(const NomadString& name) const;
 
-    [[nodiscard]] NomadId createAudioObject(NomadId resourceId);
-    [[nodiscard]] NomadId createAudioObject(const NomadString& resourceName);
-    [[nodiscard]] AudioObject* getAudioObject(NomadId audioObjectId);
-    [[nodiscard]] const AudioObject* getAudioObject(NomadId audioObjectId) const;
+    [[nodiscard]] AudioObject* createAudioObject(NomadId resourceId);
+    [[nodiscard]] AudioObject* createAudioObject(const NomadString& resourceName);
     [[nodiscard]] NomadIndex getAudioObjectCount() const;
 
     void pauseAll();
@@ -123,6 +121,7 @@ private:
     std::atomic_bool m_musicCompletionPending = false;
     CompletionCallback m_musicCompletionCallback;
     std::vector<std::unique_ptr<AudioResource>> m_resources;
+    // Non-owning live instances for global controls, callbacks, and shutdown.
     std::vector<AudioObject*> m_audioObjects;
 };
 

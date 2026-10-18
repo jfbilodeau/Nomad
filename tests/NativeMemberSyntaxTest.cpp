@@ -98,7 +98,7 @@ BOOST_AUTO_TEST_CASE(rejects_reading_write_only_property) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    BOOST_REQUIRE(runtime.registerNativeProperty(runtime.getStringType(), "sink", runtime.getIntegerType(), {},
+    BOOST_REQUIRE(runtime.registerNativeProperty(static_cast<const ObjectTypeBase*>(runtime.getStringType()), "sink", runtime.getIntegerType(), {},
                                                     propertySetter(), NomadDoc("Sink")) != NOMAD_INVALID_ID);
 
     auto expression = parseExpression(context, nullptr, "\"Nomad\".sink");
@@ -132,7 +132,7 @@ BOOST_AUTO_TEST_CASE(allows_assigning_write_only_property) {
     ScriptFunction function(NOMAD_INVALID_ID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
     runtime.registerNativeProperty(
-        runtime.getStringType(), "sink", runtime.getIntegerType(), {}, propertySetter(), ""
+        static_cast<const ObjectTypeBase*>(runtime.getStringType()), "sink", runtime.getIntegerType(), {}, propertySetter(), ""
     );
 
     Tokenizer tokens(&context, "test.nomad", "name.sink = 10");
@@ -148,7 +148,7 @@ BOOST_AUTO_TEST_CASE(chained_assignment_reads_receiver_but_only_requires_final_s
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     runtime.registerNativeProperty(
-        runtime.getStringType(), "sink", runtime.getIntegerType(), {}, propertySetter(), ""
+        static_cast<const ObjectTypeBase*>(runtime.getStringType()), "sink", runtime.getIntegerType(), {}, propertySetter(), ""
     );
 
     Tokenizer tokens(&context, "test.nomad", "\"Nomad\".toUpper.sink = 10");
@@ -180,7 +180,7 @@ BOOST_AUTO_TEST_CASE(allows_object_method_on_temporary) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    BOOST_REQUIRE(runtime.registerNativeMethod(runtime.getStringType(), "clear", methodFunction(), {},
+    BOOST_REQUIRE(runtime.registerNativeMethod(static_cast<const ObjectTypeBase*>(runtime.getStringType()), "clear", methodFunction(), {},
                                                   runtime.getVoidType(), NomadDoc("Clear")) != NOMAD_INVALID_ID);
 
     Tokenizer tokens(&context, "test.nomad", "\"Nomad\".clear");

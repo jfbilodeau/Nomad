@@ -102,8 +102,7 @@ void Game::initAudioFunctions() {
             }
 
             executeAudioAction(virtualMachine, [&] {
-                const auto objectId = audio->createAudioObject(resourceName);
-                auto* object = audio->getAudioObject(objectId);
+                auto* object = audio->createAudioObject(resourceName);
                 if (object == nullptr) {
                     virtualMachine->fault("Failed to load Audio '" + resourceName + "'");
                 }

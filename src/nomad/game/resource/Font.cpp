@@ -16,41 +16,20 @@ FontManager::FontManager(ResourceManager* resources):
 
 FontManager::~FontManager() {
     for (auto* font : m_fonts) {
-        if (font != nullptr) {
-            font->detachManager();
-        }
+        font->detachManager();
     }
 }
 
 void FontManager::unregisterFont(FontObject* font) {
-    const auto found = std::ranges::find(m_fonts, font);
-    if (found != m_fonts.end()) {
-        *found = nullptr;
-    }
+    std::erase(m_fonts, font);
 }
 
-NomadId FontManager::registerFont(const NomadString& fontName, const NomadFloat pointSize) {
-    const auto fontId = toNomadId(m_fonts.size());
+FontObject* FontManager::registerFont(const NomadString& fontName, const NomadFloat pointSize) {
     const auto fileName = m_resources->makeResourcePath(fontName);
     auto font = std::make_unique<FontObject>(fontName, fileName, pointSize);
     m_fonts.push_back(font.get());
     font->m_manager = this;
-    font.release();
-    return fontId;
-}
-
-FontObject* FontManager::getFont(const NomadId fontId) const {
-    const auto fontIndex = toNomadIndex(fontId);
-    return fontIndex < m_fonts.size() ? m_fonts[fontIndex] : nullptr;
-}
-
-const FontObject* FontManager::getFontByName(const NomadString& fontName) const {
-    for (const auto* font : m_fonts) {
-        if (font != nullptr && font->getName() == fontName) {
-            return font;
-        }
-    }
-    return nullptr;
+    return font.release();
 }
 
 } // namespace nomad

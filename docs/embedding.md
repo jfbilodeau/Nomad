@@ -336,11 +336,10 @@ Include `nomad/game/resource/AudioObject.hpp` and
 `nomad/game/resource/FontObject.hpp` when using their C++ object APIs. Their
 script type names remain `Audio` and `Font`; neither is script-constructible.
 
-`AudioManager::createAudioObject` and `FontManager::registerFont` create objects
-with one caller-owned reference. The manager lookup functions return borrowed
-pointers. Release the initial reference when finished; lookups become null
-after the last reference is released. `Entity::setFont` retains its `FontObject`,
-and `Entity::getFont` returns a borrowed pointer.
+`AudioManager::createAudioObject` and `FontManager::registerFont` return object
+pointers with one caller-owned reference. Release that reference when finished.
+There are no audio-instance or font IDs to look up. `Entity::setFont` retains its
+`FontObject`, and `Entity::getFont` returns a borrowed pointer.
 
 Keep the game alive while using its resources. Game shutdown invalidates the
 underlying resources even if a C++ object reference survives; such references

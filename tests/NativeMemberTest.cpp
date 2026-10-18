@@ -24,7 +24,7 @@ NativeFunctionFn methodFunction() {
     return [](VirtualMachine*) {};
 }
 
-const Type* registerTestType(Runtime& runtime) {
+const ObjectTypeBase* registerTestType(Runtime& runtime) {
     auto descriptor = std::make_unique<ObjectType>("TestObject");
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
@@ -40,9 +40,9 @@ BOOST_AUTO_TEST_CASE(registers_read_only_write_only_and_read_write_properties) {
 
     const auto readOnlyId = runtime.getNativeMemberId(runtime.getStringType(), "length");
     const auto writeOnlyId = runtime.registerNativeProperty(
-        runtime.getStringType(), "sink", runtime.getIntegerType(), {}, propertySetter(), NomadDoc("Write-only value"));
+        static_cast<const ObjectTypeBase*>(runtime.getStringType()), "sink", runtime.getIntegerType(), {}, propertySetter(), NomadDoc("Write-only value"));
     const auto readWriteId =
-        runtime.registerNativeProperty(runtime.getStringType(), "value", runtime.getIntegerType(), propertyGetter(),
+        runtime.registerNativeProperty(static_cast<const ObjectTypeBase*>(runtime.getStringType()), "value", runtime.getIntegerType(), propertyGetter(),
                                           propertySetter(), NomadDoc("Read/write value"));
 
     BOOST_REQUIRE(readOnlyId != NOMAD_INVALID_ID);
@@ -71,7 +71,7 @@ BOOST_AUTO_TEST_CASE(registers_method_metadata) {
     Runtime runtime;
 
     const auto methodId =
-        runtime.registerNativeMethod(runtime.getStringType(), "replace", methodFunction(),
+        runtime.registerNativeMethod(static_cast<const ObjectTypeBase*>(runtime.getStringType()), "replace", methodFunction(),
                                         {
                                             defParameter("from", runtime.getStringType(), NomadDoc("Text to replace")),
                                             defParameter("to", runtime.getStringType(), NomadDoc("Replacement text")),
@@ -93,10 +93,10 @@ BOOST_AUTO_TEST_CASE(registers_method_metadata) {
 BOOST_AUTO_TEST_CASE(rejects_duplicate_member_name_on_same_type) {
     Runtime runtime;
 
-    BOOST_REQUIRE(runtime.registerNativeProperty(runtime.getStringType(), "value", runtime.getIntegerType(),
+    BOOST_REQUIRE(runtime.registerNativeProperty(static_cast<const ObjectTypeBase*>(runtime.getStringType()), "value", runtime.getIntegerType(),
                                                     propertyGetter(), {}, NomadDoc("Property")) != NOMAD_INVALID_ID);
 
-    BOOST_TEST(runtime.registerNativeMethod(runtime.getStringType(), "value", methodFunction(), {},
+    BOOST_TEST(runtime.registerNativeMethod(static_cast<const ObjectTypeBase*>(runtime.getStringType()), "value", methodFunction(), {},
                                                runtime.getIntegerType(),
                                                NomadDoc("Method")) == NOMAD_INVALID_ID);
 }
@@ -106,7 +106,7 @@ BOOST_AUTO_TEST_CASE(allows_compatible_member_names_on_different_types) {
     const auto* type = registerTestType(runtime);
 
     const auto stringId =
-        runtime.registerNativeMethod(runtime.getStringType(), "find", methodFunction(),
+        runtime.registerNativeMethod(static_cast<const ObjectTypeBase*>(runtime.getStringType()), "find", methodFunction(),
                                         {defParameter("value", runtime.getStringType(), NomadDoc("Value"))},
                                         runtime.getIntegerType(), NomadDoc("Find string"));
     const auto integerId =
@@ -128,7 +128,7 @@ BOOST_AUTO_TEST_CASE(rejects_incompatible_member_shapes) {
     Runtime runtime;
     const auto* type = registerTestType(runtime);
 
-    BOOST_REQUIRE(runtime.registerNativeMethod(runtime.getStringType(), "find", methodFunction(),
+    BOOST_REQUIRE(runtime.registerNativeMethod(static_cast<const ObjectTypeBase*>(runtime.getStringType()), "find", methodFunction(),
                                                   {defParameter("value", runtime.getStringType(), NomadDoc("Value"))},
                                                   runtime.getIntegerType(),
                                                   NomadDoc("Find string")) != NOMAD_INVALID_ID);
@@ -144,21 +144,20 @@ BOOST_AUTO_TEST_CASE(rejects_incompatible_member_shapes) {
 
 BOOST_AUTO_TEST_CASE(rejects_invalid_member_definitions) {
     Runtime runtime;
+    ObjectType unregisteredType("Unregistered");
 
+    BOOST_TEST(runtime.registerNativeProperty(&unregisteredType, "value", runtime.getIntegerType(),
+                                                 propertyGetter(), {}, NomadDoc("Unregistered owner")) == NOMAD_INVALID_ID);
     BOOST_TEST(runtime.registerNativeProperty(nullptr, "value", runtime.getIntegerType(), propertyGetter(), {},
                                                  NomadDoc("Invalid owner")) == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeProperty(runtime.getVoidType(), "value", runtime.getIntegerType(),
-                                                 propertyGetter(), {}, NomadDoc("Void owner")) == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeProperty(runtime.getIntegerType(), "value", runtime.getIntegerType(),
-                                                 propertyGetter(), {}, NomadDoc("Primitive owner")) == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeProperty(runtime.getStringType(), "invalid.name", runtime.getIntegerType(),
+    BOOST_TEST(runtime.registerNativeProperty(static_cast<const ObjectTypeBase*>(runtime.getStringType()), "invalid.name", runtime.getIntegerType(),
                                                  propertyGetter(), {}, NomadDoc("Invalid name")) == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeProperty(runtime.getStringType(), "value", runtime.getIntegerType(), {}, {},
+    BOOST_TEST(runtime.registerNativeProperty(static_cast<const ObjectTypeBase*>(runtime.getStringType()), "value", runtime.getIntegerType(), {}, {},
                                                  NomadDoc("No access")) == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeProperty(runtime.getStringType(), "value", runtime.getVoidType(),
+    BOOST_TEST(runtime.registerNativeProperty(static_cast<const ObjectTypeBase*>(runtime.getStringType()), "value", runtime.getVoidType(),
                                                  propertyGetter(), {}, NomadDoc("Void value")) == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeMethod(runtime.getStringType(), "convert", {}, {}, runtime.getStringType(), NomadDoc("No function")) == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeMethod(runtime.getStringType(), "convert", methodFunction(), {}, nullptr,
+    BOOST_TEST(runtime.registerNativeMethod(static_cast<const ObjectTypeBase*>(runtime.getStringType()), "convert", {}, {}, runtime.getStringType(), NomadDoc("No function")) == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerNativeMethod(static_cast<const ObjectTypeBase*>(runtime.getStringType()), "convert", methodFunction(), {}, nullptr,
                                                NomadDoc("No return type")) == NOMAD_INVALID_ID);
 }
 
@@ -167,7 +166,7 @@ BOOST_AUTO_TEST_CASE(iterates_members_by_type_and_globally) {
     const auto* type = registerTestType(runtime);
 
     const auto stringMethodId = runtime.registerNativeMethod(
-        runtime.getStringType(), "convert", methodFunction(), {}, runtime.getStringType(), NomadDoc("Convert"));
+        static_cast<const ObjectTypeBase*>(runtime.getStringType()), "convert", methodFunction(), {}, runtime.getStringType(), NomadDoc("Convert"));
     const auto integerPropertyId = runtime.registerNativeProperty(
         type, "sign", runtime.getIntegerType(), propertyGetter(), {}, NomadDoc("Sign"));
 

@@ -52,13 +52,13 @@ AudioObject::~AudioObject() {
 }
 
 void AudioObject::detachManager() {
+    m_manager = nullptr;
     cancelCompletion();
     if (m_track != nullptr) {
         (void)MIX_SetTrackStoppedCallback(m_track, nullptr, nullptr);
         MIX_DestroyTrack(m_track);
         m_track = nullptr;
     }
-    m_manager = nullptr;
     m_resource = nullptr;
 }
 

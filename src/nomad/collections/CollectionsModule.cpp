@@ -25,9 +25,10 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
             );
         },
         [runtime = context->runtime](const nomad::Type* type) {
-            const auto* elementType = static_cast<const nomad::ObjectType*>(type)->getTypeArguments()[0];
+            const auto* objectType = static_cast<const nomad::ObjectType*>(type);
+            const auto* elementType = objectType->getTypeArguments()[0];
             const auto countId = runtime->registerNativeProperty(
-                type,
+                objectType,
                 "count",
                 runtime->getIntegerType(),
                 [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
@@ -38,7 +39,7 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 NomadDoc("The number of elements in the list.")
             );
             const auto pushId = runtime->registerNativeMethod(
-                static_cast<const nomad::ObjectType*>(type),
+                objectType,
                 "push",
                 [](nomad::VirtualMachine* vm) {
                     auto* list = vm->getThisAs<nomad::ListObject>();

@@ -121,12 +121,11 @@ AudioManager::AudioManager() {
 }
 
 AudioManager::~AudioManager() {
-    for (auto* object : m_audioObjects) {
-        if (object != nullptr) {
-            object->detachManager();
-        }
+    while (!m_audioObjects.empty()) {
+        auto* object = m_audioObjects.back();
+        m_audioObjects.pop_back();
+        object->detachManager();
     }
-    m_audioObjects.clear();
     m_resources.clear();
 
     if (m_musicTrack != nullptr) {
@@ -228,83 +227,58 @@ NomadId AudioManager::getResourceId(const NomadString& name) const {
     return NOMAD_INVALID_ID;
 }
 
-NomadId AudioManager::createAudioObject(const NomadId resourceId) {
+AudioObject* AudioManager::createAudioObject(const NomadId resourceId) {
     const auto* resource = getResource(resourceId);
 
     if (resource == nullptr) {
         log::error("Cannot create an audio object for an invalid resource ID");
-        return NOMAD_INVALID_ID;
+        return nullptr;
     }
 
-    const auto audioObjectId = toNomadId(m_audioObjects.size());
     try {
         auto object = std::make_unique<AudioObject>(resource, m_mixer, m_volume);
         m_audioObjects.push_back(object.get());
         object->m_manager = this;
-        object.release();
+        return object.release();
     } catch (const AudioException& error) {
         log::error(error.what());
-        return NOMAD_INVALID_ID;
+        return nullptr;
     }
-
-    return audioObjectId;
 }
 
-NomadId AudioManager::createAudioObject(const NomadString& resourceName) {
+AudioObject* AudioManager::createAudioObject(const NomadString& resourceName) {
     const auto resourceId = getResourceId(resourceName);
 
     if (resourceId == NOMAD_INVALID_ID) {
         log::error("Audio resource does not exist: '" + resourceName + "'");
-        return NOMAD_INVALID_ID;
+        return nullptr;
     }
 
     return createAudioObject(resourceId);
 }
 
-AudioObject* AudioManager::getAudioObject(const NomadId audioObjectId) {
-    const auto index = toNomadIndex(audioObjectId);
-    return index < m_audioObjects.size() ? m_audioObjects[index] : nullptr;
-}
-
-const AudioObject* AudioManager::getAudioObject(const NomadId audioObjectId) const {
-    const auto index = toNomadIndex(audioObjectId);
-    return index < m_audioObjects.size() ? m_audioObjects[index] : nullptr;
-}
-
 NomadIndex AudioManager::getAudioObjectCount() const {
-    return std::ranges::count_if(m_audioObjects, [](const auto* object) { return object != nullptr; });
+    return m_audioObjects.size();
 }
 
 void AudioManager::unregisterAudioObject(AudioObject* object) {
-    const auto found = std::ranges::find(m_audioObjects, object);
-    if (found != m_audioObjects.end()) {
-        *found = nullptr;
-    }
+    std::erase(m_audioObjects, object);
 }
 
 void AudioManager::pauseAll() {
     for (auto* audioObject : m_audioObjects) {
-        if (audioObject == nullptr) {
-            continue;
-        }
         audioObject->pause();
     }
 }
 
 void AudioManager::resumeAll() {
     for (auto* audioObject : m_audioObjects) {
-        if (audioObject == nullptr) {
-            continue;
-        }
         audioObject->resume();
     }
 }
 
 void AudioManager::stopAll() {
     for (auto* audioObject : m_audioObjects) {
-        if (audioObject == nullptr) {
-            continue;
-        }
         audioObject->stop();
     }
 }
@@ -429,9 +403,6 @@ void AudioManager::processCallbacks() {
     std::vector<CompletionCallback> callbacks;
 
     for (auto* audioObject : m_audioObjects) {
-        if (audioObject == nullptr) {
-            continue;
-        }
         auto callback = audioObject->takeCompletionCallback();
 
         if (callback) {
@@ -465,9 +436,6 @@ bool AudioManager::getMusicPauseAutomatically() const {
 void AudioManager::pauseAutomatically() {
     if (m_audioPauseAutomatically) {
         for (auto* audioObject : m_audioObjects) {
-        if (audioObject == nullptr) {
-            continue;
-        }
             audioObject->pauseAutomatically();
         }
     }
@@ -488,9 +456,6 @@ void AudioManager::pauseAutomatically() {
 
 void AudioManager::resumeAutomatically() {
     for (auto* audioObject : m_audioObjects) {
-        if (audioObject == nullptr) {
-            continue;
-        }
         audioObject->resumeAutomatically();
     }
 
@@ -507,9 +472,6 @@ void AudioManager::setVolume(const NomadFloat volume) {
     const auto clampedVolume = audio::clampVolume(volume);
 
     for (auto* audioObject : m_audioObjects) {
-        if (audioObject == nullptr) {
-            continue;
-        }
         audioObject->setCategoryVolume(clampedVolume);
     }
 

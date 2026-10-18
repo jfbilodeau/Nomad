@@ -21,14 +21,13 @@ public:
     FontManager& operator=(const FontManager&) = delete;
     ~FontManager();
 
-    [[nodiscard]] NomadId registerFont(const NomadString& fontName, NomadFloat pointSize);
-    [[nodiscard]] FontObject* getFont(NomadId fontId) const;
-    [[nodiscard]] const FontObject* getFontByName(const NomadString& fontName) const;
+    [[nodiscard]] FontObject* registerFont(const NomadString& fontName, NomadFloat pointSize);
 
 private:
     friend class FontObject;
     void unregisterFont(FontObject* font);
     ResourceManager* m_resources;
+    // Non-owning live instances, used only to invalidate resources at shutdown.
     std::vector<FontObject*> m_fonts;
 };
 

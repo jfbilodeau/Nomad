@@ -160,7 +160,7 @@ NomadId Runtime::registerNativeFunction(
 }
 
 NomadId Runtime::registerNativeCallable(
-    const Type* objectType,
+    const ObjectTypeBase* objectType,
     const NomadString& name,
     NativeFunctionFn fn,
     const std::vector<FunctionParameterDefinition>& parameters,
@@ -861,7 +861,7 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
     return true;
 }
 
-NomadId Runtime::registerNativeProperty(const Type* objectType, const NomadString& name, const Type* valueType,
+NomadId Runtime::registerNativeProperty(const ObjectTypeBase* objectType, const NomadString& name, const Type* valueType,
                                            NativePropertyGetFn getFn, NativePropertySetFn setFn,
                                            const NomadString& doc) {
     if (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
@@ -899,7 +899,7 @@ NomadId Runtime::registerNativeProperty(const Type* objectType, const NomadStrin
 }
 
 NomadId Runtime::registerNativeMethod(
-    const Type* objectType,
+    const ObjectTypeBase* objectType,
     const NomadString& name,
     NativeFunctionFn fn,
     const std::vector<FunctionParameterDefinition>& parameters,
