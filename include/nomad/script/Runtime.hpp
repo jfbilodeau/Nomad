@@ -134,21 +134,19 @@ public:
     [[nodiscard]] const Type* getEventType(const NomadString& name) const;
     [[nodiscard]] const Type* getPredicateType();
 
-    // `name` is how `new` refers to the constructor. `objectType` is the class being constructed and `returnType`
-    // is the type of the object that gets created; they differ when one class builds several kinds of object.
-    NomadId registerConstructor(
-        const NomadString& name,
+    // `objectType` is the class being constructed and the constructor is invoked by its name. `createdType` is the
+    // type of the object that gets created; it differs from `objectType` when one class builds several kinds of object.
+    NomadId registerNativeConstructor(
         const ObjectTypeBase* objectType,
         const std::vector<ParameterDefinition>& parameters,
-        const ObjectTypeBase* returnType,
+        const ObjectTypeBase* createdType,
         ConstructorFactory factory,
         NomadDocArg
     );
     // Shorthand for a constructor whose class and created type are the same.
-    NomadId registerConstructor(
-        const NomadString& name,
+    NomadId registerNativeConstructor(
+        const ObjectTypeBase* objectType,
         const std::vector<ParameterDefinition>& parameters,
-        const ObjectTypeBase* returnType,
         ConstructorFactory factory,
         NomadDocArg
     );
@@ -156,12 +154,11 @@ public:
     // Null unless `functionId` identifies a constructor.
     [[nodiscard]] const ConstructorDefinition* getConstructorDefinition(NomadId functionId) const;
     [[nodiscard]] std::vector<const ConstructorDefinition*> getConstructors() const;
-    // The class named by constructors registered under `name`; null when there are none.
-    [[nodiscard]] const Type* getConstructorObjectType(const NomadString& name) const;
     [[nodiscard]] std::vector<const ConstructorDefinition*> getConstructors(const Type* objectType) const;
     using ParameterizedConstructorInitializer =
         std::function<void(const NomadString&, const std::vector<const Type*>&)>;
-    bool registerParameterizedConstructor(
+    // The initializer registers a class type named after the specialization and its constructors.
+    bool registerNativeParameterizedConstructor(
         const NomadString& name,
         NomadIndex argumentCount,
         ParameterizedConstructorInitializer initializer
@@ -371,7 +368,7 @@ public:
     [[nodiscard]] NomadId getNextVariableContextId(NomadId currentId) const;
 
     // Functions
-    NomadId registerFunction(const NomadString& name, const NomadString& path, const NomadString& source);
+    NomadId registerScriptFunction(const NomadString& name, const NomadString& path, const NomadString& source);
     [[nodiscard]] NomadId getFunctionId(const NomadString& name) const;
     [[nodiscard]] ScriptFunction* getFunction(NomadId function_id) const;
     [[nodiscard]] ScriptFunction* getFunctionAtLine(

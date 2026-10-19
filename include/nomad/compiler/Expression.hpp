@@ -229,9 +229,9 @@ private:
     NomadFloat m_value;
 };
 
-class NewObjectExpression final : public Expression {
+class ConstructorExpression final : public Expression {
 public:
-    NewObjectExpression(
+    ConstructorExpression(
         const Expression* parent,
         NomadIndex line,
         NomadIndex column,

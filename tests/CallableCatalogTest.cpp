@@ -91,7 +91,7 @@ BOOST_AUTO_TEST_CASE(function_is_registered_in_catalog)
 {
     Runtime runtime;
 
-    const auto functionId = runtime.registerFunction("entities.player", "entities/player.nomad", "return 1");
+    const auto functionId = runtime.registerScriptFunction("entities.player", "entities/player.nomad", "return 1");
 
     BOOST_REQUIRE(functionId != NOMAD_INVALID_ID);
 
@@ -109,7 +109,7 @@ BOOST_AUTO_TEST_CASE(function_signature_is_read_live)
 {
     Runtime runtime;
 
-    const auto functionId = runtime.registerFunction("compute", "compute.nomad", "return 1");
+    const auto functionId = runtime.registerScriptFunction("compute", "compute.nomad", "return 1");
     const auto callable = runtime.getCallableId("compute");
 
     BOOST_REQUIRE(callable.isValid());
@@ -132,7 +132,7 @@ BOOST_AUTO_TEST_CASE(catalog_separates_native_functions_from_functions)
     Runtime runtime;
 
     registerVoidNativeFunction(runtime, "native.only");
-    runtime.registerFunction("function.only", "function.nomad", "return 1");
+    runtime.registerScriptFunction("function.only", "function.nomad", "return 1");
 
     BOOST_TEST(runtime.getNativeFunctionId("native.only") != NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getFunctionId("native.only") == NOMAD_INVALID_ID);
@@ -155,9 +155,9 @@ BOOST_AUTO_TEST_CASE(duplicate_function_name_is_rejected)
 {
     Runtime runtime;
 
-    BOOST_REQUIRE(runtime.registerFunction("duplicate", "duplicate.nomad", "return 1") != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(runtime.registerScriptFunction("duplicate", "duplicate.nomad", "return 1") != NOMAD_INVALID_ID);
 
-    BOOST_TEST(runtime.registerFunction("duplicate", "other.nomad", "return 2") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerScriptFunction("duplicate", "other.nomad", "return 2") == NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getCallableOverloadCount("duplicate") == NomadIndex{1});
 }
 
@@ -169,7 +169,7 @@ BOOST_AUTO_TEST_CASE(function_cannot_shadow_native_function)
 
     BOOST_REQUIRE(runtime.getNativeFunctionId("log.info") != NOMAD_INVALID_ID);
 
-    BOOST_TEST(runtime.registerFunction("log.info", "log/info.nomad", "return 1") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerScriptFunction("log.info", "log/info.nomad", "return 1") == NOMAD_INVALID_ID);
 
     const auto callable = runtime.getCallableId("log.info");
 
@@ -181,7 +181,7 @@ BOOST_AUTO_TEST_CASE(native_function_cannot_shadow_function)
 {
     Runtime runtime;
 
-    BOOST_REQUIRE(runtime.registerFunction("entities.player", "entities/player.nomad", "return 1") != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(runtime.registerScriptFunction("entities.player", "entities/player.nomad", "return 1") != NOMAD_INVALID_ID);
 
     BOOST_TEST(registerVoidNativeFunction(runtime, "entities.player") == NOMAD_INVALID_ID);
 
@@ -464,10 +464,9 @@ NomadId registerResolutionConstructor(
     const ObjectType* type,
     const std::vector<ParameterDefinition>& parameters
 ) {
-    return runtime.registerConstructor(
-        type->getTypeName(),
-        parameters,
+    return runtime.registerNativeConstructor(
         type,
+        parameters,
         [](std::span<const RuntimeValue>) { return new ResolutionObject; },
         ""
     );

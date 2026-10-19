@@ -222,16 +222,16 @@ defining a type descriptor, and release initialized values through `freeValue`
 when they are no longer needed. Keep descriptors alive until all values using
 them have been released.
 
-Register a constructor with its name, parameters, return type, and factory:
+Register a constructor with the type it constructs, its parameters, and a factory.
+Scripts invoke it with `new` and the type's name:
 
 ```cpp
 auto descriptor = std::make_unique<nomad::ObjectType>("Example");
 const auto* type = descriptor.get();
 runtime.registerType(std::move(descriptor));
-const auto constructorId = runtime.registerConstructor(
-    "Example",
-    {nomad::defParameter("size", runtime.getIntegerType(), "")},
+const auto constructorId = runtime.registerNativeConstructor(
     type,
+    {nomad::defParameter("size", runtime.getIntegerType(), "")},
     [](std::span<const nomad::RuntimeValue> arguments) {
         return new ExampleObject(arguments[0].getIntegerValue());
     },
@@ -242,29 +242,33 @@ if (constructorId == nomad::NOMAD_INVALID_ID) {
 }
 ```
 
-Parameters and return types must be types registered with that runtime;
-parameters cannot be `void` and the return type must be a public object type.
-Registration failures are logged and return `NOMAD_INVALID_ID`.
-Constructors sharing a name may differ in parameter count or types and may return
-different object types. Duplicate parameter signatures are rejected, even if
-their parameter names or return types differ. Use an empty parameter list for a
-parameterless constructor.
+Parameter types and the constructed type must be types registered with that runtime;
+parameters cannot be `void`. Registration failures are logged and return `NOMAD_INVALID_ID`.
+Constructors of one type may differ in parameter count or types. Duplicate parameter
+signatures are rejected, even if their parameter names differ. Use an empty parameter
+list for a parameterless constructor.
+
+When a class creates a different kind of object, pass the created type after the
+parameters: `registerNativeConstructor(type, parameters, createdType, factory, doc)`.
+Different overloads of one class may then create different types. The created type must be a public
+object type.
 
 Constructor parameters follow the same conventions as native function
 parameters, including `$file`, `$function`, and `$line`.
 
 The compiler checks argument types and count and uses the selected constructor's
-declared return type. The factory receives borrowed arguments in parameter order
+created type. The factory receives borrowed arguments in parameter order
 and returns an object of that type with one owned reference. Retain any argument
 object stored in the new instance. A null result raises an error.
 Validate value restrictions inside the factory: construction runs at evaluation
 time in both compiled scripts and the interpreter.
 
 For a constructor with type arguments, use
-`registerParameterizedConstructor(name, argumentCount, initializer)`. Its
-initializer receives the specialized constructor name and resolved type arguments;
-register its overloads with `registerConstructor`. Specializations are reused on
-subsequent requests through `getParameterizedConstructorName(name, arguments)`.
+`registerNativeParameterizedConstructor(name, argumentCount, initializer)`. Its
+initializer receives the specialized name and resolved type arguments; it registers
+a type with that name and its constructors with `registerNativeConstructor`.
+Specializations are reused on subsequent requests through
+`getParameterizedConstructorName(name, arguments)`.
 
 ## Native object methods
 

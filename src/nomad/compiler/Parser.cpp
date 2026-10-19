@@ -817,9 +817,9 @@ std::unique_ptr<Expression> parseNewExpression(
         return nullptr;
     }
     const ConstructorDefinition* shape = nullptr;
-    for (const auto* constructor : runtime->getConstructors()) {
-        if (constructor->name == constructorName &&
-            (shape == nullptr || constructor->parameters.size() > shape->parameters.size())) {
+    const auto* objectType = runtime->getTypeByName(constructorName);
+    for (const auto* constructor : runtime->getConstructors(objectType)) {
+        if (shape == nullptr || constructor->parameters.size() > shape->parameters.size()) {
             shape = constructor;
         }
     }
@@ -833,8 +833,8 @@ std::unique_ptr<Expression> parseNewExpression(
     if (!parseNativeFunctionArguments(context, function, tokens, *shape, &arguments, true)) {
         return nullptr;
     }
-    return std::make_unique<NewObjectExpression>(
-        parent, line, column, constructorName, shape->objectType, std::move(arguments)
+    return std::make_unique<ConstructorExpression>(
+        parent, line, column, constructorName, objectType, std::move(arguments)
     );
 }
 

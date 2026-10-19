@@ -532,8 +532,8 @@ BOOST_AUTO_TEST_CASE(object_construction_reports_factory_failures) {
     auto descriptor = std::make_unique<ObjectType>("Broken");
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
-    runtime.registerConstructor(
-        "Broken", {}, type, [](std::span<const RuntimeValue>) -> NomadObject* { return nullptr; }, ""
+    runtime.registerNativeConstructor(
+        type, {}, [](std::span<const RuntimeValue>) -> NomadObject* { return nullptr; }, ""
     );
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());

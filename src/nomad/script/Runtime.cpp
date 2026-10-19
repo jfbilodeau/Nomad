@@ -1060,31 +1060,29 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
     return true;
 }
 
-NomadId Runtime::registerConstructor(
-    const NomadString& name,
-    const std::vector<ParameterDefinition>& parameters,
-    const ObjectTypeBase* returnType,
-    ConstructorFactory factory,
-    const NomadString& doc
-) {
-    // Constructors registered under one name belong to one class, even when they create different types.
-    const auto* existingClass = getConstructorObjectType(name);
-    const auto* objectType = existingClass != nullptr ? existingClass : returnType;
-
-    return registerConstructor(name, static_cast<const ObjectTypeBase*>(objectType), parameters, returnType, std::move(factory), doc);
-}
-
-NomadId Runtime::registerConstructor(
-    const NomadString& name,
+NomadId Runtime::registerNativeConstructor(
     const ObjectTypeBase* objectType,
     const std::vector<ParameterDefinition>& parameters,
-    const ObjectTypeBase* returnType,
     ConstructorFactory factory,
     const NomadString& doc
 ) {
-    if (name.empty() || !ownsType(returnType) || returnType->isInternal() || !ownsType(objectType) || !factory ||
-        getParameterizedConstructorArgumentCount(name) || getParameterizedTypeArgumentCount(name)) {
-        log::error("Cannot register constructor: a name, registered public object return type, and factory are required");
+    return registerNativeConstructor(objectType, parameters, objectType, std::move(factory), doc);
+}
+
+NomadId Runtime::registerNativeConstructor(
+    const ObjectTypeBase* objectType,
+    const std::vector<ParameterDefinition>& parameters,
+    const ObjectTypeBase* createdType,
+    ConstructorFactory factory,
+    const NomadString& doc
+) {
+    if (!ownsType(objectType) || !ownsType(createdType) || createdType->isInternal() || !factory) {
+        log::error("Cannot register constructor: a registered class, registered public object type, and factory are required");
+        return NOMAD_INVALID_ID;
+    }
+    const auto name = objectType->getTypeName();
+    if (name.empty() || getParameterizedConstructorArgumentCount(name) || getParameterizedTypeArgumentCount(name)) {
+        log::error("Cannot register constructor '" + name + "': the name is reserved");
         return NOMAD_INVALID_ID;
     }
     for (const auto& parameter : parameters) {
@@ -1093,8 +1091,8 @@ NomadId Runtime::registerConstructor(
             return NOMAD_INVALID_ID;
         }
     }
-    for (const auto* existing : getConstructors()) {
-        if (existing->name != name || existing->parameters.size() != parameters.size()) {
+    for (const auto* existing : getConstructors(objectType)) {
+        if (existing->parameters.size() != parameters.size()) {
             continue;
         }
         const auto collides = std::ranges::equal(
@@ -1109,7 +1107,7 @@ NomadId Runtime::registerConstructor(
     auto definition = std::make_unique<ConstructorDefinition>();
     definition->name = name;
     definition->parameters = parameters;
-    definition->returnType = returnType;
+    definition->returnType = createdType;
     definition->objectType = objectType;
     definition->factory = std::move(factory);
     definition->doc = doc;
@@ -1135,15 +1133,6 @@ std::vector<const ConstructorDefinition*> Runtime::getConstructors() const {
     return constructors;
 }
 
-const Type* Runtime::getConstructorObjectType(const NomadString& name) const {
-    for (const auto& definition : m_functionTable) {
-        if (definition->type == CallableType::Constructor && definition->name == name) {
-            return definition->objectType;
-        }
-    }
-    return nullptr;
-}
-
 std::vector<const ConstructorDefinition*> Runtime::getConstructors(const Type* objectType) const {
     std::vector<const ConstructorDefinition*> constructors;
     for (const auto* constructor : getConstructors()) {
@@ -1154,7 +1143,7 @@ std::vector<const ConstructorDefinition*> Runtime::getConstructors(const Type* o
     return constructors;
 }
 
-bool Runtime::registerParameterizedConstructor(
+bool Runtime::registerNativeParameterizedConstructor(
     const NomadString& name,
     const NomadIndex argumentCount,
     ParameterizedConstructorInitializer initializer
@@ -2284,7 +2273,7 @@ NomadId Runtime::getNextVariableContextId(const NomadId currentId) const {
     return currentId + 1;
 }
 
-NomadId Runtime::registerFunction(
+NomadId Runtime::registerScriptFunction(
     const NomadString& name,
     const NomadString& path,
     const NomadString& source

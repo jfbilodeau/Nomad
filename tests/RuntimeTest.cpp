@@ -34,8 +34,8 @@ BOOST_AUTO_TEST_CASE(runtime_owns_registered_functions_and_exposes_observer_view
     {
         Runtime runtime;
 
-        const auto firstFunctionId = runtime.registerFunction("first", "first.nomad", "");
-        const auto secondFunctionId = runtime.registerFunction("second", "second.nomad", "");
+        const auto firstFunctionId = runtime.registerScriptFunction("first", "first.nomad", "");
+        const auto secondFunctionId = runtime.registerScriptFunction("second", "second.nomad", "");
 
         BOOST_TEST(firstFunctionId == 0);
         BOOST_TEST(secondFunctionId == 1);
@@ -58,10 +58,10 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_and_duplicate_function_ids)
 {
     Runtime runtime;
 
-    const auto functionId = runtime.registerFunction("function", "function.nomad", "");
+    const auto functionId = runtime.registerScriptFunction("function", "function.nomad", "");
 
     BOOST_TEST(functionId == 0);
-    BOOST_TEST(runtime.registerFunction("function", "duplicate.nomad", "") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerScriptFunction("function", "duplicate.nomad", "") == NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getFunctionCount() == 1U);
     BOOST_TEST(runtime.getFunction(NOMAD_INVALID_ID) == nullptr);
     BOOST_TEST(runtime.getFunction(-2) == nullptr);
@@ -74,9 +74,9 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_and_duplicate_function_ids)
 BOOST_AUTO_TEST_CASE(runtime_source_lookup_ignores_unknown_ranges_and_prefers_inner_functions)
 {
     Runtime runtime;
-    const auto outerId = runtime.registerFunction("outer", "source.nomad", "");
-    const auto innerId = runtime.registerFunction("inner", "source.nomad", "");
-    const auto unparsedId = runtime.registerFunction("unparsed", "source.nomad", "");
+    const auto outerId = runtime.registerScriptFunction("outer", "source.nomad", "");
+    const auto innerId = runtime.registerScriptFunction("inner", "source.nomad", "");
+    const auto unparsedId = runtime.registerScriptFunction("unparsed", "source.nomad", "");
     const auto* unparsed = runtime.getFunction(unparsedId);
 
     BOOST_TEST(unparsed->getSourceStartLine() == NOMAD_INVALID_INDEX);

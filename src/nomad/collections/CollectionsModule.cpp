@@ -61,10 +61,9 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         },
         [runtime = context->runtime](const nomad::Type* type) {
             const auto* arrayType = static_cast<const nomad::Array1Type*>(type);
-            if (runtime->registerConstructor(
-                type->getTypeName(),
-                {nomad::defParameter("size", runtime->getIntegerType(), "")},
+            if (runtime->registerNativeConstructor(
                 arrayType,
+                {nomad::defParameter("size", runtime->getIntegerType(), "")},
                 [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
                     return arrayType->createObject(arguments[0].getIntegerValue());
                 }, ""
@@ -80,13 +79,12 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         },
         [runtime = context->runtime](const nomad::Type* type) {
             const auto* arrayType = static_cast<const nomad::Array2Type*>(type);
-            if (runtime->registerConstructor(
-                type->getTypeName(),
+            if (runtime->registerNativeConstructor(
+                arrayType,
                 {
                     nomad::defParameter("size1", runtime->getIntegerType(), ""),
                     nomad::defParameter("size2", runtime->getIntegerType(), "")
                 },
-                arrayType,
                 [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
                     return arrayType->createObject(arguments[0].getIntegerValue(), arguments[1].getIntegerValue());
                 }, ""
@@ -102,14 +100,13 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         },
         [runtime = context->runtime](const nomad::Type* type) {
             const auto* arrayType = static_cast<const nomad::Array3Type*>(type);
-            if (runtime->registerConstructor(
-                type->getTypeName(),
+            if (runtime->registerNativeConstructor(
+                arrayType,
                 {
                     nomad::defParameter("size1", runtime->getIntegerType(), ""),
                     nomad::defParameter("size2", runtime->getIntegerType(), ""),
                     nomad::defParameter("size3", runtime->getIntegerType(), "")
                 },
-                arrayType,
                 [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
                     return arrayType->createObject(
                         arguments[0].getIntegerValue(), arguments[1].getIntegerValue(), arguments[2].getIntegerValue()
@@ -120,11 +117,11 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
             }
         }
     );
-    if (!context->runtime->registerParameterizedConstructor(
+    if (!context->runtime->registerNativeParameterizedConstructor(
         "Array", 1,
         [runtime = context->runtime](const NomadString& name, const std::vector<const nomad::Type*>& arguments) {
             // One class per specialization (e.g. `Array<int>`); each rank constructor builds a different array type.
-            auto classType = std::make_unique<nomad::ObjectType>("$" + name);
+            auto classType = std::make_unique<nomad::ObjectType>(name);
             const auto* arrayClass = classType.get();
             runtime->registerType(std::move(classType));
             for (const auto* family : {"Array1", "Array2", "Array3"}) {
@@ -132,17 +129,11 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 if (type == nullptr) {
                     throw nomad::NomadException("Failed to resolve Array constructor return type");
                 }
-                nomad::ConstructorDefinition rankConstructor;
-                for (const auto* candidate : runtime->getConstructors()) {
-                    if (candidate->name == type->getTypeName()) {
-                        rankConstructor = *candidate;
-                        break;
-                    }
-                }
-                if (!rankConstructor.factory || runtime->registerConstructor(
-                    name, arrayClass, rankConstructor.parameters,
-                    static_cast<const nomad::ObjectTypeBase*>(rankConstructor.returnType),
-                    rankConstructor.factory, ""
+                const auto rankConstructors = runtime->getConstructors(type);
+                if (rankConstructors.empty() || runtime->registerNativeConstructor(
+                    arrayClass, rankConstructors.front()->parameters,
+                    static_cast<const nomad::ObjectTypeBase*>(rankConstructors.front()->returnType),
+                    rankConstructors.front()->factory, ""
                 ) == nomad::NOMAD_INVALID_ID) {
                     throw nomad::NomadException("Failed to register Array constructor");
                 }
@@ -160,8 +151,8 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         [runtime = context->runtime](const nomad::Type* type) {
             const auto* objectType = static_cast<const nomad::ObjectType*>(type);
             const auto* elementType = objectType->getTypeArguments()[0];
-            const auto constructorId = runtime->registerConstructor(
-                type->getTypeName(), {}, objectType,
+            const auto constructorId = runtime->registerNativeConstructor(
+                objectType, {},
                 [elementType](std::span<const nomad::RuntimeValue>) {
                     return new nomad::ListObject(elementType);
                 }, ""

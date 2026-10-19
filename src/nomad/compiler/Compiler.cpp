@@ -1003,7 +1003,7 @@ NomadId Compiler::createFunction(
         return NOMAD_INVALID_ID;
     }
 
-    const auto functionId = m_runtime->registerFunction(functionName, source.sourceName, source.text);
+    const auto functionId = m_runtime->registerScriptFunction(functionName, source.sourceName, source.text);
     if (functionId == NOMAD_INVALID_ID) {
         context->reportError("Could not register function '" + functionName + "'",
             source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);

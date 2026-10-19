@@ -1127,7 +1127,7 @@ void FloatLiteral::onCompile(Compiler* compiler, ScriptFunction* /*function*/, E
 ///////////////////////////////////////////////////////////////////////////////
 // Object construction
 
-NewObjectExpression::NewObjectExpression(
+ConstructorExpression::ConstructorExpression(
     const Expression* parent,
     const NomadIndex line,
     const NomadIndex column,
@@ -1142,7 +1142,7 @@ NewObjectExpression::NewObjectExpression(
 {
 }
 
-void NewObjectExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+void ConstructorExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
     const auto* runtime = context->getRuntime();
     auto& arguments = m_arguments.getArguments();
 
@@ -1173,16 +1173,16 @@ void NewObjectExpression::onResolve(CompilerContext* context, ScriptFunction* fu
     }
 }
 
-bool NewObjectExpression::isTerminal() const {
+bool ConstructorExpression::isTerminal() const {
     return false;
 }
 
-void NewObjectExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+void ConstructorExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
     compiler->addConstructorCall(m_constructorId, function, &m_arguments);
     compiler->addMoveResult(getType(), target);
 }
 
-void NewObjectExpression::onEvaluate(InterpreterContext& context) const {
+void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
     std::vector<TypedValue> evaluatedArguments;
     std::vector<RuntimeValue> values;
     m_arguments.evaluate(context, evaluatedArguments, values);

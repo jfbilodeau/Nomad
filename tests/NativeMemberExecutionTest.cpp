@@ -22,8 +22,8 @@ const ObjectTypeBase* registerTestObject(Runtime& runtime) {
     auto descriptor = std::make_unique<ObjectType>("TestObject");
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
-    runtime.registerConstructor(
-        "TestObject", {}, type, [](std::span<const RuntimeValue>) { return new TestObject; }, ""
+    runtime.registerNativeConstructor(
+        type, {}, [](std::span<const RuntimeValue>) { return new TestObject; }, ""
     );
     runtime.registerNativeProperty(
         type, "value", runtime.getIntegerType(),
