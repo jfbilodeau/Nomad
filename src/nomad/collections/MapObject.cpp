@@ -28,6 +28,16 @@ bool MapObject::contains(const NomadStringView key) const {
     return m_values.contains(key);
 }
 
+bool MapObject::remove(const NomadStringView key) {
+    const auto entry = m_values.find(key);
+    if (entry == m_values.end()) {
+        return false;
+    }
+    m_valueType->freeValue(entry->second);
+    m_values.erase(entry);
+    return true;
+}
+
 MapObject::~MapObject() {
     if (m_valueType->needsFree()) {
         for (auto& [key, value] : m_values) {

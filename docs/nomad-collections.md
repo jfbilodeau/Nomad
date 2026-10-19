@@ -70,6 +70,17 @@ hasHero = scores.contains "hero" # true
 hasGuest = scores.contains "guest" # false
 ```
 
+Use `remove` to delete an entry. It returns `true` if the key existed, or
+`false` without logging if it was absent:
+
+```nomad
+removed = scores.remove "hero" # true
+removed = scores.remove "hero" # false
+```
+
+Removal decreases `count` and is visible through aliases. It releases the
+map's reference to the value; other references to that object remain valid.
+
 ## Fixed-size arrays
 
 Construct arrays with one `int` size per dimension. The result type is

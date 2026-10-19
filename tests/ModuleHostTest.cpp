@@ -539,6 +539,115 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_checks_keys_without_logging_or_in
     BOOST_TEST(documentation.str().find("`returns bool`") != NomadString::npos);
 }
 
+BOOST_AUTO_TEST_CASE(collections_maps_remove_entries_without_logging_and_preserve_saved_objects) {
+    TestDirectory directory("nomad_host_map_remove");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    const std::vector<NomadString> sources = {
+        "scores = new Map<string int>",
+        "removed = scores.remove \"missing\"",
+        "assert removed == false",
+        "assert scores.count == 0",
+        "scores[\"hero\"] = 0",
+        "scores[\"Hero\"] = 2",
+        "scores[\"\"] = 3",
+        "alias = scores",
+        "removed = alias.remove \"hero\"",
+        "assert removed == true",
+        "assert scores.count == 2",
+        "present = scores.contains \"hero\"",
+        "assert present == false",
+        "assert scores[\"Hero\"] == 2",
+        "removed = scores.remove \"hero\"",
+        "assert removed == false",
+        "removed = scores.remove \"\"",
+        "assert removed == true",
+        "assert scores.count == 1",
+        "scores[\"hero\"] = 7",
+        "assert scores[\"hero\"] == 7",
+        "assert scores.count == 2",
+        "words = new Map<string string>",
+        "words[\"name\"] = \"hello\"",
+        "savedWord = words[\"name\"]",
+        "removed = words.remove \"name\"",
+        "assert removed == true",
+        "assert savedWord == \"hello\"",
+        "assert words.count == 0",
+        "nested = new Map<string List<int>>",
+        "nested[\"saved\"] = new List<int>",
+        "nested[\"saved\"].push 9",
+        "saved = nested[\"saved\"]",
+        "removed = nested.remove \"saved\"",
+        "assert removed == true",
+        "assert saved[0] == 9",
+        "nested[\"discarded\"] = new List<int>",
+        "removed = nested.remove \"discarded\"",
+        "assert removed == true",
+        "assert nested.count == 0"
+    };
+    NomadString script;
+    for (const auto& source : sources) {
+        script += source + "\n";
+    }
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, {{{"main", {"main.nomad", script}}}, {}});
+    BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&compilation, CompilationTarget::Executable),
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    RuntimeValue empty;
+    runtime.getStringType()->initValue(empty);
+    runtime.getStringType()->freeValue(empty);
+    const auto before = NomadObject::getLiveObjectCount();
+    struct LogCapture {
+        MemorySink sink;
+        LogCapture() {
+            log::flush();
+            log::addSink(&sink);
+        }
+        ~LogCapture() { log::removeSink(&sink); }
+    } capture;
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    {
+        VirtualMachine machine(&runtime);
+        InterpreterContext context(machine);
+        for (const auto& source : sources) {
+            BOOST_TEST_CONTEXT(source) {
+                const auto isAssertion = source.starts_with("assert ");
+                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, context),
+                    (context.getError() ? *context.getError() : source));
+                if (isAssertion) {
+                    BOOST_TEST(context.getResult()->getValue().getBooleanValue());
+                }
+            }
+        }
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    log::flush();
+    BOOST_TEST(capture.sink.getEntries().empty());
+    const auto* listType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
+    {
+        MapObject map(listType);
+        RuntimeValue value;
+        listType->initValue(value);
+        map.setValue("list", value);
+        BOOST_TEST(value.getObjectValue()->getReferenceCount() == 2u);
+        BOOST_TEST(map.remove("list"));
+        BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
+        map.setValue("list", value);
+        listType->freeValue(value);
+        const auto storedObjects = NomadObject::getLiveObjectCount();
+        BOOST_TEST(map.remove("list"));
+        BOOST_TEST(NomadObject::getLiveObjectCount() == storedObjects - 1);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    std::ostringstream documentation;
+    generateNativeMemberDocumentation(&runtime, documentation);
+    BOOST_TEST(documentation.str().find("#### `remove` (*method*)") != NomadString::npos);
+}
+
 BOOST_AUTO_TEST_CASE(collections_maps_release_partial_copies_and_preserve_entries_on_failure) {
     class MapValueType final : public ObjectTypeBase {
     public:
@@ -608,7 +717,10 @@ BOOST_AUTO_TEST_CASE(collections_maps_reject_unsupported_operations_and_types) {
         "values = new Map<string int>\nvalues[\"a\" \"b\"]",
         "values = new Map<string int>\nvalues.contains 1",
         "values = new Map<string int>\nvalues.contains",
-        "values = new Map<string int>\nvalues.contains \"a\" \"b\""
+        "values = new Map<string int>\nvalues.contains \"a\" \"b\"",
+        "values = new Map<string int>\nvalues.remove 1",
+        "values = new Map<string int>\nvalues.remove",
+        "values = new Map<string int>\nvalues.remove \"a\" \"b\""
     }) {
         BOOST_TEST_CONTEXT(source) {
             auto compiler = runtime.createCompiler();

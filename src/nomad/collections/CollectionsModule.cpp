@@ -349,8 +349,22 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 runtime->getBooleanType(),
                 NomadDoc("Returns whether the key exists, without logging or changing the map.")
             );
+            const auto removeId = runtime->registerNativeMethod(
+                objectType,
+                "remove",
+                [](nomad::VirtualMachine* machine) {
+                    auto* map = machine->getThisAs<nomad::MapObject>();
+                    const auto& key = machine->getStringParameter(0)->getString();
+                    const auto removed = map->remove(key);
+                    machine->setBooleanResult(removed);
+                },
+                {nomad::defParameter("key", runtime->getStringType(), NomadDoc("The case-sensitive key to remove."))},
+                runtime->getBooleanType(),
+                NomadDoc("Removes an entry and returns true if it existed. Missing keys return false without logging.")
+            );
             if (constructorId == nomad::NOMAD_INVALID_ID || countId == nomad::NOMAD_INVALID_ID ||
-                indexerId == nomad::NOMAD_INVALID_ID || containsId == nomad::NOMAD_INVALID_ID) {
+                indexerId == nomad::NOMAD_INVALID_ID || containsId == nomad::NOMAD_INVALID_ID ||
+                removeId == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register Map members");
             }
         }
