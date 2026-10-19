@@ -143,13 +143,88 @@ BOOST_AUTO_TEST_CASE(collections_key_values_construct_read_and_share_references)
     const auto* type = runtime.getParameterizedType("KeyValue", {runtime.getStringType(), runtime.getIntegerType()});
     BOOST_TEST(type == runtime.getTypeByName("KeyValue<string int>"));
     BOOST_TEST(type == runtime.getParameterizedType("KeyValue", {runtime.getStringType(), runtime.getIntegerType()}));
-    BOOST_TEST(!runtime.getNativeConstructorTemplate("KeyValue").has_value());
+    BOOST_TEST(runtime.getNativeConstructorTemplate("KeyValue").has_value());
     std::ostringstream documentation;
     generateTypeDocumentation(&runtime, documentation);
     generateNativeMemberDocumentation(&runtime, documentation);
     BOOST_TEST(documentation.str().find("new KeyValue<string int> key:string value:int") != NomadString::npos);
     BOOST_TEST(documentation.str().find("#### `key` (*read-only property*)") != NomadString::npos);
     BOOST_TEST(documentation.str().find("#### `value` (*read-only property*)") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(collections_key_values_infer_constructor_types) {
+    TestDirectory directory("nomad_host_key_value_inference");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    const std::vector<NomadString> sources = {
+        "entry = new KeyValue \"score\" 100",
+        "assert entry.key == \"score\"",
+        "assert entry.value == 100",
+        "flags = new KeyValue 123 true",
+        "assert flags.key == 123",
+        "assert flags.value",
+        "key = \"numbers\"",
+        "numbers = new List<int>",
+        "entryWithList = new KeyValue key numbers",
+        "entryWithList.value.append 42",
+        "assert numbers[0] == 42",
+        "nested = new KeyValue \"outer\" (new KeyValue 123 true)",
+        "assert nested.value.key == 123",
+        "assert nested.value.value",
+        "pairs = new Array<KeyValue<string int>> 1",
+        "pairs[0] = new KeyValue \"score\" 100",
+        "assert pairs[0].value == 100",
+        "explicitEntry = new KeyValue<string int> \"explicit\" 7",
+        "explicitEntry = entry",
+        "assert explicitEntry.key == \"score\""
+    };
+    NomadString script;
+    for (const auto& source : sources) {
+        script += source + "\n";
+    }
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, {{{
+        "main", {"main.nomad", script}
+    }, {
+        "makeEntry", {"makeEntry.nomad", "return new KeyValue \"score\" 100"}
+    }, {
+        "makeFlags", {"makeFlags.nomad", "return new KeyValue 123 true"}
+    }}, {}});
+    const auto compiled = compiler->compileScripts(&compilation, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled,
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    const auto* entryType = runtime.getParameterizedType("KeyValue", {runtime.getStringType(), runtime.getIntegerType()});
+    const auto* flagsType = runtime.getParameterizedType("KeyValue", {runtime.getIntegerType(), runtime.getBooleanType()});
+    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("makeEntry"))->getReturnType() == entryType);
+    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("makeFlags"))->getReturnType() == flagsType);
+    RuntimeValue empty;
+    runtime.getStringType()->initValue(empty);
+    runtime.getStringType()->freeValue(empty);
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    {
+        VirtualMachine machine(&runtime);
+        InterpreterContext evaluation(machine);
+        for (const auto& source : sources) {
+            BOOST_TEST_CONTEXT(source) {
+                const auto isAssertion = source.starts_with("assert ");
+                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, evaluation),
+                    (evaluation.getError() ? *evaluation.getError() : source));
+                if (isAssertion) {
+                    BOOST_TEST(evaluation.getResult()->getValue().getBooleanValue());
+                }
+            }
+        }
+        BOOST_REQUIRE(Interpreter{}.execute("entry", evaluation));
+        BOOST_TEST(evaluation.getResult()->getType() == entryType);
+        BOOST_REQUIRE(Interpreter{}.execute("flags", evaluation));
+        BOOST_TEST(evaluation.getResult()->getType() == flagsType);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
 BOOST_AUTO_TEST_CASE(collections_key_values_reject_invalid_construction_and_property_writes) {
@@ -169,7 +244,12 @@ BOOST_AUTO_TEST_CASE(collections_key_values_reject_invalid_construction_and_prop
         "entry = new KeyValue<string int bool> \"key\" 1",
         "entry = new KeyValue<void int> 0 1",
         "entry = new KeyValue<string void> \"key\" 1",
-        "entry = new KeyValue \"key\" 1",
+        "entry = new KeyValue",
+        "entry = new KeyValue \"key\"",
+        "entry = new KeyValue \"key\" 1 2",
+        "entry = new KeyValue \"key\" 1\nentry.key = \"other\"",
+        "entry = new KeyValue \"key\" 1\nentry.value = 2",
+        "pairs = new Array<KeyValue<string int>> 1\npairs[0] = new KeyValue 1 \"key\"",
         "entry = new KeyValue<string int> \"key\" 1\nentry.key = \"other\"",
         "entry = new KeyValue<string int> \"key\" 1\nentry.value = 2",
         "entry = new KeyValue<string int> \"key\" 1\nentry[0]",

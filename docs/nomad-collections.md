@@ -23,6 +23,19 @@ name = entry.key # "score"
 score = entry.value # 100
 ```
 
+Type arguments can be omitted; the constructor infers both types from the
+static types of its arguments:
+
+```nomad
+entry = new KeyValue "score" 100 # KeyValue<string int>
+flags = new KeyValue 123 true # KeyValue<int bool>
+nested = new KeyValue "flags" flags # KeyValue<string KeyValue<int bool>>
+```
+
+Explicit type arguments remain supported and must match the supplied values.
+Partial type arguments are not supported, and the destination does not influence
+inference.
+
 The `key` and `value` properties are read-only: neither can be reassigned after
 construction. Assignments share the same pair. Strings and scalar values retain
 their original values; object keys and values share references rather than being
@@ -42,7 +55,7 @@ Default-initialized pairs, such as elements in an Array, are distinct instances
 containing the default values of `K` and `V`. For example, a
 `KeyValue<string int>` defaults to `""` and `0`. These defaults do not add a
 parameterless script constructor: `new KeyValue<K V>` still requires both
-arguments. Explicit type arguments are currently required for this family.
+arguments.
 
 ## Lists
 

@@ -67,6 +67,15 @@ void registerKeyValueType(Runtime* runtime) {
     )) {
         throw NomadException("Failed to register KeyValue");
     }
+    if (!runtime->registerNativeConstructorTemplate(
+        "KeyValue",
+        {
+            defTemplateParameter("key", TypeParameterIndex{0}, NomadDoc("The key to store.")),
+            defTemplateParameter("value", TypeParameterIndex{1}, NomadDoc("The value to store."))
+        }
+    )) {
+        throw NomadException("Failed to register KeyValue constructor inference");
+    }
 }
 
 } // namespace nomad
