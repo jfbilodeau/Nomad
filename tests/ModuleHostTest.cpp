@@ -143,7 +143,7 @@ BOOST_AUTO_TEST_CASE(collections_key_values_construct_read_and_share_references)
     const auto* type = runtime.getParameterizedType("KeyValue", {runtime.getStringType(), runtime.getIntegerType()});
     BOOST_TEST(type == runtime.getTypeByName("KeyValue<string int>"));
     BOOST_TEST(type == runtime.getParameterizedType("KeyValue", {runtime.getStringType(), runtime.getIntegerType()}));
-    BOOST_TEST(runtime.getNativeConstructorTemplate("KeyValue").has_value());
+    BOOST_TEST(runtime.getConstructorTemplate("KeyValue").has_value());
     std::ostringstream documentation;
     generateTypeDocumentation(&runtime, documentation);
     generateNativeMemberDocumentation(&runtime, documentation);

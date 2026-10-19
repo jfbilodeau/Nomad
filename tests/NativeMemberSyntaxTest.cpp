@@ -65,11 +65,11 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
             ) != NOMAD_INVALID_ID);
         }
     ));
-    BOOST_REQUIRE(runtime.registerNativeConstructorTemplate("Box", {
+    BOOST_REQUIRE(runtime.registerConstructorTemplate("Box", {
         defTemplateParameter("value", TypeParameterIndex{0}, "")
     }));
-    BOOST_REQUIRE(runtime.registerNativeMemberTemplate("Box", "declaredProperty", MemberType::Property));
-    BOOST_REQUIRE(runtime.registerNativeMemberTemplate("Box", "declaredMethod", MemberType::Method, {
+    BOOST_REQUIRE(runtime.registerMemberTemplate("Box", "declaredProperty", MemberType::Property));
+    BOOST_REQUIRE(runtime.registerMemberTemplate("Box", "declaredMethod", MemberType::Method, {
         defTemplateParameter("value", TypeParameterIndex{0}, ""),
         defTemplateParameter("line", runtime.getLineNumberType(), "")
     }));

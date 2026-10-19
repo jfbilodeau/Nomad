@@ -754,7 +754,7 @@ std::optional<NomadIndex> Runtime::getParameterizedTypeArgumentCount(const Nomad
     return registration->argumentCount;
 }
 
-bool Runtime::registerNativeConstructorTemplate(
+bool Runtime::registerConstructorTemplate(
     const NomadString& name,
     std::vector<TemplateParameter> parameters
 ) {
@@ -792,7 +792,7 @@ bool Runtime::registerNativeConstructorTemplate(
     return true;
 }
 
-std::optional<std::vector<TemplateParameter>> Runtime::getNativeConstructorTemplate(const NomadString& name) const {
+std::optional<std::vector<TemplateParameter>> Runtime::getConstructorTemplate(const NomadString& name) const {
     const auto registration = std::ranges::find(m_parameterizedTypes, name, &ParameterizedTypeRegistration::name);
     if (registration == m_parameterizedTypes.end()) {
         return std::nullopt;
@@ -800,7 +800,7 @@ std::optional<std::vector<TemplateParameter>> Runtime::getNativeConstructorTempl
     return registration->constructorTemplate;
 }
 
-ConstructorInferenceResult Runtime::inferNativeConstructorTypeArguments(
+ConstructorInferenceResult Runtime::inferConstructorTypeArguments(
     const NomadString& name,
     const std::vector<const Type*>& argumentTypes
 ) const {
@@ -950,10 +950,10 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
         return false;
     }
 
-    return canRegisterNativeMemberSignature(name, type, parameters, error);
+    return canRegisterMemberSignature(name, type, parameters, error);
 }
 
-bool Runtime::canRegisterNativeMemberSignature(
+bool Runtime::canRegisterMemberSignature(
     const NomadString& name,
     const MemberType type,
     const std::vector<Parameter>& parameters,
@@ -971,7 +971,7 @@ bool Runtime::canRegisterNativeMemberSignature(
         error = "properties cannot take parameters";
         return false;
     }
-    if (const auto existing = getNativeMemberSignature(name)) {
+    if (const auto existing = getMemberSignature(name)) {
         const auto& existingParameters = existing->parameters;
         if (existingParameters.size() != parameters.size()) {
             error = "members sharing a name must take the same number of parameters";
@@ -997,7 +997,7 @@ bool Runtime::canRegisterNativeMemberSignature(
     return true;
 }
 
-bool Runtime::registerNativeMemberTemplate(
+bool Runtime::registerMemberTemplate(
     const NomadString& family,
     const NomadString& name,
     const MemberType type,
@@ -1034,15 +1034,15 @@ bool Runtime::registerNativeMemberTemplate(
         parserParameters.push_back(defParameter(parameter.name, parameterType, parameter.doc));
     }
     NomadString error;
-    if (!canRegisterNativeMemberSignature(name, type, parserParameters, error)) {
+    if (!canRegisterMemberSignature(name, type, parserParameters, error)) {
         log::error("Cannot register member template '" + name + "': " + error);
         return false;
     }
-    registration->memberTemplates.emplace(name, NativeMemberSignature{type, std::move(parserParameters)});
+    registration->memberTemplates.emplace(name, MemberSignature{type, std::move(parserParameters)});
     return true;
 }
 
-std::optional<NativeMemberSignature> Runtime::getNativeMemberSignature(const NomadString& name) const {
+std::optional<MemberSignature> Runtime::getMemberSignature(const NomadString& name) const {
     for (const auto& registration : m_parameterizedTypes) {
         if (const auto member = registration.memberTemplates.find(name); member != registration.memberTemplates.end()) {
             return member->second;
@@ -1059,9 +1059,9 @@ std::optional<NativeMemberSignature> Runtime::getNativeMemberSignature(const Nom
         if (method == nullptr) {
             throw NomadBug("Invalid native method registration");
         }
-        return NativeMemberSignature{type, method->getParameters()};
+        return MemberSignature{type, method->getParameters()};
     }
-    return NativeMemberSignature{type, {}};
+    return MemberSignature{type, {}};
 }
 
 NomadId Runtime::registerNativeConstructor(

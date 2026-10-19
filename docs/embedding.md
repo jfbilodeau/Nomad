@@ -275,16 +275,18 @@ Requesting a specialization creates a descriptor, not an object. The compiler re
 annotations in script parameters, function parameters, and event declarations
 through the same registration API.
 
-### Native constructor inference signatures
+### Constructor inference signatures
 
 After registering a parameterized type family, hosts can register one constructor
-inference signature with `registerNativeConstructorTemplate(name, parameters)`.
+inference signature with `registerConstructorTemplate(name, parameters)`.
+These declarations are independent of whether the concrete constructor is native
+or script-defined; executable script-defined types are not yet supported.
 Each `TemplateParameter` describes either a concrete `Type*` or a
 `TypeParameterIndex{index}` referring to the family's zero-based type-argument position.
 For example, for an already registered two-argument family named `Pair`:
 
 ```cpp
-if (!runtime.registerNativeConstructorTemplate(
+if (!runtime.registerConstructorTemplate(
     "Pair",
     {
         nomad::defTemplateParameter("key", nomad::TypeParameterIndex{0}, "The key."),
@@ -301,10 +303,10 @@ constructor parameters. Unknown families, invalid type-argument indices,
 incomplete signatures, and duplicate registrations log an error and return
 `false` without changing the registered signature.
 
-`getNativeConstructorTemplate(name)` returns an optional copy of the signature,
+`getConstructorTemplate(name)` returns an optional copy of the signature,
 or an empty optional when none is registered. Registering or retrieving this
 metadata does not create a specialization or register an executable constructor.
-`inferNativeConstructorTypeArguments(name, argumentTypes)` deduces the family's
+`inferConstructorTypeArguments(name, argumentTypes)` deduces the family's
 type arguments from a vector of static constructor argument types. The vector
 uses signature order, including null entries for compiler-supplied source file,
 function, and line arguments. Null entries cannot bind generic type parameters
@@ -498,17 +500,15 @@ An incorrect pairing causes undefined behaviour.
 Use `getThisAs<const Object>()` to obtain a pointer to const.
 Calling the accessor outside an active method faults.
 
-## Native object properties
-
-### Members of parameterized type families
+## Member declarations for parameterized type families
 
 Declare member parsing signatures before compiling scripts that use inferred
 constructors. This lets scripts access members before any concrete specialization
 has been created:
 
 ```cpp
-if (!runtime.registerNativeMemberTemplate("KeyValue", "key", nomad::MemberType::Property) ||
-    !runtime.registerNativeMemberTemplate("KeyValue", "value", nomad::MemberType::Property)) {
+if (!runtime.registerMemberTemplate("KeyValue", "key", nomad::MemberType::Property) ||
+    !runtime.registerMemberTemplate("KeyValue", "value", nomad::MemberType::Property)) {
     throw nomad::NomadException("Failed to register KeyValue member signatures");
 }
 ```
@@ -518,7 +518,7 @@ declaration takes no parameters. For methods, supply `TemplateParameter` entries
 using concrete types or `TypeParameterIndex`:
 
 ```cpp
-if (!runtime.registerNativeMemberTemplate(
+if (!runtime.registerMemberTemplate(
     "Box", "store", nomad::MemberType::Method,
     {nomad::defTemplateParameter("value", nomad::TypeParameterIndex{0}, "")}
 )) {
@@ -531,6 +531,10 @@ register each specialization's concrete members in its initializer. Return types
 property access permissions, and argument type checking come from those concrete
 members.
 
+Member declarations are source-independent. Hosts register them today; a future
+script-type declaration pass can use the same API before parsing member bodies.
+This API does not add execution support for script-defined types.
+
 All members sharing a name must agree on parameter count and parser-dependent
 parameter types, including callbacks and hidden source parameters. A property and
 a zero-parameter method have the same parsing shape, as with concrete members.
@@ -538,12 +542,12 @@ Generic method parameters parse as ordinary value expressions.
 Incompatible declarations and concrete registrations are rejected with a logged
 error. Duplicate declarations within a family are also rejected.
 
-`getNativeMemberSignature(name)` returns a copy of the parsing signature, whether
+`getMemberSignature(name)` returns a copy of the parsing signature, whether
 declared by a family or provided by a concrete member. Generic parameter types are
 represented by null pointers in this parsing signature. Existing member-ID and
 overload queries continue to return only concrete members.
 
-### Registering concrete properties
+## Native object properties
 
 Use `registerNativeProperty(objectType, name, valueType, getter, setter, doc)`.
 Either callback may be empty for a write-only or read-only property. Both

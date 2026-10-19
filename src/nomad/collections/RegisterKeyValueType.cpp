@@ -67,11 +67,11 @@ void registerKeyValueType(Runtime* runtime) {
     )) {
         throw NomadException("Failed to register KeyValue");
     }
-    if (!runtime->registerNativeMemberTemplate("KeyValue", "key", MemberType::Property) ||
-        !runtime->registerNativeMemberTemplate("KeyValue", "value", MemberType::Property)) {
+    if (!runtime->registerMemberTemplate("KeyValue", "key", MemberType::Property) ||
+        !runtime->registerMemberTemplate("KeyValue", "value", MemberType::Property)) {
         throw NomadException("Failed to register KeyValue member signatures");
     }
-    if (!runtime->registerNativeConstructorTemplate(
+    if (!runtime->registerConstructorTemplate(
         "KeyValue",
         {
             defTemplateParameter("key", TypeParameterIndex{0}, NomadDoc("The key to store.")),

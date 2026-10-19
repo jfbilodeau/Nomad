@@ -51,46 +51,46 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
             }
         ));
     }
-    BOOST_REQUIRE(runtime.registerNativeMemberTemplate("Family", "declaredProperty", MemberType::Property));
+    BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "declaredProperty", MemberType::Property));
     const std::vector<TemplateParameter> parameters = {
         defTemplateParameter("value", TypeParameterIndex{0}, ""),
         defTemplateParameter("line", runtime.getLineNumberType(), "")
     };
-    BOOST_REQUIRE(runtime.registerNativeMemberTemplate("Family", "declaredMethod", MemberType::Method, parameters));
-    BOOST_REQUIRE(runtime.registerNativeMemberTemplate("Other", "declaredMethod", MemberType::Method, parameters));
+    BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "declaredMethod", MemberType::Method, parameters));
+    BOOST_REQUIRE(runtime.registerMemberTemplate("Other", "declaredMethod", MemberType::Method, parameters));
     BOOST_TEST(specializations == 0u);
     BOOST_TEST(runtime.getNativeMemberOverloadCount("declaredMethod") == 0u);
-    auto signature = runtime.getNativeMemberSignature("declaredMethod");
+    auto signature = runtime.getMemberSignature("declaredMethod");
     BOOST_REQUIRE(signature.has_value());
     BOOST_TEST((signature->type == MemberType::Method));
     BOOST_REQUIRE(signature->parameters.size() == 2u);
     BOOST_TEST(signature->parameters[0].type == nullptr);
     BOOST_TEST(signature->parameters[1].type == runtime.getLineNumberType());
     signature->parameters.clear();
-    BOOST_TEST(runtime.getNativeMemberSignature("declaredMethod")->parameters.size() == 2u);
-    BOOST_TEST(!runtime.getNativeMemberSignature("missing").has_value());
+    BOOST_TEST(runtime.getMemberSignature("declaredMethod")->parameters.size() == 2u);
+    BOOST_TEST(!runtime.getMemberSignature("missing").has_value());
 
-    BOOST_TEST(!runtime.registerNativeMemberTemplate("Family", "declaredMethod", MemberType::Method, parameters));
-    BOOST_TEST(!runtime.registerNativeMemberTemplate("Missing", "member", MemberType::Property));
-    BOOST_TEST(!runtime.registerNativeMemberTemplate("Family", "invalid.name", MemberType::Property));
-    BOOST_TEST(!runtime.registerNativeMemberTemplate("Family", "unknownKind", MemberType::Unknown));
-    BOOST_REQUIRE(runtime.registerNativeMemberTemplate("Other", "declaredProperty", MemberType::Method));
-    BOOST_TEST(!runtime.registerNativeMemberTemplate("Family", "withArguments", MemberType::Property, parameters));
-    BOOST_TEST(!runtime.registerNativeMemberTemplate("Family", "badIndex", MemberType::Method, {
+    BOOST_TEST(!runtime.registerMemberTemplate("Family", "declaredMethod", MemberType::Method, parameters));
+    BOOST_TEST(!runtime.registerMemberTemplate("Missing", "member", MemberType::Property));
+    BOOST_TEST(!runtime.registerMemberTemplate("Family", "invalid.name", MemberType::Property));
+    BOOST_TEST(!runtime.registerMemberTemplate("Family", "unknownKind", MemberType::Unknown));
+    BOOST_REQUIRE(runtime.registerMemberTemplate("Other", "declaredProperty", MemberType::Method));
+    BOOST_TEST(!runtime.registerMemberTemplate("Family", "withArguments", MemberType::Property, parameters));
+    BOOST_TEST(!runtime.registerMemberTemplate("Family", "badIndex", MemberType::Method, {
         defTemplateParameter("value", TypeParameterIndex{1}, "")
     }));
     IntegerType foreignType;
     for (const auto* type : {static_cast<const Type*>(nullptr), runtime.getVoidType(), static_cast<const Type*>(&foreignType)}) {
-        BOOST_TEST(!runtime.registerNativeMemberTemplate("Family", "badType", MemberType::Method, {
+        BOOST_TEST(!runtime.registerMemberTemplate("Family", "badType", MemberType::Method, {
             defTemplateParameter("value", type, "")
         }));
     }
-    BOOST_TEST(!runtime.registerNativeMemberTemplate("Family", "badName", MemberType::Method, {
+    BOOST_TEST(!runtime.registerMemberTemplate("Family", "badName", MemberType::Method, {
         defTemplateParameter("", TypeParameterIndex{0}, "")
     }));
-    BOOST_TEST(!runtime.getNativeMemberSignature("badType").has_value());
-    BOOST_TEST(!runtime.getNativeMemberSignature("badIndex").has_value());
-    BOOST_TEST(!runtime.getNativeMemberSignature("badName").has_value());
+    BOOST_TEST(!runtime.getMemberSignature("badType").has_value());
+    BOOST_TEST(!runtime.getMemberSignature("badIndex").has_value());
+    BOOST_TEST(!runtime.getMemberSignature("badName").has_value());
     const auto* objectType = registerTestType(runtime);
     BOOST_TEST(runtime.registerNativeMethod(
         objectType, "declaredMethod", methodFunction(),
@@ -114,10 +114,10 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
         objectType, "declaredProperty", runtime.getIntegerType(), propertyGetter(), {}, ""
     ) != NOMAD_INVALID_ID);
     const auto* callbackType = runtime.getCallbackType({}, runtime.getVoidType());
-    BOOST_REQUIRE(runtime.registerNativeMemberTemplate("Family", "declaredCallback", MemberType::Method, {
+    BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "declaredCallback", MemberType::Method, {
         defTemplateParameter("callback", callbackType, "")
     }));
-    BOOST_TEST(!runtime.registerNativeMemberTemplate("Other", "declaredCallback", MemberType::Method, {
+    BOOST_TEST(!runtime.registerMemberTemplate("Other", "declaredCallback", MemberType::Method, {
         defTemplateParameter("value", TypeParameterIndex{0}, "")
     }));
     BOOST_TEST(runtime.registerNativeMethod(
@@ -142,18 +142,18 @@ BOOST_AUTO_TEST_CASE(member_templates_validate_against_existing_concrete_members
         type, "existingMethod", methodFunction(),
         {defParameter("value", runtime.getIntegerType(), "")}, runtime.getVoidType(), ""
     ) != NOMAD_INVALID_ID);
-    BOOST_TEST(!runtime.registerNativeMemberTemplate("Family", "existingMethod", MemberType::Property));
-    BOOST_TEST(!runtime.registerNativeMemberTemplate("Family", "existingMethod", MemberType::Method));
-    BOOST_TEST(!runtime.registerNativeMemberTemplate("Family", "existingMethod", MemberType::Method, {
+    BOOST_TEST(!runtime.registerMemberTemplate("Family", "existingMethod", MemberType::Property));
+    BOOST_TEST(!runtime.registerMemberTemplate("Family", "existingMethod", MemberType::Method));
+    BOOST_TEST(!runtime.registerMemberTemplate("Family", "existingMethod", MemberType::Method, {
         defTemplateParameter("value", runtime.getLineNumberType(), "")
     }));
-    BOOST_REQUIRE(runtime.registerNativeMemberTemplate("Family", "existingMethod", MemberType::Method, {
+    BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "existingMethod", MemberType::Method, {
         defTemplateParameter("value", TypeParameterIndex{0}, "")
     }));
     BOOST_REQUIRE(runtime.registerNativeMethod(
         type, "zeroArguments", methodFunction(), {}, runtime.getVoidType(), ""
     ) != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(runtime.registerNativeMemberTemplate("Family", "zeroArguments", MemberType::Property));
+    BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "zeroArguments", MemberType::Property));
 }
 
 BOOST_AUTO_TEST_CASE(string_type_getter_returns_concrete_descriptor) {

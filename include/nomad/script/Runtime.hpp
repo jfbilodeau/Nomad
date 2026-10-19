@@ -122,14 +122,14 @@ public:
         const NomadString& name,
         const std::vector<const Type*>& arguments
     );
-    bool registerNativeConstructorTemplate(
+    bool registerConstructorTemplate(
         const NomadString& name,
         std::vector<TemplateParameter> parameters
     );
-    [[nodiscard]] std::optional<std::vector<TemplateParameter>> getNativeConstructorTemplate(
+    [[nodiscard]] std::optional<std::vector<TemplateParameter>> getConstructorTemplate(
         const NomadString& name
     ) const;
-    [[nodiscard]] ConstructorInferenceResult inferNativeConstructorTypeArguments(
+    [[nodiscard]] ConstructorInferenceResult inferConstructorTypeArguments(
         const NomadString& name,
         const std::vector<const Type*>& argumentTypes
     ) const;
@@ -182,15 +182,16 @@ public:
         const std::vector<const Type*>& arguments
     );
 
-    // Native members
-    bool registerNativeMemberTemplate(
+    // Member declarations
+    bool registerMemberTemplate(
         const NomadString& family,
         const NomadString& name,
         MemberType type,
         const std::vector<TemplateParameter>& parameters = {}
     );
-    [[nodiscard]] std::optional<NativeMemberSignature> getNativeMemberSignature(const NomadString& name) const;
+    [[nodiscard]] std::optional<MemberSignature> getMemberSignature(const NomadString& name) const;
 
+    // Native members
     NomadId registerNativeIndexer(
         const ObjectTypeBase* objectType,
         std::vector<const Type*> indexTypes,
@@ -474,7 +475,7 @@ private:
     [[nodiscard]] bool canRegisterNativeMember(const Type* objectType, const NomadString& name, MemberType type,
                                                   const std::vector<Parameter>& parameters,
                                                   NomadString& error) const;
-    [[nodiscard]] bool canRegisterNativeMemberSignature(
+    [[nodiscard]] bool canRegisterMemberSignature(
         const NomadString& name,
         MemberType type,
         const std::vector<Parameter>& parameters,
@@ -489,7 +490,7 @@ private:
         ParameterizedTypeFactory factory;
         ParameterizedTypeInitializer initializer;
         std::optional<std::vector<TemplateParameter>> constructorTemplate;
-        std::unordered_map<NomadString, NativeMemberSignature> memberTemplates;
+        std::unordered_map<NomadString, MemberSignature> memberTemplates;
     };
     struct TypeSpecialization {
         NomadString name;

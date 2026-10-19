@@ -116,7 +116,7 @@ std::optional<MemberNameParts> splitNativeMemberName(const Runtime* runtime, con
     }
 
     auto member = name.substr(separator + 1);
-    if (!runtime->getNativeMemberSignature(member)) {
+    if (!runtime->getMemberSignature(member)) {
         return std::nullopt;
     }
 
@@ -129,7 +129,7 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
 
 bool parseNativeMemberArguments(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
                                    const NomadString& memberName, ArgumentList& arguments) {
-    const auto signature = context->getRuntime()->getNativeMemberSignature(memberName);
+    const auto signature = context->getRuntime()->getMemberSignature(memberName);
     if (!signature) {
         context->reportError("Unknown native member '" + memberName + "'", tokens);
         return false;
@@ -153,7 +153,7 @@ std::unique_ptr<Expression> createNativeMemberExpression(
             return nullptr;
         }
     } else {
-        const auto signature = context->getRuntime()->getNativeMemberSignature(memberName);
+        const auto signature = context->getRuntime()->getMemberSignature(memberName);
         if (!signature) {
             context->reportError("Unknown native member '" + memberName + "'");
             return nullptr;
@@ -762,7 +762,7 @@ std::unique_ptr<Expression> parseNewExpression(
     } else if (runtime->getParameterizedTypeArgumentCount(constructorName)) {
         tokens->next();
         if (!tokens->is("<")) {
-            const auto signature = runtime->getNativeConstructorTemplate(constructorName);
+            const auto signature = runtime->getConstructorTemplate(constructorName);
             if (!signature) {
                 context->reportError("Constructor '" + constructorName +
                     "' requires explicit type arguments: no inference signature is registered", tokens);

@@ -1125,7 +1125,7 @@ void ConstructorExpression::onResolve(CompilerContext* context, ScriptFunction* 
 
     const auto* objectType = m_objectType;
     if (objectType == nullptr) {
-        const auto inference = runtime->inferNativeConstructorTypeArguments(m_constructorName, argumentTypes);
+        const auto inference = runtime->inferConstructorTypeArguments(m_constructorName, argumentTypes);
         if (!inference.isResolved()) {
             reportError(context, function, inference.error);
             return;
