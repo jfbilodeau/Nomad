@@ -16,7 +16,7 @@ The SDK provides:
 
 | Module | Features |
 | --- | --- |
-| [nomad-collections](nomad-collections.md) | Typed lists and fixed-size 1D/2D/3D arrays, with indexed access for lists and 1D arrays. |
+| [nomad-collections](nomad-collections.md) | Typed lists, fixed-size 1D/2D/3D arrays, and string-keyed maps with indexed access. |
 | [nomad-system](nomad-system.md) | Logging, math functions, conversions, and orderly shutdown. |
 | [nomad-game](nomad-game.md) | Windows, input, graphics, audio, scenes, entities, and game resources. Requires `nomad-system`. |
 

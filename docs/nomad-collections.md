@@ -1,7 +1,7 @@
 # Collections module
 
-Select `nomad-collections` in `nomad.toml` to use typed lists and fixed-size
-arrays:
+Select `nomad-collections` in `nomad.toml` to use typed lists, fixed-size
+arrays, and maps:
 
 ```toml
 [nomad]
@@ -35,6 +35,33 @@ assignments can change its contents through a parameter or another reference.
 
 See [Object types and members](language.md#object-types-and-members) for
 construction, reference semantics, and indexer syntax.
+
+## Maps
+
+Construct an empty map with `Map<string V>`, where `V` is its value type:
+
+```nomad
+names = new Map<string string>
+scores = new Map<string int>
+count = names.count # 0
+scores["hero"] = 100
+score = scores["hero"] # 100
+scores["hero"] = 200 # Replaces the value; count stays 1
+```
+
+Only string keys are supported. The value type can be any public, non-void
+type, including another collection. The read-only `count` property gives the
+number of entries. Assignments share the same map instance; default-initialized
+map values are distinct empty maps.
+
+Indexed assignment inserts a new entry or replaces the value for an existing
+key. Keys are case-sensitive strings, including empty strings. Object-valued
+entries keep reference semantics.
+
+Reading a missing key logs an error and returns the value type's default
+without inserting an entry or changing `count`. Each missing read of a
+list- or map-valued entry returns a distinct empty collection.
+`contains` is not available yet.
 
 ## Fixed-size arrays
 

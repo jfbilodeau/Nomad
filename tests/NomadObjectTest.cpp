@@ -210,7 +210,7 @@ BOOST_AUTO_TEST_CASE(CollectionObjectsUseReferenceCounting) {
         static_cast<NomadObject*>(new Array2dObject(&elementType)),
         static_cast<NomadObject*>(new Array3dObject(&elementType)),
         static_cast<NomadObject*>(new ListObject(&elementType)),
-        static_cast<NomadObject*>(new MapObject)
+        static_cast<NomadObject*>(new MapObject(&elementType))
     }) {
         BOOST_TEST(object->getReferenceCount() == 1U);
         object->addRef();

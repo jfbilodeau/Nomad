@@ -8,9 +8,13 @@
 #include <nomad/collections/Array3dObject.hpp>
 #include <nomad/collections/ArrayType.hpp>
 #include <nomad/collections/ListObject.hpp>
+#include <nomad/collections/MapObject.hpp>
+#include <nomad/collections/MapType.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+
+#include <nomad/log/MemorySink.hpp>
 
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -265,6 +269,278 @@ BOOST_AUTO_TEST_CASE(array_constructor_signatures_are_checked_by_compiler) {
             compiler->registerSources(&context, {{{"main", {"main.nomad", source}}}, {}});
             BOOST_TEST(!compiler->compileScripts(&context, CompilationTarget::Analysis));
             BOOST_REQUIRE(context.getFirstError() != nullptr);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(collections_maps_construct_empty_typed_instances_and_defaults) {
+    TestDirectory directory("nomad_host_map_construction");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    const auto* mapType = runtime.getParameterizedType("Map", {runtime.getStringType(), runtime.getIntegerType()});
+    BOOST_REQUIRE(dynamic_cast<const MapType*>(mapType) != nullptr);
+    BOOST_TEST(mapType->getTypeName() == "Map<string int>");
+    BOOST_TEST(runtime.getParameterizedType("Map", {runtime.getStringType(), runtime.getIntegerType()}) == mapType);
+    BOOST_TEST(!mapType->sameType(runtime.getParameterizedType("Map", {runtime.getStringType(), runtime.getStringType()})));
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue first;
+    RuntimeValue second;
+    mapType->initValue(first);
+    mapType->initValue(second);
+    BOOST_TEST(first.getObjectValue() != second.getObjectValue());
+    BOOST_TEST(first.asObject<MapObject>()->getCount() == 0u);
+    BOOST_TEST(first.asObject<MapObject>()->getValueType() == runtime.getIntegerType());
+    mapType->freeValue(first);
+    mapType->freeValue(second);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    const std::vector<NomadString> sources = {
+        "names = new Map<string string>",
+        "scores = new Map<string int>",
+        "nested = new Map<string List<int>>",
+        "maps = new Map<string Map<string int>>",
+        "alias = scores",
+        "assert names.count == 0",
+        "assert scores.count == 0",
+        "assert alias.count == 0",
+        "assert nested.count == 0",
+        "assert maps.count == 0",
+        "defaults = new Array<Map<string int>> 2",
+        "assert defaults[0].count == 0",
+        "assert defaults[1].count == 0",
+        "defaults[0] = scores",
+        "assert defaults[0].count == 0"
+    };
+    NomadString script =
+        "fun countEntries values:Map<string int>\n"
+        "    return values.count\n"
+        "end\n";
+    for (const auto& source : sources) {
+        script += source + "\n";
+    }
+    script += "return countEntries scores";
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, {{{"main", {"main.nomad", script}}}, {}});
+    BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&compilation, CompilationTarget::Executable),
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    const auto compiledObjects = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 0);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == compiledObjects);
+    {
+        VirtualMachine machine(&runtime);
+        InterpreterContext context(machine);
+        for (const auto& source : sources) {
+            BOOST_TEST_CONTEXT(source) {
+                const auto isAssertion = source.starts_with("assert ");
+                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, context),
+                    (context.getError() ? *context.getError() : source));
+                if (isAssertion) {
+                    BOOST_TEST(context.getResult()->getValue().getBooleanValue());
+                }
+            }
+        }
+        BOOST_TEST(context.getVariableValue("scores")->getObjectValue() ==
+            context.getVariableValue("alias")->getObjectValue());
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == compiledObjects);
+    std::ostringstream documentation;
+    generateNativeMemberDocumentation(&runtime, documentation);
+    BOOST_TEST(documentation.str().find("### `Map<string int>`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("The number of entries in the map.") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(collections_map_indexers_insert_replace_and_preserve_owned_values) {
+    TestDirectory directory("nomad_host_map_indexers");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    const std::vector<NomadString> sources = {
+        "scores = new Map<string int>",
+        "scores[\"hero\"] = 100",
+        "scores[\"Hero\"] = 20",
+        "scores[\"\"] = 3",
+        "assert scores.count == 3",
+        "assert scores[\"Hero\"] == 20",
+        "assert scores[\"\"] == 3",
+        "alias = scores",
+        "alias[\"hero\"] = scores[\"hero\"] + 1",
+        "assert scores[\"hero\"] == 101",
+        "assert scores.count == 3",
+        "assert scores[\"missing\"] == 0",
+        "assert scores.count == 3",
+        "words = new Map<string string>",
+        "key = \"name\"",
+        "words[key] = \"hello\"",
+        "key = \"changed\"",
+        "words[\"name\"] = words[\"name\"]",
+        "assert words[\"name\"][1] == \"e\"",
+        "words[\"name\"] = \"updated\"",
+        "assert words[\"name\"] == \"updated\"",
+        "assert words[\"missing\"] == \"\"",
+        "assert words.count == 1",
+        "nested = new Map<string List<int>>",
+        "nested[\"list\"] = new List<int>",
+        "nested[\"list\"].push 7",
+        "saved = nested[\"list\"]",
+        "nested[\"list\"] = new List<int>",
+        "assert saved[0] == 7",
+        "assert nested[\"list\"].count == 0",
+        "nested[\"absent\"].push 8",
+        "assert nested[\"absent\"].count == 0",
+        "assert nested.count == 1",
+        "maps = new Map<string Map<string int>>",
+        "maps[\"inner\"] = scores",
+        "maps[\"inner\"][\"hero\"] = 200",
+        "assert scores[\"hero\"] == 200",
+        "maps[\"missing\"][\"ignored\"] = 1",
+        "assert maps[\"missing\"].count == 0",
+        "assert maps.count == 1",
+        "holder = new List<Map<string string>>",
+        "holder.push words",
+        "words = new Map<string string>",
+        "assert holder[0][\"name\"] == \"updated\""
+    };
+    NomadString script;
+    for (const auto& source : sources) {
+        script += source + "\n";
+    }
+    script += "return holder[0][\"name\"]";
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, {{{"main", {"main.nomad", script}}}, {}});
+    BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&compilation, CompilationTarget::Executable),
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    RuntimeValue empty;
+    runtime.getStringType()->initValue(empty);
+    runtime.getStringType()->freeValue(empty);
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getStringObject()->getString() == "updated");
+    runtime.getStringType()->freeValue(result);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    {
+        VirtualMachine machine(&runtime);
+        InterpreterContext context(machine);
+        for (const auto& source : sources) {
+            BOOST_TEST_CONTEXT(source) {
+                const auto isAssertion = source.starts_with("assert ");
+                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, context),
+                    (context.getError() ? *context.getError() : source));
+                if (isAssertion) {
+                    BOOST_TEST(context.getResult()->getValue().getBooleanValue());
+                }
+            }
+        }
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    struct LogCapture {
+        MemorySink sink;
+        LogCapture() {
+            log::flush();
+            log::addSink(&sink);
+        }
+        ~LogCapture() { log::removeSink(&sink); }
+    } capture;
+    MapObject map(runtime.getIntegerType());
+    map.getValue("absent", result);
+    log::flush();
+    BOOST_TEST(result.getIntegerValue() == 0);
+    BOOST_TEST(map.getCount() == 0u);
+    BOOST_REQUIRE(capture.sink.getEntries().size() == 1u);
+    BOOST_CHECK(capture.sink.getEntries()[0].level == LogLevel::Error);
+    std::ostringstream documentation;
+    generateNativeMemberDocumentation(&runtime, documentation);
+    BOOST_TEST(documentation.str().find("Map<string int>[index]") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(collections_maps_release_partial_copies_and_preserve_entries_on_failure) {
+    class MapValueType final : public ObjectTypeBase {
+    public:
+        [[nodiscard]] NomadString getTypeName() const override { return "MapValue"; }
+        void toString(const RuntimeValue&, NomadString& text) const override { text = getTypeName(); }
+        void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override {
+            ObjectTypeBase::copyValue(source, destination);
+            if (failCopy) {
+                throw NomadException("Map value copy failed");
+            }
+        }
+        bool failCopy = false;
+    } type;
+    const auto before = NomadObject::getLiveObjectCount();
+    {
+        MapObject map(&type);
+        RuntimeValue first;
+        RuntimeValue second;
+        first.setObjectValue(new NomadObject);
+        second.setObjectValue(new NomadObject);
+        type.failCopy = true;
+        BOOST_CHECK_THROW(map.setValue("new", first), NomadException);
+        BOOST_TEST(map.getCount() == 0u);
+        BOOST_TEST(first.getObjectValue()->getReferenceCount() == 1u);
+        type.failCopy = false;
+        map.setValue("stored", first);
+        type.failCopy = true;
+        BOOST_CHECK_THROW(map.setValue("stored", second), NomadException);
+        BOOST_TEST(map.getCount() == 1u);
+        BOOST_TEST(first.getObjectValue()->getReferenceCount() == 2u);
+        BOOST_TEST(second.getObjectValue()->getReferenceCount() == 1u);
+        RuntimeValue result;
+        BOOST_CHECK_THROW(map.getValue("stored", result), NomadException);
+        type.freeValue(result);
+        BOOST_TEST(first.getObjectValue()->getReferenceCount() == 2u);
+        type.failCopy = false;
+        map.getValue("stored", result);
+        BOOST_TEST(result.getObjectValue() == first.getObjectValue());
+        type.freeValue(first);
+        type.freeValue(second);
+        BOOST_TEST(result.getObjectValue()->getReferenceCount() == 2u);
+        type.freeValue(result);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(collections_maps_reject_unsupported_operations_and_types) {
+    TestDirectory directory("nomad_host_map_validation");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    BOOST_CHECK_THROW(MapObject(nullptr), NomadException);
+    BOOST_CHECK_THROW(MapObject(runtime.getVoidType()), NomadException);
+    BOOST_CHECK_THROW(MapType(runtime.getIntegerType(), runtime.getIntegerType()), NomadException);
+    BOOST_CHECK_THROW(MapType(runtime.getStringType(), runtime.getFileNameType()), NomadException);
+    VirtualMachine machine(&runtime);
+    InterpreterContext context(machine);
+    for (const auto* source : {
+        "values = new Map<int string>",
+        "values = new Map<string>",
+        "values = new Map<string int int>",
+        "values = new Map<string void>",
+        "values = new Map<string int> 1",
+        "values = new Map<string int>\nvalues.count = 1",
+        "values = new Map<string int>\nvalues[1]",
+        "values = new Map<string int>\nvalues[\"key\"] = \"wrong\"",
+        "values = new Map<string int>\nvalues[\"a\" \"b\"]"
+    }) {
+        BOOST_TEST_CONTEXT(source) {
+            auto compiler = runtime.createCompiler();
+            CompilerContext compilation(compiler.get());
+            compiler->registerSources(&compilation, {{{"rejected", {"rejected.nomad", source}}}, {}});
+            BOOST_TEST(!compiler->compileScripts(&compilation, CompilationTarget::Executable));
+            BOOST_REQUIRE(compilation.getFirstError() != nullptr);
+            const NomadString input(source);
+            const auto lineBreak = input.find('\n');
+            if (lineBreak != NomadString::npos) {
+                BOOST_REQUIRE(Interpreter{}.execute(input.substr(0, lineBreak), context));
+            }
+            BOOST_TEST(!Interpreter{}.execute(
+                lineBreak == NomadString::npos ? input : input.substr(lineBreak + 1), context
+            ));
+            BOOST_TEST(context.hasError());
+            BOOST_REQUIRE(Interpreter{}.execute("recovery = new Map<string int>", context));
         }
     }
 }

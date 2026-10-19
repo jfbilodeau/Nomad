@@ -10,6 +10,7 @@ add_library(nomad-collections SHARED
     ${NOMAD_INCLUDE_DIR}/nomad/collections/ListObject.hpp
     ${NOMAD_INCLUDE_DIR}/nomad/collections/ListType.hpp
     ${NOMAD_INCLUDE_DIR}/nomad/collections/MapObject.hpp
+    ${NOMAD_INCLUDE_DIR}/nomad/collections/MapType.hpp
 
     ${NOMAD_SOURCE_DIR}/nomad/collections/Array1Type.cpp
     ${NOMAD_SOURCE_DIR}/nomad/collections/Array1dObject.cpp
@@ -22,6 +23,8 @@ add_library(nomad-collections SHARED
     ${NOMAD_SOURCE_DIR}/nomad/collections/CollectionsModule.cpp
     ${NOMAD_SOURCE_DIR}/nomad/collections/ListObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/collections/ListType.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/collections/MapObject.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/collections/MapType.cpp
 )
 
 nomad_configure_library_target(nomad-collections)

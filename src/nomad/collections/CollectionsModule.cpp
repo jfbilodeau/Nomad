@@ -10,6 +10,8 @@
 #include <nomad/collections/ArrayType.hpp>
 #include <nomad/collections/ListObject.hpp>
 #include <nomad/collections/ListType.hpp>
+#include <nomad/collections/MapObject.hpp>
+#include <nomad/collections/MapType.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
@@ -256,5 +258,57 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         }
     )) {
         throw nomad::NomadException("Failed to register List");
+    }
+    if (!context->runtime->registerParameterizedType(
+        "Map",
+        2,
+        [](const std::vector<const nomad::Type*>& arguments) {
+            return std::make_unique<nomad::MapType>(arguments[0], arguments[1]);
+        },
+        [runtime = context->runtime](const nomad::Type* type) {
+            const auto* objectType = static_cast<const nomad::MapType*>(type);
+            const auto* valueType = objectType->getTypeArguments()[1];
+            const auto constructorId = runtime->registerNativeConstructor(
+                objectType, {},
+                [valueType](std::span<const nomad::RuntimeValue>) {
+                    return new nomad::MapObject(valueType);
+                },
+                NomadDoc("Creates an empty map with string keys.")
+            );
+            const auto countId = runtime->registerNativeProperty(
+                objectType,
+                "count",
+                runtime->getIntegerType(),
+                [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
+                    result.setIntegerValue(static_cast<nomad::NomadInteger>(
+                        machine->getThisAs<nomad::MapObject>()->getCount()
+                    ));
+                },
+                {},
+                NomadDoc("The number of entries in the map.")
+            );
+            const auto indexerId = runtime->registerNativeIndexer(
+                objectType,
+                {runtime->getStringType()},
+                valueType,
+                [](nomad::VirtualMachine* machine) {
+                    machine->getThisAs<nomad::MapObject>()->getValue(
+                        machine->getStringParameter(0)->getString(), machine->getResult()
+                    );
+                },
+                [](nomad::VirtualMachine* machine) {
+                    machine->getThisAs<nomad::MapObject>()->setValue(
+                        machine->getStringParameter(0)->getString(), machine->getParameter(1)
+                    );
+                },
+                NomadDoc("Reads, inserts, or replaces an entry by string key. Missing keys log an error and return a default without inserting.")
+            );
+            if (constructorId == nomad::NOMAD_INVALID_ID || countId == nomad::NOMAD_INVALID_ID ||
+                indexerId == nomad::NOMAD_INVALID_ID) {
+                throw nomad::NomadException("Failed to register Map members");
+            }
+        }
+    )) {
+        throw nomad::NomadException("Failed to register Map");
     }
 }
