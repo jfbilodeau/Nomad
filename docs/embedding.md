@@ -69,6 +69,8 @@ parameter and inferred return-type updates. All views refer to the same object,
 so signature changes are immediately visible through generic accessors.
 Pointers remain valid until the runtime is destroyed, including when more
 callables are registered.
+Registering additional APIs does not change the selected targets of already
+resolved function, method, or constructor calls.
 
 Signatures expose `Parameter` entries through `getParameters()`. Script source
 text is available through `getSourceCode()`; `getSource()` identifies whether

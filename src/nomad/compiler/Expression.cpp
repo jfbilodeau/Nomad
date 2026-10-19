@@ -608,6 +608,9 @@ void NativeMemberExpression::setAllowVoid(const bool allowVoid) {
 }
 
 bool NativeMemberExpression::resolveMember(CompilerContext* context, ScriptFunction* function) {
+    m_memberId = NOMAD_INVALID_ID;
+    m_memberType = MemberType::Unknown;
+    m_method = nullptr;
     if (!m_receiver->resolve(context, function)) {
         return false;
     }
@@ -622,6 +625,13 @@ bool NativeMemberExpression::resolveMember(CompilerContext* context, ScriptFunct
         return false;
     }
 
+    m_memberType = runtime->getMemberType(m_memberId);
+    if (m_memberType == MemberType::Method) {
+        m_method = runtime->getNativeMemberMethod(m_memberId);
+        if (m_method == nullptr) {
+            context->getCompiler()->reportInternalError("Invalid native method: " + m_qualifiedName);
+        }
+    }
     return true;
 }
 
@@ -631,7 +641,7 @@ bool NativeMemberExpression::resolveAssignmentTarget(CompilerContext* context, S
     }
 
     auto* runtime = context->getRuntime();
-    if (runtime->getMemberType(m_memberId) == MemberType::Method) {
+    if (m_memberType == MemberType::Method) {
         reportError(context, function, "Cannot assign to native method '" + m_qualifiedName + "'");
         return false;
     }
@@ -654,7 +664,7 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptFunction*
     }
 
     auto* runtime = context->getRuntime();
-    switch (runtime->getMemberType(m_memberId)) {
+    switch (m_memberType) {
     case MemberType::Property: {
         NativePropertyDefinition definition;
         if (!runtime->getNativePropertyDefinition(m_memberId, definition)) {
@@ -671,10 +681,7 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptFunction*
     }
 
     case MemberType::Method: {
-        const auto* method = runtime->getNativeMemberMethod(m_memberId);
-        if (method == nullptr) {
-            context->getCompiler()->reportInternalError("Invalid native method: " + m_qualifiedName);
-        }
+        const auto* method = m_method;
 
         auto& arguments = m_arguments.getArguments();
         if (arguments.size() != method->getParameterCount()) {
@@ -706,13 +713,14 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptFunction*
 }
 
 void NativeMemberExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
-    auto* runtime = compiler->getRuntime();
-    const auto memberType = runtime->getMemberType(m_memberId);
+    if (m_memberType == MemberType::Unknown) {
+        compiler->reportInternalError("Native member has not been resolved: " + m_qualifiedName);
+    }
     const auto* receiverType = m_receiver->getType();
 
     m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
 
-    if (memberType == MemberType::Property) {
+    if (m_memberType == MemberType::Property) {
         compiler->addOpCode(op_native_property_get);
         compiler->addId(m_memberId);
         compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
@@ -720,7 +728,7 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptFunction* funct
         return;
     }
 
-    const auto* method = memberType == MemberType::Method ? runtime->getNativeMemberMethod(m_memberId) : nullptr;
+    const auto* method = m_method != nullptr ? m_method->asNativeMethod() : nullptr;
     if (method == nullptr) {
         compiler->reportInternalError("Invalid native member: " + m_qualifiedName);
     }
@@ -736,6 +744,9 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptFunction* funct
 }
 
 void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
+    if (m_memberType == MemberType::Unknown) {
+        raiseException("Native member has not been resolved: " + m_qualifiedName);
+    }
     m_receiver->evaluate(context);
     const auto* evaluatedReceiver = context.getResult();
     if (evaluatedReceiver == nullptr) {
@@ -750,9 +761,7 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
     receiverType->copyValue(evaluatedReceiver->getValue(), receiver);
 
     auto* runtime = context.getRuntime();
-    const auto memberType = runtime->getMemberType(m_memberId);
-
-    if (memberType == MemberType::Property) {
+    if (m_memberType == MemberType::Property) {
         NativePropertyDefinition definition;
         RuntimeValue result;
         definition.valueType = nullptr;
@@ -776,7 +785,7 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
 
-    const auto* method = memberType == MemberType::Method ? runtime->getNativeMemberMethod(m_memberId) : nullptr;
+    const auto* method = m_method != nullptr ? m_method->asNativeMethod() : nullptr;
     if (method == nullptr) {
         receiverType->freeValue(receiver);
         raiseException("Invalid native method: " + m_qualifiedName);
@@ -1076,6 +1085,7 @@ ConstructorExpression::ConstructorExpression(
 }
 
 void ConstructorExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+    m_constructor = nullptr;
     const auto* runtime = context->getRuntime();
     auto& arguments = m_arguments.getArguments();
 
@@ -1086,22 +1096,21 @@ void ConstructorExpression::onResolve(CompilerContext* context, ScriptFunction* 
         argumentTypes.push_back(argument->resolveOverloadType(context, function));
     }
 
-    m_constructorId = NOMAD_INVALID_ID;
     const auto resolution = runtime->resolveConstructor(m_objectType, argumentTypes);
     if (resolution.status != ResolveStatus::Resolved) {
         reportError(context, function, runtime->describeResolveFailure(m_constructorName, resolution));
         return;
     }
-    const auto* selected = runtime->getNativeConstructor(resolution.id);
+    const auto* selected = runtime->getConstructor(resolution.id);
     if (selected == nullptr) {
         reportError(context, function, "Invalid constructor for '" + m_constructorName + "'");
         return;
     }
-    m_constructorId = selected->getId();
     for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
         arguments[index]->setType(selected->getParameters()[index].type);
     }
     if (m_arguments.resolve(context, function)) {
+        m_constructor = selected;
         setType(selected->getReturnType());
     }
 }
@@ -1111,11 +1120,25 @@ bool ConstructorExpression::isTerminal() const {
 }
 
 void ConstructorExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
-    compiler->addConstructorCall(m_constructorId, function, &m_arguments);
+    if (m_constructor == nullptr) {
+        raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
+    }
+    const auto* native = m_constructor->asNativeConstructor();
+    if (native == nullptr) {
+        raiseException("Unsupported implementation of constructor '" + m_constructorName + "'");
+    }
+    compiler->addConstructorCall(native->getId(), function, &m_arguments);
     compiler->addMoveResult(getType(), target);
 }
 
 void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
+    if (m_constructor == nullptr) {
+        raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
+    }
+    const auto* constructor = m_constructor->asNativeConstructor();
+    if (constructor == nullptr) {
+        raiseException("Unsupported implementation of constructor '" + m_constructorName + "'");
+    }
     std::vector<TypedValue> evaluatedArguments;
     std::vector<RuntimeValue> values;
     m_arguments.evaluate(context, evaluatedArguments, values);
@@ -1123,10 +1146,6 @@ void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
     const auto release = [](NomadObject* object) { object->releaseRef(); };
-    const auto* constructor = context.getRuntime()->getNativeConstructor(m_constructorId);
-    if (constructor == nullptr) {
-        raiseException("Invalid constructor");
-    }
     const std::unique_ptr<NomadObject, decltype(release)> object(constructor->getFactory()(values), release);
     if (!object) {
         raiseException("Object factory for '" + m_constructorName + "' returned null");

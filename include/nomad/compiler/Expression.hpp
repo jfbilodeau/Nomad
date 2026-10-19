@@ -6,6 +6,8 @@
 #include <nomad/compiler/FormatStringCompiler.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 
+#include <nomad/script/Member.hpp>
+
 #include <nomad/Nomad.hpp>
 
 namespace nomad {
@@ -125,6 +127,8 @@ private:
     std::unique_ptr<Expression> m_receiver;
     ArgumentList m_arguments;
     NomadId m_memberId = NOMAD_INVALID_ID;
+    MemberType m_memberType = MemberType::Unknown;
+    const Method* m_method = nullptr;
     bool m_allowVoid = false;
 };
 
@@ -227,7 +231,7 @@ private:
     NomadString m_constructorName;
     const Type* m_objectType;
     ArgumentList m_arguments;
-    NomadId m_constructorId = NOMAD_INVALID_ID;
+    const Constructor* m_constructor = nullptr;
 };
 
 class StringLiteral : public PrimaryExpression {

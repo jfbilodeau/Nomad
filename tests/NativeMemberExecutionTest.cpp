@@ -2,8 +2,11 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <nomad/system/String.hpp>
+
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/Expression.hpp>
 
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -62,6 +65,70 @@ NomadId compileFunction(Runtime& runtime, const NomadString& source) {
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(native_member_execution)
+
+BOOST_AUTO_TEST_CASE(resolved_method_and_constructor_survive_catalog_growth) {
+    Runtime runtime;
+    const auto* type = registerTestObject(runtime);
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    auto receiver = std::make_unique<ConstructorExpression>(
+        nullptr, 1, 0, "TestObject", type, ArgumentList{}
+    );
+    ArgumentList arguments;
+    arguments.addExpressionArgument(1, 20, runtime.getIntegerType(),
+        std::make_unique<IntegerLiteral>(nullptr, 1, 20, 3));
+    NativeMemberExpression expression(nullptr, 1, 0, "TestObject.increment", "increment",
+        std::move(receiver), std::move(arguments));
+    BOOST_REQUIRE(expression.resolve(&compilation, nullptr));
+
+    BOOST_REQUIRE(runtime.registerNativeConstructor(
+        type, {defParameter("value", runtime.getIntegerType(), "")},
+        [](std::span<const RuntimeValue>) {
+            auto* object = new TestObject;
+            object->value = 100;
+            return object;
+        }, ""
+    ) != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(runtime.registerNativeMethod(
+        runtime.getStringType(), "increment",
+        [](VirtualMachine* machine) { machine->setIntegerResult(200); },
+        {defParameter("amount", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
+    ) != NOMAD_INVALID_ID);
+    for (auto index = NomadInteger{0}; index < 64; ++index) {
+        BOOST_REQUIRE(runtime.registerNativeFunction(
+            "growth" + toString(index), [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+        ) != NOMAD_INVALID_ID);
+    }
+
+    const auto liveObjects = NomadObject::getLiveObjectCount();
+    {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext evaluation(*machine);
+        expression.evaluate(evaluation);
+        BOOST_REQUIRE(!evaluation.hasError());
+        BOOST_REQUIRE(evaluation.getResult() != nullptr);
+        BOOST_TEST(evaluation.getResult()->getValue().getIntegerValue() == 7);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == liveObjects);
+
+    const auto functionId = compileFunction(runtime,
+        "object = new TestObject\nreturn object.increment 3");
+    RuntimeValue result;
+    runtime.executeFunction(functionId, {}, result);
+    BOOST_TEST(result.getIntegerValue() == 7);
+}
+
+BOOST_AUTO_TEST_CASE(unresolved_method_and_constructor_evaluation_reports_an_error) {
+    Runtime runtime;
+    const auto* type = registerTestObject(runtime);
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext evaluation(*machine);
+    ConstructorExpression constructor(nullptr, 1, 0, "TestObject", type, ArgumentList{});
+    BOOST_CHECK_THROW(constructor.evaluate(evaluation), AstException);
+    NativeMemberExpression method(nullptr, 1, 0, "text.toUpper", "toUpper",
+        std::make_unique<StringLiteral>(nullptr, 1, 0, "text"), ArgumentList{});
+    BOOST_CHECK_THROW(method.evaluate(evaluation), AstException);
+}
 
 BOOST_AUTO_TEST_CASE(typed_method_borrows_the_string_receiver) {
     Runtime runtime;
