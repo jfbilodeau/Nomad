@@ -236,6 +236,7 @@ public:
         NomadIndex line,
         NomadIndex column,
         NomadString constructorName,
+        const Type* objectType,
         ArgumentList arguments
     );
     [[nodiscard]] bool isTerminal() const override;
@@ -247,6 +248,7 @@ protected:
 
 private:
     NomadString m_constructorName;
+    const Type* m_objectType;
     ArgumentList m_arguments;
     NomadId m_constructorId = NOMAD_INVALID_ID;
 };

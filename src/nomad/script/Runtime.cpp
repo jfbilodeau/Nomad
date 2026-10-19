@@ -184,6 +184,16 @@ NomadId Runtime::registerNativeCallable(
             return NOMAD_INVALID_ID;
         }
     }
+    if (objectType == nullptr) {
+        if (const auto* overloadSet = findCallableOverloadSet(name)) {
+            if (NomadString error; !canOverloadCallable(*overloadSet, CallableKind::NativeFunction, parameters, returnType, error)) {
+                log::error("Cannot register native function '" + name + "': " + error);
+
+                return NOMAD_INVALID_ID;
+            }
+        }
+    }
+
     auto definition = std::make_unique<NativeFunctionDefinition>();
     definition->name = name;
     definition->type = objectType != nullptr ? CallableType::Method : CallableType::Function;
@@ -203,20 +213,7 @@ NomadId Runtime::registerNativeCallable(
         return memberId;
     }
 
-    const auto callable = CallableId{CallableKind::NativeFunction, id};
-
-    // The definition has to be in place before the signature can be compared against the existing overloads.
-    if (const auto* overloadSet = findCallableOverloadSet(name)) {
-        if (NomadString error; !canOverloadCallable(*overloadSet, callable, error)) {
-            log::error("Cannot register native function '" + name + "': " + error);
-
-            removeLastFunctionDefinition();
-
-            return NOMAD_INVALID_ID;
-        }
-    }
-
-    addCallable(name, callable);
+    addCallable(name, CallableId{CallableKind::NativeFunction, id});
 
     return id;
 }
@@ -229,18 +226,6 @@ NomadId Runtime::addFunctionDefinition(std::unique_ptr<FunctionDefinition> defin
     m_functionTable.push_back(std::move(definition));
 
     return id;
-}
-
-void Runtime::removeLastFunctionDefinition() {
-    auto& ids = m_functionsByName[m_functionTable.back()->name];
-
-    ids.pop_back();
-
-    if (ids.empty()) {
-        m_functionsByName.erase(m_functionTable.back()->name);
-    }
-
-    m_functionTable.pop_back();
 }
 
 const FunctionDefinition* Runtime::getFunctionDefinition(const NomadId functionId) const {
@@ -609,24 +594,25 @@ ParameterShape Runtime::getParameterShape(const Type* type) const {
 
 bool Runtime::canOverloadCallable(
     const CallableOverloadSet& overloadSet,
-    const CallableId candidate,
+    const CallableKind candidateKind,
+    const std::vector<ParameterDefinition>& parameters,
+    const Type* returnType,
     NomadString& error
 ) const {
-    const auto parameterCount = getCallableParameterCount(candidate);
+    const auto parameterCount = parameters.size();
 
     for (NomadIndex index = 0; index < parameterCount; ++index) {
-        if (!isOverloadableShape(getParameterShape(getCallableParameterType(candidate, index)))) {
-            error = "parameter '" + getCallableParameterName(candidate, index) + "' cannot take part in overloading";
+        if (!isOverloadableShape(getParameterShape(parameters[index].type))) {
+            error = "parameter '" + parameters[index].name + "' cannot take part in overloading";
 
             return false;
         }
     }
 
-    const auto* returnType = getCallableReturnType(candidate);
     const auto returnsValue = returnType != nullptr && !returnType->isVoid();
 
     for (const auto existing : overloadSet.overloads) {
-        if (existing.kind != candidate.kind) {
+        if (existing.kind != candidateKind) {
             error = "a callable of a different kind is already registered under that name";
 
             return false;
@@ -651,7 +637,7 @@ bool Runtime::canOverloadCallable(
         auto hasSameSignature = true;
 
         for (NomadIndex index = 0; index < parameterCount; ++index) {
-            const auto* candidateType = getCallableParameterType(candidate, index);
+            const auto* candidateType = parameters[index].type;
             const auto* existingType = getCallableParameterType(existing, index);
             const auto candidateShape = getParameterShape(candidateType);
 
@@ -1081,7 +1067,22 @@ NomadId Runtime::registerConstructor(
     ConstructorFactory factory,
     const NomadString& doc
 ) {
-    if (name.empty() || !ownsType(returnType) || returnType->isInternal() || !factory ||
+    // Constructors registered under one name belong to one class, even when they create different types.
+    const auto* existingClass = getConstructorObjectType(name);
+    const auto* objectType = existingClass != nullptr ? existingClass : returnType;
+
+    return registerConstructor(name, static_cast<const ObjectTypeBase*>(objectType), parameters, returnType, std::move(factory), doc);
+}
+
+NomadId Runtime::registerConstructor(
+    const NomadString& name,
+    const ObjectTypeBase* objectType,
+    const std::vector<ParameterDefinition>& parameters,
+    const ObjectTypeBase* returnType,
+    ConstructorFactory factory,
+    const NomadString& doc
+) {
+    if (name.empty() || !ownsType(returnType) || returnType->isInternal() || !ownsType(objectType) || !factory ||
         getParameterizedConstructorArgumentCount(name) || getParameterizedTypeArgumentCount(name)) {
         log::error("Cannot register constructor: a name, registered public object return type, and factory are required");
         return NOMAD_INVALID_ID;
@@ -1109,7 +1110,7 @@ NomadId Runtime::registerConstructor(
     definition->name = name;
     definition->parameters = parameters;
     definition->returnType = returnType;
-    definition->objectType = returnType;
+    definition->objectType = objectType;
     definition->factory = std::move(factory);
     definition->doc = doc;
     return addFunctionDefinition(std::move(definition));
@@ -1129,6 +1130,25 @@ std::vector<const ConstructorDefinition*> Runtime::getConstructors() const {
     for (const auto& definition : m_functionTable) {
         if (definition->type == CallableType::Constructor) {
             constructors.push_back(static_cast<const ConstructorDefinition*>(definition.get()));
+        }
+    }
+    return constructors;
+}
+
+const Type* Runtime::getConstructorObjectType(const NomadString& name) const {
+    for (const auto& definition : m_functionTable) {
+        if (definition->type == CallableType::Constructor && definition->name == name) {
+            return definition->objectType;
+        }
+    }
+    return nullptr;
+}
+
+std::vector<const ConstructorDefinition*> Runtime::getConstructors(const Type* objectType) const {
+    std::vector<const ConstructorDefinition*> constructors;
+    for (const auto* constructor : getConstructors()) {
+        if (constructor->objectType == objectType) {
+            constructors.push_back(constructor);
         }
     }
     return constructors;
@@ -1355,13 +1375,7 @@ bool Runtime::getNativePropertyDefinition(const NomadId memberId, NativeProperty
 }
 
 bool Runtime::getNativeMethodDefinition(const NomadId memberId, NativeMethodDefinition& definition) const {
-    const auto memberIndex = toNomadIndex(memberId);
-    if (memberIndex >= m_nativeMembers.size()) {
-        return false;
-    }
-
-    const auto& member = m_nativeMembers[memberIndex];
-    const auto* method = member.type == NativeMemberType::Method ? getNativeFunctionDefinition(toNomadId(member.definitionIndex)) : nullptr;
+    const auto* method = getNativeMethodDefinition(memberId);
     if (method == nullptr) {
         return false;
     }
@@ -1369,6 +1383,16 @@ bool Runtime::getNativeMethodDefinition(const NomadId memberId, NativeMethodDefi
     definition = *method;
     definition.id = memberId;
     return true;
+}
+
+const NativeFunctionDefinition* Runtime::getNativeMethodDefinition(const NomadId memberId) const {
+    const auto memberIndex = toNomadIndex(memberId);
+    if (memberIndex >= m_nativeMembers.size()) {
+        return nullptr;
+    }
+
+    const auto& member = m_nativeMembers[memberIndex];
+    return member.type == NativeMemberType::Method ? getNativeFunctionDefinition(toNomadId(member.definitionIndex)) : nullptr;
 }
 
 void Runtime::getNativeMembers(const Type* objectType, std::vector<NomadId>& members) const {

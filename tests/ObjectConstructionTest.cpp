@@ -200,7 +200,7 @@ BOOST_AUTO_TEST_CASE(registration_rejects_collisions_invalid_types_and_missing_f
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE(context.getFirstError() != nullptr);
     BOOST_TEST(context.getFirstError()->sourceName == "invalid.nomad");
-    BOOST_TEST(context.getFirstError()->message.find("No matching constructor") != NomadString::npos);
+    BOOST_TEST(context.getFirstError()->message.find("No overload of 'Example'") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(overloads_select_by_argument_types_and_count_with_distinct_return_types) {

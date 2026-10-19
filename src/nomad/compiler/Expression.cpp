@@ -1132,10 +1132,12 @@ NewObjectExpression::NewObjectExpression(
     const NomadIndex line,
     const NomadIndex column,
     NomadString constructorName,
+    const Type* objectType,
     ArgumentList arguments
 ):
     Expression(parent, line, column),
     m_constructorName(std::move(constructorName)),
+    m_objectType(objectType),
     m_arguments(std::move(arguments))
 {
 }
@@ -1152,36 +1154,22 @@ void NewObjectExpression::onResolve(CompilerContext* context, ScriptFunction* fu
     }
 
     m_constructorId = NOMAD_INVALID_ID;
-    ConstructorDefinition selected;
-    for (const auto* candidate : runtime->getConstructors()) {
-        const auto& constructor = *candidate;
-        if (constructor.name != m_constructorName || constructor.parameters.size() != argumentTypes.size()) {
-            continue;
-        }
-        auto matches = true;
-        for (auto index = NomadIndex{0}; index < argumentTypes.size(); ++index) {
-            matches = matches && (argumentTypes[index] == nullptr ||
-                                  constructor.parameters[index].type->sameType(argumentTypes[index]));
-        }
-        if (!matches) {
-            continue;
-        }
-        if (m_constructorId != NOMAD_INVALID_ID) {
-            reportError(context, function, "Ambiguous constructor for '" + m_constructorName + "'");
-            return;
-        }
-        selected = constructor;
-        m_constructorId = constructor.id;
-    }
-    if (m_constructorId == NOMAD_INVALID_ID) {
-        reportError(context, function, "No matching constructor for '" + m_constructorName + "'");
+    const auto resolution = runtime->resolveConstructor(m_objectType, argumentTypes);
+    if (resolution.status != ResolveStatus::Resolved) {
+        reportError(context, function, runtime->describeResolveFailure(m_constructorName, resolution));
         return;
     }
+    const auto* selected = runtime->getConstructorDefinition(resolution.id);
+    if (selected == nullptr) {
+        reportError(context, function, "Invalid constructor for '" + m_constructorName + "'");
+        return;
+    }
+    m_constructorId = selected->id;
     for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
-        arguments[index]->setType(selected.parameters[index].type);
+        arguments[index]->setType(selected->parameters[index].type);
     }
     if (m_arguments.resolve(context, function)) {
-        setType(selected.returnType);
+        setType(selected->returnType);
     }
 }
 

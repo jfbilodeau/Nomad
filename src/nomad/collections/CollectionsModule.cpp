@@ -123,6 +123,10 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     if (!context->runtime->registerParameterizedConstructor(
         "Array", 1,
         [runtime = context->runtime](const NomadString& name, const std::vector<const nomad::Type*>& arguments) {
+            // One class per specialization (e.g. `Array<int>`); each rank constructor builds a different array type.
+            auto classType = std::make_unique<nomad::ObjectType>("$" + name);
+            const auto* arrayClass = classType.get();
+            runtime->registerType(std::move(classType));
             for (const auto* family : {"Array1", "Array2", "Array3"}) {
                 const auto* type = runtime->getParameterizedType(family, arguments);
                 if (type == nullptr) {
@@ -136,7 +140,8 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                     }
                 }
                 if (!rankConstructor.factory || runtime->registerConstructor(
-                    name, rankConstructor.parameters, static_cast<const nomad::ObjectTypeBase*>(rankConstructor.returnType),
+                    name, arrayClass, rankConstructor.parameters,
+                    static_cast<const nomad::ObjectTypeBase*>(rankConstructor.returnType),
                     rankConstructor.factory, ""
                 ) == nomad::NOMAD_INVALID_ID) {
                     throw nomad::NomadException("Failed to register Array constructor");

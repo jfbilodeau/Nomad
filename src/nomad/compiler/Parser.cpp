@@ -138,18 +138,13 @@ bool parseNativeMemberArguments(CompilerContext* context, ScriptFunction* functi
         return true;
     }
 
-    NativeMethodDefinition definition;
-    if (!context->getRuntime()->getNativeMethodDefinition(representativeId, definition)) {
+    const auto* definition = context->getRuntime()->getNativeMethodDefinition(representativeId);
+    if (definition == nullptr) {
         context->getCompiler()->reportInternalError("Invalid native method shape: " + memberName);
+        return false;
     }
 
-    NativeFunctionDefinition parsingDefinition;
-    parsingDefinition.name = memberName;
-    parsingDefinition.parameters = definition.parameters;
-    parsingDefinition.returnType = definition.returnType;
-    parsingDefinition.doc = definition.doc;
-
-    return parseNativeFunctionArguments(context, function, tokens, parsingDefinition, &arguments);
+    return parseNativeFunctionArguments(context, function, tokens, *definition, &arguments);
 }
 
 std::unique_ptr<Expression> createNativeMemberExpression(
@@ -834,16 +829,13 @@ std::unique_ptr<Expression> parseNewExpression(
     }
 
     // The overload with the most parameters shapes the argument list; shorter overloads omit trailing arguments.
-    NativeFunctionDefinition parsingDefinition;
-    parsingDefinition.name = constructorName;
-    parsingDefinition.parameters = shape->parameters;
-    parsingDefinition.returnType = shape->returnType;
-    parsingDefinition.doc = shape->doc;
     ArgumentList arguments;
-    if (!parseNativeFunctionArguments(context, function, tokens, parsingDefinition, &arguments, true)) {
+    if (!parseNativeFunctionArguments(context, function, tokens, *shape, &arguments, true)) {
         return nullptr;
     }
-    return std::make_unique<NewObjectExpression>(parent, line, column, constructorName, std::move(arguments));
+    return std::make_unique<NewObjectExpression>(
+        parent, line, column, constructorName, shape->objectType, std::move(arguments)
+    );
 }
 
 std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
@@ -1356,7 +1348,7 @@ bool parseNativeFunctionArguments(
     CompilerContext* context,
     ScriptFunction* function,
     Tokenizer* tokens,
-    const NativeFunctionDefinition& nativeFunction,
+    const FunctionDefinition& nativeFunction,
     ArgumentList* arguments,
     const bool allowOmittedArguments
 ) {

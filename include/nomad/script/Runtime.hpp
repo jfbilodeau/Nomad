@@ -134,6 +134,17 @@ public:
     [[nodiscard]] const Type* getEventType(const NomadString& name) const;
     [[nodiscard]] const Type* getPredicateType();
 
+    // `name` is how `new` refers to the constructor. `objectType` is the class being constructed and `returnType`
+    // is the type of the object that gets created; they differ when one class builds several kinds of object.
+    NomadId registerConstructor(
+        const NomadString& name,
+        const ObjectTypeBase* objectType,
+        const std::vector<ParameterDefinition>& parameters,
+        const ObjectTypeBase* returnType,
+        ConstructorFactory factory,
+        NomadDocArg
+    );
+    // Shorthand for a constructor whose class and created type are the same.
     NomadId registerConstructor(
         const NomadString& name,
         const std::vector<ParameterDefinition>& parameters,
@@ -145,6 +156,9 @@ public:
     // Null unless `functionId` identifies a constructor.
     [[nodiscard]] const ConstructorDefinition* getConstructorDefinition(NomadId functionId) const;
     [[nodiscard]] std::vector<const ConstructorDefinition*> getConstructors() const;
+    // The class named by constructors registered under `name`; null when there are none.
+    [[nodiscard]] const Type* getConstructorObjectType(const NomadString& name) const;
+    [[nodiscard]] std::vector<const ConstructorDefinition*> getConstructors(const Type* objectType) const;
     using ParameterizedConstructorInitializer =
         std::function<void(const NomadString&, const std::vector<const Type*>&)>;
     bool registerParameterizedConstructor(
@@ -185,6 +199,8 @@ public:
     [[nodiscard]] NativeMemberType getNativeMemberType(NomadId memberId) const;
     [[nodiscard]] bool getNativePropertyDefinition(NomadId memberId, NativePropertyDefinition& definition) const;
     [[nodiscard]] bool getNativeMethodDefinition(NomadId memberId, NativeMethodDefinition& definition) const;
+    // The table entry behind a method member id; its `id` is the table id. Null when `memberId` is not a method.
+    [[nodiscard]] const NativeFunctionDefinition* getNativeMethodDefinition(NomadId memberId) const;
     void getNativeMembers(const Type* objectType, std::vector<NomadId>& members) const;
     void getNativeMembers(std::vector<NomadId>& members) const;
     void getNativeMemberOverloads(const NomadString& name, std::vector<NomadId>& overloads) const;
@@ -427,11 +443,11 @@ private:
     // Adds `callable` to the overload set for `name`, creating the set when needed.
     void addCallable(const NomadString& name, CallableId callable);
     [[nodiscard]] const CallableOverloadSet* findCallableOverloadSet(const NomadString& name) const;
-    // Checks that `candidate` may join `overloadSet` as an overload.
-    [[nodiscard]] bool canOverloadCallable(const CallableOverloadSet& overloadSet, CallableId candidate,
-                                           NomadString& error) const;
+    // Checks that a callable of `candidateKind` with these parameters may join `overloadSet` as an overload.
+    [[nodiscard]] bool canOverloadCallable(const CallableOverloadSet& overloadSet, CallableKind candidateKind,
+                                           const std::vector<ParameterDefinition>& parameters,
+                                           const Type* returnType, NomadString& error) const;
     NomadId addFunctionDefinition(std::unique_ptr<FunctionDefinition> definition);
-    void removeLastFunctionDefinition();
     [[nodiscard]] ResolveResult resolveAmong(
         std::vector<NomadId> candidates,
         const std::vector<const Type*>& argumentTypes

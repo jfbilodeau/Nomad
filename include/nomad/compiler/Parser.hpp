@@ -71,7 +71,7 @@ std::unique_ptr<Expression> parseNativeFunctionCallExpression(CompilerContext* c
     CompilerContext* context,
     ScriptFunction* function,
     Tokenizer* tokens,
-    const NativeFunctionDefinition& nativeFunction,
+    const FunctionDefinition& nativeFunction,
     ArgumentList* arguments,
     bool allowOmittedArguments = false
 );
