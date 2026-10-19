@@ -456,90 +456,6 @@ void BinaryExpression::onEvaluate(InterpreterContext& context) const {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// CallNativeFunctionExpression
-CallNativeFunctionExpression::CallNativeFunctionExpression(
-    const Expression* parent,
-    const NomadIndex line,
-    const NomadIndex column,
-    NomadString name
-):
-    Expression(parent, line, column),
-    m_name(std::move(name))
-{
-}
-
-bool CallNativeFunctionExpression::isTerminal() const {
-    return false;
-}
-
-void CallNativeFunctionExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
-    auto* runtime = context->getRuntime();
-
-    if (runtime->getCallableOverloadCount(m_name) > 1) {
-        NomadString error;
-        const auto selected = selectCallableOverload(context, function, m_name, &m_arguments, error);
-
-        if (!selected.isValid()) {
-            reportError(context, function, error);
-            return;
-        }
-
-        m_nativeFunctionId = selected.id;
-    } else {
-        m_nativeFunctionId = runtime->getNativeFunctionId(m_name);
-    }
-
-    if (m_nativeFunctionId == NOMAD_INVALID_ID) {
-        reportError(context, function, "Unknown native function '" + m_name + "'");
-        return;
-    }
-
-    const auto* nativeFunction = runtime->getNativeFunction(m_nativeFunctionId);
-
-    if (nativeFunction == nullptr || nativeFunction->getReturnType() == nullptr || nativeFunction->getReturnType()->isVoid()) {
-        reportError(context, function, "NativeFunction '" + m_name + "' does not return a value");
-        return;
-    }
-
-    setType(nativeFunction->getReturnType());
-
-    (void)m_arguments.resolve(context, function);
-}
-
-void CallNativeFunctionExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
-    if (m_nativeFunctionId == NOMAD_INVALID_ID) {
-        raiseException("Unknown native function '" + m_name + "'");
-    }
-
-    compiler->addNativeFunctionCall(m_nativeFunctionId, function, &m_arguments);
-
-    compiler->addMoveResult(getType(), target);
-}
-
-void CallNativeFunctionExpression::onEvaluate(InterpreterContext& context) const {
-    std::vector<TypedValue> evaluatedArguments;
-    std::vector<RuntimeValue> values;
-    m_arguments.evaluate(context, evaluatedArguments, values);
-    if (context.hasError()) {
-        return;
-    }
-
-    context.evaluateNativeFunctionCall(m_nativeFunctionId, values);
-}
-
-void CallNativeFunctionExpression::addArgument(std::unique_ptr<Argument> argument) {
-    m_arguments.add(std::move(argument));
-}
-
-ArgumentList* CallNativeFunctionExpression::getArguments() {
-    return &m_arguments;
-}
-
-const ArgumentList* CallNativeFunctionExpression::getArguments() const {
-    return &m_arguments;
-}
-
-///////////////////////////////////////////////////////////////////////////////
 // CallFunctionExpression
 FunctionCallExpression::FunctionCallExpression(
     const Expression* parent,
@@ -557,30 +473,31 @@ bool FunctionCallExpression::isTerminal() const {
 }
 
 void FunctionCallExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
-    auto* runtime = context->getRuntime();
-    m_functionId = runtime->getFunctionId(m_name);
-
-    if (m_functionId == NOMAD_INVALID_ID) {
-        reportError(context, function, "Unknown function '" + m_name + "'");
+    NomadString error;
+    m_function = resolveFunctionCall(context, function, m_name, &m_arguments, error);
+    if (m_function == nullptr) {
+        reportError(context, function, error);
         return;
     }
 
-    const auto* callFunction = runtime->getScriptFunction(m_functionId);
-    const auto* returnType = callFunction->getReturnType();
+    const auto* script = m_function->asScriptFunction();
+    const auto* returnType = m_function->getReturnType();
 
-    if (context->getMode() != CompilerMode::Script && callFunction->getFunctionStart() == NOMAD_INVALID_INDEX) {
+    if (context->getMode() != CompilerMode::Script && script != nullptr &&
+        script->getFunctionStart() == NOMAD_INVALID_INDEX) {
         reportError(context, function, "Function '" + m_name + "' has not been compiled");
         return;
     }
 
     auto* compiler = context->getCompiler();
 
-    if (context->getMode() == CompilerMode::Script && function != nullptr) {
-        compiler->addFunctionCallDependency(function->getId(), m_functionId);
+    if (context->getMode() == CompilerMode::Script && function != nullptr && script != nullptr) {
+        compiler->addFunctionCallDependency(function->getId(), script->getId());
     }
 
     if (returnType == nullptr) {
-        if (function != nullptr && compiler->isRecursiveFunctionCall(function->getId(), m_functionId)) {
+        if (script != nullptr && function != nullptr &&
+            compiler->isRecursiveFunctionCall(function->getId(), script->getId())) {
             reportError(
                 context,
                 function,
@@ -604,7 +521,16 @@ void FunctionCallExpression::onResolve(CompilerContext* context, ScriptFunction*
 }
 
 void FunctionCallExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
-    compiler->addFunctionCall(m_functionId, function, &m_arguments);
+    if (m_function == nullptr) {
+        raiseException("Function call to '" + m_name + "' has not been resolved");
+    }
+    if (const auto* native = m_function->asNativeFunction()) {
+        compiler->addNativeFunctionCall(native->getId(), function, &m_arguments);
+    } else if (const auto* script = m_function->asScriptFunction()) {
+        compiler->addFunctionCall(script->getId(), function, &m_arguments);
+    } else {
+        raiseException("Unsupported implementation of function '" + m_name + "'");
+    }
 
     compiler->addMoveResult(getType(), target);
 }
@@ -626,6 +552,9 @@ NomadIndex FunctionCallExpression::getArgumentCount() const {
 }
 
 void FunctionCallExpression::onEvaluate(InterpreterContext& context) const {
+    if (m_function == nullptr) {
+        raiseException("Function call to '" + m_name + "' has not been resolved");
+    }
     std::vector<TypedValue> evaluatedArguments;
     std::vector<RuntimeValue> values;
     m_arguments.evaluate(context, evaluatedArguments, values);
@@ -633,7 +562,13 @@ void FunctionCallExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
 
-    context.evaluateFunctionCall(m_functionId, values);
+    if (const auto* native = m_function->asNativeFunction()) {
+        context.evaluateNativeFunctionCall(native->getId(), values);
+    } else if (const auto* script = m_function->asScriptFunction()) {
+        context.evaluateFunctionCall(script->getId(), values);
+    } else {
+        raiseException("Unsupported implementation of function '" + m_name + "'");
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -696,7 +631,7 @@ bool NativeMemberExpression::resolveAssignmentTarget(CompilerContext* context, S
     }
 
     auto* runtime = context->getRuntime();
-    if (runtime->getNativeMemberType(m_memberId) == NativeMemberType::Method) {
+    if (runtime->getMemberType(m_memberId) == MemberType::Method) {
         reportError(context, function, "Cannot assign to native method '" + m_qualifiedName + "'");
         return false;
     }
@@ -719,8 +654,8 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptFunction*
     }
 
     auto* runtime = context->getRuntime();
-    switch (runtime->getNativeMemberType(m_memberId)) {
-    case NativeMemberType::Property: {
+    switch (runtime->getMemberType(m_memberId)) {
+    case MemberType::Property: {
         NativePropertyDefinition definition;
         if (!runtime->getNativePropertyDefinition(m_memberId, definition)) {
             context->getCompiler()->reportInternalError("Invalid native property: " + m_qualifiedName);
@@ -735,7 +670,7 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptFunction*
         return;
     }
 
-    case NativeMemberType::Method: {
+    case MemberType::Method: {
         const auto* method = runtime->getNativeMemberMethod(m_memberId);
         if (method == nullptr) {
             context->getCompiler()->reportInternalError("Invalid native method: " + m_qualifiedName);
@@ -765,19 +700,19 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptFunction*
         return;
     }
 
-    case NativeMemberType::Unknown:
+    case MemberType::Unknown:
         context->getCompiler()->reportInternalError("Invalid native member: " + m_qualifiedName);
     }
 }
 
 void NativeMemberExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
     auto* runtime = compiler->getRuntime();
-    const auto memberType = runtime->getNativeMemberType(m_memberId);
+    const auto memberType = runtime->getMemberType(m_memberId);
     const auto* receiverType = m_receiver->getType();
 
     m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
 
-    if (memberType == NativeMemberType::Property) {
+    if (memberType == MemberType::Property) {
         compiler->addOpCode(op_native_property_get);
         compiler->addId(m_memberId);
         compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
@@ -785,7 +720,7 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptFunction* funct
         return;
     }
 
-    const auto* method = memberType == NativeMemberType::Method ? runtime->getNativeMemberMethod(m_memberId) : nullptr;
+    const auto* method = memberType == MemberType::Method ? runtime->getNativeMemberMethod(m_memberId) : nullptr;
     if (method == nullptr) {
         compiler->reportInternalError("Invalid native member: " + m_qualifiedName);
     }
@@ -815,9 +750,9 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
     receiverType->copyValue(evaluatedReceiver->getValue(), receiver);
 
     auto* runtime = context.getRuntime();
-    const auto memberType = runtime->getNativeMemberType(m_memberId);
+    const auto memberType = runtime->getMemberType(m_memberId);
 
-    if (memberType == NativeMemberType::Property) {
+    if (memberType == MemberType::Property) {
         NativePropertyDefinition definition;
         RuntimeValue result;
         definition.valueType = nullptr;
@@ -841,7 +776,7 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
 
-    const auto* method = memberType == NativeMemberType::Method ? runtime->getNativeMemberMethod(m_memberId) : nullptr;
+    const auto* method = memberType == MemberType::Method ? runtime->getNativeMemberMethod(m_memberId) : nullptr;
     if (method == nullptr) {
         receiverType->freeValue(receiver);
         raiseException("Invalid native method: " + m_qualifiedName);

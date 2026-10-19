@@ -223,7 +223,7 @@ void CallStatementNode::onResolve(CompilerContext* context, ScriptFunction* func
     (void)m_arguments.resolve(context, function);
 }
 
-CallableId selectCallableOverload(
+const Function* resolveFunctionCall(
     CompilerContext* context,
     ScriptFunction* function,
     const NomadString& name,
@@ -231,6 +231,13 @@ CallableId selectCallableOverload(
     NomadString& error
 ) {
     const auto* runtime = context->getRuntime();
+    if (runtime->getCallableOverloadCount(name) <= 1) {
+        const auto* selected = runtime->getFunction(runtime->getCallableId(name));
+        if (selected == nullptr) {
+            error = "Unknown function '" + name + "'";
+        }
+        return selected;
+    }
     auto& argumentNodes = arguments->getArguments();
 
     std::vector<const Type*> argumentTypes;
@@ -240,72 +247,22 @@ CallableId selectCallableOverload(
         argumentTypes.push_back(argument->resolveOverloadType(context, function));
     }
 
-    const auto selected = runtime->resolveCallableOverload(name, argumentTypes, error);
+    const auto selected = runtime->resolveFunction(name, argumentTypes);
 
-    if (!selected.isValid()) {
-        return NOMAD_INVALID_CALLABLE_ID;
+    if (!selected.isResolved()) {
+        error = runtime->describeResolveFailure(name, selected);
+        return nullptr;
     }
+    const auto* selectedFunction = runtime->getFunction(selected.id);
 
     // Only overloadable shapes can reach this point, so each parameter produced exactly one argument.
     for (NomadIndex index = 0; index < argumentNodes.size(); ++index) {
         if (argumentTypes[index] != nullptr) {
-            argumentNodes[index]->setType(runtime->getCallableParameterType(selected, index));
+            argumentNodes[index]->setType(selectedFunction->getParameters()[index].type);
         }
     }
 
-    return selected;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// NativeFunctionStatementNode
-NativeFunctionStatementNode::NativeFunctionStatementNode(const NomadIndex line, const NomadIndex column, const NativeFunction* nativeFunction):
-    CallStatementNode(line, column),
-    m_nativeFunction(nativeFunction)
-{
-}
-
-void NativeFunctionStatementNode::onResolve(CompilerContext* context, ScriptFunction* function) {
-    auto* runtime = context->getRuntime();
-
-    // The parser picked the first overload to shape the argument list; now that the arguments exist, pick the one
-    // whose parameter types they actually match.
-    if (runtime->getCallableOverloadCount(m_nativeFunction->getName()) > 1) {
-        NomadString error;
-        const auto selected = selectCallableOverload(context, function, m_nativeFunction->getName(), getArguments(), error);
-
-        if (!selected.isValid()) {
-            reportError(context, function, error);
-
-            return;
-        }
-
-        if (const auto* overload = runtime->getNativeFunction(selected.id)) {
-            m_nativeFunction = overload;
-        }
-    }
-
-    CallStatementNode::onResolve(context, function);
-}
-
-void NativeFunctionStatementNode::onCompile(Compiler* compiler, ScriptFunction* function) {
-    compiler->addNativeFunctionCall(m_nativeFunction->getId(), function, getArguments());
-
-    // The statement discards the nativeFunction's return value.
-    compiler->addFreeValue(m_nativeFunction->getReturnType()->getTypeOpCodes()->freeResult);
-}
-
-void NativeFunctionStatementNode::onEvaluate(InterpreterContext& context) const {
-    std::vector<TypedValue> evaluatedArguments;
-    std::vector<RuntimeValue> values;
-    getArguments()->evaluate(context, evaluatedArguments, values);
-    if (context.hasError()) {
-        return;
-    }
-
-    context.getRuntime()->executeNativeFunction(m_nativeFunction->getId(), values, context);
-    if (!context.hasError()) {
-        context.setVoidResult();
-    }
+    return selectedFunction;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -316,16 +273,16 @@ FunctionCallStatementNode::FunctionCallStatementNode(const NomadIndex line, cons
 }
 
 void FunctionCallStatementNode::onResolve(CompilerContext* context, ScriptFunction* function) {
-    const auto* runtime = context->getRuntime();
-    m_functionId = runtime->getFunctionId(m_name);
-
-    if (m_functionId == NOMAD_INVALID_ID) {
-        reportError(context, function, "Unknown function '" + m_name + "'");
+    NomadString error;
+    m_function = resolveFunctionCall(context, function, m_name, getArguments(), error);
+    if (m_function == nullptr) {
+        reportError(context, function, error);
         return;
     }
 
-    if (context->getMode() != CompilerMode::Script &&
-        runtime->getScriptFunction(m_functionId)->getFunctionStart() == NOMAD_INVALID_INDEX) {
+    const auto* script = m_function->asScriptFunction();
+    if (context->getMode() != CompilerMode::Script && script != nullptr &&
+        script->getFunctionStart() == NOMAD_INVALID_INDEX) {
         reportError(context, function, "Function '" + m_name + "' has not been compiled");
         return;
     }
@@ -334,19 +291,25 @@ void FunctionCallStatementNode::onResolve(CompilerContext* context, ScriptFuncti
 }
 
 void FunctionCallStatementNode::onCompile(Compiler* compiler, ScriptFunction* function) {
-    const auto targetFunctionId = compiler->getRuntime()->getFunctionId(m_name);
-
-    compiler->addFunctionCall(targetFunctionId, function, getArguments());
+    if (m_function == nullptr) {
+        raiseException("Function call to '" + m_name + "' has not been resolved");
+    }
+    if (const auto* native = m_function->asNativeFunction()) {
+        compiler->addNativeFunctionCall(native->getId(), function, getArguments());
+    } else if (const auto* script = m_function->asScriptFunction()) {
+        compiler->addFunctionCall(script->getId(), function, getArguments());
+    } else {
+        raiseException("Unsupported implementation of function '" + m_name + "'");
+    }
 
     // The statement discards the function's return value.
-    if (const auto* targetFunction = compiler->getRuntime()->getScriptFunction(targetFunctionId);
-        targetFunction != nullptr && targetFunction->getReturnType() != nullptr) {
-        compiler->addFreeValue(targetFunction->getReturnType()->getTypeOpCodes()->freeResult);
+    if (const auto* returnType = m_function->getReturnType()) {
+        compiler->addFreeValue(returnType->getTypeOpCodes()->freeResult);
     }
 }
 
 void FunctionCallStatementNode::onEvaluate(InterpreterContext& context) const {
-    if (m_functionId == NOMAD_INVALID_ID) {
+    if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
 
@@ -357,8 +320,16 @@ void FunctionCallStatementNode::onEvaluate(InterpreterContext& context) const {
         return;
     }
 
-    context.evaluateFunctionCall(m_functionId, values);
-    context.setVoidResult();
+    if (const auto* native = m_function->asNativeFunction()) {
+        context.evaluateNativeFunctionCall(native->getId(), values);
+    } else if (const auto* script = m_function->asScriptFunction()) {
+        context.evaluateFunctionCall(script->getId(), values);
+    } else {
+        raiseException("Unsupported implementation of function '" + m_name + "'");
+    }
+    if (!context.hasError()) {
+        context.setVoidResult();
+    }
 }
 
 } // namespace nomad

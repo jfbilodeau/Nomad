@@ -17,7 +17,7 @@ class Type;
 class ObjectTypeBase;
 class VirtualMachine;
 
-enum class NativeMemberType {
+enum class MemberType {
     Unknown = 1,
     Property,
     Method,

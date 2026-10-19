@@ -92,7 +92,7 @@ BOOST_AUTO_TEST_CASE(registers_method_metadata) {
                                         runtime.getStringType(), NomadDoc("Return a replaced string"));
 
     BOOST_REQUIRE(methodId != NOMAD_INVALID_ID);
-    BOOST_TEST((runtime.getNativeMemberType(methodId) == NativeMemberType::Method));
+    BOOST_TEST((runtime.getMemberType(methodId) == MemberType::Method));
 
     const auto* method = runtime.getNativeMemberMethod(methodId);
     BOOST_REQUIRE(method != nullptr);

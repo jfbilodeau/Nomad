@@ -156,33 +156,11 @@ protected:
     }
 };
 
-// Where a callable is implemented. Both kinds are called with the same syntax in Nomad code.
-enum class CallableKind {
-    NativeFunction = 1, // Implemented in C++ and registered by the host runtime.
-    Function,           // Compiled from Nomad source, either from a script or from a `fun` declaration.
-};
-
-// `id` indexes the shared callable table; `kind` records the implementation used by the legacy call parser.
-struct CallableId {
-    CallableKind kind = CallableKind::NativeFunction;
-    NomadId id = NOMAD_INVALID_ID;
-
-    [[nodiscard]] bool isValid() const { return id != NOMAD_INVALID_ID; }
-
-    bool operator==(const CallableId& other) const {
-        return kind == other.kind && id == other.id;
-    }
-
-    bool operator!=(const CallableId& other) const { return !(*this == other); }
-};
-
-inline constexpr CallableId NOMAD_INVALID_CALLABLE_ID = CallableId{};
-
 // All callables sharing one name. A set holds more than one entry when the name is overloaded; overloads may differ
 // only in the types of their `ParameterShape::Value` parameters.
 struct CallableOverloadSet {
     NomadString name;
-    std::vector<CallableId> overloads;
+    std::vector<NomadId> overloads;
 };
 
 } // nomad

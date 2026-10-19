@@ -186,7 +186,7 @@ NomadId Runtime::registerNativeCallable(
     }
     if (objectType == nullptr) {
         if (const auto* overloadSet = findCallableOverloadSet(name)) {
-            if (NomadString error; !canOverloadCallable(*overloadSet, CallableKind::NativeFunction, parameters, returnType, error)) {
+            if (NomadString error; !canOverloadCallable(*overloadSet, parameters, returnType, error)) {
                 log::error("Cannot register native function '" + name + "': " + error);
 
                 return NOMAD_INVALID_ID;
@@ -200,7 +200,7 @@ NomadId Runtime::registerNativeCallable(
         id = addCallableToTable(std::make_unique<NativeMethod>(name, objectType, std::move(fn), parameters, returnType, doc));
 
         const auto memberId = toNomadId(m_nativeMembers.size());
-        m_nativeMembers.push_back({NativeMemberType::Method, toNomadIndex(id)});
+        m_nativeMembers.push_back({MemberType::Method, toNomadIndex(id)});
         m_nativeMembersByName[name].push_back(memberId);
 
         return memberId;
@@ -208,7 +208,7 @@ NomadId Runtime::registerNativeCallable(
 
     id = addCallableToTable(std::make_unique<NativeFunction>(name, std::move(fn), parameters, returnType, doc));
 
-    addCallable(name, CallableId{CallableKind::NativeFunction, id});
+    addCallable(name, id);
 
     return id;
 }
@@ -433,7 +433,7 @@ NomadString Runtime::describeResolveFailure(const NomadString& name, const Resol
     return {};
 }
 
-void Runtime::addCallable(const NomadString& name, const CallableId callable) {
+void Runtime::addCallable(const NomadString& name, const NomadId callable) {
     const auto existing = m_callablesByName.find(name);
 
     if (existing == m_callablesByName.end()) {
@@ -456,17 +456,17 @@ const CallableOverloadSet* Runtime::findCallableOverloadSet(const NomadString& n
     return &m_callables[entry->second];
 }
 
-CallableId Runtime::getCallableId(const NomadString& name) const {
+NomadId Runtime::getCallableId(const NomadString& name) const {
     const auto* overloadSet = findCallableOverloadSet(name);
 
     if (overloadSet == nullptr || overloadSet->overloads.empty()) {
-        return NOMAD_INVALID_CALLABLE_ID;
+        return NOMAD_INVALID_ID;
     }
 
     return overloadSet->overloads.front();
 }
 
-void Runtime::getCallableOverloads(const NomadString& name, std::vector<CallableId>& overloads) const {
+void Runtime::getCallableOverloads(const NomadString& name, std::vector<NomadId>& overloads) const {
     overloads.clear();
 
     if (const auto* overloadSet = findCallableOverloadSet(name)) {
@@ -480,46 +480,8 @@ NomadIndex Runtime::getCallableOverloadCount(const NomadString& name) const {
     return overloadSet == nullptr ? 0 : overloadSet->overloads.size();
 }
 
-const NomadString& Runtime::getCallableName(const CallableId callable) const {
-    static const NomadString emptyName;
-
-    const auto* entry = getCallable(callable.id);
-
-    return entry == nullptr ? emptyName : entry->getName();
-}
-
-NomadIndex Runtime::getCallableParameterCount(const CallableId callable) const {
-    const auto* entry = getCallable(callable.id);
-
-    return entry == nullptr ? 0 : entry->getParameterCount();
-}
-
-const Type* Runtime::getCallableParameterType(const CallableId callable, const NomadIndex parameterIndex) const {
-    if (parameterIndex >= getCallableParameterCount(callable)) {
-        return nullptr;
-    }
-
-    return getCallable(callable.id)->getParameters()[parameterIndex].type;
-}
-
-const NomadString& Runtime::getCallableParameterName(const CallableId callable, const NomadIndex parameterIndex) const {
-    static const NomadString emptyName;
-
-    if (parameterIndex >= getCallableParameterCount(callable)) {
-        return emptyName;
-    }
-
-    return getCallable(callable.id)->getParameters()[parameterIndex].name;
-}
-
-const Type* Runtime::getCallableReturnType(const CallableId callable) const {
-    const auto* entry = getCallable(callable.id);
-
-    return entry == nullptr ? nullptr : entry->getReturnType();
-}
-
 ParameterShape Runtime::getParameterShape(const Type* type) const {
-    // Mirrors the order in which `parseNativeFunctionArguments` tests parameter types.
+    // Mirrors the order in which `parseCallableArguments` tests parameter types.
     if (type == getFileNameType()) {
         return ParameterShape::SourceFile;
     }
@@ -549,7 +511,6 @@ ParameterShape Runtime::getParameterShape(const Type* type) const {
 
 bool Runtime::canOverloadCallable(
     const CallableOverloadSet& overloadSet,
-    const CallableKind candidateKind,
     const std::vector<Parameter>& parameters,
     const Type* returnType,
     NomadString& error
@@ -567,19 +528,20 @@ bool Runtime::canOverloadCallable(
     const auto returnsValue = returnType != nullptr && !returnType->isVoid();
 
     for (const auto existing : overloadSet.overloads) {
-        if (existing.kind != candidateKind) {
+        const auto* existingFunction = getFunction(existing);
+        if (existingFunction == nullptr || existingFunction->asNativeFunction() == nullptr) {
             error = "a callable of a different kind is already registered under that name";
 
             return false;
         }
 
-        if (getCallableParameterCount(existing) != parameterCount) {
+        if (existingFunction->getParameterCount() != parameterCount) {
             error = "overloads must all take the same number of parameters";
 
             return false;
         }
 
-        const auto* existingReturnType = getCallableReturnType(existing);
+        const auto* existingReturnType = existingFunction->getReturnType();
 
         // The parser decides whether a call is a statement or an expression from the name alone, so the whole set
         // has to agree on whether it yields a value.
@@ -593,7 +555,7 @@ bool Runtime::canOverloadCallable(
 
         for (NomadIndex index = 0; index < parameterCount; ++index) {
             const auto* candidateType = parameters[index].type;
-            const auto* existingType = getCallableParameterType(existing, index);
+            const auto* existingType = existingFunction->getParameters()[index].type;
             const auto candidateShape = getParameterShape(candidateType);
 
             if (candidateShape != getParameterShape(existingType)) {
@@ -621,97 +583,6 @@ bool Runtime::canOverloadCallable(
     }
 
     return true;
-}
-
-CallableId Runtime::resolveCallableOverload(
-    const NomadString& name,
-    const std::vector<const Type*>& argumentTypes,
-    NomadString& error
-) const {
-    const auto* overloadSet = findCallableOverloadSet(name);
-
-    if (overloadSet == nullptr || overloadSet->overloads.empty()) {
-        error = "Unknown function '" + name + "'";
-
-        return NOMAD_INVALID_CALLABLE_ID;
-    }
-
-    auto exactMatch = NOMAD_INVALID_CALLABLE_ID;
-    auto compatibleMatch = NOMAD_INVALID_CALLABLE_ID;
-    NomadIndex compatibleCount = 0;
-
-    for (const auto candidate : overloadSet->overloads) {
-        if (getCallableParameterCount(candidate) != argumentTypes.size()) {
-            continue;
-        }
-
-        auto isExact = true;
-        auto isCompatible = true;
-
-        for (NomadIndex index = 0; index < argumentTypes.size(); ++index) {
-            const auto* argumentType = argumentTypes[index];
-
-            // The compiler supplies this argument, so it cannot tell the overloads apart.
-            if (argumentType == nullptr) {
-                continue;
-            }
-
-            const auto* parameterType = getCallableParameterType(candidate, index);
-
-            if (parameterType == argumentType) {
-                continue;
-            }
-
-            isExact = false;
-
-            if (parameterType == nullptr || !parameterType->acceptsArgument(argumentType)) {
-                isCompatible = false;
-
-                break;
-            }
-        }
-
-        if (isExact) {
-            if (exactMatch.isValid()) {
-                error = "Ambiguous call to '" + name + "'";
-
-                return NOMAD_INVALID_CALLABLE_ID;
-            }
-
-            exactMatch = candidate;
-        } else if (isCompatible) {
-            compatibleMatch = candidate;
-            ++compatibleCount;
-        }
-    }
-
-    if (exactMatch.isValid()) {
-        return exactMatch;
-    }
-
-    if (compatibleCount == 1) {
-        return compatibleMatch;
-    }
-
-    NomadString argumentList;
-
-    for (const auto* argumentType : argumentTypes) {
-        if (argumentType == nullptr) {
-            continue;
-        }
-
-        if (!argumentList.empty()) {
-            argumentList += ", ";
-        }
-
-        argumentList += getTypeDisplayName(argumentType);
-    }
-
-    error = compatibleCount > 1
-        ? "Ambiguous call to '" + name + "' with arguments (" + argumentList + ")"
-        : "No overload of '" + name + "' accepts arguments (" + argumentList + ")";
-
-    return NOMAD_INVALID_CALLABLE_ID;
 }
 
 void Runtime::registerType(std::unique_ptr<Type>&& type) {
@@ -982,7 +853,7 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
     for (const auto memberId : existing->second) {
         std::vector<Parameter> existingParameters;
 
-        if (getNativeMemberType(memberId) == NativeMemberType::Method) {
+        if (getMemberType(memberId) == MemberType::Method) {
             const auto* method = getNativeMemberMethod(memberId);
             if (method == nullptr) {
                 throw NomadBug("Invalid native method registration");
@@ -1227,7 +1098,7 @@ NomadId Runtime::registerNativeProperty(const ObjectTypeBase* objectType, const 
         std::move(setFn),
         doc,
     });
-    m_nativeMembers.push_back({NativeMemberType::Property, definitionIndex});
+    m_nativeMembers.push_back({MemberType::Property, definitionIndex});
     m_nativeMembersByName[name].push_back(id);
 
     return id;
@@ -1255,8 +1126,8 @@ NomadId Runtime::getNativeMemberId(const Type* objectType, const NomadString& na
     }
 
     for (const auto memberId : overloads->second) {
-        switch (getNativeMemberType(memberId)) {
-        case NativeMemberType::Property: {
+        switch (getMemberType(memberId)) {
+        case MemberType::Property: {
             NativePropertyDefinition definition;
             if (getNativePropertyDefinition(memberId, definition) && definition.objectType == objectType) {
                 return memberId;
@@ -1264,7 +1135,7 @@ NomadId Runtime::getNativeMemberId(const Type* objectType, const NomadString& na
             break;
         }
 
-        case NativeMemberType::Method: {
+        case MemberType::Method: {
             const auto* method = getNativeMemberMethod(memberId);
             if (method != nullptr && method->getObjectType() == objectType) {
                 return memberId;
@@ -1272,7 +1143,7 @@ NomadId Runtime::getNativeMemberId(const Type* objectType, const NomadString& na
             break;
         }
 
-        case NativeMemberType::Unknown:
+        case MemberType::Unknown:
             break;
         }
     }
@@ -1280,10 +1151,10 @@ NomadId Runtime::getNativeMemberId(const Type* objectType, const NomadString& na
     return NOMAD_INVALID_ID;
 }
 
-NativeMemberType Runtime::getNativeMemberType(const NomadId memberId) const {
+MemberType Runtime::getMemberType(const NomadId memberId) const {
     const auto memberIndex = toNomadIndex(memberId);
     if (memberIndex >= m_nativeMembers.size()) {
-        return NativeMemberType::Unknown;
+        return MemberType::Unknown;
     }
 
     return m_nativeMembers[memberIndex].type;
@@ -1296,7 +1167,7 @@ bool Runtime::getNativePropertyDefinition(const NomadId memberId, NativeProperty
     }
 
     const auto& member = m_nativeMembers[memberIndex];
-    if (member.type != NativeMemberType::Property || member.definitionIndex >= m_nativeProperties.size()) {
+    if (member.type != MemberType::Property || member.definitionIndex >= m_nativeProperties.size()) {
         return false;
     }
 
@@ -1311,7 +1182,7 @@ const NativeMethod* Runtime::getNativeMemberMethod(const NomadId memberId) const
     }
 
     const auto& member = m_nativeMembers[memberIndex];
-    if (member.type != NativeMemberType::Method) {
+    if (member.type != MemberType::Method) {
         return nullptr;
     }
 
@@ -1323,14 +1194,14 @@ void Runtime::getNativeMembers(const Type* objectType, std::vector<NomadId>& mem
 
     for (NomadIndex index = 0; index < m_nativeMembers.size(); ++index) {
         const auto memberId = toNomadId(index);
-        const auto type = getNativeMemberType(memberId);
+        const auto type = getMemberType(memberId);
 
-        if (type == NativeMemberType::Property) {
+        if (type == MemberType::Property) {
             NativePropertyDefinition definition;
             if (getNativePropertyDefinition(memberId, definition) && definition.objectType == objectType) {
                 members.push_back(memberId);
             }
-        } else if (type == NativeMemberType::Method) {
+        } else if (type == MemberType::Method) {
             const auto* method = getNativeMemberMethod(memberId);
             if (method != nullptr && method->getObjectType() == objectType) {
                 members.push_back(memberId);
@@ -1597,13 +1468,8 @@ const std::vector<Operand>& Runtime::getInstructionOperands(const NomadId id) co
 }
 
 NomadId Runtime::getNativeFunctionId(const NomadString& name) const {
-    const auto callable = getCallableId(name);
-
-    if (callable.kind != CallableKind::NativeFunction) {
-        return NOMAD_INVALID_ID;
-    }
-
-    return callable.id;
+    const auto* function = getNativeFunction(getCallableId(name));
+    return function == nullptr ? NOMAD_INVALID_ID : function->getId();
 }
 
 NativeFunctionFn Runtime::getNativeFunctionFn(const NomadId id) const {
@@ -2200,7 +2066,7 @@ NomadId Runtime::registerScriptFunction(
     const NomadString& path,
     const NomadString& source
     ) {
-    if (getCallableId(name).isValid()) {
+    if (getCallableId(name) != NOMAD_INVALID_ID) {
         log::error("Function with name '" + name + "' conflicts with an already registered callable.");
 
         return NOMAD_INVALID_ID;
@@ -2208,7 +2074,7 @@ NomadId Runtime::registerScriptFunction(
 
     const auto id = addCallableToTable(std::make_unique<ScriptFunction>(NOMAD_INVALID_ID, name, path, source));
 
-    addCallable(name, CallableId{CallableKind::Function, id});
+    addCallable(name, id);
 
     return id;
 }
@@ -2242,13 +2108,8 @@ bool Runtime::setScriptFunctionReturnType(const NomadId functionId, const Type* 
 }
 
 NomadId Runtime::getFunctionId(const NomadString& name) const {
-    const auto callable = getCallableId(name);
-
-    if (callable.kind != CallableKind::Function) {
-        return NOMAD_INVALID_ID;
-    }
-
-    return callable.id;
+    const auto* function = getScriptFunction(getCallableId(name));
+    return function == nullptr ? NOMAD_INVALID_ID : function->getId();
 }
 
 ScriptFunction* Runtime::getFunctionAtLine(

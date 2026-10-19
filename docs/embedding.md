@@ -41,11 +41,24 @@ Use `resolveFunction(name, argumentTypes)`, `resolveMethod(objectType, name,
 argumentTypes)`, or `resolveConstructor(objectType, argumentTypes)` to select an
 overload. Inspect the `ResolveResult` before retrieving the selected callable.
 The selected ID or pointer can be retained without repeating name resolution.
+Native and script functions use the same call syntax in expressions and
+statements. A statement discards any returned value.
+
+`getCallableId(name)` returns the first free-function overload as a `NomadId`,
+or `NOMAD_INVALID_ID` when absent. It supplies a signature for parsing; it does
+not select an overload. `getCallableOverloads(name, ids)` lists free-function
+overloads as callable-table IDs. Read metadata through `getFunction(id)` or
+`getCallable(id)` rather than the removed callable metadata forwarding APIs.
+`CallableId`, `CallableKind`, and `resolveCallableOverload` have been removed;
+use plain IDs, category conversions, and `resolveFunction` instead.
 
 Native member IDs are a separate namespace. `registerNativeMethod` and
 `getNativeMemberId` return member IDs; pass these to
 `getNativeMemberMethod(memberId)`, then use the returned method's `getId()` for
 callable-table access. `getNativeMethod(callableId)` takes a callable-table ID.
+`getMemberType(memberId)` returns `MemberType::Property` or `MemberType::Method`.
+This replaces `getNativeMemberType` and `NativeMemberType`; native registration
+and callback APIs keep their native-specific names.
 
 Use `getNativeFunction(id)` or `getScriptFunction(id)` for implementation-specific
 access. These return `nullptr` for the wrong implementation kind. A const runtime

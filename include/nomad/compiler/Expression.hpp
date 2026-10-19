@@ -73,29 +73,6 @@ protected:
 ///////////////////////////////////////////////////////////////////////////////
 // Call expressions
 ///////////////////////////////////////////////////////////////////////////////
-class CallNativeFunctionExpression : public Expression {
-public:
-    explicit CallNativeFunctionExpression(const Expression* parent, NomadIndex line, NomadIndex column, NomadString name);
-
-    [[nodiscard]]
-    bool isTerminal() const override;
-
-    void addArgument(std::unique_ptr<Argument> argument);
-
-    [[nodiscard]] ArgumentList* getArguments();
-    [[nodiscard]] const ArgumentList* getArguments() const;
-
-protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
-    void onEvaluate(InterpreterContext& context) const override;
-
-private:
-    NomadString m_name;
-    NomadId m_nativeFunctionId = NOMAD_INVALID_ID;
-    ArgumentList m_arguments;
-};
-
 class FunctionCallExpression final : public Expression {
 public:
     explicit FunctionCallExpression(const Expression* parent, NomadIndex line, NomadIndex column, NomadString name);
@@ -116,7 +93,7 @@ protected:
 
 private:
     NomadString m_name;
-    NomadId m_functionId = NOMAD_INVALID_ID;
+    const Function* m_function = nullptr;
     ArgumentList m_arguments;
 };
 

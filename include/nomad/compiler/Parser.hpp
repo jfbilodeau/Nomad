@@ -48,7 +48,6 @@ std::unique_ptr<Expression> parseExpression(CompilerContext* context, ScriptFunc
 std::unique_ptr<Expression> parseRootExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Statement* statement);
 std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 std::unique_ptr<Statement> parseStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokenizer);
-std::unique_ptr<Statement> parseNativeFunctionStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const NativeFunction& nativeFunction);
 void parseFunctionParameter(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Parameter& parameter);
 std::unique_ptr<Statement> parseFunctionCall(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const NomadString& functionName);
 std::unique_ptr<Expression> parseLogicalAndExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);
@@ -65,13 +64,11 @@ std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, Scr
 std::unique_ptr<Expression> parseNewExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);
 std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);
 std::unique_ptr<Expression> parseFunctionCallExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent, const NomadString& functionName);
-[[nodiscard]] bool parseFunctionArguments(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const ScriptFunction* targetFunction, ArgumentList* arguments);
-std::unique_ptr<Expression> parseNativeFunctionCallExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent, const NativeFunction& nativeFunction);
-[[nodiscard]] bool parseNativeFunctionArguments(
+[[nodiscard]] bool parseCallableArguments(
     CompilerContext* context,
     ScriptFunction* function,
     Tokenizer* tokens,
-    const Callable& nativeFunction,
+    const Callable& callable,
     ArgumentList* arguments,
     bool allowOmittedArguments = false
 );

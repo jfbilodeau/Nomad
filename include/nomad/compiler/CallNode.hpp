@@ -64,9 +64,9 @@ private:
     const Type* m_receiverType = nullptr;
 };
 
-// Selects the overload of `name` that matches the already-parsed `arguments`, and assigns the selected parameter
-// types to those arguments. Returns an invalid id and fills `error` when no single overload matches.
-CallableId selectCallableOverload(
+// Resolves a free-function call and assigns selected parameter types to overloaded arguments.
+// Non-overloaded signatures retain specialized argument validation, including expanded event arguments.
+[[nodiscard]] const Function* resolveFunctionCall(
     CompilerContext* context,
     ScriptFunction* function,
     const NomadString& name,
@@ -95,22 +95,6 @@ private:
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-/// NativeFunctionStatementNode
-///////////////////////////////////////////////////////////////////////////////
-class NativeFunctionStatementNode : public CallStatementNode {
-public:
-    NativeFunctionStatementNode(NomadIndex line, NomadIndex column, const NativeFunction* nativeFunction);
-
-protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
-
-private:
-    const NativeFunction* m_nativeFunction;
-};
-
-///////////////////////////////////////////////////////////////////////////////
 /// FunctionCallStatementNode
 ///////////////////////////////////////////////////////////////////////////////
 class FunctionCallStatementNode : public CallStatementNode {
@@ -124,7 +108,7 @@ protected:
 
 private:
     NomadString m_name;
-    NomadId m_functionId = NOMAD_INVALID_ID;
+    const Function* m_function = nullptr;
 };
 
 

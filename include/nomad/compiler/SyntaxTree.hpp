@@ -28,7 +28,6 @@ class ScriptFunction;
 class FunctionBuilder;
 
 // Forward declarations in file
-class CallNativeFunctionExpression;
 class CallStatementNode;
 class Expression;
 class IdentifierExpression;

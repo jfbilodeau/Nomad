@@ -168,9 +168,9 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
         return IdentifierType::Statement;
     }
 
-    const auto callable = m_runtime->getCallableId(name);
+    const auto* callable = m_runtime->getFunction(m_runtime->getCallableId(name));
 
-    if (callable.isValid() && callable.kind == CallableKind::NativeFunction) {
+    if (callable != nullptr && callable->asNativeFunction() != nullptr) {
         return IdentifierType::NativeFunction;
     }
 
@@ -178,7 +178,7 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
         return IdentifierType::Constant;
     }
 
-    if (callable.isValid() && callable.kind == CallableKind::Function) {
+    if (callable != nullptr && callable->asScriptFunction() != nullptr) {
         return IdentifierType::Function;
     }
 
@@ -225,18 +225,18 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
         return;
     }
 
-    const auto callable = m_runtime->getCallableId(name);
+    const auto* callable = m_runtime->getFunction(m_runtime->getCallableId(name));
 
-    if (callable.isValid()) {
-        if (callable.kind == CallableKind::NativeFunction) {
+    if (callable != nullptr) {
+        if (callable->asNativeFunction() != nullptr) {
             definition.identifierType = IdentifierType::NativeFunction;
-            definition.nativeFunctionId = callable.id;
+            definition.nativeFunctionId = callable->getId();
         } else {
             definition.identifierType = IdentifierType::Function;
-            definition.functionId = callable.id;
+            definition.functionId = callable->getId();
         }
 
-        definition.valueType = m_runtime->getCallableReturnType(callable);
+        definition.valueType = callable->getReturnType();
 
         return;
     }
@@ -330,8 +330,8 @@ bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type
     for (const auto memberId : members) {
         NomadString memberName;
 
-        switch (m_runtime->getNativeMemberType(memberId)) {
-        case NativeMemberType::Property: {
+        switch (m_runtime->getMemberType(memberId)) {
+        case MemberType::Property: {
             NativePropertyDefinition definition;
             if (!m_runtime->getNativePropertyDefinition(memberId, definition)) {
                 reportInternalError("Invalid native property id: " + toString(memberId));
@@ -340,7 +340,7 @@ bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type
             break;
         }
 
-        case NativeMemberType::Method: {
+        case MemberType::Method: {
             const auto* method = m_runtime->getNativeMemberMethod(memberId);
             if (method == nullptr) {
                 reportInternalError("Invalid native method id: " + toString(memberId));
@@ -349,7 +349,7 @@ bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type
             break;
         }
 
-        case NativeMemberType::Unknown:
+        case MemberType::Unknown:
             reportInternalError("Invalid native member id: " + toString(memberId));
         }
 

@@ -19,7 +19,7 @@ namespace {
 
 struct NativeMemberDocumentationInfo {
     NomadId id;
-    NativeMemberType memberType;
+    MemberType memberType;
     const Type* objectType;
     NomadString name;
 };
@@ -32,24 +32,24 @@ std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Ru
     members.reserve(memberIds.size());
 
     for (const auto memberId : memberIds) {
-        switch (runtime->getNativeMemberType(memberId)) {
-        case NativeMemberType::Property: {
+        switch (runtime->getMemberType(memberId)) {
+        case MemberType::Property: {
             NativePropertyDefinition definition;
             if (runtime->getNativePropertyDefinition(memberId, definition)) {
-                members.emplace_back(memberId, NativeMemberType::Property, definition.objectType, definition.name);
+                members.emplace_back(memberId, MemberType::Property, definition.objectType, definition.name);
             }
             break;
         }
 
-        case NativeMemberType::Method: {
+        case MemberType::Method: {
             const auto* method = runtime->getNativeMemberMethod(memberId);
             if (method != nullptr) {
-                members.emplace_back(memberId, NativeMemberType::Method, method->getObjectType(), method->getName());
+                members.emplace_back(memberId, MemberType::Method, method->getObjectType(), method->getName());
             }
             break;
         }
 
-        case NativeMemberType::Unknown:
+        case MemberType::Unknown:
             break;
         }
     }
@@ -488,7 +488,7 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
 
         out << "#### `" << member.name << "`";
 
-        if (member.memberType == NativeMemberType::Property) {
+        if (member.memberType == MemberType::Property) {
             NativePropertyDefinition definition;
             (void)runtime->getNativePropertyDefinition(member.id, definition);
 

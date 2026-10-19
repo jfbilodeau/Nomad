@@ -69,7 +69,7 @@ BOOST_AUTO_TEST_CASE(unknown_name_resolves_to_invalid_callable)
 
     const auto callable = runtime.getCallableId("missing");
 
-    BOOST_TEST(!callable.isValid());
+    BOOST_TEST(callable == NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getCallableOverloadCount("missing") == NomadIndex{0});
 }
 
@@ -87,14 +87,14 @@ BOOST_AUTO_TEST_CASE(native_function_is_registered_in_catalog)
 
     const auto callable = runtime.getCallableId("test.greet");
 
-    BOOST_REQUIRE(callable.isValid());
-    BOOST_TEST((callable.kind == CallableKind::NativeFunction));
-    BOOST_TEST(callable.id == nativeFunctionId);
-    BOOST_TEST(runtime.getCallableName(callable) == "test.greet");
-    BOOST_TEST(runtime.getCallableParameterCount(callable) == NomadIndex{1});
-    BOOST_TEST(runtime.getCallableParameterName(callable, 0) == "name");
-    BOOST_TEST(runtime.getCallableParameterType(callable, 0) == runtime.getStringType());
-    BOOST_TEST(runtime.getCallableReturnType(callable) == runtime.getVoidType());
+    BOOST_REQUIRE(callable != NOMAD_INVALID_ID);
+    BOOST_TEST((runtime.getFunction(callable)->asNativeFunction() != nullptr));
+    BOOST_TEST(callable == nativeFunctionId);
+    BOOST_TEST(runtime.getCallable(callable)->getName() == "test.greet");
+    BOOST_TEST(runtime.getCallable(callable)->getParameterCount() == NomadIndex{1});
+    BOOST_TEST(runtime.getCallable(callable)->getParameters()[0].name == "name");
+    BOOST_TEST(runtime.getCallable(callable)->getParameters()[0].type == runtime.getStringType());
+    BOOST_TEST(runtime.getCallable(callable)->getReturnType() == runtime.getVoidType());
 }
 
 BOOST_AUTO_TEST_CASE(function_is_registered_in_catalog)
@@ -107,11 +107,11 @@ BOOST_AUTO_TEST_CASE(function_is_registered_in_catalog)
 
     const auto callable = runtime.getCallableId("entities.player");
 
-    BOOST_REQUIRE(callable.isValid());
-    BOOST_TEST((callable.kind == CallableKind::Function));
-    BOOST_TEST(callable.id == functionId);
-    BOOST_TEST(runtime.getCallableName(callable) == "entities.player");
-    BOOST_TEST(runtime.getCallableParameterCount(callable) == NomadIndex{0});
+    BOOST_REQUIRE(callable != NOMAD_INVALID_ID);
+    BOOST_TEST((runtime.getFunction(callable)->asScriptFunction() != nullptr));
+    BOOST_TEST(callable == functionId);
+    BOOST_TEST(runtime.getCallable(callable)->getName() == "entities.player");
+    BOOST_TEST(runtime.getCallable(callable)->getParameterCount() == NomadIndex{0});
 }
 
 // Signature changes are visible through every view of the same runtime-owned callable.
@@ -122,8 +122,8 @@ BOOST_AUTO_TEST_CASE(function_signature_is_read_live)
     const auto functionId = runtime.registerScriptFunction("compute", "compute.nomad", "return 1");
     const auto callable = runtime.getCallableId("compute");
 
-    BOOST_REQUIRE(callable.isValid());
-    BOOST_TEST(runtime.getCallableReturnType(callable) == nullptr);
+    BOOST_REQUIRE(callable != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getCallable(callable)->getReturnType() == nullptr);
 
     auto* function = runtime.getScriptFunction(functionId);
     BOOST_REQUIRE(function != nullptr);
@@ -131,10 +131,10 @@ BOOST_AUTO_TEST_CASE(function_signature_is_read_live)
     function->addParameter("value", runtime.getIntegerType());
     function->setReturnType(runtime.getFloatType());
 
-    BOOST_TEST(runtime.getCallableParameterCount(callable) == NomadIndex{1});
-    BOOST_TEST(runtime.getCallableParameterName(callable, 0) == "value");
-    BOOST_TEST(runtime.getCallableParameterType(callable, 0) == runtime.getIntegerType());
-    BOOST_TEST(runtime.getCallableReturnType(callable) == runtime.getFloatType());
+    BOOST_TEST(runtime.getCallable(callable)->getParameterCount() == NomadIndex{1});
+    BOOST_TEST(runtime.getCallable(callable)->getParameters()[0].name == "value");
+    BOOST_TEST(runtime.getCallable(callable)->getParameters()[0].type == runtime.getIntegerType());
+    BOOST_TEST(runtime.getCallable(callable)->getReturnType() == runtime.getFloatType());
 }
 
 BOOST_AUTO_TEST_CASE(script_function_joins_function_table)
@@ -301,8 +301,8 @@ BOOST_AUTO_TEST_CASE(function_cannot_shadow_native_function)
 
     const auto callable = runtime.getCallableId("log.info");
 
-    BOOST_REQUIRE(callable.isValid());
-    BOOST_TEST((callable.kind == CallableKind::NativeFunction));
+    BOOST_REQUIRE(callable != NOMAD_INVALID_ID);
+    BOOST_TEST((runtime.getFunction(callable)->asNativeFunction() != nullptr));
 }
 
 BOOST_AUTO_TEST_CASE(native_function_cannot_shadow_function)
@@ -315,8 +315,8 @@ BOOST_AUTO_TEST_CASE(native_function_cannot_shadow_function)
 
     const auto callable = runtime.getCallableId("entities.player");
 
-    BOOST_REQUIRE(callable.isValid());
-    BOOST_TEST((callable.kind == CallableKind::Function));
+    BOOST_REQUIRE(callable != NOMAD_INVALID_ID);
+    BOOST_TEST((runtime.getFunction(callable)->asScriptFunction() != nullptr));
 }
 
 BOOST_AUTO_TEST_CASE(overloads_are_reported_for_a_registered_name)
@@ -325,12 +325,12 @@ BOOST_AUTO_TEST_CASE(overloads_are_reported_for_a_registered_name)
 
     const auto nativeFunctionId = registerVoidNativeFunction(runtime, "test.single");
 
-    std::vector<CallableId> overloads;
+    std::vector<NomadId> overloads;
     runtime.getCallableOverloads("test.single", overloads);
 
     BOOST_REQUIRE(overloads.size() == 1);
-    BOOST_TEST(overloads[0].id == nativeFunctionId);
-    BOOST_TEST((overloads[0].kind == CallableKind::NativeFunction));
+    BOOST_TEST(overloads[0] == nativeFunctionId);
+    BOOST_TEST((runtime.getFunction(overloads[0])->asNativeFunction() != nullptr));
 
     runtime.getCallableOverloads("missing", overloads);
     BOOST_TEST(overloads.empty());
@@ -360,14 +360,13 @@ BOOST_AUTO_TEST_CASE(native_functions_can_be_overloaded_on_parameter_type)
     BOOST_REQUIRE(fromString != NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getCallableOverloadCount("test.convert") == NomadIndex{2});
 
-    NomadString error;
 
-    const auto selectedFloat = runtime.resolveCallableOverload("test.convert", {runtime.getFloatType()}, error);
-    BOOST_REQUIRE_MESSAGE(selectedFloat.isValid(), error);
+    const auto selectedFloat = runtime.resolveFunction("test.convert", {runtime.getFloatType()});
+    BOOST_REQUIRE(selectedFloat.isResolved());
     BOOST_TEST(selectedFloat.id == fromFloat);
 
-    const auto selectedString = runtime.resolveCallableOverload("test.convert", {runtime.getStringType()}, error);
-    BOOST_REQUIRE_MESSAGE(selectedString.isValid(), error);
+    const auto selectedString = runtime.resolveFunction("test.convert", {runtime.getStringType()});
+    BOOST_REQUIRE(selectedString.isResolved());
     BOOST_TEST(selectedString.id == fromString);
 }
 
@@ -391,10 +390,9 @@ BOOST_AUTO_TEST_CASE(overload_selection_prefers_an_exact_match)
 
     BOOST_REQUIRE(takesString != NOMAD_INVALID_ID);
 
-    NomadString error;
-    const auto selected = runtime.resolveCallableOverload("test.pick", {runtime.getStringType()}, error);
+    const auto selected = runtime.resolveFunction("test.pick", {runtime.getStringType()});
 
-    BOOST_REQUIRE_MESSAGE(selected.isValid(), error);
+    BOOST_REQUIRE(selected.isResolved());
     BOOST_TEST(selected.id == takesString);
 }
 
@@ -409,11 +407,10 @@ BOOST_AUTO_TEST_CASE(overload_resolution_reports_when_nothing_matches)
         runtime.getIntegerType()
     );
 
-    NomadString error;
-    const auto selected = runtime.resolveCallableOverload("test.convert", {runtime.getBooleanType()}, error);
+    const auto selected = runtime.resolveFunction("test.convert", {runtime.getBooleanType()});
 
-    BOOST_TEST(!selected.isValid());
-    BOOST_TEST(!error.empty());
+    BOOST_TEST(!selected.isResolved());
+    BOOST_TEST(!runtime.describeResolveFailure("test.convert", selected).empty());
 }
 
 BOOST_AUTO_TEST_CASE(overload_with_a_different_parameter_count_is_rejected)
@@ -566,6 +563,26 @@ BOOST_AUTO_TEST_CASE(call_matching_no_overload_is_a_compile_error)
 
     BOOST_TEST(!fixture.compile());
     BOOST_TEST(fixture.hasError("No overload of 'test.record'"));
+}
+
+BOOST_AUTO_TEST_CASE(native_and_script_calls_share_expression_and_statement_dispatch)
+{
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    runtime.registerNativeFunction("test.pick", [](VirtualMachine* machine) {
+        machine->setIntegerResult(10);
+    }, {defParameter("value", runtime.getIntegerType(), "")}, runtime.getIntegerType(), "");
+    runtime.registerNativeFunction("test.pick", [](VirtualMachine* machine) {
+        machine->setIntegerResult(20);
+    }, {defParameter("value", runtime.getStringType(), "")}, runtime.getIntegerType(), "");
+    fixture.addFunction("answer", "return test.pick \"text\"");
+    fixture.addFunction("main", "test.pick 1\nanswer\nreturn (test.pick 1) + answer");
+
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto outcome = fixture.execute("main");
+    BOOST_TEST(!outcome.fault.has_value());
+    BOOST_TEST(outcome.integerValue == 30);
+    BOOST_TEST(outcome.leakedStrings == 0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

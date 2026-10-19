@@ -125,19 +125,16 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         const auto isAssignment = parser::hasAssignmentOperator(&tokenizer);
         const auto isStatement = firstToken.type == TokenType::Identifier &&
                                  compiler->isStatement(firstToken.textValue);
-        const auto* nativeFunction = firstToken.type == TokenType::Identifier ?
-            evaluation.m_runtime->getNativeFunction(firstToken.textValue) : nullptr;
         const auto functionId = firstToken.type == TokenType::Identifier
-            ? evaluation.m_runtime->getFunctionId(firstToken.textValue)
+            ? evaluation.m_runtime->getCallableId(firstToken.textValue)
             : NOMAD_INVALID_ID;
-        const auto* function = functionId == NOMAD_INVALID_ID ? nullptr : evaluation.m_runtime->getScriptFunction(functionId);
+        const auto* function = evaluation.m_runtime->getFunction(functionId);
         const auto isValueReturningCall =
-            (nativeFunction != nullptr && nativeFunction->getReturnType() != nullptr && !nativeFunction->getReturnType()->isVoid()) ||
-            (function != nullptr && function->getReturnType() != nullptr && !function->getReturnType()->isVoid());
+            function != nullptr && function->getReturnType() != nullptr && !function->getReturnType()->isVoid();
         const auto line = tokenizer.getLineIndex();
         const auto column = tokenizer.getColumnIndex();
         const auto parseAsExpression = !isAssignment && !isStatement &&
-                                       (isValueReturningCall || (nativeFunction == nullptr && function == nullptr));
+                                       (isValueReturningCall || function == nullptr);
 
         std::unique_ptr<Statement> statement;
         if (parseAsExpression) {

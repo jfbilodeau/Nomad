@@ -194,7 +194,7 @@ public:
     NomadId registerNativeProperty(const ObjectTypeBase* objectType, const NomadString& name, const Type* valueType,
                                       NativePropertyGetFn getFn, NativePropertySetFn setFn, NomadDocArg);
     [[nodiscard]] NomadId getNativeMemberId(const Type* objectType, const NomadString& name) const;
-    [[nodiscard]] NativeMemberType getNativeMemberType(NomadId memberId) const;
+    [[nodiscard]] MemberType getMemberType(NomadId memberId) const;
     [[nodiscard]] bool getNativePropertyDefinition(NomadId memberId, NativePropertyDefinition& definition) const;
     // The method behind a member id; `getId()` is its function table id. Null when `memberId` is not a method.
     [[nodiscard]] const NativeMethod* getNativeMemberMethod(NomadId memberId) const;
@@ -247,32 +247,19 @@ public:
     [[nodiscard]] NomadId getNextNativeFunctionId(NomadId currentId) const;
 
     // Callables
-    // Unified catalog of everything callable from Nomad code. Native functions and compiled functions are
+    // Unified catalog of free functions. Native functions and compiled functions are
     // registered here under one namespace, so a name resolves the same way regardless of how it is implemented.
     // Signatures are read live from the callable because a script function's parameters and return type are
     // only known once it has been pre-parsed and its return type inferred.
-    [[nodiscard]] CallableId getCallableId(const NomadString& name) const;
-    // Every callable registered under `name`. Holds more than one entry when the name is overloaded.
-    void getCallableOverloads(const NomadString& name, std::vector<CallableId>& overloads) const;
+    // First free-function overload, for signature-driven parsing; not an overload selection.
+    [[nodiscard]] NomadId getCallableId(const NomadString& name) const;
+    // Every free function registered under `name`. Holds more than one entry when the name is overloaded.
+    void getCallableOverloads(const NomadString& name, std::vector<NomadId>& overloads) const;
     [[nodiscard]] NomadIndex getCallableOverloadCount(const NomadString& name) const;
-    [[nodiscard]] const NomadString& getCallableName(CallableId callable) const;
-    [[nodiscard]] NomadIndex getCallableParameterCount(CallableId callable) const;
-    [[nodiscard]] const Type* getCallableParameterType(CallableId callable, NomadIndex parameterIndex) const;
-    [[nodiscard]] const NomadString& getCallableParameterName(CallableId callable, NomadIndex parameterIndex) const;
-    [[nodiscard]] const Type* getCallableReturnType(CallableId callable) const;
     [[nodiscard]] ParameterShape getParameterShape(const Type* type) const;
-    // Selects the overload of `name` whose parameters match `argumentTypes`, which is indexed by parameter and holds
-    // `nullptr` for parameters the compiler supplies. An overload matching every argument exactly wins over one that
-    // merely accepts them. Returns an invalid id and fills `error` when nothing matches or when the call is ambiguous.
-    [[nodiscard]] CallableId resolveCallableOverload(
-        const NomadString& name,
-        const std::vector<const Type*>& argumentTypes,
-        NomadString& error
-    ) const;
 
     // Function table
-    // Every native function, native method and constructor, in one id space. The ids returned when registering
-    // them are ids in this table, as are script function ids.
+    // Every function, method and constructor shares this ID space. Native member IDs are separate.
     [[nodiscard]] const Callable* getCallable(NomadId functionId) const;
     // Null unless `functionId` identifies a free function, native or script.
     [[nodiscard]] const Function* getFunction(NomadId functionId) const;
@@ -439,7 +426,7 @@ private:
     };
 
     struct NativeMemberRegistration {
-        NativeMemberType type;
+        MemberType type;
         NomadIndex definitionIndex;
     };
 
@@ -447,10 +434,10 @@ private:
     NomadId internContextVariable(NomadId contextId, NomadId localVariableId);
     [[nodiscard]] const ContextVariable* getContextVariable(NomadId contextVariableId) const;
     // Adds `callable` to the overload set for `name`, creating the set when needed.
-    void addCallable(const NomadString& name, CallableId callable);
+    void addCallable(const NomadString& name, NomadId callable);
     [[nodiscard]] const CallableOverloadSet* findCallableOverloadSet(const NomadString& name) const;
-    // Checks that a callable of `candidateKind` with these parameters may join `overloadSet` as an overload.
-    [[nodiscard]] bool canOverloadCallable(const CallableOverloadSet& overloadSet, CallableKind candidateKind,
+    // Checks that a native function with these parameters may join `overloadSet` as an overload.
+    [[nodiscard]] bool canOverloadCallable(const CallableOverloadSet& overloadSet,
                                            const std::vector<Parameter>& parameters,
                                            const Type* returnType, NomadString& error) const;
     NomadId addCallableToTable(std::unique_ptr<Callable> callable);
