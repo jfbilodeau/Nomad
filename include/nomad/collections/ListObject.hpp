@@ -19,7 +19,13 @@ public:
     [[nodiscard]] const Type* getElementType() const;
     [[nodiscard]] NomadIndex getCount() const;
 
-    void push(const RuntimeValue& value);
+    NomadInteger append(const RuntimeValue& value);
+    void prepend(const RuntimeValue& value);
+    void insert(NomadInteger index, const RuntimeValue& value);
+    [[nodiscard]] bool remove(NomadInteger index);
+    [[nodiscard]] bool removeFirst();
+    [[nodiscard]] bool removeLast();
+    void clear();
     [[nodiscard]] const RuntimeValue& getValue(NomadInteger index) const;
     void setValue(NomadInteger index, const RuntimeValue& value);
 

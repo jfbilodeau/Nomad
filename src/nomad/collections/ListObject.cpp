@@ -6,6 +6,8 @@
 
 #include <nomad/system/String.hpp>
 
+#include <utility>
+
 namespace nomad {
 
 ListObject::ListObject(const Type* elementType):
@@ -17,11 +19,16 @@ ListObject::ListObject(const Type* elementType):
 }
 
 ListObject::~ListObject() {
+    clear();
+}
+
+void ListObject::clear() {
     if (m_elementType->needsFree()) {
         for (auto& value : m_values) {
             m_elementType->freeValue(value);
         }
     }
+    m_values.clear();
 }
 
 const Type* ListObject::getElementType() const {
@@ -32,15 +39,55 @@ NomadIndex ListObject::getCount() const {
     return m_values.size();
 }
 
-void ListObject::push(const RuntimeValue& value) {
+NomadInteger ListObject::append(const RuntimeValue& value) {
+    if (!std::in_range<NomadInteger>(m_values.size())) {
+        throw NomadException("List size exceeds the maximum index");
+    }
+    const auto index = static_cast<NomadInteger>(m_values.size());
+    insert(index, value);
+    return index;
+}
+
+void ListObject::prepend(const RuntimeValue& value) {
+    insert(0, value);
+}
+
+void ListObject::insert(const NomadInteger index, const RuntimeValue& value) {
+    if (index < 0 || static_cast<NomadIndex>(index) > m_values.size()) {
+        throw NomadException("List insertion index " + toString(index) +
+            " is out of bounds for size " + toString(m_values.size()));
+    }
     RuntimeValue storedValue;
     try {
         m_elementType->copyValue(value, storedValue);
-        m_values.push_back(storedValue);
+        m_values.insert(m_values.begin() + static_cast<std::vector<RuntimeValue>::difference_type>(index), storedValue);
     } catch (...) {
         m_elementType->freeValue(storedValue);
         throw;
     }
+}
+
+bool ListObject::remove(const NomadInteger index) {
+    if (index < 0 || static_cast<NomadIndex>(index) >= m_values.size()) {
+        return false;
+    }
+    const auto position = m_values.begin() + static_cast<std::vector<RuntimeValue>::difference_type>(index);
+    if (m_elementType->needsFree()) {
+        m_elementType->freeValue(*position);
+    }
+    m_values.erase(position);
+    return true;
+}
+
+bool ListObject::removeFirst() {
+    return remove(0);
+}
+
+bool ListObject::removeLast() {
+    if (m_values.empty()) {
+        return false;
+    }
+    return remove(static_cast<NomadInteger>(m_values.size() - 1));
 }
 
 NomadIndex ListObject::validateIndex(const NomadInteger index) const {

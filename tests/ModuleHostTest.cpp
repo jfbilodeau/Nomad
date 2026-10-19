@@ -95,7 +95,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
         "assert volume.count == 24\n"
         "assert (new Array1<int> (2 + 3)).count == 5\n"
         "arrays = new List<Array1<int>>\n"
-        "arrays.push line\n"
+        "arrays.append line\n"
         "assert arrays[0].count == 10\n"
         "return new Array1<Array2<int>> 2"
     }}}, {}});
@@ -383,12 +383,12 @@ BOOST_AUTO_TEST_CASE(collections_map_indexers_insert_replace_and_preserve_owned_
         "assert words.count == 1",
         "nested = new Map<string List<int>>",
         "nested[\"list\"] = new List<int>",
-        "nested[\"list\"].push 7",
+        "nested[\"list\"].append 7",
         "saved = nested[\"list\"]",
         "nested[\"list\"] = new List<int>",
         "assert saved[0] == 7",
         "assert nested[\"list\"].count == 0",
-        "nested[\"absent\"].push 8",
+        "nested[\"absent\"].append 8",
         "assert nested[\"absent\"].count == 0",
         "assert nested.count == 1",
         "maps = new Map<string Map<string int>>",
@@ -399,7 +399,7 @@ BOOST_AUTO_TEST_CASE(collections_map_indexers_insert_replace_and_preserve_owned_
         "assert maps[\"missing\"].count == 0",
         "assert maps.count == 1",
         "holder = new List<Map<string string>>",
-        "holder.push words",
+        "holder.append words",
         "words = new Map<string string>",
         "assert holder[0][\"name\"] == \"updated\""
     };
@@ -629,7 +629,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_prese
         "assert words.count == 0",
         "nested = new Map<string List<int>>",
         "nested[\"saved\"] = new List<int>",
-        "nested[\"saved\"].push 9",
+        "nested[\"saved\"].append 9",
         "saved = nested[\"saved\"]",
         "removed = nested.remove \"saved\"",
         "assert removed == true",
@@ -835,22 +835,22 @@ BOOST_AUTO_TEST_CASE(collections_lists_store_typed_values_and_share_mutations) {
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad",
         "fun append values:List<int>\n"
-        "    values.push 30\n"
+        "    values.append 30\n"
         "end\n"
         "values = new List<int>\n"
         "assert values.count == 0\n"
-        "values.push 10\n"
+        "values.append 10\n"
         "alias = values\n"
-        "alias.push 20\n"
+        "alias.append 20\n"
         "append values\n"
         "assert alias.count == 3\n"
         "words = new List<string>\n"
-        "words.push \"hello\"\n"
-        "words.push \"world\".toUpper\n"
+        "words.append \"hello\"\n"
+        "words.append \"world\".toUpper\n"
         "assert words.count == 2\n"
         "nested = new List<List<string>>\n"
-        "nested.push words\n"
-        "nested.push new List<string>\n"
+        "nested.append words\n"
+        "nested.append new List<string>\n"
         "assert nested.count == 2\n"
         "return values.count"
     }}}, {}});
@@ -867,8 +867,8 @@ BOOST_AUTO_TEST_CASE(collections_lists_store_typed_values_and_share_mutations) {
         VirtualMachine machine(&runtime);
         InterpreterContext interpreterContext(machine);
         for (const auto* source : {
-            "values = new List<string>", "values.push \"hello\"", "alias = values",
-            "alias.push \"world\".toUpper", "values.count"
+            "values = new List<string>", "values.append \"hello\"", "alias = values",
+            "alias.append \"world\".toUpper", "values.count"
         }) {
             BOOST_REQUIRE(Interpreter{}.execute(source, interpreterContext));
         }
@@ -879,15 +879,28 @@ BOOST_AUTO_TEST_CASE(collections_lists_store_typed_values_and_share_mutations) {
 
 BOOST_AUTO_TEST_CASE(collections_lists_reject_invalid_member_operations) {
     for (const auto* source : {
-        "values = new List<int>\nvalues.push \"wrong\"",
-        "values = new List<string>\nvalues.push 1",
-        "values = new List<List<int>>\nvalues.push new List<string>",
+        "values = new List<int>\nvalues.append \"wrong\"",
+        "values = new List<string>\nvalues.append 1",
+        "values = new List<List<int>>\nvalues.append new List<string>",
         "values = new List<int>\nvalues.count = 10",
-        "values = new List<int>\nvalues.push",
+        "values = new List<int>\nvalues.append",
         "values = new List<int>\nvalues[0] = \"wrong\"",
         "values = new List<int>\nreturn values[\"key\"]",
         "values = new List<int>\nreturn values[0 1]",
-        "values = new List<int>\nreturn values.push 1",
+        "values = new List<int>\nreturn values.prepend 1",
+        "values = new List<int>\nvalues.push 1",
+        "values = new List<int>\nvalues.pop",
+        "values = new List<int>\nvalues.prepend \"wrong\"",
+        "values = new List<int>\nvalues.insert 0 \"wrong\"",
+        "values = new List<int>\nvalues.insert \"zero\" 1",
+        "values = new List<int>\nvalues.insert 0",
+        "values = new List<int>\nvalues.remove \"zero\"",
+        "values = new List<int>\nvalues.remove",
+        "values = new List<int>\nvalues.removeFirst 1",
+        "values = new List<int>\nvalues.removeLast 1",
+        "values = new List<int>\nvalues.clear 1",
+        "values = new List<int>\nresult = values.insert 0 1",
+        "values = new List<int>\nresult = values.clear",
         "params values:List<int>\nvalues = new List<int>"
     }) {
         BOOST_TEST_CONTEXT(source) {
@@ -899,6 +912,179 @@ BOOST_AUTO_TEST_CASE(collections_lists_reject_invalid_member_operations) {
             compiler->registerSources(&context, {{{"main", {"main.nomad", source}}}, {}});
             BOOST_TEST(!compiler->compileScripts(&context, CompilationTarget::Analysis));
             BOOST_TEST(context.hasError());
+            const NomadString input(source);
+            if (!input.starts_with("params ")) {
+                VirtualMachine machine(host.getRuntime());
+                InterpreterContext evaluation(machine);
+                const auto lineBreak = input.find('\n');
+                BOOST_REQUIRE(Interpreter{}.execute(input.substr(0, lineBreak), evaluation));
+                BOOST_TEST(!Interpreter{}.execute(input.substr(lineBreak + 1), evaluation));
+                BOOST_TEST(evaluation.hasError());
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(collections_lists_mutate_order_return_indices_and_release_values) {
+    TestDirectory directory("nomad_host_list_mutation");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    const std::vector<NomadString> sources = {
+        "items = new List<int>",
+        "removed = items.removeFirst",
+        "assert removed == false",
+        "removed = items.removeLast",
+        "assert removed == false",
+        "removed = items.remove 0",
+        "assert removed == false",
+        "removed = items.remove (-1)",
+        "assert removed == false",
+        "items.clear",
+        "items.insert 0 20",
+        "index = items.append 40",
+        "assert index == 1",
+        "items.prepend 10",
+        "items.insert 2 30",
+        "items.insert 4 50",
+        "assert items.count == 5",
+        "assert items[0] == 10",
+        "assert items[1] == 20",
+        "assert items[2] == 30",
+        "assert items[3] == 40",
+        "assert items[4] == 50",
+        "alias = items",
+        "removed = alias.remove 2",
+        "assert removed == true",
+        "assert items.count == 4",
+        "assert items[2] == 40",
+        "removed = items.removeFirst",
+        "assert removed == true",
+        "assert items[0] == 20",
+        "removed = items.removeLast",
+        "assert removed == true",
+        "assert items.count == 2",
+        "assert items[1] == 40",
+        "removed = items.remove 2",
+        "assert removed == false",
+        "removed = items.remove 9223372036854775807",
+        "assert removed == false",
+        "assert items.count == 2",
+        "alias.clear",
+        "assert items.count == 0",
+        "items.clear",
+        "index = items.append 9",
+        "assert index == 0",
+        "removed = items.removeLast",
+        "assert removed == true",
+        "items.prepend 8",
+        "removed = items.removeFirst",
+        "assert removed == true",
+        "items.insert 0 7",
+        "removed = items.remove 0",
+        "assert removed == true",
+        "assert items.count == 0",
+        "words = new List<string>",
+        "index = words.append \"hello\"",
+        "assert index == 0",
+        "words.insert 0 words[0]",
+        "words.prepend words[1]",
+        "assert words.count == 3",
+        "assert words[0] == \"hello\"",
+        "savedWord = words[1]",
+        "removed = words.remove 1",
+        "assert removed == true",
+        "words.clear",
+        "assert savedWord == \"hello\"",
+        "nested = new List<List<int>>",
+        "nested.append new List<int>",
+        "nested[0].append 42",
+        "saved = nested[0]",
+        "nested.insert 0 nested[0]",
+        "nested.prepend new List<int>",
+        "removed = nested.removeLast",
+        "assert removed == true",
+        "assert nested[1][0] == 42",
+        "nested.clear",
+        "assert saved[0] == 42"
+    };
+    NomadString script;
+    for (const auto& source : sources) {
+        script += source + "\n";
+    }
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, {{{"main", {"main.nomad", script}}}, {}});
+    BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&compilation, CompilationTarget::Executable),
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    RuntimeValue empty;
+    runtime.getStringType()->initValue(empty);
+    runtime.getStringType()->freeValue(empty);
+    const auto before = NomadObject::getLiveObjectCount();
+    struct LogCapture {
+        MemorySink sink;
+        LogCapture() {
+            log::flush();
+            log::addSink(&sink);
+        }
+        ~LogCapture() { log::removeSink(&sink); }
+    } capture;
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    {
+        VirtualMachine machine(&runtime);
+        InterpreterContext context(machine);
+        for (const auto& source : sources) {
+            BOOST_TEST_CONTEXT(source) {
+                const auto isAssertion = source.starts_with("assert ");
+                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, context),
+                    (context.getError() ? *context.getError() : source));
+                if (isAssertion) {
+                    BOOST_TEST(context.getResult()->getValue().getBooleanValue());
+                }
+            }
+        }
+        log::flush();
+        BOOST_TEST(capture.sink.getEntries().empty());
+        for (const auto* source : {"items.insert (-1) 1", "items.insert 1 1"}) {
+            BOOST_TEST(!Interpreter{}.execute(source, context));
+            BOOST_REQUIRE(context.hasError());
+            BOOST_REQUIRE(Interpreter{}.evaluateExpression("items.count", context));
+            BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 0);
+        }
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    log::flush();
+    std::ostringstream documentation;
+    generateNativeMemberDocumentation(&runtime, documentation);
+    for (const auto* name : {"append", "prepend", "insert", "remove", "removeFirst", "removeLast", "clear"}) {
+        BOOST_TEST(documentation.str().find("#### `" + NomadString(name) + "` (*method*)") != NomadString::npos);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(collections_list_insertion_bounds_fault_without_changing_list) {
+    for (const auto* index : {"(-1)", "1", "9223372036854775807"}) {
+        BOOST_TEST_CONTEXT(index) {
+            TestDirectory directory("nomad_host_list_insertion_bounds");
+            const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+            ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+            auto& runtime = *host.getRuntime();
+            auto compiler = runtime.createCompiler();
+            CompilerContext compilation(compiler.get());
+            const auto source = "params items:List<int>\nitems.insert " + NomadString(index) + " 42";
+            compiler->registerSources(&compilation, {{{"main", {"main.nomad", source}}}, {}});
+            BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&compilation, CompilationTarget::Executable),
+                (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+            const auto* listType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
+            RuntimeValue value;
+            listType->initValue(value);
+            const auto before = NomadObject::getLiveObjectCount();
+            auto machine = runtime.createVirtualMachine();
+            BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(runtime.getFunctionId("main")), {value}), NomadException);
+            BOOST_TEST(value.asObject<ListObject>()->getCount() == 0u);
+            BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+            listType->freeValue(value);
         }
     }
 }
@@ -912,22 +1098,22 @@ BOOST_AUTO_TEST_CASE(collections_indexers_read_replace_chain_and_preserve_evalua
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad",
         "fun receiver values:List<int>\n"
-        "    values.push 1\n"
+        "    values.append 1\n"
         "    return values\n"
         "end\n"
         "fun index values:List<int>\n"
-        "    values.push 2\n"
+        "    values.append 2\n"
         "    return 0\n"
         "end\n"
         "fun assigned values:List<int>\n"
-        "    values.push 3\n"
+        "    values.append 3\n"
         "    return 9\n"
         "end\n"
         "fun replace values:List<string>\n"
         "    values[0] = \"changed\"\n"
         "end\n"
         "values = new List<int>\n"
-        "values.push 0\n"
+        "values.append 0\n"
         "(receiver values)[index values] = assigned values\n"
         "assert values.count == 4\n"
         "assert values[0] == 9\n"
@@ -935,18 +1121,18 @@ BOOST_AUTO_TEST_CASE(collections_indexers_read_replace_chain_and_preserve_evalua
         "assert values[2] == 3\n"
         "assert values[3] == 2\n"
         "words = new List<string>\n"
-        "words.push \"hello\"\n"
+        "words.append \"hello\"\n"
         "words[0] = words[0]\n"
         "assert words[0] == \"hello\"\n"
         "replace words\n"
         "assert words[0].length == 7\n"
         "assert words[0][0] == \"c\"\n"
         "nested = new List<List<string>>\n"
-        "nested.push words\n"
+        "nested.append words\n"
         "nested[0][0] = \"updated\"\n"
         "assert words[0] == \"updated\"\n"
         "nested[0] = new List<string>\n"
-        "nested[0].push \"new\"\n"
+        "nested[0].append \"new\"\n"
         "assert nested[0][0] == \"new\"\n"
         "assert words[0] == \"updated\"\n"
         "return $\"{words[0]}:{values[0]}\""
@@ -995,7 +1181,7 @@ BOOST_AUTO_TEST_CASE(array1_indexers_read_replace_and_preserve_references) {
         "replace words\n"
         "assert words[0][0] == \"c\"\n"
         "nested = new Array1<List<int>> 1\n"
-        "nested[0].push 7\n"
+        "nested[0].append 7\n"
         "saved = nested[0]\n"
         "nested[0] = new List<int>\n"
         "assert saved[0] == 7\n"
@@ -1054,15 +1240,15 @@ BOOST_AUTO_TEST_CASE(array2_indexers_read_write_chain_and_preserve_reference_sem
         "replace words\n"
         "assert words[1 2].length == 7\n"
         "nested = new Array2<List<int>> 1 2\n"
-        "nested[0 1].push 7\n"
+        "nested[0 1].append 7\n"
         "saved = nested[0 1]\n"
         "nested[0 1] = new List<int>\n"
         "assert saved[0] == 7\n"
         "assert nested[0 1].count == 0\n"
-        "nested[-1 0].push 8\n"
+        "nested[-1 0].append 8\n"
         "assert nested[-1 0].count == 0\n"
         "holder = new List<Array2<string>>\n"
-        "holder.push words\n"
+        "holder.append words\n"
         "holder[0][0 1] = \"nested\"\n"
         "assert words[0 1] == \"nested\"\n"
         "return $\"{words[1 2]}:{grid[1 2]}\""
@@ -1104,7 +1290,7 @@ BOOST_AUTO_TEST_CASE(array2_indexers_work_in_interpreter_and_reject_invalid_synt
             "grid[2 0] = 9", "grid[0 3] = 9", "assert grid[0 1] == 123",
             "words = new Array2<string> 1 2", "words[0 1] = \"hello\"",
             "words[0 1] = words[0 1]", "assert words[0 1][1] == \"e\"",
-            "nested = new Array2<List<int>> 1 2", "nested[0 1].push 7", "saved = nested[0 1]",
+            "nested = new Array2<List<int>> 1 2", "nested[0 1].append 7", "saved = nested[0 1]",
             "nested[0 1] = new List<int>", "assert saved[0] == 7", "assert nested[0 1].count == 0",
             "assert nested[-1 0].count == 0"
         }) {
@@ -1168,12 +1354,12 @@ BOOST_AUTO_TEST_CASE(array3_indexers_work_in_compiled_scripts_and_interpreter) {
         "assert words[0 0 4] == \"\"",
         "assert words[1 2 3] == \"hello\"",
         "nested = new Array3<List<int>> 1 2 3",
-        "nested[0 1 2].push 7",
+        "nested[0 1 2].append 7",
         "saved = nested[0 1 2]",
         "nested[0 1 2] = new List<int>",
         "assert saved[0] == 7",
         "assert nested[0 1 2].count == 0",
-        "nested[0 1 3].push 8",
+        "nested[0 1 3].append 8",
         "assert nested[0 1 3].count == 0"
     };
     auto sources = statements;
@@ -1281,7 +1467,7 @@ BOOST_AUTO_TEST_CASE(collections_indexers_work_in_interpreter_and_fault_without_
         VirtualMachine machine(&runtime);
         InterpreterContext context(machine);
         for (const auto* source : {
-            "words = new List<string>", "words.push \"first\"", "alias = words",
+            "words = new List<string>", "words.append \"first\"", "alias = words",
             "alias[0] = \"second\"", "words[0] = words[0]", "words[0][0]"
         }) {
             const auto executed = Interpreter{}.execute(source, context);
@@ -1621,7 +1807,7 @@ BOOST_AUTO_TEST_CASE(collections_native_returns_do_not_allocate_unused_list_defa
         InterpreterContext context(*machine);
         BOOST_REQUIRE(Interpreter{}.execute("list = makeList", context));
         BOOST_REQUIRE(Interpreter{}.execute("alias = list.copyReference", context));
-        BOOST_REQUIRE(Interpreter{}.execute("alias.push 42", context));
+        BOOST_REQUIRE(Interpreter{}.execute("alias.append 42", context));
         BOOST_REQUIRE(Interpreter{}.execute("list[0]", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 42);
     }

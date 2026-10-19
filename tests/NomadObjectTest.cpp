@@ -126,8 +126,15 @@ BOOST_AUTO_TEST_CASE(ListSkipsCleanupForUnmanagedElements) {
     BOOST_TEST(!elementType.needsFree());
     auto* list = new ListObject(&elementType);
     for (auto index = 0; index < 100; ++index) {
-        list->push(RuntimeValue(NomadInteger{index}));
+        list->append(RuntimeValue(NomadInteger{index}));
     }
+    BOOST_TEST(list->removeFirst());
+    BOOST_TEST(list->removeLast());
+    BOOST_TEST(list->remove(10));
+    list->clear();
+    BOOST_TEST(list->getCount() == 0u);
+    list->clear();
+    BOOST_TEST(list->append(RuntimeValue(NomadInteger{9})) == 0);
     list->releaseRef();
     BOOST_TEST(elementType.freeCalls == 0u);
 }
@@ -141,13 +148,15 @@ BOOST_AUTO_TEST_CASE(ArraySkipsCleanupForUnmanagedElements) {
     BOOST_TEST(elementType.freeCalls == 0u);
 }
 
-BOOST_AUTO_TEST_CASE(ListReleasesPartialCopyWhenPushFails) {
+BOOST_AUTO_TEST_CASE(ListReleasesPartialCopyWhenAppendFails) {
     FailingCopyType elementType;
     NomadIndex destroyed = 0;
     auto* list = new ListObject(&elementType);
     RuntimeValue value;
     value.setObjectValue(new CountingObject(destroyed));
-    BOOST_CHECK_THROW(list->push(value), NomadException);
+    BOOST_CHECK_THROW(list->append(value), NomadException);
+    BOOST_CHECK_THROW(list->prepend(value), NomadException);
+    BOOST_CHECK_THROW(list->insert(0, value), NomadException);
     BOOST_TEST(list->getCount() == 0u);
     BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
     list->releaseRef();
@@ -164,13 +173,79 @@ BOOST_AUTO_TEST_CASE(ListRetainsAndReleasesStoredObjects) {
     RuntimeValue value;
     value.setObjectValue(new CountingObject(destroyed));
     for (auto index = 0; index < 100; ++index) {
-        list->push(value);
+        list->append(value);
     }
     BOOST_TEST(list->getCount() == 100u);
     BOOST_TEST(value.getObjectValue()->getReferenceCount() == 101u);
     elementType.freeValue(value);
     BOOST_TEST(destroyed == 0u);
     list->releaseRef();
+    BOOST_TEST(destroyed == 1u);
+}
+
+BOOST_AUTO_TEST_CASE(ListInsertionCopiesAliasedValuesBeforeReallocation) {
+    ObjectType elementType("Element");
+    NomadIndex destroyed = 0;
+    ListObject list(&elementType);
+    RuntimeValue value;
+    value.setObjectValue(new CountingObject(destroyed));
+    BOOST_TEST(list.append(value) == 0);
+    for (auto index = 0; index < 100; ++index) {
+        list.insert(index / 2, list.getValue(index));
+    }
+    list.prepend(list.getValue(100));
+    BOOST_TEST(list.append(list.getValue(0)) == 102);
+    BOOST_TEST(value.getObjectValue()->getReferenceCount() == 104u);
+    BOOST_TEST(!list.remove(-1));
+    BOOST_TEST(!list.remove(103));
+    BOOST_CHECK_THROW(list.insert(-1, value), NomadException);
+    BOOST_CHECK_THROW(list.insert(104, value), NomadException);
+    BOOST_TEST(list.getCount() == 103u);
+    BOOST_TEST(value.getObjectValue()->getReferenceCount() == 104u);
+    BOOST_TEST(list.remove(50));
+    BOOST_TEST(list.removeFirst());
+    BOOST_TEST(list.removeLast());
+    BOOST_TEST(value.getObjectValue()->getReferenceCount() == 101u);
+    list.clear();
+    BOOST_TEST(list.getCount() == 0u);
+    BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
+    BOOST_TEST(destroyed == 0u);
+    BOOST_TEST(!list.removeFirst());
+    BOOST_TEST(!list.removeLast());
+    list.append(value);
+    elementType.freeValue(value);
+    BOOST_TEST(destroyed == 0u);
+    BOOST_TEST(list.removeFirst());
+    BOOST_TEST(destroyed == 1u);
+}
+
+BOOST_AUTO_TEST_CASE(ListFailedInsertionPreservesExistingElements) {
+    class ConditionalCopyType final : public ObjectTypeBase {
+    public:
+        NomadString getTypeName() const override { return "ConditionalCopy"; }
+        void toString(const RuntimeValue&, NomadString& string) const override { string = getTypeName(); }
+        void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override {
+            ObjectTypeBase::copyValue(source, destination);
+            if (failCopy) {
+                throw NomadException("Copy failed");
+            }
+        }
+        bool failCopy = false;
+    } elementType;
+    NomadIndex destroyed = 0;
+    ListObject list(&elementType);
+    RuntimeValue value;
+    value.setObjectValue(new CountingObject(destroyed));
+    list.append(value);
+    elementType.failCopy = true;
+    BOOST_CHECK_THROW(list.insert(0, list.getValue(0)), NomadException);
+    BOOST_CHECK_THROW(list.prepend(list.getValue(0)), NomadException);
+    BOOST_CHECK_THROW(list.append(list.getValue(0)), NomadException);
+    BOOST_TEST(list.getCount() == 1u);
+    BOOST_TEST(list.getValue(0).getObjectValue() == value.getObjectValue());
+    BOOST_TEST(value.getObjectValue()->getReferenceCount() == 2u);
+    elementType.freeValue(value);
+    list.clear();
     BOOST_TEST(destroyed == 1u);
 }
 

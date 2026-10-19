@@ -132,7 +132,7 @@ BOOST_AUTO_TEST_CASE(invalid_indices_log_errors_and_return_fresh_owned_defaults)
     {
         Array1dObject array(&lists, 1);
         const ArrayValue first(array, -1);
-        first.asObject<ListObject>()->push(RuntimeValue(NomadInteger{7}));
+        first.asObject<ListObject>()->append(RuntimeValue(NomadInteger{7}));
         const ArrayValue second(array, -1);
         BOOST_TEST(second.asObject<ListObject>()->getCount() == 0u);
         BOOST_TEST(first.asObject<ListObject>()->getCount() == 1u);
@@ -184,7 +184,7 @@ BOOST_AUTO_TEST_CASE(read_results_own_values_after_array_destruction_for_every_r
     BOOST_TEST(NomadObject::getLiveObjectCount() == before + results.size());
     for (auto& result : results) {
         BOOST_TEST(result.asObject<ListObject>()->getCount() == 0u);
-        result.asObject<ListObject>()->push(RuntimeValue(NomadInteger{42}));
+        result.asObject<ListObject>()->append(RuntimeValue(NomadInteger{42}));
         BOOST_TEST(result.asObject<ListObject>()->getCount() == 1u);
         lists.freeValue(result);
     }
@@ -442,7 +442,7 @@ BOOST_AUTO_TEST_CASE(nested_defaults_share_arrays_but_not_mutable_lists) {
         auto* firstList = first.asObject<ListObject>();
         auto* secondList = second.asObject<ListObject>();
         BOOST_TEST(firstList != secondList);
-        firstList->push(RuntimeValue(NomadInteger{42}));
+        firstList->append(RuntimeValue(NomadInteger{42}));
         BOOST_TEST(firstList->getCount() == 1u);
         BOOST_TEST(secondList->getCount() == 0u);
 

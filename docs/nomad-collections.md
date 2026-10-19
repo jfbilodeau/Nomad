@@ -14,13 +14,13 @@ that uses collections. See [Runtime modules](modules.md) for module setup.
 
 ## Lists
 
-Lists start empty, support `push` to append a value, and expose a read-only
+Lists start empty, support `append` to add a value, and expose a read-only
 `count` property:
 
 ```nomad
 words = new List<string>
-words.push "first"
-words.push "second"
+firstIndex = words.append "first" # 0
+secondIndex = words.append "second" # 1
 word = words[0]
 words[1] = "updated"
 length = words[1].length
@@ -32,6 +32,37 @@ Negative indices and indices greater than or equal to `count` cause a runtime
 error. Indexed assignment replaces an existing element; it does not grow the
 list. Assignments share the same list instance, and methods and indexed
 assignments can change its contents through a parameter or another reference.
+
+### Changing list contents
+
+| Method | Result | Behavior |
+| --- | --- | --- |
+| `append value` | `int` | Adds at the end and returns the new element's zero-based index. |
+| `prepend value` | `void` | Inserts at the beginning. |
+| `insert index value` | `void` | Inserts before `index`; `index == count` appends. |
+| `remove index` | `bool` | Removes the indexed element; returns `false` for negative or out-of-range indices. |
+| `removeFirst` | `bool` | Removes the first element; returns `false` if empty. |
+| `removeLast` | `bool` | Removes the last element; returns `false` if empty. |
+| `clear` | `void` | Removes all elements; harmless if already empty. |
+
+Insertion shifts later elements right; removal shifts them left. `insert`
+accepts indices from zero through `count`, including zero for an empty list.
+Invalid insertion indices cause a runtime error without changing the list.
+Failed removals return `false` without logging or changing the list.
+Successful removals return `true`, not the removed value.
+
+```nomad
+words.prepend "start"
+words.insert 1 "middle"
+removed = words.remove 1 # true
+removed = words.removeFirst
+removed = words.removeLast
+words.clear
+```
+
+Removal and clearing release the list's references to stored objects; other
+references remain valid. The list can be reused after clearing. `append`
+replaces the former `push` name; `push` and `pop` are not available.
 
 See [Object types and members](language.md#object-types-and-members) for
 construction, reference semantics, and indexer syntax.

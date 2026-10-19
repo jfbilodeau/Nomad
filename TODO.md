@@ -7,6 +7,7 @@ Things the author wants to do.
 ## Open
 [ ] File IO module.
 [ ] `doc` comments in Nomad.
+[ ] Replace ref counting with garbage collector.
 [ ] Game debug console--root should be Game/Inventory/Windows/etc.
 [ ] Need to add `game.mouse.x/y`, `scene.mouse.x/y` and `this.mouse.x/y`
 [ ] Configure logging via `nomad.toml`
