@@ -181,7 +181,7 @@ NomadId Runtime::registerNativeCallable(
             }
         }
         NomadString error;
-        if (!canRegisterNativeMember(objectType, name, parameters, error)) {
+        if (!canRegisterNativeMember(objectType, name, MemberType::Method, parameters, error)) {
             log::error("Cannot register native method '" + name + "': " + error);
             return NOMAD_INVALID_ID;
         }
@@ -932,7 +932,7 @@ bool Runtime::ownsType(const Type* type) const {
            std::ranges::any_of(m_types, [type](const auto& registeredType) { return registeredType.get() == type; });
 }
 
-bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString& name,
+bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString& name, const MemberType type,
                                          const std::vector<Parameter>& parameters,
                                          NomadString& error) const {
     if (!ownsType(objectType)) {
@@ -945,33 +945,34 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
         return false;
     }
 
-    if (!isNativeMemberName(name)) {
-        error = "member name must be a simple identifier";
-        return false;
-    }
-
     if (getNativeMemberId(objectType, name) != NOMAD_INVALID_ID) {
         error = "the type already has a member with that name";
         return false;
     }
 
-    const auto existing = m_nativeMembersByName.find(name);
-    if (existing == m_nativeMembersByName.end()) {
-        return true;
+    return canRegisterNativeMemberSignature(name, type, parameters, error);
+}
+
+bool Runtime::canRegisterNativeMemberSignature(
+    const NomadString& name,
+    const MemberType type,
+    const std::vector<Parameter>& parameters,
+    NomadString& error
+) const {
+    if (!isNativeMemberName(name)) {
+        error = "member name must be a simple identifier";
+        return false;
     }
-
-    for (const auto memberId : existing->second) {
-        std::vector<Parameter> existingParameters;
-
-        if (getMemberType(memberId) == MemberType::Method) {
-            const auto* method = getNativeMemberMethod(memberId);
-            if (method == nullptr) {
-                throw NomadBug("Invalid native method registration");
-            }
-
-            existingParameters = method->getParameters();
-        }
-
+    if (type != MemberType::Property && type != MemberType::Method) {
+        error = "member must be a property or method";
+        return false;
+    }
+    if (type == MemberType::Property && !parameters.empty()) {
+        error = "properties cannot take parameters";
+        return false;
+    }
+    if (const auto existing = getNativeMemberSignature(name)) {
+        const auto& existingParameters = existing->parameters;
         if (existingParameters.size() != parameters.size()) {
             error = "members sharing a name must take the same number of parameters";
             return false;
@@ -994,6 +995,73 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
     }
 
     return true;
+}
+
+bool Runtime::registerNativeMemberTemplate(
+    const NomadString& family,
+    const NomadString& name,
+    const MemberType type,
+    const std::vector<TemplateParameter>& parameters
+) {
+    const auto registration = std::ranges::find(m_parameterizedTypes, family, &ParameterizedTypeRegistration::name);
+    if (registration == m_parameterizedTypes.end()) {
+        log::error("Cannot register member template '" + name + "': a registered parameterized type is required");
+        return false;
+    }
+    if (registration->memberTemplates.contains(name)) {
+        log::error("Cannot register member template '" + name + "': duplicate definition for '" + family + "'");
+        return false;
+    }
+    std::vector<Parameter> parserParameters;
+    for (const auto& parameter : parameters) {
+        const Type* parameterType = nullptr;
+        if (const auto* index = std::get_if<TypeParameterIndex>(&parameter.type)) {
+            if (index->index >= registration->argumentCount) {
+                log::error("Cannot register member template '" + name + "': type argument index is out of range");
+                return false;
+            }
+        } else {
+            parameterType = std::get<const Type*>(parameter.type);
+            if (!ownsType(parameterType) || parameterType->isVoid()) {
+                log::error("Cannot register member template '" + name + "': parameter types must be registered and non-void");
+                return false;
+            }
+        }
+        if (parameter.name.empty()) {
+            log::error("Cannot register member template '" + name + "': parameter name is empty");
+            return false;
+        }
+        parserParameters.push_back(defParameter(parameter.name, parameterType, parameter.doc));
+    }
+    NomadString error;
+    if (!canRegisterNativeMemberSignature(name, type, parserParameters, error)) {
+        log::error("Cannot register member template '" + name + "': " + error);
+        return false;
+    }
+    registration->memberTemplates.emplace(name, NativeMemberSignature{type, std::move(parserParameters)});
+    return true;
+}
+
+std::optional<NativeMemberSignature> Runtime::getNativeMemberSignature(const NomadString& name) const {
+    for (const auto& registration : m_parameterizedTypes) {
+        if (const auto member = registration.memberTemplates.find(name); member != registration.memberTemplates.end()) {
+            return member->second;
+        }
+    }
+    const auto overloads = m_nativeMembersByName.find(name);
+    if (overloads == m_nativeMembersByName.end() || overloads->second.empty()) {
+        return std::nullopt;
+    }
+    const auto memberId = overloads->second.front();
+    const auto type = getMemberType(memberId);
+    if (type == MemberType::Method) {
+        const auto* method = getNativeMemberMethod(memberId);
+        if (method == nullptr) {
+            throw NomadBug("Invalid native method registration");
+        }
+        return NativeMemberSignature{type, method->getParameters()};
+    }
+    return NativeMemberSignature{type, {}};
 }
 
 NomadId Runtime::registerNativeConstructor(
@@ -1200,7 +1268,7 @@ NomadId Runtime::registerNativeProperty(const ObjectTypeBase* objectType, const 
     }
 
     NomadString error;
-    if (!canRegisterNativeMember(objectType, name, {}, error)) {
+    if (!canRegisterNativeMember(objectType, name, MemberType::Property, {}, error)) {
         log::error("Cannot register native property '" + name + "': " + error);
         return NOMAD_INVALID_ID;
     }

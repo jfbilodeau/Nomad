@@ -21,6 +21,11 @@ class VirtualMachine;
 using NativePropertyGetFn = std::function<void(VirtualMachine*, RuntimeValue&)>;
 using NativePropertySetFn = std::function<void(VirtualMachine*, const RuntimeValue&)>;
 
+struct NativeMemberSignature {
+    MemberType type = MemberType::Unknown;
+    std::vector<Parameter> parameters;
+};
+
 struct NativePropertyDefinition {
     NomadId id = NOMAD_INVALID_ID;
     const Type* objectType = nullptr;

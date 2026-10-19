@@ -183,6 +183,14 @@ public:
     );
 
     // Native members
+    bool registerNativeMemberTemplate(
+        const NomadString& family,
+        const NomadString& name,
+        MemberType type,
+        const std::vector<TemplateParameter>& parameters = {}
+    );
+    [[nodiscard]] std::optional<NativeMemberSignature> getNativeMemberSignature(const NomadString& name) const;
+
     NomadId registerNativeIndexer(
         const ObjectTypeBase* objectType,
         std::vector<const Type*> indexTypes,
@@ -463,9 +471,15 @@ private:
         const std::vector<const Type*>& argumentTypes
     ) const;
     [[nodiscard]] bool ownsType(const Type* type) const;
-    [[nodiscard]] bool canRegisterNativeMember(const Type* objectType, const NomadString& name,
+    [[nodiscard]] bool canRegisterNativeMember(const Type* objectType, const NomadString& name, MemberType type,
                                                   const std::vector<Parameter>& parameters,
                                                   NomadString& error) const;
+    [[nodiscard]] bool canRegisterNativeMemberSignature(
+        const NomadString& name,
+        MemberType type,
+        const std::vector<Parameter>& parameters,
+        NomadString& error
+    ) const;
 
     std::vector<Instruction> m_instructions;
     std::vector<OpCodeDefinition> m_opCodes;
@@ -475,6 +489,7 @@ private:
         ParameterizedTypeFactory factory;
         ParameterizedTypeInitializer initializer;
         std::optional<std::vector<TemplateParameter>> constructorTemplate;
+        std::unordered_map<NomadString, NativeMemberSignature> memberTemplates;
     };
     struct TypeSpecialization {
         NomadString name;

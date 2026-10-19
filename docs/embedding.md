@@ -500,6 +500,51 @@ Calling the accessor outside an active method faults.
 
 ## Native object properties
 
+### Members of parameterized type families
+
+Declare member parsing signatures before compiling scripts that use inferred
+constructors. This lets scripts access members before any concrete specialization
+has been created:
+
+```cpp
+if (!runtime.registerNativeMemberTemplate("KeyValue", "key", nomad::MemberType::Property) ||
+    !runtime.registerNativeMemberTemplate("KeyValue", "value", nomad::MemberType::Property)) {
+    throw nomad::NomadException("Failed to register KeyValue member signatures");
+}
+```
+
+The family must already be registered with `registerParameterizedType`. A property
+declaration takes no parameters. For methods, supply `TemplateParameter` entries
+using concrete types or `TypeParameterIndex`:
+
+```cpp
+if (!runtime.registerNativeMemberTemplate(
+    "Box", "store", nomad::MemberType::Method,
+    {nomad::defTemplateParameter("value", nomad::TypeParameterIndex{0}, "")}
+)) {
+    throw nomad::NomadException("Failed to register Box.store signature");
+}
+```
+
+Declarations do not create types, executable members, or callbacks. Continue to
+register each specialization's concrete members in its initializer. Return types,
+property access permissions, and argument type checking come from those concrete
+members.
+
+All members sharing a name must agree on parameter count and parser-dependent
+parameter types, including callbacks and hidden source parameters. A property and
+a zero-parameter method have the same parsing shape, as with concrete members.
+Generic method parameters parse as ordinary value expressions.
+Incompatible declarations and concrete registrations are rejected with a logged
+error. Duplicate declarations within a family are also rejected.
+
+`getNativeMemberSignature(name)` returns a copy of the parsing signature, whether
+declared by a family or provided by a concrete member. Generic parameter types are
+represented by null pointers in this parsing signature. Existing member-ID and
+overload queries continue to return only concrete members.
+
+### Registering concrete properties
+
 Use `registerNativeProperty(objectType, name, valueType, getter, setter, doc)`.
 Either callback may be empty for a write-only or read-only property. Both
 callbacks access the borrowed instance through `getThisAs<T>()`.

@@ -116,7 +116,7 @@ std::optional<MemberNameParts> splitNativeMemberName(const Runtime* runtime, con
     }
 
     auto member = name.substr(separator + 1);
-    if (runtime->getNativeMemberOverloadCount(member) == 0) {
+    if (!runtime->getNativeMemberSignature(member)) {
         return std::nullopt;
     }
 
@@ -129,26 +129,17 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
 
 bool parseNativeMemberArguments(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
                                    const NomadString& memberName, ArgumentList& arguments) {
-    std::vector<NomadId> overloads;
-    context->getRuntime()->getNativeMemberOverloads(memberName, overloads);
-
-    if (overloads.empty()) {
+    const auto signature = context->getRuntime()->getNativeMemberSignature(memberName);
+    if (!signature) {
         context->reportError("Unknown native member '" + memberName + "'", tokens);
         return false;
     }
 
-    const auto representativeId = overloads.front();
-    if (context->getRuntime()->getMemberType(representativeId) == MemberType::Property) {
+    if (signature->type == MemberType::Property) {
         return true;
     }
 
-    const auto* definition = context->getRuntime()->getNativeMemberMethod(representativeId);
-    if (definition == nullptr) {
-        context->getCompiler()->reportInternalError("Invalid native method shape: " + memberName);
-        return false;
-    }
-
-    return parseCallableArguments(context, function, tokens, *definition, &arguments);
+    return parseCallableArguments(context, function, tokens, signature->parameters, &arguments);
 }
 
 std::unique_ptr<Expression> createNativeMemberExpression(
@@ -162,17 +153,13 @@ std::unique_ptr<Expression> createNativeMemberExpression(
             return nullptr;
         }
     } else {
-        std::vector<NomadId> overloads;
-        context->getRuntime()->getNativeMemberOverloads(memberName, overloads);
-
-        if (overloads.empty()) {
+        const auto signature = context->getRuntime()->getNativeMemberSignature(memberName);
+        if (!signature) {
             context->reportError("Unknown native member '" + memberName + "'");
             return nullptr;
         }
 
-        const auto* method = context->getRuntime()->getNativeMemberMethod(overloads.front());
-        if (context->getRuntime()->getMemberType(overloads.front()) == MemberType::Method &&
-            method != nullptr && method->getParameterCount() != 0) {
+        if (signature->type == MemberType::Method && !signature->parameters.empty()) {
             context->reportError("Native method '" + memberName +
                                  "' requires arguments before another member can be accessed");
             return nullptr;

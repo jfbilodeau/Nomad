@@ -37,6 +37,58 @@ std::unique_ptr<Expression> parseExpression(CompilerContext& context, ScriptFunc
 
 BOOST_AUTO_TEST_SUITE(native_member_syntax)
 
+BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_concrete_members) {
+    Runtime runtime;
+    auto specializations = NomadIndex{0};
+    BOOST_REQUIRE(runtime.registerParameterizedType(
+        "Box", 1,
+        [&](const std::vector<const Type*>& arguments) {
+            ++specializations;
+            return std::make_unique<ObjectType>("Box<" + arguments[0]->getTypeName() + ">", arguments);
+        },
+        [&](const Type* type) {
+            const auto* objectType = static_cast<const ObjectType*>(type);
+            const auto* valueType = objectType->getTypeArguments()[0];
+            BOOST_REQUIRE(runtime.registerNativeConstructor(
+                objectType, {defParameter("value", valueType, "")},
+                [](std::span<const RuntimeValue>) { return new NomadObject; }, ""
+            ) != NOMAD_INVALID_ID);
+            BOOST_REQUIRE(runtime.registerNativeProperty(
+                objectType, "declaredProperty", valueType, [](VirtualMachine*, RuntimeValue&) {}, {}, ""
+            ) != NOMAD_INVALID_ID);
+            BOOST_REQUIRE(runtime.registerNativeMethod(
+                objectType, "declaredMethod", methodFunction(),
+                {
+                    defParameter("value", valueType, ""),
+                    defParameter("line", runtime.getLineNumberType(), "")
+                }, valueType, ""
+            ) != NOMAD_INVALID_ID);
+        }
+    ));
+    BOOST_REQUIRE(runtime.registerNativeConstructorTemplate("Box", {
+        defTemplateParameter("value", TypeParameterIndex{0}, "")
+    }));
+    BOOST_REQUIRE(runtime.registerNativeMemberTemplate("Box", "declaredProperty", MemberType::Property));
+    BOOST_REQUIRE(runtime.registerNativeMemberTemplate("Box", "declaredMethod", MemberType::Method, {
+        defTemplateParameter("value", TypeParameterIndex{0}, ""),
+        defTemplateParameter("line", runtime.getLineNumberType(), "")
+    }));
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    auto property = parseExpression(context, nullptr, "(new Box 1).declaredProperty");
+    auto method = parseExpression(context, nullptr, "(new Box 1).declaredMethod 2");
+    BOOST_REQUIRE(property != nullptr);
+    BOOST_REQUIRE(method != nullptr);
+    BOOST_TEST(context.getErrorCount() == 0);
+    BOOST_TEST(specializations == 0u);
+    BOOST_TEST(runtime.getNativeMemberOverloadCount("declaredProperty") == 0u);
+    BOOST_REQUIRE(property->resolve(&context, nullptr));
+    BOOST_REQUIRE(method->resolve(&context, nullptr));
+    BOOST_TEST(property->getType() == runtime.getIntegerType());
+    BOOST_TEST(method->getType() == runtime.getIntegerType());
+    BOOST_TEST(specializations == 1u);
+}
+
 BOOST_AUTO_TEST_CASE(resolves_property_on_literal) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
