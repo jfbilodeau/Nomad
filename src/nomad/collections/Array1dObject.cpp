@@ -4,22 +4,40 @@
 
 #include <nomad/script/Type.hpp>
 
+#include <nomad/system/String.hpp>
+
 #include <array>
 #include <cstdint>
 
 namespace nomad {
 
 Array1dObject::Array1dObject(const Type* elementType):
-    ArrayObject(elementType, 1)
+    ArrayObject(elementType)
 {}
 
 Array1dObject::Array1dObject(const Type* elementType, const NomadInteger size):
-    ArrayObject(elementType, std::array{size})
+    ArrayObject(elementType, std::array{size}),
+    m_size(static_cast<NomadIndex>(size))
 {}
 
-const RuntimeValue& Array1dObject::getValue(const NomadInteger index) const {
+NomadIndex Array1dObject::getDimensionCount() const {
+    return 1;
+}
+
+NomadIndex Array1dObject::getDimensionSize(const NomadIndex dimension) const {
+    if (dimension != 0) {
+        throw NomadException("Invalid array dimension " + toString(dimension));
+    }
+    return m_size;
+}
+
+void Array1dObject::getValue(const NomadInteger index, RuntimeValue& result) const {
     const auto offset = getOffset(index);
-    return offset == NOMAD_INVALID_INDEX ? getDefaultValue() : m_values[offset];
+    if (offset == NOMAD_INVALID_INDEX) {
+        m_elementType->initValue(result);
+    } else {
+        m_elementType->copyValue(m_values[offset], result);
+    }
 }
 
 void Array1dObject::setValue(const NomadInteger index, const RuntimeValue& value) {
@@ -30,8 +48,8 @@ void Array1dObject::setValue(const NomadInteger index, const RuntimeValue& value
 }
 
 NomadIndex Array1dObject::getOffset(const NomadInteger index) const {
-    if (index < 0 || static_cast<std::uintmax_t>(index) >= m_dimensions[0]) {
-        reportIndexOutOfBounds(index, 0, m_dimensions[0]);
+    if (index < 0 || static_cast<std::uintmax_t>(index) >= m_size) {
+        reportIndexOutOfBounds(index, 0, m_size);
         return NOMAD_INVALID_INDEX;
     }
     return static_cast<NomadIndex>(index);

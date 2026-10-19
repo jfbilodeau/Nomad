@@ -75,9 +75,9 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 arrayType,
                 runtime->getIntegerType(),
                 elementType,
-                [elementType](nomad::VirtualMachine* machine, const nomad::RuntimeValue& index, nomad::RuntimeValue& result) {
+                [](nomad::VirtualMachine* machine, const nomad::RuntimeValue& index, nomad::RuntimeValue& result) {
                     const auto* array = machine->getThisAs<nomad::Array1dObject>();
-                    elementType->copyValue(array->getValue(index.getIntegerValue()), result);
+                    array->getValue(index.getIntegerValue(), result);
                 },
                 [](nomad::VirtualMachine* machine, const nomad::RuntimeValue& index, const nomad::RuntimeValue& value) {
                     machine->getThisAs<nomad::Array1dObject>()->setValue(index.getIntegerValue(), value);

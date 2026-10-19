@@ -392,6 +392,14 @@ Array bounds errors log an error rather than faulting: invalid reads return a
 default element and invalid writes are ignored. List and string bounds errors
 still fault.
 
+The C++ `Array1dObject`, `Array2dObject`, and `Array3dObject` getters accept
+indices followed by a `RuntimeValue& result`. Pass an empty result: valid reads
+copy the element and invalid reads initialize its type's default value.
+The caller owns the result and must release it using the element type's
+`freeValue` when `needsFree()` is true, including if initialization or copying
+throws. Results remain valid independently of subsequent reads or destruction
+of the array.
+
 ## Typed native object methods
 
 Built-in string methods use the same object-method API. Read the instance with

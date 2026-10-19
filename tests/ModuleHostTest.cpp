@@ -110,8 +110,14 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
     BOOST_TEST(calls == "32");
     const auto* outer = result.asObject<Array1dObject>();
     BOOST_TEST(outer->getCount() == 2u);
-    BOOST_TEST(outer->getValue(0).getObjectValue() == outer->getValue(1).getObjectValue());
-    BOOST_TEST(outer->getValue(0).asObject<Array2dObject>()->getCount() == 0u);
+    RuntimeValue first;
+    RuntimeValue second;
+    outer->getValue(0, first);
+    outer->getValue(1, second);
+    BOOST_TEST(first.getObjectValue() == second.getObjectValue());
+    BOOST_TEST(first.asObject<Array2dObject>()->getCount() == 0u);
+    nestedType->freeValue(first);
+    nestedType->freeValue(second);
     result.freeObjectValue();
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     calls.clear();
@@ -130,8 +136,12 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
         const auto* grid = evaluation.getVariableValue("grid")->asObject<Array2dObject>();
         BOOST_TEST(grid->getDimensionSize(0) == 2u);
         BOOST_TEST(grid->getDimensionSize(1) == 3u);
-        BOOST_TEST(runtime.getStringType()->toString(grid->getValue(1, 2)) == "");
-        BOOST_TEST(evaluation.getVariableValue("volume")->asObject<Array3dObject>()->getValue(1, 2, 3).getFloatValue() == 0.0f);
+        RuntimeValue element;
+        grid->getValue(1, 2, element);
+        BOOST_TEST(runtime.getStringType()->toString(element) == "");
+        runtime.getStringType()->freeValue(element);
+        evaluation.getVariableValue("volume")->asObject<Array3dObject>()->getValue(1, 2, 3, element);
+        BOOST_TEST(element.getFloatValue() == 0.0f);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     std::ostringstream documentation;

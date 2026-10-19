@@ -12,9 +12,8 @@
 
 namespace nomad {
 
-ArrayObject::ArrayObject(const Type* elementType, const NomadIndex dimensionCount):
-    m_elementType(elementType),
-    m_dimensions(dimensionCount, 0)
+ArrayObject::ArrayObject(const Type* elementType):
+    m_elementType(elementType)
 {
     if (elementType == nullptr || elementType->isVoid() || elementType->isInternal()) {
         throw NomadException("Array element type must be a public, non-void type");
@@ -22,7 +21,7 @@ ArrayObject::ArrayObject(const Type* elementType, const NomadIndex dimensionCoun
 }
 
 ArrayObject::ArrayObject(const Type* elementType, const std::span<const NomadInteger> dimensions):
-    ArrayObject(elementType, dimensions.size())
+    ArrayObject(elementType)
 {
     auto count = NomadIndex{1};
     for (auto dimension = NomadIndex{0}; dimension < dimensions.size(); ++dimension) {
@@ -34,8 +33,7 @@ ArrayObject::ArrayObject(const Type* elementType, const std::span<const NomadInt
         if (static_cast<std::uintmax_t>(size) > m_values.max_size() / count) {
             throw NomadException("Array dimensions exceed the maximum element count");
         }
-        m_dimensions[dimension] = static_cast<NomadIndex>(size);
-        count *= m_dimensions[dimension];
+        count *= static_cast<NomadIndex>(size);
     }
 
     m_values.reserve(count);
@@ -47,26 +45,7 @@ ArrayObject::ArrayObject(const Type* elementType, const std::span<const NomadInt
 }
 
 ArrayObject::~ArrayObject() {
-    if (m_defaultValue) {
-        m_elementType->freeValue(*m_defaultValue);
-    }
     freeElements();
-}
-
-const RuntimeValue& ArrayObject::getDefaultValue() const {
-    if (m_defaultValue) {
-        m_elementType->freeValue(*m_defaultValue);
-        m_defaultValue.reset();
-    }
-    m_defaultValue.emplace();
-    try {
-        m_elementType->initValue(*m_defaultValue);
-    } catch (...) {
-        m_elementType->freeValue(*m_defaultValue);
-        m_defaultValue.reset();
-        throw;
-    }
-    return *m_defaultValue;
 }
 
 void ArrayObject::freeElements() noexcept {
@@ -83,17 +62,6 @@ const Type* ArrayObject::getElementType() const {
 
 NomadIndex ArrayObject::getCount() const {
     return m_values.size();
-}
-
-NomadIndex ArrayObject::getDimensionCount() const {
-    return m_dimensions.size();
-}
-
-NomadIndex ArrayObject::getDimensionSize(const NomadIndex dimension) const {
-    if (dimension >= m_dimensions.size()) {
-        throw NomadException("Invalid array dimension " + toString(dimension));
-    }
-    return m_dimensions[dimension];
 }
 
 void ArrayObject::reportIndexOutOfBounds(
