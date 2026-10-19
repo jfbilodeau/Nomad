@@ -14,6 +14,14 @@ Parameter defParameter(const NomadString& name, const Type* type, const NomadStr
     };
 }
 
+TemplateParameter defTemplateParameter(
+    const NomadString& name,
+    std::variant<const Type*, TypeArgument> type,
+    const NomadString& doc
+) {
+    return {name, std::move(type), doc};
+}
+
 Callable::Callable(
     const CallableType type,
     const CallableSource source,

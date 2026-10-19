@@ -742,7 +742,7 @@ bool Runtime::registerParameterizedType(
         log::error("Cannot register parameterized type '" + name + "': invalid or duplicate definition");
         return false;
     }
-    m_parameterizedTypes.push_back({name, argumentCount, std::move(factory), std::move(initializer)});
+    m_parameterizedTypes.push_back({name, argumentCount, std::move(factory), std::move(initializer), std::nullopt});
     return true;
 }
 
@@ -752,6 +752,52 @@ std::optional<NomadIndex> Runtime::getParameterizedTypeArgumentCount(const Nomad
         return std::nullopt;
     }
     return registration->argumentCount;
+}
+
+bool Runtime::registerNativeConstructorTemplate(
+    const NomadString& name,
+    std::vector<TemplateParameter> parameters
+) {
+    const auto registration = std::ranges::find(m_parameterizedTypes, name, &ParameterizedTypeRegistration::name);
+    if (registration == m_parameterizedTypes.end()) {
+        log::error("Cannot register constructor template '" + name + "': a registered parameterized type is required");
+        return false;
+    }
+    if (registration->constructorTemplate) {
+        log::error("Cannot register constructor template '" + name + "': duplicate definition");
+        return false;
+    }
+    std::vector<bool> boundArguments(registration->argumentCount, false);
+    for (const auto& parameter : parameters) {
+        if (const auto* argument = std::get_if<TypeArgument>(&parameter.type)) {
+            if (argument->index >= registration->argumentCount) {
+                log::error("Cannot register constructor template '" + name + "': type argument index is out of range");
+                return false;
+            }
+            boundArguments[argument->index] = true;
+        } else {
+            const auto* type = std::get<const Type*>(parameter.type);
+            if (!ownsType(type) || type->isVoid()) {
+                log::error("Cannot register constructor template '" + name +
+                    "': parameter types must be registered and non-void");
+                return false;
+            }
+        }
+    }
+    if (std::ranges::find(boundArguments, false) != boundArguments.end()) {
+        log::error("Cannot register constructor template '" + name + "': every type argument must appear in the signature");
+        return false;
+    }
+    registration->constructorTemplate = std::move(parameters);
+    return true;
+}
+
+std::optional<std::vector<TemplateParameter>> Runtime::getNativeConstructorTemplate(const NomadString& name) const {
+    const auto registration = std::ranges::find(m_parameterizedTypes, name, &ParameterizedTypeRegistration::name);
+    if (registration == m_parameterizedTypes.end()) {
+        return std::nullopt;
+    }
+    return registration->constructorTemplate;
 }
 
 const Type* Runtime::getParameterizedType(

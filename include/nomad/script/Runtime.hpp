@@ -122,6 +122,13 @@ public:
         const NomadString& name,
         const std::vector<const Type*>& arguments
     );
+    bool registerNativeConstructorTemplate(
+        const NomadString& name,
+        std::vector<TemplateParameter> parameters
+    );
+    [[nodiscard]] std::optional<std::vector<TemplateParameter>> getNativeConstructorTemplate(
+        const NomadString& name
+    ) const;
     void registerType(std::unique_ptr<Type>&& type);
     // [[nodiscard]] const Type* getType(NomadId id) const;
     [[nodiscard]] NomadId getTypeId(const NomadString& typeName) const;
@@ -463,6 +470,7 @@ private:
         NomadIndex argumentCount;
         ParameterizedTypeFactory factory;
         ParameterizedTypeInitializer initializer;
+        std::optional<std::vector<TemplateParameter>> constructorTemplate;
     };
     struct TypeSpecialization {
         NomadString name;

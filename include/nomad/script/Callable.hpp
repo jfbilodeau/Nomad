@@ -6,6 +6,7 @@
 
 #include <nomad/script/Documentation.hpp>
 
+#include <variant>
 #include <vector>
 
 namespace nomad {
@@ -25,6 +26,22 @@ struct Parameter {
 };
 
 Parameter defParameter(const NomadString& name, const Type* type, NomadDocArg);
+
+struct TypeArgument {
+    NomadIndex index;
+};
+
+struct TemplateParameter {
+    NomadString name;
+    std::variant<const Type*, TypeArgument> type;
+    NomadDocField;
+};
+
+TemplateParameter defTemplateParameter(
+    const NomadString& name,
+    std::variant<const Type*, TypeArgument> type,
+    NomadDocArg
+);
 
 enum class CallableType {
     Function = 1,

@@ -36,6 +36,138 @@ NomadId compileConstruction(Runtime& runtime, const NomadString& source) {
 
 BOOST_AUTO_TEST_SUITE(object_construction)
 
+BOOST_AUTO_TEST_CASE(constructor_templates_store_generic_and_concrete_parameters_without_specializing) {
+    Runtime runtime;
+    auto factoryCalls = NomadIndex{0};
+    BOOST_REQUIRE(runtime.registerParameterizedType(
+        "Example", 2,
+        [&factoryCalls](const std::vector<const Type*>& arguments) {
+            ++factoryCalls;
+            return std::make_unique<ObjectType>("Example", arguments);
+        }
+    ));
+    BOOST_TEST(!runtime.getNativeConstructorTemplate("Missing").has_value());
+    BOOST_TEST(!runtime.getNativeConstructorTemplate("Example").has_value());
+    BOOST_REQUIRE(runtime.registerNativeConstructorTemplate(
+        "Example",
+        {
+            defTemplateParameter("key", TypeArgument{0}, "The key."),
+            defTemplateParameter("value", TypeArgument{1}, "The value."),
+            defTemplateParameter("sameKey", TypeArgument{0}, ""),
+            defTemplateParameter("enabled", runtime.getBooleanType(), "Whether enabled."),
+            defTemplateParameter("file", runtime.getFileNameType(), "")
+        }
+    ));
+    auto signature = runtime.getNativeConstructorTemplate("Example");
+    BOOST_REQUIRE(signature.has_value());
+    BOOST_REQUIRE(signature->size() == 5u);
+    BOOST_TEST((*signature)[0].name == "key");
+    BOOST_TEST((*signature)[0].doc == "The key.");
+    BOOST_TEST(std::get<TypeArgument>((*signature)[0].type).index == 0u);
+    BOOST_TEST(std::get<TypeArgument>((*signature)[1].type).index == 1u);
+    BOOST_TEST(std::get<TypeArgument>((*signature)[2].type).index == 0u);
+    BOOST_TEST(std::get<const Type*>((*signature)[3].type) == runtime.getBooleanType());
+    BOOST_TEST(std::get<const Type*>((*signature)[4].type) == runtime.getFileNameType());
+    signature->clear();
+    BOOST_TEST(runtime.getNativeConstructorTemplate("Example")->size() == 5u);
+    BOOST_TEST(factoryCalls == 0u);
+    BOOST_TEST(runtime.getTypeByName("Example") == nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(constructor_templates_reject_invalid_definitions_without_reserving_signature) {
+    Runtime runtime;
+    Runtime other;
+    const auto factory = [](const std::vector<const Type*>& arguments) {
+        return std::make_unique<ObjectType>("Example", arguments);
+    };
+    BOOST_REQUIRE(runtime.registerParameterizedType("Example", 2, factory));
+    BOOST_TEST(!runtime.registerNativeConstructorTemplate(
+        "Missing", {defTemplateParameter("value", TypeArgument{0}, "")}
+    ));
+    BOOST_TEST(!runtime.registerNativeConstructorTemplate("Example", {}));
+    for (const auto& parameters : std::vector<std::vector<TemplateParameter>>{
+        {defTemplateParameter("value", TypeArgument{0}, "")},
+        {defTemplateParameter("key", TypeArgument{0}, ""), defTemplateParameter("value", TypeArgument{2}, "")},
+        {
+            defTemplateParameter("key", TypeArgument{0}, ""),
+            defTemplateParameter("value", TypeArgument{1}, ""),
+            defTemplateParameter("invalid", static_cast<const Type*>(nullptr), "")
+        },
+        {
+            defTemplateParameter("key", TypeArgument{0}, ""),
+            defTemplateParameter("value", TypeArgument{1}, ""),
+            defTemplateParameter("invalid", runtime.getVoidType(), "")
+        },
+        {
+            defTemplateParameter("key", TypeArgument{0}, ""),
+            defTemplateParameter("value", TypeArgument{1}, ""),
+            defTemplateParameter("invalid", other.getIntegerType(), "")
+        }
+    }) {
+        BOOST_TEST(!runtime.registerNativeConstructorTemplate("Example", parameters));
+        BOOST_TEST(!runtime.getNativeConstructorTemplate("Example").has_value());
+    }
+    BOOST_REQUIRE(runtime.registerNativeParameterizedConstructor(
+        "Alias", 1, [](const NomadString&, const std::vector<const Type*>&) {}
+    ));
+    BOOST_TEST(!runtime.registerNativeConstructorTemplate(
+        "Alias", {defTemplateParameter("value", TypeArgument{0}, "")}
+    ));
+    registerObjectType(runtime, "Concrete");
+    BOOST_TEST(!runtime.registerNativeConstructorTemplate(
+        "Concrete", {defTemplateParameter("value", TypeArgument{0}, "")}
+    ));
+    BOOST_REQUIRE(runtime.registerNativeConstructorTemplate(
+        "Example",
+        {defTemplateParameter("key", TypeArgument{0}, ""), defTemplateParameter("value", TypeArgument{1}, "")}
+    ));
+    BOOST_TEST(!runtime.registerNativeConstructorTemplate(
+        "Example",
+        {defTemplateParameter("value", TypeArgument{1}, ""), defTemplateParameter("key", TypeArgument{0}, "")}
+    ));
+    const auto signature = runtime.getNativeConstructorTemplate("Example");
+    BOOST_REQUIRE(signature.has_value());
+    BOOST_TEST((*signature)[0].name == "key");
+    BOOST_TEST(std::get<TypeArgument>((*signature)[0].type).index == 0u);
+}
+
+BOOST_AUTO_TEST_CASE(constructor_template_registration_preserves_explicit_construction) {
+    Runtime runtime;
+    auto calls = NomadIndex{0};
+    BOOST_REQUIRE(runtime.registerParameterizedType(
+        "Box", 1,
+        [](const std::vector<const Type*>& arguments) {
+            const auto* elementType = arguments[0];
+            return std::make_unique<ObjectType>("Box<" + elementType->getTypeName() + ">", arguments);
+        },
+        [&](const Type* type) {
+            const auto* objectType = static_cast<const ObjectType*>(type);
+            const auto* elementType = objectType->getTypeArguments()[0];
+            BOOST_REQUIRE(runtime.registerNativeConstructor(
+                objectType, {defParameter("value", elementType, "")},
+                [&](const std::span<const RuntimeValue> arguments) {
+                    BOOST_TEST(arguments[0].getIntegerValue() == 42);
+                    ++calls;
+                    return new ConstructedObject;
+                }, ""
+            ) != NOMAD_INVALID_ID);
+        }
+    ));
+    BOOST_REQUIRE(runtime.registerNativeConstructorTemplate(
+        "Box", {defTemplateParameter("value", TypeArgument{0}, "")}
+    ));
+    const auto id = compileConstruction(runtime, "return new Box<int> 42");
+    RuntimeValue result;
+    runtime.executeFunction(id, {}, result);
+    result.freeObjectValue();
+    {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext context(*machine);
+        BOOST_REQUIRE(Interpreter{}.execute("new Box<int> 42", context));
+    }
+    BOOST_TEST(calls == 2u);
+}
+
 BOOST_AUTO_TEST_CASE(constructors_accept_heterogeneous_arguments_and_type_specific_zero_values) {
     Runtime runtime;
     auto calls = NomadIndex{0};

@@ -275,6 +275,41 @@ Requesting a specialization creates a descriptor, not an object. The compiler re
 annotations in script parameters, function parameters, and event declarations
 through the same registration API.
 
+### Native constructor inference signatures
+
+After registering a parameterized type family, hosts can register one constructor
+inference signature with `registerNativeConstructorTemplate(name, parameters)`.
+Each `TemplateParameter` describes either a concrete `Type*` or a
+`TypeArgument{index}` referring to the family's zero-based type-argument position.
+For example, for an already registered two-argument family named `Pair`:
+
+```cpp
+if (!runtime.registerNativeConstructorTemplate(
+    "Pair",
+    {
+        nomad::defTemplateParameter("key", nomad::TypeArgument{0}, "The key."),
+        nomad::defTemplateParameter("value", nomad::TypeArgument{1}, "The value.")
+    }
+)) {
+    throw nomad::NomadException("Failed to register Pair constructor template");
+}
+```
+
+Every family type argument must appear at least once. Repeated references are
+allowed. Concrete types must belong to the runtime and be non-void, as with native
+constructor parameters. Unknown families, invalid type-argument indices,
+incomplete signatures, and duplicate registrations log an error and return
+`false` without changing the registered signature.
+
+`getNativeConstructorTemplate(name)` returns an optional copy of the signature,
+or an empty optional when none is registered. Registering or retrieving this
+metadata does not create a specialization or register an executable constructor.
+This API currently stores signatures only: scripts must still supply explicit
+type arguments, and hosts must still register each specialization's constructor
+with `registerNativeConstructor`.
+
+### Native object types and constructors
+
 `ObjectTypeBase` provides shared reference-counted value handling and object
 opcodes. `ObjectType` supplies a name and type-argument metadata; its text
 representation is its type name. Its initial value is a null object reference,
