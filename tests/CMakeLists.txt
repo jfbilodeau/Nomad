@@ -60,6 +60,7 @@ add_executable(
     ./StatementExecutionTest.cpp
     ./SystemTest.cpp
     ./TestDirectory.hpp
+    ./TestDirectoryTest.cpp
     ./TileMapDataTest.cpp
     ./TileMapTest.cpp
     ./TokenizerTest.cpp
@@ -105,7 +106,20 @@ endif()
 
 nomad_copy_runtime_dependencies(nomad_test)
 
-add_test(NAME nomad_test COMMAND nomad_test)
+# Filters select top-level suites. The remaining test catches all other suites and root-level cases,
+# including newly added tests, so splitting the runner cannot silently omit coverage.
+set(NOMAD_TEST_AUDIO_FILTER "audio")
+set(NOMAD_TEST_LANGUAGE_FILTER "language_*,native_*,array_objects,object_construction,callable_*,function_resolution")
+set(NOMAD_TEST_TOOLING_FILTER "compilation,project_*,sprite_*,audio_discovery,module_host,module_manifest,source_overlays")
+set(NOMAD_TEST_REMAINING_FILTER
+    "!${NOMAD_TEST_AUDIO_FILTER}:!${NOMAD_TEST_LANGUAGE_FILTER}:!${NOMAD_TEST_TOOLING_FILTER}")
+
+foreach(GROUP IN ITEMS audio language tooling remaining)
+    string(TOUPPER "${GROUP}" GROUP_UPPER)
+    add_test(NAME nomad_test_${GROUP}
+        COMMAND nomad_test "--run_test=${NOMAD_TEST_${GROUP_UPPER}_FILTER}" --log_level=test_suite --color_output=no)
+    set_tests_properties(nomad_test_${GROUP} PROPERTIES LABELS unit)
+endforeach()
 
 if(TARGET nomad-lsp)
     add_test(NAME nomad_lsp_process

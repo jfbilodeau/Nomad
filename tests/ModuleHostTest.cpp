@@ -101,6 +101,9 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
     RuntimeValue empty;
     nestedType->initValue(empty);
     nestedType->freeValue(empty);
+    // The process-wide empty string is retained after the runtime's arrays are released.
+    runtime.getStringType()->initValue(empty);
+    runtime.getStringType()->freeValue(empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);

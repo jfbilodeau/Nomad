@@ -31,6 +31,23 @@ UndefinedBehaviorSanitizer builds.
 VS Code tasks and launch configurations are included. Select the matching
 CMake preset before building or debugging the runtime and tests.
 
+## Running tests
+
+Test presets allow up to four concurrent test processes. Unit tests are split
+into `nomad_test_audio`, `nomad_test_language`, `nomad_test_tooling`, and
+`nomad_test_remaining`; together they run the full unit suite. Each group uses
+the same `nomad_test` executable. Tests not assigned to a named group run in the
+remaining group, including newly added tests.
+
+In VS Code, select the relevant CTest group for focused validation, or run all
+tests for full validation. The `unit` label selects all unit-test groups without
+the separate integration tests. Suite and case timings are included in the unit
+test output to help identify slow tests. Test directories have unique names so
+concurrent processes do not overwrite one another's temporary files.
+
+Packaging and distribution integration tests retain their existing serial
+execution requirements. Parallel jobs do not override those restrictions.
+
 The `nomad-lsp` target builds the standalone stdio language server and is included
 in SDK distributions. It is enabled by default; configure with
 `-DNOMAD_BUILD_LSP=OFF` to omit the executable. See the

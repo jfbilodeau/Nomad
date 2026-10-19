@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -12,9 +13,7 @@ namespace nomad::test {
 class TestDirectory {
 public:
     explicit TestDirectory(const std::string& name) :
-        m_path(resolveTemporaryRoot() / name) {
-        std::filesystem::remove_all(m_path);
-        std::filesystem::create_directories(m_path);
+        m_path(createTemporaryDirectory(name)) {
     }
 
     TestDirectory(const TestDirectory&) = delete;
@@ -56,6 +55,22 @@ public:
     }
 
 private:
+    static std::filesystem::path createTemporaryDirectory(const std::string& name) {
+        const auto root = resolveTemporaryRoot();
+        const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        for (auto attempt = 0; attempt < 100; ++attempt) {
+            const auto path = root / (name + "-" + std::to_string(timestamp) + "-" + std::to_string(attempt));
+            if (std::filesystem::create_directory(path)) {
+                return path;
+            }
+        }
+        throw std::filesystem::filesystem_error(
+            "Failed to create a unique test directory",
+            root,
+            std::make_error_code(std::errc::file_exists)
+        );
+    }
+
     static std::filesystem::path resolveTemporaryRoot() {
         std::error_code error;
         auto root = std::filesystem::temp_directory_path(error);
