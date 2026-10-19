@@ -13,6 +13,9 @@ public:
 
     [[nodiscard]] const RuntimeValue& getValue(NomadInteger index1, NomadInteger index2, NomadInteger index3) const;
     void setValue(NomadInteger index1, NomadInteger index2, NomadInteger index3, const RuntimeValue& value);
+
+private:
+    [[nodiscard]] NomadIndex getOffset(NomadInteger index1, NomadInteger index2, NomadInteger index3) const;
 };
 
 } // namespace nomad

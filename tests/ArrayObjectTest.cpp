@@ -145,6 +145,40 @@ BOOST_AUTO_TEST_CASE(multidimensional_elements_have_distinct_storage) {
     BOOST_CHECK_THROW(volume.getValue(0, 0, 2), NomadException);
 }
 
+BOOST_AUTO_TEST_CASE(specialized_offsets_reject_each_invalid_coordinate_without_mutation) {
+    IntegerType integers;
+    Array1dObject line(&integers, 2);
+    Array2dObject grid(&integers, 2, 3);
+    Array3dObject volume(&integers, 2, 3, 4);
+    const RuntimeValue value(NomadInteger{42});
+    line.setValue(1, value);
+    grid.setValue(1, 2, value);
+    volume.setValue(1, 2, 3, value);
+    for (const auto invalid : {NomadInteger{-1}, NomadInteger{2}, std::numeric_limits<NomadInteger>::max()}) {
+        BOOST_CHECK_THROW(line.getValue(invalid), NomadException);
+        BOOST_CHECK_THROW(line.setValue(invalid, value), NomadException);
+        BOOST_CHECK_THROW(grid.getValue(invalid, 0), NomadException);
+        BOOST_CHECK_THROW(grid.setValue(invalid, 0, value), NomadException);
+        BOOST_CHECK_THROW(volume.getValue(invalid, 0, 0), NomadException);
+        BOOST_CHECK_THROW(volume.setValue(invalid, 0, 0, value), NomadException);
+    }
+    for (const auto invalid : {NomadInteger{-1}, NomadInteger{3}, std::numeric_limits<NomadInteger>::max()}) {
+        BOOST_CHECK_THROW(grid.getValue(0, invalid), NomadException);
+        BOOST_CHECK_THROW(grid.setValue(0, invalid, value), NomadException);
+        BOOST_CHECK_THROW(volume.getValue(0, invalid, 0), NomadException);
+        BOOST_CHECK_THROW(volume.setValue(0, invalid, 0, value), NomadException);
+    }
+    for (const auto invalid : {NomadInteger{-1}, NomadInteger{4}, std::numeric_limits<NomadInteger>::max()}) {
+        BOOST_CHECK_THROW(volume.getValue(0, 0, invalid), NomadException);
+        BOOST_CHECK_THROW(volume.setValue(0, 0, invalid, value), NomadException);
+    }
+    BOOST_TEST(line.getValue(1).getIntegerValue() == 42);
+    BOOST_TEST(grid.getValue(1, 2).getIntegerValue() == 42);
+    BOOST_TEST(volume.getValue(1, 2, 3).getIntegerValue() == 42);
+    BOOST_TEST(grid.getValue(0, 0).getIntegerValue() == 0);
+    BOOST_TEST(volume.getValue(0, 0, 0).getIntegerValue() == 0);
+}
+
 BOOST_AUTO_TEST_CASE(dimensions_and_element_types_are_validated_before_allocation) {
     IntegerType integers;
     VoidType voidType;

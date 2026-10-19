@@ -25,16 +25,14 @@ protected:
     ArrayObject(const Type* elementType, NomadIndex dimensionCount);
     ArrayObject(const Type* elementType, std::span<const NomadInteger> dimensions);
 
-    [[nodiscard]] const RuntimeValue& getElement(std::span<const NomadInteger> indices) const;
-    void setElement(std::span<const NomadInteger> indices, const RuntimeValue& value);
-
-private:
-    [[nodiscard]] NomadIndex getOffset(std::span<const NomadInteger> indices) const;
-    void freeElements() noexcept;
+    [[noreturn]] static void reportIndexOutOfBounds(NomadInteger index, NomadIndex dimension, NomadIndex size);
 
     const Type* m_elementType;
     std::vector<NomadIndex> m_dimensions;
     std::vector<RuntimeValue> m_values;
+
+private:
+    void freeElements() noexcept;
 };
 
 } // namespace nomad

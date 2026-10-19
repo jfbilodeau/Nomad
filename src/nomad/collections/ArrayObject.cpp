@@ -75,29 +75,13 @@ NomadIndex ArrayObject::getDimensionSize(const NomadIndex dimension) const {
     return m_dimensions[dimension];
 }
 
-NomadIndex ArrayObject::getOffset(const std::span<const NomadInteger> indices) const {
-    if (indices.size() != m_dimensions.size()) {
-        throw NomadException("Array index count does not match its dimensions");
-    }
-    auto offset = NomadIndex{0};
-    for (auto dimension = NomadIndex{0}; dimension < indices.size(); ++dimension) {
-        const auto index = indices[dimension];
-        const auto size = m_dimensions[dimension];
-        if (index < 0 || static_cast<std::uintmax_t>(index) >= size) {
-            throw NomadException("Array index " + toString(index) + " is out of bounds for dimension " +
-                toString(dimension + 1) + " of size " + toString(size));
-        }
-        offset = offset * size + static_cast<NomadIndex>(index);
-    }
-    return offset;
-}
-
-const RuntimeValue& ArrayObject::getElement(const std::span<const NomadInteger> indices) const {
-    return m_values[getOffset(indices)];
-}
-
-void ArrayObject::setElement(const std::span<const NomadInteger> indices, const RuntimeValue& value) {
-    m_elementType->assignValue(value, m_values[getOffset(indices)]);
+void ArrayObject::reportIndexOutOfBounds(
+    const NomadInteger index,
+    const NomadIndex dimension,
+    const NomadIndex size
+) {
+    throw NomadException("Array index " + toString(index) + " is out of bounds for dimension " +
+        toString(dimension + 1) + " of size " + toString(size));
 }
 
 } // namespace nomad
