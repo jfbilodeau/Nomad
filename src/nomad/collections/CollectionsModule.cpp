@@ -42,9 +42,9 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 const auto countId = runtime->registerNativeProperty(
                     objectType, "count", runtime->getIntegerType(),
                     [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
-                        result.setIntegerValue(static_cast<nomad::NomadInteger>(
-                            machine->getThisAs<nomad::ArrayObject>()->getCount()
-                        ));
+                        const auto* array = machine->getThisAs<nomad::ArrayObject>();
+                        const auto count = static_cast<nomad::NomadInteger>(array->getCount());
+                        result.setIntegerValue(count);
                     },
                     {}, NomadDoc("The total number of elements in the fixed-size array.")
                 );
@@ -59,7 +59,8 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     registerArrayType(
         "Array1",
         [](const std::vector<const nomad::Type*>& arguments) {
-            return std::make_unique<nomad::Array1Type>(arguments[0]);
+            const auto* elementType = arguments[0];
+            return std::make_unique<nomad::Array1Type>(elementType);
         },
         [runtime = context->runtime](const nomad::Type* type) {
             const auto* arrayType = static_cast<const nomad::Array1Type*>(type);
@@ -67,7 +68,8 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 arrayType,
                 {nomad::defParameter("size", runtime->getIntegerType(), "")},
                 [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
-                    return arrayType->createObject(arguments[0].getIntegerValue());
+                    const auto size = arguments[0].getIntegerValue();
+                    return arrayType->createObject(size);
                 }, ""
             ) == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register Array1 constructor");
@@ -79,10 +81,15 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 elementType,
                 [](nomad::VirtualMachine* machine) {
                     const auto* array = machine->getThisAs<nomad::Array1dObject>();
-                    array->getValue(machine->getIntegerParameter(0), machine->getResult());
+                    const auto index = machine->getIntegerParameter(0);
+                    auto& result = machine->getResult();
+                    array->getValue(index, result);
                 },
                 [](nomad::VirtualMachine* machine) {
-                    machine->getThisAs<nomad::Array1dObject>()->setValue(machine->getIntegerParameter(0), machine->getParameter(1));
+                    auto* array = machine->getThisAs<nomad::Array1dObject>();
+                    const auto index = machine->getIntegerParameter(0);
+                    const auto& value = machine->getParameter(1);
+                    array->setValue(index, value);
                 },
                 NomadDoc("Reads or replaces an element at a zero-based index. Invalid indices log an error; reads return a default and writes do nothing.")
             ) == nomad::NOMAD_INVALID_ID) {
@@ -93,7 +100,8 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     registerArrayType(
         "Array2",
         [](const std::vector<const nomad::Type*>& arguments) {
-            return std::make_unique<nomad::Array2Type>(arguments[0]);
+            const auto* elementType = arguments[0];
+            return std::make_unique<nomad::Array2Type>(elementType);
         },
         [runtime = context->runtime](const nomad::Type* type) {
             const auto* arrayType = static_cast<const nomad::Array2Type*>(type);
@@ -104,7 +112,9 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                     nomad::defParameter("size2", runtime->getIntegerType(), "")
                 },
                 [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
-                    return arrayType->createObject(arguments[0].getIntegerValue(), arguments[1].getIntegerValue());
+                    const auto size1 = arguments[0].getIntegerValue();
+                    const auto size2 = arguments[1].getIntegerValue();
+                    return arrayType->createObject(size1, size2);
                 }, ""
             ) == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register Array2 constructor");
@@ -114,14 +124,18 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 {runtime->getIntegerType(), runtime->getIntegerType()},
                 arrayType->getElementType(),
                 [](nomad::VirtualMachine* machine) {
-                    machine->getThisAs<nomad::Array2dObject>()->getValue(
-                        machine->getIntegerParameter(0), machine->getIntegerParameter(1), machine->getResult()
-                    );
+                    const auto* array = machine->getThisAs<nomad::Array2dObject>();
+                    const auto index1 = machine->getIntegerParameter(0);
+                    const auto index2 = machine->getIntegerParameter(1);
+                    auto& result = machine->getResult();
+                    array->getValue(index1, index2, result);
                 },
                 [](nomad::VirtualMachine* machine) {
-                    machine->getThisAs<nomad::Array2dObject>()->setValue(
-                        machine->getIntegerParameter(0), machine->getIntegerParameter(1), machine->getParameter(2)
-                    );
+                    auto* array = machine->getThisAs<nomad::Array2dObject>();
+                    const auto index1 = machine->getIntegerParameter(0);
+                    const auto index2 = machine->getIntegerParameter(1);
+                    const auto& value = machine->getParameter(2);
+                    array->setValue(index1, index2, value);
                 },
                 NomadDoc("Reads or replaces an element at two zero-based indices. Invalid indices log an error; reads return a default and writes do nothing.")
             ) == nomad::NOMAD_INVALID_ID) {
@@ -132,7 +146,8 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     registerArrayType(
         "Array3",
         [](const std::vector<const nomad::Type*>& arguments) {
-            return std::make_unique<nomad::Array3Type>(arguments[0]);
+            const auto* elementType = arguments[0];
+            return std::make_unique<nomad::Array3Type>(elementType);
         },
         [runtime = context->runtime](const nomad::Type* type) {
             const auto* arrayType = static_cast<const nomad::Array3Type*>(type);
@@ -144,9 +159,10 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                     nomad::defParameter("size3", runtime->getIntegerType(), "")
                 },
                 [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
-                    return arrayType->createObject(
-                        arguments[0].getIntegerValue(), arguments[1].getIntegerValue(), arguments[2].getIntegerValue()
-                    );
+                    const auto size1 = arguments[0].getIntegerValue();
+                    const auto size2 = arguments[1].getIntegerValue();
+                    const auto size3 = arguments[2].getIntegerValue();
+                    return arrayType->createObject(size1, size2, size3);
                 }, ""
             ) == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register Array3 constructor");
@@ -156,16 +172,20 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 {runtime->getIntegerType(), runtime->getIntegerType(), runtime->getIntegerType()},
                 arrayType->getElementType(),
                 [](nomad::VirtualMachine* machine) {
-                    machine->getThisAs<nomad::Array3dObject>()->getValue(
-                        machine->getIntegerParameter(0), machine->getIntegerParameter(1),
-                        machine->getIntegerParameter(2), machine->getResult()
-                    );
+                    const auto* array = machine->getThisAs<nomad::Array3dObject>();
+                    const auto index1 = machine->getIntegerParameter(0);
+                    const auto index2 = machine->getIntegerParameter(1);
+                    const auto index3 = machine->getIntegerParameter(2);
+                    auto& result = machine->getResult();
+                    array->getValue(index1, index2, index3, result);
                 },
                 [](nomad::VirtualMachine* machine) {
-                    machine->getThisAs<nomad::Array3dObject>()->setValue(
-                        machine->getIntegerParameter(0), machine->getIntegerParameter(1),
-                        machine->getIntegerParameter(2), machine->getParameter(3)
-                    );
+                    auto* array = machine->getThisAs<nomad::Array3dObject>();
+                    const auto index1 = machine->getIntegerParameter(0);
+                    const auto index2 = machine->getIntegerParameter(1);
+                    const auto index3 = machine->getIntegerParameter(2);
+                    const auto& value = machine->getParameter(3);
+                    array->setValue(index1, index2, index3, value);
                 },
                 NomadDoc("Reads or replaces an element at three zero-based indices. Invalid indices log an error; reads return a default and writes do nothing.")
             ) == nomad::NOMAD_INVALID_ID) {
@@ -205,7 +225,8 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         "List",
         1,
         [](const std::vector<const nomad::Type*>& arguments) {
-            return std::make_unique<nomad::ListType>(arguments[0]);
+            const auto* elementType = arguments[0];
+            return std::make_unique<nomad::ListType>(elementType);
         },
         [runtime = context->runtime](const nomad::Type* type) {
             const auto* objectType = static_cast<const nomad::ObjectType*>(type);
@@ -222,7 +243,8 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 runtime->getIntegerType(),
                 [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
                     const auto* list = machine->getThisAs<nomad::ListObject>();
-                    result.setIntegerValue(static_cast<nomad::NomadInteger>(list->getCount()));
+                    const auto count = static_cast<nomad::NomadInteger>(list->getCount());
+                    result.setIntegerValue(count);
                 },
                 {},
                 NomadDoc("The number of elements in the list.")
@@ -232,7 +254,8 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 "push",
                 [](nomad::VirtualMachine* vm) {
                     auto* list = vm->getThisAs<nomad::ListObject>();
-                    list->push(vm->getParameter(0));
+                    const auto& value = vm->getParameter(0);
+                    list->push(value);
                 },
                 {nomad::defParameter("value", elementType, NomadDoc("The value to append."))},
                 runtime->getVoidType(),
@@ -244,10 +267,16 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 elementType,
                 [elementType](nomad::VirtualMachine* machine) {
                     const auto* list = machine->getThisAs<nomad::ListObject>();
-                    elementType->copyValue(list->getValue(machine->getIntegerParameter(0)), machine->getResult());
+                    const auto index = machine->getIntegerParameter(0);
+                    auto& result = machine->getResult();
+                    const auto& value = list->getValue(index);
+                    elementType->copyValue(value, result);
                 },
                 [](nomad::VirtualMachine* machine) {
-                    machine->getThisAs<nomad::ListObject>()->setValue(machine->getIntegerParameter(0), machine->getParameter(1));
+                    auto* list = machine->getThisAs<nomad::ListObject>();
+                    const auto index = machine->getIntegerParameter(0);
+                    const auto& value = machine->getParameter(1);
+                    list->setValue(index, value);
                 },
                 NomadDoc("Reads or replaces an element at a zero-based index. Out-of-range indices fault.")
             );
@@ -263,7 +292,9 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         "Map",
         2,
         [](const std::vector<const nomad::Type*>& arguments) {
-            return std::make_unique<nomad::MapType>(arguments[0], arguments[1]);
+            const auto* keyType = arguments[0];
+            const auto* valueType = arguments[1];
+            return std::make_unique<nomad::MapType>(keyType, valueType);
         },
         [runtime = context->runtime](const nomad::Type* type) {
             const auto* objectType = static_cast<const nomad::MapType*>(type);
@@ -280,9 +311,9 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 "count",
                 runtime->getIntegerType(),
                 [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
-                    result.setIntegerValue(static_cast<nomad::NomadInteger>(
-                        machine->getThisAs<nomad::MapObject>()->getCount()
-                    ));
+                    const auto* map = machine->getThisAs<nomad::MapObject>();
+                    const auto count = static_cast<nomad::NomadInteger>(map->getCount());
+                    result.setIntegerValue(count);
                 },
                 {},
                 NomadDoc("The number of entries in the map.")
@@ -292,14 +323,16 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 {runtime->getStringType()},
                 valueType,
                 [](nomad::VirtualMachine* machine) {
-                    machine->getThisAs<nomad::MapObject>()->getValue(
-                        machine->getStringParameter(0)->getString(), machine->getResult()
-                    );
+                    const auto* map = machine->getThisAs<nomad::MapObject>();
+                    const auto& key = machine->getStringParameter(0)->getString();
+                    auto& result = machine->getResult();
+                    map->getValue(key, result);
                 },
                 [](nomad::VirtualMachine* machine) {
-                    machine->getThisAs<nomad::MapObject>()->setValue(
-                        machine->getStringParameter(0)->getString(), machine->getParameter(1)
-                    );
+                    auto* map = machine->getThisAs<nomad::MapObject>();
+                    const auto& key = machine->getStringParameter(0)->getString();
+                    const auto& value = machine->getParameter(1);
+                    map->setValue(key, value);
                 },
                 NomadDoc("Reads, inserts, or replaces an entry by string key. Missing keys log an error and return a default without inserting.")
             );
@@ -307,9 +340,10 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 objectType,
                 "contains",
                 [](nomad::VirtualMachine* machine) {
-                    machine->setBooleanResult(machine->getThisAs<nomad::MapObject>()->contains(
-                        machine->getStringParameter(0)->getString()
-                    ));
+                    const auto* map = machine->getThisAs<nomad::MapObject>();
+                    const auto& key = machine->getStringParameter(0)->getString();
+                    const auto contains = map->contains(key);
+                    machine->setBooleanResult(contains);
                 },
                 {nomad::defParameter("key", runtime->getStringType(), NomadDoc("The case-sensitive key to check."))},
                 runtime->getBooleanType(),
