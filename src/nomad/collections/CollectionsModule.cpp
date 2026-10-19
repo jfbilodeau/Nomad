@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
 #include <nomad/collections/RegisterArrayType.hpp>
+#include <nomad/collections/RegisterKeyValueType.hpp>
 #include <nomad/collections/RegisterListType.hpp>
 #include <nomad/collections/RegisterMapType.hpp>
 
@@ -12,6 +13,7 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     }
     auto* runtime = context->runtime;
     nomad::registerArrayType(runtime);
+    nomad::registerKeyValueType(runtime);
     nomad::registerListType(runtime);
     nomad::registerMapType(runtime);
 }

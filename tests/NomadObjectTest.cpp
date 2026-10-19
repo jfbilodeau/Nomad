@@ -3,6 +3,8 @@
 #include <nomad/collections/Array1dObject.hpp>
 #include <nomad/collections/Array2dObject.hpp>
 #include <nomad/collections/Array3dObject.hpp>
+#include <nomad/collections/KeyValueObject.hpp>
+#include <nomad/collections/KeyValueType.hpp>
 #include <nomad/collections/ListObject.hpp>
 #include <nomad/collections/MapObject.hpp>
 
@@ -88,6 +90,105 @@ void FailingCopyType::copyValue(const RuntimeValue& source, RuntimeValue& destin
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(NomadObjectTests)
+
+BOOST_AUTO_TEST_CASE(KeyValueRetainsBothReferencesAndReleasesThemOnDestruction) {
+    ObjectType type("Element");
+    NomadIndex destroyed = 0;
+    RuntimeValue value;
+    value.setObjectValue(new CountingObject(destroyed));
+    {
+        KeyValueObject pair(&type, &type, value, value);
+        BOOST_TEST(pair.getKey().getObjectValue() == value.getObjectValue());
+        BOOST_TEST(pair.getValue().getObjectValue() == value.getObjectValue());
+        BOOST_TEST(value.getObjectValue()->getReferenceCount() == 3u);
+        type.freeValue(value);
+        BOOST_TEST(pair.getKey().getObjectValue()->getReferenceCount() == 2u);
+        BOOST_TEST(destroyed == 0u);
+    }
+    BOOST_TEST(destroyed == 1u);
+}
+
+BOOST_AUTO_TEST_CASE(KeyValueReleasesPartialCopiesWhenEitherArgumentFails) {
+    ObjectType type("Element");
+    FailingCopyType failingType;
+    NomadIndex destroyed = 0;
+    RuntimeValue key;
+    RuntimeValue value;
+    key.setObjectValue(new CountingObject(destroyed));
+    value.setObjectValue(new CountingObject(destroyed));
+    BOOST_CHECK_THROW(KeyValueObject(&failingType, &type, key, value), NomadException);
+    BOOST_TEST(key.getObjectValue()->getReferenceCount() == 1u);
+    BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
+    BOOST_CHECK_THROW(KeyValueObject(&type, &failingType, key, value), NomadException);
+    BOOST_TEST(key.getObjectValue()->getReferenceCount() == 1u);
+    BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
+    type.freeValue(key);
+    type.freeValue(value);
+    BOOST_TEST(destroyed == 2u);
+}
+
+BOOST_AUTO_TEST_CASE(KeyValueReleasesPartiallyInitializedDefaults) {
+    class InitializingType final : public ObjectType {
+    public:
+        explicit InitializingType(NomadIndex& destroyed):
+            ObjectType("Initializing"),
+            m_destroyed(destroyed)
+        {}
+        void initValue(RuntimeValue& value) const override {
+            value.setObjectValue(new CountingObject(m_destroyed));
+            if (failInitialization) {
+                throw NomadException("Initialization failed");
+            }
+        }
+        bool failInitialization = false;
+    private:
+        NomadIndex& m_destroyed;
+    };
+    NomadIndex destroyed = 0;
+    InitializingType type(destroyed);
+    InitializingType failingType(destroyed);
+    failingType.failInitialization = true;
+    BOOST_CHECK_THROW(KeyValueObject(&failingType, &type), NomadException);
+    BOOST_TEST(destroyed == 1u);
+    BOOST_CHECK_THROW(KeyValueObject(&type, &failingType), NomadException);
+    BOOST_TEST(destroyed == 3u);
+    {
+        KeyValueObject pair(&type, &type);
+        BOOST_TEST(pair.getKey().getObjectValue() != pair.getValue().getObjectValue());
+    }
+    BOOST_TEST(destroyed == 5u);
+}
+
+BOOST_AUTO_TEST_CASE(KeyValueDefaultsAndUnmanagedValuesNeedNoCleanup) {
+    UnmanagedType type;
+    KeyValueType pairType(&type, &type);
+    RuntimeValue first;
+    RuntimeValue second;
+    pairType.initValue(first);
+    pairType.initValue(second);
+    BOOST_TEST(first.getObjectValue() != second.getObjectValue());
+    BOOST_TEST(first.asObject<KeyValueObject>()->getKey().getIntegerValue() == 0);
+    BOOST_TEST(first.asObject<KeyValueObject>()->getValue().getIntegerValue() == 0);
+    pairType.freeValue(first);
+    pairType.freeValue(second);
+    BOOST_TEST(type.freeCalls == 0u);
+}
+
+BOOST_AUTO_TEST_CASE(KeyValueRejectsInvalidTypes) {
+    IntegerType integerType;
+    VoidType voidType;
+    BOOST_CHECK_THROW(KeyValueType(nullptr, &integerType), NomadException);
+    BOOST_CHECK_THROW(KeyValueType(&integerType, nullptr), NomadException);
+    BOOST_CHECK_THROW(KeyValueType(&voidType, &integerType), NomadException);
+    BOOST_CHECK_THROW(KeyValueType(&integerType, &voidType), NomadException);
+    BOOST_CHECK_THROW(KeyValueObject(nullptr, &integerType), NomadException);
+    BOOST_CHECK_THROW(KeyValueObject(&integerType, nullptr), NomadException);
+    BOOST_CHECK_THROW(KeyValueObject(&voidType, &integerType), NomadException);
+    BOOST_CHECK_THROW(KeyValueObject(&integerType, &voidType), NomadException);
+    RuntimeValue value;
+    BOOST_CHECK_THROW(KeyValueObject(nullptr, &integerType, value, value), NomadException);
+    BOOST_CHECK_THROW(KeyValueObject(&integerType, &voidType, value, value), NomadException);
+}
 
 BOOST_AUTO_TEST_CASE(ReferenceHelpersHandleNullSelfAndReplacement) {
     addRef(nullptr);

@@ -504,6 +504,12 @@ Use `registerNativeProperty(objectType, name, valueType, getter, setter, doc)`.
 Either callback may be empty for a write-only or read-only property. Both
 callbacks access the borrowed instance through `getThisAs<T>()`.
 
+The getter's `result` is write-only output storage. Do not read or release its
+previous contents. Return an owned value by assigning it or using a value setter.
+For a typed copy, use `Type::assignValue` into a fresh local `RuntimeValue`, then
+assign that local to `result`; this retains object references without reading the
+output's previous contents.
+
 ```cpp
 runtime.registerNativeProperty(
     objectType, "value", runtime.getFloatType(),

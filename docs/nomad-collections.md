@@ -1,7 +1,7 @@
 # Collections module
 
 Select `nomad-collections` in `nomad.toml` to use typed lists, fixed-size
-arrays, and maps:
+arrays, maps, and key/value pairs:
 
 ```toml
 [nomad]
@@ -11,6 +11,38 @@ modules = ["nomad-collections"]
 Keep the project's existing `nomad.version`. Add other modules to the same list
 when needed; for example, use `["nomad-game", "nomad-collections"]` in a game
 that uses collections. See [Runtime modules](modules.md) for module setup.
+
+## Key/value pairs
+
+`KeyValue<K V>` stores a key of type `K` and a value of type `V`. Both types
+must be public, non-void types. Construct a pair by supplying both values:
+
+```nomad
+entry = new KeyValue<string int> "score" 100
+name = entry.key # "score"
+score = entry.value # 100
+```
+
+The `key` and `value` properties are read-only: neither can be reassigned after
+construction. Assignments share the same pair. Strings and scalar values retain
+their original values; object keys and values share references rather than being
+deep-copied. A referenced object can still be modified:
+
+```nomad
+numbers = new List<int>
+entry = new KeyValue<string List<int>> "numbers" numbers
+entry.value.append 42
+# numbers[0] is now 42
+```
+
+Reading an object property keeps that object alive independently of the pair.
+Pairs release their stored references when they are destroyed.
+
+Default-initialized pairs, such as elements in an Array, are distinct instances
+containing the default values of `K` and `V`. For example, a
+`KeyValue<string int>` defaults to `""` and `0`. These defaults do not add a
+parameterless script constructor: `new KeyValue<K V>` still requires both
+arguments. Explicit type arguments are currently required for this family.
 
 ## Lists
 
