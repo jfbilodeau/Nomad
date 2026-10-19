@@ -2,9 +2,13 @@
 
 #include <nomad/collections/MapObject.hpp>
 
+#include <nomad/collections/Array1dObject.hpp>
+
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/script/Type.hpp>
+
+#include <utility>
 
 namespace nomad {
 
@@ -22,6 +26,34 @@ const Type* MapObject::getValueType() const {
 
 NomadIndex MapObject::getCount() const {
     return m_values.size();
+}
+
+std::unique_ptr<Array1dObject> MapObject::getKeys(const Type* keyType) const {
+    if (keyType == nullptr || !keyType->isString() || keyType->isInternal()) {
+        throw NomadException("Map key type must be string");
+    }
+    if (m_values.empty()) {
+        return std::make_unique<Array1dObject>(keyType);
+    }
+    if (!std::in_range<NomadInteger>(m_values.size())) {
+        throw NomadException("Map key count exceeds the maximum array size");
+    }
+    const auto count = static_cast<NomadInteger>(m_values.size());
+    auto keys = std::make_unique<Array1dObject>(keyType, count);
+    auto index = NomadInteger{0};
+    for (const auto& [key, value] : m_values) {
+        RuntimeValue storedKey;
+        storedKey.setStringValue(key);
+        try {
+            keys->setValue(index, storedKey);
+        } catch (...) {
+            keyType->freeValue(storedKey);
+            throw;
+        }
+        keyType->freeValue(storedKey);
+        ++index;
+    }
+    return keys;
 }
 
 bool MapObject::contains(const NomadStringView key) const {

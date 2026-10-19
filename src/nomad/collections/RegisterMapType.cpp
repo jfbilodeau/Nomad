@@ -2,6 +2,7 @@
 
 #include <nomad/collections/RegisterMapType.hpp>
 
+#include <nomad/collections/Array1dObject.hpp>
 #include <nomad/collections/MapObject.hpp>
 #include <nomad/collections/MapType.hpp>
 
@@ -23,6 +24,11 @@ void registerMapType(Runtime* runtime) {
         [runtime](const nomad::Type* type) {
             const auto* objectType = static_cast<const nomad::MapType*>(type);
             const auto* valueType = objectType->getTypeArguments()[1];
+            const auto* keyType = objectType->getTypeArguments()[0];
+            const auto* keysType = runtime->getParameterizedType("Array1", {keyType});
+            if (keysType == nullptr) {
+                throw nomad::NomadException("Failed to resolve Map keys array type");
+            }
             const auto constructorId = runtime->registerNativeConstructor(
                 objectType, {},
                 [valueType](std::span<const nomad::RuntimeValue>) {
@@ -41,6 +47,18 @@ void registerMapType(Runtime* runtime) {
                 },
                 {},
                 NomadDoc("The number of entries in the map.")
+            );
+            const auto keysId = runtime->registerNativeProperty(
+                objectType,
+                "keys",
+                keysType,
+                [keyType](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
+                    const auto* map = machine->getThisAs<nomad::MapObject>();
+                    auto keys = map->getKeys(keyType);
+                    result.setObjectValue(keys.release());
+                },
+                {},
+                NomadDoc("A fixed-size snapshot of all keys in unspecified order. Changes to the array and map are independent.")
             );
             const auto indexerId = runtime->registerNativeIndexer(
                 objectType,
@@ -99,7 +117,8 @@ void registerMapType(Runtime* runtime) {
             );
             if (constructorId == nomad::NOMAD_INVALID_ID || countId == nomad::NOMAD_INVALID_ID ||
                 indexerId == nomad::NOMAD_INVALID_ID || containsId == nomad::NOMAD_INVALID_ID ||
-                removeId == nomad::NOMAD_INVALID_ID || clearId == nomad::NOMAD_INVALID_ID) {
+                removeId == nomad::NOMAD_INVALID_ID || clearId == nomad::NOMAD_INVALID_ID ||
+                keysId == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register Map members");
             }
         }

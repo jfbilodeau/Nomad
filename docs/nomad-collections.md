@@ -92,6 +92,18 @@ count = scores.count # 0
 references remain valid. Aliases observe the empty map. Clearing an empty map
 does nothing and does not log. New entries can be inserted afterward.
 
+The read-only `keys` property returns an `Array1<string>` snapshot containing
+each key once, in unspecified order:
+
+```nomad
+keys = scores.keys
+keyCount = keys.count
+```
+
+An empty map returns an empty array. Changing array elements does not change
+the map, and later map changes do not affect an existing snapshot. Each read
+returns a separate array that remains valid after the map is cleared or released.
+
 ## Fixed-size arrays
 
 Construct arrays with one `int` size per dimension. The result type is

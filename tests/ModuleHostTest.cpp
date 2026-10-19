@@ -457,13 +457,15 @@ BOOST_AUTO_TEST_CASE(collections_map_indexers_insert_replace_and_preserve_owned_
     BOOST_TEST(documentation.str().find("Map<string int>[index]") != NomadString::npos);
 }
 
-BOOST_AUTO_TEST_CASE(collections_maps_contains_checks_keys_without_logging_or_inserting) {
+BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_the_map) {
     TestDirectory directory("nomad_host_map_contains");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
     ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host.getRuntime();
     const std::vector<NomadString> sources = {
         "scores = new Map<string int>",
+        "emptyKeys = scores.keys",
+        "assert emptyKeys.count == 0",
         "present = scores.contains \"hero\"",
         "assert present == false",
         "assert scores.count == 0",
@@ -489,7 +491,45 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_checks_keys_without_logging_or_in
         "present = words.contains \"empty\"",
         "assert present == true",
         "present = words.contains \"missing\"",
-        "assert present == false"
+        "assert present == false",
+        "keys = scores.keys",
+        "otherKeys = scores.keys",
+        "assert keys.count == 2",
+        "assert keys[0] != keys[1]",
+        "present = scores.contains keys[0]",
+        "assert present == true",
+        "present = scores.contains keys[1]",
+        "assert present == true",
+        "originalKey = keys[0]",
+        "keys[0] = \"changed snapshot\"",
+        "present = scores.contains \"changed snapshot\"",
+        "assert present == false",
+        "present = scores.contains originalKey",
+        "assert present == true",
+        "assert otherKeys[0] != \"changed snapshot\"",
+        "scores[\"later\"] = 3",
+        "assert keys.count == 2",
+        "assert otherKeys.count == 2",
+        "assert emptyKeys.count == 0",
+        "removed = scores.remove originalKey",
+        "assert removed == true",
+        "assert otherKeys.count == 2",
+        "alias.clear",
+        "assert scores.count == 0",
+        "assert otherKeys[0] != otherKeys[1]",
+        "assert otherKeys[0] == \"hero\" || otherKeys[0] == \"\"",
+        "assert otherKeys[1] == \"hero\" || otherKeys[1] == \"\"",
+        "scores = new Map<string int>",
+        "assert otherKeys.count == 2",
+        "words.clear",
+        "words[\"Hero\"] = \"upper\"",
+        "words[\"hero\"] = \"lower\"",
+        "wordKeys = words.keys",
+        "words = new Map<string string>",
+        "assert wordKeys.count == 2",
+        "assert wordKeys[0] != wordKeys[1]",
+        "assert wordKeys[0] == \"Hero\" || wordKeys[0] == \"hero\"",
+        "assert wordKeys[1] == \"Hero\" || wordKeys[1] == \"hero\""
     };
     NomadString script;
     for (const auto& source : sources) {
@@ -537,6 +577,8 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_checks_keys_without_logging_or_in
     BOOST_TEST(documentation.str().find("#### `contains` (*method*)") != NomadString::npos);
     BOOST_TEST(documentation.str().find("- `key:string`") != NomadString::npos);
     BOOST_TEST(documentation.str().find("`returns bool`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `keys` (*read-only property*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("`keys:Array1<string>`") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_preserve_saved_objects) {
@@ -760,7 +802,9 @@ BOOST_AUTO_TEST_CASE(collections_maps_reject_unsupported_operations_and_types) {
         "values = new Map<string int>\nvalues.remove",
         "values = new Map<string int>\nvalues.remove \"a\" \"b\"",
         "values = new Map<string int>\nvalues.clear 1",
-        "values = new Map<string int>\nresult = values.clear"
+        "values = new Map<string int>\nresult = values.clear",
+        "values = new Map<string int>\nvalues.keys = new Array<string> 1",
+        "values = new Map<string int>\nvalues.keys[0] = 1"
     }) {
         BOOST_TEST_CONTEXT(source) {
             auto compiler = runtime.createCompiler();
