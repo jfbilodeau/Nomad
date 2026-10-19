@@ -31,6 +31,15 @@ struct ResolveResult {
     [[nodiscard]] bool isResolved() const { return status == ResolveStatus::Resolved; }
 };
 
+struct ConstructorInferenceResult {
+    ResolveStatus status = ResolveStatus::UnknownName;
+    // Complete and valid only when resolved; failures never return partial bindings.
+    std::vector<const Type*> typeArguments;
+    NomadString error;
+
+    [[nodiscard]] bool isResolved() const { return status == ResolveStatus::Resolved; }
+};
+
 // How the parser consumes the tokens of a parameter. A call is parsed before its overload is selected, so every
 // overload of a name must agree on the shape of each parameter.
 enum class ParameterShape {

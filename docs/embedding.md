@@ -280,15 +280,15 @@ through the same registration API.
 After registering a parameterized type family, hosts can register one constructor
 inference signature with `registerNativeConstructorTemplate(name, parameters)`.
 Each `TemplateParameter` describes either a concrete `Type*` or a
-`TypeArgument{index}` referring to the family's zero-based type-argument position.
+`TypeParameterIndex{index}` referring to the family's zero-based type-argument position.
 For example, for an already registered two-argument family named `Pair`:
 
 ```cpp
 if (!runtime.registerNativeConstructorTemplate(
     "Pair",
     {
-        nomad::defTemplateParameter("key", nomad::TypeArgument{0}, "The key."),
-        nomad::defTemplateParameter("value", nomad::TypeArgument{1}, "The value.")
+        nomad::defTemplateParameter("key", nomad::TypeParameterIndex{0}, "The key."),
+        nomad::defTemplateParameter("value", nomad::TypeParameterIndex{1}, "The value.")
     }
 )) {
     throw nomad::NomadException("Failed to register Pair constructor template");
@@ -304,9 +304,29 @@ incomplete signatures, and duplicate registrations log an error and return
 `getNativeConstructorTemplate(name)` returns an optional copy of the signature,
 or an empty optional when none is registered. Registering or retrieving this
 metadata does not create a specialization or register an executable constructor.
-This API currently stores signatures only: scripts must still supply explicit
-type arguments, and hosts must still register each specialization's constructor
-with `registerNativeConstructor`.
+`inferNativeConstructorTypeArguments(name, argumentTypes)` deduces the family's
+type arguments from a vector of static constructor argument types. The vector
+uses signature order, including null entries for compiler-supplied source file,
+function, and line arguments. Null entries cannot bind generic type parameters
+or match ordinary concrete parameters.
+
+The returned `ConstructorInferenceResult` contains a `ResolveStatus`, a complete
+`typeArguments` vector on success, and an `error` message on failure.
+`isResolved()` reports success. Missing signatures return `UnknownName`, incorrect
+argument counts return `NoMatchingArity`, and invalid types, conflicting bindings,
+or mismatched concrete parameters return `NoMatchingTypes`. Failed deduction
+returns no partial bindings and does not log; callers can report the returned
+diagnostic in their own context.
+
+Generic bindings must be registered public, non-void types from the same runtime.
+Repeated bindings and concrete parameters require the same type; deduction does
+not use implicit conversions or guess a common type. Returned type arguments
+follow the family's type-parameter order, not constructor argument order.
+Deduction neither creates specializations nor invokes constructors.
+
+Script syntax is not yet connected to this API: scripts must still supply
+explicit type arguments, and hosts must still register each specialization's
+constructor with `registerNativeConstructor`.
 
 ### Native object types and constructors
 

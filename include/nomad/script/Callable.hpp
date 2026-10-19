@@ -27,19 +27,19 @@ struct Parameter {
 
 Parameter defParameter(const NomadString& name, const Type* type, NomadDocArg);
 
-struct TypeArgument {
+struct TypeParameterIndex {
     NomadIndex index;
 };
 
 struct TemplateParameter {
     NomadString name;
-    std::variant<const Type*, TypeArgument> type;
+    std::variant<const Type*, TypeParameterIndex> type;
     NomadDocField;
 };
 
 TemplateParameter defTemplateParameter(
     const NomadString& name,
-    std::variant<const Type*, TypeArgument> type,
+    std::variant<const Type*, TypeParameterIndex> type,
     NomadDocArg
 );
 

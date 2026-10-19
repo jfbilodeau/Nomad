@@ -769,7 +769,7 @@ bool Runtime::registerNativeConstructorTemplate(
     }
     std::vector<bool> boundArguments(registration->argumentCount, false);
     for (const auto& parameter : parameters) {
-        if (const auto* argument = std::get_if<TypeArgument>(&parameter.type)) {
+        if (const auto* argument = std::get_if<TypeParameterIndex>(&parameter.type)) {
             if (argument->index >= registration->argumentCount) {
                 log::error("Cannot register constructor template '" + name + "': type argument index is out of range");
                 return false;
@@ -798,6 +798,68 @@ std::optional<std::vector<TemplateParameter>> Runtime::getNativeConstructorTempl
         return std::nullopt;
     }
     return registration->constructorTemplate;
+}
+
+ConstructorInferenceResult Runtime::inferNativeConstructorTypeArguments(
+    const NomadString& name,
+    const std::vector<const Type*>& argumentTypes
+) const {
+    const auto registration = std::ranges::find(m_parameterizedTypes, name, &ParameterizedTypeRegistration::name);
+    if (registration == m_parameterizedTypes.end() || !registration->constructorTemplate) {
+        return {
+            ResolveStatus::UnknownName, {},
+            "No constructor inference signature is registered for '" + name + "'"
+        };
+    }
+    const auto& parameters = *registration->constructorTemplate;
+    if (argumentTypes.size() != parameters.size()) {
+        return {
+            ResolveStatus::NoMatchingArity, {},
+            "Constructor inference for '" + name + "' expects " + std::to_string(parameters.size()) +
+                " argument(s), received " + std::to_string(argumentTypes.size())
+        };
+    }
+
+    std::vector<const Type*> typeArguments(registration->argumentCount, nullptr);
+    for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
+        const auto& parameter = parameters[index];
+        const auto* argumentType = argumentTypes[index];
+        const auto prefix = "Cannot infer constructor '" + name + "' from argument " +
+            std::to_string(index + 1) + " ('" + parameter.name + "'): ";
+        if (const auto* typeParameter = std::get_if<TypeParameterIndex>(&parameter.type)) {
+            if (!ownsType(argumentType) || argumentType->isVoid() || argumentType->isInternal()) {
+                return {
+                    ResolveStatus::NoMatchingTypes, {},
+                    prefix + "a registered public, non-void argument type is required; supply explicit type arguments"
+                };
+            }
+            auto& binding = typeArguments[typeParameter->index];
+            if (binding != nullptr && !binding->sameType(argumentType)) {
+                return {
+                    ResolveStatus::NoMatchingTypes, {},
+                    prefix + "conflicting types for type parameter " + std::to_string(typeParameter->index) +
+                        " ('" + binding->getTypeName() + "' and '" + argumentType->getTypeName() + "')"
+                };
+            }
+            if (binding == nullptr) {
+                binding = argumentType;
+            }
+        } else {
+            const auto* parameterType = std::get<const Type*>(parameter.type);
+            const auto shape = getParameterShape(parameterType);
+            if (argumentType == nullptr && (shape == ParameterShape::SourceFile ||
+                shape == ParameterShape::SourceFunction || shape == ParameterShape::SourceLine)) {
+                continue;
+            }
+            if (!ownsType(argumentType) || !parameterType->sameType(argumentType)) {
+                return {
+                    ResolveStatus::NoMatchingTypes, {},
+                    prefix + "expected exact type '" + parameterType->getTypeName() + "'"
+                };
+            }
+        }
+    }
+    return {ResolveStatus::Resolved, std::move(typeArguments), {}};
 }
 
 const Type* Runtime::getParameterizedType(

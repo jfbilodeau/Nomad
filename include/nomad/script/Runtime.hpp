@@ -129,6 +129,10 @@ public:
     [[nodiscard]] std::optional<std::vector<TemplateParameter>> getNativeConstructorTemplate(
         const NomadString& name
     ) const;
+    [[nodiscard]] ConstructorInferenceResult inferNativeConstructorTypeArguments(
+        const NomadString& name,
+        const std::vector<const Type*>& argumentTypes
+    ) const;
     void registerType(std::unique_ptr<Type>&& type);
     // [[nodiscard]] const Type* getType(NomadId id) const;
     [[nodiscard]] NomadId getTypeId(const NomadString& typeName) const;

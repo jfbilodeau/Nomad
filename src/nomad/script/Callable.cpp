@@ -16,7 +16,7 @@ Parameter defParameter(const NomadString& name, const Type* type, const NomadStr
 
 TemplateParameter defTemplateParameter(
     const NomadString& name,
-    std::variant<const Type*, TypeArgument> type,
+    std::variant<const Type*, TypeParameterIndex> type,
     const NomadString& doc
 ) {
     return {name, std::move(type), doc};
