@@ -457,6 +457,88 @@ BOOST_AUTO_TEST_CASE(collections_map_indexers_insert_replace_and_preserve_owned_
     BOOST_TEST(documentation.str().find("Map<string int>[index]") != NomadString::npos);
 }
 
+BOOST_AUTO_TEST_CASE(collections_maps_contains_checks_keys_without_logging_or_inserting) {
+    TestDirectory directory("nomad_host_map_contains");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    const std::vector<NomadString> sources = {
+        "scores = new Map<string int>",
+        "present = scores.contains \"hero\"",
+        "assert present == false",
+        "assert scores.count == 0",
+        "scores[\"hero\"] = 0",
+        "scores[\"\"] = 1",
+        "present = scores.contains \"hero\"",
+        "assert present == true",
+        "present = scores.contains \"Hero\"",
+        "assert present == false",
+        "present = scores.contains \"\"",
+        "assert present == true",
+        "alias = scores",
+        "present = alias.contains \"hero\"",
+        "assert present == true",
+        "scores[\"hero\"] = 2",
+        "present = scores.contains \"hero\"",
+        "assert present == true",
+        "present = scores.contains \"missing\"",
+        "assert present == false",
+        "assert scores.count == 2",
+        "words = new Map<string string>",
+        "words[\"empty\"] = \"\"",
+        "present = words.contains \"empty\"",
+        "assert present == true",
+        "present = words.contains \"missing\"",
+        "assert present == false"
+    };
+    NomadString script;
+    for (const auto& source : sources) {
+        script += source + "\n";
+    }
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, {{{"main", {"main.nomad", script}}}, {}});
+    BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&compilation, CompilationTarget::Executable),
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    RuntimeValue empty;
+    runtime.getStringType()->initValue(empty);
+    runtime.getStringType()->freeValue(empty);
+    const auto before = NomadObject::getLiveObjectCount();
+    struct LogCapture {
+        MemorySink sink;
+        LogCapture() {
+            log::flush();
+            log::addSink(&sink);
+        }
+        ~LogCapture() { log::removeSink(&sink); }
+    } capture;
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    {
+        VirtualMachine machine(&runtime);
+        InterpreterContext context(machine);
+        for (const auto& source : sources) {
+            BOOST_TEST_CONTEXT(source) {
+                const auto isAssertion = source.starts_with("assert ");
+                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, context),
+                    (context.getError() ? *context.getError() : source));
+                if (isAssertion) {
+                    BOOST_TEST(context.getResult()->getValue().getBooleanValue());
+                }
+            }
+        }
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    log::flush();
+    BOOST_TEST(capture.sink.getEntries().empty());
+    std::ostringstream documentation;
+    generateNativeMemberDocumentation(&runtime, documentation);
+    BOOST_TEST(documentation.str().find("#### `contains` (*method*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("- `key:string`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("`returns bool`") != NomadString::npos);
+}
+
 BOOST_AUTO_TEST_CASE(collections_maps_release_partial_copies_and_preserve_entries_on_failure) {
     class MapValueType final : public ObjectTypeBase {
     public:
@@ -523,7 +605,10 @@ BOOST_AUTO_TEST_CASE(collections_maps_reject_unsupported_operations_and_types) {
         "values = new Map<string int>\nvalues.count = 1",
         "values = new Map<string int>\nvalues[1]",
         "values = new Map<string int>\nvalues[\"key\"] = \"wrong\"",
-        "values = new Map<string int>\nvalues[\"a\" \"b\"]"
+        "values = new Map<string int>\nvalues[\"a\" \"b\"]",
+        "values = new Map<string int>\nvalues.contains 1",
+        "values = new Map<string int>\nvalues.contains",
+        "values = new Map<string int>\nvalues.contains \"a\" \"b\""
     }) {
         BOOST_TEST_CONTEXT(source) {
             auto compiler = runtime.createCompiler();

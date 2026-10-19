@@ -303,8 +303,20 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 },
                 NomadDoc("Reads, inserts, or replaces an entry by string key. Missing keys log an error and return a default without inserting.")
             );
+            const auto containsId = runtime->registerNativeMethod(
+                objectType,
+                "contains",
+                [](nomad::VirtualMachine* machine) {
+                    machine->setBooleanResult(machine->getThisAs<nomad::MapObject>()->contains(
+                        machine->getStringParameter(0)->getString()
+                    ));
+                },
+                {nomad::defParameter("key", runtime->getStringType(), NomadDoc("The case-sensitive key to check."))},
+                runtime->getBooleanType(),
+                NomadDoc("Returns whether the key exists, without logging or changing the map.")
+            );
             if (constructorId == nomad::NOMAD_INVALID_ID || countId == nomad::NOMAD_INVALID_ID ||
-                indexerId == nomad::NOMAD_INVALID_ID) {
+                indexerId == nomad::NOMAD_INVALID_ID || containsId == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register Map members");
             }
         }

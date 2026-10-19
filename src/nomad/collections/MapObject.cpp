@@ -24,6 +24,10 @@ NomadIndex MapObject::getCount() const {
     return m_values.size();
 }
 
+bool MapObject::contains(const NomadStringView key) const {
+    return m_values.contains(key);
+}
+
 MapObject::~MapObject() {
     if (m_valueType->needsFree()) {
         for (auto& [key, value] : m_values) {

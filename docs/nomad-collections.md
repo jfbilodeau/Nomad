@@ -61,7 +61,14 @@ entries keep reference semantics.
 Reading a missing key logs an error and returns the value type's default
 without inserting an entry or changing `count`. Each missing read of a
 list- or map-valued entry returns a distinct empty collection.
-`contains` is not available yet.
+Use `contains` to check whether an entry exists, including entries holding a
+default value such as zero. This returns a `bool` without logging or changing
+the map:
+
+```nomad
+hasHero = scores.contains "hero" # true
+hasGuest = scores.contains "guest" # false
+```
 
 ## Fixed-size arrays
 
