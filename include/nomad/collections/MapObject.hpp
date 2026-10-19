@@ -20,6 +20,7 @@ public:
     [[nodiscard]] NomadIndex getCount() const;
     [[nodiscard]] bool contains(NomadStringView key) const;
     [[nodiscard]] bool remove(NomadStringView key);
+    void clear();
 
     // The result must be empty; the caller releases it using the value type, including on failure.
     void getValue(NomadStringView key, RuntimeValue& result) const;

@@ -81,6 +81,17 @@ removed = scores.remove "hero" # false
 Removal decreases `count` and is visible through aliases. It releases the
 map's reference to the value; other references to that object remain valid.
 
+Use `clear` to remove all entries and reset `count` to zero:
+
+```nomad
+scores.clear
+count = scores.count # 0
+```
+
+`clear` returns `void` and releases the map's references to its values; other
+references remain valid. Aliases observe the empty map. Clearing an empty map
+does nothing and does not log. New entries can be inserted afterward.
+
 ## Fixed-size arrays
 
 Construct arrays with one `int` size per dimension. The result type is

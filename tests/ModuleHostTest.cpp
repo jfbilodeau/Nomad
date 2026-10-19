@@ -539,13 +539,15 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_checks_keys_without_logging_or_in
     BOOST_TEST(documentation.str().find("`returns bool`") != NomadString::npos);
 }
 
-BOOST_AUTO_TEST_CASE(collections_maps_remove_entries_without_logging_and_preserve_saved_objects) {
+BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_preserve_saved_objects) {
     TestDirectory directory("nomad_host_map_remove");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
     ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host.getRuntime();
     const std::vector<NomadString> sources = {
         "scores = new Map<string int>",
+        "scores.clear",
+        "scores.clear",
         "removed = scores.remove \"missing\"",
         "assert removed == false",
         "assert scores.count == 0",
@@ -568,6 +570,15 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_entries_without_logging_and_preserv
         "assert scores[\"hero\"] == 7",
         "assert scores.count == 2",
         "words = new Map<string string>",
+        "alias.clear",
+        "assert scores.count == 0",
+        "present = scores.contains \"hero\"",
+        "assert present == false",
+        "present = scores.contains \"Hero\"",
+        "assert present == false",
+        "scores[\"hero\"] = 8",
+        "assert alias[\"hero\"] == 8",
+        "assert alias.count == 1",
         "words[\"name\"] = \"hello\"",
         "savedWord = words[\"name\"]",
         "removed = words.remove \"name\"",
@@ -584,7 +595,20 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_entries_without_logging_and_preserv
         "nested[\"discarded\"] = new List<int>",
         "removed = nested.remove \"discarded\"",
         "assert removed == true",
-        "assert nested.count == 0"
+        "assert nested.count == 0",
+        "nested[\"saved\"] = saved",
+        "nested[\"discarded\"] = new List<int>",
+        "nested.clear",
+        "assert nested.count == 0",
+        "assert saved[0] == 9",
+        "words[\"name\"] = savedWord",
+        "words[\"other\"] = \"discarded\"",
+        "words.clear",
+        "words.clear",
+        "assert words.count == 0",
+        "assert savedWord == \"hello\"",
+        "words[\"new\"] = \"again\"",
+        "assert words[\"new\"] == \"again\""
     };
     NomadString script;
     for (const auto& source : sources) {
@@ -641,11 +665,25 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_entries_without_logging_and_preserv
         const auto storedObjects = NomadObject::getLiveObjectCount();
         BOOST_TEST(map.remove("list"));
         BOOST_TEST(NomadObject::getLiveObjectCount() == storedObjects - 1);
+        listType->initValue(value);
+        map.setValue("first", value);
+        map.setValue("second", value);
+        BOOST_TEST(value.getObjectValue()->getReferenceCount() == 3u);
+        map.clear();
+        BOOST_TEST(map.getCount() == 0u);
+        BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
+        map.setValue("discarded", value);
+        listType->freeValue(value);
+        const auto beforeClear = NomadObject::getLiveObjectCount();
+        map.clear();
+        BOOST_TEST(NomadObject::getLiveObjectCount() == beforeClear - 1);
+        map.clear();
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     std::ostringstream documentation;
     generateNativeMemberDocumentation(&runtime, documentation);
     BOOST_TEST(documentation.str().find("#### `remove` (*method*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `clear` (*method*)") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(collections_maps_release_partial_copies_and_preserve_entries_on_failure) {
@@ -720,7 +758,9 @@ BOOST_AUTO_TEST_CASE(collections_maps_reject_unsupported_operations_and_types) {
         "values = new Map<string int>\nvalues.contains \"a\" \"b\"",
         "values = new Map<string int>\nvalues.remove 1",
         "values = new Map<string int>\nvalues.remove",
-        "values = new Map<string int>\nvalues.remove \"a\" \"b\""
+        "values = new Map<string int>\nvalues.remove \"a\" \"b\"",
+        "values = new Map<string int>\nvalues.clear 1",
+        "values = new Map<string int>\nresult = values.clear"
     }) {
         BOOST_TEST_CONTEXT(source) {
             auto compiler = runtime.createCompiler();

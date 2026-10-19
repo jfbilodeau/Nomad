@@ -86,9 +86,20 @@ void registerMapType(Runtime* runtime) {
                 runtime->getBooleanType(),
                 NomadDoc("Removes an entry and returns true if it existed. Missing keys return false without logging.")
             );
+            const auto clearId = runtime->registerNativeMethod(
+                objectType,
+                "clear",
+                [](nomad::VirtualMachine* machine) {
+                    auto* map = machine->getThisAs<nomad::MapObject>();
+                    map->clear();
+                },
+                {},
+                runtime->getVoidType(),
+                NomadDoc("Removes all entries. Clearing an empty map does nothing and does not log.")
+            );
             if (constructorId == nomad::NOMAD_INVALID_ID || countId == nomad::NOMAD_INVALID_ID ||
                 indexerId == nomad::NOMAD_INVALID_ID || containsId == nomad::NOMAD_INVALID_ID ||
-                removeId == nomad::NOMAD_INVALID_ID) {
+                removeId == nomad::NOMAD_INVALID_ID || clearId == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register Map members");
             }
         }

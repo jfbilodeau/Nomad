@@ -39,11 +39,16 @@ bool MapObject::remove(const NomadStringView key) {
 }
 
 MapObject::~MapObject() {
+    clear();
+}
+
+void MapObject::clear() {
     if (m_valueType->needsFree()) {
         for (auto& [key, value] : m_values) {
             m_valueType->freeValue(value);
         }
     }
+    m_values.clear();
 }
 
 void MapObject::getValue(const NomadStringView key, RuntimeValue& result) const {
