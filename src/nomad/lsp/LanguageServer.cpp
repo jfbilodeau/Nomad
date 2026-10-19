@@ -134,12 +134,11 @@ ApiAnalysis analyzeApiSymbols(
                 type->getTypeName(), type->getDocumentation()});
         }
     }
-    std::vector<NativeFunctionDefinition> functions;
-    runtime->getNativeFunctions(functions);
-    for (const auto& function : functions) {
-        auto signature = function.name;
-        auto documentation = function.doc;
-        for (const auto& parameter : function.parameters) {
+    const auto functions = runtime->getNativeFunctions();
+    for (const auto* function : functions) {
+        auto signature = function->getName();
+        auto documentation = function->getDoc();
+        for (const auto& parameter : function->getParameters()) {
             const auto shape = runtime->getParameterShape(parameter.type);
             if (shape == ParameterShape::SourceFile || shape == ParameterShape::SourceFunction ||
                 shape == ParameterShape::SourceLine) continue;
@@ -149,8 +148,8 @@ ApiAnalysis analyzeApiSymbols(
                 documentation += "\n\n- `" + parameter.name + "`: " + parameter.doc;
             }
         }
-        signature += " -> " + function.returnType->getTypeName();
-        symbols.push_back({function.name, CompletionItemKind::Function,
+        signature += " -> " + function->getReturnType()->getTypeName();
+        symbols.push_back({function->getName(), CompletionItemKind::Function,
             std::move(signature), std::move(documentation)});
     }
     for (auto id = runtime->getFirstConstantId(); id != NOMAD_INVALID_ID;
@@ -191,20 +190,20 @@ ApiAnalysis analyzeApiSymbols(
             symbols.push_back({definition.name, CompletionItemKind::Property,
                 receiver + "." + definition.name + ":" + value, definition.doc, value, receiver});
         } else if (runtime->getNativeMemberType(id) == NativeMemberType::Method) {
-            NativeMethodDefinition definition;
-            if (!runtime->getNativeMethodDefinition(id, definition)) {
+            const auto* method = runtime->getNativeMethod(id);
+            if (method == nullptr) {
                 throw std::runtime_error("Registered native method is unavailable");
             }
-            const auto receiver = definition.objectType->getTypeName();
-            auto signature = receiver + "." + definition.name;
-            auto documentation = definition.doc;
-            for (const auto& parameter : definition.parameters) {
+            const auto receiver = method->getObjectType()->getTypeName();
+            auto signature = receiver + "." + method->getName();
+            auto documentation = method->getDoc();
+            for (const auto& parameter : method->getParameters()) {
                 const auto typeName = parameter.type->getTypeName();
                 signature += " " + parameter.name + ":" + typeName;
                 if (!parameter.doc.empty()) documentation += "\n\n- `" + parameter.name + "`: " + parameter.doc;
             }
-            signature += " -> " + definition.returnType->getTypeName();
-            symbols.push_back({definition.name, CompletionItemKind::Method,
+            signature += " -> " + method->getReturnType()->getTypeName();
+            symbols.push_back({method->getName(), CompletionItemKind::Method,
                 std::move(signature), std::move(documentation), "", receiver});
         }
     }

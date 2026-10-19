@@ -138,7 +138,7 @@ bool parseNativeMemberArguments(CompilerContext* context, ScriptFunction* functi
         return true;
     }
 
-    const auto* definition = context->getRuntime()->getNativeMethodDefinition(representativeId);
+    const auto* definition = context->getRuntime()->getNativeMethod(representativeId);
     if (definition == nullptr) {
         context->getCompiler()->reportInternalError("Invalid native method shape: " + memberName);
         return false;
@@ -166,10 +166,9 @@ std::unique_ptr<Expression> createNativeMemberExpression(
             return nullptr;
         }
 
-        NativeMethodDefinition definition;
+        const auto* method = context->getRuntime()->getNativeMethod(overloads.front());
         if (context->getRuntime()->getNativeMemberType(overloads.front()) == NativeMemberType::Method &&
-            context->getRuntime()->getNativeMethodDefinition(overloads.front(), definition) &&
-            !definition.parameters.empty()) {
+            method != nullptr && method->getParameterCount() != 0) {
             context->reportError("Native method '" + memberName +
                                  "' requires arguments before another member can be accessed");
             return nullptr;
@@ -183,9 +182,9 @@ std::unique_ptr<Expression> createNativeMemberExpression(
 std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptFunction* function,
                                                               const Expression* parent, const NomadString& name,
                                                               const NomadIndex line, const NomadIndex column) {
-    NativeFunctionDefinition nativeFunction;
-    if (context->getRuntime()->getNativeFunctionDefinition(name, nativeFunction)) {
-        if (!nativeFunction.parameters.empty()) {
+    const auto* nativeFunction = context->getRuntime()->getNativeFunction(name);
+    if (nativeFunction != nullptr) {
+        if (nativeFunction->getParameterCount() != 0) {
             context->reportError("Function receiver '" + name + "' requires arguments");
             return nullptr;
         }
@@ -424,9 +423,9 @@ std::unique_ptr<Statement> parseStatement(
         return statement;
     }
 
-    NativeFunctionDefinition nativeFunction;
-    if (context->getRuntime()->getNativeFunctionDefinition(statementName, nativeFunction)) {
-        auto statement = parseNativeFunctionStatement(context, function, tokens, nativeFunction);
+    const auto* nativeFunction = context->getRuntime()->getNativeFunction(statementName);
+    if (nativeFunction != nullptr) {
+        auto statement = parseNativeFunctionStatement(context, function, tokens, *nativeFunction);
 
         if (statement == nullptr || !expectEndOfLine(context, function, tokens)) {
             return nullptr;
@@ -452,14 +451,14 @@ std::unique_ptr<Statement> parseStatement(
     return nullptr;
 }
 
-std::unique_ptr<Statement> parseNativeFunctionStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const NativeFunctionDefinition& nativeFunction) {
+std::unique_ptr<Statement> parseNativeFunctionStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const NativeFunction& nativeFunction) {
     auto line = tokens->getLineIndex();
     auto column = tokens->getColumnIndex();
 
     auto nativeFunctionStatement = std::make_unique<NativeFunctionStatementNode>(
         line,
         column,
-        nativeFunction
+        &nativeFunction
     );
 
     if (!parseNativeFunctionArguments(context, function, tokens, nativeFunction, nativeFunctionStatement->getArguments())) {
@@ -816,10 +815,10 @@ std::unique_ptr<Expression> parseNewExpression(
     } else if (!tokens->nextIdentifier(constructorName)) {
         return nullptr;
     }
-    const ConstructorDefinition* shape = nullptr;
+    const NativeConstructor* shape = nullptr;
     const auto* objectType = runtime->getTypeByName(constructorName);
     for (const auto* constructor : runtime->getConstructors(objectType)) {
-        if (shape == nullptr || constructor->parameters.size() > shape->parameters.size()) {
+        if (shape == nullptr || constructor->getParameterCount() > shape->getParameterCount()) {
             shape = constructor;
         }
     }
@@ -932,9 +931,7 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
         return IdentifierType::Statement;
     }
 
-    NativeFunctionDefinition nativeFunctionDefinition;
-
-    if (compiler->getRuntime()->getNativeFunctionDefinition(name, nativeFunctionDefinition)) {
+    if (compiler->getRuntime()->getNativeFunction(name) != nullptr) {
         return IdentifierType::NativeFunction;
     }
 
@@ -1109,9 +1106,9 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
 
     if (token.type == TokenType::Identifier) {
         // Is it a nativeFunction?
-        NativeFunctionDefinition nativeFunction;
-        if (context->getRuntime()->getNativeFunctionDefinition(token.textValue, nativeFunction)) {
-            if (nativeFunction.returnType->isVoid()) {
+        const auto* nativeFunction = context->getRuntime()->getNativeFunction(token.textValue);
+        if (nativeFunction != nullptr) {
+            if (nativeFunction->getReturnType()->isVoid()) {
                 context->reportError(
                     "Cannot use native function '" + token.textValue + "' in an expression because it does not return a value"
                 , tokens);
@@ -1119,7 +1116,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
                 return nullptr;
             }
 
-            return parseNativeFunctionCallExpression(context, function, tokens, parent, nativeFunction);
+            return parseNativeFunctionCallExpression(context, function, tokens, parent, *nativeFunction);
         }
 
         // Is it a function?
@@ -1271,13 +1268,13 @@ std::unique_ptr<Expression> parseNativeFunctionCallExpression(
     ScriptFunction* function,
     Tokenizer* tokens,
     const Expression* parent,
-    const NativeFunctionDefinition& nativeFunction
+    const NativeFunction& nativeFunction
 ) {
     auto nativeFunctionExpression = std::make_unique<CallNativeFunctionExpression>(
         parent,
         tokens->getLineIndex(),
         tokens->getColumnIndex(),
-        nativeFunction.name
+        nativeFunction.getName()
     );
 
     if (!parseNativeFunctionArguments(context, function, tokens, nativeFunction, nativeFunctionExpression->getArguments())) {
@@ -1348,15 +1345,15 @@ bool parseNativeFunctionArguments(
     CompilerContext* context,
     ScriptFunction* function,
     Tokenizer* tokens,
-    const FunctionDefinition& nativeFunction,
+    const Callable& nativeFunction,
     ArgumentList* arguments,
     const bool allowOmittedArguments
 ) {
     const auto* runtime = context->getRuntime();
     auto omitRemainingArguments = false;
 
-    for (NomadIndex i = 0; i < nativeFunction.parameters.size(); ++i) {
-        const auto& parameter = nativeFunction.parameters[i];
+    for (NomadIndex i = 0; i < nativeFunction.getParameterCount(); ++i) {
+        const auto& parameter = nativeFunction.getParameters()[i];
 
         // Hidden source parameters are supplied by the compiler and consume no tokens.
         const auto isSourceParameter =
@@ -1469,7 +1466,7 @@ bool parseNativeFunctionArguments(
             arguments->add(std::move(eventCallbackArgument));
 
         } else if (const auto callbackType = argumentType->asCallback(); callbackType != nullptr) {
-            if (tokens->is("then") && i + 1 < nativeFunction.parameters.size()) {
+            if (tokens->is("then") && i + 1 < nativeFunction.getParameterCount()) {
                 context->reportError("`then` callback must be the last argument", tokens);
 
                 return false;

@@ -849,11 +849,11 @@ void op_object_init_r(VirtualMachine* interpreter) {
 }
 
 void op_object_new(VirtualMachine* interpreter) {
-    ConstructorDefinition constructor;
-    if (!interpreter->getRuntime()->getConstructorDefinition(interpreter->nextId(), constructor)) {
+    const auto* constructor = interpreter->getRuntime()->getNativeConstructor(interpreter->nextId());
+    if (constructor == nullptr) {
         interpreter->fault("Cannot construct object: invalid constructor");
     }
-    const auto& parameters = constructor.parameters;
+    const auto& parameters = constructor->getParameters();
     // Arguments are pushed right to left like any other call; the compiler frees and pops them afterwards.
     std::vector<RuntimeValue> arguments;
     arguments.reserve(parameters.size());
@@ -862,9 +862,9 @@ void op_object_new(VirtualMachine* interpreter) {
     }
     NomadObject* object = nullptr;
     try {
-        object = constructor.factory(arguments);
+        object = constructor->getFactory()(arguments);
         if (object == nullptr) {
-            interpreter->fault("Object factory for '" + constructor.name + "' returned null");
+            interpreter->fault("Object factory for '" + constructor->getName() + "' returned null");
         }
     } catch (...) {
         // The compiler-emitted cleanup is skipped on failure, so release the arguments here.

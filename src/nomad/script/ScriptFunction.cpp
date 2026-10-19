@@ -16,13 +16,11 @@ ScriptFunction::ScriptFunction(
     NomadString  path,
     NomadString  source
 ):
-    m_ownedDefinition(std::make_unique<ScriptFunctionDefinition>()),
+    m_ownedDefinition(std::make_unique<ScriptFunctionDefinition>(id, std::move(name))),
     m_definition(m_ownedDefinition.get()),
     m_path(std::move(path)),
     m_source(std::move(source))
 {
-    m_definition->id = id;
-    m_definition->name = std::move(name);
     m_definition->function = this;
 }
 
@@ -35,11 +33,11 @@ void ScriptFunction::attachDefinition(ScriptFunctionDefinition* definition) {
 }
 
 NomadId ScriptFunction::getId() const {
-    return m_definition->id;
+    return m_definition->getId();
 }
 
 const NomadString& ScriptFunction::getName() const {
-    return m_definition->name;
+    return m_definition->getName();
 }
 
 const NomadString& ScriptFunction::getPath() const {
@@ -67,10 +65,10 @@ NomadId ScriptFunction::addParameter(const NomadString& parameterName, const Typ
     auto parameterId = getParameterId(parameterName);
 
     if (parameterId == NOMAD_INVALID_ID) {
-        parameterId = toNomadId(m_definition->parameters.size());
-        m_definition->parameters.push_back({parameterName, type});
+        parameterId = toNomadId(m_definition->getParameterCount());
+        m_definition->getEditableParameters().push_back({parameterName, type});
     } else {
-        auto& existing = m_definition->parameters[toNomadIndex(parameterId)];
+        auto& existing = m_definition->getEditableParameters()[toNomadIndex(parameterId)];
 
         if (existing.type == nullptr) {
             existing.type = type;
@@ -86,7 +84,7 @@ NomadId ScriptFunction::addParameter(const NomadString& parameterName, const Typ
 }
 
 NomadId ScriptFunction::getParameterId(const NomadString& parameterName) const {
-    const auto& parameters = m_definition->parameters;
+    const auto& parameters = m_definition->getParameters();
 
     for (NomadIndex index = 0; index < parameters.size(); ++index) {
         if (parameters[index].name == parameterName) {
@@ -98,15 +96,15 @@ NomadId ScriptFunction::getParameterId(const NomadString& parameterName) const {
 }
 
 const NomadString& ScriptFunction::getParameterName(const NomadId parameterId) const {
-    return m_definition->parameters[toNomadIndex(parameterId)].name;
+    return m_definition->getParameters()[toNomadIndex(parameterId)].name;
 }
 
 const Type* ScriptFunction::getParameterType(const NomadId parameterId) const {
-    return m_definition->parameters[toNomadIndex(parameterId)].type;
+    return m_definition->getParameters()[toNomadIndex(parameterId)].type;
 }
 
 NomadIndex ScriptFunction::getParameterCount() const {
-    return m_definition->parameters.size();
+    return m_definition->getParameterCount();
 }
 
 NomadId ScriptFunction::createCapture(
@@ -261,11 +259,11 @@ NomadIndex ScriptFunction::getVariableCount() const {
 }
 
 void ScriptFunction::setReturnType(const Type* returnType) {
-    m_definition->returnType = returnType;
+    m_definition->setReturnType(returnType);
 }
 
 const Type* ScriptFunction::getReturnType() const {
-    return m_definition->returnType;
+    return m_definition->getReturnType();
 }
 
 void ScriptFunction::setFunctionStart(NomadIndex functionStartIndex) {

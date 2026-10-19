@@ -206,8 +206,8 @@ void VirtualMachine::callNativeFunction(const NomadId nativeFunctionId) {
 }
 
 void VirtualMachine::callNativeMethod(const NomadId memberId, const RuntimeValue& receiver) {
-    NativeMethodDefinition definition;
-    if (!m_runtime->getNativeMethodDefinition(memberId, definition) || !definition.fn) {
+    const auto* method = m_runtime->getNativeMethod(memberId);
+    if (method == nullptr || !method->getFn()) {
         fault("Invalid native method id: " + toString(memberId));
     }
     const auto previousParameterIndex = m_parameterIndex;
@@ -219,7 +219,7 @@ void VirtualMachine::callNativeMethod(const NomadId memberId, const RuntimeValue
 
     try {
         (void)getThis();
-        definition.fn(this);
+        method->getFn()(this);
     } catch (...) {
         m_parameterIndex = previousParameterIndex;
         m_enclosingParameterIndex = previousEnclosingParameterIndex;
@@ -304,18 +304,18 @@ void VirtualMachine::setNativeIndex1(
 }
 
 void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std::vector<RuntimeValue>& args) {
-    NativeFunctionDefinition definition;
-    if (!m_runtime->getNativeFunctionDefinition(nativeFunctionId, definition)) {
+    const auto* function = m_runtime->getNativeFunction(nativeFunctionId);
+    if (function == nullptr) {
         fault("Invalid native function id: " + toString(nativeFunctionId));
     }
-    if (definition.returnType == nullptr) {
-        fault("NativeFunction '" + definition.name + "' has no return type");
+    if (function->getReturnType() == nullptr) {
+        fault("NativeFunction '" + function->getName() + "' has no return type");
     }
-    if (!definition.returnType->isVoid()) {
+    if (!function->getReturnType()->isVoid()) {
         m_result = RuntimeValue{};
     }
-    if (args.size() != definition.parameters.size()) {
-        fault("Incorrect argument count when calling native function '" + definition.name + "'");
+    if (args.size() != function->getParameterCount()) {
+        fault("Incorrect argument count when calling native function '" + function->getName() + "'");
     }
     if (m_stackIndex >= m_stack.size() ||
         args.size() > m_stack.size() - m_stackIndex - 1) {
@@ -337,9 +337,9 @@ void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std
     try {
         for (NomadIndex index = args.size(); index > 0; --index) {
             const auto argumentIndex = index - 1;
-            const auto* type = definition.parameters[argumentIndex].type;
+            const auto* type = function->getParameters()[argumentIndex].type;
             if (type == nullptr) {
-                fault("NativeFunction '" + definition.name + "' has an invalid parameter type");
+                fault("NativeFunction '" + function->getName() + "' has an invalid parameter type");
             }
             ++m_stackIndex;
             argumentTypes.push_back(type);
@@ -358,18 +358,18 @@ void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std
 
 void VirtualMachine::runNativeMethod(const NomadId memberId, const std::vector<RuntimeValue>& args,
                                         RuntimeValue& receiver) {
-    NativeMethodDefinition definition;
-    if (!m_runtime->getNativeMethodDefinition(memberId, definition)) {
+    const auto* method = m_runtime->getNativeMethod(memberId);
+    if (method == nullptr) {
         fault("Invalid native method id: " + toString(memberId));
     }
-    if (definition.returnType == nullptr) {
-        fault("Native method '" + definition.name + "' has no return type");
+    if (method->getReturnType() == nullptr) {
+        fault("Native method '" + method->getName() + "' has no return type");
     }
-    if (!definition.returnType->isVoid()) {
+    if (!method->getReturnType()->isVoid()) {
         m_result = RuntimeValue{};
     }
-    if (args.size() != definition.parameters.size()) {
-        fault("Incorrect argument count when calling native method '" + definition.name + "'");
+    if (args.size() != method->getParameterCount()) {
+        fault("Incorrect argument count when calling native method '" + method->getName() + "'");
     }
     if (m_stackIndex >= m_stack.size() || args.size() > m_stack.size() - m_stackIndex - 1) {
         fault("Stack overflow");
@@ -389,9 +389,9 @@ void VirtualMachine::runNativeMethod(const NomadId memberId, const std::vector<R
     try {
         for (NomadIndex index = args.size(); index > 0; --index) {
             const auto argumentIndex = index - 1;
-            const auto* type = definition.parameters[argumentIndex].type;
+            const auto* type = method->getParameters()[argumentIndex].type;
             if (type == nullptr) {
-                fault("Native method '" + definition.name + "' has an invalid parameter type");
+                fault("Native method '" + method->getName() + "' has an invalid parameter type");
             }
 
             ++m_stackIndex;

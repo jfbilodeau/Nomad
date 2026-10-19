@@ -42,9 +42,9 @@ std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Ru
         }
 
         case NativeMemberType::Method: {
-            NativeMethodDefinition definition;
-            if (runtime->getNativeMethodDefinition(memberId, definition)) {
-                members.emplace_back(memberId, NativeMemberType::Method, definition.objectType, definition.name);
+            const auto* method = runtime->getNativeMethod(memberId);
+            if (method != nullptr) {
+                members.emplace_back(memberId, NativeMemberType::Method, method->getObjectType(), method->getName());
             }
             break;
         }
@@ -329,17 +329,16 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     auto nativeFunctionId = runtime->getFirstNativeFunctionId();
 
     while (nativeFunctionId != NOMAD_INVALID_ID) {
-        NativeFunctionDefinition nativeFunctionDefinition;
-
-        runtime->getNativeFunctionDefinition(nativeFunctionId, nativeFunctionDefinition);
-
-        functions.emplace_back(
-            nativeFunctionDefinition.name,
-            FunctionType::Native,
-            nativeFunctionDefinition.doc,
-            nativeFunctionDefinition.parameters,
-            nativeFunctionDefinition.returnType
-        );
+        const auto* nativeFunction = runtime->getNativeFunction(nativeFunctionId);
+        if (nativeFunction != nullptr) {
+            functions.emplace_back(
+                nativeFunction->getName(),
+                FunctionType::Native,
+                nativeFunction->getDoc(),
+                nativeFunction->getParameters(),
+                nativeFunction->getReturnType()
+            );
+        }
 
         nativeFunctionId = runtime->getNextNativeFunctionId(nativeFunctionId);
     }
@@ -457,13 +456,13 @@ void generateTypeDocumentation(const Runtime* runtime, std::ostream& out) {
         out << type->getDocumentation() << std::endl;
         for (const auto* candidate : runtime->getConstructors()) {
             const auto& constructor = *candidate;
-            if (constructor.returnType != type) {
+            if (constructor.getReturnType() != type) {
                 continue;
             }
-            out << std::endl << "Constructor: `new " << constructor.name;
-            for (auto index = NomadIndex{0}; index < constructor.parameters.size(); ++index) {
-                out << " " << constructor.parameters[index].name << ":"
-                    << getDocumentedTypeName(runtime, constructor.parameters[index].type);
+            out << std::endl << "Constructor: `new " << constructor.getName();
+            for (auto index = NomadIndex{0}; index < constructor.getParameters().size(); ++index) {
+                out << " " << constructor.getParameters()[index].name << ":"
+                    << getDocumentedTypeName(runtime, constructor.getParameters()[index].type);
             }
             out << "` -> `" << type->getTypeName() << "`" << std::endl;
         }
@@ -512,19 +511,21 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
                 out << std::endl;
             }
         } else {
-            NativeMethodDefinition definition;
-            (void)runtime->getNativeMethodDefinition(member.id, definition);
+            const auto* method = runtime->getNativeMethod(member.id);
+            if (method == nullptr) {
+                continue;
+            }
 
             out << " (*method*)" << std::endl;
             out << std::endl;
 
-            if (definition.parameters.empty()) {
+            if (method->getParameters().empty()) {
                 out << "No parameters." << std::endl;
             } else {
                 out << "parameters:" << std::endl;
                 out << std::endl;
 
-                for (const auto& parameter : definition.parameters) {
+                for (const auto& parameter : method->getParameters()) {
                     out << "- `" << parameter.name << ":" << getDocumentedTypeName(runtime, parameter.type) << "`";
                     if (!parameter.doc.empty()) {
                         out << " - " << parameter.doc;
@@ -534,10 +535,10 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
             }
 
             out << std::endl;
-            out << "`returns " << getDocumentedTypeName(runtime, definition.returnType) << "`" << std::endl;
+            out << "`returns " << getDocumentedTypeName(runtime, method->getReturnType()) << "`" << std::endl;
             out << std::endl;
-            if (!definition.doc.empty()) {
-                out << definition.doc << std::endl;
+            if (!method->getDoc().empty()) {
+                out << method->getDoc() << std::endl;
                 out << std::endl;
             }
         }
@@ -582,11 +583,10 @@ void generateKeywords(Runtime* runtime, std::ostream& out) {
 
     out << "--- Native Functions ---\n";
 
-    std::vector<NativeFunctionDefinition> nativeFunctions;
-    runtime->getNativeFunctions(nativeFunctions);
+    const auto nativeFunctions = runtime->getNativeFunctions();
 
-    for (const NativeFunctionDefinition& nativeFunction : nativeFunctions) {
-        out << nativeFunction.name << "\n";
+    for (const auto* nativeFunction : nativeFunctions) {
+        out << nativeFunction->getName() << "\n";
     }
 
     out << "--- NativeMembers ---\n";

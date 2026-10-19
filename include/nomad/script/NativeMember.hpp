@@ -36,8 +36,6 @@ struct NativePropertyDefinition {
     NomadDocField;
 };
 
-using NativeMethodDefinition = NativeFunctionDefinition;
-
 using NativeIndexerGetFn1 = std::function<void(VirtualMachine*, const RuntimeValue&, RuntimeValue&)>;
 using NativeIndexerSetFn1 = std::function<void(VirtualMachine*, const RuntimeValue&, const RuntimeValue&)>;
 

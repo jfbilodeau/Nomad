@@ -150,11 +150,10 @@ public:
         ConstructorFactory factory,
         NomadDocArg
     );
-    [[nodiscard]] bool getConstructorDefinition(NomadId constructorId, ConstructorDefinition& definition) const;
     // Null unless `functionId` identifies a constructor.
-    [[nodiscard]] const ConstructorDefinition* getConstructorDefinition(NomadId functionId) const;
-    [[nodiscard]] std::vector<const ConstructorDefinition*> getConstructors() const;
-    [[nodiscard]] std::vector<const ConstructorDefinition*> getConstructors(const Type* objectType) const;
+    [[nodiscard]] const NativeConstructor* getNativeConstructor(NomadId functionId) const;
+    [[nodiscard]] std::vector<const NativeConstructor*> getConstructors() const;
+    [[nodiscard]] std::vector<const NativeConstructor*> getConstructors(const Type* objectType) const;
     using ParameterizedConstructorInitializer =
         std::function<void(const NomadString&, const std::vector<const Type*>&)>;
     // The initializer registers a class type named after the specialization and its constructors.
@@ -196,9 +195,11 @@ public:
     [[nodiscard]] NativeMemberType getNativeMemberType(NomadId memberId) const;
     [[nodiscard]] bool getNativePropertyDefinition(NomadId memberId, NativePropertyDefinition& definition) const;
     [[nodiscard]] bool getNativeMethodDefinition(NomadId memberId, NativeMethodDefinition& definition) const;
-    // The table entry behind a method member id; its `id` is the table id. Null when `memberId` is not a method.
-    [[nodiscard]] const NativeFunctionDefinition* getNativeMethodDefinition(NomadId memberId) const;
+    [[nodiscard]] bool getNativeMethodDefinition(const NomadString& name, NativeMethodDefinition& definition) const;
+    // The method behind a member id; `getId()` is its function table id. Null when `memberId` is not a method.
+    [[nodiscard]] const NativeMethod* getNativeMethod(NomadId memberId) const;
     void getNativeMembers(const Type* objectType, std::vector<NomadId>& members) const;
+    [[nodiscard]] bool getConstructorDefinition(NomadId functionId, ConstructorDefinition& definition) const;
     void getNativeMembers(std::vector<NomadId>& members) const;
     void getNativeMemberOverloads(const NomadString& name, std::vector<NomadId>& overloads) const;
     [[nodiscard]] NomadIndex getNativeMemberOverloadCount(const NomadString& name) const;
@@ -238,11 +239,13 @@ public:
     [[nodiscard]] NomadId getNativeFunctionId(const NomadString& name) const;
     [[nodiscard]] NativeFunctionFn getNativeFunctionFn(NomadId id) const;
 
-    bool getNativeFunctionDefinition(NomadId id, NativeFunctionDefinition& definition) const;
-    // Null unless `functionId` identifies a native function or native method.
-    [[nodiscard]] const NativeFunctionDefinition* getNativeFunctionDefinition(NomadId functionId) const;
-    bool getNativeFunctionDefinition(const NomadString& name, NativeFunctionDefinition& definition) const;
-    void getNativeFunctions(std::vector<NativeFunctionDefinition>& nativeFunctions) const;
+    // Null unless `functionId` identifies a native function.
+    [[nodiscard]] const NativeFunction* getNativeFunction(NomadId functionId) const;
+    [[nodiscard]] const NativeFunction* getNativeFunction(const NomadString& name) const;
+    [[nodiscard]] std::vector<const NativeFunction*> getNativeFunctions() const;
+    [[nodiscard]] bool getNativeFunctionDefinition(NomadId functionId, NativeFunctionDefinition& definition) const;
+    [[nodiscard]] bool getNativeFunctionDefinition(const NomadString& name, NativeFunctionDefinition& definition) const;
+    void getNativeFunctions(std::vector<NativeFunctionDefinition>& definitions) const;
 
     [[nodiscard]] NomadId getFirstNativeFunctionId() const;
     [[nodiscard]] NomadId getNextNativeFunctionId(NomadId currentId) const;
@@ -273,8 +276,8 @@ public:
 
     // Function table
     // Every native function, native method and constructor, in one id space. The ids returned when registering
-    // them are ids in this table. Script functions are not part of it yet.
-    [[nodiscard]] const FunctionDefinition* getFunctionDefinition(NomadId functionId) const;
+    // them are ids in this table, as are script function ids.
+    [[nodiscard]] const Callable* getCallable(NomadId functionId) const;
     [[nodiscard]] NomadIndex getFunctionTableSize() const;
     // `argumentTypes` is indexed by parameter and holds `nullptr` for parameters the compiler supplies. An overload
     // matching every argument exactly wins over one that merely accepts them.
@@ -448,7 +451,7 @@ private:
     [[nodiscard]] bool canOverloadCallable(const CallableOverloadSet& overloadSet, CallableKind candidateKind,
                                            const std::vector<ParameterDefinition>& parameters,
                                            const Type* returnType, NomadString& error) const;
-    NomadId addFunctionDefinition(std::unique_ptr<FunctionDefinition> definition);
+    NomadId addCallableToTable(std::unique_ptr<Callable> callable);
     [[nodiscard]] ResolveResult resolveAmong(
         std::vector<NomadId> candidates,
         const std::vector<const Type*>& argumentTypes
@@ -491,7 +494,7 @@ private:
         const Type* returnType,
         const NomadString& doc
     );
-    std::vector<std::unique_ptr<FunctionDefinition>> m_functionTable;
+    std::vector<std::unique_ptr<Callable>> m_functionTable;
     std::unordered_map<NomadString, std::vector<NomadId>> m_functionsByName;
     std::vector<KeywordDefinition> m_keywords;
     VariableMap m_constantsMap;

@@ -361,8 +361,8 @@ void InterpreterContext::evaluateFunctionCall(const NomadId functionId, const st
 }
 
 void InterpreterContext::evaluateNativeFunctionCall(const NomadId functionId, const std::vector<RuntimeValue>& arguments) {
-    NativeFunctionDefinition definition;
-    if (!getRuntime()->getNativeFunctionDefinition(functionId, definition) || definition.returnType == nullptr) {
+    const auto* function = getRuntime()->getNativeFunction(functionId);
+    if (function == nullptr || function->getReturnType() == nullptr) {
         throw NomadBug("Invalid interpreted native function call");
     }
     auto* machine = getVirtualMachine();
@@ -371,10 +371,10 @@ void InterpreterContext::evaluateNativeFunctionCall(const NomadId functionId, co
     machine->setResult(RuntimeValue{});
     try {
         machine->runNativeFunction(functionId, arguments);
-        setResult(definition.returnType, machine->getResult());
-        definition.returnType->freeValue(machine->getResult());
+        setResult(function->getReturnType(), machine->getResult());
+        function->getReturnType()->freeValue(machine->getResult());
     } catch (...) {
-        definition.returnType->freeValue(machine->getResult());
+        function->getReturnType()->freeValue(machine->getResult());
         machine->setResult(savedResult);
         machine->setIntermediate(savedIntermediate);
         throw;

@@ -10,6 +10,7 @@
 
 #include <functional>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace nomad {
@@ -41,53 +42,215 @@ enum class CallableSource {
     Native,     // Implemented in C++ and registered by the host.
 };
 
-// Describes any callable, whatever its type or source. All callables share one id space.
-// Each source adds its own details in a derived class; `Runtime` hands them out through typed getters.
-struct FunctionDefinition {
-    FunctionDefinition() = default;
-    FunctionDefinition(const FunctionDefinition&) = default;
-    FunctionDefinition& operator=(const FunctionDefinition&) = default;
-    virtual ~FunctionDefinition() = default;
+// Root of everything that can be called, whatever its kind or source. All callables share one id space and are owned
+// by `Runtime`, which hands them out as const pointers through typed getters.
+class Callable {
+public:
+    Callable(const Callable&) = delete;
+    Callable& operator=(const Callable&) = delete;
+    virtual ~Callable() = default;
 
+    [[nodiscard]] NomadId getId() const { return m_id; }
+    [[nodiscard]] const NomadString& getName() const { return m_name; }
+    [[nodiscard]] CallableType getType() const { return m_type; }
+    [[nodiscard]] CallableSource getSource() const { return m_source; }
+    [[nodiscard]] const std::vector<ParameterDefinition>& getParameters() const { return m_parameters; }
+    [[nodiscard]] NomadIndex getParameterCount() const { return m_parameters.size(); }
+    // The type of the value the callable yields; void when it yields nothing.
+    [[nodiscard]] const Type* getReturnType() const { return m_returnType; }
+    // Method: the receiver's type. Constructor: the class being constructed (e.g. `Array`), which may differ from
+    // the return type (e.g. `Array1<int>`). Null for functions.
+    [[nodiscard]] const Type* getObjectType() const { return m_objectType; }
+    [[nodiscard]] const NomadString& getDoc() const { return m_doc; }
+
+protected:
+    Callable(
+        CallableType type,
+        CallableSource source,
+        NomadString name,
+        std::vector<ParameterDefinition> parameters,
+        const Type* returnType,
+        const Type* objectType,
+        NomadString doc
+    ):
+        m_name(std::move(name)),
+        m_type(type),
+        m_source(source),
+        m_parameters(std::move(parameters)),
+        m_returnType(returnType),
+        m_objectType(objectType),
+        m_doc(std::move(doc))
+    {
+    }
+
+    void setId(const NomadId id) { m_id = id; }
+    void setReturnType(const Type* returnType) { m_returnType = returnType; }
+    [[nodiscard]] std::vector<ParameterDefinition>& getEditableParameters() { return m_parameters; }
+
+private:
+    friend class Runtime; // Assigns the id when the callable joins the function table.
+
+    NomadId m_id = NOMAD_INVALID_ID;
+    NomadString m_name;
+    CallableType m_type;
+    CallableSource m_source;
+    std::vector<ParameterDefinition> m_parameters;
+    const Type* m_returnType;
+    const Type* m_objectType;
+    NomadString m_doc;
+};
+
+// A callable that does not need a receiver.
+class Function : public Callable {
+protected:
+    Function(
+        const CallableSource source,
+        NomadString name,
+        std::vector<ParameterDefinition> parameters,
+        const Type* returnType,
+        NomadString doc
+    ):
+        Callable(CallableType::Function, source, std::move(name), std::move(parameters), returnType, nullptr, std::move(doc))
+    {
+    }
+};
+
+// A callable invoked on an object of `objectType`.
+class Method : public Callable {
+protected:
+    Method(
+        const CallableSource source,
+        NomadString name,
+        const Type* objectType,
+        std::vector<ParameterDefinition> parameters,
+        const Type* returnType,
+        NomadString doc
+    ):
+        Callable(CallableType::Method, source, std::move(name), std::move(parameters), returnType, objectType, std::move(doc))
+    {
+    }
+};
+
+// Creates an object. The name is the one of the class being constructed.
+class Constructor : public Callable {
+protected:
+    Constructor(
+        const CallableSource source,
+        NomadString name,
+        const Type* objectType,
+        std::vector<ParameterDefinition> parameters,
+        const Type* createdType,
+        NomadString doc
+    ):
+        Callable(CallableType::Constructor, source, std::move(name), std::move(parameters), createdType, objectType, std::move(doc))
+    {
+    }
+};
+
+class NativeFunction : public Function {
+public:
+    NativeFunction(
+        NomadString name,
+        NativeFunctionFn fn,
+        std::vector<ParameterDefinition> parameters,
+        const Type* returnType,
+        NomadString doc
+    ):
+        Function(CallableSource::Native, std::move(name), std::move(parameters), returnType, std::move(doc)),
+        m_fn(std::move(fn))
+    {
+    }
+
+    [[nodiscard]] const NativeFunctionFn& getFn() const { return m_fn; }
+
+private:
+    NativeFunctionFn m_fn;
+};
+
+class NativeMethod : public Method {
+public:
+    NativeMethod(
+        NomadString name,
+        const Type* objectType,
+        NativeFunctionFn fn,
+        std::vector<ParameterDefinition> parameters,
+        const Type* returnType,
+        NomadString doc
+    ):
+        Method(CallableSource::Native, std::move(name), objectType, std::move(parameters), returnType, std::move(doc)),
+        m_fn(std::move(fn))
+    {
+    }
+
+    [[nodiscard]] const NativeFunctionFn& getFn() const { return m_fn; }
+
+private:
+    NativeFunctionFn m_fn;
+};
+
+class NativeConstructor : public Constructor {
+public:
+    NativeConstructor(
+        NomadString name,
+        const Type* objectType,
+        const Type* createdType,
+        ConstructorFactory factory,
+        std::vector<ParameterDefinition> parameters,
+        NomadString doc
+    ):
+        Constructor(CallableSource::Native, std::move(name), objectType, std::move(parameters), createdType, std::move(doc)),
+        m_factory(std::move(factory))
+    {
+    }
+
+    [[nodiscard]] const ConstructorFactory& getFactory() const { return m_factory; }
+
+private:
+    ConstructorFactory m_factory;
+};
+
+struct NativeFunctionDefinition {
     NomadId id = NOMAD_INVALID_ID;
     NomadString name;
-    CallableType type = CallableType::Function;
-    CallableSource source = CallableSource::Native;
     std::vector<ParameterDefinition> parameters;
-    // The type of the value the callable yields; void when it yields nothing.
     const Type* returnType = nullptr;
-    // Method: the receiver's type. Constructor: the class being constructed (e.g. `Array`), which may differ from
-    // `returnType` (e.g. `Array1<int>`). Null for functions.
-    const Type* objectType = nullptr;
     NomadDocField;
 };
 
-// Functions and methods implemented in C++. A method has an `objectType`.
-struct NativeFunctionDefinition : FunctionDefinition {
-    NativeFunctionDefinition() {
-        source = CallableSource::Native;
-    }
-
-    NativeFunctionFn fn;
+struct NativeMethodDefinition {
+    NomadId id = NOMAD_INVALID_ID;
+    const Type* objectType = nullptr;
+    NomadString name;
+    std::vector<ParameterDefinition> parameters;
+    const Type* returnType = nullptr;
+    NomadDocField;
 };
 
-struct ConstructorDefinition : FunctionDefinition {
-    ConstructorDefinition() {
-        type = CallableType::Constructor;
-        source = CallableSource::Native;
-    }
-
+struct ConstructorDefinition {
+    NomadId id = NOMAD_INVALID_ID;
+    const Type* objectType = nullptr;
+    NomadString name;
+    std::vector<ParameterDefinition> parameters;
+    const Type* returnType = nullptr;
     ConstructorFactory factory;
+    NomadDocField;
 };
 
 class ScriptFunction;
 
-// Functions compiled from Nomad source. Parameters are known as soon as the declaration is parsed; `returnType`
+// Functions compiled from Nomad source. Parameters are known as soon as the declaration is parsed; the return type
 // stays null until the body has been compiled.
-struct ScriptFunctionDefinition : FunctionDefinition {
-    ScriptFunctionDefinition() {
-        source = CallableSource::Script;
+class ScriptFunctionDefinition : public Function {
+public:
+    ScriptFunctionDefinition(const NomadId id, NomadString name):
+        Function(CallableSource::Script, std::move(name), {}, nullptr, {})
+    {
+        setId(id);
     }
+
+    using Callable::setId;
+    using Callable::setReturnType;
+    using Callable::getEditableParameters;
 
     ScriptFunction* function = nullptr; // Owned by `Runtime`.
 };

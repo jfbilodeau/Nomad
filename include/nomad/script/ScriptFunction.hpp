@@ -12,7 +12,7 @@
 
 namespace nomad {
 
-struct ScriptFunctionDefinition;
+class ScriptFunctionDefinition;
 
 enum class CaptureSource {
     Variable,

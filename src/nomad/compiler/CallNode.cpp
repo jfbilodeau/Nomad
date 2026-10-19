@@ -258,9 +258,9 @@ CallableId selectCallableOverload(
 
 ///////////////////////////////////////////////////////////////////////////////
 // NativeFunctionStatementNode
-NativeFunctionStatementNode::NativeFunctionStatementNode(const NomadIndex line, const NomadIndex column, const NativeFunctionDefinition& definition):
+NativeFunctionStatementNode::NativeFunctionStatementNode(const NomadIndex line, const NomadIndex column, const NativeFunction* nativeFunction):
     CallStatementNode(line, column),
-    m_definition(definition)
+    m_nativeFunction(nativeFunction)
 {
 }
 
@@ -269,9 +269,9 @@ void NativeFunctionStatementNode::onResolve(CompilerContext* context, ScriptFunc
 
     // The parser picked the first overload to shape the argument list; now that the arguments exist, pick the one
     // whose parameter types they actually match.
-    if (runtime->getCallableOverloadCount(m_definition.name) > 1) {
+    if (runtime->getCallableOverloadCount(m_nativeFunction->getName()) > 1) {
         NomadString error;
-        const auto selected = selectCallableOverload(context, function, m_definition.name, getArguments(), error);
+        const auto selected = selectCallableOverload(context, function, m_nativeFunction->getName(), getArguments(), error);
 
         if (!selected.isValid()) {
             reportError(context, function, error);
@@ -279,17 +279,19 @@ void NativeFunctionStatementNode::onResolve(CompilerContext* context, ScriptFunc
             return;
         }
 
-        runtime->getNativeFunctionDefinition(selected.id, m_definition);
+        if (const auto* overload = runtime->getNativeFunction(selected.id)) {
+            m_nativeFunction = overload;
+        }
     }
 
     CallStatementNode::onResolve(context, function);
 }
 
 void NativeFunctionStatementNode::onCompile(Compiler* compiler, ScriptFunction* function) {
-    compiler->addNativeFunctionCall(m_definition.id, function, getArguments());
+    compiler->addNativeFunctionCall(m_nativeFunction->getId(), function, getArguments());
 
     // The statement discards the nativeFunction's return value.
-    compiler->addFreeValue(m_definition.returnType->getTypeOpCodes()->freeResult);
+    compiler->addFreeValue(m_nativeFunction->getReturnType()->getTypeOpCodes()->freeResult);
 }
 
 void NativeFunctionStatementNode::onEvaluate(InterpreterContext& context) const {
@@ -300,7 +302,7 @@ void NativeFunctionStatementNode::onEvaluate(InterpreterContext& context) const 
         return;
     }
 
-    context.getRuntime()->executeNativeFunction(m_definition.id, values, context);
+    context.getRuntime()->executeNativeFunction(m_nativeFunction->getId(), values, context);
     if (!context.hasError()) {
         context.setVoidResult();
     }

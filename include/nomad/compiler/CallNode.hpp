@@ -99,7 +99,7 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 class NativeFunctionStatementNode : public CallStatementNode {
 public:
-    NativeFunctionStatementNode(NomadIndex line, NomadIndex column, const NativeFunctionDefinition& definition);
+    NativeFunctionStatementNode(NomadIndex line, NomadIndex column, const NativeFunction* nativeFunction);
 
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
@@ -107,7 +107,7 @@ protected:
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
-    NativeFunctionDefinition m_definition;
+    const NativeFunction* m_nativeFunction;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

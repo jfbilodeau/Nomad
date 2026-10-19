@@ -341,11 +341,11 @@ bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type
         }
 
         case NativeMemberType::Method: {
-            NativeMethodDefinition definition;
-            if (!m_runtime->getNativeMethodDefinition(memberId, definition)) {
+            const auto* method = m_runtime->getNativeMethod(memberId);
+            if (method == nullptr) {
                 reportInternalError("Invalid native method id: " + toString(memberId));
             }
-            memberName = definition.name;
+            memberName = method->getName();
             break;
         }
 
@@ -728,11 +728,7 @@ void Compiler::addFreeArguments(const ArgumentList* arguments) {
 NomadIndex Compiler::addNativeFunctionCall(const NomadId nativeFunctionId, ScriptFunction* function, const ArgumentList* arguments) {
     arguments->compile(this, function);
 
-    NativeFunctionDefinition nativeFunction;
-
-    const auto result = m_runtime->getNativeFunctionDefinition(nativeFunctionId, nativeFunction);
-
-    if (result == false) {
+    if (m_runtime->getNativeFunction(nativeFunctionId) == nullptr) {
         reportInternalError("Unknown native function: " + toString(nativeFunctionId));
     }
 
