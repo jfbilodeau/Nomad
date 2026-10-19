@@ -66,7 +66,7 @@ private:
 
 // Resolves a free-function call and assigns selected parameter types to overloaded arguments.
 // Non-overloaded signatures retain specialized argument validation, including expanded event arguments.
-[[nodiscard]] const Function* resolveFunctionCall(
+[[nodiscard]] const Function* resolveFunctionCallArguments(
     CompilerContext* context,
     ScriptFunction* function,
     const NomadString& name,

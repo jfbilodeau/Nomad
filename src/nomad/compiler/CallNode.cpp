@@ -223,7 +223,7 @@ void CallStatementNode::onResolve(CompilerContext* context, ScriptFunction* func
     (void)m_arguments.resolve(context, function);
 }
 
-const Function* resolveFunctionCall(
+const Function* resolveFunctionCallArguments(
     CompilerContext* context,
     ScriptFunction* function,
     const NomadString& name,
@@ -274,7 +274,7 @@ FunctionCallStatementNode::FunctionCallStatementNode(const NomadIndex line, cons
 
 void FunctionCallStatementNode::onResolve(CompilerContext* context, ScriptFunction* function) {
     NomadString error;
-    m_function = resolveFunctionCall(context, function, m_name, getArguments(), error);
+    m_function = resolveFunctionCallArguments(context, function, m_name, getArguments(), error);
     if (m_function == nullptr) {
         reportError(context, function, error);
         return;

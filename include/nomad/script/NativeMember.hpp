@@ -5,6 +5,7 @@
 #include <nomad/Nomad.hpp>
 
 #include <nomad/script/Documentation.hpp>
+#include <nomad/script/Member.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/RuntimeValue.hpp>
 
@@ -16,12 +17,6 @@ namespace nomad {
 class Type;
 class ObjectTypeBase;
 class VirtualMachine;
-
-enum class MemberType {
-    Unknown = 1,
-    Property,
-    Method,
-};
 
 using NativePropertyGetFn = std::function<void(VirtualMachine*, RuntimeValue&)>;
 using NativePropertySetFn = std::function<void(VirtualMachine*, const RuntimeValue&)>;

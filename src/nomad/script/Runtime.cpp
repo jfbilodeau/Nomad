@@ -446,7 +446,7 @@ void Runtime::addCallable(const NomadString& name, const NomadId callable) {
     m_callables[existing->second].overloads.push_back(callable);
 }
 
-const CallableOverloadSet* Runtime::findCallableOverloadSet(const NomadString& name) const {
+const Runtime::CallableOverloadSet* Runtime::findCallableOverloadSet(const NomadString& name) const {
     const auto entry = m_callablesByName.find(name);
 
     if (entry == m_callablesByName.end()) {

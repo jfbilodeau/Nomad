@@ -16,6 +16,7 @@
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
 #include <nomad/script/FunctionResolution.hpp>
+#include <nomad/script/Member.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/NativeMember.hpp>
 #include <nomad/script/ScriptCallable.hpp>
@@ -423,6 +424,11 @@ private:
         NomadId id;
         NomadId functionId;
         std::unique_ptr<FormatString> formatString;
+    };
+
+    struct CallableOverloadSet {
+        NomadString name;
+        std::vector<NomadId> overloads;
     };
 
     struct NativeMemberRegistration {

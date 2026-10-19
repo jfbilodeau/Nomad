@@ -156,11 +156,4 @@ protected:
     }
 };
 
-// All callables sharing one name. A set holds more than one entry when the name is overloaded; overloads may differ
-// only in the types of their `ParameterShape::Value` parameters.
-struct CallableOverloadSet {
-    NomadString name;
-    std::vector<NomadId> overloads;
-};
-
 } // nomad

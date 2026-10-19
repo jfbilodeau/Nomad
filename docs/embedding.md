@@ -57,6 +57,8 @@ Native member IDs are a separate namespace. `registerNativeMethod` and
 `getNativeMemberMethod(memberId)`, then use the returned method's `getId()` for
 callable-table access. `getNativeMethod(callableId)` takes a callable-table ID.
 `getMemberType(memberId)` returns `MemberType::Property` or `MemberType::Method`.
+Include `<nomad/script/Member.hpp>` for `MemberType`; native property callbacks
+and indexer definitions remain in `<nomad/script/NativeMember.hpp>`.
 This replaces `getNativeMemberType` and `NativeMemberType`; native registration
 and callback APIs keep their native-specific names.
 

@@ -474,7 +474,7 @@ bool FunctionCallExpression::isTerminal() const {
 
 void FunctionCallExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
     NomadString error;
-    m_function = resolveFunctionCall(context, function, m_name, &m_arguments, error);
+    m_function = resolveFunctionCallArguments(context, function, m_name, &m_arguments, error);
     if (m_function == nullptr) {
         reportError(context, function, error);
         return;
