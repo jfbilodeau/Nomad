@@ -65,8 +65,18 @@ element-count overflow produce runtime errors, not compile-time errors.
 Elements start with their type's default value: zero, `false`, empty strings,
 distinct empty lists, or shared empty arrays. Internal empty-array defaults have
 zero in every dimension; they cannot be explicitly constructed with `new`.
-The read-only `count` property gives the total element count. Script-level array
-indexers are not available yet.
+The read-only `count` property gives the total element count. One-dimensional
+arrays support reading and replacing elements with a zero-based `int` index:
+
+```nomad
+line[0] = 123
+value = line[0]
+```
+
+Negative indices and indices greater than or equal to `count` produce runtime
+errors; indexed assignment never resizes the array. Object-valued elements keep
+reference semantics. Two- and three-dimensional array indexers are not available
+yet.
 
 ## SDK modules
 

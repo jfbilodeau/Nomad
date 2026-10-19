@@ -395,6 +395,84 @@ BOOST_AUTO_TEST_CASE(collections_indexers_read_replace_chain_and_preserve_evalua
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
+BOOST_AUTO_TEST_CASE(array1_indexers_read_replace_and_preserve_references) {
+    TestDirectory directory("nomad_host_array1_indexers");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"main", {"main.nomad",
+        "fun replace values:Array1<string>\n"
+        "    values[0] = \"changed\"\n"
+        "end\n"
+        "values = new Array<int> 2\n"
+        "assert values[0] == 0\n"
+        "values[1] = 123\n"
+        "alias = values\n"
+        "alias[0] = values[1]\n"
+        "assert values[0] == 123\n"
+        "assert values.count == 2\n"
+        "words = new Array1<string> 1\n"
+        "words[0] = \"hello\"\n"
+        "words[0] = words[0]\n"
+        "replace words\n"
+        "assert words[0][0] == \"c\"\n"
+        "nested = new Array1<List<int>> 1\n"
+        "nested[0].push 7\n"
+        "saved = nested[0]\n"
+        "nested[0] = new List<int>\n"
+        "assert saved[0] == 7\n"
+        "assert nested[0].count == 0\n"
+        "return words[0].length + values[1]"
+    }}}, {}});
+    const auto compiled = compiler->compileScripts(&context, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled,
+        (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
+    RuntimeValue empty;
+    runtime.getStringType()->initValue(empty);
+    runtime.getStringType()->freeValue(empty);
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 130);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(array1_indexers_work_in_interpreter_and_report_bounds_errors) {
+    TestDirectory directory("nomad_host_array1_interpreter");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    VirtualMachine machine(&runtime);
+    InterpreterContext context(machine);
+    for (const auto* source : {
+        "values = new Array<int> 2", "values[0] = 123", "alias = values",
+        "alias[1] = values[0]", "values[1]"
+    }) {
+        BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(source, context),
+            (context.getError() ? *context.getError() : source));
+    }
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 123);
+    for (const auto* source : {"values[-1]", "values[2]", "values[-1] = 9", "values[2] = 9"}) {
+        BOOST_TEST_CONTEXT(source) {
+            BOOST_TEST(!Interpreter{}.execute(source, context));
+            BOOST_REQUIRE(context.getError() != nullptr);
+            BOOST_TEST(context.getError()->find("out of bounds") != NomadString::npos);
+        }
+    }
+    for (const auto* source : {"values[\"key\"]", "values[0] = \"wrong\"", "values[0 1]"}) {
+        BOOST_TEST_CONTEXT(source) {
+            BOOST_TEST(!Interpreter{}.execute(source, context));
+            BOOST_TEST(context.hasError());
+        }
+    }
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("values.count", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 2);
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("values[0] + values[1]", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 246);
+}
+
 BOOST_AUTO_TEST_CASE(collections_indexers_work_in_interpreter_and_fault_without_growing) {
     TestDirectory directory("nomad_host_interpreter_indexers");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});

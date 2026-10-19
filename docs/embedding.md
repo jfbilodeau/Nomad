@@ -387,7 +387,7 @@ owned result into initialized storage; retain any existing object returned from
 the receiver. A setter must retain an object value it stores and release any
 replaced value. Use `machine->fault(...)` to report invalid indices or other
 access errors. The built-in string indexer is read-only and uses Unicode code
-points; `List<T>` provides read/write element access.
+points; `List<T>` and `Array1<T>` provide read/write element access.
 
 ## Typed native object methods
 

@@ -70,6 +70,22 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
             ) == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register Array1 constructor");
             }
+            const auto* elementType = arrayType->getElementType();
+            if (runtime->registerNativeIndexer1(
+                arrayType,
+                runtime->getIntegerType(),
+                elementType,
+                [elementType](nomad::VirtualMachine* machine, const nomad::RuntimeValue& index, nomad::RuntimeValue& result) {
+                    const auto* array = machine->getThisAs<nomad::Array1dObject>();
+                    elementType->copyValue(array->getValue(index.getIntegerValue()), result);
+                },
+                [](nomad::VirtualMachine* machine, const nomad::RuntimeValue& index, const nomad::RuntimeValue& value) {
+                    machine->getThisAs<nomad::Array1dObject>()->setValue(index.getIntegerValue(), value);
+                },
+                NomadDoc("Reads or replaces an element at a zero-based index. Out-of-range indices fault.")
+            ) == nomad::NOMAD_INVALID_ID) {
+                throw nomad::NomadException("Failed to register Array1 indexer");
+            }
         }
     );
     registerArrayType(
