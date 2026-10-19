@@ -194,7 +194,7 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
 
     const auto functionId = context->getRuntime()->getFunctionId(name);
     if (functionId != NOMAD_INVALID_ID) {
-        const auto* targetFunction = context->getRuntime()->getFunction(functionId);
+        const auto* targetFunction = context->getRuntime()->getScriptFunction(functionId);
         if (targetFunction->getParameterCount() != 0) {
             context->reportError("Function receiver '" + name + "' requires arguments");
             return nullptr;
@@ -281,7 +281,7 @@ bool isNativeMemberCandidate(const Compiler* compiler, const ScriptFunction* fun
         if (compiler->getIdentifierType(name, scope) != IdentifierType::Unknown) {
             return false;
         }
-        scope = compiler->getRuntime()->getFunction(scope->getParentId());
+        scope = compiler->getRuntime()->getScriptFunction(scope->getParentId());
     }
     return compiler->getIdentifierType(name, nullptr) == IdentifierType::Unknown;
 }
@@ -494,7 +494,7 @@ NomadId parseCallbackParameter(
             return NOMAD_INVALID_ID;
         }
 
-        const auto callbackFunction = context->getRuntime()->getFunction(functionId);
+        const auto callbackFunction = context->getRuntime()->getScriptFunction(functionId);
 
         // Wire the nested function's parent reference.
         callbackFunction->setParentId(function->getId());
@@ -536,7 +536,7 @@ NomadId parseCallbackParameter(
         return NOMAD_INVALID_ID;
     }
 
-    if (context->getRuntime()->getFunction(funId)->getParameterCount() != callbackType->getParameterCount()) {
+    if (context->getRuntime()->getScriptFunction(funId)->getParameterCount() != callbackType->getParameterCount()) {
         context->reportError("Callback function '" + funName + "' has incorrect number of parameters", tokens);
 
         return NOMAD_INVALID_ID;
@@ -545,7 +545,7 @@ NomadId parseCallbackParameter(
     for (auto i = NomadIndex{0}; i < callbackType->getParameterCount(); ++i) {
         const auto parameterId = toNomadId(i);
         const auto expectedType = callbackType->getParameterType(parameterId);
-        const auto actualType = context->getRuntime()->getFunction(funId)->getParameterType(parameterId);
+        const auto actualType = context->getRuntime()->getScriptFunction(funId)->getParameterType(parameterId);
         if (expectedType != actualType) {
             context->reportError("Callback function '" + funName + "' parameter type mismatch at index " + toString(i), tokens);
 
@@ -576,7 +576,7 @@ std::unique_ptr<Statement> parseFunctionCall(
         return nullptr;
     }
 
-    const auto targetFunction = context->getRuntime()->getFunction(functionId);
+    const auto targetFunction = context->getRuntime()->getScriptFunction(functionId);
 
     if (!parseFunctionArguments(context, function, tokens, targetFunction, functionCallStatement->getArguments())) {
         return nullptr;
@@ -1195,7 +1195,7 @@ std::unique_ptr<Expression> parseFunctionCallExpression(
     );
 
     const auto functionId = context->getRuntime()->getFunctionId(functionName);
-    const auto targetFunction = context->getRuntime()->getFunction(functionId);
+    const auto targetFunction = context->getRuntime()->getScriptFunction(functionId);
 
     if (!parseFunctionArguments(context, function, tokens, targetFunction, functionCallExpression->getArguments())) {
         return nullptr;

@@ -9,9 +9,9 @@ See [building from source](building.md) for toolchain requirements and the
 
 The host owns the `Runtime`, its virtual machines, and interpreter contexts.
 Destroy contexts before their borrowed VM, and destroy VMs before the runtime.
-Types and function definitions used by a context must remain valid.
+Types and callables used by a context must remain valid.
 
-- `Runtime` holds registered APIs, types, function definitions, and bytecode.
+- `Runtime` owns registered APIs, types, callables, and bytecode.
 - `VirtualMachine` executes compiled functions and provides the execution
   environment for native calls, object members, and dynamic variables.
 - `InterpreterContext` borrows a VM and owns interpreter variables, its latest
@@ -20,6 +20,27 @@ Types and function definitions used by a context must remain valid.
   to retain interpreter variables between executions.
 
 Neither the interpreter nor its context creates or owns a VM.
+
+### Callable access
+
+Registered native functions, script functions, methods, and constructors share
+one runtime-owned callable table and ID space. `getCallable(id)` returns a
+borrowed `const Callable*`; `getFunction(id)` returns a borrowed `const Function*`
+for either a native or a script free function. Both return `nullptr` for invalid
+IDs, and `getFunction` also returns `nullptr` for methods and constructors.
+
+Use `getNativeFunction(id)` or `getScriptFunction(id)` for implementation-specific
+access. These return `nullptr` for the wrong implementation kind. A const runtime
+returns a `const ScriptFunction*`; a mutable runtime also permits script
+parameter and inferred return-type updates. All views refer to the same object,
+so signature changes are immediately visible through generic accessors.
+Pointers remain valid until the runtime is destroyed, including when more
+callables are registered.
+
+Signatures expose `Parameter` entries through `getParameters()`. Script source
+text is available through `getSourceCode()`; `getSource()` identifies whether
+the callable is native or script-backed. Script enumeration and source/bytecode
+lookups continue to include only script functions.
 
 ## Source input and compilation
 

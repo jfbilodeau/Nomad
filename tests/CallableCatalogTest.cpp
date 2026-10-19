@@ -10,6 +10,8 @@
 #include <nomad/script/Runtime.hpp>
 
 #include <span>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 using namespace nomad;
@@ -18,12 +20,18 @@ using namespace nomad::test;
 BOOST_TEST_DONT_PRINT_LOG_VALUE(nomad::CallableType)
 BOOST_TEST_DONT_PRINT_LOG_VALUE(nomad::ResolveStatus)
 
+static_assert(std::is_base_of_v<ScriptCallable<Function>, ScriptFunction>);
+static_assert(!std::is_copy_constructible_v<ScriptFunction>);
+static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getFunction(0)), const Function*>);
+static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getScriptFunction(0)), const ScriptFunction*>);
+static_assert(std::is_same_v<decltype(std::declval<Runtime&>().getScriptFunction(0)), ScriptFunction*>);
+
 namespace {
 
 NomadId registerVoidNativeFunction(
     Runtime& runtime,
     const NomadString& name,
-    const std::vector<ParameterDefinition>& parameters = {}
+    const std::vector<Parameter>& parameters = {}
 ) {
     return runtime.registerNativeFunction(
         name,
@@ -37,7 +45,7 @@ NomadId registerVoidNativeFunction(
 NomadId registerNativeFunction(
     Runtime& runtime,
     const NomadString& name,
-    const std::vector<ParameterDefinition>& parameters,
+    const std::vector<Parameter>& parameters,
     const Type* returnType
 ) {
     return runtime.registerNativeFunction(
@@ -104,7 +112,7 @@ BOOST_AUTO_TEST_CASE(function_is_registered_in_catalog)
     BOOST_TEST(runtime.getCallableParameterCount(callable) == NomadIndex{0});
 }
 
-// The catalog reads signatures from the owning definition, so a return type inferred after registration is visible.
+// Signature changes are visible through every view of the same runtime-owned callable.
 BOOST_AUTO_TEST_CASE(function_signature_is_read_live)
 {
     Runtime runtime;
@@ -115,7 +123,7 @@ BOOST_AUTO_TEST_CASE(function_signature_is_read_live)
     BOOST_REQUIRE(callable.isValid());
     BOOST_TEST(runtime.getCallableReturnType(callable) == nullptr);
 
-    auto* function = runtime.getFunction(functionId);
+    auto* function = runtime.getScriptFunction(functionId);
     BOOST_REQUIRE(function != nullptr);
 
     function->addParameter("value", runtime.getIntegerType());
@@ -137,25 +145,26 @@ BOOST_AUTO_TEST_CASE(script_function_joins_function_table)
     BOOST_REQUIRE(scriptId != NOMAD_INVALID_ID);
     BOOST_TEST(scriptId != nativeId);
 
-    const auto* definition = runtime.getScriptFunctionDefinition(scriptId);
-    BOOST_REQUIRE(definition != nullptr);
-    BOOST_TEST(definition->id == scriptId);
-    BOOST_TEST(definition->name == "scripted");
-    BOOST_TEST((definition->source == CallableSource::Script));
-    BOOST_TEST((definition->type == CallableType::Function));
-    BOOST_TEST(definition->function == runtime.getFunction(scriptId));
-    BOOST_TEST(runtime.getScriptFunctionDefinition(nativeId) == nullptr);
-    BOOST_TEST(runtime.getNativeFunctionDefinition(scriptId) == nullptr);
+    const auto* function = runtime.getScriptFunction(scriptId);
+    BOOST_REQUIRE(function != nullptr);
+    BOOST_TEST(function->getId() == scriptId);
+    BOOST_TEST(function->getName() == "scripted");
+    BOOST_TEST((function->getSource() == CallableSource::Script));
+    BOOST_TEST((function->getType() == CallableType::Function));
+    BOOST_TEST(runtime.getCallable(scriptId) == static_cast<const Callable*>(function));
+    BOOST_TEST(runtime.getFunction(scriptId) == static_cast<const Function*>(function));
+    BOOST_TEST(runtime.getScriptFunction(nativeId) == nullptr);
+    BOOST_TEST(runtime.getNativeFunction(scriptId) == nullptr);
 
-    runtime.getFunction(scriptId)->addParameter("value", runtime.getIntegerType());
+    runtime.getScriptFunction(scriptId)->addParameter("value", runtime.getIntegerType());
 
-    BOOST_REQUIRE(definition->parameters.size() == NomadIndex{1});
-    BOOST_TEST(definition->parameters[0].name == "value");
-    BOOST_TEST(definition->parameters[0].type == runtime.getIntegerType());
-    BOOST_TEST(definition->returnType == nullptr);
+    BOOST_REQUIRE(function->getParameters().size() == NomadIndex{1});
+    BOOST_TEST(function->getParameters()[0].name == "value");
+    BOOST_TEST(function->getParameters()[0].type == runtime.getIntegerType());
+    BOOST_TEST(function->getReturnType() == nullptr);
 
     BOOST_TEST(runtime.setScriptFunctionReturnType(scriptId, runtime.getFloatType()));
-    BOOST_TEST(definition->returnType == runtime.getFloatType());
+    BOOST_TEST(function->getReturnType() == runtime.getFloatType());
     BOOST_TEST(!runtime.setScriptFunctionReturnType(nativeId, runtime.getFloatType()));
 
     const auto resolved = runtime.resolveFunction("scripted", {runtime.getIntegerType()});
@@ -175,6 +184,76 @@ BOOST_AUTO_TEST_CASE(catalog_separates_native_functions_from_functions)
 
     BOOST_TEST(runtime.getFunctionId("function.only") != NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getNativeFunctionId("function.only") == NOMAD_INVALID_ID);
+}
+
+BOOST_AUTO_TEST_CASE(typed_function_views_reject_invalid_ids_and_wrong_sources)
+{
+    Runtime runtime;
+    const auto nativeId = registerVoidNativeFunction(runtime, "native");
+    const auto scriptId = runtime.registerScriptFunction("script", "script.nomad", "return 1");
+    const auto& readOnlyRuntime = std::as_const(runtime);
+
+    BOOST_TEST(runtime.getFunction(nativeId) == static_cast<const Function*>(runtime.getNativeFunction(nativeId)));
+    BOOST_TEST(runtime.getFunction(scriptId) == static_cast<const Function*>(runtime.getScriptFunction(scriptId)));
+    BOOST_TEST(readOnlyRuntime.getScriptFunction(scriptId) == runtime.getScriptFunction(scriptId));
+    BOOST_TEST(readOnlyRuntime.getScriptFunction(nativeId) == nullptr);
+    BOOST_TEST(runtime.getScriptFunction(nativeId) == nullptr);
+    BOOST_TEST(runtime.getNativeFunction(scriptId) == nullptr);
+
+    for (const auto id : {NOMAD_INVALID_ID, NomadId{-2}, toNomadId(runtime.getFunctionTableSize())}) {
+        BOOST_TEST(runtime.getFunction(id) == nullptr);
+        BOOST_TEST(runtime.getScriptFunction(id) == nullptr);
+        BOOST_TEST(readOnlyRuntime.getScriptFunction(id) == nullptr);
+        BOOST_TEST(runtime.getNativeFunction(id) == nullptr);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(script_function_views_and_state_survive_table_growth)
+{
+    Runtime runtime;
+    const auto scriptId = runtime.registerScriptFunction("script", "source.nomad", "return value");
+    auto* script = runtime.getScriptFunction(scriptId);
+    BOOST_REQUIRE(script != nullptr);
+    const auto* function = runtime.getFunction(scriptId);
+    const auto* callable = runtime.getCallable(scriptId);
+
+    script->addParameter("value", runtime.getIntegerType());
+    script->setReturnType(runtime.getIntegerType());
+    script->registerVariable("local", runtime.getFloatType());
+    script->setSourceLineRange(2, 4);
+    script->setFunctionStart(10);
+    script->setFunctionEnd(20);
+    const auto initialTableSize = runtime.getFunctionTableSize();
+
+    for (NomadIndex index = 0; index < 64; ++index) {
+        BOOST_REQUIRE(registerVoidNativeFunction(runtime, "native" + std::to_string(index)) != NOMAD_INVALID_ID);
+    }
+
+    BOOST_TEST(runtime.getFunctionTableSize() == initialTableSize + 64);
+    BOOST_TEST(runtime.getScriptFunction(scriptId) == script);
+    BOOST_TEST(runtime.getFunction(scriptId) == function);
+    BOOST_TEST(runtime.getCallable(scriptId) == callable);
+    BOOST_TEST(&callable->getParameters() == &script->getParameters());
+    BOOST_TEST(function->getReturnType() == runtime.getIntegerType());
+    BOOST_TEST(script->getPath() == "source.nomad");
+    BOOST_TEST(script->getSourceCode() == "return value");
+    BOOST_TEST(script->getVariableCount() == 1U);
+    BOOST_TEST(script->getVariableType(0) == runtime.getFloatType());
+    BOOST_TEST(runtime.getFunctionCount() == 1U);
+    BOOST_TEST(runtime.getFunctionSize() == 10U);
+    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 3) == script);
+    BOOST_TEST(runtime.getFunctionByStartAddress(10) == script);
+    BOOST_TEST(runtime.getFunctionAtInstructionIndex(19) == script);
+    BOOST_TEST(runtime.getFunctionAtInstructionIndex(20) == nullptr);
+
+    std::vector<ScriptFunction*> scripts;
+    runtime.getFunctions(scripts);
+    BOOST_REQUIRE(scripts.size() == 1U);
+    BOOST_TEST(scripts.front() == script);
+    TempVector<ScriptFunction*> temporaryScripts;
+    runtime.getFunctions(temporaryScripts);
+    BOOST_REQUIRE(temporaryScripts.size() == 1U);
+    BOOST_TEST(temporaryScripts.front() == script);
 }
 
 BOOST_AUTO_TEST_CASE(duplicate_native_function_name_is_rejected)
@@ -498,7 +577,7 @@ const ObjectType* registerResolutionType(Runtime& runtime, const NomadString& na
 NomadId registerResolutionConstructor(
     Runtime& runtime,
     const ObjectType* type,
-    const std::vector<ParameterDefinition>& parameters
+    const std::vector<Parameter>& parameters
 ) {
     return runtime.registerNativeConstructor(
         type,
@@ -535,17 +614,21 @@ BOOST_AUTO_TEST_CASE(registered_callables_share_one_id_space)
 
     BOOST_TEST(functionResult.id == function);
     BOOST_TEST(constructorResult.id == constructor);
-    BOOST_TEST(runtime.getFunctionDefinition(methodResult.id)->objectType == type);
-    BOOST_TEST(runtime.getNativeFunctionDefinition(functionResult.id) != nullptr);
-    BOOST_TEST(runtime.getNativeFunctionDefinition(methodResult.id) != nullptr);
-    BOOST_TEST(runtime.getNativeFunctionDefinition(constructorResult.id) == nullptr);
-    BOOST_TEST(runtime.getConstructorDefinition(constructorResult.id) != nullptr);
-    BOOST_TEST(runtime.getConstructorDefinition(functionResult.id) == nullptr);
+    BOOST_TEST(runtime.getCallable(methodResult.id)->getObjectType() == type);
+    BOOST_TEST(runtime.getNativeFunction(functionResult.id) != nullptr);
+    BOOST_TEST(runtime.getNativeFunction(methodResult.id) == nullptr);
+    BOOST_TEST(runtime.getNativeMethod(method)->getId() == methodResult.id);
+    BOOST_TEST(runtime.getNativeFunction(constructorResult.id) == nullptr);
+    BOOST_TEST(runtime.getNativeConstructor(constructorResult.id) != nullptr);
+    BOOST_TEST(runtime.getNativeConstructor(functionResult.id) == nullptr);
+    BOOST_TEST(runtime.getFunction(functionResult.id) != nullptr);
+    BOOST_TEST(runtime.getFunction(methodResult.id) == nullptr);
+    BOOST_TEST(runtime.getFunction(constructorResult.id) == nullptr);
 
-    BOOST_TEST(runtime.getFunctionDefinition(functionResult.id)->type == CallableType::Function);
-    BOOST_TEST(runtime.getFunctionDefinition(methodResult.id)->type == CallableType::Method);
-    BOOST_TEST(runtime.getFunctionDefinition(constructorResult.id)->type == CallableType::Constructor);
-    BOOST_TEST(runtime.getFunctionDefinition(NOMAD_INVALID_ID) == nullptr);
+    BOOST_TEST(runtime.getCallable(functionResult.id)->getType() == CallableType::Function);
+    BOOST_TEST(runtime.getCallable(methodResult.id)->getType() == CallableType::Method);
+    BOOST_TEST(runtime.getCallable(constructorResult.id)->getType() == CallableType::Constructor);
+    BOOST_TEST(runtime.getCallable(NOMAD_INVALID_ID) == nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(resolve_function_reports_each_failure_status)

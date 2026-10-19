@@ -325,7 +325,7 @@ void FunctionCallStatementNode::onResolve(CompilerContext* context, ScriptFuncti
     }
 
     if (context->getMode() != CompilerMode::Script &&
-        runtime->getFunction(m_functionId)->getFunctionStart() == NOMAD_INVALID_INDEX) {
+        runtime->getScriptFunction(m_functionId)->getFunctionStart() == NOMAD_INVALID_INDEX) {
         reportError(context, function, "Function '" + m_name + "' has not been compiled");
         return;
     }
@@ -339,7 +339,7 @@ void FunctionCallStatementNode::onCompile(Compiler* compiler, ScriptFunction* fu
     compiler->addFunctionCall(targetFunctionId, function, getArguments());
 
     // The statement discards the function's return value.
-    if (const auto* targetFunction = compiler->getRuntime()->getFunction(targetFunctionId);
+    if (const auto* targetFunction = compiler->getRuntime()->getScriptFunction(targetFunctionId);
         targetFunction != nullptr && targetFunction->getReturnType() != nullptr) {
         compiler->addFreeValue(targetFunction->getReturnType()->getTypeOpCodes()->freeResult);
     }

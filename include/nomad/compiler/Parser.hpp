@@ -49,7 +49,7 @@ std::unique_ptr<Expression> parseRootExpression(CompilerContext* context, Script
 std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 std::unique_ptr<Statement> parseStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokenizer);
 std::unique_ptr<Statement> parseNativeFunctionStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const NativeFunction& nativeFunction);
-void parseFunctionParameter(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const ParameterDefinition& parameter);
+void parseFunctionParameter(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Parameter& parameter);
 std::unique_ptr<Statement> parseFunctionCall(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const NomadString& functionName);
 std::unique_ptr<Expression> parseLogicalAndExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);
 std::unique_ptr<Expression> parseLogicalOrExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent);

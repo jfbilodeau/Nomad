@@ -565,7 +565,7 @@ void FunctionCallExpression::onResolve(CompilerContext* context, ScriptFunction*
         return;
     }
 
-    const auto* callFunction = runtime->getFunction(m_functionId);
+    const auto* callFunction = runtime->getScriptFunction(m_functionId);
     const auto* returnType = callFunction->getReturnType();
 
     if (context->getMode() != CompilerMode::Script && callFunction->getFunctionStart() == NOMAD_INVALID_INDEX) {
@@ -1336,7 +1336,7 @@ bool FormatStringLiteral::parsePlaceholders(
         if (functionId == NOMAD_INVALID_ID) {
             return false;
         }
-        auto* expressionFunction = context->getRuntime()->getFunction(functionId);
+        auto* expressionFunction = context->getRuntime()->getScriptFunction(functionId);
         expressionFunction->setParentId(function->getId());
 
         const auto column = getColumn() + 3 + segment.offset;
@@ -1377,7 +1377,7 @@ void FormatStringLiteral::onResolve(CompilerContext* context, ScriptFunction* fu
     }
 
     for (const auto& placeholder : m_expressionPlaceholders) {
-        const auto* expressionFunction = context->getRuntime()->getFunction(placeholder.functionId);
+        const auto* expressionFunction = context->getRuntime()->getScriptFunction(placeholder.functionId);
         const auto* returnType = expressionFunction->getReturnType();
         if (returnType != nullptr && returnType->isVoid()) {
             context->reportError("Format string expression must return a value", function->getPath(),
@@ -1411,7 +1411,7 @@ void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function
                 } else if (expressionIndex < m_expressionPlaceholders.size() &&
                            m_expressionPlaceholders[expressionIndex].segmentIndex == segmentIndex) {
                     const auto id = m_expressionPlaceholders[expressionIndex++].functionId;
-                    const auto* expressionFunction = compiler->getRuntime()->getFunction(id);
+                    const auto* expressionFunction = compiler->getRuntime()->getScriptFunction(id);
                     const auto* returnType = expressionFunction->getReturnType();
                     if (returnType == nullptr || returnType->isVoid()) {
                         compiler->reportInternalError("Format string expression has no resolved value type");
@@ -1768,7 +1768,7 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
             return false;
         }
 
-        auto parentFunction = compiler->getRuntime()->getFunction(parentId);
+        auto parentFunction = compiler->getRuntime()->getScriptFunction(parentId);
 
         if (parentFunction == nullptr) {
             compiler->reportInternalError("Failed to retrieve parent function during capture resolution");
@@ -1810,7 +1810,7 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
             throw NomadBug("Failed to retrieve parent function during capture propagation");
         }
 
-        const auto parentFunction = compiler->getRuntime()->getFunction(parentId);
+        const auto parentFunction = compiler->getRuntime()->getScriptFunction(parentId);
 
         if (parentFunction == nullptr) {
             throw NomadBug("Failed to retrieve parent function during capture propagation");

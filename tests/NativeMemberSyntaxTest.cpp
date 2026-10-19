@@ -84,7 +84,7 @@ BOOST_AUTO_TEST_CASE(resolves_chained_members_on_function_return) {
     CompilerContext context(compiler.get());
 
     const auto functionId = runtime.registerScriptFunction("getName", "getName.nomad", "return \"Nomad\"");
-    runtime.getFunction(functionId)->setReturnType(runtime.getStringType());
+    runtime.getScriptFunction(functionId)->setReturnType(runtime.getStringType());
 
     auto expression = parseExpression(context, nullptr, "getName.toUpper.length");
 

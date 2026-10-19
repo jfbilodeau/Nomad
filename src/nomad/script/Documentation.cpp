@@ -212,7 +212,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
             }
             constantTextValue = std::format("\"{}\"", escaped);
         } else if (constant.type == runtime->getFunctionType()) {
-            constantTextValue = runtime->getFunction(constant.value.getIdValue())->getName();
+            constantTextValue = runtime->getScriptFunction(constant.value.getIdValue())->getName();
         } else {
             constantTextValue = "<unknown_type>";
         }
@@ -320,7 +320,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
         NomadString name;
         FunctionType functionType;
         NomadString doc;
-        std::vector<ParameterDefinition> parameters;
+        std::vector<Parameter> parameters;
         const Type* returnType = nullptr;
     };
 
@@ -348,7 +348,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     runtime->getFunctions(scriptFunctions);
 
     for (auto function: scriptFunctions) {
-        std::vector<ParameterDefinition> parameters;
+        std::vector<Parameter> parameters;
 
         for (NomadIndex i = 0; i < function->getParameterCount(); i++) {
             auto name = function->getParameterName(toNomadId(i));

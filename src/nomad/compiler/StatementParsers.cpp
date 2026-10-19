@@ -104,7 +104,7 @@ bool preParseFunStatement(CompilerContext* context, ScriptFunction* function, To
         return false;
     }
 
-    auto fun = context->getRuntime()->getFunction(funId);
+    auto fun = context->getRuntime()->getScriptFunction(funId);
 
     // Parse parameters.
     return preParseParamsStatement(context, fun, tokens);
@@ -202,7 +202,7 @@ std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptFun
     tokens->nextLine();
 
     auto funId =  context->getRuntime()->getFunctionId(funName);
-    auto funFunction = context->getRuntime()->getFunction(funId);
+    auto funFunction = context->getRuntime()->getScriptFunction(funId);
 
     if (funFunction == nullptr) {
         // Pre-parsing failed to register the function and already reported why.
@@ -832,7 +832,7 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
         if (handlerFunctionId == NOMAD_INVALID_ID) {
             return nullptr;
         }
-        auto handlerFunction = context->getRuntime()->getFunction(handlerFunctionId);
+        auto handlerFunction = context->getRuntime()->getScriptFunction(handlerFunctionId);
 
         // Parse parameters (names only for now)
         const auto declarationLine = tokens->getLineIndex();

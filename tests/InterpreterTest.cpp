@@ -167,10 +167,10 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
     compiler->registerSources(&compilation, {{{"answer", {"answer.nomad", "return 3"}}}, {}});
     BOOST_REQUIRE(compiler->compileFunctions(&compilation));
     const auto parentId = runtime.registerScriptFunction("parent", "frame.nomad", "");
-    auto* parent = runtime.getFunction(parentId);
+    auto* parent = runtime.getScriptFunction(parentId);
     parent->registerVariable("uncaptured", runtime.getIntegerType());
     const auto id = runtime.registerScriptFunction("frame", "frame.nomad", "");
-    auto* function = runtime.getFunction(id);
+    auto* function = runtime.getScriptFunction(id);
     function->setParentId(parentId);
     function->addParameter("value", runtime.getIntegerType());
     function->addParameter("text", runtime.getStringType());

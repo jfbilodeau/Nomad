@@ -658,7 +658,7 @@ void Compiler::addFreeValue(const InstructionFn freeOpCode, const NomadIndex ope
 }
 
 NomadIndex Compiler::addFunctionCall(const NomadId targetFunctionId, ScriptFunction* function, const ArgumentList* arguments) {
-    const auto targetFunction = getRuntime()->getFunction(targetFunctionId);
+    const auto targetFunction = getRuntime()->getScriptFunction(targetFunctionId);
 
     if (targetFunction == nullptr) {
         reportInternalError("Unknown function id: " + toString(targetFunctionId));
@@ -809,7 +809,7 @@ void Compiler::setIndex(NomadIndex index, NomadIndex value) {
 }
 
 void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scriptFile) {
-    auto function = m_runtime->getFunction(scriptFile.functionId);
+    auto function = m_runtime->getScriptFunction(scriptFile.functionId);
     auto& tokens = *scriptFile.tokens;
 
     tokens.reset();
@@ -835,7 +835,7 @@ void Compiler::parseFunction(CompilerContext* context, ScriptCompilation& file) 
 
     // Statements with errors are skipped so the following lines are still parsed.
     while (tokens.nextLine()) {
-        const auto function = m_runtime->getFunction(file.functionId);
+        const auto function = m_runtime->getScriptFunction(file.functionId);
 
         auto statement = parser::parseLine(context, function, &tokens);
 
@@ -992,7 +992,7 @@ NomadId Compiler::createFunction(
     const auto& source = getScript(scriptId).source;
     const auto existingFunctionId = m_runtime->getFunctionId(functionName);
     if (existingFunctionId != NOMAD_INVALID_ID) {
-        const auto* existingFunction = m_runtime->getFunction(existingFunctionId);
+        const auto* existingFunction = m_runtime->getScriptFunction(existingFunctionId);
         context->reportError(
             "Function name '" + functionName + "' is already used by '" + existingFunction->getPath() + "'",
             source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
@@ -1006,7 +1006,7 @@ NomadId Compiler::createFunction(
         return NOMAD_INVALID_ID;
     }
 
-    auto function = m_runtime->getFunction(functionId);
+    auto function = m_runtime->getScriptFunction(functionId);
 
     m_functions.emplace_back(FunctionCompilation {
         scriptId,
@@ -1186,7 +1186,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     // Parsing a placeholder can append nested format literals to the queue.
     for (auto index = NomadIndex{0}; index < m_pendingFormatStrings.size(); ++index) {
         const auto pending = std::move(m_pendingFormatStrings[index]);
-        auto* function = m_runtime->getFunction(pending.functionId);
+        auto* function = m_runtime->getScriptFunction(pending.functionId);
         reportExceptions(function->getPath(), [&] {
             (void)pending.literal->parsePlaceholders(context, function, pending.sourceContent);
         });
@@ -1307,7 +1307,7 @@ void Compiler::addReturningFunction(const NomadId functionId) {
 
 void Compiler::linkFunctions() {
     for (auto& link: m_functionLinks) {
-        auto function = m_runtime->getFunction(link.functionId);
+        auto function = m_runtime->getScriptFunction(link.functionId);
 
         if (function == nullptr) {
             reportInternalError("Failed to link function '" + toString(link.functionId) + "'");

@@ -171,25 +171,23 @@ BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_ca
     BOOST_TEST(runtime.getNextNativeFunctionId(first) == last);
     BOOST_TEST(runtime.getNativeFunctionId("catalogMethod") == NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getNativeMemberId(type, "catalogMethod") == method);
-    NativeMethodDefinition methodDefinition;
-    BOOST_REQUIRE(runtime.getNativeMethodDefinition(method, methodDefinition));
-    BOOST_TEST(methodDefinition.id == method);
-    BOOST_TEST(methodDefinition.objectType == type);
-    std::vector<NativeFunctionDefinition> functions;
-    runtime.getNativeFunctions(functions);
+    const auto* methodCallable = runtime.getNativeMethod(method);
+    BOOST_REQUIRE(methodCallable != nullptr);
+    BOOST_TEST(methodCallable->getObjectType() == type);
+    const auto functions = runtime.getNativeFunctions();
     NomadIndex enumerated = 0;
     for (auto id = runtime.getFirstNativeFunctionId(); id != NOMAD_INVALID_ID;
          id = runtime.getNextNativeFunctionId(id)) {
-        NativeFunctionDefinition definition;
-        BOOST_REQUIRE(runtime.getNativeFunctionDefinition(id, definition));
-        BOOST_TEST(definition.objectType == nullptr);
-        BOOST_TEST(definition.name != "catalogMethod");
+        const auto* function = runtime.getNativeFunction(id);
+        BOOST_REQUIRE(function != nullptr);
+        BOOST_TEST(function->getObjectType() == nullptr);
+        BOOST_TEST(function->getName() != "catalogMethod");
         ++enumerated;
     }
     BOOST_TEST(enumerated == functions.size());
-    for (const auto& definition : functions) {
-        BOOST_TEST(definition.objectType == nullptr);
-        BOOST_TEST(definition.name != "catalogMethod");
+    for (const auto* function : functions) {
+        BOOST_TEST(function->getObjectType() == nullptr);
+        BOOST_TEST(function->getName() != "catalogMethod");
     }
     BOOST_TEST(runtime.registerNativeMethod(
         nullptr, "invalid", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
@@ -379,7 +377,7 @@ BOOST_AUTO_TEST_CASE(indexer_callbacks_release_operands_and_partial_results_on_f
         auto machine = runtime.createVirtualMachine();
         const auto before = NomadObject::getLiveObjectCount();
         for (auto attempt = 0; attempt < 2; ++attempt) {
-            BOOST_CHECK_THROW(machine->run(runtime.getFunction(id), {}), VirtualMachineException);
+            BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(id), {}), VirtualMachineException);
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
             BOOST_CHECK_THROW(machine->getThis(), VirtualMachineException);
         }

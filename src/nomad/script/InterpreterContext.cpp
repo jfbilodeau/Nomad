@@ -333,7 +333,7 @@ void InterpreterContext::setParameterResult(const NomadId parameterId) {
 }
 
 void InterpreterContext::evaluateFunctionCall(const NomadId functionId, const std::vector<RuntimeValue>& arguments) {
-    const auto* function = getRuntime()->getFunction(functionId);
+    const auto* function = getRuntime()->getScriptFunction(functionId);
     if (function == nullptr || function->getReturnType() == nullptr) {
         throw NomadBug("Invalid interpreted function call");
     }

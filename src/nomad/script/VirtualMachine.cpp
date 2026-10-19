@@ -413,7 +413,7 @@ std::vector<TypedValue> VirtualMachine::captureCurrentFrame(const ScriptFunction
     if (function == nullptr || function->getParentId() == NOMAD_INVALID_ID) {
         fault("Invalid function for current-frame capture");
     }
-    const auto* parent = m_runtime->getFunction(function->getParentId());
+    const auto* parent = m_runtime->getScriptFunction(function->getParentId());
     if (parent == nullptr || parent != getCurrentFunction()) {
         fault("Format expression does not belong to the current script frame");
     }
@@ -442,7 +442,7 @@ std::vector<TypedValue> VirtualMachine::captureCurrentFrame(const ScriptFunction
 }
 
 std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, const NomadId functionId) const {
-    const auto function = runtime->getFunction(functionId);
+    const auto function = runtime->getScriptFunction(functionId);
 
     if (function == nullptr) {
         return nullptr;

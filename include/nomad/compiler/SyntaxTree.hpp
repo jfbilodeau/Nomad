@@ -24,6 +24,7 @@ class FunStatementNode;  // Defined in StatementParsers.hpp
 class InterpreterContext;
 class TypedValue;
 class Runtime;
+class ScriptFunction;
 class FunctionBuilder;
 
 // Forward declarations in file

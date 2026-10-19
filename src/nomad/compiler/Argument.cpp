@@ -260,7 +260,7 @@ NomadId CallbackArgument::getFunctionId() const {
 
 void CallbackArgument::onResolve(CompilerContext* context, ScriptFunction* function) {
     const auto* callbackType = getType() == nullptr ? nullptr : getType()->asCallback();
-    const auto* callbackFunction = context->getRuntime()->getFunction(m_functionId);
+    const auto* callbackFunction = context->getRuntime()->getScriptFunction(m_functionId);
 
     if (callbackType == nullptr || callbackFunction == nullptr) {
         return;
@@ -291,7 +291,7 @@ void CallbackArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*
 
 TypedValue CallbackArgument::onEvaluate(InterpreterContext& context) const {
     const auto* runtime = context.getRuntime();
-    const auto* function = runtime->getFunction(m_functionId);
+    const auto* function = runtime->getScriptFunction(m_functionId);
     const auto* callbackType = getType() == nullptr ? nullptr : getType()->asCallback();
 
     if (function == nullptr) {

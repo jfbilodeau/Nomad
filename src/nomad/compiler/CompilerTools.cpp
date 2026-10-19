@@ -99,7 +99,7 @@ void validateEntryFunction(
     }
 
     const auto functionId = runtime->getFunctionId(entryFunction);
-    const auto* function = runtime->getFunction(functionId);
+    const auto* function = runtime->getScriptFunction(functionId);
     NomadString message;
 
     if (function == nullptr) {
@@ -144,7 +144,7 @@ InstructionDumpResult dumpInstructions(
 
     if (functionName) {
         const auto functionId = artifacts.runtime->getFunctionId(*functionName);
-        const auto* function = artifacts.runtime->getFunction(functionId);
+        const auto* function = artifacts.runtime->getScriptFunction(functionId);
 
         if (function == nullptr) {
             result.compilation.diagnostics.push_back(Diagnostic{

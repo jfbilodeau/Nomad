@@ -34,7 +34,7 @@ BOOST_AUTO_TEST_CASE(checks_named_in_memory_sources_without_reading_files)
 
     BOOST_REQUIRE(result.succeeded());
     BOOST_TEST(runtime.getFunctionId("helpers.answer") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getFunction(runtime.getFunctionId("init"))->getPath() == "untitled:init");
+    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("init"))->getPath() == "untitled:init");
 }
 
 BOOST_AUTO_TEST_CASE(checks_editor_text_instead_of_disk_contents)
@@ -76,8 +76,8 @@ BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_compilation)
     }, {}};
 
     BOOST_REQUIRE(checkSources(batch, &runtime).succeeded());
-    const auto* main = runtime.getFunction(runtime.getFunctionId("main"));
-    const auto* outer = runtime.getFunction(runtime.getFunctionId("outer"));
+    const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+    const auto* outer = runtime.getScriptFunction(runtime.getFunctionId("outer"));
     const auto* callback = runtime.getFunctionAtLine("editor:main", 4);
     BOOST_REQUIRE(callback != nullptr);
     BOOST_TEST(callback->getParentId() == outer->getId());
@@ -94,7 +94,7 @@ BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_compilation)
     BOOST_TEST(runtime.getFunctionAtLine("editor:main", 8) == nullptr);
     BOOST_TEST(runtime.getFunctionAtLine("editor:missing", 1) == nullptr);
     BOOST_TEST(runtime.getFunctionAtLine("editor:other", 1) ==
-        runtime.getFunction(runtime.getFunctionId("other")));
+        runtime.getScriptFunction(runtime.getFunctionId("other")));
 }
 
 BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_type_errors)

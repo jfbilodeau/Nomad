@@ -99,7 +99,7 @@ NomadString FormatString::format(VirtualMachine *interpreter) const {
     NomadString string;
 
     const auto appendFunction = [&](const Segment& segment, const bool captureFrame) {
-        const auto* function = interpreter->getRuntime()->getFunction(segment.variableId);
+        const auto* function = interpreter->getRuntime()->getScriptFunction(segment.variableId);
         if (function == nullptr || segment.valueType == nullptr || segment.valueType->isVoid() ||
             function->getReturnType() != segment.valueType) {
             interpreter->fault("Internal error: Invalid function in format string segment");

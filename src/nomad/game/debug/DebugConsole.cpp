@@ -1354,7 +1354,7 @@ void DebugConsole::renderFunctionInspector() {
 
             const auto* selectedFunction = m_selectedFunctionId == NOMAD_INVALID_ID
                 ? nullptr
-                : m_game->getRuntime()->getFunction(m_selectedFunctionId);
+                : m_game->getRuntime()->getScriptFunction(m_selectedFunctionId);
             if (ImGui::BeginCombo(
                 "##function",
                 selectedFunction != nullptr ? selectedFunction->getName().c_str() : "<select function>"
@@ -1384,7 +1384,7 @@ void DebugConsole::renderFunctionInspector() {
                 );
                 ImGui::Separator();
                 ImGui::BeginChild("FunctionSource");
-                ImGui::TextUnformatted(selectedFunction->getSource().c_str());
+                ImGui::TextUnformatted(selectedFunction->getSourceCode().c_str());
                 ImGui::EndChild();
             }
 

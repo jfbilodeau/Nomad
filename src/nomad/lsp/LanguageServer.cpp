@@ -224,7 +224,7 @@ ApiAnalysis analyzeApiSymbols(
     }
     std::set<NomadString> localNames;
     for (auto* function = runtime->getFunctionAtLine(uri, line); function;
-        function = runtime->getFunction(function->getParentId())) {
+        function = runtime->getScriptFunction(function->getParentId())) {
         const auto addLocal = [&](const NomadString& name, const Type* type) {
             if (!localNames.insert(name).second) return;
             const auto typeName = type ? type->getTypeName() : "unknown";

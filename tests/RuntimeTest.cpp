@@ -40,8 +40,8 @@ BOOST_AUTO_TEST_CASE(runtime_owns_registered_functions_and_exposes_observer_view
         BOOST_TEST(firstFunctionId != NOMAD_INVALID_ID);
         BOOST_TEST(secondFunctionId == firstFunctionId + 1);
         BOOST_TEST(runtime.getFunctionCount() == 2U);
-        BOOST_TEST(runtime.getFunction(firstFunctionId) != nullptr);
-        BOOST_TEST(runtime.getFunction(secondFunctionId) != nullptr);
+        BOOST_TEST(runtime.getScriptFunction(firstFunctionId) != nullptr);
+        BOOST_TEST(runtime.getScriptFunction(secondFunctionId) != nullptr);
         BOOST_TEST(runtime.getFunctionId("first") == firstFunctionId);
         BOOST_TEST(runtime.getFunctionName(secondFunctionId).value() == "second");
 
@@ -49,8 +49,8 @@ BOOST_AUTO_TEST_CASE(runtime_owns_registered_functions_and_exposes_observer_view
         runtime.getFunctions(functions);
 
         BOOST_TEST(functions.size() == 2U);
-        BOOST_TEST(functions[0] == runtime.getFunction(firstFunctionId));
-        BOOST_TEST(functions[1] == runtime.getFunction(secondFunctionId));
+        BOOST_TEST(functions[0] == runtime.getScriptFunction(firstFunctionId));
+        BOOST_TEST(functions[1] == runtime.getScriptFunction(secondFunctionId));
     }
 }
 
@@ -63,9 +63,9 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_and_duplicate_function_ids)
     BOOST_TEST(functionId != NOMAD_INVALID_ID);
     BOOST_TEST(runtime.registerScriptFunction("function", "duplicate.nomad", "") == NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getFunctionCount() == 1U);
-    BOOST_TEST(runtime.getFunction(NOMAD_INVALID_ID) == nullptr);
-    BOOST_TEST(runtime.getFunction(-2) == nullptr);
-    BOOST_TEST(runtime.getFunction(1) == nullptr);
+    BOOST_TEST(runtime.getScriptFunction(NOMAD_INVALID_ID) == nullptr);
+    BOOST_TEST(runtime.getScriptFunction(-2) == nullptr);
+    BOOST_TEST(runtime.getScriptFunction(1) == nullptr);
     BOOST_TEST(!runtime.getFunctionName(NOMAD_INVALID_ID).has_value());
     BOOST_TEST(!runtime.getFunctionName(-2).has_value());
     BOOST_TEST(!runtime.getFunctionName(1).has_value());
@@ -77,15 +77,15 @@ BOOST_AUTO_TEST_CASE(runtime_source_lookup_ignores_unknown_ranges_and_prefers_in
     const auto outerId = runtime.registerScriptFunction("outer", "source.nomad", "");
     const auto innerId = runtime.registerScriptFunction("inner", "source.nomad", "");
     const auto unparsedId = runtime.registerScriptFunction("unparsed", "source.nomad", "");
-    const auto* unparsed = runtime.getFunction(unparsedId);
+    const auto* unparsed = runtime.getScriptFunction(unparsedId);
 
     BOOST_TEST(unparsed->getSourceStartLine() == NOMAD_INVALID_INDEX);
     BOOST_TEST(unparsed->getSourceEndLine() == NOMAD_INVALID_INDEX);
     BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 1) == nullptr);
     BOOST_TEST(runtime.getFunctionAtLine("source.nomad", NOMAD_INVALID_INDEX) == nullptr);
 
-    auto* outer = runtime.getFunction(outerId);
-    auto* inner = runtime.getFunction(innerId);
+    auto* outer = runtime.getScriptFunction(outerId);
+    auto* inner = runtime.getScriptFunction(innerId);
     outer->setSourceLineRange(1, 4);
     inner->setSourceLineRange(2, 3);
     inner->setParentId(outerId);

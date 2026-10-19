@@ -89,7 +89,7 @@ BOOST_AUTO_TEST_CASE(constructor_faults_and_null_factories_release_object_argume
         const auto before = NomadObject::getLiveObjectCount();
         auto machine = runtime.createVirtualMachine();
         for (auto attempt = 0; attempt < 2; ++attempt) {
-            BOOST_CHECK_THROW(machine->run(runtime.getFunction(id), {}), NomadException);
+            BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(id), {}), NomadException);
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
         }
         {
@@ -209,7 +209,7 @@ BOOST_AUTO_TEST_CASE(overloads_select_by_argument_types_and_count_with_distinct_
     const auto* emptyType = registerObjectType(runtime, "Empty");
     const auto* exampleType = registerObjectType(runtime, "Example");
     NomadString calls;
-    const auto registerFactory = [&](const std::vector<ParameterDefinition>& parameters,
+    const auto registerFactory = [&](const std::vector<Parameter>& parameters,
                                      const ObjectType* type, const NomadString& marker) {
         BOOST_REQUIRE(runtime.registerNativeConstructor(
             exampleType, parameters, type,

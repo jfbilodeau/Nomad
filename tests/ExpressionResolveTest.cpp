@@ -41,12 +41,13 @@ BOOST_AUTO_TEST_CASE(statement_resolve_reports_errors_in_call_arguments)
     ScriptFunction function(NOMAD_INVALID_ID, "test", "", "");
     CompilerContext context(compiler.get());
 
-    NativeFunctionDefinition definition{};
-    definition.id = 0;
-    definition.name = "log";
-    definition.returnType = runtime.getVoidType();
+    const auto nativeId = runtime.registerNativeFunction(
+        "log", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    );
+    const auto* nativeFunction = runtime.getNativeFunction(nativeId);
+    BOOST_REQUIRE(nativeFunction != nullptr);
 
-    NativeFunctionStatementNode statement(1, 0, definition);
+    NativeFunctionStatementNode statement(1, 0, nativeFunction);
     statement.addArgument(createExpressionArgument(
         1,
         4,
@@ -150,7 +151,7 @@ BOOST_AUTO_TEST_CASE(compile_functions_infers_return_type_of_function_resolved_l
 
     BOOST_TEST(compiler->compileFunctions(&context));
     BOOST_TEST(context.getErrorCount() == 0);
-    BOOST_TEST(runtime.getFunction(runtime.getFunctionId("b"))->getReturnType() == runtime.getIntegerType());
+    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("b"))->getReturnType() == runtime.getIntegerType());
 }
 
 BOOST_AUTO_TEST_CASE(compile_functions_infers_recursive_return_type_from_later_return)
@@ -203,7 +204,7 @@ BOOST_AUTO_TEST_CASE(compile_functions_treats_function_without_return_as_void)
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
     BOOST_TEST(context.getDiagnostics()[0].message == "Function 'noValue' does not return a value");
-    BOOST_TEST(runtime.getFunction(runtime.getFunctionId("noValue"))->getReturnType() == runtime.getVoidType());
+    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("noValue"))->getReturnType() == runtime.getVoidType());
 }
 
 BOOST_AUTO_TEST_CASE(compile_functions_reports_non_boolean_if_condition_while_resolving)

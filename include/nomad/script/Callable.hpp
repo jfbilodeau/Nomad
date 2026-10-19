@@ -6,7 +6,6 @@
 
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/RuntimeValue.hpp>
-#include <nomad/script/VirtualMachine.hpp>
 
 #include <functional>
 #include <span>
@@ -18,18 +17,19 @@ namespace nomad {
 class NomadObject;
 class ObjectTypeBase;
 class Type;
+class VirtualMachine;
 
 using NativeFunctionFn = std::function<void(VirtualMachine*)>;
 
 using ConstructorFactory = std::function<NomadObject*(std::span<const RuntimeValue>)>;
 
-struct ParameterDefinition {
+struct Parameter {
     NomadString name;
     const Type* type;
     NomadDocField;
 };
 
-ParameterDefinition defParameter(const NomadString& name, const Type* type, NomadDocArg);
+Parameter defParameter(const NomadString& name, const Type* type, NomadDocArg);
 
 enum class CallableType {
     Function = 1,
@@ -54,7 +54,7 @@ public:
     [[nodiscard]] const NomadString& getName() const { return m_name; }
     [[nodiscard]] CallableType getType() const { return m_type; }
     [[nodiscard]] CallableSource getSource() const { return m_source; }
-    [[nodiscard]] const std::vector<ParameterDefinition>& getParameters() const { return m_parameters; }
+    [[nodiscard]] const std::vector<Parameter>& getParameters() const { return m_parameters; }
     [[nodiscard]] NomadIndex getParameterCount() const { return m_parameters.size(); }
     // The type of the value the callable yields; void when it yields nothing.
     [[nodiscard]] const Type* getReturnType() const { return m_returnType; }
@@ -68,7 +68,7 @@ protected:
         CallableType type,
         CallableSource source,
         NomadString name,
-        std::vector<ParameterDefinition> parameters,
+        std::vector<Parameter> parameters,
         const Type* returnType,
         const Type* objectType,
         NomadString doc
@@ -85,7 +85,7 @@ protected:
 
     void setId(const NomadId id) { m_id = id; }
     void setReturnType(const Type* returnType) { m_returnType = returnType; }
-    [[nodiscard]] std::vector<ParameterDefinition>& getEditableParameters() { return m_parameters; }
+    [[nodiscard]] std::vector<Parameter>& getEditableParameters() { return m_parameters; }
 
 private:
     friend class Runtime; // Assigns the id when the callable joins the function table.
@@ -94,7 +94,7 @@ private:
     NomadString m_name;
     CallableType m_type;
     CallableSource m_source;
-    std::vector<ParameterDefinition> m_parameters;
+    std::vector<Parameter> m_parameters;
     const Type* m_returnType;
     const Type* m_objectType;
     NomadString m_doc;
@@ -106,7 +106,7 @@ protected:
     Function(
         const CallableSource source,
         NomadString name,
-        std::vector<ParameterDefinition> parameters,
+        std::vector<Parameter> parameters,
         const Type* returnType,
         NomadString doc
     ):
@@ -122,7 +122,7 @@ protected:
         const CallableSource source,
         NomadString name,
         const Type* objectType,
-        std::vector<ParameterDefinition> parameters,
+        std::vector<Parameter> parameters,
         const Type* returnType,
         NomadString doc
     ):
@@ -138,7 +138,7 @@ protected:
         const CallableSource source,
         NomadString name,
         const Type* objectType,
-        std::vector<ParameterDefinition> parameters,
+        std::vector<Parameter> parameters,
         const Type* createdType,
         NomadString doc
     ):
@@ -152,7 +152,7 @@ public:
     NativeFunction(
         NomadString name,
         NativeFunctionFn fn,
-        std::vector<ParameterDefinition> parameters,
+        std::vector<Parameter> parameters,
         const Type* returnType,
         NomadString doc
     ):
@@ -173,7 +173,7 @@ public:
         NomadString name,
         const Type* objectType,
         NativeFunctionFn fn,
-        std::vector<ParameterDefinition> parameters,
+        std::vector<Parameter> parameters,
         const Type* returnType,
         NomadString doc
     ):
@@ -195,7 +195,7 @@ public:
         const Type* objectType,
         const Type* createdType,
         ConstructorFactory factory,
-        std::vector<ParameterDefinition> parameters,
+        std::vector<Parameter> parameters,
         NomadString doc
     ):
         Constructor(CallableSource::Native, std::move(name), objectType, std::move(parameters), createdType, std::move(doc)),
@@ -212,7 +212,7 @@ private:
 struct NativeFunctionDefinition {
     NomadId id = NOMAD_INVALID_ID;
     NomadString name;
-    std::vector<ParameterDefinition> parameters;
+    std::vector<Parameter> parameters;
     const Type* returnType = nullptr;
     NomadDocField;
 };
@@ -221,7 +221,7 @@ struct NativeMethodDefinition {
     NomadId id = NOMAD_INVALID_ID;
     const Type* objectType = nullptr;
     NomadString name;
-    std::vector<ParameterDefinition> parameters;
+    std::vector<Parameter> parameters;
     const Type* returnType = nullptr;
     NomadDocField;
 };
@@ -230,29 +230,10 @@ struct ConstructorDefinition {
     NomadId id = NOMAD_INVALID_ID;
     const Type* objectType = nullptr;
     NomadString name;
-    std::vector<ParameterDefinition> parameters;
+    std::vector<Parameter> parameters;
     const Type* returnType = nullptr;
     ConstructorFactory factory;
     NomadDocField;
-};
-
-class ScriptFunction;
-
-// Functions compiled from Nomad source. Parameters are known as soon as the declaration is parsed; the return type
-// stays null until the body has been compiled.
-class ScriptFunctionDefinition : public Function {
-public:
-    ScriptFunctionDefinition(const NomadId id, NomadString name):
-        Function(CallableSource::Script, std::move(name), {}, nullptr, {})
-    {
-        setId(id);
-    }
-
-    using Callable::setId;
-    using Callable::setReturnType;
-    using Callable::getEditableParameters;
-
-    ScriptFunction* function = nullptr; // Owned by `Runtime`.
 };
 
 // Where a callable is implemented. Both kinds are called with the same syntax in Nomad code.

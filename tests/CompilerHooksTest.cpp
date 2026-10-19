@@ -30,7 +30,7 @@ BOOST_AUTO_TEST_CASE(executable_hooks_follow_phase_and_registration_order)
             compiler->registerSources(hookContext, {{{"answer", {"editor:answer", "return 42"}}}, {}});
         }
         if (phase == CompilationPhase::Emit) {
-            const auto* function = runtime.getFunction(runtime.getFunctionId("answer"));
+            const auto* function = runtime.getScriptFunction(runtime.getFunctionId("answer"));
             BOOST_REQUIRE(function != nullptr);
             BOOST_TEST(function->getReturnType() == runtime.getIntegerType());
             BOOST_TEST(runtime.getInstructions().size() == instructionCount);
@@ -95,8 +95,8 @@ BOOST_AUTO_TEST_CASE(analysis_hooks_skip_emission_linking_and_verification)
     BOOST_CHECK(phases == expected);
     BOOST_TEST(!context.hasError());
     BOOST_TEST(runtime.getInstructions().size() == instructionCount);
-    const auto* main = runtime.getFunction(runtime.getFunctionId("main"));
-    const auto* increment = runtime.getFunction(runtime.getFunctionId("increment"));
+    const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+    const auto* increment = runtime.getScriptFunction(runtime.getFunctionId("increment"));
     BOOST_REQUIRE(main != nullptr);
     BOOST_REQUIRE(increment != nullptr);
     BOOST_TEST(main->getReturnType() == runtime.getIntegerType());
@@ -258,8 +258,8 @@ BOOST_AUTO_TEST_CASE(analysis_tool_resolves_types_without_function_instructions)
 
     BOOST_REQUIRE(result.succeeded());
     BOOST_TEST(runtime.getInstructions().size() == 1U);
-    const auto* answer = runtime.getFunction(runtime.getFunctionId("answer"));
-    const auto* formatted = runtime.getFunction(runtime.getFunctionId("formatted"));
+    const auto* answer = runtime.getScriptFunction(runtime.getFunctionId("answer"));
+    const auto* formatted = runtime.getScriptFunction(runtime.getFunctionId("formatted"));
     BOOST_REQUIRE(answer != nullptr);
     BOOST_REQUIRE(formatted != nullptr);
     BOOST_TEST(answer->getReturnType() == runtime.getIntegerType());

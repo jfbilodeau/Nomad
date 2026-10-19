@@ -154,7 +154,7 @@ BOOST_AUTO_TEST_CASE(array_dimension_values_fail_at_runtime_not_compilation) {
             BOOST_REQUIRE_MESSAGE(compiled, (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
             const auto before = NomadObject::getLiveObjectCount();
             auto machine = runtime.createVirtualMachine();
-            BOOST_CHECK_THROW(machine->run(runtime.getFunction(runtime.getFunctionId("main")), {}), NomadException);
+            BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(runtime.getFunctionId("main")), {}), NomadException);
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
             InterpreterContext evaluation(*machine);
             BOOST_TEST(!Interpreter{}.execute(NomadString(source).substr(7), evaluation));
@@ -583,7 +583,7 @@ BOOST_AUTO_TEST_CASE(compiler_resolves_parameterized_annotations_from_collection
             "return identity values"
         }}}, {}});
         BOOST_REQUIRE(compiler->compileScripts(&context, target));
-        const auto* function = runtime.getFunction(runtime.getFunctionId("init"));
+        const auto* function = runtime.getScriptFunction(runtime.getFunctionId("init"));
         BOOST_REQUIRE(function != nullptr);
         BOOST_TEST(function->getParameterType(0) == runtime.getParameterizedType("List", {runtime.getIntegerType()}));
         BOOST_TEST(function->getParameterType(1)->getTypeName() == "List<List<string>>");

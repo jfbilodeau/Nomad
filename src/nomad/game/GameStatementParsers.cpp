@@ -38,7 +38,7 @@ SelectStatement::SelectStatement(
 
 void SelectStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
     // The predicate is resolved with its own function, which infers the function return type.
-    const auto* predicateFunction = context->getRuntime()->getFunction(m_predicateFunctionId);
+    const auto* predicateFunction = context->getRuntime()->getScriptFunction(m_predicateFunctionId);
 
     if (predicateFunction->getReturnType() != context->getRuntime()->getBooleanType()) {
         reportError(context, function, "`select` expression must be of type boolean");

@@ -226,7 +226,7 @@ BOOST_AUTO_TEST_CASE(dynamic_format_propagates_called_function_faults_and_preser
 #ifdef NOMAD_DEBUG
         const auto liveBefore = RuntimeValue::getLiveStringCount();
 #endif
-        const auto* function = runtime.getFunction(runtime.getFunctionId("main"));
+        const auto* function = runtime.getScriptFunction(runtime.getFunctionId("main"));
         BOOST_CHECK_THROW(machine->run(function, {argument}), VirtualMachineException);
 #ifdef NOMAD_DEBUG
         BOOST_TEST(RuntimeValue::getLiveStringCount() == liveBefore);
@@ -632,7 +632,7 @@ BOOST_AUTO_TEST_CASE(format_string_expression_fault_releases_captures_and_restor
     machine->setIntegerResult(77);
     machine->setIntegerIntermediate(88);
     BOOST_CHECK_EXCEPTION(
-        machine->run(runtime.getFunction(runtime.getFunctionId("main")), {argument}),
+        machine->run(runtime.getScriptFunction(runtime.getFunctionId("main")), {argument}),
         VirtualMachineException,
         [](const VirtualMachineException& exception) { return std::string(exception.what()) == "expression failed"; }
     );
@@ -643,7 +643,7 @@ BOOST_AUTO_TEST_CASE(format_string_expression_fault_releases_captures_and_restor
 #endif
     argument.freeObjectValue();
 
-    machine->run(runtime.getFunction(runtime.getFunctionId("healthy")), {});
+    machine->run(runtime.getScriptFunction(runtime.getFunctionId("healthy")), {});
     BOOST_TEST(machine->getStringResult()->getString() == "3");
     runtime.getStringType()->freeValue(machine->getResult());
 }

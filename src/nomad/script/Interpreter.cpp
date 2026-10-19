@@ -130,7 +130,7 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         const auto functionId = firstToken.type == TokenType::Identifier
             ? evaluation.m_runtime->getFunctionId(firstToken.textValue)
             : NOMAD_INVALID_ID;
-        const auto* function = functionId == NOMAD_INVALID_ID ? nullptr : evaluation.m_runtime->getFunction(functionId);
+        const auto* function = functionId == NOMAD_INVALID_ID ? nullptr : evaluation.m_runtime->getScriptFunction(functionId);
         const auto isValueReturningCall =
             (nativeFunction != nullptr && nativeFunction->getReturnType() != nullptr && !nativeFunction->getReturnType()->isVoid()) ||
             (function != nullptr && function->getReturnType() != nullptr && !function->getReturnType()->isVoid());

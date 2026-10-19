@@ -1799,7 +1799,7 @@ bool Game::processGameEventCreateEntity(const GameEventCreateEntity &event) {
 
         if (event.initFunctionId != NOMAD_INVALID_ID) {
             // Set entity name to be the name of its init function.
-            auto function = m_runtime->getFunction(event.initFunctionId);
+            auto function = m_runtime->getScriptFunction(event.initFunctionId);
             
             if (function) {
                 entityPtr->setName(function->getName());

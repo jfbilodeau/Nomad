@@ -183,7 +183,7 @@ BOOST_AUTO_TEST_CASE(functions_keep_their_script_identity_across_registration_an
             ++generatedCount;
             BOOST_TEST(compiler->getScriptId(function->getId()) == scriptId);
             BOOST_TEST(function->getPath() == "editor:z");
-            BOOST_TEST(function->getSource() == text);
+            BOOST_TEST(function->getSourceCode() == text);
         }
     }
     BOOST_TEST(generatedCount == 1U);
