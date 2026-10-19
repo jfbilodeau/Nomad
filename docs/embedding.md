@@ -324,12 +324,20 @@ not use implicit conversions or guess a common type. Returned type arguments
 follow the family's type-parameter order, not constructor argument order.
 Deduction neither creates specializations nor invokes constructors.
 
-The parser accepts omitted constructor type arguments for families with a
-registered inference signature, preserving the family name until resolution.
-Families without a signature require explicit type arguments. Constructor
-resolution is not yet connected to deduction, so executable scripts must still
-supply explicit type arguments. Hosts must still register each specialization's
-constructor with `registerNativeConstructor`.
+Scripts can omit constructor type arguments for families with a registered
+inference signature. The constructor arguments' static types determine the
+specialization; the assignment destination does not participate. Explicit type
+arguments bypass deduction. Families without a signature still require explicit
+type arguments.
+
+For a two-parameter family with the `Pair` signature above, `new Pair "key" 1`
+selects `Pair<string int>`. Argument expressions can include variables and nested
+inferred constructors. Deduction does not execute argument expressions.
+The selected specialization is reused through the normal type registry, and its
+concrete constructor must still match the arguments. Hosts register that
+constructor with `registerNativeConstructor`, usually in the type-family
+initializer. Compiled scripts and the interpreter both support inferred
+construction through the existing native constructor execution paths.
 
 ### Native object types and constructors
 

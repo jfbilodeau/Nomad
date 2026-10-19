@@ -1109,22 +1109,34 @@ ConstructorExpression::ConstructorExpression(
 
 void ConstructorExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
     m_constructor = nullptr;
-    if (m_objectType == nullptr) {
-        reportError(context, function, "Constructor type inference for '" + m_constructorName +
-            "' is not yet available; supply explicit type arguments");
-        return;
-    }
-    const auto* runtime = context->getRuntime();
+    auto* runtime = context->getRuntime();
     auto& arguments = m_arguments.getArguments();
 
     // Arguments without a type of their own (such as source arguments) match any parameter.
     std::vector<const Type*> argumentTypes;
     argumentTypes.reserve(arguments.size());
+    const auto errorCount = context->getErrorCount();
     for (const auto& argument : arguments) {
         argumentTypes.push_back(argument->resolveOverloadType(context, function));
     }
+    if (m_objectType == nullptr && context->getErrorCount() != errorCount) {
+        return;
+    }
 
-    const auto resolution = runtime->resolveConstructor(m_objectType, argumentTypes);
+    const auto* objectType = m_objectType;
+    if (objectType == nullptr) {
+        const auto inference = runtime->inferNativeConstructorTypeArguments(m_constructorName, argumentTypes);
+        if (!inference.isResolved()) {
+            reportError(context, function, inference.error);
+            return;
+        }
+        objectType = runtime->getParameterizedType(m_constructorName, inference.typeArguments);
+        if (objectType == nullptr) {
+            reportError(context, function, "Cannot specialize inferred constructor '" + m_constructorName + "'");
+            return;
+        }
+    }
+    const auto resolution = runtime->resolveConstructor(objectType, argumentTypes);
     if (resolution.status != ResolveStatus::Resolved) {
         reportError(context, function, runtime->describeResolveFailure(m_constructorName, resolution));
         return;
