@@ -5,7 +5,7 @@
 #include <nomad/compiler/CompilerTools.hpp>
 
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 
 #include <boost/test/unit_test.hpp>
 

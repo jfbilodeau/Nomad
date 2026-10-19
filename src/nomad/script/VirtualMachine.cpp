@@ -6,7 +6,7 @@
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <nomad/script/VirtualMachine.hpp>
@@ -206,7 +206,7 @@ void VirtualMachine::callNativeFunction(const NomadId nativeFunctionId) {
 }
 
 void VirtualMachine::callNativeMethod(const NomadId memberId, const RuntimeValue& receiver) {
-    const auto* method = m_runtime->getNativeMethod(memberId);
+    const auto* method = m_runtime->getNativeMemberMethod(memberId);
     if (method == nullptr || !method->getFn()) {
         fault("Invalid native method id: " + toString(memberId));
     }
@@ -358,7 +358,7 @@ void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std
 
 void VirtualMachine::runNativeMethod(const NomadId memberId, const std::vector<RuntimeValue>& args,
                                         RuntimeValue& receiver) {
-    const auto* method = m_runtime->getNativeMethod(memberId);
+    const auto* method = m_runtime->getNativeMemberMethod(memberId);
     if (method == nullptr) {
         fault("Invalid native method id: " + toString(memberId));
     }

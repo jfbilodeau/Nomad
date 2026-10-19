@@ -138,7 +138,7 @@ bool parseNativeMemberArguments(CompilerContext* context, ScriptFunction* functi
         return true;
     }
 
-    const auto* definition = context->getRuntime()->getNativeMethod(representativeId);
+    const auto* definition = context->getRuntime()->getNativeMemberMethod(representativeId);
     if (definition == nullptr) {
         context->getCompiler()->reportInternalError("Invalid native method shape: " + memberName);
         return false;
@@ -166,7 +166,7 @@ std::unique_ptr<Expression> createNativeMemberExpression(
             return nullptr;
         }
 
-        const auto* method = context->getRuntime()->getNativeMethod(overloads.front());
+        const auto* method = context->getRuntime()->getNativeMemberMethod(overloads.front());
         if (context->getRuntime()->getNativeMemberType(overloads.front()) == NativeMemberType::Method &&
             method != nullptr && method->getParameterCount() != 0) {
             context->reportError("Native method '" + memberName +

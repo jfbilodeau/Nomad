@@ -42,7 +42,7 @@ std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Ru
         }
 
         case NativeMemberType::Method: {
-            const auto* method = runtime->getNativeMethod(memberId);
+            const auto* method = runtime->getNativeMemberMethod(memberId);
             if (method != nullptr) {
                 members.emplace_back(memberId, NativeMemberType::Method, method->getObjectType(), method->getName());
             }
@@ -511,7 +511,7 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
                 out << std::endl;
             }
         } else {
-            const auto* method = runtime->getNativeMethod(member.id);
+            const auto* method = runtime->getNativeMemberMethod(member.id);
             if (method == nullptr) {
                 continue;
             }
@@ -699,11 +699,10 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
     );
 
     std::vector<NomadString> nativeFunctionNames;
-    std::vector<NativeFunctionDefinition> nativeFunctions;
-    runtime->getNativeFunctions(nativeFunctions);
+    const auto nativeFunctions = runtime->getNativeFunctions();
     nativeFunctionNames.reserve(nativeFunctions.size());
-    for (const auto& nativeFunction : nativeFunctions) {
-        nativeFunctionNames.push_back(nativeFunction.name);
+    for (const auto* nativeFunction : nativeFunctions) {
+        nativeFunctionNames.push_back(nativeFunction->getName());
     }
     repository["functions"] = createPatternRepositoryEntry(
         createMatchPattern("support.function.nomad", createWordPattern(nativeFunctionNames))

@@ -12,7 +12,7 @@
 
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
 

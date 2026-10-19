@@ -31,6 +31,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterContext.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/NativeCallable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeMembers.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NomadObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NomadStringObject.cpp
@@ -38,7 +39,6 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/Runtime.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeOpCodes.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeValue.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/ScriptFunction.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Type.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Variable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/VariableContext.cpp

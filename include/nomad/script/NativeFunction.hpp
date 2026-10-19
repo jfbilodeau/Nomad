@@ -2,6 +2,6 @@
 
 #pragma once
 
-// Forwarding header: the callable definitions now live in Callable.hpp.
-#include <nomad/script/Callable.hpp>
+// Forwarding header for native callable implementations.
+#include <nomad/script/NativeCallable.hpp>
  

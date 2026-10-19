@@ -6,7 +6,7 @@
 #include <nomad/compiler/FormatStringCompiler.hpp>
 
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 
 #if defined(NOMAD_DEBUG)
 //#define BOOST_SPIRIT_DEBUG

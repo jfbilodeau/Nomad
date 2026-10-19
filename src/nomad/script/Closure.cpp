@@ -3,7 +3,7 @@
 #include <nomad/script/Closure.hpp>
 
 #include <nomad/log/Logger.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/system/String.hpp>
 
 namespace nomad {

@@ -10,7 +10,7 @@
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/RuntimeValue.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 
 #include <functional>
 #include <type_traits>

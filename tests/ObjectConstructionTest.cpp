@@ -188,10 +188,10 @@ BOOST_AUTO_TEST_CASE(registration_rejects_collisions_invalid_types_and_missing_f
     ) == NOMAD_INVALID_ID);
     BOOST_TEST(runtime.registerNativeConstructor(type, {}, {}, "") == NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getConstructors().size() == 1u);
-    ConstructorDefinition definition;
-    BOOST_REQUIRE(runtime.getConstructorDefinition(id, definition));
-    BOOST_TEST(definition.returnType == type);
-    BOOST_TEST(!runtime.getConstructorDefinition(NOMAD_INVALID_ID, definition));
+    const auto* constructor = runtime.getConstructor(id);
+    BOOST_REQUIRE(constructor != nullptr);
+    BOOST_TEST(constructor->getReturnType() == type);
+    BOOST_TEST(runtime.getConstructor(NOMAD_INVALID_ID) == nullptr);
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"invalid", {"invalid.nomad", "return new Example true"}}}, {}});

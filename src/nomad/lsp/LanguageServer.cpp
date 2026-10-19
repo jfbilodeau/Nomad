@@ -190,7 +190,7 @@ ApiAnalysis analyzeApiSymbols(
             symbols.push_back({definition.name, CompletionItemKind::Property,
                 receiver + "." + definition.name + ":" + value, definition.doc, value, receiver});
         } else if (runtime->getNativeMemberType(id) == NativeMemberType::Method) {
-            const auto* method = runtime->getNativeMethod(id);
+            const auto* method = runtime->getNativeMemberMethod(id);
             if (method == nullptr) {
                 throw std::runtime_error("Registered native method is unavailable");
             }

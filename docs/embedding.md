@@ -26,8 +26,26 @@ Neither the interpreter nor its context creates or owns a VM.
 Registered native functions, script functions, methods, and constructors share
 one runtime-owned callable table and ID space. `getCallable(id)` returns a
 borrowed `const Callable*`; `getFunction(id)` returns a borrowed `const Function*`
-for either a native or a script free function. Both return `nullptr` for invalid
-IDs, and `getFunction` also returns `nullptr` for methods and constructors.
+for either a native or a script free function. `getMethod(id)` and
+`getConstructor(id)` return borrowed `const Method*` and `const Constructor*`.
+These category getters return `nullptr` for invalid IDs or the wrong category.
+All take callable-table IDs.
+
+Each category offers conversions to its implementation: `asNativeFunction()` /
+`asScriptFunction()`, `asNativeMethod()` / `asScriptMethod()`, and
+`asNativeConstructor()` / `asScriptConstructor()`. They return the same object
+with its specialized type, or `nullptr` when the implementation does not match.
+Script methods and script constructors are not yet supported.
+
+Use `resolveFunction(name, argumentTypes)`, `resolveMethod(objectType, name,
+argumentTypes)`, or `resolveConstructor(objectType, argumentTypes)` to select an
+overload. Inspect the `ResolveResult` before retrieving the selected callable.
+The selected ID or pointer can be retained without repeating name resolution.
+
+Native member IDs are a separate namespace. `registerNativeMethod` and
+`getNativeMemberId` return member IDs; pass these to
+`getNativeMemberMethod(memberId)`, then use the returned method's `getId()` for
+callable-table access. `getNativeMethod(callableId)` takes a callable-table ID.
 
 Use `getNativeFunction(id)` or `getScriptFunction(id)` for implementation-specific
 access. These return `nullptr` for the wrong implementation kind. A const runtime
@@ -41,6 +59,12 @@ Signatures expose `Parameter` entries through `getParameters()`. Script source
 text is available through `getSourceCode()`; `getSource()` identifies whether
 the callable is native or script-backed. Script enumeration and source/bytecode
 lookups continue to include only script functions.
+
+Include `<nomad/script/Callable.hpp>` for common callable metadata,
+`<nomad/script/NativeCallable.hpp>` for native implementations, and
+`<nomad/script/ScriptCallable.hpp>` for script implementations. The former
+`ScriptFunction.hpp` header and callable definition-copy APIs have been removed;
+use the borrowed pointer accessors instead.
 
 ## Source input and compilation
 

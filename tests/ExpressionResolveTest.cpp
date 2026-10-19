@@ -9,7 +9,7 @@
 #include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 
 using namespace nomad;
 

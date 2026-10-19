@@ -8,7 +8,7 @@
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 
 #include <memory>
 

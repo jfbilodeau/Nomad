@@ -16,8 +16,9 @@
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
 #include <nomad/script/FunctionResolution.hpp>
+#include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/NativeMember.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -195,12 +196,9 @@ public:
     [[nodiscard]] NomadId getNativeMemberId(const Type* objectType, const NomadString& name) const;
     [[nodiscard]] NativeMemberType getNativeMemberType(NomadId memberId) const;
     [[nodiscard]] bool getNativePropertyDefinition(NomadId memberId, NativePropertyDefinition& definition) const;
-    [[nodiscard]] bool getNativeMethodDefinition(NomadId memberId, NativeMethodDefinition& definition) const;
-    [[nodiscard]] bool getNativeMethodDefinition(const NomadString& name, NativeMethodDefinition& definition) const;
     // The method behind a member id; `getId()` is its function table id. Null when `memberId` is not a method.
-    [[nodiscard]] const NativeMethod* getNativeMethod(NomadId memberId) const;
+    [[nodiscard]] const NativeMethod* getNativeMemberMethod(NomadId memberId) const;
     void getNativeMembers(const Type* objectType, std::vector<NomadId>& members) const;
-    [[nodiscard]] bool getConstructorDefinition(NomadId functionId, ConstructorDefinition& definition) const;
     void getNativeMembers(std::vector<NomadId>& members) const;
     void getNativeMemberOverloads(const NomadString& name, std::vector<NomadId>& overloads) const;
     [[nodiscard]] NomadIndex getNativeMemberOverloadCount(const NomadString& name) const;
@@ -244,9 +242,6 @@ public:
     [[nodiscard]] const NativeFunction* getNativeFunction(NomadId functionId) const;
     [[nodiscard]] const NativeFunction* getNativeFunction(const NomadString& name) const;
     [[nodiscard]] std::vector<const NativeFunction*> getNativeFunctions() const;
-    [[nodiscard]] bool getNativeFunctionDefinition(NomadId functionId, NativeFunctionDefinition& definition) const;
-    [[nodiscard]] bool getNativeFunctionDefinition(const NomadString& name, NativeFunctionDefinition& definition) const;
-    void getNativeFunctions(std::vector<NativeFunctionDefinition>& definitions) const;
 
     [[nodiscard]] NomadId getFirstNativeFunctionId() const;
     [[nodiscard]] NomadId getNextNativeFunctionId(NomadId currentId) const;
@@ -281,6 +276,10 @@ public:
     [[nodiscard]] const Callable* getCallable(NomadId functionId) const;
     // Null unless `functionId` identifies a free function, native or script.
     [[nodiscard]] const Function* getFunction(NomadId functionId) const;
+    // All category getters take callable-table IDs, not native member IDs.
+    [[nodiscard]] const Method* getMethod(NomadId callableId) const;
+    [[nodiscard]] const Constructor* getConstructor(NomadId callableId) const;
+    [[nodiscard]] const NativeMethod* getNativeMethod(NomadId callableId) const;
     [[nodiscard]] NomadIndex getFunctionTableSize() const;
     // `argumentTypes` is indexed by parameter and holds `nullptr` for parameters the compiler supplies. An overload
     // matching every argument exactly wins over one that merely accepts them.

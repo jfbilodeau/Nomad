@@ -16,7 +16,7 @@
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <algorithm>
@@ -736,7 +736,7 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptFunction*
     }
 
     case NativeMemberType::Method: {
-        const auto* method = runtime->getNativeMethod(m_memberId);
+        const auto* method = runtime->getNativeMemberMethod(m_memberId);
         if (method == nullptr) {
             context->getCompiler()->reportInternalError("Invalid native method: " + m_qualifiedName);
         }
@@ -785,7 +785,7 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptFunction* funct
         return;
     }
 
-    const auto* method = memberType == NativeMemberType::Method ? runtime->getNativeMethod(m_memberId) : nullptr;
+    const auto* method = memberType == NativeMemberType::Method ? runtime->getNativeMemberMethod(m_memberId) : nullptr;
     if (method == nullptr) {
         compiler->reportInternalError("Invalid native member: " + m_qualifiedName);
     }
@@ -841,7 +841,7 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
 
-    const auto* method = memberType == NativeMemberType::Method ? runtime->getNativeMethod(m_memberId) : nullptr;
+    const auto* method = memberType == NativeMemberType::Method ? runtime->getNativeMemberMethod(m_memberId) : nullptr;
     if (method == nullptr) {
         receiverType->freeValue(receiver);
         raiseException("Invalid native method: " + m_qualifiedName);

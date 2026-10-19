@@ -141,8 +141,7 @@ BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) 
         ""
     );
     BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
-    NativeMethodDefinition definition;
-    BOOST_REQUIRE(runtime.getNativeMethodDefinition(memberId, definition));
+    BOOST_REQUIRE(runtime.getNativeMemberMethod(memberId) != nullptr);
     auto machine = runtime.createVirtualMachine();
     RuntimeValue receiver;
     receiver.setObjectValue(instance);
@@ -171,7 +170,7 @@ BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_ca
     BOOST_TEST(runtime.getNextNativeFunctionId(first) == last);
     BOOST_TEST(runtime.getNativeFunctionId("catalogMethod") == NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getNativeMemberId(type, "catalogMethod") == method);
-    const auto* methodCallable = runtime.getNativeMethod(method);
+    const auto* methodCallable = runtime.getNativeMemberMethod(method);
     BOOST_REQUIRE(methodCallable != nullptr);
     BOOST_TEST(methodCallable->getObjectType() == type);
     const auto functions = runtime.getNativeFunctions();

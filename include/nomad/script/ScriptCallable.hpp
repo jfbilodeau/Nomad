@@ -232,4 +232,28 @@ private:
     NomadId m_parentId = NOMAD_INVALID_ID;
 };
 
+class ScriptFunction : public ScriptCallable<Function> {
+public:
+    ScriptFunction(
+        const NomadId id,
+        NomadString name,
+        NomadString path,
+        NomadString source
+    ):
+        ScriptCallable(
+            id,
+            std::move(path),
+            std::move(source),
+            std::move(name),
+            std::vector<Parameter>{},
+            nullptr,
+            NomadString{}
+        )
+    {
+    }
+
+    [[nodiscard]] ScriptFunction* asScriptFunction() override { return this; }
+    [[nodiscard]] const ScriptFunction* asScriptFunction() const override { return this; }
+};
+
 } // namespace nomad

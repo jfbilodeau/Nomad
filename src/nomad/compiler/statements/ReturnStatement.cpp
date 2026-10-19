@@ -7,7 +7,7 @@
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 
 namespace nomad {

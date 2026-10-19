@@ -5,23 +5,19 @@
 #include <nomad/Nomad.hpp>
 
 #include <nomad/script/Documentation.hpp>
-#include <nomad/script/RuntimeValue.hpp>
 
-#include <functional>
-#include <span>
 #include <utility>
 #include <vector>
 
 namespace nomad {
 
-class NomadObject;
-class ObjectTypeBase;
+class NativeConstructor;
+class NativeFunction;
+class NativeMethod;
+class ScriptConstructor;
+class ScriptFunction;
+class ScriptMethod;
 class Type;
-class VirtualMachine;
-
-using NativeFunctionFn = std::function<void(VirtualMachine*)>;
-
-using ConstructorFactory = std::function<NomadObject*(std::span<const RuntimeValue>)>;
 
 struct Parameter {
     NomadString name;
@@ -102,6 +98,11 @@ private:
 
 // A callable that does not need a receiver.
 class Function : public Callable {
+public:
+    [[nodiscard]] virtual const NativeFunction* asNativeFunction() const { return nullptr; }
+    [[nodiscard]] virtual ScriptFunction* asScriptFunction() { return nullptr; }
+    [[nodiscard]] virtual const ScriptFunction* asScriptFunction() const { return nullptr; }
+
 protected:
     Function(
         const CallableSource source,
@@ -117,6 +118,10 @@ protected:
 
 // A callable invoked on an object of `objectType`.
 class Method : public Callable {
+public:
+    [[nodiscard]] virtual const NativeMethod* asNativeMethod() const { return nullptr; }
+    [[nodiscard]] virtual const ScriptMethod* asScriptMethod() const { return nullptr; }
+
 protected:
     Method(
         const CallableSource source,
@@ -133,6 +138,10 @@ protected:
 
 // Creates an object. The name is the one of the class being constructed.
 class Constructor : public Callable {
+public:
+    [[nodiscard]] virtual const NativeConstructor* asNativeConstructor() const { return nullptr; }
+    [[nodiscard]] virtual const ScriptConstructor* asScriptConstructor() const { return nullptr; }
+
 protected:
     Constructor(
         const CallableSource source,
@@ -147,103 +156,13 @@ protected:
     }
 };
 
-class NativeFunction : public Function {
-public:
-    NativeFunction(
-        NomadString name,
-        NativeFunctionFn fn,
-        std::vector<Parameter> parameters,
-        const Type* returnType,
-        NomadString doc
-    ):
-        Function(CallableSource::Native, std::move(name), std::move(parameters), returnType, std::move(doc)),
-        m_fn(std::move(fn))
-    {
-    }
-
-    [[nodiscard]] const NativeFunctionFn& getFn() const { return m_fn; }
-
-private:
-    NativeFunctionFn m_fn;
-};
-
-class NativeMethod : public Method {
-public:
-    NativeMethod(
-        NomadString name,
-        const Type* objectType,
-        NativeFunctionFn fn,
-        std::vector<Parameter> parameters,
-        const Type* returnType,
-        NomadString doc
-    ):
-        Method(CallableSource::Native, std::move(name), objectType, std::move(parameters), returnType, std::move(doc)),
-        m_fn(std::move(fn))
-    {
-    }
-
-    [[nodiscard]] const NativeFunctionFn& getFn() const { return m_fn; }
-
-private:
-    NativeFunctionFn m_fn;
-};
-
-class NativeConstructor : public Constructor {
-public:
-    NativeConstructor(
-        NomadString name,
-        const Type* objectType,
-        const Type* createdType,
-        ConstructorFactory factory,
-        std::vector<Parameter> parameters,
-        NomadString doc
-    ):
-        Constructor(CallableSource::Native, std::move(name), objectType, std::move(parameters), createdType, std::move(doc)),
-        m_factory(std::move(factory))
-    {
-    }
-
-    [[nodiscard]] const ConstructorFactory& getFactory() const { return m_factory; }
-
-private:
-    ConstructorFactory m_factory;
-};
-
-struct NativeFunctionDefinition {
-    NomadId id = NOMAD_INVALID_ID;
-    NomadString name;
-    std::vector<Parameter> parameters;
-    const Type* returnType = nullptr;
-    NomadDocField;
-};
-
-struct NativeMethodDefinition {
-    NomadId id = NOMAD_INVALID_ID;
-    const Type* objectType = nullptr;
-    NomadString name;
-    std::vector<Parameter> parameters;
-    const Type* returnType = nullptr;
-    NomadDocField;
-};
-
-struct ConstructorDefinition {
-    NomadId id = NOMAD_INVALID_ID;
-    const Type* objectType = nullptr;
-    NomadString name;
-    std::vector<Parameter> parameters;
-    const Type* returnType = nullptr;
-    ConstructorFactory factory;
-    NomadDocField;
-};
-
 // Where a callable is implemented. Both kinds are called with the same syntax in Nomad code.
 enum class CallableKind {
     NativeFunction = 1, // Implemented in C++ and registered by the host runtime.
     Function,           // Compiled from Nomad source, either from a script or from a `fun` declaration.
 };
 
-// Identifies a single callable in the unified catalog. `id` indexes the registry of the matching kind, so the
-// pair is required to address a callable unambiguously.
+// `id` indexes the shared callable table; `kind` records the implementation used by the legacy call parser.
 struct CallableId {
     CallableKind kind = CallableKind::NativeFunction;
     NomadId id = NOMAD_INVALID_ID;

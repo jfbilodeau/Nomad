@@ -52,9 +52,9 @@ BOOST_AUTO_TEST_CASE(registers_immutable_string_members) {
     BOOST_TEST(!length.setFn);
     BOOST_TEST(length.valueType == runtime.getIntegerType());
 
-    NativeMethodDefinition toUpper;
-    BOOST_REQUIRE(runtime.getNativeMethodDefinition(toUpperId, toUpper));
-    BOOST_TEST(toUpper.returnType == runtime.getStringType());
+    const auto* toUpper = runtime.getNativeMemberMethod(toUpperId);
+    BOOST_REQUIRE(toUpper != nullptr);
+    BOOST_TEST(toUpper->getReturnType() == runtime.getStringType());
 }
 
 BOOST_AUTO_TEST_CASE(exports_string_members_to_documentation_and_textmate_grammar) {

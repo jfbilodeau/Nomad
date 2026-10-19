@@ -341,7 +341,7 @@ bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type
         }
 
         case NativeMemberType::Method: {
-            const auto* method = m_runtime->getNativeMethod(memberId);
+            const auto* method = m_runtime->getNativeMemberMethod(memberId);
             if (method == nullptr) {
                 reportInternalError("Invalid native method id: " + toString(memberId));
             }

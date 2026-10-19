@@ -94,13 +94,13 @@ BOOST_AUTO_TEST_CASE(registers_method_metadata) {
     BOOST_REQUIRE(methodId != NOMAD_INVALID_ID);
     BOOST_TEST((runtime.getNativeMemberType(methodId) == NativeMemberType::Method));
 
-    NativeMethodDefinition definition;
-    BOOST_REQUIRE(runtime.getNativeMethodDefinition(methodId, definition));
-    BOOST_TEST(definition.id == methodId);
-    BOOST_TEST(definition.objectType == runtime.getStringType());
-    BOOST_TEST(definition.name == "replace");
-    BOOST_TEST(definition.parameters.size() == NomadIndex{2});
-    BOOST_TEST(definition.returnType == runtime.getStringType());
+    const auto* method = runtime.getNativeMemberMethod(methodId);
+    BOOST_REQUIRE(method != nullptr);
+    BOOST_TEST(runtime.getMethod(method->getId()) == static_cast<const Method*>(method));
+    BOOST_TEST(method->getObjectType() == runtime.getStringType());
+    BOOST_TEST(method->getName() == "replace");
+    BOOST_TEST(method->getParameters().size() == NomadIndex{2});
+    BOOST_TEST(method->getReturnType() == runtime.getStringType());
 }
 
 BOOST_AUTO_TEST_CASE(rejects_duplicate_member_name_on_same_type) {

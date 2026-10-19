@@ -240,64 +240,34 @@ const Function* Runtime::getFunction(const NomadId functionId) const {
 }
 
 const NativeFunction* Runtime::getNativeFunction(const NomadId functionId) const {
-    const auto* callable = getCallable(functionId);
+    const auto* function = getFunction(functionId);
+    return function == nullptr ? nullptr : function->asNativeFunction();
+}
 
-    if (callable == nullptr || callable->getSource() != CallableSource::Native ||
-        callable->getType() != CallableType::Function) {
+const Method* Runtime::getMethod(const NomadId callableId) const {
+    const auto* callable = getCallable(callableId);
+    if (callable == nullptr || callable->getType() != CallableType::Method) {
         return nullptr;
     }
-
-    return static_cast<const NativeFunction*>(callable);
+    return static_cast<const Method*>(callable);
 }
 
-bool Runtime::getNativeFunctionDefinition(const NomadId functionId, NativeFunctionDefinition& definition) const {
-    const auto* function = getNativeFunction(functionId);
-    if (function == nullptr) {
-        return false;
-    }
-
-    definition.id = function->getId();
-    definition.name = function->getName();
-    definition.parameters = function->getParameters();
-    definition.returnType = function->getReturnType();
-    definition.doc = function->getDoc();
-    return true;
-}
-
-bool Runtime::getNativeFunctionDefinition(const NomadString& name, NativeFunctionDefinition& definition) const {
-    const auto* function = getNativeFunction(name);
-    if (function == nullptr) {
-        return false;
-    }
-
-    return getNativeFunctionDefinition(function->getId(), definition);
-}
-
-void Runtime::getNativeFunctions(std::vector<NativeFunctionDefinition>& definitions) const {
-    definitions.clear();
-    definitions.reserve(m_functionTable.size());
-
-    for (const auto& callable : m_functionTable) {
-        if (callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Native) {
-            NativeFunctionDefinition definition;
-            definition.id = callable->getId();
-            definition.name = callable->getName();
-            definition.parameters = callable->getParameters();
-            definition.returnType = callable->getReturnType();
-            definition.doc = callable->getDoc();
-            definitions.push_back(definition);
-        }
-    }
-}
-
-const NativeConstructor* Runtime::getNativeConstructor(const NomadId functionId) const {
-    const auto* callable = getCallable(functionId);
-
+const Constructor* Runtime::getConstructor(const NomadId callableId) const {
+    const auto* callable = getCallable(callableId);
     if (callable == nullptr || callable->getType() != CallableType::Constructor) {
         return nullptr;
     }
+    return static_cast<const Constructor*>(callable);
+}
 
-    return static_cast<const NativeConstructor*>(callable);
+const NativeMethod* Runtime::getNativeMethod(const NomadId callableId) const {
+    const auto* method = getMethod(callableId);
+    return method == nullptr ? nullptr : method->asNativeMethod();
+}
+
+const NativeConstructor* Runtime::getNativeConstructor(const NomadId functionId) const {
+    const auto* constructor = getConstructor(functionId);
+    return constructor == nullptr ? nullptr : constructor->asNativeConstructor();
 }
 
 NomadIndex Runtime::getFunctionTableSize() const {
@@ -1013,7 +983,7 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
         std::vector<Parameter> existingParameters;
 
         if (getNativeMemberType(memberId) == NativeMemberType::Method) {
-            const auto* method = getNativeMethod(memberId);
+            const auto* method = getNativeMemberMethod(memberId);
             if (method == nullptr) {
                 throw NomadBug("Invalid native method registration");
             }
@@ -1295,7 +1265,7 @@ NomadId Runtime::getNativeMemberId(const Type* objectType, const NomadString& na
         }
 
         case NativeMemberType::Method: {
-            const auto* method = getNativeMethod(memberId);
+            const auto* method = getNativeMemberMethod(memberId);
             if (method != nullptr && method->getObjectType() == objectType) {
                 return memberId;
             }
@@ -1334,37 +1304,7 @@ bool Runtime::getNativePropertyDefinition(const NomadId memberId, NativeProperty
     return true;
 }
 
-bool Runtime::getNativeMethodDefinition(const NomadId memberId, NativeMethodDefinition& definition) const {
-    const auto* method = getNativeMethod(memberId);
-    if (method == nullptr) {
-        return false;
-    }
-
-    definition.id = memberId;
-    definition.objectType = method->getObjectType();
-    definition.name = method->getName();
-    definition.parameters = method->getParameters();
-    definition.returnType = method->getReturnType();
-    definition.doc = method->getDoc();
-    return true;
-}
-
-bool Runtime::getNativeMethodDefinition(const NomadString& name, NativeMethodDefinition& definition) const {
-    const auto overloads = m_nativeMembersByName.find(name);
-    if (overloads == m_nativeMembersByName.end()) {
-        return false;
-    }
-
-    for (const auto memberId : overloads->second) {
-        if (getNativeMethodDefinition(memberId, definition)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-const NativeMethod* Runtime::getNativeMethod(const NomadId memberId) const {
+const NativeMethod* Runtime::getNativeMemberMethod(const NomadId memberId) const {
     const auto memberIndex = toNomadIndex(memberId);
     if (memberIndex >= m_nativeMembers.size()) {
         return nullptr;
@@ -1375,27 +1315,7 @@ const NativeMethod* Runtime::getNativeMethod(const NomadId memberId) const {
         return nullptr;
     }
 
-    const auto* callable = getCallable(toNomadId(member.definitionIndex));
-
-    return callable != nullptr && callable->getType() == CallableType::Method
-        ? static_cast<const NativeMethod*>(callable)
-        : nullptr;
-}
-
-bool Runtime::getConstructorDefinition(const NomadId functionId, ConstructorDefinition& definition) const {
-    const auto* constructor = getNativeConstructor(functionId);
-    if (constructor == nullptr) {
-        return false;
-    }
-
-    definition.id = functionId;
-    definition.objectType = constructor->getObjectType();
-    definition.name = constructor->getName();
-    definition.parameters = constructor->getParameters();
-    definition.returnType = constructor->getReturnType();
-    definition.factory = constructor->getFactory();
-    definition.doc = constructor->getDoc();
-    return true;
+    return getNativeMethod(toNomadId(member.definitionIndex));
 }
 
 void Runtime::getNativeMembers(const Type* objectType, std::vector<NomadId>& members) const {
@@ -1411,7 +1331,7 @@ void Runtime::getNativeMembers(const Type* objectType, std::vector<NomadId>& mem
                 members.push_back(memberId);
             }
         } else if (type == NativeMemberType::Method) {
-            const auto* method = getNativeMethod(memberId);
+            const auto* method = getNativeMemberMethod(memberId);
             if (method != nullptr && method->getObjectType() == objectType) {
                 members.push_back(memberId);
             }
@@ -2298,18 +2218,15 @@ ScriptFunction* Runtime::getScriptFunction(const NomadId functionId) {
         return nullptr;
     }
     auto* callable = m_functionTable[toNomadIndex(functionId)].get();
-    if (callable->getSource() != CallableSource::Script || callable->getType() != CallableType::Function) {
+    if (callable->getType() != CallableType::Function) {
         return nullptr;
     }
-    return static_cast<ScriptFunction*>(callable);
+    return static_cast<Function*>(callable)->asScriptFunction();
 }
 
 const ScriptFunction* Runtime::getScriptFunction(const NomadId functionId) const {
     const auto* function = getFunction(functionId);
-    if (function == nullptr || function->getSource() != CallableSource::Script) {
-        return nullptr;
-    }
-    return static_cast<const ScriptFunction*>(function);
+    return function == nullptr ? nullptr : function->asScriptFunction();
 }
 
 bool Runtime::setScriptFunctionReturnType(const NomadId functionId, const Type* returnType) {
