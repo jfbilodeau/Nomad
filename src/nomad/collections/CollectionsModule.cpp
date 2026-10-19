@@ -82,7 +82,7 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 [](nomad::VirtualMachine* machine, const nomad::RuntimeValue& index, const nomad::RuntimeValue& value) {
                     machine->getThisAs<nomad::Array1dObject>()->setValue(index.getIntegerValue(), value);
                 },
-                NomadDoc("Reads or replaces an element at a zero-based index. Out-of-range indices fault.")
+                NomadDoc("Reads or replaces an element at a zero-based index. Invalid indices log an error; reads return a default and writes do nothing.")
             ) == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register Array1 indexer");
             }

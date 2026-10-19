@@ -5,6 +5,7 @@
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/RuntimeValue.hpp>
 
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -25,7 +26,9 @@ protected:
     ArrayObject(const Type* elementType, NomadIndex dimensionCount);
     ArrayObject(const Type* elementType, std::span<const NomadInteger> dimensions);
 
-    [[noreturn]] static void reportIndexOutOfBounds(NomadInteger index, NomadIndex dimension, NomadIndex size);
+    static void reportIndexOutOfBounds(NomadInteger index, NomadIndex dimension, NomadIndex size);
+    // Borrowed until the next invalid read or destruction. Mutable defaults are recreated for each invalid read.
+    [[nodiscard]] const RuntimeValue& getDefaultValue() const;
 
     const Type* m_elementType;
     std::vector<NomadIndex> m_dimensions;
@@ -33,6 +36,7 @@ protected:
 
 private:
     void freeElements() noexcept;
+    mutable std::optional<RuntimeValue> m_defaultValue;
 };
 
 } // namespace nomad

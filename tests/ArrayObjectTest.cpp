@@ -10,6 +10,8 @@
 #include <nomad/collections/ListObject.hpp>
 #include <nomad/collections/ListType.hpp>
 
+#include <nomad/log/MemorySink.hpp>
+
 #include <nomad/script/Type.hpp>
 
 #include <boost/test/unit_test.hpp>
@@ -86,6 +88,49 @@ void FailingElementType::copyValue(const RuntimeValue& source, RuntimeValue& des
 
 BOOST_AUTO_TEST_SUITE(array_objects)
 
+BOOST_AUTO_TEST_CASE(invalid_indices_log_errors_and_return_fresh_owned_defaults) {
+    struct LogCapture {
+        MemorySink sink;
+        LogCapture() {
+            log::flush();
+            log::addSink(&sink);
+        }
+        ~LogCapture() { log::removeSink(&sink); }
+    } capture;
+    IntegerType integers;
+    ListType lists(&integers);
+    const auto before = NomadObject::getLiveObjectCount();
+    {
+        Array1dObject array(&lists, 1);
+        array.getValue(-1).asObject<ListObject>()->push(RuntimeValue(NomadInteger{7}));
+        BOOST_TEST(array.getValue(-1).asObject<ListObject>()->getCount() == 0u);
+        array.setValue(1, RuntimeValue{});
+        BOOST_TEST(array.getValue(0).asObject<ListObject>()->getCount() == 0u);
+        BOOST_TEST(array.getCount() == 1u);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    log::flush();
+    const auto& entries = capture.sink.getEntries();
+    BOOST_REQUIRE(entries.size() == 3u);
+    for (const auto& entry : entries) {
+        BOOST_CHECK(entry.level == LogLevel::Error);
+        BOOST_TEST(entry.message.find("out of bounds for dimension 1 of size 1") != NomadString::npos);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(invalid_read_default_initialization_failure_releases_partial_values) {
+    FailingElementType elements;
+    {
+        Array1dObject array(&elements);
+        elements.failInitialization = 1;
+        BOOST_CHECK_THROW(static_cast<void>(array.getValue(0)), NomadException);
+        BOOST_TEST(elements.destroyed == 1u);
+        elements.failInitialization = 0;
+        BOOST_TEST(array.getValue(0).getObjectValue() != nullptr);
+    }
+    BOOST_TEST(elements.destroyed == 2u);
+}
+
 BOOST_AUTO_TEST_CASE(one_dimension_initializes_and_replaces_values) {
     IntegerType integers;
     Array1dObject array(&integers, 4);
@@ -100,9 +145,9 @@ BOOST_AUTO_TEST_CASE(one_dimension_initializes_and_replaces_values) {
     for (auto index = NomadInteger{0}; index < 4; ++index) {
         BOOST_TEST(array.getValue(index).getIntegerValue() == index + 10);
     }
-    BOOST_CHECK_THROW(array.getValue(-1), NomadException);
-    BOOST_CHECK_THROW(array.getValue(4), NomadException);
-    BOOST_CHECK_THROW(array.setValue(4, RuntimeValue(NomadInteger{1})), NomadException);
+    BOOST_TEST(array.getValue(-1).getIntegerValue() == 0);
+    BOOST_TEST(array.getValue(4).getIntegerValue() == 0);
+    BOOST_CHECK_NO_THROW(array.setValue(4, RuntimeValue(NomadInteger{1})));
     BOOST_CHECK_THROW(array.getDimensionSize(1), NomadException);
 }
 
@@ -135,14 +180,14 @@ BOOST_AUTO_TEST_CASE(multidimensional_elements_have_distinct_storage) {
             }
         }
     }
-    BOOST_CHECK_THROW(grid.getValue(-1, 0), NomadException);
-    BOOST_CHECK_THROW(grid.getValue(3, 0), NomadException);
-    BOOST_CHECK_THROW(grid.getValue(0, -1), NomadException);
-    BOOST_CHECK_THROW(grid.getValue(0, 4), NomadException);
-    BOOST_CHECK_THROW(volume.getValue(3, 0, 0), NomadException);
-    BOOST_CHECK_THROW(volume.getValue(0, 4, 0), NomadException);
-    BOOST_CHECK_THROW(volume.getValue(0, 0, -1), NomadException);
-    BOOST_CHECK_THROW(volume.getValue(0, 0, 2), NomadException);
+    BOOST_TEST(grid.getValue(-1, 0).getIntegerValue() == 0);
+    BOOST_TEST(grid.getValue(3, 0).getIntegerValue() == 0);
+    BOOST_TEST(grid.getValue(0, -1).getIntegerValue() == 0);
+    BOOST_TEST(grid.getValue(0, 4).getIntegerValue() == 0);
+    BOOST_TEST(volume.getValue(3, 0, 0).getIntegerValue() == 0);
+    BOOST_TEST(volume.getValue(0, 4, 0).getIntegerValue() == 0);
+    BOOST_TEST(volume.getValue(0, 0, -1).getIntegerValue() == 0);
+    BOOST_TEST(volume.getValue(0, 0, 2).getIntegerValue() == 0);
 }
 
 BOOST_AUTO_TEST_CASE(specialized_offsets_reject_each_invalid_coordinate_without_mutation) {
@@ -155,22 +200,22 @@ BOOST_AUTO_TEST_CASE(specialized_offsets_reject_each_invalid_coordinate_without_
     grid.setValue(1, 2, value);
     volume.setValue(1, 2, 3, value);
     for (const auto invalid : {NomadInteger{-1}, NomadInteger{2}, std::numeric_limits<NomadInteger>::max()}) {
-        BOOST_CHECK_THROW(line.getValue(invalid), NomadException);
-        BOOST_CHECK_THROW(line.setValue(invalid, value), NomadException);
-        BOOST_CHECK_THROW(grid.getValue(invalid, 0), NomadException);
-        BOOST_CHECK_THROW(grid.setValue(invalid, 0, value), NomadException);
-        BOOST_CHECK_THROW(volume.getValue(invalid, 0, 0), NomadException);
-        BOOST_CHECK_THROW(volume.setValue(invalid, 0, 0, value), NomadException);
+        BOOST_TEST(line.getValue(invalid).getIntegerValue() == 0);
+        BOOST_CHECK_NO_THROW(line.setValue(invalid, value));
+        BOOST_TEST(grid.getValue(invalid, 0).getIntegerValue() == 0);
+        BOOST_CHECK_NO_THROW(grid.setValue(invalid, 0, value));
+        BOOST_TEST(volume.getValue(invalid, 0, 0).getIntegerValue() == 0);
+        BOOST_CHECK_NO_THROW(volume.setValue(invalid, 0, 0, value));
     }
     for (const auto invalid : {NomadInteger{-1}, NomadInteger{3}, std::numeric_limits<NomadInteger>::max()}) {
-        BOOST_CHECK_THROW(grid.getValue(0, invalid), NomadException);
-        BOOST_CHECK_THROW(grid.setValue(0, invalid, value), NomadException);
-        BOOST_CHECK_THROW(volume.getValue(0, invalid, 0), NomadException);
-        BOOST_CHECK_THROW(volume.setValue(0, invalid, 0, value), NomadException);
+        BOOST_TEST(grid.getValue(0, invalid).getIntegerValue() == 0);
+        BOOST_CHECK_NO_THROW(grid.setValue(0, invalid, value));
+        BOOST_TEST(volume.getValue(0, invalid, 0).getIntegerValue() == 0);
+        BOOST_CHECK_NO_THROW(volume.setValue(0, invalid, 0, value));
     }
     for (const auto invalid : {NomadInteger{-1}, NomadInteger{4}, std::numeric_limits<NomadInteger>::max()}) {
-        BOOST_CHECK_THROW(volume.getValue(0, 0, invalid), NomadException);
-        BOOST_CHECK_THROW(volume.setValue(0, 0, invalid, value), NomadException);
+        BOOST_TEST(volume.getValue(0, 0, invalid).getIntegerValue() == 0);
+        BOOST_CHECK_NO_THROW(volume.setValue(0, 0, invalid, value));
     }
     BOOST_TEST(line.getValue(1).getIntegerValue() == 42);
     BOOST_TEST(grid.getValue(1, 2).getIntegerValue() == 42);
@@ -256,7 +301,7 @@ BOOST_AUTO_TEST_CASE(array_defaults_are_lazy_shared_and_separate_by_descriptor) 
         BOOST_TEST(empty->getCount() == 0u);
         BOOST_TEST(empty->getDimensionSize(0) == 0u);
         BOOST_TEST(empty->getDimensionSize(1) == 0u);
-        BOOST_CHECK_THROW(empty->getValue(0, 0), NomadException);
+        BOOST_TEST(empty->getValue(0, 0).getIntegerValue() == 0);
         type.copyValue(first, survivor);
         type.freeValue(first);
         type.freeValue(second);
@@ -286,13 +331,13 @@ BOOST_AUTO_TEST_CASE(each_array_rank_has_an_empty_default_that_rejects_writes) {
             }
             switch (dimensions) {
             case 1:
-                BOOST_CHECK_THROW(value.asObject<Array1dObject>()->setValue(0, RuntimeValue{}), NomadException);
+                BOOST_CHECK_NO_THROW(value.asObject<Array1dObject>()->setValue(0, RuntimeValue{}));
                 break;
             case 2:
-                BOOST_CHECK_THROW(value.asObject<Array2dObject>()->setValue(0, 0, RuntimeValue{}), NomadException);
+                BOOST_CHECK_NO_THROW(value.asObject<Array2dObject>()->setValue(0, 0, RuntimeValue{}));
                 break;
             case 3:
-                BOOST_CHECK_THROW(value.asObject<Array3dObject>()->setValue(0, 0, 0, RuntimeValue{}), NomadException);
+                BOOST_CHECK_NO_THROW(value.asObject<Array3dObject>()->setValue(0, 0, 0, RuntimeValue{}));
                 break;
             }
             type->freeValue(value);

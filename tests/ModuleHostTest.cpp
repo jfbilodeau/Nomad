@@ -413,8 +413,17 @@ BOOST_AUTO_TEST_CASE(array1_indexers_read_replace_and_preserve_references) {
         "alias[0] = values[1]\n"
         "assert values[0] == 123\n"
         "assert values.count == 2\n"
+        "assert values[-1] == 0\n"
+        "assert values[2] == 0\n"
+        "values[-1] = 9\n"
+        "values[2] = 9\n"
+        "assert values[0] == 123\n"
+        "assert values[1] == 123\n"
         "words = new Array1<string> 1\n"
         "words[0] = \"hello\"\n"
+        "assert words[-1] == \"\"\n"
+        "words[1] = \"ignored\"\n"
+        "assert words[0] == \"hello\"\n"
         "words[0] = words[0]\n"
         "replace words\n"
         "assert words[0][0] == \"c\"\n"
@@ -456,11 +465,12 @@ BOOST_AUTO_TEST_CASE(array1_indexers_work_in_interpreter_and_report_bounds_error
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 123);
     for (const auto* source : {"values[-1]", "values[2]", "values[-1] = 9", "values[2] = 9"}) {
         BOOST_TEST_CONTEXT(source) {
-            BOOST_TEST(!Interpreter{}.execute(source, context));
-            BOOST_REQUIRE(context.getError() != nullptr);
-            BOOST_TEST(context.getError()->find("out of bounds") != NomadString::npos);
+            BOOST_REQUIRE(Interpreter{}.execute(source, context));
+            BOOST_TEST(!context.hasError());
         }
     }
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("values[-1] + values[2]", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 0);
     for (const auto* source : {"values[\"key\"]", "values[0] = \"wrong\"", "values[0 1]"}) {
         BOOST_TEST_CONTEXT(source) {
             BOOST_TEST(!Interpreter{}.execute(source, context));

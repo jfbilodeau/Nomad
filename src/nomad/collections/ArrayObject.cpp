@@ -2,6 +2,8 @@
 
 #include <nomad/collections/ArrayObject.hpp>
 
+#include <nomad/log/Logger.hpp>
+
 #include <nomad/script/Type.hpp>
 
 #include <nomad/system/String.hpp>
@@ -45,7 +47,26 @@ ArrayObject::ArrayObject(const Type* elementType, const std::span<const NomadInt
 }
 
 ArrayObject::~ArrayObject() {
+    if (m_defaultValue) {
+        m_elementType->freeValue(*m_defaultValue);
+    }
     freeElements();
+}
+
+const RuntimeValue& ArrayObject::getDefaultValue() const {
+    if (m_defaultValue) {
+        m_elementType->freeValue(*m_defaultValue);
+        m_defaultValue.reset();
+    }
+    m_defaultValue.emplace();
+    try {
+        m_elementType->initValue(*m_defaultValue);
+    } catch (...) {
+        m_elementType->freeValue(*m_defaultValue);
+        m_defaultValue.reset();
+        throw;
+    }
+    return *m_defaultValue;
 }
 
 void ArrayObject::freeElements() noexcept {
@@ -80,7 +101,7 @@ void ArrayObject::reportIndexOutOfBounds(
     const NomadIndex dimension,
     const NomadIndex size
 ) {
-    throw NomadException("Array index " + toString(index) + " is out of bounds for dimension " +
+    log::error("Array index " + toString(index) + " is out of bounds for dimension " +
         toString(dimension + 1) + " of size " + toString(size));
 }
 

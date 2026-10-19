@@ -27,7 +27,8 @@ const RuntimeValue& Array3dObject::getValue(
     const NomadInteger index2,
     const NomadInteger index3
 ) const {
-    return m_values[getOffset(index1, index2, index3)];
+    const auto offset = getOffset(index1, index2, index3);
+    return offset == NOMAD_INVALID_INDEX ? getDefaultValue() : m_values[offset];
 }
 
 void Array3dObject::setValue(
@@ -36,7 +37,10 @@ void Array3dObject::setValue(
     const NomadInteger index3,
     const RuntimeValue& value
 ) {
-    m_elementType->assignValue(value, m_values[getOffset(index1, index2, index3)]);
+    const auto offset = getOffset(index1, index2, index3);
+    if (offset != NOMAD_INVALID_INDEX) {
+        m_elementType->assignValue(value, m_values[offset]);
+    }
 }
 
 NomadIndex Array3dObject::getOffset(
@@ -46,12 +50,15 @@ NomadIndex Array3dObject::getOffset(
 ) const {
     if (index1 < 0 || static_cast<std::uintmax_t>(index1) >= m_dimensions[0]) {
         reportIndexOutOfBounds(index1, 0, m_dimensions[0]);
+        return NOMAD_INVALID_INDEX;
     }
     if (index2 < 0 || static_cast<std::uintmax_t>(index2) >= m_dimensions[1]) {
         reportIndexOutOfBounds(index2, 1, m_dimensions[1]);
+        return NOMAD_INVALID_INDEX;
     }
     if (index3 < 0 || static_cast<std::uintmax_t>(index3) >= m_dimensions[2]) {
         reportIndexOutOfBounds(index3, 2, m_dimensions[2]);
+        return NOMAD_INVALID_INDEX;
     }
     return (static_cast<NomadIndex>(index1) * m_dimensions[1] + static_cast<NomadIndex>(index2)) *
         m_dimensions[2] + static_cast<NomadIndex>(index3);

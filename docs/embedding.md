@@ -388,6 +388,9 @@ the receiver. A setter must retain an object value it stores and release any
 replaced value. Use `machine->fault(...)` to report invalid indices or other
 access errors. The built-in string indexer is read-only and uses Unicode code
 points; `List<T>` and `Array1<T>` provide read/write element access.
+Array bounds errors log an error rather than faulting: invalid reads return a
+default element and invalid writes are ignored. List and string bounds errors
+still fault.
 
 ## Typed native object methods
 

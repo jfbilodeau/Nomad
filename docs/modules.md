@@ -73,8 +73,9 @@ line[0] = 123
 value = line[0]
 ```
 
-Negative indices and indices greater than or equal to `count` produce runtime
-errors; indexed assignment never resizes the array. Object-valued elements keep
+Negative indices and indices greater than or equal to `count` log an error.
+Invalid reads return the element type's default value; invalid writes leave the
+array unchanged. Indexed assignment never resizes the array. Object-valued elements keep
 reference semantics. Two- and three-dimensional array indexers are not available
 yet.
 

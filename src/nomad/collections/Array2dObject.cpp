@@ -22,7 +22,8 @@ Array2dObject::Array2dObject(
 {}
 
 const RuntimeValue& Array2dObject::getValue(const NomadInteger index1, const NomadInteger index2) const {
-    return m_values[getOffset(index1, index2)];
+    const auto offset = getOffset(index1, index2);
+    return offset == NOMAD_INVALID_INDEX ? getDefaultValue() : m_values[offset];
 }
 
 void Array2dObject::setValue(
@@ -30,15 +31,20 @@ void Array2dObject::setValue(
     const NomadInteger index2,
     const RuntimeValue& value
 ) {
-    m_elementType->assignValue(value, m_values[getOffset(index1, index2)]);
+    const auto offset = getOffset(index1, index2);
+    if (offset != NOMAD_INVALID_INDEX) {
+        m_elementType->assignValue(value, m_values[offset]);
+    }
 }
 
 NomadIndex Array2dObject::getOffset(const NomadInteger index1, const NomadInteger index2) const {
     if (index1 < 0 || static_cast<std::uintmax_t>(index1) >= m_dimensions[0]) {
         reportIndexOutOfBounds(index1, 0, m_dimensions[0]);
+        return NOMAD_INVALID_INDEX;
     }
     if (index2 < 0 || static_cast<std::uintmax_t>(index2) >= m_dimensions[1]) {
         reportIndexOutOfBounds(index2, 1, m_dimensions[1]);
+        return NOMAD_INVALID_INDEX;
     }
     return static_cast<NomadIndex>(index1) * m_dimensions[1] + static_cast<NomadIndex>(index2);
 }
