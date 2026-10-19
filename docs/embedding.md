@@ -342,8 +342,8 @@ for methods on an `ObjectTypeBase` descriptor. Read the instance inside the call
 
 ```cpp
 [](nomad::VirtualMachine* vm) {
-    auto* list = vm->getThisAs<nomad::ListObject>();
-    list->push(vm->getParameter(0));
+    auto* object = vm->getThisAs<MyObject>();
+    object->setValue(vm->getIntegerParameter(0));
 }
 ```
 
@@ -358,14 +358,19 @@ instance must outlive the call.
 
 Object methods may mutate the instance through parameter and temporary references.
 They do not replace the receiver binding or roll back changes to object contents.
-`List.push` and the `Audio` controls use this API. Script-defined methods are not
-supported yet.
+Script-defined methods are not supported yet.
 
 ## Native indexers
 
 Register a one-dimensional indexer with `registerNativeIndexer1`. Its index and
 value types must belong to the runtime and be public, non-void types. Each object
-type may have one such indexer. Omit the setter for read-only indexing, or omit
+type may have one such indexer. Use `registerNativeIndexer2` for two-dimensional
+indexing: pass the object type, first index type, second index type, value type,
+getter, setter, and documentation. Its callbacks receive two borrowed indices
+before the result or assigned value. A type may register both ranks independently;
+the number of bracket indices selects the indexer.
+
+Omit the setter for read-only indexing, or omit
 the getter for write-only indexing. Invalid access is rejected during compilation.
 
 ```cpp
@@ -386,19 +391,7 @@ Callbacks borrow the receiver, index, and assigned value. A getter writes an
 owned result into initialized storage; retain any existing object returned from
 the receiver. A setter must retain an object value it stores and release any
 replaced value. Use `machine->fault(...)` to report invalid indices or other
-access errors. The built-in string indexer is read-only and uses Unicode code
-points; `List<T>` and `Array1<T>` provide read/write element access.
-Array bounds errors log an error rather than faulting: invalid reads return a
-default element and invalid writes are ignored. List and string bounds errors
-still fault.
-
-The C++ `Array1dObject`, `Array2dObject`, and `Array3dObject` getters accept
-indices followed by a `RuntimeValue& result`. Pass an empty result: valid reads
-copy the element and invalid reads initialize its type's default value.
-The caller owns the result and must release it using the element type's
-`freeValue` when `needsFree()` is true, including if initialization or copying
-throws. Results remain valid independently of subsequent reads or destruction
-of the array.
+access errors.
 
 ## Typed native object methods
 
@@ -439,14 +432,14 @@ callbacks access the borrowed instance through `getThisAs<T>()`.
 
 ```cpp
 runtime.registerNativeProperty(
-    objectType, "volume", runtime.getFloatType(),
+    objectType, "value", runtime.getFloatType(),
     [](nomad::VirtualMachine* vm, nomad::RuntimeValue& result) {
-        result.setFloatValue(vm->getThisAs<nomad::AudioObject>()->getVolume());
+        result.setFloatValue(vm->getThisAs<MyObject>()->getValue());
     },
     [](nomad::VirtualMachine* vm, const nomad::RuntimeValue& value) {
-        vm->getThisAs<nomad::AudioObject>()->setVolume(value.getFloatValue());
+        vm->getThisAs<MyObject>()->setValue(value.getFloatValue());
     },
-    NomadDoc("Instance volume.")
+    NomadDoc("Instance value.")
 );
 ```
 
@@ -464,21 +457,6 @@ than adopting its existing reference.
 Use `value.asObject<T>()` to read a borrowed, typed object pointer from a
 `RuntimeValue`. It preserves null and does not change the reference count.
 Like `getThisAs<T>()`, it relies on the host supplying the correct C++ class.
-
-## Audio and font ownership
-
-Include `nomad/game/resource/AudioObject.hpp` and
-`nomad/game/resource/FontObject.hpp` when using their C++ object APIs. Their
-script type names remain `Audio` and `Font`; neither is script-constructible.
-
-`AudioManager::createAudioObject` and `FontManager::registerFont` return object
-pointers with one caller-owned reference. Release that reference when finished.
-There are no audio-instance or font IDs to look up. `Entity::setFont` retains its
-`FontObject`, and `Entity::getFont` returns a borrowed pointer.
-
-Keep the game alive while using its resources. Game shutdown invalidates the
-underlying resources even if a C++ object reference survives; such references
-may still be released safely afterward.
 
 DLLs must use compatible C++ ABI settings and remain loaded while their callbacks
 or objects are alive.

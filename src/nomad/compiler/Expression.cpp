@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <any>
 #include <cctype>
+#include <optional>
 #include <ranges>
 
 namespace nomad {
@@ -883,11 +884,13 @@ IndexerExpression::IndexerExpression(
     const NomadIndex line,
     const NomadIndex column,
     std::unique_ptr<Expression> receiver,
-    std::unique_ptr<Expression> index
+    std::unique_ptr<Expression> index,
+    std::unique_ptr<Expression> index2
 ):
     Expression(parent, line, column),
     m_receiver(std::move(receiver)),
-    m_index(std::move(index))
+    m_index(std::move(index)),
+    m_index2(std::move(index2))
 {}
 
 bool IndexerExpression::isTerminal() const {
@@ -895,22 +898,45 @@ bool IndexerExpression::isTerminal() const {
 }
 
 bool IndexerExpression::resolveIndexer(CompilerContext* context, ScriptFunction* function) {
-    if (!m_receiver->resolve(context, function) || !m_index->resolve(context, function)) {
+    if (!m_receiver->resolve(context, function) || !m_index->resolve(context, function) ||
+        (m_index2 && !m_index2->resolve(context, function))) {
         return false;
     }
     auto* runtime = context->getRuntime();
-    m_indexerId = runtime->getNativeIndexerId1(m_receiver->getType());
-    NativeIndexerDefinition1 definition;
-    if (!runtime->getNativeIndexerDefinition1(m_indexerId, definition)) {
-        reportError(context, function, "Type '" + getTypeDisplayName(m_receiver->getType()) + "' has no one-dimensional indexer");
-        return false;
+    const Type* indexType = nullptr;
+    if (m_index2) {
+        m_indexerId = runtime->getNativeIndexerId2(m_receiver->getType());
+        NativeIndexerDefinition2 definition;
+        if (!runtime->getNativeIndexerDefinition2(m_indexerId, definition)) {
+            reportError(context, function, "Type '" + getTypeDisplayName(m_receiver->getType()) + "' has no two-dimensional indexer");
+            return false;
+        }
+        if (m_index2->getType() != definition.indexType2) {
+            reportError(context, function, "Indexer requires a second index of type '" + getTypeDisplayName(definition.indexType2) +
+                "', not '" + getTypeDisplayName(m_index2->getType()) + "'");
+            return false;
+        }
+        indexType = definition.indexType1;
+        setType(definition.valueType);
+        m_canRead = static_cast<bool>(definition.getFn);
+        m_canWrite = static_cast<bool>(definition.setFn);
+    } else {
+        m_indexerId = runtime->getNativeIndexerId1(m_receiver->getType());
+        NativeIndexerDefinition1 definition;
+        if (!runtime->getNativeIndexerDefinition1(m_indexerId, definition)) {
+            reportError(context, function, "Type '" + getTypeDisplayName(m_receiver->getType()) + "' has no one-dimensional indexer");
+            return false;
+        }
+        indexType = definition.indexType;
+        setType(definition.valueType);
+        m_canRead = static_cast<bool>(definition.getFn);
+        m_canWrite = static_cast<bool>(definition.setFn);
     }
-    if (m_index->getType() != definition.indexType) {
-        reportError(context, function, "Indexer requires an index of type '" + getTypeDisplayName(definition.indexType) +
+    if (m_index->getType() != indexType) {
+        reportError(context, function, "Indexer requires an index of type '" + getTypeDisplayName(indexType) +
             "', not '" + getTypeDisplayName(m_index->getType()) + "'");
         return false;
     }
-    setType(definition.valueType);
     return true;
 }
 
@@ -918,9 +944,7 @@ bool IndexerExpression::resolveAssignmentTarget(CompilerContext* context, Script
     if (!resolveIndexer(context, function)) {
         return false;
     }
-    NativeIndexerDefinition1 definition;
-    (void)context->getRuntime()->getNativeIndexerDefinition1(m_indexerId, definition);
-    if (!definition.setFn) {
+    if (!m_canWrite) {
         reportError(context, function, "Indexer for type '" + getTypeDisplayName(m_receiver->getType()) + "' is read-only");
         return false;
     }
@@ -931,9 +955,7 @@ void IndexerExpression::onResolve(CompilerContext* context, ScriptFunction* func
     if (!resolveIndexer(context, function)) {
         return;
     }
-    NativeIndexerDefinition1 definition;
-    (void)context->getRuntime()->getNativeIndexerDefinition1(m_indexerId, definition);
-    if (!definition.getFn) {
+    if (!m_canRead) {
         reportError(context, function, "Indexer for type '" + getTypeDisplayName(m_receiver->getType()) + "' is write-only");
     }
 }
@@ -941,12 +963,15 @@ void IndexerExpression::onResolve(CompilerContext* context, ScriptFunction* func
 void IndexerExpression::compileOperands(Compiler* compiler, ScriptFunction* function) {
     m_receiver->compile(compiler, function, ExpressionTarget::Stack);
     m_index->compile(compiler, function, ExpressionTarget::Stack);
+    if (m_index2) {
+        m_index2->compile(compiler, function, ExpressionTarget::Stack);
+    }
 }
 
 void IndexerExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
     compileOperands(compiler, function);
     compiler->addFreeValue(getType()->getTypeOpCodes()->initResult);
-    compiler->addOpCode(op_native_index_get_1);
+    compiler->addOpCode(m_index2 ? op_native_index_get_2 : op_native_index_get_1);
     compiler->addId(m_indexerId);
     compiler->addMoveResult(getType(), target);
 }
@@ -954,7 +979,7 @@ void IndexerExpression::onCompile(Compiler* compiler, ScriptFunction* function, 
 void IndexerExpression::compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression) {
     compileOperands(compiler, function);
     expression->compile(compiler, function, ExpressionTarget::Result);
-    compiler->addOpCode(op_native_index_set_1);
+    compiler->addOpCode(m_index2 ? op_native_index_set_2 : op_native_index_set_1);
     compiler->addId(m_indexerId);
     compiler->addFreeValue(getType()->getTypeOpCodes()->freeResult);
 }
@@ -970,9 +995,21 @@ void IndexerExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
     const TypedValue index(*context.getResult());
+    std::optional<TypedValue> index2;
+    if (m_index2) {
+        m_index2->evaluate(context);
+        if (context.hasError()) {
+            return;
+        }
+        index2.emplace(*context.getResult());
+    }
     RuntimeValue result;
     try {
-        context.getVirtualMachine()->getNativeIndex1(m_indexerId, receiver.getValue(), index.getValue(), result);
+        if (m_index2) {
+            context.getVirtualMachine()->getNativeIndex2(m_indexerId, receiver.getValue(), index.getValue(), index2->getValue(), result);
+        } else {
+            context.getVirtualMachine()->getNativeIndex1(m_indexerId, receiver.getValue(), index.getValue(), result);
+        }
         context.setResult(getType(), result);
     } catch (...) {
         getType()->freeValue(result);
@@ -992,12 +1029,24 @@ void IndexerExpression::evaluateAssignment(InterpreterContext& context, const Ex
         return;
     }
     const TypedValue index(*context.getResult());
+    std::optional<TypedValue> index2;
+    if (m_index2) {
+        m_index2->evaluate(context);
+        if (context.hasError()) {
+            return;
+        }
+        index2.emplace(*context.getResult());
+    }
     expression->evaluate(context);
     if (context.hasError()) {
         return;
     }
     const TypedValue value(*context.getResult());
-    context.getVirtualMachine()->setNativeIndex1(m_indexerId, receiver.getValue(), index.getValue(), value.getValue());
+    if (m_index2) {
+        context.getVirtualMachine()->setNativeIndex2(m_indexerId, receiver.getValue(), index.getValue(), index2->getValue(), value.getValue());
+    } else {
+        context.getVirtualMachine()->setNativeIndex1(m_indexerId, receiver.getValue(), index.getValue(), value.getValue());
+    }
     context.setResult(value);
 }
 

@@ -222,7 +222,9 @@ The available members for each object type are listed in the [engine API](engine
 ### Indexers
 
 Use `value[index]` to read an indexed value and `value[index] = expression`
-to assign through a writable indexer. The receiver's type determines the index
+to assign through a writable indexer. Two-dimensional indexers use
+`value[index1 index2]`, with whitespace separating the two expressions and no
+comma. The receiver's type determines the index
 and value types, access permissions, and bounds behavior. Reading a write-only
 indexer or assigning through a read-only indexer is a compile-time error.
 Indexers can be chained with other indexers, properties, and methods.
@@ -240,11 +242,13 @@ letter = text[1] # "o"
 
 Indexing binds more tightly than binary operators. Parenthesize a compound
 receiver when needed: `("hello".toUpper)[0]`.
-The receiver and index are evaluated once, in that order, before an assignment's
+The receiver and indices are evaluated once, from left to right, before an assignment's
 right-hand side. Writable indexers can mutate an object through a parameter or
 temporary without rebinding that reference. Object-valued elements keep reference
-semantics. Only one index per pair of brackets is supported; multidimensional
-indexers are not yet available.
+semantics. One or two indices per pair of brackets are supported; three-dimensional
+indexers are not yet available. Parenthesize indices when needed to keep them
+separate: `value[0 (-1)]` supplies two indices, while `value[0 - 1]` supplies one
+subtraction expression.
 
 ### Audio and fonts
 

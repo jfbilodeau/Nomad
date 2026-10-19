@@ -139,7 +139,8 @@ public:
         NomadIndex line,
         NomadIndex column,
         std::unique_ptr<Expression> receiver,
-        std::unique_ptr<Expression> index
+        std::unique_ptr<Expression> index,
+        std::unique_ptr<Expression> index2 = {}
     );
     [[nodiscard]] bool isTerminal() const override;
     [[nodiscard]] bool resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function) override;
@@ -157,7 +158,10 @@ private:
 
     std::unique_ptr<Expression> m_receiver;
     std::unique_ptr<Expression> m_index;
+    std::unique_ptr<Expression> m_index2;
     NomadId m_indexerId = NOMAD_INVALID_ID;
+    bool m_canRead = false;
+    bool m_canWrite = false;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

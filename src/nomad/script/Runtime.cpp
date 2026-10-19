@@ -1067,6 +1067,55 @@ const std::vector<NativeIndexerDefinition1>& Runtime::getNativeIndexers1() const
     return m_nativeIndexers1;
 }
 
+NomadId Runtime::registerNativeIndexer2(
+    const ObjectTypeBase* objectType,
+    const Type* indexType1,
+    const Type* indexType2,
+    const Type* valueType,
+    NativeIndexerGetFn2 getFn,
+    NativeIndexerSetFn2 setFn,
+    const NomadString& doc
+) {
+    if (!ownsType(objectType) || !ownsType(indexType1) || !ownsType(indexType2) || !ownsType(valueType) ||
+        indexType1->isVoid() || indexType1->isInternal() ||
+        indexType2->isVoid() || indexType2->isInternal() || valueType->isVoid() || valueType->isInternal()) {
+        log::error("Cannot register native indexer: types must be registered, public, and non-void");
+        return NOMAD_INVALID_ID;
+    }
+    if (!getFn && !setFn) {
+        log::error("Cannot register native indexer: indexer has no accessor or mutator");
+        return NOMAD_INVALID_ID;
+    }
+    if (getNativeIndexerId2(objectType) != NOMAD_INVALID_ID) {
+        log::error("Cannot register native indexer: type already has a two-dimensional indexer");
+        return NOMAD_INVALID_ID;
+    }
+    const auto id = toNomadId(m_nativeIndexers2.size());
+    m_nativeIndexers2.push_back({id, objectType, indexType1, indexType2, valueType, std::move(getFn), std::move(setFn), doc});
+    return id;
+}
+
+NomadId Runtime::getNativeIndexerId2(const Type* objectType) const {
+    for (const auto& definition : m_nativeIndexers2) {
+        if (definition.objectType == objectType) {
+            return definition.id;
+        }
+    }
+    return NOMAD_INVALID_ID;
+}
+
+bool Runtime::getNativeIndexerDefinition2(const NomadId indexerId, NativeIndexerDefinition2& definition) const {
+    if (isIdOutOfRange(indexerId, m_nativeIndexers2.size())) {
+        return false;
+    }
+    definition = m_nativeIndexers2[indexerId];
+    return true;
+}
+
+const std::vector<NativeIndexerDefinition2>& Runtime::getNativeIndexers2() const {
+    return m_nativeIndexers2;
+}
+
 NomadId Runtime::registerNativeProperty(const ObjectTypeBase* objectType, const NomadString& name, const Type* valueType,
                                            NativePropertyGetFn getFn, NativePropertySetFn setFn,
                                            const NomadString& doc) {

@@ -53,17 +53,34 @@ element-count overflow produce runtime errors, not compile-time errors.
 Elements start with their type's default value: zero, `false`, empty strings,
 distinct empty lists, or shared empty arrays. Internal empty-array defaults have
 zero in every dimension; they cannot be explicitly constructed with `new`.
-The read-only `count` property gives the total element count. One-dimensional
-arrays support reading and replacing elements with a zero-based `int` index:
+The read-only `count` property gives the total element count. One- and
+two-dimensional arrays support reading and replacing elements with zero-based
+`int` indices:
 
 ```nomad
 line[0] = 123
 value = line[0]
+grid[1 2] = "hello"
+word = grid[1 2]
+letter = grid[1 2][0] # "h"
 ```
 
-Negative indices and indices greater than or equal to `count` log an error.
+Negative indices and indices greater than or equal to the corresponding
+dimension's size log an error.
 Invalid reads return the element type's default value; invalid writes leave the
 array unchanged. Each invalid read of a list-valued element returns a new empty
 list. Indexed assignment never resizes the array. Object-valued elements keep
-reference semantics. Two- and three-dimensional array indexers are not available
-yet.
+reference semantics. Two-dimensional indices are separated by whitespace, not
+commas. Use parentheses when necessary, such as `grid[0 (-1)]`, to keep a
+negative second index separate from subtraction.
+Three-dimensional array indexers are not available yet.
+
+## C++ array reads
+
+The `Array1dObject`, `Array2dObject`, and `Array3dObject` getters accept indices
+followed by a `RuntimeValue& result`. Pass an empty result: valid reads copy the
+element and invalid reads initialize its type's default value.
+The caller owns the result and must release it using the element type's
+`freeValue` when `needsFree()` is true, including if initialization or copying
+throws. Results remain valid independently of subsequent reads or destruction
+of the array.

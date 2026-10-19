@@ -458,6 +458,131 @@ BOOST_AUTO_TEST_CASE(array1_indexers_read_replace_and_preserve_references) {
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
+BOOST_AUTO_TEST_CASE(array2_indexers_read_write_chain_and_preserve_reference_semantics) {
+    TestDirectory directory("nomad_host_array2_indexers");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"main", {"main.nomad",
+        "fun replace grid:Array2<string>\n"
+        "    grid[1 2] = \"changed\"\n"
+        "end\n"
+        "grid = new Array<int> 2 3\n"
+        "assert grid.count == 6\n"
+        "grid[0 1] = 12\n"
+        "grid[1 0] = 34\n"
+        "alias = grid\n"
+        "alias[1 2] = grid[0 1] + grid[1 0]\n"
+        "assert grid[1 2] == 46\n"
+        "assert grid[0 0] == 0\n"
+        "assert grid[1 1] == 0\n"
+        "assert grid[(0 + 1) (1 + 1)] == 46\n"
+        "assert grid[-1 0] == 0\n"
+        "assert grid[2 0] == 0\n"
+        "assert grid[0 (-1)] == 0\n"
+        "assert grid[0 3] == 0\n"
+        "grid[-1 0] = 99\n"
+        "grid[2 0] = 99\n"
+        "grid[0 (-1)] = 99\n"
+        "grid[0 3] = 99\n"
+        "assert grid[0 1] == 12\n"
+        "assert grid[1 2] == 46\n"
+        "words = new Array2<string> 2 3\n"
+        "words[1 2] = \"hello\"\n"
+        "words[1 2] = words[1 2]\n"
+        "assert words[1 2][0] == \"h\"\n"
+        "assert words[2 0] == \"\"\n"
+        "replace words\n"
+        "assert words[1 2].length == 7\n"
+        "nested = new Array2<List<int>> 1 2\n"
+        "nested[0 1].push 7\n"
+        "saved = nested[0 1]\n"
+        "nested[0 1] = new List<int>\n"
+        "assert saved[0] == 7\n"
+        "assert nested[0 1].count == 0\n"
+        "nested[-1 0].push 8\n"
+        "assert nested[-1 0].count == 0\n"
+        "holder = new List<Array2<string>>\n"
+        "holder.push words\n"
+        "holder[0][0 1] = \"nested\"\n"
+        "assert words[0 1] == \"nested\"\n"
+        "return $\"{words[1 2]}:{grid[1 2]}\""
+    }}}, {}});
+    const auto compiled = compiler->compileScripts(&context, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled,
+        (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
+    RuntimeValue empty;
+    runtime.getStringType()->initValue(empty);
+    runtime.getStringType()->freeValue(empty);
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getStringObject()->getString() == "changed:46");
+    runtime.getStringType()->freeValue(result);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    std::ostringstream documentation;
+    generateNativeMemberDocumentation(&runtime, documentation);
+    BOOST_TEST(documentation.str().find("Array2<int>[index1 index2]") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(array2_indexers_work_in_interpreter_and_reject_invalid_syntax_and_types) {
+    TestDirectory directory("nomad_host_array2_interpreter");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    RuntimeValue empty;
+    runtime.getStringType()->initValue(empty);
+    runtime.getStringType()->freeValue(empty);
+    const auto before = NomadObject::getLiveObjectCount();
+    {
+        VirtualMachine machine(&runtime);
+        InterpreterContext context(machine);
+        for (const auto* source : {
+            "grid = new Array<int> 2 3", "grid[1 2] = 123", "alias = grid", "alias[0 1] = grid[1 2]",
+            "assert grid[0 1] == 123", "assert grid[1 2] == 123",
+            "assert grid[-1 0] == 0", "assert grid[0 (-1)] == 0",
+            "assert grid[2 0] == 0", "assert grid[0 3] == 0",
+            "grid[2 0] = 9", "grid[0 3] = 9", "assert grid[0 1] == 123",
+            "words = new Array2<string> 1 2", "words[0 1] = \"hello\"",
+            "words[0 1] = words[0 1]", "assert words[0 1][1] == \"e\"",
+            "nested = new Array2<List<int>> 1 2", "nested[0 1].push 7", "saved = nested[0 1]",
+            "nested[0 1] = new List<int>", "assert saved[0] == 7", "assert nested[0 1].count == 0",
+            "assert nested[-1 0].count == 0"
+        }) {
+            BOOST_TEST_CONTEXT(source) {
+                const auto isAssertion = NomadStringView(source).starts_with("assert ");
+                const auto executed = Interpreter{}.execute(isAssertion ? source + 7 : source, context);
+                BOOST_REQUIRE_MESSAGE(executed, (context.getError() ? *context.getError() : source));
+                if (isAssertion) {
+                    BOOST_TEST(context.getResult()->getValue().getBooleanValue());
+                }
+            }
+        }
+        for (const auto* source : {
+            "grid[]", "grid[0]", "grid[0 1 2]", "grid[0 1", "grid[0, 1]",
+            "grid[\"key\" 0]", "grid[0 \"key\"]", "grid[0 1.0]", "grid[false 0]",
+            "grid[0 1] = \"wrong\"", "grid[0 1] = false"
+        }) {
+            BOOST_TEST_CONTEXT(source) {
+                BOOST_TEST(!Interpreter{}.execute(source, context));
+                BOOST_TEST(context.hasError());
+                auto compiler = runtime.createCompiler();
+                CompilerContext compilation(compiler.get());
+                compiler->registerSources(&compilation, {{{"rejected", {"rejected.nomad",
+                    NomadString("grid = new Array2<int> 2 3\n") + source
+                }}}, {}});
+                BOOST_TEST(!compiler->compileScripts(&compilation, CompilationTarget::Executable));
+                BOOST_REQUIRE(compilation.getFirstError() != nullptr);
+            }
+        }
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("grid[0 1] + grid[1 2]", context));
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 246);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
 BOOST_AUTO_TEST_CASE(array1_indexers_work_in_interpreter_and_report_bounds_errors) {
     TestDirectory directory("nomad_host_array1_interpreter");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});

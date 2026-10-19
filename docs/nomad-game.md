@@ -46,3 +46,18 @@ See [CLI](cli.md) for commands and packaging options.
 
 Use `system.exit` to request orderly shutdown after the current script
 invocation. The game module releases its script state during shutdown.
+
+## C++ audio and font ownership
+
+Include `nomad/game/resource/AudioObject.hpp` and
+`nomad/game/resource/FontObject.hpp` when using their C++ object APIs. Their
+script type names are `Audio` and `Font`; neither is script-constructible.
+
+`AudioManager::createAudioObject` and `FontManager::registerFont` return object
+pointers with one caller-owned reference. Release that reference when finished.
+There are no audio-instance or font IDs to look up. `Entity::setFont` retains its
+`FontObject`, and `Entity::getFont` returns a borrowed pointer.
+
+Keep the game alive while using its resources. Game shutdown invalidates the
+underlying resources even if a C++ object reference survives; such references
+may still be released safely afterward.

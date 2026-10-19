@@ -44,4 +44,18 @@ struct NativeIndexerDefinition1 {
     NomadDocField;
 };
 
+using NativeIndexerGetFn2 = std::function<void(VirtualMachine*, const RuntimeValue&, const RuntimeValue&, RuntimeValue&)>;
+using NativeIndexerSetFn2 = std::function<void(VirtualMachine*, const RuntimeValue&, const RuntimeValue&, const RuntimeValue&)>;
+
+struct NativeIndexerDefinition2 {
+    NomadId id = NOMAD_INVALID_ID;
+    const ObjectTypeBase* objectType = nullptr;
+    const Type* indexType1 = nullptr;
+    const Type* indexType2 = nullptr;
+    const Type* valueType = nullptr;
+    NativeIndexerGetFn2 getFn;
+    NativeIndexerSetFn2 setFn;
+    NomadDocField;
+};
+
 } // namespace nomad

@@ -74,6 +74,20 @@ public:
     void setNativeProperty(NomadId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
     void getNativeIndex1(NomadId indexerId, const RuntimeValue& receiver, const RuntimeValue& index, RuntimeValue& result);
     void setNativeIndex1(NomadId indexerId, const RuntimeValue& receiver, const RuntimeValue& index, const RuntimeValue& value);
+    void getNativeIndex2(
+        NomadId indexerId,
+        const RuntimeValue& receiver,
+        const RuntimeValue& index1,
+        const RuntimeValue& index2,
+        RuntimeValue& result
+    );
+    void setNativeIndex2(
+        NomadId indexerId,
+        const RuntimeValue& receiver,
+        const RuntimeValue& index1,
+        const RuntimeValue& index2,
+        const RuntimeValue& value
+    );
     [[nodiscard]] NomadObject* getThis() const;
 
     template<typename Object>

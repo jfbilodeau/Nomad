@@ -107,6 +107,35 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
             ) == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register Array2 constructor");
             }
+            if (runtime->registerNativeIndexer2(
+                arrayType,
+                runtime->getIntegerType(),
+                runtime->getIntegerType(),
+                arrayType->getElementType(),
+                [](
+                    nomad::VirtualMachine* machine,
+                    const nomad::RuntimeValue& index1,
+                    const nomad::RuntimeValue& index2,
+                    nomad::RuntimeValue& result
+                ) {
+                    machine->getThisAs<nomad::Array2dObject>()->getValue(
+                        index1.getIntegerValue(), index2.getIntegerValue(), result
+                    );
+                },
+                [](
+                    nomad::VirtualMachine* machine,
+                    const nomad::RuntimeValue& index1,
+                    const nomad::RuntimeValue& index2,
+                    const nomad::RuntimeValue& value
+                ) {
+                    machine->getThisAs<nomad::Array2dObject>()->setValue(
+                        index1.getIntegerValue(), index2.getIntegerValue(), value
+                    );
+                },
+                NomadDoc("Reads or replaces an element at two zero-based indices. Invalid indices log an error; reads return a default and writes do nothing.")
+            ) == nomad::NOMAD_INVALID_ID) {
+                throw nomad::NomadException("Failed to register Array2 indexer");
+            }
         }
     );
     registerArrayType(
