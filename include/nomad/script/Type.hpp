@@ -336,18 +336,6 @@ public:
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 
-const NomadString INDEXER_TYPE_NAME = "indexer";
-class IndexerType final : public Type {
-public:
-    void initValue(RuntimeValue& value) const override;
-    IndexerType(const std::vector<Type*>& keyTypes, const Type* valueType);
-
-    [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
-    [[nodiscard]] bool sameType(const Type* other) const override;
-};
-
 } // nomad
 
 #endif // NOMAD_TYPE_HPP

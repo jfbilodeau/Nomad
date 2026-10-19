@@ -594,8 +594,4 @@ void EventDispatchType::toString(const RuntimeValue& value, NomadString& string)
     string = std::format("{}({})", EVENT_DISPATCH_TYPE_NAME, value.getIdValue());
 }
 
-void IndexerType::initValue(RuntimeValue& value) const {
-    value.setIdValue(0);
-}
-
 } // namespace nomad

@@ -583,6 +583,102 @@ BOOST_AUTO_TEST_CASE(array2_indexers_work_in_interpreter_and_reject_invalid_synt
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
+BOOST_AUTO_TEST_CASE(array3_indexers_work_in_compiled_scripts_and_interpreter) {
+    TestDirectory directory("nomad_host_array3_indexers");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    const std::vector<NomadString> statements = {
+        "volume = new Array<int> 2 3 4",
+        "assert volume.count == 24",
+        "assert volume[1 2 3] == 0",
+        "volume[0 1 2] = 12",
+        "volume[1 0 2] = 34",
+        "volume[1 2 0] = 56",
+        "alias = volume",
+        "alias[1 2 3] = volume[0 1 2] + volume[1 0 2]",
+        "assert volume[1 2 3] == 46",
+        "assert volume[0 1 2] == 12",
+        "assert volume[1 0 2] == 34",
+        "assert volume[1 2 0] == 56",
+        "assert volume[0 0 0] == 0",
+        "words = new Array3<string> 2 3 4",
+        "words[1 2 3] = \"hello\"",
+        "words[1 2 3] = words[1 2 3]",
+        "assert words[1 2 3][1] == \"e\"",
+        "assert words[0 0 0] == \"\"",
+        "words[0 0 4] = \"ignored\"",
+        "assert words[0 0 4] == \"\"",
+        "assert words[1 2 3] == \"hello\"",
+        "nested = new Array3<List<int>> 1 2 3",
+        "nested[0 1 2].push 7",
+        "saved = nested[0 1 2]",
+        "nested[0 1 2] = new List<int>",
+        "assert saved[0] == 7",
+        "assert nested[0 1 2].count == 0",
+        "nested[0 1 3].push 8",
+        "assert nested[0 1 3].count == 0"
+    };
+    auto sources = statements;
+    for (const auto* indexes : {"-1 0 0", "2 0 0", "0 (-1) 0", "0 3 0", "0 0 (-1)", "0 0 4"}) {
+        sources.push_back("assert volume[" + NomadString(indexes) + "] == 0");
+        sources.push_back("volume[" + NomadString(indexes) + "] = 99");
+    }
+    sources.emplace_back("assert volume[1 2 3] == 46");
+    sources.emplace_back("assert volume[0 0 0] == 0");
+    NomadString script;
+    for (const auto& source : sources) {
+        script += source + "\n";
+    }
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, {{{"main", {"main.nomad", script}}}, {}});
+    BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&compilation, CompilationTarget::Executable),
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    RuntimeValue empty;
+    runtime.getStringType()->initValue(empty);
+    runtime.getStringType()->freeValue(empty);
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    {
+        VirtualMachine machine(&runtime);
+        InterpreterContext context(machine);
+        for (const auto& source : sources) {
+            BOOST_TEST_CONTEXT(source) {
+                const auto isAssertion = source.starts_with("assert ");
+                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, context),
+                    (context.getError() ? *context.getError() : source));
+                if (isAssertion) {
+                    BOOST_TEST(context.getResult()->getValue().getBooleanValue());
+                }
+            }
+        }
+        for (const auto* source : {
+            "volume[0 0]", "volume[0 0 0 0]", "volume[\"key\" 0 0]",
+            "volume[0 \"key\" 0]", "volume[0 0 \"key\"]", "volume[0 0 0] = \"wrong\""
+        }) {
+            BOOST_TEST_CONTEXT(source) {
+                BOOST_TEST(!Interpreter{}.execute(source, context));
+                BOOST_TEST(context.hasError());
+                auto rejectedCompiler = runtime.createCompiler();
+                CompilerContext rejected(rejectedCompiler.get());
+                rejectedCompiler->registerSources(&rejected, {{{"rejected", {"rejected.nomad",
+                    NomadString("volume = new Array<int> 2 3 4\n") + source
+                }}}, {}});
+                BOOST_TEST(!rejectedCompiler->compileScripts(&rejected, CompilationTarget::Executable));
+                BOOST_REQUIRE(Interpreter{}.evaluateExpression("volume[1 2 3] == 46", context));
+                BOOST_TEST(context.getResult()->getValue().getBooleanValue());
+            }
+        }
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    std::ostringstream documentation;
+    generateNativeMemberDocumentation(&runtime, documentation);
+    BOOST_TEST(documentation.str().find("Array3<int>[index1 index2 index3]") != NomadString::npos);
+}
+
 BOOST_AUTO_TEST_CASE(array1_indexers_work_in_interpreter_and_report_bounds_errors) {
     TestDirectory directory("nomad_host_array1_interpreter");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});

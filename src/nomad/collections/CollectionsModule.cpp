@@ -149,6 +149,26 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
             ) == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register Array3 constructor");
             }
+            if (runtime->registerNativeIndexer(
+                arrayType,
+                {runtime->getIntegerType(), runtime->getIntegerType(), runtime->getIntegerType()},
+                arrayType->getElementType(),
+                [](nomad::VirtualMachine* machine) {
+                    machine->getThisAs<nomad::Array3dObject>()->getValue(
+                        machine->getIntegerParameter(0), machine->getIntegerParameter(1),
+                        machine->getIntegerParameter(2), machine->getResult()
+                    );
+                },
+                [](nomad::VirtualMachine* machine) {
+                    machine->getThisAs<nomad::Array3dObject>()->setValue(
+                        machine->getIntegerParameter(0), machine->getIntegerParameter(1),
+                        machine->getIntegerParameter(2), machine->getParameter(3)
+                    );
+                },
+                NomadDoc("Reads or replaces an element at three zero-based indices. Invalid indices log an error; reads return a default and writes do nothing.")
+            ) == nomad::NOMAD_INVALID_ID) {
+                throw nomad::NomadException("Failed to register Array3 indexer");
+            }
         }
     );
     if (!context->runtime->registerNativeParameterizedConstructor(
