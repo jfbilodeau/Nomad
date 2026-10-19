@@ -180,6 +180,39 @@ An empty map returns an empty array. Changing array elements does not change
 the map, and later map changes do not affect an existing snapshot. Each read
 returns a separate array that remains valid after the map is cleared or released.
 
+The read-only `values` property returns an `Array1<V>` snapshot. It contains one
+value per entry, including duplicates, in unspecified order:
+
+```nomad
+scores["alice"] = 100
+scores["bob"] = 200
+values = scores.values
+valueCount = values.count # 2
+```
+
+The read-only `entries` property returns an `Array1<KeyValue<string V>>`
+snapshot. Each read creates a separate array of fresh pairs whose `key` and
+`value` properties are read-only:
+
+```nomad
+entries = scores.entries
+entry = entries[0]
+name = entry.key
+score = entry.value
+```
+
+Both properties return empty arrays for an empty map. Replacing snapshot elements
+does not change the map. Later insertions, replacements, removals, or clearing of
+the map do not change existing snapshots, which remain valid after the map is
+released. There is no guaranteed correspondence between indices in separately
+retrieved `keys`, `values`, or `entries` arrays; use an entry to keep its key and
+value together.
+
+Snapshots do not deep-copy object values. The map, values snapshot, and entry
+pairs share references to those objects, so mutations to a referenced object are
+visible through all of them. Replacing or removing a map entry does not invalidate
+objects held by a snapshot.
+
 ## Fixed-size arrays
 
 Construct arrays with one `int` size per dimension. The result type is

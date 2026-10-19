@@ -3,6 +3,7 @@
 #include <nomad/collections/RegisterMapType.hpp>
 
 #include <nomad/collections/Array1dObject.hpp>
+#include <nomad/collections/KeyValueType.hpp>
 #include <nomad/collections/MapObject.hpp>
 #include <nomad/collections/MapType.hpp>
 
@@ -26,8 +27,14 @@ void registerMapType(Runtime* runtime) {
             const auto* valueType = objectType->getTypeArguments()[1];
             const auto* keyType = objectType->getTypeArguments()[0];
             const auto* keysType = runtime->getParameterizedType("Array1", {keyType});
-            if (keysType == nullptr) {
-                throw nomad::NomadException("Failed to resolve Map keys array type");
+            const auto* valuesType = runtime->getParameterizedType("Array1", {valueType});
+            const auto* entryType = dynamic_cast<const KeyValueType*>(
+                runtime->getParameterizedType("KeyValue", {keyType, valueType})
+            );
+            const auto* entriesType = entryType == nullptr ? nullptr :
+                runtime->getParameterizedType("Array1", {entryType});
+            if (keysType == nullptr || valuesType == nullptr || entriesType == nullptr) {
+                throw nomad::NomadException("Failed to resolve Map snapshot types");
             }
             const auto constructorId = runtime->registerNativeConstructor(
                 objectType, {},
@@ -59,6 +66,30 @@ void registerMapType(Runtime* runtime) {
                 },
                 {},
                 NomadDoc("A fixed-size snapshot of all keys in unspecified order. Changes to the array and map are independent.")
+            );
+            const auto valuesId = runtime->registerNativeProperty(
+                objectType,
+                "values",
+                valuesType,
+                [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
+                    const auto* map = machine->getThisAs<nomad::MapObject>();
+                    auto values = map->getValues();
+                    result.setObjectValue(values.release());
+                },
+                {},
+                NomadDoc("A fixed-size snapshot of all values in unspecified order. Object values share references.")
+            );
+            const auto entriesId = runtime->registerNativeProperty(
+                objectType,
+                "entries",
+                entriesType,
+                [entryType](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
+                    const auto* map = machine->getThisAs<nomad::MapObject>();
+                    auto entries = map->getEntries(entryType);
+                    result.setObjectValue(entries.release());
+                },
+                {},
+                NomadDoc("A fixed-size snapshot of fresh read-only key/value pairs in unspecified order. Object values share references.")
             );
             const auto indexerId = runtime->registerNativeIndexer(
                 objectType,
@@ -118,7 +149,8 @@ void registerMapType(Runtime* runtime) {
             if (constructorId == nomad::NOMAD_INVALID_ID || countId == nomad::NOMAD_INVALID_ID ||
                 indexerId == nomad::NOMAD_INVALID_ID || containsId == nomad::NOMAD_INVALID_ID ||
                 removeId == nomad::NOMAD_INVALID_ID || clearId == nomad::NOMAD_INVALID_ID ||
-                keysId == nomad::NOMAD_INVALID_ID) {
+                keysId == nomad::NOMAD_INVALID_ID || valuesId == nomad::NOMAD_INVALID_ID ||
+                entriesId == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register Map members");
             }
         }

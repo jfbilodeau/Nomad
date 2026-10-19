@@ -684,6 +684,10 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
         "scores = new Map<string int>",
         "emptyKeys = scores.keys",
         "assert emptyKeys.count == 0",
+        "emptyValues = scores.values",
+        "emptyEntries = scores.entries",
+        "assert emptyValues.count == 0",
+        "assert emptyEntries.count == 0",
         "present = scores.contains \"hero\"",
         "assert present == false",
         "assert scores.count == 0",
@@ -712,6 +716,23 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
         "assert present == false",
         "keys = scores.keys",
         "otherKeys = scores.keys",
+        "scoreValues = scores.values",
+        "scoreEntries = scores.entries",
+        "otherEntries = scores.entries",
+        "assert scoreValues.count == 2",
+        "assert scoreValues[0] + scoreValues[1] == 3",
+        "assert scoreEntries.count == 2",
+        "assert scoreEntries[0].key != scoreEntries[1].key",
+        "assert scoreEntries[0].value == scores[scoreEntries[0].key]",
+        "assert scoreEntries[1].value == scores[scoreEntries[1].key]",
+        "savedEntry = scoreEntries[0]",
+        "scoreValues[0] = 999",
+        "scoreEntries[0] = new KeyValue \"snapshot\" 999",
+        "assert scores.count == 2",
+        "present = scores.contains \"snapshot\"",
+        "assert present == false",
+        "assert otherEntries[0].key == savedEntry.key",
+        "assert otherEntries[0].value == savedEntry.value",
         "assert keys.count == 2",
         "assert keys[0] != keys[1]",
         "present = scores.contains keys[0]",
@@ -728,12 +749,19 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
         "scores[\"later\"] = 3",
         "assert keys.count == 2",
         "assert otherKeys.count == 2",
+        "assert scoreValues.count == 2",
+        "assert otherEntries.count == 2",
+        "assert emptyValues.count == 0",
+        "assert emptyEntries.count == 0",
         "assert emptyKeys.count == 0",
         "removed = scores.remove originalKey",
         "assert removed == true",
         "assert otherKeys.count == 2",
         "alias.clear",
         "assert scores.count == 0",
+        "assert otherEntries[0].value + otherEntries[1].value == 3",
+        "assert savedEntry.value == 1 || savedEntry.value == 2",
+        "assert scoreValues[0] == 999",
         "assert otherKeys[0] != otherKeys[1]",
         "assert otherKeys[0] == \"hero\" || otherKeys[0] == \"\"",
         "assert otherKeys[1] == \"hero\" || otherKeys[1] == \"\"",
@@ -743,11 +771,36 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
         "words[\"Hero\"] = \"upper\"",
         "words[\"hero\"] = \"lower\"",
         "wordKeys = words.keys",
+        "wordValues = words.values",
+        "wordEntries = words.entries",
         "words = new Map<string string>",
+        "assert wordValues[0] == \"upper\" || wordValues[0] == \"lower\"",
+        "assert wordValues[1] == \"upper\" || wordValues[1] == \"lower\"",
+        "assert wordValues[0] != wordValues[1]",
+        "assert wordEntries[0].key != wordEntries[1].key",
+        "assert wordEntries[0].value != wordEntries[1].value",
         "assert wordKeys.count == 2",
         "assert wordKeys[0] != wordKeys[1]",
         "assert wordKeys[0] == \"Hero\" || wordKeys[0] == \"hero\"",
-        "assert wordKeys[1] == \"Hero\" || wordKeys[1] == \"hero\""
+        "assert wordKeys[1] == \"Hero\" || wordKeys[1] == \"hero\"",
+        "lists = new Map<string List<int>>",
+        "numbers = new List<int>",
+        "numbers.append 7",
+        "lists[\"numbers\"] = numbers",
+        "listValues = lists.values",
+        "listEntries = lists.entries",
+        "listValues[0].append 8",
+        "listEntries[0].value.append 9",
+        "assert lists[\"numbers\"].count == 3",
+        "assert numbers[2] == 9",
+        "lists[\"numbers\"] = new List<int>",
+        "assert lists[\"numbers\"].count == 0",
+        "assert listEntries[0].value.count == 3",
+        "lists.clear",
+        "lists = new Map<string List<int>>",
+        "assert listValues[0][0] == 7",
+        "assert listEntries[0].key == \"numbers\"",
+        "assert listEntries[0].value[1] == 8"
     };
     NomadString script;
     for (const auto& source : sources) {
@@ -797,6 +850,10 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
     BOOST_TEST(documentation.str().find("`returns bool`") != NomadString::npos);
     BOOST_TEST(documentation.str().find("#### `keys` (*read-only property*)") != NomadString::npos);
     BOOST_TEST(documentation.str().find("`keys:Array1<string>`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `values` (*read-only property*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("`values:Array1<int>`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `entries` (*read-only property*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("`entries:Array1<KeyValue<string int>>`") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_preserve_saved_objects) {
@@ -992,6 +1049,97 @@ BOOST_AUTO_TEST_CASE(collections_maps_release_partial_copies_and_preserve_entrie
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
+BOOST_AUTO_TEST_CASE(collections_map_snapshots_own_references_and_release_partial_results) {
+    class SnapshotValueType final : public ObjectType {
+    public:
+        SnapshotValueType(): ObjectType("SnapshotValue") {}
+        void initValue(RuntimeValue& value) const override {
+            if (failInitialization) {
+                value.setObjectValue(new NomadObject);
+                throw NomadException("Snapshot value initialization failed");
+            }
+            ObjectType::initValue(value);
+        }
+        void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override {
+            ObjectType::copyValue(source, destination);
+            if (copiesUntilFailure == 0) {
+                throw NomadException("Snapshot value copy failed");
+            }
+            if (copiesUntilFailure > 0) {
+                --copiesUntilFailure;
+            }
+        }
+        mutable NomadInteger copiesUntilFailure = -1;
+        bool failInitialization = false;
+    } valueType;
+    StringType keyType;
+    KeyValueType entryType(&keyType, &valueType);
+    RuntimeValue empty;
+    keyType.initValue(empty);
+    keyType.freeValue(empty);
+    const auto before = NomadObject::getLiveObjectCount();
+    {
+        MapObject map(&valueType);
+        RuntimeValue value;
+        value.setObjectValue(new NomadObject);
+        map.setValue("first", value);
+        map.setValue("second", value);
+        BOOST_TEST(value.getObjectValue()->getReferenceCount() == 3u);
+        const auto storedObjects = NomadObject::getLiveObjectCount();
+        valueType.failInitialization = true;
+        BOOST_CHECK_THROW(static_cast<void>(map.getValues()), NomadException);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == storedObjects);
+        BOOST_CHECK_THROW(static_cast<void>(map.getEntries(&entryType)), NomadException);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == storedObjects);
+        valueType.failInitialization = false;
+        for (const auto successfulCopies : {0, 1}) {
+            valueType.copiesUntilFailure = successfulCopies;
+            BOOST_CHECK_THROW(static_cast<void>(map.getValues()), NomadException);
+            BOOST_TEST(value.getObjectValue()->getReferenceCount() == 3u);
+            BOOST_TEST(NomadObject::getLiveObjectCount() == storedObjects);
+            valueType.copiesUntilFailure = successfulCopies;
+            BOOST_CHECK_THROW(static_cast<void>(map.getEntries(&entryType)), NomadException);
+            BOOST_TEST(value.getObjectValue()->getReferenceCount() == 3u);
+            BOOST_TEST(NomadObject::getLiveObjectCount() == storedObjects);
+            BOOST_TEST(map.getCount() == 2u);
+            BOOST_TEST(map.contains("first"));
+            BOOST_TEST(map.contains("second"));
+        }
+        valueType.copiesUntilFailure = -1;
+        {
+            auto values = map.getValues();
+            auto entries = map.getEntries(&entryType);
+            auto otherEntries = map.getEntries(&entryType);
+            BOOST_TEST(values->getCount() == 2u);
+            BOOST_TEST(entries->getCount() == 2u);
+            BOOST_TEST(otherEntries->getCount() == 2u);
+            BOOST_TEST(value.getObjectValue()->getReferenceCount() == 9u);
+            RuntimeValue firstEntry;
+            RuntimeValue otherEntry;
+            entries->getValue(0, firstEntry);
+            otherEntries->getValue(0, otherEntry);
+            BOOST_TEST(firstEntry.getObjectValue() != otherEntry.getObjectValue());
+            BOOST_TEST(firstEntry.asObject<KeyValueObject>()->getValue().getObjectValue() == value.getObjectValue());
+            BOOST_TEST(otherEntry.asObject<KeyValueObject>()->getValue().getObjectValue() == value.getObjectValue());
+            map.clear();
+            BOOST_TEST(value.getObjectValue()->getReferenceCount() == 7u);
+            entryType.freeValue(firstEntry);
+            entryType.freeValue(otherEntry);
+        }
+        BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
+        valueType.freeValue(value);
+        BOOST_TEST(map.getValues()->getCount() == 0u);
+        BOOST_TEST(map.getEntries(&entryType)->getCount() == 0u);
+        BOOST_CHECK_THROW(static_cast<void>(map.getEntries(nullptr)), NomadException);
+        IntegerType integerType;
+        KeyValueType wrongKeyType(&integerType, &valueType);
+        KeyValueType wrongValueType(&keyType, &integerType);
+        BOOST_CHECK_THROW(static_cast<void>(map.getEntries(&wrongKeyType)), NomadException);
+        BOOST_CHECK_THROW(static_cast<void>(map.getEntries(&wrongValueType)), NomadException);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
 BOOST_AUTO_TEST_CASE(collections_maps_reject_unsupported_operations_and_types) {
     TestDirectory directory("nomad_host_map_validation");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
@@ -1022,7 +1170,13 @@ BOOST_AUTO_TEST_CASE(collections_maps_reject_unsupported_operations_and_types) {
         "values = new Map<string int>\nvalues.clear 1",
         "values = new Map<string int>\nresult = values.clear",
         "values = new Map<string int>\nvalues.keys = new Array<string> 1",
-        "values = new Map<string int>\nvalues.keys[0] = 1"
+        "values = new Map<string int>\nvalues.keys[0] = 1",
+        "values = new Map<string int>\nvalues.values = new Array<int> 1",
+        "values = new Map<string int>\nvalues.entries = new Array<KeyValue<string int>> 1",
+        "values = new Map<string int>\nvalues.values[0] = \"wrong\"",
+        "values = new Map<string int>\nvalues.entries[0] = new KeyValue \"wrong\" true",
+        "values = new Map<string int>\nvalues.entries[0].key = \"wrong\"",
+        "values = new Map<string int>\nvalues.entries[0].value = 2"
     }) {
         BOOST_TEST_CONTEXT(source) {
             auto compiler = runtime.createCompiler();

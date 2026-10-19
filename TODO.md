@@ -12,6 +12,7 @@ Things the author wants to do.
 [ ] Need to add `game.mouse.x/y`, `scene.mouse.x/y` and `this.mouse.x/y`
 [ ] Configure logging via `nomad.toml`
 [ ] Sample game
+[ ] Native GUI?
 [ ] Select text (`t.*`) language
 [ ] `this.wait`, `scene.wait`, `game.wait`
 [ ] Support to tween properties

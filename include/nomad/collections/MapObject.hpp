@@ -10,6 +10,7 @@
 namespace nomad {
 
 class Array1dObject;
+class KeyValueType;
 class Type;
 
 class MapObject final : public NomadObject {
@@ -20,6 +21,8 @@ public:
     [[nodiscard]] const Type* getValueType() const;
     [[nodiscard]] NomadIndex getCount() const;
     [[nodiscard]] std::unique_ptr<Array1dObject> getKeys(const Type* keyType) const;
+    [[nodiscard]] std::unique_ptr<Array1dObject> getValues() const;
+    [[nodiscard]] std::unique_ptr<Array1dObject> getEntries(const KeyValueType* entryType) const;
     [[nodiscard]] bool contains(NomadStringView key) const;
     [[nodiscard]] bool remove(NomadStringView key);
     void clear();

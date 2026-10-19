@@ -3,6 +3,8 @@
 #include <nomad/collections/MapObject.hpp>
 
 #include <nomad/collections/Array1dObject.hpp>
+#include <nomad/collections/KeyValueObject.hpp>
+#include <nomad/collections/KeyValueType.hpp>
 
 #include <nomad/log/Logger.hpp>
 
@@ -54,6 +56,55 @@ std::unique_ptr<Array1dObject> MapObject::getKeys(const Type* keyType) const {
         ++index;
     }
     return keys;
+}
+
+std::unique_ptr<Array1dObject> MapObject::getValues() const {
+    if (m_values.empty()) {
+        return std::make_unique<Array1dObject>(m_valueType);
+    }
+    if (!std::in_range<NomadInteger>(m_values.size())) {
+        throw NomadException("Map value count exceeds the maximum array size");
+    }
+    auto values = std::make_unique<Array1dObject>(m_valueType, static_cast<NomadInteger>(m_values.size()));
+    auto index = NomadInteger{0};
+    for (const auto& [key, value] : m_values) {
+        values->setValue(index, value);
+        ++index;
+    }
+    return values;
+}
+
+std::unique_ptr<Array1dObject> MapObject::getEntries(const KeyValueType* entryType) const {
+    if (entryType == nullptr || !entryType->getTypeArguments()[0]->isString() ||
+        !entryType->getTypeArguments()[1]->sameType(m_valueType)) {
+        throw NomadException("Map entry type must be KeyValue<string V> with the map's value type");
+    }
+    const auto* keyType = entryType->getTypeArguments()[0];
+    if (m_values.empty()) {
+        return std::make_unique<Array1dObject>(entryType);
+    }
+    if (!std::in_range<NomadInteger>(m_values.size())) {
+        throw NomadException("Map entry count exceeds the maximum array size");
+    }
+    auto entries = std::make_unique<Array1dObject>(entryType, static_cast<NomadInteger>(m_values.size()));
+    auto index = NomadInteger{0};
+    for (const auto& [key, value] : m_values) {
+        RuntimeValue storedKey;
+        storedKey.setStringValue(key);
+        RuntimeValue entry;
+        try {
+            entry.setObjectValue(new KeyValueObject(keyType, m_valueType, storedKey, value));
+            entries->setValue(index, entry);
+        } catch (...) {
+            entryType->freeValue(entry);
+            keyType->freeValue(storedKey);
+            throw;
+        }
+        entryType->freeValue(entry);
+        keyType->freeValue(storedKey);
+        ++index;
+    }
+    return entries;
 }
 
 bool MapObject::contains(const NomadStringView key) const {
