@@ -6,7 +6,6 @@
 
 #include <nomad/script/Documentation.hpp>
 
-#include <utility>
 #include <vector>
 
 namespace nomad {
@@ -44,20 +43,20 @@ class Callable {
 public:
     Callable(const Callable&) = delete;
     Callable& operator=(const Callable&) = delete;
-    virtual ~Callable() = default;
+    virtual ~Callable();
 
-    [[nodiscard]] NomadId getId() const { return m_id; }
-    [[nodiscard]] const NomadString& getName() const { return m_name; }
-    [[nodiscard]] CallableType getType() const { return m_type; }
-    [[nodiscard]] CallableSource getSource() const { return m_source; }
-    [[nodiscard]] const std::vector<Parameter>& getParameters() const { return m_parameters; }
-    [[nodiscard]] NomadIndex getParameterCount() const { return m_parameters.size(); }
+    [[nodiscard]] NomadId getId() const;
+    [[nodiscard]] const NomadString& getName() const;
+    [[nodiscard]] CallableType getType() const;
+    [[nodiscard]] CallableSource getSource() const;
+    [[nodiscard]] const std::vector<Parameter>& getParameters() const;
+    [[nodiscard]] NomadIndex getParameterCount() const;
     // The type of the value the callable yields; void when it yields nothing.
-    [[nodiscard]] const Type* getReturnType() const { return m_returnType; }
+    [[nodiscard]] const Type* getReturnType() const;
     // Method: the receiver's type. Constructor: the class being constructed (e.g. `Array`), which may differ from
     // the return type (e.g. `Array1<int>`). Null for functions.
-    [[nodiscard]] const Type* getObjectType() const { return m_objectType; }
-    [[nodiscard]] const NomadString& getDoc() const { return m_doc; }
+    [[nodiscard]] const Type* getObjectType() const;
+    [[nodiscard]] const NomadString& getDoc() const;
 
 protected:
     Callable(
@@ -68,20 +67,11 @@ protected:
         const Type* returnType,
         const Type* objectType,
         NomadString doc
-    ):
-        m_name(std::move(name)),
-        m_type(type),
-        m_source(source),
-        m_parameters(std::move(parameters)),
-        m_returnType(returnType),
-        m_objectType(objectType),
-        m_doc(std::move(doc))
-    {
-    }
+    );
 
-    void setId(const NomadId id) { m_id = id; }
-    void setReturnType(const Type* returnType) { m_returnType = returnType; }
-    [[nodiscard]] std::vector<Parameter>& getEditableParameters() { return m_parameters; }
+    void setId(NomadId id);
+    void setReturnType(const Type* returnType);
+    [[nodiscard]] std::vector<Parameter>& getEditableParameters();
 
 private:
     friend class Runtime; // Assigns the id when the callable joins the function table.
@@ -99,9 +89,9 @@ private:
 // A callable that does not need a receiver.
 class Function : public Callable {
 public:
-    [[nodiscard]] virtual const NativeFunction* asNativeFunction() const { return nullptr; }
-    [[nodiscard]] virtual ScriptFunction* asScriptFunction() { return nullptr; }
-    [[nodiscard]] virtual const ScriptFunction* asScriptFunction() const { return nullptr; }
+    [[nodiscard]] virtual const NativeFunction* asNativeFunction() const;
+    [[nodiscard]] virtual ScriptFunction* asScriptFunction();
+    [[nodiscard]] virtual const ScriptFunction* asScriptFunction() const;
 
 protected:
     Function(
@@ -110,17 +100,14 @@ protected:
         std::vector<Parameter> parameters,
         const Type* returnType,
         NomadString doc
-    ):
-        Callable(CallableType::Function, source, std::move(name), std::move(parameters), returnType, nullptr, std::move(doc))
-    {
-    }
+    );
 };
 
 // A callable invoked on an object of `objectType`.
 class Method : public Callable {
 public:
-    [[nodiscard]] virtual const NativeMethod* asNativeMethod() const { return nullptr; }
-    [[nodiscard]] virtual const ScriptMethod* asScriptMethod() const { return nullptr; }
+    [[nodiscard]] virtual const NativeMethod* asNativeMethod() const;
+    [[nodiscard]] virtual const ScriptMethod* asScriptMethod() const;
 
 protected:
     Method(
@@ -130,17 +117,14 @@ protected:
         std::vector<Parameter> parameters,
         const Type* returnType,
         NomadString doc
-    ):
-        Callable(CallableType::Method, source, std::move(name), std::move(parameters), returnType, objectType, std::move(doc))
-    {
-    }
+    );
 };
 
 // Creates an object. The name is the one of the class being constructed.
 class Constructor : public Callable {
 public:
-    [[nodiscard]] virtual const NativeConstructor* asNativeConstructor() const { return nullptr; }
-    [[nodiscard]] virtual const ScriptConstructor* asScriptConstructor() const { return nullptr; }
+    [[nodiscard]] virtual const NativeConstructor* asNativeConstructor() const;
+    [[nodiscard]] virtual const ScriptConstructor* asScriptConstructor() const;
 
 protected:
     Constructor(
@@ -150,10 +134,7 @@ protected:
         std::vector<Parameter> parameters,
         const Type* createdType,
         NomadString doc
-    ):
-        Callable(CallableType::Constructor, source, std::move(name), std::move(parameters), createdType, objectType, std::move(doc))
-    {
-    }
+    );
 };
 
 } // nomad

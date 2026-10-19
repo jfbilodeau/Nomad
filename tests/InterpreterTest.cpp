@@ -172,8 +172,8 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
     const auto id = runtime.registerScriptFunction("frame", "frame.nomad", "");
     auto* function = runtime.getScriptFunction(id);
     function->setParentId(parentId);
-    function->addParameter("value", runtime.getIntegerType());
-    function->addParameter("text", runtime.getStringType());
+    function->addParameter("value", runtime.getIntegerType(), "");
+    function->addParameter("text", runtime.getStringType(), "");
     function->createCapture(0, "captured", CaptureSource::Variable, runtime.getIntegerType());
     function->registerVariable("local", runtime.getIntegerType());
     function->registerVariable("localText", runtime.getStringType());

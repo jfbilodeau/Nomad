@@ -40,13 +40,17 @@ public:
     [[nodiscard]] NomadIndex getSourceStartLine() const { return m_sourceStartLine; }
     [[nodiscard]] NomadIndex getSourceEndLine() const { return m_sourceEndLine; }
 
-    NomadId addParameter(const NomadString& parameterName, const Type* type) {
+    NomadId addParameter(
+        const NomadString& parameterName,
+        const Type* type,
+        const NomadString& doc
+    ) {
         auto parameterId = getParameterId(parameterName);
         auto& parameters = this->getEditableParameters();
 
         if (parameterId == NOMAD_INVALID_ID) {
             parameterId = toNomadId(parameters.size());
-            parameters.push_back({parameterName, type});
+            parameters.push_back(defParameter(parameterName, type, doc));
         } else {
             auto& existing = parameters[toNomadIndex(parameterId)];
             if (existing.type == nullptr) {
@@ -107,7 +111,7 @@ public:
             throw NomadBug("Internal error: Capture '" + name + "' is already registered as a parameter");
         }
         m_captures.push_back({name, id, type, source});
-        addParameter(name, type);
+        addParameter(name, type, "");
         return toNomadId(m_captures.size() - 1);
     }
 

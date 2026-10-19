@@ -5,6 +5,7 @@ Things the author wants to do.
 
 
 ## Open
+[ ] `doc` comments in Nomad.
 [ ] Game debug console--root should be Game/Inventory/Windows/etc.
 [ ] Need to add `game.mouse.x/y`, `scene.mouse.x/y` and `this.mouse.x/y`
 [ ] Configure logging via `nomad.toml`

@@ -230,7 +230,11 @@ InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine, ScriptFun
     m_function = std::make_unique<ScriptFunction>(function.getId(), function.getName(), function.getPath(), "");
     for (NomadIndex index = 0; index < function.getParameterCount(); ++index) {
         const auto id = toNomadId(index);
-        m_function->addParameter(function.getParameterName(id), function.getParameterType(id));
+        m_function->addParameter(
+            function.getParameterName(id),
+            function.getParameterType(id),
+            function.getParameters()[index].doc
+        );
     }
     for (NomadIndex index = 0; index < m_frameVariableCount; ++index) {
         const auto id = toNomadId(index);

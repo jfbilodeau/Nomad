@@ -72,8 +72,11 @@ callables are registered.
 Registering additional APIs does not change the selected targets of already
 resolved function, method, or constructor calls.
 
-Signatures expose `Parameter` entries through `getParameters()`. Script source
-text is available through `getSourceCode()`; `getSource()` identifies whether
+Signatures expose `Parameter` entries through `getParameters()`. Script
+parameters added with `addParameter(name, type, doc)` require a documentation
+string; pass an empty string when no description is available. Descriptions are
+available through each parameter's `doc` field.
+Script source text is available through `getSourceCode()`; `getSource()` identifies whether
 the callable is native or script-backed. Script enumeration and source/bytecode
 lookups continue to include only script functions.
 

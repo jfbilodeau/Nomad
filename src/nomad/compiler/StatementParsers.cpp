@@ -126,7 +126,7 @@ bool parseCallbackFunParameters(CompilerContext* context, ScriptFunction* functi
             return false;
         }
 
-        function->addParameter(parameterName, parameterType);
+        function->addParameter(parameterName, parameterType, "");
     }
 
     return true;
@@ -1113,7 +1113,7 @@ bool preParseParamsStatement(CompilerContext* context, ScriptFunction* function,
             return false;
         }
 
-        function->addParameter(parameterName, parameterType);
+        function->addParameter(parameterName, parameterType, "");
     }
 
     return true;

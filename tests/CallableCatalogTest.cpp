@@ -128,12 +128,13 @@ BOOST_AUTO_TEST_CASE(function_signature_is_read_live)
     auto* function = runtime.getScriptFunction(functionId);
     BOOST_REQUIRE(function != nullptr);
 
-    function->addParameter("value", runtime.getIntegerType());
+    function->addParameter("value", runtime.getIntegerType(), "Value to compute");
     function->setReturnType(runtime.getFloatType());
 
     BOOST_TEST(runtime.getCallable(callable)->getParameterCount() == NomadIndex{1});
     BOOST_TEST(runtime.getCallable(callable)->getParameters()[0].name == "value");
     BOOST_TEST(runtime.getCallable(callable)->getParameters()[0].type == runtime.getIntegerType());
+    BOOST_TEST(runtime.getCallable(callable)->getParameters()[0].doc == "Value to compute");
     BOOST_TEST(runtime.getCallable(callable)->getReturnType() == runtime.getFloatType());
 }
 
@@ -163,7 +164,7 @@ BOOST_AUTO_TEST_CASE(script_function_joins_function_table)
     BOOST_TEST(runtime.getFunction(scriptId)->asScriptFunction() == std::as_const(runtime).getScriptFunction(scriptId));
     BOOST_TEST(runtime.getScriptFunction(scriptId)->asScriptFunction() == runtime.getScriptFunction(scriptId));
 
-    runtime.getScriptFunction(scriptId)->addParameter("value", runtime.getIntegerType());
+    runtime.getScriptFunction(scriptId)->addParameter("value", runtime.getIntegerType(), "");
 
     BOOST_REQUIRE(function->getParameters().size() == NomadIndex{1});
     BOOST_TEST(function->getParameters()[0].name == "value");
@@ -228,7 +229,7 @@ BOOST_AUTO_TEST_CASE(script_function_views_and_state_survive_table_growth)
     const auto* function = runtime.getFunction(scriptId);
     const auto* callable = runtime.getCallable(scriptId);
 
-    script->addParameter("value", runtime.getIntegerType());
+    script->addParameter("value", runtime.getIntegerType(), "");
     script->setReturnType(runtime.getIntegerType());
     script->registerVariable("local", runtime.getFloatType());
     script->setSourceLineRange(2, 4);
