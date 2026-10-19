@@ -8,6 +8,7 @@
 #include <nomad/script/Variable.hpp>
 
 #include <vector>
+#include <memory>
 
 namespace nomad {
 
@@ -38,8 +39,8 @@ public:
 
     ~ScriptFunction();
 
-    // Links the function to its entry in the runtime's function table. From then on, parameters and the return type
-    // are kept in sync with that entry.
+    // Links the function to its entry in the runtime's function table, which becomes the only store of its
+    // signature. Must be called before parameters are added.
     void attachDefinition(ScriptFunctionDefinition* definition);
 
     [[nodiscard]]
@@ -122,9 +123,11 @@ public:
     NomadIndex getFunctionLength() const;
 
 private:
-    NomadId m_id;
+    // Signature (id, name, parameters, return type) lives only in the definition: the runtime's table entry once
+    // attached, `m_ownedDefinition` for a function that has no runtime.
+    std::unique_ptr<ScriptFunctionDefinition> m_ownedDefinition;
+    ScriptFunctionDefinition* m_definition = nullptr;
 
-    NomadString m_name;
     NomadString m_path;
     NomadString m_source;
     NomadIndex m_sourceStartLine = NOMAD_INVALID_INDEX;
@@ -133,14 +136,11 @@ private:
     NomadIndex m_functionEndIndex = NOMAD_INVALID_INDEX;
 
     VariableMap m_variables;  // Local function variables (refactored from vector<VariableMetadata>)
-    VariableMap m_parameters;
 
     // Capture tracking: which of MY parameters/variables are being captured by nested functions
     std::vector<Capture> m_captures;
 
     NomadId m_parentId = NOMAD_INVALID_ID;
-    const Type* m_returnType = nullptr;
-    ScriptFunctionDefinition* m_definition = nullptr;
 };
 
 } // nomad

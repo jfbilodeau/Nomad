@@ -2292,8 +2292,8 @@ NomadId Runtime::registerScriptFunction(
     const auto id = addFunctionDefinition(std::move(definition));
 
     auto function = std::make_unique<ScriptFunction>(id, name, path, source);
-    function->attachDefinition(definitionPtr);
     definitionPtr->function = function.get();
+    function->attachDefinition(definitionPtr);
     m_functions.push_back(std::move(function));
 
     addCallable(name, CallableId{CallableKind::Function, id});
