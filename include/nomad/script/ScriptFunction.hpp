@@ -11,6 +11,8 @@
 
 namespace nomad {
 
+struct ScriptFunctionDefinition;
+
 enum class CaptureSource {
     Variable,
     Parameter,
@@ -35,6 +37,10 @@ public:
     ScriptFunction(const ScriptFunction& other) = delete;
 
     ~ScriptFunction();
+
+    // Links the function to its entry in the runtime's function table. From then on, parameters and the return type
+    // are kept in sync with that entry.
+    void attachDefinition(ScriptFunctionDefinition* definition);
 
     [[nodiscard]]
     NomadId getId() const;
@@ -134,6 +140,7 @@ private:
 
     NomadId m_parentId = NOMAD_INVALID_ID;
     const Type* m_returnType = nullptr;
+    ScriptFunctionDefinition* m_definition = nullptr;
 };
 
 } // nomad

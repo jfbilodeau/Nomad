@@ -80,6 +80,18 @@ struct ConstructorDefinition : FunctionDefinition {
     ConstructorFactory factory;
 };
 
+class ScriptFunction;
+
+// Functions compiled from Nomad source. Parameters are known as soon as the declaration is parsed; `returnType`
+// stays null until the body has been compiled.
+struct ScriptFunctionDefinition : FunctionDefinition {
+    ScriptFunctionDefinition() {
+        source = CallableSource::Script;
+    }
+
+    ScriptFunction* function = nullptr; // Owned by `Runtime`.
+};
+
 // Where a callable is implemented. Both kinds are called with the same syntax in Nomad code.
 enum class CallableKind {
     NativeFunction = 1, // Implemented in C++ and registered by the host runtime.

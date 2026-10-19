@@ -37,8 +37,8 @@ BOOST_AUTO_TEST_CASE(runtime_owns_registered_functions_and_exposes_observer_view
         const auto firstFunctionId = runtime.registerScriptFunction("first", "first.nomad", "");
         const auto secondFunctionId = runtime.registerScriptFunction("second", "second.nomad", "");
 
-        BOOST_TEST(firstFunctionId == 0);
-        BOOST_TEST(secondFunctionId == 1);
+        BOOST_TEST(firstFunctionId != NOMAD_INVALID_ID);
+        BOOST_TEST(secondFunctionId == firstFunctionId + 1);
         BOOST_TEST(runtime.getFunctionCount() == 2U);
         BOOST_TEST(runtime.getFunction(firstFunctionId) != nullptr);
         BOOST_TEST(runtime.getFunction(secondFunctionId) != nullptr);
@@ -60,7 +60,7 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_and_duplicate_function_ids)
 
     const auto functionId = runtime.registerScriptFunction("function", "function.nomad", "");
 
-    BOOST_TEST(functionId == 0);
+    BOOST_TEST(functionId != NOMAD_INVALID_ID);
     BOOST_TEST(runtime.registerScriptFunction("function", "duplicate.nomad", "") == NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getFunctionCount() == 1U);
     BOOST_TEST(runtime.getFunction(NOMAD_INVALID_ID) == nullptr);

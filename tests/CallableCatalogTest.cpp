@@ -127,6 +127,42 @@ BOOST_AUTO_TEST_CASE(function_signature_is_read_live)
     BOOST_TEST(runtime.getCallableReturnType(callable) == runtime.getFloatType());
 }
 
+BOOST_AUTO_TEST_CASE(script_function_joins_function_table)
+{
+    Runtime runtime;
+
+    const auto nativeId = registerVoidNativeFunction(runtime, "test.native");
+    const auto scriptId = runtime.registerScriptFunction("scripted", "scripted.nomad", "");
+
+    BOOST_REQUIRE(scriptId != NOMAD_INVALID_ID);
+    BOOST_TEST(scriptId != nativeId);
+
+    const auto* definition = runtime.getScriptFunctionDefinition(scriptId);
+    BOOST_REQUIRE(definition != nullptr);
+    BOOST_TEST(definition->id == scriptId);
+    BOOST_TEST(definition->name == "scripted");
+    BOOST_TEST((definition->source == CallableSource::Script));
+    BOOST_TEST((definition->type == CallableType::Function));
+    BOOST_TEST(definition->function == runtime.getFunction(scriptId));
+    BOOST_TEST(runtime.getScriptFunctionDefinition(nativeId) == nullptr);
+    BOOST_TEST(runtime.getNativeFunctionDefinition(scriptId) == nullptr);
+
+    runtime.getFunction(scriptId)->addParameter("value", runtime.getIntegerType());
+
+    BOOST_REQUIRE(definition->parameters.size() == NomadIndex{1});
+    BOOST_TEST(definition->parameters[0].name == "value");
+    BOOST_TEST(definition->parameters[0].type == runtime.getIntegerType());
+    BOOST_TEST(definition->returnType == nullptr);
+
+    BOOST_TEST(runtime.setScriptFunctionReturnType(scriptId, runtime.getFloatType()));
+    BOOST_TEST(definition->returnType == runtime.getFloatType());
+    BOOST_TEST(!runtime.setScriptFunctionReturnType(nativeId, runtime.getFloatType()));
+
+    const auto resolved = runtime.resolveFunction("scripted", {runtime.getIntegerType()});
+    BOOST_TEST((resolved.status == ResolveStatus::Resolved));
+    BOOST_TEST(resolved.id == scriptId);
+}
+
 BOOST_AUTO_TEST_CASE(catalog_separates_native_functions_from_functions)
 {
     Runtime runtime;

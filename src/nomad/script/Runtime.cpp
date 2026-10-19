@@ -2284,13 +2284,43 @@ NomadId Runtime::registerScriptFunction(
         return NOMAD_INVALID_ID;
     }
 
-    const auto id = toNomadId(m_functions.size());
+    auto definition = std::make_unique<ScriptFunctionDefinition>();
+    definition->name = name;
+    definition->type = CallableType::Function;
+    auto* definitionPtr = definition.get();
 
-    m_functions.push_back(std::make_unique<ScriptFunction>(id, name, path, source));
+    const auto id = addFunctionDefinition(std::move(definition));
+
+    auto function = std::make_unique<ScriptFunction>(id, name, path, source);
+    function->attachDefinition(definitionPtr);
+    definitionPtr->function = function.get();
+    m_functions.push_back(std::move(function));
 
     addCallable(name, CallableId{CallableKind::Function, id});
 
     return id;
+}
+
+const ScriptFunctionDefinition* Runtime::getScriptFunctionDefinition(const NomadId functionId) const {
+    const auto* definition = getFunctionDefinition(functionId);
+
+    if (definition == nullptr || definition->source != CallableSource::Script) {
+        return nullptr;
+    }
+
+    return static_cast<const ScriptFunctionDefinition*>(definition);
+}
+
+bool Runtime::setScriptFunctionReturnType(const NomadId functionId, const Type* returnType) {
+    auto* function = getFunction(functionId);
+
+    if (function == nullptr) {
+        return false;
+    }
+
+    function->setReturnType(returnType);
+
+    return true;
 }
 
 NomadId Runtime::getFunctionId(const NomadString& name) const {
@@ -2304,11 +2334,9 @@ NomadId Runtime::getFunctionId(const NomadString& name) const {
 }
 
 ScriptFunction* Runtime::getFunction(NomadId function_id) const {
-    if (isIdOutOfRange(function_id, m_functions.size())) {
-        return nullptr;
-    }
+    const auto* definition = getScriptFunctionDefinition(function_id);
 
-    return m_functions[static_cast<NomadIndex>(function_id)].get();
+    return definition == nullptr ? nullptr : definition->function;
 }
 
 ScriptFunction* Runtime::getFunctionAtLine(
@@ -2331,11 +2359,13 @@ ScriptFunction* Runtime::getFunctionAtLine(
 }
 
 std::optional<NomadString> Runtime::getFunctionName(NomadId functionId) const {
-    if (isIdOutOfRange(functionId, m_functions.size())) {
+    const auto* function = getFunction(functionId);
+
+    if (function == nullptr) {
         return std::nullopt;
     }
 
-    return m_functions[static_cast<NomadIndex>(functionId)]->getName();
+    return function->getName();
 }
 
 ScriptFunction * Runtime::getFunctionByStartAddress(NomadIndex startAddress) const {

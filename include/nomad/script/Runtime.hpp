@@ -371,6 +371,10 @@ public:
     NomadId registerScriptFunction(const NomadString& name, const NomadString& path, const NomadString& source);
     [[nodiscard]] NomadId getFunctionId(const NomadString& name) const;
     [[nodiscard]] ScriptFunction* getFunction(NomadId function_id) const;
+    // Null unless `functionId` identifies a script function.
+    [[nodiscard]] const ScriptFunctionDefinition* getScriptFunctionDefinition(NomadId functionId) const;
+    // Script return types are inferred after compilation. Returns false if `functionId` is not a script function.
+    bool setScriptFunctionReturnType(NomadId functionId, const Type* returnType);
     [[nodiscard]] ScriptFunction* getFunctionAtLine(
         const NomadString& sourceName,
         NomadIndex line

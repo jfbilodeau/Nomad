@@ -2,9 +2,16 @@
 
 #include <nomad/script/ScriptFunction.hpp>
 
+#include <nomad/script/Callable.hpp>
+
 #include <utility>
 
 namespace nomad {
+    
+void ScriptFunction::attachDefinition(ScriptFunctionDefinition* definition) {
+    m_definition = definition;
+}
+
 ScriptFunction::ScriptFunction(
     NomadId      id,
     NomadString  name,
@@ -51,6 +58,10 @@ NomadIndex ScriptFunction::getSourceEndLine() const {
 
 NomadId ScriptFunction::addParameter(const NomadString& parameterName, const Type* type) {
     m_parameters.registerVariable(parameterName, type);
+
+    if (m_definition != nullptr) {
+        m_definition->parameters.push_back({parameterName, type});
+    }
 
     return static_cast<NomadId>(m_parameters.getVariableCount() - 1);
 }
@@ -224,6 +235,10 @@ NomadIndex ScriptFunction::getVariableCount() const {
 
 void ScriptFunction::setReturnType(const Type* returnType) {
     m_returnType = returnType;
+
+    if (m_definition != nullptr) {
+        m_definition->returnType = returnType;
+    }
 }
 
 const Type* ScriptFunction::getReturnType() const {
