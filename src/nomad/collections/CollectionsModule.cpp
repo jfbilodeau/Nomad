@@ -71,16 +71,16 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 throw nomad::NomadException("Failed to register Array1 constructor");
             }
             const auto* elementType = arrayType->getElementType();
-            if (runtime->registerNativeIndexer1(
+            if (runtime->registerNativeIndexer(
                 arrayType,
-                runtime->getIntegerType(),
+                {runtime->getIntegerType()},
                 elementType,
-                [](nomad::VirtualMachine* machine, const nomad::RuntimeValue& index, nomad::RuntimeValue& result) {
+                [](nomad::VirtualMachine* machine) {
                     const auto* array = machine->getThisAs<nomad::Array1dObject>();
-                    array->getValue(index.getIntegerValue(), result);
+                    array->getValue(machine->getIntegerParameter(0), machine->getResult());
                 },
-                [](nomad::VirtualMachine* machine, const nomad::RuntimeValue& index, const nomad::RuntimeValue& value) {
-                    machine->getThisAs<nomad::Array1dObject>()->setValue(index.getIntegerValue(), value);
+                [](nomad::VirtualMachine* machine) {
+                    machine->getThisAs<nomad::Array1dObject>()->setValue(machine->getIntegerParameter(0), machine->getParameter(1));
                 },
                 NomadDoc("Reads or replaces an element at a zero-based index. Invalid indices log an error; reads return a default and writes do nothing.")
             ) == nomad::NOMAD_INVALID_ID) {
@@ -107,29 +107,18 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
             ) == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register Array2 constructor");
             }
-            if (runtime->registerNativeIndexer2(
+            if (runtime->registerNativeIndexer(
                 arrayType,
-                runtime->getIntegerType(),
-                runtime->getIntegerType(),
+                {runtime->getIntegerType(), runtime->getIntegerType()},
                 arrayType->getElementType(),
-                [](
-                    nomad::VirtualMachine* machine,
-                    const nomad::RuntimeValue& index1,
-                    const nomad::RuntimeValue& index2,
-                    nomad::RuntimeValue& result
-                ) {
+                [](nomad::VirtualMachine* machine) {
                     machine->getThisAs<nomad::Array2dObject>()->getValue(
-                        index1.getIntegerValue(), index2.getIntegerValue(), result
+                        machine->getIntegerParameter(0), machine->getIntegerParameter(1), machine->getResult()
                     );
                 },
-                [](
-                    nomad::VirtualMachine* machine,
-                    const nomad::RuntimeValue& index1,
-                    const nomad::RuntimeValue& index2,
-                    const nomad::RuntimeValue& value
-                ) {
+                [](nomad::VirtualMachine* machine) {
                     machine->getThisAs<nomad::Array2dObject>()->setValue(
-                        index1.getIntegerValue(), index2.getIntegerValue(), value
+                        machine->getIntegerParameter(0), machine->getIntegerParameter(1), machine->getParameter(2)
                     );
                 },
                 NomadDoc("Reads or replaces an element at two zero-based indices. Invalid indices log an error; reads return a default and writes do nothing.")
@@ -227,16 +216,16 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
                 runtime->getVoidType(),
                 NomadDoc("Appends a value to the list.")
             );
-            const auto indexerId = runtime->registerNativeIndexer1(
+            const auto indexerId = runtime->registerNativeIndexer(
                 objectType,
-                runtime->getIntegerType(),
+                {runtime->getIntegerType()},
                 elementType,
-                [elementType](nomad::VirtualMachine* machine, const nomad::RuntimeValue& index, nomad::RuntimeValue& result) {
+                [elementType](nomad::VirtualMachine* machine) {
                     const auto* list = machine->getThisAs<nomad::ListObject>();
-                    elementType->copyValue(list->getValue(index.getIntegerValue()), result);
+                    elementType->copyValue(list->getValue(machine->getIntegerParameter(0)), machine->getResult());
                 },
-                [](nomad::VirtualMachine* machine, const nomad::RuntimeValue& index, const nomad::RuntimeValue& value) {
-                    machine->getThisAs<nomad::ListObject>()->setValue(index.getIntegerValue(), value);
+                [](nomad::VirtualMachine* machine) {
+                    machine->getThisAs<nomad::ListObject>()->setValue(machine->getIntegerParameter(0), machine->getParameter(1));
                 },
                 NomadDoc("Reads or replaces an element at a zero-based index. Out-of-range indices fault.")
             );

@@ -72,21 +72,12 @@ public:
 
     void getNativeProperty(NomadId memberId, const RuntimeValue& receiver, RuntimeValue& result);
     void setNativeProperty(NomadId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
-    void getNativeIndex1(NomadId indexerId, const RuntimeValue& receiver, const RuntimeValue& index, RuntimeValue& result);
-    void setNativeIndex1(NomadId indexerId, const RuntimeValue& receiver, const RuntimeValue& index, const RuntimeValue& value);
-    void getNativeIndex2(
+    void callNativeIndexer(NomadId indexerId, const RuntimeValue& receiver, bool write);
+    void runNativeIndexer(
         NomadId indexerId,
+        const std::vector<RuntimeValue>& args,
         const RuntimeValue& receiver,
-        const RuntimeValue& index1,
-        const RuntimeValue& index2,
-        RuntimeValue& result
-    );
-    void setNativeIndex2(
-        NomadId indexerId,
-        const RuntimeValue& receiver,
-        const RuntimeValue& index1,
-        const RuntimeValue& index2,
-        const RuntimeValue& value
+        bool write
     );
     [[nodiscard]] NomadObject* getThis() const;
 
@@ -257,6 +248,7 @@ private:
     NomadIndex m_enclosingParameterIndex = 0;  // Enclosing function's parameter frame for closure capture
     NomadIndex m_variableIndex = 0;
     void invokeNativeMember(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
+    void invokeNativeMethod(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
     RuntimeValue m_this; // Receiver of the current member call; borrowed, not retained.
 };
 

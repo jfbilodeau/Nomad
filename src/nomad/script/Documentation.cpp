@@ -546,24 +546,29 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
         out << "---" << std::endl;
     }
 
-    for (const auto& indexer : runtime->getNativeIndexers1()) {
+    for (const auto& indexer : runtime->getNativeIndexers()) {
         out << std::endl;
-        out << "### `" << indexer.objectType->getTypeName() << "[index]`" << std::endl;
-        const auto access = indexer.getFn ? (indexer.setFn ? "read/write" : "read-only") : "write-only";
-        out << std::endl << "*" << access << " indexer*" << std::endl;
-        out << std::endl << "- Index: `" << getDocumentedTypeName(runtime, indexer.indexType) << "`" << std::endl;
-        out << "- Value: `" << getDocumentedTypeName(runtime, indexer.valueType) << "`" << std::endl;
-        if (!indexer.doc.empty()) {
-            out << std::endl << indexer.doc << std::endl;
+        out << "### `" << indexer.objectType->getTypeName() << "[";
+        for (auto index = NomadIndex{0}; index < indexer.indexTypes.size(); ++index) {
+            if (index != 0) {
+                out << " ";
+            }
+            out << "index";
+            if (indexer.indexTypes.size() != 1) {
+                out << index + 1;
+            }
         }
-    }
-    for (const auto& indexer : runtime->getNativeIndexers2()) {
-        out << std::endl;
-        out << "### `" << indexer.objectType->getTypeName() << "[index1 index2]`" << std::endl;
+        out << "]`" << std::endl;
         const auto access = indexer.getFn ? (indexer.setFn ? "read/write" : "read-only") : "write-only";
         out << std::endl << "*" << access << " indexer*" << std::endl;
-        out << std::endl << "- Index 1: `" << getDocumentedTypeName(runtime, indexer.indexType1) << "`" << std::endl;
-        out << "- Index 2: `" << getDocumentedTypeName(runtime, indexer.indexType2) << "`" << std::endl;
+        out << std::endl;
+        for (auto index = NomadIndex{0}; index < indexer.indexTypes.size(); ++index) {
+            out << "- Index";
+            if (indexer.indexTypes.size() != 1) {
+                out << " " << index + 1;
+            }
+            out << ": `" << getDocumentedTypeName(runtime, indexer.indexTypes[index]) << "`" << std::endl;
+        }
         out << "- Value: `" << getDocumentedTypeName(runtime, indexer.valueType) << "`" << std::endl;
         if (!indexer.doc.empty()) {
             out << std::endl << indexer.doc << std::endl;

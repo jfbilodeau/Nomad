@@ -172,29 +172,17 @@ public:
     );
 
     // Native members
-    NomadId registerNativeIndexer1(
+    NomadId registerNativeIndexer(
         const ObjectTypeBase* objectType,
-        const Type* indexType,
+        std::vector<const Type*> indexTypes,
         const Type* valueType,
-        NativeIndexerGetFn1 getFn,
-        NativeIndexerSetFn1 setFn,
+        NativeFunctionFn getFn,
+        NativeFunctionFn setFn,
         NomadDocArg
     );
-    [[nodiscard]] NomadId getNativeIndexerId1(const Type* objectType) const;
-    [[nodiscard]] bool getNativeIndexerDefinition1(NomadId indexerId, NativeIndexerDefinition1& definition) const;
-    [[nodiscard]] const std::vector<NativeIndexerDefinition1>& getNativeIndexers1() const;
-    NomadId registerNativeIndexer2(
-        const ObjectTypeBase* objectType,
-        const Type* indexType1,
-        const Type* indexType2,
-        const Type* valueType,
-        NativeIndexerGetFn2 getFn,
-        NativeIndexerSetFn2 setFn,
-        const NomadString& doc
-    );
-    [[nodiscard]] NomadId getNativeIndexerId2(const Type* objectType) const;
-    [[nodiscard]] bool getNativeIndexerDefinition2(NomadId indexerId, NativeIndexerDefinition2& definition) const;
-    [[nodiscard]] const std::vector<NativeIndexerDefinition2>& getNativeIndexers2() const;
+    [[nodiscard]] NomadId getNativeIndexerId(const Type* objectType, NomadIndex indexCount) const;
+    [[nodiscard]] bool getNativeIndexerDefinition(NomadId indexerId, NativeIndexerDefinition& definition) const;
+    [[nodiscard]] const std::vector<NativeIndexerDefinition>& getNativeIndexers() const;
 
     NomadId registerNativeMethod(
         const ObjectTypeBase* objectType,
@@ -518,8 +506,7 @@ private:
     std::unordered_map<NomadString, NomadIndex> m_callablesByName;
     std::vector<NativeMemberRegistration> m_nativeMembers;
     std::vector<NativePropertyDefinition> m_nativeProperties;
-    std::vector<NativeIndexerDefinition1> m_nativeIndexers1;
-    std::vector<NativeIndexerDefinition2> m_nativeIndexers2;
+    std::vector<NativeIndexerDefinition> m_nativeIndexers;
     std::unordered_map<NomadString, std::vector<NomadId>> m_nativeMembersByName;
     bool m_debug = false;
     std::unique_ptr<VirtualMachine> m_virtualMachine = nullptr;

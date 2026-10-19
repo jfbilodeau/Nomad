@@ -19,59 +19,38 @@ namespace nomad {
 
 namespace {
 
-void callNativeIndexer1(VirtualMachine* machine, const bool write) {
+void callNativeIndexer(VirtualMachine* machine, const bool write) {
     const auto indexerId = machine->nextId();
-    NativeIndexerDefinition1 definition;
-    if (!machine->getRuntime()->getNativeIndexerDefinition1(indexerId, definition)) {
+    NativeIndexerDefinition definition;
+    if (!machine->getRuntime()->getNativeIndexerDefinition(indexerId, definition)) {
         machine->fault("Invalid native indexer");
     }
 
-    const TypedValue receiver(definition.objectType, machine->peekStack(1));
-    const TypedValue index(definition.indexType, machine->peekStack(0));
-    auto savedIndex = machine->popValue();
-    definition.indexType->freeValue(savedIndex);
-    auto savedReceiver = machine->popValue();
-    definition.objectType->freeValue(savedReceiver);
+    const auto argumentCount = definition.indexTypes.size() + (write ? 1 : 0);
+    const auto receiver = machine->peekStack(argumentCount);
+    const auto releaseArguments = [&]() {
+        for (const auto* type : definition.indexTypes) {
+            auto value = machine->popValue();
+            type->freeValue(value);
+        }
+        if (write) {
+            auto value = machine->popValue();
+            definition.valueType->freeValue(value);
+        }
+        auto savedReceiver = machine->popValue();
+        definition.objectType->freeValue(savedReceiver);
+    };
 
     try {
-        if (write) {
-            machine->setNativeIndex1(indexerId, receiver.getValue(), index.getValue(), machine->getResult());
-        } else {
-            machine->getNativeIndex1(indexerId, receiver.getValue(), index.getValue(), machine->getResult());
-        }
+        machine->callNativeIndexer(indexerId, receiver, write);
     } catch (...) {
-        definition.valueType->freeValue(machine->getResult());
+        releaseArguments();
+        if (!write) {
+            definition.valueType->freeValue(machine->getResult());
+        }
         throw;
     }
-}
-
-void callNativeIndexer2(VirtualMachine* machine, const bool write) {
-    const auto indexerId = machine->nextId();
-    NativeIndexerDefinition2 definition;
-    if (!machine->getRuntime()->getNativeIndexerDefinition2(indexerId, definition)) {
-        machine->fault("Invalid native indexer");
-    }
-
-    const TypedValue receiver(definition.objectType, machine->peekStack(2));
-    const TypedValue index1(definition.indexType1, machine->peekStack(1));
-    const TypedValue index2(definition.indexType2, machine->peekStack(0));
-    auto savedIndex2 = machine->popValue();
-    definition.indexType2->freeValue(savedIndex2);
-    auto savedIndex1 = machine->popValue();
-    definition.indexType1->freeValue(savedIndex1);
-    auto savedReceiver = machine->popValue();
-    definition.objectType->freeValue(savedReceiver);
-
-    try {
-        if (write) {
-            machine->setNativeIndex2(indexerId, receiver.getValue(), index1.getValue(), index2.getValue(), machine->getResult());
-        } else {
-            machine->getNativeIndex2(indexerId, receiver.getValue(), index1.getValue(), index2.getValue(), machine->getResult());
-        }
-    } catch (...) {
-        definition.valueType->freeValue(machine->getResult());
-        throw;
-    }
+    releaseArguments();
 }
 
 } // namespace
@@ -216,20 +195,12 @@ void op_native_property_set(VirtualMachine* interpreter) {
     interpreter->setNativeProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
 }
 
-void op_native_index_get_1(VirtualMachine* interpreter) {
-    callNativeIndexer1(interpreter, false);
+void op_native_index_get(VirtualMachine* interpreter) {
+    callNativeIndexer(interpreter, false);
 }
 
-void op_native_index_set_1(VirtualMachine* interpreter) {
-    callNativeIndexer1(interpreter, true);
-}
-
-void op_native_index_get_2(VirtualMachine* interpreter) {
-    callNativeIndexer2(interpreter, false);
-}
-
-void op_native_index_set_2(VirtualMachine* interpreter) {
-    callNativeIndexer2(interpreter, true);
+void op_native_index_set(VirtualMachine* interpreter) {
+    callNativeIndexer(interpreter, true);
 }
 
 void op_native_method_call(VirtualMachine* interpreter) {

@@ -210,6 +210,10 @@ void VirtualMachine::callNativeMethod(const NomadId memberId, const RuntimeValue
     if (method == nullptr || !method->getFn()) {
         fault("Invalid native method id: " + toString(memberId));
     }
+    invokeNativeMethod(method->getFn(), receiver);
+}
+
+void VirtualMachine::invokeNativeMethod(const NativeFunctionFn& callback, const RuntimeValue& receiver) {
     const auto previousParameterIndex = m_parameterIndex;
     const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
     const auto previousThis = m_this;
@@ -219,7 +223,7 @@ void VirtualMachine::callNativeMethod(const NomadId memberId, const RuntimeValue
 
     try {
         (void)getThis();
-        method->getFn()(this);
+        callback(this);
     } catch (...) {
         m_parameterIndex = previousParameterIndex;
         m_enclosingParameterIndex = previousEnclosingParameterIndex;
@@ -277,58 +281,63 @@ void VirtualMachine::setNativeProperty(
     invokeNativeMember([&](VirtualMachine* machine) { definition.setFn(machine, value); }, receiver);
 }
 
-void VirtualMachine::getNativeIndex1(
+void VirtualMachine::callNativeIndexer(
     const NomadId indexerId,
     const RuntimeValue& receiver,
-    const RuntimeValue& index,
-    RuntimeValue& result
+    const bool write
 ) {
-    NativeIndexerDefinition1 definition;
-    if (!m_runtime->getNativeIndexerDefinition1(indexerId, definition) || !definition.getFn) {
-        fault("Invalid native indexer getter");
+    NativeIndexerDefinition definition;
+    if (!m_runtime->getNativeIndexerDefinition(indexerId, definition)) {
+        fault("Invalid native indexer");
     }
-    invokeNativeMember([&](VirtualMachine* machine) { definition.getFn(machine, index, result); }, receiver);
+    const auto& callback = write ? definition.setFn : definition.getFn;
+    if (!callback) {
+        fault(write ? "Invalid native indexer setter" : "Invalid native indexer getter");
+    }
+    m_result = RuntimeValue{};
+    invokeNativeMethod(callback, receiver);
 }
 
-void VirtualMachine::setNativeIndex1(
+void VirtualMachine::runNativeIndexer(
     const NomadId indexerId,
+    const std::vector<RuntimeValue>& args,
     const RuntimeValue& receiver,
-    const RuntimeValue& index,
-    const RuntimeValue& value
+    const bool write
 ) {
-    NativeIndexerDefinition1 definition;
-    if (!m_runtime->getNativeIndexerDefinition1(indexerId, definition) || !definition.setFn) {
-        fault("Invalid native indexer setter");
+    NativeIndexerDefinition definition;
+    if (!m_runtime->getNativeIndexerDefinition(indexerId, definition)) {
+        fault("Invalid native indexer");
     }
-    invokeNativeMember([&](VirtualMachine* machine) { definition.setFn(machine, index, value); }, receiver);
-}
-
-void VirtualMachine::getNativeIndex2(
-    const NomadId indexerId,
-    const RuntimeValue& receiver,
-    const RuntimeValue& index1,
-    const RuntimeValue& index2,
-    RuntimeValue& result
-) {
-    NativeIndexerDefinition2 definition;
-    if (!m_runtime->getNativeIndexerDefinition2(indexerId, definition) || !definition.getFn) {
-        fault("Invalid native indexer getter");
+    if (args.size() != definition.indexTypes.size() + (write ? 1 : 0)) {
+        fault("Incorrect argument count when calling native indexer");
     }
-    invokeNativeMember([&](VirtualMachine* machine) { definition.getFn(machine, index1, index2, result); }, receiver);
-}
-
-void VirtualMachine::setNativeIndex2(
-    const NomadId indexerId,
-    const RuntimeValue& receiver,
-    const RuntimeValue& index1,
-    const RuntimeValue& index2,
-    const RuntimeValue& value
-) {
-    NativeIndexerDefinition2 definition;
-    if (!m_runtime->getNativeIndexerDefinition2(indexerId, definition) || !definition.setFn) {
-        fault("Invalid native indexer setter");
+    if (m_stackIndex >= m_stack.size() || args.size() > m_stack.size() - m_stackIndex - 1) {
+        fault("Stack overflow");
     }
-    invokeNativeMember([&](VirtualMachine* machine) { definition.setFn(machine, index1, index2, value); }, receiver);
+    const auto initialStackIndex = m_stackIndex;
+    const auto parameterType = [&](const NomadIndex index) {
+        return index < definition.indexTypes.size() ? definition.indexTypes[index] : definition.valueType;
+    };
+    const auto releaseArguments = [&]() {
+        while (m_stackIndex > initialStackIndex) {
+            const auto index = args.size() - (m_stackIndex - initialStackIndex);
+            parameterType(index)->freeValue(m_stack[m_stackIndex]);
+            --m_stackIndex;
+        }
+    };
+    m_result = RuntimeValue{};
+    try {
+        for (auto index = args.size(); index > 0; --index) {
+            ++m_stackIndex;
+            m_stack[m_stackIndex] = RuntimeValue{};
+            parameterType(index - 1)->copyValue(args[index - 1], m_stack[m_stackIndex]);
+        }
+        callNativeIndexer(indexerId, receiver, write);
+    } catch (...) {
+        releaseArguments();
+        throw;
+    }
+    releaseArguments();
 }
 
 void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std::vector<RuntimeValue>& args) {

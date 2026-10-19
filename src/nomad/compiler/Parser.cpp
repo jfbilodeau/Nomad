@@ -828,27 +828,24 @@ std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, Scr
             const auto column = tokens->getColumnIndex();
             tokens->next();
             if (tokens->is(TokenType::Operator) && tokens->is("]")) {
-                context->reportError("Indexer requires one or two indices", tokens);
+                context->reportError("Indexer requires at least one index", tokens);
                 return nullptr;
             }
-            auto index = parseExpression(context, function, tokens);
-            if (index == nullptr) {
-                return nullptr;
-            }
-            std::unique_ptr<Expression> index2;
-            if (!tokens->endOfLine() && (!tokens->is(TokenType::Operator) || !tokens->is("]"))) {
-                index2 = parseExpression(context, function, tokens);
-                if (index2 == nullptr) {
+            std::vector<std::unique_ptr<Expression>> indexes;
+            while (!tokens->endOfLine() && (!tokens->is(TokenType::Operator) || !tokens->is("]"))) {
+                auto index = parseExpression(context, function, tokens);
+                if (index == nullptr) {
                     return nullptr;
                 }
+                indexes.push_back(std::move(index));
             }
             if (!tokens->is(TokenType::Operator) || !tokens->is("]")) {
-                context->reportError("Expected ']' after one or two index expressions", tokens);
+                context->reportError("Expected ']' after index expressions", tokens);
                 return nullptr;
             }
             tokens->next();
             expression = std::make_unique<IndexerExpression>(
-                parent, line, column, std::move(expression), std::move(index), std::move(index2)
+                parent, line, column, std::move(expression), std::move(indexes)
             );
             continue;
         }

@@ -362,35 +362,43 @@ Script-defined methods are not supported yet.
 
 ## Native indexers
 
-Register a one-dimensional indexer with `registerNativeIndexer1`. Its index and
-value types must belong to the runtime and be public, non-void types. Each object
-type may have one such indexer. Use `registerNativeIndexer2` for two-dimensional
-indexing: pass the object type, first index type, second index type, value type,
-getter, setter, and documentation. Its callbacks receive two borrowed indices
-before the result or assigned value. A type may register both ranks independently;
-the number of bracket indices selects the indexer.
+Register an indexer with `registerNativeIndexer(objectType, indexTypes,
+valueType, getter, setter, doc)`. The non-empty `std::vector<const Type*>`
+specifies the number and types of indices. All types must belong to the runtime
+and be public, non-void types. An object type may register one indexer per index
+count; lookup uses the receiver type and number of indices, not index-type
+overloading.
 
 Omit the setter for read-only indexing, or omit
 the getter for write-only indexing. Invalid access is rejected during compilation.
 
 ```cpp
-runtime.registerNativeIndexer1(
+runtime.registerNativeIndexer(
     objectType,
-    runtime.getIntegerType(),
+    {runtime.getIntegerType()},
     runtime.getStringType(),
-    [](nomad::VirtualMachine* machine, const nomad::RuntimeValue& index, nomad::RuntimeValue& result) {
+    [](nomad::VirtualMachine* machine) {
         const auto* object = machine->getThisAs<MyObject>();
-        result.setStringValue(object->getText(index.getIntegerValue()));
+        machine->setStringResult(object->getText(machine->getIntegerParameter(0)));
     },
     {},
     NomadDoc("Read text at the given index.")
 );
 ```
 
-Callbacks borrow the receiver, index, and assigned value. A getter writes an
-owned result into initialized storage; retain any existing object returned from
+Callbacks use the native-method calling convention: `getThisAs<T>()` accesses
+the receiver and `getParameter(i)` or a typed parameter accessor reads index
+`i`. For N indices, the setter reads the assigned value from parameter N.
+The receiver is evaluated first, then arguments are evaluated and pushed
+right-to-left, just like function arguments. For assignment, the value is the
+last parameter and is therefore evaluated before the indices.
+
+Callbacks borrow the receiver and parameters. A getter writes an
+owned result through the VM's result setters; retain any existing object returned from
 the receiver. A setter must retain an object value it stores and release any
-replaced value. Use `machine->fault(...)` to report invalid indices or other
+replaced value; it returns `void` and must not write a result.
+Parameter and receiver frames are restored after the callback, including on
+failure. Use `machine->fault(...)` to report invalid indices or other
 access errors.
 
 ## Typed native object methods

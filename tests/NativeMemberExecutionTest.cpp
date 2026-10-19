@@ -404,10 +404,10 @@ BOOST_AUTO_TEST_CASE(string_indexer_faults_and_interpreter_recovers) {
 BOOST_AUTO_TEST_CASE(write_only_indexer_supports_assignment_but_not_reads) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    runtime.registerNativeIndexer1(
-        type, runtime.getIntegerType(), runtime.getIntegerType(), {},
-        [](VirtualMachine* vm, const RuntimeValue& index, const RuntimeValue& value) {
-            vm->getThisAs<TestObject>()->value = index.getIntegerValue() + value.getIntegerValue();
+    runtime.registerNativeIndexer(
+        type, {runtime.getIntegerType()}, runtime.getIntegerType(), {},
+        [](VirtualMachine* vm) {
+            vm->getThisAs<TestObject>()->value = vm->getIntegerParameter(0) + vm->getIntegerParameter(1);
         }, ""
     );
     const auto id = compileFunction(runtime, "value = new TestObject\nvalue[2] = 5\nreturn value.value");
@@ -429,13 +429,13 @@ BOOST_AUTO_TEST_CASE(indexer_callbacks_release_operands_and_partial_results_on_f
     for (const auto* source : {"return (new TestObject)[0]", "(new TestObject)[0] = \"assigned\""}) {
         Runtime runtime;
         const auto* type = registerTestObject(runtime);
-        runtime.registerNativeIndexer1(
-            type, runtime.getIntegerType(), runtime.getStringType(),
-            [](VirtualMachine* vm, const RuntimeValue&, RuntimeValue& result) {
-                result.setStringValue("partial");
+        runtime.registerNativeIndexer(
+            type, {runtime.getIntegerType()}, runtime.getStringType(),
+            [](VirtualMachine* vm) {
+                vm->setStringResult("partial");
                 vm->fault("Indexer getter failed");
             },
-            [](VirtualMachine* vm, const RuntimeValue&, const RuntimeValue&) {
+            [](VirtualMachine* vm) {
                 vm->fault("Indexer setter failed");
             }, ""
         );
@@ -453,15 +453,15 @@ BOOST_AUTO_TEST_CASE(indexer_callbacks_release_operands_and_partial_results_on_f
 BOOST_AUTO_TEST_CASE(indexers_support_object_valued_keys_and_literal_delimiters) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    runtime.registerNativeIndexer1(
-        type, runtime.getStringType(), runtime.getIntegerType(),
-        [](VirtualMachine* vm, const RuntimeValue& index, RuntimeValue& result) {
-            BOOST_TEST(index.getStringObject()->getLength() == 1);
-            result.setIntegerValue(vm->getThisAs<TestObject>()->value);
+    runtime.registerNativeIndexer(
+        type, {runtime.getStringType()}, runtime.getIntegerType(),
+        [](VirtualMachine* vm) {
+            BOOST_TEST(vm->getStringParameter(0)->getLength() == 1);
+            vm->setIntegerResult(vm->getThisAs<TestObject>()->value);
         },
-        [](VirtualMachine* vm, const RuntimeValue& index, const RuntimeValue& value) {
-            BOOST_TEST(index.getStringObject()->getString() == "]");
-            vm->getThisAs<TestObject>()->value = value.getIntegerValue();
+        [](VirtualMachine* vm) {
+            BOOST_TEST(vm->getStringParameter(0)->getString() == "]");
+            vm->getThisAs<TestObject>()->value = vm->getIntegerParameter(1);
         }, ""
     );
     const auto id = compileFunction(runtime, "value = new TestObject\nvalue[\"]\"] = 9\nreturn value[\"[\"]");
@@ -485,17 +485,17 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_evaluate_once_in_order_with_distin
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
     NomadString calls;
-    runtime.registerNativeIndexer2(
-        type, runtime.getStringType(), runtime.getIntegerType(), runtime.getIntegerType(),
-        [&calls](VirtualMachine* machine, const RuntimeValue& index1, const RuntimeValue& index2, RuntimeValue& result) {
+    runtime.registerNativeIndexer(
+        type, {runtime.getStringType(), runtime.getIntegerType()}, runtime.getIntegerType(),
+        [&calls](VirtualMachine* machine) {
             calls += "get";
-            result.setIntegerValue(machine->getThisAs<TestObject>()->value +
-                static_cast<NomadInteger>(index1.getStringObject()->getLength()) + index2.getIntegerValue());
+            machine->setIntegerResult(machine->getThisAs<TestObject>()->value +
+                static_cast<NomadInteger>(machine->getStringParameter(0)->getLength()) + machine->getIntegerParameter(1));
         },
-        [&calls](VirtualMachine* machine, const RuntimeValue& index1, const RuntimeValue& index2, const RuntimeValue& value) {
+        [&calls](VirtualMachine* machine) {
             calls += "set";
-            machine->getThisAs<TestObject>()->value = value.getIntegerValue() +
-                static_cast<NomadInteger>(index1.getStringObject()->getLength()) + index2.getIntegerValue();
+            machine->getThisAs<TestObject>()->value = machine->getIntegerParameter(2) +
+                static_cast<NomadInteger>(machine->getStringParameter(0)->getLength()) + machine->getIntegerParameter(1);
         }, ""
     );
     runtime.registerNativeFunction("receiver", [&calls](VirtualMachine* machine) {
@@ -525,20 +525,20 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_evaluate_once_in_order_with_distin
     RuntimeValue result;
     runtime.executeFunction(readId, {}, result);
     BOOST_TEST(result.getIntegerValue() == 9);
-    BOOST_TEST(calls == "receiverfirstsecondget");
+    BOOST_TEST(calls == "receiversecondfirstget");
     calls.clear();
     runtime.executeFunction(runtime.getFunctionId("write"), {}, result);
-    BOOST_TEST(calls == "receiverfirstsecondassignedset");
+    BOOST_TEST(calls == "receiverassignedsecondfirstset");
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     auto machine = runtime.createVirtualMachine();
     InterpreterContext context(*machine);
     calls.clear();
     BOOST_REQUIRE(Interpreter{}.evaluateExpression("(receiver)[(first) (second)]", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 9);
-    BOOST_TEST(calls == "receiverfirstsecondget");
+    BOOST_TEST(calls == "receiversecondfirstget");
     calls.clear();
     BOOST_REQUIRE(Interpreter{}.execute("(receiver)[(first) (second)] = assigned", context));
-    BOOST_TEST(calls == "receiverfirstsecondassignedset");
+    BOOST_TEST(calls == "receiverassignedsecondfirstset");
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
@@ -546,16 +546,16 @@ BOOST_AUTO_TEST_CASE(two_dimensional_access_permissions_are_checked_in_both_exec
     for (const auto readOnly : {false, true}) {
         Runtime runtime;
         const auto* type = registerTestObject(runtime);
-        const NativeIndexerGetFn2 getter = [](VirtualMachine* machine, const RuntimeValue& first,
-            const RuntimeValue& second, RuntimeValue& result) {
-            result.setIntegerValue(machine->getThisAs<TestObject>()->value + first.getIntegerValue() + second.getIntegerValue());
+        const NativeFunctionFn getter = [](VirtualMachine* machine) {
+            machine->setIntegerResult(machine->getThisAs<TestObject>()->value +
+                machine->getIntegerParameter(0) + machine->getIntegerParameter(1));
         };
-        const NativeIndexerSetFn2 setter = [](VirtualMachine* machine, const RuntimeValue& first,
-            const RuntimeValue& second, const RuntimeValue& value) {
-            machine->getThisAs<TestObject>()->value = first.getIntegerValue() + second.getIntegerValue() + value.getIntegerValue();
+        const NativeFunctionFn setter = [](VirtualMachine* machine) {
+            machine->getThisAs<TestObject>()->value =
+                machine->getIntegerParameter(0) + machine->getIntegerParameter(1) + machine->getIntegerParameter(2);
         };
-        runtime.registerNativeIndexer2(type, runtime.getIntegerType(), runtime.getIntegerType(), runtime.getIntegerType(),
-            readOnly ? getter : NativeIndexerGetFn2{}, readOnly ? NativeIndexerSetFn2{} : setter, "");
+        runtime.registerNativeIndexer(type, {runtime.getIntegerType(), runtime.getIntegerType()}, runtime.getIntegerType(),
+            readOnly ? getter : NativeFunctionFn{}, readOnly ? NativeFunctionFn{} : setter, "");
         const auto id = compileFunction(runtime, readOnly
             ? "object = new TestObject\nreturn object[1 2]"
             : "object = new TestObject\nobject[1 2] = 7\nreturn object.value");
@@ -585,21 +585,21 @@ BOOST_AUTO_TEST_CASE(two_dimensional_interpreter_stops_after_a_failed_index_with
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
     NomadString calls;
-    runtime.registerNativeIndexer2(type, runtime.getStringType(), runtime.getStringType(), runtime.getIntegerType(),
-        [&calls](VirtualMachine*, const RuntimeValue&, const RuntimeValue&, RuntimeValue& result) {
+    runtime.registerNativeIndexer(type, {runtime.getStringType(), runtime.getStringType()}, runtime.getIntegerType(),
+        [&calls](VirtualMachine* machine) {
             calls += "get";
-            result.setIntegerValue(1);
+            machine->setIntegerResult(1);
         },
-        [&calls](VirtualMachine*, const RuntimeValue&, const RuntimeValue&, const RuntimeValue&) {
+        [&calls](VirtualMachine*) {
             calls += "set";
         }, "");
     runtime.registerNativeFunction("first", [&calls](VirtualMachine* machine) {
         calls += "first";
-        machine->setStringResult("first");
+        machine->fault("First index failed");
     }, {}, runtime.getStringType(), "");
     runtime.registerNativeFunction("second", [&calls](VirtualMachine* machine) {
         calls += "second";
-        machine->fault("Second index failed");
+        machine->setStringResult("second");
     }, {}, runtime.getStringType(), "");
     runtime.registerNativeFunction("assigned", [&calls](VirtualMachine* machine) {
         calls += "assigned";
@@ -618,8 +618,8 @@ BOOST_AUTO_TEST_CASE(two_dimensional_interpreter_stops_after_a_failed_index_with
             calls.clear();
             BOOST_TEST(!Interpreter{}.execute(source, context));
             BOOST_REQUIRE(context.getError() != nullptr);
-            BOOST_TEST(context.getError()->find("Second index failed") != NomadString::npos);
-            BOOST_TEST(calls == "firstsecond");
+            BOOST_TEST(context.getError()->find("First index failed") != NomadString::npos);
+            BOOST_TEST(calls == (NomadStringView(source).ends_with("assigned") ? "assignedsecondfirst" : "secondfirst"));
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
         }
     }
@@ -633,12 +633,12 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexer_faults_release_object_keys_receiver
     }) {
         Runtime runtime;
         const auto* type = registerTestObject(runtime);
-        runtime.registerNativeIndexer2(type, runtime.getStringType(), runtime.getStringType(), runtime.getStringType(),
-            [](VirtualMachine* machine, const RuntimeValue&, const RuntimeValue&, RuntimeValue& result) {
-                result.setStringValue("partial");
+        runtime.registerNativeIndexer(type, {runtime.getStringType(), runtime.getStringType()}, runtime.getStringType(),
+            [](VirtualMachine* machine) {
+                machine->setStringResult("partial");
                 machine->fault("Getter failed");
             },
-            [](VirtualMachine* machine, const RuntimeValue&, const RuntimeValue&, const RuntimeValue&) {
+            [](VirtualMachine* machine) {
                 machine->fault("Setter failed");
             }, "");
         const auto id = compileFunction(runtime, source);
@@ -661,6 +661,83 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexer_faults_release_object_keys_receiver
         }
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     }
+}
+
+BOOST_AUTO_TEST_CASE(indexers_support_arbitrary_arity_and_restore_native_parameter_frames) {
+    Runtime runtime;
+    const auto* type = registerTestObject(runtime);
+    const auto increment = runtime.getNativeMemberId(type, "increment");
+    auto* nested = new TestObject;
+    RuntimeValue nestedReceiver;
+    nestedReceiver.setObjectValue(nested);
+    for (const auto count : {NomadIndex{1}, NomadIndex{2}, NomadIndex{3}, NomadIndex{5}, NomadIndex{8}}) {
+        std::vector<const Type*> types(count, runtime.getIntegerType());
+        types.back() = runtime.getStringType();
+        BOOST_REQUIRE(runtime.registerNativeIndexer(
+            type, types, runtime.getIntegerType(),
+            [count, increment, &nestedReceiver](VirtualMachine* machine) {
+                const auto* receiver = machine->getThisAs<TestObject>();
+                const auto first = machine->getParameter(0);
+                machine->runNativeMethod(increment, {RuntimeValue(NomadInteger{1})}, nestedReceiver);
+                BOOST_TEST(machine->getThisAs<TestObject>() == receiver);
+                if (count > 1) {
+                    BOOST_TEST(machine->getIntegerParameter(0) == first.getIntegerValue());
+                }
+                auto total = receiver->value;
+                for (auto index = NomadIndex{0}; index + 1 < count; ++index) {
+                    total += static_cast<NomadInteger>(index + 1) * machine->getIntegerParameter(index);
+                }
+                total += static_cast<NomadInteger>(machine->getStringParameter(count - 1)->getLength());
+                machine->setIntegerResult(total);
+            },
+            [count](VirtualMachine* machine) {
+                BOOST_TEST(machine->getStringParameter(count - 1)->getString() == "key");
+                machine->getThisAs<TestObject>()->value = machine->getIntegerParameter(count);
+            }, "Arbitrary arity"
+        ) != NOMAD_INVALID_ID);
+    }
+    RuntimeValue empty;
+    runtime.getStringType()->initValue(empty);
+    runtime.getStringType()->freeValue(empty);
+    for (const auto count : {NomadIndex{1}, NomadIndex{2}, NomadIndex{3}, NomadIndex{5}, NomadIndex{8}}) {
+        NomadString indexes;
+        auto expected = NomadInteger{10};
+        for (auto index = NomadIndex{0}; index + 1 < count; ++index) {
+            indexes += toString(index + 1) + " ";
+            expected += static_cast<NomadInteger>((index + 1) * (index + 1));
+        }
+        indexes += "\"key\"";
+        BOOST_TEST_CONTEXT("Index count " << count) {
+            const auto name = "arity" + toString(count);
+            auto compiler = runtime.createCompiler();
+            CompilerContext compilation(compiler.get());
+            compiler->registerSources(&compilation, {{{name, {name + ".nomad",
+                "object = new TestObject\nobject[" + indexes + "] = 7\nreturn object[" + indexes + "]"
+            }}}, {}});
+            const auto compiled = compiler->compileFunctions(&compilation);
+            BOOST_REQUIRE_MESSAGE(compiled,
+                (compilation.getFirstError() ? compilation.getFirstError()->message : "Compilation failed"));
+            const auto before = NomadObject::getLiveObjectCount();
+            RuntimeValue result;
+            runtime.executeFunction(runtime.getFunctionId(name), {}, result);
+            BOOST_TEST(result.getIntegerValue() == expected);
+            BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+            {
+                auto machine = runtime.createVirtualMachine();
+                InterpreterContext context(*machine);
+                BOOST_REQUIRE(Interpreter{}.execute("object = new TestObject", context));
+                BOOST_REQUIRE(Interpreter{}.execute("object[" + indexes + "] = 7", context));
+                BOOST_REQUIRE(Interpreter{}.evaluateExpression("object[" + indexes + "]", context));
+                BOOST_TEST(context.getResult()->getValue().getIntegerValue() == expected);
+                BOOST_TEST(!Interpreter{}.evaluateExpression("object[" + indexes + " 0]", context));
+                BOOST_REQUIRE(Interpreter{}.evaluateExpression("object[" + indexes + "]", context));
+                BOOST_TEST(context.getResult()->getValue().getIntegerValue() == expected);
+                BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+            }
+            BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+        }
+    }
+    nestedReceiver.freeObjectValue();
 }
 
 BOOST_AUTO_TEST_SUITE_END()
