@@ -68,6 +68,14 @@ std::unique_ptr<Expression> parseFunctionCallExpression(CompilerContext* context
     CompilerContext* context,
     ScriptFunction* function,
     Tokenizer* tokens,
+    const std::vector<Parameter>& parameters,
+    ArgumentList* arguments,
+    bool allowOmittedArguments = false
+);
+[[nodiscard]] bool parseCallableArguments(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
     const Callable& callable,
     ArgumentList* arguments,
     bool allowOmittedArguments = false

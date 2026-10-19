@@ -24,13 +24,17 @@ namespace parser {
 
 namespace {
 
-const Type* parseTypeName(CompilerContext* context, Tokenizer* tokens, const NomadIndex depth) {
+const Type* parseTypeName(
+    CompilerContext* context,
+    Tokenizer* tokens,
+    const NomadIndex depth,
+    NomadString name = {}
+) {
     if (depth >= 64) {
         context->reportError("Type nesting exceeds the maximum depth of 64", tokens);
         return nullptr;
     }
-    NomadString name;
-    if (!tokens->nextIdentifier(name)) {
+    if (name.empty() && !tokens->nextIdentifier(name)) {
         return nullptr;
     }
     auto* runtime = context->getRuntime();
@@ -769,7 +773,31 @@ std::unique_ptr<Expression> parseNewExpression(
             return nullptr;
         }
     } else if (runtime->getParameterizedTypeArgumentCount(constructorName)) {
-        const auto* type = parseType(context, tokens);
+        tokens->next();
+        if (!tokens->is("<")) {
+            const auto signature = runtime->getNativeConstructorTemplate(constructorName);
+            if (!signature) {
+                context->reportError("Constructor '" + constructorName +
+                    "' requires explicit type arguments: no inference signature is registered", tokens);
+                return nullptr;
+            }
+            std::vector<Parameter> parameters;
+            parameters.reserve(signature->size());
+            for (const auto& parameter : *signature) {
+                const auto* concreteType = std::get_if<const Type*>(&parameter.type);
+                parameters.push_back(defParameter(
+                    parameter.name, concreteType != nullptr ? *concreteType : nullptr, parameter.doc
+                ));
+            }
+            ArgumentList arguments;
+            if (!parseCallableArguments(context, function, tokens, parameters, &arguments)) {
+                return nullptr;
+            }
+            return std::make_unique<ConstructorExpression>(
+                parent, line, column, constructorName, nullptr, std::move(arguments)
+            );
+        }
+        const auto* type = parseTypeName(context, tokens, 0, constructorName);
         if (type == nullptr) {
             return nullptr;
         }
@@ -1227,11 +1255,24 @@ bool parseCallableArguments(
     ArgumentList* arguments,
     const bool allowOmittedArguments
 ) {
+    return parseCallableArguments(
+        context, function, tokens, callable.getParameters(), arguments, allowOmittedArguments
+    );
+}
+
+bool parseCallableArguments(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    const std::vector<Parameter>& parameters,
+    ArgumentList* arguments,
+    const bool allowOmittedArguments
+) {
     const auto* runtime = context->getRuntime();
     auto omitRemainingArguments = false;
 
-    for (NomadIndex i = 0; i < callable.getParameterCount(); ++i) {
-        const auto& parameter = callable.getParameters()[i];
+    for (NomadIndex i = 0; i < parameters.size(); ++i) {
+        const auto& parameter = parameters[i];
 
         // Hidden source parameters are supplied by the compiler and consume no tokens.
         const auto isSourceParameter =
@@ -1246,8 +1287,9 @@ bool parseCallableArguments(
             continue;
         }
 
-        if (!isSourceParameter && tokens->endOfLine()) {
-            context->reportError("Expected arguments for `" + parameter.name + ":" + parameter.type->getTypeName() + "`", tokens);
+        if (!isSourceParameter && (tokens->endOfLine() || (parameter.type == nullptr && !isArgumentStart(tokens)))) {
+            const auto typeName = parameter.type != nullptr ? ":" + parameter.type->getTypeName() : "";
+            context->reportError("Expected arguments for `" + parameter.name + typeName + "`", tokens);
 
             return false;
         }
@@ -1343,8 +1385,8 @@ bool parseCallableArguments(
 
             arguments->add(std::move(eventCallbackArgument));
 
-        } else if (const auto callbackType = argumentType->asCallback(); callbackType != nullptr) {
-            if (tokens->is("then") && i + 1 < callable.getParameterCount()) {
+        } else if (const auto callbackType = argumentType != nullptr ? argumentType->asCallback() : nullptr; callbackType != nullptr) {
+            if (tokens->is("then") && i + 1 < parameters.size()) {
                 context->reportError("`then` callback must be the last argument", tokens);
 
                 return false;

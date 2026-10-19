@@ -1109,6 +1109,11 @@ ConstructorExpression::ConstructorExpression(
 
 void ConstructorExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
     m_constructor = nullptr;
+    if (m_objectType == nullptr) {
+        reportError(context, function, "Constructor type inference for '" + m_constructorName +
+            "' is not yet available; supply explicit type arguments");
+        return;
+    }
     const auto* runtime = context->getRuntime();
     auto& arguments = m_arguments.getArguments();
 

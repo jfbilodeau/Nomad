@@ -2,6 +2,8 @@
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/Parser.hpp>
+#include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -35,6 +37,120 @@ NomadId compileConstruction(Runtime& runtime, const NomadString& source) {
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(object_construction)
+
+BOOST_AUTO_TEST_CASE(inferred_constructors_parse_from_signatures_without_specializing) {
+    Runtime runtime;
+    auto factoryCalls = NomadIndex{0};
+    BOOST_REQUIRE(runtime.registerParameterizedType(
+        "Pair", 2,
+        [&factoryCalls](const std::vector<const Type*>& arguments) {
+            ++factoryCalls;
+            return std::make_unique<ObjectType>("Pair", arguments);
+        }
+    ));
+    BOOST_REQUIRE(runtime.registerNativeConstructorTemplate(
+        "Pair",
+        {
+            defTemplateParameter("key", TypeParameterIndex{0}, ""),
+            defTemplateParameter("value", TypeParameterIndex{1}, "")
+        }
+    ));
+    for (const auto* source : {
+        "new Pair \"key\" 1", "new Pair 123 true", "new Pair name value",
+        "new Pair \"outer\" new Pair \"inner\" 42",
+        "new Pair (1 + 2) (3 * 4)", "(new Pair \"key\" 1)", "(new Pair \"key\" 1)[0]"
+    }) {
+        BOOST_TEST_CONTEXT(source) {
+            auto compiler = runtime.createCompiler();
+            CompilerContext context(compiler.get());
+            Tokenizer tokens(&context, "test.nomad", source);
+            auto expression = parser::parseExpression(&context, nullptr, &tokens);
+            BOOST_REQUIRE(expression != nullptr);
+            BOOST_TEST(!context.hasError());
+            BOOST_TEST(tokens.endOfLine());
+        }
+    }
+    for (const auto* boundary : {")", "]", "extra"}) {
+        auto compiler = runtime.createCompiler();
+        CompilerContext context(compiler.get());
+        Tokenizer tokens(&context, "test.nomad", "new Pair \"key\" 1 " + NomadString(boundary));
+        auto expression = parser::parseNewExpression(&context, nullptr, &tokens, nullptr);
+        BOOST_REQUIRE(expression != nullptr);
+        BOOST_TEST(tokens.is(boundary));
+        BOOST_TEST(!context.hasError());
+    }
+    BOOST_TEST(factoryCalls == 0u);
+    BOOST_TEST(runtime.getConstructors().empty());
+}
+
+BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reports_missing_arguments_and_signatures) {
+    Runtime runtime;
+    BOOST_REQUIRE(runtime.registerParameterizedType(
+        "Pair", 2, [](const std::vector<const Type*>& arguments) {
+            return std::make_unique<ObjectType>("Pair", arguments);
+        }
+    ));
+    auto compiler = runtime.createCompiler();
+    {
+        CompilerContext context(compiler.get());
+        Tokenizer tokens(&context, "test.nomad", "new Pair \"key\" 1");
+        BOOST_TEST(parser::parseExpression(&context, nullptr, &tokens) == nullptr);
+        BOOST_REQUIRE(context.getFirstError() != nullptr);
+        BOOST_TEST(context.getFirstError()->message.find("no inference signature") != NomadString::npos);
+    }
+    BOOST_REQUIRE(runtime.registerNativeConstructorTemplate(
+        "Pair",
+        {
+            defTemplateParameter("key", TypeParameterIndex{0}, ""),
+            defTemplateParameter("value", TypeParameterIndex{1}, "")
+        }
+    ));
+    for (const auto* source : {"new Pair", "new Pair \"key\"", "new Pair \"key\" )", "new Pair \"key\" ]"}) {
+        CompilerContext context(compiler.get());
+        Tokenizer tokens(&context, "test.nomad", source);
+        BOOST_TEST(parser::parseExpression(&context, nullptr, &tokens) == nullptr);
+        BOOST_REQUIRE(context.getFirstError() != nullptr);
+        BOOST_TEST(context.getFirstError()->message.find("Expected arguments for") != NomadString::npos);
+    }
+    {
+        CompilerContext context(compiler.get());
+        Tokenizer tokens(&context, "test.nomad", "new Pair \"key\" 1");
+        auto expression = parser::parseExpression(&context, nullptr, &tokens);
+        BOOST_REQUIRE(expression != nullptr);
+        BOOST_TEST(!expression->resolve(&context, nullptr));
+        BOOST_REQUIRE(context.getFirstError() != nullptr);
+        BOOST_TEST(context.getFirstError()->message.find("supply explicit type arguments") != NomadString::npos);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reuses_concrete_and_hidden_parameter_shapes) {
+    Runtime runtime;
+    BOOST_REQUIRE(runtime.registerParameterizedType(
+        "Located", 1, [](const std::vector<const Type*>& arguments) {
+            return std::make_unique<ObjectType>("Located", arguments);
+        }
+    ));
+    BOOST_REQUIRE(runtime.registerNativeConstructorTemplate(
+        "Located",
+        {
+            defTemplateParameter("file", runtime.getFileNameType(), ""),
+            defTemplateParameter("value", TypeParameterIndex{0}, ""),
+            defTemplateParameter("enabled", runtime.getBooleanType(), ""),
+            defTemplateParameter("function", runtime.getFunctionNameType(), ""),
+            defTemplateParameter("line", runtime.getLineNumberType(), "")
+        }
+    ));
+    const auto id = compileConstruction(runtime, "return 0");
+    auto* function = runtime.getScriptFunction(id);
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    Tokenizer tokens(&context, "test.nomad", "new Located \"value\" true");
+    auto expression = parser::parseExpression(&context, function, &tokens);
+    BOOST_REQUIRE(expression != nullptr);
+    BOOST_TEST(tokens.endOfLine());
+    BOOST_TEST(!context.hasError());
+    BOOST_TEST(runtime.getTypeByName("Located<string>") == nullptr);
+}
 
 BOOST_AUTO_TEST_CASE(constructor_templates_store_generic_and_concrete_parameters_without_specializing) {
     Runtime runtime;

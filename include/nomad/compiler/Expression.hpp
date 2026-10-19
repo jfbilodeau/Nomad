@@ -232,6 +232,7 @@ protected:
 
 private:
     NomadString m_constructorName;
+    // Null when the family is parsed without explicit type arguments.
     const Type* m_objectType;
     ArgumentList m_arguments;
     const Constructor* m_constructor = nullptr;

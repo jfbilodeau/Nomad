@@ -324,8 +324,11 @@ not use implicit conversions or guess a common type. Returned type arguments
 follow the family's type-parameter order, not constructor argument order.
 Deduction neither creates specializations nor invokes constructors.
 
-Script syntax is not yet connected to this API: scripts must still supply
-explicit type arguments, and hosts must still register each specialization's
+The parser accepts omitted constructor type arguments for families with a
+registered inference signature, preserving the family name until resolution.
+Families without a signature require explicit type arguments. Constructor
+resolution is not yet connected to deduction, so executable scripts must still
+supply explicit type arguments. Hosts must still register each specialization's
 constructor with `registerNativeConstructor`.
 
 ### Native object types and constructors
