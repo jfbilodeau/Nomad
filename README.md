@@ -5,9 +5,11 @@
 
 [![CI](https://github.com/jfbilodeau/Nomad/actions/workflows/ci.yml/badge.svg)](https://github.com/jfbilodeau/Nomad/actions/workflows/ci.yml)
 
-Nomad is a 2D game engine with its own compiled, strongly typed scripting
-language. It is designed for building games with a small native runtime while
-keeping gameplay code in readable `.nomad` scripts.
+Nomad is a strongly typed, minimal‑noise programming language built for cognitive clarity.  
+It embraces a quiet syntax with almost no punctuation, familiar keywords, and predictable semantics.
+The language is opinionated in its pursuit of simplicity, yet flexible enough for diverse programming styles.
+Nomad’s tooling is intentionally frictionless. Build, run, and package workflows are designed to stay out of your way.
+The result is a language that feels calm, readable, and reliable: a space where your brain can focus on ideas instead of syntax.
 
 The engine uses C++20, SDL3, and Box2D. The SDK includes:
 
