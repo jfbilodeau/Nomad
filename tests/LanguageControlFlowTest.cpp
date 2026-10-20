@@ -146,7 +146,7 @@ BOOST_AUTO_TEST_CASE(for_uses_registered_iteration_not_collection_names)
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
-BOOST_AUTO_TEST_CASE(range_is_exclusive_scoped_and_directional)
+BOOST_AUTO_TEST_CASE(range_is_exclusive_and_directional)
 {
     const auto outcome = runSource(
         "total = 0\n"
@@ -273,6 +273,38 @@ BOOST_AUTO_TEST_CASE(parameters_can_be_used_as_loop_bindings_without_changing_ca
     BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
     BOOST_TEST(!outcome.fault.has_value());
     BOOST_TEST(outcome.integerValue == 1220);
+}
+
+BOOST_AUTO_TEST_CASE(range_values_and_active_iterators_are_independent_of_later_assignments)
+{
+    const auto outcome = runSource(
+        "start = 1\nstop = 4\nincrement = 1\n"
+        "sequence = range start stop increment\n"
+        "start = 100\nstop = 100\nincrement = 0\n"
+        "total = 0\n"
+        "for value in sequence\n"
+        "    sequence = range 0\n"
+        "    total = total + value\n"
+        "end\n"
+        "for value in sequence\n"
+        "    total = 1000\n"
+        "end\n"
+        "return total * 10 + value");
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_TEST(!outcome.fault.has_value());
+    BOOST_TEST(outcome.integerValue == 63);
+}
+
+BOOST_AUTO_TEST_CASE(equal_range_bounds_are_empty_for_both_step_directions)
+{
+    const auto outcome = runSource(
+        "value = 42\n"
+        "for value in range 3 3\nvalue = 1000\nend\n"
+        "for value in range 3 3 (-1)\nvalue = 2000\nend\n"
+        "return value");
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_TEST(!outcome.fault.has_value());
+    BOOST_TEST(outcome.integerValue == 42);
 }
 
 BOOST_AUTO_TEST_CASE(conditional_loops_and_inline_control)

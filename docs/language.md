@@ -427,10 +427,10 @@ do
 end until finished
 ```
 
-### Iterating collections
+### Iterating ranges and collections
 
-Nomad provides the built-in functions `range stop`, `range start stop`, and
-`range start stop step`. These functions return a reusable `Range` without
+Nomad provides the built-in functions `range <stop>`, `range <start> <stop>`, and
+`range <start> <stop> <step>`. These functions return a reusable `Range` without
 requiring any modules:
 
 ```nomad
@@ -450,6 +450,8 @@ range. A zero step raises a runtime error, including when supplied as a literal.
 Iteration stops safely at integer limits without wrapping. Each traversal starts
 an independent iterator; range values can be stored and traversed repeatedly.
 Parenthesize negative arguments to distinguish them from subtraction.
+Changing the original argument variables or reassigning the range variable does
+not change an iterator that is already traversing the range.
 
 ```nomad
 names = new List<string>
@@ -473,6 +475,18 @@ including after `break`, with its last assigned value. An empty loop preserves a
 existing value; a new binding retains its normal default value. Nested loops may
 reuse the same variable, but their iterators remain independent. Explicit
 callbacks capture the value when the callback is created.
+
+```nomad
+value = 42
+for value in range 0 3
+    value = value + 10
+end
+log.info value  # 12; the body assignment does not affect the next range value
+
+for value in range 0
+    # Empty: value remains 12.
+end
+```
 
 Numeric iteration uses `for value in range ...`; `for value = ... to ... step ...`
 is not supported.
