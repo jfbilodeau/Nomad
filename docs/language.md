@@ -277,6 +277,10 @@ name.length = 10
 name = "Nomad" # Error: string would introduce the conflicting name.length member.
 ```
 
+Names under a registered context prefix, such as `this.value`, remain context
+variables when a native property has the same name. Assigning one creates the
+context variable if it does not already exist.
+
 ---
 
 ## Variables and variable kinds

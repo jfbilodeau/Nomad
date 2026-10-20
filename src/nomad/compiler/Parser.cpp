@@ -1005,7 +1005,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     context->getCompiler()->getIdentifierDefinition(variableName, function, identifierDefinition);
 
     const auto memberParts = splitNativeMemberName(context->getRuntime(), variableName);
-    if (identifierDefinition.identifierType == IdentifierType::Unknown && memberParts &&
+    if (memberParts && isNativeMemberCandidate(context->getCompiler(), function, variableName) &&
         context->getCompiler()->getIdentifierType(
             memberParts->receiver, function
         ) != IdentifierType::Unknown) {
