@@ -119,7 +119,7 @@ void Statement::checkReachability(CompilerContext* /*context*/, const ScriptFunc
 
 void Statement::evaluate(InterpreterContext& context) const {
     context.clearResult();
-    if (context.hasError()) {
+    if (context.hasError() || context.getLoopControl() != LoopControl::None) {
         return;
     }
 
@@ -202,8 +202,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
 
         switch (identifier.identifierType) {
         case IdentifierType::Parameter:
-            reportError(context, function, "Cannot assign value to parameter '" + m_identifier +
-                "': parameters are read-only. Copy it to a local variable first");
+            compiler->reportInternalError("Missing mutable parameter binding: " + m_identifier);
             return;
         case IdentifierType::FunctionVariable: {
             const auto* interpreterContext = context->getInterpreterContext();
@@ -212,6 +211,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
                 reportError(context, function, "Cannot change type of frame variable '" + m_identifier + "'");
                 return;
             }
+            function->setVariableType(identifier.variableId, expressionType);
             break;
         }
         case IdentifierType::DynamicVariable: {
@@ -262,6 +262,11 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
             if (identifier.identifierType != IdentifierType::FunctionVariable && !isNewConsoleVariable) {
                 reportError(context, function, "Cannot assign value to '" + m_identifier + "' in the interpreter");
                 return;
+            }
+            if (isNewConsoleVariable && function != nullptr) {
+                identifier.identifierType = IdentifierType::FunctionVariable;
+                identifier.variableId = function->registerVariable(m_identifier, expressionType);
+                identifier.valueType = expressionType;
             }
             break;
         }
@@ -347,11 +352,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
         reportError(context, function, "Cannot assign value to event type '" + m_identifier + "'");
         break;
     case IdentifierType::Parameter:
-        reportError(
-            context,
-            function,
-            "Cannot assign value to parameter '" + m_identifier + "': parameters are read-only. Copy it to a local variable first"
-        );
+        compiler->reportInternalError("Missing mutable parameter binding: " + m_identifier);
         break;
     default:
         reportError(context, function, "Cannot assign value to unknown identifier '" + m_identifier + "'");
@@ -527,7 +528,7 @@ void StatementList::evaluate(InterpreterContext& context) const {
 
     context.setVoidResult();
     for (const auto& statement: m_statements) {
-        if (context.hasError()) {
+        if (context.hasError() || context.getLoopControl() != LoopControl::None) {
             context.clearResult();
             return;
         }

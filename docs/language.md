@@ -19,7 +19,7 @@ Nomad is case‑sensitive.
 - [Constants and predefined values](#constants-and-predefined-values)
 - [Enumerations (`enum`)](#enums)
 - [Type rules and conversions](#type-rules-and-conversions)
-- [Control flow (if) and No loops](#control-flow-if-and-no-loops)
+- [Control flow and loops](#control-flow-and-loops)
 - [Assertions](#assertions)
 - [Format strings](#format-strings)
 - [Operators](#operators)
@@ -207,9 +207,9 @@ literalLength = "Nomad".length
 
 Properties may be read-only, write-only or read/write. Object methods may change
 their instance even when its reference comes from a
-read-only parameter or a temporary; this does not reassign the reference.
+parameter or a temporary; this does not reassign the reference.
 
-Writable properties may also change an instance through a read-only parameter
+Writable properties may also change an instance through a parameter
 or temporary. Changes to an object's contents are immediate and are not rolled
 back if a property setter or method fails.
 
@@ -277,6 +277,10 @@ name.length = 10
 name = "Nomad" # Error: string would introduce the conflicting name.length member.
 ```
 
+Names under a registered context prefix, such as `this.value`, remain context
+variables when a native property has the same name. Assigning one creates the
+context variable if it does not already exist.
+
 ---
 
 ## Variables and variable kinds
@@ -298,7 +302,7 @@ Nomad supports three variable kinds:
 - Context variables: bound to a named context; identified by a prefix and a dot (for example `global.score`). Contexts are provided by the embedding engine and have engine‑specific semantics for storage and persistence. The `global.` context is pre-defined by the default Nomad runtime. The game engine provides `inventory.*` for saved game state and `settings.*` for user preferences. The `global.*`, `scene.*`, `this.*`, and `other.*` contexts are not persisted by the save and settings native functions.
 - Dynamic variables: engine‑defined identifiers (for example `this.x`) managed directly by engine code; the engine decides read/write permissions and behavior.
 
-The interactive interpreter is an exception to compiled-code typing rules. Interpreter variables may be created by assignment and reassigned with a value of a different type. Parameters remain read-only, and frame variables retain their compiled types. Runtime context variables and engine-defined dynamic variables continue to follow the type rules of their contexts and definitions.
+The interactive interpreter is an exception to compiled-code typing rules. Interpreter variables may be created by assignment and reassigned with a value of a different type. Frame variables and parameters retain their compiled types but may be reassigned. Runtime context variables and engine-defined dynamic variables continue to follow the type rules of their contexts and definitions.
 
 See [Embedding Nomad in C++](embedding.md) for the interpreter context API and ownership rules.
 
@@ -388,7 +392,7 @@ message = $"Score: {score}"
 
 ---
 
-## Control flow (if) and No loops
+## Control flow and loops
 
 Only `bool` expressions are allowed in `if` conditions. Numeric values are not implicitly converted to `bool`.
 
@@ -398,7 +402,125 @@ if condition
 end
 ```
 
-There are currently no loop constructs (`for`, `while`, etc.) yet in Nomad.
+### Conditional loops
+
+`while` tests before each iteration and repeats while its condition is true.
+`until` also tests before each iteration, but repeats while its condition is false.
+Conditions must be `bool` expressions.
+
+```nomad
+while running
+    # statements
+end
+
+until finished
+    # statements
+end
+```
+
+Use `do` for a body that executes at least once. Its closing line must include
+`while` or `until` and a boolean condition.
+
+```nomad
+do
+    # statements
+end while running
+
+do
+    # statements
+end until finished
+```
+
+### Iterating ranges and collections
+
+Nomad provides the built-in functions `range <stop>`, `range <start> <stop>`, and
+`range <start> <stop> <step>`. These functions return a reusable `Range` without
+requiring any modules:
+
+```nomad
+for value in range 0 10
+    log.info value  # 0 through 9
+end
+
+for value in range 10 0 (-2)
+    log.info value  # 10, 8, 6, 4, 2
+end
+```
+
+Range arguments are `int` expressions evaluated once when the function is called.
+The start is inclusive and the stop is exclusive. The default start is `0` and
+the default step is `1`. A direction mismatch or equal bounds produces an empty
+range. A zero step raises a runtime error, including when supplied as a literal.
+Iteration stops safely at integer limits without wrapping. Each traversal starts
+an independent iterator; range values can be stored and traversed repeatedly.
+Parenthesize negative arguments to distinguish them from subtraction.
+Changing the original argument variables or reassigning the range variable does
+not change an iterator that is already traversing the range.
+
+```nomad
+names = new List<string>
+names.append "Ada"
+names.append "Grace"
+for name in names
+    log.info name
+end
+
+for entry in scores.entries
+    log.info $"{entry.key}: {entry.value}"
+end
+```
+
+`for value in source` evaluates its source once and uses an independent iterator
+for each execution, including nested loops. The loop variable is an ordinary
+mutable local, or an existing local or parameter of the element type. Each
+iteration assigns the next value to it. Assigning to the variable in the body
+does not reposition the iterator. The variable remains available after the loop,
+including after `break`, with its last assigned value. An empty loop preserves an
+existing value; a new binding retains its normal default value. Nested loops may
+reuse the same variable, but their iterators remain independent. Explicit
+callbacks capture the value when the callback is created.
+
+```nomad
+value = 42
+for value in range 0 3
+    value = value + 10
+end
+log.info value  # 12; the body assignment does not affect the next range value
+
+for value in range 0
+    # Empty: value remains 12.
+end
+```
+
+Numeric iteration uses `for value in range ...`; `for value = ... to ... step ...`
+is not supported.
+
+`List<T>` and one-dimensional `Array<T>` are iterable. Multidimensional arrays and
+maps are not directly iterable; use a map's `keys`, `values`, or `entries` snapshot.
+Iteration is live: replacing an element or changing an object stored in a
+collection is allowed, and later advances observe updated elements.
+
+Structural changes to a list invalidate its active iterators. Append, prepend,
+insert, successful removal, and clearing a nonempty list succeed normally, but
+the iterator's **next advance** faults. Failed removals and clearing an empty list
+do not invalidate iteration. Mutation followed immediately by `break` is valid.
+
+### Break and continue
+
+`break` exits the nearest enclosing loop. `continue` skips the rest of its body:
+conditional loops retest their condition and iterable loops request the next
+element. Both statements must be inside a loop in the
+same function; a callback cannot break or continue its caller's loop.
+
+Single-line conditional forms do not need an `end`:
+
+```nomad
+if finished break
+if skipValue continue
+```
+
+Loops are synchronous. They do not wait for callbacks or automatically yield
+execution; an unbounded loop can block the calling thread.
 
 ---
 
@@ -556,12 +678,15 @@ end
 
 ### Parameters and returns
 
-Parameters are declared as `name:type`. Parameters are read-only: assigning to one is a compilation error. Copy it to a local variable first:
+Parameters are declared as `name:type` and can be reassigned without changing
+their type. Rebinding a parameter does not change the caller's variable. Object
+parameters still share their referenced object, so member mutations remain
+visible to the caller:
 
 ```nomad
 fun shout text:string
-    loud = $"{text}!"
-    return loud
+    text = $"{text}!"
+    return text
 end
 ```
 
@@ -693,6 +818,9 @@ log.info "scene created!"
 - There is no closing `end` for a `then` callback.
 - `then` consumes the remaining body of the current function as the callback body.
 - `then` applies only to callback arguments.
+- `then` is allowed only at the root of the current script or function body,
+  not inside an `if` or loop. An explicit `fun ... end` callback inside a block
+  establishes a fresh function body and may use `then` at its own root.
 
 Predefined native functions:
 
@@ -741,7 +869,7 @@ Native function naming follows the same identifier rules as variables and functi
 
 ### Overloading
 
-A native function name may be registered more than once, as long as the overloads differ in the types of their parameters. The call is resolved from the types of its arguments:
+A native function name may be registered more than once, as long as the overloads differ in parameter count or types. The call is resolved from the count and types of its arguments:
 
 ```nomad
 i = toInt 13.2    # calls toInt value:float
@@ -752,7 +880,9 @@ An overload whose parameter types match the arguments exactly is preferred over 
 
 Because a call is parsed before its overload is chosen, every overload of a name must be parsed the same way. The runtime rejects an overload that would break this:
 
-- All overloads must take the same number of parameters.
+- Overloads may take different numbers of ordinary value parameters. For nested calls,
+  use parentheses to delimit the arguments of the inner call.
+- Overloads involving compiler-supplied source parameters must take the same number of parameters.
 - All overloads must return a value, or all must return nothing. (The parser decides whether a call is a statement or an expression from the name alone.)
 - Only ordinary value parameters may differ between overloads. A name that takes a callback, a `then` continuation, a predicate or an event cannot be overloaded.
 - Two overloads may not have the same parameter types.

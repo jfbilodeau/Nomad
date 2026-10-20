@@ -226,6 +226,7 @@ ApiAnalysis analyzeApiSymbols(
     for (auto* function = runtime->getFunctionAtLine(uri, line); function;
         function = runtime->getScriptFunction(function->getParentId())) {
         const auto addLocal = [&](const NomadString& name, const Type* type) {
+            if (name.empty() || name.find('@') != NomadString::npos) return;
             if (!localNames.insert(name).second) return;
             const auto typeName = type ? type->getTypeName() : "unknown";
             std::erase_if(symbols, [&](const auto& symbol) {
@@ -235,7 +236,7 @@ ApiAnalysis analyzeApiSymbols(
                 "Local to `" + function->getName() + "`.", type ? typeName : NomadString{}});
         };
         for (auto index = NomadIndex{0}; index < function->getVariableCount(); ++index) {
-            addLocal(function->getVariableName(toNomadId(index)), function->getVariableType(toNomadId(index)));
+            addLocal(function->getVisibleVariableName(toNomadId(index)), function->getVariableType(toNomadId(index)));
         }
         for (auto index = NomadIndex{0}; index < function->getParameterCount(); ++index) {
             addLocal(function->getParameterName(toNomadId(index)), function->getParameterType(toNomadId(index)));

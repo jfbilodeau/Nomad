@@ -1468,7 +1468,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
             // Reload the identifier definition.
             compiler->getIdentifierDefinition(m_identifier, function, m_identifierDefinition);
 
-            if (m_identifierDefinition.identifierType != IdentifierType::Parameter) {
+            if (m_identifierDefinition.identifierType != IdentifierType::FunctionVariable) {
                 compiler->reportInternalError("Capture definition should exist.");
             }
             break;
@@ -1535,6 +1535,8 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
 
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::FunctionVariable:
+        m_writable = true;
+        break;
     case IdentifierType::ContextVariable:
         m_writable = true;
         break;
@@ -1653,8 +1655,11 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
         if (value == nullptr) {
             raiseException("Variable '" + m_identifier + "' has not been assigned a value");
         }
-
-        context.setResult(context.getVariableTypeById(m_identifierDefinition.variableId), *value);
+        const auto* actualType = context.getVariableTypeById(m_identifierDefinition.variableId);
+        if (actualType != getType()) {
+            raiseException("Variable '" + m_identifier + "' changed type after this expression was resolved");
+        }
+        context.setResult(actualType, *value);
         break;
     }
 
@@ -1725,17 +1730,17 @@ bool IdentifierExpression::parseCapture(const Compiler* compiler, ScriptFunction
 }
 
 bool getCapture(const NomadString& identifier, const ScriptFunction* function, NomadId& id, CaptureSource& captureSource) {
-    const NomadId parameterId = function->getParameterId(identifier);
-    if (parameterId != NOMAD_INVALID_ID) {
-        id = parameterId;
-        captureSource = CaptureSource::Parameter;
-        return true;
-    }
-
     const NomadId variableId = function->getVariableId(identifier);
     if (variableId != NOMAD_INVALID_ID) {
         id = variableId;
         captureSource = CaptureSource::Variable;
+        return true;
+    }
+
+    const auto parameterId = function->getParameterId(identifier);
+    if (parameterId != NOMAD_INVALID_ID) {
+        id = parameterId;
+        captureSource = CaptureSource::Parameter;
         return true;
     }
 

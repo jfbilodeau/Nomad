@@ -593,6 +593,41 @@ directory = "res"
     }
 }
 
+BOOST_AUTO_TEST_CASE(loop_completion_shows_ordinary_bindings_but_not_hidden_iterators)
+{
+    TestDirectory directory("nomad_lsp_loop_scope");
+    const auto uri = uriFor(directory.getPath() / "loops.nomad");
+    const NomadString source =
+        "total = 0\n"
+        "for value in range 1 4\n"
+        "    total = total + value\n"
+        "end\n"
+        "total = total + 1";
+    const auto query = [&](const int id, const int line) {
+        return frame({{"jsonrpc", "2.0"}, {"id", id}, {"method", "textDocument/completion"},
+            {"params", {{"textDocument", {{"uri", uri}}},
+                {"position", {{"line", line}, {"character", 0}}}}}});
+    };
+    std::istringstream input(start() + frame(openDocument(uri, source)) +
+        query(10, 2) + query(11, 4) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    BOOST_REQUIRE_MESSAGE(errors.str().empty(), errors.str());
+    for (const auto& message : responses(output.str())) {
+        if (!message.contains("id")) continue;
+        const auto id = message.at("id").as_int64();
+        if (id != 10 && id != 11) continue;
+        auto found = false;
+        for (const auto& item : message.at("result").as_object().at("items").as_array()) {
+            const NomadString name{item.as_object().at("label").as_string()};
+            BOOST_TEST(name.find('@') == NomadString::npos);
+            if (name == "value") found = true;
+        }
+        BOOST_TEST(found);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(local_completion_uses_compiler_scope_and_types_on_an_incomplete_line)
 {
     TestDirectory directory("nomad_lsp_local_symbols");

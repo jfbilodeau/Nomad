@@ -41,6 +41,13 @@ Use `resolveFunction(name, argumentTypes)`, `resolveMethod(objectType, name,
 argumentTypes)`, or `resolveConstructor(objectType, argumentTypes)` to select an
 overload. Inspect the `ResolveResult` before retrieving the selected callable.
 The selected ID or pointer can be retained without repeating name resolution.
+Function overloads are selected by parameter count and types, independently of
+their implementation. Different parameter counts require all parameters to be
+ordinary values. Overloads with compiler-supplied source parameters
+must retain the same count and parameter shapes. All overloads under a name must
+agree on whether they return a value.
+Registration of overloaded free functions is currently supported for native
+functions; script-defined overload declarations are not yet supported.
 Native and script functions use the same call syntax in expressions and
 statements. A statement discards any returned value.
 
@@ -218,8 +225,9 @@ void interpretInput() {
 }
 ```
 
-`execute(source, context)` accepts one line containing an assignment, an
-expression, or a supported function call. `evaluateExpression(source, context)`
+`execute(source, context)` accepts assignments, supported function calls, and
+multiline `if`, `while`, `until`, `do`, and `for` statements. It also accepts a
+single expression. `evaluateExpression(source, context)`
 requires exactly one non-void expression; assignments and statements are rejected.
 Each entry point clears the context's previous result and error.
 
@@ -232,7 +240,18 @@ const auto succeeded = interpreter.evaluateExpression(input, context);
 
 The string overloads preserve the existing context source name. Interpretation
 continues to share the compiler's tokenizer, parser, and type resolver; it does
-not register input as a compiled function or relax its single-line restrictions.
+not register input as a compiled function. Declarations, `return`, assertions,
+and inline callbacks remain unsupported by the interpreter. Loops execute
+synchronously on the caller's thread.
+
+Loop bindings are ordinary mutable locals or compatible parameters and remain
+available after the loop. Frame-backed interpretation can reassign script
+parameters without replacing the caller's arguments; their declared types remain
+fixed. Callback captures retain the values present when the callback was created.
+
+The `SourceText` expression overload optionally accepts a one-based source line,
+so expressions embedded in a larger input retain their scope and diagnostic
+location.
 
 Use `hasError()` to check for errors and `hasWarning()` to check for warnings.
 Warnings alone do not indicate failure. To display all diagnostics from the latest
@@ -499,6 +518,42 @@ An incorrect pairing causes undefined behaviour.
 
 Use `getThisAs<const Object>()` to obtain a pointer to const.
 Calling the accessor outside an active method faults.
+
+## Iterable objects
+
+Hosts can make an object usable in `for value in source` without collection-specific
+compiler support:
+
+1. Derive a cursor from `IteratorObject`, constructed with the registered element
+   type. Implement `onMoveNext(RuntimeValue&)`: return `true` after writing one
+   owned element into its empty output, or `false` at completion. The cursor must
+   retain any source objects it needs and release them when destroyed.
+2. Obtain the cursor's script type with `runtime.getIteratorType(elementType)`.
+   It exposes parameterless `moveNext` and the read-only `current` property.
+   Reading `current` before a successful advance or after completion faults.
+3. Register a parameterless native method on the source type that returns a fresh
+   cursor of that iterator type. The method name is not prescribed.
+4. Register the association:
+
+```cpp
+const auto memberId = runtime.registerNativeMethod(
+    sourceType, "iterator", createIterator, {},
+    runtime.getIteratorType(elementType), ""
+);
+runtime.registerIterableType(
+    sourceType, elementType, runtime.getNativeMemberMethod(memberId)
+);
+```
+
+`registerIterableType` accepts a runtime-owned `Method`, not a native member ID.
+The factory must belong to the source type, take no arguments, and return the
+matching iterator type. Duplicate associations and invalid registrations throw
+`NomadException`. `getIterableDefinition(sourceType)` returns an optional association.
+
+Each factory invocation must create independent iteration state. An iterator
+owns its published value; consumers receive normal typed copies, including
+reference ownership for object values. Completion is permanent. Loop completion,
+`break`, and normal function return release loop-owned cursors and values.
 
 ## Member declarations for parameterized type families
 

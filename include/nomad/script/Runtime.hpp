@@ -16,6 +16,7 @@
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
 #include <nomad/script/FunctionResolution.hpp>
+#include <nomad/script/IteratorObject.hpp>
 #include <nomad/script/Member.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/NativeMember.hpp>
@@ -134,6 +135,13 @@ public:
         const std::vector<const Type*>& argumentTypes
     ) const;
     void registerType(std::unique_ptr<Type>&& type);
+    [[nodiscard]] const ObjectTypeBase* getIteratorType(const Type* valueType);
+    void registerIterableType(
+        const Type* sourceType,
+        const Type* valueType,
+        const Method* factory
+    );
+    [[nodiscard]] std::optional<IterableDefinition> getIterableDefinition(const Type* sourceType) const;
     // [[nodiscard]] const Type* getType(NomadId id) const;
     [[nodiscard]] NomadId getTypeId(const NomadString& typeName) const;
     [[nodiscard]] std::optional<const Type*> getType(NomadId id) const;
@@ -533,6 +541,7 @@ private:
     // Maps a callable name to its index in `m_callables`.
     std::unordered_map<NomadString, NomadIndex> m_callablesByName;
     std::vector<NativeMemberRegistration> m_nativeMembers;
+    std::unordered_map<const Type*, IterableDefinition> m_iterableTypes;
     std::vector<NativePropertyDefinition> m_nativeProperties;
     std::vector<NativeIndexerDefinition> m_nativeIndexers;
     std::unordered_map<NomadString, std::vector<NomadId>> m_nativeMembersByName;

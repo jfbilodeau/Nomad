@@ -11,7 +11,9 @@ namespace nomad {
 
 class Compiler;
 class InterpreterContext;
+class LoopStatement;
 class Runtime;
+class ScriptFunction;
 class Tokenizer;
 
 enum class DiagnosticSeverity {
@@ -70,6 +72,23 @@ public:
     [[nodiscard]] const Diagnostic* getFirstError() const;
     void clearDiagnostics();
 
+    struct Block {
+        const ScriptFunction* function;
+        LoopStatement* loop;
+        bool functionRoot;
+        bool endsAtEnd;
+    };
+    void enterBlock(
+        const ScriptFunction* function,
+        LoopStatement* loop = nullptr,
+        bool functionRoot = false,
+        bool endsAtEnd = false
+    );
+    void leaveBlock();
+    [[nodiscard]] bool isFunctionRoot(const ScriptFunction* function) const;
+    [[nodiscard]] LoopStatement* getEnclosingLoop(const ScriptFunction* function) const;
+    [[nodiscard]] bool currentBodyEndsAtEnd() const;
+
 private:
     void report(
         DiagnosticSeverity severity,
@@ -85,6 +104,24 @@ private:
     std::vector<Diagnostic> m_diagnostics;
     NomadIndex m_errorCount = 0;
     NomadIndex m_warningCount = 0;
+    std::vector<Block> m_blocks;
+};
+
+class ParserBlockScope {
+public:
+    ParserBlockScope(
+        CompilerContext& context,
+        const ScriptFunction* function,
+        LoopStatement* loop = nullptr,
+        bool functionRoot = false,
+        bool endsAtEnd = false
+    );
+    ParserBlockScope(const ParserBlockScope&) = delete;
+    ParserBlockScope& operator=(const ParserBlockScope&) = delete;
+    ~ParserBlockScope();
+
+private:
+    CompilerContext& m_context;
 };
 
 } // namespace nomad

@@ -2,6 +2,7 @@
 
 #include <nomad/collections/RegisterListType.hpp>
 
+#include <nomad/collections/ListIterator.hpp>
 #include <nomad/collections/ListObject.hpp>
 #include <nomad/collections/ListType.hpp>
 
@@ -22,6 +23,15 @@ void registerListType(Runtime* runtime) {
         [runtime](const nomad::Type* type) {
             const auto* objectType = static_cast<const nomad::ObjectType*>(type);
             const auto* elementType = objectType->getTypeArguments()[0];
+            const auto iteratorId = runtime->registerNativeMethod(
+                objectType, "iterator",
+                [](VirtualMachine* machine) {
+                    machine->getResult().setObjectValue(new ListIterator(machine->getThisAs<ListObject>()));
+                },
+                {}, runtime->getIteratorType(elementType),
+                NomadDoc("Creates an independent live iterator. Structural changes invalidate its next advance.")
+            );
+            runtime->registerIterableType(objectType, elementType, runtime->getNativeMemberMethod(iteratorId));
             const auto constructorId = runtime->registerNativeConstructor(
                 objectType, {},
                 [elementType](std::span<const nomad::RuntimeValue>) {

@@ -4,6 +4,7 @@
 
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/CompilerException.hpp>
+#include <nomad/compiler/LoopStatement.hpp>
 #include <nomad/compiler/StatementParsers.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
@@ -33,6 +34,12 @@ Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
     registerParseStatementFn("if", parseIfStatement);
     registerParseStatementFn("params", nullptr, preParseParamsStatement);
     registerParseStatementFn("return", parseReturnStatement);
+    registerParseStatementFn("while", parseWhileStatement);
+    registerParseStatementFn("until", parseUntilStatement);
+    registerParseStatementFn("do", parseDoStatement);
+    registerParseStatementFn("break", parseBreakStatement);
+    registerParseStatementFn("continue", parseContinueStatement);
+    registerParseStatementFn("for", parseForStatement);
 
 }
 
@@ -194,14 +201,13 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
         return IdentifierType::Unknown;
     }
 
-    if (function->getParameterId(name) != NOMAD_INVALID_ID) {
-        return IdentifierType::Parameter;
-    }
-
     if (function->getVariableId(name) != NOMAD_INVALID_ID) {
         return IdentifierType::FunctionVariable;
     }
 
+    if (function->getParameterId(name) != NOMAD_INVALID_ID) {
+        return IdentifierType::Parameter;
+    }
     return IdentifierType::Unknown;
 }
 
@@ -293,17 +299,6 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
         return;
     }
 
-    // Check if this is a local parameter
-    const NomadId parameterId = function->getParameterId(name);
-
-    if (parameterId != NOMAD_INVALID_ID) {
-        definition.identifierType = IdentifierType::Parameter;
-        definition.variableId = parameterId;
-        definition.valueType = function->getParameterType(parameterId);
-
-        return;
-    }
-
     // Check if this is a local variable
     const NomadId variableId = function->getVariableId(name);
 
@@ -312,6 +307,14 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
         definition.variableId = variableId;
         definition.valueType = function->getVariableType(variableId);
 
+        return;
+    }
+
+    const auto parameterId = function->getParameterId(name);
+    if (parameterId != NOMAD_INVALID_ID) {
+        definition.identifierType = IdentifierType::Parameter;
+        definition.variableId = parameterId;
+        definition.valueType = function->getParameterType(parameterId);
         return;
     }
 

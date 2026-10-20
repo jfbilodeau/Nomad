@@ -8,6 +8,7 @@
 #include <nomad/collections/Array2dObject.hpp>
 #include <nomad/collections/Array3Type.hpp>
 #include <nomad/collections/Array3dObject.hpp>
+#include <nomad/collections/ArrayIterator.hpp>
 #include <nomad/collections/ArrayObject.hpp>
 #include <nomad/collections/ArrayType.hpp>
 
@@ -68,6 +69,15 @@ void registerArrayType(Runtime* runtime) {
                 throw nomad::NomadException("Failed to register Array1 constructor");
             }
             const auto* elementType = arrayType->getElementType();
+            const auto iteratorId = runtime->registerNativeMethod(
+                arrayType, "iterator",
+                [](VirtualMachine* machine) {
+                    machine->getResult().setObjectValue(new ArrayIterator(machine->getThisAs<Array1dObject>()));
+                },
+                {}, runtime->getIteratorType(elementType),
+                NomadDoc("Creates an independent live iterator over the array.")
+            );
+            runtime->registerIterableType(arrayType, elementType, runtime->getNativeMemberMethod(iteratorId));
             if (runtime->registerNativeIndexer(
                 arrayType,
                 {runtime->getIntegerType()},

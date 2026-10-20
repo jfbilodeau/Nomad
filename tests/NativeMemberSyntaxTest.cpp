@@ -9,6 +9,7 @@
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/VariableContext.hpp>
 
 using namespace nomad;
 
@@ -256,6 +257,33 @@ BOOST_AUTO_TEST_CASE(preserves_existing_qualified_identifier) {
     BOOST_REQUIRE(expression != nullptr);
     BOOST_TEST(expression->resolve(&context, &function));
     BOOST_TEST(expression->getType() == runtime.getIntegerType());
+}
+
+BOOST_AUTO_TEST_CASE(context_assignment_takes_precedence_over_native_member_names) {
+    Runtime runtime;
+    runtime.registerVariableContext("entity", "this.", std::make_unique<SimpleVariableContext>());
+    BOOST_REQUIRE(runtime.registerNativeProperty(
+        runtime.getStringType(), "value", runtime.getIntegerType(),
+        [](VirtualMachine*, RuntimeValue&) {}, {}, ""
+    ) != NOMAD_INVALID_ID);
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"test", {"test.nomad",
+        "this = 0\n"
+        "this.value = 20\n"
+        "this.value = this.value + 1\n"
+        "this.length = 2\n"
+        "return this.value + this.length\n"
+    }}}, {}});
+
+    const auto compiled = compiler->compileFunctions(&context);
+    BOOST_REQUIRE_MESSAGE(compiled, (context.getFirstError() ? context.getFirstError()->message : "Compilation failed"));
+    BOOST_TEST(runtime.getContextVariableId("this.value") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getContextVariableId("this.length") != NOMAD_INVALID_ID);
+
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("test"), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 23);
 }
 
 BOOST_AUTO_TEST_CASE(rejects_invalid_indexer_syntax_and_types) {

@@ -45,8 +45,16 @@ struct InterpreterVariableInfo {
     NomadString value;
 };
 
+enum class LoopControl {
+    None = 1,
+    Break,
+    Continue
+};
+
 class InterpreterContext {
 public:
+    [[nodiscard]] LoopControl getLoopControl() const { return m_loopControl; }
+    void setLoopControl(LoopControl control) { m_loopControl = control; }
     // The caller owns the VM. Interpreter variables persist for this context's lifetime.
     explicit InterpreterContext(VirtualMachine& virtualMachine);
     // Additionally borrows the active script frame, which must outlive this context.
@@ -82,6 +90,7 @@ public:
     [[nodiscard]] const NomadString* getError() const;
 
     void setVariable(const NomadString& name, const Type* type, const RuntimeValue& value);
+    void clearVariableValue(const NomadString& name);
 
     [[nodiscard]] const Type* getVariableType(const NomadString& name) const;
     [[nodiscard]] const Type* getVariableTypeById(NomadId variableId) const;
@@ -102,6 +111,7 @@ private:
     NomadIndex m_variableIndex = 0;
     NomadIndex m_frameVariableCount = 0;
     std::optional<TypedValue> m_result;
+    LoopControl m_loopControl = LoopControl::None;
     std::vector<Diagnostic> m_diagnostics;
     // Indexed by resolution variable id; borrowed frame slots remain empty.
     std::vector<std::unique_ptr<TypedValue>> m_variables;

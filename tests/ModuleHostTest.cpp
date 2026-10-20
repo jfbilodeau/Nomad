@@ -61,6 +61,404 @@ bool compileFixture(ModuleHost& host, const CompilationTarget target) {
 
 BOOST_AUTO_TEST_SUITE(module_host)
 
+BOOST_AUTO_TEST_CASE(range_overloads_are_reusable_iterables_in_compiler_and_interpreter) {
+    Runtime runtime;
+    const NomadString source =
+        "total = 0\n"
+        "sequence = range 4\n"
+        "for value in sequence\n"
+        "    total = total + value\n"
+        "end\n"
+        "for value in range 2 5\n"
+        "    total = total + value\n"
+        "end\n"
+        "for value in range 5 0 (-2)\n"
+        "    total = total + value\n"
+        "end\n"
+        "for outer in sequence\n"
+        "    for inner in sequence\n"
+        "        total = total + 1\n"
+        "    end\n"
+        "end\n"
+        "for value in range 0\n"
+        "    total = total + 1000\n"
+        "end\n"
+        "for value in range 5 0\n"
+        "    total = total + 1000\n"
+        "end\n"
+        "for value in range 0 5 (-1)\n"
+        "    total = total + 1000\n"
+        "end\n"
+        "cursor = sequence.iterator\n"
+        "sequence = range 0\n"
+        "cursor.moveNext\n"
+        "total = total + cursor.current\n";
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, {{{"main", {"main.nomad", source + "return total"}}}, {}});
+    const auto compiled = compiler->compileScripts(&compilation, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled,
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 40);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext context(*machine);
+        const auto succeeded = Interpreter{}.execute(source, context);
+        BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : "Interpreter failed"));
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("total", context));
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 40);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(range_handles_integer_limits_and_rejects_zero_step_at_runtime) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    const NomadString source =
+        "count = 0\n"
+        "for value in range 9223372036854775806 9223372036854775807 2\n"
+        "    count = count + 1\n"
+        "end\n"
+        "for value in range (-9223372036854775807) (-9223372036854775808) (-2)\n"
+        "    count = count + 1\n"
+        "end\n"
+        "for value in range 9223372036854775807 (-9223372036854775808) (-9223372036854775808)\n"
+        "    count = count + 1\n"
+        "end\n";
+    compiler->registerSources(&compilation, {{{
+        "main", {"main.nomad", source + "return count"}
+    }, {
+        "invalid", {"invalid.nomad", "return range 0 5 0"}
+    }}, {}});
+    const auto compiled = compiler->compileScripts(&compilation, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled,
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 4);
+    BOOST_CHECK_EXCEPTION(runtime.executeFunction(runtime.getFunctionId("invalid"), {}, result),
+        NomadException, [](const NomadException& error) {
+            return NomadString(error.what()).find("Range step must not be zero") != NomadString::npos;
+        });
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    BOOST_REQUIRE(Interpreter{}.execute(source, context));
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("count", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 4);
+    BOOST_REQUIRE(Interpreter{}.execute("zero = 0", context));
+    BOOST_CHECK_THROW((void)Interpreter{}.evaluateExpression("range 0 5 zero", context), NomadException);
+    BOOST_TEST(!Interpreter{}.evaluateExpression("range \"invalid\"", context));
+    BOOST_TEST(!Interpreter{}.evaluateExpression("range", context));
+    BOOST_TEST(!Interpreter{}.evaluateExpression("range 1 2 3 4", context));
+}
+
+BOOST_AUTO_TEST_CASE(range_arguments_are_evaluated_once_and_loop_controls_use_normal_iteration) {
+    Runtime runtime;
+    auto calls = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "test.bound",
+        [&calls](VirtualMachine* machine) {
+            ++calls;
+            machine->setIntegerResult(machine->getIntegerParameter(0));
+        },
+        {defParameter("value", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
+    ) != NOMAD_INVALID_ID);
+    const NomadString source =
+        "total = 0\n"
+        "sequence = range (test.bound 0) (test.bound 10) (test.bound 1)\n"
+        "for value in sequence\n"
+        "    if value == 1 continue\n"
+        "    if value == 4 break\n"
+        "    total = total + value\n"
+        "end\n";
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, {{{"main", {"main.nomad", source + "return total"}}}, {}});
+    const auto compiled = compiler->compileScripts(&compilation, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled,
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 5);
+    BOOST_TEST(calls == 3);
+    calls = 0;
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    BOOST_REQUIRE(Interpreter{}.execute(source, context));
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("total", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 5);
+    BOOST_TEST(calls == 3);
+}
+
+BOOST_AUTO_TEST_CASE(collection_loops_run_in_compiler_and_interpreter) {
+    TestDirectory directory("nomad_host_collection_loops");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    const NomadString source =
+        "items = new List<int>\n"
+        "items.append 1\nitems.append 2\nitems.append 3\n"
+        "total = 0\n"
+        "for value in items\n"
+        "    if value == 2 continue\n"
+        "    total = total + value\n"
+        "    for nested in items\n"
+        "        total = total + nested\n"
+        "    end\n"
+        "end\n"
+        "array = new Array<int> 2\n"
+        "array[0] = 10\narray[1] = 20\n"
+        "for value in array\n"
+        "    total = total + value\n"
+        "end\n"
+        "map = new Map<string int>\n"
+        "map[\"one\"] = 100\nmap[\"two\"] = 200\n"
+        "for entry in map.entries\n"
+        "    total = total + entry.value\n"
+        "end\n"
+        "for value in range 1 3\n"
+        "    text = $\"{value} {value + 1}\"\n"
+        "    total = total + value\n"
+        "end\n";
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, {{{"main", {"main.nomad", source + "return total"}}}, {}});
+    const auto compiled = compiler->compileScripts(&compilation, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled,
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    RuntimeValue empty;
+    runtime.getStringType()->initValue(empty);
+    runtime.getStringType()->freeValue(empty);
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 349);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext context(*machine);
+        const auto succeeded = Interpreter{}.execute(source, context);
+        BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : "Interpreter failed"));
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("total", context));
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 349);
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("value", context));
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 2);
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("text", context));
+        BOOST_TEST(context.getResult()->getValue().getStringValue() == "2 3");
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(collection_iterators_keep_sources_and_obey_current_and_completion_contracts) {
+    TestDirectory directory("nomad_host_iterator_contract");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    RuntimeValue empty;
+    runtime.getStringType()->initValue(empty);
+    runtime.getStringType()->freeValue(empty);
+    {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext context(*machine);
+        BOOST_REQUIRE(Interpreter{}.execute("items = new List<string>\nitems.append \"first\"", context));
+        BOOST_REQUIRE(Interpreter{}.execute("cursor = items.iterator", context));
+        BOOST_CHECK_THROW((void)Interpreter{}.evaluateExpression("cursor.current", context), NomadException);
+        BOOST_REQUIRE(Interpreter{}.execute("items = new List<string>", context));
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("cursor.moveNext", context));
+        BOOST_TEST(context.getResult()->getValue().getBooleanValue());
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("cursor.current", context));
+        BOOST_TEST(context.getResult()->getValue().getStringValue() == "first");
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("cursor.moveNext", context));
+        BOOST_TEST(!context.getResult()->getValue().getBooleanValue());
+        BOOST_CHECK_THROW((void)Interpreter{}.evaluateExpression("cursor.current", context), NomadException);
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("cursor.moveNext", context));
+        BOOST_TEST(!context.getResult()->getValue().getBooleanValue());
+    }
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    const NomadString source =
+        "items = new List<string>\nitems.append \"kept\"\n"
+        "for value in items\nreturn value\nend\nreturn \"\"";
+    compiler->registerSources(&compilation, {{{"earlyReturn", {"earlyReturn.nomad", source}}}, {}});
+    const auto compiled = compiler->compileScripts(&compilation, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled,
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("earlyReturn"), {}, result);
+    BOOST_TEST(result.getStringValue() == "kept");
+    runtime.getStringType()->freeValue(result);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(collection_loops_allow_replacement_failed_removal_and_mutation_before_break) {
+    TestDirectory directory("nomad_host_collection_mutation");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    const NomadString source =
+        "items = new List<int>\nitems.append 1\nitems.append 2\n"
+        "total = 0\n"
+        "for value in items\n"
+        "    items[1] = 10\n"
+        "    items.remove 100\n"
+        "    total = total + value\n"
+        "end\n"
+        "for value in items\n"
+        "    items.append 3\n"
+        "    break\n"
+        "end\n"
+        "empty = new List<int>\n"
+        "for value in empty\n"
+        "    total = 1000\n"
+        "end\n";
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, {{{"main", {"main.nomad", source + "return total"}}}, {}});
+    const auto compiled = compiler->compileScripts(&compilation, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled,
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 11);
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    const auto succeeded = Interpreter{}.execute(source, context);
+    BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : "Interpreter failed"));
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("total", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 11);
+}
+
+BOOST_AUTO_TEST_CASE(collection_iterators_detect_structural_mutation_on_next_advance) {
+    TestDirectory directory("nomad_host_iteration_invalidated");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    for (const auto* mutation : {"items.append 3", "items.prepend 3", "items.insert 0 3",
+        "items.remove 0", "items.removeFirst", "items.removeLast", "items.clear"}) {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext context(*machine);
+        const auto source = NomadString{
+            "items = new List<int>\nitems.append 1\nitems.append 2\n"
+            "for value in items\n"
+        } + mutation + "\nend";
+        BOOST_TEST_CONTEXT(mutation) {
+            BOOST_TEST(!Interpreter{}.execute(source, context));
+            BOOST_REQUIRE(context.getError() != nullptr);
+            BOOST_TEST(context.getError()->find("structurally modified") != NomadString::npos, *context.getError());
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(collection_loops_reject_non_iterables) {
+    TestDirectory directory("nomad_host_iteration_invalid_sources");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    for (const auto* source : {
+        "for value in 42\nend",
+        "map = new Map<string int>\nfor value in map\nend",
+        "array = new Array<int int> 2 2\nfor value in array\nend"
+    }) {
+        auto compiler = runtime.createCompiler();
+        CompilerContext compilation(compiler.get());
+        compiler->registerSources(&compilation, {{{"rejected", {"rejected.nomad", source}}}, {}});
+        BOOST_TEST(!compiler->compileScripts(&compilation, CompilationTarget::Analysis));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(collection_loop_bindings_preserve_values_and_allow_reassignment) {
+    TestDirectory directory("nomad_host_mutable_loop_bindings");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    const NomadString source =
+        "items = new List<string>\n"
+        "items.append \"first\"\nitems.append \"last\"\n"
+        "for value in items\n"
+        "    value = value.toUpper\n"
+        "end\n"
+        "empty = new List<string>\n"
+        "for value in empty\nend\n"
+        "for fresh in empty\nend\n"
+        "for stopped in items\n"
+        "    stopped = \"break\"\n"
+        "    break\n"
+        "end\n"
+        "number = 20\n"
+        "for number in range 0\nend\n"
+        "for unused in range 0\nend\n"
+        "count = 0\n"
+        "for shared in range 2\n"
+        "    for shared in range 3\n"
+        "        shared = 100\n"
+        "        count = count + 1\n"
+        "    end\n"
+        "end\n"
+        "text = $\"{value}{fresh}{stopped}{number} {unused} {count} {shared}\"\n";
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    compiler->registerSources(&compilation, {{{"main", {"main.nomad", source + "return text"}}}, {}});
+    const auto compiled = compiler->compileScripts(&compilation, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled,
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    RuntimeValue emptyString;
+    runtime.getStringType()->initValue(emptyString);
+    runtime.getStringType()->freeValue(emptyString);
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getStringValue() == "LASTbreak20 0 6 100");
+    runtime.getStringType()->freeValue(result);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext context(*machine);
+        const auto succeeded = Interpreter{}.execute(source, context);
+        BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : "Interpreter failed"));
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("text", context));
+        BOOST_TEST(context.getResult()->getValue().getStringValue() == "LASTbreak20 0 6 100");
+        BOOST_REQUIRE(Interpreter{}.execute("value = \"still here\"", context));
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("value", context));
+        BOOST_TEST(context.getResult()->getValue().getStringValue() == "still here");
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(object_parameter_reassignment_preserves_caller_references_and_shared_mutations) {
+    TestDirectory directory("nomad_host_mutable_object_parameters");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
+    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host.getRuntime();
+    auto compiler = runtime.createCompiler();
+    CompilerContext compilation(compiler.get());
+    const NomadString source =
+        "fun change items:List<int>\n"
+        "    items.append 1\n"
+        "    items = new List<int>\n"
+        "    items.append 2\n"
+        "    return items[0]\n"
+        "end\n"
+        "items = new List<int>\n"
+        "items.append 10\n"
+        "result = change items\n"
+        "return result * 100 + items.count * 10 + items[1]";
+    compiler->registerSources(&compilation, {{{"main", {"main.nomad", source}}}, {}});
+    const auto compiled = compiler->compileScripts(&compilation, CompilationTarget::Executable);
+    BOOST_REQUIRE_MESSAGE(compiled,
+        (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 221);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
 BOOST_AUTO_TEST_CASE(collections_key_values_construct_read_and_share_references) {
     TestDirectory directory("nomad_host_key_value");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
@@ -1284,7 +1682,7 @@ BOOST_AUTO_TEST_CASE(collections_lists_reject_invalid_member_operations) {
         "values = new List<int>\nvalues.clear 1",
         "values = new List<int>\nresult = values.insert 0 1",
         "values = new List<int>\nresult = values.clear",
-        "params values:List<int>\nvalues = new List<int>"
+        "params values:List<int>\nvalues = new List<string>"
     }) {
         BOOST_TEST_CONTEXT(source) {
             TestDirectory directory("nomad_host_bad_list_values");

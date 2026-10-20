@@ -251,8 +251,9 @@ BOOST_AUTO_TEST_CASE(script_function_views_and_state_survive_table_growth)
     BOOST_TEST(function->getReturnType() == runtime.getIntegerType());
     BOOST_TEST(script->getPath() == "source.nomad");
     BOOST_TEST(script->getSourceCode() == "return value");
-    BOOST_TEST(script->getVariableCount() == 1U);
-    BOOST_TEST(script->getVariableType(0) == runtime.getFloatType());
+    BOOST_TEST(script->getVariableCount() == 2U);
+    BOOST_TEST(script->getVariableType(script->getVariableId("local")) == runtime.getFloatType());
+    BOOST_TEST(script->getVariableType(script->getVariableId("value")) == runtime.getIntegerType());
     BOOST_TEST(runtime.getFunctionCount() == 1U);
     BOOST_TEST(runtime.getFunctionSize() == 10U);
     BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 3) == script);
@@ -414,7 +415,7 @@ BOOST_AUTO_TEST_CASE(overload_resolution_reports_when_nothing_matches)
     BOOST_TEST(!runtime.describeResolveFailure("test.convert", selected).empty());
 }
 
-BOOST_AUTO_TEST_CASE(overload_with_a_different_parameter_count_is_rejected)
+BOOST_AUTO_TEST_CASE(overloads_can_have_different_parameter_counts)
 {
     Runtime runtime;
 
@@ -436,10 +437,29 @@ BOOST_AUTO_TEST_CASE(overload_with_a_different_parameter_count_is_rejected)
                 defParameter("fallback", runtime.getIntegerType(), NomadDoc("Fallback"))
             },
             runtime.getIntegerType()
-        ) == NOMAD_INVALID_ID
+        ) != NOMAD_INVALID_ID
     );
 
-    BOOST_TEST(runtime.getCallableOverloadCount("test.convert") == NomadIndex{1});
+    BOOST_TEST(runtime.getCallableOverloadCount("test.convert") == NomadIndex{2});
+}
+
+BOOST_AUTO_TEST_CASE(different_arity_overloads_reject_source_parameters_in_either_registration_order)
+{
+    for (const auto sourceFirst : {false, true}) {
+        Runtime runtime;
+        const std::vector<Parameter> sourceParameters{
+            defParameter("$file", runtime.getFileNameType(), ""),
+            defParameter("value", runtime.getIntegerType(), "")
+        };
+        const std::vector<Parameter> valueParameters{
+            defParameter("value", runtime.getIntegerType(), "")
+        };
+        const auto& first = sourceFirst ? sourceParameters : valueParameters;
+        const auto& second = sourceFirst ? valueParameters : sourceParameters;
+        BOOST_REQUIRE(registerNativeFunction(runtime, "test.source", first, runtime.getIntegerType()) != NOMAD_INVALID_ID);
+        BOOST_TEST(registerNativeFunction(runtime, "test.source", second, runtime.getIntegerType()) == NOMAD_INVALID_ID);
+        BOOST_TEST(runtime.getCallableOverloadCount("test.source") == NomadIndex{1});
+    }
 }
 
 // The parser decides between a statement and an expression from the name alone, so a set cannot mix the two.
@@ -584,6 +604,34 @@ BOOST_AUTO_TEST_CASE(native_and_script_calls_share_expression_and_statement_disp
     BOOST_TEST(!outcome.fault.has_value());
     BOOST_TEST(outcome.integerValue == 30);
     BOOST_TEST(outcome.leakedStrings == 0);
+}
+
+BOOST_AUTO_TEST_CASE(different_arity_calls_use_the_longest_signature_regardless_of_registration_order)
+{
+    for (const auto longestFirst : {false, true}) {
+        LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        for (const auto count : (longestFirst ? std::vector<int>{2, 1, 0} : std::vector<int>{0, 1, 2})) {
+            std::vector<Parameter> parameters;
+            for (auto index = 0; index < count; ++index) {
+                parameters.push_back(defParameter("value" + std::to_string(index), runtime.getIntegerType(), ""));
+            }
+            BOOST_REQUIRE(runtime.registerNativeFunction(
+                "test.arity",
+                [count](VirtualMachine* machine) { machine->setIntegerResult(count); },
+                parameters, runtime.getIntegerType(), ""
+            ) != NOMAD_INVALID_ID);
+        }
+        fixture.addFunction("main",
+            "test.arity\n"
+            "test.arity 1\n"
+            "test.arity 1 2\n"
+            "return (test.arity) + (test.arity 1) + (test.arity 1 2)");
+        BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+        const auto result = fixture.execute("main");
+        BOOST_TEST(!result.fault.has_value());
+        BOOST_TEST(result.integerValue == 3);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

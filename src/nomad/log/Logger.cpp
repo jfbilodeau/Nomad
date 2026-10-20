@@ -134,7 +134,7 @@ void Logger::log(const LogLevel level, const NomadStringView message, const Loca
     auto time = std::chrono::system_clock::now();
 
     auto line = std::format(
-        "{0:%F}T{0:%T} [{1}] [{2}] [{3}:{4}:{5}] {6}",
+        "{0:%F}T{0:%T} [{1}] {6} [{2}] [{3}:{4}:{5}]",
         time,
         logLevelName,
         location.function,

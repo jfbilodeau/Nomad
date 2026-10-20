@@ -63,6 +63,7 @@ public:
             }
         }
 
+        registerVariable(parameterName, type);
         return parameterId;
     }
 
@@ -200,6 +201,11 @@ public:
     }
 
     [[nodiscard]] NomadIndex getVariableCount() const { return m_variables.getVariableCount(); }
+
+    [[nodiscard]] NomadString getVisibleVariableName(NomadId variableId) const {
+        const auto& storageName = getVariableName(variableId);
+        return storageName.find('@') == NomadString::npos ? storageName : NomadString{};
+    }
 
     using Base::setReturnType;
 

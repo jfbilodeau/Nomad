@@ -116,8 +116,13 @@ void VirtualMachine::initializeFunctionVariables(const ScriptFunction* function)
 
     for (NomadIndex variableIndex = 0; variableIndex < variableCount; ++variableIndex) {
         const auto type = function->getVariableType(toNomadId(variableIndex));
+        m_stack[m_variableIndex + variableIndex] = RuntimeValue{};
 
-        if (type != nullptr && type->isString()) {
+        const auto parameterId = function->getParameterId(function->getVariableName(toNomadId(variableIndex)));
+        if (type != nullptr && parameterId != NOMAD_INVALID_ID) {
+            // Mutable bindings own copies; argument storage remains owned by the caller.
+            type->copyValue(getParameter(toNomadIndex(parameterId)), m_stack[m_variableIndex + variableIndex]);
+        } else if (type != nullptr && type->isString()) {
             initStringVariable(variableIndex);
         }
     }

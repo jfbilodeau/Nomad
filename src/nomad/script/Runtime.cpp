@@ -8,6 +8,7 @@
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/NativeMembers.hpp>
 #include <nomad/script/NomadStringObject.hpp>
+#include <nomad/script/RegisterRangeType.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -22,6 +23,37 @@
 #include <iomanip>
 
 namespace nomad {
+
+const ObjectTypeBase* Runtime::getIteratorType(const Type* valueType) {
+    if (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
+        throw NomadException("Iterator value type must be a registered non-void type");
+    }
+    const auto* type = getParameterizedType("Iterator", {valueType});
+    if (type == nullptr) {
+        throw NomadException("Failed to specialize iterator type");
+    }
+    return static_cast<const ObjectTypeBase*>(type);
+}
+
+void Runtime::registerIterableType(
+    const Type* sourceType,
+    const Type* valueType,
+    const Method* factory
+) {
+    const auto* iteratorType = getIteratorType(valueType);
+    if (!ownsType(sourceType) ||
+        factory == nullptr || getMethod(factory->getId()) != factory ||
+        factory->getObjectType() != sourceType || factory->getParameterCount() != 0 ||
+        factory->getReturnType() != iteratorType || m_iterableTypes.contains(sourceType)) {
+        throw NomadException("Invalid iterable registration");
+    }
+    m_iterableTypes.emplace(sourceType, IterableDefinition{valueType, iteratorType, factory->getId()});
+}
+
+std::optional<IterableDefinition> Runtime::getIterableDefinition(const Type* sourceType) const {
+    const auto existing = m_iterableTypes.find(sourceType);
+    return existing == m_iterableTypes.end() ? std::nullopt : std::optional{existing->second};
+}
 
 namespace {
 
@@ -56,6 +88,40 @@ Runtime::Runtime() {
     registerType(std::make_unique<FunctionLineNumberType>());
     registerType(std::make_unique<EventCallbackType>());
     registerType(std::make_unique<EventDispatchType>());
+    if (!registerParameterizedType(
+        "Iterator", 1,
+        [](const std::vector<const Type*>& arguments) {
+            return std::make_unique<ObjectType>("Iterator<" + arguments[0]->getTypeName() + ">", arguments);
+        },
+        [this](const Type* type) {
+            const auto* iteratorType = static_cast<const ObjectType*>(type);
+            const auto* valueType = iteratorType->getTypeArguments()[0];
+            const auto advanceId = registerNativeMethod(
+                iteratorType, "moveNext",
+                [](VirtualMachine* machine) {
+                    machine->setBooleanResult(machine->getThisAs<IteratorObject>()->moveNext());
+                },
+                {}, getBooleanType(), NomadDoc("Advances the iterator. Returns false at the end.")
+            );
+            const auto currentId = registerNativeProperty(
+                iteratorType, "current", valueType,
+                [valueType](VirtualMachine* machine, RuntimeValue& result) {
+                    RuntimeValue owned;
+                    valueType->assignValue(machine->getThisAs<IteratorObject>()->getCurrent(), owned);
+                    result = owned;
+                },
+                {}, NomadDoc("The value published by the last successful moveNext call.")
+            );
+            if (advanceId == NOMAD_INVALID_ID || currentId == NOMAD_INVALID_ID) {
+                throw NomadException("Failed to register iterator members");
+            }
+        }
+    ) || !registerMemberTemplate("Iterator", "moveNext", MemberType::Method) ||
+        !registerMemberTemplate("Iterator", "current", MemberType::Property)) {
+        throw NomadException("Failed to register iterator type");
+    }
+
+    registerRangeType(this);
 
     // Register instructions
     registerDefaultInstructions();
@@ -116,7 +182,15 @@ Runtime::Runtime() {
     registerKeyword("new", NomadDoc("Constructs a new object"));
     registerKeyword("if", NomadDoc("if statement"));
     registerKeyword("else", NomadDoc("`else` branch of an `if` statement"));
-    registerKeyword("end", NomadDoc("End of a `fun` or `if` statement"));
+    registerKeyword("end", NomadDoc("Closes a function, conditional, or loop body"));
+    registerKeyword("while", NomadDoc("Repeats while a boolean condition is true"));
+    registerKeyword("until", NomadDoc("Repeats until a boolean condition is true"));
+    registerKeyword("do", NomadDoc("Starts a post-test loop, closed by `end while` or `end until`"));
+    registerKeyword("for", NomadDoc("Iterates an inclusive integer range or an iterable object"));
+    registerKeyword("in", NomadDoc("Introduces the iterable source of a for loop"));
+    registerKeyword("break", NomadDoc("Exits the nearest loop in the current function"));
+    registerKeyword("continue", NomadDoc("Advances the nearest loop in the current function"));
+    registerKeyword("then", NomadDoc("Uses the remainder of a script or function root as a callback body"));
     registerKeyword("const", NomadDoc("Declares a constant"));
     registerKeyword("enum", NomadDoc("Declares an enum"));
 
@@ -538,9 +612,14 @@ bool Runtime::canOverloadCallable(
         }
 
         if (existingFunction->getParameterCount() != parameterCount) {
-            error = "overloads must all take the same number of parameters";
-
-            return false;
+            const auto ordinaryValues = [this](const auto& parameter) {
+                return getParameterShape(parameter.type) == ParameterShape::Value;
+            };
+            if (!std::ranges::all_of(parameters, ordinaryValues) ||
+                !std::ranges::all_of(existingFunction->getParameters(), ordinaryValues)) {
+                error = "overloads with different parameter counts require ordinary value parameters";
+                return false;
+            }
         }
 
         const auto* existingReturnType = existingFunction->getReturnType();
@@ -553,9 +632,9 @@ bool Runtime::canOverloadCallable(
             return false;
         }
 
-        auto hasSameSignature = true;
+        auto hasSameSignature = existingFunction->getParameterCount() == parameterCount;
 
-        for (NomadIndex index = 0; index < parameterCount; ++index) {
+        for (NomadIndex index = 0; index < std::min(parameterCount, existingFunction->getParameterCount()); ++index) {
             const auto* candidateType = parameters[index].type;
             const auto* existingType = existingFunction->getParameters()[index].type;
             const auto candidateShape = getParameterShape(candidateType);

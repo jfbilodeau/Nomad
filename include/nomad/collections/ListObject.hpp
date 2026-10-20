@@ -18,6 +18,7 @@ public:
 
     [[nodiscard]] const Type* getElementType() const;
     [[nodiscard]] NomadIndex getCount() const;
+    [[nodiscard]] std::uint64_t getStructuralVersion() const { return m_structuralVersion; }
 
     NomadInteger append(const RuntimeValue& value);
     void prepend(const RuntimeValue& value);
@@ -33,6 +34,7 @@ private:
     [[nodiscard]] NomadIndex validateIndex(NomadInteger index) const;
     const Type* m_elementType;
     std::vector<RuntimeValue> m_values;
+    std::uint64_t m_structuralVersion = 0;
 };
 
 } // namespace nomad

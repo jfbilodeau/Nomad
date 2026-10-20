@@ -7,6 +7,55 @@
 
 namespace nomad {
 
+ParserBlockScope::ParserBlockScope(
+    CompilerContext& context,
+    const ScriptFunction* function,
+    LoopStatement* loop,
+    bool functionRoot,
+    bool endsAtEnd
+):
+    m_context(context)
+{
+    m_context.enterBlock(function, loop, functionRoot, endsAtEnd);
+}
+
+ParserBlockScope::~ParserBlockScope() {
+    m_context.leaveBlock();
+}
+
+void CompilerContext::enterBlock(
+    const ScriptFunction* function,
+    LoopStatement* loop,
+    bool functionRoot,
+    bool endsAtEnd
+) {
+    m_blocks.push_back({function, loop, functionRoot, endsAtEnd});
+}
+
+void CompilerContext::leaveBlock() {
+    m_blocks.pop_back();
+}
+
+bool CompilerContext::isFunctionRoot(const ScriptFunction* function) const {
+    return m_blocks.empty() || m_blocks.back().function != function || m_blocks.back().functionRoot;
+}
+
+bool CompilerContext::currentBodyEndsAtEnd() const {
+    return !m_blocks.empty() && m_blocks.back().endsAtEnd;
+}
+
+LoopStatement* CompilerContext::getEnclosingLoop(const ScriptFunction* function) const {
+    for (auto block = m_blocks.rbegin(); block != m_blocks.rend(); ++block) {
+        if (block->function != function || block->functionRoot) {
+            break;
+        }
+        if (block->loop != nullptr) {
+            return block->loop;
+        }
+    }
+    return nullptr;
+}
+
 NomadString formatDiagnostic(const Diagnostic& diagnostic) {
     NomadString location = diagnostic.sourceName;
 

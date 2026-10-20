@@ -8,6 +8,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerTools.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Expression.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/FormatStringCompiler.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/LoopStatement.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Operators.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Parser.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/SourceLoader.cpp
@@ -31,11 +32,16 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterContext.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/IteratorObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeCallable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeMembers.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NomadObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NomadStringObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/OpCode.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/RangeIterator.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/RangeObject.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/RangeType.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/RegisterRangeType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Runtime.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeOpCodes.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeValue.cpp
