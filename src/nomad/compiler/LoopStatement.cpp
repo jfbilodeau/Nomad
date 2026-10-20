@@ -51,10 +51,12 @@ public:
         NomadIndex line,
         NomadIndex column,
         NomadString binding,
+        NomadString iterator,
         std::unique_ptr<Expression> source
     ):
         LoopStatement(line, column, false, false),
         m_binding(std::move(binding)),
+        m_iterator(std::move(iterator)),
         m_source(std::move(source))
     {}
 
@@ -78,8 +80,15 @@ protected:
         if (!m_factory->resolve(context, function)) {
             return;
         }
+        IdentifierDefinition definition;
+        context->getCompiler()->getIdentifierDefinition(m_binding, function, definition);
+        if (definition.identifierType != IdentifierType::FunctionVariable ||
+            (definition.valueType != nullptr && definition.valueType != m_valueType)) {
+            reportError(context, function, "For loop variable must be a local or parameter of the element type");
+            return;
+        }
         m_valueId = function->registerVariable(m_binding, m_valueType);
-        m_iteratorId = function->registerVariable(m_binding + "@iterator", m_iteratorType);
+        m_iteratorId = function->registerVariable(m_iterator, m_iteratorType);
         if (m_advance == nullptr) {
             m_advance = member("moveNext", iteratorVariable());
             m_current = member("current", iteratorVariable());
@@ -109,18 +118,29 @@ protected:
         const auto cleanup = compiler->getOpCodeSize();
         compiler->setIndex(exit, cleanup);
         patchControls(compiler, continuation, cleanup);
-        compiler->addFreeValue(m_valueType->getTypeOpCodes()->freeFunctionVariable, toNomadIndex(m_valueId));
         compiler->addFreeValue(m_iteratorType->getTypeOpCodes()->freeFunctionVariable, toNomadIndex(m_iteratorId));
     }
 
     void onEvaluate(InterpreterContext& context) const override {
-        const InterpreterLoopVariable binding(context, m_binding);
-        const InterpreterLoopVariable iterator(context, m_binding + "@iterator");
+        const InterpreterLoopVariable iterator(context, m_iterator);
         m_factory->evaluate(context);
         if (context.hasError()) {
             return;
         }
-        context.setVariable(m_binding + "@iterator", m_iteratorType, context.getResult()->getValue());
+        if (context.getVariableValue(m_binding) == nullptr) {
+            RuntimeValue initial;
+            if (m_valueType->isString()) {
+                m_valueType->initValue(initial);
+            }
+            try {
+                context.setVariable(m_binding, m_valueType, initial);
+            } catch (...) {
+                m_valueType->freeValue(initial);
+                throw;
+            }
+            m_valueType->freeValue(initial);
+        }
+        context.setVariable(m_iterator, m_iteratorType, context.getResult()->getValue());
         while (!context.hasError()) {
             m_advance->evaluate(context);
             if (context.hasError() || !context.getResult()->getValue().getBooleanValue()) {
@@ -143,7 +163,7 @@ protected:
 
 private:
     std::unique_ptr<Expression> iteratorVariable() const {
-        return std::make_unique<IdentifierExpression>(nullptr, getLine(), getColumn(), m_binding + "@iterator");
+        return std::make_unique<IdentifierExpression>(nullptr, getLine(), getColumn(), m_iterator);
     }
     std::unique_ptr<Expression> member(const NomadString& name, std::unique_ptr<Expression> receiver) const {
         return std::make_unique<NativeMemberExpression>(
@@ -152,6 +172,7 @@ private:
     }
 
     NomadString m_binding;
+    NomadString m_iterator;
     std::unique_ptr<Expression> m_source;
     std::unique_ptr<Expression> m_factory;
     std::unique_ptr<Expression> m_advance;
@@ -293,7 +314,7 @@ std::unique_ptr<Statement> parseForStatement(
     const auto line = tokens->getLineIndex();
     const auto column = tokens->getColumnIndex();
     if (!tokens->is(TokenType::Identifier)) {
-        context->reportError("Expected a new loop variable after 'for'", tokens);
+        context->reportError("Expected a loop variable after 'for'", tokens);
         return nullptr;
     }
     const auto name = tokens->next().textValue;
@@ -302,9 +323,9 @@ std::unique_ptr<Statement> parseForStatement(
         return nullptr;
     }
     auto* compiler = context->getCompiler();
-    if (compiler->getIdentifierType(name, function) != IdentifierType::Unknown ||
-        compiler->getScopedIdentifier(name, function, line) != name) {
-        context->reportError("For loop variable must be a new local name; shadowing is not supported", tokens);
+    const auto identifierType = compiler->getIdentifierType(name, function);
+    if (identifierType != IdentifierType::Unknown && identifierType != IdentifierType::FunctionVariable) {
+        context->reportError("For loop variable must be a local or parameter", tokens);
         return nullptr;
     }
     if (!tokens->expect("in")) {
@@ -314,12 +335,15 @@ std::unique_ptr<Statement> parseForStatement(
     if (!source || !parser::expectEndOfLine(context, function, tokens)) {
         return nullptr;
     }
-    const auto binding = function->registerScopedVariable(name, nullptr, line);
-    auto loop = std::make_unique<IterableForStatement>(line, column, binding, std::move(source));
+    if (identifierType == IdentifierType::Unknown) {
+        function->registerVariable(name, nullptr);
+    }
+    const auto iterator = name + "$iterator" + std::to_string(function->getVariableCount());
+    function->registerVariable(iterator, nullptr);
+    auto loop = std::make_unique<IterableForStatement>(line, column, name, iterator, std::move(source));
     tokens->nextLine();
     const ParserBlockScope block(*context, function, loop.get(), false, context->currentBodyEndsAtEnd());
     const auto valid = parser::parseBlock(context, function, tokens, {"end"}, &loop->getBody());
-    function->closeVariableScope(binding, tokens->getLineIndex());
     if (!valid) {
         return nullptr;
     }

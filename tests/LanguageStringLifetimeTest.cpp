@@ -386,14 +386,18 @@ BOOST_AUTO_TEST_CASE(closures_keep_captured_parameters_alive)
 #endif
 }
 
-BOOST_AUTO_TEST_CASE(function_parameters_are_read_only)
+BOOST_AUTO_TEST_CASE(function_parameters_are_mutable_owned_local_bindings)
 {
-    const auto errors = compileErrors("fun f a:string\n    a = \"b\"\n    return a\nend\nreturn f \"x\"");
-    BOOST_TEST(errors.find("parameters are read-only") != std::string::npos, errors);
-    BOOST_TEST(errors.find("'a'") != std::string::npos, errors);
-
-    const auto integerErrors = compileErrors("fun f a:int\n    a = 2\n    return a\nend\nreturn f 1");
-    BOOST_TEST(integerErrors.find("parameters are read-only") != std::string::npos, integerErrors);
+    const auto outcome = runSource(
+        "fun change text:string\ntext = text.toUpper\ntext = $\"{text}!\"\nreturn text\nend\n"
+        "original = \"hello\"\nchanged = change original\nreturn $\"{original}{changed}\"");
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_TEST(outcome.text == "helloHELLO!");
+    BOOST_TEST(outcome.leakedStrings == 0);
+    const auto integer = runSource("fun change value:int\nvalue = 2\nreturn value\nend\nreturn change 1");
+    BOOST_REQUIRE_MESSAGE(integer.compiled, integer.diagnostics);
+    BOOST_TEST(integer.integerValue == 2);
+    BOOST_TEST(!compileErrors("fun change value:int\nvalue = \"wrong\"\nend\nchange 1").empty());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

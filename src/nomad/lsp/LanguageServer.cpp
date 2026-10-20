@@ -236,7 +236,7 @@ ApiAnalysis analyzeApiSymbols(
                 "Local to `" + function->getName() + "`.", type ? typeName : NomadString{}});
         };
         for (auto index = NomadIndex{0}; index < function->getVariableCount(); ++index) {
-            addLocal(function->getVisibleVariableName(toNomadId(index), line), function->getVariableType(toNomadId(index)));
+            addLocal(function->getVisibleVariableName(toNomadId(index)), function->getVariableType(toNomadId(index)));
         }
         for (auto index = NomadIndex{0}; index < function->getParameterCount(); ++index) {
             addLocal(function->getParameterName(toNomadId(index)), function->getParameterType(toNomadId(index)));

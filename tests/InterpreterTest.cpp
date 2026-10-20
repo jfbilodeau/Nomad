@@ -69,15 +69,16 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
     }
     BOOST_CHECK_THROW(static_cast<void>(Interpreter{}.evaluateExpression("test.fail", context)), VirtualMachineException);
     BOOST_REQUIRE(Interpreter{}.execute("local = 7", context));
-    BOOST_TEST(machine->getFunctionVariableValue(0).getIntegerValue() == 7);
+    BOOST_TEST(context.getVariableValue("local")->getIntegerValue() == 7);
     BOOST_TEST(!Interpreter{}.execute("local = true", context));
-    BOOST_TEST(machine->getFunctionVariableValue(0).getIntegerValue() == 7);
-    BOOST_TEST(!Interpreter{}.execute("value = 1", context));
-    BOOST_TEST(!Interpreter{}.execute("text = \"changed\"", context));
+    BOOST_TEST(context.getVariableValue("local")->getIntegerValue() == 7);
+    BOOST_REQUIRE(Interpreter{}.execute("value = 1", context));
+    BOOST_REQUIRE(Interpreter{}.execute("text = \"changed\"", context));
+    BOOST_TEST(context.getVariableValue("value")->getIntegerValue() == 1);
     BOOST_TEST(machine->getParameter(0).getIntegerValue() == 40);
     BOOST_REQUIRE(Interpreter{}.execute("created = local + value", context));
     BOOST_REQUIRE(Interpreter{}.evaluateExpression("created", context));
-    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 47);
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 8);
     BOOST_REQUIRE(Interpreter{}.execute("created = \"forty-seven\"", context));
     BOOST_REQUIRE(Interpreter{}.evaluateExpression("created", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "forty-seven");
@@ -85,10 +86,9 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
     BOOST_TEST(context.getVariableValue("unknown.name") == nullptr);
     BOOST_REQUIRE(Interpreter{}.execute("localText = \"first\"", context));
     BOOST_REQUIRE(Interpreter{}.execute("localText = localText.toUpper", context));
-    BOOST_TEST(NomadString{machine->getFunctionVariableValue(1).getStringValue()} == "FIRST");
+    BOOST_TEST(context.getVariableValue("localText")->getStringValue() == "FIRST");
     BOOST_TEST(!Interpreter{}.execute("localText = 1", context));
-    BOOST_CHECK_THROW(context.setVariable("value", machine->getRuntime()->getIntegerType(),
-        RuntimeValue{NomadInteger{1}}), std::invalid_argument);
+    context.setVariable("value", machine->getRuntime()->getIntegerType(), RuntimeValue{NomadInteger{1}});
     BOOST_CHECK_THROW(context.setVariable("local", machine->getRuntime()->getBooleanType(),
         RuntimeValue{true}), std::invalid_argument);
     BOOST_TEST(machine->getResult().getIntegerValue() == savedResult.getIntegerValue());
@@ -222,7 +222,8 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
     function->setReturnType(runtime.getVoidType());
     function->setFunctionStart(runtime.getInstructions().size());
     const auto initializeFrame = runtime.registerInstruction("test.initializeFrame", [](VirtualMachine* machine) {
-        machine->setFunctionVariableValue(0, RuntimeValue{NomadInteger{2}});
+        machine->setFunctionVariableValue(
+            machine->getCurrentFunction()->getVariableId("local"), RuntimeValue{NomadInteger{2}});
         machine->setIntegerResult(77);
         machine->setIntegerIntermediate(88);
     }, NomadDoc("Initialize the test frame"), {});

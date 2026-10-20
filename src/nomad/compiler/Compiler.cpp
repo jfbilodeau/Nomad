@@ -201,33 +201,14 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
         return IdentifierType::Unknown;
     }
 
-    if (function->getParameterId(name) != NOMAD_INVALID_ID) {
-        return IdentifierType::Parameter;
-    }
-
     if (function->getVariableId(name) != NOMAD_INVALID_ID) {
         return IdentifierType::FunctionVariable;
     }
 
-    return IdentifierType::Unknown;
-}
-
-NomadString Compiler::getScopedIdentifier(
-    const NomadString& name,
-    const ScriptFunction* function,
-    NomadIndex line
-) const {
-    for (auto* current = function; current != nullptr;
-        current = m_runtime->getScriptFunction(current->getParentId())) {
-        const auto scoped = current->getScopedVariableName(name, line);
-        if (scoped != name) {
-            return scoped;
-        }
-        if (current->getParameterId(name) != NOMAD_INVALID_ID || current->getVariableId(name) != NOMAD_INVALID_ID) {
-            break;
-        }
+    if (function->getParameterId(name) != NOMAD_INVALID_ID) {
+        return IdentifierType::Parameter;
     }
-    return name;
+    return IdentifierType::Unknown;
 }
 
 void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunction* function, IdentifierDefinition& definition) const {
@@ -318,17 +299,6 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
         return;
     }
 
-    // Check if this is a local parameter
-    const NomadId parameterId = function->getParameterId(name);
-
-    if (parameterId != NOMAD_INVALID_ID) {
-        definition.identifierType = IdentifierType::Parameter;
-        definition.variableId = parameterId;
-        definition.valueType = function->getParameterType(parameterId);
-
-        return;
-    }
-
     // Check if this is a local variable
     const NomadId variableId = function->getVariableId(name);
 
@@ -337,6 +307,14 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
         definition.variableId = variableId;
         definition.valueType = function->getVariableType(variableId);
 
+        return;
+    }
+
+    const auto parameterId = function->getParameterId(name);
+    if (parameterId != NOMAD_INVALID_ID) {
+        definition.identifierType = IdentifierType::Parameter;
+        definition.variableId = parameterId;
+        definition.valueType = function->getParameterType(parameterId);
         return;
     }
 

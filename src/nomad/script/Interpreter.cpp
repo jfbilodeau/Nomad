@@ -113,10 +113,6 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
     evaluation.clearResult();
     evaluation.setLoopControl(LoopControl::None);
     const RegisterRestoration registers(*evaluation.getVirtualMachine());
-    struct VariableScopeRestoration {
-        ScriptFunction& function;
-        ~VariableScopeRestoration() { function.clearVariableScopes(); }
-    } scopes{*evaluation.m_function};
     try {
         auto compiler = evaluation.m_runtime->createCompiler();
         CompilerContext compilerContext(compiler.get(), CompilerMode::Interpreter, &evaluation);

@@ -207,9 +207,9 @@ literalLength = "Nomad".length
 
 Properties may be read-only, write-only or read/write. Object methods may change
 their instance even when its reference comes from a
-read-only parameter or a temporary; this does not reassign the reference.
+parameter or a temporary; this does not reassign the reference.
 
-Writable properties may also change an instance through a read-only parameter
+Writable properties may also change an instance through a parameter
 or temporary. Changes to an object's contents are immediate and are not rolled
 back if a property setter or method fails.
 
@@ -298,7 +298,7 @@ Nomad supports three variable kinds:
 - Context variables: bound to a named context; identified by a prefix and a dot (for example `global.score`). Contexts are provided by the embedding engine and have engine‑specific semantics for storage and persistence. The `global.` context is pre-defined by the default Nomad runtime. The game engine provides `inventory.*` for saved game state and `settings.*` for user preferences. The `global.*`, `scene.*`, `this.*`, and `other.*` contexts are not persisted by the save and settings native functions.
 - Dynamic variables: engine‑defined identifiers (for example `this.x`) managed directly by engine code; the engine decides read/write permissions and behavior.
 
-The interactive interpreter is an exception to compiled-code typing rules. Interpreter variables may be created by assignment and reassigned with a value of a different type. Parameters remain read-only, and frame variables retain their compiled types. Runtime context variables and engine-defined dynamic variables continue to follow the type rules of their contexts and definitions.
+The interactive interpreter is an exception to compiled-code typing rules. Interpreter variables may be created by assignment and reassigned with a value of a different type. Frame variables and parameters retain their compiled types but may be reassigned. Runtime context variables and engine-defined dynamic variables continue to follow the type rules of their contexts and definitions.
 
 See [Embedding Nomad in C++](embedding.md) for the interpreter context API and ownership rules.
 
@@ -465,10 +465,14 @@ end
 ```
 
 `for value in source` evaluates its source once and uses an independent iterator
-for each execution, including nested loops. The loop variable is a new, read-only
-local visible only inside that loop. It cannot reuse an existing local or
-parameter name. Separate loops may reuse the same name. Explicit callbacks
-capture the value for their own iteration.
+for each execution, including nested loops. The loop variable is an ordinary
+mutable local, or an existing local or parameter of the element type. Each
+iteration assigns the next value to it. Assigning to the variable in the body
+does not reposition the iterator. The variable remains available after the loop,
+including after `break`, with its last assigned value. An empty loop preserves an
+existing value; a new binding retains its normal default value. Nested loops may
+reuse the same variable, but their iterators remain independent. Explicit
+callbacks capture the value when the callback is created.
 
 Numeric iteration uses `for value in range ...`; `for value = ... to ... step ...`
 is not supported.
@@ -656,12 +660,15 @@ end
 
 ### Parameters and returns
 
-Parameters are declared as `name:type`. Parameters are read-only: assigning to one is a compilation error. Copy it to a local variable first:
+Parameters are declared as `name:type` and can be reassigned without changing
+their type. Rebinding a parameter does not change the caller's variable. Object
+parameters still share their referenced object, so member mutations remain
+visible to the caller:
 
 ```nomad
 fun shout text:string
-    loud = $"{text}!"
-    return loud
+    text = $"{text}!"
+    return text
 end
 ```
 

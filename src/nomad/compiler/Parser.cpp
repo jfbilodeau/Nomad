@@ -191,7 +191,7 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
     const auto parts = splitNativeMemberName(context->getRuntime(), name);
     if (!parts) {
         return std::make_unique<IdentifierExpression>(
-            parent, line, column, context->getCompiler()->getScopedIdentifier(name, function, line)
+            parent, line, column, name
         );
     }
 
@@ -999,9 +999,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
         return std::make_unique<MemberAssignmentStatement>(line, column, std::move(target), std::move(expression));
     }
 
-    auto variableName = context->getCompiler()->getScopedIdentifier(
-        tokens->currentToken().textValue, function, line
-    );
+    auto variableName = tokens->currentToken().textValue;
 
     IdentifierDefinition identifierDefinition;
     context->getCompiler()->getIdentifierDefinition(variableName, function, identifierDefinition);
@@ -1009,7 +1007,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     const auto memberParts = splitNativeMemberName(context->getRuntime(), variableName);
     if (identifierDefinition.identifierType == IdentifierType::Unknown && memberParts &&
         context->getCompiler()->getIdentifierType(
-            context->getCompiler()->getScopedIdentifier(memberParts->receiver, function, line), function
+            memberParts->receiver, function
         ) != IdentifierType::Unknown) {
         tokens->next();
         if (!tokens->expect("=")) {
@@ -1176,7 +1174,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
             parent,
             tokens->getLineIndex(),
             tokens->getColumnIndex(),
-            context->getCompiler()->getScopedIdentifier(token.textValue, function, tokens->getLineIndex())
+            token.textValue
         );
     }
 

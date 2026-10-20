@@ -251,8 +251,9 @@ BOOST_AUTO_TEST_CASE(script_function_views_and_state_survive_table_growth)
     BOOST_TEST(function->getReturnType() == runtime.getIntegerType());
     BOOST_TEST(script->getPath() == "source.nomad");
     BOOST_TEST(script->getSourceCode() == "return value");
-    BOOST_TEST(script->getVariableCount() == 1U);
-    BOOST_TEST(script->getVariableType(0) == runtime.getFloatType());
+    BOOST_TEST(script->getVariableCount() == 2U);
+    BOOST_TEST(script->getVariableType(script->getVariableId("local")) == runtime.getFloatType());
+    BOOST_TEST(script->getVariableType(script->getVariableId("value")) == runtime.getIntegerType());
     BOOST_TEST(runtime.getFunctionCount() == 1U);
     BOOST_TEST(runtime.getFunctionSize() == 10U);
     BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 3) == script);

@@ -189,12 +189,10 @@ BOOST_AUTO_TEST_CASE(iterable_for_checks_source_and_binding)
     for (const auto* source : {
         "for value in true\nend",
         "for value in range 1 3 1.0\nend",
-        "value = 1\nfor value in range 1 3\nend",
-        "params value:int\nfor value in range 1 3\nend",
-        "for value in range 1 3\nvalue = 2\nend",
+        "value = \"wrong type\"\nfor value in range 1 3\nend",
+        "params value:string\nfor value in range 1 3\nend",
         "for qualified.value in range 1 3\nend",
-        "for value in range 1 3\nend\nreturn value",
-        "for value in range 1 3\nfor value in range 1 3\nend\nend"
+        "const value = 1\nfor value in range 1 3\nend"
     }) {
         BOOST_TEST_CONTEXT(source) {
             BOOST_TEST(!compileErrors(source).empty());
@@ -220,6 +218,61 @@ BOOST_AUTO_TEST_CASE(iterable_for_supports_format_placeholders)
     BOOST_REQUIRE_MESSAGE(dynamic.compiled, dynamic.diagnostics);
     BOOST_TEST(dynamic.text == "2 3");
     BOOST_TEST(dynamic.leakedStrings == 0);
+}
+
+BOOST_AUTO_TEST_CASE(loop_bindings_are_mutable_persistent_and_independent_of_iterator_position)
+{
+    const auto outcome = runSource(
+        "value = 20\n"
+        "for value in range 0\nend\n"
+        "total = value\n"
+        "for value in range 3\n"
+        "    total = total + value\n"
+        "    value = 100\n"
+        "end\n"
+        "total = total + value\n"
+        "for value in range 5\n"
+        "    value = 7\n"
+        "    break\n"
+        "end\n"
+        "for unused in range 0\nend\n"
+        "return total + value + unused");
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_TEST(!outcome.fault.has_value());
+    BOOST_TEST(outcome.integerValue == 130);
+}
+
+BOOST_AUTO_TEST_CASE(nested_loops_reusing_a_binding_have_independent_iterators)
+{
+    const auto outcome = runSource(
+        "total = 0\n"
+        "for value in range 2\n"
+        "    total = total + value\n"
+        "    for value in range 3\n"
+        "        total = total + value\n"
+        "    end\n"
+        "end\n"
+        "return total * 10 + value");
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_TEST(!outcome.fault.has_value());
+    BOOST_TEST(outcome.integerValue == 72);
+}
+
+BOOST_AUTO_TEST_CASE(parameters_can_be_used_as_loop_bindings_without_changing_callers)
+{
+    const auto outcome = runSource(
+        "fun iterate value:int\n"
+        "    for value in range 3\n"
+        "        value = value + 10\n"
+        "    end\n"
+        "    return value\n"
+        "end\n"
+        "value = 20\n"
+        "result = iterate value\n"
+        "return result * 100 + value");
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_TEST(!outcome.fault.has_value());
+    BOOST_TEST(outcome.integerValue == 1220);
 }
 
 BOOST_AUTO_TEST_CASE(conditional_loops_and_inline_control)

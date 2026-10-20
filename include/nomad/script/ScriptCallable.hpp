@@ -63,6 +63,7 @@ public:
             }
         }
 
+        registerVariable(parameterName, type);
         return parameterId;
     }
 
@@ -201,54 +202,8 @@ public:
 
     [[nodiscard]] NomadIndex getVariableCount() const { return m_variables.getVariableCount(); }
 
-    NomadString registerScopedVariable(
-        const NomadString& name,
-        const Type* type,
-        NomadIndex startLine
-    ) {
-        auto storageName = name + "@scope" + std::to_string(m_variables.getVariableCount());
-        registerVariable(storageName, type);
-        m_scopedVariables.push_back({name, storageName, startLine, NOMAD_INVALID_INDEX});
-        return storageName;
-    }
-
-    void closeVariableScope(const NomadString& storageName, NomadIndex endLine) {
-        for (auto& variable : m_scopedVariables) {
-            if (variable.storageName == storageName) {
-                variable.endLine = endLine;
-                return;
-            }
-        }
-        throw NomadBug("Unknown scoped variable");
-    }
-
-    [[nodiscard]] NomadString getScopedVariableName(const NomadString& name, NomadIndex line) const {
-        for (auto variable = m_scopedVariables.rbegin(); variable != m_scopedVariables.rend(); ++variable) {
-            if (variable->name == name && line >= variable->startLine &&
-                (variable->endLine == NOMAD_INVALID_INDEX || line <= variable->endLine)) {
-                return variable->storageName;
-            }
-        }
-        return name;
-    }
-
-    [[nodiscard]] bool isReadOnlyVariable(const NomadString& name) const {
-        for (const auto& variable : m_scopedVariables) {
-            if (variable.storageName == name) {
-                return true;
-            }
-        }
-        return false;
-    }
-    void clearVariableScopes() { m_scopedVariables.clear(); }
-    void copyVariableScopesFrom(const ScriptCallable& source) { m_scopedVariables = source.m_scopedVariables; }
-    [[nodiscard]] NomadString getVisibleVariableName(NomadId variableId, NomadIndex line) const {
+    [[nodiscard]] NomadString getVisibleVariableName(NomadId variableId) const {
         const auto& storageName = getVariableName(variableId);
-        for (const auto& variable : m_scopedVariables) {
-            if (variable.storageName == storageName) {
-                return line >= variable.startLine && line <= variable.endLine ? variable.name : NomadString{};
-            }
-        }
         return storageName.find('@') == NomadString::npos ? storageName : NomadString{};
     }
 
@@ -283,13 +238,6 @@ private:
     NomadIndex m_functionStartIndex = NOMAD_INVALID_INDEX;
     NomadIndex m_functionEndIndex = NOMAD_INVALID_INDEX;
     VariableMap m_variables;
-    struct ScopedVariable {
-        NomadString name;
-        NomadString storageName;
-        NomadIndex startLine;
-        NomadIndex endLine;
-    };
-    std::vector<ScopedVariable> m_scopedVariables;
     std::vector<Capture> m_captures;
     NomadId m_parentId = NOMAD_INVALID_ID;
 };

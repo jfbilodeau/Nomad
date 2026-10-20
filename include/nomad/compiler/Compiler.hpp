@@ -98,11 +98,6 @@ public:
     // Identifier identification
     IdentifierType getIdentifierType(const NomadString& name, const ScriptFunction* function) const;
     void getIdentifierDefinition(const NomadString& name, const ScriptFunction* function, IdentifierDefinition& definition) const;
-    [[nodiscard]] NomadString getScopedIdentifier(
-        const NomadString& name,
-        const ScriptFunction* function,
-        NomadIndex line
-    ) const;
     [[nodiscard]] bool getNativeMemberConflict(const NomadString& identifier, const Type* type,
                                                   const ScriptFunction* function,
                                                   NomadString& conflictingIdentifier) const;

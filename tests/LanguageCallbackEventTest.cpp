@@ -164,6 +164,46 @@ BOOST_AUTO_TEST_CASE(loop_callbacks_capture_each_iteration_value)
     }
 }
 
+BOOST_AUTO_TEST_CASE(callbacks_capture_mutated_parameters_and_allow_parameter_reassignment)
+{
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    std::vector<std::unique_ptr<Closure>> callbacks;
+    runtime.registerNativeFunction(
+        "test.keep",
+        [&runtime, &callbacks](VirtualMachine* machine) {
+            callbacks.push_back(machine->createClosure(&runtime, machine->getIdParameter(0)));
+        },
+        {defParameter("callback", runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()), "")},
+        runtime.getVoidType(), ""
+    );
+    fixture.addFunction("main",
+        "params value:int\n"
+        "for value in range 1 4\n"
+        "    value = value + 10\n"
+        "    test.keep fun offset\n"
+        "        offset = offset + 100\n"
+        "        return value + offset\n"
+        "    end\n"
+        "    value = 99\n"
+        "end\n"
+        "return value"
+    );
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    const auto outcome = fixture.execute("main", {RuntimeValue{NomadInteger{0}}});
+    BOOST_TEST(!outcome.fault.has_value());
+    BOOST_TEST(outcome.integerValue == 99);
+    BOOST_REQUIRE(callbacks.size() == 3);
+    for (auto index = size_t{0}; index < callbacks.size(); ++index) {
+        for (auto invocation = 0; invocation < 2; ++invocation) {
+            RuntimeValue result;
+            runtime.executeFunction(callbacks[index].get(), {RuntimeValue{NomadInteger{0}}}, result);
+            BOOST_TEST(result.getIntegerValue() == static_cast<NomadInteger>(index + 111));
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(then_is_restricted_to_the_current_function_root)
 {
     for (const auto& source : std::vector<NomadString>{

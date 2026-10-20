@@ -173,10 +173,6 @@ AssignmentStatement::AssignmentStatement(
 }
 
 void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
-    if (function != nullptr && function->isReadOnlyVariable(m_identifier)) {
-        reportError(context, function, "Loop variables are read-only");
-        return;
-    }
     if (!m_expression->resolve(context, function)) {
         return;
     }
@@ -206,8 +202,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
 
         switch (identifier.identifierType) {
         case IdentifierType::Parameter:
-            reportError(context, function, "Cannot assign value to parameter '" + m_identifier +
-                "': parameters are read-only. Copy it to a local variable first");
+            compiler->reportInternalError("Missing mutable parameter binding: " + m_identifier);
             return;
         case IdentifierType::FunctionVariable: {
             const auto* interpreterContext = context->getInterpreterContext();
@@ -357,11 +352,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
         reportError(context, function, "Cannot assign value to event type '" + m_identifier + "'");
         break;
     case IdentifierType::Parameter:
-        reportError(
-            context,
-            function,
-            "Cannot assign value to parameter '" + m_identifier + "': parameters are read-only. Copy it to a local variable first"
-        );
+        compiler->reportInternalError("Missing mutable parameter binding: " + m_identifier);
         break;
     default:
         reportError(context, function, "Cannot assign value to unknown identifier '" + m_identifier + "'");

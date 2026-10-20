@@ -1320,7 +1320,6 @@ bool FormatStringLiteral::parsePlaceholders(
         }
         if (identifier && !needsFirstCharacter &&
             !parser::isNativeMemberCandidate(context->getCompiler(), function, segment.text)) {
-            segment.text = context->getCompiler()->getScopedIdentifier(segment.text, function, getLine());
             m_variableFormat += "{" + segment.text + "}";
             continue;
         }
@@ -1469,7 +1468,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
             // Reload the identifier definition.
             compiler->getIdentifierDefinition(m_identifier, function, m_identifierDefinition);
 
-            if (m_identifierDefinition.identifierType != IdentifierType::Parameter) {
+            if (m_identifierDefinition.identifierType != IdentifierType::FunctionVariable) {
                 compiler->reportInternalError("Capture definition should exist.");
             }
             break;
@@ -1536,7 +1535,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
 
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::FunctionVariable:
-        m_writable = !function->isReadOnlyVariable(m_identifier);
+        m_writable = true;
         break;
     case IdentifierType::ContextVariable:
         m_writable = true;
@@ -1731,17 +1730,17 @@ bool IdentifierExpression::parseCapture(const Compiler* compiler, ScriptFunction
 }
 
 bool getCapture(const NomadString& identifier, const ScriptFunction* function, NomadId& id, CaptureSource& captureSource) {
-    const NomadId parameterId = function->getParameterId(identifier);
-    if (parameterId != NOMAD_INVALID_ID) {
-        id = parameterId;
-        captureSource = CaptureSource::Parameter;
-        return true;
-    }
-
     const NomadId variableId = function->getVariableId(identifier);
     if (variableId != NOMAD_INVALID_ID) {
         id = variableId;
         captureSource = CaptureSource::Variable;
+        return true;
+    }
+
+    const auto parameterId = function->getParameterId(identifier);
+    if (parameterId != NOMAD_INVALID_ID) {
+        id = parameterId;
+        captureSource = CaptureSource::Parameter;
         return true;
     }
 

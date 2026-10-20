@@ -103,9 +103,6 @@ void InterpreterContext::setVariable(
     if (type == nullptr || type->isVoid()) {
         throw std::invalid_argument("Interpreter variables must have a non-void type");
     }
-    if (m_function->getParameterId(name) != NOMAD_INVALID_ID) {
-        throw std::invalid_argument("Parameters are read-only");
-    }
     const auto frameId = m_function->getVariableId(name);
     if (isFrameVariable(frameId)) {
         validateFrame();
@@ -236,6 +233,10 @@ InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine, ScriptFun
     m_variableIndex = virtualMachine.m_variableIndex;
     m_frameVariableCount = function.getVariableCount();
     m_function = std::make_unique<ScriptFunction>(function.getId(), function.getName(), function.getPath(), "");
+    for (NomadIndex index = 0; index < m_frameVariableCount; ++index) {
+        const auto id = toNomadId(index);
+        m_function->registerVariable(function.getVariableName(id), function.getVariableType(id));
+    }
     for (NomadIndex index = 0; index < function.getParameterCount(); ++index) {
         const auto id = toNomadId(index);
         m_function->addParameter(
@@ -244,11 +245,6 @@ InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine, ScriptFun
             function.getParameters()[index].doc
         );
     }
-    for (NomadIndex index = 0; index < m_frameVariableCount; ++index) {
-        const auto id = toNomadId(index);
-        m_function->registerVariable(function.getVariableName(id), function.getVariableType(id));
-    }
-    m_function->copyVariableScopesFrom(function);
     m_variables.resize(m_frameVariableCount);
 }
 

@@ -593,7 +593,7 @@ directory = "res"
     }
 }
 
-BOOST_AUTO_TEST_CASE(loop_completion_shows_only_visible_bindings)
+BOOST_AUTO_TEST_CASE(loop_completion_shows_ordinary_bindings_but_not_hidden_iterators)
 {
     TestDirectory directory("nomad_lsp_loop_scope");
     const auto uri = uriFor(directory.getPath() / "loops.nomad");
@@ -621,10 +621,10 @@ BOOST_AUTO_TEST_CASE(loop_completion_shows_only_visible_bindings)
         auto found = false;
         for (const auto& item : message.at("result").as_object().at("items").as_array()) {
             const NomadString name{item.as_object().at("label").as_string()};
-            BOOST_TEST(name.find("@scope") == NomadString::npos);
+            BOOST_TEST(name.find('@') == NomadString::npos);
             if (name == "value") found = true;
         }
-        BOOST_TEST(found == (id == 10));
+        BOOST_TEST(found);
     }
 }
 

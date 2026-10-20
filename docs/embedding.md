@@ -244,6 +244,11 @@ not register input as a compiled function. Declarations, `return`, assertions,
 and inline callbacks remain unsupported by the interpreter. Loops execute
 synchronously on the caller's thread.
 
+Loop bindings are ordinary mutable locals or compatible parameters and remain
+available after the loop. Frame-backed interpretation can reassign script
+parameters without replacing the caller's arguments; their declared types remain
+fixed. Callback captures retain the values present when the callback was created.
+
 The `SourceText` expression overload optionally accepts a one-based source line,
 so expressions embedded in a larger input retain their scope and diagnostic
 location.
