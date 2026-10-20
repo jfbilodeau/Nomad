@@ -6,10 +6,12 @@
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/LoopStatement.hpp>
 #include <nomad/compiler/Parser.hpp>
-#include <nomad/compiler/Tokenizer.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
+#include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
@@ -140,6 +142,7 @@ std::unique_ptr<FunctionNode> parseFunBody(
 ) {
     auto fun = std::make_unique<FunctionNode>(startLine, 0);
 
+    const ParserBlockScope bodyScope(*context, function, nullptr, true, true);
     const auto valid = parser::parseBlock(context, function, tokens, {"end"}, fun->getStatements());
 
     if (tokens->isEndOfFile()) {
@@ -168,10 +171,15 @@ std::unique_ptr<FunctionNode> parseThenBody(
 
     auto thenBody = std::make_unique<FunctionNode>(startLine, 0);
 
-    while (!tokens->isEndOfFile()) {
+    const auto endsAtEnd = context->currentBodyEndsAtEnd();
+    const ParserBlockScope bodyScope(*context, function, nullptr, true, endsAtEnd);
+    while (!tokens->isEndOfFile() && !(endsAtEnd && tokens->is("end"))) {
         auto statement = parser::parseLine(context, function, tokens);
         thenBody->addStatement(std::move(statement));
 
+        if (endsAtEnd && tokens->is("end")) {
+            break;
+        }
         if (!tokens->nextLine()) {
             break;
         }
@@ -1004,6 +1012,28 @@ protected:
         }
     }
 
+    void onEvaluate(InterpreterContext& context) const override {
+        m_expression->evaluate(context);
+        if (context.hasError()) {
+            return;
+        }
+        if (context.getResult()->getValue().getBooleanValue()) {
+            m_body.evaluate(context);
+            return;
+        }
+        for (const auto& branch : m_branches) {
+            branch.expression->evaluate(context);
+            if (context.hasError()) {
+                return;
+            }
+            if (context.getResult()->getValue().getBooleanValue()) {
+                branch.statements.evaluate(context);
+                return;
+            }
+        }
+        m_elseStatements.evaluate(context);
+    }
+
 private:
     std::unique_ptr<Expression> m_expression;
     StatementList m_body;
@@ -1019,6 +1049,16 @@ std::unique_ptr<Statement> parseIfStatement(CompilerContext* context, ScriptFunc
 
     auto ifExpression = parser::parseExpression(context, function, tokens);
 
+    if (ifExpression != nullptr && (tokens->is("break") || tokens->is("continue"))) {
+        auto control = parseLoopControlStatement(context, function, tokens);
+        if (control == nullptr || !parser::expectEndOfLine(context, function, tokens)) {
+            return nullptr;
+        }
+        ifStatement->setExpression(std::move(ifExpression));
+        ifStatement->getBody()->addStatement(std::move(control));
+        return ifStatement;
+    }
+
     if (ifExpression == nullptr || !parser::expectEndOfLine(context, function, tokens)) {
         valid = false;
     }
@@ -1027,6 +1067,7 @@ std::unique_ptr<Statement> parseIfStatement(CompilerContext* context, ScriptFunc
 
     tokens->nextLine();
 
+    const ParserBlockScope block(*context, function, nullptr, false, context->currentBodyEndsAtEnd());
     valid = parser::parseBlock(context, function, tokens, {"else", "end"}, ifStatement->getBody()) && valid;
 
     while (tokens->is("else")) {

@@ -14,7 +14,11 @@ public:
     [[nodiscard]] NomadBoolean execute(const SourceText& source, InterpreterContext& context) const;
     // Requires one non-void expression. Syntax/type errors are retained; execution faults propagate.
     [[nodiscard]] bool evaluateExpression(const NomadString& source, InterpreterContext& context) const;
-    [[nodiscard]] bool evaluateExpression(const SourceText& source, InterpreterContext& context) const;
+    [[nodiscard]] bool evaluateExpression(
+        const SourceText& source,
+        InterpreterContext& context,
+        NomadIndex sourceLine = 1
+    ) const;
 };
 
 } // namespace nomad

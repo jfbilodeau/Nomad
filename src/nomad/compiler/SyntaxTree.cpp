@@ -119,7 +119,7 @@ void Statement::checkReachability(CompilerContext* /*context*/, const ScriptFunc
 
 void Statement::evaluate(InterpreterContext& context) const {
     context.clearResult();
-    if (context.hasError()) {
+    if (context.hasError() || context.getLoopControl() != LoopControl::None) {
         return;
     }
 
@@ -173,6 +173,10 @@ AssignmentStatement::AssignmentStatement(
 }
 
 void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
+    if (function != nullptr && function->isReadOnlyVariable(m_identifier)) {
+        reportError(context, function, "Loop variables are read-only");
+        return;
+    }
     if (!m_expression->resolve(context, function)) {
         return;
     }
@@ -212,6 +216,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
                 reportError(context, function, "Cannot change type of frame variable '" + m_identifier + "'");
                 return;
             }
+            function->setVariableType(identifier.variableId, expressionType);
             break;
         }
         case IdentifierType::DynamicVariable: {
@@ -262,6 +267,11 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
             if (identifier.identifierType != IdentifierType::FunctionVariable && !isNewConsoleVariable) {
                 reportError(context, function, "Cannot assign value to '" + m_identifier + "' in the interpreter");
                 return;
+            }
+            if (isNewConsoleVariable && function != nullptr) {
+                identifier.identifierType = IdentifierType::FunctionVariable;
+                identifier.variableId = function->registerVariable(m_identifier, expressionType);
+                identifier.valueType = expressionType;
             }
             break;
         }
@@ -527,7 +537,7 @@ void StatementList::evaluate(InterpreterContext& context) const {
 
     context.setVoidResult();
     for (const auto& statement: m_statements) {
-        if (context.hasError()) {
+        if (context.hasError() || context.getLoopControl() != LoopControl::None) {
             context.clearResult();
             return;
         }

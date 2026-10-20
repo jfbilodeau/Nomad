@@ -2,6 +2,9 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/script/IteratorObject.hpp>
+#include <nomad/script/VirtualMachine.hpp>
+
 #include <boost/test/unit_test.hpp>
 
 #include <string>
@@ -29,6 +32,251 @@ FunctionOutcome runWithInteger(const std::string& source, NomadInteger argument)
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(language_control_flow)
+
+BOOST_AUTO_TEST_CASE(iterator_types_are_specialized_and_interned)
+{
+    Runtime runtime;
+    const auto* integers = runtime.getIteratorType(runtime.getIntegerType());
+    const auto* strings = runtime.getIteratorType(runtime.getStringType());
+    BOOST_TEST(integers->getTypeName() == "Iterator<int>");
+    BOOST_TEST(strings->getTypeName() == "Iterator<string>");
+    BOOST_TEST(integers != strings);
+    BOOST_TEST(runtime.getIteratorType(runtime.getIntegerType()) == integers);
+    BOOST_TEST(runtime.getParameterizedType("Iterator", {runtime.getStringType()}) == strings);
+    BOOST_CHECK_THROW(static_cast<void>(runtime.getIteratorType(runtime.getVoidType())), NomadException);
+}
+
+BOOST_AUTO_TEST_CASE(numeric_for_evaluates_bounds_once_in_source_order)
+{
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    std::vector<NomadInteger> calls;
+    for (auto index = NomadInteger{1}; index <= 3; ++index) {
+        runtime.registerNativeFunction(
+            "test.bound" + std::to_string(index),
+            [&calls, index](VirtualMachine* machine) {
+                calls.push_back(index);
+                machine->setIntegerResult(index == 2 ? 3 : 1);
+            },
+            {}, runtime.getIntegerType(), ""
+        );
+    }
+    fixture.addFunction("main",
+        "total = 0\n"
+        "for value = test.bound1 to test.bound2 step test.bound3\n"
+        "    total = total + value\n"
+        "end\n"
+        "return total"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto outcome = fixture.execute("main");
+    BOOST_TEST(!outcome.fault.has_value());
+    BOOST_TEST(outcome.integerValue == 6);
+    BOOST_TEST(calls == std::vector<NomadInteger>({1, 2, 3}), boost::test_tools::per_element());
+}
+
+BOOST_AUTO_TEST_CASE(for_uses_registered_iteration_not_collection_names)
+{
+    class SequenceIterator final : public IteratorObject {
+    public:
+        explicit SequenceIterator(const Type* type): IteratorObject(type) {}
+    protected:
+        bool onMoveNext(RuntimeValue& value) override {
+            if (m_next > 3) {
+                return false;
+            }
+            value.setIntegerValue(m_next++);
+            return true;
+        }
+    private:
+        NomadInteger m_next = 1;
+    };
+    class SequenceObject final : public NomadObject {};
+
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto type = std::make_unique<ObjectType>("Sequence");
+    auto* sourceType = type.get();
+    runtime.registerType(std::move(type));
+    runtime.registerNativeConstructor(sourceType, {}, [](std::span<const RuntimeValue>) {
+        return new SequenceObject;
+    }, "");
+    auto factoryCalls = 0;
+    const auto factoryId = runtime.registerNativeMethod(
+        sourceType, "startTraversal",
+        [&factoryCalls](VirtualMachine* machine) {
+            ++factoryCalls;
+            machine->getResult().setObjectValue(new SequenceIterator(machine->getRuntime()->getIntegerType()));
+        },
+        {}, runtime.getIteratorType(runtime.getIntegerType()), ""
+    );
+    runtime.registerIterableType(sourceType, runtime.getIntegerType(), runtime.getNativeMemberMethod(factoryId));
+    fixture.addFunction("main",
+        "total = 0\n"
+        "for value in new Sequence\n"
+        "    total = total + value\n"
+        "end\n"
+        "return total"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto before = NomadObject::getLiveObjectCount();
+    const auto outcome = fixture.execute("main");
+    BOOST_TEST(!outcome.fault.has_value());
+    BOOST_TEST(outcome.integerValue == 6);
+    BOOST_TEST(factoryCalls == 1);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(numeric_for_is_inclusive_scoped_and_directional)
+{
+    const auto outcome = runSource(
+        "total = 0\n"
+        "for value = 1 to 5 step 2\n"
+        "    if value == 3 continue\n"
+        "    total = total + value\n"
+        "end\n"
+        "for value = 3 to 1 step -1\n"
+        "    total = total + value\n"
+        "end\n"
+        "for value = 5 to 1\n"
+        "    total = 1000\n"
+        "end\n"
+        "return total"
+    );
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_TEST(!outcome.fault.has_value());
+    BOOST_TEST(outcome.integerValue == 12);
+}
+
+BOOST_AUTO_TEST_CASE(numeric_for_stops_without_integer_overflow)
+{
+    for (const auto* range : {
+        "9223372036854775806 to 9223372036854775807 step 2",
+        "-9223372036854775807 to -9223372036854775808 step -2",
+        "0 to -9223372036854775808 step -9223372036854775808"
+    }) {
+        const auto outcome = runSource(
+            "count = 0\nfor value = " + NomadString{range} +
+            "\ncount = count + 1\nend\nreturn count"
+        );
+        BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+        BOOST_TEST(!outcome.fault.has_value());
+        BOOST_TEST(outcome.integerValue == (range[0] == '0' ? 2 : 1));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(numeric_for_checks_bounds_step_and_binding)
+{
+    for (const auto* source : {
+        "for value = true to 3\nend",
+        "for value = 1 to 3 step 1.0\nend",
+        "value = 1\nfor value = 1 to 3\nend",
+        "params value:int\nfor value = 1 to 3\nend",
+        "for value = 1 to 3\nvalue = 2\nend",
+        "for qualified.value = 1 to 3\nend",
+        "for value = 1 to 3\nend\nreturn value",
+        "for value = 1 to 3\nfor value = 1 to 3\nend\nend"
+    }) {
+        BOOST_TEST_CONTEXT(source) {
+            BOOST_TEST(!compileErrors(source).empty());
+        }
+    }
+    const auto outcome = runSource("for value = 3 to 1 step 0\nend");
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_REQUIRE(outcome.fault.has_value());
+    BOOST_TEST(outcome.fault->find("zero") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(numeric_for_supports_format_placeholders)
+{
+    const auto outcome = runSource("for value = 2 to 2\nreturn $\"{value} {value + 1}\"\nend\nreturn \"\"");
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_TEST(outcome.text == "2 3");
+    BOOST_TEST(outcome.leakedStrings == 0);
+    const auto dynamic = runSource(
+        "for value = 2 to 2\nreturn $(\"{value} {value + 1}\")\nend\nreturn \"\""
+    );
+    BOOST_REQUIRE_MESSAGE(dynamic.compiled, dynamic.diagnostics);
+    BOOST_TEST(dynamic.text == "2 3");
+    BOOST_TEST(dynamic.leakedStrings == 0);
+}
+
+BOOST_AUTO_TEST_CASE(conditional_loops_and_inline_control)
+{
+    const auto outcome = runSource(
+        "value = 0\n"
+        "total = 0\n"
+        "while value < 10\n"
+        "    value = value + 1\n"
+        "    if value == 3 continue\n"
+        "    if value == 6 break\n"
+        "    total = total + value\n"
+        "end\n"
+        "until value == 8\n"
+        "    value = value + 1\n"
+        "end\n"
+        "do\n"
+        "    value = value + 1\n"
+        "end while false\n"
+        "do\n"
+        "    value = value + 1\n"
+        "    continue\n"
+        "end until value == 10\n"
+        "return total * 100 + value"
+    );
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_TEST(!outcome.fault.has_value());
+    BOOST_TEST(outcome.integerValue == 1210);
+}
+
+BOOST_AUTO_TEST_CASE(loop_control_is_local_to_the_nearest_loop)
+{
+    const auto outcome = runSource(
+        "outer = 0\n"
+        "total = 0\n"
+        "while outer < 3\n"
+        "    outer = outer + 1\n"
+        "    inner = 0\n"
+        "    do\n"
+        "        inner = inner + 1\n"
+        "        if inner == 2 break\n"
+        "        total = total + 1\n"
+        "    end until false\n"
+        "end\n"
+        "return total"
+    );
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_TEST(outcome.integerValue == 3);
+}
+
+BOOST_AUTO_TEST_CASE(loops_reject_invalid_conditions_and_control)
+{
+    for (const auto* source : {
+        "break", "continue", "if true break",
+        "while 1\nend", "until \"yes\"\nend",
+        "do\nend", "while true\nend until true",
+        "while true\nif true break extra\nbreak\nend",
+        "while true\nfun nested\nbreak\nend\nbreak\nend"
+    }) {
+        BOOST_TEST_CONTEXT(source) {
+            BOOST_TEST(!compileErrors(source).empty());
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(loop_return_releases_owned_locals)
+{
+    const auto outcome = runSource(
+        "text = $\"hello{1}world\"\n"
+        "while true\n"
+        "    return text\n"
+        "end\n"
+        "return \"unreachable\""
+    );
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_TEST(outcome.text == "hello1world");
+    BOOST_TEST(outcome.leakedStrings == 0);
+}
 
 BOOST_AUTO_TEST_CASE(if_executes_body_only_when_true)
 {
@@ -214,9 +462,8 @@ BOOST_AUTO_TEST_CASE(malformed_if_statements_are_rejected)
     }
 }
 
-BOOST_AUTO_TEST_CASE(loops_are_not_supported)
+BOOST_AUTO_TEST_CASE(incomplete_numeric_for_is_rejected)
 {
-    BOOST_TEST(!compileErrors("while true\nend").empty());
     BOOST_TEST(!compileErrors("for i = 1\nend").empty());
 }
 

@@ -1320,6 +1320,7 @@ bool FormatStringLiteral::parsePlaceholders(
         }
         if (identifier && !needsFirstCharacter &&
             !parser::isNativeMemberCandidate(context->getCompiler(), function, segment.text)) {
+            segment.text = context->getCompiler()->getScopedIdentifier(segment.text, function, getLine());
             m_variableFormat += "{" + segment.text + "}";
             continue;
         }
@@ -1535,6 +1536,8 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
 
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::FunctionVariable:
+        m_writable = !function->isReadOnlyVariable(m_identifier);
+        break;
     case IdentifierType::ContextVariable:
         m_writable = true;
         break;
@@ -1653,8 +1656,11 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
         if (value == nullptr) {
             raiseException("Variable '" + m_identifier + "' has not been assigned a value");
         }
-
-        context.setResult(context.getVariableTypeById(m_identifierDefinition.variableId), *value);
+        const auto* actualType = context.getVariableTypeById(m_identifierDefinition.variableId);
+        if (actualType != getType()) {
+            raiseException("Variable '" + m_identifier + "' changed type after this expression was resolved");
+        }
+        context.setResult(actualType, *value);
         break;
     }
 

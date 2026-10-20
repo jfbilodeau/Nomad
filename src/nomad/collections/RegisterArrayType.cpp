@@ -19,6 +19,34 @@
 
 namespace nomad {
 
+namespace {
+
+class ArrayIterator final : public IteratorObject {
+public:
+    explicit ArrayIterator(Array1dObject* array):
+        IteratorObject(array->getElementType()), m_array(array)
+    {
+        m_array->addRef();
+    }
+    ~ArrayIterator() override { m_array->releaseRef(); }
+
+protected:
+    bool onMoveNext(RuntimeValue& value) override {
+        if (m_next == m_array->getCount()) {
+            return false;
+        }
+        m_array->getValue(static_cast<NomadInteger>(m_next), value);
+        ++m_next;
+        return true;
+    }
+
+private:
+    Array1dObject* m_array;
+    NomadIndex m_next = 0;
+};
+
+} // namespace
+
 void registerArrayType(Runtime* runtime) {
     const auto registerArrayType = [runtime](
         const NomadString& name,
@@ -68,6 +96,15 @@ void registerArrayType(Runtime* runtime) {
                 throw nomad::NomadException("Failed to register Array1 constructor");
             }
             const auto* elementType = arrayType->getElementType();
+            const auto iteratorId = runtime->registerNativeMethod(
+                arrayType, "iterator",
+                [](VirtualMachine* machine) {
+                    machine->getResult().setObjectValue(new ArrayIterator(machine->getThisAs<Array1dObject>()));
+                },
+                {}, runtime->getIteratorType(elementType),
+                NomadDoc("Creates an independent live iterator over the array.")
+            );
+            runtime->registerIterableType(arrayType, elementType, runtime->getNativeMemberMethod(iteratorId));
             if (runtime->registerNativeIndexer(
                 arrayType,
                 {runtime->getIntegerType()},

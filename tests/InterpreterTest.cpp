@@ -105,6 +105,48 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
 
 } // namespace
 
+BOOST_AUTO_TEST_CASE(interpreter_executes_conditional_loops)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    const auto succeeded = Interpreter{}.execute(
+        "value = 0\n"
+        "total = 0\n"
+        "while value < 6\n"
+        "    value = value + 1\n"
+        "    if value == 2 continue\n"
+        "    if value == 5 break\n"
+        "    total = total + value\n"
+        "end\n"
+        "do\n"
+        "    total = total + 1\n"
+        "    continue\n"
+        "end until true", context);
+    const auto diagnostic = context.getError() ? *context.getError() : "Loop execution failed";
+    BOOST_REQUIRE_MESSAGE(succeeded, diagnostic);
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("total", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 9);
+    BOOST_TEST(!Interpreter{}.execute("break", context));
+}
+
+BOOST_AUTO_TEST_CASE(interpreter_detects_type_changes_across_loop_iterations)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    BOOST_TEST(!Interpreter{}.execute(
+        "value = 1\n"
+        "while value > 0\n"
+        "    value = \"changed\"\n"
+        "end", context));
+    BOOST_REQUIRE(context.getError() != nullptr);
+    BOOST_TEST(context.getError()->find("changed type") != NomadString::npos);
+    BOOST_REQUIRE(Interpreter{}.execute("value = 2", context));
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("value + 1", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 3);
+}
+
 BOOST_AUTO_TEST_CASE(frame_interpreter_requires_an_active_script_function)
 {
     Runtime runtime;
@@ -683,17 +725,15 @@ BOOST_AUTO_TEST_CASE(interpreter_context_reports_line_errors_and_clears_them_on_
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 42);
 }
 
-BOOST_AUTO_TEST_CASE(interpreter_context_rejects_multiline_input)
+BOOST_AUTO_TEST_CASE(interpreter_context_executes_multiline_assignments)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
     InterpreterContext context(*machine);
 
-    BOOST_TEST(!Interpreter{}.execute("score = 10\nscore", context));
-    BOOST_TEST(context.hasError());
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Interpreter accepts a single line of input");
-    BOOST_TEST(context.getVariableValue("score") == nullptr);
+    BOOST_REQUIRE(Interpreter{}.execute("score = 10\nscore = score + 1", context));
+    BOOST_REQUIRE(context.getVariableValue("score") != nullptr);
+    BOOST_TEST(context.getVariableValue("score")->getIntegerValue() == 11);
 }
 
 BOOST_AUTO_TEST_CASE(interpreter_context_lists_variables_in_name_order)

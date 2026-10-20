@@ -134,6 +134,95 @@ FunctionOutcome invokeStoredClosure(Runtime& runtime, const CallbackStore& store
 
 BOOST_AUTO_TEST_SUITE(language_callbacks)
 
+BOOST_AUTO_TEST_CASE(loop_callbacks_capture_each_iteration_value)
+{
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    std::vector<std::unique_ptr<Closure>> callbacks;
+    runtime.registerNativeFunction(
+        "test.keep",
+        [&runtime, &callbacks](VirtualMachine* machine) {
+            callbacks.push_back(machine->createClosure(&runtime, machine->getIdParameter(0)));
+        },
+        {defParameter("callback", runtime.getCallbackType({}, runtime.getIntegerType()), "")},
+        runtime.getVoidType(), ""
+    );
+    fixture.addFunction("main",
+        "for value = 1 to 3\n"
+        "    test.keep fun\n"
+        "        return value\n"
+        "    end\n"
+        "end"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    BOOST_REQUIRE(!fixture.execute("main").fault.has_value());
+    BOOST_REQUIRE(callbacks.size() == 3);
+    for (auto index = size_t{0}; index < callbacks.size(); ++index) {
+        RuntimeValue result;
+        runtime.executeFunction(callbacks[index].get(), {}, result);
+        BOOST_TEST(result.getIntegerValue() == static_cast<NomadInteger>(index + 1));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(then_is_restricted_to_the_current_function_root)
+{
+    for (const auto& source : std::vector<NomadString>{
+        "if true\ntest.storeVoid then\nend",
+        "while false\ntest.storeVoid then\nend",
+        "until true\ntest.storeVoid then\nend",
+        "do\ntest.storeVoid then\nend until true",
+        "for value = 1 to 1\ntest.storeVoid then\nend"
+    }) {
+        LanguageTestFixture fixture;
+        CallbackStore store;
+        registerCallbackNativeFunctions(fixture.getRuntime(), store);
+        fixture.addFunction("main", source);
+        BOOST_TEST_CONTEXT(source) {
+            BOOST_TEST(!fixture.compile());
+            BOOST_TEST(fixture.hasError("root"));
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(then_in_a_named_function_stops_at_its_end)
+{
+    LanguageTestFixture fixture;
+    CallbackStore store;
+    registerCallbackNativeFunctions(fixture.getRuntime(), store);
+    fixture.addFunction("main",
+        "fun nested\n"
+        "    test.storeVoid then\n"
+        "    captured = 10\n"
+        "end\n"
+        "nested\n"
+        "return 42"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto outcome = fixture.execute("main");
+    BOOST_TEST(!outcome.fault.has_value());
+    BOOST_TEST(outcome.integerValue == 42);
+    BOOST_REQUIRE(store.closure != nullptr);
+    BOOST_TEST(!invokeStoredClosure(fixture.getRuntime(), store, {}).fault.has_value());
+}
+
+BOOST_AUTO_TEST_CASE(explicit_callback_inside_a_loop_has_a_fresh_then_root)
+{
+    LanguageTestFixture fixture;
+    CallbackStore store;
+    registerCallbackNativeFunctions(fixture.getRuntime(), store);
+    fixture.addFunction("main",
+        "while true\n"
+        "    test.storeVoid fun\n"
+        "        test.storeVoid then\n"
+        "        captured = 10\n"
+        "    end\n"
+        "    break\n"
+        "end"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    BOOST_TEST(!fixture.execute("main").fault.has_value());
+}
+
 BOOST_AUTO_TEST_CASE(named_file_function_callback)
 {
     LanguageTestFixture fixture;

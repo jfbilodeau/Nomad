@@ -54,19 +54,27 @@ bool Interpreter::evaluateExpression(const NomadString& source, InterpreterConte
     return evaluateExpression(SourceText{evaluation.m_function->getPath(), source}, evaluation);
 }
 
-bool Interpreter::evaluateExpression(const SourceText& source, InterpreterContext& evaluation) const {
+bool Interpreter::evaluateExpression(
+    const SourceText& source,
+    InterpreterContext& evaluation,
+    NomadIndex sourceLine
+) const {
     evaluation.clearError();
     evaluation.clearResult();
+    evaluation.setLoopControl(LoopControl::None);
     evaluation.validateFrame();
     auto compiler = evaluation.m_runtime->createCompiler();
     CompilerContext context(compiler.get(), CompilerMode::Interpreter, &evaluation);
     auto* function = evaluation.m_function.get();
-    Tokenizer tokens(&context, source.sourceName, source.text);
+    if (sourceLine == 0 || sourceLine == NOMAD_INVALID_INDEX) {
+        sourceLine = 1;
+    }
+    Tokenizer tokens(&context, source.sourceName, NomadString(sourceLine - 1, '\n') + source.text);
     retainDiagnostics(evaluation, context.getDiagnostics(), source.sourceName);
     if (context.hasError()) {
         return false;
     }
-    if (tokens.getLineCount() != 1 || !tokens.nextLine()) {
+    if (tokens.getLineCount() != sourceLine || !tokens.nextLine()) {
         reportInputError(evaluation, source, "Interpreter requires one non-empty expression");
         return false;
     }
@@ -103,15 +111,16 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
     evaluation.validateFrame();
     evaluation.clearError();
     evaluation.clearResult();
+    evaluation.setLoopControl(LoopControl::None);
     const RegisterRestoration registers(*evaluation.getVirtualMachine());
+    struct VariableScopeRestoration {
+        ScriptFunction& function;
+        ~VariableScopeRestoration() { function.clearVariableScopes(); }
+    } scopes{*evaluation.m_function};
     try {
         auto compiler = evaluation.m_runtime->createCompiler();
         CompilerContext compilerContext(compiler.get(), CompilerMode::Interpreter, &evaluation);
         Tokenizer tokenizer(&compilerContext, source.sourceName, source.text);
-        if (tokenizer.getLineCount() > 1) {
-            reportInputError(evaluation, source, "Interpreter accepts a single line of input");
-            return false;
-        }
         if (compilerContext.hasError()) {
             retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
             return false;
@@ -133,10 +142,11 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
             function != nullptr && function->getReturnType() != nullptr && !function->getReturnType()->isVoid();
         const auto line = tokenizer.getLineIndex();
         const auto column = tokenizer.getColumnIndex();
-        const auto parseAsExpression = !isAssignment && !isStatement &&
+        const auto parseAsExpression = tokenizer.getLineCount() == 1 && !isAssignment && !isStatement &&
                                        (isValueReturningCall || function == nullptr);
 
         std::unique_ptr<Statement> statement;
+        StatementList statements;
         if (parseAsExpression) {
             auto expression = parser::parseExpression(&compilerContext, evaluation.m_function.get(), &tokenizer);
             if (expression != nullptr &&
@@ -150,24 +160,24 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
                     std::move(expression)
                 );
             }
-        } else if (isStatement && !isAssignment) {
-            reportInputError(evaluation, source, "Statement '" + firstToken.textValue + "' is not supported by the interpreter");
-            return false;
         } else {
-            statement = parser::parseLine(&compilerContext, evaluation.m_function.get(), &tokenizer);
+            do {
+                statements.addStatement(parser::parseLine(&compilerContext, evaluation.m_function.get(), &tokenizer));
+            } while (tokenizer.nextLine());
         }
+        statements.addStatement(std::move(statement));
 
         if (compilerContext.hasError()) {
             retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
             return false;
         }
 
-        if (statement == nullptr) {
+        if (statements.isEmpty()) {
             evaluation.setVoidResult();
             return true;
         }
 
-        if (!statement->resolve(&compilerContext, evaluation.m_function.get())) {
+        if (!statements.resolve(&compilerContext, evaluation.m_function.get())) {
             retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
             if (!evaluation.hasError()) {
                 reportInputError(evaluation, source, "Failed to resolve interpreter input");
@@ -176,7 +186,7 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         }
 
         retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
-        statement->evaluate(evaluation);
+        statements.evaluate(evaluation);
         return !evaluation.hasError();
     } catch (const NomadException& exception) {
         evaluation.clearResult();

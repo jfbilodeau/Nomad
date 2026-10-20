@@ -190,7 +190,9 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
 
     const auto parts = splitNativeMemberName(context->getRuntime(), name);
     if (!parts) {
-        return std::make_unique<IdentifierExpression>(parent, line, column, name);
+        return std::make_unique<IdentifierExpression>(
+            parent, line, column, context->getCompiler()->getScopedIdentifier(name, function, line)
+        );
     }
 
     auto receiver = createQualifiedReceiverExpression(context, function, parent, parts->receiver, line, column);
@@ -326,8 +328,9 @@ std::unique_ptr<Statement> parseLine(CompilerContext* context, ScriptFunction* f
     }
 
     if (isPotentialMemberExpression(context, function, tokenizer)) {
+        const auto statementLine = tokenizer->getLineIndex();
         auto expression = parseExpression(context, function, tokenizer);
-        if (!expression || !expectEndOfLine(context, function, tokenizer)) {
+        if (!expression || !expectEndOfLine(context, function, tokenizer, statementLine)) {
             return nullptr;
         }
 
@@ -364,12 +367,17 @@ bool parseBlock(
             return context->getErrorCount() == errorCount;
         }
 
+        const auto statementLine = tokens->getLineIndex();
         auto statement = parseLine(context, function, tokens);
 
         if (statement != nullptr) {
             statements->addStatement(std::move(statement));
         }
 
+        if (!tokens->endOfLine() && tokens->getLineIndex() != statementLine &&
+            std::ranges::find(endTokens, tokens->currentToken().textValue) != endTokens.end()) {
+            return context->getErrorCount() == errorCount;
+        }
         tokens->nextLine();
     }
 }
@@ -385,6 +393,13 @@ std::unique_ptr<Statement> parseStatement(
     ParseStatementFn statementFn;
 
     if (context->getCompiler()->getParseStatementFn(statementName, statementFn)) {
+        if (context->getMode() == CompilerMode::Interpreter &&
+            (statementName == "const" || statementName == "enum" || statementName == "fun" ||
+                statementName == "event" || statementName == "params" || statementName == "return" ||
+                statementName == "assert")) {
+            context->reportError("Statement '" + statementName + "' is not supported by the interpreter", tokens);
+            return nullptr;
+        }
         if (statementFn == nullptr) {
             return nullptr;
         }
@@ -407,9 +422,10 @@ std::unique_ptr<Statement> parseStatement(
     const auto functionId = context->getRuntime()->getCallableId(statementName);
 
     if (functionId != NOMAD_INVALID_ID) {
+        const auto callLine = tokens->getLineIndex();
         auto statement = parseFunctionCall(context, function, tokens, statementName);
 
-        if (statement == nullptr || !expectEndOfLine(context, function, tokens)) {
+        if (statement == nullptr || !expectEndOfLine(context, function, tokens, callLine)) {
             return nullptr;
         }
 
@@ -430,6 +446,13 @@ NomadId parseCallbackParameter(
     const auto isFun = tokens->is("fun");
 
     if (isFun || tokens->is("then")) {
+        if (!isFun && !context->isFunctionRoot(function)) {
+            context->reportError(
+                "`then` is only allowed at the root of a script or function body. "
+                "Use an explicit `fun ... end` callback inside control-flow blocks.", tokens
+            );
+            return NOMAD_INVALID_ID;
+        }
         if (context->getMode() != CompilerMode::Script) {
             context->reportError(
                 NomadString("Inline `") + (isFun ? "fun" : "then") + "` callbacks are not supported by the interpreter"
@@ -895,7 +918,17 @@ std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, Scr
     return expression;
 }
 
-bool expectEndOfLine(CompilerContext* context, ScriptFunction* /*function*/, Tokenizer* tokens) {
+bool expectEndOfLine(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    NomadIndex statementLine
+) {
+    if (statementLine != NOMAD_INVALID_INDEX && tokens->getLineIndex() != statementLine &&
+        tokens->is("end") && tokens->getTokenCount() == 1 &&
+        context->isFunctionRoot(function) && context->currentBodyEndsAtEnd()) {
+        return true;
+    }
     if (!tokens->endOfLine()) {
         context->reportError("Expected end of line", tokens);
 
@@ -959,21 +992,25 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
         }
 
         auto expression = parseExpression(context, function, tokens);
-        if (expression == nullptr || !expectEndOfLine(context, function, tokens)) {
+        if (expression == nullptr || !expectEndOfLine(context, function, tokens, line)) {
             return nullptr;
         }
 
         return std::make_unique<MemberAssignmentStatement>(line, column, std::move(target), std::move(expression));
     }
 
-    auto variableName = tokens->currentToken().textValue;
+    auto variableName = context->getCompiler()->getScopedIdentifier(
+        tokens->currentToken().textValue, function, line
+    );
 
     IdentifierDefinition identifierDefinition;
     context->getCompiler()->getIdentifierDefinition(variableName, function, identifierDefinition);
 
     const auto memberParts = splitNativeMemberName(context->getRuntime(), variableName);
     if (identifierDefinition.identifierType == IdentifierType::Unknown && memberParts &&
-        context->getCompiler()->getIdentifierType(memberParts->receiver, function) != IdentifierType::Unknown) {
+        context->getCompiler()->getIdentifierType(
+            context->getCompiler()->getScopedIdentifier(memberParts->receiver, function, line), function
+        ) != IdentifierType::Unknown) {
         tokens->next();
         if (!tokens->expect("=")) {
             return nullptr;
@@ -991,7 +1028,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
                                                                   std::move(arguments));
 
         auto expression = parseExpression(context, function, tokens);
-        if (expression == nullptr || !expectEndOfLine(context, function, tokens)) {
+        if (expression == nullptr || !expectEndOfLine(context, function, tokens, line)) {
             return nullptr;
         }
 
@@ -1022,7 +1059,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
 
     auto expression = parseExpression(context, function, tokens);
 
-    if (expression == nullptr || !expectEndOfLine(context, function, tokens)) {
+    if (expression == nullptr || !expectEndOfLine(context, function, tokens, line)) {
         return nullptr;
     }
 
@@ -1139,7 +1176,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
             parent,
             tokens->getLineIndex(),
             tokens->getColumnIndex(),
-            token.textValue
+            context->getCompiler()->getScopedIdentifier(token.textValue, function, tokens->getLineIndex())
         );
     }
 

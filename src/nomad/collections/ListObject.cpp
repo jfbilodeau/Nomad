@@ -23,6 +23,9 @@ ListObject::~ListObject() {
 }
 
 void ListObject::clear() {
+    if (!m_values.empty()) {
+        ++m_structuralVersion;
+    }
     if (m_elementType->needsFree()) {
         for (auto& value : m_values) {
             m_elementType->freeValue(value);
@@ -61,6 +64,7 @@ void ListObject::insert(const NomadInteger index, const RuntimeValue& value) {
     try {
         m_elementType->copyValue(value, storedValue);
         m_values.insert(m_values.begin() + static_cast<std::vector<RuntimeValue>::difference_type>(index), storedValue);
+        ++m_structuralVersion;
     } catch (...) {
         m_elementType->freeValue(storedValue);
         throw;
@@ -76,6 +80,7 @@ bool ListObject::remove(const NomadInteger index) {
         m_elementType->freeValue(*position);
     }
     m_values.erase(position);
+    ++m_structuralVersion;
     return true;
 }
 

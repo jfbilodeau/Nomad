@@ -142,6 +142,14 @@ void InterpreterContext::setVariable(
     m_variables[index] = std::move(replacement);
 }
 
+void InterpreterContext::clearVariableValue(const NomadString& name) {
+    const auto variableId = m_function->getVariableId(name);
+    if (variableId != NOMAD_INVALID_ID && !isFrameVariable(variableId) &&
+        toNomadIndex(variableId) < m_variables.size()) {
+        m_variables[toNomadIndex(variableId)].reset();
+    }
+}
+
 const Type* InterpreterContext::getVariableType(const NomadString& name) const {
     return getVariableTypeById(getFunction()->getVariableId(name));
 }
@@ -240,6 +248,7 @@ InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine, ScriptFun
         const auto id = toNomadId(index);
         m_function->registerVariable(function.getVariableName(id), function.getVariableType(id));
     }
+    m_function->copyVariableScopesFrom(function);
     m_variables.resize(m_frameVariableCount);
 }
 

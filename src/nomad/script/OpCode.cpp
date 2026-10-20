@@ -8,6 +8,7 @@
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/NomadStringObject.hpp>
+#include <nomad/script/NumericRange.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
@@ -16,6 +17,33 @@
 #include <cassert>
 
 namespace nomad {
+
+void op_numeric_for_test(VirtualMachine* machine) {
+    const auto valueId = machine->nextId();
+    const auto lastId = machine->nextId();
+    const auto stepId = machine->nextId();
+    const auto value = machine->getFunctionVariableValue(valueId).getIntegerValue();
+    const auto last = machine->getFunctionVariableValue(lastId).getIntegerValue();
+    const auto step = machine->getFunctionVariableValue(stepId).getIntegerValue();
+    if (step == 0) {
+        machine->fault("Numeric for step must not be zero");
+    }
+    machine->getResult().setBooleanValue(isNumericRangeValue(value, last, step));
+}
+
+void op_numeric_for_advance(VirtualMachine* machine) {
+    const auto valueId = machine->nextId();
+    const auto lastId = machine->nextId();
+    const auto stepId = machine->nextId();
+    auto value = machine->getFunctionVariableValue(valueId).getIntegerValue();
+    const auto last = machine->getFunctionVariableValue(lastId).getIntegerValue();
+    const auto step = machine->getFunctionVariableValue(stepId).getIntegerValue();
+    const auto advanced = advanceNumericRange(value, last, step);
+    if (advanced) {
+        machine->setFunctionVariableValue(valueId, RuntimeValue{value});
+    }
+    machine->getResult().setBooleanValue(advanced);
+}
 
 namespace {
 

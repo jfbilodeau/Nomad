@@ -4,6 +4,7 @@
 
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/CompilerException.hpp>
+#include <nomad/compiler/LoopStatement.hpp>
 #include <nomad/compiler/StatementParsers.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
@@ -33,6 +34,12 @@ Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
     registerParseStatementFn("if", parseIfStatement);
     registerParseStatementFn("params", nullptr, preParseParamsStatement);
     registerParseStatementFn("return", parseReturnStatement);
+    registerParseStatementFn("while", parseWhileStatement);
+    registerParseStatementFn("until", parseUntilStatement);
+    registerParseStatementFn("do", parseDoStatement);
+    registerParseStatementFn("break", parseBreakStatement);
+    registerParseStatementFn("continue", parseContinueStatement);
+    registerParseStatementFn("for", parseForStatement);
 
 }
 
@@ -203,6 +210,24 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
     }
 
     return IdentifierType::Unknown;
+}
+
+NomadString Compiler::getScopedIdentifier(
+    const NomadString& name,
+    const ScriptFunction* function,
+    NomadIndex line
+) const {
+    for (auto* current = function; current != nullptr;
+        current = m_runtime->getScriptFunction(current->getParentId())) {
+        const auto scoped = current->getScopedVariableName(name, line);
+        if (scoped != name) {
+            return scoped;
+        }
+        if (current->getParameterId(name) != NOMAD_INVALID_ID || current->getVariableId(name) != NOMAD_INVALID_ID) {
+            break;
+        }
+    }
+    return name;
 }
 
 void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunction* function, IdentifierDefinition& definition) const {

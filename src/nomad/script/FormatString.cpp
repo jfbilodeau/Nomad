@@ -37,7 +37,9 @@ DynamicFormatResult formatDynamicString(const NomadStringView format, Interprete
             const auto& diagnostic = parsed.diagnostics.at(*segment.diagnosticIndex);
             appendError(segment, diagnostic.message == "Missing '}' in format string"
                 ? "missing `}`" : "empty expression");
-        } else if (interpreter.evaluateExpression(segment.text, context)) {
+        } else if (interpreter.evaluateExpression(
+            SourceText{NomadString{sourceName}, segment.text}, context, line
+        )) {
             const auto* value = context.getResult();
             result.text += value->getType()->toString(value->getValue());
         } else {

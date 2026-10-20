@@ -11,6 +11,38 @@
 
 namespace nomad {
 
+namespace {
+
+class ListIterator final : public IteratorObject {
+public:
+    explicit ListIterator(ListObject* list):
+        IteratorObject(list->getElementType()), m_list(list), m_version(list->getStructuralVersion())
+    {
+        m_list->addRef();
+    }
+    ~ListIterator() override { m_list->releaseRef(); }
+
+protected:
+    bool onMoveNext(RuntimeValue& value) override {
+        if (m_list->getStructuralVersion() != m_version) {
+            throw NomadException("List was structurally modified during iteration");
+        }
+        if (m_next == m_list->getCount()) {
+            return false;
+        }
+        m_list->getElementType()->copyValue(m_list->getValue(static_cast<NomadInteger>(m_next)), value);
+        ++m_next;
+        return true;
+    }
+
+private:
+    ListObject* m_list;
+    std::uint64_t m_version;
+    NomadIndex m_next = 0;
+};
+
+} // namespace
+
 void registerListType(Runtime* runtime) {
     if (!runtime->registerParameterizedType(
         "List",
@@ -22,6 +54,15 @@ void registerListType(Runtime* runtime) {
         [runtime](const nomad::Type* type) {
             const auto* objectType = static_cast<const nomad::ObjectType*>(type);
             const auto* elementType = objectType->getTypeArguments()[0];
+            const auto iteratorId = runtime->registerNativeMethod(
+                objectType, "iterator",
+                [](VirtualMachine* machine) {
+                    machine->getResult().setObjectValue(new ListIterator(machine->getThisAs<ListObject>()));
+                },
+                {}, runtime->getIteratorType(elementType),
+                NomadDoc("Creates an independent live iterator. Structural changes invalidate its next advance.")
+            );
+            runtime->registerIterableType(objectType, elementType, runtime->getNativeMemberMethod(iteratorId));
             const auto constructorId = runtime->registerNativeConstructor(
                 objectType, {},
                 [elementType](std::span<const nomad::RuntimeValue>) {
