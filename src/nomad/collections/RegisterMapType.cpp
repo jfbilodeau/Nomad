@@ -55,40 +55,40 @@ void registerMapType(Runtime* runtime) {
                 {},
                 NomadDoc("The number of entries in the map.")
             );
-            const auto keysId = runtime->registerNativeProperty(
+            const auto keysId = runtime->registerNativeMethod(
                 objectType,
                 "keys",
-                keysType,
-                [keyType](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
+                [keyType](nomad::VirtualMachine* machine) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
                     auto keys = map->getKeys(keyType);
-                    result.setObjectValue(keys.release());
+                    machine->getResult().setObjectValue(keys.release());
                 },
                 {},
+                keysType,
                 NomadDoc("A fixed-size snapshot of all keys in unspecified order. Changes to the array and map are independent.")
             );
-            const auto valuesId = runtime->registerNativeProperty(
+            const auto valuesId = runtime->registerNativeMethod(
                 objectType,
                 "values",
-                valuesType,
-                [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
+                [](nomad::VirtualMachine* machine) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
                     auto values = map->getValues();
-                    result.setObjectValue(values.release());
+                    machine->getResult().setObjectValue(values.release());
                 },
                 {},
+                valuesType,
                 NomadDoc("A fixed-size snapshot of all values in unspecified order. Object values share references.")
             );
-            const auto entriesId = runtime->registerNativeProperty(
+            const auto entriesId = runtime->registerNativeMethod(
                 objectType,
                 "entries",
-                entriesType,
-                [entryType](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
+                [entryType](nomad::VirtualMachine* machine) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
                     auto entries = map->getEntries(entryType);
-                    result.setObjectValue(entries.release());
+                    machine->getResult().setObjectValue(entries.release());
                 },
                 {},
+                entriesType,
                 NomadDoc("A fixed-size snapshot of fresh read-only key/value pairs in unspecified order. Object values share references.")
             );
             const auto indexerId = runtime->registerNativeIndexer(

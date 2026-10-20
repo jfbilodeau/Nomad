@@ -168,7 +168,7 @@ count = scores.count # 0
 references remain valid. Aliases observe the empty map. Clearing an empty map
 does nothing and does not log. New entries can be inserted afterward.
 
-The read-only `keys` property returns an `Array1<string>` snapshot containing
+The parameterless `keys` method returns an `Array<string>` snapshot containing
 each key once, in unspecified order:
 
 ```nomad
@@ -180,7 +180,7 @@ An empty map returns an empty array. Changing array elements does not change
 the map, and later map changes do not affect an existing snapshot. Each read
 returns a separate array that remains valid after the map is cleared or released.
 
-The read-only `values` property returns an `Array1<V>` snapshot. It contains one
+The parameterless `values` method returns an `Array<V>` snapshot. It contains one
 value per entry, including duplicates, in unspecified order:
 
 ```nomad
@@ -190,7 +190,7 @@ values = scores.values
 valueCount = values.count # 2
 ```
 
-The read-only `entries` property returns an `Array1<KeyValue<string V>>`
+The parameterless `entries` method returns an `Array<KeyValue<string V>>`
 snapshot. Each read creates a separate array of fresh pairs whose `key` and
 `value` properties are read-only:
 
@@ -201,7 +201,7 @@ name = entry.key
 score = entry.value
 ```
 
-Both properties return empty arrays for an empty map. Replacing snapshot elements
+Both methods return empty arrays for an empty map. Replacing snapshot elements
 does not change the map. Later insertions, replacements, removals, or clearing of
 the map do not change existing snapshots, which remain valid after the map is
 released. There is no guaranteed correspondence between indices in separately

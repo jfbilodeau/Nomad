@@ -742,7 +742,7 @@ bool Runtime::registerParameterizedType(
         log::error("Cannot register parameterized type '" + name + "': invalid or duplicate definition");
         return false;
     }
-    m_parameterizedTypes.push_back({name, argumentCount, std::move(factory), std::move(initializer), std::nullopt});
+    m_parameterizedTypes.push_back({name, argumentCount, std::move(factory), std::move(initializer), std::nullopt, {}});
     return true;
 }
 

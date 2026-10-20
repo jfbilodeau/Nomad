@@ -848,12 +848,20 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
     BOOST_TEST(documentation.str().find("#### `contains` (*method*)") != NomadString::npos);
     BOOST_TEST(documentation.str().find("- `key:string`") != NomadString::npos);
     BOOST_TEST(documentation.str().find("`returns bool`") != NomadString::npos);
-    BOOST_TEST(documentation.str().find("#### `keys` (*read-only property*)") != NomadString::npos);
-    BOOST_TEST(documentation.str().find("`keys:Array1<string>`") != NomadString::npos);
-    BOOST_TEST(documentation.str().find("#### `values` (*read-only property*)") != NomadString::npos);
-    BOOST_TEST(documentation.str().find("`values:Array1<int>`") != NomadString::npos);
-    BOOST_TEST(documentation.str().find("#### `entries` (*read-only property*)") != NomadString::npos);
-    BOOST_TEST(documentation.str().find("`entries:Array1<KeyValue<string int>>`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `keys` (*method*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("`returns Array1<string>`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `values` (*method*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("`returns Array1<int>`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `entries` (*method*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("`returns Array1<KeyValue<string int>>`") != NomadString::npos);
+    const auto* mapType = runtime.getParameterizedType("Map", {runtime.getStringType(), runtime.getIntegerType()});
+    for (const auto* name : {"keys", "values", "entries"}) {
+        const auto memberId = runtime.getNativeMemberId(mapType, name);
+        BOOST_REQUIRE((runtime.getMemberType(memberId) == MemberType::Method));
+        const auto* method = runtime.getNativeMemberMethod(memberId);
+        BOOST_REQUIRE(method != nullptr);
+        BOOST_TEST(method->getParameterCount() == 0u);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_preserve_saved_objects) {
@@ -1171,6 +1179,9 @@ BOOST_AUTO_TEST_CASE(collections_maps_reject_unsupported_operations_and_types) {
         "values = new Map<string int>\nresult = values.clear",
         "values = new Map<string int>\nvalues.keys = new Array<string> 1",
         "values = new Map<string int>\nvalues.keys[0] = 1",
+        "values = new Map<string int>\nvalues.keys 1",
+        "values = new Map<string int>\nvalues.values 1",
+        "values = new Map<string int>\nvalues.entries 1",
         "values = new Map<string int>\nvalues.values = new Array<int> 1",
         "values = new Map<string int>\nvalues.entries = new Array<KeyValue<string int>> 1",
         "values = new Map<string int>\nvalues.values[0] = \"wrong\"",
