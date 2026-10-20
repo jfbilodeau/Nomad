@@ -2,6 +2,7 @@
 
 #include <nomad/collections/RegisterListType.hpp>
 
+#include <nomad/collections/ListIterator.hpp>
 #include <nomad/collections/ListObject.hpp>
 #include <nomad/collections/ListType.hpp>
 
@@ -10,38 +11,6 @@
 #include <nomad/script/VirtualMachine.hpp>
 
 namespace nomad {
-
-namespace {
-
-class ListIterator final : public IteratorObject {
-public:
-    explicit ListIterator(ListObject* list):
-        IteratorObject(list->getElementType()), m_list(list), m_version(list->getStructuralVersion())
-    {
-        m_list->addRef();
-    }
-    ~ListIterator() override { m_list->releaseRef(); }
-
-protected:
-    bool onMoveNext(RuntimeValue& value) override {
-        if (m_list->getStructuralVersion() != m_version) {
-            throw NomadException("List was structurally modified during iteration");
-        }
-        if (m_next == m_list->getCount()) {
-            return false;
-        }
-        m_list->getElementType()->copyValue(m_list->getValue(static_cast<NomadInteger>(m_next)), value);
-        ++m_next;
-        return true;
-    }
-
-private:
-    ListObject* m_list;
-    std::uint64_t m_version;
-    NomadIndex m_next = 0;
-};
-
-} // namespace
 
 void registerListType(Runtime* runtime) {
     if (!runtime->registerParameterizedType(

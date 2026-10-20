@@ -8,6 +8,7 @@
 #include <nomad/collections/Array2dObject.hpp>
 #include <nomad/collections/Array3Type.hpp>
 #include <nomad/collections/Array3dObject.hpp>
+#include <nomad/collections/ArrayIterator.hpp>
 #include <nomad/collections/ArrayObject.hpp>
 #include <nomad/collections/ArrayType.hpp>
 
@@ -18,34 +19,6 @@
 #include <utility>
 
 namespace nomad {
-
-namespace {
-
-class ArrayIterator final : public IteratorObject {
-public:
-    explicit ArrayIterator(Array1dObject* array):
-        IteratorObject(array->getElementType()), m_array(array)
-    {
-        m_array->addRef();
-    }
-    ~ArrayIterator() override { m_array->releaseRef(); }
-
-protected:
-    bool onMoveNext(RuntimeValue& value) override {
-        if (m_next == m_array->getCount()) {
-            return false;
-        }
-        m_array->getValue(static_cast<NomadInteger>(m_next), value);
-        ++m_next;
-        return true;
-    }
-
-private:
-    Array1dObject* m_array;
-    NomadIndex m_next = 0;
-};
-
-} // namespace
 
 void registerArrayType(Runtime* runtime) {
     const auto registerArrayType = [runtime](
