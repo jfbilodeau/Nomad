@@ -118,7 +118,7 @@ BOOST_AUTO_TEST_CASE(game_startup_preloads_configured_audio_roots)
     TestDirectory directory("nomad_audio_game_preload");
     directory.write("sounds/hit.wav", makeWaveFile());
     directory.write("text/text.csv", "key,en\ntitle,Test\n");
-    directory.write("scripts/init.nomad", "");
+    directory.write("scripts/main.nomad", "");
     std::filesystem::create_directories(directory.getPath() / "mods");
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
     SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
@@ -140,7 +140,7 @@ BOOST_AUTO_TEST_CASE(game_scripts_control_preloaded_audio_instances)
     directory.write("audio/hit.wav", makeWaveFile());
     directory.write("text/text.csv", "key,en\ntitle,Test\n");
     directory.write(
-        "scripts/init.nomad",
+        "scripts/main.nomad",
         "fun audioFinished\n"
         " game.volume = 0.7\n"
         "end\n"
@@ -190,7 +190,7 @@ BOOST_AUTO_TEST_CASE(game_scripts_control_streamed_music)
     directory.write("music/theme.wav", makeWaveFile());
     directory.write("text/text.csv", "key,en\ntitle,Test\n");
     directory.write(
-        "scripts/init.nomad",
+        "scripts/main.nomad",
         "fun musicFinished\n"
         " game.volume = 0.7\n"
         "end\n"
@@ -224,7 +224,7 @@ BOOST_AUTO_TEST_CASE(game_scripts_log_invalid_audio_volume)
 {
     TestDirectory directory("nomad_audio_script_volume");
     directory.write("text/text.csv", "key,en\ntitle,Test\n");
-    directory.write("scripts/init.nomad", "game.audio.volume = 1.5\n");
+    directory.write("scripts/main.nomad", "game.audio.volume = 1.5\n");
     std::filesystem::create_directories(directory.getPath() / "mods");
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
     SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
@@ -242,7 +242,7 @@ BOOST_AUTO_TEST_CASE(game_audio_load_faults_when_playback_is_unavailable)
     directory.write("audio/hit.wav", makeWaveFile());
     directory.write("text/text.csv", "key,en\ntitle,Test\n");
     directory.write(
-        "scripts/init.nomad",
+        "scripts/main.nomad",
         "sound = game.audio.load \"audio.hit\"\n"
         "game.volume = 0.5\n"
     );

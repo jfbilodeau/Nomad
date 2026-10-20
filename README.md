@@ -68,10 +68,10 @@ my-game/
 ├── nomadw / nomadw.cmd
 └── res/
     └── scripts/
-        └── init.nomad
+        └── main.nomad
 ```
 
-Edit `res/scripts/init.nomad` to start building your game. The project-local
+Edit `res/scripts/main.nomad` to start building your game. The project-local
 `nomadw` and `nomadw.cmd` wrappers select the SDK version declared in
 `nomad.toml`, making builds reproducible across machines. If that SDK is
 missing, the wrapper follows `NOMAD_DOWNLOAD_POLICY`: `prompt` (the default)

@@ -155,7 +155,7 @@ if(NOT OUTPUT_COUNT EQUAL 1)
 endif()
 
 require_path("${PACKAGE_DIR}/nomad.toml" "Release manifest")
-require_path("${PACKAGE_DIR}/res/scripts/init.nomad" "Packaged entry script")
+require_path("${PACKAGE_DIR}/res/scripts/main.nomad" "Packaged entry script")
 require_path("${PACKAGE_DIR}/res/keep.txt" "Included resource")
 require_path("${PACKAGE_DIR}/res/日本語.txt" "Unicode resource")
 require_path("${PACKAGE_DIR}/res/sprites/catalog.json" "Compiled sprite catalog")
@@ -249,7 +249,7 @@ if(DEFINED NOMAD_PACKAGE_ARTIFACT_DIR)
         "${NOMAD_PACKAGE_ARTIFACT_DIR}/TestProcess.cmake")
 endif()
 
-file(WRITE "${PROJECT_DIR}/res/scripts/init.nomad" "missing.statement\n")
+file(WRITE "${PROJECT_DIR}/res/scripts/main.nomad" "missing.statement\n")
 run_failure(
     "Package compilation gate"
     "${NOMAD_CLI}" package "${PROJECT_DIR}" --force

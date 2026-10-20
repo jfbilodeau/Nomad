@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
                 throw NomadException("Script compilation failed");
             }
         });
-        return session.run(project.document.getString("project.entry").value_or("init"));
+        return session.run(project.gameOptions.entryFunction);
     } catch (const std::exception& error) {
         log::error(error.what());
         return EXIT_FAILURE;

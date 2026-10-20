@@ -33,7 +33,7 @@ struct ScriptOptions {
 
 struct GameOptions {
     NomadString resourcePath;
-    NomadString entryFunction = "init";
+    NomadString entryFunction = "main";
     std::optional<NomadString> title;
     std::optional<Point> resolution;
     std::optional<Point> size;

@@ -63,14 +63,14 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
          std::filesystem::perms::owner_exec) != std::filesystem::perms::none
     );
     BOOST_TEST(std::filesystem::is_regular_file(destination / "nomad.toml"));
-    BOOST_TEST(std::filesystem::is_regular_file(destination / "res/scripts/init.nomad"));
+    BOOST_TEST(std::filesystem::is_regular_file(destination / "res/scripts/main.nomad"));
     BOOST_TEST(std::filesystem::is_regular_file(destination / "res/text/text.csv"));
 
     const auto project = loadNomadProject(destination / "nomad.toml");
     BOOST_TEST(project.configuration.project.name == "Example Game");
     BOOST_TEST(project.configuration.project.identifier == "com.example.example-game");
     BOOST_TEST(project.configuration.project.executable == "example-game");
-    BOOST_TEST(project.gameOptions.entryFunction == "init");
+    BOOST_TEST(project.gameOptions.entryFunction == "main");
     BOOST_TEST(project.configuration.sdk.version == getNomadVersion());
     BOOST_TEST(project.configuration.resources.directory == NomadPath("res"));
     BOOST_REQUIRE(project.gameOptions.text.directories.has_value());
@@ -82,8 +82,8 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
     BOOST_TEST(readme.find("{{") == NomadString::npos);
 
     const auto session = createProjectSession(project, ModuleMode::Analysis);
-    auto compilation = checkPath(destination / "res/scripts/init.nomad", session->getRuntime());
-    validateEntryFunction(compilation, session->getRuntime(), "init", destination / "nomad.toml");
+    auto compilation = checkPath(destination / "res/scripts/main.nomad", session->getRuntime());
+    validateEntryFunction(compilation, session->getRuntime(), project.gameOptions.entryFunction, destination / "nomad.toml");
     BOOST_TEST(compilation.succeeded());
 }
 
@@ -117,7 +117,7 @@ BOOST_AUTO_TEST_CASE(refuses_to_overwrite_existing_project_files)
 
     const auto content = readFile(projectFile);
     BOOST_TEST(content == "existing");
-    BOOST_TEST(!std::filesystem::exists(destination / "res/scripts/init.nomad"));
+    BOOST_TEST(!std::filesystem::exists(destination / "res/scripts/main.nomad"));
 }
 
 BOOST_AUTO_TEST_CASE(rejects_unknown_template_placeholders_and_rolls_back)

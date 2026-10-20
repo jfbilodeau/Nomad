@@ -554,7 +554,7 @@ BOOST_AUTO_TEST_CASE(defaults_optional_development_fields)
             static_cast<int>(configuration.configuration.type) ==
             static_cast<int>(ProjectConfigurationType::Development)
         );
-        BOOST_TEST(configuration.gameOptions.entryFunction == "init");
+        BOOST_TEST(configuration.gameOptions.entryFunction == "main");
         const auto overrides = std::string(tables).find("assets") != std::string::npos;
         BOOST_TEST(
             configuration.configuration.resources.directory ==
@@ -657,7 +657,7 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_optional_fields_instead_of_defaulting)
     }
 }
 
-BOOST_AUTO_TEST_CASE(defaults_the_entry_function_to_init)
+BOOST_AUTO_TEST_CASE(defaults_the_entry_function_to_main)
 {
     TestDirectory directory("nomad_project_configuration_default_entry");
     auto configurationText = std::string(COMPLETE_CONFIGURATION);
@@ -666,7 +666,9 @@ BOOST_AUTO_TEST_CASE(defaults_the_entry_function_to_init)
 
     const auto configuration = loadNomadProject(projectFile);
 
-    BOOST_TEST(configuration.gameOptions.entryFunction == "init");
+    BOOST_TEST(configuration.gameOptions.entryFunction == "main");
+    const auto releaseFile = directory.write("release.toml", serializeReleaseProject(configuration));
+    BOOST_TEST(loadNomadProject(releaseFile).gameOptions.entryFunction == "main");
 }
 
 BOOST_AUTO_TEST_CASE(discovers_the_project_from_a_nested_path)

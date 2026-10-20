@@ -91,7 +91,7 @@ nomad check my-game
 nomad run my-game
 ```
 
-The generated project contains `nomad.toml` and `res/scripts/init.nomad`.
+The generated project contains `nomad.toml` and `res/scripts/main.nomad`.
 Edit the script to change your game. Start with the
 [language guide](language.md), [sprite guide](sprites.md),
 [sound guide](sound.md), [text and localization guide](text.md), and

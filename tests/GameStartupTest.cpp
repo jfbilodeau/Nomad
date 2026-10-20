@@ -72,7 +72,7 @@ BOOST_AUTO_TEST_CASE(displays_the_configured_splash_at_the_configured_resolution
     TestDirectory directory("nomad_game_startup_splash");
     writeTextCatalogue(directory);
     writePng(directory, "splash.png");
-    directory.write("scripts/init.nomad", "game.name = \"Splash configured\"\n");
+    directory.write("scripts/main.nomad", "game.name = \"Splash configured\"\n");
     selectDummyDrivers();
 
     auto options = makeOptions(directory);
@@ -93,7 +93,7 @@ BOOST_AUTO_TEST_CASE(uses_resolution_as_window_size_when_size_is_unconfigured)
 {
     TestDirectory directory("nomad_game_startup_resolution_size");
     writeTextCatalogue(directory);
-    directory.write("scripts/init.nomad", "game.name = \"Resolution fallback\"\n");
+    directory.write("scripts/main.nomad", "game.name = \"Resolution fallback\"\n");
     selectDummyDrivers();
 
     auto options = makeOptions(directory);
@@ -111,7 +111,7 @@ BOOST_AUTO_TEST_CASE(loads_sprites_before_executing_the_entry_function)
     TestDirectory directory("nomad_game_startup_sprites");
     writeTextCatalogue(directory);
     writePng(directory, "sprites/player.png");
-    directory.write("scripts/init.nomad", "game.name = \"Initialized\"\n");
+    directory.write("scripts/main.nomad", "game.name = \"Initialized\"\n");
     selectDummyDrivers();
 
     auto game = Game::create(makeOptions(directory));
@@ -131,7 +131,7 @@ BOOST_AUTO_TEST_CASE(loads_compiled_sprite_catalog_instead_of_raw_pngs)
     writeSpriteCatalog(directory.getPath() / "sprites", groups);
     writePng(directory, "sprites/ignored.png");
     writePng(directory, "mod/sprites/community.png");
-    directory.write("scripts/init.nomad", "game.name = \"Compiled sprites\"\n");
+    directory.write("scripts/main.nomad", "game.name = \"Compiled sprites\"\n");
     selectDummyDrivers();
 
     auto options = makeOptions(directory);
@@ -151,7 +151,7 @@ BOOST_AUTO_TEST_CASE(reports_script_compilation_failure_after_loading_valid_spri
     TestDirectory directory("nomad_game_startup_script_failure");
     writeTextCatalogue(directory);
     writePng(directory, "sprites/player.png");
-    directory.write("scripts/init.nomad", "this is not valid Nomad code\n");
+    directory.write("scripts/main.nomad", "this is not valid Nomad code\n");
     selectDummyDrivers();
 
     BOOST_CHECK_EXCEPTION(
@@ -168,7 +168,7 @@ BOOST_AUTO_TEST_CASE(reports_sprite_failure_after_successful_script_compilation)
     TestDirectory directory("nomad_game_startup_sprite_failure");
     writeTextCatalogue(directory);
     directory.write("sprites/player.png", "not a PNG");
-    directory.write("scripts/init.nomad", "log.info \"compiled\"\n");
+    directory.write("scripts/main.nomad", "log.info \"compiled\"\n");
     selectDummyDrivers();
 
     BOOST_CHECK_EXCEPTION(
@@ -185,7 +185,7 @@ BOOST_AUTO_TEST_CASE(reports_both_failures_after_joining_compilation)
     TestDirectory directory("nomad_game_startup_combined_failure");
     writeTextCatalogue(directory);
     directory.write("sprites/player.png", "not a PNG");
-    directory.write("scripts/init.nomad", "this is not valid Nomad code\n");
+    directory.write("scripts/main.nomad", "this is not valid Nomad code\n");
     selectDummyDrivers();
 
     BOOST_CHECK_EXCEPTION(
@@ -200,6 +200,21 @@ BOOST_AUTO_TEST_CASE(reports_both_failures_after_joining_compilation)
                 message.find("Failed to compile functions") != NomadString::npos;
         }
     );
+}
+
+BOOST_AUTO_TEST_CASE(executes_an_explicitly_configured_init_entry)
+{
+    TestDirectory directory("nomad_game_startup_custom_entry");
+    writeTextCatalogue(directory);
+    directory.write("scripts/init.nomad", "game.name = \"Custom entry\"\n");
+    directory.write("scripts/main.nomad", "game.name = \"Default entry\"\n");
+    selectDummyDrivers();
+
+    auto options = makeOptions(directory);
+    options.entryFunction = "init";
+    auto game = Game::create(std::move(options));
+
+    BOOST_TEST(game->getName() == "Custom entry");
 }
 
 BOOST_AUTO_TEST_SUITE_END()

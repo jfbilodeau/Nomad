@@ -75,7 +75,7 @@ Shared dependencies are initialized once. Missing modules, invalid manifests,
 and dependency cycles are errors.
 
 All modules register their script features before compilation. The configured
-`project.entry` function, or `init` by default, executes after successful
+`project.entry` function, or `main` by default, executes after successful
 compilation and resource preparation. It must take no arguments and return
 `void`.
 

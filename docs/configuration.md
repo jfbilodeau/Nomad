@@ -11,7 +11,7 @@ name = "Example Game"
 identifier = "com.example.game"
 version = "0.1.0"
 executable = "example-game"
-entry = "init"
+entry = "main"
 
 [nomad]
 version = "0.1.0"
@@ -71,7 +71,7 @@ exclude = [
 | `project.identifier` | Stable application identifier used to locate saved data. | Required |
 | `project.version` | Game version used in package archive names. | Required |
 | `project.executable` | Executable file name without extension or directory. | Required for development projects |
-| `project.entry` | Script entry function taking no arguments and returning `void`. | Optional; `"init"` |
+| `project.entry` | Script entry function taking no arguments and returning `void`. | Optional; `"main"` |
 | `nomad.version` | Required SDK version in canonical `major.minor.patch` form; packaging requires this exact runtime version. | Required |
 | `nomad.modules` | Requested native modules; dependencies are included automatically. Use `[]` for the bare runtime. | Required |
 | `game.debug` | Whether diagnostic logging and the in-game debug console are enabled. | Optional; `false` |
