@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/collections/RangeType.hpp>
+#include <nomad/script/RangeType.hpp>
 
-#include <nomad/collections/RangeObject.hpp>
+#include <nomad/script/RangeObject.hpp>
 
 namespace nomad {
 

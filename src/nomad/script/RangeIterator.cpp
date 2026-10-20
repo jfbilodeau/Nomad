@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/collections/RangeIterator.hpp>
+#include <nomad/script/RangeIterator.hpp>
 
-#include <nomad/collections/RangeObject.hpp>
+#include <nomad/script/RangeObject.hpp>
 
 #include <limits>
 

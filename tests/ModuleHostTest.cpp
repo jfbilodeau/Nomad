@@ -62,10 +62,7 @@ bool compileFixture(ModuleHost& host, const CompilationTarget target) {
 BOOST_AUTO_TEST_SUITE(module_host)
 
 BOOST_AUTO_TEST_CASE(range_overloads_are_reusable_iterables_in_compiler_and_interpreter) {
-    TestDirectory directory("nomad_host_range");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    Runtime runtime;
     const NomadString source =
         "total = 0\n"
         "sequence = range 4\n"
@@ -119,10 +116,7 @@ BOOST_AUTO_TEST_CASE(range_overloads_are_reusable_iterables_in_compiler_and_inte
 }
 
 BOOST_AUTO_TEST_CASE(range_handles_integer_limits_and_rejects_zero_step_at_runtime) {
-    TestDirectory directory("nomad_host_range_limits");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext compilation(compiler.get());
     const NomadString source =
@@ -164,10 +158,7 @@ BOOST_AUTO_TEST_CASE(range_handles_integer_limits_and_rejects_zero_step_at_runti
 }
 
 BOOST_AUTO_TEST_CASE(range_arguments_are_evaluated_once_and_loop_controls_use_normal_iteration) {
-    TestDirectory directory("nomad_host_range_arguments");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    Runtime runtime;
     auto calls = 0;
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "test.bound",

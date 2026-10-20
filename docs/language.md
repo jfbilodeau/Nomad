@@ -452,8 +452,9 @@ same name. Explicit callbacks capture the value for their own iteration.
 
 ### Iterating collections
 
-The `nomad-collections` module provides `range stop`, `range start stop`, and
-`range start stop step`. These native functions return a reusable `Range`:
+Nomad provides the built-in functions `range stop`, `range start stop`, and
+`range start stop step`. These functions return a reusable `Range` without
+requiring any modules:
 
 ```nomad
 for value in range 0 10

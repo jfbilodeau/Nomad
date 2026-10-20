@@ -294,6 +294,8 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_member_definitions) {
 
 BOOST_AUTO_TEST_CASE(iterates_members_by_type_and_globally) {
     Runtime runtime;
+    std::vector<NomadId> builtInMembers;
+    runtime.getNativeMembers(builtInMembers);
     const auto* type = registerTestType(runtime);
 
     const auto stringMethodId = runtime.registerNativeMethod(
@@ -313,7 +315,7 @@ BOOST_AUTO_TEST_CASE(iterates_members_by_type_and_globally) {
 
     std::vector<NomadId> allMembers;
     runtime.getNativeMembers(allMembers);
-    BOOST_TEST(allMembers.size() == stringMembers.size() + 1);
+    BOOST_TEST(allMembers.size() == builtInMembers.size() + 2);
     const auto hasIntegerProperty = std::ranges::find(allMembers, integerPropertyId) != allMembers.end();
     BOOST_TEST(hasIntegerProperty);
 }

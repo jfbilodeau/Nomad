@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/collections/RegisterRangeType.hpp>
+#include <nomad/script/RegisterRangeType.hpp>
 
-#include <nomad/collections/RangeIterator.hpp>
-#include <nomad/collections/RangeObject.hpp>
-#include <nomad/collections/RangeType.hpp>
+#include <nomad/script/RangeIterator.hpp>
+#include <nomad/script/RangeObject.hpp>
+#include <nomad/script/RangeType.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>

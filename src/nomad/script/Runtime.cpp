@@ -8,6 +8,7 @@
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/NativeMembers.hpp>
 #include <nomad/script/NomadStringObject.hpp>
+#include <nomad/script/RegisterRangeType.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -119,6 +120,8 @@ Runtime::Runtime() {
         !registerMemberTemplate("Iterator", "current", MemberType::Property)) {
         throw NomadException("Failed to register iterator type");
     }
+
+    registerRangeType(this);
 
     // Register instructions
     registerDefaultInstructions();
