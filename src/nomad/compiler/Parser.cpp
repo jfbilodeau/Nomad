@@ -1,7 +1,5 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/system/String.hpp>
-
 #include <nomad/compiler/Parser.hpp>
 
 #include <nomad/compiler/Argument.hpp>
@@ -15,6 +13,8 @@
 
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
+#include <nomad/system/String.hpp>
+
 #include <algorithm>
 #include <optional>
 
@@ -22,8 +22,85 @@ namespace nomad {
 
 namespace parser {
 
-using ParseExpressionFunction = std::unique_ptr<Expression> (*)(CompilerContext*, ScriptFunction*, Tokenizer*,
-                                                                const Expression*);
+namespace {
+
+const Type* parseTypeName(
+    CompilerContext* context,
+    Tokenizer* tokens,
+    const NomadIndex depth,
+    NomadString name = {}
+) {
+    if (depth >= 64) {
+        context->reportError("Type nesting exceeds the maximum depth of 64", tokens);
+        return nullptr;
+    }
+    if (name.empty() && !tokens->nextIdentifier(name)) {
+        return nullptr;
+    }
+    auto* runtime = context->getRuntime();
+    const auto argumentCount = runtime->getParameterizedTypeArgumentCount(name);
+    if (tokens->is("<")) {
+        tokens->next();
+        if (!argumentCount) {
+            context->reportError("Unknown parameterized type '" + name + "'", tokens);
+            return nullptr;
+        }
+        std::vector<const Type*> arguments;
+        while (!tokens->is(">")) {
+            if (tokens->endOfLine()) {
+                context->reportError("Expected '>' to close type arguments for '" + name + "'", tokens);
+                return nullptr;
+            }
+            const auto* argument = parseTypeName(context, tokens, depth + 1);
+            if (argument == nullptr) {
+                return nullptr;
+            }
+            if (argument->isVoid() || argument->isInternal()) {
+                context->reportError("Invalid type argument '" + argument->getTypeName() + "' for '" + name + "'", tokens);
+                return nullptr;
+            }
+            arguments.push_back(argument);
+        }
+        tokens->next();
+        if (arguments.size() != *argumentCount) {
+            context->reportError(
+                "Parameterized type '" + name + "' expects " + std::to_string(*argumentCount) +
+                " type arguments, got " + std::to_string(arguments.size()), tokens
+            );
+            return nullptr;
+        }
+        const auto* type = runtime->getParameterizedType(name, arguments);
+        if (type == nullptr) {
+            context->reportError("Cannot resolve parameterized type '" + name + "'", tokens);
+        }
+        return type;
+    }
+    if (argumentCount) {
+        context->reportError("Type arguments required for parameterized type '" + name + "'", tokens);
+        return nullptr;
+    }
+    const auto* type = runtime->getTypeByName(name);
+    if (type == nullptr) {
+        context->reportError("Unknown type '" + name + "' for parameter", tokens);
+    } else if (type->isInternal()) {
+        context->reportError("Internal type '" + name + "' cannot be used for parameter", tokens);
+        return nullptr;
+    }
+    return type;
+}
+
+} // namespace
+
+const Type* parseType(CompilerContext* context, Tokenizer* tokens) {
+    return parseTypeName(context, tokens, 0);
+}
+
+using ParseExpressionFunction = std::unique_ptr<Expression> (*)(
+    CompilerContext*, 
+    ScriptFunction*, 
+    Tokenizer*,
+    const Expression*
+);
 
 namespace {
 
@@ -32,14 +109,14 @@ struct MemberNameParts {
     NomadString member;
 };
 
-std::optional<MemberNameParts> splitIntrinsicMemberName(const Runtime* runtime, const NomadString& name) {
+std::optional<MemberNameParts> splitNativeMemberName(const Runtime* runtime, const NomadString& name) {
     const auto separator = name.rfind('.');
     if (separator == NomadString::npos || separator == 0 || separator + 1 >= name.size()) {
         return std::nullopt;
     }
 
     auto member = name.substr(separator + 1);
-    if (runtime->getIntrinsicMemberOverloadCount(member) == 0) {
+    if (!runtime->getMemberSignature(member)) {
         return std::nullopt;
     }
 
@@ -50,81 +127,53 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
                                                               const Expression* parent, const NomadString& name,
                                                               NomadIndex line, NomadIndex column);
 
-bool parseIntrinsicMemberArguments(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
+bool parseNativeMemberArguments(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
                                    const NomadString& memberName, ArgumentList& arguments) {
-    std::vector<NomadId> overloads;
-    context->getRuntime()->getIntrinsicMemberOverloads(memberName, overloads);
-
-    if (overloads.empty()) {
-        context->reportError("Unknown intrinsic member '" + memberName + "'", tokens);
+    const auto signature = context->getRuntime()->getMemberSignature(memberName);
+    if (!signature) {
+        context->reportError("Unknown native member '" + memberName + "'", tokens);
         return false;
     }
 
-    const auto representativeId = overloads.front();
-    if (context->getRuntime()->getIntrinsicMemberType(representativeId) == IntrinsicMemberType::Property) {
+    if (signature->type == MemberType::Property) {
         return true;
     }
 
-    IntrinsicMethodDefinition definition;
-    if (!context->getRuntime()->getIntrinsicMethodDefinition(representativeId, definition)) {
-        context->getCompiler()->reportInternalError("Invalid intrinsic method shape: " + memberName);
-    }
-
-    NativeFunctionDefinition parsingDefinition{
-        NOMAD_INVALID_ID, memberName, {}, definition.parameters, definition.returnType, definition.doc,
-    };
-
-    return parseNativeFunctionArguments(context, function, tokens, parsingDefinition, &arguments);
+    return parseCallableArguments(context, function, tokens, signature->parameters, &arguments);
 }
 
-std::unique_ptr<Expression> createIntrinsicMemberExpression(
+std::unique_ptr<Expression> createNativeMemberExpression(
     CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent,
     NomadString qualifiedName, NomadString memberName, std::unique_ptr<Expression> receiver,
-    const IntrinsicMemberAccess access, const bool parseArguments, const NomadIndex line, const NomadIndex column) {
+    const bool parseArguments, const NomadIndex line, const NomadIndex column) {
     ArgumentList arguments;
 
     if (parseArguments) {
-        if (!parseIntrinsicMemberArguments(context, function, tokens, memberName, arguments)) {
+        if (!parseNativeMemberArguments(context, function, tokens, memberName, arguments)) {
             return nullptr;
         }
     } else {
-        std::vector<NomadId> overloads;
-        context->getRuntime()->getIntrinsicMemberOverloads(memberName, overloads);
-
-        if (overloads.empty()) {
-            context->reportError("Unknown intrinsic member '" + memberName + "'");
+        const auto signature = context->getRuntime()->getMemberSignature(memberName);
+        if (!signature) {
+            context->reportError("Unknown native member '" + memberName + "'");
             return nullptr;
         }
 
-        IntrinsicMethodDefinition definition;
-        if (context->getRuntime()->getIntrinsicMemberType(overloads.front()) == IntrinsicMemberType::Method &&
-            context->getRuntime()->getIntrinsicMethodDefinition(overloads.front(), definition) &&
-            !definition.parameters.empty()) {
-            context->reportError("Intrinsic method '" + memberName +
+        if (signature->type == MemberType::Method && !signature->parameters.empty()) {
+            context->reportError("Native method '" + memberName +
                                  "' requires arguments before another member can be accessed");
             return nullptr;
         }
     }
 
-    return std::make_unique<IntrinsicMemberExpression>(parent, line, column, std::move(qualifiedName),
-                                                       std::move(memberName), std::move(receiver), std::move(arguments),
-                                                       access);
+    return std::make_unique<NativeMemberExpression>(parent, line, column, std::move(qualifiedName),
+                                                       std::move(memberName), std::move(receiver), std::move(arguments));
 }
 
 std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptFunction* function,
                                                               const Expression* parent, const NomadString& name,
                                                               const NomadIndex line, const NomadIndex column) {
-    NativeFunctionDefinition nativeFunction;
-    if (context->getRuntime()->getNativeFunctionDefinition(name, nativeFunction)) {
-        if (!nativeFunction.parameters.empty()) {
-            context->reportError("Function receiver '" + name + "' requires arguments");
-            return nullptr;
-        }
-
-        return std::make_unique<CallNativeFunctionExpression>(parent, line, column, name);
-    }
-
-    const auto functionId = context->getRuntime()->getFunctionId(name);
+    const auto functionId = context->getRuntime()->getCallableId(name);
     if (functionId != NOMAD_INVALID_ID) {
         const auto* targetFunction = context->getRuntime()->getFunction(functionId);
         if (targetFunction->getParameterCount() != 0) {
@@ -139,7 +188,7 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
         return std::make_unique<ConstantValueExpression>(parent, line, column, name);
     }
 
-    const auto parts = splitIntrinsicMemberName(context->getRuntime(), name);
+    const auto parts = splitNativeMemberName(context->getRuntime(), name);
     if (!parts) {
         return std::make_unique<IdentifierExpression>(parent, line, column, name);
     }
@@ -149,23 +198,29 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
         return nullptr;
     }
 
-    return createIntrinsicMemberExpression(context, function, nullptr, parent, name, parts->member, std::move(receiver),
-                                           IntrinsicMemberAccess::Read, false, line, column);
-}
-
-bool hasAssignmentOperator(const Tokenizer* tokens) {
-    for (NomadIndex index = 0; index < tokens->getTokenCount(); ++index) {
-        if (tokens->getTokenAt(index) == "=") {
-            return true;
-        }
-    }
-
-    return false;
+    return createNativeMemberExpression(context, function, nullptr, parent, name, parts->member, std::move(receiver),
+                                           false, line, column);
 }
 
 bool isPotentialMemberExpression(CompilerContext* context, ScriptFunction* function, const Tokenizer* tokens) {
     if (tokens->getTokenCount() == 0) {
         return false;
+    }
+
+    if (context->getCompiler()->isStatement(tokens->getTokenAt(0))) {
+        return false;
+    }
+    if (tokens->getTokenTypeAt(0) == TokenType::Identifier) {
+        const auto kind = context->getCompiler()->getIdentifierType(tokens->getTokenAt(0), function);
+        if (kind == IdentifierType::NativeFunction || kind == IdentifierType::Function) {
+            return false;
+        }
+    }
+
+    for (NomadIndex index = 0; index < tokens->getTokenCount(); ++index) {
+        if (tokens->getTokenTypeAt(index) == TokenType::Operator && tokens->getTokenAt(index) == "[") {
+            return true;
+        }
     }
 
     if (tokens->getTokenTypeAt(0) == TokenType::Identifier) {
@@ -174,7 +229,7 @@ bool isPotentialMemberExpression(CompilerContext* context, ScriptFunction* funct
             return false;
         }
 
-        return splitIntrinsicMemberName(context->getRuntime(), name).has_value();
+        return splitNativeMemberName(context->getRuntime(), name).has_value();
     }
 
     for (NomadIndex index = 0; index < tokens->getTokenCount(); ++index) {
@@ -188,8 +243,17 @@ bool isPotentialMemberExpression(CompilerContext* context, ScriptFunction* funct
 
 } // namespace
 
-bool isIntrinsicMemberCandidate(const Compiler* compiler, const ScriptFunction* function, const NomadString& name) {
-    if (!splitIntrinsicMemberName(compiler->getRuntime(), name)) {
+bool hasAssignmentOperator(const Tokenizer* tokens) {
+    for (NomadIndex index = 0; index < tokens->getTokenCount(); ++index) {
+        if (tokens->getTokenTypeAt(index) == TokenType::Operator && tokens->getTokenAt(index) == "=") {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool isNativeMemberCandidate(const Compiler* compiler, const ScriptFunction* function, const NomadString& name) {
+    if (!splitNativeMemberName(compiler->getRuntime(), name)) {
         return false;
     }
 
@@ -198,7 +262,7 @@ bool isIntrinsicMemberCandidate(const Compiler* compiler, const ScriptFunction* 
         if (compiler->getIdentifierType(name, scope) != IdentifierType::Unknown) {
             return false;
         }
-        scope = compiler->getRuntime()->getFunction(scope->getParentId());
+        scope = compiler->getRuntime()->getScriptFunction(scope->getParentId());
     }
     return compiler->getIdentifierType(name, nullptr) == IdentifierType::Unknown;
 }
@@ -267,7 +331,7 @@ std::unique_ptr<Statement> parseLine(CompilerContext* context, ScriptFunction* f
             return nullptr;
         }
 
-        if (auto* member = expression->asIntrinsicExpression()) {
+        if (auto* member = expression->asNativeExpression()) {
             member->setAllowVoid(true);
         }
 
@@ -340,18 +404,7 @@ std::unique_ptr<Statement> parseStatement(
         return statement;
     }
 
-    NativeFunctionDefinition nativeFunction;
-    if (context->getRuntime()->getNativeFunctionDefinition(statementName, nativeFunction)) {
-        auto statement = parseNativeFunctionStatement(context, function, tokens, nativeFunction);
-
-        if (statement == nullptr || !expectEndOfLine(context, function, tokens)) {
-            return nullptr;
-        }
-
-        return statement;
-    }
-
-    auto functionId = context->getRuntime()->getFunctionId(statementName);
+    const auto functionId = context->getRuntime()->getCallableId(statementName);
 
     if (functionId != NOMAD_INVALID_ID) {
         auto statement = parseFunctionCall(context, function, tokens, statementName);
@@ -366,23 +419,6 @@ std::unique_ptr<Statement> parseStatement(
     context->reportError("Unknown statement, native function or function name: '" + statementName + "'", tokens);
 
     return nullptr;
-}
-
-std::unique_ptr<Statement> parseNativeFunctionStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const NativeFunctionDefinition& nativeFunction) {
-    auto line = tokens->getLineIndex();
-    auto column = tokens->getColumnIndex();
-
-    auto nativeFunctionStatement = std::make_unique<NativeFunctionStatementNode>(
-        line,
-        column,
-        nativeFunction
-    );
-
-    if (!parseNativeFunctionArguments(context, function, tokens, nativeFunction, nativeFunctionStatement->getArguments())) {
-        return nullptr;
-    }
-
-    return nativeFunctionStatement;
 }
 
 NomadId parseCallbackParameter(
@@ -411,7 +447,7 @@ NomadId parseCallbackParameter(
             return NOMAD_INVALID_ID;
         }
 
-        const auto callbackFunction = context->getRuntime()->getFunction(functionId);
+        const auto callbackFunction = context->getRuntime()->getScriptFunction(functionId);
 
         // Wire the nested function's parent reference.
         callbackFunction->setParentId(function->getId());
@@ -453,7 +489,7 @@ NomadId parseCallbackParameter(
         return NOMAD_INVALID_ID;
     }
 
-    if (context->getRuntime()->getFunction(funId)->getParameterCount() != callbackType->getParameterCount()) {
+    if (context->getRuntime()->getScriptFunction(funId)->getParameterCount() != callbackType->getParameterCount()) {
         context->reportError("Callback function '" + funName + "' has incorrect number of parameters", tokens);
 
         return NOMAD_INVALID_ID;
@@ -462,7 +498,7 @@ NomadId parseCallbackParameter(
     for (auto i = NomadIndex{0}; i < callbackType->getParameterCount(); ++i) {
         const auto parameterId = toNomadId(i);
         const auto expectedType = callbackType->getParameterType(parameterId);
-        const auto actualType = context->getRuntime()->getFunction(funId)->getParameterType(parameterId);
+        const auto actualType = context->getRuntime()->getScriptFunction(funId)->getParameterType(parameterId);
         if (expectedType != actualType) {
             context->reportError("Callback function '" + funName + "' parameter type mismatch at index " + toString(i), tokens);
 
@@ -485,7 +521,7 @@ std::unique_ptr<Statement> parseFunctionCall(
         functionName
     );
 
-    const auto functionId = context->getRuntime()->getFunctionId(functionName);
+    const auto functionId = context->getRuntime()->getCallableId(functionName);
 
     if (functionId == NOMAD_INVALID_ID) {
         context->reportError("Unknown function name: '" + functionName + "'", tokens);
@@ -493,9 +529,9 @@ std::unique_ptr<Statement> parseFunctionCall(
         return nullptr;
     }
 
-    const auto targetFunction = context->getRuntime()->getFunction(functionId);
+    const auto* targetFunction = context->getRuntime()->getFunction(functionId);
 
-    if (!parseFunctionArguments(context, function, tokens, targetFunction, functionCallStatement->getArguments())) {
+    if (!parseCallableArguments(context, function, tokens, *targetFunction, functionCallStatement->getArguments())) {
         return nullptr;
     }
 
@@ -662,15 +698,136 @@ std::unique_ptr<Expression> parseUnaryOperatorExpression(CompilerContext* contex
                                              std::move(expression));
 }
 
+namespace {
+
+// True when the current token can begin an argument; false at the end of the line or at a closing/binary operator.
+bool isArgumentStart(const Tokenizer* tokens) {
+    if (tokens->endOfLine()) {
+        return false;
+    }
+    if (!tokens->is(TokenType::Operator)) {
+        return true;
+    }
+    if (tokens->is(")") || tokens->is("]")) {
+        return false;
+    }
+    return tokens->is("(") || tokens->is("$") ||
+           getUnaryOperator(tokens->currentToken().textValue) != UnaryOperator::Unknown;
+}
+
+} // namespace
+
+std::unique_ptr<Expression> parseNewExpression(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    const Expression* parent
+) {
+    const auto line = tokens->getLineIndex();
+    const auto column = tokens->getColumnIndex();
+    if (!tokens->expect("new")) {
+        return nullptr;
+    }
+    if (tokens->endOfLine()) {
+        context->reportError("Expected constructor name after 'new'", tokens);
+        return nullptr;
+    }
+    auto* runtime = context->getRuntime();
+    NomadString constructorName = tokens->currentToken().textValue;
+    if (const auto count = runtime->getParameterizedConstructorArgumentCount(constructorName)) {
+        tokens->next();
+        if (!tokens->expect("<")) {
+            return nullptr;
+        }
+        std::vector<const Type*> typeArguments;
+        while (!tokens->endOfLine() && !tokens->is(">")) {
+            const auto* argument = parseType(context, tokens);
+            if (argument == nullptr) {
+                return nullptr;
+            }
+            typeArguments.push_back(argument);
+        }
+        if (!tokens->expect(">")) {
+            return nullptr;
+        }
+        if (typeArguments.size() != *count) {
+            context->reportError("Incorrect number of constructor type arguments for '" + constructorName + "'", tokens);
+            return nullptr;
+        }
+        constructorName = runtime->getParameterizedConstructorName(constructorName, typeArguments);
+        if (constructorName.empty()) {
+            context->reportError("Cannot resolve parameterized constructor", tokens);
+            return nullptr;
+        }
+    } else if (runtime->getParameterizedTypeArgumentCount(constructorName)) {
+        tokens->next();
+        if (!tokens->is("<")) {
+            const auto signature = runtime->getConstructorTemplate(constructorName);
+            if (!signature) {
+                context->reportError("Constructor '" + constructorName +
+                    "' requires explicit type arguments: no inference signature is registered", tokens);
+                return nullptr;
+            }
+            std::vector<Parameter> parameters;
+            parameters.reserve(signature->size());
+            for (const auto& parameter : *signature) {
+                const auto* concreteType = std::get_if<const Type*>(&parameter.type);
+                parameters.push_back(defParameter(
+                    parameter.name, concreteType != nullptr ? *concreteType : nullptr, parameter.doc
+                ));
+            }
+            ArgumentList arguments;
+            if (!parseCallableArguments(context, function, tokens, parameters, &arguments)) {
+                return nullptr;
+            }
+            return std::make_unique<ConstructorExpression>(
+                parent, line, column, constructorName, nullptr, std::move(arguments)
+            );
+        }
+        const auto* type = parseTypeName(context, tokens, 0, constructorName);
+        if (type == nullptr) {
+            return nullptr;
+        }
+        constructorName = type->getTypeName();
+    } else if (!tokens->nextIdentifier(constructorName)) {
+        return nullptr;
+    }
+    const NativeConstructor* shape = nullptr;
+    const auto* objectType = runtime->getTypeByName(constructorName);
+    for (const auto* constructor : runtime->getConstructors(objectType)) {
+        if (shape == nullptr || constructor->getParameterCount() > shape->getParameterCount()) {
+            shape = constructor;
+        }
+    }
+    if (shape == nullptr) {
+        context->reportError("No registered constructor named '" + constructorName + "'", tokens);
+        return nullptr;
+    }
+
+    // The overload with the most parameters shapes the argument list; shorter overloads omit trailing arguments.
+    ArgumentList arguments;
+    if (!parseCallableArguments(context, function, tokens, *shape, &arguments, true)) {
+        return nullptr;
+    }
+    return std::make_unique<ConstructorExpression>(
+        parent, line, column, constructorName, objectType, std::move(arguments)
+    );
+}
+
 std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
                                                    const Expression* parent) {
     std::unique_ptr<Expression> expression;
 
-    if (tokens->is("(")) {
+    if (tokens->is(TokenType::Operator) && tokens->is("(")) {
         tokens->next();
         expression = parseExpression(context, function, tokens);
 
         if (expression == nullptr || !tokens->expect(")")) {
+            return nullptr;
+        }
+    } else if ((tokens->is(TokenType::Identifier) || tokens->is(TokenType::Keyword)) && tokens->is("new")) {
+        expression = parseNewExpression(context, function, tokens, parent);
+        if (expression == nullptr) {
             return nullptr;
         }
     } else {
@@ -680,7 +837,33 @@ std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, Scr
         }
     }
 
-    while (tokens->is(".")) {
+    while (tokens->is(TokenType::Operator) && (tokens->is(".") || tokens->is("["))) {
+        if (tokens->is("[")) {
+            const auto line = tokens->getLineIndex();
+            const auto column = tokens->getColumnIndex();
+            tokens->next();
+            if (tokens->is(TokenType::Operator) && tokens->is("]")) {
+                context->reportError("Indexer requires at least one index", tokens);
+                return nullptr;
+            }
+            std::vector<std::unique_ptr<Expression>> indexes;
+            while (!tokens->endOfLine() && (!tokens->is(TokenType::Operator) || !tokens->is("]"))) {
+                auto index = parseExpression(context, function, tokens);
+                if (index == nullptr) {
+                    return nullptr;
+                }
+                indexes.push_back(std::move(index));
+            }
+            if (!tokens->is(TokenType::Operator) || !tokens->is("]")) {
+                context->reportError("Expected ']' after index expressions", tokens);
+                return nullptr;
+            }
+            tokens->next();
+            expression = std::make_unique<IndexerExpression>(
+                parent, line, column, std::move(expression), std::move(indexes)
+            );
+            continue;
+        }
         tokens->next();
 
         NomadString memberPath;
@@ -694,8 +877,8 @@ std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, Scr
             const auto isLast = separator == NomadString::npos;
             auto memberName = memberPath.substr(start, isLast ? NomadString::npos : separator - start);
 
-            expression = createIntrinsicMemberExpression(context, function, tokens, parent, memberName, memberName,
-                                                         std::move(expression), IntrinsicMemberAccess::Read, isLast,
+            expression = createNativeMemberExpression(context, function, tokens, parent, memberName, memberName,
+                                                         std::move(expression), isLast,
                                                          tokens->getLineIndex(), tokens->getColumnIndex());
             if (expression == nullptr) {
                 return nullptr;
@@ -731,9 +914,7 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
         return IdentifierType::Statement;
     }
 
-    NativeFunctionDefinition nativeFunctionDefinition;
-
-    if (compiler->getRuntime()->getNativeFunctionDefinition(name, nativeFunctionDefinition)) {
+    if (compiler->getRuntime()->getNativeFunction(name) != nullptr) {
         return IdentifierType::NativeFunction;
     }
 
@@ -769,14 +950,9 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
 
     if (!isDirectIdentifier) {
         auto target = parseExpression(context, function, tokens);
-        auto* memberTarget = target == nullptr ? nullptr : target->asIntrinsicExpression();
-
-        if (memberTarget == nullptr) {
-            context->reportError("Assignment target must be an identifier or intrinsic property", tokens);
+        if (target == nullptr) {
             return nullptr;
         }
-
-        memberTarget->setAccess(IntrinsicMemberAccess::Write);
 
         if (!tokens->expect("=")) {
             return nullptr;
@@ -795,7 +971,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     IdentifierDefinition identifierDefinition;
     context->getCompiler()->getIdentifierDefinition(variableName, function, identifierDefinition);
 
-    const auto memberParts = splitIntrinsicMemberName(context->getRuntime(), variableName);
+    const auto memberParts = splitNativeMemberName(context->getRuntime(), variableName);
     if (identifierDefinition.identifierType == IdentifierType::Unknown && memberParts &&
         context->getCompiler()->getIdentifierType(memberParts->receiver, function) != IdentifierType::Unknown) {
         tokens->next();
@@ -810,9 +986,9 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
         }
 
         ArgumentList arguments;
-        auto target = std::make_unique<IntrinsicMemberExpression>(nullptr, line, column, variableName,
+        auto target = std::make_unique<NativeMemberExpression>(nullptr, line, column, variableName,
                                                                   memberParts->member, std::move(receiver),
-                                                                  std::move(arguments), IntrinsicMemberAccess::Write);
+                                                                  std::move(arguments));
 
         auto expression = parseExpression(context, function, tokens);
         if (expression == nullptr || !expectEndOfLine(context, function, tokens)) {
@@ -912,22 +1088,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
     // auto& identifier = token.textValue;
 
     if (token.type == TokenType::Identifier) {
-        // Is it a nativeFunction?
-        NativeFunctionDefinition nativeFunction;
-        if (context->getRuntime()->getNativeFunctionDefinition(token.textValue, nativeFunction)) {
-            if (nativeFunction.returnType->isVoid()) {
-                context->reportError(
-                    "Cannot use native function '" + token.textValue + "' in an expression because it does not return a value"
-                , tokens);
-
-                return nullptr;
-            }
-
-            return parseNativeFunctionCallExpression(context, function, tokens, parent, nativeFunction);
-        }
-
-        // Is it a function?
-        const auto functionId = context->getRuntime()->getFunctionId(token.textValue);
+        const auto functionId = context->getRuntime()->getCallableId(token.textValue);
 
         if (functionId != NOMAD_INVALID_ID) {
             return parseFunctionCallExpression(context, function, tokens, parent, token.textValue);
@@ -941,8 +1102,8 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
                                                              token.textValue);
         }
 
-        if (isIntrinsicMemberCandidate(context->getCompiler(), function, token.textValue)) {
-            const auto memberParts = splitIntrinsicMemberName(context->getRuntime(), token.textValue);
+        if (isNativeMemberCandidate(context->getCompiler(), function, token.textValue)) {
+            const auto memberParts = splitNativeMemberName(context->getRuntime(), token.textValue);
 
             if (memberParts) {
                 auto receiver = createQualifiedReceiverExpression(context, function, parent, memberParts->receiver,
@@ -951,9 +1112,9 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
                     return nullptr;
                 }
 
-                return createIntrinsicMemberExpression(
+                return createNativeMemberExpression(
                     context, function, tokens, parent, token.textValue, memberParts->member, std::move(receiver),
-                    IntrinsicMemberAccess::Read, true, tokens->getLineIndex(), tokens->getColumnIndex());
+                    true, tokens->getLineIndex(), tokens->getColumnIndex());
             }
         }
 
@@ -1001,95 +1162,19 @@ std::unique_ptr<Expression> parseFunctionCallExpression(
         functionName
     );
 
-    const auto functionId = context->getRuntime()->getFunctionId(functionName);
-    const auto targetFunction = context->getRuntime()->getFunction(functionId);
+    const auto functionId = context->getRuntime()->getCallableId(functionName);
+    const auto* targetFunction = context->getRuntime()->getFunction(functionId);
 
-    if (!parseFunctionArguments(context, function, tokens, targetFunction, functionCallExpression->getArguments())) {
+    if (targetFunction == nullptr) {
+        context->reportError("Unknown function '" + functionName + "'", tokens);
+        return nullptr;
+    }
+
+    if (!parseCallableArguments(context, function, tokens, *targetFunction, functionCallExpression->getArguments())) {
         return nullptr;
     }
 
     return functionCallExpression;
-}
-
-bool parseFunctionArguments(
-    CompilerContext* context,
-    ScriptFunction* function,
-    Tokenizer* tokens,
-    const ScriptFunction* targetFunction,
-    ArgumentList* arguments
-) {
-    const auto parameterCount = targetFunction->getParameterCount();
-
-    for (auto i = NomadIndex{0}; i < parameterCount; ++i) {
-        const auto parameterId = toNomadId(i);
-        const auto& parameterName = targetFunction->getParameterName(parameterId);
-        const auto parameterType = targetFunction->getParameterType(parameterId);
-
-        if (tokens->endOfLine()) {
-            context->reportError("Expected argument '" + parameterName + "'", tokens);
-
-            return false;
-        }
-
-        const auto argumentType = parameterType;
-
-        const auto callbackType = argumentType->asCallback();
-
-        if (callbackType) {
-            if (tokens->is("then") && i + NomadIndex{1} < parameterCount) {
-                context->reportError("`then` callback must be the last argument", tokens);
-
-                return false;
-            }
-
-            const auto functionId = parseCallbackParameter(context, function, tokens, callbackType);
-
-            if (functionId == NOMAD_INVALID_ID) {
-                return false;
-            }
-
-            auto funArgument = createCallbackArgument(
-                tokens->getLineIndex(),
-                tokens->getColumnIndex(),
-                argumentType,
-                functionId
-            );
-
-            arguments->add(std::move(funArgument));
-        } else {
-            // Functions cannot assign to their parameters, so borrowable strings are lent rather than copied.
-            auto argument = parseExpressionArgument(context, argumentType, function, tokens, ParameterAccess::ReadOnly);
-
-            if (argument == nullptr) {
-                return false;
-            }
-
-            arguments->add(std::move(argument));
-        }
-    }
-
-    return true;
-}
-
-std::unique_ptr<Expression> parseNativeFunctionCallExpression(
-    CompilerContext* context,
-    ScriptFunction* function,
-    Tokenizer* tokens,
-    const Expression* parent,
-    const NativeFunctionDefinition& nativeFunction
-) {
-    auto nativeFunctionExpression = std::make_unique<CallNativeFunctionExpression>(
-        parent,
-        tokens->getLineIndex(),
-        tokens->getColumnIndex(),
-        nativeFunction.name
-    );
-
-    if (!parseNativeFunctionArguments(context, function, tokens, nativeFunction, nativeFunctionExpression->getArguments())) {
-        return nullptr;
-    }
-
-    return nativeFunctionExpression;
 }
 
 // Returns false on error.
@@ -1149,17 +1234,32 @@ bool parseEventDispatch(CompilerContext* context, ScriptFunction* function, Toke
     return true;
 }
 
-bool parseNativeFunctionArguments(
+bool parseCallableArguments(
     CompilerContext* context,
     ScriptFunction* function,
     Tokenizer* tokens,
-    const NativeFunctionDefinition& nativeFunction,
-    ArgumentList* arguments
+    const Callable& callable,
+    ArgumentList* arguments,
+    const bool allowOmittedArguments
+) {
+    return parseCallableArguments(
+        context, function, tokens, callable.getParameters(), arguments, allowOmittedArguments
+    );
+}
+
+bool parseCallableArguments(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    const std::vector<Parameter>& parameters,
+    ArgumentList* arguments,
+    const bool allowOmittedArguments
 ) {
     const auto* runtime = context->getRuntime();
+    auto omitRemainingArguments = false;
 
-    for (NomadIndex i = 0; i < nativeFunction.parameters.size(); ++i) {
-        const auto& parameter = nativeFunction.parameters[i];
+    for (NomadIndex i = 0; i < parameters.size(); ++i) {
+        const auto& parameter = parameters[i];
 
         // Hidden source parameters are supplied by the compiler and consume no tokens.
         const auto isSourceParameter =
@@ -1167,8 +1267,16 @@ bool parseNativeFunctionArguments(
             parameter.type == runtime->getFunctionNameType() ||
             parameter.type == runtime->getLineNumberType();
 
-        if (!isSourceParameter && tokens->endOfLine()) {
-            context->reportError("Expected arguments for `" + parameter.name + ":" + parameter.type->getTypeName() + "`", tokens);
+        // Overloads with fewer parameters leave the trailing script-supplied arguments out.
+        if (allowOmittedArguments && !isSourceParameter &&
+            (omitRemainingArguments || !isArgumentStart(tokens))) {
+            omitRemainingArguments = true;
+            continue;
+        }
+
+        if (!isSourceParameter && (tokens->endOfLine() || (parameter.type == nullptr && !isArgumentStart(tokens)))) {
+            const auto typeName = parameter.type != nullptr ? ":" + parameter.type->getTypeName() : "";
+            context->reportError("Expected arguments for `" + parameter.name + typeName + "`", tokens);
 
             return false;
         }
@@ -1264,8 +1372,8 @@ bool parseNativeFunctionArguments(
 
             arguments->add(std::move(eventCallbackArgument));
 
-        } else if (const auto callbackType = argumentType->asCallback(); callbackType != nullptr) {
-            if (tokens->is("then") && i + 1 < nativeFunction.parameters.size()) {
+        } else if (const auto callbackType = argumentType != nullptr ? argumentType->asCallback() : nullptr; callbackType != nullptr) {
+            if (tokens->is("then") && i + 1 < parameters.size()) {
                 context->reportError("`then` callback must be the last argument", tokens);
 
                 return false;
@@ -1311,8 +1419,7 @@ std::unique_ptr<Argument> parseExpressionArgument(
     CompilerContext* context,
     const Type* argumentType,
     ScriptFunction* function,
-    Tokenizer* tokens,
-    const ParameterAccess parameterAccess
+    Tokenizer* tokens
 ) {
     auto expression = parseExpression(context, function, tokens);
 
@@ -1324,8 +1431,7 @@ std::unique_ptr<Argument> parseExpressionArgument(
         tokens->getLineIndex(),
         tokens->getColumnIndex(),
         argumentType,
-        std::move(expression),
-        parameterAccess
+        std::move(expression)
     );
 }
 

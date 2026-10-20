@@ -7,7 +7,7 @@
 
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <nomad/system/Path.hpp>
@@ -99,7 +99,7 @@ void validateEntryFunction(
     }
 
     const auto functionId = runtime->getFunctionId(entryFunction);
-    const auto* function = runtime->getFunction(functionId);
+    const auto* function = runtime->getScriptFunction(functionId);
     NomadString message;
 
     if (function == nullptr) {
@@ -144,7 +144,7 @@ InstructionDumpResult dumpInstructions(
 
     if (functionName) {
         const auto functionId = artifacts.runtime->getFunctionId(*functionName);
-        const auto* function = artifacts.runtime->getFunction(functionId);
+        const auto* function = artifacts.runtime->getScriptFunction(functionId);
 
         if (function == nullptr) {
             result.compilation.diagnostics.push_back(Diagnostic{

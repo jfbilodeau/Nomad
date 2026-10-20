@@ -14,19 +14,19 @@
 
 using namespace nomad;
 
-BOOST_AUTO_TEST_CASE(bare_runtime_has_core_string_intrinsics_without_standard_native_functions)
+BOOST_AUTO_TEST_CASE(bare_runtime_has_core_string_natives_without_standard_native_functions)
 {
     Runtime runtime;
 
     for (const auto* name : {"toFloat", "toInt", "log.info", "math.floor"}) {
         BOOST_TEST_CONTEXT(name) {
             BOOST_TEST(runtime.getNativeFunctionId(name) == NOMAD_INVALID_ID);
-            BOOST_TEST(!runtime.getCallableId(name).isValid());
+            BOOST_TEST(runtime.getCallableId(name) == NOMAD_INVALID_ID);
         }
     }
-    BOOST_TEST(runtime.getIntrinsicMemberId(runtime.getStringType(), "length") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getIntrinsicMemberId(runtime.getStringType(), "toUpper") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getIntrinsicMemberId(runtime.getStringType(), "contains") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getNativeMemberId(runtime.getStringType(), "length") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getNativeMemberId(runtime.getStringType(), "toUpper") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getNativeMemberId(runtime.getStringType(), "contains") != NOMAD_INVALID_ID);
 }
 
 BOOST_AUTO_TEST_CASE(runtime_owns_registered_functions_and_exposes_observer_views)
@@ -34,14 +34,14 @@ BOOST_AUTO_TEST_CASE(runtime_owns_registered_functions_and_exposes_observer_view
     {
         Runtime runtime;
 
-        const auto firstFunctionId = runtime.registerFunction("first", "first.nomad", "");
-        const auto secondFunctionId = runtime.registerFunction("second", "second.nomad", "");
+        const auto firstFunctionId = runtime.registerScriptFunction("first", "first.nomad", "");
+        const auto secondFunctionId = runtime.registerScriptFunction("second", "second.nomad", "");
 
-        BOOST_TEST(firstFunctionId == 0);
-        BOOST_TEST(secondFunctionId == 1);
+        BOOST_TEST(firstFunctionId != NOMAD_INVALID_ID);
+        BOOST_TEST(secondFunctionId == firstFunctionId + 1);
         BOOST_TEST(runtime.getFunctionCount() == 2U);
-        BOOST_TEST(runtime.getFunction(firstFunctionId) != nullptr);
-        BOOST_TEST(runtime.getFunction(secondFunctionId) != nullptr);
+        BOOST_TEST(runtime.getScriptFunction(firstFunctionId) != nullptr);
+        BOOST_TEST(runtime.getScriptFunction(secondFunctionId) != nullptr);
         BOOST_TEST(runtime.getFunctionId("first") == firstFunctionId);
         BOOST_TEST(runtime.getFunctionName(secondFunctionId).value() == "second");
 
@@ -49,8 +49,8 @@ BOOST_AUTO_TEST_CASE(runtime_owns_registered_functions_and_exposes_observer_view
         runtime.getFunctions(functions);
 
         BOOST_TEST(functions.size() == 2U);
-        BOOST_TEST(functions[0] == runtime.getFunction(firstFunctionId));
-        BOOST_TEST(functions[1] == runtime.getFunction(secondFunctionId));
+        BOOST_TEST(functions[0] == runtime.getScriptFunction(firstFunctionId));
+        BOOST_TEST(functions[1] == runtime.getScriptFunction(secondFunctionId));
     }
 }
 
@@ -58,14 +58,14 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_and_duplicate_function_ids)
 {
     Runtime runtime;
 
-    const auto functionId = runtime.registerFunction("function", "function.nomad", "");
+    const auto functionId = runtime.registerScriptFunction("function", "function.nomad", "");
 
-    BOOST_TEST(functionId == 0);
-    BOOST_TEST(runtime.registerFunction("function", "duplicate.nomad", "") == NOMAD_INVALID_ID);
+    BOOST_TEST(functionId != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerScriptFunction("function", "duplicate.nomad", "") == NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getFunctionCount() == 1U);
-    BOOST_TEST(runtime.getFunction(NOMAD_INVALID_ID) == nullptr);
-    BOOST_TEST(runtime.getFunction(-2) == nullptr);
-    BOOST_TEST(runtime.getFunction(1) == nullptr);
+    BOOST_TEST(runtime.getScriptFunction(NOMAD_INVALID_ID) == nullptr);
+    BOOST_TEST(runtime.getScriptFunction(-2) == nullptr);
+    BOOST_TEST(runtime.getScriptFunction(1) == nullptr);
     BOOST_TEST(!runtime.getFunctionName(NOMAD_INVALID_ID).has_value());
     BOOST_TEST(!runtime.getFunctionName(-2).has_value());
     BOOST_TEST(!runtime.getFunctionName(1).has_value());
@@ -74,18 +74,18 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_and_duplicate_function_ids)
 BOOST_AUTO_TEST_CASE(runtime_source_lookup_ignores_unknown_ranges_and_prefers_inner_functions)
 {
     Runtime runtime;
-    const auto outerId = runtime.registerFunction("outer", "source.nomad", "");
-    const auto innerId = runtime.registerFunction("inner", "source.nomad", "");
-    const auto unparsedId = runtime.registerFunction("unparsed", "source.nomad", "");
-    const auto* unparsed = runtime.getFunction(unparsedId);
+    const auto outerId = runtime.registerScriptFunction("outer", "source.nomad", "");
+    const auto innerId = runtime.registerScriptFunction("inner", "source.nomad", "");
+    const auto unparsedId = runtime.registerScriptFunction("unparsed", "source.nomad", "");
+    const auto* unparsed = runtime.getScriptFunction(unparsedId);
 
     BOOST_TEST(unparsed->getSourceStartLine() == NOMAD_INVALID_INDEX);
     BOOST_TEST(unparsed->getSourceEndLine() == NOMAD_INVALID_INDEX);
     BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 1) == nullptr);
     BOOST_TEST(runtime.getFunctionAtLine("source.nomad", NOMAD_INVALID_INDEX) == nullptr);
 
-    auto* outer = runtime.getFunction(outerId);
-    auto* inner = runtime.getFunction(innerId);
+    auto* outer = runtime.getScriptFunction(outerId);
+    auto* inner = runtime.getScriptFunction(innerId);
     outer->setSourceLineRange(1, 4);
     inner->setSourceLineRange(2, 3);
     inner->setParentId(outerId);
@@ -261,7 +261,7 @@ BOOST_AUTO_TEST_CASE(documentation_renders_function_parameters_as_a_markdown_lis
         "game.loadFont",
         [](VirtualMachine*) {},
         {
-            defParameter("fontName", runtime.getStringRefType(), NomadParamDoc("Name of the font to load.")),
+            defParameter("fontName", runtime.getStringType(), NomadParamDoc("Name of the font to load.")),
             defParameter("fontSize", runtime.getIntegerType(), NomadParamDoc("Size of the font in point to load.")),
         },
         fontType,

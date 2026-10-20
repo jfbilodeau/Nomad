@@ -66,7 +66,7 @@ standard error. `--help`/`-h` prints usage and `--version`/`-v` prints the versi
 unknown arguments are rejected.
 
 The server supports compiler diagnostics, API and project-function completion,
-local variable and parameter suggestions, intrinsic member completion, and hover
+local variable and parameter suggestions, object member completion, and hover
 documentation. Suggestions and diagnostics reflect unsaved editor changes and
 use the nearest project configuration. Scripts are never executed. See the
 [VS Code extension guide](https://github.com/jfbilodeau/Nomad/blob/main/editor/README.md)

@@ -7,14 +7,53 @@
 #include <nomad/system/Integer.hpp>
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/InterpreterContext.hpp>
+#include <nomad/script/NomadStringObject.hpp>
 
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <cassert>
 
 namespace nomad {
+
+namespace {
+
+void callNativeIndexer(VirtualMachine* machine, const bool write) {
+    const auto indexerId = machine->nextId();
+    NativeIndexerDefinition definition;
+    if (!machine->getRuntime()->getNativeIndexerDefinition(indexerId, definition)) {
+        machine->fault("Invalid native indexer");
+    }
+
+    const auto argumentCount = definition.indexTypes.size() + (write ? 1 : 0);
+    const auto receiver = machine->peekStack(argumentCount);
+    const auto releaseArguments = [&]() {
+        for (const auto* type : definition.indexTypes) {
+            auto value = machine->popValue();
+            type->freeValue(value);
+        }
+        if (write) {
+            auto value = machine->popValue();
+            definition.valueType->freeValue(value);
+        }
+        auto savedReceiver = machine->popValue();
+        definition.objectType->freeValue(savedReceiver);
+    };
+
+    try {
+        machine->callNativeIndexer(indexerId, receiver, write);
+    } catch (...) {
+        releaseArguments();
+        if (!write) {
+            definition.valueType->freeValue(machine->getResult());
+        }
+        throw;
+    }
+    releaseArguments();
+}
+
+} // namespace
 
 void op_nop(VirtualMachine* /*interpreter*/) {
     // Do nothing...
@@ -109,21 +148,21 @@ void op_copy_r_to_i(VirtualMachine* interpreter) {
     interpreter->setIntermediate(interpreter->getResult());
 }
 
-void op_copy_string_r_to_i(VirtualMachine* interpreter) {
-    interpreter->setStringIntermediate(interpreter->getStringResult());
+void op_object_copy_r_to_i(VirtualMachine* interpreter) {
+    interpreter->getIntermediate().copyObjectValue(interpreter->getResult());
 }
 
-void op_string_move_r_to_i(VirtualMachine* interpreter) {
-    interpreter->moveStringResultToIntermediate();
+void op_object_move_r_to_i(VirtualMachine* interpreter) {
+    interpreter->moveObjectResultToIntermediate();
 }
 
-void op_string_move_i_to_r(VirtualMachine* interpreter) {
-    interpreter->pushStringIntermediate();
-    interpreter->popStringResult();
+void op_object_move_i_to_r(VirtualMachine* interpreter) {
+    interpreter->pushObjectIntermediate();
+    interpreter->popObjectResult();
 }
 
-void op_string_move_r_to_stack(VirtualMachine* interpreter) {
-    interpreter->moveStringResultToStack();
+void op_object_move_r_to_stack(VirtualMachine* interpreter) {
+    interpreter->moveObjectResultToStack();
 }
 
 void op_call_function(VirtualMachine* interpreter) {
@@ -146,30 +185,29 @@ void op_call_native_function(VirtualMachine* interpreter) {
     interpreter->callNativeFunction(nativeFunctionId);
 }
 
-void op_intrinsic_property_get(VirtualMachine* interpreter) {
+void op_native_property_get(VirtualMachine* interpreter) {
     const auto memberId = interpreter->nextId();
-    IntrinsicPropertyDefinition definition;
-
-    if (!interpreter->getRuntime()->getIntrinsicPropertyDefinition(memberId, definition) || !definition.getFn) {
-        interpreter->fault("Invalid intrinsic property getter");
-    }
-
-    definition.getFn(interpreter, interpreter->getIntermediate(), interpreter->getResult());
+    interpreter->getNativeProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
 }
 
-void op_intrinsic_property_set(VirtualMachine* interpreter) {
+void op_native_property_set(VirtualMachine* interpreter) {
     const auto memberId = interpreter->nextId();
-    IntrinsicPropertyDefinition definition;
-
-    if (!interpreter->getRuntime()->getIntrinsicPropertyDefinition(memberId, definition) || !definition.setFn) {
-        interpreter->fault("Invalid intrinsic property setter");
-    }
-
-    definition.setFn(interpreter, interpreter->getIntermediate(), interpreter->getResult());
+    interpreter->setNativeProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
 }
 
-void op_intrinsic_method_call(VirtualMachine* interpreter) {
-    interpreter->callIntrinsicMethod(interpreter->nextId());
+void op_native_index_get(VirtualMachine* interpreter) {
+    callNativeIndexer(interpreter, false);
+}
+
+void op_native_index_set(VirtualMachine* interpreter) {
+    callNativeIndexer(interpreter, true);
+}
+
+void op_native_method_call(VirtualMachine* interpreter) {
+    const auto memberId = interpreter->nextId();
+    const auto receiverOffset = interpreter->nextIndex();
+    interpreter->setIntermediate(interpreter->peekStack(receiverOffset));
+    interpreter->callNativeMethod(memberId, interpreter->getIntermediate());
 }
 
 void op_parameter_load_r(VirtualMachine* interpreter) {
@@ -196,30 +234,22 @@ void op_parameter_push(VirtualMachine* interpreter) {
     interpreter->pushValue(value);
 }
 
-void op_string_parameter_load_r(VirtualMachine* interpreter) {
+void op_object_parameter_load_r(VirtualMachine* interpreter) {
     const auto parameterId = interpreter->nextId();
 
-    const auto value = interpreter->getStringParameter(parameterId);
-
-    interpreter->setStringResult(value);
+    interpreter->getResult().copyObjectValue(interpreter->getParameter(parameterId));
 }
 
-void op_string_parameter_load_i(VirtualMachine* interpreter) {
+void op_object_parameter_load_i(VirtualMachine* interpreter) {
     const auto parameterId = interpreter->nextId();
 
-    const auto value = interpreter->getStringParameter(parameterId);
-
-    interpreter->setStringIntermediate(value);
+    interpreter->getIntermediate().copyObjectValue(interpreter->getParameter(parameterId));
 }
 
-void op_string_parameter_push(VirtualMachine* interpreter) {
+void op_object_parameter_push(VirtualMachine* interpreter) {
     const auto parameterId = interpreter->nextId();
 
-    const auto& value = interpreter->getParameter(parameterId);
-
-    const auto string = value.getStringValue();
-
-    interpreter->pushString(string);
+    interpreter->pushObjectValue(interpreter->getParameter(parameterId));
 }
 
 void op_function_variable_set(VirtualMachine* interpreter) {
@@ -238,12 +268,13 @@ void op_function_variable_get_r(VirtualMachine* interpreter) {
     interpreter->setResult(value);
 }
 
-void op_function_variable_string_get_r(VirtualMachine* interpreter) {
+void op_function_variable_object_get_r(VirtualMachine* interpreter) {
     const auto variableId = interpreter->nextId();
 
-    const auto value = interpreter->getFunctionStringVariableValue(variableId);
+    RuntimeValue value;
+    interpreter->getFunctionVariableValue(variableId, value);
 
-    interpreter->setStringResult(value);
+    interpreter->getResult().copyObjectValue(value);
 }
 
 void op_function_variable_get_i(VirtualMachine* interpreter) {
@@ -255,12 +286,13 @@ void op_function_variable_get_i(VirtualMachine* interpreter) {
     interpreter->setIntermediate(value);
 }
 
-void op_function_variable_string_get_i(VirtualMachine* interpreter) {
+void op_function_variable_object_get_i(VirtualMachine* interpreter) {
     const auto variableId = interpreter->nextId();
 
-    const auto value = interpreter->getFunctionStringVariableValue(variableId);
+    RuntimeValue value;
+    interpreter->getFunctionVariableValue(variableId, value);
 
-    interpreter->setStringIntermediate(value);
+    interpreter->getIntermediate().copyObjectValue(value);
 }
 
 void op_function_variable_push(VirtualMachine* interpreter) {
@@ -272,12 +304,13 @@ void op_function_variable_push(VirtualMachine* interpreter) {
     interpreter->pushValue(value);
 }
 
-void op_function_variable_string_push(VirtualMachine* interpreter) {
+void op_function_variable_object_push(VirtualMachine* interpreter) {
     const auto variableId = interpreter->nextId();
 
-    const auto value = interpreter->getFunctionStringVariableValue(variableId);
+    RuntimeValue value;
+    interpreter->getFunctionVariableValue(variableId, value);
 
-    interpreter->pushString(value);
+    interpreter->pushObjectValue(value);
 }
 
 void op_dynamic_variable_set(VirtualMachine* interpreter) {
@@ -286,29 +319,12 @@ void op_dynamic_variable_set(VirtualMachine* interpreter) {
     interpreter->getRuntime()->setDynamicVariable(interpreter, variableId, interpreter->getResult());
 }
 
-void op_dynamic_variable_string_set(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
-
-    interpreter->getRuntime()->setStringDynamicVariable(interpreter, variableId, interpreter->getResult());
-}
-
 void op_dynamic_variable_get_r(VirtualMachine* interpreter) {
     const auto variableId = interpreter->nextId();
 
     RuntimeValue value;
 
     interpreter->getRuntime()->getDynamicVariableValue(interpreter, variableId, value);
-
-    interpreter->setResult(value);
-}
-
-void op_dynamic_variable_string_get_r(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
-
-    // Dynamic getters hand over an owned string, which is moved into the register.
-    RuntimeValue value;
-
-    interpreter->getRuntime()->getStringDynamicVariableValue(interpreter, variableId, value);
 
     interpreter->setResult(value);
 }
@@ -323,17 +339,6 @@ void op_dynamic_variable_get_i(VirtualMachine* interpreter) {
     interpreter->setIntermediate(value);
 }
 
-void op_dynamic_variable_string_get_i(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
-
-    // Dynamic getters hand over an owned string, which is moved into the register.
-    RuntimeValue value;
-
-    interpreter->getRuntime()->getStringDynamicVariableValue(interpreter, variableId, value);
-
-    interpreter->setIntermediate(value);
-}
-
 void op_dynamic_variable_push(VirtualMachine* interpreter) {
     const auto variableId = interpreter->nextId();
 
@@ -344,27 +349,10 @@ void op_dynamic_variable_push(VirtualMachine* interpreter) {
     interpreter->pushValue(value);
 }
 
-void op_dynamic_variable_string_push(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
-
-    // Dynamic getters hand over an owned string, which is moved onto the stack.
-    RuntimeValue value;
-
-    interpreter->getRuntime()->getStringDynamicVariableValue(interpreter, variableId, value);
-
-    interpreter->pushValue(value);
-}
-
 void op_context_variable_set(VirtualMachine* interpreter) {
     const auto variableId = interpreter->nextId();
 
     interpreter->getRuntime()->setContextVariableValue(variableId, interpreter->getResult());
-}
-
-void op_context_variable_string_set(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
-
-    interpreter->getRuntime()->setStringContextVariableValue(variableId, interpreter->getResult().getStringValue());
 }
 
 void op_context_variable_get_r(VirtualMachine* interpreter) {
@@ -377,15 +365,14 @@ void op_context_variable_get_r(VirtualMachine* interpreter) {
     interpreter->setResult(value);
 }
 
-void op_context_variable_string_get_r(VirtualMachine* interpreter) {
+void op_context_variable_object_get_r(VirtualMachine* interpreter) {
     const auto variableId = interpreter->nextId();
 
-    // The variable context shares its string, so the register receives a copy.
     RuntimeValue value;
 
     interpreter->getRuntime()->getContextVariableValue(variableId, value);
 
-    interpreter->setStringResult(value.getStringValue());
+    interpreter->getResult().copyObjectValue(value);
 }
 
 void op_context_variable_get_i(VirtualMachine* interpreter) {
@@ -398,15 +385,14 @@ void op_context_variable_get_i(VirtualMachine* interpreter) {
     interpreter->setIntermediate(value);
 }
 
-void op_context_variable_string_get_i(VirtualMachine* interpreter) {
+void op_context_variable_object_get_i(VirtualMachine* interpreter) {
     const auto variableId = interpreter->nextId();
 
-    // The variable context shares its string, so the register receives a copy.
     RuntimeValue value;
 
     interpreter->getRuntime()->getContextVariableValue(variableId, value);
 
-    interpreter->setStringIntermediate(value.getStringValue());
+    interpreter->getIntermediate().copyObjectValue(value);
 }
 
 void op_context_variable_push(VirtualMachine* interpreter) {
@@ -419,15 +405,14 @@ void op_context_variable_push(VirtualMachine* interpreter) {
     interpreter->pushValue(value);
 }
 
-void op_context_variable_string_push(VirtualMachine* interpreter) {
+void op_context_variable_object_push(VirtualMachine* interpreter) {
     const auto variableId = interpreter->nextId();
 
-    // The variable context shares its string, so the stack receives a copy.
     RuntimeValue value;
 
     interpreter->getRuntime()->getContextVariableValue(variableId, value);
 
-    interpreter->pushString(value.getStringValue());
+    interpreter->pushObjectValue(value);
 }
 
 void op_boolean_load_false_r(VirtualMachine* interpreter) {
@@ -867,114 +852,124 @@ void op_string_init_r(VirtualMachine* interpreter) {
     interpreter->initStringResult();
 }
 
+void op_object_init_r(VirtualMachine* interpreter) {
+    interpreter->getResult().setObjectValue(nullptr);
+}
+
+void op_object_new(VirtualMachine* interpreter) {
+    const auto* constructor = interpreter->getRuntime()->getNativeConstructor(interpreter->nextId());
+    if (constructor == nullptr) {
+        interpreter->fault("Cannot construct object: invalid constructor");
+    }
+    const auto& parameters = constructor->getParameters();
+    // Arguments are pushed right to left like any other call; the compiler frees and pops them afterwards.
+    std::vector<RuntimeValue> arguments;
+    arguments.reserve(parameters.size());
+    for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
+        arguments.push_back(interpreter->peekStack(index));
+    }
+    NomadObject* object = nullptr;
+    try {
+        object = constructor->getFactory()(arguments);
+        if (object == nullptr) {
+            interpreter->fault("Object factory for '" + constructor->getName() + "' returned null");
+        }
+    } catch (...) {
+        // The compiler-emitted cleanup is skipped on failure, so release the arguments here.
+        for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
+            parameters[index].type->freeValue(arguments[index]);
+        }
+        throw;
+    }
+    interpreter->getResult().setObjectValue(object);
+}
+
+void op_object_init_i(VirtualMachine* interpreter) {
+    interpreter->getIntermediate().setObjectValue(nullptr);
+}
+
 void op_string_init_i(VirtualMachine* interpreter) {
     interpreter->initStringIntermediate();
 }
 
-void op_string_free_r(VirtualMachine* interpreter) {
-    interpreter->freeStringResult();
+void op_object_free_r(VirtualMachine* interpreter) {
+    interpreter->freeObjectResult();
 }
 
-void op_string_free_i(VirtualMachine* interpreter) {
-    interpreter->freeStringIntermediate();
+void op_object_free_i(VirtualMachine* interpreter) {
+    interpreter->freeObjectIntermediate();
 }
 
-void op_string_free_variable(VirtualMachine* interpreter) {
-    auto string_index = interpreter->nextIndex();
+void op_object_free_variable(VirtualMachine* interpreter) {
+    auto variableIndex = interpreter->nextIndex();
 
-    interpreter->freeStringVariable(string_index);
+    interpreter->freeObjectVariable(variableIndex);
 }
 
-void op_string_free_stack(VirtualMachine* interpreter) {
+void op_object_free_stack(VirtualMachine* interpreter) {
     const auto index = interpreter->nextIndex();
 
-    interpreter->freeStringStack(index);
-}
-void op_string_push_r(VirtualMachine* interpreter) {
-    interpreter->pushStringResult();
+    interpreter->freeObjectStack(index);
 }
 
-void op_string_push_i(VirtualMachine* interpreter) {
-    interpreter->pushStringIntermediate();
+void op_object_push_r(VirtualMachine* interpreter) {
+    interpreter->pushObjectResult();
+}
+
+void op_object_push_i(VirtualMachine* interpreter) {
+    interpreter->pushObjectIntermediate();
 }
 
 void op_string_push_n(VirtualMachine* interpreter) {
     const auto stringId = interpreter->nextId();
 
-    const auto& string = interpreter->getRuntime()->getString(stringId);
+    auto* string = interpreter->getRuntime()->getString(stringId);
+    string->addRef();
 
     interpreter->pushString(string);
 }
 
-void op_string_pop_r(VirtualMachine* interpreter) {
-    interpreter->popStringResult();
+void op_object_pop_r(VirtualMachine* interpreter) {
+    interpreter->popObjectResult();
 }
 
-void op_string_pop_i(VirtualMachine* interpreter) {
-    interpreter->popStringIntermediate();
+void op_object_pop_i(VirtualMachine* interpreter) {
+    interpreter->popObjectIntermediate();
 }
 
 void op_string_load_r(VirtualMachine* interpreter) {
-    const auto string_id = interpreter->nextId();
+    const auto stringId = interpreter->nextId();
 
-    auto& string = interpreter->getRuntime()->getString(string_id);
+    auto* string = interpreter->getRuntime()->getString(stringId);
+    string->addRef();
 
     interpreter->setStringResult(string);
 }
 
 void op_string_load_i(VirtualMachine* interpreter) {
-    auto stringId = interpreter->nextId();
+    const auto stringId = interpreter->nextId();
 
-    auto string = interpreter->getRuntime()->getString(stringId);
+    auto* string = interpreter->getRuntime()->getString(stringId);
+    string->addRef();
 
     interpreter->setStringIntermediate(string);
 }
 
-// String comparisons borrow both operands: the compiler loads `$stringref` pointers into `r` and `i` (or frees owned
-// temporaries itself), so nothing is released here.
+// String comparisons release both operands.
 void op_string_equal(VirtualMachine* interpreter) {
-    const auto result = stringEqualTo(interpreter->getResult().getStringValue(), interpreter->getIntermediate().getStringValue());
+    const auto result = interpreter->getStringResult()->getView() == interpreter->getStringIntermediate()->getView();
 
+    interpreter->freeObjectResult();
+    interpreter->freeObjectIntermediate();
     interpreter->setBooleanResult(result);
 }
 
 void op_string_not_equal(VirtualMachine* interpreter) {
-    const auto result = !stringEqualTo(interpreter->getResult().getStringValue(), interpreter->getIntermediate().getStringValue());
+    const auto result = interpreter->getStringResult()->getView() != interpreter->getStringIntermediate()->getView();
 
+    interpreter->freeObjectResult();
+    interpreter->freeObjectIntermediate();
     interpreter->setBooleanResult(result);
-}
-
-void op_stringref_load_r(VirtualMachine* interpreter) {
-    const auto stringId = interpreter->nextId();
-
-    interpreter->setStringRefResult(interpreter->getRuntime()->getString(stringId).c_str());
-}
-
-void op_stringref_load_i(VirtualMachine* interpreter) {
-    const auto stringId = interpreter->nextId();
-
-    interpreter->setStringRefIntermediate(interpreter->getRuntime()->getString(stringId).c_str());
-}
-
-void op_stringref_push(VirtualMachine* interpreter) {
-    const auto stringId = interpreter->nextId();
-
-    RuntimeValue reference;
-    reference.setStringRefValue(interpreter->getRuntime()->getString(stringId).c_str());
-
-    interpreter->pushValue(reference);
-}
-
-void op_stringref_peek_r(VirtualMachine* interpreter) {
-    const auto offset = interpreter->nextIndex();
-
-    interpreter->setResult(interpreter->peekStack(offset));
-}
-
-void op_stringref_peek_i(VirtualMachine* interpreter) {
-    const auto offset = interpreter->nextIndex();
-
-    interpreter->setIntermediate(interpreter->peekStack(offset));
 }
 
 void op_format_string_execute(VirtualMachine* interpreter) {
@@ -996,14 +991,13 @@ void op_dynamic_format_execute(VirtualMachine* machine) {
         machine->fault("Dynamic formatting requires an active script function");
     }
 
-    const auto* type = machine->getRuntime()->getStringType();
-    const TypedValue operand(type, machine->getResult());
-
-    type->freeValue(machine->getResult());
+    auto* formatText = machine->getStringResult();
     machine->setResult(RuntimeValue{});
     InterpreterContext context(*machine, *function);
 
-    const auto result = formatDynamicString(operand.getValue().getStringValue(), context, function->getPath(), line, column);
+    const auto result = formatDynamicString(formatText->getText(), context, function->getPath(), line, column);
+
+    formatText->releaseRef();
 
     machine->setStringResult(result.text);
 }
@@ -1036,11 +1030,11 @@ void op_assert(VirtualMachine* interpreter) {
 
     // Bitwise comparison
     if (!assertResult) {
-        auto& assertionMessage = interpreter->getRuntime()->getString(assertMessageId);
+        const auto* assertionMessage = interpreter->getRuntime()->getString(assertMessageId);
 
-        log::error(assertionMessage);
+        log::error(assertionMessage->getString());
 
-        interpreter->fault(assertionMessage);
+        interpreter->fault(assertionMessage->getString());
     }
 }
 

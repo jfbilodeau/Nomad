@@ -44,16 +44,6 @@ private:
     AssignmentStatement* m_assignmentNode;
 };
 
-class FunctionDefinition {
-public:
-    FunctionDefinition(ScriptFunction* function);
-
-
-
-private:
-    ScriptFunction* m_function;
-};
-
 class Compiler {
 public:
     explicit Compiler(Runtime* runtime, std::vector<Instruction>& instructions);
@@ -108,7 +98,7 @@ public:
     // Identifier identification
     IdentifierType getIdentifierType(const NomadString& name, const ScriptFunction* function) const;
     void getIdentifierDefinition(const NomadString& name, const ScriptFunction* function, IdentifierDefinition& definition) const;
-    [[nodiscard]] bool getIntrinsicMemberConflict(const NomadString& identifier, const Type* type,
+    [[nodiscard]] bool getNativeMemberConflict(const NomadString& identifier, const Type* type,
                                                   const ScriptFunction* function,
                                                   NomadString& conflictingIdentifier) const;
 
@@ -128,8 +118,6 @@ public:
     NomadIndex addLoadFloatValue(NomadFloat value, ExpressionTarget target);
     NomadIndex addLoadIntegerValue(NomadInteger value, ExpressionTarget target);
     NomadIndex addLoadStringValue(const NomadString& value, ExpressionTarget target);
-    // Load a borrowed pointer to an interned copy of `value` (`$stringref`). Nothing needs to be freed.
-    NomadIndex addLoadStringReference(const NomadString& value, ExpressionTarget target);
     // Emit the opcode for `target` from `opCodes` followed by `operand`.
     NomadIndex addLoadTarget(const TargetOpCodes& opCodes, NomadId operand, ExpressionTarget target);
     NomadIndex addLoadFunctionVariable(NomadId variableId, const Type* type, ExpressionTarget target);
@@ -151,8 +139,9 @@ public:
 
     NomadIndex addFunctionCall(NomadId targetFunctionId, ScriptFunction* function, const ArgumentList* arguments);
     NomadIndex addNativeFunctionCall(NomadId nativeFunctionId, ScriptFunction* function, const ArgumentList* arguments);
-    NomadIndex addIntrinsicMethodCall(NomadId memberId, ScriptFunction* function, const ArgumentList* arguments);
-    // After a call returns, free the owned arguments still on the stack. Lent arguments (`$stringref`) are skipped.
+    NomadIndex addConstructorCall(NomadId constructorId, ScriptFunction* function, const ArgumentList* arguments);
+    NomadIndex addNativeMethodCall(NomadId memberId, ScriptFunction* function, const ArgumentList* arguments);
+    // After a call returns, free the arguments still on the stack.
     void addFreeArguments(const ArgumentList* arguments);
 
     void setOpCode(NomadIndex index, const NomadString& opCodeName);

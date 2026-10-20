@@ -24,14 +24,14 @@ class FunStatementNode;  // Defined in StatementParsers.hpp
 class InterpreterContext;
 class TypedValue;
 class Runtime;
+class ScriptFunction;
 class FunctionBuilder;
 
 // Forward declarations in file
-class CallNativeFunctionExpression;
 class CallStatementNode;
 class Expression;
 class IdentifierExpression;
-class IntrinsicMemberExpression;
+class NativeMemberExpression;
 class Statement;
 class StatementList;
 
@@ -100,16 +100,14 @@ public:
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptFunction* function);
     // The expression must have been resolved first.
     void compile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target);
-    // Can the expression lend a pointer to a string it does not own (`$stringref`) instead of producing a copy?
-    // Only literals/constants, function variables and parameters can: their storage outlives the borrowing operation.
-    [[nodiscard]] virtual bool canBorrow() const;
     [[nodiscard]] virtual bool isWritable() const;
     [[nodiscard]] virtual IdentifierExpression* asIdentifierExpression();
     [[nodiscard]] virtual const IdentifierExpression* asIdentifierExpression() const;
-    [[nodiscard]] virtual IntrinsicMemberExpression* asIntrinsicExpression();
-    [[nodiscard]] virtual const IntrinsicMemberExpression* asIntrinsicExpression() const;
-    // Load a borrowed string pointer into `target`. Only valid when `canBorrow()` is true.
-    void compileBorrowed(Compiler* compiler, ScriptFunction* function, ExpressionTarget target);
+    [[nodiscard]] virtual NativeMemberExpression* asNativeExpression();
+    [[nodiscard]] virtual const NativeMemberExpression* asNativeExpression() const;
+    [[nodiscard]] virtual bool resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function);
+    virtual void compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression);
+    virtual void evaluateAssignment(InterpreterContext& context, const Expression* expression) const;
     // The expression must have been resolved first.
     void evaluate(InterpreterContext& context) const;
 
@@ -134,7 +132,6 @@ protected:
 
     virtual void onResolve(CompilerContext* context, ScriptFunction* function) = 0;
     virtual void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) = 0;
-    virtual void onCompileBorrowed(Compiler* compiler, ScriptFunction* function, ExpressionTarget target);
     virtual void onEvaluate(InterpreterContext& context) const;
     [[nodiscard]]
     virtual const Statement* onGetStatement() const;

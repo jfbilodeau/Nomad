@@ -23,18 +23,18 @@ const NomadString& Type::getDocumentation() const {
     return m_documentation;
 }
 
-void Type::initValue(RuntimeValue& /*value*/) const {
-    // Default implementation does nothing
-}
-
 void Type::freeValue(RuntimeValue& /*value*/) const {
     // Default implementation does nothing
 }
 
 void Type::assignValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
     RuntimeValue copy;
-    initValue(copy);
-    copyValue(sourceValue, copy);
+    try {
+        copyValue(sourceValue, copy);
+    } catch (...) {
+        freeValue(copy);
+        throw;
+    }
 
     freeValue(destinationValue);
     destinationValue = copy;
@@ -46,10 +46,6 @@ const TypeOpCodes* Type::getTypeOpCodes() const {
 
 bool Type::needsFree() const {
     return m_typeOpCodes.freeResult != nullptr;
-}
-
-bool Type::isReference() const {
-    return false;
 }
 
 bool Type::acceptsArgument(const Type* argumentType) const {
@@ -115,6 +111,10 @@ NomadString getTypeDisplayName(const Type* type) {
 
 ///////////////////////////////////////////////////////////////////////////////
 // VoidType
+void VoidType::initValue(RuntimeValue& value) const {
+    value = RuntimeValue{};
+}
+
 NomadString VoidType::getTypeName() const {
     return VOID_TYPE_NAME;
 }
@@ -134,6 +134,10 @@ bool VoidType::isVoid() const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // IdType
+void IdType::initValue(RuntimeValue& value) const {
+    value.setIdValue(0);
+}
+
 NomadString IdType::getTypeName() const {
     return ID_TYPE_NAME;
 }
@@ -154,6 +158,10 @@ OpaqueIdType::OpaqueIdType(NomadString name, NomadString documentation):
 {
 }
 
+void OpaqueIdType::initValue(RuntimeValue& value) const {
+    value.setIdValue(0);
+}
+
 NomadString OpaqueIdType::getTypeName() const {
     return m_name;
 }
@@ -172,6 +180,10 @@ bool OpaqueIdType::sameType(const Type* other) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // FloatType
+void FloatType::initValue(RuntimeValue& value) const {
+    value.setFloatValue(0.0f);
+}
+
 NomadString FloatType::getTypeName() const {
     return FLOAT_TYPE_NAME;
 }
@@ -186,6 +198,10 @@ void FloatType::toString(const RuntimeValue& value, NomadString& string) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // IntegerType
+void IntegerType::initValue(RuntimeValue& value) const {
+    value.setIntegerValue(0);
+}
+
 NomadString IntegerType::getTypeName() const {
     return INTEGER_TYPE_NAME;
 }
@@ -204,6 +220,10 @@ EnumType::EnumType(NomadString name, std::vector<EnumValueDefinition> values):
     m_name(std::move(name)),
     m_values(std::move(values))
 {
+}
+
+void EnumType::initValue(RuntimeValue& value) const {
+    value.setIntegerValue(0);
 }
 
 NomadString EnumType::getTypeName() const {
@@ -260,6 +280,10 @@ bool EnumType::getNameByValue(const NomadInteger value, NomadString& name) const
 
 ///////////////////////////////////////////////////////////////////////////////
 // BooleanType
+void BooleanType::initValue(RuntimeValue& value) const {
+    value.setBooleanValue(NOMAD_FALSE);
+}
+
 NomadString BooleanType::getTypeName() const {
     return BOOLEAN_TYPE_NAME;
 }
@@ -276,57 +300,105 @@ void BooleanType::toString(const RuntimeValue& value, NomadString& string) const
 
 ///////////////////////////////////////////////////////////////////////////////
 // BaseStringType
-BaseStringType::BaseStringType() {
-    m_typeOpCodes.initResult = op_string_init_r;
-    m_typeOpCodes.initIntermediate = op_string_init_i;
+ObjectTypeBase::ObjectTypeBase(NomadString documentation):
+    Type(std::move(documentation))
+{
+    m_typeOpCodes.initResult = op_object_init_r;
+    m_typeOpCodes.initIntermediate = op_object_init_i;
 
-    m_typeOpCodes.freeResult = op_string_free_r;
-    m_typeOpCodes.freeIntermediate = op_string_free_i;
-    m_typeOpCodes.freeStack = op_string_free_stack;
-    m_typeOpCodes.freeFunctionVariable = op_string_free_variable;
+    m_typeOpCodes.freeResult = op_object_free_r;
+    m_typeOpCodes.freeIntermediate = op_object_free_i;
+    m_typeOpCodes.freeStack = op_object_free_stack;
+    m_typeOpCodes.freeFunctionVariable = op_object_free_variable;
 
     m_typeOpCodes.loadFunctionVariable = {
-        op_function_variable_string_get_r, op_function_variable_string_get_i, op_function_variable_string_push
+        op_function_variable_object_get_r, op_function_variable_object_get_i, op_function_variable_object_push
     };
     m_typeOpCodes.loadParameter = {
-        op_string_parameter_load_r, op_string_parameter_load_i, op_string_parameter_push
+        op_object_parameter_load_r, op_object_parameter_load_i, op_object_parameter_push
     };
+    // Dynamic getters hand over an owned object.
     m_typeOpCodes.loadDynamicVariable = {
-        op_dynamic_variable_string_get_r, op_dynamic_variable_string_get_i, op_dynamic_variable_string_push
+        op_dynamic_variable_get_r, op_dynamic_variable_get_i, op_dynamic_variable_push
     };
     m_typeOpCodes.loadContextVariable = {
-        op_context_variable_string_get_r, op_context_variable_string_get_i, op_context_variable_string_push
+        op_context_variable_object_get_r, op_context_variable_object_get_i, op_context_variable_object_push
     };
 
-    m_typeOpCodes.copyResultToStack = op_string_push_r;
-    m_typeOpCodes.moveResultToIntermediate = op_string_move_r_to_i;
-    m_typeOpCodes.moveIntermediateToResult = op_string_move_i_to_r;
-    m_typeOpCodes.moveResultToStack = op_string_move_r_to_stack;
-    m_typeOpCodes.pushIntermediate = op_string_push_i;
-    m_typeOpCodes.popResult = op_string_pop_r;
-    m_typeOpCodes.popIntermediate = op_string_pop_i;
+    m_typeOpCodes.copyResultToStack = op_object_push_r;
+    m_typeOpCodes.moveResultToIntermediate = op_object_move_r_to_i;
+    m_typeOpCodes.moveIntermediateToResult = op_object_move_i_to_r;
+    m_typeOpCodes.moveResultToStack = op_object_move_r_to_stack;
+    m_typeOpCodes.pushIntermediate = op_object_push_i;
+    m_typeOpCodes.popResult = op_object_pop_r;
+    m_typeOpCodes.popIntermediate = op_object_pop_i;
 
     // The compiler frees the previous value, then `r` is moved into the variable.
     m_typeOpCodes.setFunctionVariable = op_function_variable_set;
-    m_typeOpCodes.setDynamicVariable = op_dynamic_variable_string_set;
-    m_typeOpCodes.setContextVariable = op_context_variable_string_set;
+    m_typeOpCodes.setDynamicVariable = op_dynamic_variable_set;
+    m_typeOpCodes.setContextVariable = op_context_variable_set;
+}
+
+void ObjectTypeBase::initValue(RuntimeValue& value) const {
+    value.setObjectValue(nullptr);
+}
+
+void ObjectTypeBase::freeValue(RuntimeValue& value) const {
+    value.freeObjectValue();
+}
+
+void ObjectTypeBase::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
+    if (&sourceValue == &destinationValue) {
+        return;
+    }
+    RuntimeValue copy;
+    copy.copyObjectValue(sourceValue);
+    destinationValue.freeObjectValue();
+    destinationValue = copy;
+}
+
+bool ObjectTypeBase::sameType(const Type* other) const {
+    return this == other;
+}
+
+ObjectType::ObjectType(
+    NomadString name,
+    std::vector<const Type*> typeArguments,
+    NomadString documentation
+):
+    ObjectTypeBase(std::move(documentation)),
+    m_name(std::move(name)),
+    m_typeArguments(std::move(typeArguments))
+{
+}
+
+NomadString ObjectType::getTypeName() const {
+    return m_name;
+}
+
+const std::vector<const Type*>& ObjectType::getTypeArguments() const {
+    return m_typeArguments;
+}
+
+void ObjectType::toString(const RuntimeValue&, NomadString& string) const {
+    string = m_name;
+}
+
+BaseStringType::BaseStringType() {
+    m_typeOpCodes.initResult = op_string_init_r;
+    m_typeOpCodes.initIntermediate = op_string_init_i;
 }
 
 void BaseStringType::initValue(RuntimeValue& value) const {
-    value.setNullStringValue();
+    value.initStringValue();
 }
 
-void BaseStringType::freeValue(RuntimeValue& value) const {
-    value.freeStringValue();
-}
-
-void BaseStringType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.setStringValue(sourceValue.getStringValue());
+bool BaseStringType::sameType(const Type* other) const {
+    return Type::sameType(other);
 }
 
 void BaseStringType::toString(const RuntimeValue& value, NomadString& string) const {
-    const auto* text = value.getStringValue();
-    string = text == nullptr ? "" : text;
+    string = value.getStringValue();
 }
 
 bool BaseStringType::isString() const {
@@ -337,31 +409,6 @@ bool BaseStringType::isString() const {
 // StringType
 NomadString StringType::getTypeName() const {
     return STRING_TYPE_NAME;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// BaseStringRefType
-void BaseStringRefType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.setStringRefValue(sourceValue.getStringValue());
-}
-
-void BaseStringRefType::toString(const RuntimeValue& value, NomadString& string) const {
-    const auto* text = value.getStringValue();
-    string = text == nullptr ? "" : text;
-}
-
-bool BaseStringRefType::isReference() const {
-    return true;
-}
-
-bool BaseStringRefType::acceptsArgument(const Type* argumentType) const {
-    return sameType(argumentType) || (argumentType != nullptr && argumentType->isString());
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// StringRefType
-NomadString StringRefType::getTypeName() const {
-    return STRING_REF_TYPE_NAME;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -378,6 +425,10 @@ NomadString FunctionNameType::getTypeName() const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // FunctionLineNumberType
+void FunctionLineNumberType::initValue(RuntimeValue& value) const {
+    value.setIntegerValue(0);
+}
+
 NomadString FunctionLineNumberType::getTypeName() const {
     return FUNCTION_LINE_NUMBER_TYPE_NAME;
 }
@@ -407,6 +458,10 @@ FunctionType::FunctionType(const std::vector<const Type*>& parameter_types, cons
     }
 
     m_name += "):" + return_type->getTypeName();
+}
+
+void FunctionType::initValue(RuntimeValue& value) const {
+    value.setIdValue(0);
 }
 
 NomadString FunctionType::getTypeName() const {
@@ -468,6 +523,10 @@ EventType::EventType(const EventDefinition* declaration):
     m_event(*declaration)
 {}
 
+void EventType::initValue(RuntimeValue& value) const {
+    value.setIdValue(0);
+}
+
 NomadString EventType::getTypeName() const {
     return EVENT_TYPE_NAME;
 }
@@ -501,6 +560,10 @@ const NomadString & EventType::getEventName() const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // EventCallbackType
+void EventCallbackType::initValue(RuntimeValue& value) const {
+    value.setIdValue(0);
+}
+
 NomadString EventCallbackType::getTypeName() const {
     return EVENT_CALLBACK_TYPE_NAME;
 }
@@ -515,6 +578,10 @@ void EventCallbackType::toString(const RuntimeValue& value, NomadString& string)
 
 ///////////////////////////////////////////////////////////////////////////////
 // EventDispatchType
+void EventDispatchType::initValue(RuntimeValue& value) const {
+    value.setIdValue(0);
+}
+
 NomadString EventDispatchType::getTypeName() const {
     return EVENT_DISPATCH_TYPE_NAME;
 }

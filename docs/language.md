@@ -10,10 +10,11 @@ Nomad is case‑sensitive.
 
 - [Core characteristics](#core-characteristics)
 - [Quick start](#quick-start)
+- [Modules](#modules)
 - [Comments](#comments)
 - [Identifiers and naming rules](#identifiers-and-naming-rules)
 - [Data types and numeric ranges](#data-types-and-numeric-ranges)
-- [Object types and intrinsic members](#object-types-and-intrinsic-members)
+- [Object types and members](#object-types-and-members)
 - [Variables and variable kinds](#variables-and-variable-kinds)
 - [Constants and predefined values](#constants-and-predefined-values)
 - [Enumerations (`enum`)](#enums)
@@ -49,6 +50,23 @@ Nomad is case‑sensitive.
 2. The Nomad compiler is pointed at the compile root and scans all `*.nomad` scripts in the directory tree.
 3. Refer to section [Scripts: file layout and compilation model](#scripts-file-layout-and-compilation-model) for naming rules and collisions.
 4. The engine can execute a compiled function by name, for example the function compiled from `init.nomad`.
+
+---
+
+## Modules
+
+Modules extend the language runtime with types, functions, and other features.
+A project's module selection determines what functionality is loaded and exposed to scripts.
+The SDK includes:
+
+| Module | Purpose |
+| --- | --- |
+| `nomad-collections` | Typed collections. |
+| `nomad-system` | Logging, math, conversions, and application exit. |
+| `nomad-game` | Graphics, input, audio, scenes, entities, and game resources. |
+
+Core language features, including strings, do not require a module. See
+[Runtime modules](modules.md) for module selection, dependencies, and usage.
 
 ---
 
@@ -102,7 +120,29 @@ Nomad provides the following built‑in types:
 
 Scripts and the embedding engine may also define strongly typed enumerations. See [Enumerations](#enums).
 
-Types whose names start with `$` (for example `$stringref`) are internal to the runtime and cannot be named in Nomad code.
+Types whose names start with `$` (for example `$file`) are internal to the runtime and cannot be named in Nomad code.
+
+### Parameterized type annotations
+
+Registered parameterized types can be used in script parameters, function parameters,
+and event declarations. Type arguments go between `<` and `>`, separated by spaces,
+and may themselves be parameterized types:
+
+```nomad
+params values:List<int>
+
+fun process items:List<List<string>>
+    return items
+end
+
+event changed items:List<int>
+```
+
+Each type family defines its required number of type arguments and must be registered
+before use. Parameterized types are not restricted to any particular module.
+Different specializations, such as `List<int>` and `List<string>`, are distinct,
+incompatible types. Type arguments cannot be `void` or internal types. Type annotations
+must fit on one line; nesting is limited to 64 types.
 
 String literal notes:
 
@@ -116,9 +156,40 @@ Numeric literal notes:
 
 ---
 
-## Object types and intrinsic members
+## Object types and members
 
-Built-in and host-defined types may register intrinsic properties and methods. A value of that type exposes those members through postfix dot syntax:
+### Object construction
+
+Use `new` followed by a constructor name to create an object:
+
+```nomad
+first = new List<int>
+second = new List<int>
+alias = first
+nested = new List<List<string>>
+```
+
+Each `new` creates a distinct object. Assignment copies the reference, not the
+object: `alias` and `first` refer to the same instance. Reassigning `first` does not
+change `alias`. References are retained through function arguments and return
+values, and an object is released when its last reference is discarded.
+
+Available constructors depend on the selected modules.
+Constructor arguments follow the name and any type arguments, separated by spaces, using the same
+expression syntax as function arguments. Their number and types are checked at
+compile time; value restrictions are checked by the constructor at runtime. 
+Construction is also available in interpreter expressions.
+
+Constructors can be overloaded by argument count or types. The selected
+constructor determines the result's type; overloads may return different types.
+For example, `new Array<int> 3 4` returns an `Array2<int>`.
+When passing a construction to another call, parenthesize it to delimit its
+arguments: `(new Array<int> 3)` is a one-dimensional array, while
+`(new Array<int> 3 4)` is two-dimensional.
+
+### Properties and methods
+
+Values expose the properties and methods provided by their type through dot syntax:
 
 ```nomad
 name = "Nomad"
@@ -134,13 +205,72 @@ upperLength = name.toUpper.length
 literalLength = "Nomad".length
 ```
 
-Properties may be read-only, write-only or read/write. Methods may be non-mutating or mutating. A mutating member requires a writable variable receiver; it cannot be called on a literal, constant, parameter, function result or other temporary. Receiver mutation is transactional: the runtime commits the changed value only after the member callback completes successfully.
+Properties may be read-only, write-only or read/write. Object methods may change
+their instance even when its reference comes from a
+read-only parameter or a temporary; this does not reassign the reference.
 
-Nomad does not currently support script-defined object types or script-defined intrinsic members.
+Writable properties may also change an instance through a read-only parameter
+or temporary. Changes to an object's contents are immediate and are not rolled
+back if a property setter or method fails.
 
-The available members for each registered object type are listed in the generated [engine API](engine-api.md#intrinsic-members).
+Assigning a new reference to the parameter itself remains invalid.
 
-Intrinsic member names share the identifier namespace with dotted identifiers. Assigning a type to a variable is rejected if that type would introduce a qualified member name that already exists:
+Nomad does not currently support defining object types, properties, or methods in scripts.
+
+The available members for each object type are listed in the [engine API](engine-api.md#object-members).
+
+### Indexers
+
+Use `value[index]` to read an indexed value and `value[index] = expression`
+to assign through a writable indexer. Multiple indices use
+`value[index1 index2 ...]`, with whitespace separating expressions and no
+commas. The receiver's type determines the supported index counts, index
+and value types, access permissions, and bounds behavior. Reading a write-only
+indexer or assigning through a read-only indexer is a compile-time error.
+Indexers can be chained with other indexers, properties, and methods.
+
+Strings have a read-only `int` indexer. It returns one Unicode code point as a
+string, consistent with `length`, rather than one UTF-8 byte or a complete
+grapheme cluster. Negative indices, out-of-range indices, and invalid UTF-8 cause
+a runtime error. Assigning to a string index is a compile-time error.
+
+```nomad
+text = "Nomad"
+letter = text[1] # "o"
+# text[1] = "a" # Invalid: string indexing is read-only.
+```
+
+Indexing binds more tightly than binary operators. Parenthesize a compound
+receiver when needed: `("hello".toUpper)[0]`.
+The receiver is evaluated once first. Indices are then evaluated once,
+right-to-left, like function arguments. In an assignment, the right-hand side
+is the last parameter, so it is evaluated after the receiver and before the
+indices. Writable indexers can mutate an object through a parameter or
+temporary without rebinding that reference. Object-valued elements keep reference
+semantics. The number of indices must match an indexer registered for the
+receiver type. Parenthesize indices when needed to keep them
+separate: `value[0 (-1)]` supplies two indices, while `value[0 - 1]` supplies one
+subtraction expression.
+
+### Audio and fonts
+
+`game.audio.load` returns an `Audio` object, and `game.loadFont` returns a `Font`
+object. These types cannot be created with `new`.
+
+```nomad
+sound = game.audio.load "audio.hit"
+sound.volume = 0.5
+sound.play
+font = game.loadFont "fonts/main.ttf" 16
+this.setText font "Hello"
+```
+
+Assignments share the same instance. Keep a reference to an `Audio` object for as
+long as it should play: releasing its last reference stops playback and cancels
+its completion callback. A font remains alive while any variable or entity uses
+it. Its font resource is released when the last reference is gone.
+
+Member names share the identifier namespace with dotted identifiers. Assigning a type to a variable is rejected if that type would introduce a qualified member name that already exists:
 
 ```nomad
 name.length = 10
@@ -289,7 +419,7 @@ Assertions are compiled into the function and are intended for detecting invalid
 Format strings allow embedding values using `$"..."`. Simple `{name}` placeholders
 use direct lookup of variables, parameters, constants, or parameterless script
 functions. Other placeholders accept normal expressions, including operators,
-parentheses, native and script function calls with arguments, and intrinsic members.
+parentheses, native and script function calls with arguments, and object members.
 Each expression must return a non-void value. Placeholders are evaluated from left
 to right using current values; expression results are converted to text.
 
@@ -320,9 +450,9 @@ its parameters and captured variables. Quoted strings inside expressions may
 contain braces, and nested format strings are supported. Invalid expressions
 are compilation errors, not inline error text. Bare native function names still
 use the simple-placeholder rules; use a call with arguments or a parenthesized
-expression to select expression parsing. Intrinsic members such as `{name.toUpper}`
+expression to select expression parsing. Object members such as `{name.toUpper}`
 and `{name.length}` do not require parentheses. An exact qualified identifier takes
-precedence over intrinsic member access.
+precedence over object member access.
 
 ### Format string operator
 
@@ -629,19 +759,11 @@ Because a call is parsed before its overload is chosen, every overload of a name
 
 Overloading applies to native functions. Functions written in Nomad are not overloadable: one name means one function.
 
-### String lifetime (host integration)
+### String lifetime
 
-Script authors only ever see `string`. Internally, the runtime manages string memory with these rules:
-
-- **The compiler manages the lifetime of temporaries.** For strings held in registers, on the stack, in parameters, locals or return values, the compiler emits the instructions that create, copy, move and free them, using each type's `TypeOpCodes` (`getTypeOpCodes()`). The compiler does not own these values; it guarantees the generated code releases them. Discarded string results, including native function and function results used as statements, are freed.
-- **Containers own their values.** Context, dynamic and constant variables keep their own copy. Assigning a new string to one frees the previous value (`RuntimeValue::setStringValue`).
-- **Receivers copy what they keep.** A `const NomadChar*` handed to C++ code is only valid for the duration of the call. Code that needs the text later must copy it into a `NomadString`.
-- **`$stringref` is an internal type** for borrowed strings. Types whose names start with `$` are internal and cannot be named in Nomad code. Native functions may declare `$stringref` parameters (`runtime.getStringRefType()`). Any string argument is accepted, and literals and variables are passed by pointer without a copy. `getStringParameter(i)` reads it the same way as a `string` parameter. Documentation lists these parameters as `string`.
-- **Hidden source parameters** `$file` and `$function` are also borrowed references. They point into the runtime string table, which is filled during compilation and must not change while functions run. `$line` is an `int`.
-- **String arguments to Nomad functions are lent when safe.** Literals, the caller's local variables and the caller's parameters are passed by pointer, because the callee cannot modify them: parameters are read-only and locals belong to the caller's frame. Context and dynamic variables are always copied, because the callee could reassign them during the call. Any other argument (native function or function results, format strings) is an owned temporary that the caller frees after the call. Inside the callee, reading a parameter (to return it, store it or capture it in a closure) produces an owned copy.
-- **`Runtime::executeFunction` / `Game::executeFunction`:** overloads that take a `returnValue` give the caller an owned copy, which must be freed through the function's return type. Overloads without `returnValue` free the result.
-
-Limitation: if a function faults (the VM throws), strings held by temporaries at that point are not freed.
+String memory is managed automatically. Assigning, passing, or returning a string
+preserves its value without requiring manual cleanup. An uninitialized string is
+empty, not null. Host integration details are covered in the [embedding guide](embedding.md).
 
 ---
 

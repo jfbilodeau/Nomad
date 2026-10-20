@@ -26,7 +26,11 @@ nav:
   - Debugging: debugging.md
   - CLI: cli.md
   - Project configuration: configuration.md
-  - Runtime modules: modules.md
+  - Runtime modules:
+      - Overview: modules.md
+      - Collections: nomad-collections.md
+      - System: nomad-system.md
+      - Game: nomad-game.md
   - Building from source: building.md
   - Contributing documentation: documentation.md
 markdown_extensions:

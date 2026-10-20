@@ -10,7 +10,7 @@
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
-#include <nomad/resource/Sprite.hpp>
+#include <nomad/game/resource/Sprite.hpp>
 
 #include <boost/test/unit_test.hpp>
 

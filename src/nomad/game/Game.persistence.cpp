@@ -2,7 +2,7 @@
 
 #include <nomad/game/Game.hpp>
 
-#include <nomad/debug/DebugConsole.hpp>
+#include <nomad/game/debug/DebugConsole.hpp>
 
 #include <nomad/game/VariablePersistence.hpp>
 

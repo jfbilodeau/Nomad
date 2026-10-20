@@ -4,7 +4,7 @@
 
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -30,8 +30,6 @@ TypedValue::TypedValue(const Type* type, const RuntimeValue& value):
     if (m_type->isVoid()) {
         return;
     }
-
-    m_type->initValue(m_value);
 
     try {
         m_type->copyValue(value, m_value);
@@ -115,7 +113,6 @@ void InterpreterContext::setVariable(
             throw std::invalid_argument("Frame variables cannot change type");
         }
         RuntimeValue replacement;
-        type->initValue(replacement);
         try {
             type->copyValue(value, replacement);
         } catch (...) {
@@ -233,7 +230,11 @@ InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine, ScriptFun
     m_function = std::make_unique<ScriptFunction>(function.getId(), function.getName(), function.getPath(), "");
     for (NomadIndex index = 0; index < function.getParameterCount(); ++index) {
         const auto id = toNomadId(index);
-        m_function->addParameter(function.getParameterName(id), function.getParameterType(id));
+        m_function->addParameter(
+            function.getParameterName(id),
+            function.getParameterType(id),
+            function.getParameters()[index].doc
+        );
     }
     for (NomadIndex index = 0; index < m_frameVariableCount; ++index) {
         const auto id = toNomadId(index);
@@ -336,7 +337,7 @@ void InterpreterContext::setParameterResult(const NomadId parameterId) {
 }
 
 void InterpreterContext::evaluateFunctionCall(const NomadId functionId, const std::vector<RuntimeValue>& arguments) {
-    const auto* function = getRuntime()->getFunction(functionId);
+    const auto* function = getRuntime()->getScriptFunction(functionId);
     if (function == nullptr || function->getReturnType() == nullptr) {
         throw NomadBug("Invalid interpreted function call");
     }
@@ -364,8 +365,8 @@ void InterpreterContext::evaluateFunctionCall(const NomadId functionId, const st
 }
 
 void InterpreterContext::evaluateNativeFunctionCall(const NomadId functionId, const std::vector<RuntimeValue>& arguments) {
-    NativeFunctionDefinition definition;
-    if (!getRuntime()->getNativeFunctionDefinition(functionId, definition) || definition.returnType == nullptr) {
+    const auto* function = getRuntime()->getNativeFunction(functionId);
+    if (function == nullptr || function->getReturnType() == nullptr) {
         throw NomadBug("Invalid interpreted native function call");
     }
     auto* machine = getVirtualMachine();
@@ -374,10 +375,10 @@ void InterpreterContext::evaluateNativeFunctionCall(const NomadId functionId, co
     machine->setResult(RuntimeValue{});
     try {
         machine->runNativeFunction(functionId, arguments);
-        setResult(definition.returnType, machine->getResult());
-        definition.returnType->freeValue(machine->getResult());
+        setResult(function->getReturnType(), machine->getResult());
+        function->getReturnType()->freeValue(machine->getResult());
     } catch (...) {
-        definition.returnType->freeValue(machine->getResult());
+        function->getReturnType()->freeValue(machine->getResult());
         machine->setResult(savedResult);
         machine->setIntermediate(savedIntermediate);
         throw;

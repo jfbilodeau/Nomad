@@ -5,7 +5,8 @@
 #include <nomad/game/Entity.hpp>
 #include <nomad/game/Scene.hpp>
 
-#include <nomad/resource/ResourceManager.hpp>
+#include <nomad/game/resource/FontObject.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
 
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Closure.hpp>
@@ -16,7 +17,7 @@ namespace nomad {
 void Game::initGameFunctions() {
     log::debug("Initializing game functions");
 
-    const auto* fontType = m_runtime->getTypeByName("font");
+    const auto* fontType = m_runtime->getTypeByName("Font");
     if (fontType == nullptr) {
         raiseError("Font type is not registered");
     }
@@ -53,7 +54,7 @@ void Game::initGameFunctions() {
     m_runtime->registerNativeFunction(
         "game.createSceneByName",
         [this](VirtualMachine* interpreter) {
-            const NomadString functionName = interpreter->getStringParameter(0);
+            const auto& functionName = interpreter->getStringParameter(0)->getString();
 
             const auto functionId = getFunctionId(functionName);
 
@@ -67,7 +68,7 @@ void Game::initGameFunctions() {
             interpreter->setIdResult(sceneId);
         }, {
             defParameter(
-                "functionName", m_runtime->getStringRefType(),
+                "functionName", m_runtime->getStringType(),
                 NomadParamDoc("Name of the function to execute to initialize the scene. Return the scene id.")
             )
         },
@@ -78,7 +79,7 @@ void Game::initGameFunctions() {
     m_runtime->registerNativeFunction(
         "game.createSceneByNameThen",
         [this](VirtualMachine* interpreter) {
-            const NomadString functionName = interpreter->getStringParameter(0);
+            const auto& functionName = interpreter->getStringParameter(0)->getString();
             const NomadId postCreateFunction = interpreter->getIdParameter(1);
 
             auto postCreateClosure = interpreter->createClosure(m_runtime, postCreateFunction);
@@ -97,7 +98,7 @@ void Game::initGameFunctions() {
         {
             defParameter(
                 "functionName",
-                m_runtime->getStringRefType(),
+                m_runtime->getStringType(),
                 NomadParamDoc("Name of the function to execute to initialize the scene.")
             ),
             defParameter(
@@ -169,24 +170,23 @@ void Game::initGameFunctions() {
     m_runtime->registerNativeFunction(
         "game.loadFont",
         [this](VirtualMachine* interpreter) {
-            const auto fontName = interpreter->getStringParameter(0);
+            const auto& fontName = interpreter->getStringParameter(0)->getString();
             const auto fontSize = interpreter->getIntegerParameter(1);
 
-            const auto fontId = m_resourceManager->getFonts()->registerFont(fontName, static_cast<NomadFloat>(fontSize));
-
-            interpreter->setIdResult(fontId);
+            auto* font = m_resourceManager->getFonts()->registerFont(fontName, static_cast<NomadFloat>(fontSize));
+            interpreter->getResult().setObjectValue(font);
         }, {
-            defParameter("fontName", m_runtime->getStringRefType(), NomadParamDoc("Name of the font to load.")),
+            defParameter("fontName", m_runtime->getStringType(), NomadParamDoc("Name of the font to load.")),
             defParameter("fontSize", m_runtime->getIntegerType(), NomadParamDoc("Size of the font in point to load.")),
         },
         fontType,
-        NomadDoc("Loads a font from a file and returns a font handle.")
+        NomadDoc("Loads a font from a file and returns a Font object.")
     );
 
     m_runtime->registerNativeFunction(
         "game.loadImage",
         [this](VirtualMachine* interpreter) {
-            const NomadString textureName = interpreter->getStringParameter(0);
+            const auto& textureName = interpreter->getStringParameter(0)->getString();
 
             const auto textureFileName = textureName + ".png";
 
@@ -194,7 +194,7 @@ void Game::initGameFunctions() {
 
             interpreter->setIdResult(textureId);
         }, {
-            defParameter("imageName", m_runtime->getStringRefType(), NomadParamDoc("Name of the image to load.")),
+            defParameter("imageName", m_runtime->getStringType(), NomadParamDoc("Name of the image to load.")),
         },
         m_runtime->getIntegerType(),
         NomadDoc("Loads a font from a file.")
@@ -203,11 +203,11 @@ void Game::initGameFunctions() {
     m_runtime->registerNativeFunction(
         "game.inventory.load",
         [this](const VirtualMachine* interpreter) {
-            const NomadString saveName = interpreter->getStringParameter(0);
+            const auto& saveName = interpreter->getStringParameter(0)->getString();
 
             loadGame(saveName);
         }, {
-            defParameter("saveName", m_runtime->getStringRefType(), NomadParamDoc("Name of the save to load.")),
+            defParameter("saveName", m_runtime->getStringType(), NomadParamDoc("Name of the save to load.")),
         },
         m_runtime->getVoidType(),
         NomadDoc(
@@ -219,11 +219,11 @@ void Game::initGameFunctions() {
     m_runtime->registerNativeFunction(
         "game.inventory.save",
         [this](const VirtualMachine* interpreter) {
-            const NomadString saveName = interpreter->getStringParameter(0);
+            const auto& saveName = interpreter->getStringParameter(0)->getString();
 
             saveGame(saveName);
         }, {
-            defParameter("saveName", m_runtime->getStringRefType(), NomadParamDoc("Name of the save.")),
+            defParameter(            "saveName", m_runtime->getStringType(), NomadParamDoc("Name of the save.")),
         },
         m_runtime->getVoidType(),
         NomadDoc("Saves all `inventory.*` variables to `<pref>/save/<saveName>.json`.")
@@ -232,11 +232,11 @@ void Game::initGameFunctions() {
     m_runtime->registerNativeFunction(
         "game.inventory.saveExists",
         [this](VirtualMachine* interpreter) {
-            const NomadString saveName = interpreter->getStringParameter(0);
+            const auto& saveName = interpreter->getStringParameter(0)->getString();
 
             interpreter->setBooleanResult(saveExists(saveName));
         }, {
-            defParameter("saveName", m_runtime->getStringRefType(), NomadParamDoc("Name of the save.")),
+            defParameter(            "saveName", m_runtime->getStringType(), NomadParamDoc("Name of the save.")),
         },
         m_runtime->getBooleanType(),
         NomadDoc("Returns true if the save `<pref>/save/<saveName>.json` exists.")

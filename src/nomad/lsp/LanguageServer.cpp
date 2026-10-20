@@ -134,24 +134,22 @@ ApiAnalysis analyzeApiSymbols(
                 type->getTypeName(), type->getDocumentation()});
         }
     }
-    std::vector<NativeFunctionDefinition> functions;
-    runtime->getNativeFunctions(functions);
-    for (const auto& function : functions) {
-        auto signature = function.name;
-        auto documentation = function.doc;
-        for (const auto& parameter : function.parameters) {
+    const auto functions = runtime->getNativeFunctions();
+    for (const auto* function : functions) {
+        auto signature = function->getName();
+        auto documentation = function->getDoc();
+        for (const auto& parameter : function->getParameters()) {
             const auto shape = runtime->getParameterShape(parameter.type);
             if (shape == ParameterShape::SourceFile || shape == ParameterShape::SourceFunction ||
                 shape == ParameterShape::SourceLine) continue;
-            const auto typeName = parameter.type == runtime->getStringRefType()
-                ? runtime->getStringType()->getTypeName() : parameter.type->getTypeName();
+            const auto typeName = parameter.type->getTypeName();
             signature += " " + parameter.name + ":" + typeName;
             if (!parameter.doc.empty()) {
                 documentation += "\n\n- `" + parameter.name + "`: " + parameter.doc;
             }
         }
-        signature += " -> " + function.returnType->getTypeName();
-        symbols.push_back({function.name, CompletionItemKind::Function,
+        signature += " -> " + function->getReturnType()->getTypeName();
+        symbols.push_back({function->getName(), CompletionItemKind::Function,
             std::move(signature), std::move(documentation)});
     }
     for (auto id = runtime->getFirstConstantId(); id != NOMAD_INVALID_ID;
@@ -180,33 +178,32 @@ ApiAnalysis analyzeApiSymbols(
         }
     }
     std::vector<NomadId> members;
-    runtime->getIntrinsicMembers(members);
+    runtime->getNativeMembers(members);
     for (const auto id : members) {
-        if (runtime->getIntrinsicMemberType(id) == IntrinsicMemberType::Property) {
-            IntrinsicPropertyDefinition definition;
-            if (!runtime->getIntrinsicPropertyDefinition(id, definition)) {
-                throw std::runtime_error("Registered intrinsic property is unavailable");
+        if (runtime->getMemberType(id) == MemberType::Property) {
+            NativePropertyDefinition definition;
+            if (!runtime->getNativePropertyDefinition(id, definition)) {
+                throw std::runtime_error("Registered native property is unavailable");
             }
             const auto receiver = definition.objectType->getTypeName();
             const auto value = definition.valueType->getTypeName();
             symbols.push_back({definition.name, CompletionItemKind::Property,
                 receiver + "." + definition.name + ":" + value, definition.doc, value, receiver});
-        } else if (runtime->getIntrinsicMemberType(id) == IntrinsicMemberType::Method) {
-            IntrinsicMethodDefinition definition;
-            if (!runtime->getIntrinsicMethodDefinition(id, definition)) {
-                throw std::runtime_error("Registered intrinsic method is unavailable");
+        } else if (runtime->getMemberType(id) == MemberType::Method) {
+            const auto* method = runtime->getNativeMemberMethod(id);
+            if (method == nullptr) {
+                throw std::runtime_error("Registered native method is unavailable");
             }
-            const auto receiver = definition.objectType->getTypeName();
-            auto signature = receiver + "." + definition.name;
-            auto documentation = definition.doc;
-            for (const auto& parameter : definition.parameters) {
-                const auto typeName = parameter.type == runtime->getStringRefType()
-                    ? runtime->getStringType()->getTypeName() : parameter.type->getTypeName();
+            const auto receiver = method->getObjectType()->getTypeName();
+            auto signature = receiver + "." + method->getName();
+            auto documentation = method->getDoc();
+            for (const auto& parameter : method->getParameters()) {
+                const auto typeName = parameter.type->getTypeName();
                 signature += " " + parameter.name + ":" + typeName;
                 if (!parameter.doc.empty()) documentation += "\n\n- `" + parameter.name + "`: " + parameter.doc;
             }
-            signature += " -> " + definition.returnType->getTypeName();
-            symbols.push_back({definition.name, CompletionItemKind::Method,
+            signature += " -> " + method->getReturnType()->getTypeName();
+            symbols.push_back({method->getName(), CompletionItemKind::Method,
                 std::move(signature), std::move(documentation), "", receiver});
         }
     }
@@ -227,7 +224,7 @@ ApiAnalysis analyzeApiSymbols(
     }
     std::set<NomadString> localNames;
     for (auto* function = runtime->getFunctionAtLine(uri, line); function;
-        function = runtime->getFunction(function->getParentId())) {
+        function = runtime->getScriptFunction(function->getParentId())) {
         const auto addLocal = [&](const NomadString& name, const Type* type) {
             if (!localNames.insert(name).second) return;
             const auto typeName = type ? type->getTypeName() : "unknown";

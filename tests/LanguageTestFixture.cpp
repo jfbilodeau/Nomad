@@ -2,8 +2,8 @@
 
 #include <LanguageTestFixture.hpp>
 
-#include <nomad/script/NativeFunctions.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/system/NativeFunctions.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -86,7 +86,7 @@ FunctionOutcome LanguageTestFixture::execute(const NomadString& functionName, co
     }
 
     const auto functionId = m_runtime.getFunctionId(functionName);
-    const auto function = m_runtime.getFunction(functionId);
+    const auto function = m_runtime.getScriptFunction(functionId);
 
     if (function == nullptr) {
         outcome.fault = "Unknown function '" + functionName + "'";

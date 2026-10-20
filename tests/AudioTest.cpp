@@ -4,8 +4,9 @@
 
 #include <nomad/log/MemorySink.hpp>
 
-#include <nomad/resource/Audio.hpp>
-#include <nomad/resource/ResourceManager.hpp>
+#include <nomad/game/resource/Audio.hpp>
+#include <nomad/game/resource/AudioObject.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
@@ -143,10 +144,15 @@ BOOST_AUTO_TEST_CASE(game_scripts_control_preloaded_audio_instances)
         "fun audioFinished\n"
         " game.volume = 0.7\n"
         "end\n"
+        "fun adjust sound:Audio\n"
+        " sound.volume = (toFloat \"a\".length) / 4.0\n"
+        "end\n"
         "sound = game.audio.load \"audio.hit\"\n"
+        "alias = sound\n"
         "game.volume = 0.8\n"
         "game.audio.volume = 0.5\n"
-        "sound.volume = 0.25\n"
+        "adjust sound\n"
+        "assert alias.volume == 0.25\n"
         "sound.playLoop\n"
         "sound.playOnceThen audioFinished\n"
         "sound.pause\n"
@@ -154,6 +160,9 @@ BOOST_AUTO_TEST_CASE(game_scripts_control_preloaded_audio_instances)
         "game.audio.pauseAll\n"
         "game.audio.resumeAll\n"
         "game.audio.stopAll\n"
+        "assert sound.volume == 0.25\n"
+        "assert !sound.playing\n"
+        "assert !sound.paused\n"
     );
     std::filesystem::create_directories(directory.getPath() / "mods");
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
@@ -163,7 +172,7 @@ BOOST_AUTO_TEST_CASE(game_scripts_control_preloaded_audio_instances)
     options.resourcePath = directory.getPath().string();
     auto game = Game::create(std::move(options));
     auto* audio = game->getResources()->getAudio();
-    const auto* audioType = game->getRuntime()->getTypeByName("audio");
+    const auto* audioType = game->getRuntime()->getTypeByName("Audio");
 
     BOOST_REQUIRE(audioType != nullptr);
     BOOST_TEST(
@@ -172,13 +181,7 @@ BOOST_AUTO_TEST_CASE(game_scripts_control_preloaded_audio_instances)
     );
     BOOST_TEST(audio->getMasterVolume() == 0.8, boost::test_tools::tolerance(0.001));
     BOOST_TEST(audio->getVolume() == 0.5, boost::test_tools::tolerance(0.001));
-    BOOST_REQUIRE(audio->getAudioObjectCount() == 1U);
-
-    const auto* object = audio->getAudioObject(0);
-    BOOST_REQUIRE(object != nullptr);
-    BOOST_TEST(object->getVolume() == 0.25, boost::test_tools::tolerance(0.001));
-    BOOST_TEST(!object->isPlaying());
-    BOOST_TEST(!object->isPaused());
+    BOOST_TEST(audio->getAudioObjectCount() == 0U);
 }
 
 BOOST_AUTO_TEST_CASE(game_scripts_control_streamed_music)
@@ -233,7 +236,7 @@ BOOST_AUTO_TEST_CASE(game_scripts_log_invalid_audio_volume)
     BOOST_TEST(game->getResources()->getAudio()->getVolume() == 1.0);
 }
 
-BOOST_AUTO_TEST_CASE(game_audio_load_logs_when_playback_is_unavailable)
+BOOST_AUTO_TEST_CASE(game_audio_load_faults_when_playback_is_unavailable)
 {
     TestDirectory directory("nomad_audio_script_unavailable");
     directory.write("audio/hit.wav", makeWaveFile());
@@ -251,12 +254,13 @@ BOOST_AUTO_TEST_CASE(game_audio_load_logs_when_playback_is_unavailable)
 
     GameOptions options;
     options.resourcePath = directory.getPath().string();
-    auto game = Game::create(std::move(options));
-    const auto* audio = game->getResources()->getAudio();
-
-    BOOST_TEST(!audio->isAvailable());
-    BOOST_TEST(audio->getAudioObjectCount() == 0U);
-    BOOST_TEST(audio->getMasterVolume() == 0.5, boost::test_tools::tolerance(0.001));
+    BOOST_CHECK_EXCEPTION(
+        Game::create(std::move(options)),
+        GameException,
+        [](const GameException& error) {
+            return NomadString(error.what()).find("Audio playback is unavailable") != NomadString::npos;
+        }
+    );
     BOOST_TEST(std::ranges::any_of(logCapture.getEntries(), [](const LogEntry& entry) {
         return entry.level == LogLevel::Error &&
             entry.message.find("Audio playback is unavailable") != NomadString::npos;
@@ -305,8 +309,9 @@ BOOST_AUTO_TEST_CASE(audio_objects_control_one_reusable_track)
 
     BOOST_REQUIRE(audio->isAvailable());
     BOOST_REQUIRE(audio->loadAudioRoots(directory.getPath(), {"audio"}, true) == 1U);
-    const auto objectId = audio->createAudioObject("audio.hit");
-    auto* object = audio->getAudioObject(objectId);
+    auto* object = audio->createAudioObject("audio.hit");
+    const auto releaseObject = [](AudioObject* value) { if (value != nullptr) { value->releaseRef(); } };
+    const std::unique_ptr<AudioObject, decltype(releaseObject)> ownedObject(object, releaseObject);
 
     BOOST_REQUIRE(object != nullptr);
     BOOST_TEST(audio->getAudioObjectCount() == 1U);
@@ -340,6 +345,76 @@ BOOST_AUTO_TEST_CASE(audio_objects_control_one_reusable_track)
     BOOST_TEST(!object->isPaused());
 }
 
+BOOST_AUTO_TEST_CASE(audio_last_reference_unregisters_and_cancels_playback)
+{
+    TestDirectory directory("nomad_audio_reference_lifetime");
+    directory.write("audio/hit.wav", makeWaveFile());
+    auto game = createHeadlessGame(directory);
+    auto* audio = game->getResources()->getAudio();
+    BOOST_REQUIRE(audio->loadAudioRoots(directory.getPath(), {"audio"}, true) == 1U);
+    auto* object = audio->createAudioObject("audio.hit");
+    BOOST_REQUIRE(object != nullptr);
+    bool called = false;
+    object->playOnceThen([&] { called = true; });
+    addRef(object);
+    releaseRef(object);
+    BOOST_TEST(audio->getAudioObjectCount() == 1U);
+    releaseRef(object);
+    BOOST_TEST(audio->getAudioObjectCount() == 0U);
+    audio->pauseAll();
+    audio->resumeAll();
+    audio->stopAll();
+    audio->pauseAutomatically();
+    audio->resumeAutomatically();
+    audio->processCallbacks();
+    BOOST_TEST(!called);
+}
+
+BOOST_AUTO_TEST_CASE(audio_reference_can_be_released_after_manager_shutdown)
+{
+    TestDirectory directory("nomad_audio_manager_shutdown");
+    directory.write("audio/hit.wav", makeWaveFile());
+    auto game = createHeadlessGame(directory);
+    auto* audio = game->getResources()->getAudio();
+    BOOST_REQUIRE(audio->loadAudioRoots(directory.getPath(), {"audio"}, true) == 1U);
+    auto* object = audio->createAudioObject("audio.hit");
+    BOOST_REQUIRE(object != nullptr);
+    object->playLoop();
+    game.reset();
+    BOOST_TEST(object->getResource() == nullptr);
+    BOOST_TEST(!object->isPlaying());
+    releaseRef(object);
+}
+
+BOOST_AUTO_TEST_CASE(audio_registry_tracks_only_surviving_instances)
+{
+    TestDirectory directory("nomad_audio_live_registry");
+    directory.write("audio/hit.wav", makeWaveFile());
+    auto game = createHeadlessGame(directory);
+    auto* audio = game->getResources()->getAudio();
+    BOOST_REQUIRE(audio->loadAudioRoots(directory.getPath(), {"audio"}, true) == 1U);
+    auto* first = audio->createAudioObject("audio.hit");
+    auto* second = audio->createAudioObject("audio.hit");
+    BOOST_REQUIRE(first != nullptr);
+    BOOST_REQUIRE(second != nullptr);
+    BOOST_TEST(first != second);
+    releaseRef(first);
+    BOOST_TEST(audio->getAudioObjectCount() == 1U);
+    second->playLoop();
+    audio->pauseAll();
+    BOOST_TEST(second->isPaused());
+    audio->resumeAll();
+    BOOST_TEST(second->isPlaying());
+    releaseRef(second);
+    BOOST_TEST(audio->getAudioObjectCount() == 0U);
+    for (auto index = 0; index < 32; ++index) {
+        auto* object = audio->createAudioObject("audio.hit");
+        BOOST_REQUIRE(object != nullptr);
+        releaseRef(object);
+    }
+    BOOST_TEST(audio->getAudioObjectCount() == 0U);
+}
+
 BOOST_AUTO_TEST_CASE(audio_manager_controls_all_tracks_and_master_volume)
 {
     TestDirectory directory("nomad_audio_global_controls");
@@ -350,8 +425,12 @@ BOOST_AUTO_TEST_CASE(audio_manager_controls_all_tracks_and_master_volume)
 
     BOOST_REQUIRE(audio->isAvailable());
     BOOST_REQUIRE(audio->loadAudioRoots(directory.getPath(), {"audio"}, true) == 2U);
-    auto* first = audio->getAudioObject(audio->createAudioObject("audio.first"));
-    auto* second = audio->getAudioObject(audio->createAudioObject("audio.second"));
+    auto* first = audio->createAudioObject("audio.first");
+    const auto releaseFirst = [](AudioObject* value) { if (value != nullptr) { value->releaseRef(); } };
+    const std::unique_ptr<AudioObject, decltype(releaseFirst)> ownedFirst(first, releaseFirst);
+    auto* second = audio->createAudioObject("audio.second");
+    const auto releaseSecond = [](AudioObject* value) { if (value != nullptr) { value->releaseRef(); } };
+    const std::unique_ptr<AudioObject, decltype(releaseSecond)> ownedSecond(second, releaseSecond);
     BOOST_REQUIRE(first != nullptr);
     BOOST_REQUIRE(second != nullptr);
 
@@ -431,7 +510,9 @@ BOOST_AUTO_TEST_CASE(audio_completion_callbacks_run_after_playback_and_cancel_on
     auto* audio = game->getResources()->getAudio();
 
     BOOST_REQUIRE(audio->loadAudioRoots(directory.getPath(), {"audio"}, true) == 1U);
-    auto* object = audio->getAudioObject(audio->createAudioObject("audio.hit"));
+    auto* object = audio->createAudioObject("audio.hit");
+    const auto releaseObject = [](AudioObject* value) { if (value != nullptr) { value->releaseRef(); } };
+    const std::unique_ptr<AudioObject, decltype(releaseObject)> ownedObject(object, releaseObject);
     BOOST_REQUIRE(object != nullptr);
 
     auto soundCompleted = false;
@@ -488,7 +569,9 @@ BOOST_AUTO_TEST_CASE(game_pause_automatically_controls_configured_audio_categori
     auto* audio = game->getResources()->getAudio();
 
     BOOST_REQUIRE(audio->loadAudioRoots(directory.getPath(), {"audio"}, true) == 1U);
-    auto* object = audio->getAudioObject(audio->createAudioObject("audio.hit"));
+    auto* object = audio->createAudioObject("audio.hit");
+    const auto releaseObject = [](AudioObject* value) { if (value != nullptr) { value->releaseRef(); } };
+    const std::unique_ptr<AudioObject, decltype(releaseObject)> ownedObject(object, releaseObject);
     BOOST_REQUIRE(object != nullptr);
     object->playLoop();
     BOOST_REQUIRE(audio->playMusic(directory.getPath(), "music.theme", true));
@@ -522,9 +605,8 @@ BOOST_AUTO_TEST_CASE(rejects_unknown_resources_and_invalid_object_ids)
     auto* audio = game->getResources()->getAudio();
 
     BOOST_REQUIRE(audio->isAvailable());
-    BOOST_TEST(audio->createAudioObject("audio.missing") == NOMAD_INVALID_ID);
-    BOOST_TEST(audio->createAudioObject(NOMAD_INVALID_ID) == NOMAD_INVALID_ID);
-    BOOST_TEST(audio->getAudioObject(NOMAD_INVALID_ID) == nullptr);
+    BOOST_TEST(audio->createAudioObject("audio.missing") == nullptr);
+    BOOST_TEST(audio->createAudioObject(NOMAD_INVALID_ID) == nullptr);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

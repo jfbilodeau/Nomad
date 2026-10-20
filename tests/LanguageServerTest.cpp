@@ -406,7 +406,7 @@ directory = "res"
     for (const auto& message : responses(output.str())) {
         if (message.contains("id")) replies.emplace(message.at("id").as_int64(), message);
     }
-    // Unknown receivers retain intrinsic candidates, but must not expose unconfigured game APIs.
+    // Unknown receivers retain native candidates, but must not expose unconfigured game APIs.
     for (const auto& item : replies.at(10).at("result").as_object().at("items").as_array()) {
         const auto& candidate = item.as_object();
         BOOST_TEST(!NomadString(candidate.at("label").as_string()).starts_with("game."));
@@ -513,7 +513,7 @@ BOOST_AUTO_TEST_CASE(standalone_symbols_remain_isolated_between_documents)
     }
 }
 
-BOOST_AUTO_TEST_CASE(completion_includes_variables_namespaces_and_intrinsic_candidates)
+BOOST_AUTO_TEST_CASE(completion_includes_variables_namespaces_and_native_candidates)
 {
     TestDirectory directory("nomad_lsp_member_suggestions");
     directory.write("nomad.toml", R"(schema = 1

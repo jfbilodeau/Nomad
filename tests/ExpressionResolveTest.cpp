@@ -8,10 +8,51 @@
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
+#include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 using namespace nomad;
+
+BOOST_AUTO_TEST_CASE(function_call_nodes_retain_the_resolved_target_across_catalog_growth)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    auto selectedCalls = 0;
+    const auto parameters = std::vector<Parameter>{defParameter("value", runtime.getIntegerType(), "")};
+    runtime.registerNativeFunction("pick", [&selectedCalls](VirtualMachine* machine) {
+        ++selectedCalls;
+        machine->setIntegerResult(11);
+    }, parameters, runtime.getIntegerType(), "");
+    runtime.registerNativeFunction("pick", [](VirtualMachine* machine) {
+        machine->setIntegerResult(22);
+    }, {defParameter("value", runtime.getStringType(), "")}, runtime.getIntegerType(), "");
+
+    FunctionCallExpression expression(nullptr, 1, 0, "pick");
+    expression.addArgument(createExpressionArgument(1, 5, runtime.getIntegerType(),
+        std::make_unique<IntegerLiteral>(nullptr, 1, 5, 1)));
+    FunctionCallStatementNode statement(1, 0, "pick");
+    statement.addArgument(createExpressionArgument(1, 5, runtime.getIntegerType(),
+        std::make_unique<IntegerLiteral>(nullptr, 1, 5, 1)));
+    BOOST_REQUIRE(expression.resolve(&context, nullptr));
+    BOOST_REQUIRE(statement.resolve(&context, nullptr));
+
+    BOOST_REQUIRE(runtime.registerNativeFunction("pick", [](VirtualMachine* machine) {
+        machine->setIntegerResult(33);
+    }, {defParameter("value", runtime.getFloatType(), "")}, runtime.getIntegerType(), "") != NOMAD_INVALID_ID);
+
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext evaluation(*machine);
+    expression.evaluate(evaluation);
+    BOOST_REQUIRE(!evaluation.hasError());
+    BOOST_REQUIRE(evaluation.getResult() != nullptr);
+    BOOST_TEST(evaluation.getResult()->getValue().getIntegerValue() == 11);
+    statement.evaluate(evaluation);
+    BOOST_TEST(!evaluation.hasError());
+    BOOST_TEST(selectedCalls == 2);
+}
 
 BOOST_AUTO_TEST_CASE(expression_resolve_reports_unknown_identifier_without_throwing)
 {
@@ -41,12 +82,13 @@ BOOST_AUTO_TEST_CASE(statement_resolve_reports_errors_in_call_arguments)
     ScriptFunction function(NOMAD_INVALID_ID, "test", "", "");
     CompilerContext context(compiler.get());
 
-    NativeFunctionDefinition definition{};
-    definition.id = 0;
-    definition.name = "log";
-    definition.returnType = runtime.getVoidType();
+    const auto nativeId = runtime.registerNativeFunction(
+        "log", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    );
+    const auto* nativeFunction = runtime.getNativeFunction(nativeId);
+    BOOST_REQUIRE(nativeFunction != nullptr);
 
-    NativeFunctionStatementNode statement(1, 0, definition);
+    FunctionCallStatementNode statement(1, 0, nativeFunction->getName());
     statement.addArgument(createExpressionArgument(
         1,
         4,
@@ -150,7 +192,7 @@ BOOST_AUTO_TEST_CASE(compile_functions_infers_return_type_of_function_resolved_l
 
     BOOST_TEST(compiler->compileFunctions(&context));
     BOOST_TEST(context.getErrorCount() == 0);
-    BOOST_TEST(runtime.getFunction(runtime.getFunctionId("b"))->getReturnType() == runtime.getIntegerType());
+    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("b"))->getReturnType() == runtime.getIntegerType());
 }
 
 BOOST_AUTO_TEST_CASE(compile_functions_infers_recursive_return_type_from_later_return)
@@ -203,7 +245,7 @@ BOOST_AUTO_TEST_CASE(compile_functions_treats_function_without_return_as_void)
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
     BOOST_TEST(context.getDiagnostics()[0].message == "Function 'noValue' does not return a value");
-    BOOST_TEST(runtime.getFunction(runtime.getFunctionId("noValue"))->getReturnType() == runtime.getVoidType());
+    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("noValue"))->getReturnType() == runtime.getVoidType());
 }
 
 BOOST_AUTO_TEST_CASE(compile_functions_reports_non_boolean_if_condition_while_resolving)
@@ -233,17 +275,17 @@ BOOST_AUTO_TEST_CASE(compile_functions_reports_format_string_errors_with_locatio
     BOOST_TEST(context.getDiagnostics()[0].line == 2);
 }
 
-BOOST_AUTO_TEST_CASE(expression_resolve_reports_unknown_nativeFunction)
+BOOST_AUTO_TEST_CASE(expression_resolve_reports_unknown_function_without_implementation_distinction)
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    CallNativeFunctionExpression expression(nullptr, 1, 2, "missingNativeFunction");
+    FunctionCallExpression expression(nullptr, 1, 2, "missingNativeFunction");
 
     BOOST_TEST(!expression.resolve(&context, nullptr));
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
-    BOOST_TEST(context.getDiagnostics().front().message == "Unknown native function 'missingNativeFunction'");
+    BOOST_TEST(context.getDiagnostics().front().message == "Unknown function 'missingNativeFunction'");
 }
 
 BOOST_AUTO_TEST_CASE(format_expression_parse_diagnostic_uses_host_source_column)

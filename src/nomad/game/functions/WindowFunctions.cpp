@@ -5,7 +5,7 @@
 #include <nomad/game/Entity.hpp>
 #include <nomad/game/Scene.hpp>
 
-#include <nomad/resource/ResourceManager.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
 
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Closure.hpp>
@@ -103,11 +103,11 @@ void Game::initWindowFunctions() {
     m_runtime->registerNativeFunction(
         "window.setTitle",
         [this](const VirtualMachine* interpreter) {
-            const auto title = interpreter->getStringParameter(0);
+            const auto* title = interpreter->getStringParameter(0);
 
-            SDL_SetWindowTitle(m_window, title);
+            SDL_SetWindowTitle(m_window, title->getText());
         }, {
-            defParameter("windowTitle", m_runtime->getStringRefType(), NomadParamDoc("Title of the game window.")),
+            defParameter("windowTitle", m_runtime->getStringType(), NomadParamDoc("Title of the game window.")),
         },
         m_runtime->getVoidType(),
         NomadDoc("Set the title of the game window.")

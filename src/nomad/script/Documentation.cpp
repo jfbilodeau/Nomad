@@ -17,39 +17,39 @@ namespace nomad {
 
 namespace {
 
-struct IntrinsicMemberDocumentationInfo {
+struct NativeMemberDocumentationInfo {
     NomadId id;
-    IntrinsicMemberType memberType;
+    MemberType memberType;
     const Type* objectType;
     NomadString name;
 };
 
-std::vector<IntrinsicMemberDocumentationInfo> getIntrinsicMemberDocumentation(const Runtime* runtime) {
+std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Runtime* runtime) {
     std::vector<NomadId> memberIds;
-    runtime->getIntrinsicMembers(memberIds);
+    runtime->getNativeMembers(memberIds);
 
-    std::vector<IntrinsicMemberDocumentationInfo> members;
+    std::vector<NativeMemberDocumentationInfo> members;
     members.reserve(memberIds.size());
 
     for (const auto memberId : memberIds) {
-        switch (runtime->getIntrinsicMemberType(memberId)) {
-        case IntrinsicMemberType::Property: {
-            IntrinsicPropertyDefinition definition;
-            if (runtime->getIntrinsicPropertyDefinition(memberId, definition)) {
-                members.emplace_back(memberId, IntrinsicMemberType::Property, definition.objectType, definition.name);
+        switch (runtime->getMemberType(memberId)) {
+        case MemberType::Property: {
+            NativePropertyDefinition definition;
+            if (runtime->getNativePropertyDefinition(memberId, definition)) {
+                members.emplace_back(memberId, MemberType::Property, definition.objectType, definition.name);
             }
             break;
         }
 
-        case IntrinsicMemberType::Method: {
-            IntrinsicMethodDefinition definition;
-            if (runtime->getIntrinsicMethodDefinition(memberId, definition)) {
-                members.emplace_back(memberId, IntrinsicMemberType::Method, definition.objectType, definition.name);
+        case MemberType::Method: {
+            const auto* method = runtime->getNativeMemberMethod(memberId);
+            if (method != nullptr) {
+                members.emplace_back(memberId, MemberType::Method, method->getObjectType(), method->getName());
             }
             break;
         }
 
-        case IntrinsicMemberType::Unknown:
+        case MemberType::Unknown:
             break;
         }
     }
@@ -63,10 +63,10 @@ std::vector<IntrinsicMemberDocumentationInfo> getIntrinsicMemberDocumentation(co
     return members;
 }
 
-std::vector<NomadString> getIntrinsicMemberNames(const Runtime* runtime) {
+std::vector<NomadString> getNativeMemberNames(const Runtime* runtime) {
     std::vector<NomadString> names;
 
-    for (const auto& member : getIntrinsicMemberDocumentation(runtime)) {
+    for (const auto& member : getNativeMemberDocumentation(runtime)) {
         if (std::ranges::find(names, member.name) == names.end()) {
             names.push_back(member.name);
         }
@@ -76,8 +76,8 @@ std::vector<NomadString> getIntrinsicMemberNames(const Runtime* runtime) {
     return names;
 }
 
-NomadString getDocumentedTypeName(const Runtime* runtime, const Type* type) {
-    return type == runtime->getStringRefType() ? runtime->getStringType()->getTypeName() : type->getTypeName();
+NomadString getDocumentedTypeName(const Runtime*, const Type* type) {
+    return type->getTypeName();
 }
 
 NomadString escapeRegularExpression(const NomadString& text) {
@@ -212,7 +212,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
             }
             constantTextValue = std::format("\"{}\"", escaped);
         } else if (constant.type == runtime->getFunctionType()) {
-            constantTextValue = runtime->getFunction(constant.value.getIdValue())->getName();
+            constantTextValue = runtime->getScriptFunction(constant.value.getIdValue())->getName();
         } else {
             constantTextValue = "<unknown_type>";
         }
@@ -307,7 +307,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     generateTypeDocumentation(runtime, out);
 
-    generateIntrinsicMemberDocumentation(runtime, out);
+    generateNativeMemberDocumentation(runtime, out);
 
     out << "## Functions" << std::endl;
 
@@ -320,7 +320,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
         NomadString name;
         FunctionType functionType;
         NomadString doc;
-        std::vector<FunctionParameterDefinition> parameters;
+        std::vector<Parameter> parameters;
         const Type* returnType = nullptr;
     };
 
@@ -329,17 +329,16 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     auto nativeFunctionId = runtime->getFirstNativeFunctionId();
 
     while (nativeFunctionId != NOMAD_INVALID_ID) {
-        NativeFunctionDefinition nativeFunctionDefinition;
-
-        runtime->getNativeFunctionDefinition(nativeFunctionId, nativeFunctionDefinition);
-
-        functions.emplace_back(
-            nativeFunctionDefinition.name,
-            FunctionType::Native,
-            nativeFunctionDefinition.doc,
-            nativeFunctionDefinition.parameters,
-            nativeFunctionDefinition.returnType
-        );
+        const auto* nativeFunction = runtime->getNativeFunction(nativeFunctionId);
+        if (nativeFunction != nullptr) {
+            functions.emplace_back(
+                nativeFunction->getName(),
+                FunctionType::Native,
+                nativeFunction->getDoc(),
+                nativeFunction->getParameters(),
+                nativeFunction->getReturnType()
+            );
+        }
 
         nativeFunctionId = runtime->getNextNativeFunctionId(nativeFunctionId);
     }
@@ -349,7 +348,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     runtime->getFunctions(scriptFunctions);
 
     for (auto function: scriptFunctions) {
-        std::vector<FunctionParameterDefinition> parameters;
+        std::vector<Parameter> parameters;
 
         for (NomadIndex i = 0; i < function->getParameterCount(); i++) {
             auto name = function->getParameterName(toNomadId(i));
@@ -393,10 +392,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
             out << std::endl;
 
             for (const auto& parameter: function.parameters) {
-                // Callers pass a regular string to a `$stringref` parameter.
-                const auto parameterTypeName = parameter.type == runtime->getStringRefType()
-                    ? runtime->getStringType()->getTypeName()
-                    : parameter.type->getTypeName();
+                const auto parameterTypeName = parameter.type->getTypeName();
 
                 out << "- `" << parameter.name << ":" << parameterTypeName << "`";
 
@@ -458,19 +454,31 @@ void generateTypeDocumentation(const Runtime* runtime, std::ostream& out) {
         out << "### `" << type->getTypeName() << "`" << std::endl;
         out << std::endl;
         out << type->getDocumentation() << std::endl;
+        for (const auto* candidate : runtime->getConstructors()) {
+            const auto& constructor = *candidate;
+            if (constructor.getReturnType() != type) {
+                continue;
+            }
+            out << std::endl << "Constructor: `new " << constructor.getName();
+            for (auto index = NomadIndex{0}; index < constructor.getParameters().size(); ++index) {
+                out << " " << constructor.getParameters()[index].name << ":"
+                    << getDocumentedTypeName(runtime, constructor.getParameters()[index].type);
+            }
+            out << "` -> `" << type->getTypeName() << "`" << std::endl;
+        }
     }
 
     out << std::endl;
 }
 
-void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& out) {
-    out << "## Intrinsic Members" << std::endl;
+void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out) {
+    out << "## Object Members" << std::endl;
     out << std::endl;
-    out << "Intrinsic properties and methods are available on values of the receiver type." << std::endl;
+    out << "Properties and methods are available on instances of each object type." << std::endl;
 
     const Type* currentType = nullptr;
 
-    for (const auto& member : getIntrinsicMemberDocumentation(runtime)) {
+    for (const auto& member : getNativeMemberDocumentation(runtime)) {
         if (member.objectType != currentType) {
             currentType = member.objectType;
             out << std::endl;
@@ -480,9 +488,9 @@ void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& 
 
         out << "#### `" << member.name << "`";
 
-        if (member.memberType == IntrinsicMemberType::Property) {
-            IntrinsicPropertyDefinition definition;
-            (void)runtime->getIntrinsicPropertyDefinition(member.id, definition);
+        if (member.memberType == MemberType::Property) {
+            NativePropertyDefinition definition;
+            (void)runtime->getNativePropertyDefinition(member.id, definition);
 
             NomadString access;
             if (definition.getFn && definition.setFn) {
@@ -503,19 +511,21 @@ void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& 
                 out << std::endl;
             }
         } else {
-            IntrinsicMethodDefinition definition;
-            (void)runtime->getIntrinsicMethodDefinition(member.id, definition);
+            const auto* method = runtime->getNativeMemberMethod(member.id);
+            if (method == nullptr) {
+                continue;
+            }
 
-            out << " (*" << (definition.mutatesReceiver ? "mutating " : "") << "method*)" << std::endl;
+            out << " (*method*)" << std::endl;
             out << std::endl;
 
-            if (definition.parameters.empty()) {
+            if (method->getParameters().empty()) {
                 out << "No parameters." << std::endl;
             } else {
                 out << "parameters:" << std::endl;
                 out << std::endl;
 
-                for (const auto& parameter : definition.parameters) {
+                for (const auto& parameter : method->getParameters()) {
                     out << "- `" << parameter.name << ":" << getDocumentedTypeName(runtime, parameter.type) << "`";
                     if (!parameter.doc.empty()) {
                         out << " - " << parameter.doc;
@@ -525,10 +535,10 @@ void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& 
             }
 
             out << std::endl;
-            out << "`returns " << getDocumentedTypeName(runtime, definition.returnType) << "`" << std::endl;
+            out << "`returns " << getDocumentedTypeName(runtime, method->getReturnType()) << "`" << std::endl;
             out << std::endl;
-            if (!definition.doc.empty()) {
-                out << definition.doc << std::endl;
+            if (!method->getDoc().empty()) {
+                out << method->getDoc() << std::endl;
                 out << std::endl;
             }
         }
@@ -536,6 +546,34 @@ void generateIntrinsicMemberDocumentation(const Runtime* runtime, std::ostream& 
         out << "---" << std::endl;
     }
 
+    for (const auto& indexer : runtime->getNativeIndexers()) {
+        out << std::endl;
+        out << "### `" << indexer.objectType->getTypeName() << "[";
+        for (auto index = NomadIndex{0}; index < indexer.indexTypes.size(); ++index) {
+            if (index != 0) {
+                out << " ";
+            }
+            out << "index";
+            if (indexer.indexTypes.size() != 1) {
+                out << index + 1;
+            }
+        }
+        out << "]`" << std::endl;
+        const auto access = indexer.getFn ? (indexer.setFn ? "read/write" : "read-only") : "write-only";
+        out << std::endl << "*" << access << " indexer*" << std::endl;
+        out << std::endl;
+        for (auto index = NomadIndex{0}; index < indexer.indexTypes.size(); ++index) {
+            out << "- Index";
+            if (indexer.indexTypes.size() != 1) {
+                out << " " << index + 1;
+            }
+            out << ": `" << getDocumentedTypeName(runtime, indexer.indexTypes[index]) << "`" << std::endl;
+        }
+        out << "- Value: `" << getDocumentedTypeName(runtime, indexer.valueType) << "`" << std::endl;
+        if (!indexer.doc.empty()) {
+            out << std::endl << indexer.doc << std::endl;
+        }
+    }
     out << std::endl;
 }
 
@@ -562,16 +600,15 @@ void generateKeywords(Runtime* runtime, std::ostream& out) {
 
     out << "--- Native Functions ---\n";
 
-    std::vector<NativeFunctionDefinition> nativeFunctions;
-    runtime->getNativeFunctions(nativeFunctions);
+    const auto nativeFunctions = runtime->getNativeFunctions();
 
-    for (const NativeFunctionDefinition& nativeFunction : nativeFunctions) {
-        out << nativeFunction.name << "\n";
+    for (const auto* nativeFunction : nativeFunctions) {
+        out << nativeFunction->getName() << "\n";
     }
 
-    out << "--- IntrinsicMembers ---\n";
+    out << "--- NativeMembers ---\n";
 
-    for (const auto& name : getIntrinsicMemberNames(runtime)) {
+    for (const auto& name : getNativeMemberNames(runtime)) {
         out << name << "\n";
     }
 }
@@ -595,7 +632,7 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
         "keywords",
         "literals",
         "functions",
-        "intrinsicMembers",
+        "nativeMembers",
         "types",
         "operators"
     }) {
@@ -620,7 +657,7 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
 
     array interpolationPatterns;
     for (const auto& repositoryName : {
-        "formatStrings", "strings", "keywords", "numbers", "functions", "intrinsicMembers", "literals",
+        "formatStrings", "strings", "keywords", "numbers", "functions", "nativeMembers", "literals",
         "types", "operators"
     }) {
         interpolationPatterns.push_back(createInclude(repositoryName));
@@ -679,20 +716,19 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
     );
 
     std::vector<NomadString> nativeFunctionNames;
-    std::vector<NativeFunctionDefinition> nativeFunctions;
-    runtime->getNativeFunctions(nativeFunctions);
+    const auto nativeFunctions = runtime->getNativeFunctions();
     nativeFunctionNames.reserve(nativeFunctions.size());
-    for (const auto& nativeFunction : nativeFunctions) {
-        nativeFunctionNames.push_back(nativeFunction.name);
+    for (const auto* nativeFunction : nativeFunctions) {
+        nativeFunctionNames.push_back(nativeFunction->getName());
     }
     repository["functions"] = createPatternRepositoryEntry(
         createMatchPattern("support.function.nomad", createWordPattern(nativeFunctionNames))
     );
 
-    repository["intrinsicMembers"] = createPatternRepositoryEntry(
+    repository["nativeMembers"] = createPatternRepositoryEntry(
         createMatchPattern(
             "support.function.member.nomad",
-            "(?<=\\.)" + createWordPattern(getIntrinsicMemberNames(runtime))
+            "(?<=\\.)" + createWordPattern(getNativeMemberNames(runtime))
         )
     );
 

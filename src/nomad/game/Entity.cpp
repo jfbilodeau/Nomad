@@ -12,10 +12,11 @@
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>
 
-#include <nomad/resource/Animation.hpp>
-#include <nomad/resource/Font.hpp>
-#include <nomad/resource/ResourceManager.hpp>
-#include <nomad/resource/Sprite.hpp>
+#include <nomad/game/resource/Animation.hpp>
+#include <nomad/game/resource/Font.hpp>
+#include <nomad/game/resource/FontObject.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
+#include <nomad/game/resource/Sprite.hpp>
 
 #include <algorithm>
 
@@ -41,6 +42,7 @@ Entity::Entity(
 
 Entity::~Entity() {
     invalidateTextTexture(); // Clear the text texture if it exists
+    releaseRef(m_textFont);
 }
 
 void Entity::update(const Scene* scene) {
@@ -1278,18 +1280,18 @@ Color Entity::getTextColor() const {
     return m_textColor;
 }
 
-void Entity::setFontById(const NomadId fontId) {
-    if (fontId == m_textFontId) {
+void Entity::setFont(FontObject* font) {
+    if (font == m_textFont) {
         return;
     }
 
-    m_textFontId = fontId;
+    m_textFont = replace(m_textFont, font);
 
     invalidateTextTexture();
 }
 
-NomadId Entity::getFontId() const {
-    return m_textFontId;
+FontObject* Entity::getFont() const {
+    return m_textFont;
 }
 
 void Entity::setVariableValue(const NomadId variableId, const RuntimeValue& value) {
@@ -1432,10 +1434,10 @@ void Entity::generateTextTexture(Canvas* canvas) {
         m_textTexture = nullptr;
     }
 
-    if (m_textFontId == NOMAD_INVALID_ID) {
+    if (m_textFont == nullptr) {
         log::warning("No font set for entity '" + m_name + "'");
     } else {
-        const auto font = canvas->getGame()->getResources()->getFonts()->getFont(m_textFontId);
+        const auto* font = m_textFont;
 
         m_textTexture = font->generateTexture(
             canvas,

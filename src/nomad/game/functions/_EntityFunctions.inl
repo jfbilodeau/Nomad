@@ -175,7 +175,7 @@ BEGIN_ENTITY_FUNCTION(oldon)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("eventName", m_runtime->getStringRefType(), NomadParamDoc("Name of the event to listen to.")),
+        defParameter("eventName", m_runtime->getStringType(), NomadParamDoc("Name of the event to listen to.")),
         defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
     },
     m_runtime->getVoidType(),
@@ -184,7 +184,7 @@ END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(oldtrigger)
     [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto eventName = interpreter->getStringParameter(0);
+        const auto& eventName = interpreter->getStringParameter(0)->getString();
 
         auto scene = getCurrentContext()->getScene();
 
@@ -198,7 +198,7 @@ BEGIN_ENTITY_FUNCTION(oldtrigger)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("eventName", m_runtime->getStringRefType(), NomadParamDoc("Name of the event to trigger.")),
+        defParameter("eventName", m_runtime->getStringType(), NomadParamDoc("Name of the event to trigger.")),
     },
     m_runtime->getVoidType(),
     NomadDoc("Trigger an event for this entity.")
@@ -315,7 +315,7 @@ BEGIN_ENTITY_FUNCTION(onPress)
     [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
         BEGIN_ENTITY_BLOCK()
 
-        const auto actionName = interpreter->getStringParameter(0);
+        const auto& actionName = interpreter->getStringParameter(0)->getString();
         const auto functionId = interpreter->getIdParameter(1);
         const auto entityId = entity->getId();
 
@@ -327,7 +327,7 @@ BEGIN_ENTITY_FUNCTION(onPress)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("actionName", m_runtime->getStringRefType(), NomadParamDoc("Name of the action to listen to.")),
+        defParameter("actionName", m_runtime->getStringType(), NomadParamDoc("Name of the action to listen to.")),
         defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function"))
     },
     m_runtime->getVoidType(),
@@ -336,7 +336,7 @@ END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(onRelease)
     [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto actionName = interpreter->getStringParameter(0);
+        const auto& actionName = interpreter->getStringParameter(0)->getString();
         auto functionId = interpreter->getIdParameter(1);
 
         BEGIN_ENTITY_BLOCK()
@@ -349,7 +349,7 @@ BEGIN_ENTITY_FUNCTION(onRelease)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("actionName", m_runtime->getStringRefType(), NomadParamDoc("Name of the action to listen to.")),
+        defParameter("actionName", m_runtime->getStringType(), NomadParamDoc("Name of the action to listen to.")),
         defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
     },
     m_runtime->getVoidType(),
@@ -410,7 +410,7 @@ END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(playAnimation)
     [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto variant = interpreter->getStringParameter(0);
+        const auto& variant = interpreter->getStringParameter(0)->getString();
         auto duration = interpreter->getIntegerParameter(1);
         auto repeat = interpreter->getBooleanParameter(2);
         auto reverse = interpreter->getBooleanParameter(3);
@@ -426,7 +426,7 @@ BEGIN_ENTITY_FUNCTION(playAnimation)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("name", m_runtime->getStringRefType(), NomadParamDoc("Name of the animation to set.")),
+        defParameter("name", m_runtime->getStringType(), NomadParamDoc("Name of the animation to set.")),
         defParameter("duration", m_runtime->getIntegerType(), NomadParamDoc("Number of frames to display an animation frame.")),
         defParameter("repeat", m_runtime->getBooleanType(), NomadParamDoc("Whether to repeat the animation.")),
         defParameter("reverse", m_runtime->getBooleanType(), NomadParamDoc("Whether to reverse the animation.")),
@@ -437,7 +437,7 @@ END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(playAnimationAndThen)
     [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto variant = interpreter->getStringParameter(0);
+        const auto& variant = interpreter->getStringParameter(0)->getString();
         auto duration = interpreter->getIntegerParameter(1);
         auto repeat = interpreter->getBooleanParameter(2);
         auto reverse = interpreter->getBooleanParameter(3);
@@ -457,7 +457,7 @@ BEGIN_ENTITY_FUNCTION(playAnimationAndThen)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("variant", m_runtime->getStringRefType(), NomadParamDoc("Variant name of the animation to set.")),
+        defParameter("variant", m_runtime->getStringType(), NomadParamDoc("Variant name of the animation to set.")),
         defParameter("duration", m_runtime->getIntegerType(), NomadParamDoc("Number of frames to display an animation frame.")),
         defParameter("repeat", m_runtime->getBooleanType(), NomadParamDoc("Whether to repeat the animation. Callback executed every time the animation ends.")),
         defParameter("reverse", m_runtime->getBooleanType(), NomadParamDoc("Whether to reverse the animation.")),
@@ -497,7 +497,7 @@ END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(removeSystem)
     [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto registrationId = interpreter->getStringParameter(0);
+        const auto& registrationId = interpreter->getStringParameter(0)->getString();
 
         BEGIN_ENTITY_BLOCK()
 
@@ -505,7 +505,7 @@ BEGIN_ENTITY_FUNCTION(removeSystem)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("registrationId", m_runtime->getStringRefType(), NomadParamDoc("Id of the system to remove from the entity."))
+        defParameter("registrationId", m_runtime->getStringType(), NomadParamDoc("Id of the system to remove from the entity."))
     },
     m_runtime->getVoidType(),
     NomadDoc("Remove a system function from the entity.")
@@ -555,7 +555,7 @@ END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(setSprite)
     [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        NomadString spriteName = interpreter->getStringParameter(0);
+        const auto& spriteName = interpreter->getStringParameter(0)->getString();
 
         auto sprite = m_resourceManager->getSprites()->getSpriteByName(spriteName);
 
@@ -570,7 +570,7 @@ BEGIN_ENTITY_FUNCTION(setSprite)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("name", m_runtime->getStringRefType(), NomadParamDoc("Name of the sprite to set.")),
+        defParameter("name", m_runtime->getStringType(), NomadParamDoc("Name of the sprite to set.")),
     },
     m_runtime->getVoidType(),
     NomadDoc("Set the sprite of the entity.")
@@ -616,18 +616,18 @@ END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(setText)
     [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto fontId = interpreter->getIdParameter(0);
-        auto text = interpreter->getStringParameter(1);
+        auto* font = interpreter->getParameter(0).asObject<FontObject>();
+        const auto& text = interpreter->getStringParameter(1)->getString();
 
         BEGIN_ENTITY_BLOCK()
 
-        entity->setFontById(fontId);
+        entity->setFont(font);
         entity->setText(text);
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("font", m_runtime->getTypeByName("font"), NomadParamDoc("Font to use")),
-        defParameter("text", m_runtime->getStringRefType(), NomadParamDoc("Text to set")),
+        defParameter("font", m_runtime->getTypeByName("Font"), NomadParamDoc("Font to use")),
+        defParameter("text", m_runtime->getStringType(), NomadParamDoc("Text to set")),
     },
     m_runtime->getVoidType(),
     NomadDoc("Set the font and text to display on an entity.")
@@ -635,7 +635,7 @@ END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(systems.afterUpdate)
     [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto systemId = interpreter->getStringParameter(0);
+        const auto& systemId = interpreter->getStringParameter(0)->getString();
         auto functionId = interpreter->getIdParameter(1);
 
         BEGIN_ENTITY_BLOCK()
@@ -658,7 +658,7 @@ END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(systems.beforeUpdate)
     [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto systemId = interpreter->getStringParameter(0);
+        const auto& systemId = interpreter->getStringParameter(0)->getString();
         auto functionId = interpreter->getIdParameter(1);
 
         BEGIN_ENTITY_BLOCK()

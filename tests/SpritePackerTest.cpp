@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/resource/SpritePacker.hpp>
+#include <nomad/game/resource/SpritePacker.hpp>
 
 #include <nomad/system/Path.hpp>
 

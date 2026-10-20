@@ -5,8 +5,8 @@
 #include <nomad/game/Game.hpp>
 #include <nomad/geometry/RectangleF.hpp>
 
-#include <nomad/resource/Sprite.hpp>
-#include <nomad/resource/Texture.hpp>
+#include <nomad/game/resource/Sprite.hpp>
+#include <nomad/game/resource/Texture.hpp>
 
 #include <cmath>
 

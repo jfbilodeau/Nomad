@@ -38,10 +38,10 @@ void registerTestNativeFunctions(Runtime& runtime, std::vector<NomadInteger>& re
     runtime.registerNativeFunction(
         "test.echo",
         [](VirtualMachine* virtualMachine) {
-            virtualMachine->setStringResult(virtualMachine->getStringParameter(0));
+            virtualMachine->setStringResult(virtualMachine->getStringParameter(0)->getString());
         },
         {
-            defParameter("text", runtime.getStringRefType(), NomadParamDoc("Text to return")),
+            defParameter("text", runtime.getStringType(), NomadParamDoc("Text to return")),
         },
         runtime.getStringType(),
         NomadDoc("Return the provided string")
@@ -119,7 +119,7 @@ BOOST_AUTO_TEST_CASE(dynamic_format_operator_recovers_from_bad_placeholders)
             RuntimeValue argument;
             argument.setStringValue(format);
             const auto outcome = fixture.execute("main", {argument});
-            argument.freeStringValue();
+            argument.freeObjectValue();
             BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
             BOOST_TEST(outcome.text == expected);
             BOOST_TEST(outcome.leakedStrings == 0);
@@ -226,12 +226,12 @@ BOOST_AUTO_TEST_CASE(dynamic_format_propagates_called_function_faults_and_preser
 #ifdef NOMAD_DEBUG
         const auto liveBefore = RuntimeValue::getLiveStringCount();
 #endif
-        const auto* function = runtime.getFunction(runtime.getFunctionId("main"));
+        const auto* function = runtime.getScriptFunction(runtime.getFunctionId("main"));
         BOOST_CHECK_THROW(machine->run(function, {argument}), VirtualMachineException);
 #ifdef NOMAD_DEBUG
         BOOST_TEST(RuntimeValue::getLiveStringCount() == liveBefore);
 #endif
-        argument.freeStringValue();
+        argument.freeObjectValue();
         InterpreterContext context(*machine);
         BOOST_CHECK_THROW(static_cast<void>(formatDynamicString(format, context, "fault.nomad", 1, 1)),
             VirtualMachineException);
@@ -442,7 +442,7 @@ BOOST_AUTO_TEST_CASE(format_string_expression_reports_type_and_syntax_errors)
     }
 }
 
-BOOST_AUTO_TEST_CASE(format_string_resolves_bare_intrinsic_members_in_lexical_scope)
+BOOST_AUTO_TEST_CASE(format_string_resolves_bare_native_members_in_lexical_scope)
 {
     const std::vector<std::pair<NomadString, NomadString>> cases{
         {"name = \"nomad\"\nreturn $\"{name.toUpper}:{name.length}\"", "NOMAD:5"},
@@ -615,7 +615,7 @@ BOOST_AUTO_TEST_CASE(format_string_expression_fault_releases_captures_and_restor
     runtime.registerNativeFunction(
         "test.explode",
         [](VirtualMachine* machine) { machine->fault("expression failed"); },
-        {defParameter("text", runtime.getStringRefType(), NomadParamDoc("Captured text"))},
+        {defParameter("text", runtime.getStringType(), NomadParamDoc("Captured text"))},
         runtime.getIntegerType(),
         NomadDoc("Fail expression execution")
     );
@@ -632,7 +632,7 @@ BOOST_AUTO_TEST_CASE(format_string_expression_fault_releases_captures_and_restor
     machine->setIntegerResult(77);
     machine->setIntegerIntermediate(88);
     BOOST_CHECK_EXCEPTION(
-        machine->run(runtime.getFunction(runtime.getFunctionId("main")), {argument}),
+        machine->run(runtime.getScriptFunction(runtime.getFunctionId("main")), {argument}),
         VirtualMachineException,
         [](const VirtualMachineException& exception) { return std::string(exception.what()) == "expression failed"; }
     );
@@ -641,10 +641,10 @@ BOOST_AUTO_TEST_CASE(format_string_expression_fault_releases_captures_and_restor
 #ifdef NOMAD_DEBUG
     BOOST_TEST(RuntimeValue::getLiveStringCount() == liveBefore);
 #endif
-    argument.freeStringValue();
+    argument.freeObjectValue();
 
-    machine->run(runtime.getFunction(runtime.getFunctionId("healthy")), {});
-    BOOST_TEST(machine->getStringResult() == "3");
+    machine->run(runtime.getScriptFunction(runtime.getFunctionId("healthy")), {});
+    BOOST_TEST(machine->getStringResult()->getString() == "3");
     runtime.getStringType()->freeValue(machine->getResult());
 }
 

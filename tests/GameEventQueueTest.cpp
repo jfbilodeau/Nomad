@@ -3,7 +3,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "nomad/game/GameEventQueue.hpp"
-#include "nomad/script/ScriptFunction.hpp"
+#include <nomad/script/ScriptCallable.hpp>
 #include "nomad/script/Type.hpp"
 
 #include <memory>
@@ -20,6 +20,10 @@ const NomadString& getEventName(const GameEvent& event) {
 class TrackingType final : public Type {
 public:
     explicit TrackingType(bool& valueFreed) : m_valueFreed(valueFreed) {}
+
+    void initValue(RuntimeValue& value) const override {
+        value = RuntimeValue{};
+    }
 
     [[nodiscard]] NomadString getTypeName() const override {
         return "tracking";

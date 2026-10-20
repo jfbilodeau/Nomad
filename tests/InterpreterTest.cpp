@@ -5,9 +5,9 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/script/Interpreter.hpp>
-#include <nomad/script/NativeFunctions.hpp>
+#include <nomad/system/NativeFunctions.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -149,8 +149,8 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
 {
     Runtime runtime;
     runtime.registerNativeFunction("test.native",
-        [](VirtualMachine* machine) { machine->setStringResult(machine->getStringParameter(0)); },
-        {defParameter("text", runtime.getStringRefType(), NomadParamDoc("Text"))},
+        [](VirtualMachine* machine) { machine->setStringResult(machine->getStringParameter(0)->getString()); },
+        {defParameter("text", runtime.getStringType(), NomadParamDoc("Text"))},
         runtime.getStringType(), NomadDoc("Echo"));
     runtime.registerNativeFunction("test.fail",
         [](VirtualMachine* machine) { machine->fault("frame failure"); },
@@ -166,14 +166,14 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
     CompilerContext compilation(compiler.get());
     compiler->registerSources(&compilation, {{{"answer", {"answer.nomad", "return 3"}}}, {}});
     BOOST_REQUIRE(compiler->compileFunctions(&compilation));
-    const auto parentId = runtime.registerFunction("parent", "frame.nomad", "");
-    auto* parent = runtime.getFunction(parentId);
+    const auto parentId = runtime.registerScriptFunction("parent", "frame.nomad", "");
+    auto* parent = runtime.getScriptFunction(parentId);
     parent->registerVariable("uncaptured", runtime.getIntegerType());
-    const auto id = runtime.registerFunction("frame", "frame.nomad", "");
-    auto* function = runtime.getFunction(id);
+    const auto id = runtime.registerScriptFunction("frame", "frame.nomad", "");
+    auto* function = runtime.getScriptFunction(id);
     function->setParentId(parentId);
-    function->addParameter("value", runtime.getIntegerType());
-    function->addParameter("text", runtime.getStringType());
+    function->addParameter("value", runtime.getIntegerType(), "");
+    function->addParameter("text", runtime.getStringType(), "");
     function->createCapture(0, "captured", CaptureSource::Variable, runtime.getIntegerType());
     function->registerVariable("local", runtime.getIntegerType());
     function->registerVariable("localText", runtime.getStringType());
@@ -203,7 +203,7 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
 #ifdef NOMAD_DEBUG
     BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
 #endif
-    text.freeStringValue();
+    text.freeObjectValue();
 }
 
 BOOST_AUTO_TEST_CASE(interpreter_context_stores_persistent_typed_variables)
@@ -635,16 +635,16 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_nativeFunctions_with_hidden_so
     runtime.registerNativeFunction(
         "test.hiddenSource",
         [&](const VirtualMachine* virtualMachine) {
-            fileName = virtualMachine->getStringParameter(0);
-            functionName = virtualMachine->getStringParameter(1);
+            fileName = virtualMachine->getStringParameter(0)->getString();
+            functionName = virtualMachine->getStringParameter(1)->getString();
             lineNumber = virtualMachine->getIntegerParameter(2);
-            message = virtualMachine->getStringParameter(3);
+            message = virtualMachine->getStringParameter(3)->getString();
         },
         {
             defParameter("$file", runtime.getFileNameType(), ""),
             defParameter("$function", runtime.getFunctionNameType(), ""),
             defParameter("$line", runtime.getLineNumberType(), ""),
-            defParameter("message", runtime.getStringRefType(), "")
+            defParameter("message", runtime.getStringType(), "")
         },
         runtime.getVoidType(),
         ""

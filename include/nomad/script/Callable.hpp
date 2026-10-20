@@ -4,63 +4,154 @@
 
 #include <nomad/Nomad.hpp>
 
+#include <nomad/script/Documentation.hpp>
+
+#include <variant>
 #include <vector>
 
 namespace nomad {
 
+class NativeConstructor;
+class NativeFunction;
+class NativeMethod;
+class ScriptConstructor;
+class ScriptFunction;
+class ScriptMethod;
 class Type;
 
-// Where a callable is implemented. Both kinds are called with the same syntax in Nomad code.
-enum class CallableKind {
-    NativeFunction = 1, // Implemented in C++ and registered by the host runtime.
-    Function,           // Compiled from Nomad source, either from a script or from a `fun` declaration.
-};
-
-// Identifies a single callable in the unified catalog. `id` indexes the registry of the matching kind, so the
-// pair is required to address a callable unambiguously.
-struct CallableId {
-    CallableKind kind = CallableKind::NativeFunction;
-    NomadId id = NOMAD_INVALID_ID;
-
-    [[nodiscard]] bool isValid() const { return id != NOMAD_INVALID_ID; }
-
-    bool operator==(const CallableId& other) const {
-        return kind == other.kind && id == other.id;
-    }
-
-    bool operator!=(const CallableId& other) const { return !(*this == other); }
-};
-
-inline constexpr CallableId NOMAD_INVALID_CALLABLE_ID = CallableId{};
-
-// How the parser consumes the tokens of a parameter. A call is parsed before its overload is selected, so every
-// overload of a name must agree on the shape of each parameter.
-enum class ParameterShape {
-    Value = 1,      // An ordinary value argument, parsed as an expression independently of the expected type.
-    SourceFile,     // Hidden `$file`; supplied by the compiler and consumes no tokens.
-    SourceFunction, // Hidden `$function`; supplied by the compiler and consumes no tokens.
-    SourceLine,     // Hidden `$line`; supplied by the compiler and consumes no tokens.
-    EventDispatch,
-    EventCallback,
-    // Also covers predicates: the predicate type is a callback type, and the parser treats it as one.
-    Callback,
-};
-
-// Shapes that produce exactly one argument and whose parsing does not depend on the parameter type. Only these can
-// appear in an overloaded callable: the other shapes either consume a variable number of tokens or produce a variable
-// number of arguments, which would make the parse ambiguous before an overload is chosen.
-[[nodiscard]] constexpr bool isOverloadableShape(const ParameterShape shape) {
-    return shape == ParameterShape::Value ||
-        shape == ParameterShape::SourceFile ||
-        shape == ParameterShape::SourceFunction ||
-        shape == ParameterShape::SourceLine;
-}
-
-// All callables sharing one name. A set holds more than one entry when the name is overloaded; overloads may differ
-// only in the types of their `ParameterShape::Value` parameters.
-struct CallableOverloadSet {
+struct Parameter {
     NomadString name;
-    std::vector<CallableId> overloads;
+    const Type* type;
+    NomadDocField;
+};
+
+Parameter defParameter(const NomadString& name, const Type* type, NomadDocArg);
+
+struct TypeParameterIndex {
+    NomadIndex index;
+};
+
+struct TemplateParameter {
+    NomadString name;
+    std::variant<const Type*, TypeParameterIndex> type;
+    NomadDocField;
+};
+
+TemplateParameter defTemplateParameter(
+    const NomadString& name,
+    std::variant<const Type*, TypeParameterIndex> type,
+    NomadDocArg
+);
+
+enum class CallableType {
+    Function = 1,
+    Method,
+    Constructor,
+};
+
+enum class CallableSource {
+    Script = 1, // Compiled from Nomad source.
+    Native,     // Implemented in C++ and registered by the host.
+};
+
+// Root of everything that can be called, whatever its kind or source. All callables share one id space and are owned
+// by `Runtime`, which hands them out as const pointers through typed getters.
+class Callable {
+public:
+    Callable(const Callable&) = delete;
+    Callable& operator=(const Callable&) = delete;
+    virtual ~Callable();
+
+    [[nodiscard]] NomadId getId() const;
+    [[nodiscard]] const NomadString& getName() const;
+    [[nodiscard]] CallableType getType() const;
+    [[nodiscard]] CallableSource getSource() const;
+    [[nodiscard]] const std::vector<Parameter>& getParameters() const;
+    [[nodiscard]] NomadIndex getParameterCount() const;
+    // The type of the value the callable yields; void when it yields nothing.
+    [[nodiscard]] const Type* getReturnType() const;
+    // Method: the receiver's type. Constructor: the class being constructed (e.g. `Array`), which may differ from
+    // the return type (e.g. `Array1<int>`). Null for functions.
+    [[nodiscard]] const Type* getObjectType() const;
+    [[nodiscard]] const NomadString& getDoc() const;
+
+protected:
+    Callable(
+        CallableType type,
+        CallableSource source,
+        NomadString name,
+        std::vector<Parameter> parameters,
+        const Type* returnType,
+        const Type* objectType,
+        NomadString doc
+    );
+
+    void setId(NomadId id);
+    void setReturnType(const Type* returnType);
+    [[nodiscard]] std::vector<Parameter>& getEditableParameters();
+
+private:
+    friend class Runtime; // Assigns the id when the callable joins the function table.
+
+    NomadId m_id = NOMAD_INVALID_ID;
+    NomadString m_name;
+    CallableType m_type;
+    CallableSource m_source;
+    std::vector<Parameter> m_parameters;
+    const Type* m_returnType;
+    const Type* m_objectType;
+    NomadString m_doc;
+};
+
+// A callable that does not need a receiver.
+class Function : public Callable {
+public:
+    [[nodiscard]] virtual const NativeFunction* asNativeFunction() const;
+    [[nodiscard]] virtual ScriptFunction* asScriptFunction();
+    [[nodiscard]] virtual const ScriptFunction* asScriptFunction() const;
+
+protected:
+    Function(
+        const CallableSource source,
+        NomadString name,
+        std::vector<Parameter> parameters,
+        const Type* returnType,
+        NomadString doc
+    );
+};
+
+// A callable invoked on an object of `objectType`.
+class Method : public Callable {
+public:
+    [[nodiscard]] virtual const NativeMethod* asNativeMethod() const;
+    [[nodiscard]] virtual const ScriptMethod* asScriptMethod() const;
+
+protected:
+    Method(
+        const CallableSource source,
+        NomadString name,
+        const Type* objectType,
+        std::vector<Parameter> parameters,
+        const Type* returnType,
+        NomadString doc
+    );
+};
+
+// Creates an object. The name is the one of the class being constructed.
+class Constructor : public Callable {
+public:
+    [[nodiscard]] virtual const NativeConstructor* asNativeConstructor() const;
+    [[nodiscard]] virtual const ScriptConstructor* asScriptConstructor() const;
+
+protected:
+    Constructor(
+        const CallableSource source,
+        NomadString name,
+        const Type* objectType,
+        std::vector<Parameter> parameters,
+        const Type* createdType,
+        NomadString doc
+    );
 };
 
 } // nomad

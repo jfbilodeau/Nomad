@@ -2,30 +2,42 @@
 Things the author wants to do.
 
 ## Problems
-[ ] `$"{1+2}"` in interpreter causes fault
-[ ] Mouse x,y not property calculate when window is scaled
 
 
 ## Open
+[ ] File IO module.
+[ ] `doc` comments in Nomad.
+[ ] Replace ref counting with garbage collector.
+[ ] Game debug console--root should be Game/Inventory/Windows/etc.
+[ ] Need to add `game.mouse.x/y`, `scene.mouse.x/y` and `this.mouse.x/y`
 [ ] Configure logging via `nomad.toml`
 [ ] Sample game
-[ ] Select text language
+[ ] Native GUI?
+[ ] Select text (`t.*`) language
 [ ] `this.wait`, `scene.wait`, `game.wait`
 [ ] Support to tween properties
 [ ] `args`
 [ ] MacOS
 [ ] WASM
 [ ] Indexer notation.
-[ ] Persist scene
-[ ] First decompiled script should start at index 1 instead of 0 in decompiler (instructions.txt).
-[ ] LSP
+[ ] Persist/load scene
+[ ] First decompiled script should start at index 1 instead of 0 in decompiler (instructions.txt). Or add a 'default' function at start that just stops execution.
 [ ] Command overloading (WIP)
 [ ] Auto publish Nomad plugin to VS Code extensions
 [ ] Compile to binary
 [ ] LLVM
+[ ] "Nomad Doc" strings for script functions, enums, events, etc...
 [ ] Gen game docs for modding
-
+[ ] Implicit constructor name:
+```nomad
+a = new Array<int> 10  # Type named, `a` now `Array<int>
+...
+a = new 20  # Type for `a` is known. Reused.
+```
+ 
 ## Completed
+[X] `$"{1+2}"` in interpreter causes fault
+[X] LSP
 [X] Make runtime plugable (Game, system, etc...)
 [X] Make `font` an intrinsic instead of ID.
 [X] Display physics bodies in debug mode
@@ -43,7 +55,7 @@ Things the author wants to do.
 [X] Save/load variable context/dynamic
 [X] Window events
 [X] Enums
-[X] Sound!!!
+[X] Sound
 
 ## Defered
 [ ] Strings might leak if a script faults

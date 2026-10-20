@@ -7,7 +7,7 @@
 #include <nomad/game/Entity.hpp>
 #include <nomad/game/Scene.hpp>
 
-#include <nomad/resource/ResourceManager.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
 
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Closure.hpp>
@@ -30,7 +30,7 @@ void Game::initSceneFunctions() {
         [this](const VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot add an animated tile outside of a scene")
 
-            const auto tileName = interpreter->getStringParameter(0);
+            const auto& tileName = interpreter->getStringParameter(0)->getString();
             const auto count = interpreter->getIntegerParameter(1);
             const auto speed = interpreter->getIntegerParameter(2);
 
@@ -38,7 +38,7 @@ void Game::initSceneFunctions() {
                 log::error("Cannot add animated tile with an unknown name, invalid count, or invalid speed");
             }
         }, {
-            defParameter("tileName", m_runtime->getStringRefType(), NomadParamDoc("Name of the first tile in the animation.")),
+            defParameter("tileName", m_runtime->getStringType(), NomadParamDoc("Name of the first tile in the animation.")),
             defParameter("count", m_runtime->getIntegerType(), NomadParamDoc("Number of consecutive tiles (frames) to animate.")),
             defParameter("speed", m_runtime->getIntegerType(), NomadParamDoc("Scene updates per displayed tile frame."))
         },
@@ -117,7 +117,7 @@ void Game::initSceneFunctions() {
         [this](const VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot create entity outside of a scene")
 
-            const auto initFunctionName = interpreter->getStringParameter(0);
+            const auto& initFunctionName = interpreter->getStringParameter(0)->getString();
             const auto entityX = interpreter->getFloatParameter(1);
             const auto entityY = interpreter->getFloatParameter(2);
             const auto layer = interpreter->getIntegerParameter(3);
@@ -140,7 +140,7 @@ void Game::initSceneFunctions() {
             }
         }, {
             defParameter(
-                "functionName", m_runtime->getStringRefType(),
+                "functionName", m_runtime->getStringType(),
                 NomadParamDoc("Name of the function to execute to initialize the entity.")
             ),
             defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
@@ -156,7 +156,7 @@ void Game::initSceneFunctions() {
         [this](VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot create entity outside of a scene")
 
-            auto initFunctionName = interpreter->getStringParameter(0);
+            const auto& initFunctionName = interpreter->getStringParameter(0)->getString();
             const auto entityX = interpreter->getFloatParameter(1);
             const auto entityY = interpreter->getFloatParameter(2);
             const auto layer = interpreter->getIntegerParameter(3);
@@ -176,7 +176,7 @@ void Game::initSceneFunctions() {
             );
         }, {
             defParameter(
-                "functionName", m_runtime->getStringRefType(),
+                "functionName", m_runtime->getStringType(),
                 NomadParamDoc("Name of the function to execute to initialize the entity.")
             ),
             defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
@@ -231,11 +231,11 @@ void Game::initSceneFunctions() {
         [this](VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot create entity outside of a scene")
 
-            auto initFunctionName = interpreter->getStringParameter(0);
+            const auto& initFunctionName = interpreter->getStringParameter(0)->getString();
             const auto entityX = interpreter->getFloatParameter(1);
             const auto entityY = interpreter->getFloatParameter(2);
             const auto layer = interpreter->getIntegerParameter(3);
-            const auto text = interpreter->getStringParameter(4);
+            const auto& text = interpreter->getStringParameter(4)->getString();
 
             addEntityToScene(
                 scene->getId(),
@@ -249,13 +249,13 @@ void Game::initSceneFunctions() {
             );
         }, {
             defParameter(
-                "functionName", m_runtime->getStringRefType(),
+                "functionName", m_runtime->getStringType(),
                 NomadParamDoc("Name of the function to execute to initialize the entity.")
             ),
             defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
             defParameter("y", m_runtime->getFloatType(), NomadParamDoc("Y position of the entity.")),
             defParameter("layer", m_runtime->getIntegerType(), NomadParamDoc("Layer of the entity.")),
-            defParameter("text", m_runtime->getStringRefType(), NomadParamDoc("Text to display for the entity."))
+            defParameter("text", m_runtime->getStringType(), NomadParamDoc("Text to display for the entity."))
         },
         m_runtime->getVoidType(),
         NomadDoc("Creates a new entity for this scene.")
@@ -270,7 +270,7 @@ void Game::initSceneFunctions() {
             const auto entityX = interpreter->getFloatParameter(1);
             const auto entityY = interpreter->getFloatParameter(2);
             const auto layer = interpreter->getIntegerParameter(3);
-            const auto text = interpreter->getStringParameter(4);
+            const auto& text = interpreter->getStringParameter(4)->getString();
 
             addEntityToScene(
                 scene->getId(),
@@ -291,7 +291,7 @@ void Game::initSceneFunctions() {
             defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
             defParameter("y", m_runtime->getFloatType(), NomadParamDoc("Y position of the entity.")),
             defParameter("layer", m_runtime->getIntegerType(), NomadParamDoc("Layer of the entity.")),
-            defParameter("text", m_runtime->getStringRefType(), NomadParamDoc("Text to display for the entity."))
+            defParameter("text", m_runtime->getStringType(), NomadParamDoc("Text to display for the entity."))
         },
         m_runtime->getVoidType(),
         NomadDoc("Creates a new entity for this scene.")
@@ -302,11 +302,11 @@ void Game::initSceneFunctions() {
         [this](VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot create entity outside of a scene")
 
-            auto initFunctionName = interpreter->getStringParameter(0);
+            const auto& initFunctionName = interpreter->getStringParameter(0)->getString();
             const auto entityX = interpreter->getFloatParameter(1);
             const auto entityY = interpreter->getFloatParameter(2);
             const auto layer = interpreter->getIntegerParameter(3);
-            const auto text = interpreter->getStringParameter(4);
+            const auto& text = interpreter->getStringParameter(4)->getString();
             const auto functionId = interpreter->getIdParameter(5);
             auto postFunctionClosure = interpreter->createClosure(m_runtime, functionId);
 
@@ -323,13 +323,13 @@ void Game::initSceneFunctions() {
             );
         }, {
             defParameter(
-                "functionName", m_runtime->getStringRefType(),
+                "functionName", m_runtime->getStringType(),
                 NomadParamDoc("Name of the function to execute to initialize the entity.")
             ),
             defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
             defParameter("y", m_runtime->getFloatType(), NomadParamDoc("Y position of the entity.")),
             defParameter("layer", m_runtime->getIntegerType(), NomadParamDoc("Layer of the entity.")),
-            defParameter("text", m_runtime->getStringRefType(), NomadParamDoc("Text to display for the entity.")),
+            defParameter("text", m_runtime->getStringType(), NomadParamDoc("Text to display for the entity.")),
             defParameter("function", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("ID of the function to execute after creating the entity."))
         },
         m_runtime->getVoidType(),
@@ -341,12 +341,12 @@ void Game::initSceneFunctions() {
         [this](VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot load input mapping outside of a scene")
 
-            auto mappingName = interpreter->getStringParameter(0);
+            const auto& mappingName = interpreter->getStringParameter(0)->getString();
 
             scene->loadActionMapping(mappingName);
         }, {
             defParameter(
-                "mappingName", m_runtime->getStringRefType(), NomadParamDoc("Name of the input mapping to load.")
+                "mappingName", m_runtime->getStringType(), NomadParamDoc("Name of the input mapping to load.")
             )
         },
         m_runtime->getVoidType(),
@@ -358,16 +358,16 @@ void Game::initSceneFunctions() {
         [this](const VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot load input mapping outside of a scene")
 
-            const NomadString mapName = interpreter->getStringParameter(0);
-            const NomadString tileSetTexture = interpreter->getStringParameter(1);
+            const auto& mapName = interpreter->getStringParameter(0)->getString();
+            const auto& tileSetTexture = interpreter->getStringParameter(1)->getString();
 
             const auto mapFileName = mapName + ".tmj";
             const auto tileSetTextureFileName = tileSetTexture + ".png";
 
             scene->loadTileMap(mapFileName, tileSetTextureFileName);
         }, {
-            defParameter("mapName", m_runtime->getStringRefType(), NomadParamDoc("Name of the map to load.")),
-            defParameter("tileSetTexture", m_runtime->getStringRefType(), NomadParamDoc("Name of the tile set texture to load."))
+            defParameter("mapName", m_runtime->getStringType(), NomadParamDoc("Name of the map to load.")),
+                        defParameter("tileSetTexture", m_runtime->getStringType(), NomadParamDoc("Name of the tile set texture to load."))
         },
         m_runtime->getVoidType(),
         NomadDoc("Loads a map for this scene.")
@@ -458,14 +458,14 @@ void Game::initSceneFunctions() {
         [this](const VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot trigger event outside of a scene")
 
-            auto eventName = interpreter->getStringParameter(1);
+            const auto& eventName = interpreter->getStringParameter(1)->getString();
             auto frameCount = interpreter->getIntegerParameter(0);
 
             scene->scheduleEvent(eventName, frameCount);
         },
         {
             defParameter("frameCount", m_runtime->getIntegerType(), NomadParamDoc("Number of frames to wait before triggering the event.")),
-            defParameter("eventName", m_runtime->getStringRefType(), NomadParamDoc("Name of the event to trigger."))
+            defParameter("eventName", m_runtime->getStringType(), NomadParamDoc("Name of the event to trigger."))
         },
         m_runtime->getVoidType(),
         NomadDoc("Trigger an event after a specified number of frames.")
@@ -675,7 +675,7 @@ void Game::initSceneFunctions() {
         [this](VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot load input mapping outside of a scene")
 
-            auto name = interpreter->getStringParameter(0);
+            const auto& name = interpreter->getStringParameter(0)->getString();
 
             auto executionContext = getCurrentContext();
 
@@ -689,7 +689,7 @@ void Game::initSceneFunctions() {
                 }
             );
         }, {
-            defParameter("name", m_runtime->getStringRefType(), NomadParamDoc("The name of the entity to select")),
+            defParameter("name", m_runtime->getStringType(), NomadParamDoc("The name of the entity to select")),
         },
         m_runtime->getIntegerType(),
         NomadDoc("Select entities across all layers that have the given name.")

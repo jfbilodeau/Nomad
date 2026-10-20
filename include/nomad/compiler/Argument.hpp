@@ -26,12 +26,6 @@ public:
     // parameter types are known.
     [[nodiscard]] virtual const Type* resolveOverloadType(CompilerContext* context, ScriptFunction* function);
 
-    // Type of the value actually pushed on the stack; decides whether the caller frees it after the call.
-    // Differs from `getType()` when a `$stringref` parameter receives an owned temporary, or when a borrowable string
-    // is lent to a read-only function parameter.
-    [[nodiscard]]
-    virtual const Type* getPushedType() const;
-
     [[nodiscard]]
     virtual NomadIndex getStackValueCount() const { return 1; }
 
@@ -49,20 +43,12 @@ private:
     const Type* m_type = nullptr;
 };
 
-// How the callee uses a parameter. A read-only parameter cannot be changed by the callee, so the caller may lend a
-// borrowable string (literal, local or parameter) instead of pushing a copy.
-enum class ParameterAccess {
-    Default = 1,
-    ReadOnly,
-};
-
 // Argument factories
 std::unique_ptr<Argument> createExpressionArgument(
     NomadIndex line,
     NomadIndex column,
     const Type* type,
-    std::unique_ptr<Expression> expression,
-    ParameterAccess parameterAccess = ParameterAccess::Default
+    std::unique_ptr<Expression> expression
 );
 std::unique_ptr<Argument> createPredicateArgument(NomadIndex line, NomadIndex column, NomadId predicateFunctionId);
 std::unique_ptr<Argument> createCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, NomadId functionId);

@@ -2,11 +2,11 @@
 
 #include <nomad/game/Game.hpp>
 
-#include <nomad/resource/ResourceManager.hpp>
-#include <nomad/resource/Sprite.hpp>
-#include <nomad/resource/SpriteCatalog.hpp>
-#include <nomad/resource/SpriteDiscovery.hpp>
-#include <nomad/resource/SpritePacker.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
+#include <nomad/game/resource/Sprite.hpp>
+#include <nomad/game/resource/SpriteCatalog.hpp>
+#include <nomad/game/resource/SpriteDiscovery.hpp>
+#include <nomad/game/resource/SpritePacker.hpp>
 
 #include <nomad/system/Path.hpp>
 

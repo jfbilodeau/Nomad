@@ -4,8 +4,9 @@
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <nomad/script/VirtualMachine.hpp>
@@ -204,63 +205,154 @@ void VirtualMachine::callNativeFunction(const NomadId nativeFunctionId) {
     m_enclosingParameterIndex = previousEnclosingParameterIndex;
 }
 
-void VirtualMachine::callIntrinsicMethod(const NomadId memberId) {
-    IntrinsicMethodDefinition definition;
-    if (!m_runtime->getIntrinsicMethodDefinition(memberId, definition) || !definition.fn) {
-        fault("Invalid intrinsic method id: " + toString(memberId));
+void VirtualMachine::callNativeMethod(const NomadId memberId, const RuntimeValue& receiver) {
+    const auto* method = m_runtime->getNativeMemberMethod(memberId);
+    if (method == nullptr || !method->getFn()) {
+        fault("Invalid native method id: " + toString(memberId));
     }
+    invokeNativeMethod(method->getFn(), receiver);
+}
+
+void VirtualMachine::invokeNativeMethod(const NativeFunctionFn& callback, const RuntimeValue& receiver) {
     const auto previousParameterIndex = m_parameterIndex;
     const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
-    auto* previousReceiver = m_intrinsicReceiver;
-    if (m_intrinsicReceiver == nullptr) {
-        m_intrinsicReceiver = &m_intermediate;
-    }
+    const auto previousThis = m_this;
+    m_this = receiver;
     m_parameterIndex = m_stackIndex;
     m_enclosingParameterIndex = previousParameterIndex;
 
     try {
-        definition.fn(this);
+        (void)getThis();
+        callback(this);
     } catch (...) {
         m_parameterIndex = previousParameterIndex;
         m_enclosingParameterIndex = previousEnclosingParameterIndex;
-        m_intrinsicReceiver = previousReceiver;
+        m_this = previousThis;
         throw;
     }
 
     m_parameterIndex = previousParameterIndex;
     m_enclosingParameterIndex = previousEnclosingParameterIndex;
-    m_intrinsicReceiver = previousReceiver;
+    m_this = previousThis;
 }
 
-const RuntimeValue& VirtualMachine::getIntrinsicReceiver() const {
-    if (m_intrinsicReceiver == nullptr) {
-        fault("Intrinsic method has no receiver");
+NomadObject* VirtualMachine::getThis() const {
+    auto* instance = m_this.getObjectValue();
+    if (instance == nullptr) {
+        fault("Object method has no instance");
     }
-
-    return *m_intrinsicReceiver;
+    return instance;
 }
 
-RuntimeValue& VirtualMachine::getIntrinsicReceiver() {
-    if (m_intrinsicReceiver == nullptr) {
-        fault("Intrinsic method has no receiver");
+void VirtualMachine::invokeNativeMember(const NativeFunctionFn& callback, const RuntimeValue& receiver) {
+    const auto previousThis = m_this;
+    m_this = receiver;
+    try {
+        (void)getThis();
+        callback(this);
+    } catch (...) {
+        m_this = previousThis;
+        throw;
     }
+    m_this = previousThis;
+}
 
-    return *m_intrinsicReceiver;
+void VirtualMachine::getNativeProperty(
+    const NomadId memberId,
+    const RuntimeValue& receiver,
+    RuntimeValue& result
+) {
+    NativePropertyDefinition definition;
+    if (!m_runtime->getNativePropertyDefinition(memberId, definition) || !definition.getFn) {
+        fault("Invalid native property getter");
+    }
+    invokeNativeMember([&](VirtualMachine* machine) { definition.getFn(machine, result); }, receiver);
+}
+
+void VirtualMachine::setNativeProperty(
+    const NomadId memberId,
+    const RuntimeValue& receiver,
+    const RuntimeValue& value
+) {
+    NativePropertyDefinition definition;
+    if (!m_runtime->getNativePropertyDefinition(memberId, definition) || !definition.setFn) {
+        fault("Invalid native property setter");
+    }
+    invokeNativeMember([&](VirtualMachine* machine) { definition.setFn(machine, value); }, receiver);
+}
+
+void VirtualMachine::callNativeIndexer(
+    const NomadId indexerId,
+    const RuntimeValue& receiver,
+    const bool write
+) {
+    NativeIndexerDefinition definition;
+    if (!m_runtime->getNativeIndexerDefinition(indexerId, definition)) {
+        fault("Invalid native indexer");
+    }
+    const auto& callback = write ? definition.setFn : definition.getFn;
+    if (!callback) {
+        fault(write ? "Invalid native indexer setter" : "Invalid native indexer getter");
+    }
+    m_result = RuntimeValue{};
+    invokeNativeMethod(callback, receiver);
+}
+
+void VirtualMachine::runNativeIndexer(
+    const NomadId indexerId,
+    const std::vector<RuntimeValue>& args,
+    const RuntimeValue& receiver,
+    const bool write
+) {
+    NativeIndexerDefinition definition;
+    if (!m_runtime->getNativeIndexerDefinition(indexerId, definition)) {
+        fault("Invalid native indexer");
+    }
+    if (args.size() != definition.indexTypes.size() + (write ? 1 : 0)) {
+        fault("Incorrect argument count when calling native indexer");
+    }
+    if (m_stackIndex >= m_stack.size() || args.size() > m_stack.size() - m_stackIndex - 1) {
+        fault("Stack overflow");
+    }
+    const auto initialStackIndex = m_stackIndex;
+    const auto parameterType = [&](const NomadIndex index) {
+        return index < definition.indexTypes.size() ? definition.indexTypes[index] : definition.valueType;
+    };
+    const auto releaseArguments = [&]() {
+        while (m_stackIndex > initialStackIndex) {
+            const auto index = args.size() - (m_stackIndex - initialStackIndex);
+            parameterType(index)->freeValue(m_stack[m_stackIndex]);
+            --m_stackIndex;
+        }
+    };
+    m_result = RuntimeValue{};
+    try {
+        for (auto index = args.size(); index > 0; --index) {
+            ++m_stackIndex;
+            m_stack[m_stackIndex] = RuntimeValue{};
+            parameterType(index - 1)->copyValue(args[index - 1], m_stack[m_stackIndex]);
+        }
+        callNativeIndexer(indexerId, receiver, write);
+    } catch (...) {
+        releaseArguments();
+        throw;
+    }
+    releaseArguments();
 }
 
 void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std::vector<RuntimeValue>& args) {
-    NativeFunctionDefinition definition;
-    if (!m_runtime->getNativeFunctionDefinition(nativeFunctionId, definition)) {
+    const auto* function = m_runtime->getNativeFunction(nativeFunctionId);
+    if (function == nullptr) {
         fault("Invalid native function id: " + toString(nativeFunctionId));
     }
-    if (definition.returnType == nullptr) {
-        fault("NativeFunction '" + definition.name + "' has no return type");
+    if (function->getReturnType() == nullptr) {
+        fault("NativeFunction '" + function->getName() + "' has no return type");
     }
-    if (!definition.returnType->isVoid()) {
-        definition.returnType->initValue(m_result);
+    if (!function->getReturnType()->isVoid()) {
+        m_result = RuntimeValue{};
     }
-    if (args.size() != definition.parameters.size()) {
-        fault("Incorrect argument count when calling native function '" + definition.name + "'");
+    if (args.size() != function->getParameterCount()) {
+        fault("Incorrect argument count when calling native function '" + function->getName() + "'");
     }
     if (m_stackIndex >= m_stack.size() ||
         args.size() > m_stack.size() - m_stackIndex - 1) {
@@ -282,13 +374,13 @@ void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std
     try {
         for (NomadIndex index = args.size(); index > 0; --index) {
             const auto argumentIndex = index - 1;
-            const auto* type = definition.parameters[argumentIndex].type;
+            const auto* type = function->getParameters()[argumentIndex].type;
             if (type == nullptr) {
-                fault("NativeFunction '" + definition.name + "' has an invalid parameter type");
+                fault("NativeFunction '" + function->getName() + "' has an invalid parameter type");
             }
             ++m_stackIndex;
             argumentTypes.push_back(type);
-            type->initValue(m_stack[m_stackIndex]);
+            m_stack[m_stackIndex] = RuntimeValue{};
             type->copyValue(args[argumentIndex], m_stack[m_stackIndex]);
         }
 
@@ -301,20 +393,20 @@ void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std
     releaseArguments();
 }
 
-void VirtualMachine::runIntrinsicMethod(const NomadId memberId, const std::vector<RuntimeValue>& args,
+void VirtualMachine::runNativeMethod(const NomadId memberId, const std::vector<RuntimeValue>& args,
                                         RuntimeValue& receiver) {
-    IntrinsicMethodDefinition definition;
-    if (!m_runtime->getIntrinsicMethodDefinition(memberId, definition)) {
-        fault("Invalid intrinsic method id: " + toString(memberId));
+    const auto* method = m_runtime->getNativeMemberMethod(memberId);
+    if (method == nullptr) {
+        fault("Invalid native method id: " + toString(memberId));
     }
-    if (definition.returnType == nullptr) {
-        fault("Intrinsic method '" + definition.name + "' has no return type");
+    if (method->getReturnType() == nullptr) {
+        fault("Native method '" + method->getName() + "' has no return type");
     }
-    if (!definition.returnType->isVoid()) {
-        definition.returnType->initValue(m_result);
+    if (!method->getReturnType()->isVoid()) {
+        m_result = RuntimeValue{};
     }
-    if (args.size() != definition.parameters.size()) {
-        fault("Incorrect argument count when calling intrinsic method '" + definition.name + "'");
+    if (args.size() != method->getParameterCount()) {
+        fault("Incorrect argument count when calling native method '" + method->getName() + "'");
     }
     if (m_stackIndex >= m_stack.size() || args.size() > m_stack.size() - m_stackIndex - 1) {
         fault("Stack overflow");
@@ -331,31 +423,26 @@ void VirtualMachine::runIntrinsicMethod(const NomadId memberId, const std::vecto
         m_stackIndex = initialStackIndex;
     };
 
-    auto* previousReceiver = m_intrinsicReceiver;
-    m_intrinsicReceiver = &receiver;
-
     try {
         for (NomadIndex index = args.size(); index > 0; --index) {
             const auto argumentIndex = index - 1;
-            const auto* type = definition.parameters[argumentIndex].type;
+            const auto* type = method->getParameters()[argumentIndex].type;
             if (type == nullptr) {
-                fault("Intrinsic method '" + definition.name + "' has an invalid parameter type");
+                fault("Native method '" + method->getName() + "' has an invalid parameter type");
             }
 
             ++m_stackIndex;
             argumentTypes.push_back(type);
-            type->initValue(m_stack[m_stackIndex]);
+            m_stack[m_stackIndex] = RuntimeValue{};
             type->copyValue(args[argumentIndex], m_stack[m_stackIndex]);
         }
 
-        callIntrinsicMethod(memberId);
+        callNativeMethod(memberId, receiver);
     } catch (...) {
-        m_intrinsicReceiver = previousReceiver;
         releaseArguments();
         throw;
     }
 
-    m_intrinsicReceiver = previousReceiver;
     releaseArguments();
 }
 
@@ -363,7 +450,7 @@ std::vector<TypedValue> VirtualMachine::captureCurrentFrame(const ScriptFunction
     if (function == nullptr || function->getParentId() == NOMAD_INVALID_ID) {
         fault("Invalid function for current-frame capture");
     }
-    const auto* parent = m_runtime->getFunction(function->getParentId());
+    const auto* parent = m_runtime->getScriptFunction(function->getParentId());
     if (parent == nullptr || parent != getCurrentFunction()) {
         fault("Format expression does not belong to the current script frame");
     }
@@ -392,7 +479,7 @@ std::vector<TypedValue> VirtualMachine::captureCurrentFrame(const ScriptFunction
 }
 
 std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, const NomadId functionId) const {
-    const auto function = runtime->getFunction(functionId);
+    const auto function = runtime->getScriptFunction(functionId);
 
     if (function == nullptr) {
         return nullptr;
@@ -448,30 +535,30 @@ void VirtualMachine::pushIntermediate() {
     m_stack[m_stackIndex] = m_intermediate;
 }
 
-void VirtualMachine::pushStringResult() {
+void VirtualMachine::pushObjectResult() {
     m_stackIndex++;
     TEST_STACK_OVERFLOW
-    m_stack[m_stackIndex].copyStringValue(m_result);
+    m_stack[m_stackIndex].copyObjectValue(m_result);
 }
 
-void VirtualMachine::pushStringIntermediate() {
+void VirtualMachine::pushObjectIntermediate() {
     m_stackIndex++;
     TEST_STACK_OVERFLOW
-    m_stack[m_stackIndex].moveStringValue(m_intermediate);
+    m_stack[m_stackIndex].moveObjectValue(m_intermediate);
 }
 
-void VirtualMachine::moveStringResultToStack() {
+void VirtualMachine::moveObjectResultToStack() {
     m_stackIndex++;
     TEST_STACK_OVERFLOW
-    m_stack[m_stackIndex].moveStringValue(m_result);
+    m_stack[m_stackIndex].moveObjectValue(m_result);
 }
 
-void VirtualMachine::freeStringVariable(const NomadIndex variable_index) {
-    m_stack[m_variableIndex + variable_index].freeStringValue();
+void VirtualMachine::freeObjectVariable(const NomadIndex variable_index) {
+    m_stack[m_variableIndex + variable_index].freeObjectValue();
 }
 
-void VirtualMachine::freeStringStack(const NomadIndex index) {
-    m_stack[m_stackIndex - index].freeStringValue();
+void VirtualMachine::freeObjectStack(const NomadIndex index) {
+    m_stack[m_stackIndex - index].freeObjectValue();
 }
 
 void VirtualMachine::popResult() {
@@ -486,14 +573,14 @@ void VirtualMachine::popIntermediate() {
     TEST_STACK_UNDERFLOW
 }
 
-void VirtualMachine::popStringResult() {
-    m_result.moveStringValue(m_stack[m_stackIndex]);
+void VirtualMachine::popObjectResult() {
+    m_result.moveObjectValue(m_stack[m_stackIndex]);
     m_stackIndex--;
     TEST_STACK_UNDERFLOW
 }
 
-void VirtualMachine::popStringIntermediate() {
-    m_intermediate.moveStringValue(m_stack[m_stackIndex]);
+void VirtualMachine::popObjectIntermediate() {
+    m_intermediate.moveObjectValue(m_stack[m_stackIndex]);
     m_stackIndex--;
     TEST_STACK_UNDERFLOW
 }
@@ -503,6 +590,12 @@ void VirtualMachine::pushValue(const RuntimeValue& value) {
     m_stackIndex++;
     m_stack[m_stackIndex] = value;
     TEST_STACK_OVERFLOW
+}
+
+void VirtualMachine::pushObjectValue(const RuntimeValue& value) {
+    m_stackIndex++;
+    TEST_STACK_OVERFLOW
+    m_stack[m_stackIndex].copyObjectValue(value);
 }
 
 void VirtualMachine::pushBoolean(const NomadBoolean value) {
@@ -539,6 +632,12 @@ void VirtualMachine::pushString(const NomadString& value) {
     m_stackIndex++;
     TEST_STACK_OVERFLOW
     m_stack[m_stackIndex].setStringValue(value);
+}
+
+void VirtualMachine::pushString(NomadStringObject* value) {
+    m_stackIndex++;
+    TEST_STACK_OVERFLOW
+    m_stack[m_stackIndex].setObjectValue(value);
 }
 
 void VirtualMachine::pushN(const NomadIndex count) {
@@ -603,7 +702,9 @@ NomadId VirtualMachine::popId() {
 }
 
 NomadString VirtualMachine::popString() {
-    const auto value = m_stack[m_stackIndex].getStringValue();
+    auto* object = m_stack[m_stackIndex].getStringObject();
+    auto value = object->getString();
+    object->releaseRef();
     m_stackIndex--;
     TEST_STACK_UNDERFLOW
     return value;

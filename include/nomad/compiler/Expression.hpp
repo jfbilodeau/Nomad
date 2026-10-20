@@ -6,9 +6,13 @@
 #include <nomad/compiler/FormatStringCompiler.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 
+#include <nomad/script/Member.hpp>
+
 #include <nomad/Nomad.hpp>
 
 namespace nomad {
+
+class ObjectTypeBase;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Unary expressions
@@ -71,29 +75,6 @@ protected:
 ///////////////////////////////////////////////////////////////////////////////
 // Call expressions
 ///////////////////////////////////////////////////////////////////////////////
-class CallNativeFunctionExpression : public Expression {
-public:
-    explicit CallNativeFunctionExpression(const Expression* parent, NomadIndex line, NomadIndex column, NomadString name);
-
-    [[nodiscard]]
-    bool isTerminal() const override;
-
-    void addArgument(std::unique_ptr<Argument> argument);
-
-    [[nodiscard]] ArgumentList* getArguments();
-    [[nodiscard]] const ArgumentList* getArguments() const;
-
-protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
-    void onEvaluate(InterpreterContext& context) const override;
-
-private:
-    NomadString m_name;
-    NomadId m_nativeFunctionId = NOMAD_INVALID_ID;
-    ArgumentList m_arguments;
-};
-
 class FunctionCallExpression final : public Expression {
 public:
     explicit FunctionCallExpression(const Expression* parent, NomadIndex line, NomadIndex column, NomadString name);
@@ -114,30 +95,24 @@ protected:
 
 private:
     NomadString m_name;
-    NomadId m_functionId = NOMAD_INVALID_ID;
+    const Function* m_function = nullptr;
     ArgumentList m_arguments;
 };
 
-enum class IntrinsicMemberAccess {
-    Read = 1,
-    Write,
-};
-
-class IntrinsicMemberExpression final : public Expression {
+class NativeMemberExpression final : public Expression {
 public:
-    IntrinsicMemberExpression(const Expression* parent, NomadIndex line, NomadIndex column, NomadString qualifiedName,
-                              NomadString memberName, std::unique_ptr<Expression> receiver, ArgumentList arguments,
-                              IntrinsicMemberAccess access = IntrinsicMemberAccess::Read);
+    NativeMemberExpression(const Expression* parent, NomadIndex line, NomadIndex column, NomadString qualifiedName,
+                              NomadString memberName, std::unique_ptr<Expression> receiver, ArgumentList arguments);
 
     [[nodiscard]] bool isTerminal() const override;
     [[nodiscard]] bool isWritable() const override;
-    [[nodiscard]] IntrinsicMemberExpression* asIntrinsicExpression() override;
-    [[nodiscard]] const IntrinsicMemberExpression* asIntrinsicExpression() const override;
+    [[nodiscard]] NativeMemberExpression* asNativeExpression() override;
+    [[nodiscard]] const NativeMemberExpression* asNativeExpression() const override;
 
-    void setAccess(IntrinsicMemberAccess access);
+    [[nodiscard]] bool resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function) override;
     void setAllowVoid(bool allowVoid);
-    void compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression);
-    void evaluateAssignment(InterpreterContext& context, const Expression* expression) const;
+    void compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression) override;
+    void evaluateAssignment(InterpreterContext& context, const Expression* expression) const override;
 
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
@@ -145,13 +120,47 @@ protected:
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
+    [[nodiscard]] bool resolveMember(CompilerContext* context, ScriptFunction* function);
+
     NomadString m_qualifiedName;
     NomadString m_memberName;
     std::unique_ptr<Expression> m_receiver;
     ArgumentList m_arguments;
-    IntrinsicMemberAccess m_access;
     NomadId m_memberId = NOMAD_INVALID_ID;
+    MemberType m_memberType = MemberType::Unknown;
+    const Method* m_method = nullptr;
     bool m_allowVoid = false;
+};
+
+class IndexerExpression final : public Expression {
+public:
+    IndexerExpression(
+        const Expression* parent,
+        NomadIndex line,
+        NomadIndex column,
+        std::unique_ptr<Expression> receiver,
+        std::vector<std::unique_ptr<Expression>> indexes
+    );
+    [[nodiscard]] bool isTerminal() const override;
+    [[nodiscard]] bool resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function) override;
+    void compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression) override;
+    void evaluateAssignment(InterpreterContext& context, const Expression* expression) const override;
+
+protected:
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onEvaluate(InterpreterContext& context) const override;
+
+private:
+    [[nodiscard]] bool resolveIndexer(CompilerContext* context, ScriptFunction* function);
+    void compileOperands(Compiler* compiler, ScriptFunction* function, Expression* assigned = nullptr);
+    void evaluateIndexer(InterpreterContext& context, const Expression* assigned = nullptr) const;
+
+    std::unique_ptr<Expression> m_receiver;
+    std::vector<std::unique_ptr<Expression>> m_indexes;
+    NomadId m_indexerId = NOMAD_INVALID_ID;
+    bool m_canRead = false;
+    bool m_canWrite = false;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -202,6 +211,31 @@ protected:
 
 private:
     NomadFloat m_value;
+};
+
+class ConstructorExpression final : public Expression {
+public:
+    ConstructorExpression(
+        const Expression* parent,
+        NomadIndex line,
+        NomadIndex column,
+        NomadString constructorName,
+        const Type* objectType,
+        ArgumentList arguments
+    );
+    [[nodiscard]] bool isTerminal() const override;
+
+protected:
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onEvaluate(InterpreterContext& context) const override;
+
+private:
+    NomadString m_constructorName;
+    // Null when the family is parsed without explicit type arguments.
+    const Type* m_objectType;
+    ArgumentList m_arguments;
+    const Constructor* m_constructor = nullptr;
 };
 
 class StringLiteral : public PrimaryExpression {
@@ -260,7 +294,6 @@ class IdentifierExpression final : public PrimaryExpression {
 public:
     explicit IdentifierExpression(const Expression* parent, NomadIndex line, NomadIndex column, const NomadString& identifier);
 
-    [[nodiscard]] bool canBorrow() const override;
     [[nodiscard]] bool isWritable() const override;
     [[nodiscard]] IdentifierExpression* asIdentifierExpression() override;
     [[nodiscard]] const IdentifierExpression* asIdentifierExpression() const override;
@@ -270,7 +303,6 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
-    void onCompileBorrowed(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:

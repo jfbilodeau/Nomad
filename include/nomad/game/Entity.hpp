@@ -23,6 +23,7 @@ namespace nomad {
 // Forward declarations
 class Animation;
 class Canvas;
+class FontObject;
 class Closure;
 class Game;
 class Scene;
@@ -273,8 +274,8 @@ public:
     void setTextColor(const Color& color);
     [[nodiscard]] Color getTextColor() const;
 
-    void setFontById(NomadId fontId);
-    [[nodiscard]] NomadId getFontId() const;
+    void setFont(FontObject* font);
+    [[nodiscard]] FontObject* getFont() const;
 
     void setVariableValue(NomadId variableId, const RuntimeValue& value);
     void getVariableValue(NomadId variableId, RuntimeValue& value) const;
@@ -384,7 +385,7 @@ private: // Data members
     NomadFloat m_textWidth = 0;
     NomadFloat m_textHeight = 0;
     NomadFloat m_textLineSpacing = 0;
-    NomadId m_textFontId = NOMAD_INVALID_ID;
+    FontObject* m_textFont = nullptr;
     Color m_textColor = Colors::Black;
     Texture* m_textTexture = nullptr;
 

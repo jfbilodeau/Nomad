@@ -9,9 +9,10 @@
 
 #include <nomad/geometry/RectangleF.hpp>
 
-#include <nomad/resource/Font.hpp>
-#include <nomad/resource/ResourceManager.hpp>
-#include <nomad/resource/Texture.hpp>
+#include <nomad/game/resource/Font.hpp>
+#include <nomad/game/resource/FontObject.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
+#include <nomad/game/resource/Texture.hpp>
 
 #include <SDL3/SDL.h>
 
@@ -61,6 +62,44 @@ PixelBounds readTextBounds(Canvas* canvas) {
 
 BOOST_AUTO_TEST_SUITE(entity_text)
 
+BOOST_AUTO_TEST_CASE(entity_keeps_font_alive_until_cleared)
+{
+    TestDirectory directory("nomad_font_reference_lifetime");
+    std::filesystem::copy_file(NOMAD_TEST_FONT_FILE, directory.getPath() / "font.ttf");
+    GameOptions options;
+    options.resourcePath = directory.getPath().string();
+    auto game = Game::createHeadless(options);
+    auto* fonts = game->getResources()->getFonts();
+    const auto liveObjects = NomadObject::getLiveObjectCount();
+    auto* font = fonts->registerFont("font.ttf", 13.0f);
+    BOOST_REQUIRE(font != nullptr);
+    Entity entity(nullptr, game->getEntityVariables(), 1, 0, 0, 1);
+    entity.setFont(font);
+    BOOST_TEST(font->getReferenceCount() == 2U);
+    releaseRef(font);
+    BOOST_TEST(entity.getFont() == font);
+    BOOST_TEST(font->getReferenceCount() == 1U);
+    entity.setFont(font);
+    BOOST_TEST(font->getReferenceCount() == 1U);
+    entity.setFont(nullptr);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == liveObjects);
+}
+
+BOOST_AUTO_TEST_CASE(font_reference_can_be_released_after_manager_shutdown)
+{
+    TestDirectory directory("nomad_font_manager_shutdown");
+    std::filesystem::copy_file(NOMAD_TEST_FONT_FILE, directory.getPath() / "font.ttf");
+    GameOptions options;
+    options.resourcePath = directory.getPath().string();
+    auto game = Game::createHeadless(options);
+    auto* fonts = game->getResources()->getFonts();
+    auto* font = fonts->registerFont("font.ttf", 13.0f);
+    BOOST_REQUIRE(font != nullptr);
+    game.reset();
+    BOOST_TEST(font->getTtfFont() == nullptr);
+    releaseRef(font);
+}
+
 BOOST_AUTO_TEST_CASE(all_alignments_place_text_on_expected_sides_with_single_offsets)
 {
     TestDirectory directory("nomad_entity_text_alignment");
@@ -69,8 +108,9 @@ BOOST_AUTO_TEST_CASE(all_alignments_place_text_on_expected_sides_with_single_off
     options.resourcePath = directory.getPath().string();
     auto game = Game::createHeadless(options);
     auto* canvas = game->getCanvas();
-    const auto fontId = game->getResources()->getFonts()->registerFont("font.ttf", 13.0f);
-    const auto* font = game->getResources()->getFonts()->getFont(fontId);
+    auto* font = game->getResources()->getFonts()->registerFont("font.ttf", 13.0f);
+    const auto releaseFont = [](FontObject* value) { value->releaseRef(); };
+    const std::unique_ptr<FontObject, decltype(releaseFont)> ownedFont(font, releaseFont);
     const auto white = Color{255, 255, 255, 255};
     const auto black = Color{0, 0, 0, 255};
     const auto texture = std::unique_ptr<Texture>(
@@ -82,7 +122,7 @@ BOOST_AUTO_TEST_CASE(all_alignments_place_text_on_expected_sides_with_single_off
     const auto reference = readTextBounds(canvas);
 
     Entity entity(nullptr, game->getEntityVariables(), 1, 200.0f, 150.0f, 1);
-    entity.setFontById(fontId);
+    entity.setFont(font);
     entity.setTextColor(white);
     entity.setText("Anchor");
     const auto horizontal = std::array{
@@ -130,8 +170,9 @@ BOOST_AUTO_TEST_CASE(fixed_width_text_applies_horizontal_alignment)
     options.resourcePath = directory.getPath().string();
     auto game = Game::createHeadless(options);
     auto* canvas = game->getCanvas();
-    const auto fontId = game->getResources()->getFonts()->registerFont("font.ttf", 13.0f);
-    const auto* font = game->getResources()->getFonts()->getFont(fontId);
+    auto* font = game->getResources()->getFonts()->registerFont("font.ttf", 13.0f);
+    const auto releaseFont = [](FontObject* value) { value->releaseRef(); };
+    const std::unique_ptr<FontObject, decltype(releaseFont)> ownedFont(font, releaseFont);
     const auto white = Color{255, 255, 255, 255};
     const auto black = Color{0, 0, 0, 255};
     constexpr NomadInteger textureWidth = 100;
@@ -181,14 +222,15 @@ BOOST_AUTO_TEST_CASE(changing_alignment_refreshes_fixed_width_text_layout)
     options.resourcePath = directory.getPath().string();
     auto game = Game::createHeadless(options);
     auto* canvas = game->getCanvas();
-    const auto fontId = game->getResources()->getFonts()->registerFont("font.ttf", 13.0f);
-    const auto* font = game->getResources()->getFonts()->getFont(fontId);
+    auto* font = game->getResources()->getFonts()->registerFont("font.ttf", 13.0f);
+    const auto releaseFont = [](FontObject* value) { value->releaseRef(); };
+    const std::unique_ptr<FontObject, decltype(releaseFont)> ownedFont(font, releaseFont);
     const auto white = Color{255, 255, 255, 255};
     const auto black = Color{0, 0, 0, 255};
     constexpr NomadInteger textureWidth = 100;
 
     Entity entity(nullptr, game->getEntityVariables(), 1, 200.0f, 150.0f, 1);
-    entity.setFontById(fontId);
+    entity.setFont(font);
     entity.setTextColor(white);
     entity.setText("Aligned");
     entity.setTextLineSpacing(1.0f);

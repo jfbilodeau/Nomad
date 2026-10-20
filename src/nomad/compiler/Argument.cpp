@@ -25,11 +25,9 @@ public:
         NomadIndex line,
         NomadIndex column,
         const Type* type,
-        std::unique_ptr<Expression> expression,
-        ParameterAccess parameterAccess
+        std::unique_ptr<Expression> expression
     );
 
-    [[nodiscard]] const Type* getPushedType() const override;
     [[nodiscard]] const Type* resolveOverloadType(CompilerContext* context, ScriptFunction* function) override;
 
 protected:
@@ -42,11 +40,6 @@ private:
     bool resolveExpression(CompilerContext* context, ScriptFunction* function);
 
     std::unique_ptr<Expression> m_expression;
-    ParameterAccess m_parameterAccess;
-    // Pass a borrowed pointer rather than an owned copy (`$stringref` or read-only parameter with a borrowable
-    // expression).
-    bool m_borrow = false;
-    const Type* m_pushedType = nullptr;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -170,13 +163,10 @@ ExpressionArgument::ExpressionArgument(
     const NomadIndex line,
     const NomadIndex column,
     const Type* type,
-    std::unique_ptr<Expression> expression,
-    const ParameterAccess parameterAccess
+    std::unique_ptr<Expression> expression
 ):
     Argument(line, column, type),
-    m_expression(std::move(expression)),
-    m_parameterAccess(parameterAccess),
-    m_pushedType(type)
+    m_expression(std::move(expression))
 {
 }
 
@@ -214,31 +204,11 @@ void ExpressionArgument::onResolve(CompilerContext* context, ScriptFunction* fun
             "Argument type mismatch. Expected " + getTypeDisplayName(argumentType) + " but got " +
                 getTypeDisplayName(expressionType)
         );
-        return;
     }
-
-    const auto lendable = argumentType->isReference() || m_parameterAccess == ParameterAccess::ReadOnly;
-    m_borrow = lendable && m_expression->canBorrow();
-
-    if (m_borrow) {
-        // Only strings can be borrowed (`Expression::canBorrow`). A lent string is pushed as a reference: not freed.
-        m_pushedType = argumentType->isReference() ? argumentType : context->getRuntime()->getStringRefType();
-    } else {
-        // A reference parameter given an owned temporary still has to free that temporary.
-        m_pushedType = argumentType->isReference() ? expressionType : argumentType;
-    }
-}
-
-const Type* ExpressionArgument::getPushedType() const {
-    return m_pushedType;
 }
 
 void ExpressionArgument::onCompile(Compiler* compiler, ScriptFunction* function) {
-    if (m_borrow) {
-        m_expression->compileBorrowed(compiler, function, ExpressionTarget::Stack);
-    } else {
-        m_expression->compile(compiler, function, ExpressionTarget::Stack);
-    }
+    m_expression->compile(compiler, function, ExpressionTarget::Stack);
 }
 
 TypedValue ExpressionArgument::onEvaluate(InterpreterContext& context) const {
@@ -290,7 +260,7 @@ NomadId CallbackArgument::getFunctionId() const {
 
 void CallbackArgument::onResolve(CompilerContext* context, ScriptFunction* function) {
     const auto* callbackType = getType() == nullptr ? nullptr : getType()->asCallback();
-    const auto* callbackFunction = context->getRuntime()->getFunction(m_functionId);
+    const auto* callbackFunction = context->getRuntime()->getScriptFunction(m_functionId);
 
     if (callbackType == nullptr || callbackFunction == nullptr) {
         return;
@@ -321,7 +291,7 @@ void CallbackArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*
 
 TypedValue CallbackArgument::onEvaluate(InterpreterContext& context) const {
     const auto* runtime = context.getRuntime();
-    const auto* function = runtime->getFunction(m_functionId);
+    const auto* function = runtime->getScriptFunction(m_functionId);
     const auto* callbackType = getType() == nullptr ? nullptr : getType()->asCallback();
 
     if (function == nullptr) {
@@ -412,14 +382,16 @@ FileNameArgument::FileNameArgument(
 }
 
 void FileNameArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*/) {
-    compiler->addLoadStringReference(m_fileName, ExpressionTarget::Stack);
+    compiler->addLoadStringValue(m_fileName, ExpressionTarget::Stack);
 }
 
 TypedValue FileNameArgument::onEvaluate(InterpreterContext& /*context*/) const {
-    // Borrows `m_fileName`, which outlives the nativeFunction call.
     RuntimeValue value;
-    value.setStringRefValue(m_fileName.c_str());
-    return TypedValue(getType(), value);
+    value.setStringValue(m_fileName);
+    TypedValue result(getType(), value);
+    value.freeObjectValue();
+
+    return result;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -437,14 +409,16 @@ FunctionNameArgument::FunctionNameArgument(
 }
 
 void FunctionNameArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*/) {
-    compiler->addLoadStringReference(m_functionName, ExpressionTarget::Stack);
+    compiler->addLoadStringValue(m_functionName, ExpressionTarget::Stack);
 }
 
 TypedValue FunctionNameArgument::onEvaluate(InterpreterContext& /*context*/) const {
-    // Borrows `m_functionName`, which outlives the nativeFunction call.
     RuntimeValue value;
-    value.setStringRefValue(m_functionName.c_str());
-    return TypedValue(getType(), value);
+    value.setStringValue(m_functionName);
+    TypedValue result(getType(), value);
+    value.freeObjectValue();
+
+    return result;
 }
 
 LineNumberArgument::LineNumberArgument(const NomadIndex line, const NomadIndex column, const Type* type):
@@ -467,15 +441,13 @@ std::unique_ptr<Argument> createExpressionArgument(
     NomadIndex line,
     NomadIndex column,
     const Type* type,
-    std::unique_ptr<Expression> expression,
-    const ParameterAccess parameterAccess
+    std::unique_ptr<Expression> expression
 ) {
     return std::make_unique<ExpressionArgument>(
         line,
         column,
         type,
-        std::move(expression),
-        parameterAccess
+        std::move(expression)
     );
 }
 

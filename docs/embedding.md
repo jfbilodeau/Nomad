@@ -9,17 +9,82 @@ See [building from source](building.md) for toolchain requirements and the
 
 The host owns the `Runtime`, its virtual machines, and interpreter contexts.
 Destroy contexts before their borrowed VM, and destroy VMs before the runtime.
-Types and function definitions used by a context must remain valid.
+Types and callables used by a context must remain valid.
 
-- `Runtime` holds registered APIs, types, function definitions, and bytecode.
+- `Runtime` owns registered APIs, types, callables, and bytecode.
 - `VirtualMachine` executes compiled functions and provides the execution
-  environment for native calls, intrinsic methods, and dynamic variables.
+  environment for native calls, object members, and dynamic variables.
 - `InterpreterContext` borrows a VM and owns interpreter variables, its latest
   typed result, and its latest error. It can additionally borrow a script frame.
 - `Interpreter` is stateless. Pass a context to each execution; keep that context
   to retain interpreter variables between executions.
 
 Neither the interpreter nor its context creates or owns a VM.
+
+### Callable access
+
+Registered native functions, script functions, methods, and constructors share
+one runtime-owned callable table and ID space. `getCallable(id)` returns a
+borrowed `const Callable*`; `getFunction(id)` returns a borrowed `const Function*`
+for either a native or a script free function. `getMethod(id)` and
+`getConstructor(id)` return borrowed `const Method*` and `const Constructor*`.
+These category getters return `nullptr` for invalid IDs or the wrong category.
+All take callable-table IDs.
+
+Each category offers conversions to its implementation: `asNativeFunction()` /
+`asScriptFunction()`, `asNativeMethod()` / `asScriptMethod()`, and
+`asNativeConstructor()` / `asScriptConstructor()`. They return the same object
+with its specialized type, or `nullptr` when the implementation does not match.
+Script methods and script constructors are not yet supported.
+
+Use `resolveFunction(name, argumentTypes)`, `resolveMethod(objectType, name,
+argumentTypes)`, or `resolveConstructor(objectType, argumentTypes)` to select an
+overload. Inspect the `ResolveResult` before retrieving the selected callable.
+The selected ID or pointer can be retained without repeating name resolution.
+Native and script functions use the same call syntax in expressions and
+statements. A statement discards any returned value.
+
+`getCallableId(name)` returns the first free-function overload as a `NomadId`,
+or `NOMAD_INVALID_ID` when absent. It supplies a signature for parsing; it does
+not select an overload. `getCallableOverloads(name, ids)` lists free-function
+overloads as callable-table IDs. Read metadata through `getFunction(id)` or
+`getCallable(id)` rather than the removed callable metadata forwarding APIs.
+`CallableId`, `CallableKind`, and `resolveCallableOverload` have been removed;
+use plain IDs, category conversions, and `resolveFunction` instead.
+
+Native member IDs are a separate namespace. `registerNativeMethod` and
+`getNativeMemberId` return member IDs; pass these to
+`getNativeMemberMethod(memberId)`, then use the returned method's `getId()` for
+callable-table access. `getNativeMethod(callableId)` takes a callable-table ID.
+`getMemberType(memberId)` returns `MemberType::Property` or `MemberType::Method`.
+Include `<nomad/script/Member.hpp>` for `MemberType`; native property callbacks
+and indexer definitions remain in `<nomad/script/NativeMember.hpp>`.
+This replaces `getNativeMemberType` and `NativeMemberType`; native registration
+and callback APIs keep their native-specific names.
+
+Use `getNativeFunction(id)` or `getScriptFunction(id)` for implementation-specific
+access. These return `nullptr` for the wrong implementation kind. A const runtime
+returns a `const ScriptFunction*`; a mutable runtime also permits script
+parameter and inferred return-type updates. All views refer to the same object,
+so signature changes are immediately visible through generic accessors.
+Pointers remain valid until the runtime is destroyed, including when more
+callables are registered.
+Registering additional APIs does not change the selected targets of already
+resolved function, method, or constructor calls.
+
+Signatures expose `Parameter` entries through `getParameters()`. Script
+parameters added with `addParameter(name, type, doc)` require a documentation
+string; pass an empty string when no description is available. Descriptions are
+available through each parameter's `doc` field.
+Script source text is available through `getSourceCode()`; `getSource()` identifies whether
+the callable is native or script-backed. Script enumeration and source/bytecode
+lookups continue to include only script functions.
+
+Include `<nomad/script/Callable.hpp>` for common callable metadata,
+`<nomad/script/NativeCallable.hpp>` for native implementations, and
+`<nomad/script/ScriptCallable.hpp>` for script implementations. The former
+`ScriptFunction.hpp` header and callable definition-copy APIs have been removed;
+use the borrowed pointer accessors instead.
 
 ## Source input and compilation
 
@@ -193,6 +258,337 @@ survive another evaluation; do not free the context's result manually.
 `listVariables()` lists interpreter-owned variables, not borrowed frame slots.
 Different contexts have independent interpreter variables even when borrowing
 the same VM. Access to a shared context or VM must be serialized by the host.
+
+## Parameterized types
+
+`Runtime::registerParameterizedType(name, argumentCount, factory)` registers a
+type family. The factory receives resolved type arguments and returns a
+runtime-owned descriptor. `getParameterizedType(name, arguments)` registers a
+specialization on first use and reuses it on subsequent requests. Arguments must
+be non-void, public types owned by that runtime. Invalid requests are logged and
+return null.
+
+`getParameterizedTypeArgumentCount(name)` returns the registered family's arity,
+or an empty optional if the family is not registered.
+
+Requesting a specialization creates a descriptor, not an object. The compiler resolves parameterized
+annotations in script parameters, function parameters, and event declarations
+through the same registration API.
+
+### Constructor inference signatures
+
+After registering a parameterized type family, hosts can register one constructor
+inference signature with `registerConstructorTemplate(name, parameters)`.
+These declarations are independent of whether the concrete constructor is native
+or script-defined; executable script-defined types are not yet supported.
+Each `TemplateParameter` describes either a concrete `Type*` or a
+`TypeParameterIndex{index}` referring to the family's zero-based type-argument position.
+For example, for an already registered two-argument family named `Pair`:
+
+```cpp
+if (!runtime.registerConstructorTemplate(
+    "Pair",
+    {
+        nomad::defTemplateParameter("key", nomad::TypeParameterIndex{0}, "The key."),
+        nomad::defTemplateParameter("value", nomad::TypeParameterIndex{1}, "The value.")
+    }
+)) {
+    throw nomad::NomadException("Failed to register Pair constructor template");
+}
+```
+
+Every family type argument must appear at least once. Repeated references are
+allowed. Concrete types must belong to the runtime and be non-void, as with native
+constructor parameters. Unknown families, invalid type-argument indices,
+incomplete signatures, and duplicate registrations log an error and return
+`false` without changing the registered signature.
+
+`getConstructorTemplate(name)` returns an optional copy of the signature,
+or an empty optional when none is registered. Registering or retrieving this
+metadata does not create a specialization or register an executable constructor.
+`inferConstructorTypeArguments(name, argumentTypes)` deduces the family's
+type arguments from a vector of static constructor argument types. The vector
+uses signature order, including null entries for compiler-supplied source file,
+function, and line arguments. Null entries cannot bind generic type parameters
+or match ordinary concrete parameters.
+
+The returned `ConstructorInferenceResult` contains a `ResolveStatus`, a complete
+`typeArguments` vector on success, and an `error` message on failure.
+`isResolved()` reports success. Missing signatures return `UnknownName`, incorrect
+argument counts return `NoMatchingArity`, and invalid types, conflicting bindings,
+or mismatched concrete parameters return `NoMatchingTypes`. Failed deduction
+returns no partial bindings and does not log; callers can report the returned
+diagnostic in their own context.
+
+Generic bindings must be registered public, non-void types from the same runtime.
+Repeated bindings and concrete parameters require the same type; deduction does
+not use implicit conversions or guess a common type. Returned type arguments
+follow the family's type-parameter order, not constructor argument order.
+Deduction neither creates specializations nor invokes constructors.
+
+Scripts can omit constructor type arguments for families with a registered
+inference signature. The constructor arguments' static types determine the
+specialization; the assignment destination does not participate. Explicit type
+arguments bypass deduction. Families without a signature still require explicit
+type arguments.
+
+For a two-parameter family with the `Pair` signature above, `new Pair "key" 1`
+selects `Pair<string int>`. Argument expressions can include variables and nested
+inferred constructors. Deduction does not execute argument expressions.
+The selected specialization is reused through the normal type registry, and its
+concrete constructor must still match the arguments. Hosts register that
+constructor with `registerNativeConstructor`, usually in the type-family
+initializer. Compiled scripts and the interpreter both support inferred
+construction through the existing native constructor execution paths.
+
+### Native object types and constructors
+
+`ObjectTypeBase` provides shared reference-counted value handling and object
+opcodes. `ObjectType` supplies a name and type-argument metadata; its text
+representation is its type name. Its initial value is a null object reference,
+not a constructed collection. Specialized descriptors may override initialization
+and formatting. Strings reuse the base while retaining empty-string initialization.
+
+`Type::initValue(value)` is pure virtual and initializes fresh storage with an
+owned default value; it does not release existing contents. Implement it when
+defining a type descriptor, and release initialized values through `freeValue`
+when they are no longer needed. Keep descriptors alive until all values using
+them have been released.
+
+Register a constructor with the type it constructs, its parameters, and a factory.
+Scripts invoke it with `new` and the type's name:
+
+```cpp
+auto descriptor = std::make_unique<nomad::ObjectType>("Example");
+const auto* type = descriptor.get();
+runtime.registerType(std::move(descriptor));
+const auto constructorId = runtime.registerNativeConstructor(
+    type,
+    {nomad::defParameter("size", runtime.getIntegerType(), "")},
+    [](std::span<const nomad::RuntimeValue> arguments) {
+        return new ExampleObject(arguments[0].getIntegerValue());
+    },
+    ""
+);
+if (constructorId == nomad::NOMAD_INVALID_ID) {
+    throw nomad::NomadException("Failed to register Example constructor");
+}
+```
+
+Parameter types and the constructed type must be types registered with that runtime;
+parameters cannot be `void`. Registration failures are logged and return `NOMAD_INVALID_ID`.
+Constructors of one type may differ in parameter count or types. Duplicate parameter
+signatures are rejected, even if their parameter names differ. Use an empty parameter
+list for a parameterless constructor.
+
+When a class creates a different kind of object, pass the created type after the
+parameters: `registerNativeConstructor(type, parameters, createdType, factory, doc)`.
+Different overloads of one class may then create different types. The created type must be a public
+object type.
+
+Constructor parameters follow the same conventions as native function
+parameters, including `$file`, `$function`, and `$line`.
+
+The compiler checks argument types and count and uses the selected constructor's
+created type. The factory receives borrowed arguments in parameter order
+and returns an object of that type with one owned reference. Retain any argument
+object stored in the new instance. A null result raises an error.
+Validate value restrictions inside the factory: construction runs at evaluation
+time in both compiled scripts and the interpreter.
+
+For a constructor with type arguments, use
+`registerNativeParameterizedConstructor(name, argumentCount, initializer)`. Its
+initializer receives the specialized name and resolved type arguments; it registers
+a type with that name and its constructors with `registerNativeConstructor`.
+Specializations are reused on subsequent requests through
+`getParameterizedConstructorName(name, arguments)`.
+
+## Native object methods
+
+Use `Runtime::registerNativeMethod(objectType, name, callback, parameters, returnType, doc)`
+for methods on an `ObjectTypeBase` descriptor. Read the instance inside the callback:
+
+```cpp
+[](nomad::VirtualMachine* vm) {
+    auto* object = vm->getThisAs<MyObject>();
+    object->setValue(vm->getIntegerParameter(0));
+}
+```
+
+Use `registerNativeFunction` for a global function and `registerNativeMethod` for a
+method on a non-null object type.
+Global function lookup and enumeration exclude methods.
+
+`getThis()` returns the borrowed instance; `getThisAs<T>()` performs a static cast.
+The host must pair the descriptor with the correct C++ class. Access without an
+active method or with a null instance faults. Retain a reference explicitly if the
+instance must outlive the call.
+
+Object methods may mutate the instance through parameter and temporary references.
+They do not replace the receiver binding or roll back changes to object contents.
+Script-defined methods are not supported yet.
+
+## Native indexers
+
+Register an indexer with `registerNativeIndexer(objectType, indexTypes,
+valueType, getter, setter, doc)`. The non-empty `std::vector<const Type*>`
+specifies the number and types of indices. All types must belong to the runtime
+and be public, non-void types. An object type may register one indexer per index
+count; lookup uses the receiver type and number of indices, not index-type
+overloading.
+
+Omit the setter for read-only indexing, or omit
+the getter for write-only indexing. Invalid access is rejected during compilation.
+
+```cpp
+runtime.registerNativeIndexer(
+    objectType,
+    {runtime.getIntegerType()},
+    runtime.getStringType(),
+    [](nomad::VirtualMachine* machine) {
+        const auto* object = machine->getThisAs<MyObject>();
+        machine->setStringResult(object->getText(machine->getIntegerParameter(0)));
+    },
+    {},
+    NomadDoc("Read text at the given index.")
+);
+```
+
+Callbacks use the native-method calling convention: `getThisAs<T>()` accesses
+the receiver and `getParameter(i)` or a typed parameter accessor reads index
+`i`. For N indices, the setter reads the assigned value from parameter N.
+The receiver is evaluated first, then arguments are evaluated and pushed
+right-to-left, just like function arguments. For assignment, the value is the
+last parameter and is therefore evaluated before the indices.
+
+Callbacks borrow the receiver and parameters. A getter writes an
+owned result through the VM's result setters; retain any existing object returned from
+the receiver. A setter must retain an object value it stores and release any
+replaced value; it returns `void` and must not write a result.
+Parameter and receiver frames are restored after the callback, including on
+failure. Use `machine->fault(...)` to report invalid indices or other
+access errors.
+
+## Typed native object methods
+
+Built-in string methods use the same object-method API. Read the instance with
+`getThisAs<Object>()`:
+
+```cpp
+runtime.registerNativeMethod(
+    runtime.getStringType(),
+    "textSize",
+    [](nomad::VirtualMachine* machine) {
+        const auto* instance = machine->getThisAs<const nomad::NomadStringObject>();
+        machine->setIntegerResult(static_cast<nomad::NomadInteger>(instance->getLength()));
+    },
+    {},
+    runtime.getIntegerType(),
+    NomadDoc("Return the number of bytes in the string.")
+);
+```
+
+The callback borrows the receiver for the duration of the call. Keeping it
+requires `addRef()` and a corresponding `releaseRef()`.
+
+The accessor uses `static_cast`, with no runtime C++ type check. The host must
+pair the registered Nomad type with its correct C++ object class and provide a
+valid receiver when invoking methods directly. Script type checking selects the
+method for the receiver's Nomad type; it cannot validate the host's C++ pairing.
+An incorrect pairing causes undefined behaviour.
+
+Use `getThisAs<const Object>()` to obtain a pointer to const.
+Calling the accessor outside an active method faults.
+
+## Member declarations for parameterized type families
+
+Declare member parsing signatures before compiling scripts that use inferred
+constructors. This lets scripts access members before any concrete specialization
+has been created:
+
+```cpp
+if (!runtime.registerMemberTemplate("KeyValue", "key", nomad::MemberType::Property) ||
+    !runtime.registerMemberTemplate("KeyValue", "value", nomad::MemberType::Property)) {
+    throw nomad::NomadException("Failed to register KeyValue member signatures");
+}
+```
+
+The family must already be registered with `registerParameterizedType`. A property
+declaration takes no parameters. For methods, supply `TemplateParameter` entries
+using concrete types or `TypeParameterIndex`:
+
+```cpp
+if (!runtime.registerMemberTemplate(
+    "Box", "store", nomad::MemberType::Method,
+    {nomad::defTemplateParameter("value", nomad::TypeParameterIndex{0}, "")}
+)) {
+    throw nomad::NomadException("Failed to register Box.store signature");
+}
+```
+
+Declarations do not create types, executable members, or callbacks. Continue to
+register each specialization's concrete members in its initializer. Return types,
+property access permissions, and argument type checking come from those concrete
+members.
+
+Member declarations are source-independent. Hosts register them today; a future
+script-type declaration pass can use the same API before parsing member bodies.
+This API does not add execution support for script-defined types.
+
+All members sharing a name must agree on parameter count and parser-dependent
+parameter types, including callbacks and hidden source parameters. A property and
+a zero-parameter method have the same parsing shape, as with concrete members.
+Generic method parameters parse as ordinary value expressions.
+Incompatible declarations and concrete registrations are rejected with a logged
+error. Duplicate declarations within a family are also rejected.
+
+`getMemberSignature(name)` returns a copy of the parsing signature, whether
+declared by a family or provided by a concrete member. Generic parameter types are
+represented by null pointers in this parsing signature. Existing member-ID and
+overload queries continue to return only concrete members.
+
+## Native object properties
+
+Use `registerNativeProperty(objectType, name, valueType, getter, setter, doc)`.
+Either callback may be empty for a write-only or read-only property. Both
+callbacks access the borrowed instance through `getThisAs<T>()`.
+
+The getter's `result` is write-only output storage. Do not read or release its
+previous contents. Return an owned value by assigning it or using a value setter.
+For a typed copy, use `Type::assignValue` into a fresh local `RuntimeValue`, then
+assign that local to `result`; this retains object references without reading the
+output's previous contents.
+
+```cpp
+runtime.registerNativeProperty(
+    objectType, "value", runtime.getFloatType(),
+    [](nomad::VirtualMachine* vm, nomad::RuntimeValue& result) {
+        result.setFloatValue(vm->getThisAs<MyObject>()->getValue());
+    },
+    [](nomad::VirtualMachine* vm, const nomad::RuntimeValue& value) {
+        vm->getThisAs<MyObject>()->setValue(value.getFloatValue());
+    },
+    NomadDoc("Instance value.")
+);
+```
+
+Members require a registered object type. Property setters mutate that instance,
+not the variable holding its reference.
+
+## Object reference helpers
+
+`nomad::addRef(object)` and `nomad::releaseRef(object)` accept null pointers.
+Use `current = nomad::replace(current, next)` to retain a replacement before
+releasing the previous reference; self-replacement does not change the count.
+The returned pointer must be assigned by the caller. This shares `next` rather
+than adopting its existing reference.
+
+Use `value.asObject<T>()` to read a borrowed, typed object pointer from a
+`RuntimeValue`. It preserves null and does not change the reference count.
+Like `getThisAs<T>()`, it relies on the host supplying the correct C++ class.
+
+DLLs must use compatible C++ ABI settings and remain loaded while their callbacks
+or objects are alive.
 
 ## Variable categories
 

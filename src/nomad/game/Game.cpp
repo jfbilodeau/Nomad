@@ -6,7 +6,7 @@
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
-#include <nomad/debug/DebugConsole.hpp>
+#include <nomad/game/debug/DebugConsole.hpp>
 
 #include <nomad/game/Alignment.hpp>
 #include <nomad/game/Canvas.hpp>
@@ -14,10 +14,10 @@
 #include <nomad/game/Scene.hpp>
 #include <nomad/game/VariablePersistence.hpp>
 
-#include <nomad/resource/ResourceManager.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
 
 #include <nomad/script/Closure.hpp>
-#include <nomad/script/NativeFunctions.hpp>
+#include <nomad/system/NativeFunctions.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
@@ -1273,19 +1273,15 @@ void Game::initRuntime() {
 void Game::initObjects() {
     log::info("Initializing objects");
 
-    if (m_runtime->registerOpaqueIdType(
-        "audio",
+    m_runtime->registerType(std::make_unique<ObjectType>(
+        "Audio", std::vector<const Type*>{},
         NomadDoc("A sound effect that can be played, paused, resumed, stopped, looped, and adjusted independently.")
-    ) == nullptr) {
-        raiseError("Failed to register the audio type");
-    }
+    ));
 
-    if (m_runtime->registerOpaqueIdType(
-        "font",
+    m_runtime->registerType(std::make_unique<ObjectType>(
+        "Font", std::vector<const Type*>{},
         NomadDoc("A font at a specific point size for displaying text.")
-    ) == nullptr) {
-        raiseError("Failed to register the font type");
-    }
+    ));
 }
 
 void Game::initEvents() const {
@@ -1803,7 +1799,7 @@ bool Game::processGameEventCreateEntity(const GameEventCreateEntity &event) {
 
         if (event.initFunctionId != NOMAD_INVALID_ID) {
             // Set entity name to be the name of its init function.
-            auto function = m_runtime->getFunction(event.initFunctionId);
+            auto function = m_runtime->getScriptFunction(event.initFunctionId);
             
             if (function) {
                 entityPtr->setName(function->getName());

@@ -15,21 +15,27 @@
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
-#include <nomad/script/IntrinsicMember.hpp>
-#include <nomad/script/NativeFunction.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/FunctionResolution.hpp>
+#include <nomad/script/Member.hpp>
+#include <nomad/script/NativeCallable.hpp>
+#include <nomad/script/NativeMember.hpp>
+#include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/TempHeap.hpp>
 
 namespace nomad {
 
 // Forward declarations
+class ObjectTypeBase;
 class Compiler;
 class Closure;
 class FormatString;
 class VirtualMachine;
 class InterpreterContext;
+class NomadStringObject;
 class Parser;
 class FunctionBuilder;
 class Tokenizer;
@@ -103,6 +109,30 @@ public:
     [[nodiscard]] const std::vector<Instruction>& getInstructions() const;
 
     // Types
+    using ParameterizedTypeFactory = std::function<std::unique_ptr<Type>(const std::vector<const Type*>&)>;
+    using ParameterizedTypeInitializer = std::function<void(const Type*)>;
+    [[nodiscard]] std::optional<NomadIndex> getParameterizedTypeArgumentCount(const NomadString& name) const;
+    bool registerParameterizedType(
+        const NomadString& name,
+        NomadIndex argumentCount,
+        ParameterizedTypeFactory factory,
+        ParameterizedTypeInitializer initializer = {}
+    );
+    [[nodiscard]] const Type* getParameterizedType(
+        const NomadString& name,
+        const std::vector<const Type*>& arguments
+    );
+    bool registerConstructorTemplate(
+        const NomadString& name,
+        std::vector<TemplateParameter> parameters
+    );
+    [[nodiscard]] std::optional<std::vector<TemplateParameter>> getConstructorTemplate(
+        const NomadString& name
+    ) const;
+    [[nodiscard]] ConstructorInferenceResult inferConstructorTypeArguments(
+        const NomadString& name,
+        const std::vector<const Type*>& argumentTypes
+    ) const;
     void registerType(std::unique_ptr<Type>&& type);
     // [[nodiscard]] const Type* getType(NomadId id) const;
     [[nodiscard]] NomadId getTypeId(const NomadString& typeName) const;
@@ -118,28 +148,88 @@ public:
     [[nodiscard]] const Type* getEventType(const NomadString& name) const;
     [[nodiscard]] const Type* getPredicateType();
 
-    // Intrinsic members
-    NomadId registerIntrinsicProperty(const Type* objectType, const NomadString& name, const Type* valueType,
-                                      IntrinsicPropertyGetFn getFn, IntrinsicPropertySetFn setFn, NomadDocArg);
-    NomadId registerIntrinsicMethod(const Type* objectType, const NomadString& name, NativeFunctionFn fn,
-                                    const std::vector<FunctionParameterDefinition>& parameters,
-                                    const Type* returnType, bool mutatesReceiver, NomadDocArg);
-    [[nodiscard]] NomadId getIntrinsicMemberId(const Type* objectType, const NomadString& name) const;
-    [[nodiscard]] IntrinsicMemberType getIntrinsicMemberType(NomadId memberId) const;
-    [[nodiscard]] bool getIntrinsicPropertyDefinition(NomadId memberId, IntrinsicPropertyDefinition& definition) const;
-    [[nodiscard]] bool getIntrinsicMethodDefinition(NomadId memberId, IntrinsicMethodDefinition& definition) const;
-    void getIntrinsicMembers(const Type* objectType, std::vector<NomadId>& members) const;
-    void getIntrinsicMembers(std::vector<NomadId>& members) const;
-    void getIntrinsicMemberOverloads(const NomadString& name, std::vector<NomadId>& overloads) const;
-    [[nodiscard]] NomadIndex getIntrinsicMemberOverloadCount(const NomadString& name) const;
+    // `objectType` is the class being constructed and the constructor is invoked by its name. `createdType` is the
+    // type of the object that gets created; it differs from `objectType` when one class builds several kinds of object.
+    NomadId registerNativeConstructor(
+        const ObjectTypeBase* objectType,
+        const std::vector<Parameter>& parameters,
+        const ObjectTypeBase* createdType,
+        ConstructorFactory factory,
+        NomadDocArg
+    );
+    // Shorthand for a constructor whose class and created type are the same.
+    NomadId registerNativeConstructor(
+        const ObjectTypeBase* objectType,
+        const std::vector<Parameter>& parameters,
+        ConstructorFactory factory,
+        NomadDocArg
+    );
+    // Null unless `functionId` identifies a constructor.
+    [[nodiscard]] const NativeConstructor* getNativeConstructor(NomadId functionId) const;
+    [[nodiscard]] std::vector<const NativeConstructor*> getConstructors() const;
+    [[nodiscard]] std::vector<const NativeConstructor*> getConstructors(const Type* objectType) const;
+    using ParameterizedConstructorInitializer =
+        std::function<void(const NomadString&, const std::vector<const Type*>&)>;
+    // The initializer registers a class type named after the specialization and its constructors.
+    bool registerNativeParameterizedConstructor(
+        const NomadString& name,
+        NomadIndex argumentCount,
+        ParameterizedConstructorInitializer initializer
+    );
+    [[nodiscard]] std::optional<NomadIndex> getParameterizedConstructorArgumentCount(const NomadString& name) const;
+    [[nodiscard]] NomadString getParameterizedConstructorName(
+        const NomadString& name,
+        const std::vector<const Type*>& arguments
+    );
+
+    // Member declarations
+    bool registerMemberTemplate(
+        const NomadString& family,
+        const NomadString& name,
+        MemberType type,
+        const std::vector<TemplateParameter>& parameters = {}
+    );
+    [[nodiscard]] std::optional<MemberSignature> getMemberSignature(const NomadString& name) const;
+
+    // Native members
+    NomadId registerNativeIndexer(
+        const ObjectTypeBase* objectType,
+        std::vector<const Type*> indexTypes,
+        const Type* valueType,
+        NativeFunctionFn getFn,
+        NativeFunctionFn setFn,
+        NomadDocArg
+    );
+    [[nodiscard]] NomadId getNativeIndexerId(const Type* objectType, NomadIndex indexCount) const;
+    [[nodiscard]] bool getNativeIndexerDefinition(NomadId indexerId, NativeIndexerDefinition& definition) const;
+    [[nodiscard]] const std::vector<NativeIndexerDefinition>& getNativeIndexers() const;
+
+    NomadId registerNativeMethod(
+        const ObjectTypeBase* objectType,
+        const NomadString& name,
+        NativeFunctionFn fn,
+        const std::vector<Parameter>& parameters,
+        const Type* returnType,
+        NomadDocArg
+    );
+    NomadId registerNativeProperty(const ObjectTypeBase* objectType, const NomadString& name, const Type* valueType,
+                                      NativePropertyGetFn getFn, NativePropertySetFn setFn, NomadDocArg);
+    [[nodiscard]] NomadId getNativeMemberId(const Type* objectType, const NomadString& name) const;
+    [[nodiscard]] MemberType getMemberType(NomadId memberId) const;
+    [[nodiscard]] bool getNativePropertyDefinition(NomadId memberId, NativePropertyDefinition& definition) const;
+    // The method behind a member id; `getId()` is its function table id. Null when `memberId` is not a method.
+    [[nodiscard]] const NativeMethod* getNativeMemberMethod(NomadId memberId) const;
+    void getNativeMembers(const Type* objectType, std::vector<NomadId>& members) const;
+    void getNativeMembers(std::vector<NomadId>& members) const;
+    void getNativeMemberOverloads(const NomadString& name, std::vector<NomadId>& overloads) const;
+    [[nodiscard]] NomadIndex getNativeMemberOverloadCount(const NomadString& name) const;
 
     // Convenience type access:
     [[nodiscard]] const Type* getVoidType() const;
     [[nodiscard]] const Type* getBooleanType() const;
     [[nodiscard]] const Type* getIntegerType() const;
     [[nodiscard]] const Type* getFloatType() const;
-    [[nodiscard]] const Type* getStringType() const;
-    [[nodiscard]] const Type* getStringRefType() const;
+    [[nodiscard]] const StringType* getStringType() const;
     [[nodiscard]] const Type* getFunctionType() const;
     [[nodiscard]] const Type* getEventCallbackType() const;
     [[nodiscard]] const Type* getEventDispatchType() const;
@@ -165,40 +255,58 @@ public:
     [[nodiscard]] const std::vector<Operand>& getInstructionOperands(NomadId id) const;
 
     // NativeFunctions
-    NomadId registerNativeFunction(const NomadString& name, NativeFunctionFn nativeFunction_fn, const std::vector<FunctionParameterDefinition>& parameters, const Type* returnType, NomadDocArg);
+    NomadId registerNativeFunction(const NomadString& name, NativeFunctionFn nativeFunction_fn, const std::vector<Parameter>& parameters, const Type* returnType, NomadDocArg);
     [[nodiscard]] NomadId getNativeFunctionId(const NomadString& name) const;
     [[nodiscard]] NativeFunctionFn getNativeFunctionFn(NomadId id) const;
 
-    bool getNativeFunctionDefinition(NomadId id, NativeFunctionDefinition& definition) const;
-    bool getNativeFunctionDefinition(const NomadString& name, NativeFunctionDefinition& definition) const;
-    void getNativeFunctions(std::vector<NativeFunctionDefinition>& nativeFunctions) const;
+    // Null unless `functionId` identifies a native function.
+    [[nodiscard]] const NativeFunction* getNativeFunction(NomadId functionId) const;
+    [[nodiscard]] const NativeFunction* getNativeFunction(const NomadString& name) const;
+    [[nodiscard]] std::vector<const NativeFunction*> getNativeFunctions() const;
 
     [[nodiscard]] NomadId getFirstNativeFunctionId() const;
     [[nodiscard]] NomadId getNextNativeFunctionId(NomadId currentId) const;
 
     // Callables
-    // Unified catalog of everything callable from Nomad code. Native functions and compiled functions are
+    // Unified catalog of free functions. Native functions and compiled functions are
     // registered here under one namespace, so a name resolves the same way regardless of how it is implemented.
-    // Signatures are read live from the owning definition because a function's parameters and return type are
+    // Signatures are read live from the callable because a script function's parameters and return type are
     // only known once it has been pre-parsed and its return type inferred.
-    [[nodiscard]] CallableId getCallableId(const NomadString& name) const;
-    // Every callable registered under `name`. Holds more than one entry when the name is overloaded.
-    void getCallableOverloads(const NomadString& name, std::vector<CallableId>& overloads) const;
+    // First free-function overload, for signature-driven parsing; not an overload selection.
+    [[nodiscard]] NomadId getCallableId(const NomadString& name) const;
+    // Every free function registered under `name`. Holds more than one entry when the name is overloaded.
+    void getCallableOverloads(const NomadString& name, std::vector<NomadId>& overloads) const;
     [[nodiscard]] NomadIndex getCallableOverloadCount(const NomadString& name) const;
-    [[nodiscard]] const NomadString& getCallableName(CallableId callable) const;
-    [[nodiscard]] NomadIndex getCallableParameterCount(CallableId callable) const;
-    [[nodiscard]] const Type* getCallableParameterType(CallableId callable, NomadIndex parameterIndex) const;
-    [[nodiscard]] const NomadString& getCallableParameterName(CallableId callable, NomadIndex parameterIndex) const;
-    [[nodiscard]] const Type* getCallableReturnType(CallableId callable) const;
     [[nodiscard]] ParameterShape getParameterShape(const Type* type) const;
-    // Selects the overload of `name` whose parameters match `argumentTypes`, which is indexed by parameter and holds
-    // `nullptr` for parameters the compiler supplies. An overload matching every argument exactly wins over one that
-    // merely accepts them. Returns an invalid id and fills `error` when nothing matches or when the call is ambiguous.
-    [[nodiscard]] CallableId resolveCallableOverload(
+
+    // Function table
+    // Every function, method and constructor shares this ID space. Native member IDs are separate.
+    [[nodiscard]] const Callable* getCallable(NomadId functionId) const;
+    // Null unless `functionId` identifies a free function, native or script.
+    [[nodiscard]] const Function* getFunction(NomadId functionId) const;
+    // All category getters take callable-table IDs, not native member IDs.
+    [[nodiscard]] const Method* getMethod(NomadId callableId) const;
+    [[nodiscard]] const Constructor* getConstructor(NomadId callableId) const;
+    [[nodiscard]] const NativeMethod* getNativeMethod(NomadId callableId) const;
+    [[nodiscard]] NomadIndex getFunctionTableSize() const;
+    // `argumentTypes` is indexed by parameter and holds `nullptr` for parameters the compiler supplies. An overload
+    // matching every argument exactly wins over one that merely accepts them.
+    [[nodiscard]] ResolveResult resolveFunction(
         const NomadString& name,
-        const std::vector<const Type*>& argumentTypes,
-        NomadString& error
+        const std::vector<const Type*>& argumentTypes
     ) const;
+    [[nodiscard]] ResolveResult resolveMethod(
+        const Type* objectType,
+        const NomadString& name,
+        const std::vector<const Type*>& argumentTypes
+    ) const;
+    // `objectType` is the class being constructed.
+    [[nodiscard]] ResolveResult resolveConstructor(
+        const Type* objectType,
+        const std::vector<const Type*>& argumentTypes
+    ) const;
+    // Describes why `result` is not resolved, e.g. "No overload of 'add' accepts arguments (string)".
+    [[nodiscard]] NomadString describeResolveFailure(const NomadString& name, const ResolveResult& result) const;
 
     // Keywords
     NomadId registerKeyword(const NomadString& keyword, NomadDocArg);
@@ -228,8 +336,8 @@ public:
     // values point directly into this table, so it must not grow or change once functions start executing.
     NomadId registerString(const NomadString& string);
     [[nodiscard]] NomadId getStringId(const NomadString& string) const;
-    [[nodiscard]] const NomadString& getString(NomadId stringId) const;
-    [[nodiscard]] const NomadString& getStringByName(const NomadString& name) const;
+    [[nodiscard]] NomadStringObject* getString(NomadId stringId) const;
+    [[nodiscard]] NomadStringObject* getStringByName(const NomadString& name) const;
 
     // Format strings
     NomadId registerFormatString(const NomadString& formatString, NomadId functionId);
@@ -246,11 +354,7 @@ public:
     void setDynamicVariable(VirtualMachine* interpreter, NomadId id, const RuntimeValue& value);
     void getDynamicVariableValue(VirtualMachine* interpreter, NomadId id, RuntimeValue& value) const;
     void setStringDynamicVariable(VirtualMachine* interpreter, NomadId id, const NomadString& value);
-    void setStringDynamicVariable(VirtualMachine* interpreter, NomadId id, const NomadChar* value);
-    void setStringDynamicVariable(VirtualMachine* interpreter, NomadId id, const RuntimeValue& value);
 
-    void getStringDynamicVariableValue(VirtualMachine* interpreter, NomadId id, NomadString& value) const;
-    void getStringDynamicVariableValue(VirtualMachine* interpreter, NomadId id, RuntimeValue& value) const;
 
     [[nodiscard]] NomadId getFirstDynamicVariableId() const;
     [[nodiscard]] NomadId getNextDynamicVariableId(NomadId currentId) const;
@@ -271,16 +375,19 @@ public:
     void setContextVariableValue(NomadId contextVariableId, const RuntimeValue& value) const;
     void getContextVariableValue(NomadId contextVariableId, RuntimeValue& value) const;
     void setStringContextVariableValue(NomadId contextVariableId, const NomadString& value) const;
-    void setStringContextVariableValue(NomadId contextVariableId, const NomadChar* value) const;
     void getStringContextVariableValue(NomadId contextVariableId, NomadString& value) const;
 
     [[nodiscard]] NomadId getFirstVariableContextId() const;
     [[nodiscard]] NomadId getNextVariableContextId(NomadId currentId) const;
 
-    // Functions
-    NomadId registerFunction(const NomadString& name, const NomadString& path, const NomadString& source);
+    // Script functions. Enumeration and source/bytecode lookups exclude native callables.
+    NomadId registerScriptFunction(const NomadString& name, const NomadString& path, const NomadString& source);
     [[nodiscard]] NomadId getFunctionId(const NomadString& name) const;
-    [[nodiscard]] ScriptFunction* getFunction(NomadId function_id) const;
+    // Null unless `functionId` identifies a script function.
+    [[nodiscard]] ScriptFunction* getScriptFunction(NomadId functionId);
+    [[nodiscard]] const ScriptFunction* getScriptFunction(NomadId functionId) const;
+    // Script return types are inferred after compilation. Returns false if `functionId` is not a script function.
+    bool setScriptFunctionReturnType(NomadId functionId, const Type* returnType);
     [[nodiscard]] ScriptFunction* getFunctionAtLine(
         const NomadString& sourceName,
         NomadIndex line
@@ -339,8 +446,13 @@ private:
         std::unique_ptr<FormatString> formatString;
     };
 
-    struct IntrinsicMemberRegistration {
-        IntrinsicMemberType type;
+    struct CallableOverloadSet {
+        NomadString name;
+        std::vector<NomadId> overloads;
+    };
+
+    struct NativeMemberRegistration {
+        MemberType type;
         NomadIndex definitionIndex;
     };
 
@@ -348,40 +460,82 @@ private:
     NomadId internContextVariable(NomadId contextId, NomadId localVariableId);
     [[nodiscard]] const ContextVariable* getContextVariable(NomadId contextVariableId) const;
     // Adds `callable` to the overload set for `name`, creating the set when needed.
-    void addCallable(const NomadString& name, CallableId callable);
+    void addCallable(const NomadString& name, NomadId callable);
     [[nodiscard]] const CallableOverloadSet* findCallableOverloadSet(const NomadString& name) const;
-    // Checks that `candidate` may join `overloadSet` as an overload.
-    [[nodiscard]] bool canOverloadCallable(const CallableOverloadSet& overloadSet, CallableId candidate,
-                                           NomadString& error) const;
+    // Checks that a native function with these parameters may join `overloadSet` as an overload.
+    [[nodiscard]] bool canOverloadCallable(const CallableOverloadSet& overloadSet,
+                                           const std::vector<Parameter>& parameters,
+                                           const Type* returnType, NomadString& error) const;
+    NomadId addCallableToTable(std::unique_ptr<Callable> callable);
+    [[nodiscard]] ResolveResult resolveAmong(
+        std::vector<NomadId> candidates,
+        const std::vector<const Type*>& argumentTypes
+    ) const;
     [[nodiscard]] bool ownsType(const Type* type) const;
-    [[nodiscard]] bool canRegisterIntrinsicMember(const Type* objectType, const NomadString& name,
-                                                  const std::vector<FunctionParameterDefinition>& parameters,
+    [[nodiscard]] bool canRegisterNativeMember(const Type* objectType, const NomadString& name, MemberType type,
+                                                  const std::vector<Parameter>& parameters,
                                                   NomadString& error) const;
+    [[nodiscard]] bool canRegisterMemberSignature(
+        const NomadString& name,
+        MemberType type,
+        const std::vector<Parameter>& parameters,
+        NomadString& error
+    ) const;
 
     std::vector<Instruction> m_instructions;
     std::vector<OpCodeDefinition> m_opCodes;
+    struct ParameterizedTypeRegistration {
+        NomadString name;
+        NomadIndex argumentCount;
+        ParameterizedTypeFactory factory;
+        ParameterizedTypeInitializer initializer;
+        std::optional<std::vector<TemplateParameter>> constructorTemplate;
+        std::unordered_map<NomadString, MemberSignature> memberTemplates;
+    };
+    struct TypeSpecialization {
+        NomadString name;
+        std::vector<const Type*> arguments;
+        const Type* type;
+    };
     std::vector<std::unique_ptr<Type>> m_types;
+    std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;
+    std::vector<TypeSpecialization> m_typeSpecializations;
+    struct ParameterizedConstructorRegistration {
+        NomadString name;
+        NomadIndex argumentCount;
+        ParameterizedConstructorInitializer initializer;
+    };
+    std::vector<ParameterizedConstructorRegistration> m_parameterizedConstructors;
+    std::vector<NomadString> m_constructorSpecializations;
     std::vector<UnaryOperatorRegistration> m_unaryOperators;
     std::vector<BinaryOperatorRegistration> m_binaryOperators;
-    std::vector<NativeFunctionDefinition> m_nativeFunctions;
+    NomadId registerNativeCallable(
+        const ObjectTypeBase* objectType,
+        const NomadString& name,
+        NativeFunctionFn fn,
+        const std::vector<Parameter>& parameters,
+        const Type* returnType,
+        const NomadString& doc
+    );
+    std::vector<std::unique_ptr<Callable>> m_functionTable;
+    std::unordered_map<NomadString, std::vector<NomadId>> m_functionsByName;
     std::vector<KeywordDefinition> m_keywords;
     VariableMap m_constantsMap;
     std::vector<RuntimeValue> m_constants;
     std::vector<EventDefinition> m_events;
     // Compile-time only; see `registerString`.
-    std::vector<NomadString> m_strings;
+    std::vector<NomadStringObject*> m_strings;
     std::vector<DynamicVariableRegistration> m_dynamicVariables;
     std::vector<VariableContextRegistration> m_variables;
     std::vector<ContextVariable> m_contextVariables;
     std::vector<FormatStringRegistration> m_formatStrings;
-    std::vector<std::unique_ptr<ScriptFunction>> m_functions;
     std::vector<CallableOverloadSet> m_callables;
     // Maps a callable name to its index in `m_callables`.
     std::unordered_map<NomadString, NomadIndex> m_callablesByName;
-    std::vector<IntrinsicMemberRegistration> m_intrinsicMembers;
-    std::vector<IntrinsicPropertyDefinition> m_intrinsicProperties;
-    std::vector<IntrinsicMethodDefinition> m_intrinsicMethods;
-    std::unordered_map<NomadString, std::vector<NomadId>> m_intrinsicMembersByName;
+    std::vector<NativeMemberRegistration> m_nativeMembers;
+    std::vector<NativePropertyDefinition> m_nativeProperties;
+    std::vector<NativeIndexerDefinition> m_nativeIndexers;
+    std::unordered_map<NomadString, std::vector<NomadId>> m_nativeMembersByName;
     bool m_debug = false;
     std::unique_ptr<VirtualMachine> m_virtualMachine = nullptr;
     std::vector<std::function<void(Compiler*)>> m_compilerSetups;

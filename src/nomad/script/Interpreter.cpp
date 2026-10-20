@@ -11,7 +11,7 @@
 
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -122,31 +122,26 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         }
 
         const auto& firstToken = tokenizer.currentToken();
-        const auto isAssignment = tokenizer.getTokenCount() >= 3 &&
-                                  tokenizer.getTokenAt(1) == "=";
+        const auto isAssignment = parser::hasAssignmentOperator(&tokenizer);
         const auto isStatement = firstToken.type == TokenType::Identifier &&
                                  compiler->isStatement(firstToken.textValue);
-        NativeFunctionDefinition nativeFunction;
-        const auto isNativeFunction = firstToken.type == TokenType::Identifier &&
-                               evaluation.m_runtime->getNativeFunctionDefinition(firstToken.textValue, nativeFunction);
         const auto functionId = firstToken.type == TokenType::Identifier
-            ? evaluation.m_runtime->getFunctionId(firstToken.textValue)
+            ? evaluation.m_runtime->getCallableId(firstToken.textValue)
             : NOMAD_INVALID_ID;
-        const auto* function = functionId == NOMAD_INVALID_ID ? nullptr : evaluation.m_runtime->getFunction(functionId);
+        const auto* function = evaluation.m_runtime->getFunction(functionId);
         const auto isValueReturningCall =
-            (isNativeFunction && nativeFunction.returnType != nullptr && !nativeFunction.returnType->isVoid()) ||
-            (function != nullptr && function->getReturnType() != nullptr && !function->getReturnType()->isVoid());
+            function != nullptr && function->getReturnType() != nullptr && !function->getReturnType()->isVoid();
         const auto line = tokenizer.getLineIndex();
         const auto column = tokenizer.getColumnIndex();
         const auto parseAsExpression = !isAssignment && !isStatement &&
-                                       (isValueReturningCall || (!isNativeFunction && function == nullptr));
+                                       (isValueReturningCall || function == nullptr);
 
         std::unique_ptr<Statement> statement;
         if (parseAsExpression) {
             auto expression = parser::parseExpression(&compilerContext, evaluation.m_function.get(), &tokenizer);
             if (expression != nullptr &&
                 parser::expectEndOfLine(&compilerContext, evaluation.m_function.get(), &tokenizer)) {
-                if (auto* member = expression->asIntrinsicExpression()) {
+                if (auto* member = expression->asNativeExpression()) {
                     member->setAllowVoid(true);
                 }
                 statement = std::make_unique<ExpressionStatement>(

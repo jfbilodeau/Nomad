@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/resource/AudioDiscovery.hpp>
+#include <nomad/game/resource/AudioDiscovery.hpp>
 
 #include <TestDirectory.hpp>
 

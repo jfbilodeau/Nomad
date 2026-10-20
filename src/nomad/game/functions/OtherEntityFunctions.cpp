@@ -5,9 +5,10 @@
 #include <nomad/game/Entity.hpp>
 #include <nomad/game/Scene.hpp>
 
-#include <nomad/resource/Animation.hpp>
-#include <nomad/resource/ResourceManager.hpp>
-#include <nomad/resource/Sprite.hpp>
+#include <nomad/game/resource/Animation.hpp>
+#include <nomad/game/resource/FontObject.hpp>
+#include <nomad/game/resource/ResourceManager.hpp>
+#include <nomad/game/resource/Sprite.hpp>
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/NativeFunction.hpp>

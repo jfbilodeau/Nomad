@@ -1,5 +1,9 @@
 # Runtime modules
 
+Modules add native types, functions, and application services to the scripting
+language. Select the modules a project needs; their APIs become available to
+scripts, the compiler, and editor diagnostics.
+
 Nomad projects select native modules in `nomad.toml`:
 
 ```toml
@@ -12,8 +16,9 @@ The SDK provides:
 
 | Module | Features |
 | --- | --- |
-| `nomad-system` | Logging, math functions, conversions, and `system.exit`. |
-| `nomad-game` | Windows, input, graphics, audio, scenes, entities, and game resources. Requires `nomad-system`. |
+| [nomad-collections](nomad-collections.md) | Typed lists, fixed-size 1D/2D/3D arrays, and string-keyed maps with indexed access. |
+| [nomad-system](nomad-system.md) | Logging, math functions, conversions, and orderly shutdown. |
+| [nomad-game](nomad-game.md) | Windows, input, graphics, audio, scenes, entities, and game resources. Requires `nomad-system`. |
 
 Dependencies are selected automatically. Listing only `nomad-game` also
 loads `nomad-system`. A system-only project can select `["nomad-system"]`
@@ -29,6 +34,9 @@ Development commands use the modules in the selected SDK:
 
 ```text
 modules/
+  nomad-collections/
+    module.toml
+    ...
   nomad-system/
     module.toml
     ...
@@ -78,9 +86,9 @@ application finishes after its entry function returns.
 `system.exit` requests orderly shutdown after the current script invocation.
 Modules stop their background work before the application releases them.
 
-The runtime accepts module command-line arguments. For games, `--debug` and
-`--no-debug` override `game.debug`; supplying both is an error. Runtime startup
-errors are reported to the console and produce a nonzero process exit status.
+The runtime accepts module command-line arguments; see each module's guide
+for its supported options. Runtime startup errors are reported to the console
+and produce a nonzero process exit status.
 Use `--project-path <directory-or-nomad.toml>` to select a project explicitly
 when launching the runtime from another directory.
 

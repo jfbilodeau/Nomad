@@ -8,7 +8,7 @@
 #include <nomad/game/Cardinal.hpp>
 #include <nomad/game/Game.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <TestDirectory.hpp>
@@ -34,7 +34,7 @@ BOOST_AUTO_TEST_CASE(checks_named_in_memory_sources_without_reading_files)
 
     BOOST_REQUIRE(result.succeeded());
     BOOST_TEST(runtime.getFunctionId("helpers.answer") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getFunction(runtime.getFunctionId("init"))->getPath() == "untitled:init");
+    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("init"))->getPath() == "untitled:init");
 }
 
 BOOST_AUTO_TEST_CASE(checks_editor_text_instead_of_disk_contents)
@@ -76,8 +76,8 @@ BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_compilation)
     }, {}};
 
     BOOST_REQUIRE(checkSources(batch, &runtime).succeeded());
-    const auto* main = runtime.getFunction(runtime.getFunctionId("main"));
-    const auto* outer = runtime.getFunction(runtime.getFunctionId("outer"));
+    const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+    const auto* outer = runtime.getScriptFunction(runtime.getFunctionId("outer"));
     const auto* callback = runtime.getFunctionAtLine("editor:main", 4);
     BOOST_REQUIRE(callback != nullptr);
     BOOST_TEST(callback->getParentId() == outer->getId());
@@ -94,7 +94,7 @@ BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_compilation)
     BOOST_TEST(runtime.getFunctionAtLine("editor:main", 8) == nullptr);
     BOOST_TEST(runtime.getFunctionAtLine("editor:missing", 1) == nullptr);
     BOOST_TEST(runtime.getFunctionAtLine("editor:other", 1) ==
-        runtime.getFunction(runtime.getFunctionId("other")));
+        runtime.getScriptFunction(runtime.getFunctionId("other")));
 }
 
 BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_type_errors)
@@ -364,7 +364,7 @@ BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
     BOOST_TEST(result.documentation.find("# Nomad") != NomadString::npos);
     BOOST_TEST(result.documentation.find("## Enums") != NomadString::npos);
     BOOST_TEST(result.documentation.find("## Debugging") == NomadString::npos);
-    BOOST_TEST(result.documentation.find("## Intrinsic Members") != NomadString::npos);
+    BOOST_TEST(result.documentation.find("## Object Members") != NomadString::npos);
     BOOST_TEST(result.documentation.find("## Functions") != NomadString::npos);
     BOOST_TEST(result.documentation.find("[Constants](#constants)") == NomadString::npos);
     BOOST_TEST(result.documentation.find("[Debugging](#debugging)") == NomadString::npos);
@@ -412,13 +412,15 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     const auto* verticalAlignmentType = runtime->getTypeByName("verticalAlignment")->asEnum();
     const auto* bodyType = runtime->getTypeByName("body")->asEnum();
     const auto* cardinalType = runtime->getTypeByName("cardinal")->asEnum();
-    const auto* fontType = runtime->getTypeByName("font");
+    const auto* fontType = runtime->getTypeByName("Font");
     BOOST_REQUIRE(alignmentType != nullptr);
     BOOST_REQUIRE(horizontalAlignmentType != nullptr);
     BOOST_REQUIRE(verticalAlignmentType != nullptr);
     BOOST_REQUIRE(bodyType != nullptr);
     BOOST_REQUIRE(cardinalType != nullptr);
     BOOST_REQUIRE(fontType != nullptr);
+    BOOST_TEST(runtime->getTypeByName("font") == nullptr);
+    BOOST_TEST(runtime->getTypeByName("audio") == nullptr);
     BOOST_TEST(fontType->getDocumentation() == "A font at a specific point size for displaying text.");
     BOOST_TEST(alignmentType->getValueCount() == 9U);
     BOOST_TEST(horizontalAlignmentType->getValueCount() == 3U);
@@ -434,25 +436,25 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     BOOST_REQUIRE(cardinalType->getValueByName("east", enumValue));
     BOOST_TEST(enumValue == static_cast<NomadInteger>(Cardinal::East));
 
-    NativeFunctionDefinition thisCircleBody;
-    NativeFunctionDefinition otherRectangleBody;
-    NativeFunctionDefinition thisSetText;
-    NativeFunctionDefinition otherSetText;
-    NativeFunctionDefinition loadFont;
-    BOOST_REQUIRE(runtime->getNativeFunctionDefinition("this.body.circle", thisCircleBody));
-    BOOST_REQUIRE(runtime->getNativeFunctionDefinition("other.body.rectangle", otherRectangleBody));
-    BOOST_REQUIRE(runtime->getNativeFunctionDefinition("this.setText", thisSetText));
-    BOOST_REQUIRE(runtime->getNativeFunctionDefinition("other.setText", otherSetText));
-    BOOST_REQUIRE(runtime->getNativeFunctionDefinition("game.loadFont", loadFont));
-    BOOST_REQUIRE(!thisCircleBody.parameters.empty());
-    BOOST_REQUIRE(!otherRectangleBody.parameters.empty());
-    BOOST_REQUIRE(!thisSetText.parameters.empty());
-    BOOST_REQUIRE(!otherSetText.parameters.empty());
-    BOOST_TEST(thisCircleBody.parameters[0].type == bodyType);
-    BOOST_TEST(otherRectangleBody.parameters[0].type == bodyType);
-    BOOST_TEST(thisSetText.parameters[0].type == fontType);
-    BOOST_TEST(otherSetText.parameters[0].type == fontType);
-    BOOST_TEST(loadFont.returnType == fontType);
+    const auto* thisCircleBody = runtime->getNativeFunction("this.body.circle");
+    const auto* otherRectangleBody = runtime->getNativeFunction("other.body.rectangle");
+    const auto* thisSetText = runtime->getNativeFunction("this.setText");
+    const auto* otherSetText = runtime->getNativeFunction("other.setText");
+    const auto* loadFont = runtime->getNativeFunction("game.loadFont");
+    BOOST_REQUIRE(thisCircleBody != nullptr);
+    BOOST_REQUIRE(otherRectangleBody != nullptr);
+    BOOST_REQUIRE(thisSetText != nullptr);
+    BOOST_REQUIRE(otherSetText != nullptr);
+    BOOST_REQUIRE(loadFont != nullptr);
+    BOOST_REQUIRE(!thisCircleBody->getParameters().empty());
+    BOOST_REQUIRE(!otherRectangleBody->getParameters().empty());
+    BOOST_REQUIRE(!thisSetText->getParameters().empty());
+    BOOST_REQUIRE(!otherSetText->getParameters().empty());
+    BOOST_TEST(thisCircleBody->getParameters()[0].type == bodyType);
+    BOOST_TEST(otherRectangleBody->getParameters()[0].type == bodyType);
+    BOOST_TEST(thisSetText->getParameters()[0].type == fontType);
+    BOOST_TEST(otherSetText->getParameters()[0].type == fontType);
+    BOOST_TEST(loadFont->getReturnType() == fontType);
 
     const auto thisAlignmentId = runtime->getDynamicVariableId("this.text.alignment");
     const auto otherAlignmentId = runtime->getDynamicVariableId("other.text.alignment");

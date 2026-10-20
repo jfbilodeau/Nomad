@@ -5,7 +5,7 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
-#include <nomad/script/ScriptFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -185,12 +185,12 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
 
     if (expressionType != nullptr) {
         NomadString conflictingIdentifier;
-        if (compiler->getIntrinsicMemberConflict(m_identifier, expressionType, function, conflictingIdentifier)) {
+        if (compiler->getNativeMemberConflict(m_identifier, expressionType, function, conflictingIdentifier)) {
             reportError(
                 context,
                 function,
                 "Assigning type '" + getTypeDisplayName(expressionType) + "' to variable '" + m_identifier +
-                    "' introduces intrinsic member '" + conflictingIdentifier +
+                    "' introduces native member '" + conflictingIdentifier +
                     "', which conflicts with an existing identifier"
             );
             return;
@@ -415,19 +415,11 @@ void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::DynamicVariable: {
         auto* runtime = context.getRuntime();
-        if (type->isString()) {
-            runtime->setStringDynamicVariable(
-                context.getVirtualMachine(),
-                m_identifierDefinition.variableId,
-                assignedValue.getValue()
-            );
-        } else {
-            runtime->setDynamicVariable(
-                context.getVirtualMachine(),
-                m_identifierDefinition.variableId,
-                assignedValue.getValue()
-            );
-        }
+        runtime->setDynamicVariable(
+            context.getVirtualMachine(),
+            m_identifierDefinition.variableId,
+            assignedValue.getValue()
+        );
         break;
     }
 
@@ -457,7 +449,8 @@ MemberAssignmentStatement::MemberAssignmentStatement(const NomadIndex line, cons
 }
 
 void MemberAssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
-    if (!m_target->resolve(context, function) || !m_expression->resolve(context, function)) {
+    auto* target = m_target.get();
+    if (!target->resolveAssignmentTarget(context, function) || !m_expression->resolve(context, function)) {
         return;
     }
 
@@ -465,33 +458,23 @@ void MemberAssignmentStatement::onResolve(CompilerContext* context, ScriptFuncti
     const auto* expressionType = m_expression->getType();
 
     if (targetType == nullptr || expressionType == nullptr) {
-        reportError(context, function, "Cannot determine intrinsic property assignment type");
+        reportError(context, function, "Cannot determine member assignment type");
         return;
     }
 
     if (targetType != expressionType) {
         reportError(context, function,
                     "Cannot assign value of type '" + getTypeDisplayName(expressionType) +
-                        "' to intrinsic property of type '" + getTypeDisplayName(targetType) + "'");
+                        "' to member of type '" + getTypeDisplayName(targetType) + "'");
     }
 }
 
 void MemberAssignmentStatement::onCompile(Compiler* compiler, ScriptFunction* function) {
-    auto* target = m_target->asIntrinsicExpression();
-    if (target == nullptr) {
-        compiler->reportInternalError("Invalid intrinsic property assignment target");
-    }
-
-    target->compileAssignment(compiler, function, m_expression.get());
+    m_target->compileAssignment(compiler, function, m_expression.get());
 }
 
 void MemberAssignmentStatement::onEvaluate(InterpreterContext& context) const {
-    const auto* target = m_target->asIntrinsicExpression();
-    if (target == nullptr) {
-        raiseException("Invalid intrinsic property assignment target");
-    }
-
-    target->evaluateAssignment(context, m_expression.get());
+    m_target->evaluateAssignment(context, m_expression.get());
 }
 
 ///////////////////////////////////////////////////////////////////////////////

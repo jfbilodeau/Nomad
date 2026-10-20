@@ -7,8 +7,8 @@
 #include <nomad/project/ProjectConfiguration.hpp>
 #include <nomad/project/ProjectPackager.hpp>
 
-#include <nomad/resource/SpriteCatalog.hpp>
-#include <nomad/resource/SpritePacker.hpp>
+#include <nomad/game/resource/SpriteCatalog.hpp>
+#include <nomad/game/resource/SpritePacker.hpp>
 
 #include <nomad/system/Path.hpp>
 #include <nomad/system/ProjectSession.hpp>
@@ -469,23 +469,38 @@ BOOST_AUTO_TEST_CASE(failed_game_generation_preserves_previous_archive_and_clean
         "version = \"" + sdkVersion + "\"");
     const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, text);
     directory.write("assets/scripts/start.nomad", "return\n");
-    std::filesystem::copy(
-        getSdkDirectory() / "runtime", directory.getPath() / "runtime",
-        std::filesystem::copy_options::recursive
-    );
+    // Exercise real module hooks without copying and compressing the full SDK dependency bundle.
+    directory.write("runtime/engine", "runtime");
+    directory.write("runtime/licenses/Nomad.txt", "license");
+    directory.write("runtime/runtime.json",
+        "{\"schema\":1,\"version\":\"" + sdkVersion + "\",\"target\":\"" +
+        NomadString(getPackagePlatform()) + "\",\"files\":["
+        "{\"path\":\"engine\",\"role\":\"runtime\"},"
+        "{\"path\":\"licenses/Nomad.txt\",\"role\":\"license\"}]}");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-game"});
     for (const auto& module : modules) {
         const auto destination = directory.getPath() / "modules" / pathFromUtf8(module.name);
         std::filesystem::create_directories(destination);
-        std::filesystem::copy(module.directory, destination, std::filesystem::copy_options::recursive);
+        const auto library = getModuleLibraryName(module.name);
+        std::filesystem::copy_file(module.directory / library, destination / library);
+        std::filesystem::copy_file(module.directory / "module.toml", destination / "module.toml");
+        directory.write(
+            NomadPath("modules") / pathFromUtf8(module.name) / "runtime.json",
+            R"({"schema":1,"files":[]})"
+        );
     }
     const auto project = loadNomadProject(projectFile);
     const auto runtime = directory.getPath() / "runtime";
     const auto original = packageProject(project, runtime, false);
     const auto originalBytes = readFile(original.output);
     directory.write("assets/sprites/broken.png", "invalid PNG");
-    BOOST_CHECK_THROW((void)packageProject(project, runtime, true, true), ProjectPackagingException);
-    BOOST_CHECK_THROW((void)packageProject(project, runtime, true), ProjectPackagingException);
+    const auto reportsSpriteFailure = [](const ProjectPackagingException& error) {
+        return NomadStringView(error.what()).find("Failed to compile sprite resources") != NomadStringView::npos;
+    };
+    BOOST_CHECK_EXCEPTION((void)packageProject(project, runtime, true, true),
+        ProjectPackagingException, reportsSpriteFailure);
+    BOOST_CHECK_EXCEPTION((void)packageProject(project, runtime, true),
+        ProjectPackagingException, reportsSpriteFailure);
     BOOST_TEST(readFile(original.output) == originalBytes);
     BOOST_TEST(!std::filesystem::exists(NomadPath(pathToUtf8(original.output) + ".staging")));
     BOOST_TEST(!std::filesystem::exists(NomadPath(pathToUtf8(original.output) + ".tmp")));
