@@ -4,6 +4,7 @@
 
 #include <boost/program_options.hpp>
 
+#include <algorithm>
 #include <cstdlib>
 #include <functional>
 #include <memory>
@@ -160,13 +161,25 @@ public:
         return *this;
     }
 
+    VerbOptions& addApplicationArguments(std::vector<std::string> Parameters::* member) {
+        m_applicationArguments = member;
+        return *this;
+    }
+
     int run(std::span<const std::string> arguments, std::ostream& output, const std::string& program) const override {
         namespace po = boost::program_options;
         Parameters parameters{};
         po::options_description options("Options");
         bind(options, parameters);
         po::variables_map values;
-        const std::vector<std::string> tokens(arguments.begin(), arguments.end());
+        auto optionsEnd = arguments.end();
+        if (m_applicationArguments != nullptr) {
+            optionsEnd = std::find(arguments.begin(), arguments.end(), "--");
+            if (optionsEnd != arguments.end()) {
+                (parameters.*m_applicationArguments).assign(optionsEnd + 1, arguments.end());
+            }
+        }
+        const std::vector<std::string> tokens(arguments.begin(), optionsEnd);
         po::store(po::command_line_parser(tokens).options(options).positional(m_positionals)
             .style(po::command_line_style::default_style & ~po::command_line_style::allow_guessing).run(), values);
         if (values.contains("help")) {
@@ -181,7 +194,8 @@ public:
         Parameters parameters{};
         boost::program_options::options_description options("Options");
         bind(options, parameters);
-        output << "Usage: " << program << ' ' << getName() << m_usage << " [options]\n\n"
+        output << "Usage: " << program << ' ' << getName() << m_usage << " [options]"
+               << (m_applicationArguments != nullptr ? " [-- application-arguments...]" : "") << "\n\n"
                << getDescription() << "\n\n" << options << '\n';
     }
 
@@ -204,6 +218,7 @@ private:
     boost::program_options::positional_options_description m_positionals;
     std::vector<std::string> m_names{"help", "h"};
     std::string m_usage;
+    std::vector<std::string> Parameters::* m_applicationArguments = nullptr;
     bool m_optionalPositional = false;
 };
 

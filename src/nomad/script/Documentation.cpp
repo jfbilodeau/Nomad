@@ -748,7 +748,7 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
     );
 
     root["repository"] = std::move(repository);
-    root["foldingStartMarker"] = "\\b(fun|if|else|enum)\\b";
+    root["foldingStartMarker"] = "\\b(fun|hub|if|else|enum)\\b";
     root["foldingStopMarker"] = "\\bend\\b";
     out << boost::json::serialize(root) << std::endl;
 }

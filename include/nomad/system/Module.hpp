@@ -36,6 +36,7 @@ struct ModuleContext {
     NomadPath projectDirectory;
     NomadPath resourceDirectory;
     NomadPath moduleDirectory;
+    // Runtime launches supply module options followed by optional "--" application arguments, without argv[0].
     std::span<const NomadString> arguments;
     std::function<void(int)> requestExit;
     std::function<bool()> pollExit;

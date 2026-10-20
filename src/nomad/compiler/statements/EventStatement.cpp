@@ -15,7 +15,11 @@ bool preParseEventStatement(CompilerContext* context, ScriptFunction* /*function
         return false;
     }
 
-    const auto eventName = tokens->currentToken().textValue;
+    const auto eventName = context->qualifyDeclaration(tokens->currentToken().textValue);
+    if (context->getRuntime()->isHub(eventName) || context->getRuntime()->isHubVariable(eventName)) {
+        context->reportError("Event name '" + eventName + "' is reserved by a hub declaration", tokens);
+        return false;
+    }
 
     // Make sure event is not already declared
     if (context->getRuntime()->getEventId(eventName) != NOMAD_INVALID_ID) {

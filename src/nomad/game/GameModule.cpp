@@ -30,6 +30,9 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     auto hasDebug = false;
     auto hasNoDebug = false;
     for (const auto& argument : context->arguments) {
+        if (argument == "--") {
+            break;
+        }
         hasDebug = hasDebug || argument == "--debug";
         hasNoDebug = hasNoDebug || argument == "--no-debug";
     }

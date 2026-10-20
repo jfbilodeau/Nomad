@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <nomad/Nomad.hpp>
 
@@ -108,6 +109,14 @@ public:
 
     // Instructions
     [[nodiscard]] const std::vector<Instruction>& getInstructions() const;
+
+    [[nodiscard]] bool registerHub(const NomadString& name);
+    [[nodiscard]] bool isHub(const NomadString& name) const;
+    [[nodiscard]] NomadString getContainingHub(const NomadString& name) const;
+    [[nodiscard]] NomadId registerHubVariable(const NomadString& name);
+    [[nodiscard]] bool isHubVariable(const NomadString& name) const;
+    void registerHubInitializer(NomadId functionId);
+    void initializeHubs();
 
     // Types
     using ParameterizedTypeFactory = std::function<std::unique_ptr<Type>(const std::vector<const Type*>&)>;
@@ -543,6 +552,14 @@ private:
     std::vector<NativeMemberRegistration> m_nativeMembers;
     std::unordered_map<const Type*, IterableDefinition> m_iterableTypes;
     std::vector<NativePropertyDefinition> m_nativeProperties;
+    std::unordered_set<NomadString> m_hubs;
+    std::unordered_set<NomadString> m_hubVariables;
+    mutable std::unordered_set<NomadString> m_uninitializedHubVariables;
+    NomadId m_hubVariableContextId = NOMAD_INVALID_ID;
+    std::vector<NomadId> m_hubInitializers;
+    bool m_initializingHubs = false;
+    bool m_initializedHubs = false;
+    NomadString m_hubInitializationError;
     std::vector<NativeIndexerDefinition> m_nativeIndexers;
     std::unordered_map<NomadString, std::vector<NomadId>> m_nativeMembersByName;
     bool m_debug = false;

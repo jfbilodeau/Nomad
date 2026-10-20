@@ -41,6 +41,7 @@ const RuntimeValue& VirtualMachine::getFunctionVariableValue(const NomadId varia
 }
 
 void VirtualMachine::run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures) {
+    m_runtime->initializeHubs();
     // Save the frame so `run` can be re-entered (e.g. from a nativeFunction) and so a fault leaves the VM usable.
     const auto savedInstructionIndex = m_instructionIndex;
     const auto savedStackIndex = m_stackIndex;

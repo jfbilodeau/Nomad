@@ -96,6 +96,11 @@ public:
     ) const;
 
     // Identifier identification
+    [[nodiscard]] NomadString resolveName(
+        const NomadString& name,
+        const ScriptFunction* function = nullptr,
+        NomadString hub = {}
+    ) const;
     IdentifierType getIdentifierType(const NomadString& name, const ScriptFunction* function) const;
     void getIdentifierDefinition(const NomadString& name, const ScriptFunction* function, IdentifierDefinition& definition) const;
     [[nodiscard]] bool getNativeMemberConflict(const NomadString& identifier, const Type* type,
@@ -202,7 +207,7 @@ private:
 
 //    void compile_init_function(Function* function);
     void registerScript(CompilerContext* context, const ScriptSource& script);
-    void preParseFunction(CompilerContext* context, ScriptCompilation& script);
+    void preParseFunction(CompilerContext* context, ScriptCompilation& script, bool hubsOnly = false);
     void parseFunction(CompilerContext* context, ScriptCompilation& script);
     [[nodiscard]] bool resolveFunction(CompilerContext* context, const FunctionCompilation& function);
     // Reports functions returning a value that can reach their end without a `return`.
@@ -236,6 +241,7 @@ private:
     std::vector<ScriptCompilation> m_scripts;
     std::vector<FunctionCompilation> m_functions;
     std::vector<PendingFormatString> m_pendingFormatStrings;
+    std::vector<NomadString> m_hubVariableNames;
     std::vector<FunctionLink> m_functionLinks;
     std::unordered_map<NomadId, std::unordered_set<NomadId>> m_functionCallDependencies;
     std::unordered_set<NomadId> m_returningFunctions;

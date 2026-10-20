@@ -37,6 +37,7 @@ const Type* parseTypeName(
     if (name.empty() && !tokens->nextIdentifier(name)) {
         return nullptr;
     }
+    name = context->resolveName(name);
     auto* runtime = context->getRuntime();
     const auto argumentCount = runtime->getParameterizedTypeArgumentCount(name);
     if (tokens->is("<")) {
@@ -226,7 +227,7 @@ bool isPotentialMemberExpression(CompilerContext* context, ScriptFunction* funct
     }
 
     if (tokens->getTokenTypeAt(0) == TokenType::Identifier) {
-        const auto& name = tokens->getTokenAt(0);
+        const auto name = context->resolveName(tokens->getTokenAt(0), function);
         if (context->getCompiler()->getIdentifierType(name, function) != IdentifierType::Unknown) {
             return false;
         }
@@ -396,7 +397,7 @@ std::unique_ptr<Statement> parseStatement(
         if (context->getMode() == CompilerMode::Interpreter &&
             (statementName == "const" || statementName == "enum" || statementName == "fun" ||
                 statementName == "event" || statementName == "params" || statementName == "return" ||
-                statementName == "assert")) {
+                statementName == "assert" || statementName == "hub")) {
             context->reportError("Statement '" + statementName + "' is not supported by the interpreter", tokens);
             return nullptr;
         }
@@ -419,11 +420,12 @@ std::unique_ptr<Statement> parseStatement(
         return statement;
     }
 
-    const auto functionId = context->getRuntime()->getCallableId(statementName);
+    const auto qualifiedName = context->resolveName(statementName, function);
+    const auto functionId = context->getRuntime()->getCallableId(qualifiedName);
 
     if (functionId != NOMAD_INVALID_ID) {
         const auto callLine = tokens->getLineIndex();
-        auto statement = parseFunctionCall(context, function, tokens, statementName);
+        auto statement = parseFunctionCall(context, function, tokens, qualifiedName);
 
         if (statement == nullptr || !expectEndOfLine(context, function, tokens, callLine)) {
             return nullptr;
@@ -503,6 +505,7 @@ NomadId parseCallbackParameter(
     if (!tokens->nextIdentifier(funName)) {
         return NOMAD_INVALID_ID;
     }
+    funName = context->resolveName(funName, function);
 
     const auto funId = context->getRuntime()->getFunctionId(funName);
 
@@ -757,6 +760,7 @@ std::unique_ptr<Expression> parseNewExpression(
     }
     auto* runtime = context->getRuntime();
     NomadString constructorName = tokens->currentToken().textValue;
+    constructorName = context->resolveName(constructorName, function);
     if (const auto count = runtime->getParameterizedConstructorArgumentCount(constructorName)) {
         tokens->next();
         if (!tokens->expect("<")) {
@@ -812,8 +816,11 @@ std::unique_ptr<Expression> parseNewExpression(
             return nullptr;
         }
         constructorName = type->getTypeName();
-    } else if (!tokens->nextIdentifier(constructorName)) {
-        return nullptr;
+    } else {
+        NomadString sourceName;
+        if (!tokens->nextIdentifier(sourceName)) {
+            return nullptr;
+        }
     }
     const NativeConstructor* shape = nullptr;
     const auto* objectType = runtime->getTypeByName(constructorName);
@@ -1000,6 +1007,40 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     }
 
     auto variableName = tokens->currentToken().textValue;
+    auto* runtime = context->getRuntime();
+    if (runtime->isHub(variableName)) {
+        context->reportError("Cannot assign a value to hub '" + variableName + "'", tokens);
+        return nullptr;
+    }
+    const auto resolvedName = context->resolveName(variableName, function);
+    if (resolvedName != variableName && runtime->isHubVariable(resolvedName)) {
+        context->reportError("Writes to hub variables require a qualified name: '" + resolvedName + "'", tokens);
+        return nullptr;
+    }
+    auto hasValueReceiver = false;
+    if (const auto parts = splitNativeMemberName(runtime, variableName)) {
+        auto receiver = parts->receiver;
+        while (!receiver.empty()) {
+            if (context->getCompiler()->getIdentifierType(receiver, function) != IdentifierType::Unknown) {
+                hasValueReceiver = true;
+                break;
+            }
+            const auto separator = receiver.rfind('.');
+            if (separator == NomadString::npos) {
+                break;
+            }
+            receiver.resize(separator);
+        }
+    }
+    if (!runtime->getContainingHub(variableName).empty() &&
+        !runtime->isHubVariable(variableName) &&
+        runtime->getConstantId(variableName) == NOMAD_INVALID_ID &&
+        runtime->getCallableId(variableName) == NOMAD_INVALID_ID &&
+        runtime->getTypeByName(variableName) == nullptr &&
+        !hasValueReceiver) {
+        context->reportError("Hub members must be declared inside a hub block: '" + variableName + "'", tokens);
+        return nullptr;
+    }
 
     IdentifierDefinition identifierDefinition;
     context->getCompiler()->getIdentifierDefinition(variableName, function, identifierDefinition);
@@ -1071,7 +1112,10 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
         return nullptr;
     }
 
-    auto& token = tokens->next();
+    auto token = tokens->next();
+    if (token.type == TokenType::Identifier) {
+        token.textValue = context->resolveName(token.textValue, function);
+    }
 
     if (token.type == TokenType::FormatString) {
         auto expression = std::make_unique<FormatStringLiteral>(
@@ -1219,6 +1263,7 @@ bool parseEventDispatch(CompilerContext* context, ScriptFunction* function, Toke
     if (!tokens->nextIdentifier(eventName)) {
         return false;
     }
+    eventName = context->resolveName(eventName, function);
 
     const auto eventId = context->getRuntime()->getEventId(eventName);
 
@@ -1372,6 +1417,7 @@ bool parseCallableArguments(
             if (!tokens->nextIdentifier(eventName)) {
                 return false;
             }
+            eventName = context->resolveName(eventName, function);
 
             const auto eventId = context->getRuntime()->getEventId(eventName);
 

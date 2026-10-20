@@ -26,10 +26,19 @@ int main(int argc, char** argv) {
     try {
         std::vector<NomadString> arguments;
         auto projectPath = std::filesystem::current_path();
+        auto applicationArguments = false;
         for (auto index = 1; index < argc; ++index) {
             arguments.emplace_back(argv[index]);
+            if (applicationArguments) {
+                continue;
+            }
+            if (arguments.back() == "--") {
+                applicationArguments = true;
+                continue;
+            }
             if (arguments.back() == "--help") {
-                std::cout << "nomad-runtime [--project-path <directory-or-nomad.toml>] [module arguments]\n";
+                std::cout << "nomad-runtime [--project-path <directory-or-nomad.toml>] "
+                    "[module options] [-- application-arguments...]\n";
                 return EXIT_SUCCESS;
             }
             if (arguments.back() == "--project-path") {

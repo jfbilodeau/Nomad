@@ -13,6 +13,7 @@ Nomad is case‑sensitive.
 - [Modules](#modules)
 - [Comments](#comments)
 - [Identifiers and naming rules](#identifiers-and-naming-rules)
+- [Hubs](#hubs)
 - [Data types and numeric ranges](#data-types-and-numeric-ranges)
 - [Object types and members](#object-types-and-members)
 - [Variables and variable kinds](#variables-and-variable-kinds)
@@ -62,6 +63,7 @@ The SDK includes:
 | Module | Purpose |
 | --- | --- |
 | `nomad-collections` | Typed collections. |
+| `nomad-os` | Arguments, environment snapshots, platform, architecture, and OS paths. |
 | `nomad-system` | Logging, math, conversions, and application exit. |
 | `nomad-game` | Graphics, input, audio, scenes, entities, and game resources. |
 
@@ -104,6 +106,77 @@ Notes:
 - Dots are used by the compiler to form function names from file paths (see compilation model). For example, the script `./entities/player.nomad` would be named as `entities.player` in the runtime.
 - Within engine‑provided dynamic variables a full identifier such as `this.x` may be treated as a single identifier by the engine.
 - Since the same rules apply to native functions, a native function like `log.info` is valid.
+
+---
+
+## Hubs
+
+A hub groups variables, functions, constants, enums, and events under a shared
+name prefix. Hubs are optional, are not types, and cannot be instantiated.
+Declare a hub with `hub name ... end`:
+
+```nomad
+hub example
+    x = 10
+    name = "test"
+
+    fun increment
+        example.x = x + 1
+        return x
+    end
+end
+
+result = example.increment # 11
+```
+
+Hub variables are shared across function calls. Their types are inferred from
+their initializers and cannot change. Initializers run once before the first
+script invocation, even when the script containing the hub is not called.
+Initialization follows script-name order and declaration order within each
+script. Reading a hub variable before its initializer has run is a runtime
+error; initialization failure prevents subsequent script execution.
+
+Declare new members inside a hub block. Qualified assignments outside a hub
+can update existing variables, but cannot introduce new members:
+
+```nomad
+example.x = 20 # Updates the existing variable.
+# example.y = 30 # Invalid: y has not been declared in a hub block.
+
+hub example
+    y = 30 # Extends the same hub.
+end
+```
+
+The same hub may be declared repeatedly, including in different scripts or
+after native registration. Reopening preserves its members. Declaring the same
+variable twice is an error, not reassignment. Hubs may appear at script level
+or inside other hubs, but not inside functions or control-flow blocks.
+
+Nested blocks and dotted names both declare nested hubs:
+
+```nomad
+hub game
+    hub audio
+        volume = 1.0
+    end
+end
+
+hub game.audio
+    muted = false
+end
+```
+
+Unqualified reads and function calls search the current hub, its parent hubs,
+and then global names; local variables and parameters retain their local
+meaning. Writes to hub variables inside functions require their qualified
+name, such as `game.audio.volume`. Enum types and values are qualified too:
+an enum `State` inside `hub game` is named `game.State`, with values such as
+`game.State.Ready`.
+
+A hub name is reserved and cannot also name a value, function, or type.
+Existing dotted identifiers remain supported; they do not implicitly declare
+hubs.
 
 ---
 
@@ -1037,6 +1110,7 @@ Reserved words (cannot use as identifiers):
 - `enum`
 - `event`
 - `fun`
+- `hub`
 - `if`
 - `params`
 - `return`

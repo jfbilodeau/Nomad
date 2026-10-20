@@ -44,6 +44,7 @@ enum class DebugOption {
 struct RunParameters {
     std::optional<NomadString> directory;
     DebugOption debug = DebugOption::Unspecified;
+    std::vector<NomadString> applicationArguments;
 };
 
 struct PackageParameters {
@@ -180,6 +181,11 @@ int runCommand(RunParameters& parameters) {
             break;
     }
 
+    if (!parameters.applicationArguments.empty()) {
+        runtimeArguments.emplace_back("--");
+        runtimeArguments.insert(runtimeArguments.end(),
+            parameters.applicationArguments.begin(), parameters.applicationArguments.end());
+    }
     return runSiblingExecutable("nomad-runtime", project.root, runtimeArguments);
 }
 
@@ -239,6 +245,7 @@ int main(int argc, char** argv) {
         program.addVerb<ProjectParameters>("check", &checkCommand, "Check project scripts without running them")
             .addOptionalPositional("directory", &ProjectParameters::directory, "Project directory (default: current directory)");
         program.addVerb<RunParameters>("run", &runCommand, "Launch a project using the installed runtime")
+            .addApplicationArguments(&RunParameters::applicationArguments)
             .addOptionalPositional("directory", &RunParameters::directory, "Project directory (default: current directory)")
             .addFlag(
                 "debug", "", &RunParameters::debug,

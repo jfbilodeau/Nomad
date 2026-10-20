@@ -11,7 +11,7 @@ command-specific help. Options belong to individual verbs.
 | --- | --- |
 | `nomad init [directory]` | Create a minimal project; refuse to overwrite generated files. |
 | `nomad check [directory]` | Validate project scripts and sprite packing through the sibling `nomadc`. |
-| `nomad run [directory] [--debug\|--no-debug]` | Launch the sibling runtime from the project root. |
+| `nomad run [directory] [--debug\|--no-debug] [-- application-arguments...]` | Launch the sibling runtime from the project root, forwarding application arguments unchanged. |
 | `nomad package [directory] [--force] [--dry-run]` | Create a standalone game ZIP using the included runtime bundle. |
 | `nomad version` | Print the SDK version. |
 
@@ -19,6 +19,12 @@ Project discovery searches the requested directory and its parents for
 `nomad.toml`. Commands reject projects requiring a newer SDK.
 Packaging additionally requires an exact match between the runtime bundle
 version and `nomad.version`.
+
+For `run`, the first `--` ends launcher options. Everything after it, including
+option-looking strings, belongs to the application. With `nomad-os` selected,
+scripts read these strings through `os.argv`; the executable, project directory,
+launcher options, and separator are excluded. For example,
+`nomad run --debug -- "Player One" --help` supplies two application arguments.
 
 `package --dry-run` lists the selected files without writing a package.
 Resources are selected using `package.exclude`. Output is named
@@ -79,6 +85,13 @@ for setup and current limitations.
 instead of discovering one from the current directory. Resource paths are
 resolved from that project's configuration. `--debug` enables diagnostic logging and the debug console;
 `--no-debug` disables project-configured debug mode.
+
+Direct launches accept application arguments after `--` as well:
+`nomad-runtime --project-path MyProject -- "Player One" --help`.
+Packaged executables use the same convention: `MyGame -- "Player One" --help`.
+After the separator, `--help`, `--project-path`, `--debug`, and `--no-debug` are
+application data, not runtime options. Without `--`, `os.argv` is empty.
+See [nomad-os](nomad-os.md) for startup environment and path snapshots.
 
 Run `nomad run --debug` and press the grave/tilde key (`~`) in the game window
 to open the debug console. Runtime log messages appear in its **Logs** panel.

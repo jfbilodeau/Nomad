@@ -1,0 +1,7 @@
+schema = 1
+
+[module]
+name = "nomad-os"
+
+[nomad]
+modules = ["nomad-collections"]

@@ -31,6 +31,8 @@ class ScriptCallable : public Base {
 public:
     [[nodiscard]] const NomadString& getPath() const { return m_path; }
     [[nodiscard]] const NomadString& getSourceCode() const { return m_source; }
+    [[nodiscard]] const NomadString& getHub() const { return m_hub; }
+    void setHub(NomadString hub) { m_hub = std::move(hub); }
 
     void setSourceLineRange(const NomadIndex startLine, const NomadIndex endLine) {
         m_sourceStartLine = startLine;
@@ -233,6 +235,7 @@ protected:
 private:
     NomadString m_path;
     NomadString m_source;
+    NomadString m_hub;
     NomadIndex m_sourceStartLine = NOMAD_INVALID_INDEX;
     NomadIndex m_sourceEndLine = NOMAD_INVALID_INDEX;
     NomadIndex m_functionStartIndex = NOMAD_INVALID_INDEX;

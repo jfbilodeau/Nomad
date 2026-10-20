@@ -179,6 +179,7 @@ Runtime::Runtime() {
 
 //    register_keyword("stringId" NomadDoc("Load the string id of the given string"));
     registerKeyword("fun", NomadDoc("Function declaration"));
+    registerKeyword("hub", NomadDoc("Groups declarations under an open, shared name prefix"));
     registerKeyword("new", NomadDoc("Constructs a new object"));
     registerKeyword("if", NomadDoc("if statement"));
     registerKeyword("else", NomadDoc("`else` branch of an `if` statement"));
@@ -232,7 +233,127 @@ NomadId Runtime::registerNativeFunction(
     const Type* returnType,
     NomadDocArg
 ) {
+    if (isHub(name) || isHubVariable(name)) {
+        log::error("Cannot register function '" + name + "': name is reserved by a hub");
+        return NOMAD_INVALID_ID;
+    }
     return registerNativeCallable(nullptr, name, std::move(nativeFunction_fn), parameters, returnType, doc);
+}
+
+bool Runtime::isHub(const NomadString& name) const {
+    return m_hubs.contains(name);
+}
+
+NomadString Runtime::getContainingHub(const NomadString& name) const {
+    auto prefix = name;
+    while (true) {
+        const auto separator = prefix.rfind('.');
+        if (separator == NomadString::npos) {
+            return {};
+        }
+        prefix.resize(separator);
+        if (isHub(prefix)) {
+            return prefix;
+        }
+    }
+}
+
+bool Runtime::isHubVariable(const NomadString& name) const {
+    return m_hubVariables.contains(name);
+}
+
+NomadId Runtime::registerHubVariable(const NomadString& name) {
+    if (m_initializedHubs || m_initializingHubs || getContainingHub(name).empty() || isHub(name) || isHubVariable(name) ||
+        getCallableId(name) != NOMAD_INVALID_ID || getConstantId(name) != NOMAD_INVALID_ID ||
+        getTypeByName(name) != nullptr || getEventId(name) != NOMAD_INVALID_ID ||
+        getDynamicVariableId(name) != NOMAD_INVALID_ID ||
+        getVariableContextIdByPrefix(name) != NOMAD_INVALID_ID) {
+        log::error("Cannot register hub variable '" + name + "': missing hub or conflicting declaration");
+        return NOMAD_INVALID_ID;
+    }
+    if (m_hubVariableContextId == NOMAD_INVALID_ID) {
+        m_hubVariableContextId = registerVariableContext(
+            "$hub", "$hub.", std::make_unique<SimpleVariableContext>()
+        );
+    }
+    const auto id = registerContextVariable(m_hubVariableContextId, name, nullptr);
+    if (id != NOMAD_INVALID_ID) {
+        m_hubVariables.insert(name);
+        m_uninitializedHubVariables.insert(name);
+    }
+    return id;
+}
+
+void Runtime::registerHubInitializer(const NomadId functionId) {
+    if (getScriptFunction(functionId) == nullptr || m_initializedHubs || m_initializingHubs) {
+        throw NomadException("Cannot register a hub initializer after initialization or with an invalid function");
+    }
+    m_hubInitializers.push_back(functionId);
+}
+
+void Runtime::initializeHubs() {
+    if (!m_hubInitializationError.empty()) {
+        throw VirtualMachineException("Hub initialization failed: " + m_hubInitializationError);
+    }
+    if (m_initializedHubs || m_initializingHubs) {
+        return;
+    }
+    m_initializingHubs = true;
+    try {
+        VirtualMachine machine(this);
+        for (const auto id : m_hubInitializers) {
+            machine.run(getScriptFunction(id), {});
+        }
+        m_initializedHubs = true;
+        m_initializingHubs = false;
+    } catch (const std::exception& exception) {
+        m_hubInitializationError = exception.what();
+        m_initializingHubs = false;
+        throw;
+    }
+}
+
+bool Runtime::registerHub(const NomadString& name) {
+    if (name.empty()) {
+        log::error("Cannot register a hub with an empty name");
+        return false;
+    }
+    std::vector<NomadString> prefixes;
+    NomadIndex start = 0;
+    while (start < name.size()) {
+        const auto end = name.find('.', start);
+        const auto length = (end == NomadString::npos ? name.size() : end) - start;
+        const auto segment = name.substr(start, length);
+        if (segment.empty() || !((segment[0] >= 'A' && segment[0] <= 'Z') ||
+            (segment[0] >= 'a' && segment[0] <= 'z') || segment[0] == '_') ||
+            segment.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") !=
+                NomadString::npos || getKeywordId(segment) != NOMAD_INVALID_ID) {
+            log::error("Invalid hub name '" + name + "'");
+            return false;
+        }
+        auto prefix = name.substr(0, start + length);
+        if (!isHub(prefix) && (getCallableId(prefix) != NOMAD_INVALID_ID ||
+            getConstantId(prefix) != NOMAD_INVALID_ID || getTypeByName(prefix) != nullptr ||
+            getEventId(prefix) != NOMAD_INVALID_ID || getDynamicVariableId(prefix) != NOMAD_INVALID_ID ||
+            isHubVariable(prefix) ||
+            getVariableContextIdByPrefix(prefix + ".") != NOMAD_INVALID_ID ||
+            getParameterizedTypeArgumentCount(prefix).has_value() ||
+            getParameterizedConstructorArgumentCount(prefix).has_value())) {
+            log::error("Cannot register hub '" + name + "': identifier '" + prefix + "' is already used");
+            return false;
+        }
+        prefixes.push_back(std::move(prefix));
+        if (end == NomadString::npos) {
+            break;
+        }
+        start = end + 1;
+        if (start == name.size()) {
+            log::error("Invalid hub name '" + name + "'");
+            return false;
+        }
+    }
+    m_hubs.insert(prefixes.begin(), prefixes.end());
+    return true;
 }
 
 NomadId Runtime::registerNativeCallable(
@@ -667,6 +788,9 @@ bool Runtime::canOverloadCallable(
 }
 
 void Runtime::registerType(std::unique_ptr<Type>&& type) {
+    if (isHub(type->getTypeName()) || isHubVariable(type->getTypeName())) {
+        throw NomadException("Type name '" + type->getTypeName() + "' is reserved by a hub");
+    }
     m_types.push_back(std::move(type));
 
     // return toNomadId(m_types.size() - 1);
@@ -711,6 +835,10 @@ void Runtime::getTypes(std::vector<const Type*>& types) const {
 }
 
 const OpaqueIdType* Runtime::registerOpaqueIdType(const NomadString& name, const NomadString& doc) {
+    if (isHub(name) || isHubVariable(name)) {
+        log::error("Cannot register type '" + name + "': name is reserved by a hub declaration");
+        return nullptr;
+    }
     if (name.empty()) {
         log::error("Cannot register an opaque ID type with an empty name");
         return nullptr;
@@ -731,6 +859,10 @@ const EnumType* Runtime::registerEnum(
     const NomadString& name,
     const std::vector<EnumValueDefinition>& values
 ) {
+    if (isHub(name) || isHubVariable(name)) {
+        log::error("Cannot register enum '" + name + "': name is reserved by a hub declaration");
+        return nullptr;
+    }
     if (name.empty()) {
         log::error("Cannot register an enum with an empty name");
         return nullptr;
@@ -815,7 +947,8 @@ bool Runtime::registerParameterizedType(
     ParameterizedTypeFactory factory,
     ParameterizedTypeInitializer initializer
 ) {
-    if (name.empty() || argumentCount == 0 || !factory || getTypeByName(name) != nullptr ||
+    if (name.empty() || isHub(name) || isHubVariable(name) ||
+        argumentCount == 0 || !factory || getTypeByName(name) != nullptr ||
         getParameterizedConstructorArgumentCount(name) ||
         std::ranges::any_of(m_parameterizedTypes, [&](const auto& entry) { return entry.name == name; })) {
         log::error("Cannot register parameterized type '" + name + "': invalid or duplicate definition");
@@ -1217,7 +1350,7 @@ bool Runtime::registerNativeParameterizedConstructor(
     const NomadIndex argumentCount,
     ParameterizedConstructorInitializer initializer
 ) {
-    if (name.empty() || argumentCount == 0 || !initializer ||
+    if (name.empty() || isHub(name) || isHubVariable(name) || argumentCount == 0 || !initializer ||
         getParameterizedConstructorArgumentCount(name) || getParameterizedTypeArgumentCount(name) ||
         getTypeByName(name) != nullptr ||
         std::ranges::any_of(m_functionTable, [&](const auto& callable) {
@@ -1835,6 +1968,10 @@ void Runtime::getKeywords(std::vector<KeywordDefinition>& keywords) const {
 }
 
 NomadId Runtime::registerConstant(const NomadString& name, const RuntimeValue& value, const Type* type) {
+    if (isHub(name) || isHubVariable(name)) {
+        log::error("Cannot register constant '" + name + "': name is reserved by a hub");
+        return NOMAD_INVALID_ID;
+    }
     if (getConstantId(name) != NOMAD_INVALID_ID) {
         log::error("Constant with name '" + name + "' already registered.");
 
@@ -1892,6 +2029,10 @@ NomadId Runtime::getNextConstantId(const NomadId currentId) const {
 }
 
 NomadId Runtime::registerEvent(const NomadString &name, const std::vector<EventParameter> &parameterTypes) {
+    if (isHub(name) || isHubVariable(name)) {
+        log::error("Cannot register event '" + name + "': name is reserved by a hub");
+        return NOMAD_INVALID_ID;
+    }
     if (getEventId(name) != NOMAD_INVALID_ID) {
         log::error("Event with name '" + name + "' already registered.");
 
@@ -2028,6 +2169,10 @@ NomadId Runtime::registerDynamicVariable(
     const Type* type,
     const NomadString& /*doc*/
     ) {
+    if (isHub(name) || isHubVariable(name)) {
+        log::error("Cannot register dynamic variable '" + name + "': name is reserved by a hub declaration");
+        return NOMAD_INVALID_ID;
+    }
     auto id = toNomadId(m_dynamicVariables.size());
 
     DynamicVariableRegistration definition;
@@ -2197,6 +2342,9 @@ NomadId Runtime::getContextVariableId(const NomadString& variableName) {
 }
 
 NomadId Runtime::getVariableContextIdByPrefix(const NomadString& variableName) const {
+    if (isHubVariable(variableName)) {
+        return m_hubVariableContextId;
+    }
     for (const auto& context: m_variables) {
         if (variableName.rfind(context.prefix, 0) == 0) {
             return context.id;
@@ -2259,6 +2407,9 @@ void Runtime::setContextVariableValue(const NomadId contextVariableId, const Run
     }
 
     getVariableContext(contextVariable->contextId)->setValue(contextVariable->localVariableId, value);
+    if (contextVariable->contextId == m_hubVariableContextId) {
+        m_uninitializedHubVariables.erase(getContextVariableName(contextVariableId));
+    }
 }
 
 void Runtime::getContextVariableValue(const NomadId contextVariableId, RuntimeValue& value) const {
@@ -2269,6 +2420,12 @@ void Runtime::getContextVariableValue(const NomadId contextVariableId, RuntimeVa
         return;
     }
 
+    if (contextVariable->contextId == m_hubVariableContextId &&
+        m_uninitializedHubVariables.contains(getContextVariableName(contextVariableId))) {
+        throw VirtualMachineException(
+            "Hub variable '" + getContextVariableName(contextVariableId) + "' read before initialization"
+        );
+    }
     getVariableContext(contextVariable->contextId)->getValue(contextVariable->localVariableId, value);
 }
 
@@ -2332,6 +2489,10 @@ NomadId Runtime::registerScriptFunction(
     const NomadString& path,
     const NomadString& source
     ) {
+    if (isHub(name) || isHubVariable(name)) {
+        log::error("Cannot register function '" + name + "': name is reserved by a hub declaration");
+        return NOMAD_INVALID_ID;
+    }
     if (getCallableId(name) != NOMAD_INVALID_ID) {
         log::error("Function with name '" + name + "' conflicts with an already registered callable.");
 

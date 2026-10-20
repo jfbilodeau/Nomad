@@ -29,6 +29,7 @@ enum class DebugOption {
 
 struct RunParameters {
     DebugOption debug = DebugOption::Unspecified;
+    std::vector<std::string> applicationArguments;
 };
 
 int runArguments(const ProgramOptions& program, std::initializer_list<std::string> arguments, std::ostream& output) {
@@ -123,6 +124,37 @@ BOOST_AUTO_TEST_CASE(binds_mutually_exclusive_enum_flags)
         runArguments(program, {"run", "--debug", "--no-debug"}, output),
         boost::program_options::error
     );
+}
+
+BOOST_AUTO_TEST_CASE(application_arguments_are_opaque_and_reset_between_invocations) {
+    std::ostringstream output;
+    ProgramOptions program("nomad", "Project manager");
+    RunParameters captured;
+    program.addVerb<RunParameters>("run", [&captured](RunParameters& parameters) {
+        captured = parameters;
+        return EXIT_SUCCESS;
+    }, "Run project")
+        .addApplicationArguments(&RunParameters::applicationArguments)
+        .addFlag("debug", "", &RunParameters::debug,
+            DebugOption::Debug, DebugOption::Unspecified, "Enable debug mode");
+
+    BOOST_TEST(runArguments(program,
+        {"run", "--debug", "--", "", "Player 日本語", "--help", "--debug", "--no-debug", "--"}, output)
+        == EXIT_SUCCESS);
+    BOOST_TEST(static_cast<int>(captured.debug) == static_cast<int>(DebugOption::Debug));
+    const std::vector<std::string> expected{"", "Player 日本語", "--help", "--debug", "--no-debug", "--"};
+    BOOST_TEST(captured.applicationArguments == expected, boost::test_tools::per_element());
+    BOOST_TEST(runArguments(program, {"run", "--", "--unknown", "--project-path", "elsewhere"}, output)
+        == EXIT_SUCCESS);
+    BOOST_TEST(captured.applicationArguments.size() == 3U);
+    BOOST_TEST(static_cast<int>(captured.debug) == static_cast<int>(DebugOption::Unspecified));
+    BOOST_TEST(runArguments(program, {"run", "--"}, output) == EXIT_SUCCESS);
+    BOOST_TEST(captured.applicationArguments.empty());
+    BOOST_TEST(runArguments(program, {"run"}, output) == EXIT_SUCCESS);
+    BOOST_TEST(captured.applicationArguments.empty());
+    BOOST_CHECK_THROW(runArguments(program, {"run", "--unknown"}, output), boost::program_options::error);
+    program.printHelp(output, "run");
+    BOOST_TEST(output.str().find("[-- application-arguments...]") != std::string::npos);
 }
 
 BOOST_AUTO_TEST_CASE(help_is_generated_from_registrations_and_bypasses_required_values)

@@ -15,10 +15,11 @@ add_test(
         "-DNOMAD_SYSTEM_LIBRARY=$<TARGET_FILE_NAME:nomad-system>"
         "-DNOMAD_COLLECTIONS_LIBRARY=$<TARGET_FILE_NAME:nomad-collections>"
         "-DNOMAD_GAME_LIBRARY=$<TARGET_FILE_NAME:nomad-game>"
+        "-DNOMAD_OS_LIBRARY=$<TARGET_FILE_NAME:nomad-os>"
         "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/module-runtime/$<CONFIG>"
         -P "${CMAKE_CURRENT_LIST_DIR}/ModuleRuntimeIntegrationTest.cmake"
 )
-set_tests_properties(nomad_module_runtime_integration PROPERTIES LABELS integration TIMEOUT 90)
+set_tests_properties(nomad_module_runtime_integration PROPERTIES LABELS integration TIMEOUT 120)
 
 add_test(
     NAME nomad_distribution_integration

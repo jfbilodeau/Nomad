@@ -70,10 +70,101 @@ StatementList& FunStatementNode::getBody() {
     return m_body;
 }
 
+class HubDeclaration final : public Statement {
+public:
+    HubDeclaration(NomadIndex line, NomadIndex column): Statement(line, column) {}
+    [[nodiscard]] NomadBoolean isDeclaration() const override { return true; }
+    StatementList& getBody() { return m_body; }
+
+protected:
+    void onResolve(CompilerContext* context, ScriptFunction* function) override {
+        (void)m_body.resolve(context, function);
+    }
+
+private:
+    StatementList m_body;
+};
+
+std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+    NomadString name;
+    if (!tokens->nextIdentifier(name) || !parser::expectEndOfLine(context, function, tokens)) {
+        return nullptr;
+    }
+    if (context->currentBodyEndsAtEnd() || !context->isFunctionRoot(function)) {
+        context->reportError("Hubs may only be declared at script level or inside another hub", tokens);
+        return nullptr;
+    }
+    const auto qualifiedName = context->qualifyDeclaration(name);
+    if (std::ranges::count(qualifiedName, '.') >= 64) {
+        context->reportError("Hub nesting exceeds the maximum depth of 64", tokens);
+        return nullptr;
+    }
+    const CompilerHubScope hubScope(*context, qualifiedName);
+    auto declaration = std::make_unique<HubDeclaration>(tokens->getLineIndex(), tokens->getColumnIndex());
+    while (tokens->nextLine()) {
+        if (tokens->is("end")) {
+            declaration->setEndSpan(tokens->getLineIndex(), tokens->getColumnIndex());
+            tokens->next();
+            if (!parser::expectEndOfLine(context, function, tokens)) {
+                return nullptr;
+            }
+            return declaration;
+        }
+        if (tokens->endOfLine()) {
+            continue;
+        }
+        if (tokens->getTokenCount() >= 3 && tokens->getTokenTypeAt(0) == TokenType::Identifier &&
+            tokens->getTokenAt(1) == "=") {
+            const auto line = tokens->getLineIndex();
+            const auto column = tokens->getColumnIndex();
+            const auto variableName = context->qualifyDeclaration(tokens->next().textValue);
+            if (!tokens->expect("=")) {
+                continue;
+            }
+            auto* compiler = context->getCompiler();
+            const auto initializerId = compiler->createFunction(
+                context, compiler->getScriptId(function->getId()), generateFunFunctionName(context, function, line)
+            );
+            if (initializerId == NOMAD_INVALID_ID) {
+                continue;
+            }
+            auto* initializerFunction = context->getRuntime()->getScriptFunction(initializerId);
+            auto expression = parser::parseExpression(context, initializerFunction, tokens);
+            if (expression == nullptr || !parser::expectEndOfLine(context, initializerFunction, tokens)) {
+                continue;
+            }
+            auto initializer = std::make_unique<FunctionNode>(line, column);
+            initializer->getStatements()->addStatement(
+                std::make_unique<AssignmentStatement>(line, column, variableName, std::move(expression))
+            );
+            initializer->setEndSpan(line, tokens->getColumnIndex());
+            compiler->setFunctionNode(initializerId, std::move(initializer));
+            context->getRuntime()->registerHubInitializer(initializerId);
+            continue;
+        }
+        if (!tokens->is("hub") && !tokens->is("fun") && !tokens->is("const") &&
+            !tokens->is("enum") && !tokens->is("event")) {
+            context->reportError("A hub may contain only variable, hub, function, constant, enum, or event declarations", tokens);
+            continue;
+        }
+        auto statement = parser::parseLine(context, function, tokens);
+        if (statement != nullptr) {
+            declaration->getBody().addStatement(std::move(statement));
+        }
+    }
+    context->reportError("Unexpected end of file in hub '" + qualifiedName + "': expected 'end'", tokens);
+    return nullptr;
+}
+
 bool preParseFunStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
     NomadString funName;
 
     if (!tokens->nextIdentifier(funName)) {
+        return false;
+    }
+    funName = context->qualifyDeclaration(funName);
+    if (context->getRuntime()->isHub(funName)) {
+        context->reportError("Function name '" + funName + "' is reserved by a hub", tokens);
         return false;
     }
 
@@ -125,6 +216,10 @@ bool parseCallbackFunParameters(CompilerContext* context, ScriptFunction* functi
         if (function->getParameterId(parameterName) != NOMAD_INVALID_ID) {
             context->reportError("Parameter '" + parameterName + "' is already defined", tokens);
 
+            return false;
+        }
+        if (context->getRuntime()->isHub(parameterName)) {
+            context->reportError("Parameter name '" + parameterName + "' is reserved by a hub", tokens);
             return false;
         }
 
@@ -204,6 +299,7 @@ std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptFun
     }
 
     funName = tokens->next().textValue;
+    funName = context->qualifyDeclaration(funName);
 
     const auto declarationLine = tokens->getLineIndex();
     // Fun is already registered by pre_parse_fun_statement
@@ -373,7 +469,7 @@ bool parseConstantPrimary(CompilerContext* context, Tokenizer* tokens, ConstantV
 
     // Constant reference?
     if (token.type == TokenType::Identifier) {
-        auto constantId = context->getRuntime()->getConstantId(token.textValue);
+        auto constantId = context->getRuntime()->getConstantId(context->resolveName(token.textValue));
 
         if (constantId == NOMAD_INVALID_ID) {
             context->reportError("Unknown constant '" + token.textValue + "'", tokens);
@@ -609,6 +705,7 @@ bool parseConstantName(CompilerContext* context, Tokenizer* tokens, NomadString&
     }
 
     constantName = constantToken.textValue;
+    constantName = context->qualifyDeclaration(constantName);
 
     return tokens->expect(TokenType::Operator) && tokens->expect("=");
 }
@@ -620,6 +717,10 @@ bool preParseConstStatement(CompilerContext* context, ScriptFunction* /*function
         return false;
     }
 
+    if (context->getRuntime()->isHub(constantName)) {
+        context->reportError("Constant name '" + constantName + "' is reserved by a hub", tokens);
+        return false;
+    }
     if (context->getRuntime()->getConstantId(constantName) != NOMAD_INVALID_ID) {
         context->reportError("Constant '" + constantName + "' is already defined", tokens);
 
@@ -632,8 +733,10 @@ bool preParseConstStatement(CompilerContext* context, ScriptFunction* /*function
         return false;
     }
 
-    context->getRuntime()->registerConstant(constantName, constant.value, constant.type);
-
+    if (context->getRuntime()->registerConstant(constantName, constant.value, constant.type) == NOMAD_INVALID_ID) {
+        context->reportError("Failed to register constant '" + constantName + "'", tokens);
+        return false;
+    }
     return true;
 }
 
@@ -673,6 +776,7 @@ bool parseEnumDefinition(
         context->reportError("Unexpected token after enum name: '" + tokens->currentToken().textValue + "'", tokens);
         valid = false;
     }
+    enumName = context->qualifyDeclaration(enumName);
 
     while (tokens->nextLine()) {
         if (tokens->is("end")) {
@@ -732,6 +836,10 @@ bool preParseEnumStatement(CompilerContext* context, ScriptFunction* function, T
     auto* compiler = context->getCompiler();
     auto* runtime = context->getRuntime();
 
+    if (runtime->isHub(enumName)) {
+        context->reportError("Type name '" + enumName + "' is reserved by a hub", tokens);
+        return false;
+    }
     if (runtime->getTypeByName(enumName) != nullptr) {
         context->reportError("Type '" + enumName + "' is already defined", tokens);
         return false;
@@ -794,7 +902,7 @@ std::unique_ptr<Statement> parseEventStatement(CompilerContext* context, ScriptF
         return nullptr;
     }
 
-    const auto eventName = tokens->next().textValue;
+    const auto eventName = context->qualifyDeclaration(tokens->next().textValue);
 
     // Parse parameters (name:type ...)
     auto eventDecl = std::make_unique<EventDeclaration>(tokens->getLineIndex(), tokens->getColumnIndex(), eventName);
@@ -826,7 +934,7 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
         return nullptr;
     }
 
-    const auto eventName = tokens->next().textValue;
+    const auto eventName = context->resolveName(tokens->next().textValue, function);
 
     // Expect 'fun' keyword or identifier for function name
     if (tokens->is("fun")) {
@@ -866,6 +974,7 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
     if (!tokens->nextIdentifier(handlerName)) {
         return nullptr;
     }
+    handlerName = context->resolveName(handlerName, function);
 
     const auto handlerFunctionId = context->getRuntime()->getFunctionId(handlerName);
 
@@ -1145,6 +1254,10 @@ bool preParseParamsStatement(CompilerContext* context, ScriptFunction* function,
         if (function->getParameterId(parameterName) != NOMAD_INVALID_ID) {
             context->reportError("Parameter '" + parameterName + "' is already defined", tokens);
 
+            return false;
+        }
+        if (context->getRuntime()->isHub(parameterName)) {
+            context->reportError("Parameter name '" + parameterName + "' is reserved by a hub", tokens);
             return false;
         }
 

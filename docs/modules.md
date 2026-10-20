@@ -19,11 +19,15 @@ The SDK provides:
 | [nomad-collections](nomad-collections.md) | Typed lists, fixed-size 1D/2D/3D arrays, and string-keyed maps with indexed access. |
 | [nomad-system](nomad-system.md) | Logging, math functions, conversions, and orderly shutdown. |
 | [nomad-game](nomad-game.md) | Windows, input, graphics, audio, scenes, entities, and game resources. Requires `nomad-system`. |
+| [nomad-os](nomad-os.md) | Startup arguments, environment, platform and architecture enums, and paths through the `os` hub. Requires `nomad-collections`. |
 
 Dependencies are selected automatically. Listing only `nomad-game` also
 loads `nomad-system`. A system-only project can select `["nomad-system"]`
 without opening a game window. An empty list selects only the fundamental
 language runtime, including built-in strings.
+
+Selecting `nomad-os` automatically loads `nomad-collections`. It does not require
+the game or system modules and does not open a window.
 
 `nomad.modules` is required in development and packaged configurations.
 There is no implicit module.
@@ -41,6 +45,9 @@ modules/
     module.toml
     ...
   nomad-game/
+    module.toml
+    ...
+  nomad-os/
     module.toml
     ...
 ```

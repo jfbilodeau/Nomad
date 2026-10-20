@@ -24,6 +24,7 @@ add_executable(
     ./LanguageControlFlowTest.cpp
     ./LanguageFormatStringFunctionTest.cpp
     ./LanguageFunctionTest.cpp
+    ./LanguageHubTest.cpp
     ./LanguageLexicalTest.cpp
     ./LanguageOperatorTest.cpp
     ./LanguageScriptDiscoveryTest.cpp
@@ -45,6 +46,7 @@ add_executable(
     ./main.cpp
     ./NomadVersionTest.cpp
     ./ObjectConstructionTest.cpp
+    ./OsModuleTest.cpp
     ./PackedSpriteRegistrationTest.cpp
     ./ParserTest.cpp
     ./ProgramOptionsTest.cpp
@@ -97,6 +99,7 @@ target_link_libraries(
     nomad-system
     Nomad::CliOptions
     archive
+    Boost::nowide
     Boost::unit_test_framework
 )
 

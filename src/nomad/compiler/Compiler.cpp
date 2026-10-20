@@ -30,6 +30,7 @@ Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
     registerParseStatementFn("enum", parseEnumStatement, preParseEnumStatement);
     registerParseStatementFn("event", parseEventStatement, preParseEventStatement);
     registerParseStatementFn("fun", parseFunStatement, preParseFunStatement);
+    registerParseStatementFn("hub", parseHubStatement);
     registerParseStatementFn("assert", parseAssertStatement);
     registerParseStatementFn("if", parseIfStatement);
     registerParseStatementFn("params", nullptr, preParseParamsStatement);
@@ -164,6 +165,59 @@ bool Compiler::foldBinary(
     RuntimeValue& result
 ) const {
     return m_runtime->foldBinary(op, lhsType, lhs, rhsType, rhs, result);
+}
+
+NomadString Compiler::resolveName(
+    const NomadString& name,
+    const ScriptFunction* function,
+    NomadString hub
+) const {
+    const auto exists = [this](const NomadString& candidate) {
+        return getIdentifierType(candidate, nullptr) != IdentifierType::Unknown ||
+            m_runtime->getTypeByName(candidate) != nullptr ||
+            m_runtime->getEventId(candidate) != NOMAD_INVALID_ID ||
+            m_runtime->isHub(candidate) ||
+            m_runtime->getParameterizedTypeArgumentCount(candidate).has_value() ||
+            m_runtime->getParameterizedConstructorArgumentCount(candidate).has_value();
+    };
+    auto receiver = name;
+    while (!receiver.empty()) {
+        for (auto* scope = function; scope != nullptr;
+             scope = m_runtime->getScriptFunction(scope->getParentId())) {
+            if (scope->getVariableId(receiver) != NOMAD_INVALID_ID ||
+                scope->getParameterId(receiver) != NOMAD_INVALID_ID) {
+                return name;
+            }
+        }
+        const auto separator = receiver.rfind('.');
+        if (separator == NomadString::npos) {
+            break;
+        }
+        receiver.resize(separator);
+    }
+    if (hub.empty() && function != nullptr) {
+        hub = function->getHub();
+    }
+    while (!hub.empty()) {
+        const auto candidate = hub + "." + name;
+        auto prefix = candidate;
+        while (prefix.size() > hub.size() + 1) {
+            if (exists(prefix)) {
+                return candidate;
+            }
+            const auto separator = prefix.rfind('.');
+            if (separator == NomadString::npos) {
+                break;
+            }
+            prefix.resize(separator);
+        }
+        const auto separator = hub.rfind('.');
+        if (separator == NomadString::npos) {
+            break;
+        }
+        hub.resize(separator);
+    }
+    return name;
 }
 
 IdentifierType Compiler::getIdentifierType(const NomadString& name, const ScriptFunction* function) const {
@@ -811,26 +865,92 @@ void Compiler::setIndex(NomadIndex index, NomadIndex value) {
     m_instructions[index].value.setIndexValue(value);
 }
 
-void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scriptFile) {
+void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scriptFile, const bool hubsOnly) {
+    const CompilerHubScope scriptScope(*context, {});
     auto function = m_runtime->getScriptFunction(scriptFile.functionId);
     auto& tokens = *scriptFile.tokens;
 
     tokens.reset();
 
+    struct DeclarationBlock {
+        NomadString hub;
+        bool isHub;
+    };
+    std::vector<DeclarationBlock> blocks;
     while (tokens.nextLine()) {
-        auto& statement = tokens.next();
+        const auto statement = tokens.next().textValue;
+        if (statement == "end") {
+            if (!blocks.empty()) {
+                context->setHub(std::move(blocks.back().hub));
+                blocks.pop_back();
+            }
+            continue;
+        }
+        if (statement == "hub") {
+            NomadString name;
+            if (!tokens.nextIdentifier(name) || !tokens.endOfLine()) {
+                context->reportError("Expected a hub name followed by end of line", &tokens);
+                continue;
+            }
+            if (blocks.size() >= 64) {
+                context->reportError("Hub nesting exceeds the maximum depth of 64", &tokens);
+                continue;
+            }
+            const auto qualifiedName = context->qualifyDeclaration(name);
+            blocks.push_back({context->getHub(), true});
+            if (!m_runtime->registerHub(qualifiedName)) {
+                context->reportError("Cannot declare hub '" + qualifiedName + "': invalid or conflicting name", &tokens);
+            }
+            context->setHub(qualifiedName);
+            continue;
+        }
 
         PreParseStatementFn preParseStatementFn;
 
-        if (getGetPreParseStatementFn(statement.textValue, preParseStatementFn) && preParseStatementFn) {
+        if (hubsOnly && statement == "enum") {
+            while (tokens.nextLine() && !tokens.is("end")) {}
+            continue;
+        }
+        if (hubsOnly && !blocks.empty() && blocks.back().isHub &&
+            tokens.getTokenCount() >= 3 && tokens.getTokenTypeAt(0) == TokenType::Identifier &&
+            tokens.getTokenAt(1) == "=") {
+            const auto name = context->qualifyDeclaration(statement);
+            if (statement.find('.') != NomadString::npos) {
+                context->reportError("Hub variable declarations require an unqualified member name", &tokens);
+            } else if (m_runtime->registerHubVariable(name) == NOMAD_INVALID_ID) {
+                context->reportError("Hub member '" + name + "' is already declared or conflicts with an identifier", &tokens);
+            } else {
+                m_hubVariableNames.push_back(name);
+            }
+        }
+        if (!hubsOnly && getGetPreParseStatementFn(statement, preParseStatementFn) && preParseStatementFn) {
             // Errors are reported to the context; keep going to collect errors from the following lines.
             (void)preParseStatementFn(context, function, &tokens);
         }
+        if (statement == "enum") {
+            continue; // Enum pre-parsing consumes its own closing end.
+        }
+        auto opensBlock = statement == "fun" || statement == "while" || statement == "until" ||
+            statement == "do" || statement == "for" || statement == "if";
+        for (NomadIndex index = 1; index < tokens.getTokenCount(); ++index) {
+            const auto& token = tokens.getTokenAt(index);
+            if (token == "fun") {
+                opensBlock = true;
+            }
+            if (statement == "if" && (token == "break" || token == "continue")) {
+                opensBlock = false;
+            }
+        }
+        if (opensBlock) {
+            blocks.push_back({context->getHub(), false});
+        }
     }
+    context->setHub({});
 }
 
 
 void Compiler::parseFunction(CompilerContext* context, ScriptCompilation& file) {
+    const CompilerHubScope scriptScope(*context, {});
     auto ast = std::make_unique<FunctionNode>(0, 0);
     auto& tokens = *file.tokens;
 
@@ -910,6 +1030,9 @@ void Compiler::inferTypes(CompilerContext* context) {
 
 std::vector<const Type*> Compiler::collectInferredTypes() const {
     std::vector<const Type*> types;
+    for (const auto& name : m_hubVariableNames) {
+        types.push_back(m_runtime->getContextVariableType(m_runtime->getContextVariableId(name)));
+    }
 
     for (const auto& source: m_functions) {
         types.push_back(source.function->getReturnType());
@@ -1010,6 +1133,7 @@ NomadId Compiler::createFunction(
     }
 
     auto function = m_runtime->getScriptFunction(functionId);
+    function->setHub(context->getHub());
 
     m_functions.emplace_back(FunctionCompilation {
         scriptId,
@@ -1153,6 +1277,14 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         reportExceptions(source.sourceName, [&] {
             script->tokens = std::make_unique<Tokenizer>(context, source.sourceName, source.text);
 
+            preParseFunction(context, *script, true);
+        });
+    }
+    if (hasNewErrors()) {
+        return false;
+    }
+    for (auto* script : orderedScripts) {
+        reportExceptions(script->script.source.sourceName, [&] {
             preParseFunction(context, *script);
         });
     }

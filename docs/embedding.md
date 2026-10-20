@@ -93,6 +93,27 @@ Include `<nomad/script/Callable.hpp>` for common callable metadata,
 `ScriptFunction.hpp` header and callable definition-copy APIs have been removed;
 use the borrowed pointer accessors instead.
 
+## Hubs
+
+Call `Runtime::registerHub(name)` to reserve an open name prefix before
+compilation. It returns `true` both for a new hub and for repeated registration
+of an existing hub. Dotted names, such as `"game.audio"`, also register their
+parent hubs. Invalid names and conflicts with existing values, callables, or
+types are logged and return `false` without partially registering the name.
+Use `Runtime::isHub(name)` to test whether a hub is registered.
+
+Register native APIs under their qualified names using the existing runtime
+registration functions. For example, register hub `"os"`, enum `"os.Platform"`,
+and constant `"os.platform"`. Hub registration does not create an object or
+change the signatures or ownership of these APIs. Scripts may reopen native
+hubs and add distinct members.
+
+Script hub variables initialize once before the first `VirtualMachine::run`
+or `Runtime::executeFunction` invocation. Compilation and analysis do not
+execute their initializers. Initialization failure propagates to the caller
+and prevents subsequent script execution. Use a fresh runtime for a new
+application execution.
+
 ## Source input and compilation
 
 The compiler consumes source text, not filesystem paths. `SourceText` owns a

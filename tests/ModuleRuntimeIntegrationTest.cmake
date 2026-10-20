@@ -1,4 +1,4 @@
-foreach(REQUIRED IN ITEMS NOMAD_CLI NOMAD_RUNTIME_SUFFIX NOMAD_SYSTEM_LIBRARY NOMAD_COLLECTIONS_LIBRARY NOMAD_GAME_LIBRARY NOMAD_TEST_ROOT)
+foreach(REQUIRED IN ITEMS NOMAD_CLI NOMAD_RUNTIME_SUFFIX NOMAD_SYSTEM_LIBRARY NOMAD_COLLECTIONS_LIBRARY NOMAD_GAME_LIBRARY NOMAD_OS_LIBRARY NOMAD_TEST_ROOT)
     if(NOT DEFINED ${REQUIRED})
         message(FATAL_ERROR "${REQUIRED} is required")
     endif()
@@ -84,4 +84,58 @@ endif()
 nomadRunTestCommand("Run packaged application with collections module"
     COMMAND "${COLLECTIONS_EXTRACTED}/${EXECUTABLE_NAME}${NOMAD_RUNTIME_SUFFIX}"
     WORKING_DIRECTORY "${COLLECTIONS_EXTRACTED}" OUTPUT_MATCH "SYSTEM_MODULE_COMPLETE")
+
+string(REPLACE "modules = [\"nomad-system\", \"nomad-collections\"]"
+    "modules = [\"nomad-system\", \"nomad-os\"]" CONFIGURATION "${CONFIGURATION}")
+file(WRITE "${PROJECT}/nomad.toml" "${CONFIGURATION}")
+file(WRITE "${PROJECT}/res/scripts/main.nomad"
+    "assert os.argv.count == 0\nlog.info \"OS_EMPTY_ARGUMENTS_COMPLETE\"\n")
+nomadRunTestCommand("Run OS application without separator"
+    COMMAND "${NOMAD_CLI}" run "${PROJECT}" OUTPUT_MATCH "OS_EMPTY_ARGUMENTS_COMPLETE")
+nomadRunTestCommand("Run OS application with empty argument list"
+    COMMAND "${NOMAD_CLI}" run "${PROJECT}" -- OUTPUT_MATCH "OS_EMPTY_ARGUMENTS_COMPLETE")
+file(WRITE "${PROJECT}/res/scripts/main.nomad" [=[
+assert os.argv.count == 6
+assert os.argv[0] == "Player 日本語"
+assert os.argv[1] == "--help"
+assert os.argv[2] == "--project-path"
+assert os.argv[3] == "--debug"
+assert os.argv[4] == "--no-debug"
+assert os.argv[5] == "--"
+assert os.currentDirectory.length > 0
+assert os.executablePath.length > 0
+assert os.tempDirectory.length > 0
+os.argv[0] = "updated"
+os.env["NOMAD_OS_LOCAL"] = "snapshot"
+assert os.argv[0] == "updated"
+assert os.env["NOMAD_OS_LOCAL"] == "snapshot"
+log.info "OS_MODULE_COMPLETE"
+]=])
+set(APPLICATION_ARGUMENTS "Player 日本語" --help --project-path --debug --no-debug --)
+nomadRunTestCommand("Check OS application without capturing host information"
+    COMMAND "${NOMAD_CLI}" check "${PROJECT}")
+nomadRunTestCommand("Forward application arguments through project manager"
+    COMMAND "${NOMAD_CLI}" run "${PROJECT}" --debug -- ${APPLICATION_ARGUMENTS}
+    OUTPUT_MATCH "OS_MODULE_COMPLETE")
+nomadRunTestCommand("Direct runtime arguments stop at separator"
+    COMMAND "${RUNTIME}" --project-path "${PROJECT}" -- ${APPLICATION_ARGUMENTS}
+    WORKING_DIRECTORY "${NOMAD_TEST_ROOT}" OUTPUT_MATCH "OS_MODULE_COMPLETE")
+nomadRunTestCommand("Package OS application"
+    COMMAND "${NOMAD_CLI}" package "${PROJECT}" --force)
+file(GLOB ARCHIVES "${PROJECT}/dist/*.zip")
+list(GET ARCHIVES 0 ARCHIVE)
+set(OS_EXTRACTED "${NOMAD_TEST_ROOT}/os-extracted")
+file(ARCHIVE_EXTRACT INPUT "${ARCHIVE}" DESTINATION "${OS_EXTRACTED}")
+if(NOT EXISTS "${OS_EXTRACTED}/${NOMAD_OS_LIBRARY}" OR
+    NOT EXISTS "${OS_EXTRACTED}/${NOMAD_COLLECTIONS_LIBRARY}" OR
+    EXISTS "${OS_EXTRACTED}/${NOMAD_GAME_LIBRARY}")
+    message(FATAL_ERROR "OS package did not include exactly its required Nomad modules")
+endif()
+file(READ "${OS_EXTRACTED}/nomad.toml" RELEASE)
+if(NOT RELEASE MATCHES "nomad-os" OR NOT RELEASE MATCHES "nomad-collections")
+    message(FATAL_ERROR "OS package configuration does not include resolved module dependencies")
+endif()
+nomadRunTestCommand("Packaged OS application receives application arguments"
+    COMMAND "${OS_EXTRACTED}/${EXECUTABLE_NAME}${NOMAD_RUNTIME_SUFFIX}" -- ${APPLICATION_ARGUMENTS}
+    WORKING_DIRECTORY "${OS_EXTRACTED}" OUTPUT_MATCH "OS_MODULE_COMPLETE")
 file(REMOVE_RECURSE "${NOMAD_TEST_ROOT}")

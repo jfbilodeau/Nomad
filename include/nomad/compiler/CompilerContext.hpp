@@ -5,6 +5,7 @@
 #include <nomad/Nomad.hpp>
 
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace nomad {
@@ -52,6 +53,10 @@ public:
     [[nodiscard]] Runtime* getRuntime() const;
     [[nodiscard]] CompilerMode getMode() const;
     [[nodiscard]] const InterpreterContext* getInterpreterContext() const;
+    [[nodiscard]] const NomadString& getHub() const;
+    void setHub(NomadString hub);
+    [[nodiscard]] NomadString qualifyDeclaration(const NomadString& name) const;
+    [[nodiscard]] NomadString resolveName(const NomadString& name, const ScriptFunction* function = nullptr) const;
 
     void reportDiagnostics(std::span<const Diagnostic> diagnostics);
 
@@ -105,6 +110,7 @@ private:
     NomadIndex m_errorCount = 0;
     NomadIndex m_warningCount = 0;
     std::vector<Block> m_blocks;
+    NomadString m_hub;
 };
 
 class ParserBlockScope {
@@ -122,6 +128,23 @@ public:
 
 private:
     CompilerContext& m_context;
+};
+
+class CompilerHubScope {
+public:
+    CompilerHubScope(CompilerContext& context, NomadString hub):
+        m_context(context),
+        m_previous(context.getHub())
+    {
+        m_context.setHub(std::move(hub));
+    }
+    CompilerHubScope(const CompilerHubScope&) = delete;
+    CompilerHubScope& operator=(const CompilerHubScope&) = delete;
+    ~CompilerHubScope() { m_context.setHub(std::move(m_previous)); }
+
+private:
+    CompilerContext& m_context;
+    NomadString m_previous;
 };
 
 } // namespace nomad
