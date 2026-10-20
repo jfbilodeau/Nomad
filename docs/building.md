@@ -45,6 +45,11 @@ the separate integration tests. Suite and case timings are included in the unit
 test output to help identify slow tests. Test directories have unique names so
 concurrent processes do not overwrite one another's temporary files.
 
+When running tests in CLion, rebuild the `nomad_test` target in the selected
+CMake profile after source or project-template changes. On Windows, wrapper
+tests check that the wrapper files are created; Unix executable permissions
+are checked only on non-Windows hosts.
+
 Packaging and distribution integration tests retain their existing serial
 execution requirements. Parallel jobs do not override those restrictions.
 

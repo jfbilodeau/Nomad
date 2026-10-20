@@ -58,10 +58,12 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
     BOOST_TEST(std::filesystem::is_regular_file(destination / "nomadw"));
     BOOST_TEST(std::filesystem::is_regular_file(destination / "nomadw.cmd"));
     BOOST_TEST(std::filesystem::is_regular_file(destination / "nomadw.ps1"));
+#ifndef _WIN32
     BOOST_CHECK(
         (std::filesystem::status(destination / "nomadw").permissions() &
          std::filesystem::perms::owner_exec) != std::filesystem::perms::none
     );
+#endif
     BOOST_TEST(std::filesystem::is_regular_file(destination / "nomad.toml"));
     BOOST_TEST(std::filesystem::is_regular_file(destination / "res/scripts/main.nomad"));
     BOOST_TEST(std::filesystem::is_regular_file(destination / "res/text/text.csv"));

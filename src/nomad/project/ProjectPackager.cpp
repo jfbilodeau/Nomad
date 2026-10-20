@@ -335,8 +335,9 @@ void validatePackagePath(const NomadPath& path) {
 }
 
 void validateSourceFile(const NomadPath& source) {
-    auto current = NomadPath{};
-    for (const auto& part : std::filesystem::absolute(source)) {
+    const auto absolute = std::filesystem::absolute(source);
+    auto current = absolute.root_path();
+    for (const auto& part : absolute.relative_path()) {
         current /= part;
         std::error_code error;
         const auto status = std::filesystem::symlink_status(current, error);
