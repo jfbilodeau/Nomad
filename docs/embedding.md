@@ -41,6 +41,10 @@ Use `resolveFunction(name, argumentTypes)`, `resolveMethod(objectType, name,
 argumentTypes)`, or `resolveConstructor(objectType, argumentTypes)` to select an
 overload. Inspect the `ResolveResult` before retrieving the selected callable.
 The selected ID or pointer can be retained without repeating name resolution.
+Native free functions may overload by parameter count as well as types when all
+parameters are ordinary values. Overloads with compiler-supplied source parameters
+must retain the same count and parameter shapes. All overloads under a name must
+agree on whether they return a value.
 Native and script functions use the same call syntax in expressions and
 statements. A statement discards any returned value.
 

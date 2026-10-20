@@ -611,9 +611,14 @@ bool Runtime::canOverloadCallable(
         }
 
         if (existingFunction->getParameterCount() != parameterCount) {
-            error = "overloads must all take the same number of parameters";
-
-            return false;
+            const auto ordinaryValues = [this](const auto& parameter) {
+                return getParameterShape(parameter.type) == ParameterShape::Value;
+            };
+            if (!std::ranges::all_of(parameters, ordinaryValues) ||
+                !std::ranges::all_of(existingFunction->getParameters(), ordinaryValues)) {
+                error = "overloads with different parameter counts require ordinary value parameters";
+                return false;
+            }
         }
 
         const auto* existingReturnType = existingFunction->getReturnType();
@@ -626,9 +631,9 @@ bool Runtime::canOverloadCallable(
             return false;
         }
 
-        auto hasSameSignature = true;
+        auto hasSameSignature = existingFunction->getParameterCount() == parameterCount;
 
-        for (NomadIndex index = 0; index < parameterCount; ++index) {
+        for (NomadIndex index = 0; index < std::min(parameterCount, existingFunction->getParameterCount()); ++index) {
             const auto* candidateType = parameters[index].type;
             const auto* existingType = existingFunction->getParameters()[index].type;
             const auto candidateShape = getParameterShape(candidateType);

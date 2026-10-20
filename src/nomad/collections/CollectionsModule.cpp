@@ -4,6 +4,7 @@
 #include <nomad/collections/RegisterKeyValueType.hpp>
 #include <nomad/collections/RegisterListType.hpp>
 #include <nomad/collections/RegisterMapType.hpp>
+#include <nomad/collections/RegisterRangeType.hpp>
 
 #include <nomad/system/Module.hpp>
 
@@ -16,4 +17,5 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     nomad::registerKeyValueType(runtime);
     nomad::registerListType(runtime);
     nomad::registerMapType(runtime);
+    nomad::registerRangeType(runtime);
 }

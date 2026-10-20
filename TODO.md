@@ -5,6 +5,7 @@ Things the author wants to do.
 
 
 ## Open
+[ ] Rename `init` to `main`
 [ ] File IO module.
 [ ] `doc` comments in Nomad.
 [ ] Replace ref counting with garbage collector.

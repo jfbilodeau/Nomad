@@ -1279,8 +1279,24 @@ bool parseCallableArguments(
     ArgumentList* arguments,
     const bool allowOmittedArguments
 ) {
+    const Callable* shape = &callable;
+    auto allowOmitted = allowOmittedArguments;
+    auto* runtime = context->getRuntime();
+    if (runtime->getFunction(callable.getId()) == &callable) {
+        std::vector<NomadId> overloads;
+        runtime->getCallableOverloads(callable.getName(), overloads);
+        for (const auto id : overloads) {
+            const auto* candidate = runtime->getFunction(id);
+            if (candidate->getParameterCount() != callable.getParameterCount()) {
+                allowOmitted = true;
+            }
+            if (candidate->getParameterCount() > shape->getParameterCount()) {
+                shape = candidate;
+            }
+        }
+    }
     return parseCallableArguments(
-        context, function, tokens, callable.getParameters(), arguments, allowOmittedArguments
+        context, function, tokens, shape->getParameters(), arguments, allowOmitted
     );
 }
 

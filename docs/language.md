@@ -452,6 +452,27 @@ same name. Explicit callbacks capture the value for their own iteration.
 
 ### Iterating collections
 
+The `nomad-collections` module provides `range stop`, `range start stop`, and
+`range start stop step`. These native functions return a reusable `Range`:
+
+```nomad
+for value in range 0 10
+    log.info value  # 0 through 9
+end
+
+for value in range 10 0 (-2)
+    log.info value  # 10, 8, 6, 4, 2
+end
+```
+
+Range arguments are `int` expressions evaluated once when the function is called.
+The start is inclusive and the stop is exclusive. The default start is `0` and
+the default step is `1`. A direction mismatch or equal bounds produces an empty
+range. A zero step raises a runtime error, including when supplied as a literal.
+Iteration stops safely at integer limits without wrapping. Each traversal starts
+an independent iterator; range values can be stored and traversed repeatedly.
+Parenthesize negative arguments to distinguish them from subtraction.
+
 ```nomad
 names = new List<string>
 names.append "Ada"
@@ -840,7 +861,7 @@ Native function naming follows the same identifier rules as variables and functi
 
 ### Overloading
 
-A native function name may be registered more than once, as long as the overloads differ in the types of their parameters. The call is resolved from the types of its arguments:
+A native function name may be registered more than once, as long as the overloads differ in parameter count or types. The call is resolved from the count and types of its arguments:
 
 ```nomad
 i = toInt 13.2    # calls toInt value:float
@@ -851,7 +872,9 @@ An overload whose parameter types match the arguments exactly is preferred over 
 
 Because a call is parsed before its overload is chosen, every overload of a name must be parsed the same way. The runtime rejects an overload that would break this:
 
-- All overloads must take the same number of parameters.
+- Overloads may take different numbers of ordinary value parameters. For nested calls,
+  use parentheses to delimit the arguments of the inner call.
+- Overloads involving compiler-supplied source parameters must take the same number of parameters.
 - All overloads must return a value, or all must return nothing. (The parser decides whether a call is a statement or an expression from the name alone.)
 - Only ordinary value parameters may differ between overloads. A name that takes a callback, a `then` continuation, a predicate or an event cannot be overloaded.
 - Two overloads may not have the same parameter types.
