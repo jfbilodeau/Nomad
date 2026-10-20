@@ -4,6 +4,22 @@ This is the repository's Copilot instructions file. It provides guidance to GitH
 
 The Nomad game engine is a 2D game engine written in C++ using modern C++20 features. It utilizes SDL3 for windowing and input, Box2D for physics simulation, and Boost libraries for various utilities. The engine is designed to be cross-platform, supporting Windows, Linux, macOS, iOS, and Android.
 
+## Working Preferences
+
+- Discuss significant architecture, language semantics, and behavioral trade-offs before implementing them. Ask for a decision when multiple reasonable approaches would materially change the result.
+- For multi-step work, agree on a plan, implement one reviewable step at a time, then stop for review. Continue only after approval.
+- Explicit approval for autonomous execution applies only to the current task and approved scope; do not carry it into later tasks or conversations.
+- Do not commit or push unless explicitly requested.
+- Keep communication concise: summarize what changed, what was verified, and any remaining limitations. Distinguish compilation checks from actual runtime or gameplay validation.
+- Preserve unrelated worktree changes and avoid unrelated fixes, refactoring, or formatting.
+
+## Scripting Language Design
+
+- Prefer simple, generic compiler behavior and ordinary callable/native APIs over special-case syntax, compiler rules, or specialized VM instructions.
+- Reuse existing opcodes and shared resolution paths where they fully support the required behavior. Discuss necessary new instructions or compiler special cases before adding them.
+- Avoid adding language restrictions or compile-time checks merely to prevent users from deliberately modifying mutable state. Preserve agreed semantics and discuss new restrictions first.
+- Follow the scripting runtime's existing ownership contracts: reference-semantic objects use raw pointers in `RuntimeValue`, not `std::shared_ptr`.
+
 ## C++ Coding Guidelines
 
 - `enum` and `enum class` start at `1` instead of `0` to make it easier to detect uninitialized values.
@@ -17,7 +33,7 @@ The Nomad game engine is a 2D game engine written in C++ using modern C++20 feat
 	- Separate groups by blank line.
 	- Keep headers sorted alphabetically within each group.
 - Prefer C++20 standard library types and features over Boost equivalents when one exists (for example, `std::optional` instead of `boost::optional`). Use Boost only for utilities that have no C++20 standard equivalent. Do not replace existing Boost usage unless the task asks for it.
-- Use K&R style for formatting and indentation. Enforce via `.clang-format` or equivalent.
+- Use K&R style for formatting and indentation. Follow the existing formatting manually; do not run `clang-format`.
 - When a C++ function or method parameter list is too long for one line, put each parameter on its own indented line, with the closing parenthesis on a separate line. Apply this to both declarations and definitions:
   ```cpp
   void myFunc(
@@ -53,6 +69,7 @@ The Nomad game engine is a 2D game engine written in C++ using modern C++20 feat
 
 - Organize source and include files by module (e.g., `game/`, `geometry/`, `log/`).
 - Keep header files in `include/` and source files in `src/`.
+- Put nontrivial classes, including collection iterators, in their own matching `.hpp` and `.cpp` files rather than embedding their implementations in registration files.
 
 ## Agent Workflow
 
@@ -72,3 +89,5 @@ The Nomad game engine is a 2D game engine written in C++ using modern C++20 feat
 - **If the build task fails:** Read the compiler errors from the output pane, fix them, and run the build task again. If the build still fails after two attempts, stop and report the errors to the user without claiming the change is complete.
 - **Don't modify generated or vendored files** inside `build/` or `_deps/` unless explicitly asked.
 - **Tests & verification:** When changing code, add or update small unit tests in `tests/` when feasible. Run the build task before proposing larger changes.
+- **Behavioral regressions:** Add focused regression coverage and verify the requested behavior, not merely successful compilation. When a failure comes from a consuming project, validate that project with the fix when available; do not alter its scripts to conceal an engine regression.
+- **Documentation-only changes:** Do not rebuild C++ for instruction or documentation edits. Run relevant documentation checks if applicable.
