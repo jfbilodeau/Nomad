@@ -31,8 +31,6 @@ DECLARE_OP_CODE(op_return_n)
 DECLARE_OP_CODE(op_jump)
 DECLARE_OP_CODE(op_jump_if)
 DECLARE_OP_CODE(op_jump_if_false)
-DECLARE_OP_CODE(op_numeric_for_test)
-DECLARE_OP_CODE(op_numeric_for_advance)
 
 // Register stack operations
 DECLARE_OP_CODE(op_push_r)

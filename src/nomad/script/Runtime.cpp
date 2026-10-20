@@ -187,8 +187,6 @@ Runtime::Runtime() {
     registerKeyword("until", NomadDoc("Repeats until a boolean condition is true"));
     registerKeyword("do", NomadDoc("Starts a post-test loop, closed by `end while` or `end until`"));
     registerKeyword("for", NomadDoc("Iterates an inclusive integer range or an iterable object"));
-    registerKeyword("to", NomadDoc("Introduces the inclusive endpoint of a numeric for loop"));
-    registerKeyword("step", NomadDoc("Introduces the integer step of a numeric for loop"));
     registerKeyword("in", NomadDoc("Introduces the iterable source of a for loop"));
     registerKeyword("break", NomadDoc("Exits the nearest loop in the current function"));
     registerKeyword("continue", NomadDoc("Advances the nearest loop in the current function"));

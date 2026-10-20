@@ -599,7 +599,7 @@ BOOST_AUTO_TEST_CASE(loop_completion_shows_only_visible_bindings)
     const auto uri = uriFor(directory.getPath() / "loops.nomad");
     const NomadString source =
         "total = 0\n"
-        "for value = 1 to 3\n"
+        "for value in range 1 4\n"
         "    total = total + value\n"
         "end\n"
         "total = total + 1";

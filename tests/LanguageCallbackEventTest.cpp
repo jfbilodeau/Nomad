@@ -148,7 +148,7 @@ BOOST_AUTO_TEST_CASE(loop_callbacks_capture_each_iteration_value)
         runtime.getVoidType(), ""
     );
     fixture.addFunction("main",
-        "for value = 1 to 3\n"
+        "for value in range 1 4\n"
         "    test.keep fun\n"
         "        return value\n"
         "    end\n"
@@ -171,7 +171,7 @@ BOOST_AUTO_TEST_CASE(then_is_restricted_to_the_current_function_root)
         "while false\ntest.storeVoid then\nend",
         "until true\ntest.storeVoid then\nend",
         "do\ntest.storeVoid then\nend until true",
-        "for value = 1 to 1\ntest.storeVoid then\nend"
+        "for value in range 1 2\ntest.storeVoid then\nend"
     }) {
         LanguageTestFixture fixture;
         CallbackStore store;

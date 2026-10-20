@@ -26,15 +26,6 @@ void Runtime::registerDefaultInstructions() {
         {Operand::Index}
     );
 
-    registerInstruction(
-        OpCodes::op_numeric_for_test, op_numeric_for_test, "Test an inclusive numeric range",
-        {Operand::FunctionVariable, Operand::FunctionVariable, Operand::FunctionVariable}
-    );
-    registerInstruction(
-        OpCodes::op_numeric_for_advance, op_numeric_for_advance, "Advance an inclusive numeric range without overflow",
-        {Operand::FunctionVariable, Operand::FunctionVariable, Operand::FunctionVariable}
-    );
-
     // Register push and pop
     registerInstruction(OpCodes::op_push_r, op_push_r, "Push the `r` register value to the stack", {});
     registerInstruction(OpCodes::op_push_i, op_push_i, "Push the `i` register value to the stack", {});

@@ -7,6 +7,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -46,7 +48,7 @@ BOOST_AUTO_TEST_CASE(iterator_types_are_specialized_and_interned)
     BOOST_CHECK_THROW(static_cast<void>(runtime.getIteratorType(runtime.getVoidType())), NomadException);
 }
 
-BOOST_AUTO_TEST_CASE(numeric_for_evaluates_bounds_once_in_source_order)
+BOOST_AUTO_TEST_CASE(range_evaluates_bounds_once)
 {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
@@ -63,7 +65,7 @@ BOOST_AUTO_TEST_CASE(numeric_for_evaluates_bounds_once_in_source_order)
     }
     fixture.addFunction("main",
         "total = 0\n"
-        "for value = test.bound1 to test.bound2 step test.bound3\n"
+        "for value in range test.bound1 test.bound2 test.bound3\n"
         "    total = total + value\n"
         "end\n"
         "return total"
@@ -71,8 +73,25 @@ BOOST_AUTO_TEST_CASE(numeric_for_evaluates_bounds_once_in_source_order)
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto outcome = fixture.execute("main");
     BOOST_TEST(!outcome.fault.has_value());
-    BOOST_TEST(outcome.integerValue == 6);
+    BOOST_TEST(outcome.integerValue == 3);
+    std::ranges::sort(calls);
     BOOST_TEST(calls == std::vector<NomadInteger>({1, 2, 3}), boost::test_tools::per_element());
+}
+
+BOOST_AUTO_TEST_CASE(range_loops_lower_to_generic_calls_and_jumps)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main", "for value in range 3\nif value == 1 continue\nend\nreturn 0");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    BOOST_TEST(runtime.getInstructionId("op_numeric_for_test") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getInstructionId("op_numeric_for_advance") == NOMAD_INVALID_ID);
+    std::ostringstream instructions;
+    runtime.dumpInstructions(instructions, runtime.getScriptFunction(runtime.getFunctionId("main")));
+    const auto text = instructions.str();
+    BOOST_TEST(text.find("op_jump_if_false") != NomadString::npos);
+    BOOST_TEST(text.find("op_jump") != NomadString::npos);
+    BOOST_TEST(text.find("numeric_for") == NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(for_uses_registered_iteration_not_collection_names)
@@ -127,18 +146,18 @@ BOOST_AUTO_TEST_CASE(for_uses_registered_iteration_not_collection_names)
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
-BOOST_AUTO_TEST_CASE(numeric_for_is_inclusive_scoped_and_directional)
+BOOST_AUTO_TEST_CASE(range_is_exclusive_scoped_and_directional)
 {
     const auto outcome = runSource(
         "total = 0\n"
-        "for value = 1 to 5 step 2\n"
+        "for value in range 1 6 2\n"
         "    if value == 3 continue\n"
         "    total = total + value\n"
         "end\n"
-        "for value = 3 to 1 step -1\n"
+        "for value in range 3 0 (-1)\n"
         "    total = total + value\n"
         "end\n"
-        "for value = 5 to 1\n"
+        "for value in range 5 1\n"
         "    total = 1000\n"
         "end\n"
         "return total"
@@ -148,53 +167,55 @@ BOOST_AUTO_TEST_CASE(numeric_for_is_inclusive_scoped_and_directional)
     BOOST_TEST(outcome.integerValue == 12);
 }
 
-BOOST_AUTO_TEST_CASE(numeric_for_stops_without_integer_overflow)
+BOOST_AUTO_TEST_CASE(range_stops_without_integer_overflow)
 {
     for (const auto* range : {
-        "9223372036854775806 to 9223372036854775807 step 2",
-        "-9223372036854775807 to -9223372036854775808 step -2",
-        "0 to -9223372036854775808 step -9223372036854775808"
+        "9223372036854775806 9223372036854775807 2",
+        "(-9223372036854775807) (-9223372036854775808) (-2)",
+        "0 (-9223372036854775808) (-9223372036854775808)"
     }) {
         const auto outcome = runSource(
-            "count = 0\nfor value = " + NomadString{range} +
+            "count = 0\nfor value in range " + NomadString{range} +
             "\ncount = count + 1\nend\nreturn count"
         );
         BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
         BOOST_TEST(!outcome.fault.has_value());
-        BOOST_TEST(outcome.integerValue == (range[0] == '0' ? 2 : 1));
+        BOOST_TEST(outcome.integerValue == 1);
     }
 }
 
-BOOST_AUTO_TEST_CASE(numeric_for_checks_bounds_step_and_binding)
+BOOST_AUTO_TEST_CASE(iterable_for_checks_source_and_binding)
 {
     for (const auto* source : {
-        "for value = true to 3\nend",
-        "for value = 1 to 3 step 1.0\nend",
-        "value = 1\nfor value = 1 to 3\nend",
-        "params value:int\nfor value = 1 to 3\nend",
-        "for value = 1 to 3\nvalue = 2\nend",
-        "for qualified.value = 1 to 3\nend",
-        "for value = 1 to 3\nend\nreturn value",
-        "for value = 1 to 3\nfor value = 1 to 3\nend\nend"
+        "for value in true\nend",
+        "for value in range 1 3 1.0\nend",
+        "value = 1\nfor value in range 1 3\nend",
+        "params value:int\nfor value in range 1 3\nend",
+        "for value in range 1 3\nvalue = 2\nend",
+        "for qualified.value in range 1 3\nend",
+        "for value in range 1 3\nend\nreturn value",
+        "for value in range 1 3\nfor value in range 1 3\nend\nend"
     }) {
         BOOST_TEST_CONTEXT(source) {
             BOOST_TEST(!compileErrors(source).empty());
         }
     }
-    const auto outcome = runSource("for value = 3 to 1 step 0\nend");
-    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
-    BOOST_REQUIRE(outcome.fault.has_value());
-    BOOST_TEST(outcome.fault->find("zero") != NomadString::npos);
+    LanguageTestFixture fixture;
+    fixture.addFunction("main", "for value in range 3 1 0\nend");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    BOOST_CHECK_EXCEPTION((void)fixture.execute("main"), NomadException, [](const NomadException& error) {
+        return NomadString(error.what()).find("Range step must not be zero") != NomadString::npos;
+    });
 }
 
-BOOST_AUTO_TEST_CASE(numeric_for_supports_format_placeholders)
+BOOST_AUTO_TEST_CASE(iterable_for_supports_format_placeholders)
 {
-    const auto outcome = runSource("for value = 2 to 2\nreturn $\"{value} {value + 1}\"\nend\nreturn \"\"");
+    const auto outcome = runSource("for value in range 2 3\nreturn $\"{value} {value + 1}\"\nend\nreturn \"\"");
     BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
     BOOST_TEST(outcome.text == "2 3");
     BOOST_TEST(outcome.leakedStrings == 0);
     const auto dynamic = runSource(
-        "for value = 2 to 2\nreturn $(\"{value} {value + 1}\")\nend\nreturn \"\""
+        "for value in range 2 3\nreturn $(\"{value} {value + 1}\")\nend\nreturn \"\""
     );
     BOOST_REQUIRE_MESSAGE(dynamic.compiled, dynamic.diagnostics);
     BOOST_TEST(dynamic.text == "2 3");
@@ -462,9 +483,13 @@ BOOST_AUTO_TEST_CASE(malformed_if_statements_are_rejected)
     }
 }
 
-BOOST_AUTO_TEST_CASE(incomplete_numeric_for_is_rejected)
+BOOST_AUTO_TEST_CASE(legacy_numeric_for_is_rejected_and_old_keywords_are_identifiers)
 {
     BOOST_TEST(!compileErrors("for i = 1\nend").empty());
+    BOOST_TEST(!compileErrors("for i = 1 to 3\nend").empty());
+    const auto outcome = runSource("to = 2\nstep = 3\nreturn to + step");
+    BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
+    BOOST_TEST(outcome.integerValue == 5);
 }
 
 BOOST_AUTO_TEST_CASE(return_types_must_be_consistent)

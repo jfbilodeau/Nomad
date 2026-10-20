@@ -427,29 +427,6 @@ do
 end until finished
 ```
 
-### Numeric for
-
-```nomad
-for value = 1 to 10
-    log.info $"{value}"
-end
-
-for value = 10 to 1 step -2
-    log.info $"{value}"
-end
-```
-
-The endpoint is inclusive. Start, endpoint, and step must be `int` expressions;
-they are evaluated once, from left to right, before iteration. The default step is
-`1`; descending ranges require an explicit negative step. A step of zero faults at
-runtime, even when the direction would otherwise produce an empty range. A range
-whose step points away from its endpoint executes zero times. Progression stops
-before the next mathematical value would pass the endpoint, without integer overflow.
-
-The loop variable is a new, read-only local visible only inside that loop. It
-cannot reuse an existing local or parameter name. Separate loops may reuse the
-same name. Explicit callbacks capture the value for their own iteration.
-
 ### Iterating collections
 
 Nomad provides the built-in functions `range stop`, `range start stop`, and
@@ -488,8 +465,13 @@ end
 ```
 
 `for value in source` evaluates its source once and uses an independent iterator
-for each execution, including nested loops. The loop variable follows the same
-scope and read-only rules as numeric `for`.
+for each execution, including nested loops. The loop variable is a new, read-only
+local visible only inside that loop. It cannot reuse an existing local or
+parameter name. Separate loops may reuse the same name. Explicit callbacks
+capture the value for their own iteration.
+
+Numeric iteration uses `for value in range ...`; `for value = ... to ... step ...`
+is not supported.
 
 `List<T>` and one-dimensional `Array<T>` are iterable. Multidimensional arrays and
 maps are not directly iterable; use a map's `keys`, `values`, or `entries` snapshot.
@@ -504,8 +486,8 @@ do not invalidate iteration. Mutation followed immediately by `break` is valid.
 ### Break and continue
 
 `break` exits the nearest enclosing loop. `continue` skips the rest of its body:
-conditional loops retest their condition, numeric loops advance, and collection
-loops request the next element. Both statements must be inside a loop in the
+conditional loops retest their condition and iterable loops request the next
+element. Both statements must be inside a loop in the
 same function; a callback cannot break or continue its caller's loop.
 
 Single-line conditional forms do not need an `end`:

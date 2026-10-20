@@ -221,7 +221,7 @@ BOOST_AUTO_TEST_CASE(collection_loops_run_in_compiler_and_interpreter) {
         "for entry in map.entries\n"
         "    total = total + entry.value\n"
         "end\n"
-        "for value = 1 to 2\n"
+        "for value in range 1 3\n"
         "    text = $\"{value} {value + 1}\"\n"
         "    total = total + value\n"
         "end\n";

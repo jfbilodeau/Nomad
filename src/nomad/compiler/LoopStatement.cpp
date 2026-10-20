@@ -8,7 +8,6 @@
 #include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/script/InterpreterContext.hpp>
-#include <nomad/script/NumericRange.hpp>
 #include <nomad/script/Runtime.hpp>
 
 namespace nomad {
@@ -44,108 +43,6 @@ protected:
 private:
     LoopStatement* m_loop;
     bool m_isBreak;
-};
-
-class NumericForStatement final : public LoopStatement {
-public:
-    NumericForStatement(
-        NomadIndex line,
-        NomadIndex column,
-        NomadString binding,
-        std::unique_ptr<Expression> first,
-        std::unique_ptr<Expression> last,
-        std::unique_ptr<Expression> step
-    ):
-        LoopStatement(line, column, false, false),
-        m_binding(std::move(binding)),
-        m_first(std::move(first)),
-        m_last(std::move(last)),
-        m_step(std::move(step))
-    {}
-
-protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override {
-        const auto* integerType = context->getRuntime()->getIntegerType();
-        for (auto* expression : {m_first.get(), m_last.get(), m_step.get()}) {
-            if (expression->resolve(context, function) && expression->getType() != integerType) {
-                reportError(context, function, "Numeric for bounds and step must be int expressions");
-            }
-        }
-        m_valueId = function->getVariableId(m_binding);
-        m_lastId = function->registerVariable(m_binding + "@last", integerType);
-        m_stepId = function->registerVariable(m_binding + "@step", integerType);
-        (void)m_body.resolve(context, function);
-    }
-
-    void onCompile(Compiler* compiler, ScriptFunction* function) override {
-        resetControls();
-        const auto initialize = [&](Expression* expression, NomadId variableId) {
-            expression->compile(compiler, function, ExpressionTarget::Result);
-            compiler->addOpCode(OpCodes::op_function_variable_set);
-            compiler->addId(variableId);
-        };
-        initialize(m_first.get(), m_valueId);
-        initialize(m_last.get(), m_lastId);
-        initialize(m_step.get(), m_stepId);
-        const auto rangeOperation = [&](const NomadString& operation) {
-            compiler->addOpCode(operation);
-            compiler->addId(m_valueId);
-            compiler->addId(m_lastId);
-            compiler->addId(m_stepId);
-        };
-        rangeOperation(OpCodes::op_numeric_for_test);
-        compiler->addOpCode(OpCodes::op_jump_if_false);
-        const auto exit = compiler->addIndex(NOMAD_INVALID_INDEX);
-        const auto start = compiler->getOpCodeSize();
-        m_body.compile(compiler, function);
-        const auto continuation = compiler->getOpCodeSize();
-        rangeOperation(OpCodes::op_numeric_for_advance);
-        compiler->addOpCode(OpCodes::op_jump_if);
-        compiler->addIndex(start);
-        const auto end = compiler->getOpCodeSize();
-        compiler->setIndex(exit, end);
-        patchControls(compiler, continuation, end);
-    }
-
-    void onEvaluate(InterpreterContext& context) const override {
-        const InterpreterLoopVariable binding(context, m_binding);
-        m_first->evaluate(context);
-        if (context.hasError()) {
-            return;
-        }
-        auto value = context.getResult()->getValue().getIntegerValue();
-        m_last->evaluate(context);
-        if (context.hasError()) {
-            return;
-        }
-        const auto last = context.getResult()->getValue().getIntegerValue();
-        m_step->evaluate(context);
-        if (context.hasError()) {
-            return;
-        }
-        const auto step = context.getResult()->getValue().getIntegerValue();
-        if (isNumericRangeValue(value, last, step)) {
-            do {
-                context.setVariable(m_binding, context.getRuntime()->getIntegerType(), RuntimeValue{value});
-                m_body.evaluate(context);
-                const auto control = context.getLoopControl();
-                context.setLoopControl(LoopControl::None);
-                if (context.hasError() || control == LoopControl::Break) {
-                    break;
-                }
-            } while (advanceNumericRange(value, last, step));
-        }
-        context.setVoidResult();
-    }
-
-private:
-    NomadString m_binding;
-    std::unique_ptr<Expression> m_first;
-    std::unique_ptr<Expression> m_last;
-    std::unique_ptr<Expression> m_step;
-    NomadId m_valueId = NOMAD_INVALID_ID;
-    NomadId m_lastId = NOMAD_INVALID_ID;
-    NomadId m_stepId = NOMAD_INVALID_ID;
 };
 
 class IterableForStatement final : public LoopStatement {
@@ -410,43 +307,15 @@ std::unique_ptr<Statement> parseForStatement(
         context->reportError("For loop variable must be a new local name; shadowing is not supported", tokens);
         return nullptr;
     }
-    std::unique_ptr<LoopStatement> loop;
-    NomadString binding;
-    if (tokens->is("in")) {
-        tokens->next();
-        auto source = parser::parseExpression(context, function, tokens);
-        if (!source || !parser::expectEndOfLine(context, function, tokens)) {
-            return nullptr;
-        }
-        binding = function->registerScopedVariable(name, nullptr, line);
-        loop = std::make_unique<IterableForStatement>(line, column, binding, std::move(source));
-    } else {
-        if (!tokens->expect("=")) {
-            return nullptr;
-        }
-        auto first = parser::parseExpression(context, function, tokens);
-        if (!first || !tokens->expect("to")) {
-            return nullptr;
-        }
-        auto last = parser::parseExpression(context, function, tokens);
-        if (!last) {
-            return nullptr;
-        }
-        std::unique_ptr<Expression> step;
-        if (tokens->is("step")) {
-            tokens->next();
-            step = parser::parseExpression(context, function, tokens);
-        } else {
-            step = std::make_unique<IntegerLiteral>(nullptr, line, column, NomadInteger{1});
-        }
-        if (!step || !parser::expectEndOfLine(context, function, tokens)) {
-            return nullptr;
-        }
-        binding = function->registerScopedVariable(name, context->getRuntime()->getIntegerType(), line);
-        loop = std::make_unique<NumericForStatement>(
-            line, column, binding, std::move(first), std::move(last), std::move(step)
-        );
+    if (!tokens->expect("in")) {
+        return nullptr;
     }
+    auto source = parser::parseExpression(context, function, tokens);
+    if (!source || !parser::expectEndOfLine(context, function, tokens)) {
+        return nullptr;
+    }
+    const auto binding = function->registerScopedVariable(name, nullptr, line);
+    auto loop = std::make_unique<IterableForStatement>(line, column, binding, std::move(source));
     tokens->nextLine();
     const ParserBlockScope block(*context, function, loop.get(), false, context->currentBodyEndsAtEnd());
     const auto valid = parser::parseBlock(context, function, tokens, {"end"}, &loop->getBody());
