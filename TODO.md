@@ -6,7 +6,6 @@ Things the author wants to do.
 
 ## Open
 [ ] File IO module.
-[ ] Readonly collections
 [ ] `doc` comments in Nomad.
 [ ] Replace ref counting with garbage collector.
 [ ] Game debug console--root should be Game/Inventory/Windows/etc.
@@ -23,7 +22,7 @@ Things the author wants to do.
 [ ] Indexer notation.
 [ ] Persist/load scene
 [ ] First decompiled script should start at index 1 instead of 0 in decompiler (instructions.txt). Or add a 'default' function at start that just stops execution.
-[ ] Command overloading (WIP)
+[ ] Function overloading (WIP)
 [ ] Auto publish Nomad plugin to VS Code extensions
 [ ] Compile to binary
 [ ] LLVM
@@ -37,6 +36,7 @@ a = new 20  # Type for `a` is known. Reused.
 ```
  
 ## Completed
+[X] Readonly collections
 [X] Rename `init` to `main`
 [X] `$"{1+2}"` in interpreter causes fault
 [X] LSP
