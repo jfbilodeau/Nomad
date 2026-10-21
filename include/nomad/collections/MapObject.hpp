@@ -20,6 +20,7 @@ public:
 
     [[nodiscard]] const Type* getValueType() const;
     [[nodiscard]] NomadIndex getCount() const;
+    [[nodiscard]] std::unique_ptr<MapObject> createCopy() const;
     [[nodiscard]] std::unique_ptr<Array1dObject> getKeys(const Type* keyType) const;
     [[nodiscard]] std::unique_ptr<Array1dObject> getValues() const;
     [[nodiscard]] std::unique_ptr<Array1dObject> getEntries(const KeyValueType* entryType) const;

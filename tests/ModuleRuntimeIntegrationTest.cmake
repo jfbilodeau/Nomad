@@ -107,14 +107,13 @@ assert os.argv[5] == "--"
 assert os.currentDirectory.length > 0
 assert os.executablePath.length > 0
 assert os.tempDirectory.length > 0
-os.argv[0] = "updated"
-os.env["NOMAD_OS_LOCAL"] = "snapshot"
-assert os.argv[0] == "updated"
+assert os.env.contains "NOMAD_OS_LOCAL"
 assert os.env["NOMAD_OS_LOCAL"] == "snapshot"
 log.info "OS_MODULE_COMPLETE"
 system.exit
 ]=])
 set(APPLICATION_ARGUMENTS "Player 日本語" --help --project-path --debug --no-debug --)
+set(ENV{NOMAD_OS_LOCAL} "snapshot")
 nomadRunTestCommand("Check OS application without capturing host information"
     COMMAND "${NOMAD_CLI}" check "${PROJECT}")
 nomadRunTestCommand("Forward application arguments through project manager"
@@ -141,4 +140,12 @@ endif()
 nomadRunTestCommand("Packaged OS application receives application arguments"
     COMMAND "${OS_EXTRACTED}/${EXECUTABLE_NAME}${NOMAD_RUNTIME_SUFFIX}" -- ${APPLICATION_ARGUMENTS}
     WORKING_DIRECTORY "${OS_EXTRACTED}" OUTPUT_MATCH "OS_MODULE_COMPLETE")
+foreach(ASSIGNMENT IN ITEMS "os.argv[0] = \"updated\"" "os.env[\"key\"] = \"updated\"")
+    file(WRITE "${PROJECT}/res/scripts/main.nomad" "${ASSIGNMENT}\nsystem.exit\n")
+    nomadRunTestCommand("Reject writing OS collection contents: ${ASSIGNMENT}"
+        COMMAND "${NOMAD_CLI}" check "${PROJECT}" EXPECT_FAILURE ERROR_VARIABLE DIAGNOSTIC)
+    if(NOT "${DIAGNOSTIC}" MATCHES "read-only")
+        message(FATAL_ERROR "Expected read-only diagnostic for ${ASSIGNMENT}: ${DIAGNOSTIC}")
+    endif()
+endforeach()
 file(REMOVE_RECURSE "${NOMAD_TEST_ROOT}")

@@ -54,6 +54,7 @@ add_executable(
     ./ProjectConfigurationTest.cpp
     ./ProjectInitializerTest.cpp
     ./ProjectPackagerTest.cpp
+    ./ReadOnlyCollectionTest.cpp
     ./RectanglePackerTest.cpp
     ./RuntimeTest.cpp
     ./SourceLoaderTest.cpp

@@ -2,6 +2,10 @@
 
 #include <nomad/collections/ArrayObject.hpp>
 
+#include <nomad/collections/Array1dObject.hpp>
+#include <nomad/collections/Array2dObject.hpp>
+#include <nomad/collections/Array3dObject.hpp>
+
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/script/Type.hpp>
@@ -62,6 +66,33 @@ const Type* ArrayObject::getElementType() const {
 
 NomadIndex ArrayObject::getCount() const {
     return m_values.size();
+}
+
+std::unique_ptr<ArrayObject> ArrayObject::createCopy() const {
+    const auto size = [this](const NomadIndex dimension) {
+        return static_cast<NomadInteger>(getDimensionSize(dimension));
+    };
+    std::unique_ptr<ArrayObject> snapshot;
+    switch (getDimensionCount()) {
+    case 1:
+        snapshot = m_values.empty() ? std::make_unique<Array1dObject>(m_elementType) :
+            std::make_unique<Array1dObject>(m_elementType, size(0));
+        break;
+    case 2:
+        snapshot = m_values.empty() ? std::make_unique<Array2dObject>(m_elementType) :
+            std::make_unique<Array2dObject>(m_elementType, size(0), size(1));
+        break;
+    case 3:
+        snapshot = m_values.empty() ? std::make_unique<Array3dObject>(m_elementType) :
+            std::make_unique<Array3dObject>(m_elementType, size(0), size(1), size(2));
+        break;
+    default:
+        throw NomadException("Invalid array rank");
+    }
+    for (auto index = NomadIndex{0}; index < m_values.size(); ++index) {
+        m_elementType->assignValue(m_values[index], snapshot->m_values[index]);
+    }
+    return snapshot;
 }
 
 void ArrayObject::reportIndexOutOfBounds(

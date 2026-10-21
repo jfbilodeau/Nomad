@@ -163,8 +163,8 @@ void registerOs(ModuleContext* context) {
         {"X86", 1}, {"X64", 2}, {"Arm32", 3}, {"Arm64", 4}
     });
     const auto* stringType = runtime->getStringType();
-    const auto* argumentsType = runtime->getParameterizedType("Array1", {stringType});
-    const auto* environmentType = runtime->getParameterizedType("Map", {stringType, stringType});
+    const auto* argumentsType = runtime->getParameterizedType("ReadOnlyArray1", {stringType});
+    const auto* environmentType = runtime->getParameterizedType("ReadOnlyMap", {stringType, stringType});
     if (platformType == nullptr || architectureType == nullptr ||
         argumentsType == nullptr || environmentType == nullptr) {
         throw NomadException("Failed to resolve nomad-os types; nomad-collections is required");

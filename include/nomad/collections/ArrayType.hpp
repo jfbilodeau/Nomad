@@ -19,7 +19,7 @@ public:
     [[nodiscard]] NomadIndex getDimensionCount() const;
 
 protected:
-    ArrayType(const Type* elementType, NomadIndex dimensionCount);
+    ArrayType(const Type* elementType, NomadIndex dimensionCount, bool readOnly = false);
     [[nodiscard]] virtual ArrayObject* createEmptyArray() const = 0;
 
 private:
