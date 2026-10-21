@@ -26,6 +26,7 @@ public:
         UnaryOperator unaryOperator,
         std::unique_ptr<Expression> expression
     );
+    [[nodiscard]] std::unique_ptr<TypedValue> getInitialValue(Compiler* compiler) const override;
 
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
@@ -61,6 +62,7 @@ public:
 
     [[nodiscard]]
     bool isTerminal() const override;
+    [[nodiscard]] std::unique_ptr<TypedValue> getInitialValue(Compiler* compiler) const override;
 
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
@@ -281,6 +283,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
     void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_constantName;
@@ -297,6 +300,7 @@ public:
     [[nodiscard]] bool isWritable() const override;
     [[nodiscard]] IdentifierExpression* asIdentifierExpression() override;
     [[nodiscard]] const IdentifierExpression* asIdentifierExpression() const override;
+    [[nodiscard]] std::unique_ptr<TypedValue> getInitialValue(Compiler* compiler) const override;
     void compileStore(Compiler* compiler) const;
     void evaluateStore(InterpreterContext& context, const RuntimeValue& value) const;
 

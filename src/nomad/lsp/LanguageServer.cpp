@@ -82,9 +82,11 @@ std::unique_ptr<ModuleHost> createAnalysisSession(const AnalysisGroup& group, co
     }
     NomadProject project;
     project.root = path.parent_path();
-    project.configuration.resources.directory = ".";
     project.configuration.sdk.modules = {"nomad-system"};
-    return createProjectSession(project, ModuleMode::Analysis);
+    return ModuleHost::create(
+        project.document, project.root, resolveProjectModules(project, getSdkDirectory()),
+        std::vector<NomadString>{}, ModuleMode::Analysis
+    );
 }
 
 ApiAnalysis analyzeApiSymbols(
@@ -115,7 +117,7 @@ ApiAnalysis analyzeApiSymbols(
         }
     }
     // Failed compilations still retain declarations collected by the compiler's earlier passes.
-    const auto compilation = analyzeSources(batch, runtime);
+    const auto compilation = session->compileSources(batch, CompilationTarget::Analysis);
     const auto currentLineError = std::ranges::any_of(compilation.diagnostics, [&](const auto& diagnostic) {
         return diagnostic.sourceName == uri && diagnostic.line == line &&
             diagnostic.severity == DiagnosticSeverity::Error;
@@ -524,11 +526,7 @@ std::map<NomadPath, AnalysisGroup> collectAnalysisGroups(const LanguageDocuments
         if (inserted) {
             if (projectRoot) {
                 group.project = loadNomadProject(*projectRoot / NOMAD_PROJECT_FILE_NAME);
-                const auto resources = resolveProjectResourcePath(*group.project);
-                for (const auto& directory : group.project->gameOptions.scripts.directories.value_or(
-                    std::vector<NomadPath>{"scripts"})) {
-                    group.roots.push_back(resources / directory);
-                }
+                group.roots = resolveScriptPaths(group.project->document, group.project->root);
             } else {
                 group.roots.push_back(path);
             }
@@ -560,11 +558,7 @@ LanguageDiagnostics analyzeLanguageDocuments(const LanguageDocuments& documents)
     for (const auto& [key, group] : groups) {
         const auto batch = loadSourcePaths(group.roots, group.overrides);
         const auto session = createAnalysisSession(group, key);
-        auto result = analyzeSources(batch, session->getRuntime());
-        if (group.project) {
-            validateEntryFunction(result, session->getRuntime(), group.project->gameOptions.entryFunction,
-                group.project->root / NOMAD_PROJECT_FILE_NAME);
-        }
+        const auto result = session->compileSources(batch, CompilationTarget::Analysis);
         std::map<NomadString, NomadString> sourceUris;
         std::map<NomadString, NomadStringView> sourceTexts;
         for (const auto& script : group.overrides) {

@@ -85,6 +85,38 @@ BOOST_AUTO_TEST_CASE(rejects_wrong_type_intermediate_module_tables)
     BOOST_TEST(!missing.contains("nomad.modules"));
 }
 
+BOOST_AUTO_TEST_CASE(reads_strict_integer_arrays)
+{
+    const auto configuration = NomadConfiguration::parse(
+        "dimensions = [1280, 720]\nempty = []\nmixed = [1, 'two']\n"
+        "floating = [1, 2.0]\nboolean = [true]\nscalar = 42\n"
+    );
+    const auto dimensions = configuration.requireIntegerArray("dimensions");
+    BOOST_REQUIRE(dimensions.size() == 2U);
+    BOOST_TEST(dimensions[0] == 1280);
+    BOOST_TEST(dimensions[1] == 720);
+    BOOST_TEST(configuration.requireIntegerArray("empty").empty());
+    BOOST_TEST(!configuration.getIntegerArray("missing").has_value());
+    BOOST_CHECK_THROW((void)configuration.requireIntegerArray("missing"), NomadConfigurationException);
+    for (const auto field : {"mixed", "floating", "boolean", "scalar"}) {
+        BOOST_CHECK_THROW((void)configuration.getIntegerArray(field), NomadConfigurationException);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(validates_optional_sections_without_exposing_the_storage_format)
+{
+    const auto configuration = NomadConfiguration::parse(
+        "window = false\narray = []\n[game]\n[game.settings]\n"
+    );
+    BOOST_CHECK_NO_THROW(configuration.validateSection("game"));
+    BOOST_CHECK_NO_THROW(configuration.validateSection("game.settings"));
+    BOOST_CHECK_NO_THROW(configuration.validateSection("missing"));
+    BOOST_CHECK_NO_THROW(configuration.validateSection("missing.settings"));
+    BOOST_CHECK_THROW(configuration.validateSection("window"), NomadConfigurationException);
+    BOOST_CHECK_THROW(configuration.validateSection("array"), NomadConfigurationException);
+    BOOST_CHECK_THROW(configuration.validateSection("window.settings"), NomadConfigurationException);
+}
+
 BOOST_AUTO_TEST_CASE(owns_deep_copies_and_mutable_nested_values)
 {
     auto original = NomadConfiguration::parse("[module]\nname = 'original'\nvalues = ['first']\n");

@@ -6,6 +6,8 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
+#include <nomad/script/Interpreter.hpp>
+#include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
@@ -62,7 +64,11 @@ bool compile(Runtime& runtime, const NomadString& source) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad", source}}}, {}});
-    return compiler->compileScripts(&context, CompilationTarget::Executable);
+    const auto compiled = compiler->compileScripts(&context, CompilationTarget::Executable);
+    if (!compiled && context.getFirstError() != nullptr) {
+        BOOST_TEST_MESSAGE(formatDiagnostic(*context.getFirstError()));
+    }
+    return compiled;
 }
 
 } // namespace
@@ -76,10 +82,10 @@ BOOST_AUTO_TEST_CASE(application_snapshots_are_owned_utf8_and_isolated_from_the_
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-os"});
     BOOST_REQUIRE_EQUAL(modules.size(), 2U);
     BOOST_TEST(modules.front().name == "nomad-collections");
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules,
+    auto host = ModuleHost::create({}, directory.getPath(), modules,
         {"--project-path", "ignored", "--debug", "--", "", "Player 日本語", "--help", "--"},
         ModuleMode::Application);
-    auto& runtime = *host.getRuntime();
+    auto& runtime = *host->getRuntime();
     BOOST_TEST(runtime.isHub("os"));
     const auto argumentsValue = constant(runtime, "os.argv");
     auto* arguments = argumentsValue.asObject<Array1dObject>();
@@ -117,9 +123,9 @@ BOOST_AUTO_TEST_CASE(application_snapshots_are_owned_utf8_and_isolated_from_the_
 BOOST_AUTO_TEST_CASE(analysis_exposes_exact_enum_types_without_host_data) {
     TestDirectory directory("nomad_os_analysis");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-os"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules,
+    auto host = ModuleHost::create({}, directory.getPath(), modules,
         {"--", "must not be captured"}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto& runtime = *host->getRuntime();
     BOOST_TEST(constant(runtime, "os.argv").asObject<Array1dObject>()->getCount() == 0U);
     BOOST_TEST(constant(runtime, "os.env").asObject<MapObject>()->getCount() == 0U);
     for (const auto* name : {"os.currentDirectory", "os.executablePath", "os.tempDirectory"}) {
@@ -184,13 +190,13 @@ BOOST_AUTO_TEST_CASE(bindings_are_read_only_but_collection_contents_are_writable
     };
     for (const auto& assignment : assignments) {
         BOOST_TEST_CONTEXT(assignment) {
-            ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-            BOOST_TEST(!compile(*host.getRuntime(), assignment));
+            auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+            BOOST_TEST(!compile(*host->getRuntime(), assignment));
         }
     }
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules,
+    auto host = ModuleHost::create({}, directory.getPath(), modules,
         {"--", "original"}, ModuleMode::Application);
-    auto& runtime = *host.getRuntime();
+    auto& runtime = *host->getRuntime();
     BOOST_REQUIRE(compile(runtime,
         "os.argv[0] = \"updated\"\n"
         "os.env[\"snapshot\"] = \"updated\"\n"
@@ -204,12 +210,12 @@ BOOST_AUTO_TEST_CASE(no_separator_means_no_application_arguments_and_packaging_h
     TestDirectory directory("nomad_os_modes");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-os"});
     {
-        ModuleHost host({}, directory.getPath(), directory.getPath(), modules,
+        auto host = ModuleHost::create({}, directory.getPath(), modules,
             {"--debug", "runtime data"}, ModuleMode::Application);
-        BOOST_TEST(constant(*host.getRuntime(), "os.argv").asObject<Array1dObject>()->getCount() == 0U);
+        BOOST_TEST(constant(*host->getRuntime(), "os.argv").asObject<Array1dObject>()->getCount() == 0U);
     }
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Packaging);
-    BOOST_TEST(host.getRuntime() == nullptr);
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Packaging);
+    BOOST_TEST(host->getRuntime() == nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(empty_environment_values_are_preserved_and_snapshots_are_independent) {
@@ -217,8 +223,8 @@ BOOST_AUTO_TEST_CASE(empty_environment_values_are_preserved_and_snapshots_are_in
     BOOST_REQUIRE(boost::nowide::setenv(ENVIRONMENT_NAME, "", 1) == 0);
     TestDirectory directory("nomad_os_empty_environment");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-os"});
-    ModuleHost first({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Application);
-    auto* firstEnvironment = constant(*first.getRuntime(), "os.env").asObject<MapObject>();
+    auto first = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Application);
+    auto* firstEnvironment = constant(*first->getRuntime(), "os.env").asObject<MapObject>();
 #if !defined(_WIN32)
     // The Windows C runtime may remove variables assigned an empty value.
     BOOST_TEST(firstEnvironment->contains(ENVIRONMENT_NAME));
@@ -228,8 +234,8 @@ BOOST_AUTO_TEST_CASE(empty_environment_values_are_preserved_and_snapshots_are_in
     value.freeObjectValue();
 #endif
     BOOST_REQUIRE(boost::nowide::setenv(ENVIRONMENT_NAME, "second snapshot", 1) == 0);
-    ModuleHost second({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Application);
-    auto* secondEnvironment = constant(*second.getRuntime(), "os.env").asObject<MapObject>();
+    auto second = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Application);
+    auto* secondEnvironment = constant(*second->getRuntime(), "os.env").asObject<MapObject>();
     BOOST_TEST(firstEnvironment != secondEnvironment);
     (void)firstEnvironment->remove(ENVIRONMENT_NAME);
     BOOST_TEST(!firstEnvironment->contains(ENVIRONMENT_NAME));
@@ -240,17 +246,49 @@ BOOST_AUTO_TEST_CASE(snapshot_objects_are_released_with_the_runtime) {
     TestDirectory directory("nomad_os_lifetime");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-os"});
     {
-        ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
+        auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     }
     const auto before = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 3; ++index) {
-        ModuleHost host({}, directory.getPath(), directory.getPath(), modules,
+        auto host = ModuleHost::create({}, directory.getPath(), modules,
             {"--", "owned 日本語"}, ModuleMode::Application);
-        BOOST_REQUIRE(compile(*host.getRuntime(), "assert os.argv[0] == \"owned 日本語\""));
+        BOOST_REQUIRE(compile(*host->getRuntime(), "assert os.argv[0] == \"owned 日本語\""));
         RuntimeValue result;
-        host.getRuntime()->executeFunction(host.getRuntime()->getFunctionId("main"), {}, result);
+        host->getRuntime()->executeFunction(host->getRuntime()->getFunctionId("main"), {}, result);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(collection_constants_survive_compiler_destruction_and_interpreter_reads) {
+    TestDirectory directory("nomad_os_collection_constants");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-os"});
+    auto host = ModuleHost::create({}, directory.getPath(), modules,
+        {"--", "original"}, ModuleMode::Application);
+    auto& runtime = *host->getRuntime();
+    BOOST_REQUIRE(compile(runtime,
+        "fun identity values:Array1<string>\nreturn values\nend\n"
+        "values = identity os.argv\n"
+        "values[0] = \"updated\"\n"
+        "assert os.argv[0] == \"updated\"\n"
+        "return os.argv\n"));
+    const auto argumentsValue = constant(runtime, "os.argv");
+    auto* arguments = argumentsValue.asObject<Array1dObject>();
+    const auto references = arguments->getReferenceCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getObjectValue() == arguments);
+    runtime.getConstantType(runtime.getConstantId("os.argv"))->freeValue(result);
+    BOOST_TEST(arguments->getReferenceCount() == references);
+    {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext context(*machine);
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("os.argv[0]", context));
+        BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "updated");
+        BOOST_REQUIRE(Interpreter{}.execute("os.env[\"interpreter\"] = \"updated\"", context));
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("os.env[\"interpreter\"]", context));
+        BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "updated");
+    }
+    BOOST_TEST(arguments->getReferenceCount() == references);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

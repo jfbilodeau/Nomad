@@ -29,6 +29,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/DynamicVariable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Event.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/FormatString.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/Hub.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterContext.cpp
@@ -52,8 +53,10 @@ add_library(nomad-language SHARED
 
     ${NOMAD_SOURCE_DIR}/nomad/system/Memory.cpp
     ${NOMAD_SOURCE_DIR}/nomad/system/ModuleHost.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/system/ModuleHostImpl.cpp
     ${NOMAD_SOURCE_DIR}/nomad/system/ModuleManifest.cpp
     ${NOMAD_SOURCE_DIR}/nomad/system/NomadConfiguration.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/system/Path.cpp
     ${NOMAD_SOURCE_DIR}/nomad/system/String.cpp
     ${NOMAD_SOURCE_DIR}/nomad/system/TempHeap.cpp
 )
@@ -61,7 +64,9 @@ add_library(Nomad::Language ALIAS nomad-language)
 nomad_configure_library_target(nomad-language)
 target_compile_definitions(nomad-language PRIVATE NOMAD_LANGUAGE_BUILD)
 
-target_include_directories(nomad-language PUBLIC
+target_include_directories(nomad-language
+    PRIVATE ${NOMAD_SOURCE_DIR}
+    PUBLIC
     $<BUILD_INTERFACE:${NOMAD_INCLUDE_DIR}>
     $<BUILD_INTERFACE:${NOMAD_GENERATED_INCLUDE_DIR}>
     $<INSTALL_INTERFACE:include>
@@ -82,7 +87,11 @@ if(MSVC)
     # Boost.Spirit templates instantiate warnings outside Nomad source.
     set_source_files_properties(${NOMAD_SOURCE_DIR}/nomad/compiler/Tokenizer.cpp PROPERTIES COMPILE_OPTIONS "/wd4459")
     # Boost.DLL's Windows path lookup shadows a local variable in a third-party header.
-    set_source_files_properties(${NOMAD_SOURCE_DIR}/nomad/system/ModuleHost.cpp PROPERTIES COMPILE_OPTIONS "/wd4456")
+    set_source_files_properties(
+        ${NOMAD_SOURCE_DIR}/nomad/system/ModuleHost.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/system/ModuleHostImpl.cpp
+        PROPERTIES COMPILE_OPTIONS "/wd4456"
+    )
 else()
     set_source_files_properties(${NOMAD_SOURCE_DIR}/nomad/compiler/Tokenizer.cpp
         PROPERTIES COMPILE_OPTIONS "-Wno-error=conversion;-Wno-error=float-conversion")

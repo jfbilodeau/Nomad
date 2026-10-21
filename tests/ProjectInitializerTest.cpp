@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
 #include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/game/GameConfiguration.hpp>
 #include <nomad/project/ProjectConfiguration.hpp>
 #include <nomad/project/ProjectInitializer.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -69,15 +70,16 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
     BOOST_TEST(std::filesystem::is_regular_file(destination / "res/text/text.csv"));
 
     const auto project = loadNomadProject(destination / "nomad.toml");
+    const auto gameOptions = readGameOptions(project.document);
     BOOST_TEST(project.configuration.project.name == "Example Game");
     BOOST_TEST(project.configuration.project.identifier == "com.example.example-game");
     BOOST_TEST(project.configuration.project.executable == "example-game");
-    BOOST_TEST(project.gameOptions.entryFunction == "main");
+    BOOST_TEST(gameOptions.entryFunction == "main");
     BOOST_TEST(project.configuration.sdk.version == getNomadVersion());
-    BOOST_TEST(project.configuration.resources.directory == NomadPath("res"));
-    BOOST_REQUIRE(project.gameOptions.text.directories.has_value());
-    BOOST_REQUIRE(project.gameOptions.text.directories->size() == 1U);
-    BOOST_TEST((*project.gameOptions.text.directories)[0] == NomadPath("text/text.csv"));
+    BOOST_TEST(gameOptions.resourcePath == "res");
+    BOOST_REQUIRE(gameOptions.text.directories.has_value());
+    BOOST_REQUIRE(gameOptions.text.directories->size() == 1U);
+    BOOST_TEST((*gameOptions.text.directories)[0] == NomadPath("text/text.csv"));
 
     const auto readme = readFile(destination / "README.md");
     BOOST_TEST(readme.find("# Example Game") != NomadString::npos);
@@ -85,7 +87,7 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
 
     const auto session = createProjectSession(project, ModuleMode::Analysis);
     auto compilation = checkPath(destination / "res/scripts/main.nomad", session->getRuntime());
-    validateEntryFunction(compilation, session->getRuntime(), project.gameOptions.entryFunction, destination / "nomad.toml");
+    validateEntryFunction(compilation, session->getRuntime(), gameOptions.entryFunction, destination / "nomad.toml");
     BOOST_TEST(compilation.succeeded());
 }
 

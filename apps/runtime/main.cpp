@@ -1,12 +1,6 @@
 // Copyright (c) 2025-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/compiler/Compiler.hpp>
-#include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/compiler/SourceLoader.hpp>
-
 #include <nomad/log/Logger.hpp>
-
-#include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/Path.hpp>
 #include <nomad/system/ProjectSession.hpp>
@@ -53,31 +47,20 @@ int main(int argc, char** argv) {
             }
         }
         const auto project = discoverNomadProject(projectPath);
-        const auto resources = resolveProjectResourcePath(project);
         validateNomadVersionCompatibility(project.configuration.sdk.version, getNomadVersion());
-        auto session = ModuleHost(
-            project.document, project.root, resources,
-            resolveProjectModules(project, getSdkDirectory()), arguments, ModuleMode::Application
+        auto session = ModuleHost::create(
+            project.document, project.root,
+            resolveProjectModules(project, getSdkDirectory()), arguments, ModuleMode::Application,
+            project.configuration.project
         );
-        session.compile([&] {
-            auto compiler = session.getRuntime()->createCompiler();
-            CompilerContext context(compiler.get());
-            std::vector<NomadPath> paths;
-            for (const auto& directory : project.document.getStringArray("scripts.directories").value_or(
-                std::vector<NomadString>{"scripts"}
-            )) {
-                paths.push_back(resources / pathFromUtf8(directory));
-            }
-            compiler->registerSources(&context, loadSourcePaths(paths));
-            const auto succeeded = compiler->compileScripts(&context);
-            for (const auto& diagnostic : context.getDiagnostics()) {
-                std::cerr << formatDiagnostic(diagnostic) << '\n';
-            }
-            if (!succeeded) {
-                throw NomadException("Script compilation failed");
-            }
-        });
-        return session.run(project.gameOptions.entryFunction);
+        const auto result = session->compileProject();
+        for (const auto& diagnostic : result.diagnostics) {
+            std::cerr << formatDiagnostic(diagnostic) << '\n';
+        }
+        if (!result.succeeded()) {
+            throw NomadException("Script compilation failed");
+        }
+        return session->run();
     } catch (const std::exception& error) {
         log::error(error.what());
         return EXIT_FAILURE;

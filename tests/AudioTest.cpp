@@ -1,15 +1,20 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/game/Game.hpp>
+#include <nomad/compiler/CompilerTools.hpp>
 
-#include <nomad/log/MemorySink.hpp>
+#include <nomad/game/Game.hpp>
 
 #include <nomad/game/resource/Audio.hpp>
 #include <nomad/game/resource/AudioObject.hpp>
 #include <nomad/game/resource/ResourceManager.hpp>
 
+#include <nomad/log/MemorySink.hpp>
+
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
+
+#include <nomad/system/NativeFunctions.hpp>
+#include <nomad/system/Path.hpp>
 
 #include <TestDirectory.hpp>
 
@@ -58,6 +63,26 @@ std::unique_ptr<Game> createHeadlessGame(const TestDirectory& directory) {
     GameOptions options;
     options.resourcePath = directory.getPath().string();
     return Game::createHeadless(std::move(options));
+}
+
+std::unique_ptr<Game> createAudioGame(Runtime& runtime, GameOptions options) {
+    registerBuildInNativeFunctions(&runtime);
+    auto game = Game::createForRuntime(&runtime, options, false);
+    const std::vector<NomadPath> paths{pathFromUtf8(options.resourcePath) / "scripts"};
+    game->prepareScripts([&] {
+        const auto result = checkPaths(paths, &runtime);
+        if (!result.succeeded()) {
+            NomadString message = "Failed to compile audio test scripts";
+            for (const auto& diagnostic : result.diagnostics) {
+                message += "\n" + formatDiagnostic(diagnostic);
+            }
+            throw GameException(message);
+        }
+    });
+    runtime.initializeScripts();
+    game->executeEntry();
+    game->onEntryExecuted();
+    return game;
 }
 
 template<typename Predicate>
@@ -126,7 +151,8 @@ BOOST_AUTO_TEST_CASE(game_startup_preloads_configured_audio_roots)
     GameOptions options;
     options.resourcePath = directory.getPath().string();
     options.audio.directories = std::vector<NomadPath>{"sounds"};
-    auto game = Game::create(std::move(options));
+    Runtime runtime;
+    auto game = createAudioGame(runtime, std::move(options));
     auto* audio = game->getResources()->getAudio();
 
     BOOST_REQUIRE(audio->isAvailable());
@@ -170,7 +196,8 @@ BOOST_AUTO_TEST_CASE(game_scripts_control_preloaded_audio_instances)
 
     GameOptions options;
     options.resourcePath = directory.getPath().string();
-    auto game = Game::create(std::move(options));
+    Runtime runtime;
+    auto game = createAudioGame(runtime, std::move(options));
     auto* audio = game->getResources()->getAudio();
     const auto* audioType = game->getRuntime()->getTypeByName("Audio");
 
@@ -210,7 +237,8 @@ BOOST_AUTO_TEST_CASE(game_scripts_control_streamed_music)
 
     GameOptions options;
     options.resourcePath = directory.getPath().string();
-    auto game = Game::create(std::move(options));
+    Runtime runtime;
+    auto game = createAudioGame(runtime, std::move(options));
     const auto* audio = game->getResources()->getAudio();
 
     BOOST_TEST(audio->getMusicVolume() == 0.4, boost::test_tools::tolerance(0.001));
@@ -232,7 +260,8 @@ BOOST_AUTO_TEST_CASE(game_scripts_log_invalid_audio_volume)
     GameOptions options;
     options.resourcePath = directory.getPath().string();
 
-    auto game = Game::create(std::move(options));
+    Runtime runtime;
+    auto game = createAudioGame(runtime, std::move(options));
     BOOST_TEST(game->getResources()->getAudio()->getVolume() == 1.0);
 }
 
@@ -254,15 +283,16 @@ BOOST_AUTO_TEST_CASE(game_audio_load_faults_when_playback_is_unavailable)
 
     GameOptions options;
     options.resourcePath = directory.getPath().string();
+    Runtime runtime;
     BOOST_CHECK_EXCEPTION(
-        Game::create(std::move(options)),
+        (void)createAudioGame(runtime, std::move(options)),
         GameException,
         [](const GameException& error) {
             return NomadString(error.what()).find("Audio playback is unavailable") != NomadString::npos;
         }
     );
     BOOST_TEST(std::ranges::any_of(logCapture.getEntries(), [](const LogEntry& entry) {
-        return entry.level == LogLevel::Error &&
+        return entry.level == LogLevel::Warning &&
             entry.message.find("Audio playback is unavailable") != NomadString::npos;
     }));
 }

@@ -6,6 +6,8 @@
 
 #include <nomad/log/Logger.hpp>
 
+#include <nomad/project/ProjectMetadata.hpp>
+
 #include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/NomadConfiguration.hpp>
@@ -54,6 +56,14 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     auto state = std::make_shared<FixtureState>();
     state->context = context;
     context->runtime->registerNativeFunction(
+        "fixture.projectName",
+        [state](nomad::VirtualMachine* machine) {
+            const auto* metadata = state->context->projectMetadata;
+            machine->setStringResult(metadata->name);
+        },
+        {}, context->runtime->getStringType(), ""
+    );
+    context->runtime->registerNativeFunction(
         "fixture.exit",
         [request = context->requestExit, state](nomad::VirtualMachine*) { request(7); },
         {}, context->runtime->getVoidType(), ""
@@ -71,6 +81,16 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     };
     callbacks->emit = [state](nomad::CompilerContext*) { record(state->context, "emit"); };
     callbacks->compilationCompleted = [state](nomad::CompilerContext*) { record(state->context, "completed"); };
+    if (context->mode == nomad::ModuleMode::Application) {
+        callbacks->run = [state] {
+            record(state->context, "run");
+            const auto entry = state->context->configuration->getString("fixture.entry").value_or("init");
+            if (!entry.empty()) {
+                state->context->runtime->executeFunction(state->context->runtime->getFunctionId(entry));
+            }
+            return 0;
+        };
+    }
     callbacks->exit = [state] { record(state->context, "exit"); };
     callbacks->shutdown = [state] { record(state->context, "shutdown"); };
 }

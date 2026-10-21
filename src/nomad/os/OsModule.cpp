@@ -118,6 +118,37 @@ void captureEnvironment(MapObject& environment) {
 #endif
 }
 
+std::unique_ptr<Array1dObject> captureArguments(const ModuleContext& context, const Type* stringType) {
+    auto applicationArguments = std::span<const NomadString>{};
+    if (context.mode != ModuleMode::Analysis) {
+        const auto separator = std::ranges::find(context.arguments, "--");
+        if (separator != context.arguments.end()) {
+            applicationArguments = context.arguments.subspan(
+                static_cast<NomadIndex>(separator - context.arguments.begin()) + 1
+            );
+        }
+    }
+    if (applicationArguments.size() > static_cast<NomadIndex>(std::numeric_limits<NomadInteger>::max())) {
+        throw NomadException("Too many application arguments");
+    }
+    auto arguments = applicationArguments.empty()
+        ? std::make_unique<Array1dObject>(stringType)
+        : std::make_unique<Array1dObject>(
+            stringType, static_cast<NomadInteger>(applicationArguments.size())
+        );
+    for (auto index = NomadIndex{0}; index < applicationArguments.size(); ++index) {
+        RuntimeValue value(applicationArguments[index]);
+        try {
+            arguments->setValue(static_cast<NomadInteger>(index), value);
+        } catch (...) {
+            value.freeObjectValue();
+            throw;
+        }
+        value.freeObjectValue();
+    }
+    return arguments;
+}
+
 } // namespace
 
 void registerOs(ModuleContext* context) {
@@ -140,31 +171,7 @@ void registerOs(ModuleContext* context) {
     }
 
     const auto analysis = context->mode == ModuleMode::Analysis;
-    auto applicationArguments = std::span<const NomadString>{};
-    if (!analysis) {
-        const auto separator = std::ranges::find(context->arguments, "--");
-        if (separator != context->arguments.end()) {
-            applicationArguments = context->arguments.subspan(
-                static_cast<NomadIndex>(separator - context->arguments.begin()) + 1
-            );
-        }
-    }
-    if (applicationArguments.size() > static_cast<NomadIndex>(std::numeric_limits<NomadInteger>::max())) {
-        throw NomadException("Too many application arguments");
-    }
-    auto arguments = std::make_unique<Array1dObject>(
-        stringType, static_cast<NomadInteger>(applicationArguments.size())
-    );
-    for (auto index = NomadIndex{0}; index < applicationArguments.size(); ++index) {
-        RuntimeValue value(applicationArguments[index]);
-        try {
-            arguments->setValue(static_cast<NomadInteger>(index), value);
-        } catch (...) {
-            value.freeObjectValue();
-            throw;
-        }
-        value.freeObjectValue();
-    }
+    auto arguments = captureArguments(*context, stringType);
     auto environment = std::make_unique<MapObject>(stringType);
     if (!analysis) {
         captureEnvironment(*environment);

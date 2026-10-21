@@ -2,6 +2,7 @@
 
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/log/Logger.hpp>
 
@@ -93,7 +94,6 @@ NomadPath resolveDocumentationOutputPath(const NomadString& output) {
 struct CompilationPaths {
     std::vector<NomadPath> sources;
     NomadPath resources;
-    std::optional<NomadString> entryFunction;
     NomadPath projectFile;
     std::optional<NomadProject> project;
 };
@@ -110,22 +110,14 @@ CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const b
 
         if (projectRoot) {
             project = loadNomadProject(*projectRoot / NOMAD_PROJECT_FILE_NAME);
-            resourcePath = resolveProjectResourcePath(*project);
+            resourcePath = project->root;
 
             if (!explicitPath) {
-                const auto directories = project->gameOptions.scripts.directories.value_or(
-                    std::vector<NomadPath>{"scripts"}
-                );
-
-                sourcePaths.clear();
-                for (const auto& directory : directories) {
-                    sourcePaths.push_back(resourcePath / directory);
-                }
+                sourcePaths = resolveScriptPaths(project->document, project->root);
 
                 return CompilationPaths{
                     std::move(sourcePaths),
                     resourcePath,
-                    project->gameOptions.entryFunction,
                     *projectRoot / NOMAD_PROJECT_FILE_NAME,
                     std::move(project)
                 };
@@ -140,7 +132,6 @@ CompilationPaths resolveCompilationPaths(const NomadPath& requestedPath, const b
     return CompilationPaths{
         std::move(sourcePaths),
         resourcePath,
-        std::nullopt,
         {},
         std::move(project)
     };
@@ -155,9 +146,12 @@ std::unique_ptr<ModuleHost> createCompilerSession(
     }
     NomadProject project;
     project.root = paths.resources;
-    project.configuration.resources.directory = ".";
+    project.document.setString("resources.directory", ".");
     project.configuration.sdk.modules = {"nomad-game"};
-    return createProjectSession(project, ModuleMode::Analysis, arguments);
+    return ModuleHost::create(
+        project.document, project.root, resolveProjectModules(project, getSdkDirectory()),
+        arguments, ModuleMode::Analysis
+    );
 }
 
 CompilationPaths resolveRequestedPaths(const std::optional<NomadString>& requestedPath) {
@@ -194,11 +188,7 @@ bool checkResources(const CompilationPaths& paths, ModuleHost& session) {
 int checkCommand(CheckParameters& parameters, const std::vector<NomadString>& arguments) {
     const auto paths = resolveRequestedPaths(parameters.path);
     const auto session = createCompilerSession(paths, arguments);
-    auto result = checkPaths(paths.sources, session->getRuntime());
-
-    if (paths.entryFunction) {
-        validateEntryFunction(result, session->getRuntime(), *paths.entryFunction, paths.projectFile);
-    }
+    const auto result = session->compileSources(loadSourcePaths(paths.sources));
 
     printDiagnostics(result);
     const auto resourcesSucceeded = checkResources(paths, *session);

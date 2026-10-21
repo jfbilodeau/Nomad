@@ -83,6 +83,32 @@ Value requireValue(std::optional<Value> value, const NomadStringView path) {
     return std::move(*value);
 }
 
+template<typename Value>
+std::optional<std::vector<Value>> readArray(
+    const toml::table& document,
+    const NomadStringView path,
+    const NomadStringView expected
+) {
+    const auto* node = findNode(document, path);
+    if (node == nullptr) {
+        return std::nullopt;
+    }
+    const auto* array = node->as_array();
+    if (array == nullptr) {
+        throw wrongType(path, expected);
+    }
+    std::vector<Value> values;
+    values.reserve(array->size());
+    for (const auto& element : *array) {
+        const auto value = element.value_exact<Value>();
+        if (!value) {
+            throw wrongType(path, expected);
+        }
+        values.push_back(*value);
+    }
+    return values;
+}
+
 toml::table* parentTable(
     toml::table& document,
     const std::vector<NomadStringView>& keys,
@@ -185,6 +211,13 @@ bool NomadConfiguration::contains(const NomadStringView path) const {
     return findNode(m_implementation->document, path) != nullptr;
 }
 
+void NomadConfiguration::validateSection(const NomadStringView path) const {
+    const auto* node = findNode(m_implementation->document, path);
+    if (node != nullptr && !node->is_table()) {
+        throw wrongType(path, "a configuration section");
+    }
+}
+
 std::optional<NomadString> NomadConfiguration::getString(const NomadStringView path) const {
     return readValue<NomadString>(m_implementation->document, path);
 }
@@ -200,24 +233,13 @@ std::optional<bool> NomadConfiguration::getBoolean(const NomadStringView path) c
 std::optional<std::vector<NomadString>> NomadConfiguration::getStringArray(
     const NomadStringView path
 ) const {
-    const auto* node = findNode(m_implementation->document, path);
-    if (node == nullptr) {
-        return std::nullopt;
-    }
-    const auto* array = node->as_array();
-    if (array == nullptr) {
-        throw wrongType(path, "an array of strings");
-    }
-    std::vector<NomadString> values;
-    values.reserve(array->size());
-    for (const auto& element : *array) {
-        const auto value = element.value_exact<NomadString>();
-        if (!value) {
-            throw wrongType(path, "an array of strings");
-        }
-        values.push_back(*value);
-    }
-    return values;
+    return readArray<NomadString>(m_implementation->document, path, "an array of strings");
+}
+
+std::optional<std::vector<NomadInteger>> NomadConfiguration::getIntegerArray(
+    const NomadStringView path
+) const {
+    return readArray<NomadInteger>(m_implementation->document, path, "an array of integers");
 }
 
 NomadString NomadConfiguration::requireString(const NomadStringView path) const {
@@ -234,6 +256,10 @@ bool NomadConfiguration::requireBoolean(const NomadStringView path) const {
 
 std::vector<NomadString> NomadConfiguration::requireStringArray(const NomadStringView path) const {
     return requireValue(getStringArray(path), path);
+}
+
+std::vector<NomadInteger> NomadConfiguration::requireIntegerArray(const NomadStringView path) const {
+    return requireValue(getIntegerArray(path), path);
 }
 
 void NomadConfiguration::setString(const NomadStringView path, const NomadStringView value) {

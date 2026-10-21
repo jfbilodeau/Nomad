@@ -53,8 +53,6 @@ const NomadString DEBUG_DRAW_VISIBLE_VARIABLE = "game.debug.draw.visible";
 
 class Game {
 public:
-    [[nodiscard]] static std::unique_ptr<Game> create(GameOptions options);
-
     // Creates a fully initialized engine against SDL's dummy video and audio drivers: no display
     // server or visible window, but a valid window, renderer and canvas. The complete script API is
     // registered without compiling or running the game's own scripts.
@@ -129,6 +127,7 @@ public:
     void run();
     void quit();
     void prepareScripts(std::function<void()> compile);
+    void executeEntry();
     void onEntryExecuted();
     void releaseScriptState();
     void setExitHandler(
@@ -205,7 +204,7 @@ public:
 private:
     explicit Game(GameOptions options);
 
-    void initialize(bool executeEntry = true);
+    void initialize();
     void initializeHeadless();
 
     void initEngine();
@@ -261,13 +260,9 @@ private:
     void createPathToFile(const NomadString& fileName) const;
     void loadTextIntoConst(const NomadString& languageCode) const;
 
-    void loadSpritesAndCompileScripts();
     void loadSpritesAndCompileScripts(std::function<void()> compile);
-    void compileScripts();
     [[nodiscard]] NomadIndex loadAudio();
     [[nodiscard]] NomadIndex loadSprites();
-
-    void runInitFunction();
 
     void render(Canvas* canvas) const;
     void update();

@@ -122,24 +122,21 @@ std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptFun
                 continue;
             }
             auto* compiler = context->getCompiler();
-            const auto initializerId = compiler->createFunction(
-                context, compiler->getScriptId(function->getId()), generateFunFunctionName(context, function, line)
-            );
-            if (initializerId == NOMAD_INVALID_ID) {
+            CompilerContext initializerContext(compiler, context->getMode(), nullptr, true);
+            initializerContext.setHub(qualifiedName);
+            auto expression = parser::parseExpression(&initializerContext, function, tokens);
+            const auto validLine = parser::expectEndOfLine(&initializerContext, function, tokens);
+            context->reportDiagnostics(initializerContext.getDiagnostics());
+            if (expression == nullptr || !validLine || initializerContext.hasError()) {
                 continue;
             }
-            auto* initializerFunction = context->getRuntime()->getScriptFunction(initializerId);
-            auto expression = parser::parseExpression(context, initializerFunction, tokens);
-            if (expression == nullptr || !parser::expectEndOfLine(context, initializerFunction, tokens)) {
-                continue;
-            }
-            auto initializer = std::make_unique<FunctionNode>(line, column);
-            initializer->getStatements()->addStatement(
-                std::make_unique<AssignmentStatement>(line, column, variableName, std::move(expression))
+            auto initializer = std::make_unique<HubInitializerStatement>(
+                line, column, variableName, std::move(expression), function, qualifiedName
             );
             initializer->setEndSpan(line, tokens->getColumnIndex());
-            compiler->setFunctionNode(initializerId, std::move(initializer));
-            context->getRuntime()->registerHubInitializer(initializerId);
+            compiler->registerScriptInitializer(
+                context, compiler->getScriptId(function->getId()), std::move(initializer)
+            );
             continue;
         }
         if (!tokens->is("hub") && !tokens->is("fun") && !tokens->is("const") &&

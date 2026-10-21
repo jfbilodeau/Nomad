@@ -20,16 +20,16 @@ string(REPLACE "entry = \"main\"\n" "" CONFIGURATION "${CONFIGURATION}")
 file(WRITE "${PROJECT}/nomad.toml" "${CONFIGURATION}")
 file(WRITE "${PROJECT}/res/scripts/main.nomad" "log.info \"SYSTEM_MODULE_COMPLETE\"\nsystem.exit\n")
 nomadRunTestCommand("Check system-only application" COMMAND "${NOMAD_CLI}" check "${PROJECT}")
-nomadRunTestCommand("Run system-only application" COMMAND "${NOMAD_CLI}" run "${PROJECT}"
-    OUTPUT_MATCH "SYSTEM_MODULE_COMPLETE")
+nomadRunTestCommand("Reject running an API-only application" EXPECT_FAILURE
+    COMMAND "${NOMAD_CLI}" run "${PROJECT}")
 get_filename_component(SDK_DIRECTORY "${NOMAD_CLI}" DIRECTORY)
 set(RUNTIME "${SDK_DIRECTORY}/nomad-runtime${NOMAD_RUNTIME_SUFFIX}")
 nomadRunTestCommand("Select project directory from outside project"
     COMMAND "${RUNTIME}" --project-path "${PROJECT}"
-    WORKING_DIRECTORY "${NOMAD_TEST_ROOT}" OUTPUT_MATCH "SYSTEM_MODULE_COMPLETE")
+    WORKING_DIRECTORY "${NOMAD_TEST_ROOT}" EXPECT_FAILURE)
 nomadRunTestCommand("Select project configuration from outside project"
     COMMAND "${RUNTIME}" --project-path "${PROJECT}/nomad.toml"
-    WORKING_DIRECTORY "${NOMAD_TEST_ROOT}" OUTPUT_MATCH "SYSTEM_MODULE_COMPLETE")
+    WORKING_DIRECTORY "${NOMAD_TEST_ROOT}" EXPECT_FAILURE)
 nomadRunTestCommand("Reject missing project path argument"
     EXPECT_FAILURE COMMAND "${RUNTIME}" --project-path
     WORKING_DIRECTORY "${NOMAD_TEST_ROOT}")
@@ -57,8 +57,8 @@ if(RELEASE MATCHES "nomad-game" OR NOT RELEASE MATCHES "nomad-system")
     message(FATAL_ERROR "Release module list does not match the resolved system-only modules")
 endif()
 set(PROGRAM "${EXTRACTED}/${EXECUTABLE_NAME}${NOMAD_RUNTIME_SUFFIX}")
-nomadRunTestCommand("Run packaged system application" COMMAND "${PROGRAM}"
-    WORKING_DIRECTORY "${EXTRACTED}" OUTPUT_MATCH "SYSTEM_MODULE_COMPLETE")
+nomadRunTestCommand("Reject running a packaged API-only application" COMMAND "${PROGRAM}"
+    WORKING_DIRECTORY "${EXTRACTED}" EXPECT_FAILURE)
 file(RENAME "${EXTRACTED}/${NOMAD_SYSTEM_LIBRARY}" "${EXTRACTED}/${NOMAD_SYSTEM_LIBRARY}.missing")
 nomadRunTestCommand("Reject missing packaged module without SDK fallback"
     EXPECT_FAILURE COMMAND "${PROGRAM}" WORKING_DIRECTORY "${EXTRACTED}")
@@ -67,8 +67,8 @@ string(REPLACE "modules = [\"nomad-system\"]" "modules = [\"nomad-system\", \"no
     CONFIGURATION "${CONFIGURATION}")
 file(WRITE "${PROJECT}/nomad.toml" "${CONFIGURATION}")
 nomadRunTestCommand("Check application with collections module" COMMAND "${NOMAD_CLI}" check "${PROJECT}")
-nomadRunTestCommand("Run application with collections module" COMMAND "${NOMAD_CLI}" run "${PROJECT}"
-    OUTPUT_MATCH "SYSTEM_MODULE_COMPLETE")
+nomadRunTestCommand("Reject running API-only collections modules" COMMAND "${NOMAD_CLI}" run "${PROJECT}"
+    EXPECT_FAILURE)
 nomadRunTestCommand("Package application with collections module" COMMAND "${NOMAD_CLI}" package "${PROJECT}" --force)
 file(GLOB ARCHIVES "${PROJECT}/dist/*.zip")
 list(LENGTH ARCHIVES COUNT)
@@ -81,15 +81,17 @@ file(ARCHIVE_EXTRACT INPUT "${ARCHIVE}" DESTINATION "${COLLECTIONS_EXTRACTED}")
 if(NOT EXISTS "${COLLECTIONS_EXTRACTED}/${NOMAD_COLLECTIONS_LIBRARY}")
     message(FATAL_ERROR "Collections application package is missing the collections module")
 endif()
-nomadRunTestCommand("Run packaged application with collections module"
+nomadRunTestCommand("Reject running packaged API-only collections modules"
     COMMAND "${COLLECTIONS_EXTRACTED}/${EXECUTABLE_NAME}${NOMAD_RUNTIME_SUFFIX}"
-    WORKING_DIRECTORY "${COLLECTIONS_EXTRACTED}" OUTPUT_MATCH "SYSTEM_MODULE_COMPLETE")
+    WORKING_DIRECTORY "${COLLECTIONS_EXTRACTED}" EXPECT_FAILURE)
 
 string(REPLACE "modules = [\"nomad-system\", \"nomad-collections\"]"
-    "modules = [\"nomad-system\", \"nomad-os\"]" CONFIGURATION "${CONFIGURATION}")
+    "modules = [\"nomad-game\", \"nomad-os\"]" CONFIGURATION "${CONFIGURATION}")
+set(ENV{SDL_VIDEODRIVER} "dummy")
+set(ENV{SDL_AUDIODRIVER} "dummy")
 file(WRITE "${PROJECT}/nomad.toml" "${CONFIGURATION}")
 file(WRITE "${PROJECT}/res/scripts/main.nomad"
-    "assert os.argv.count == 0\nlog.info \"OS_EMPTY_ARGUMENTS_COMPLETE\"\n")
+    "assert os.argv.count == 0\nlog.info \"OS_EMPTY_ARGUMENTS_COMPLETE\"\nsystem.exit\n")
 nomadRunTestCommand("Run OS application without separator"
     COMMAND "${NOMAD_CLI}" run "${PROJECT}" OUTPUT_MATCH "OS_EMPTY_ARGUMENTS_COMPLETE")
 nomadRunTestCommand("Run OS application with empty argument list"
@@ -110,6 +112,7 @@ os.env["NOMAD_OS_LOCAL"] = "snapshot"
 assert os.argv[0] == "updated"
 assert os.env["NOMAD_OS_LOCAL"] == "snapshot"
 log.info "OS_MODULE_COMPLETE"
+system.exit
 ]=])
 set(APPLICATION_ARGUMENTS "Player 日本語" --help --project-path --debug --no-debug --)
 nomadRunTestCommand("Check OS application without capturing host information"
@@ -128,7 +131,7 @@ set(OS_EXTRACTED "${NOMAD_TEST_ROOT}/os-extracted")
 file(ARCHIVE_EXTRACT INPUT "${ARCHIVE}" DESTINATION "${OS_EXTRACTED}")
 if(NOT EXISTS "${OS_EXTRACTED}/${NOMAD_OS_LIBRARY}" OR
     NOT EXISTS "${OS_EXTRACTED}/${NOMAD_COLLECTIONS_LIBRARY}" OR
-    EXISTS "${OS_EXTRACTED}/${NOMAD_GAME_LIBRARY}")
+    NOT EXISTS "${OS_EXTRACTED}/${NOMAD_GAME_LIBRARY}")
     message(FATAL_ERROR "OS package did not include exactly its required Nomad modules")
 endif()
 file(READ "${OS_EXTRACTED}/nomad.toml" RELEASE)

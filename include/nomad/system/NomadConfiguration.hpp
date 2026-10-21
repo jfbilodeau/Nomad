@@ -29,14 +29,18 @@ public:
     [[nodiscard]] NomadString serialize() const;
 
     [[nodiscard]] bool contains(NomadStringView path) const;
+    // Missing sections are allowed; existing values must be configuration sections.
+    void validateSection(NomadStringView path) const;
     [[nodiscard]] std::optional<NomadString> getString(NomadStringView path) const;
     [[nodiscard]] std::optional<NomadInteger> getInteger(NomadStringView path) const;
     [[nodiscard]] std::optional<bool> getBoolean(NomadStringView path) const;
     [[nodiscard]] std::optional<std::vector<NomadString>> getStringArray(NomadStringView path) const;
+    [[nodiscard]] std::optional<std::vector<NomadInteger>> getIntegerArray(NomadStringView path) const;
     [[nodiscard]] NomadString requireString(NomadStringView path) const;
     [[nodiscard]] NomadInteger requireInteger(NomadStringView path) const;
     [[nodiscard]] bool requireBoolean(NomadStringView path) const;
     [[nodiscard]] std::vector<NomadString> requireStringArray(NomadStringView path) const;
+    [[nodiscard]] std::vector<NomadInteger> requireIntegerArray(NomadStringView path) const;
 
     void setString(NomadStringView path, NomadStringView value);
     void setInteger(NomadStringView path, NomadInteger value);

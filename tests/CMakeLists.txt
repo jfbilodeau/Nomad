@@ -16,6 +16,7 @@ add_executable(
     ./ExpressionEvaluationTest.cpp
     ./ExpressionResolveTest.cpp
     ./FormatStringCompilerTest.cpp
+    ./GameConfigurationTest.cpp
     ./GameEventQueueTest.cpp
     ./GameStartupTest.cpp
     ./GeometryTest.cpp

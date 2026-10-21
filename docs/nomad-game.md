@@ -15,13 +15,17 @@ See [Runtime modules](modules.md) for module setup.
 
 ## Startup and configuration
 
-The game module prepares resources and scripts before the project's entry
-function runs. After that function returns, the game event loop handles input,
+The game module prepares resources and scripts before startup. Once the host
+has initialized script hub values, the game executes `game.entry` (default
+`main`). The entry must take no arguments and return `void`. After that function
+returns, the game event loop handles input,
 updates, and rendering until shutdown is requested.
 
 Configure the initial window with `window.title`, `window.resolution`,
 `window.size`, and `window.fullscreen`. Set `resources.directory` to choose the
-resource root. See [Project configuration](configuration.md) for defaults,
+asset root; this setting does not affect script locations. Script directories
+are project-relative, with `scripts.directories = ["res/scripts"]` in generated
+game projects. See [Project configuration](configuration.md) for defaults,
 resource directories, and validation rules.
 
 ## Features and guides

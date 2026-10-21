@@ -64,6 +64,9 @@ DECLARE_OP_CODE(op_object_parameter_load_i)
 DECLARE_OP_CODE(op_object_parameter_push)
 
 // Variable operations
+DECLARE_OP_CODE(op_constant_get_r)
+DECLARE_OP_CODE(op_constant_get_i)
+DECLARE_OP_CODE(op_constant_push)
 DECLARE_OP_CODE(op_function_variable_set)
 DECLARE_OP_CODE(op_function_variable_get_r)
 DECLARE_OP_CODE(op_function_variable_object_get_r)

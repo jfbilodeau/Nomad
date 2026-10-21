@@ -1132,7 +1132,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
         }
         if (context->getMode() == CompilerMode::Script && function != nullptr) {
             context->getCompiler()->deferFormatString(expression.get(), function->getId(),
-                sourceLine.substr(offset + 2, *end - offset - 2));
+                sourceLine.substr(offset + 2, *end - offset - 2), context->getHub(), context->isHubInitializer());
         }
         return expression;
     }

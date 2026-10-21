@@ -50,5 +50,5 @@ system.exit
 ```
 
 Modules stop their background work before the application releases them.
-Without an event-loop module, an application also finishes normally when its
-entry function returns.
+This module supplies APIs only. Running an application requires a separate
+runnable module, which owns its entry point and determines when execution ends.

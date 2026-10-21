@@ -2,6 +2,8 @@
 
 #include <nomad/game/GamePackaging.hpp>
 
+#include <nomad/game/GameConfiguration.hpp>
+
 #include <nomad/game/resource/SpriteCatalog.hpp>
 #include <nomad/game/resource/SpriteDiscovery.hpp>
 #include <nomad/game/resource/SpritePacker.hpp>
@@ -35,22 +37,19 @@ void packageGameResources(ModulePackageContext* context) {
         throw ModuleException("Game packaging requires a complete module package context");
     }
 
-    const auto configuredDirectories = context->source->getStringArray("sprites.directories");
-    const auto directories = configuredDirectories.value_or(std::vector<NomadString>{"sprites"});
-    const auto maxTextureSize = context->source->getInteger("sprites.max-texture-size").value_or(2048);
-    const auto padding = context->source->getInteger("sprites.padding").value_or(1);
-    if (maxTextureSize < 1 || padding < 0) {
-        throw ModuleException("Sprite maximum texture size must be positive and padding must not be negative");
-    }
+    const auto options = readGameOptions(*context->source);
+    const auto& configuredDirectories = options.sprites.directories;
+    const auto directories = configuredDirectories.value_or(std::vector<NomadPath>{"sprites"});
+    const auto maxTextureSize = options.sprites.maxTextureSize.value_or(2048);
+    const auto padding = options.sprites.padding.value_or(1);
 
     try {
-        for (const auto& directory : directories) {
-            const auto configuredDirectory = pathFromUtf8(directory);
+        for (const auto& configuredDirectory : directories) {
             const auto sourceDirectory = (context->resourceDirectory / configuredDirectory).lexically_normal();
             const auto relativeRoot = sourceDirectory.lexically_relative(context->resourceDirectory);
             if (configuredDirectory.empty() || configuredDirectory.is_absolute() ||
                 relativeRoot.empty() || relativeRoot.is_absolute() || *relativeRoot.begin() == "..") {
-                throw ModuleException("Sprite directory must remain within the resource directory: '" + directory + "'");
+                throw ModuleException("Sprite directory must remain within the resource directory: '" + pathToUtf8(configuredDirectory) + "'");
             }
 
             if (hasSpriteCatalog(sourceDirectory)) {

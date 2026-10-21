@@ -2,6 +2,8 @@
 
 #include <nomad/project/ProjectPackager.hpp>
 
+#include <nomad/compiler/SourceLoader.hpp>
+
 #include <nomad/system/ModuleHost.hpp>
 #include <nomad/system/Path.hpp>
 #include <nomad/system/ProjectSession.hpp>
@@ -151,12 +153,13 @@ void copyFile(const NomadPath& source, const NomadPath& destination) {
     }
 }
 
-void copyResources(
-    const NomadProject& project,
+void copyDirectory(
+    const NomadPath& resources,
+    const NomadPath& destination,
+    const std::vector<NomadString>& exclusions,
     const std::set<NomadPath>& excludedResources,
     const std::function<void(const NomadPath&, const NomadPath&)>& copyResource
 ) {
-    const auto resources = resolveProjectResourcePath(project);
     std::error_code error;
 
     if (!std::filesystem::is_directory(resources, error)) {
@@ -194,9 +197,9 @@ void copyResources(
                 raiseFilesystemError("Failed to resolve resource", entry.path(), error);
             }
 
-            if (!isExcluded(relative, project.configuration.package.exclude) &&
+            if (!isExcluded(relative, exclusions) &&
                 !excludedResources.contains(relative.lexically_normal())) {
-                copyResource(entry.path(), NomadPath("res") / relative);
+                copyResource(entry.path(), destination / relative);
             }
         } else if (!entry.is_directory(error)) {
             throw ProjectPackagingException("Unsupported project resource: '" + pathToUtf8(entry.path()) + "'");
@@ -548,14 +551,15 @@ ProjectPackageResult packageProject(
     }
 
     const auto outputDirectory = (project.root / configuration.package.output).lexically_normal();
-    const auto resources = resolveProjectResourcePath(project);
-
-    if (
-        outputDirectory == project.root ||
-        isWithin(outputDirectory, resources) ||
-        isWithin(resources, outputDirectory)
-    ) {
-        throw ProjectPackagingException("Package output must not contain or replace the project resources");
+    if (outputDirectory == project.root) {
+        throw ProjectPackagingException("Package output must not replace the project");
+    }
+    const auto scriptDirectories = getScriptPaths(project.document);
+    for (const auto& directory : scriptDirectories) {
+        const auto source = (project.root / directory).lexically_normal();
+        if (isWithin(outputDirectory, source) || isWithin(source, outputDirectory)) {
+            throw ProjectPackagingException("Package output must not contain or replace the project scripts");
+        }
     }
 
     const auto validComponent = [](const NomadString& value) {
@@ -578,8 +582,9 @@ ProjectPackageResult packageProject(
             }
             moduleBundles.push_back(std::move(dependencies));
         }
-        moduleHost = std::make_unique<ModuleHost>(
-            project.document, project.root, resources, modules, std::vector<NomadString>{}, ModuleMode::Packaging
+        moduleHost = ModuleHost::create(
+            project.document, project.root, modules, std::vector<NomadString>{}, ModuleMode::Packaging,
+            project.configuration.project
         );
     } catch (const ModuleException& error) {
         throw ProjectPackagingException("Failed to load packaging modules: " + NomadString(error.what()));
@@ -674,11 +679,28 @@ ProjectPackageResult packageProject(
         context.source = &project.document;
         context.release = &release;
         context.projectDirectory = project.root;
-        context.resourceDirectory = resources;
         context.stagingDirectory = staging;
         context.dryRun = dryRun;
+        std::map<NomadPath, NomadPath> copiedResources;
+        auto packagedScriptDirectories = scriptDirectories;
         context.copyFile = [&](const NomadPath& source, const NomadPath& relative) {
-            packageFiles.copy(source, relative);
+            const auto [entry, inserted] = copiedResources.emplace(relative.lexically_normal(), source.lexically_normal());
+            if (inserted || entry->second != source.lexically_normal()) {
+                packageFiles.copy(source, relative);
+            }
+        };
+        context.copyDirectory = [&](const NomadPath& source, const NomadPath& destination) {
+            if (isWithin(outputDirectory, source) || isWithin(source, outputDirectory)) {
+                throw ProjectPackagingException("Package output must not contain or replace the project resources");
+            }
+            copyDirectory(source, destination, configuration.package.exclude, excludedResources, context.copyFile);
+            for (auto index = NomadIndex{0}; index < scriptDirectories.size(); ++index) {
+                const auto scriptPath = (project.root / scriptDirectories[index]).lexically_normal();
+                const auto relative = scriptPath.lexically_relative(source.lexically_normal());
+                if (!relative.empty() && !relative.is_absolute() && *relative.begin() != "..") {
+                    packagedScriptDirectories[index] = (destination / relative).lexically_normal();
+                }
+            }
         };
         context.writeFile = [&](const NomadPath& relative, const NomadStringView content) {
             packageFiles.write(relative, content);
@@ -698,7 +720,24 @@ ProjectPackageResult packageProject(
         } catch (const std::exception& moduleError) {
             throw ProjectPackagingException("Module packaging failed: " + NomadString(moduleError.what()));
         }
-        copyResources(project, excludedResources, context.copyFile);
+        auto releaseScripts = getScriptPaths(release);
+        if (releaseScripts.size() != scriptDirectories.size()) {
+            throw ProjectPackagingException("Module packaging must preserve the number of script directories");
+        }
+        for (auto index = NomadIndex{0}; index < scriptDirectories.size(); ++index) {
+            if (releaseScripts[index] == scriptDirectories[index]) {
+                releaseScripts[index] = packagedScriptDirectories[index];
+            }
+        }
+        std::vector<NomadString> releaseScriptPaths;
+        for (const auto& path : releaseScripts) {
+            releaseScriptPaths.push_back(pathToGenericUtf8(path));
+        }
+        release.setStringArray("scripts.directories", releaseScriptPaths);
+        (void)getScriptPaths(release);
+        for (auto index = NomadIndex{0}; index < scriptDirectories.size(); ++index) {
+            context.copyDirectory(project.root / scriptDirectories[index], releaseScripts[index]);
+        }
         release.setStringArray("nomad.modules", moduleNames);
         packageFiles.write(pathFromUtf8(NOMAD_PROJECT_FILE_NAME), release.serialize());
         stagedFiles = packageFiles.getFiles();

@@ -23,6 +23,87 @@ using namespace nomad::test;
 
 BOOST_AUTO_TEST_SUITE(source_overlays)
 
+BOOST_AUTO_TEST_CASE(script_roots_default_to_the_project_scripts_directory_independently_of_game_settings)
+{
+    const TestDirectory directory("nomad_script_roots_default");
+    directory.write("scripts/zebra.nomad", "return 2");
+    directory.write("scripts/alpha.nomad", "return 1");
+    directory.write("assets/scripts/ignored.nomad", "return 3");
+    const auto configuration = NomadConfiguration::parse(
+        "[resources]\ndirectory = 'assets'\n[audio]\ndirectories = false\n"
+    );
+    const auto roots = resolveScriptPaths(configuration, directory.getPath());
+    BOOST_REQUIRE(roots.size() == 1U);
+    BOOST_TEST(roots[0] == directory.getPath() / "scripts");
+    const auto batch = loadSourcePaths(roots);
+    BOOST_REQUIRE(batch.diagnostics.empty());
+    BOOST_REQUIRE(batch.sources.size() == 2U);
+    BOOST_TEST(batch.sources[0].scriptName == "alpha");
+    BOOST_TEST(batch.sources[1].scriptName == "zebra");
+}
+
+BOOST_AUTO_TEST_CASE(configured_script_roots_are_normalized_and_resolved_relative_to_the_project)
+{
+    const TestDirectory directory("nomad_script_roots_configured");
+    directory.write("res/scripts/main.nomad", "return 1");
+    directory.write("mods/answer.nomad", "return 2");
+    const auto configuration = NomadConfiguration::parse(
+        "[scripts]\ndirectories = ['res\\scripts\\nested\\..', 'mods/']\n"
+        "[resources]\ndirectory = 'different-assets'\n"
+    );
+    const auto directories = getScriptPaths(configuration);
+    BOOST_REQUIRE(directories.size() == 2U);
+    BOOST_TEST(directories[0] == NomadPath("res/scripts"));
+    BOOST_TEST(directories[1] == NomadPath("mods"));
+    const auto roots = resolveScriptPaths(configuration, directory.getPath());
+    BOOST_REQUIRE(roots.size() == 2U);
+    BOOST_TEST(roots[0] == directory.getPath() / "res" / "scripts");
+    BOOST_TEST(roots[1] == directory.getPath() / "mods");
+    const auto batch = loadSourcePaths(roots);
+    BOOST_REQUIRE(batch.diagnostics.empty());
+    BOOST_REQUIRE(batch.sources.size() == 2U);
+    BOOST_TEST(batch.sources[0].scriptName == "answer");
+    BOOST_TEST(batch.sources[1].scriptName == "main");
+}
+
+BOOST_AUTO_TEST_CASE(empty_script_roots_disable_disk_discovery)
+{
+    const auto configuration = NomadConfiguration::parse("[scripts]\ndirectories = []\n");
+    BOOST_TEST(getScriptPaths(configuration).empty());
+    BOOST_TEST(resolveScriptPaths(configuration, std::filesystem::current_path()).empty());
+}
+
+BOOST_AUTO_TEST_CASE(compiler_rejects_invalid_script_sections_and_directory_lists)
+{
+    for (const auto text : {
+        "scripts = false",
+        "[scripts]\ndirectories = false",
+        "[scripts]\ndirectories = ['scripts', 42]",
+        "[scripts]\ndirectories = ['']",
+        "[scripts]\ndirectories = ['.']",
+        "[scripts]\ndirectories = ['/scripts']",
+#ifdef _WIN32
+        "[scripts]\ndirectories = ['C:\\scripts']",
+        "[scripts]\ndirectories = ['C:scripts']",
+#endif
+        "[scripts]\ndirectories = ['../scripts']",
+        "[scripts]\ndirectories = ['scripts', 'scripts/nested']",
+        "[scripts]\ndirectories = ['scripts/nested', 'scripts']",
+        "[scripts]\ndirectories = ['Scripts', 'scripts']"
+    }) {
+        BOOST_TEST_CONTEXT(text) {
+            const auto configuration = NomadConfiguration::parse(text);
+            BOOST_CHECK_EXCEPTION(
+                (void)getScriptPaths(configuration),
+                NomadConfigurationException,
+                [](const auto& error) {
+                    return NomadStringView(error.what()).find("scripts") != NomadStringView::npos;
+                }
+            );
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(editor_text_replaces_disk_snapshot_and_keeps_discovered_script_name)
 {
     TestDirectory directory("nomad_overlay_existing");

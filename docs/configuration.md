@@ -11,13 +11,13 @@ name = "Example Game"
 identifier = "com.example.game"
 version = "0.1.0"
 executable = "example-game"
-entry = "main"
 
 [nomad]
 version = "0.1.0"
 modules = ["nomad-game"]
 
 [game]
+entry = "main"
 debug = false
 
 [resources]
@@ -44,7 +44,7 @@ directories = [
 
 [scripts]
 directories = [
-    "scripts",
+    "res/scripts",
     "mods",
 ]
 
@@ -71,11 +71,11 @@ exclude = [
 | `project.identifier` | Stable application identifier used to locate saved data. | Required |
 | `project.version` | Game version used in package archive names. | Required |
 | `project.executable` | Executable file name without extension or directory. | Required for development projects |
-| `project.entry` | Script entry function taking no arguments and returning `void`. | Optional; `"main"` |
+| `game.entry` | Game script entry function taking no arguments and returning `void`. | Optional; `"main"` |
 | `nomad.version` | Required SDK version in canonical `major.minor.patch` form; packaging requires this exact runtime version. | Required |
 | `nomad.modules` | Requested native modules; dependencies are included automatically. Use `[]` for the bare runtime. | Required |
 | `game.debug` | Whether diagnostic logging and the in-game debug console are enabled. | Optional; `false` |
-| `resources.directory` | Resource directory relative to the project root. | Optional; `"res"` |
+| `resources.directory` | Game-module asset directory relative to the project root. Does not affect script discovery. | Optional; `"res"` |
 | `window.title` | Initial game window title. Scripts may change it after startup. | Optional; `project.name` |
 | `window.resolution` | Initial logical rendering resolution as `[width, height]`. | Optional; `[800, 600]` |
 | `window.size` | Initial window size as `[width, height]`. | Optional; `window.resolution` |
@@ -83,7 +83,7 @@ exclude = [
 | `window.splash-image` | Image displayed while resources and scripts load, relative to the resource directory. | Optional |
 | `audio.directories` | Resource-relative directories recursively scanned for sound effects. | Optional; `["audio"]` |
 | `text.directories` | Resource-relative CSV localization files loaded in order. | Optional; `["text/text.csv"]` |
-| `scripts.directories` | Resource-relative directories recursively scanned for Nomad scripts. | Optional; `["scripts"]` |
+| `scripts.directories` | Project-relative directories recursively scanned for Nomad scripts. | Optional; `["scripts"]`; game templates use `["res/scripts"]` |
 | `sprites.directories` | Resource-relative directories recursively scanned for sprite PNG files. | Optional; `["sprites"]` |
 | `sprites.max-texture-size` | Maximum width and height of each packed texture page. | Optional; `2048` |
 | `sprites.padding` | Transparent pixels reserved between adjacent packed sprites. | Optional; `1` |
@@ -93,12 +93,18 @@ exclude = [
 The `[game]`, `[resources]`, `[window]`, `[audio]`, `[text]`, `[scripts]`, `[sprites]`, and `[package]` tables may be omitted. Defaults apply
 only to missing fields; invalid types and empty strings are rejected.
 Development projects are identified by `project.executable`. A configuration
-without it is a packaged configuration and must omit `[resources]` and `[package]`.
+without it is a packaged configuration and must omit `[package]`.
+
+Game, window, audio, text, sprite, and resource-directory settings are validated
+by the game module when it is selected, including during packaging and dry runs.
+Other projects preserve those settings without interpreting them.
 
 See [runtime modules](modules.md) for module selection, dependency ordering,
 SDK layout, and packaged applications. Set `nomad.modules` to
-`["nomad-system"]` for a non-graphical application or `[]` for the fundamental
-language runtime only.
+`["nomad-system"]` for non-graphical script APIs or `[]` for the fundamental
+language runtime only. Running an application requires a module with a run
+callback; `nomad-system` alone only supplies script APIs, not an application
+entry point. The former `project.entry` field is rejected; move it to `game.entry`.
 
 `window.resolution` and `window.size` must each contain exactly two positive
 integers. When `window.size` is omitted, the window uses the configured logical
@@ -145,14 +151,16 @@ constants, override order, and long-form text files.
 
 ## Script directories
 
-`scripts.directories` contains directories relative to `resources.directory`.
+`scripts.directories` contains directories relative to the project root,
+independently of the game module's `resources.directory`.
 Nomad recursively loads `.nomad` files from each directory before compiling
 the configured entry function. Set the property to an empty array to disable
 script loading.
 
-Configured directories must be non-empty resource-relative paths. Absolute
+Configured directories must be non-empty project-relative paths. Absolute
 paths, paths that escape through `..`, duplicates, and overlapping directories
 are rejected. When `[scripts]` is omitted, Nomad uses `["scripts"]`.
+Generated game projects explicitly use `["res/scripts"]`.
 
 ## Sprite directories
 
@@ -193,8 +201,11 @@ the outer edge of a texture page.
 Game packages contain a reduced `nomad.toml`. It retains the schema,
 project identity and version, entry function, required Nomad version, explicit
 game and window settings, and explicit audio, text, script, and sprite configuration. It omits `project.executable`,
-`[resources]`, and `[package]`.
-Packaged resources always live in `res`.
+and `[package]`. The game module sets `resources.directory` to `res` and
+packages its assets there. Script roots inside the asset directory are remapped
+to the corresponding packaged paths; other script roots retain their
+project-relative locations. Projects without the game module package their
+configured script directories without interpreting game asset settings.
 
 Packaging replaces the source PNGs in every nonempty raw sprite root with a
 versioned `catalog.json` and adjacent packed PNG pages. Empty roots remain

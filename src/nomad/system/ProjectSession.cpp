@@ -37,9 +37,10 @@ std::unique_ptr<ModuleHost> createProjectSession(
     std::vector<NomadString> arguments
 ) {
     validateNomadVersionCompatibility(project.configuration.sdk.version, getNomadVersion());
-    return std::make_unique<ModuleHost>(
-        project.document, project.root, resolveProjectResourcePath(project),
-        resolveProjectModules(project, getSdkDirectory()), std::move(arguments), mode
+    return ModuleHost::create(
+        project.document, project.root,
+        resolveProjectModules(project, getSdkDirectory()), std::move(arguments), mode,
+        project.configuration.project
     );
 }
 

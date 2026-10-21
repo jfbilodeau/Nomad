@@ -170,9 +170,35 @@ void scanDirectory(SourceBatch& batch, const std::filesystem::path& root,
 
 } // namespace
 
-SourceBatch loadSourcePaths(std::span<const std::filesystem::path> paths, std::span<const ScriptSource> scripts) {
+std::vector<NomadPath> getScriptPaths(const NomadConfiguration& configuration) {
+    configuration.validateSection("scripts");
+    const auto directories = configuration.getStringArray("scripts.directories");
+    if (!directories) {
+        return {"scripts"};
+    }
+    try {
+        return normalizeRelativeDirectories(*directories);
+    } catch (const NomadException& error) {
+        throw NomadConfigurationException(
+            "Configuration field 'scripts.directories' (relative to the project root) " + NomadString(error.what())
+        );
+    }
+}
+
+std::vector<NomadPath> resolveScriptPaths (
+    const NomadConfiguration& configuration,
+    const NomadPath& projectDirectory
+) {
+    auto paths = getScriptPaths(configuration);
+    for (auto& path : paths) {
+        path = (projectDirectory / path).lexically_normal();
+    }
+    return paths;
+}
+
+SourceBatch loadSourcePaths(std::span<const std::filesystem::path> paths, std::span<const ScriptSource> overrideSources) {
     SourceBatch batch;
-    auto overrides = prepareOverrides(batch, scripts);
+    auto overrides = prepareOverrides(batch, overrideSources);
     for (const auto& path : paths) {
         try {
             if (path.extension() == ".nomad" && applyOverride(batch, path, pathToUtf8(path.stem()), overrides)) {

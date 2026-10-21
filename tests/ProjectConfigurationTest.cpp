@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/game/GameConfiguration.hpp>
+
 #include <nomad/project/ProjectConfiguration.hpp>
 #include <nomad/system/Path.hpp>
 
@@ -22,13 +24,13 @@ name = "Test Game"
 identifier = "com.example.test-game"
 version = "0.1.0"
 executable = "test-game"
-entry = "start"
 
 [nomad]
 version = "0.1.0"
 modules = ["nomad-game"]
 
 [game]
+entry = "start"
 debug = true
 
 [audio]
@@ -61,6 +63,27 @@ exclude = ["**/*.psd", "development/**"]
 
 BOOST_AUTO_TEST_SUITE(project_configuration)
 
+BOOST_AUTO_TEST_CASE(project_loading_preserves_script_settings_for_the_compiler)
+{
+    const TestDirectory directory("nomad_project_preserves_scripts");
+    for (const auto& [text, booleanField] : {
+        std::pair{"scripts = false\n", "scripts"},
+        std::pair{"[scripts]\ndirectories = false\n", "scripts.directories"},
+        std::pair{"[scripts]\ndirectories = ['scripts\\nested\\..', 'mods']\n", ""}
+    }) {
+        auto document = NomadConfiguration::parse(COMPLETE_CONFIGURATION);
+        document.merge(NomadConfiguration::parse(text));
+        const auto project = loadNomadProject(directory.write(NOMAD_PROJECT_FILE_NAME, document.serialize()));
+        const auto release = NomadConfiguration::parse(serializeReleaseProject(project));
+        if (NomadStringView(booleanField).empty()) {
+            BOOST_TEST(release.requireStringArray("scripts.directories") ==
+                document.requireStringArray("scripts.directories"));
+        } else {
+            BOOST_TEST(!release.requireBoolean(booleanField));
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(requires_modules_and_accepts_explicit_module_lists)
 {
     TestDirectory directory("nomad_project_configuration_modules");
@@ -69,7 +92,7 @@ BOOST_AUTO_TEST_CASE(requires_modules_and_accepts_explicit_module_lists)
     const auto legacyFile = directory.write("missing.toml", missingModules);
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(legacyFile),
-        ProjectConfigurationException,
+        NomadConfigurationException,
         [](const auto& error) {
             return NomadString(error.what()).find("nomad.modules") != NomadString::npos;
         }
@@ -79,7 +102,7 @@ BOOST_AUTO_TEST_CASE(requires_modules_and_accepts_explicit_module_lists)
     missingModules.erase(missingModules.find("[package]"));
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(directory.write("missing-release.toml", missingModules)),
-        ProjectConfigurationException,
+        NomadConfigurationException,
         [](const auto& error) {
             return NomadString(error.what()).find("nomad.modules") != NomadString::npos;
         }
@@ -115,7 +138,7 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_module_types_names_and_duplicates)
         const auto file = directory.write("invalid.toml", text);
         BOOST_CHECK_EXCEPTION(
             (void)loadNomadProject(file),
-            ProjectConfigurationException,
+            NomadConfigurationException,
             [](const auto& error) {
                 return NomadString(error.what()).find("nomad.modules") != NomadString::npos;
             }
@@ -146,8 +169,6 @@ label = "untouched"
     const auto file = directory.write(NOMAD_PROJECT_FILE_NAME, text);
     auto project = loadNomadProject(file);
     const auto original = project.document.serialize();
-    project.gameOptions.title = "Updated Window";
-    project.gameOptions.sprites.padding = 5;
     const auto releaseText = serializeReleaseProject(project);
     const auto release = NomadConfiguration::parse(releaseText);
 
@@ -156,13 +177,13 @@ label = "untouched"
     BOOST_TEST(project.document.contains("resources"));
     BOOST_TEST(project.document.contains("package"));
     BOOST_TEST(!release.contains("project.executable"));
-    BOOST_TEST(!release.contains("resources"));
+    BOOST_TEST(release.contains("resources"));
     BOOST_TEST(!release.contains("package"));
     BOOST_TEST(release.requireString("project.custom") == "project-setting");
     BOOST_TEST(release.requireString("nomad.custom") == "sdk-setting");
     BOOST_TEST(release.requireString("window.custom") == "window-setting");
-    BOOST_TEST(release.requireString("window.title") == "Updated Window");
-    BOOST_TEST(release.requireInteger("sprites.padding") == 5);
+    BOOST_TEST(release.requireString("window.title") == "Test Window");
+    BOOST_TEST(release.requireInteger("sprites.padding") == 2);
     BOOST_TEST(release.requireBoolean("custom-module.enabled"));
     BOOST_TEST(release.requireInteger("custom-module.count") == 9);
     BOOST_TEST(release.requireStringArray("custom-module.names").size() == 2U);
@@ -188,6 +209,7 @@ BOOST_AUTO_TEST_CASE(loads_typed_project_configuration)
     const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, COMPLETE_CONFIGURATION);
 
     const auto configuration = loadNomadProject(projectFile);
+    const auto configurationOptions = readGameOptions(configuration.document);
 
     BOOST_TEST(configuration.configuration.schema == 1U);
     BOOST_TEST(
@@ -198,48 +220,43 @@ BOOST_AUTO_TEST_CASE(loads_typed_project_configuration)
     BOOST_TEST(configuration.configuration.project.identifier == "com.example.test-game");
     BOOST_TEST(configuration.configuration.project.version == "0.1.0");
     BOOST_TEST(configuration.configuration.project.executable == "test-game");
-    BOOST_TEST(configuration.gameOptions.entryFunction == "start");
+    BOOST_TEST(configurationOptions.entryFunction == "start");
     BOOST_TEST(configuration.configuration.sdk.version == NomadVersion(0, 1, 0));
-    BOOST_TEST(configuration.configuration.resources.directory == std::filesystem::path("res"));
-    BOOST_REQUIRE(configuration.gameOptions.debug.has_value());
-    BOOST_TEST(*configuration.gameOptions.debug);
-    BOOST_REQUIRE(configuration.gameOptions.title.has_value());
-    BOOST_TEST(*configuration.gameOptions.title == "Test Window");
-    BOOST_REQUIRE(configuration.gameOptions.resolution.has_value());
-    BOOST_TEST(configuration.gameOptions.resolution->getX() == 1280);
-    BOOST_TEST(configuration.gameOptions.resolution->getY() == 720);
-    BOOST_REQUIRE(configuration.gameOptions.size.has_value());
-    BOOST_TEST(configuration.gameOptions.size->getX() == 1600);
-    BOOST_TEST(configuration.gameOptions.size->getY() == 900);
-    BOOST_REQUIRE(configuration.gameOptions.fullscreen.has_value());
-    BOOST_TEST(*configuration.gameOptions.fullscreen);
-    BOOST_REQUIRE(configuration.gameOptions.splashImage.has_value());
-    BOOST_TEST(*configuration.gameOptions.splashImage == NomadPath("images/splash.png"));
-    BOOST_REQUIRE(configuration.gameOptions.audio.directories.has_value());
-    BOOST_REQUIRE(configuration.gameOptions.audio.directories->size() == 2U);
-    BOOST_TEST((*configuration.gameOptions.audio.directories)[0] == NomadPath("audio"));
-    BOOST_TEST((*configuration.gameOptions.audio.directories)[1] == NomadPath("mod/audio"));
-    BOOST_REQUIRE(configuration.gameOptions.text.directories.has_value());
-    BOOST_REQUIRE(configuration.gameOptions.text.directories->size() == 2U);
-    BOOST_TEST((*configuration.gameOptions.text.directories)[0] == NomadPath("text/text.csv"));
-    BOOST_TEST((*configuration.gameOptions.text.directories)[1] == NomadPath("text/expansion.csv"));
-    BOOST_REQUIRE(configuration.gameOptions.sprites.directories.has_value());
-    BOOST_REQUIRE(configuration.gameOptions.sprites.directories->size() == 2U);
-    BOOST_TEST((*configuration.gameOptions.sprites.directories)[0] == NomadPath("sprites"));
-    BOOST_TEST((*configuration.gameOptions.sprites.directories)[1] == NomadPath("mod/sprites"));
-    BOOST_REQUIRE(configuration.gameOptions.sprites.maxTextureSize.has_value());
-    BOOST_TEST(*configuration.gameOptions.sprites.maxTextureSize == 1024);
-    BOOST_REQUIRE(configuration.gameOptions.sprites.padding.has_value());
-    BOOST_TEST(*configuration.gameOptions.sprites.padding == 2);
+    BOOST_REQUIRE(configurationOptions.debug.has_value());
+    BOOST_TEST(*configurationOptions.debug);
+    BOOST_REQUIRE(configurationOptions.title.has_value());
+    BOOST_TEST(*configurationOptions.title == "Test Window");
+    BOOST_REQUIRE(configurationOptions.resolution.has_value());
+    BOOST_TEST(configurationOptions.resolution->getX() == 1280);
+    BOOST_TEST(configurationOptions.resolution->getY() == 720);
+    BOOST_REQUIRE(configurationOptions.size.has_value());
+    BOOST_TEST(configurationOptions.size->getX() == 1600);
+    BOOST_TEST(configurationOptions.size->getY() == 900);
+    BOOST_REQUIRE(configurationOptions.fullscreen.has_value());
+    BOOST_TEST(*configurationOptions.fullscreen);
+    BOOST_REQUIRE(configurationOptions.splashImage.has_value());
+    BOOST_TEST(*configurationOptions.splashImage == NomadPath("images/splash.png"));
+    BOOST_REQUIRE(configurationOptions.audio.directories.has_value());
+    BOOST_REQUIRE(configurationOptions.audio.directories->size() == 2U);
+    BOOST_TEST((*configurationOptions.audio.directories)[0] == NomadPath("audio"));
+    BOOST_TEST((*configurationOptions.audio.directories)[1] == NomadPath("mod/audio"));
+    BOOST_REQUIRE(configurationOptions.text.directories.has_value());
+    BOOST_REQUIRE(configurationOptions.text.directories->size() == 2U);
+    BOOST_TEST((*configurationOptions.text.directories)[0] == NomadPath("text/text.csv"));
+    BOOST_TEST((*configurationOptions.text.directories)[1] == NomadPath("text/expansion.csv"));
+    BOOST_REQUIRE(configurationOptions.sprites.directories.has_value());
+    BOOST_REQUIRE(configurationOptions.sprites.directories->size() == 2U);
+    BOOST_TEST((*configurationOptions.sprites.directories)[0] == NomadPath("sprites"));
+    BOOST_TEST((*configurationOptions.sprites.directories)[1] == NomadPath("mod/sprites"));
+    BOOST_REQUIRE(configurationOptions.sprites.maxTextureSize.has_value());
+    BOOST_TEST(*configurationOptions.sprites.maxTextureSize == 1024);
+    BOOST_REQUIRE(configurationOptions.sprites.padding.has_value());
+    BOOST_TEST(*configurationOptions.sprites.padding == 2);
     BOOST_TEST(configuration.configuration.package.output == std::filesystem::path("dist"));
     BOOST_REQUIRE(configuration.configuration.package.exclude.size() == 2U);
     BOOST_TEST(configuration.configuration.package.exclude[0] == "**/*.psd");
     BOOST_TEST(configuration.configuration.package.exclude[1] == "development/**");
     BOOST_TEST(configuration.root == std::filesystem::absolute(directory.getPath()));
-    BOOST_TEST(
-        resolveProjectResourcePath(configuration) ==
-        (std::filesystem::absolute(directory.getPath()) / "res").lexically_normal()
-    );
 }
 
 BOOST_AUTO_TEST_CASE(loads_and_serializes_release_configuration)
@@ -247,11 +264,12 @@ BOOST_AUTO_TEST_CASE(loads_and_serializes_release_configuration)
     TestDirectory directory("nomad_release_project_configuration");
     const auto developmentFile = directory.write(NOMAD_PROJECT_FILE_NAME, COMPLETE_CONFIGURATION);
     const auto development = loadNomadProject(developmentFile);
+    const auto developmentOptions = readGameOptions(development.document);
     const auto releaseText = serializeReleaseProject(development);
     const auto releaseFile = directory.write("release/nomad.toml", releaseText);
 
     BOOST_TEST(releaseText.find("executable") == NomadString::npos);
-    BOOST_TEST(releaseText.find("[resources]") == NomadString::npos);
+    BOOST_TEST(releaseText.find("[resources]") != NomadString::npos);
     BOOST_TEST(releaseText.find("[package]") == NomadString::npos);
     BOOST_TEST(releaseText.find("[window]") != NomadString::npos);
     BOOST_TEST(releaseText.find("[audio]") != NomadString::npos);
@@ -259,6 +277,7 @@ BOOST_AUTO_TEST_CASE(loads_and_serializes_release_configuration)
     BOOST_TEST(releaseText.find("[sprites]") != NomadString::npos);
 
     const auto release = loadNomadProject(releaseFile);
+    const auto releaseOptions = readGameOptions(release.document);
     BOOST_TEST(
         static_cast<int>(release.configuration.type) ==
         static_cast<int>(ProjectConfigurationType::Release)
@@ -266,73 +285,72 @@ BOOST_AUTO_TEST_CASE(loads_and_serializes_release_configuration)
     BOOST_TEST(release.configuration.project.name == development.configuration.project.name);
     BOOST_TEST(release.configuration.project.identifier == development.configuration.project.identifier);
     BOOST_TEST(release.configuration.project.version == development.configuration.project.version);
-    BOOST_TEST(release.gameOptions.entryFunction == development.gameOptions.entryFunction);
+    BOOST_TEST(releaseOptions.entryFunction == developmentOptions.entryFunction);
     BOOST_TEST(release.configuration.project.executable.empty());
     BOOST_TEST(release.configuration.sdk.version == development.configuration.sdk.version);
-    BOOST_TEST(release.configuration.resources.directory == NomadPath("res"));
-    BOOST_REQUIRE(release.gameOptions.debug.has_value());
-    BOOST_REQUIRE(development.gameOptions.debug.has_value());
-    BOOST_TEST(*release.gameOptions.debug == *development.gameOptions.debug);
-    BOOST_REQUIRE(release.gameOptions.title.has_value());
-    BOOST_REQUIRE(development.gameOptions.title.has_value());
-    BOOST_TEST(*release.gameOptions.title == *development.gameOptions.title);
-    BOOST_REQUIRE(release.gameOptions.resolution.has_value());
-    BOOST_REQUIRE(development.gameOptions.resolution.has_value());
-    BOOST_TEST(release.gameOptions.resolution->getX() == development.gameOptions.resolution->getX());
-    BOOST_TEST(release.gameOptions.resolution->getY() == development.gameOptions.resolution->getY());
-    BOOST_REQUIRE(release.gameOptions.size.has_value());
-    BOOST_REQUIRE(development.gameOptions.size.has_value());
-    BOOST_TEST(release.gameOptions.size->getX() == development.gameOptions.size->getX());
-    BOOST_TEST(release.gameOptions.size->getY() == development.gameOptions.size->getY());
-    BOOST_REQUIRE(release.gameOptions.fullscreen.has_value());
-    BOOST_REQUIRE(development.gameOptions.fullscreen.has_value());
-    BOOST_TEST(*release.gameOptions.fullscreen == *development.gameOptions.fullscreen);
-    BOOST_REQUIRE(release.gameOptions.splashImage.has_value());
-    BOOST_REQUIRE(development.gameOptions.splashImage.has_value());
-    BOOST_TEST(*release.gameOptions.splashImage == *development.gameOptions.splashImage);
-    BOOST_REQUIRE(release.gameOptions.audio.directories.has_value());
-    BOOST_REQUIRE(development.gameOptions.audio.directories.has_value());
+    BOOST_REQUIRE(releaseOptions.debug.has_value());
+    BOOST_REQUIRE(developmentOptions.debug.has_value());
+    BOOST_TEST(*releaseOptions.debug == *developmentOptions.debug);
+    BOOST_REQUIRE(releaseOptions.title.has_value());
+    BOOST_REQUIRE(developmentOptions.title.has_value());
+    BOOST_TEST(*releaseOptions.title == *developmentOptions.title);
+    BOOST_REQUIRE(releaseOptions.resolution.has_value());
+    BOOST_REQUIRE(developmentOptions.resolution.has_value());
+    BOOST_TEST(releaseOptions.resolution->getX() == developmentOptions.resolution->getX());
+    BOOST_TEST(releaseOptions.resolution->getY() == developmentOptions.resolution->getY());
+    BOOST_REQUIRE(releaseOptions.size.has_value());
+    BOOST_REQUIRE(developmentOptions.size.has_value());
+    BOOST_TEST(releaseOptions.size->getX() == developmentOptions.size->getX());
+    BOOST_TEST(releaseOptions.size->getY() == developmentOptions.size->getY());
+    BOOST_REQUIRE(releaseOptions.fullscreen.has_value());
+    BOOST_REQUIRE(developmentOptions.fullscreen.has_value());
+    BOOST_TEST(*releaseOptions.fullscreen == *developmentOptions.fullscreen);
+    BOOST_REQUIRE(releaseOptions.splashImage.has_value());
+    BOOST_REQUIRE(developmentOptions.splashImage.has_value());
+    BOOST_TEST(*releaseOptions.splashImage == *developmentOptions.splashImage);
+    BOOST_REQUIRE(releaseOptions.audio.directories.has_value());
+    BOOST_REQUIRE(developmentOptions.audio.directories.has_value());
     BOOST_REQUIRE(
-        release.gameOptions.audio.directories->size() ==
-        development.gameOptions.audio.directories->size()
+        releaseOptions.audio.directories->size() ==
+        developmentOptions.audio.directories->size()
     );
     BOOST_TEST(
-        (*release.gameOptions.audio.directories)[0] ==
-        (*development.gameOptions.audio.directories)[0]
+        (*releaseOptions.audio.directories)[0] ==
+        (*developmentOptions.audio.directories)[0]
     );
     BOOST_TEST(
-        (*release.gameOptions.audio.directories)[1] ==
-        (*development.gameOptions.audio.directories)[1]
+        (*releaseOptions.audio.directories)[1] ==
+        (*developmentOptions.audio.directories)[1]
     );
-    BOOST_REQUIRE(release.gameOptions.text.directories.has_value());
-    BOOST_REQUIRE(development.gameOptions.text.directories.has_value());
+    BOOST_REQUIRE(releaseOptions.text.directories.has_value());
+    BOOST_REQUIRE(developmentOptions.text.directories.has_value());
     BOOST_TEST(
-        *release.gameOptions.text.directories ==
-        *development.gameOptions.text.directories
+        *releaseOptions.text.directories ==
+        *developmentOptions.text.directories
     );
-    BOOST_REQUIRE(release.gameOptions.sprites.directories.has_value());
-    BOOST_REQUIRE(development.gameOptions.sprites.directories.has_value());
+    BOOST_REQUIRE(releaseOptions.sprites.directories.has_value());
+    BOOST_REQUIRE(developmentOptions.sprites.directories.has_value());
     BOOST_REQUIRE(
-        release.gameOptions.sprites.directories->size() ==
-        development.gameOptions.sprites.directories->size()
+        releaseOptions.sprites.directories->size() ==
+        developmentOptions.sprites.directories->size()
     );
     BOOST_TEST(
-        (*release.gameOptions.sprites.directories)[0] ==
-        (*development.gameOptions.sprites.directories)[0]
+        (*releaseOptions.sprites.directories)[0] ==
+        (*developmentOptions.sprites.directories)[0]
     );
     BOOST_TEST(
-        (*release.gameOptions.sprites.directories)[1] ==
-        (*development.gameOptions.sprites.directories)[1]
+        (*releaseOptions.sprites.directories)[1] ==
+        (*developmentOptions.sprites.directories)[1]
     );
-    BOOST_REQUIRE(release.gameOptions.sprites.maxTextureSize.has_value());
-    BOOST_REQUIRE(development.gameOptions.sprites.maxTextureSize.has_value());
+    BOOST_REQUIRE(releaseOptions.sprites.maxTextureSize.has_value());
+    BOOST_REQUIRE(developmentOptions.sprites.maxTextureSize.has_value());
     BOOST_TEST(
-        *release.gameOptions.sprites.maxTextureSize ==
-        *development.gameOptions.sprites.maxTextureSize
+        *releaseOptions.sprites.maxTextureSize ==
+        *developmentOptions.sprites.maxTextureSize
     );
-    BOOST_REQUIRE(release.gameOptions.sprites.padding.has_value());
-    BOOST_REQUIRE(development.gameOptions.sprites.padding.has_value());
-    BOOST_TEST(*release.gameOptions.sprites.padding == *development.gameOptions.sprites.padding);
+    BOOST_REQUIRE(releaseOptions.sprites.padding.has_value());
+    BOOST_REQUIRE(developmentOptions.sprites.padding.has_value());
+    BOOST_TEST(*releaseOptions.sprites.padding == *developmentOptions.sprites.padding);
     BOOST_TEST(release.configuration.package.output.empty());
     BOOST_TEST(release.configuration.package.exclude.empty());
 }
@@ -347,20 +365,22 @@ BOOST_AUTO_TEST_CASE(defaults_and_disables_sprite_directories)
     const auto defaultFile = directory.write("default.toml", defaultText);
 
     const auto defaults = loadNomadProject(defaultFile);
-    BOOST_TEST(!defaults.gameOptions.sprites.directories.has_value());
-    BOOST_TEST(!defaults.gameOptions.sprites.maxTextureSize.has_value());
-    BOOST_TEST(!defaults.gameOptions.sprites.padding.has_value());
+    const auto defaultsOptions = readGameOptions(defaults.document);
+    BOOST_TEST(!defaultsOptions.sprites.directories.has_value());
+    BOOST_TEST(!defaultsOptions.sprites.maxTextureSize.has_value());
+    BOOST_TEST(!defaultsOptions.sprites.padding.has_value());
     BOOST_TEST(serializeReleaseProject(defaults).find("[sprites]") == NomadString::npos);
 
     auto disabledText = defaultText;
     disabledText += "\n[sprites]\ndirectories = []\n";
     const auto disabledFile = directory.write("disabled.toml", disabledText);
     const auto disabled = loadNomadProject(disabledFile);
+    const auto disabledOptions = readGameOptions(disabled.document);
 
-    BOOST_REQUIRE(disabled.gameOptions.sprites.directories.has_value());
-    BOOST_TEST(disabled.gameOptions.sprites.directories->empty());
-    BOOST_TEST(!disabled.gameOptions.sprites.maxTextureSize.has_value());
-    BOOST_TEST(!disabled.gameOptions.sprites.padding.has_value());
+    BOOST_REQUIRE(disabledOptions.sprites.directories.has_value());
+    BOOST_TEST(disabledOptions.sprites.directories->empty());
+    BOOST_TEST(!disabledOptions.sprites.maxTextureSize.has_value());
+    BOOST_TEST(!disabledOptions.sprites.padding.has_value());
     BOOST_TEST(serializeReleaseProject(disabled).find("directories = []") != NomadString::npos);
 }
 
@@ -374,73 +394,20 @@ BOOST_AUTO_TEST_CASE(defaults_and_disables_audio_directories)
     const auto defaultFile = directory.write("default.toml", defaultText);
 
     const auto defaults = loadNomadProject(defaultFile);
-    BOOST_TEST(!defaults.gameOptions.audio.directories.has_value());
+    const auto defaultsOptions = readGameOptions(defaults.document);
+    BOOST_TEST(!defaultsOptions.audio.directories.has_value());
     BOOST_TEST(serializeReleaseProject(defaults).find("[audio]") == NomadString::npos);
 
     auto disabledText = defaultText;
     disabledText += "\n[audio]\ndirectories = []\n";
     const auto disabledFile = directory.write("disabled.toml", disabledText);
     const auto disabled = loadNomadProject(disabledFile);
+    const auto disabledOptions = readGameOptions(disabled.document);
 
-    BOOST_REQUIRE(disabled.gameOptions.audio.directories.has_value());
-    BOOST_TEST(disabled.gameOptions.audio.directories->empty());
+    BOOST_REQUIRE(disabledOptions.audio.directories.has_value());
+    BOOST_TEST(disabledOptions.audio.directories->empty());
     BOOST_TEST(serializeReleaseProject(disabled).find("[audio]") != NomadString::npos);
     BOOST_TEST(serializeReleaseProject(disabled).find("directories = []") != NomadString::npos);
-}
-
-BOOST_AUTO_TEST_CASE(normalizes_audio_directories)
-{
-    TestDirectory directory("nomad_project_configuration_audio_normalization");
-    auto configurationText = std::string(COMPLETE_CONFIGURATION);
-    const auto originalDirectories = std::string("directories = [\"audio\", \"mod/audio\"]");
-    configurationText.replace(
-        configurationText.find(originalDirectories),
-        originalDirectories.size(),
-        "directories = [\"audio/effects/..\", \"mod\\\\audio\"]"
-    );
-    const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText);
-
-    const auto configuration = loadNomadProject(projectFile);
-
-    BOOST_REQUIRE(configuration.gameOptions.audio.directories.has_value());
-    BOOST_REQUIRE(configuration.gameOptions.audio.directories->size() == 2U);
-    BOOST_TEST((*configuration.gameOptions.audio.directories)[0] == NomadPath("audio"));
-    BOOST_TEST((*configuration.gameOptions.audio.directories)[1] == NomadPath("mod/audio"));
-}
-
-BOOST_AUTO_TEST_CASE(rejects_invalid_audio_directories)
-{
-    TestDirectory directory("nomad_project_configuration_audio_validation");
-
-    const auto originalDirectories = std::string("[\"audio\", \"mod/audio\"]");
-    NomadIndex caseIndex = 0;
-
-    for (const auto& directories : {
-        "false",
-        "[\"audio\", 42]",
-        "[\"\"]",
-        "[\".\"]",
-        "[\"../audio\"]",
-        "[\"audio\", \"audio/../audio\"]",
-        "[\"audio\", \"audio/effects\"]",
-        "[\"Audio\", \"audio\"]"
-    }) {
-        auto configurationText = std::string(COMPLETE_CONFIGURATION);
-        const auto value = configurationText.find(originalDirectories);
-        configurationText.replace(value, originalDirectories.size(), directories);
-        const auto projectFile = directory.write(
-            "invalid-audio-" + std::to_string(caseIndex++) + ".toml",
-            configurationText
-        );
-
-        BOOST_CHECK_EXCEPTION(
-            (void)loadNomadProject(projectFile),
-            ProjectConfigurationException,
-            [](const ProjectConfigurationException& error) {
-                return NomadString(error.what()).find("audio.directories") != NomadString::npos;
-            }
-        );
-    }
 }
 
 BOOST_AUTO_TEST_CASE(parses_and_serializes_independent_sprite_packing_settings)
@@ -457,68 +424,17 @@ BOOST_AUTO_TEST_CASE(parses_and_serializes_independent_sprite_packing_settings)
     const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText);
 
     const auto configuration = loadNomadProject(projectFile);
-    BOOST_TEST(!configuration.gameOptions.sprites.directories.has_value());
-    BOOST_REQUIRE(configuration.gameOptions.sprites.maxTextureSize.has_value());
-    BOOST_TEST(*configuration.gameOptions.sprites.maxTextureSize == 4096);
-    BOOST_REQUIRE(configuration.gameOptions.sprites.padding.has_value());
-    BOOST_TEST(*configuration.gameOptions.sprites.padding == 0);
+    const auto configurationOptions = readGameOptions(configuration.document);
+    BOOST_TEST(!configurationOptions.sprites.directories.has_value());
+    BOOST_REQUIRE(configurationOptions.sprites.maxTextureSize.has_value());
+    BOOST_TEST(*configurationOptions.sprites.maxTextureSize == 4096);
+    BOOST_REQUIRE(configurationOptions.sprites.padding.has_value());
+    BOOST_TEST(*configurationOptions.sprites.padding == 0);
 
     const auto releaseText = serializeReleaseProject(configuration);
     BOOST_TEST(releaseText.find("[sprites]\ndirectories") == NomadString::npos);
     BOOST_TEST(releaseText.find("max-texture-size = 4096") != NomadString::npos);
     BOOST_TEST(releaseText.find("padding = 0") != NomadString::npos);
-}
-
-BOOST_AUTO_TEST_CASE(normalizes_sprite_directories)
-{
-    TestDirectory directory("nomad_project_configuration_sprite_normalization");
-    auto configurationText = std::string(COMPLETE_CONFIGURATION);
-    const auto originalDirectories = std::string("directories = [\"sprites\", \"mod/sprites\"]");
-    configurationText.replace(
-        configurationText.find(originalDirectories),
-        originalDirectories.size(),
-        "directories = [\"sprites/characters/..\", \"mod\\\\sprites\"]"
-    );
-    const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText);
-
-    const auto configuration = loadNomadProject(projectFile);
-
-    BOOST_REQUIRE(configuration.gameOptions.sprites.directories.has_value());
-    BOOST_REQUIRE(configuration.gameOptions.sprites.directories->size() == 2U);
-    BOOST_TEST((*configuration.gameOptions.sprites.directories)[0] == NomadPath("sprites"));
-    BOOST_TEST((*configuration.gameOptions.sprites.directories)[1] == NomadPath("mod/sprites"));
-}
-
-BOOST_AUTO_TEST_CASE(rejects_invalid_sprite_directories)
-{
-    TestDirectory directory("nomad_project_configuration_sprite_validation");
-
-    const auto originalDirectories = std::string("[\"sprites\", \"mod/sprites\"]");
-    NomadIndex caseIndex = 0;
-
-    for (const auto& directories : {
-        "false",
-        "[\"sprites\", 42]",
-        "[\"\"]",
-        "[\".\"]",
-        "[\"../sprites\"]",
-        "[\"sprites\", \"sprites/../sprites\"]",
-        "[\"sprites\", \"sprites/ui\"]",
-        "[\"Sprites\", \"sprites\"]"
-    }) {
-        auto configurationText = std::string(COMPLETE_CONFIGURATION);
-        const auto value = configurationText.find(originalDirectories);
-        configurationText.replace(value, originalDirectories.size(), directories);
-        const auto projectFile = directory.write("invalid-" + std::to_string(caseIndex++) + ".toml", configurationText);
-
-        BOOST_CHECK_EXCEPTION(
-            (void)loadNomadProject(projectFile),
-            ProjectConfigurationException,
-            [](const ProjectConfigurationException& error) {
-                return NomadString(error.what()).find("sprites.directories") != NomadString::npos;
-            }
-        );
-    }
 }
 
 BOOST_AUTO_TEST_CASE(rejects_partial_development_configuration)
@@ -531,8 +447,8 @@ BOOST_AUTO_TEST_CASE(rejects_partial_development_configuration)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(projectFile),
-        ProjectConfigurationException,
-        [](const ProjectConfigurationException& error) {
+        NomadConfigurationException,
+        [](const NomadConfigurationException& error) {
             return NomadString(error.what()).find("requires 'project.executable'") != NomadString::npos;
         }
     );
@@ -550,16 +466,13 @@ BOOST_AUTO_TEST_CASE(defaults_optional_development_fields)
         "\n[resources]\ndirectory = \"assets\"\n[package]\noutput = \"packages\"\n"}) {
         const auto file = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText + tables);
         const auto configuration = loadNomadProject(file);
+        const auto configurationOptions = readGameOptions(configuration.document);
         BOOST_TEST(
             static_cast<int>(configuration.configuration.type) ==
             static_cast<int>(ProjectConfigurationType::Development)
         );
-        BOOST_TEST(configuration.gameOptions.entryFunction == "main");
+        BOOST_TEST(configurationOptions.entryFunction == "main");
         const auto overrides = std::string(tables).find("assets") != std::string::npos;
-        BOOST_TEST(
-            configuration.configuration.resources.directory ==
-            NomadPath(overrides ? "assets" : "res")
-        );
         BOOST_TEST(
             configuration.configuration.package.output ==
             NomadPath(overrides ? "packages" : "dist")
@@ -581,12 +494,13 @@ BOOST_AUTO_TEST_CASE(defaults_window_configuration)
     const auto file = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText);
 
     const auto configuration = loadNomadProject(file);
+    const auto configurationOptions = readGameOptions(configuration.document);
 
-    BOOST_TEST(!configuration.gameOptions.title.has_value());
-    BOOST_TEST(!configuration.gameOptions.resolution.has_value());
-    BOOST_TEST(!configuration.gameOptions.size.has_value());
-    BOOST_TEST(!configuration.gameOptions.fullscreen.has_value());
-    BOOST_TEST(!configuration.gameOptions.splashImage.has_value());
+    BOOST_TEST(!configurationOptions.title.has_value());
+    BOOST_TEST(!configurationOptions.resolution.has_value());
+    BOOST_TEST(!configurationOptions.size.has_value());
+    BOOST_TEST(!configurationOptions.fullscreen.has_value());
+    BOOST_TEST(!configurationOptions.splashImage.has_value());
     BOOST_TEST(serializeReleaseProject(configuration).find("[window]") == NomadString::npos);
 }
 
@@ -600,8 +514,9 @@ BOOST_AUTO_TEST_CASE(leaves_debug_unconfigured_when_game_table_is_omitted)
     const auto file = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText);
 
     const auto configuration = loadNomadProject(file);
+    const auto configurationOptions = readGameOptions(configuration.document);
 
-    BOOST_TEST(!configuration.gameOptions.debug.has_value());
+    BOOST_TEST(!configurationOptions.debug.has_value());
     BOOST_TEST(serializeReleaseProject(configuration).find("[game]") == NomadString::npos);
 }
 
@@ -616,11 +531,12 @@ BOOST_AUTO_TEST_CASE(leaves_window_size_unconfigured_when_omitted)
     const auto file = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText);
 
     const auto configuration = loadNomadProject(file);
+    const auto configurationOptions = readGameOptions(configuration.document);
 
-    BOOST_REQUIRE(configuration.gameOptions.resolution.has_value());
-    BOOST_TEST(configuration.gameOptions.resolution->getX() == 1280);
-    BOOST_TEST(configuration.gameOptions.resolution->getY() == 720);
-    BOOST_TEST(!configuration.gameOptions.size.has_value());
+    BOOST_REQUIRE(configurationOptions.resolution.has_value());
+    BOOST_TEST(configurationOptions.resolution->getX() == 1280);
+    BOOST_TEST(configurationOptions.resolution->getY() == 720);
+    BOOST_TEST(!configurationOptions.size.has_value());
 }
 
 BOOST_AUTO_TEST_CASE(rejects_invalid_optional_fields_instead_of_defaulting)
@@ -652,7 +568,7 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_optional_fields_instead_of_defaulting)
         text.replace(text.find(replacement.first), std::string(replacement.first).size(), replacement.second);
         const auto file = directory.write(NOMAD_PROJECT_FILE_NAME, text);
         BOOST_TEST_CONTEXT("replacement: " << replacement.first << " -> " << replacement.second) {
-            BOOST_CHECK_THROW((void)loadNomadProject(file), ProjectConfigurationException);
+            BOOST_CHECK_THROW((void)readGameOptions(loadNomadProject(file).document), NomadException);
         }
     }
 }
@@ -665,10 +581,31 @@ BOOST_AUTO_TEST_CASE(defaults_the_entry_function_to_main)
     const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, configurationText);
 
     const auto configuration = loadNomadProject(projectFile);
+    const auto configurationOptions = readGameOptions(configuration.document);
 
-    BOOST_TEST(configuration.gameOptions.entryFunction == "main");
+    BOOST_TEST(configurationOptions.entryFunction == "main");
     const auto releaseFile = directory.write("release.toml", serializeReleaseProject(configuration));
-    BOOST_TEST(loadNomadProject(releaseFile).gameOptions.entryFunction == "main");
+    BOOST_TEST(readGameOptions(loadNomadProject(releaseFile).document).entryFunction == "main");
+}
+
+BOOST_AUTO_TEST_CASE(rejects_the_former_project_entry_field_with_a_migration_message)
+{
+    TestDirectory directory("nomad_project_configuration_former_entry");
+    auto configuration = NomadConfiguration::parse(COMPLETE_CONFIGURATION);
+    configuration.setString("project.entry", "start");
+    const auto file = directory.write(NOMAD_PROJECT_FILE_NAME, configuration.serialize());
+    BOOST_CHECK_EXCEPTION((void)loadNomadProject(file), NomadConfigurationException, [](const auto& error) {
+        return NomadString(error.what()).find("has moved to 'game.entry'") != NomadString::npos;
+    });
+}
+
+BOOST_AUTO_TEST_CASE(release_configuration_uses_game_entry_only)
+{
+    TestDirectory directory("nomad_project_configuration_game_entry");
+    const auto project = loadNomadProject(directory.write(NOMAD_PROJECT_FILE_NAME, COMPLETE_CONFIGURATION));
+    const auto release = NomadConfiguration::parse(serializeReleaseProject(project));
+    BOOST_TEST(release.requireString("game.entry") == "start");
+    BOOST_TEST(!release.contains("project.entry"));
 }
 
 BOOST_AUTO_TEST_CASE(discovers_the_project_from_a_nested_path)
@@ -694,8 +631,8 @@ BOOST_AUTO_TEST_CASE(reports_invalid_schema_and_required_fields)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(unsupportedFile),
-        ProjectConfigurationException,
-        [](const ProjectConfigurationException& error) {
+        NomadConfigurationException,
+        [](const NomadConfigurationException& error) {
             return std::string(error.what()).find("Unsupported project schema 2") != std::string::npos;
         }
     );
@@ -706,8 +643,8 @@ BOOST_AUTO_TEST_CASE(reports_invalid_schema_and_required_fields)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(missingNameFile),
-        ProjectConfigurationException,
-        [](const ProjectConfigurationException& error) {
+        NomadConfigurationException,
+        [](const NomadConfigurationException& error) {
             return std::string(error.what()).find("project.name") != std::string::npos;
         }
     );
@@ -726,8 +663,8 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_nomad_versions)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(projectFile),
-        ProjectConfigurationException,
-        [](const ProjectConfigurationException& error) {
+        NomadConfigurationException,
+        [](const NomadConfigurationException& error) {
             return std::string(error.what()).find("nomad.version") != std::string::npos;
         }
     );
@@ -743,8 +680,8 @@ BOOST_AUTO_TEST_CASE(validates_nomad_version_compatibility)
     );
     BOOST_CHECK_EXCEPTION(
         validateNomadVersionCompatibility(NomadVersion(1, 3, 0), NomadVersion(1, 2, 3)),
-        ProjectConfigurationException,
-        [](const ProjectConfigurationException& error) {
+        NomadConfigurationException,
+        [](const NomadConfigurationException& error) {
             const auto message = std::string(error.what());
             return
                 message.find("requires Nomad 1.3.0") != std::string::npos &&
@@ -766,8 +703,8 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_executable_names_and_exclusions)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(executableFile),
-        ProjectConfigurationException,
-        [](const ProjectConfigurationException& error) {
+        NomadConfigurationException,
+        [](const NomadConfigurationException& error) {
             return std::string(error.what()).find("extensionless file name") != std::string::npos;
         }
     );
@@ -782,8 +719,8 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_executable_names_and_exclusions)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(exclusionsFile),
-        ProjectConfigurationException,
-        [](const ProjectConfigurationException& error) {
+        NomadConfigurationException,
+        [](const NomadConfigurationException& error) {
             return std::string(error.what()).find("package.exclude") != std::string::npos;
         }
     );
@@ -796,8 +733,8 @@ BOOST_AUTO_TEST_CASE(reports_parse_locations_and_missing_projects)
 
     BOOST_CHECK_EXCEPTION(
         (void)loadNomadProject(malformed),
-        ProjectConfigurationException,
-        [](const ProjectConfigurationException& error) {
+        NomadConfigurationException,
+        [](const NomadConfigurationException& error) {
             const auto message = std::string(error.what());
             return message.find("Failed to parse project configuration at 1:") != std::string::npos;
         }
@@ -807,7 +744,7 @@ BOOST_AUTO_TEST_CASE(reports_parse_locations_and_missing_projects)
     BOOST_TEST(!findProjectRoot(missingDirectory.getPath()).has_value());
     BOOST_CHECK_THROW(
         (void)discoverNomadProject(missingDirectory.getPath()),
-        ProjectConfigurationException
+        NomadConfigurationException
     );
 }
 

@@ -81,14 +81,16 @@ in manifest order, and initializes dependencies before their dependents.
 Shared dependencies are initialized once. Missing modules, invalid manifests,
 and dependency cycles are errors.
 
-All modules register their script features before compilation. The configured
-`project.entry` function, or `main` by default, executes after successful
-compilation and resource preparation. It must take no arguments and return
-`void`.
+All modules register their script features before compilation. After successful
+compilation and resource preparation, the host executes the generated `$init`
+function before invoking the runnable module. Initialization failure or a
+shutdown request during initialization prevents the run callback.
 
-A game module runs the application's main-thread event loop. Only one
-configured module may provide that loop. Without an event-loop provider, the
-application finishes after its entry function returns.
+Exactly one configured module must provide a run callback to run an application.
+Each runnable module owns its entry convention. The game module executes
+`game.entry` (default `main`), which must take no arguments and return `void`,
+then runs its main-thread event loop. API-only modules such as `nomad-system`
+do not provide a runnable entry.
 
 `system.exit` requests orderly shutdown after the current script invocation.
 Modules stop their background work before the application releases them.

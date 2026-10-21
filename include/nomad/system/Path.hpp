@@ -4,7 +4,14 @@
 
 #include <nomad/Nomad.hpp>
 
+#include <span>
+#include <vector>
+
 namespace nomad {
+
+[[nodiscard]] std::vector<NomadPath> normalizeRelativeDirectories(
+    std::span<const NomadString> directories
+);
 
 [[nodiscard]] inline NomadPath pathFromUtf8(const NomadStringView path) {
     std::u8string encoded;

@@ -2,7 +2,7 @@
 
 #include <nomad/game/GameResourceCheck.hpp>
 
-#include <nomad/project/ProjectConfiguration.hpp>
+#include <nomad/game/GameConfiguration.hpp>
 
 #include <nomad/game/resource/SpritePacker.hpp>
 
@@ -20,7 +20,7 @@ NomadString checkGameResources(const ModuleContext& context) {
 
     const auto directories = sprites.directories.value_or(std::vector<NomadPath>{"sprites"});
     const auto report = analyzeSpritePacking(
-        context.resourceDirectory,
+        resolveGameResourcePath(*context.configuration, context.projectDirectory),
         directories,
         sprites.directories.has_value(),
         sprites.maxTextureSize.value_or(2048),

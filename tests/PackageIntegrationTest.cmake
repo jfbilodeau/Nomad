@@ -196,13 +196,17 @@ reject_path("${PACKAGE_DIR}/res/sprite.aseprite" "Excluded Aseprite resource")
 
 file(READ "${PACKAGE_DIR}/nomad.toml" RELEASE_MANIFEST)
 
-foreach(DEVELOPMENT_FIELD IN ITEMS "executable" "[resources]" "[package]")
+foreach(DEVELOPMENT_FIELD IN ITEMS "executable" "[package]")
     string(FIND "${RELEASE_MANIFEST}" "${DEVELOPMENT_FIELD}" FIELD_POSITION)
 
     if(NOT FIELD_POSITION EQUAL -1)
         message(FATAL_ERROR "Release manifest contains development field: ${DEVELOPMENT_FIELD}")
     endif()
 endforeach()
+
+if(NOT RELEASE_MANIFEST MATCHES "\\[resources\\][ \t\r\n]+directory = ['\"]res['\"]")
+    message(FATAL_ERROR "Release game configuration must point resources.directory to res")
+endif()
 
 run_success(
     "Release package validation"

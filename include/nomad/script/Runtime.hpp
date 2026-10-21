@@ -17,6 +17,7 @@
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
 #include <nomad/script/FunctionResolution.hpp>
+#include <nomad/script/Hub.hpp>
 #include <nomad/script/IteratorObject.hpp>
 #include <nomad/script/Member.hpp>
 #include <nomad/script/NativeCallable.hpp>
@@ -94,7 +95,7 @@ private:
         NomadId id;
         NomadString name;
         NomadString prefix;
-        std::unique_ptr<VariableContext> context;
+        std::shared_ptr<VariableContext> context;
     };
 
 public:
@@ -112,11 +113,13 @@ public:
 
     [[nodiscard]] bool registerHub(const NomadString& name);
     [[nodiscard]] bool isHub(const NomadString& name) const;
+    [[nodiscard]] NomadId getHubId(const NomadString& name) const;
+    [[nodiscard]] const Hub* getHub(NomadId id) const;
     [[nodiscard]] NomadString getContainingHub(const NomadString& name) const;
     [[nodiscard]] NomadId registerHubVariable(const NomadString& name);
     [[nodiscard]] bool isHubVariable(const NomadString& name) const;
-    void registerHubInitializer(NomadId functionId);
-    void initializeHubs();
+    void setScriptInitializer(NomadId functionId);
+    void initializeScripts();
 
     // Types
     using ParameterizedTypeFactory = std::function<std::unique_ptr<Type>(const std::vector<const Type*>&)>;
@@ -552,14 +555,23 @@ private:
     std::vector<NativeMemberRegistration> m_nativeMembers;
     std::unordered_map<const Type*, IterableDefinition> m_iterableTypes;
     std::vector<NativePropertyDefinition> m_nativeProperties;
-    std::unordered_set<NomadString> m_hubs;
-    std::unordered_set<NomadString> m_hubVariables;
-    mutable std::unordered_set<NomadString> m_uninitializedHubVariables;
-    NomadId m_hubVariableContextId = NOMAD_INVALID_ID;
-    std::vector<NomadId> m_hubInitializers;
-    bool m_initializingHubs = false;
-    bool m_initializedHubs = false;
-    NomadString m_hubInitializationError;
+    std::vector<std::unique_ptr<Hub>> m_hubs;
+    enum class ScriptInitializationState {
+        Pending = 1,
+        Running,
+        Complete,
+        Failed
+    };
+    struct ScriptInitialization {
+        NomadId functionId = NOMAD_INVALID_ID;
+        ScriptInitializationState state = ScriptInitializationState::Pending;
+        NomadString error;
+    };
+    ScriptInitialization m_scriptInitialization;
+    void registerHubMember(const NomadString& name, HubMember member);
+    [[nodiscard]] bool canRegisterHubMember(const NomadString& name, bool function = false) const;
+    void rebuildHubMembers();
+    void validateScriptExecution() const;
     std::vector<NativeIndexerDefinition> m_nativeIndexers;
     std::unordered_map<NomadString, std::vector<NomadId>> m_nativeMembersByName;
     bool m_debug = false;

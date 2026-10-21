@@ -5,7 +5,7 @@
 #include <nomad/Nomad.hpp>
 #include <nomad/NomadVersion.hpp>
 
-#include <nomad/game/GameOptions.hpp>
+#include <nomad/project/ProjectMetadata.hpp>
 
 #include <nomad/system/NomadConfiguration.hpp>
 
@@ -26,20 +26,9 @@ enum class ProjectConfigurationType {
     Release
 };
 
-struct ProjectMetadata {
-    NomadString name;
-    NomadString identifier;
-    NomadString version;
-    NomadString executable;
-};
-
 struct SdkConfiguration {
     NomadVersion version{0, 0, 0};
     std::vector<NomadString> modules;
-};
-
-struct ResourceConfiguration {
-    NomadPath directory = "res";
 };
 
 struct PackageConfiguration {
@@ -52,20 +41,13 @@ struct ProjectConfiguration {
     ProjectConfigurationType type = ProjectConfigurationType::Development;
     ProjectMetadata project;
     SdkConfiguration sdk;
-    ResourceConfiguration resources;
     PackageConfiguration package;
 };
 
 struct NomadProject {
     ProjectConfiguration configuration;
-    GameOptions gameOptions;
     NomadPath root;
     NomadConfiguration document;
-};
-
-class ProjectConfigurationException final : public NomadException {
-public:
-    using NomadException::NomadException;
 };
 
 [[nodiscard]] 
@@ -77,16 +59,8 @@ std::optional<NomadPath> findProjectRoot(
     const NomadPath& projectFile
 );
 
-[[nodiscard]] GameOptions readGameOptions(
-    const NomadConfiguration& configuration
-);
-
 [[nodiscard]] NomadProject discoverNomadProject(
     const NomadPath& startPath
-);
-
-[[nodiscard]] NomadPath resolveProjectResourcePath(
-    const NomadProject& project
 );
 
 [[nodiscard]] NomadString serializeReleaseProject(

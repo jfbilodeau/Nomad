@@ -27,10 +27,6 @@ struct TextOptions {
     std::optional<std::vector<NomadPath>> directories;
 };
 
-struct ScriptOptions {
-    std::optional<std::vector<NomadPath>> directories;
-};
-
 struct GameOptions {
     NomadString resourcePath;
     NomadString entryFunction = "main";
@@ -41,7 +37,6 @@ struct GameOptions {
     AudioOptions audio;
     SpriteOptions sprites;
     TextOptions text;
-    ScriptOptions scripts;
     std::optional<bool> fullscreen;
     std::optional<bool> debug;
 };

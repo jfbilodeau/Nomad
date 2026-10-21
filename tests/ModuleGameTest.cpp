@@ -165,10 +165,11 @@ BOOST_AUTO_TEST_CASE(script_preparation_propagates_host_compilation_failure)
     );
 }
 
-BOOST_AUTO_TEST_CASE(host_executes_entry_and_releases_script_state)
+BOOST_AUTO_TEST_CASE(game_executes_its_entry_and_releases_script_state)
 {
+    options.entryFunction = "init";
     auto game = Game::createForRuntime(&runtime, options, true);
-    runtime.executeFunction(runtime.getFunctionId("init"));
+    game->executeEntry();
     game->onEntryExecuted();
 
     BOOST_TEST(entryExecuted);

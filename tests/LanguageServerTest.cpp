@@ -233,6 +233,7 @@ name = "LSP test"
 identifier = "org.nomad.lsp"
 version = "0.1.0"
 executable = "lsp-test"
+[game]
 entry = "init"
 [nomad]
 version = "0.1.0"
@@ -240,7 +241,7 @@ modules = ["nomad-game"]
 [resources]
 directory = "res"
 [scripts]
-directories = ["scripts", "mods"]
+directories = ["res/scripts", "res/mods"]
 )");
     const auto init = directory.write("res/scripts/init.nomad", "value = helpers.answer\nlog.info \"ready\"");
     const auto answer = directory.write("res/mods/helpers/answer.nomad", "return missing");
@@ -336,10 +337,13 @@ name = "LSP completion"
 identifier = "org.nomad.completion"
 version = "0.1.0"
 executable = "completion"
+[game]
 entry = "init"
 [nomad]
 version = "0.1.0"
 modules = ["nomad-game"]
+[scripts]
+directories = ["res/scripts"]
 [resources]
 directory = "res"
 )");
@@ -378,14 +382,15 @@ name = "System project"
 identifier = "org.nomad.system-project"
 version = "0.1.0"
 executable = "system-project"
-entry = "init"
 [nomad]
 version = "0.1.0"
 modules = ["nomad-system"]
+[scripts]
+directories = ["res/scripts"]
 [resources]
 directory = "res"
 )");
-    const auto valid = NomadString("value = math.floor 1.5\nlog.info \"ready\"");
+    const auto valid = NomadString("value = math.floor 1.5\nlog.info \"ready\"\nreturn value");
     const auto uri = uriFor(directory.write("res/scripts/init.nomad", valid));
     BOOST_TEST(analyzeLanguageDocuments({{uri, {valid, 1}}}).empty());
     const auto diagnostics = analyzeLanguageDocuments({{uri, {"game.createScene", 2}}});
@@ -427,10 +432,13 @@ name = "Project symbols"
 identifier = "org.nomad.symbols"
 version = "0.1.0"
 executable = "symbols"
+[game]
 entry = "init"
 [nomad]
 version = "0.1.0"
 modules = ["nomad-game"]
+[scripts]
+directories = ["res/scripts"]
 [resources]
 directory = "res"
 )");
@@ -522,10 +530,13 @@ name = "Member suggestions"
 identifier = "org.nomad.members"
 version = "0.1.0"
 executable = "members"
+[game]
 entry = "init"
 [nomad]
 version = "0.1.0"
 modules = ["nomad-game"]
+[scripts]
+directories = ["res/scripts"]
 [resources]
 directory = "res"
 )");

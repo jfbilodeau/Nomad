@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/compiler/CompilerTools.hpp>
+
 #include <nomad/game/Game.hpp>
 
 #include <nomad/game/resource/ResourceManager.hpp>
@@ -8,7 +10,12 @@
 #include <nomad/game/resource/SpriteDiscovery.hpp>
 #include <nomad/game/resource/SpritePacker.hpp>
 
+#include <nomad/script/Runtime.hpp>
+
+#include <nomad/system/ModuleHost.hpp>
+#include <nomad/system/NativeFunctions.hpp>
 #include <nomad/system/Path.hpp>
+#include <nomad/system/ProjectSession.hpp>
 
 #include <TestDirectory.hpp>
 
@@ -59,8 +66,36 @@ void selectDummyDrivers() {
     SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
 }
 
-void createGameDiscardingResult(const TestDirectory& directory) {
-    auto game = Game::create(makeOptions(directory));
+std::unique_ptr<ModuleHost> createGameHost(
+    const TestDirectory& directory,
+    NomadConfiguration configuration = {}
+) {
+    configuration.setString("resources.directory", ".");
+    return ModuleHost::create(
+        std::move(configuration), directory.getPath(),
+        resolveModules(getSdkDirectory() / "modules", {"nomad-game"}),
+        {}, ModuleMode::Application
+    );
+}
+
+std::unique_ptr<Game> createPreparedGame(
+    Runtime& runtime,
+    const GameOptions& options
+) {
+    registerBuildInNativeFunctions(&runtime);
+    auto game = Game::createForRuntime(&runtime, options, false);
+    const std::vector<NomadPath> paths{pathFromUtf8(options.resourcePath) / "scripts"};
+    game->prepareScripts([&] {
+        const auto result = checkPaths(paths, &runtime);
+        if (!result.succeeded()) {
+            NomadString message = "Failed to compile functions";
+            for (const auto& diagnostic : result.diagnostics) {
+                message += "\n" + formatDiagnostic(diagnostic);
+            }
+            throw GameException(message);
+        }
+    });
+    return game;
 }
 
 } // namespace
@@ -72,41 +107,35 @@ BOOST_AUTO_TEST_CASE(displays_the_configured_splash_at_the_configured_resolution
     TestDirectory directory("nomad_game_startup_splash");
     writeTextCatalogue(directory);
     writePng(directory, "splash.png");
-    directory.write("scripts/main.nomad", "game.name = \"Splash configured\"\n");
+    directory.write("scripts/main.nomad",
+        "assert window.resolution.width == 1280\nassert window.resolution.height == 720\n"
+        "assert window.width == 1600\nassert window.height == 900\nsystem.exit\n");
     selectDummyDrivers();
 
-    auto options = makeOptions(directory);
-    options.title = "Configured title";
-    options.resolution = Point{1280, 720};
-    options.size = Point{1600, 900};
-    options.splashImage = "splash.png";
-    auto game = Game::create(std::move(options));
-
-    BOOST_TEST(game->getResolution().getX() == 1280);
-    BOOST_TEST(game->getResolution().getY() == 720);
-    BOOST_TEST(game->getWindowSize().getX() == 1600);
-    BOOST_TEST(game->getWindowSize().getY() == 900);
-    BOOST_TEST(game->getName() == "Splash configured");
+    const auto configuration = NomadConfiguration::parse(
+        "[window]\ntitle = 'Configured title'\nresolution = [1280, 720]\n"
+        "size = [1600, 900]\nsplash-image = 'splash.png'\n"
+    );
+    const auto host = createGameHost(directory, configuration);
+    BOOST_REQUIRE(host->compileProject().succeeded());
+    BOOST_TEST(host->run() == 0);
 }
 
 BOOST_AUTO_TEST_CASE(uses_resolution_as_window_size_when_size_is_unconfigured)
 {
     TestDirectory directory("nomad_game_startup_resolution_size");
     writeTextCatalogue(directory);
-    directory.write("scripts/main.nomad", "game.name = \"Resolution fallback\"\n");
+    directory.write("scripts/main.nomad",
+        "assert window.resolution.width == 1024\nassert window.resolution.height == 576\n"
+        "assert window.width == 1024\nassert window.height == 576\nsystem.exit\n");
     selectDummyDrivers();
 
-    auto options = makeOptions(directory);
-    options.resolution = Point{1024, 576};
-    auto game = Game::create(std::move(options));
-
-    BOOST_TEST(game->getResolution().getX() == 1024);
-    BOOST_TEST(game->getResolution().getY() == 576);
-    BOOST_TEST(game->getWindowSize().getX() == 1024);
-    BOOST_TEST(game->getWindowSize().getY() == 576);
+    const auto host = createGameHost(directory, NomadConfiguration::parse("[window]\nresolution = [1024, 576]\n"));
+    BOOST_REQUIRE(host->compileProject().succeeded());
+    BOOST_TEST(host->run() == 0);
 }
 
-BOOST_AUTO_TEST_CASE(loads_sprites_before_executing_the_entry_function)
+BOOST_AUTO_TEST_CASE(prepares_sprites_before_direct_entry_execution)
 {
     TestDirectory directory("nomad_game_startup_sprites");
     writeTextCatalogue(directory);
@@ -114,10 +143,13 @@ BOOST_AUTO_TEST_CASE(loads_sprites_before_executing_the_entry_function)
     directory.write("scripts/main.nomad", "game.name = \"Initialized\"\n");
     selectDummyDrivers();
 
-    auto game = Game::create(makeOptions(directory));
+    Runtime runtime;
+    auto game = createPreparedGame(runtime, makeOptions(directory));
 
     const auto* sprite = game->getResources()->getSprites()->getSpriteByName("sprites.player");
     BOOST_REQUIRE(sprite != nullptr);
+    runtime.initializeScripts();
+    game->executeEntry();
     BOOST_TEST(game->getName() == "Initialized");
 }
 
@@ -136,13 +168,16 @@ BOOST_AUTO_TEST_CASE(loads_compiled_sprite_catalog_instead_of_raw_pngs)
 
     auto options = makeOptions(directory);
     options.sprites.directories = std::vector<NomadPath>{"sprites", "mod/sprites"};
-    auto game = Game::create(std::move(options));
+    Runtime runtime;
+    auto game = createPreparedGame(runtime, options);
 
     BOOST_TEST(game->getResources()->getSprites()->getSpriteByName("sprites.core") != nullptr);
     BOOST_TEST(game->getResources()->getSprites()->getSpriteByName("sprites.ignored") == nullptr);
     BOOST_TEST(
         game->getResources()->getSprites()->getSpriteByName("mod.sprites.community") != nullptr
     );
+    runtime.initializeScripts();
+    game->executeEntry();
     BOOST_TEST(game->getName() == "Compiled sprites");
 }
 
@@ -154,13 +189,11 @@ BOOST_AUTO_TEST_CASE(reports_script_compilation_failure_after_loading_valid_spri
     directory.write("scripts/main.nomad", "this is not valid Nomad code\n");
     selectDummyDrivers();
 
-    BOOST_CHECK_EXCEPTION(
-        createGameDiscardingResult(directory),
-        GameException,
-        [](const GameException& error) {
-            return NomadString(error.what()).find("Failed to compile functions") != NomadString::npos;
-        }
-    );
+    const auto host = createGameHost(directory);
+    const auto result = host->compileProject();
+    BOOST_TEST(!result.succeeded());
+    BOOST_TEST(!result.diagnostics.empty());
+    BOOST_CHECK_THROW((void)host->run(), ModuleException);
 }
 
 BOOST_AUTO_TEST_CASE(reports_sprite_failure_after_successful_script_compilation)
@@ -171,8 +204,9 @@ BOOST_AUTO_TEST_CASE(reports_sprite_failure_after_successful_script_compilation)
     directory.write("scripts/main.nomad", "log.info \"compiled\"\n");
     selectDummyDrivers();
 
+    const auto host = createGameHost(directory);
     BOOST_CHECK_EXCEPTION(
-        createGameDiscardingResult(directory),
+        (void)host->compileProject(),
         SpritePackerException,
         [](const SpritePackerException& error) {
             return NomadString(error.what()).find("Failed to load image for sprite") != NomadString::npos;
@@ -180,7 +214,7 @@ BOOST_AUTO_TEST_CASE(reports_sprite_failure_after_successful_script_compilation)
     );
 }
 
-BOOST_AUTO_TEST_CASE(reports_both_failures_after_joining_compilation)
+BOOST_AUTO_TEST_CASE(direct_preparation_reports_both_failures_after_joining_compilation)
 {
     TestDirectory directory("nomad_game_startup_combined_failure");
     writeTextCatalogue(directory);
@@ -188,8 +222,9 @@ BOOST_AUTO_TEST_CASE(reports_both_failures_after_joining_compilation)
     directory.write("scripts/main.nomad", "this is not valid Nomad code\n");
     selectDummyDrivers();
 
+    Runtime runtime;
     BOOST_CHECK_EXCEPTION(
-        createGameDiscardingResult(directory),
+        (void)createPreparedGame(runtime, makeOptions(directory)),
         GameException,
         [](const GameException& error) {
             const auto message = NomadString(error.what());
@@ -206,15 +241,29 @@ BOOST_AUTO_TEST_CASE(executes_an_explicitly_configured_init_entry)
 {
     TestDirectory directory("nomad_game_startup_custom_entry");
     writeTextCatalogue(directory);
-    directory.write("scripts/init.nomad", "game.name = \"Custom entry\"\n");
-    directory.write("scripts/main.nomad", "game.name = \"Default entry\"\n");
+    directory.write("scripts/init.nomad", "game.name = \"Custom entry\"\nassert game.name == \"Custom entry\"\nsystem.exit\n");
+    directory.write("scripts/main.nomad", "assert false\n");
     selectDummyDrivers();
 
-    auto options = makeOptions(directory);
-    options.entryFunction = "init";
-    auto game = Game::create(std::move(options));
+    const auto host = createGameHost(directory, NomadConfiguration::parse("[game]\nentry = 'init'\n"));
+    BOOST_REQUIRE(host->compileProject().succeeded());
+    BOOST_TEST(host->run() == 0);
+}
 
-    BOOST_TEST(game->getName() == "Custom entry");
+BOOST_AUTO_TEST_CASE(host_initializes_hub_values_before_the_game_entry)
+{
+    TestDirectory directory("nomad_game_startup_hubs");
+    writeTextCatalogue(directory);
+    directory.write("scripts/main.nomad",
+        "fun initialTitle\nreturn \"Initialized\"\nend\n"
+        "hub startup\ntitle = initialTitle\nend\n"
+        "assert startup.title == \"Initialized\"\ngame.name = startup.title\n"
+        "assert game.name == \"Initialized\"\nsystem.exit\n");
+    selectDummyDrivers();
+
+    const auto host = createGameHost(directory);
+    BOOST_REQUIRE(host->compileProject().succeeded());
+    BOOST_TEST(host->run() == 0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

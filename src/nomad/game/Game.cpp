@@ -2,10 +2,6 @@
 
 #include <nomad/game/Game.hpp>
 
-#include <nomad/compiler/Compiler.hpp>
-#include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/compiler/SourceLoader.hpp>
-
 #include <nomad/game/debug/DebugConsole.hpp>
 
 #include <nomad/game/Alignment.hpp>
@@ -60,12 +56,6 @@ Game::Game(GameOptions options) :
     m_options(std::move(options))
 {}
 
-std::unique_ptr<Game> Game::create(GameOptions options) {
-    auto game = std::unique_ptr<Game>(new Game(std::move(options)));
-    game->initialize();
-    return game;
-}
-
 std::unique_ptr<Game> Game::createHeadless(GameOptions options) {
     auto game = std::unique_ptr<Game>(new Game(std::move(options)));
     game->initializeHeadless();
@@ -86,7 +76,7 @@ std::unique_ptr<Game> Game::createForRuntime(
     if (headless) {
         game->initializeHeadless();
     } else {
-        game->initialize(false);
+        game->initialize();
     }
     return game;
 }
@@ -106,7 +96,7 @@ void Game::initEngine()
     initResourceManager();
 }
 
-void Game::initialize(const bool executeEntry)
+void Game::initialize()
 {
     initSdl();
     initEngine();
@@ -127,28 +117,13 @@ void Game::initialize(const bool executeEntry)
         );
     }
 
-    if (executeEntry) {
-        loadSpritesAndCompileScripts();
-    }
-
     if (isDebug()) {
         log::setLogLevel(LogLevel::Debug);
-    }
-
-    if (executeEntry) {
-        runInitFunction();
-        onEntryExecuted();
     }
 
     log::info("Game initialized");
 
     log::flush();
-}
-
-void Game::loadSpritesAndCompileScripts() {
-    loadSpritesAndCompileScripts([this] {
-        compileScripts();
-    });
 }
 
 void Game::prepareScripts(std::function<void()> compile) {
@@ -1500,70 +1475,6 @@ void Game::loadTextIntoConst(const NomadString& languageCode) const {
     }
 }
 
-void Game::compileScripts() {
-    log::info("Compiling functions...");
-
-    const auto start_ticks = SDL_GetTicks();
-
-    auto compiler = m_runtime->createCompiler();
-    CompilerContext context(compiler.get());
-    auto compiled = false;
-    NomadString exceptionMessage;
-
-    try {
-        const auto directories = m_options.scripts.directories.value_or(
-            std::vector<NomadPath>{"scripts"}
-        );
-
-        std::vector<NomadPath> paths;
-        for (const auto& directory : directories) {
-            paths.push_back(pathFromUtf8(m_options.resourcePath) / directory);
-        }
-        compiler->registerSources(&context, loadSourcePaths(paths));
-
-        compiled = compiler->compileFunctions(&context);
-    } catch (NomadException& e) {
-        exceptionMessage = NomadString("Failed to compile functions: ") + e.what();
-    } catch (std::exception& e) {
-        exceptionMessage = NomadString("Unexpected exception while compiling functions: ") + e.what();
-    }
-
-    NomadString diagnosticMessages;
-    for (const auto& diagnostic : context.getDiagnostics()) {
-        const auto message = formatDiagnostic(diagnostic);
-        diagnosticMessages += "\n" + message;
-        if (diagnostic.severity == DiagnosticSeverity::Error) {
-            log::error(message);
-        } else {
-            log::warning(message);
-        }
-    }
-
-    if (!exceptionMessage.empty()) {
-        raiseError(exceptionMessage + diagnosticMessages);
-    }
-
-    if (!compiled) {
-        raiseError(
-            "Failed to compile functions: " + toString(context.getErrorCount()) + " error(s), " +
-            toString(context.getWarningCount()) + " warning(s)" + diagnosticMessages
-        );
-    }
-
-    const auto end_ticks = SDL_GetTicks();
-    const auto elapsed_ticks = end_ticks - start_ticks;
-    const auto function_count = m_runtime->getFunctionCount();
-
-    const auto message =
-        NomadString("Compiled ") +
-        std::to_string(function_count) +
-        " functions in " +
-        std::to_string(elapsed_ticks) +
-        "ms";
-
-    log::info(message);
-}
-
 NomadIndex Game::loadSprites() {
     const auto directories = m_options.sprites.directories.value_or(
         std::vector<NomadPath>{"sprites"}
@@ -1657,7 +1568,7 @@ NomadString& Game::getText(const NomadString& key, NomadString& text) const {
     return text;
 }
 
-void Game::runInitFunction() {
+void Game::executeEntry() {
     log::info("Executing `" + m_options.entryFunction + "` entry function");
 
     const NomadId initFunctionId = m_runtime->getFunctionId(m_options.entryFunction);
@@ -1667,7 +1578,8 @@ void Game::runInitFunction() {
     }
 
     try {
-        executeFunction(initFunctionId, nullptr, nullptr);
+        m_currentContext.reset(nullptr, nullptr);
+        m_runtime->executeFunction(initFunctionId);
     } catch (std::exception& e) {
         raiseError(
             "Failed to execute entry function '" + m_options.entryFunction + "': " + e.what()

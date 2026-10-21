@@ -121,8 +121,8 @@ hub example
     name = "test"
 
     fun increment
-        example.x = x + 1
-        return x
+        example.x = example.x + 1
+        return example.x
     end
 end
 
@@ -130,11 +130,38 @@ result = example.increment # 11
 ```
 
 Hub variables are shared across function calls. Their types are inferred from
-their initializers and cannot change. Initializers run once before the first
-script invocation, even when the script containing the hub is not called.
-Initialization follows script-name order and declaration order within each
-script. Reading a hub variable before its initializer has run is a runtime
-error; initialization failure prevents subsequent script execution.
+their initializers and cannot change. Circular dependencies that prevent type
+inference are compile errors.
+
+Safely resolved initial values are installed first, across all scripts and hubs.
+The remaining assignments run once in the internal `$init` function, before the
+application entry, even when the script containing the hub is not called.
+These assignments follow script-name order and declaration order within each
+script. Renaming a script can therefore change runtime initialization order.
+A statically initialized member is not assigned again by `$init`.
+
+The compiler conservatively stops propagating mutable hub values once it
+encounters an initializer requiring runtime execution. For example:
+
+```nomad
+fun changeA
+    example.a = example.a + 1
+    return example.a
+end
+
+hub example
+    a = 10
+    b = changeA
+    c = example.a # Reads 11 during $init, not the original 10.
+end
+```
+
+Runtime-dependent members have their type's default value until their assignment
+runs. The compiler does not analyze reads or writes hidden inside initializer
+calls, and premature reads do not receive a special runtime initialization
+error. Developers are responsible for initialization-order dependencies; use
+explicit application-entry assignments when sequencing is important.
+Initialization failure prevents subsequent script execution and is not retried.
 
 Declare new members inside a hub block. Qualified assignments outside a hub
 can update existing variables, but cannot introduce new members:
@@ -167,10 +194,13 @@ hub game.audio
 end
 ```
 
-Unqualified reads and function calls search the current hub, its parent hubs,
-and then global names; local variables and parameters retain their local
-meaning. Writes to hub variables inside functions require their qualified
-name, such as `game.audio.volume`. Enum types and values are qualified too:
+Hub variable reads and writes always require their qualified name, such as
+`game.audio.volume`, including inside the declaring hub. Unqualified references
+to other declarations, including constants and functions, search the current hub,
+its parent hubs, and then global names; local variables and parameters retain
+their local meaning. Hub initializers cannot read script locals or parameters:
+use constants or qualified hub variables instead. Enum types and values have
+qualified names too:
 an enum `State` inside `hub game` is named `game.State`, with values such as
 `game.State.Ready`.
 

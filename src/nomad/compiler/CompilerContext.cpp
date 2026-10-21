@@ -77,10 +77,11 @@ NomadString formatDiagnostic(const Diagnostic& diagnostic) {
 }
 
 CompilerContext::CompilerContext(Compiler* compiler, const CompilerMode mode,
-    const InterpreterContext* interpreterContext):
+    const InterpreterContext* interpreterContext, const bool hubInitializer):
     m_compiler(compiler),
     m_mode(mode),
-    m_interpreterContext(interpreterContext)
+    m_interpreterContext(interpreterContext),
+    m_hubInitializer(hubInitializer)
 {
     if (m_compiler == nullptr) {
         throw NomadBug("CompilerContext requires a compiler");
@@ -91,6 +92,10 @@ CompilerContext::~CompilerContext() = default;
 
 Compiler* CompilerContext::getCompiler() const {
     return m_compiler;
+}
+
+bool CompilerContext::isHubInitializer() const {
+    return m_hubInitializer;
 }
 
 Runtime* CompilerContext::getRuntime() const {

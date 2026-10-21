@@ -119,6 +119,7 @@ public:
     NomadIndex addInteger(NomadInteger value);
     NomadIndex addFloat(NomadFloat value);
     NomadIndex addLoadValue(const Type* type, const RuntimeValue& value, ExpressionTarget target);
+    NomadIndex addLoadConstant(NomadId constantId, ExpressionTarget target);
     NomadIndex addLoadBooleanValue(NomadBoolean value, ExpressionTarget target);
     NomadIndex addLoadFloatValue(NomadFloat value, ExpressionTarget target);
     NomadIndex addLoadIntegerValue(NomadInteger value, ExpressionTarget target);
@@ -158,12 +159,29 @@ public:
     void registerSources(CompilerContext* context, const SourceBatch& batch);
     // Parser interface: creates a function belonging to an already registered script.
     // Returns NOMAD_INVALID_ID and reports to context if the function name is already used.
-    [[nodiscard]] NomadId createFunction(CompilerContext* context, NomadId scriptId, const NomadString& functionName);
+    [[nodiscard]] NomadId createFunction(
+        CompilerContext* context,
+        NomadId scriptId,
+        const NomadString& functionName,
+        bool hubInitializer = false
+    );
     [[nodiscard]] NomadId getScriptId(NomadId functionId) const;
     [[nodiscard]] const ScriptSource& getScript(NomadId scriptId) const;
     void setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode> ast);
+    void registerScriptInitializer(
+        CompilerContext* context,
+        NomadId scriptId,
+        std::unique_ptr<HubInitializerStatement> initializer
+    );
+    [[nodiscard]] const TypedValue* getHubInitialValue(const NomadString& name) const;
     // Borrows an AST node until placeholder preparation, before type inference.
-    void deferFormatString(FormatStringLiteral* literal, NomadId functionId, NomadString sourceContent);
+    void deferFormatString(
+        FormatStringLiteral* literal,
+        NomadId functionId,
+        NomadString sourceContent,
+        NomadString hub,
+        bool hubInitializer
+    );
     void registerPhaseHook(std::function<void(CompilerContext*, CompilationPhase)> hook);
     [[nodiscard]] bool compileScripts(
         CompilerContext* context,
@@ -189,6 +207,7 @@ private:
         NomadId scriptId = NOMAD_INVALID_ID;
         std::unique_ptr<FunctionNode> ast;
         ScriptFunction* function;
+        bool hubInitializer = false;
     };
 
     struct ScriptCompilation {
@@ -203,9 +222,12 @@ private:
         FormatStringLiteral* literal;
         NomadId functionId;
         NomadString sourceContent;
+        NomadString hub;
+        bool hubInitializer;
     };
 
-//    void compile_init_function(Function* function);
+    void prepareScriptInitialization(CompilerContext* context);
+    void installScriptInitialValues();
     void registerScript(CompilerContext* context, const ScriptSource& script);
     void preParseFunction(CompilerContext* context, ScriptCompilation& script, bool hubsOnly = false);
     void parseFunction(CompilerContext* context, ScriptCompilation& script);
@@ -241,7 +263,10 @@ private:
     std::vector<ScriptCompilation> m_scripts;
     std::vector<FunctionCompilation> m_functions;
     std::vector<PendingFormatString> m_pendingFormatStrings;
-    std::vector<NomadString> m_hubVariableNames;
+    std::vector<HubInitializerStatement*> m_scriptInitializers;
+    std::unordered_set<NomadString> m_hubVariableDeclarations;
+    bool m_allowInitialValueLookup = false;
+    NomadId m_scriptInitializerId = NOMAD_INVALID_ID;
     std::vector<FunctionLink> m_functionLinks;
     std::unordered_map<NomadId, std::unordered_set<NomadId>> m_functionCallDependencies;
     std::unordered_set<NomadId> m_returningFunctions;

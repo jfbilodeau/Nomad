@@ -20,6 +20,7 @@ add_library(nomad-game SHARED
     ${NOMAD_SOURCE_DIR}/nomad/game/EventRegistration.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/Game.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/Game.persistence.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/GameConfiguration.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/GameEvent.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/GameEventQueue.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/GameExecutionContext.cpp

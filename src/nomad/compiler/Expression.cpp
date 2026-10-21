@@ -151,6 +151,10 @@ bool Expression::isParsed() const {
     return hasType() && hasValue();
 }
 
+std::unique_ptr<TypedValue> Expression::getInitialValue(Compiler* /*compiler*/) const {
+    return isParsed() ? std::make_unique<TypedValue>(getType(), getValue()) : nullptr;
+}
+
 bool Expression::isTerminal() const {
     return true;
 }
@@ -242,6 +246,23 @@ void UnaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, Ex
     compiler->addOpCode(opcode);
 }
 
+std::unique_ptr<TypedValue> UnaryExpression::getInitialValue(Compiler* compiler) const {
+    if (isParsed()) {
+        return Expression::getInitialValue(compiler);
+    }
+    const auto operand = m_expression->getInitialValue(compiler);
+    if (operand == nullptr || getType() == nullptr) {
+        return nullptr;
+    }
+    RuntimeValue value;
+    if (!compiler->foldUnary(m_unaryOperator, operand->getType(), operand->getValue(), value)) {
+        return nullptr;
+    }
+    auto result = std::make_unique<TypedValue>(getType(), value);
+    getType()->freeValue(value);
+    return result;
+}
+
 void UnaryExpression::onEvaluate(InterpreterContext& context) const {
     m_expression->evaluate(context);
     const auto* evaluatedOperand = context.getResult();
@@ -321,6 +342,26 @@ BinaryExpression::BinaryExpression(
 
 bool BinaryExpression::isTerminal() const {
     return false;
+}
+
+std::unique_ptr<TypedValue> BinaryExpression::getInitialValue(Compiler* compiler) const {
+    if (isParsed()) {
+        return Expression::getInitialValue(compiler);
+    }
+    const auto left = m_left->getInitialValue(compiler);
+    const auto right = m_right->getInitialValue(compiler);
+    if (left == nullptr || right == nullptr || getType() == nullptr) {
+        return nullptr;
+    }
+    RuntimeValue value;
+    if (!compiler->foldBinary(
+        m_binaryOperator, left->getType(), left->getValue(), right->getType(), right->getValue(), value
+    )) {
+        return nullptr;
+    }
+    auto result = std::make_unique<TypedValue>(getType(), value);
+    getType()->freeValue(value);
+    return result;
 }
 
 void BinaryExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
@@ -1250,15 +1291,25 @@ void ConstantValueExpression::onResolve(CompilerContext* context, ScriptFunction
     runtime->getConstantValue(m_constantId, constantValue);
     auto constantType = runtime->getConstantType(m_constantId);
 
-    setResolved(constantValue, constantType);
+    if (constantType->needsFree() && !constantType->isString()) {
+        setType(constantType);
+    } else {
+        setResolved(constantValue, constantType);
+    }
 }
 
 void ConstantValueExpression::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget target) {
-    if (!isParsed()) {
+    if (m_constantId == NOMAD_INVALID_ID) {
         raiseException("Unknown constant: " + m_constantName);
     }
 
-    compiler->addLoadValue(getType(), getValue(), target);
+    compiler->addLoadConstant(m_constantId, target);
+}
+
+void ConstantValueExpression::onEvaluate(InterpreterContext& context) const {
+    RuntimeValue value;
+    context.getRuntime()->getConstantValue(m_constantId, value);
+    context.setResult(getType(), value);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1320,18 +1371,34 @@ bool FormatStringLiteral::parsePlaceholders(
         }
         if (identifier && !needsFirstCharacter &&
             !parser::isNativeMemberCandidate(context->getCompiler(), function, segment.text)) {
+            segment.text = context->resolveName(segment.text, function);
+            IdentifierDefinition definition;
+            context->getCompiler()->getIdentifierDefinition(segment.text, function, definition);
+            if (context->isHubInitializer() &&
+                (definition.identifierType == IdentifierType::FunctionVariable ||
+                 definition.identifierType == IdentifierType::Parameter)) {
+                reportError(context, function, "Hub initializers cannot read script local '" + segment.text + "'");
+                return false;
+            }
             m_variableFormat += "{" + segment.text + "}";
             continue;
         }
 
         auto* compiler = context->getCompiler();
         const auto name = compiler->generateFunctionName("formatExpression", function, getLine());
-        const auto functionId = compiler->createFunction(context, compiler->getScriptId(function->getId()), name);
+        const auto functionId = compiler->createFunction(
+            context, compiler->getScriptId(function->getId()), name, context->isHubInitializer()
+        );
         if (functionId == NOMAD_INVALID_ID) {
             return false;
         }
         auto* expressionFunction = context->getRuntime()->getScriptFunction(functionId);
-        expressionFunction->setParentId(function->getId());
+        expressionFunction->setParentId(
+            context->isHubInitializer() && function->getParentId() == NOMAD_INVALID_ID
+                ? context->getRuntime()->getFunctionId("$init")
+                : function->getId()
+        );
+        expressionFunction->setHub(context->getHub().empty() ? function->getHub() : context->getHub());
 
         const auto column = getColumn() + 3 + segment.offset;
         // Padding keeps every child AST node and nested format literal in host-source coordinates.
@@ -1385,35 +1452,33 @@ void FormatStringLiteral::onResolve(CompilerContext* context, ScriptFunction* fu
 void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) {
     const NomadId functionId = function->getId();
 
-    auto formatStringId = compiler->getRuntime()->getFormatStringId(m_formatString, functionId);
+    auto formatKey = m_variableFormat;
+    for (const auto& placeholder : m_expressionPlaceholders) {
+        formatKey += "@" + std::to_string(placeholder.functionId);
+    }
+    auto formatStringId = compiler->getRuntime()->getFormatStringId(formatKey, functionId);
 
     if (formatStringId == NOMAD_INVALID_ID) {
-        formatStringId = compiler->getRuntime()->registerFormatString(m_formatString, functionId);
+        formatStringId = compiler->getRuntime()->registerFormatString(formatKey, functionId);
 
         const auto format_string = compiler->getRuntime()->getFormatString(formatStringId);
 
-        if (m_expressionPlaceholders.empty()) {
-            if (const auto error = compileFormatString(compiler, function, m_formatString, format_string)) {
-                compiler->reportInternalError("Format string failed to compile after resolving: " + *error);
-            }
-        } else {
-            auto expressionIndex = NomadIndex{0};
-            for (auto segmentIndex = NomadIndex{0}; segmentIndex < m_segments.size(); ++segmentIndex) {
-                const auto& segment = m_segments[segmentIndex];
-                if (segment.type == FormatTemplateSegmentType::Literal) {
-                    format_string->addLiteral(segment.text);
-                } else if (expressionIndex < m_expressionPlaceholders.size() &&
-                           m_expressionPlaceholders[expressionIndex].segmentIndex == segmentIndex) {
-                    const auto id = m_expressionPlaceholders[expressionIndex++].functionId;
-                    const auto* expressionFunction = compiler->getRuntime()->getScriptFunction(id);
-                    const auto* returnType = expressionFunction->getReturnType();
-                    if (returnType == nullptr || returnType->isVoid()) {
-                        compiler->reportInternalError("Format string expression has no resolved value type");
-                    }
-                    format_string->addExpression(returnType, id);
-                } else if (const auto error = compileFormatString(compiler, function, "{" + segment.text + "}", format_string)) {
-                    compiler->reportInternalError("Format string placeholder failed to compile after resolving: " + *error);
+        auto expressionIndex = NomadIndex{0};
+        for (auto segmentIndex = NomadIndex{0}; segmentIndex < m_segments.size(); ++segmentIndex) {
+            const auto& segment = m_segments[segmentIndex];
+            if (segment.type == FormatTemplateSegmentType::Literal) {
+                format_string->addLiteral(segment.text);
+            } else if (expressionIndex < m_expressionPlaceholders.size() &&
+                       m_expressionPlaceholders[expressionIndex].segmentIndex == segmentIndex) {
+                const auto id = m_expressionPlaceholders[expressionIndex++].functionId;
+                const auto* expressionFunction = compiler->getRuntime()->getScriptFunction(id);
+                const auto* returnType = expressionFunction->getReturnType();
+                if (returnType == nullptr || returnType->isVoid()) {
+                    compiler->reportInternalError("Format string expression has no resolved value type");
                 }
+                format_string->addExpression(returnType, id);
+            } else if (const auto error = compileFormatString(compiler, function, "{" + segment.text + "}", format_string)) {
+                compiler->reportInternalError("Format string placeholder failed to compile after resolving: " + *error);
             }
         }
     }
@@ -1515,10 +1580,22 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
         return;
     }
 
+    if (context->isHubInitializer() &&
+        (m_identifierDefinition.identifierType == IdentifierType::FunctionVariable ||
+         m_identifierDefinition.identifierType == IdentifierType::Parameter)) {
+        reportError(context, function, "Hub initializers cannot read script local '" + m_identifier + "'");
+        return;
+    }
+
     if (m_identifierDefinition.identifierType == IdentifierType::Constant) {
         RuntimeValue constantValue;
         context->getRuntime()->getConstantValue(m_identifierDefinition.variableId, constantValue);
-        setResolved(constantValue, m_identifierDefinition.valueType);
+        const auto* type = m_identifierDefinition.valueType;
+        if (type->needsFree() && !type->isString()) {
+            setType(type);
+        } else {
+            setResolved(constantValue, type);
+        }
         return;
     }
 
@@ -1555,6 +1632,10 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
 
 void IdentifierExpression::onCompile(Compiler* compiler, ScriptFunction* /*function*/, const ExpressionTarget target) {
     switch (m_identifierDefinition.identifierType) {
+        case IdentifierType::Constant:
+            compiler->addLoadConstant(m_identifierDefinition.variableId, target);
+            break;
+
         case IdentifierType::FunctionVariable:
             compiler->addLoadFunctionVariable(m_identifierDefinition.variableId, m_identifierDefinition.valueType, target);
             break;
@@ -1584,6 +1665,14 @@ void IdentifierExpression::onCompile(Compiler* compiler, ScriptFunction* /*funct
 
 bool IdentifierExpression::isWritable() const {
     return m_writable;
+}
+
+std::unique_ptr<TypedValue> IdentifierExpression::getInitialValue(Compiler* compiler) const {
+    if (isParsed()) {
+        return Expression::getInitialValue(compiler);
+    }
+    const auto* value = compiler->getHubInitialValue(m_identifier);
+    return value != nullptr ? std::make_unique<TypedValue>(*value) : nullptr;
 }
 
 IdentifierExpression* IdentifierExpression::asIdentifierExpression() {
@@ -1647,6 +1736,12 @@ void IdentifierExpression::evaluateStore(InterpreterContext& context, const Runt
 
 void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
     switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::Constant: {
+        RuntimeValue value;
+        context.getRuntime()->getConstantValue(m_identifierDefinition.variableId, value);
+        context.setResult(getType(), value);
+        break;
+    }
     case IdentifierType::Parameter:
         context.setParameterResult(m_identifierDefinition.variableId);
         break;

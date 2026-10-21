@@ -313,6 +313,33 @@ void op_function_variable_object_push(VirtualMachine* interpreter) {
     interpreter->pushObjectValue(value);
 }
 
+void op_constant_get_r(VirtualMachine* machine) {
+    const auto id = machine->nextId();
+    RuntimeValue value;
+    machine->getRuntime()->getConstantValue(id, value);
+    RuntimeValue copy;
+    machine->getRuntime()->getConstantType(id)->copyValue(value, copy);
+    machine->setResult(copy);
+}
+
+void op_constant_get_i(VirtualMachine* machine) {
+    const auto id = machine->nextId();
+    RuntimeValue value;
+    machine->getRuntime()->getConstantValue(id, value);
+    RuntimeValue copy;
+    machine->getRuntime()->getConstantType(id)->copyValue(value, copy);
+    machine->setIntermediate(copy);
+}
+
+void op_constant_push(VirtualMachine* machine) {
+    const auto id = machine->nextId();
+    RuntimeValue value;
+    machine->getRuntime()->getConstantValue(id, value);
+    RuntimeValue copy;
+    machine->getRuntime()->getConstantType(id)->copyValue(value, copy);
+    machine->pushValue(copy);
+}
+
 void op_dynamic_variable_set(VirtualMachine* interpreter) {
     const auto variableId = interpreter->nextId();
 

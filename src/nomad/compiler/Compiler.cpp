@@ -2,6 +2,7 @@
 
 #include <nomad/compiler/Compiler.hpp>
 
+#include <nomad/compiler/CallNode.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/CompilerException.hpp>
 #include <nomad/compiler/LoopStatement.hpp>
@@ -11,6 +12,7 @@
 #include <nomad/compiler/statements/EventStatement.hpp>
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
+#include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/String.hpp>
@@ -173,6 +175,9 @@ NomadString Compiler::resolveName(
     NomadString hub
 ) const {
     const auto exists = [this](const NomadString& candidate) {
+        if (m_runtime->isHubVariable(candidate)) {
+            return false;
+        }
         return getIdentifierType(candidate, nullptr) != IdentifierType::Unknown ||
             m_runtime->getTypeByName(candidate) != nullptr ||
             m_runtime->getEventId(candidate) != NOMAD_INVALID_ID ||
@@ -492,6 +497,10 @@ NomadIndex Compiler::addFloat(NomadFloat value) {
     m_instructions.emplace_back(RuntimeValue(value));
 
     return instruction;
+}
+
+NomadIndex Compiler::addLoadConstant(const NomadId constantId, const ExpressionTarget target) {
+    return addLoadTarget({op_constant_get_r, op_constant_get_i, op_constant_push}, constantId, target);
 }
 
 NomadIndex Compiler::addLoadValue(const Type* type, const RuntimeValue& value, ExpressionTarget target) {
@@ -917,10 +926,10 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
             const auto name = context->qualifyDeclaration(statement);
             if (statement.find('.') != NomadString::npos) {
                 context->reportError("Hub variable declarations require an unqualified member name", &tokens);
+            } else if (!m_hubVariableDeclarations.insert(name).second) {
+                context->reportError("Hub variable '" + name + "' has more than one initializer", &tokens);
             } else if (m_runtime->registerHubVariable(name) == NOMAD_INVALID_ID) {
                 context->reportError("Hub member '" + name + "' is already declared or conflicts with an identifier", &tokens);
-            } else {
-                m_hubVariableNames.push_back(name);
             }
         }
         if (!hubsOnly && getGetPreParseStatementFn(statement, preParseStatementFn) && preParseStatementFn) {
@@ -973,6 +982,13 @@ void Compiler::parseFunction(CompilerContext* context, ScriptCompilation& file) 
 }
 
 bool Compiler::resolveFunction(CompilerContext* context, const FunctionCompilation& source) {
+    if (source.hubInitializer) {
+        CompilerContext initializerContext(this, context->getMode(), nullptr, true);
+        initializerContext.setHub(source.function->getHub());
+        const auto resolved = source.ast->resolve(&initializerContext, source.function);
+        context->reportDiagnostics(initializerContext.getDiagnostics());
+        return resolved;
+    }
     return source.ast->resolve(context, source.function);
 }
 
@@ -1030,9 +1046,6 @@ void Compiler::inferTypes(CompilerContext* context) {
 
 std::vector<const Type*> Compiler::collectInferredTypes() const {
     std::vector<const Type*> types;
-    for (const auto& name : m_hubVariableNames) {
-        types.push_back(m_runtime->getContextVariableType(m_runtime->getContextVariableId(name)));
-    }
 
     for (const auto& source: m_functions) {
         types.push_back(source.function->getReturnType());
@@ -1110,7 +1123,8 @@ void Compiler::registerScript(CompilerContext* context, const ScriptSource& scri
 NomadId Compiler::createFunction(
     CompilerContext* context,
     const NomadId scriptId,
-    const NomadString& functionName
+    const NomadString& functionName,
+    const bool hubInitializer
 ) {
     if (context == nullptr || context->getCompiler() != this) {
         throw NomadBug("Function creation requires this compiler's context");
@@ -1138,7 +1152,8 @@ NomadId Compiler::createFunction(
     m_functions.emplace_back(FunctionCompilation {
         scriptId,
         {},
-        function
+        function,
+        hubInitializer
     });
 
     return functionId;
@@ -1187,13 +1202,100 @@ void Compiler::registerSources(CompilerContext* context, const SourceBatch& batc
     }
 }
 
-void Compiler::deferFormatString(FormatStringLiteral* literal, const NomadId functionId, NomadString sourceContent) {
-    m_pendingFormatStrings.push_back({literal, functionId, std::move(sourceContent)});
+void Compiler::deferFormatString(
+    FormatStringLiteral* literal,
+    const NomadId functionId,
+    NomadString sourceContent,
+    NomadString hub,
+    const bool hubInitializer
+) {
+    m_pendingFormatStrings.push_back({
+        literal, functionId, std::move(sourceContent), std::move(hub), hubInitializer
+    });
 }
 
 void Compiler::registerPhaseHook(std::function<void(CompilerContext*, CompilationPhase)> hook) {
     if (hook) {
         m_phaseHooks.push_back(std::move(hook));
+    }
+}
+
+void Compiler::registerScriptInitializer(
+    CompilerContext* context,
+    const NomadId scriptId,
+    std::unique_ptr<HubInitializerStatement> initializer
+) {
+    if (m_scriptInitializerId == NOMAD_INVALID_ID) {
+        m_scriptInitializerId = createFunction(context, scriptId, "$init");
+        if (m_scriptInitializerId == NOMAD_INVALID_ID) {
+            return;
+        }
+        m_runtime->getScriptFunction(m_scriptInitializerId)->setHub({});
+        setFunctionNode(m_scriptInitializerId, std::make_unique<FunctionNode>(0, 0));
+    }
+    for (auto& source : m_functions) {
+        if (source.function->getId() == m_scriptInitializerId) {
+            m_scriptInitializers.push_back(initializer.get());
+            source.ast->addStatement(std::move(initializer));
+            return;
+        }
+    }
+    throw NomadBug("Missing script initialization function");
+}
+
+const TypedValue* Compiler::getHubInitialValue(const NomadString& name) const {
+    if (m_allowInitialValueLookup) {
+        for (const auto* initializer : m_scriptInitializers) {
+            if (initializer->getIdentifier() == name) {
+                return initializer->getInitialValue();
+            }
+        }
+    }
+    return nullptr;
+}
+
+void Compiler::prepareScriptInitialization(CompilerContext* context) {
+    for (auto* initializer : m_scriptInitializers) {
+        if (initializer->getExpression()->isParsed()) {
+            initializer->setInitialValue(initializer->getExpression()->getInitialValue(this));
+        }
+    }
+    m_allowInitialValueLookup = true;
+    for (auto* initializer : m_scriptInitializers) {
+        try {
+            if (initializer->getInitialValue() == nullptr) {
+                initializer->setInitialValue(initializer->getExpression()->getInitialValue(this));
+                if (initializer->getInitialValue() == nullptr) {
+                    m_allowInitialValueLookup = false;
+                }
+            }
+        } catch (const NomadBug&) {
+            throw;
+        } catch (const NomadException& exception) {
+            context->reportError(exception.what(), initializer->getSourceName(),
+                initializer->getLine(), initializer->getColumn());
+        }
+    }
+    m_allowInitialValueLookup = false;
+}
+
+void Compiler::installScriptInitialValues() {
+    for (const auto* initializer : m_scriptInitializers) {
+        const auto id = m_runtime->getContextVariableId(initializer->getIdentifier());
+        const auto* type = m_runtime->getContextVariableType(id);
+        if (const auto* initialValue = initializer->getInitialValue()) {
+            m_runtime->setContextVariableValue(id, initialValue->getValue());
+        } else {
+            RuntimeValue value;
+            type->initValue(value);
+            try {
+                m_runtime->setContextVariableValue(id, value);
+            } catch (...) {
+                type->freeValue(value);
+                throw;
+            }
+            type->freeValue(value);
+        }
     }
 }
 
@@ -1323,7 +1425,10 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         const auto pending = std::move(m_pendingFormatStrings[index]);
         auto* function = m_runtime->getScriptFunction(pending.functionId);
         reportExceptions(function->getPath(), [&] {
-            (void)pending.literal->parsePlaceholders(context, function, pending.sourceContent);
+            CompilerContext placeholderContext(this, context->getMode(), nullptr, pending.hubInitializer);
+            placeholderContext.setHub(pending.hub);
+            (void)pending.literal->parsePlaceholders(&placeholderContext, function, pending.sourceContent);
+            context->reportDiagnostics(placeholderContext.getDiagnostics());
         });
         if (hasNewErrors()) {
             return false;
@@ -1350,6 +1455,13 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         });
     }
 
+    if (hasNewErrors()) {
+        return false;
+    }
+
+    reportExceptions({}, [&] {
+        prepareScriptInitialization(context);
+    });
     if (hasNewErrors()) {
         return false;
     }
@@ -1395,6 +1507,15 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
 
     if (!beginPhase(CompilationPhase::Completed)) {
         return false;
+    }
+    if (m_scriptInitializerId != NOMAD_INVALID_ID) {
+        reportExceptions({}, [&] {
+            installScriptInitialValues();
+            m_runtime->setScriptInitializer(m_scriptInitializerId);
+        });
+        if (hasNewErrors()) {
+            return false;
+        }
     }
     log::info("Functions compiled");
 

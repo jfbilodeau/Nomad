@@ -21,6 +21,7 @@ class CompilerContext;
 class Logger;
 class NomadConfiguration;
 class Runtime;
+struct ProjectMetadata;
 
 enum class ModuleMode {
     Application = 1,
@@ -34,13 +35,13 @@ struct ModuleContext {
     Logger* logger;
     ModuleMode mode;
     NomadPath projectDirectory;
-    NomadPath resourceDirectory;
     NomadPath moduleDirectory;
     // Runtime launches supply module options followed by optional "--" application arguments, without argv[0].
     std::span<const NomadString> arguments;
     std::function<void(int)> requestExit;
     std::function<bool()> pollExit;
     std::function<void()> compileScripts;
+    const ProjectMetadata* projectMetadata;
 };
 
 struct ModulePackageContext {
@@ -52,6 +53,7 @@ struct ModulePackageContext {
     bool dryRun;
     NomadPath stagingDirectory;
     std::function<void(const NomadPath&, const NomadPath&)> copyFile;
+    std::function<void(const NomadPath&, const NomadPath&)> copyDirectory;
     std::function<void(const NomadPath&, NomadStringView)> writeFile;
     std::function<void(const NomadPath&)> recordFile;
     std::function<void(const NomadPath&)> excludeResource;

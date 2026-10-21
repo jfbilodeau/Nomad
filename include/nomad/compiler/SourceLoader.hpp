@@ -4,10 +4,19 @@
 
 #include <nomad/compiler/Source.hpp>
 
+#include <nomad/system/NomadConfiguration.hpp>
+
 #include <filesystem>
 #include <span>
 
 namespace nomad {
+
+[[nodiscard]] std::vector<NomadPath> getScriptPaths(const NomadConfiguration& configuration);
+
+[[nodiscard]] std::vector<NomadPath> resolveScriptPaths(
+    const NomadConfiguration& configuration,
+    const NomadPath& projectDirectory
+);
 
 // Reads .nomad files or script roots. Each root defines its own relative script names.
 // Directory traversal skips symbolic links and stops after ten directory levels.

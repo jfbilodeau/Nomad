@@ -172,6 +172,63 @@ AssignmentStatement::AssignmentStatement(
 
 }
 
+const NomadString& AssignmentStatement::getIdentifier() const {
+    return m_identifier;
+}
+
+const Expression* AssignmentStatement::getExpression() const {
+    return m_expression.get();
+}
+
+HubInitializerStatement::HubInitializerStatement(
+    const NomadIndex line,
+    const NomadIndex column,
+    NomadString identifier,
+    std::unique_ptr<Expression> expression,
+    ScriptFunction* sourceFunction,
+    NomadString hub
+):
+    AssignmentStatement(line, column, std::move(identifier), std::move(expression)),
+    m_sourceFunction(sourceFunction),
+    m_hub(std::move(hub))
+{}
+
+HubInitializerStatement::~HubInitializerStatement() = default;
+
+const NomadString& HubInitializerStatement::getSourceName() const {
+    return m_sourceFunction->getPath();
+}
+
+const TypedValue* HubInitializerStatement::getInitialValue() const {
+    return m_initialValue.get();
+}
+
+void HubInitializerStatement::setInitialValue(std::unique_ptr<TypedValue> value) {
+    m_initialValue = std::move(value);
+}
+
+void HubInitializerStatement::onResolve(CompilerContext* context, ScriptFunction* /*function*/) {
+    CompilerContext initializerContext(context->getCompiler(), context->getMode(), nullptr, true);
+    initializerContext.setHub(m_hub);
+    try {
+        AssignmentStatement::onResolve(&initializerContext, m_sourceFunction);
+    } catch (const AstException& exception) {
+        initializerContext.reportError(exception.what(), getSourceName(),
+            exception.getLine(), exception.getColumn());
+    }
+    context->reportDiagnostics(initializerContext.getDiagnostics());
+}
+
+void HubInitializerStatement::onCompile(Compiler* compiler, ScriptFunction* function) {
+    if (m_initialValue == nullptr) {
+        AssignmentStatement::onCompile(compiler, function);
+    } else {
+        compiler->getRuntime()->setContextVariableWritten(
+            compiler->getRuntime()->getContextVariableId(getIdentifier()), true
+        );
+    }
+}
+
 void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
     if (!m_expression->resolve(context, function)) {
         return;
@@ -278,6 +335,10 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
 
     if (expressionType == nullptr) {
         reportError(context, function, "Cannot determine type of expression assigned to '" + m_identifier + "'");
+        return;
+    }
+    if (expressionType->isVoid()) {
+        reportError(context, function, "Cannot assign a void expression to '" + m_identifier + "'");
         return;
     }
 

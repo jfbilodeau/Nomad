@@ -49,8 +49,9 @@ empty roots remain uncompiled for dynamically installed mods.
 
 A path may name one `.nomad` file or a directory to compile recursively.
 Without a path, the compiler discovers the current project and uses its
-resource directory. Project checks validate that the entry function exists,
-takes no arguments, and returns `void`.
+resource directory. Project modules supply their own validation rules. For
+game projects, checks require `game.entry` to exist, take no arguments, and
+return `void`.
 
 The compiler initializes a headless engine with dummy video/audio drivers.
 Engine functions and constants remain available. Diagnostics include source
@@ -80,8 +81,9 @@ for setup and current limitations.
 
 ## Runtime
 
-`nomad-runtime` discovers the current project's configuration and executes
-`project.entry`. `--project-path <directory-or-nomad.toml>` selects a project
+`nomad-runtime` discovers the current project's configuration, initializes scripts,
+and invokes its runnable module. The game module executes `game.entry` (default
+`main`) before entering its event loop. `--project-path <directory-or-nomad.toml>` selects a project
 instead of discovering one from the current directory. Resource paths are
 resolved from that project's configuration. `--debug` enables diagnostic logging and the debug console;
 `--no-debug` disables project-configured debug mode.

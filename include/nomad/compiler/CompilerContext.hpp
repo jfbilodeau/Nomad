@@ -44,7 +44,7 @@ struct Diagnostic {
 class CompilerContext {
 public:
     explicit CompilerContext(Compiler* compiler, CompilerMode mode = CompilerMode::Script,
-        const InterpreterContext* interpreterContext = nullptr);
+        const InterpreterContext* interpreterContext = nullptr, bool hubInitializer = false);
     CompilerContext(const CompilerContext&) = delete;
     CompilerContext& operator=(const CompilerContext&) = delete;
     ~CompilerContext();
@@ -53,6 +53,7 @@ public:
     [[nodiscard]] Runtime* getRuntime() const;
     [[nodiscard]] CompilerMode getMode() const;
     [[nodiscard]] const InterpreterContext* getInterpreterContext() const;
+    [[nodiscard]] bool isHubInitializer() const;
     [[nodiscard]] const NomadString& getHub() const;
     void setHub(NomadString hub);
     [[nodiscard]] NomadString qualifyDeclaration(const NomadString& name) const;
@@ -106,6 +107,7 @@ private:
     Compiler* m_compiler;
     CompilerMode m_mode;
     const InterpreterContext* m_interpreterContext;
+    bool m_hubInitializer;
     std::vector<Diagnostic> m_diagnostics;
     NomadIndex m_errorCount = 0;
     NomadIndex m_warningCount = 0;

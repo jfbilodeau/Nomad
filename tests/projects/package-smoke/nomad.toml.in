@@ -5,11 +5,16 @@ name = "Nomad Packaging Smoke Test"
 identifier = "org.nomad.package-smoke"
 version = "0.1.0"
 executable = "nomad-package-smoke"
+
+[game]
 entry = "init"
 
 [nomad]
 version = "@PROJECT_VERSION@"
 modules = ["nomad-game"]
+
+[scripts]
+directories = ["res/scripts"]
 
 [resources]
 directory = "res"

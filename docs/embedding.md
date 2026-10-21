@@ -93,6 +93,37 @@ Include `<nomad/script/Callable.hpp>` for common callable metadata,
 `ScriptFunction.hpp` header and callable definition-copy APIs have been removed;
 use the borrowed pointer accessors instead.
 
+## Module configuration
+
+Read module settings through `NomadConfiguration` rather than parsing its serialized
+representation. Typed getters return an empty optional for missing fields and
+throw `NomadConfigurationException` for incorrect types. Required getters also
+reject missing fields. Integer and string arrays are checked element by element.
+`validateSection(path)` permits an absent section but rejects an existing scalar
+or array at that path.
+
+Modules supply their own defaults and validate constraints such as positive
+dimensions and valid resource paths. The configuration API keeps the storage
+format out of module code.
+
+Project loading, discovery, compatibility checks, and module configuration
+validation report configuration failures through `NomadConfigurationException`.
+Hosts can handle these failures with a single exception type.
+
+The compiler source loader reads `scripts.directories` independently of game
+settings. `readScriptDirectories(configuration)` returns normalized project-relative
+roots, defaulting to `scripts`; an explicit empty array disables disk discovery.
+`resolveScriptPaths(configuration, projectDirectory)` resolves those roots for
+`loadSourcePaths`. Script directory lists reject escaping, duplicate, and
+overlapping roots. Project loading preserves script settings; the compiler source
+loader validates them when requested.
+
+The game module reads `resources.directory` (default `res`) relative to the
+project root. Audio and sprite directories are relative to that resource root,
+not the script roots. Selecting a different resource root does not change script
+discovery. Packaging preserves script discovery when a module relocates a
+directory containing scripts.
+
 ## Hubs
 
 Call `Runtime::registerHub(name)` to reserve an open name prefix before
@@ -101,6 +132,11 @@ of an existing hub. Dotted names, such as `"game.audio"`, also register their
 parent hubs. Invalid names and conflicts with existing values, callables, or
 types are logged and return `false` without partially registering the name.
 Use `Runtime::isHub(name)` to test whether a hub is registered.
+`getHubId(name)` returns its table ID or `NOMAD_INVALID_ID`; `getHub(id)` returns
+a borrowed `const Hub*`, or `nullptr` for an invalid ID. A hub exposes its
+qualified name, parent ID, and locally named members. Function members refer
+to the existing callable table; types and events retain their runtime IDs or
+type references. Hub pointers remain valid when more hubs are registered.
 
 Register native APIs under their qualified names using the existing runtime
 registration functions. For example, register hub `"os"`, enum `"os.Platform"`,
@@ -108,11 +144,55 @@ and constant `"os.platform"`. Hub registration does not create an object or
 change the signatures or ownership of these APIs. Scripts may reopen native
 hubs and add distinct members.
 
-Script hub variables initialize once before the first `VirtualMachine::run`
-or `Runtime::executeFunction` invocation. Compilation and analysis do not
-execute their initializers. Initialization failure propagates to the caller
-and prevents subsequent script execution. Use a fresh runtime for a new
-application execution.
+Successful executable compilation installs safely resolved hub initial values
+and typed defaults for runtime-dependent members. It does not execute application
+code. The remaining assignments are compiled into one internal `$init` function,
+ordered by script name and then declaration order. Developers are responsible
+for dependencies between runtime initializers; premature reads see typed defaults
+or the value assigned so far, without a special initialization-order check.
+
+After compilation and resource preparation, call `ModuleHost::run()` to
+initialize scripts and invoke the runnable module. The module receives fully
+initialized scripting state and owns its entry-point convention. The game
+module executes `game.entry` through `Runtime::executeFunction`.
+
+Use `ModuleHost::compileProject()` to load configured script roots and compile them.
+It returns a `CompilationResult` containing diagnostics and error/warning counts;
+the caller chooses how to display them. Application sessions produce executable
+scripts, analysis sessions perform analysis, and packaging sessions cannot
+compile. For supplied text or editor overrides, use `compileSources(sourceBatch, target)`.
+Neither form executes `$init` or an entry function. Failed compilation prevents
+`run()` from initializing scripts or invoking the runnable module.
+
+The host does not impose an entry convention or validate a configured entry
+during compilation. Each runnable module executes its own entry; game entry
+errors are reported during startup rather than by `nomad check`.
+Compiler phase hooks remain available to modules. Resource preparation is
+coordinated internally by the host rather than through caller-supplied
+compilation callbacks.
+
+Create a host with `ModuleHost::create(...)`, which returns a
+`std::unique_ptr<ModuleHost>`. `ModuleHost` is a pure virtual interface; callers
+do not construct or depend on its concrete implementation.
+
+`ModuleContext::projectMetadata` always points to immutable, host-owned
+`ProjectMetadata` and remains valid throughout the module lifetime.
+Omitted metadata defaults to blank fields, including for standalone tooling.
+Metadata does not control compilation.
+
+There is no standalone `Game::create()` startup path. Use a game-module host
+for applications; `Game::createForRuntime` registers the game API against a
+borrowed runtime without compiling or executing scripts.
+
+Embedders invoking callbacks or using their own VM without a module host must
+call `Runtime::initializeScripts()` first. It executes `$init` once; repeated
+successful calls do nothing. `VirtualMachine::run` never performs initialization
+automatically. Analysis resolves initializers but installs neither initial values
+nor executable initialization code. `initializeScripts` rejects analysis-only
+hub variables.
+Initialization failure propagates to the caller, is not retried, and prevents
+subsequent high-level script execution. Use a fresh runtime for a new application
+execution.
 
 ## Source input and compilation
 

@@ -116,6 +116,7 @@ public:
     [[nodiscard]] bool hasType() const;
     [[nodiscard]] bool hasValue() const;
     [[nodiscard]] bool isParsed() const;
+    [[nodiscard]] virtual std::unique_ptr<TypedValue> getInitialValue(Compiler* compiler) const;
     // Is the expression terminal (no further computation necessary) or compound (needs further evaluation)
     // ie: the r/i registers will be used if false.
     [[nodiscard]]
@@ -182,6 +183,8 @@ protected:
 class AssignmentStatement : public Statement {
 public:
     AssignmentStatement(NomadIndex line, NomadIndex column, NomadString identifier, std::unique_ptr<Expression> expression);
+    [[nodiscard]] const NomadString& getIdentifier() const;
+    [[nodiscard]] const Expression* getExpression() const;
 
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
@@ -192,6 +195,31 @@ private:
     NomadString m_identifier;
     IdentifierDefinition m_identifierDefinition;
     std::unique_ptr<Expression> m_expression;
+};
+
+class HubInitializerStatement final : public AssignmentStatement {
+public:
+    HubInitializerStatement(
+        NomadIndex line,
+        NomadIndex column,
+        NomadString identifier,
+        std::unique_ptr<Expression> expression,
+        ScriptFunction* sourceFunction,
+        NomadString hub
+    );
+    ~HubInitializerStatement() override;
+    [[nodiscard]] const NomadString& getSourceName() const;
+    [[nodiscard]] const TypedValue* getInitialValue() const;
+    void setInitialValue(std::unique_ptr<TypedValue> value);
+
+protected:
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onCompile(Compiler* compiler, ScriptFunction* function) override;
+
+private:
+    ScriptFunction* m_sourceFunction;
+    NomadString m_hub;
+    std::unique_ptr<TypedValue> m_initialValue;
 };
 
 class MemberAssignmentStatement final : public Statement {

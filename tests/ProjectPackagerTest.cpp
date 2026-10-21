@@ -2,6 +2,8 @@
 
 #include <nomad/game/GamePackaging.hpp>
 
+#include <nomad/compiler/SourceLoader.hpp>
+
 #include <nomad/Version.hpp>
 
 #include <nomad/project/ProjectConfiguration.hpp>
@@ -41,11 +43,16 @@ name = "Package Test"
 identifier = "com.example.package-test"
 version = "1.2.3"
 executable = "package-test"
+
+[game]
 entry = "start"
 
 [nomad]
 version = "0.1.0"
 modules = []
+
+[scripts]
+directories = ["assets"]
 
 [resources]
 directory = "assets"
@@ -187,17 +194,17 @@ BOOST_AUTO_TEST_CASE(packages_runtime_resources_and_release_manifest)
     extractArchive(result.output, output);
     BOOST_TEST(std::filesystem::is_regular_file(output / "package-test.exe"));
     BOOST_TEST(std::filesystem::is_regular_file(output / "SDL3.dll"));
-    BOOST_TEST(std::filesystem::is_regular_file(output / "res/scripts/start.nomad"));
-    BOOST_TEST(std::filesystem::is_regular_file(output / "res/images/player.png"));
-    BOOST_TEST(!std::filesystem::exists(output / "res/images/player.aseprite"));
-    BOOST_TEST(!std::filesystem::exists(output / "res/art/background.psd"));
-    BOOST_TEST(!std::filesystem::exists(output / "res/development/notes.txt"));
+    BOOST_TEST(std::filesystem::is_regular_file(output / "assets/scripts/start.nomad"));
+    BOOST_TEST(std::filesystem::is_regular_file(output / "assets/images/player.png"));
+    BOOST_TEST(!std::filesystem::exists(output / "assets/images/player.aseprite"));
+    BOOST_TEST(!std::filesystem::exists(output / "assets/art/background.psd"));
+    BOOST_TEST(!std::filesystem::exists(output / "assets/development/notes.txt"));
     BOOST_TEST(readFile(output / "licenses/Nomad.txt") == "license");
     BOOST_TEST(!std::filesystem::exists(output / "runtime.json"));
 
     const auto releaseText = readFile(output / NOMAD_PROJECT_FILE_NAME);
     BOOST_TEST(releaseText.find("executable") == NomadString::npos);
-    BOOST_TEST(releaseText.find("[resources]") == NomadString::npos);
+    BOOST_TEST(releaseText.find("[resources]") != NomadString::npos);
     BOOST_TEST(releaseText.find("[package]") == NomadString::npos);
 
     const auto release = loadNomadProject(output / NOMAD_PROJECT_FILE_NAME);
@@ -205,7 +212,7 @@ BOOST_AUTO_TEST_CASE(packages_runtime_resources_and_release_manifest)
         static_cast<int>(release.configuration.type) ==
         static_cast<int>(ProjectConfigurationType::Release)
     );
-    BOOST_TEST(resolveProjectResourcePath(release) == output / "res");
+    BOOST_TEST(release.document.requireString("resources.directory") == "assets");
 
     const auto firstArchive = readFile(result.output);
     const auto repeated = packageProject(configuration, runtimeDirectory, true);
@@ -464,11 +471,14 @@ BOOST_AUTO_TEST_CASE(failed_game_generation_preserves_previous_archive_and_clean
     TestDirectory directory("nomad_package_failed_game_generation");
     auto text = NomadString(CONFIGURATION);
     text.replace(text.find("modules = []"), NomadStringView("modules = []").size(), "modules = [\"nomad-game\"]");
+    text.replace(text.find("directories = [\"assets\"]"), NomadStringView("directories = [\"assets\"]").size(),
+        "directories = [\"assets/scripts\", \"scripts\"]");
     const auto sdkVersion = getNomadVersion().toString();
     text.replace(text.find("version = \"0.1.0\""), NomadStringView("version = \"0.1.0\"").size(),
         "version = \"" + sdkVersion + "\"");
     const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, text);
     directory.write("assets/scripts/start.nomad", "return\n");
+    directory.write("scripts/answer.nomad", "return 42\n");
     // Exercise real module hooks without copying and compressing the full SDK dependency bundle.
     directory.write("runtime/engine", "runtime");
     directory.write("runtime/licenses/Nomad.txt", "license");
@@ -493,6 +503,21 @@ BOOST_AUTO_TEST_CASE(failed_game_generation_preserves_previous_archive_and_clean
     const auto runtime = directory.getPath() / "runtime";
     const auto original = packageProject(project, runtime, false);
     const auto originalBytes = readFile(original.output);
+    const auto extracted = directory.getPath() / "extracted";
+    extractArchive(original.output, extracted);
+    const auto release = loadNomadProject(extracted / NOMAD_PROJECT_FILE_NAME);
+    const auto roots = getScriptPaths(release.document);
+    BOOST_REQUIRE(roots.size() == 2U);
+    BOOST_TEST(roots[0] == NomadPath("res/scripts"));
+    BOOST_TEST(roots[1] == NomadPath("scripts"));
+    BOOST_TEST(std::filesystem::is_regular_file(extracted / "res" / "scripts" / "start.nomad"));
+    BOOST_TEST(std::filesystem::is_regular_file(extracted / "scripts" / "answer.nomad"));
+    const auto paths = resolveScriptPaths(release.document, extracted);
+    const auto batch = loadSourcePaths(paths);
+    BOOST_REQUIRE(batch.diagnostics.empty());
+    BOOST_REQUIRE(batch.sources.size() == 2U);
+    BOOST_TEST(batch.sources[0].scriptName == "answer");
+    BOOST_TEST(batch.sources[1].scriptName == "start");
     directory.write("assets/sprites/broken.png", "invalid PNG");
     const auto reportsSpriteFailure = [](const ProjectPackagingException& error) {
         return NomadStringView(error.what()).find("Failed to compile sprite resources") != NomadStringView::npos;

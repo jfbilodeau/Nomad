@@ -16,6 +16,8 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
+#include <nomad/game/Game.hpp>
+
 #include <nomad/log/MemorySink.hpp>
 
 #include <nomad/script/Interpreter.hpp>
@@ -24,11 +26,14 @@
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/ModuleHost.hpp>
+#include <nomad/system/Path.hpp>
 #include <nomad/system/ProjectSession.hpp>
 
 #include <TestDirectory.hpp>
 
 #include <boost/test/unit_test.hpp>
+
+#include <SDL3/SDL.h>
 
 #include <fstream>
 #include <iterator>
@@ -50,16 +55,341 @@ NomadString events(const TestDirectory& directory) {
     return {std::istreambuf_iterator<char>(input), {}};
 }
 
-bool compileFixture(ModuleHost& host, const CompilationTarget target) {
-    auto compiler = host.getRuntime()->createCompiler();
-    CompilerContext context(compiler.get());
-    compiler->registerSources(&context, {{{"init", {"init.nomad", "fixture.exit"}}}, {}});
-    return compiler->compileScripts(&context, target);
+bool compileFixture(
+    ModuleHost& host,
+    const CompilationTarget target,
+    const NomadString& source = "fixture.exit",
+    const NomadString& name = "init"
+) {
+    return host.compileSources(SourceBatch{{{name, {name + ".nomad", source}}}, {}}, target).succeeded();
 }
 
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(module_host)
+
+BOOST_AUTO_TEST_CASE(project_metadata_is_host_owned_and_defaults_to_blank)
+{
+    const TestDirectory directory("host-project-metadata");
+    auto metadata = ProjectMetadata{"Original project", "org.nomad.test", "1.0.0", "test"};
+    auto projectHost = ModuleHost::create({}, directory.getPath(), fixtureModules(), {}, ModuleMode::Application, metadata);
+    metadata.name = "Changed by caller";
+    const auto projectResult = projectHost->compileSources(SourceBatch{{
+        {"init", {"init.nomad", "assert fixture.projectName == \"Original project\"\nfixture.exit"}}
+    }, {}});
+    BOOST_REQUIRE(projectResult.succeeded());
+    BOOST_TEST(projectHost->run() == 7);
+
+    auto standaloneHost = ModuleHost::create({}, directory.getPath(), fixtureModules(), {}, ModuleMode::Application);
+    const auto standaloneResult = standaloneHost->compileSources(SourceBatch{{
+        {"init", {"init.nomad", "assert fixture.projectName == \"\"\nfixture.exit"}}
+    }, {}});
+    BOOST_REQUIRE(standaloneResult.succeeded());
+    BOOST_TEST(standaloneHost->run() == 7);
+}
+
+BOOST_AUTO_TEST_CASE(game_title_defaults_to_nomad_unless_explicitly_configured)
+{
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    const TestDirectory directory("host-project-session-metadata");
+    for (const auto explicitTitle : {false, true}) {
+        NomadProject project;
+        project.root = directory.getPath();
+        project.configuration.project = {"Typed name", "org.nomad.test", "1.0.0", "test"};
+        project.configuration.sdk.modules = {"nomad-game"};
+        project.document = NomadConfiguration::parse(
+            "[text]\ndirectories = []\n[audio]\ndirectories = []\n[sprites]\ndirectories = []\n"
+        );
+        if (explicitTitle) {
+            project.document.setString("window.title", "Explicit title");
+        }
+        const auto host = createProjectSession(project, ModuleMode::Application);
+        auto count = 0;
+        auto** windows = SDL_GetWindows(&count);
+        BOOST_REQUIRE(windows != nullptr);
+        const auto title = count == 1 ? NomadString(SDL_GetWindowTitle(windows[0])) : NomadString{};
+        SDL_free(windows);
+        BOOST_REQUIRE(count == 1);
+        BOOST_TEST(title == (explicitTitle ? "Explicit title" : "Nomad"));
+        BOOST_TEST(!project.document.contains("project.name"));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(host_compiles_configured_files_and_collects_diagnostics_without_running_scripts)
+{
+    const TestDirectory directory("host-standard-compilation");
+    const auto configuration = NomadConfiguration::parse(
+        "[scripts]\ndirectories = ['source']\n"
+        "[fixture]\nentry = 'launch'\n"
+    );
+    directory.write("source/launch.nomad", "assert example.value == 42\nfixture.exit");
+    directory.write("source/declarations.nomad", "hub example\nvalue = fixture.initialValue\nend");
+    auto host = ModuleHost::create(configuration, directory.getPath(), fixtureModules(), {}, ModuleMode::Application);
+    auto calls = 0;
+    host->getRuntime()->registerNativeFunction(
+        "fixture.initialValue",
+        [&](VirtualMachine* machine) {
+            ++calls;
+            machine->setIntegerResult(42);
+        },
+        {}, host->getRuntime()->getIntegerType(), ""
+    );
+    const auto result = host->compileProject();
+    BOOST_REQUIRE(result.succeeded());
+    BOOST_TEST(result.errorCount == 0U);
+    BOOST_TEST(result.warningCount == 0U);
+    BOOST_TEST(result.diagnostics.empty());
+    BOOST_TEST(calls == 0);
+    BOOST_TEST(events(directory).find("run\n") == NomadString::npos);
+    BOOST_TEST(host->run() == 7);
+    BOOST_TEST(calls == 1);
+}
+
+BOOST_AUTO_TEST_CASE(host_uses_default_script_paths)
+{
+    const TestDirectory directory("host-default-script-paths");
+    directory.write("scripts/init.nomad", "fixture.exit");
+    auto host = ModuleHost::create({}, directory.getPath(), fixtureModules(), {}, ModuleMode::Application);
+    const auto result = host->compileProject();
+    BOOST_REQUIRE(result.succeeded());
+    BOOST_TEST(host->run() == 7);
+}
+
+BOOST_AUTO_TEST_CASE(host_default_compilation_uses_analysis_mode_without_installing_initializers)
+{
+    const TestDirectory directory("host-default-analysis");
+    directory.write("scripts/declarations.nomad",
+        "fun calculate\nreturn 42\nend\nhub example\nvalue = calculate\nend");
+    auto host = ModuleHost::create({}, directory.getPath(), fixtureModules(), {}, ModuleMode::Analysis);
+    const auto result = host->compileProject();
+    BOOST_REQUIRE(result.succeeded());
+    BOOST_CHECK_THROW(host->getRuntime()->initializeScripts(), NomadException);
+    BOOST_TEST(events(directory).find("run\n") == NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(host_does_not_impose_a_module_entry_convention)
+{
+    const TestDirectory directory("host-entry-metadata");
+    const auto configuration = NomadConfiguration::parse(
+        "[fixture]\nentry = 'launch'\n"
+    );
+    for (const auto target : {CompilationTarget::Analysis, CompilationTarget::Executable}) {
+        for (const auto source : {"", "fun launch value:int\nend", "fun launch\nreturn 1\nend"}) {
+            auto host = ModuleHost::create(configuration, directory.getPath(), fixtureModules(), {}, ModuleMode::Application);
+            const auto result = host->compileSources(SourceBatch{{{"declarations", {"editor:declarations", source}}}, {}}, target);
+            BOOST_TEST(result.succeeded());
+            BOOST_TEST(result.diagnostics.empty());
+            BOOST_TEST(events(directory).find("run\n") == NomadString::npos);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(failed_standard_compilation_prevents_initialization_and_run)
+{
+    const TestDirectory directory("host-failed-compilation");
+    auto host = ModuleHost::create({}, directory.getPath(), fixtureModules(), {}, ModuleMode::Application);
+    const auto result = host->compileSources(SourceBatch{{{"init", {"editor:init", "missing.statement"}}}, {}});
+    BOOST_TEST(!result.succeeded());
+    BOOST_TEST(result.errorCount > 0U);
+    BOOST_REQUIRE(!result.diagnostics.empty());
+    BOOST_TEST(result.diagnostics[0].sourceName == "editor:init");
+    BOOST_CHECK_THROW((void)host->run(), ModuleException);
+    BOOST_TEST(events(directory).find("run\n") == NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(source_loading_errors_prevent_run_even_before_compiler_phases)
+{
+    const TestDirectory directory("host-source-failure");
+    auto host = ModuleHost::create({}, directory.getPath(), fixtureModules(), {}, ModuleMode::Application);
+    const auto result = host->compileProject();
+    BOOST_TEST(!result.succeeded());
+    BOOST_TEST(result.errorCount == 1U);
+    BOOST_REQUIRE(result.diagnostics.size() == 1U);
+    BOOST_TEST(result.diagnostics[0].message.find("Path does not exist") != NomadString::npos);
+    BOOST_CHECK_THROW((void)host->run(), ModuleException);
+    BOOST_TEST(events(directory).find("run\n") == NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(host_preserves_hook_diagnostics_without_spurious_entry_errors)
+{
+    const TestDirectory directory("host-hook-diagnostics");
+    const auto configuration = NomadConfiguration::parse(
+        "[fixture]\nfail-hook = true\n"
+    );
+    auto host = ModuleHost::create(configuration, directory.getPath(), fixtureModules(), {}, ModuleMode::Application);
+    const auto result = host->compileSources(SourceBatch{});
+    BOOST_TEST(!result.succeeded());
+    BOOST_TEST(result.errorCount == 1U);
+    BOOST_REQUIRE(result.diagnostics.size() == 1U);
+    BOOST_TEST(result.diagnostics[0].message == "Requested hook failure");
+    BOOST_CHECK_THROW((void)host->run(), ModuleException);
+}
+
+BOOST_AUTO_TEST_CASE(packaging_sessions_reject_all_compilation_overloads)
+{
+    const TestDirectory directory("host-no-packaging-compilation");
+    auto host = ModuleHost::create({}, directory.getPath(), fixtureModules(), {}, ModuleMode::Packaging);
+    BOOST_CHECK_THROW((void)host->compileProject(), ModuleException);
+    BOOST_CHECK_THROW((void)host->compileSources(SourceBatch{}), ModuleException);
+}
+
+BOOST_AUTO_TEST_CASE(script_initialization_runs_after_compilation_before_entry)
+{
+    const TestDirectory directory("hub-startup");
+    auto host = ModuleHost::create({}, directory.getPath(), fixtureModules(), {}, ModuleMode::Application);
+    auto prepared = false;
+    auto calls = 0;
+    BOOST_REQUIRE(host->getRuntime()->registerNativeFunction(
+        "fixture.initialValue",
+        [&](VirtualMachine* machine) {
+            BOOST_TEST(prepared);
+            ++calls;
+            machine->setIntegerResult(42);
+        },
+        {}, host->getRuntime()->getIntegerType(), ""
+    ) != NOMAD_INVALID_ID);
+    const auto result = host->compileSources(SourceBatch{{
+        {"init", {"init.nomad", "hub example\nvalue = fixture.initialValue\nend\nassert example.value == 42\nfixture.exit"}}
+    }, {}});
+    BOOST_REQUIRE(result.succeeded());
+    BOOST_TEST(calls == 0);
+    prepared = true;
+    BOOST_TEST(host->run() == 7);
+    BOOST_TEST(calls == 1);
+}
+
+BOOST_AUTO_TEST_CASE(runnable_modules_do_not_require_a_global_script_entry)
+{
+    const TestDirectory directory("host-no-script-entry");
+    auto configuration = NomadConfiguration::parse("[fixture]\nentry = \"\"\n");
+    auto host = ModuleHost::create(configuration, directory.getPath(), fixtureModules(), {}, ModuleMode::Application);
+    BOOST_REQUIRE(compileFixture(*host, CompilationTarget::Executable,
+        "fun calculate\nreturn 42\nend\nhub example\nvalue = calculate\nend", "declarations"));
+
+    BOOST_TEST(host->run() == 0);
+    RuntimeValue value;
+    host->getRuntime()->getContextVariableValue(host->getRuntime()->getContextVariableId("example.value"), value);
+    BOOST_TEST(value.getIntegerValue() == 42);
+    BOOST_TEST(events(directory).find("run\n") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(initialization_exit_prevents_the_run_callback)
+{
+    const TestDirectory directory("host-initialization-exit");
+    auto host = ModuleHost::create({}, directory.getPath(), fixtureModules(), {}, ModuleMode::Application);
+    BOOST_REQUIRE(compileFixture(*host, CompilationTarget::Executable,
+        "fun initialize\nfixture.exit\nreturn 42\nend\nhub example\nvalue = initialize\nend"));
+
+    BOOST_TEST(host->run() == 7);
+    BOOST_TEST(events(directory).find("run\n") == NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(initialization_failure_prevents_the_run_callback_and_is_not_retried)
+{
+    const TestDirectory directory("host-initialization-failure");
+    auto host = ModuleHost::create({}, directory.getPath(), fixtureModules(), {}, ModuleMode::Application);
+    auto calls = 0;
+    host->getRuntime()->registerNativeFunction(
+        "fixture.fail",
+        [&](VirtualMachine*) {
+            ++calls;
+            throw VirtualMachineException("Requested initialization failure");
+        },
+        {}, host->getRuntime()->getIntegerType(), ""
+    );
+    BOOST_REQUIRE(compileFixture(*host, CompilationTarget::Executable, "hub example\nvalue = fixture.fail\nend"));
+
+    BOOST_CHECK_THROW((void)host->run(), VirtualMachineException);
+    BOOST_CHECK_THROW((void)host->run(), VirtualMachineException);
+    BOOST_TEST(calls == 1);
+    BOOST_TEST(events(directory).find("run\n") == NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(running_requires_an_application_session_and_a_runnable_module)
+{
+    const TestDirectory directory("host-run-contract");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-system"});
+    auto application = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Application);
+    BOOST_CHECK_EXCEPTION((void)application->run(), ModuleException, [](const auto& error) {
+        return NomadString(error.what()).find("requires a module with a run callback") != NomadString::npos;
+    });
+    auto analysis = ModuleHost::create({}, directory.getPath(), fixtureModules(), {}, ModuleMode::Analysis);
+    BOOST_CHECK_THROW((void)analysis->run(), ModuleException);
+    auto packaging = ModuleHost::create({}, directory.getPath(), fixtureModules(), {}, ModuleMode::Packaging);
+    BOOST_CHECK_THROW((void)packaging->run(), ModuleException);
+}
+
+BOOST_AUTO_TEST_CASE(game_module_executes_its_configured_entry_after_initialization)
+{
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    const TestDirectory directory("host-game-entry");
+    auto configuration = NomadConfiguration::parse(
+        "[project]\nname = \"Test\"\n[game]\nentry = \"launch\"\n"
+        "[text]\ndirectories = []\n[audio]\ndirectories = []\n[sprites]\ndirectories = []\n"
+    );
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-game"});
+    auto host = ModuleHost::create(configuration, directory.getPath(), modules, {}, ModuleMode::Application);
+    auto calls = 0;
+    host->getRuntime()->registerNativeFunction(
+        "test.initialValue",
+        [&](VirtualMachine* machine) {
+            ++calls;
+            machine->setIntegerResult(42);
+        },
+        {}, host->getRuntime()->getIntegerType(), ""
+    );
+    const auto result = host->compileSources(SourceBatch{{{"launch", {"launch.nomad",
+        "hub example\nvalue = test.initialValue\nend\n"
+        "assert example.value == 42\nexample.value = 43\nsystem.exit"}}}, {}});
+    BOOST_REQUIRE(result.succeeded());
+    BOOST_TEST(calls == 0);
+    BOOST_TEST(host->run() == 0);
+    BOOST_TEST(calls == 1);
+    RuntimeValue value;
+    host->getRuntime()->getContextVariableValue(host->getRuntime()->getContextVariableId("example.value"), value);
+    BOOST_TEST(value.getIntegerValue() == 43);
+}
+
+BOOST_AUTO_TEST_CASE(game_entry_is_not_required_during_analysis_or_executable_compilation)
+{
+    const TestDirectory directory("host-game-entry-validation");
+    const auto configuration = NomadConfiguration::parse(
+        "[project]\nname = \"Test\"\n[game]\nentry = \"launch\"\n"
+        "[text]\ndirectories = []\n[audio]\ndirectories = []\n[sprites]\ndirectories = []\n"
+    );
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-game"});
+    for (const auto target : {CompilationTarget::Analysis, CompilationTarget::Executable}) {
+        for (const auto& source : {"", "fun launch value:int\nend", "fun launch\nreturn 1\nend"}) {
+            auto host = ModuleHost::create(configuration, directory.getPath(), modules, {}, ModuleMode::Analysis);
+            auto compiler = host->getRuntime()->createCompiler();
+            CompilerContext context(compiler.get());
+            compiler->registerSources(&context, {{{"other", {"other.nomad", source}}}, {}});
+            BOOST_TEST(compiler->compileScripts(&context, target));
+            BOOST_TEST(context.getFirstError() == nullptr);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(missing_game_entry_is_reported_during_startup)
+{
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    const TestDirectory directory("host-missing-game-entry");
+    const auto configuration = NomadConfiguration::parse(
+        "[game]\nentry = 'missing'\n[text]\ndirectories = []\n"
+        "[audio]\ndirectories = []\n[sprites]\ndirectories = []\n"
+    );
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-game"});
+    auto host = ModuleHost::create(configuration, directory.getPath(), modules, {}, ModuleMode::Application);
+    const auto result = host->compileSources(SourceBatch{});
+    BOOST_REQUIRE(result.succeeded());
+    BOOST_CHECK_EXCEPTION((void)host->run(), GameException, [](const auto& error) {
+        return NomadStringView(error.what()).find("Configured entry function 'missing' was not found")
+            != NomadStringView::npos;
+    });
+}
 
 BOOST_AUTO_TEST_CASE(range_overloads_are_reusable_iterables_in_compiler_and_interpreter) {
     Runtime runtime;
@@ -198,8 +528,8 @@ BOOST_AUTO_TEST_CASE(range_arguments_are_evaluated_once_and_loop_controls_use_no
 BOOST_AUTO_TEST_CASE(collection_loops_run_in_compiler_and_interpreter) {
     TestDirectory directory("nomad_host_collection_loops");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     const NomadString source =
         "items = new List<int>\n"
         "items.append 1\nitems.append 2\nitems.append 3\n"
@@ -257,8 +587,8 @@ BOOST_AUTO_TEST_CASE(collection_loops_run_in_compiler_and_interpreter) {
 BOOST_AUTO_TEST_CASE(collection_iterators_keep_sources_and_obey_current_and_completion_contracts) {
     TestDirectory directory("nomad_host_iterator_contract");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     RuntimeValue empty;
     runtime.getStringType()->initValue(empty);
     runtime.getStringType()->freeValue(empty);
@@ -299,8 +629,8 @@ BOOST_AUTO_TEST_CASE(collection_iterators_keep_sources_and_obey_current_and_comp
 BOOST_AUTO_TEST_CASE(collection_loops_allow_replacement_failed_removal_and_mutation_before_break) {
     TestDirectory directory("nomad_host_collection_mutation");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     const NomadString source =
         "items = new List<int>\nitems.append 1\nitems.append 2\n"
         "total = 0\n"
@@ -337,8 +667,8 @@ BOOST_AUTO_TEST_CASE(collection_loops_allow_replacement_failed_removal_and_mutat
 BOOST_AUTO_TEST_CASE(collection_iterators_detect_structural_mutation_on_next_advance) {
     TestDirectory directory("nomad_host_iteration_invalidated");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     for (const auto* mutation : {"items.append 3", "items.prepend 3", "items.insert 0 3",
         "items.remove 0", "items.removeFirst", "items.removeLast", "items.clear"}) {
         auto machine = runtime.createVirtualMachine();
@@ -358,8 +688,8 @@ BOOST_AUTO_TEST_CASE(collection_iterators_detect_structural_mutation_on_next_adv
 BOOST_AUTO_TEST_CASE(collection_loops_reject_non_iterables) {
     TestDirectory directory("nomad_host_iteration_invalid_sources");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     for (const auto* source : {
         "for value in 42\nend",
         "map = new Map<string int>\nfor value in map\nend",
@@ -375,8 +705,8 @@ BOOST_AUTO_TEST_CASE(collection_loops_reject_non_iterables) {
 BOOST_AUTO_TEST_CASE(collection_loop_bindings_preserve_values_and_allow_reassignment) {
     TestDirectory directory("nomad_host_mutable_loop_bindings");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     const NomadString source =
         "items = new List<string>\n"
         "items.append \"first\"\nitems.append \"last\"\n"
@@ -433,8 +763,8 @@ BOOST_AUTO_TEST_CASE(collection_loop_bindings_preserve_values_and_allow_reassign
 BOOST_AUTO_TEST_CASE(object_parameter_reassignment_preserves_caller_references_and_shared_mutations) {
     TestDirectory directory("nomad_host_mutable_object_parameters");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     auto compiler = runtime.createCompiler();
     CompilerContext compilation(compiler.get());
     const NomadString source =
@@ -462,8 +792,8 @@ BOOST_AUTO_TEST_CASE(object_parameter_reassignment_preserves_caller_references_a
 BOOST_AUTO_TEST_CASE(collections_key_values_construct_read_and_share_references) {
     TestDirectory directory("nomad_host_key_value");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     const std::vector<NomadString> sources = {
         "entry = new KeyValue<string int> \"score\" 100",
         "assert entry.key == \"score\"",
@@ -553,8 +883,8 @@ BOOST_AUTO_TEST_CASE(collections_key_values_construct_read_and_share_references)
 BOOST_AUTO_TEST_CASE(collections_key_values_infer_constructor_types) {
     TestDirectory directory("nomad_host_key_value_inference");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     const std::vector<NomadString> sources = {
         "entry = new KeyValue \"score\" 100",
         "assert entry.key == \"score\"",
@@ -628,8 +958,8 @@ BOOST_AUTO_TEST_CASE(collections_key_values_infer_constructor_types) {
 BOOST_AUTO_TEST_CASE(collections_key_values_reject_invalid_construction_and_property_writes) {
     TestDirectory directory("nomad_host_key_value_validation");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     VirtualMachine machine(&runtime);
     InterpreterContext evaluation(machine);
     for (const auto* source : {
@@ -678,8 +1008,8 @@ BOOST_AUTO_TEST_CASE(collections_key_values_reject_invalid_construction_and_prop
 BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
     TestDirectory directory("nomad_host_array_construction");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     BOOST_REQUIRE(dynamic_cast<const Array1Type*>(
         runtime.getParameterizedType("Array1", {runtime.getIntegerType()})
     ) != nullptr);
@@ -778,8 +1108,8 @@ BOOST_AUTO_TEST_CASE(array_dimension_values_fail_at_runtime_not_compilation) {
         BOOST_TEST_CONTEXT(source) {
             TestDirectory directory("nomad_host_invalid_array_dimensions");
             const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-            ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-            auto& runtime = *host.getRuntime();
+            auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+            auto& runtime = *host->getRuntime();
             auto compiler = runtime.createCompiler();
             CompilerContext context(compiler.get());
             compiler->registerSources(&context, {{{"main", {"main.nomad", source}}}, {}});
@@ -800,8 +1130,8 @@ BOOST_AUTO_TEST_CASE(array_dimension_values_fail_at_runtime_not_compilation) {
 BOOST_AUTO_TEST_CASE(array_constructor_overloads_return_rank_specific_types) {
     TestDirectory directory("nomad_host_array_overloads");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     NomadString calls;
     runtime.registerNativeFunction(
         "size",
@@ -879,8 +1209,8 @@ BOOST_AUTO_TEST_CASE(array_constructor_signatures_are_checked_by_compiler) {
         BOOST_TEST_CONTEXT(source) {
             TestDirectory directory("nomad_host_array_constructor_types");
             const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-            ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-            auto compiler = host.getRuntime()->createCompiler();
+            auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+            auto compiler = host->getRuntime()->createCompiler();
             CompilerContext context(compiler.get());
             compiler->registerSources(&context, {{{"main", {"main.nomad", source}}}, {}});
             BOOST_TEST(!compiler->compileScripts(&context, CompilationTarget::Analysis));
@@ -892,8 +1222,8 @@ BOOST_AUTO_TEST_CASE(array_constructor_signatures_are_checked_by_compiler) {
 BOOST_AUTO_TEST_CASE(collections_maps_construct_empty_typed_instances_and_defaults) {
     TestDirectory directory("nomad_host_map_construction");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     const auto* mapType = runtime.getParameterizedType("Map", {runtime.getStringType(), runtime.getIntegerType()});
     BOOST_REQUIRE(dynamic_cast<const MapType*>(mapType) != nullptr);
     BOOST_TEST(mapType->getTypeName() == "Map<string int>");
@@ -971,8 +1301,8 @@ BOOST_AUTO_TEST_CASE(collections_maps_construct_empty_typed_instances_and_defaul
 BOOST_AUTO_TEST_CASE(collections_map_indexers_insert_replace_and_preserve_owned_values) {
     TestDirectory directory("nomad_host_map_indexers");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     const std::vector<NomadString> sources = {
         "scores = new Map<string int>",
         "scores[\"hero\"] = 100",
@@ -1076,8 +1406,8 @@ BOOST_AUTO_TEST_CASE(collections_map_indexers_insert_replace_and_preserve_owned_
 BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_the_map) {
     TestDirectory directory("nomad_host_map_contains");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     const std::vector<NomadString> sources = {
         "scores = new Map<string int>",
         "emptyKeys = scores.keys",
@@ -1265,8 +1595,8 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
 BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_preserve_saved_objects) {
     TestDirectory directory("nomad_host_map_remove");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     const std::vector<NomadString> sources = {
         "scores = new Map<string int>",
         "scores.clear",
@@ -1549,8 +1879,8 @@ BOOST_AUTO_TEST_CASE(collections_map_snapshots_own_references_and_release_partia
 BOOST_AUTO_TEST_CASE(collections_maps_reject_unsupported_operations_and_types) {
     TestDirectory directory("nomad_host_map_validation");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     BOOST_CHECK_THROW(MapObject(nullptr), NomadException);
     BOOST_CHECK_THROW(MapObject(runtime.getVoidType()), NomadException);
     BOOST_CHECK_THROW(MapType(runtime.getIntegerType(), runtime.getIntegerType()), NomadException);
@@ -1610,8 +1940,8 @@ BOOST_AUTO_TEST_CASE(collections_maps_reject_unsupported_operations_and_types) {
 BOOST_AUTO_TEST_CASE(collections_lists_store_typed_values_and_share_mutations) {
     TestDirectory directory("nomad_host_list_values");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad",
@@ -1687,15 +2017,15 @@ BOOST_AUTO_TEST_CASE(collections_lists_reject_invalid_member_operations) {
         BOOST_TEST_CONTEXT(source) {
             TestDirectory directory("nomad_host_bad_list_values");
             const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-            ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-            auto compiler = host.getRuntime()->createCompiler();
+            auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+            auto compiler = host->getRuntime()->createCompiler();
             CompilerContext context(compiler.get());
             compiler->registerSources(&context, {{{"main", {"main.nomad", source}}}, {}});
             BOOST_TEST(!compiler->compileScripts(&context, CompilationTarget::Analysis));
             BOOST_TEST(context.hasError());
             const NomadString input(source);
             if (!input.starts_with("params ")) {
-                VirtualMachine machine(host.getRuntime());
+                VirtualMachine machine(host->getRuntime());
                 InterpreterContext evaluation(machine);
                 const auto lineBreak = input.find('\n');
                 BOOST_REQUIRE(Interpreter{}.execute(input.substr(0, lineBreak), evaluation));
@@ -1709,8 +2039,8 @@ BOOST_AUTO_TEST_CASE(collections_lists_reject_invalid_member_operations) {
 BOOST_AUTO_TEST_CASE(collections_lists_mutate_order_return_indices_and_release_values) {
     TestDirectory directory("nomad_host_list_mutation");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     const std::vector<NomadString> sources = {
         "items = new List<int>",
         "removed = items.removeFirst",
@@ -1849,8 +2179,8 @@ BOOST_AUTO_TEST_CASE(collections_list_insertion_bounds_fault_without_changing_li
         BOOST_TEST_CONTEXT(index) {
             TestDirectory directory("nomad_host_list_insertion_bounds");
             const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-            ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-            auto& runtime = *host.getRuntime();
+            auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+            auto& runtime = *host->getRuntime();
             auto compiler = runtime.createCompiler();
             CompilerContext compilation(compiler.get());
             const auto source = "params items:List<int>\nitems.insert " + NomadString(index) + " 42";
@@ -1873,8 +2203,8 @@ BOOST_AUTO_TEST_CASE(collections_list_insertion_bounds_fault_without_changing_li
 BOOST_AUTO_TEST_CASE(collections_indexers_read_replace_chain_and_preserve_evaluation_order) {
     TestDirectory directory("nomad_host_indexers");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad",
@@ -1932,8 +2262,8 @@ BOOST_AUTO_TEST_CASE(collections_indexers_read_replace_chain_and_preserve_evalua
 BOOST_AUTO_TEST_CASE(array1_indexers_read_replace_and_preserve_references) {
     TestDirectory directory("nomad_host_array1_indexers");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad",
@@ -1985,8 +2315,8 @@ BOOST_AUTO_TEST_CASE(array1_indexers_read_replace_and_preserve_references) {
 BOOST_AUTO_TEST_CASE(array2_indexers_read_write_chain_and_preserve_reference_semantics) {
     TestDirectory directory("nomad_host_array2_indexers");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad",
@@ -2054,8 +2384,8 @@ BOOST_AUTO_TEST_CASE(array2_indexers_read_write_chain_and_preserve_reference_sem
 BOOST_AUTO_TEST_CASE(array2_indexers_work_in_interpreter_and_reject_invalid_syntax_and_types) {
     TestDirectory directory("nomad_host_array2_interpreter");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     RuntimeValue empty;
     runtime.getStringType()->initValue(empty);
     runtime.getStringType()->freeValue(empty);
@@ -2110,8 +2440,8 @@ BOOST_AUTO_TEST_CASE(array2_indexers_work_in_interpreter_and_reject_invalid_synt
 BOOST_AUTO_TEST_CASE(array3_indexers_work_in_compiled_scripts_and_interpreter) {
     TestDirectory directory("nomad_host_array3_indexers");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     const std::vector<NomadString> statements = {
         "volume = new Array<int> 2 3 4",
         "assert volume.count == 24",
@@ -2206,8 +2536,8 @@ BOOST_AUTO_TEST_CASE(array3_indexers_work_in_compiled_scripts_and_interpreter) {
 BOOST_AUTO_TEST_CASE(array1_indexers_work_in_interpreter_and_report_bounds_errors) {
     TestDirectory directory("nomad_host_array1_interpreter");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     VirtualMachine machine(&runtime);
     InterpreterContext context(machine);
     for (const auto* source : {
@@ -2241,8 +2571,8 @@ BOOST_AUTO_TEST_CASE(array1_indexers_work_in_interpreter_and_report_bounds_error
 BOOST_AUTO_TEST_CASE(collections_indexers_work_in_interpreter_and_fault_without_growing) {
     TestDirectory directory("nomad_host_interpreter_indexers");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     const auto before = NomadObject::getLiveObjectCount();
     {
         VirtualMachine machine(&runtime);
@@ -2274,8 +2604,8 @@ BOOST_AUTO_TEST_CASE(collections_indexers_work_in_interpreter_and_fault_without_
 BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
     TestDirectory directory("nomad_host_list_construction");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     BOOST_TEST(runtime.getKeywordId("new") != NOMAD_INVALID_ID);
     const auto* listType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(listType != nullptr);
@@ -2362,9 +2692,9 @@ BOOST_AUTO_TEST_CASE(compiler_rejects_invalid_object_construction) {
         BOOST_TEST_CONTEXT(source) {
             TestDirectory directory("nomad_host_bad_construction");
             const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-            ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-            host.getRuntime()->registerType(std::make_unique<ObjectType>("Unconstructible"));
-            auto compiler = host.getRuntime()->createCompiler();
+            auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+            host->getRuntime()->registerType(std::make_unique<ObjectType>("Unconstructible"));
+            auto compiler = host->getRuntime()->createCompiler();
             CompilerContext context(compiler.get());
             compiler->registerSources(&context, {{{"init", {"init.nomad", source}}}, {}});
             BOOST_TEST(!compiler->compileScripts(&context, CompilationTarget::Analysis));
@@ -2410,8 +2740,8 @@ BOOST_AUTO_TEST_CASE(compiler_resolves_parameterized_annotations_from_collection
     for (const auto target : {CompilationTarget::Analysis, CompilationTarget::Executable}) {
         TestDirectory directory("nomad_host_type_annotations");
         const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-        ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-        auto& runtime = *host.getRuntime();
+        auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+        auto& runtime = *host->getRuntime();
         BOOST_REQUIRE(runtime.registerParameterizedType("Pair", 2, [](const auto& arguments) {
             return std::make_unique<ObjectType>(
                 "Pair<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
@@ -2462,8 +2792,8 @@ BOOST_AUTO_TEST_CASE(compiler_reports_invalid_parameterized_annotations) {
         BOOST_TEST_CONTEXT(source) {
             TestDirectory directory("nomad_host_bad_type_annotations");
             const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-            ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-            auto compiler = host.getRuntime()->createCompiler();
+            auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+            auto compiler = host->getRuntime()->createCompiler();
             CompilerContext context(compiler.get());
             compiler->registerSources(&context, {{{"init", {"init.nomad", source}}}, {}});
             BOOST_TEST(!compiler->compileScripts(&context, CompilationTarget::Analysis));
@@ -2490,8 +2820,8 @@ BOOST_AUTO_TEST_CASE(compiler_limits_type_nesting) {
     for (const auto nesting : {63, 64}) {
         TestDirectory directory("nomad_host_type_nesting");
         const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-        ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-        auto compiler = host.getRuntime()->createCompiler();
+        auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+        auto compiler = host->getRuntime()->createCompiler();
         CompilerContext context(compiler.get());
         NomadString typeName = "int";
         for (auto index = 0; index < nesting; ++index) {
@@ -2509,8 +2839,8 @@ BOOST_AUTO_TEST_CASE(compiler_limits_type_nesting) {
 BOOST_AUTO_TEST_CASE(collections_interns_list_specializations) {
     TestDirectory directory("nomad_host_list_types");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     BOOST_TEST(runtime.getTypeByName("List<int>") == nullptr);
     const auto* integers = runtime.getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(integers != nullptr);
@@ -2541,8 +2871,8 @@ BOOST_AUTO_TEST_CASE(collections_interns_list_specializations) {
 BOOST_AUTO_TEST_CASE(collections_list_defaults_are_distinct_empty_instances) {
     TestDirectory directory("nomad_host_list_defaults");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     const auto* type = runtime.getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(type != nullptr);
     const auto before = NomadObject::getLiveObjectCount();
@@ -2561,8 +2891,8 @@ BOOST_AUTO_TEST_CASE(collections_list_defaults_are_distinct_empty_instances) {
 BOOST_AUTO_TEST_CASE(collections_native_returns_do_not_allocate_unused_list_defaults) {
     TestDirectory directory("nomad_host_list_native_defaults");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
-    ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, ModuleMode::Analysis);
-    auto& runtime = *host.getRuntime();
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    auto& runtime = *host->getRuntime();
     const auto* type = runtime.getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(type != nullptr);
     runtime.registerNativeFunction(
@@ -2625,28 +2955,28 @@ BOOST_AUTO_TEST_CASE(collections_module_loads_in_all_modes) {
     BOOST_TEST(modules.front().name == "nomad-collections");
 
     for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis, ModuleMode::Packaging}) {
-        ModuleHost host({}, directory.getPath(), directory.getPath(), modules, {}, mode);
-        BOOST_TEST((host.getRuntime() != nullptr) == (mode != ModuleMode::Packaging));
+        auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
+        BOOST_TEST((host->getRuntime() != nullptr) == (mode != ModuleMode::Packaging));
     }
 }
 
 BOOST_AUTO_TEST_CASE(loads_registers_compiles_and_shuts_down_in_lifetime_order) {
     TestDirectory directory("nomad_host_lifecycle");
     {
-        ModuleHost host({}, directory.getPath(), directory.getPath(), fixtureModules(),
+        auto host = ModuleHost::create({}, directory.getPath(), fixtureModules(),
             {"--custom", "value"}, ModuleMode::Application);
-        BOOST_REQUIRE(compileFixture(host, CompilationTarget::Executable));
-        BOOST_TEST(host.run("init") == 7);
-        BOOST_TEST(host.pollExit());
+        BOOST_REQUIRE(compileFixture(*host, CompilationTarget::Executable));
+        BOOST_TEST(host->run() == 7);
+        BOOST_TEST(host->pollExit());
     }
-    BOOST_TEST(events(directory) == "register\npreParse\nemit\ncompleted\nexit\nshutdown\ndestroy\n");
+    BOOST_TEST(events(directory) == "register\npreParse\nemit\ncompleted\nrun\nexit\nshutdown\ndestroy\n");
 }
 
 BOOST_AUTO_TEST_CASE(analysis_skips_emission_and_execution) {
     TestDirectory directory("nomad_host_analysis");
     {
-        ModuleHost host({}, directory.getPath(), directory.getPath(), fixtureModules(), {}, ModuleMode::Analysis);
-        BOOST_REQUIRE(compileFixture(host, CompilationTarget::Analysis));
+        auto host = ModuleHost::create({}, directory.getPath(), fixtureModules(), {}, ModuleMode::Analysis);
+        BOOST_REQUIRE(compileFixture(*host, CompilationTarget::Analysis));
     }
     BOOST_TEST(events(directory) == "register\npreParse\ncompleted\nshutdown\ndestroy\n");
 }
@@ -2655,8 +2985,8 @@ BOOST_AUTO_TEST_CASE(hook_failure_prevents_later_hooks) {
     TestDirectory directory("nomad_host_hook_failure");
     {
         auto configuration = NomadConfiguration::parse("[fixture]\nfail-hook = true\n");
-        ModuleHost host(configuration, directory.getPath(), directory.getPath(), fixtureModules(), {}, ModuleMode::Analysis);
-        BOOST_TEST(!compileFixture(host, CompilationTarget::Executable));
+        auto host = ModuleHost::create(configuration, directory.getPath(), fixtureModules(), {}, ModuleMode::Analysis);
+        BOOST_TEST(!compileFixture(*host, CompilationTarget::Executable));
     }
     BOOST_TEST(events(directory) == "register\npreParse\nshutdown\ndestroy\n");
 }
@@ -2666,8 +2996,8 @@ BOOST_AUTO_TEST_CASE(packaging_uses_context_without_runtime_registration) {
     auto source = NomadConfiguration::parse("[fixture]\ndevelopment = true\n");
     auto release = source;
     auto generated = NomadString{};
-    ModuleHost host(source, directory.getPath(), directory.getPath(), fixtureModules(), {}, ModuleMode::Packaging);
-    BOOST_TEST(host.getRuntime() == nullptr);
+    auto host = ModuleHost::create(source, directory.getPath(), fixtureModules(), {}, ModuleMode::Packaging);
+    BOOST_TEST(host->getRuntime() == nullptr);
     ModulePackageContext context{};
     context.source = &source;
     context.release = &release;
@@ -2675,7 +3005,7 @@ BOOST_AUTO_TEST_CASE(packaging_uses_context_without_runtime_registration) {
         BOOST_TEST(path == NomadPath("generated.txt"));
         generated = value;
     };
-    host.package(context);
+    host->package(context);
     BOOST_TEST(source.contains("fixture.development"));
     BOOST_TEST(!release.contains("fixture.development"));
     BOOST_TEST(generated == "generated by fixture\n");
@@ -2685,7 +3015,7 @@ BOOST_AUTO_TEST_CASE(packaging_uses_context_without_runtime_registration) {
 BOOST_AUTO_TEST_CASE(missing_library_is_an_explicit_startup_failure) {
     TestDirectory directory("nomad_host_missing");
     BOOST_CHECK_THROW(
-        ModuleHost({}, directory.getPath(), directory.getPath(),
+        (void)ModuleHost::create({}, directory.getPath(),
             {{"missing", directory.getPath(), {}}}, {}, ModuleMode::Application),
         ModuleException
     );
@@ -2695,7 +3025,7 @@ BOOST_AUTO_TEST_CASE(registration_failure_is_not_reported_as_success) {
     TestDirectory directory("nomad_host_registration_failure");
     auto configuration = NomadConfiguration::parse("[fixture]\nfail-registration = true\n");
     BOOST_CHECK_EXCEPTION(
-        ModuleHost(configuration, directory.getPath(), directory.getPath(),
+        (void)ModuleHost::create(configuration, directory.getPath(),
             fixtureModules(), {}, ModuleMode::Analysis),
         NomadException,
         [](const auto& error) {
@@ -2708,7 +3038,7 @@ BOOST_AUTO_TEST_CASE(registration_failure_is_not_reported_as_success) {
 BOOST_AUTO_TEST_CASE(missing_registration_entry_is_an_explicit_startup_failure) {
     TestDirectory directory("nomad_host_missing_entry");
     BOOST_CHECK_EXCEPTION(
-        ModuleHost({}, directory.getPath(), directory.getPath(),
+        (void)ModuleHost::create({}, directory.getPath(),
             {{"nomad-language", NOMAD_TEST_CORE_DIRECTORY, {}}}, {}, ModuleMode::Analysis),
         ModuleException,
         [](const auto& error) {
@@ -2719,10 +3049,10 @@ BOOST_AUTO_TEST_CASE(missing_registration_entry_is_an_explicit_startup_failure) 
 
 BOOST_AUTO_TEST_CASE(module_arguments_are_provided_during_registration) {
     TestDirectory directory("nomad_host_arguments");
-    ModuleHost host({}, directory.getPath(), directory.getPath(), fixtureModules(),
+    auto host = ModuleHost::create({}, directory.getPath(), fixtureModules(),
         {"--custom", "value"}, ModuleMode::Analysis);
     RuntimeValue value;
-    host.getRuntime()->getConstantValue(host.getRuntime()->getConstantId("fixture.argumentCount"), value);
+    host->getRuntime()->getConstantValue(host->getRuntime()->getConstantId("fixture.argumentCount"), value);
     BOOST_TEST(value.getIntegerValue() == 2);
 }
 

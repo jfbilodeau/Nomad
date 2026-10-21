@@ -72,6 +72,9 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_function_variable_object_get_i, op_function_variable_object_get_i, "Load the `id` object function variable value to the `intermediate` register", {Operand::FunctionVariable});
     registerInstruction(OpCodes::op_function_variable_push, op_function_variable_push, "Push the `id` function variable value to the stack", {Operand::FunctionVariable});
     registerInstruction(OpCodes::op_function_variable_object_push, op_function_variable_object_push, "Push the `id` object function variable to the stack", {Operand::FunctionVariable});
+    registerInstruction(OpCodes::op_constant_get_r, op_constant_get_r, "Load the constant into the result register", {Operand::Id});
+    registerInstruction(OpCodes::op_constant_get_i, op_constant_get_i, "Load the constant into the intermediate register", {Operand::Id});
+    registerInstruction(OpCodes::op_constant_push, op_constant_push, "Push the constant onto the stack", {Operand::Id});
     registerInstruction(OpCodes::op_dynamic_variable_set, op_dynamic_variable_set, "Set the dynamic variable `id` from the `result` register value", {Operand::DynamicVariable});
     registerInstruction(OpCodes::op_dynamic_variable_get_r, op_dynamic_variable_get_r, "Load the dynamic variable `id` value to the `r` register", {Operand::DynamicVariable});
     registerInstruction(OpCodes::op_dynamic_variable_get_i, op_dynamic_variable_get_i, "Load the dynamic variable `id` value to the `intermediate` register", {Operand::DynamicVariable});

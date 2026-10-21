@@ -3,33 +3,48 @@
 #include <nomad/system/Module.hpp>
 
 #include <nomad/game/Game.hpp>
+#include <nomad/game/GameConfiguration.hpp>
 #include <nomad/game/GamePackaging.hpp>
 #include <nomad/game/GameResourceCheck.hpp>
 
-#include <nomad/project/ProjectConfiguration.hpp>
-
+#include <nomad/system/ModuleManifest.hpp>
 #include <nomad/system/Path.hpp>
 
 #include <memory>
-#include <utility>
 
-NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::ModuleCallbacks* callbacks) noexcept(false) {
-    callbacks->package = [](nomad::ModulePackageContext& package) {
-        nomad::packageGameResources(&package);
+namespace {
+
+void packageModule(nomad::ModulePackageContext& context) {
+    context.resourceDirectory = nomad::resolveGameResourcePath(*context.source, context.projectDirectory);
+    const auto output = context.stagingDirectory.parent_path();
+    const auto within = [](const nomad::NomadPath& path, const nomad::NomadPath& parent) {
+        const auto relative = path.lexically_normal().lexically_relative(parent.lexically_normal());
+        return !relative.empty() && *relative.begin() != "..";
     };
-    if (context->mode == nomad::ModuleMode::Packaging) {
-        return;
+    if (within(output, context.resourceDirectory) || within(context.resourceDirectory, output)) {
+        throw nomad::ModuleException("Package output must not contain or replace the project resources");
     }
-    auto options = nomad::readGameOptions(*context->configuration);
-    if (!options.title) {
-        options.title = context->configuration->getString("project.name");
+    nomad::normalizeGameConfiguration(*context.source, *context.release);
+    nomad::packageGameResources(&context);
+    context.copyDirectory(context.resourceDirectory, "res");
+}
+
+nomad::GameOptions getGameOptions(const nomad::ModuleContext& context) {
+    auto options = nomad::readGameOptions(*context.configuration);
+
+    if (!options.title || options.title->empty()) {
+        options.title = "Nomad";
     }
-    options.resourcePath = nomad::pathToUtf8(context->resourceDirectory);
-    options.audio.missingDirectoriesAllowed = !context->configuration->contains("project.executable");
+
+    options.resourcePath = nomad::pathToUtf8(
+        nomad::resolveGameResourcePath(*context.configuration, context.projectDirectory)
+    );
+
+    options.audio.missingDirectoriesAllowed = !context.configuration->contains("project.executable");
     options.sprites.missingDirectoriesAllowed = options.audio.missingDirectoriesAllowed;
     auto hasDebug = false;
     auto hasNoDebug = false;
-    for (const auto& argument : context->arguments) {
+    for (const auto& argument : context.arguments) {
         if (argument == "--") {
             break;
         }
@@ -42,21 +57,39 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     if (hasDebug || hasNoDebug) {
         options.debug = hasDebug;
     }
+    return options;
+}
+
+std::shared_ptr<nomad::Game> createGame(const nomad::ModuleContext& context) {
     auto game = std::shared_ptr<nomad::Game>(nomad::Game::createForRuntime(
-        context->runtime, std::move(options), context->mode != nomad::ModuleMode::Application
+        context.runtime, getGameOptions(context), context.mode != nomad::ModuleMode::Application
     ));
     game->setExitHandler(
-        [requestExit = context->requestExit] { requestExit(0); }, context->pollExit
+        [requestExit = context.requestExit] { requestExit(0); }, context.pollExit
     );
+    return game;
+}
+
+int runModule(nomad::Game& game) {
+    game.executeEntry();
+    game.onEntryExecuted();
+    game.run();
+    return 0;
+}
+
+} // namespace
+
+NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::ModuleCallbacks* callbacks) noexcept(false) {
+    callbacks->package = packageModule;
+    if (context->mode == nomad::ModuleMode::Packaging) {
+        return;
+    }
+    const auto game = createGame(*context);
     callbacks->shutdown = [game] { game->releaseScriptState(); };
     callbacks->checkResources = [context] { return nomad::checkGameResources(*context); };
     if (context->mode == nomad::ModuleMode::Application) {
         callbacks->prepareCompilation = [game, context] { game->prepareScripts(context->compileScripts); };
-        callbacks->run = [game] {
-            game->onEntryExecuted();
-            game->run();
-            return 0;
-        };
+        callbacks->run = [game] { return runModule(*game); };
         callbacks->exit = [game] { game->quit(); };
     }
 }

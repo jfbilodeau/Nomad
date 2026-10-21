@@ -5,14 +5,17 @@ name = "{{project_name_toml}}"
 identifier = "com.example.{{project_executable}}"
 version = "0.1.0"
 executable = "{{project_executable}}"
-entry = "main"
 
 [nomad]
 version = "{{nomad_version}}"
 modules = ["nomad-game"]
 
 [game]
+entry = "main"
 debug = false
+
+[scripts]
+directories = ["res/scripts"]
 
 [resources]
 directory = "res"

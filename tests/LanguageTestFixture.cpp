@@ -98,6 +98,7 @@ FunctionOutcome LanguageTestFixture::execute(const NomadString& functionName, co
     const auto liveStringsBefore = RuntimeValue::getLiveStringCount();
 
     try {
+        m_runtime.initializeScripts();
         m_runtime.executeFunction(functionId, arguments, result);
     } catch (const VirtualMachineException& exception) {
         outcome.fault = exception.what();

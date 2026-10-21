@@ -233,7 +233,7 @@ NomadId Runtime::registerNativeFunction(
     const Type* returnType,
     NomadDocArg
 ) {
-    if (isHub(name) || isHubVariable(name)) {
+    if (isHub(name) || !canRegisterHubMember(name, true)) {
         log::error("Cannot register function '" + name + "': name is reserved by a hub");
         return NOMAD_INVALID_ID;
     }
@@ -241,7 +241,20 @@ NomadId Runtime::registerNativeFunction(
 }
 
 bool Runtime::isHub(const NomadString& name) const {
-    return m_hubs.contains(name);
+    return getHubId(name) != NOMAD_INVALID_ID;
+}
+
+NomadId Runtime::getHubId(const NomadString& name) const {
+    for (auto index = NomadIndex{0}; index < m_hubs.size(); ++index) {
+        if (m_hubs[index]->getName() == name) {
+            return toNomadId(index);
+        }
+    }
+    return NOMAD_INVALID_ID;
+}
+
+const Hub* Runtime::getHub(const NomadId id) const {
+    return isIdOutOfRange(id, m_hubs.size()) ? nullptr : m_hubs[toNomadIndex(id)].get();
 }
 
 NomadString Runtime::getContainingHub(const NomadString& name) const {
@@ -259,11 +272,18 @@ NomadString Runtime::getContainingHub(const NomadString& name) const {
 }
 
 bool Runtime::isHubVariable(const NomadString& name) const {
-    return m_hubVariables.contains(name);
+    const auto* hub = getHub(getHubId(getContainingHub(name)));
+    if (hub == nullptr) {
+        return false;
+    }
+    const auto* member = hub->getMember(name.substr(hub->getName().size() + 1));
+    return member != nullptr && std::holds_alternative<HubVariable>(*member);
 }
 
 NomadId Runtime::registerHubVariable(const NomadString& name) {
-    if (m_initializedHubs || m_initializingHubs || getContainingHub(name).empty() || isHub(name) || isHubVariable(name) ||
+    if (m_scriptInitialization.state != ScriptInitializationState::Pending ||
+        getContainingHub(name).empty() || !canRegisterHubMember(name) ||
+        isHub(name) || isHubVariable(name) ||
         getCallableId(name) != NOMAD_INVALID_ID || getConstantId(name) != NOMAD_INVALID_ID ||
         getTypeByName(name) != nullptr || getEventId(name) != NOMAD_INVALID_ID ||
         getDynamicVariableId(name) != NOMAD_INVALID_ID ||
@@ -271,45 +291,159 @@ NomadId Runtime::registerHubVariable(const NomadString& name) {
         log::error("Cannot register hub variable '" + name + "': missing hub or conflicting declaration");
         return NOMAD_INVALID_ID;
     }
-    if (m_hubVariableContextId == NOMAD_INVALID_ID) {
-        m_hubVariableContextId = registerVariableContext(
-            "$hub", "$hub.", std::make_unique<SimpleVariableContext>()
-        );
+    auto& hub = *m_hubs[toNomadIndex(getHubId(getContainingHub(name)))];
+    if (hub.m_variableContextId == NOMAD_INVALID_ID) {
+        hub.m_variableContextId = toNomadId(m_variables.size());
+        m_variables.push_back({
+            hub.m_variableContextId, hub.getName(), "$hub." + hub.getName() + ".", hub.m_variables
+        });
     }
-    const auto id = registerContextVariable(m_hubVariableContextId, name, nullptr);
+    const auto id = registerContextVariable(hub.m_variableContextId, name, nullptr);
     if (id != NOMAD_INVALID_ID) {
-        m_hubVariables.insert(name);
-        m_uninitializedHubVariables.insert(name);
+        registerHubMember(name, HubVariable{hub.m_variables->getVariableId(name)});
     }
     return id;
 }
 
-void Runtime::registerHubInitializer(const NomadId functionId) {
-    if (getScriptFunction(functionId) == nullptr || m_initializedHubs || m_initializingHubs) {
-        throw NomadException("Cannot register a hub initializer after initialization or with an invalid function");
+void Runtime::setScriptInitializer(const NomadId functionId) {
+    const auto* function = getScriptFunction(functionId);
+    if (m_scriptInitialization.state != ScriptInitializationState::Pending ||
+        m_scriptInitialization.functionId != NOMAD_INVALID_ID || function == nullptr ||
+        function->getParameterCount() != 0 || function->getReturnType() != getVoidType() ||
+        function->getFunctionStart() == NOMAD_INVALID_INDEX) {
+        throw NomadException("Script initialization requires a compiled, parameterless void function before startup");
     }
-    m_hubInitializers.push_back(functionId);
+    m_scriptInitialization.functionId = functionId;
 }
 
-void Runtime::initializeHubs() {
-    if (!m_hubInitializationError.empty()) {
-        throw VirtualMachineException("Hub initialization failed: " + m_hubInitializationError);
+void Runtime::initializeScripts() {
+    auto& initialization = m_scriptInitialization;
+    if (initialization.state == ScriptInitializationState::Failed) {
+        throw VirtualMachineException("Script initialization failed: " + initialization.error);
     }
-    if (m_initializedHubs || m_initializingHubs) {
+    if (initialization.state == ScriptInitializationState::Complete) {
         return;
     }
-    m_initializingHubs = true;
+    if (initialization.state == ScriptInitializationState::Running) {
+        throw VirtualMachineException("Script initialization cannot be re-entered");
+    }
+    if (initialization.functionId == NOMAD_INVALID_ID) {
+        for (const auto& hub : m_hubs) {
+            if (hub->m_variables->getVariableCount() != 0) {
+                throw VirtualMachineException("Script initialization requires successful executable compilation");
+            }
+        }
+        initialization.state = ScriptInitializationState::Complete;
+        return;
+    }
+    initialization.state = ScriptInitializationState::Running;
     try {
         VirtualMachine machine(this);
-        for (const auto id : m_hubInitializers) {
-            machine.run(getScriptFunction(id), {});
-        }
-        m_initializedHubs = true;
-        m_initializingHubs = false;
+        machine.run(getScriptFunction(initialization.functionId), {});
+        initialization.state = ScriptInitializationState::Complete;
     } catch (const std::exception& exception) {
-        m_hubInitializationError = exception.what();
-        m_initializingHubs = false;
+        initialization.error = exception.what();
+        initialization.state = ScriptInitializationState::Failed;
         throw;
+    }
+}
+
+bool Runtime::canRegisterHubMember(const NomadString& name, const bool function) const {
+    if (name.find('@') != NomadString::npos) {
+        return true;
+    }
+    const auto* hub = getHub(getHubId(getContainingHub(name)));
+    if (hub == nullptr) {
+        return true;
+    }
+    const auto* member = hub->getMember(name.substr(hub->getName().size() + 1));
+    if (member == nullptr || (function && std::holds_alternative<HubFunctions>(*member))) {
+        return true;
+    }
+    log::error("Hub member '" + name + "' is already declared");
+    return false;
+}
+
+namespace {
+
+void addHubMember(
+    std::unordered_map<NomadString, HubMember>& members,
+    const NomadString& name,
+    HubMember member
+) {
+    const auto existing = members.find(name);
+    if (existing == members.end()) {
+        members.emplace(name, std::move(member));
+        return;
+    }
+    auto* functions = std::get_if<HubFunctions>(&existing->second);
+    const auto* additions = std::get_if<HubFunctions>(&member);
+    if (functions == nullptr || additions == nullptr) {
+        throw NomadException("Conflicting hub member '" + name + "'");
+    }
+    functions->ids.insert(functions->ids.end(), additions->ids.begin(), additions->ids.end());
+}
+
+} // namespace
+
+void Runtime::registerHubMember(const NomadString& name, HubMember member) {
+    if (name.find('@') != NomadString::npos) {
+        return;
+    }
+    const auto id = getHubId(getContainingHub(name));
+    if (id != NOMAD_INVALID_ID) {
+        auto& hub = *m_hubs[toNomadIndex(id)];
+        addHubMember(hub.m_members, name.substr(hub.getName().size() + 1), std::move(member));
+    }
+}
+
+void Runtime::rebuildHubMembers() {
+    std::vector<std::unordered_map<NomadString, HubMember>> members(m_hubs.size());
+    const auto add = [&](const NomadString& name, HubMember member) {
+        if (name.find('@') != NomadString::npos) {
+            return;
+        }
+        const auto id = getHubId(getContainingHub(name));
+        if (id != NOMAD_INVALID_ID) {
+            const auto index = toNomadIndex(id);
+            addHubMember(members[index], name.substr(m_hubs[index]->getName().size() + 1), std::move(member));
+        }
+    };
+    for (auto index = NomadIndex{0}; index < m_hubs.size(); ++index) {
+        const auto& hub = *m_hubs[index];
+        add(hub.getName(), HubChild{toNomadId(index)});
+        for (auto id = hub.m_variables->getFirstVariableId(); id != NOMAD_INVALID_ID;
+             id = hub.m_variables->getNextVariableId(id)) {
+            add(hub.m_variables->getVariableName(id), HubVariable{id});
+        }
+    }
+    for (const auto& callable : m_functionTable) {
+        if (callable->getType() == CallableType::Function) {
+            add(callable->getName(), HubFunctions{{callable->getId()}});
+        }
+    }
+    for (auto id = getFirstConstantId(); id != NOMAD_INVALID_ID; id = getNextConstantId(id)) {
+        add(getConstantName(id), HubConstant{id});
+    }
+    for (const auto& type : m_types) {
+        if (getEventId(type->getTypeName()) == NOMAD_INVALID_ID) {
+            add(type->getTypeName(), HubType{type.get()});
+        }
+    }
+    for (const auto& event : m_events) {
+        add(event.name, HubEvent{event.id});
+    }
+    for (auto index = NomadIndex{0}; index < m_dynamicVariables.size(); ++index) {
+        add(m_dynamicVariables[index].name, HubDynamicVariable{toNomadId(index)});
+    }
+    for (const auto& family : m_parameterizedTypes) {
+        add(family.name, HubTypeFamily{family.argumentCount});
+    }
+    for (const auto& family : m_parameterizedConstructors) {
+        add(family.name, HubTypeFamily{family.argumentCount});
+    }
+    for (auto index = NomadIndex{0}; index < m_hubs.size(); ++index) {
+        m_hubs[index]->m_members = std::move(members[index]);
     }
 }
 
@@ -352,8 +486,36 @@ bool Runtime::registerHub(const NomadString& name) {
             return false;
         }
     }
-    m_hubs.insert(prefixes.begin(), prefixes.end());
+    const auto previousCount = m_hubs.size();
+    for (const auto& prefix : prefixes) {
+        if (!isHub(prefix)) {
+            m_hubs.push_back(std::make_unique<Hub>(prefix, getHubId(getContainingHub(prefix))));
+        }
+    }
+    if (previousCount != m_hubs.size()) {
+        try {
+            rebuildHubMembers();
+        } catch (const NomadException& exception) {
+            m_hubs.resize(previousCount);
+            log::error("Cannot register hub '" + name + "': " + exception.what());
+            return false;
+        }
+    }
     return true;
+}
+
+void Runtime::validateScriptExecution() const {
+    if (m_scriptInitialization.state == ScriptInitializationState::Failed) {
+        throw VirtualMachineException("Script initialization failed: " + m_scriptInitialization.error);
+    }
+    if (m_scriptInitialization.state == ScriptInitializationState::Pending) {
+        if (m_scriptInitialization.functionId != NOMAD_INVALID_ID ||
+            std::ranges::any_of(m_hubs, [](const auto& hub) {
+                return hub->m_variables->getVariableCount() != 0;
+            })) {
+            throw VirtualMachineException("Call Runtime::initializeScripts before executing scripts with hub variables");
+        }
+    }
 }
 
 NomadId Runtime::registerNativeCallable(
@@ -406,6 +568,7 @@ NomadId Runtime::registerNativeCallable(
     id = addCallableToTable(std::make_unique<NativeFunction>(name, std::move(fn), parameters, returnType, doc));
 
     addCallable(name, id);
+    registerHubMember(name, HubFunctions{{id}});
 
     return id;
 }
@@ -791,6 +954,12 @@ void Runtime::registerType(std::unique_ptr<Type>&& type) {
     if (isHub(type->getTypeName()) || isHubVariable(type->getTypeName())) {
         throw NomadException("Type name '" + type->getTypeName() + "' is reserved by a hub");
     }
+    if (getEventId(type->getTypeName()) == NOMAD_INVALID_ID) {
+        if (!canRegisterHubMember(type->getTypeName())) {
+            throw NomadException("Type name '" + type->getTypeName() + "' is already a hub member");
+        }
+        registerHubMember(type->getTypeName(), HubType{type.get()});
+    }
     m_types.push_back(std::move(type));
 
     // return toNomadId(m_types.size() - 1);
@@ -947,7 +1116,7 @@ bool Runtime::registerParameterizedType(
     ParameterizedTypeFactory factory,
     ParameterizedTypeInitializer initializer
 ) {
-    if (name.empty() || isHub(name) || isHubVariable(name) ||
+    if (name.empty() || isHub(name) || !canRegisterHubMember(name) ||
         argumentCount == 0 || !factory || getTypeByName(name) != nullptr ||
         getParameterizedConstructorArgumentCount(name) ||
         std::ranges::any_of(m_parameterizedTypes, [&](const auto& entry) { return entry.name == name; })) {
@@ -955,6 +1124,7 @@ bool Runtime::registerParameterizedType(
         return false;
     }
     m_parameterizedTypes.push_back({name, argumentCount, std::move(factory), std::move(initializer), std::nullopt, {}});
+    registerHubMember(name, HubTypeFamily{argumentCount});
     return true;
 }
 
@@ -1350,7 +1520,7 @@ bool Runtime::registerNativeParameterizedConstructor(
     const NomadIndex argumentCount,
     ParameterizedConstructorInitializer initializer
 ) {
-    if (name.empty() || isHub(name) || isHubVariable(name) || argumentCount == 0 || !initializer ||
+    if (name.empty() || isHub(name) || !canRegisterHubMember(name) || argumentCount == 0 || !initializer ||
         getParameterizedConstructorArgumentCount(name) || getParameterizedTypeArgumentCount(name) ||
         getTypeByName(name) != nullptr ||
         std::ranges::any_of(m_functionTable, [&](const auto& callable) {
@@ -1360,6 +1530,7 @@ bool Runtime::registerNativeParameterizedConstructor(
         return false;
     }
     m_parameterizedConstructors.push_back({name, argumentCount, std::move(initializer)});
+    registerHubMember(name, HubTypeFamily{argumentCount});
     return true;
 }
 
@@ -1968,7 +2139,7 @@ void Runtime::getKeywords(std::vector<KeywordDefinition>& keywords) const {
 }
 
 NomadId Runtime::registerConstant(const NomadString& name, const RuntimeValue& value, const Type* type) {
-    if (isHub(name) || isHubVariable(name)) {
+    if (isHub(name) || !canRegisterHubMember(name)) {
         log::error("Cannot register constant '" + name + "': name is reserved by a hub");
         return NOMAD_INVALID_ID;
     }
@@ -1983,6 +2154,7 @@ NomadId Runtime::registerConstant(const NomadString& name, const RuntimeValue& v
 
     m_constants.resize(constantIndex + 1);
     type->copyValue(value, m_constants[constantIndex]);
+    registerHubMember(name, HubConstant{constantId});
 
     return constantId;
 }
@@ -2029,7 +2201,7 @@ NomadId Runtime::getNextConstantId(const NomadId currentId) const {
 }
 
 NomadId Runtime::registerEvent(const NomadString &name, const std::vector<EventParameter> &parameterTypes) {
-    if (isHub(name) || isHubVariable(name)) {
+    if (isHub(name) || !canRegisterHubMember(name)) {
         log::error("Cannot register event '" + name + "': name is reserved by a hub");
         return NOMAD_INVALID_ID;
     }
@@ -2045,6 +2217,7 @@ NomadId Runtime::registerEvent(const NomadString &name, const std::vector<EventP
 
     // Also register event type.
     registerType(std::make_unique<EventType>(&m_events.back()));
+    registerHubMember(name, HubEvent{id});
 
     return id;
 }
@@ -2169,7 +2342,7 @@ NomadId Runtime::registerDynamicVariable(
     const Type* type,
     const NomadString& /*doc*/
     ) {
-    if (isHub(name) || isHubVariable(name)) {
+    if (isHub(name) || !canRegisterHubMember(name)) {
         log::error("Cannot register dynamic variable '" + name + "': name is reserved by a hub declaration");
         return NOMAD_INVALID_ID;
     }
@@ -2185,6 +2358,7 @@ NomadId Runtime::registerDynamicVariable(
 #endif
 
     m_dynamicVariables.push_back(definition);
+    registerHubMember(name, HubDynamicVariable{id});
 
     return id;
 }
@@ -2343,7 +2517,7 @@ NomadId Runtime::getContextVariableId(const NomadString& variableName) {
 
 NomadId Runtime::getVariableContextIdByPrefix(const NomadString& variableName) const {
     if (isHubVariable(variableName)) {
-        return m_hubVariableContextId;
+        return m_hubs[toNomadIndex(getHubId(getContainingHub(variableName)))]->m_variableContextId;
     }
     for (const auto& context: m_variables) {
         if (variableName.rfind(context.prefix, 0) == 0) {
@@ -2407,9 +2581,6 @@ void Runtime::setContextVariableValue(const NomadId contextVariableId, const Run
     }
 
     getVariableContext(contextVariable->contextId)->setValue(contextVariable->localVariableId, value);
-    if (contextVariable->contextId == m_hubVariableContextId) {
-        m_uninitializedHubVariables.erase(getContextVariableName(contextVariableId));
-    }
 }
 
 void Runtime::getContextVariableValue(const NomadId contextVariableId, RuntimeValue& value) const {
@@ -2420,12 +2591,6 @@ void Runtime::getContextVariableValue(const NomadId contextVariableId, RuntimeVa
         return;
     }
 
-    if (contextVariable->contextId == m_hubVariableContextId &&
-        m_uninitializedHubVariables.contains(getContextVariableName(contextVariableId))) {
-        throw VirtualMachineException(
-            "Hub variable '" + getContextVariableName(contextVariableId) + "' read before initialization"
-        );
-    }
     getVariableContext(contextVariable->contextId)->getValue(contextVariable->localVariableId, value);
 }
 
@@ -2489,7 +2654,7 @@ NomadId Runtime::registerScriptFunction(
     const NomadString& path,
     const NomadString& source
     ) {
-    if (isHub(name) || isHubVariable(name)) {
+    if (isHub(name) || !canRegisterHubMember(name, true)) {
         log::error("Cannot register function '" + name + "': name is reserved by a hub declaration");
         return NOMAD_INVALID_ID;
     }
@@ -2502,6 +2667,7 @@ NomadId Runtime::registerScriptFunction(
     const auto id = addCallableToTable(std::make_unique<ScriptFunction>(NOMAD_INVALID_ID, name, path, source));
 
     addCallable(name, id);
+    registerHubMember(name, HubFunctions{{id}});
 
     return id;
 }
@@ -2664,6 +2830,7 @@ void Runtime::executeFunction(const NomadId functionId) {
 }
 
 const ScriptFunction* Runtime::runClosure(const Closure* closure, const std::vector<RuntimeValue>& args) {
+    validateScriptExecution();
     if (m_virtualMachine == nullptr) {
         m_virtualMachine = std::make_unique<VirtualMachine>(this);
     }
@@ -2715,6 +2882,7 @@ void Runtime::executeFunction(const Closure* closure, const std::vector<RuntimeV
 }
 
 void Runtime::executeFunction(const NomadId functionId, const std::vector<RuntimeValue> &args) {
+    validateScriptExecution();
     if (m_virtualMachine == nullptr) {
         m_virtualMachine = std::make_unique<VirtualMachine>(this);
     }
@@ -2735,6 +2903,7 @@ void Runtime::executeFunction(const NomadId functionId, const std::vector<Runtim
 }
 
 void Runtime::executeFunction(const NomadId functionId, const std::vector<RuntimeValue> &args, RuntimeValue& returnValue) {
+    validateScriptExecution();
     if (m_virtualMachine == nullptr) {
         m_virtualMachine = std::make_unique<VirtualMachine>(this);
     }
