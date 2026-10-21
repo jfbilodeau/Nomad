@@ -12,6 +12,65 @@ Keep the project's existing `nomad.version`. Add other modules to the same list
 when needed; for example, use `["nomad-game", "nomad-collections"]` in a game
 that uses collections. See [Runtime modules](modules.md) for module setup.
 
+## Read-only collections
+
+Call `toReadOnly` on a list, map, or array to create a new read-only snapshot:
+
+```nomad
+items = new List<int>
+items.append 10
+snapshot = items.toReadOnly
+items[0] = 20
+assert snapshot[0] == 10
+```
+
+| Source type | Snapshot type |
+| --- | --- |
+| `List<T>` | `ReadOnlyList<T>` |
+| `Map<string V>` | `ReadOnlyMap<string V>` |
+| `Array1<T>` | `ReadOnlyArray1<T>` |
+| `Array2<T>` | `ReadOnlyArray2<T>` |
+| `Array3<T>` | `ReadOnlyArray3<T>` |
+
+Snapshots preserve the source's entries, element types, and array dimensions.
+Later replacements, insertions, or removals in the source do not affect the
+snapshot. Each call creates a separate container, including for empty sources.
+Copying is shallow: stored objects share references, so a nested mutable
+collection can still be changed through an element read from the snapshot.
+
+Read-only collections retain `count` and indexed reads. Read-only lists and
+one-dimensional arrays support iteration. Read-only maps retain `contains`,
+`keys`, `values`, and `entries`; the latter three return independent, writable
+array snapshots just as they do on mutable maps. Object values in those arrays
+still share references.
+
+Indexed writes and mutating methods are unavailable. There are no script
+constructors for read-only collections and no implicit conversion between
+mutable and read-only collection types. Use the snapshot type in function
+parameter annotations. Default-initialized read-only collections, such as array
+elements, are empty. Assigning a read-only collection shares that snapshot;
+it does not make another copy.
+
+### Native hosts
+
+With `nomad-collections` registered, resolve `ReadOnlyList`, `ReadOnlyMap`, or
+`ReadOnlyArray1` through `ReadOnlyArray3` using `Runtime::getParameterizedType`
+and the same type arguments as the corresponding mutable collection.
+
+Hosts can populate ordinary `ListObject`, `MapObject`, or rank-matching array
+objects and expose them under the corresponding read-only type. No wrapper
+object or snapshot copy is required. The object's element or value type and
+array rank must match the exposed type. `registerConstant` retains the object;
+release the host's original reference after successful registration, and also
+release it if registration fails. Native function results transfer an owned
+object reference to the VM instead.
+
+Read-only types restrict script access, not native access to the object. Native
+mutations remain visible through existing read-only references. Stored objects
+also retain their own APIs; exposing a collection as read-only does not freeze
+its elements. Script `toReadOnly` calls create independent shallow snapshots
+rather than sharing the source container.
+
 ## Key/value pairs
 
 `KeyValue<K V>` stores a key of type `K` and a value of type `V`. Both types

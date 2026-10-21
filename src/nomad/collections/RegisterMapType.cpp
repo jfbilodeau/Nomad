@@ -6,24 +6,30 @@
 #include <nomad/collections/KeyValueType.hpp>
 #include <nomad/collections/MapObject.hpp>
 #include <nomad/collections/MapType.hpp>
+#include <nomad/collections/ReadOnlyMapType.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <utility>
+
 namespace nomad {
 
-void registerMapType(Runtime* runtime) {
+namespace {
+
+void registerMapFamily(
+    Runtime* runtime,
+    const NomadString& name,
+    Runtime::ParameterizedTypeFactory factory,
+    const bool writable
+) {
     if (!runtime->registerParameterizedType(
-        "Map",
+        name,
         2,
-        [](const std::vector<const nomad::Type*>& arguments) {
-            const auto* keyType = arguments[0];
-            const auto* valueType = arguments[1];
-            return std::make_unique<nomad::MapType>(keyType, valueType);
-        },
-        [runtime](const nomad::Type* type) {
-            const auto* objectType = static_cast<const nomad::MapType*>(type);
+        std::move(factory),
+        [runtime, writable](const nomad::Type* type) {
+            const auto* objectType = static_cast<const nomad::ObjectType*>(type);
             const auto* valueType = objectType->getTypeArguments()[1];
             const auto* keyType = objectType->getTypeArguments()[0];
             const auto* keysType = runtime->getParameterizedType("Array1", {keyType});
@@ -36,13 +42,15 @@ void registerMapType(Runtime* runtime) {
             if (keysType == nullptr || valuesType == nullptr || entriesType == nullptr) {
                 throw nomad::NomadException("Failed to resolve Map snapshot types");
             }
-            const auto constructorId = runtime->registerNativeConstructor(
+            if (writable && runtime->registerNativeConstructor(
                 objectType, {},
                 [valueType](std::span<const nomad::RuntimeValue>) {
                     return new nomad::MapObject(valueType);
                 },
                 NomadDoc("Creates an empty map with string keys.")
-            );
+            ) == NOMAD_INVALID_ID) {
+                throw NomadException("Failed to register Map constructor");
+            }
             const auto countId = runtime->registerNativeProperty(
                 objectType,
                 "count",
@@ -91,6 +99,14 @@ void registerMapType(Runtime* runtime) {
                 entriesType,
                 NomadDoc("A fixed-size snapshot of fresh read-only key/value pairs in unspecified order. Object values share references.")
             );
+            NativeFunctionFn setter;
+            if (writable) {
+                setter = [](VirtualMachine* machine) {
+                    auto* map = machine->getThisAs<MapObject>();
+                    const auto& key = machine->getStringParameter(0)->getString();
+                    map->setValue(key, machine->getParameter(1));
+                };
+            }
             const auto indexerId = runtime->registerNativeIndexer(
                 objectType,
                 {runtime->getStringType()},
@@ -101,13 +117,10 @@ void registerMapType(Runtime* runtime) {
                     auto& result = machine->getResult();
                     map->getValue(key, result);
                 },
-                [](nomad::VirtualMachine* machine) {
-                    auto* map = machine->getThisAs<nomad::MapObject>();
-                    const auto& key = machine->getStringParameter(0)->getString();
-                    const auto& value = machine->getParameter(1);
-                    map->setValue(key, value);
-                },
-                NomadDoc("Reads, inserts, or replaces an entry by string key. Missing keys log an error and return a default without inserting.")
+                std::move(setter),
+                writable
+                    ? NomadDoc("Reads, inserts, or replaces an entry by string key. Missing keys log an error and return a default without inserting.")
+                    : NomadDoc("Reads an entry by string key. Missing keys log an error and return a default without inserting.")
             );
             const auto containsId = runtime->registerNativeMethod(
                 objectType,
@@ -122,6 +135,25 @@ void registerMapType(Runtime* runtime) {
                 runtime->getBooleanType(),
                 NomadDoc("Returns whether the key exists, without logging or changing the map.")
             );
+            if (countId == NOMAD_INVALID_ID || indexerId == NOMAD_INVALID_ID || containsId == NOMAD_INVALID_ID ||
+                keysId == NOMAD_INVALID_ID || valuesId == NOMAD_INVALID_ID || entriesId == NOMAD_INVALID_ID) {
+                throw NomadException("Failed to register Map readers");
+            }
+            if (!writable) {
+                return;
+            }
+            const auto* readOnlyType = runtime->getParameterizedType("ReadOnlyMap", {keyType, valueType});
+            if (readOnlyType == nullptr || runtime->registerNativeMethod(
+                objectType, "toReadOnly",
+                [](VirtualMachine* machine) {
+                    auto snapshot = machine->getThisAs<MapObject>()->createCopy();
+                    machine->getResult().setObjectValue(snapshot.release());
+                },
+                {}, readOnlyType,
+                NomadDoc("Creates an independent read-only snapshot. Object values share references.")
+            ) == NOMAD_INVALID_ID) {
+                throw NomadException("Failed to register Map.toReadOnly");
+            }
             const auto removeId = runtime->registerNativeMethod(
                 objectType,
                 "remove",
@@ -146,17 +178,24 @@ void registerMapType(Runtime* runtime) {
                 runtime->getVoidType(),
                 NomadDoc("Removes all entries. Clearing an empty map does nothing and does not log.")
             );
-            if (constructorId == nomad::NOMAD_INVALID_ID || countId == nomad::NOMAD_INVALID_ID ||
-                indexerId == nomad::NOMAD_INVALID_ID || containsId == nomad::NOMAD_INVALID_ID ||
-                removeId == nomad::NOMAD_INVALID_ID || clearId == nomad::NOMAD_INVALID_ID ||
-                keysId == nomad::NOMAD_INVALID_ID || valuesId == nomad::NOMAD_INVALID_ID ||
-                entriesId == nomad::NOMAD_INVALID_ID) {
+            if (removeId == nomad::NOMAD_INVALID_ID || clearId == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register Map members");
             }
         }
     )) {
-        throw nomad::NomadException("Failed to register Map");
+        throw nomad::NomadException("Failed to register " + name);
     }
+}
+
+} // namespace
+
+void registerMapType(Runtime* runtime) {
+    registerMapFamily(runtime, "ReadOnlyMap", [](const std::vector<const Type*>& arguments) {
+        return std::make_unique<ReadOnlyMapType>(arguments[0], arguments[1]);
+    }, false);
+    registerMapFamily(runtime, "Map", [](const std::vector<const Type*>& arguments) {
+        return std::make_unique<MapType>(arguments[0], arguments[1]);
+    }, true);
 }
 
 } // namespace nomad

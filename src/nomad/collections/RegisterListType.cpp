@@ -5,14 +5,72 @@
 #include <nomad/collections/ListIterator.hpp>
 #include <nomad/collections/ListObject.hpp>
 #include <nomad/collections/ListType.hpp>
+#include <nomad/collections/ReadOnlyListType.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <utility>
+
 namespace nomad {
 
+namespace {
+
+void registerListReaders(Runtime* runtime, const ObjectType* objectType, const bool writable) {
+    const auto* elementType = objectType->getTypeArguments()[0];
+    const auto iteratorId = runtime->registerNativeMethod(
+        objectType, "iterator",
+        [](VirtualMachine* machine) {
+            machine->getResult().setObjectValue(new ListIterator(machine->getThisAs<ListObject>()));
+        },
+        {}, runtime->getIteratorType(elementType),
+        NomadDoc("Creates an independent live iterator. Structural changes invalidate its next advance.")
+    );
+    const auto countId = runtime->registerNativeProperty(
+        objectType, "count", runtime->getIntegerType(),
+        [](VirtualMachine* machine, RuntimeValue& result) {
+            result.setIntegerValue(static_cast<NomadInteger>(machine->getThisAs<ListObject>()->getCount()));
+        },
+        {}, NomadDoc("The number of elements in the list.")
+    );
+    NativeFunctionFn setter;
+    if (writable) {
+        setter = [](VirtualMachine* machine) {
+            machine->getThisAs<ListObject>()->setValue(machine->getIntegerParameter(0), machine->getParameter(1));
+        };
+    }
+    const auto indexerId = runtime->registerNativeIndexer(
+        objectType, {runtime->getIntegerType()}, elementType,
+        [elementType](VirtualMachine* machine) {
+            const auto* list = machine->getThisAs<ListObject>();
+            elementType->copyValue(list->getValue(machine->getIntegerParameter(0)), machine->getResult());
+        },
+        std::move(setter),
+        writable
+            ? NomadDoc("Reads or replaces an element at a zero-based index. Out-of-range indices fault.")
+            : NomadDoc("Reads an element at a zero-based index. Out-of-range indices fault.")
+    );
+    if (iteratorId == NOMAD_INVALID_ID || countId == NOMAD_INVALID_ID || indexerId == NOMAD_INVALID_ID) {
+        throw NomadException("Failed to register List readers");
+    }
+    runtime->registerIterableType(objectType, elementType, runtime->getNativeMemberMethod(iteratorId));
+}
+
+} // namespace
+
 void registerListType(Runtime* runtime) {
+    if (!runtime->registerParameterizedType(
+        "ReadOnlyList", 1,
+        [](const std::vector<const Type*>& arguments) {
+            return std::make_unique<ReadOnlyListType>(arguments[0]);
+        },
+        [runtime](const Type* type) {
+            registerListReaders(runtime, static_cast<const ObjectType*>(type), false);
+        }
+    )) {
+        throw NomadException("Failed to register ReadOnlyList");
+    }
     if (!runtime->registerParameterizedType(
         "List",
         1,
@@ -23,32 +81,28 @@ void registerListType(Runtime* runtime) {
         [runtime](const nomad::Type* type) {
             const auto* objectType = static_cast<const nomad::ObjectType*>(type);
             const auto* elementType = objectType->getTypeArguments()[0];
-            const auto iteratorId = runtime->registerNativeMethod(
-                objectType, "iterator",
+            registerListReaders(runtime, objectType, true);
+            const auto* readOnlyType = runtime->getParameterizedType("ReadOnlyList", {elementType});
+            if (readOnlyType == nullptr || runtime->registerNativeMethod(
+                objectType, "toReadOnly",
                 [](VirtualMachine* machine) {
-                    machine->getResult().setObjectValue(new ListIterator(machine->getThisAs<ListObject>()));
+                    const auto* source = machine->getThisAs<ListObject>();
+                    auto snapshot = std::make_unique<ListObject>(source->getElementType());
+                    for (auto index = NomadIndex{0}; index < source->getCount(); ++index) {
+                        (void)snapshot->append(source->getValue(static_cast<NomadInteger>(index)));
+                    }
+                    machine->getResult().setObjectValue(snapshot.release());
                 },
-                {}, runtime->getIteratorType(elementType),
-                NomadDoc("Creates an independent live iterator. Structural changes invalidate its next advance.")
-            );
-            runtime->registerIterableType(objectType, elementType, runtime->getNativeMemberMethod(iteratorId));
+                {}, readOnlyType,
+                NomadDoc("Creates an independent read-only snapshot. Object elements share references.")
+            ) == NOMAD_INVALID_ID) {
+                throw NomadException("Failed to register List.toReadOnly");
+            }
             const auto constructorId = runtime->registerNativeConstructor(
                 objectType, {},
                 [elementType](std::span<const nomad::RuntimeValue>) {
                     return new nomad::ListObject(elementType);
                 }, ""
-            );
-            const auto countId = runtime->registerNativeProperty(
-                objectType,
-                "count",
-                runtime->getIntegerType(),
-                [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
-                    const auto* list = machine->getThisAs<nomad::ListObject>();
-                    const auto count = static_cast<nomad::NomadInteger>(list->getCount());
-                    result.setIntegerValue(count);
-                },
-                {},
-                NomadDoc("The number of elements in the list.")
             );
             const auto appendId = runtime->registerNativeMethod(
                 objectType,
@@ -139,31 +193,11 @@ void registerListType(Runtime* runtime) {
                 runtime->getVoidType(),
                 NomadDoc("Removes all elements. Clearing an empty list does nothing and does not log.")
             );
-            const auto indexerId = runtime->registerNativeIndexer(
-                objectType,
-                {runtime->getIntegerType()},
-                elementType,
-                [elementType](nomad::VirtualMachine* machine) {
-                    const auto* list = machine->getThisAs<nomad::ListObject>();
-                    const auto index = machine->getIntegerParameter(0);
-                    auto& result = machine->getResult();
-                    const auto& value = list->getValue(index);
-                    elementType->copyValue(value, result);
-                },
-                [](nomad::VirtualMachine* machine) {
-                    auto* list = machine->getThisAs<nomad::ListObject>();
-                    const auto index = machine->getIntegerParameter(0);
-                    const auto& value = machine->getParameter(1);
-                    list->setValue(index, value);
-                },
-                NomadDoc("Reads or replaces an element at a zero-based index. Out-of-range indices fault.")
-            );
-            if (constructorId == nomad::NOMAD_INVALID_ID || countId == nomad::NOMAD_INVALID_ID ||
+            if (constructorId == nomad::NOMAD_INVALID_ID ||
                 appendId == nomad::NOMAD_INVALID_ID || prependId == nomad::NOMAD_INVALID_ID ||
                 insertId == nomad::NOMAD_INVALID_ID || removeId == nomad::NOMAD_INVALID_ID ||
                 removeFirstId == nomad::NOMAD_INVALID_ID || removeLastId == nomad::NOMAD_INVALID_ID ||
-                clearId == nomad::NOMAD_INVALID_ID ||
-                indexerId == nomad::NOMAD_INVALID_ID) {
+                clearId == nomad::NOMAD_INVALID_ID) {
                 throw nomad::NomadException("Failed to register List members");
             }
         }

@@ -18,6 +18,7 @@ public:
 
     [[nodiscard]] const Type* getElementType() const;
     [[nodiscard]] NomadIndex getCount() const;
+    [[nodiscard]] std::unique_ptr<ArrayObject> createCopy() const;
     [[nodiscard]] virtual NomadIndex getDimensionCount() const = 0;
     [[nodiscard]] virtual NomadIndex getDimensionSize(NomadIndex dimension) const = 0;
 

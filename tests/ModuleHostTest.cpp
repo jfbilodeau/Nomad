@@ -90,10 +90,10 @@ BOOST_AUTO_TEST_CASE(project_metadata_is_host_owned_and_defaults_to_blank)
 
 BOOST_AUTO_TEST_CASE(game_title_defaults_to_nomad_unless_explicitly_configured)
 {
-    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
-    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
     const TestDirectory directory("host-project-session-metadata");
     for (const auto explicitTitle : {false, true}) {
+        SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+        SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
         NomadProject project;
         project.root = directory.getPath();
         project.configuration.project = {"Typed name", "org.nomad.test", "1.0.0", "test"};
@@ -105,6 +105,7 @@ BOOST_AUTO_TEST_CASE(game_title_defaults_to_nomad_unless_explicitly_configured)
             project.document.setString("window.title", "Explicit title");
         }
         const auto host = createProjectSession(project, ModuleMode::Application);
+        BOOST_TEST(NomadString(SDL_GetCurrentVideoDriver()) == "dummy");
         auto count = 0;
         auto** windows = SDL_GetWindows(&count);
         BOOST_REQUIRE(windows != nullptr);

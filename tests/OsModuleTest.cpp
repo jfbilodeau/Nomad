@@ -128,6 +128,8 @@ BOOST_AUTO_TEST_CASE(analysis_exposes_exact_enum_types_without_host_data) {
     auto& runtime = *host->getRuntime();
     BOOST_TEST(constant(runtime, "os.argv").asObject<Array1dObject>()->getCount() == 0U);
     BOOST_TEST(constant(runtime, "os.env").asObject<MapObject>()->getCount() == 0U);
+    BOOST_TEST(runtime.getConstantType(runtime.getConstantId("os.argv"))->getTypeName() == "ReadOnlyArray1<string>");
+    BOOST_TEST(runtime.getConstantType(runtime.getConstantId("os.env"))->getTypeName() == "ReadOnlyMap<string string>");
     for (const auto* name : {"os.currentDirectory", "os.executablePath", "os.tempDirectory"}) {
         BOOST_TEST(NomadString(constant(runtime, name).getStringValue()).empty());
     }
@@ -170,13 +172,13 @@ BOOST_AUTO_TEST_CASE(analysis_exposes_exact_enum_types_without_host_data) {
             "|| os.platform == os.Platform.MacOS\n"
         "assert os.architecture == os.Architecture.X86 || os.architecture == os.Architecture.X64 "
             "|| os.architecture == os.Architecture.Arm32 || os.architecture == os.Architecture.Arm64\n"
-        "os.env[\"snapshot\"] = \"mutable\"\n"
-        "assert os.env[\"snapshot\"] == \"mutable\"\n"));
+        "assert os.argv.count == 0\n"
+        "assert os.env.count == 0\n"));
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
 }
 
-BOOST_AUTO_TEST_CASE(bindings_are_read_only_but_collection_contents_are_writable) {
+BOOST_AUTO_TEST_CASE(bindings_and_collection_contents_are_read_only_in_both_execution_modes) {
     TestDirectory directory("nomad_os_read_only");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-os"});
     const std::vector<NomadString> assignments{
@@ -186,22 +188,28 @@ BOOST_AUTO_TEST_CASE(bindings_are_read_only_but_collection_contents_are_writable
         "os.architecture = os.Architecture.X64",
         "os.currentDirectory = \"elsewhere\"",
         "os.executablePath = \"elsewhere\"",
-        "os.tempDirectory = \"elsewhere\""
+        "os.tempDirectory = \"elsewhere\"",
+        "os.argv[0] = \"updated\"",
+        "os.env[\"snapshot\"] = \"updated\"",
+        "os.env.remove \"snapshot\"",
+        "os.env.clear"
     };
     for (const auto& assignment : assignments) {
         BOOST_TEST_CONTEXT(assignment) {
             auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
             BOOST_TEST(!compile(*host->getRuntime(), assignment));
+            auto machine = host->getRuntime()->createVirtualMachine();
+            InterpreterContext context(*machine);
+            BOOST_TEST(!Interpreter{}.execute(assignment, context));
+            BOOST_TEST(context.hasError());
         }
     }
     auto host = ModuleHost::create({}, directory.getPath(), modules,
         {"--", "original"}, ModuleMode::Application);
     auto& runtime = *host->getRuntime();
     BOOST_REQUIRE(compile(runtime,
-        "os.argv[0] = \"updated\"\n"
-        "os.env[\"snapshot\"] = \"updated\"\n"
-        "assert os.argv[0] == \"updated\"\n"
-        "assert os.env[\"snapshot\"] == \"updated\"\n"));
+        "assert os.argv[0] == \"original\"\n"
+        "for argument in os.argv\nassert argument == \"original\"\nend\n"));
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
 }
@@ -265,11 +273,13 @@ BOOST_AUTO_TEST_CASE(collection_constants_survive_compiler_destruction_and_inter
     auto host = ModuleHost::create({}, directory.getPath(), modules,
         {"--", "original"}, ModuleMode::Application);
     auto& runtime = *host->getRuntime();
+    RuntimeValue environmentValue(NomadString("original"));
+    constant(runtime, "os.env").asObject<MapObject>()->setValue("interpreter", environmentValue);
+    environmentValue.freeObjectValue();
     BOOST_REQUIRE(compile(runtime,
-        "fun identity values:Array1<string>\nreturn values\nend\n"
+        "fun identity values:ReadOnlyArray1<string>\nreturn values\nend\n"
         "values = identity os.argv\n"
-        "values[0] = \"updated\"\n"
-        "assert os.argv[0] == \"updated\"\n"
+        "assert values[0] == \"original\"\n"
         "return os.argv\n"));
     const auto argumentsValue = constant(runtime, "os.argv");
     auto* arguments = argumentsValue.asObject<Array1dObject>();
@@ -283,10 +293,11 @@ BOOST_AUTO_TEST_CASE(collection_constants_survive_compiler_destruction_and_inter
         auto machine = runtime.createVirtualMachine();
         InterpreterContext context(*machine);
         BOOST_REQUIRE(Interpreter{}.evaluateExpression("os.argv[0]", context));
-        BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "updated");
-        BOOST_REQUIRE(Interpreter{}.execute("os.env[\"interpreter\"] = \"updated\"", context));
+        BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "original");
+        BOOST_TEST(!Interpreter{}.execute("os.argv[0] = \"updated\"", context));
+        BOOST_TEST(!Interpreter{}.execute("os.env[\"interpreter\"] = \"updated\"", context));
         BOOST_REQUIRE(Interpreter{}.evaluateExpression("os.env[\"interpreter\"]", context));
-        BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "updated");
+        BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "original");
     }
     BOOST_TEST(arguments->getReferenceCount() == references);
 }
