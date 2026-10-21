@@ -5,7 +5,6 @@ Things the author wants to do.
 
 
 ## Open
-[ ] Rename `init` to `main`
 [ ] File IO module.
 [ ] Readonly collections
 [ ] `doc` comments in Nomad.
@@ -38,6 +37,7 @@ a = new 20  # Type for `a` is known. Reused.
 ```
  
 ## Completed
+[X] Rename `init` to `main`
 [X] `$"{1+2}"` in interpreter causes fault
 [X] LSP
 [X] Make runtime plugable (Game, system, etc...)
