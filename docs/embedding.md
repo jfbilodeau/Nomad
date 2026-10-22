@@ -453,8 +453,14 @@ provide other default values and formatting.
 Implement it when defining a type descriptor, and release initialized values
 through `freeValue` when they are no longer needed.
 
-Register a constructor with the type it constructs, its parameters, and a factory.
-Scripts invoke it with `new` and the type's name:
+Register a constructor through `Runtime::registerNativeConstructor` with the type
+it constructs, its parameters, and a factory. `ObjectType::getConstructors()`
+lists that type's registered constructors as borrowed `const Constructor*`
+pointers, in registration order. These pointers remain valid until the runtime
+is destroyed. A constructor returning another type is listed under its declaring
+type, not its result type.
+
+Scripts invoke constructors with `new` and the type's name:
 
 ```cpp
 auto descriptor = std::make_unique<nomad::ObjectType>("Example");

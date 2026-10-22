@@ -4,6 +4,7 @@
 
 #include <nomad/log/Logger.hpp>
 
+#include <nomad/script/Callable.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/String.hpp>
@@ -312,6 +313,36 @@ void BooleanType::toString(const RuntimeValue& value, NomadString& string) const
 
 ///////////////////////////////////////////////////////////////////////////////
 // ObjectType
+ObjectType::~ObjectType() = default;
+
+NomadId ObjectType::registerConstructor(
+    Runtime& runtime,
+    std::unique_ptr<Constructor> constructor
+) {
+    if (constructor == nullptr || constructor->getObjectType() != this ||
+        constructor->getId() != NOMAD_INVALID_ID || runtime.getTypeByName(getTypeName()) != this) {
+        log::error("Cannot register constructor: invalid owner or previously registered callable");
+        return NOMAD_INVALID_ID;
+    }
+
+    m_constructors.push_back(std::move(constructor));
+    const auto id = m_constructors.back()->registerWithRuntime(runtime);
+    if (id == NOMAD_INVALID_ID) {
+        m_constructors.pop_back();
+        log::error("Cannot register constructor: callable registration failed");
+    }
+    return id;
+}
+
+std::vector<const Constructor*> ObjectType::getConstructors() const {
+    std::vector<const Constructor*> constructors;
+    constructors.reserve(m_constructors.size());
+    for (const auto& constructor : m_constructors) {
+        constructors.push_back(constructor.get());
+    }
+    return constructors;
+}
+
 ObjectType::ObjectType(
     NomadString name,
     std::vector<const Type*> typeArguments,

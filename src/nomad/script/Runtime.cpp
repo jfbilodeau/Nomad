@@ -1309,6 +1309,15 @@ bool Runtime::ownsType(const Type* type) const {
            std::ranges::any_of(m_types, [type](const auto& registeredType) { return registeredType.get() == type; });
 }
 
+ObjectType* Runtime::getMutableObjectType(const ObjectType* type) {
+    for (const auto& registeredType : m_types) {
+        if (registeredType.get() == type) {
+            return static_cast<ObjectType*>(registeredType.get());
+        }
+    }
+    return nullptr;
+}
+
 bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString& name, const MemberType type,
                                          const std::vector<Parameter>& parameters,
                                          NomadString& error) const {
@@ -1457,7 +1466,8 @@ NomadId Runtime::registerNativeConstructor(
     ConstructorFactory factory,
     const NomadString& doc
 ) {
-    if (!ownsType(objectType) || !ownsType(createdType) || createdType->isInternal() || !factory) {
+    auto* ownedType = getMutableObjectType(objectType);
+    if (ownedType == nullptr || !ownsType(createdType) || createdType->isInternal() || !factory) {
         log::error("Cannot register constructor: a registered class, registered public object type, and factory are required");
         return NOMAD_INVALID_ID;
     }
@@ -1485,7 +1495,8 @@ NomadId Runtime::registerNativeConstructor(
             return NOMAD_INVALID_ID;
         }
     }
-    return addCallableToTable(
+    return ownedType->registerConstructor(
+        *this,
         std::make_unique<NativeConstructor>(name, objectType, createdType, std::move(factory), parameters, doc)
     );
 }

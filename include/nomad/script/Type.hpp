@@ -12,6 +12,7 @@
 #include <nomad/script/OpCode.hpp>
 
 #include <functional>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -22,6 +23,7 @@ class EventType;
 class Runtime;
 class FunctionType;
 class EnumType;
+class Constructor;
 
 enum class TypeStorage {
     None = 1,  // for `void`
@@ -237,10 +239,16 @@ public:
         std::vector<const Type*> typeArguments = {},
         NomadString documentation = {}
     );
+    ~ObjectType() override;
     using Type::toString;
     [[nodiscard]] NomadString getTypeName() const override;
     [[nodiscard]] TypeStorage getStorage() const override;
     [[nodiscard]] const std::vector<const Type*>& getTypeArguments() const;
+    [[nodiscard]] NomadId registerConstructor(
+        Runtime& runtime,
+        std::unique_ptr<Constructor> constructor
+    );
+    [[nodiscard]] std::vector<const Constructor*> getConstructors() const;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 
     void initValue(RuntimeValue& value) const override;
@@ -261,6 +269,7 @@ private:
     NomadString m_name;
     std::vector<const Type*> m_typeArguments;
     std::vector<ObjectPropertyDefinition> m_properties;
+    std::vector<std::unique_ptr<Constructor>> m_constructors;
 };
 
 class BaseStringType : public ObjectType {

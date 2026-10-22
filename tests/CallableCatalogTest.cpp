@@ -9,7 +9,9 @@
 #include <nomad/system/NativeFunctions.hpp>
 #include <nomad/script/Runtime.hpp>
 
+#include <memory>
 #include <span>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -710,6 +712,82 @@ BOOST_AUTO_TEST_CASE(registered_callables_share_one_id_space)
     BOOST_TEST(runtime.getCallable(functionResult.id) == runtime.getNativeFunction(functionResult.id));
     BOOST_TEST(runtime.getCallable(methodResult.id) == runtime.getNativeMethod(methodResult.id));
     BOOST_TEST(runtime.getCallable(NOMAD_INVALID_ID) == nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(constructors_belong_to_the_declaring_type)
+{
+    Runtime runtime;
+    const auto* declaringType = registerResolutionType(runtime, "ConstructorOwner");
+    const auto* createdType = registerResolutionType(runtime, "ConstructorResult");
+    const auto id = runtime.registerNativeConstructor(
+        declaringType, {}, createdType,
+        [](std::span<const RuntimeValue>) { return new ResolutionObject; }, ""
+    );
+    BOOST_REQUIRE(id != NOMAD_INVALID_ID);
+    const auto constructors = declaringType->getConstructors();
+    BOOST_REQUIRE(constructors.size() == 1);
+    BOOST_TEST(constructors.front() == runtime.getConstructor(id));
+    BOOST_TEST(constructors.front()->getReturnType() == createdType);
+    BOOST_TEST(createdType->getConstructors().empty());
+
+    const auto duplicate = registerResolutionConstructor(runtime, declaringType, {});
+    BOOST_TEST(duplicate == NOMAD_INVALID_ID);
+    BOOST_TEST(declaringType->getConstructors().size() == 1);
+
+    Runtime otherRuntime;
+    const auto otherCallableCount = otherRuntime.getFunctionTableSize();
+    BOOST_TEST(registerResolutionConstructor(otherRuntime, declaringType, {}) == NOMAD_INVALID_ID);
+    BOOST_TEST(otherRuntime.getFunctionTableSize() == otherCallableCount);
+    BOOST_TEST(declaringType->getConstructors().size() == 1);
+
+    for (auto index = 0; index < 32; ++index) {
+        BOOST_REQUIRE(registerVoidNativeFunction(runtime, "extra" + std::to_string(index)) != NOMAD_INVALID_ID);
+    }
+    BOOST_TEST(runtime.getConstructor(id) == constructors.front());
+    BOOST_TEST(runtime.resolveConstructor(declaringType, {}).id == id);
+}
+
+BOOST_AUTO_TEST_CASE(type_owned_constructor_factory_is_released_once)
+{
+    auto destructions = 0;
+    auto aliveAtTypeDestruction = false;
+    {
+        class ConstructorOwner final : public ObjectType {
+        public:
+            ConstructorOwner(int& destructions, bool& alive):
+                ObjectType("LifetimeOwner"),
+                m_destructions(destructions),
+                m_alive(alive)
+            {
+            }
+
+            ~ConstructorOwner() override {
+                m_alive = m_destructions == 0 && getConstructors().size() == 1;
+            }
+
+        private:
+            int& m_destructions;
+            bool& m_alive;
+        };
+
+        Runtime runtime;
+        auto descriptor = std::make_unique<ConstructorOwner>(destructions, aliveAtTypeDestruction);
+        const auto* type = descriptor.get();
+        runtime.registerType(std::move(descriptor));
+        auto lifetime = std::shared_ptr<int>(new int{0}, [&destructions](int* value) {
+            ++destructions;
+            delete value;
+        });
+        const auto id = runtime.registerNativeConstructor(
+            type, {},
+            [lifetime = std::move(lifetime)](std::span<const RuntimeValue>) { return new ResolutionObject; },
+            ""
+        );
+        BOOST_REQUIRE(id != NOMAD_INVALID_ID);
+        BOOST_TEST(destructions == 0);
+    }
+    BOOST_TEST(aliveAtTypeDestruction);
+    BOOST_TEST(destructions == 1);
 }
 
 BOOST_AUTO_TEST_CASE(category_getters_and_conversions_use_resolved_callable_ids)

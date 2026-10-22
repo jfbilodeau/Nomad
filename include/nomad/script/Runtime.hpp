@@ -532,6 +532,7 @@ private:
     ) const;
     // Type and member validation
     [[nodiscard]] bool ownsType(const Type* type) const;
+    [[nodiscard]] ObjectType* getMutableObjectType(const ObjectType* type);
     [[nodiscard]] bool canRegisterNativeMember(
         const Type* objectType,
         const NomadString& name,
