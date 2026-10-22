@@ -884,7 +884,7 @@ void op_object_init_r(VirtualMachine* interpreter) {
 }
 
 void op_object_new(VirtualMachine* interpreter) {
-    const auto* constructor = interpreter->getRuntime()->getNativeConstructor(interpreter->nextId());
+    const auto* constructor = interpreter->getRuntime()->getNativeConstructor(CallableId{interpreter->nextId()});
     if (constructor == nullptr) {
         interpreter->fault("Cannot construct object: invalid constructor");
     }

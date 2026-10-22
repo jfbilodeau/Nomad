@@ -1136,14 +1136,14 @@ CallableId Compiler::createFunction(
         context->reportError(
             "Function name '" + functionName + "' is already used by '" + existingFunction->getPath() + "'",
             source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
-        return CallableId{};
+        return CallableId::INVALID;
     }
 
     const auto functionId = m_runtime->registerScriptFunction(functionName, source.sourceName, source.text);
     if (functionId == CallableId{}) {
         context->reportError("Could not register function '" + functionName + "'",
             source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
-        return CallableId{};
+        return CallableId::INVALID;
     }
 
     auto function = m_runtime->getScriptFunction(functionId);
@@ -1530,7 +1530,7 @@ void Compiler::addFunctionCallDependency(const CallableId callerFunctionId, cons
 }
 
 bool Compiler::isRecursiveFunctionCall(const CallableId callerFunctionId, const CallableId calleeFunctionId) const {
-    std::unordered_set<CallableId> visited;
+    std::unordered_set<CallableId, IdHash> visited;
     std::vector<CallableId> pending = { calleeFunctionId };
 
     while (!pending.empty()) {

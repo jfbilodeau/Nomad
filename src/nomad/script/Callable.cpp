@@ -83,7 +83,7 @@ const NomadString& Callable::getDoc() const {
 
 CallableId Callable::registerWithRuntime(Runtime& runtime) {
     if (m_id != CallableId{}) {
-        return CallableId{};
+        return CallableId::INVALID;
     }
 
     m_id = runtime.catalogCallable(this);

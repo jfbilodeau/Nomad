@@ -235,7 +235,7 @@ CallableId Runtime::registerNativeFunction(
 ) {
     if (isHub(name) || !canRegisterHubMember(name, true)) {
         log::error("Cannot register function '" + name + "': name is reserved by a hub");
-        return CallableId{};
+        return CallableId::INVALID;
     }
     return registerNativeCallable(nullptr, name, std::move(nativeFunction_fn), parameters, returnType, doc);
 }
@@ -529,18 +529,18 @@ CallableId Runtime::registerNativeCallable(
     if (objectType != nullptr) {
         if (!fn || !ownsType(returnType) || (returnType->isInternal() && !returnType->isVoid())) {
             log::error("Cannot register native method '" + name + "': invalid callback or return type");
-            return CallableId{};
+            return CallableId::INVALID;
         }
         for (const auto& parameter : parameters) {
             if (parameter.name.empty() || !ownsType(parameter.type) || parameter.type->isVoid()) {
                 log::error("Cannot register native method '" + name + "': invalid parameter definition");
-                return CallableId{};
+                return CallableId::INVALID;
             }
         }
         NomadString error;
         if (!canRegisterNativeMember(objectType, name, MemberType::Method, parameters, error)) {
             log::error("Cannot register native method '" + name + "': " + error);
-            return CallableId{};
+            return CallableId::INVALID;
         }
     }
     if (objectType == nullptr) {
@@ -548,7 +548,7 @@ CallableId Runtime::registerNativeCallable(
             if (NomadString error; !canOverloadCallable(name, parameters, returnType, error)) {
                 log::error("Cannot register native function '" + name + "': " + error);
 
-                return CallableId{};
+                return CallableId::INVALID;
             }
         }
     }
@@ -559,13 +559,13 @@ CallableId Runtime::registerNativeCallable(
         auto* mutableType = getMutableObjectType(objectType);
         if (mutableType == nullptr) {
             log::error("Cannot register native method '" + name + "': object type is not registered");
-            return CallableId{};
+            return CallableId::INVALID;
         }
         id = mutableType->registerMethod(
             *this, std::make_unique<NativeMethod>(name, objectType, std::move(fn), parameters, returnType, doc)
         );
         if (id == CallableId{}) {
-            return CallableId{};
+            return CallableId::INVALID;
         }
 
         const auto memberId = toNomadId(m_nativeMembers.size());
@@ -583,7 +583,7 @@ CallableId Runtime::registerNativeCallable(
 
 CallableId Runtime::addCallableToTable(std::unique_ptr<Function> function) {
     if (function == nullptr) {
-        return CallableId{};
+        return CallableId::INVALID;
     }
 
     m_functions.push_back(std::move(function));
@@ -598,7 +598,7 @@ CallableId Runtime::addCallableToTable(std::unique_ptr<Function> function) {
 CallableId Runtime::catalogCallable(Callable* callable) {
     if (callable == nullptr || callable->getId() != CallableId{} ||
         m_callables.size() >= toNomadIndex(NOMAD_ID_MAX)) {
-        return CallableId{};
+        return CallableId::INVALID;
     }
 
     const auto id = CallableId{toNomadId(m_callables.size())};
@@ -823,7 +823,7 @@ CallableId Runtime::getCallableId(const NomadString& name) const {
         }
     }
 
-    return CallableId{};
+    return CallableId::INVALID;
 }
 
 void Runtime::getCallableOverloads(const NomadString& name, std::vector<CallableId>& overloads) const {
@@ -977,7 +977,7 @@ TypeId Runtime::getTypeId(const NomadString& typeName) const {
         }
     }
 
-    return TypeId{};
+    return TypeId::INVALID;
 }
 
 std::optional<const Type*> Runtime::getType(const TypeId id) const {
@@ -1477,17 +1477,17 @@ CallableId Runtime::registerNativeConstructor(
     auto* ownedType = getMutableObjectType(objectType);
     if (ownedType == nullptr || !ownsType(createdType) || createdType->isInternal() || !factory) {
         log::error("Cannot register constructor: a registered class, registered public object type, and factory are required");
-        return CallableId{};
+        return CallableId::INVALID;
     }
     const auto name = objectType->getTypeName();
     if (name.empty() || getParameterizedConstructorArgumentCount(name) || getParameterizedTypeArgumentCount(name)) {
         log::error("Cannot register constructor '" + name + "': the name is reserved");
-        return CallableId{};
+        return CallableId::INVALID;
     }
     for (const auto& parameter : parameters) {
         if (!ownsType(parameter.type) || parameter.type->isVoid()) {
             log::error("Cannot register constructor: parameter types must be registered and non-void");
-            return CallableId{};
+            return CallableId::INVALID;
         }
     }
     for (const auto* existing : getConstructors(objectType)) {
@@ -1500,7 +1500,7 @@ CallableId Runtime::registerNativeConstructor(
         );
         if (collides) {
             log::error("Cannot register constructor '" + name + "': duplicate signature");
-            return CallableId{};
+            return CallableId::INVALID;
         }
     }
     return ownedType->registerConstructor(
@@ -1605,11 +1605,11 @@ NomadId Runtime::registerNativeIndexer(
 ) {
     if (!ownsType(objectType) || !ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
         log::error("Cannot register native indexer: types must be registered, public, and non-void");
-        return CallableId{};
+        return CallableId::INVALID;
     }
     if (indexTypes.empty()) {
         log::error("Cannot register native indexer: at least one index type is required");
-        return CallableId{};
+        return CallableId::INVALID;
     }
     for (const auto* indexType : indexTypes) {
         if (!ownsType(indexType) || indexType->isVoid() || indexType->isInternal()) {
@@ -2111,7 +2111,7 @@ CallableId Runtime::getFirstNativeFunctionId() const {
             return callable->getId();
         }
     }
-    return CallableId{};
+    return CallableId::INVALID;
 }
 
 CallableId Runtime::getNextNativeFunctionId(const CallableId currentId) const {
@@ -2121,7 +2121,7 @@ CallableId Runtime::getNextNativeFunctionId(const CallableId currentId) const {
             return CallableId{toNomadId(index)};
         }
     }
-    return CallableId{};
+    return CallableId::INVALID;
 }
 
 NomadId Runtime::registerKeyword(const NomadString& keyword, const NomadString& /*doc*/) {
@@ -2671,12 +2671,12 @@ CallableId Runtime::registerScriptFunction(
     ) {
     if (isHub(name) || !canRegisterHubMember(name, true)) {
         log::error("Cannot register function '" + name + "': name is reserved by a hub declaration");
-        return CallableId{};
+        return CallableId::INVALID;
     }
     if (getCallableId(name) != CallableId{}) {
         log::error("Function with name '" + name + "' conflicts with an already registered callable.");
 
-        return CallableId{};
+        return CallableId::INVALID;
     }
 
     const auto id = addCallableToTable(

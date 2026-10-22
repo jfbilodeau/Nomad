@@ -7,6 +7,7 @@
 #include <nomad/compiler/CompilerContext.hpp>
 
 #include <nomad/script/RuntimeValue.hpp>
+#include <nomad/script/Callable.hpp>
 
 #include <memory>
 #include <optional>

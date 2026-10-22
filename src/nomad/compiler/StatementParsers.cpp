@@ -942,7 +942,7 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
         auto* compiler = context->getCompiler();
         const auto handlerFunctionId = compiler->createFunction(
             context, compiler->getScriptId(function->getId()), handlerFunctionName);
-        if (handlerFunctionId == NOMAD_INVALID_ID) {
+        if (handlerFunctionId.isInvalid()) {
             return nullptr;
         }
         auto handlerFunction = context->getRuntime()->getScriptFunction(handlerFunctionId);
@@ -975,7 +975,7 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
 
     const auto handlerFunctionId = context->getRuntime()->getFunctionId(handlerName);
 
-    if (handlerFunctionId == NOMAD_INVALID_ID) {
+    if (handlerFunctionId.isInvalid()) {
         context->reportError("Unknown handler function '" + handlerName + "'", tokens);
 
         return nullptr;

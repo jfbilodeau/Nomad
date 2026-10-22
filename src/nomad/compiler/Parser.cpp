@@ -453,14 +453,14 @@ CallableId parseCallbackParameter(
                 "`then` is only allowed at the root of a script or function body. "
                 "Use an explicit `fun ... end` callback inside control-flow blocks.", tokens
             );
-            return CallableId{};
+            return CallableId::INVALID;
         }
         if (context->getMode() != CompilerMode::Script) {
             context->reportError(
                 NomadString("Inline `") + (isFun ? "fun" : "then") + "` callbacks are not supported by the interpreter"
             , tokens);
 
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
 
         tokens->next();
@@ -469,7 +469,7 @@ CallableId parseCallbackParameter(
         auto* compiler = context->getCompiler();
         const auto functionId = compiler->createFunction(context, compiler->getScriptId(function->getId()), functionName);
         if (functionId.isInvalid()) {
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
 
         const auto callbackFunction = context->getRuntime()->getScriptFunction(functionId);
@@ -492,7 +492,7 @@ CallableId parseCallbackParameter(
             : parseThenBody(context, callbackFunction, tokens, declarationLine);
 
         if (!parametersParsed || callbackBody == nullptr) {
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
 
         context->getCompiler()->setFunctionNode(functionId, std::move(callbackBody));
@@ -503,7 +503,7 @@ CallableId parseCallbackParameter(
     NomadString funName;
 
     if (!tokens->nextIdentifier(funName)) {
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
     funName = context->resolveName(funName, function);
 
@@ -512,13 +512,13 @@ CallableId parseCallbackParameter(
     if (funId.isInvalid()) {
         context->reportError("Unknown callback function name '" + funName + "'", tokens);
 
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
 
     if (context->getRuntime()->getScriptFunction(funId)->getParameterCount() != callbackType->getParameterCount()) {
         context->reportError("Callback function '" + funName + "' has incorrect number of parameters", tokens);
 
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
 
     for (auto i = NomadIndex{0}; i < callbackType->getParameterCount(); ++i) {
@@ -528,7 +528,7 @@ CallableId parseCallbackParameter(
         if (expectedType != actualType) {
             context->reportError("Callback function '" + funName + "' parameter type mismatch at index " + toString(i), tokens);
 
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
     }
 

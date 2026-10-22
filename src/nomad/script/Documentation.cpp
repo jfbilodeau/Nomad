@@ -212,7 +212,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
             }
             constantTextValue = std::format("\"{}\"", escaped);
         } else if (constant.type == runtime->getFunctionType()) {
-            constantTextValue = runtime->getScriptFunction(constant.value.getIdValue())->getName();
+            constantTextValue = runtime->getScriptFunction(CallableId{constant.value.getIdValue()})->getName();
         } else {
             constantTextValue = "<unknown_type>";
         }
@@ -328,7 +328,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     auto nativeFunctionId = runtime->getFirstNativeFunctionId();
 
-    while (nativeFunctionId != NOMAD_INVALID_ID) {
+    while (nativeFunctionId.isValid()) {
         const auto* nativeFunction = runtime->getNativeFunction(nativeFunctionId);
         if (nativeFunction != nullptr) {
             functions.emplace_back(

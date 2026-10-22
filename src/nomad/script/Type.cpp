@@ -323,7 +323,7 @@ CallableId ObjectType::registerConstructor(
     if (constructor == nullptr || constructor->getObjectType() != this ||
         constructor->getId() != CallableId{} || runtime.getTypeByName(getTypeName()) != this) {
         log::error("Cannot register constructor: invalid owner or previously registered callable");
-        return CallableId{};
+        return CallableId::INVALID;
     }
 
     m_constructors.push_back(std::move(constructor));
@@ -351,7 +351,7 @@ CallableId ObjectType::registerMethod(
     if (method == nullptr || method->getObjectType() != this ||
         method->getId() != CallableId{} || runtime.getTypeByName(getTypeName()) != this) {
         log::error("Cannot register method: invalid owner or previously registered callable");
-        return CallableId{};
+        return CallableId::INVALID;
     }
 
     m_methods.push_back(std::move(method));

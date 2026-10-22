@@ -268,8 +268,8 @@ private:
     bool m_allowInitialValueLookup = false;
     CallableId m_scriptInitializerId{};
     std::vector<FunctionLink> m_functionLinks;
-    std::unordered_map<CallableId, std::unordered_set<CallableId>> m_functionCallDependencies;
-    std::unordered_set<CallableId> m_returningFunctions;
+    std::unordered_map<CallableId, std::unordered_set<CallableId, IdHash>, IdHash> m_functionCallDependencies;
+    std::unordered_set<CallableId, IdHash> m_returningFunctions;
     std::vector<Instruction>& m_instructions;
 };
 
