@@ -215,7 +215,9 @@ std::vector<InterpreterVariableInfo> InterpreterContext::listVariables() const {
 
 InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine):
     m_runtime(virtualMachine.getRuntime()),
-    m_function(std::make_unique<ScriptFunction>(NOMAD_INVALID_ID, CONSOLE_SOURCE_NAME, CONSOLE_SOURCE_NAME, "")),
+    m_function(std::make_unique<ScriptFunction>(
+        CallableId{}, CONSOLE_SOURCE_NAME, CONSOLE_SOURCE_NAME, ""
+    )),
     m_virtualMachine(virtualMachine)
 {
 }
@@ -341,7 +343,7 @@ void InterpreterContext::setParameterResult(const NomadId parameterId) {
     setResult(m_function->getParameterType(parameterId), m_virtualMachine.m_stack[m_parameterIndex - parameterId]);
 }
 
-void InterpreterContext::evaluateFunctionCall(const NomadId functionId, const std::vector<RuntimeValue>& arguments) {
+void InterpreterContext::evaluateFunctionCall(const CallableId functionId, const std::vector<RuntimeValue>& arguments) {
     const auto* function = getRuntime()->getScriptFunction(functionId);
     if (function == nullptr || function->getReturnType() == nullptr) {
         throw NomadBug("Invalid interpreted function call");
@@ -369,7 +371,7 @@ void InterpreterContext::evaluateFunctionCall(const NomadId functionId, const st
     machine->setIntermediate(savedIntermediate);
 }
 
-void InterpreterContext::evaluateNativeFunctionCall(const NomadId functionId, const std::vector<RuntimeValue>& arguments) {
+void InterpreterContext::evaluateNativeFunctionCall(const CallableId functionId, const std::vector<RuntimeValue>& arguments) {
     const auto* function = getRuntime()->getNativeFunction(functionId);
     if (function == nullptr || function->getReturnType() == nullptr) {
         throw NomadBug("Invalid interpreted native function call");

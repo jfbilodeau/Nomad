@@ -11,6 +11,8 @@
 
 namespace nomad {
 
+DeclareId(CallableId);
+
 class NativeConstructor;
 class NativeFunction;
 class NativeMethod;
@@ -63,7 +65,7 @@ public:
     Callable& operator=(const Callable&) = delete;
     virtual ~Callable();
 
-    [[nodiscard]] NomadId getId() const;
+    [[nodiscard]] CallableId getId() const;
     [[nodiscard]] const NomadString& getName() const;
     [[nodiscard]] CallableType getType() const;
     [[nodiscard]] CallableSource getSource() const;
@@ -75,7 +77,7 @@ public:
     // the return type (e.g. `Array1<int>`). Null for functions.
     [[nodiscard]] const Type* getObjectType() const;
     [[nodiscard]] const NomadString& getDoc() const;
-    [[nodiscard]] NomadId registerWithRuntime(Runtime& runtime);
+    [[nodiscard]] CallableId registerWithRuntime(Runtime& runtime);
 
 protected:
     Callable(
@@ -88,12 +90,12 @@ protected:
         NomadString doc
     );
 
-    void setId(NomadId id);
+    void setId(CallableId id);
     void setReturnType(const Type* returnType);
     [[nodiscard]] std::vector<Parameter>& getEditableParameters();
 
 private:
-    NomadId m_id = NOMAD_INVALID_ID;
+    CallableId m_id = CallableId{};
     NomadString m_name;
     CallableType m_type;
     CallableSource m_source;

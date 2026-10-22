@@ -64,11 +64,11 @@ public:
     ScriptFunction* getCurrentFunction() const;
 
     void callFunction(const ScriptFunction* function);
-    void callNativeFunction(NomadId nativeFunctionId);
+    void callNativeFunction(CallableId nativeFunctionId);
     void callNativeMethod(NomadId memberId, const RuntimeValue& receiver);
     void returnFunction(NomadIndex variableCount);
     void runNativeMethod(NomadId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
-    void runNativeFunction(NomadId nativeFunctionId, const std::vector<RuntimeValue>& args);
+    void runNativeFunction(CallableId nativeFunctionId, const std::vector<RuntimeValue>& args);
 
     void getNativeProperty(NomadId memberId, const RuntimeValue& receiver, RuntimeValue& result);
     void setNativeProperty(NomadId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
@@ -85,7 +85,7 @@ public:
     [[nodiscard]] Object* getThisAs() const;
 
     [[nodiscard]]
-    std::unique_ptr<Closure> createClosure(const Runtime* runtime, NomadId functionId) const;
+    std::unique_ptr<Closure> createClosure(const Runtime* runtime, CallableId functionId) const;
 
     // Copies captures from the active script frame, not an enclosing native-call parameter frame.
     [[nodiscard]] std::vector<TypedValue> captureCurrentFrame(const ScriptFunction* function) const;

@@ -143,9 +143,9 @@ public:
     // Same, for free opcodes taking an operand (stack offset from the top or function variable index).
     void addFreeValue(InstructionFn freeOpCode, NomadIndex operand);
 
-    NomadIndex addFunctionCall(NomadId targetFunctionId, ScriptFunction* function, const ArgumentList* arguments);
-    NomadIndex addNativeFunctionCall(NomadId nativeFunctionId, ScriptFunction* function, const ArgumentList* arguments);
-    NomadIndex addConstructorCall(NomadId constructorId, ScriptFunction* function, const ArgumentList* arguments);
+    NomadIndex addFunctionCall(CallableId targetFunctionId, ScriptFunction* function, const ArgumentList* arguments);
+    NomadIndex addNativeFunctionCall(CallableId nativeFunctionId, ScriptFunction* function, const ArgumentList* arguments);
+    NomadIndex addConstructorCall(CallableId constructorId, ScriptFunction* function, const ArgumentList* arguments);
     NomadIndex addNativeMethodCall(NomadId memberId, ScriptFunction* function, const ArgumentList* arguments);
     // After a call returns, free the arguments still on the stack.
     void addFreeArguments(const ArgumentList* arguments);
@@ -159,15 +159,15 @@ public:
     void registerSources(CompilerContext* context, const SourceBatch& batch);
     // Parser interface: creates a function belonging to an already registered script.
     // Returns NOMAD_INVALID_ID and reports to context if the function name is already used.
-    [[nodiscard]] NomadId createFunction(
+    [[nodiscard]] CallableId createFunction(
         CompilerContext* context,
         NomadId scriptId,
         const NomadString& functionName,
         bool hubInitializer = false
     );
-    [[nodiscard]] NomadId getScriptId(NomadId functionId) const;
+    [[nodiscard]] NomadId getScriptId(CallableId functionId) const;
     [[nodiscard]] const ScriptSource& getScript(NomadId scriptId) const;
-    void setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode> ast);
+    void setFunctionNode(CallableId functionId, std::unique_ptr<FunctionNode> ast);
     void registerScriptInitializer(
         CompilerContext* context,
         NomadId scriptId,
@@ -177,7 +177,7 @@ public:
     // Borrows an AST node until placeholder preparation, before type inference.
     void deferFormatString(
         FormatStringLiteral* literal,
-        NomadId functionId,
+        CallableId functionId,
         NomadString sourceContent,
         NomadString hub,
         bool hubInitializer
@@ -188,13 +188,13 @@ public:
         CompilationTarget target = CompilationTarget::Executable
     );
     [[nodiscard]] bool compileFunctions(CompilerContext* context);
-    void addFunctionLink(NomadId functionId, NomadIndex callIndex);
+    void addFunctionLink(CallableId functionId, NomadIndex callIndex);
     // Function calls used in expressions, recorded while resolving. Explains return types that cannot be inferred.
-    void addFunctionCallDependency(NomadId callerFunctionId, NomadId calleeFunctionId);
+    void addFunctionCallDependency(CallableId callerFunctionId, CallableId calleeFunctionId);
     // True if calleeFunctionId leads back to callerFunctionId or to itself through recorded function calls.
-    [[nodiscard]] bool isRecursiveFunctionCall(NomadId callerFunctionId, NomadId calleeFunctionId) const;
+    [[nodiscard]] bool isRecursiveFunctionCall(CallableId callerFunctionId, CallableId calleeFunctionId) const;
     // Records that a function contains a `return` statement. Functions without one return void.
-    void addReturningFunction(NomadId functionId);
+    void addReturningFunction(CallableId functionId);
     void linkFunctions();
     void postCompile(CompilerContext* context);
 
@@ -215,12 +215,12 @@ private:
         // Only exists while compileScripts() runs so lexing errors are reported once.
         std::unique_ptr<Tokenizer> tokens;
 
-        NomadId functionId = NOMAD_INVALID_ID;
+        CallableId functionId = CallableId{};
     };
 
     struct PendingFormatString {
         FormatStringLiteral* literal;
-        NomadId functionId;
+        CallableId functionId;
         NomadString sourceContent;
         NomadString hub;
         bool hubInitializer;
@@ -252,7 +252,7 @@ private:
     };
 
     struct FunctionLink {
-        NomadId functionId;
+        CallableId functionId;
         NomadIndex callIndex;
     };
 
@@ -268,8 +268,8 @@ private:
     bool m_allowInitialValueLookup = false;
     NomadId m_scriptInitializerId = NOMAD_INVALID_ID;
     std::vector<FunctionLink> m_functionLinks;
-    std::unordered_map<NomadId, std::unordered_set<NomadId>> m_functionCallDependencies;
-    std::unordered_set<NomadId> m_returningFunctions;
+    std::unordered_map<CallableId, std::unordered_set<CallableId>> m_functionCallDependencies;
+    std::unordered_set<CallableId> m_returningFunctions;
     std::vector<Instruction>& m_instructions;
 };
 

@@ -5,6 +5,7 @@
 #include <nomad/Nomad.hpp>
 
 #include <nomad/script/RuntimeValue.hpp>
+#include <nomad/script/Type.hpp>
 
 #include <vector>
 
@@ -24,6 +25,23 @@ struct EventDefinition {
     NomadString name;
     std::vector<EventParameter> parameters;
     NomadString doc;
+};
+
+const NomadString EVENT_TYPE_NAME = "event";
+class EventType final : public ValueType {
+public:
+    void initValue(RuntimeValue& value) const override;
+    explicit EventType(const EventDefinition* declaration);
+
+    [[nodiscard]] NomadString getTypeName() const override;
+    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    void toString(const RuntimeValue& value, NomadString& string) const override;
+    [[nodiscard]] bool sameType(const Type* other) const override;
+
+    [[nodiscard]] const NomadString& getEventName() const;
+
+private:
+    const EventDefinition m_event;
 };
 
 struct EventDispatch {

@@ -265,7 +265,7 @@ protected:
 
 private:
     struct ExpressionPlaceholder {
-        NomadId functionId;
+        CallableId functionId;
         NomadIndex column;
         NomadIndex segmentIndex;
     };

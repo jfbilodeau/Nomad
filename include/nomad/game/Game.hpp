@@ -138,20 +138,20 @@ public:
     [[nodiscard]] uint64_t getUpdateDuration() const;
     [[nodiscard]] uint64_t getRenderDuration() const;
 
-    [[nodiscard]] NomadId getFunctionId(const NomadString& functionName) const;
-    void executeFunction(NomadId functionId, Scene* scene, Entity* thisEntity, Entity* otherEntity = nullptr);
-    void executeFunction(NomadId functionId, Scene* scene, Entity* entity, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue);
-    void executeFunction(NomadId functionId, Scene* scene, Entity* entity, const std::vector<Entity*>& others, const std::vector<RuntimeValue>& args);
-    void executeFunction(NomadId functionId, Scene* scene, Entity* entity, const std::vector<Entity*>& others, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue);
+    [[nodiscard]] CallableId getFunctionId(const NomadString& functionName) const;
+    void executeFunction(CallableId functionId, Scene* scene, Entity* thisEntity, Entity* otherEntity = nullptr);
+    void executeFunction(CallableId functionId, Scene* scene, Entity* entity, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue);
+    void executeFunction(CallableId functionId, Scene* scene, Entity* entity, const std::vector<Entity*>& others, const std::vector<RuntimeValue>& args);
+    void executeFunction(CallableId functionId, Scene* scene, Entity* entity, const std::vector<Entity*>& others, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue);
     void executeFunction(const Closure* closure, Scene* scene, Entity* entity, const std::vector<Entity*>& others = {}, const std::vector<RuntimeValue>& args = {});
     // The caller owns the copy placed in `returnValue` and must free it through the function's return type.
     void executeFunction(const Closure* closure, Scene* scene, Entity* entity, const std::vector<Entity*>& others, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue);
 
-    [[nodiscard]] bool executePredicate(NomadId functionId) const;
+    [[nodiscard]] bool executePredicate(CallableId functionId) const;
 
     NomadId createScene(
         const NomadString& sceneName,
-        NomadId functionId,
+        CallableId functionId,
         std::unique_ptr<Closure> postCreateClosure = nullptr
     );
     void removeScene(const Scene* scene);
@@ -161,7 +161,7 @@ public:
 
     NomadId addEntityToScene(
         NomadId sceneId,
-        NomadId initFunctionId,
+        CallableId initFunctionId,
         NomadFloat x,
         NomadFloat y,
         NomadFloat width,

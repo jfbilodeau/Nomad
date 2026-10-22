@@ -69,8 +69,8 @@ public:
     [[nodiscard]] const ScriptFunction* getFunction() const;
     [[nodiscard]] bool isFrameBacked() const;
     [[nodiscard]] bool isFrameVariable(NomadId variableId) const;
-    void evaluateFunctionCall(NomadId functionId, const std::vector<RuntimeValue>& arguments);
-    void evaluateNativeFunctionCall(NomadId functionId, const std::vector<RuntimeValue>& arguments);
+    void evaluateFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
+    void evaluateNativeFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
     void setParameterResult(NomadId parameterId);
 
     void setResult(const Type* type, const RuntimeValue& value);

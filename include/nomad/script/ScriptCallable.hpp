@@ -88,7 +88,7 @@ public:
     }
 
     NomadId createCapture(
-        const NomadId id,
+        const CallableId id,
         const NomadString& name,
         const CaptureSource source,
         const Type* type
@@ -168,9 +168,9 @@ public:
     [[nodiscard]] NomadIndex getCaptureCount() const { return m_captures.size(); }
     [[nodiscard]] const std::vector<Capture>& getCaptures() const { return m_captures; }
 
-    void setParentId(const NomadId parentId) { m_parentId = parentId; }
-    [[nodiscard]] NomadId getParentId() const { return m_parentId; }
-    [[nodiscard]] NomadIndex isNested() const { return m_parentId != NOMAD_INVALID_ID; }
+    void setParentId(const CallableId parentId) { m_parentId = parentId; }
+    [[nodiscard]] CallableId getParentId() const { return m_parentId; }
+    [[nodiscard]] NomadIndex isNested() const { return m_parentId != CallableId{}; }
 
     NomadId registerVariable(const NomadString& variableName, const Type* type) {
         const auto variableId = getVariableId(variableName);
@@ -220,7 +220,7 @@ public:
 protected:
     template<class... Arguments>
     ScriptCallable(
-        const NomadId id,
+        const CallableId id,
         NomadString path,
         NomadString source,
         Arguments&&... arguments
@@ -242,7 +242,7 @@ private:
     NomadIndex m_functionEndIndex = NOMAD_INVALID_INDEX;
     VariableMap m_variables;
     std::vector<Capture> m_captures;
-    NomadId m_parentId = NOMAD_INVALID_ID;
+    CallableId m_parentId = CallableId{};
 };
 
 class ScriptFunction : public ScriptCallable<Function> {

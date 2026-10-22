@@ -21,5 +21,13 @@ static_assert(!std::is_convertible_v<nomad::NomadId, TestTypeId>);
 static_assert(!std::is_convertible_v<TestTypeId, nomad::NomadId>);
 static_assert(!std::is_convertible_v<TestTypeId, TestCallableId>);
 static_assert(!std::equality_comparable_with<TestTypeId, TestCallableId>);
+static_assert(TestTypeId{}.isInvalid());
+static_assert(!TestTypeId{}.isValid());
+static_assert(TestTypeId{0}.isValid());
+static_assert(TestTypeId{nomad::NOMAD_ID_MAX - 1}.isValid());
+static_assert(TestTypeId{-2}.isInvalid());
+static_assert(TestTypeId{nomad::NOMAD_ID_MAX}.isInvalid());
+static_assert(!std::is_constructible_v<bool, TestTypeId>);
+static_assert(!std::is_convertible_v<TestTypeId, bool>);
 
 } // namespace

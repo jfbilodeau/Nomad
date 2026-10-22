@@ -85,7 +85,7 @@ std::unique_ptr<Expression> parseFunctionCallExpression(CompilerContext* context
     ArgumentList* arguments,
     bool allowOmittedArguments = false
 );
-[[nodiscard]] NomadId parseCallbackParameter(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const FunctionType* callbackType);
+[[nodiscard]] CallableId parseCallbackParameter(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const FunctionType* callbackType);
 std::unique_ptr<Argument> parseExpressionArgument(
     CompilerContext* context,
     const Type* argumentType,

@@ -25,7 +25,7 @@ enum class SystemEvent
 
 struct EventRegistration {
     SystemEvent eventId;
-    NomadId functionId;
+    CallableId functionId;
     NomadString name;
     NomadInteger mask;
 };
@@ -36,19 +36,19 @@ public:
     EventRegistrationManager(const EventRegistrationManager&) = delete;
     ~EventRegistrationManager() = default;
 
-    void registerSystemEvent(SystemEvent event, NomadId functionId);
+    void registerSystemEvent(SystemEvent event, CallableId functionId);
     void unregisterSystemEvent(SystemEvent event);
-    void registerUserEvent(const NomadString& name, NomadId functionId);
+    void registerUserEvent(const NomadString& name, CallableId functionId);
     void unregisterMaskEvent(SystemEvent event, NomadInteger mask);
-    void registerMaskEvent(SystemEvent event, NomadId functionId, NomadInteger mask);
+    void registerMaskEvent(SystemEvent event, CallableId functionId, NomadInteger mask);
     void unregisterUserEvent(const NomadString& name);
 
     [[nodiscard]]
-    NomadId getFunctionIdForSystemEvent(SystemEvent event) const;
+    CallableId getFunctionIdForSystemEvent(SystemEvent event) const;
     [[nodiscard]]
-    NomadId getFunctionIdForUserEvent(const NomadString& name) const;
+    CallableId getFunctionIdForUserEvent(const NomadString& name) const;
     [[nodiscard]]
-    NomadId getFunctionIdForMaskEvent(SystemEvent event, NomadInteger mask) const;
+    CallableId getFunctionIdForMaskEvent(SystemEvent event, NomadInteger mask) const;
 
     void enumerateRegistrations(const std::function<void(const EventRegistration&)>& callback) const;
 

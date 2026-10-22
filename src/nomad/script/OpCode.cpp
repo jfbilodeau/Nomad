@@ -180,7 +180,7 @@ void op_call_function(VirtualMachine* interpreter) {
 }
 
 void op_call_native_function(VirtualMachine* interpreter) {
-    const auto nativeFunctionId = interpreter->nextId();
+    const auto nativeFunctionId = CallableId{interpreter->nextId()};
 
     interpreter->callNativeFunction(nativeFunctionId);
 }

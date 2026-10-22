@@ -22,9 +22,9 @@ enum class ResolveStatus {
 struct ResolveResult {
     ResolveStatus status = ResolveStatus::UnknownName;
     // Valid only when `status` is Resolved.
-    NomadId id = NOMAD_INVALID_ID;
+    CallableId id = CallableId{};
     // The callables that were considered; when Ambiguous, the ones that tied.
-    std::vector<NomadId> candidates;
+    std::vector<CallableId> candidates;
     // The argument types supplied by the caller; null entries are compiler-supplied arguments.
     std::vector<const Type*> argumentTypes;
 

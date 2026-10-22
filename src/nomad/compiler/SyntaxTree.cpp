@@ -700,11 +700,11 @@ void FunctionDeclaration::addParam(std::unique_ptr<ParameterDeclaration> param) 
     m_params.push_back(std::move(param));
 }
 
-void FunctionDeclaration::setFunctionId(NomadId id) {
+void FunctionDeclaration::setFunctionId(CallableId id) {
     m_functionId = id;
 }
 
-NomadId FunctionDeclaration::getFunctionId() const {
+CallableId FunctionDeclaration::getFunctionId() const {
     return m_functionId;
 }
 

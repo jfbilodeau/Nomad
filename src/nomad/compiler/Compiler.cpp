@@ -723,11 +723,11 @@ void Compiler::addFreeValue(const InstructionFn freeOpCode, const NomadIndex ope
     }
 }
 
-NomadIndex Compiler::addFunctionCall(const NomadId targetFunctionId, ScriptFunction* function, const ArgumentList* arguments) {
+NomadIndex Compiler::addFunctionCall(const CallableId targetFunctionId, ScriptFunction* function, const ArgumentList* arguments) {
     const auto targetFunction = getRuntime()->getScriptFunction(targetFunctionId);
 
     if (targetFunction == nullptr) {
-        reportInternalError("Unknown function id: " + toString(targetFunctionId));
+        reportInternalError("Unknown function id: " + toString(targetFunctionId.id));
     }
 
     const auto argumentCount = arguments->getArgumentCount();
@@ -791,15 +791,15 @@ void Compiler::addFreeArguments(const ArgumentList* arguments) {
     }
 }
 
-NomadIndex Compiler::addNativeFunctionCall(const NomadId nativeFunctionId, ScriptFunction* function, const ArgumentList* arguments) {
+NomadIndex Compiler::addNativeFunctionCall(const CallableId nativeFunctionId, ScriptFunction* function, const ArgumentList* arguments) {
     arguments->compile(this, function);
 
     if (m_runtime->getNativeFunction(nativeFunctionId) == nullptr) {
-        reportInternalError("Unknown native function: " + toString(nativeFunctionId));
+        reportInternalError("Unknown native function: " + toString(nativeFunctionId.id));
     }
 
     addOpCode(OpCodes::op_call_native_function);
-    addIndex(nativeFunctionId);
+    addIndex(toNomadIndex(nativeFunctionId.id));
 
     addFreeArguments(arguments);
 
@@ -820,11 +820,11 @@ NomadIndex Compiler::addNativeFunctionCall(const NomadId nativeFunctionId, Scrip
     return m_instructions.size() - 1;
 }
 
-NomadIndex Compiler::addConstructorCall(const NomadId constructorId, ScriptFunction* function, const ArgumentList* arguments) {
+NomadIndex Compiler::addConstructorCall(const CallableId constructorId, ScriptFunction* function, const ArgumentList* arguments) {
     arguments->compile(this, function);
 
     addOpCode(OpCodes::op_object_new);
-    addId(constructorId);
+    addId(constructorId.id);
 
     addFreeArguments(arguments);
 
@@ -1120,7 +1120,7 @@ void Compiler::registerScript(CompilerContext* context, const ScriptSource& scri
     m_scripts.back().functionId = functionId;
 }
 
-NomadId Compiler::createFunction(
+CallableId Compiler::createFunction(
     CompilerContext* context,
     const NomadId scriptId,
     const NomadString& functionName,
@@ -1131,19 +1131,19 @@ NomadId Compiler::createFunction(
     }
     const auto& source = getScript(scriptId).source;
     const auto existingFunctionId = m_runtime->getFunctionId(functionName);
-    if (existingFunctionId != NOMAD_INVALID_ID) {
+    if (existingFunctionId != CallableId{}) {
         const auto* existingFunction = m_runtime->getScriptFunction(existingFunctionId);
         context->reportError(
             "Function name '" + functionName + "' is already used by '" + existingFunction->getPath() + "'",
             source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
-        return NOMAD_INVALID_ID;
+        return CallableId{};
     }
 
     const auto functionId = m_runtime->registerScriptFunction(functionName, source.sourceName, source.text);
-    if (functionId == NOMAD_INVALID_ID) {
+    if (functionId == CallableId{}) {
         context->reportError("Could not register function '" + functionName + "'",
             source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
-        return NOMAD_INVALID_ID;
+        return CallableId{};
     }
 
     auto function = m_runtime->getScriptFunction(functionId);
@@ -1159,13 +1159,13 @@ NomadId Compiler::createFunction(
     return functionId;
 }
 
-NomadId Compiler::getScriptId(const NomadId functionId) const {
+NomadId Compiler::getScriptId(const CallableId functionId) const {
     for (const auto& function : m_functions) {
         if (function.function->getId() == functionId) {
             return function.scriptId;
         }
     }
-    throw NomadBug("Function does not belong to a registered script: " + toString(functionId));
+    throw NomadBug("Function does not belong to a registered script: " + toString(functionId.id));
 }
 
 const ScriptSource& Compiler::getScript(const NomadId scriptId) const {
@@ -1175,7 +1175,7 @@ const ScriptSource& Compiler::getScript(const NomadId scriptId) const {
     return m_scripts[toNomadIndex(scriptId)].script;
 }
 
-void Compiler::setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode> ast) {
+void Compiler::setFunctionNode(CallableId functionId, std::unique_ptr<FunctionNode> ast) {
     for (auto& source: m_functions) {
         if (source.function->getId() == functionId) {
             source.function->setSourceLineRange(
@@ -1188,7 +1188,7 @@ void Compiler::setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode>
         }
     }
 
-    reportInternalError("Unknown function id: " + toString(functionId));
+    reportInternalError("Unknown function id: " + toString(functionId.id));
 }
 
 void Compiler::registerSources(CompilerContext* context, const SourceBatch& batch) {
@@ -1204,7 +1204,7 @@ void Compiler::registerSources(CompilerContext* context, const SourceBatch& batc
 
 void Compiler::deferFormatString(
     FormatStringLiteral* literal,
-    const NomadId functionId,
+    const CallableId functionId,
     NomadString sourceContent,
     NomadString hub,
     const bool hubInitializer
@@ -1521,17 +1521,17 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
 
     return true;
 }
-void Compiler::addFunctionLink(NomadId functionId, NomadIndex callIndex) {
+void Compiler::addFunctionLink(CallableId functionId, NomadIndex callIndex) {
     m_functionLinks.emplace_back(FunctionLink{functionId, callIndex});
 }
 
-void Compiler::addFunctionCallDependency(const NomadId callerFunctionId, const NomadId calleeFunctionId) {
+void Compiler::addFunctionCallDependency(const CallableId callerFunctionId, const CallableId calleeFunctionId) {
     m_functionCallDependencies[callerFunctionId].insert(calleeFunctionId);
 }
 
-bool Compiler::isRecursiveFunctionCall(const NomadId callerFunctionId, const NomadId calleeFunctionId) const {
-    std::unordered_set<NomadId> visited;
-    std::vector<NomadId> pending = { calleeFunctionId };
+bool Compiler::isRecursiveFunctionCall(const CallableId callerFunctionId, const CallableId calleeFunctionId) const {
+    std::unordered_set<CallableId> visited;
+    std::vector<CallableId> pending = { calleeFunctionId };
 
     while (!pending.empty()) {
         const auto functionId = pending.back();
@@ -1557,7 +1557,7 @@ bool Compiler::isRecursiveFunctionCall(const NomadId callerFunctionId, const Nom
     return callerFunctionId == calleeFunctionId;
 }
 
-void Compiler::addReturningFunction(const NomadId functionId) {
+void Compiler::addReturningFunction(const CallableId functionId) {
     m_returningFunctions.insert(functionId);
 }
 

@@ -3,8 +3,6 @@
 #ifndef NOMAD_TYPE_HPP
 #define NOMAD_TYPE_HPP
 
-#include <nomad/script/Event.hpp>
-
 #include <nomad/script/RuntimeValue.hpp>
 
 #include <nomad/Nomad.hpp>
@@ -17,6 +15,8 @@
 #include <vector>
 
 namespace nomad {
+
+DeclareId(TypeId);
 
 // Forward declarations
 class EventType;
@@ -245,12 +245,12 @@ public:
     [[nodiscard]] NomadString getTypeName() const override;
     [[nodiscard]] TypeStorage getStorage() const override;
     [[nodiscard]] const std::vector<const Type*>& getTypeArguments() const;
-    [[nodiscard]] NomadId registerConstructor(
+    [[nodiscard]] CallableId registerConstructor(
         Runtime& runtime,
         std::unique_ptr<Constructor> constructor
     );
     [[nodiscard]] std::vector<const Constructor*> getConstructors() const;
-    [[nodiscard]] NomadId registerMethod(
+    [[nodiscard]] CallableId registerMethod(
         Runtime& runtime,
         std::unique_ptr<Method> method
     );
@@ -343,23 +343,6 @@ private:
     NomadString m_name;
     const std::vector<const Type*> m_parameterTypes;
     const Type* m_returnType;
-};
-
-const NomadString EVENT_TYPE_NAME = "event";
-class EventType final : public ValueType {
-public:
-    void initValue(RuntimeValue& value) const override;
-    explicit EventType(const EventDefinition* declaration);
-
-    [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
-    [[nodiscard]] bool sameType(const Type* other) const override;
-
-    [[nodiscard]] const NomadString& getEventName() const;
-
-private:
-    const EventDefinition m_event;
 };
 
 const NomadString EVENT_CALLBACK_TYPE_NAME = "eventCallback";

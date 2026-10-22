@@ -18,7 +18,7 @@ struct HubVariable {
 };
 
 struct HubFunctions {
-    std::vector<NomadId> ids;
+    std::vector<CallableId> ids;
 };
 
 struct HubConstant {

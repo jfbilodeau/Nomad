@@ -45,7 +45,7 @@ Callable::Callable(
 
 Callable::~Callable() = default;
 
-NomadId Callable::getId() const {
+CallableId Callable::getId() const {
     return m_id;
 }
 
@@ -81,16 +81,16 @@ const NomadString& Callable::getDoc() const {
     return m_doc;
 }
 
-NomadId Callable::registerWithRuntime(Runtime& runtime) {
-    if (m_id != NOMAD_INVALID_ID) {
-        return NOMAD_INVALID_ID;
+CallableId Callable::registerWithRuntime(Runtime& runtime) {
+    if (m_id != CallableId{}) {
+        return CallableId{};
     }
 
     m_id = runtime.catalogCallable(this);
     return m_id;
 }
 
-void Callable::setId(const NomadId id) {
+void Callable::setId(const CallableId id) {
     m_id = id;
 }
 

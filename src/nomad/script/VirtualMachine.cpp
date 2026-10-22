@@ -178,7 +178,7 @@ void VirtualMachine::callFunction(const ScriptFunction* function) {
     jump(functionStart);
 }
 
-void VirtualMachine::callNativeFunction(const NomadId nativeFunctionId) {
+void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
     const auto previousParameterIndex = m_parameterIndex;
     const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
 
@@ -191,7 +191,7 @@ void VirtualMachine::callNativeFunction(const NomadId nativeFunctionId) {
 
 #ifdef NOMAD_DEBUG
     if (nativeFunctionFn == nullptr) {
-        log::error("NativeFunction not found: " + toString(nativeFunctionId));
+        log::error("NativeFunction not found: " + toString(nativeFunctionId.id));
         m_parameterIndex = previousParameterIndex;
         m_enclosingParameterIndex = previousEnclosingParameterIndex;
         return;
@@ -345,10 +345,10 @@ void VirtualMachine::runNativeIndexer(
     releaseArguments();
 }
 
-void VirtualMachine::runNativeFunction(const NomadId nativeFunctionId, const std::vector<RuntimeValue>& args) {
+void VirtualMachine::runNativeFunction(const CallableId nativeFunctionId, const std::vector<RuntimeValue>& args) {
     const auto* function = m_runtime->getNativeFunction(nativeFunctionId);
     if (function == nullptr) {
-        fault("Invalid native function id: " + toString(nativeFunctionId));
+        fault("Invalid native function id: " + toString(nativeFunctionId.id));
     }
     if (function->getReturnType() == nullptr) {
         fault("NativeFunction '" + function->getName() + "' has no return type");
@@ -452,7 +452,7 @@ void VirtualMachine::runNativeMethod(const NomadId memberId, const std::vector<R
 }
 
 std::vector<TypedValue> VirtualMachine::captureCurrentFrame(const ScriptFunction* function) const {
-    if (function == nullptr || function->getParentId() == NOMAD_INVALID_ID) {
+    if (function == nullptr || function->getParentId() == CallableId{}) {
         fault("Invalid function for current-frame capture");
     }
     const auto* parent = m_runtime->getScriptFunction(function->getParentId());
@@ -483,7 +483,7 @@ std::vector<TypedValue> VirtualMachine::captureCurrentFrame(const ScriptFunction
     return values;
 }
 
-std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, const NomadId functionId) const {
+std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, const CallableId functionId) const {
     const auto function = runtime->getScriptFunction(functionId);
 
     if (function == nullptr) {

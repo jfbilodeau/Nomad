@@ -46,30 +46,31 @@ class FormatString {
         IdentifierType variableType;
         const Type* valueType;
         NomadId variableId;
+        CallableId functionId;
         NomadString value;
     };
 
 public:
-    explicit FormatString(const NomadString& formatString, NomadId functionId);
+    explicit FormatString(const NomadString& formatString, CallableId functionId);
     ~FormatString();
 
     [[nodiscard]] const NomadString& getFormatString() const {
         return m_formatString;
     }
 
-    [[nodiscard]] NomadId getFunctionId() const {
+    [[nodiscard]] CallableId getFunctionId() const {
         return m_functionId;
     }
 
     void addLiteral(const NomadString& literal);
     void addVariable(IdentifierType identifierType, const Type* valueType, NomadId variableId);
-    void addExpression(const Type* valueType, NomadId functionId);
+    void addExpression(const Type* valueType, CallableId functionId);
 
     NomadString format(VirtualMachine* interpreter) const;
 
 private:
     NomadString m_formatString;
-    NomadId m_functionId;
+    CallableId m_functionId;
     std::vector<Segment> m_segments;
 };
 

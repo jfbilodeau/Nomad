@@ -29,10 +29,10 @@ struct IdentifierDefinition {
     IdentifierType identifierType = IdentifierType::Unknown;
     const Type* valueType = nullptr;
     union {
-        NomadId nativeFunctionId = NOMAD_INVALID_ID;
+        CallableId nativeFunctionId = CallableId{};
         NomadId eventId;
         NomadId variableId;
-        NomadId functionId;
+        CallableId functionId;
     };
 };
 

@@ -18,9 +18,9 @@ public:
     explicit ArgumentList();
 
     void addExpressionArgument(NomadIndex line, NomadIndex column, const Type* type, std::unique_ptr<Expression> expression);
-    void addPredicateArgument(NomadIndex line, NomadIndex column, NomadId predicateFunctionId);
-    void addCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, NomadId functionId);
-    void addEventCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, NomadId eventId, NomadId functionId);
+    void addPredicateArgument(NomadIndex line, NomadIndex column, CallableId predicateFunctionId);
+    void addCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, CallableId functionId);
+    void addEventCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, NomadId eventId, CallableId functionId);
     void addEventDispatchArgument(NomadIndex line, NomadIndex column, const Type* type, const EventDefinition& eventDefinition);
     void addFileNameArgument(NomadIndex line, NomadIndex column, const Type* type, NomadString fileName);
     void addLineNumberArgument(NomadIndex line, NomadIndex column, const Type* type);

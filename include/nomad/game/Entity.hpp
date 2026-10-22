@@ -157,8 +157,8 @@ public:
     RectangleF& getBoundingBox(RectangleF& boundingBox) const;
 
     // System
-    void addSystemBeforeUpdate(NomadString systemId, NomadId functionId);
-    void addSystemAfterUpdate(NomadString systemId, NomadId functionId);
+    void addSystemBeforeUpdate(NomadString systemId, CallableId functionId);
+    void addSystemAfterUpdate(NomadString systemId, CallableId functionId);
     void removeSystem(const NomadString& systemId);
     void removeAllSystems();
     void executeSystemsBeforeUpdate();
@@ -174,12 +174,12 @@ public:
     void exitCamera();
 
     // Function to execute when the entity enters the camera frame.
-    void setOnEnterCamera(NomadId functionId);
-    [[nodiscard]] NomadId getOnEnterCamera() const;
+    void setOnEnterCamera(CallableId functionId);
+    [[nodiscard]] CallableId getOnEnterCamera() const;
 
     // Function to execute when the entity exits the camera frame.
-    void setOnExitCamera(NomadId functionId);
-    [[nodiscard]] NomadId getOnExitCamera() const;
+    void setOnExitCamera(CallableId functionId);
+    [[nodiscard]] CallableId getOnExitCamera() const;
 
     [[nodiscard]] bool isInCamera() const;
 
@@ -227,16 +227,16 @@ public:
     void setAnimationReverse(bool reverse);
     [[nodiscard]] bool getAnimationReverse() const;
 
-    void setOnAnimationEnd(NomadId functionId);
+    void setOnAnimationEnd(CallableId functionId);
     void setOnAnimationEnd(std::unique_ptr<Closure> closure);
-    [[nodiscard]] NomadId getOnAnimationEnd() const;
+    [[nodiscard]] CallableId getOnAnimationEnd() const;
 
     void playAnimation(
         const NomadString& variant,
         NomadInteger duration,
         NomadBoolean repeat,
         NomadBoolean reverse,
-        NomadId onAnimationEnd = NOMAD_INVALID_ID
+        CallableId onAnimationEnd = CallableId{}
     );
     void playAnimation(
         const NomadString& variant,
@@ -280,7 +280,7 @@ public:
     void setVariableValue(NomadId variableId, const RuntimeValue& value);
     void getVariableValue(NomadId variableId, RuntimeValue& value) const;
 
-    void registerUserEvent(const NomadString& name, NomadId functionId);
+    void registerUserEvent(const NomadString& name, CallableId functionId);
     void unregisterUserEvent(const NomadString& name);
     void triggerUserEvent(const NomadString& name);
     void registerEvent(NomadId eventId, std::unique_ptr<Closure> closure);
@@ -288,19 +288,19 @@ public:
     void dispatchEvent(const EventDispatch& dispatch);
 
     [[nodiscard]] NomadId getOnUpdate() const;
-    void setOnUpdate(NomadId functionId);
+    void setOnUpdate(CallableId functionId);
 
-    void setOnBeginCollision(NomadId functionId);
-    [[nodiscard]] NomadId getOnBeginCollision() const;
+    void setOnBeginCollision(CallableId functionId);
+    [[nodiscard]] CallableId getOnBeginCollision() const;
 
-    void setOnBeginCollisionWith(NomadInteger mask, NomadId functionId);
-    [[nodiscard]] NomadId getOnBeginCollisionWith(NomadInteger mask) const;
+    void setOnBeginCollisionWith(NomadInteger mask, CallableId functionId);
+    [[nodiscard]] CallableId getOnBeginCollisionWith(NomadInteger mask) const;
 
-    void setOnEndCollision(NomadId functionId);
-    [[nodiscard]] NomadId getOnEndCollision() const;
+    void setOnEndCollision(CallableId functionId);
+    [[nodiscard]] CallableId getOnEndCollision() const;
 
-    void setOnEndCollisionWith(NomadInteger mask, NomadId functionId);
-    [[nodiscard]] NomadId getOnEndCollisionWith(NomadInteger mask) const;
+    void setOnEndCollisionWith(NomadInteger mask, CallableId functionId);
+    [[nodiscard]] CallableId getOnEndCollisionWith(NomadInteger mask) const;
 
 private: // Functions
     void invalidateTextTexture();
@@ -402,7 +402,7 @@ private: // Data members
     // Systems
     struct SystemRegistration {
         NomadString systemId;
-        NomadId functionId;
+        CallableId functionId;
     };
     std::vector<SystemRegistration> m_systemsBeforeUpdate;
     std::vector<SystemRegistration> m_systemsAfterUpdate;

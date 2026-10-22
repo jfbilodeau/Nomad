@@ -80,9 +80,11 @@ constexpr NomadId NOMAD_ID_MAX = 1000000;  // std::numeric_limits<NomadId>::max(
     struct name { \
         ::nomad::NomadId id = ::nomad::NOMAD_INVALID_ID; \
         constexpr bool operator==(const name&) const noexcept = default; \
+        [[nodiscard]] constexpr bool isValid() const noexcept { \
+            return id >= ::nomad::NOMAD_ID_MIN && id < ::nomad::NOMAD_ID_MAX; \
+        } \
+        [[nodiscard]] constexpr bool isInvalid() const noexcept { return !isValid(); } \
     }
-
-DeclareId(TypeId);
 
 // Returns true when an ID is within the Nomad ID domain.
 [[nodiscard]] constexpr bool isValidId(const NomadId id) noexcept {
