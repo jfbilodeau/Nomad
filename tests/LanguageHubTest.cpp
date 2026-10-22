@@ -2,6 +2,7 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
@@ -25,6 +26,74 @@ BOOST_AUTO_TEST_CASE(native_registration_is_idempotent_and_reserves_names)
     BOOST_TEST(!runtime.registerHub("invalid."));
     BOOST_TEST(!runtime.registerHub("invalid..name"));
     BOOST_TEST(!runtime.registerHub("fun"));
+}
+
+BOOST_AUTO_TEST_CASE(hub_qualified_dynamic_variables_remain_readable_and_writable)
+{
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    NomadFloat volume = 0.25f;
+
+    BOOST_REQUIRE(runtime.registerHub("game"));
+    BOOST_REQUIRE(runtime.registerDynamicVariable(
+        "game.volume",
+        [&volume](VirtualMachine*, const RuntimeValue& value) {
+            volume = value.getFloatValue();
+        },
+        [&volume](VirtualMachine*, RuntimeValue& value) {
+            value.setFloatValue(volume);
+        },
+        runtime.getFloatType(),
+        NomadDoc("Test game volume.")
+    ) != NOMAD_INVALID_ID);
+
+    fixture.addFunction("main", "game.volume = 0.75\nreturn game.volume");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+
+    const auto outcome = fixture.execute("main");
+    BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+    BOOST_TEST(outcome.floatValue == 0.75f);
+    BOOST_TEST(volume == 0.75f);
+
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    BOOST_TEST(Interpreter{}.execute("game.volume = 0.5", context));
+    BOOST_TEST(volume == 0.5f);
+    BOOST_TEST(!Interpreter{}.execute("game.volume = \"wrong\"", context));
+    BOOST_TEST(context.hasError());
+    BOOST_TEST(volume == 0.5f);
+}
+
+BOOST_AUTO_TEST_CASE(hub_qualified_read_only_dynamic_variables_remain_unwritable)
+{
+    Runtime runtime;
+
+    BOOST_REQUIRE(runtime.registerHub("game"));
+    BOOST_REQUIRE(runtime.registerDynamicVariable(
+        "game.frame",
+        nullptr,
+        [](VirtualMachine*, RuntimeValue& value) {
+            value.setIntegerValue(42);
+        },
+        runtime.getIntegerType(),
+        NomadDoc("Test read-only game frame.")
+    ) != NOMAD_INVALID_ID);
+
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+
+    BOOST_TEST(Interpreter{}.execute("game.frame = 10", context) == false);
+    BOOST_TEST(context.hasError());
+}
+
+BOOST_AUTO_TEST_CASE(hub_qualified_unknown_members_remain_undeclarable_by_assignment)
+{
+    LanguageTestFixture fixture;
+    BOOST_REQUIRE(fixture.getRuntime().registerHub("game"));
+
+    fixture.addFunction("main", "game.unknown = 10");
+    BOOST_TEST(!fixture.compile());
+    BOOST_TEST(fixture.hasError("Hub members must be declared inside a hub block"));
 }
 
 BOOST_AUTO_TEST_CASE(variables_initialize_before_any_entry_and_persist)

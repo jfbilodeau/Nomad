@@ -1036,6 +1036,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
         !runtime->isHubVariable(variableName) &&
         runtime->getConstantId(variableName) == NOMAD_INVALID_ID &&
         runtime->getCallableId(variableName) == NOMAD_INVALID_ID &&
+        runtime->getDynamicVariableId(variableName) == NOMAD_INVALID_ID &&
         runtime->getTypeByName(variableName) == nullptr &&
         !hasValueReceiver) {
         context->reportError("Hub members must be declared inside a hub block: '" + variableName + "'", tokens);
