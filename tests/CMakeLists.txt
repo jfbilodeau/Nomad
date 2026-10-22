@@ -10,6 +10,7 @@ add_executable(
     ./CompilerTest.cpp
     ./CompilerToolsTest.cpp
     ./DebugDrawTest.cpp
+    ./DeclareIdTest.cpp
     ./EntitySpriteAnchorTest.cpp
     ./EntityTextTest.cpp
     ./EventRegistrationTest.cpp
