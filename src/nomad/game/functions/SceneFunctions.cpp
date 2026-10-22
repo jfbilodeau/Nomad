@@ -509,7 +509,7 @@ void Game::initSceneFunctions() {
                 if (type) {
                     (*type)->copyValue(interpreter->peekStack(static_cast<NomadIndex>(i) + 1), value);
                 } else {
-                    log::error("Invalid type id for event parameter: " + toString(parameter.typeId));
+                    log::error("Invalid type id for event parameter: " + toString(parameter.typeId.id));
                 }
 
                 args.emplace_back(value);
@@ -557,7 +557,7 @@ void Game::initSceneFunctions() {
                 if (type) {
                     (*type)->copyValue(interpreter->peekStack(static_cast<NomadIndex>(i) + 2), value);
                 } else {
-                    log::error("Invalid type id for event parameter: " + toString(parameter.typeId));
+                    log::error("Invalid type id for event parameter: " + toString(parameter.typeId.id));
                 }
 
                 args.emplace_back(value);

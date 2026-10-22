@@ -970,24 +970,22 @@ void Runtime::registerType(std::unique_ptr<Type>&& type) {
     // return toNomadId(m_types.size() - 1);
 }
 
-NomadId Runtime::getTypeId(const NomadString& typeName) const {
+TypeId Runtime::getTypeId(const NomadString& typeName) const {
     for (NomadIndex i = 0; i < m_types.size(); ++i) {
         if (m_types[i]->getTypeName() == typeName) {
-            return toNomadId(i);
+            return TypeId{toNomadId(i)};
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return TypeId{};
 }
 
-std::optional<const Type*> Runtime::getType(const NomadId id) const {
-    const auto typeIndex = toNomadIndex(id);
-
-    if (typeIndex >= m_types.size()) {
+std::optional<const Type*> Runtime::getType(const TypeId id) const {
+    if (isIdOutOfRange(id.id, m_types.size())) {
         return std::nullopt;
     }
 
-    return m_types[typeIndex].get();
+    return m_types[toNomadIndex(id.id)].get();
 }
 
 const Type* Runtime::getTypeByName(const NomadString& name) const {

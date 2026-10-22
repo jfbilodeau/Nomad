@@ -12,6 +12,8 @@
 #include <cmath>
 #include <numbers>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 using namespace nomad;
@@ -28,6 +30,45 @@ struct TypeCase {
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(language_types)
+
+BOOST_AUTO_TEST_CASE(type_lookup_uses_strong_ids)
+{
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Runtime&>().getTypeId("int")), TypeId
+    >);
+    static_assert(!std::is_convertible_v<NomadId, TypeId>);
+    static_assert(!std::is_convertible_v<TypeId, NomadId>);
+    static_assert(!std::is_invocable_v<decltype(&Runtime::getType), const Runtime&, NomadId>);
+    static_assert(std::is_same_v<decltype(EventParameter{}.typeId), TypeId>);
+
+    Runtime runtime;
+    const auto integerId = runtime.getTypeId(runtime.getIntegerType()->getTypeName());
+    BOOST_REQUIRE(integerId.id != NOMAD_INVALID_ID);
+    const auto integerType = runtime.getType(integerId);
+    BOOST_REQUIRE(integerType.has_value());
+    BOOST_TEST(*integerType == runtime.getIntegerType());
+    BOOST_TEST(runtime.getTypeId("MissingType").id == NOMAD_INVALID_ID);
+    BOOST_TEST(!runtime.getType(TypeId{}).has_value());
+    BOOST_TEST(!runtime.getType(TypeId{-2}).has_value());
+    BOOST_TEST(!runtime.getType(TypeId{NOMAD_ID_MAX}).has_value());
+    BOOST_TEST(!runtime.getType(TypeId{NOMAD_ID_MAX - 1}).has_value());
+
+    const auto eventId = runtime.registerEvent(
+        "typedEvent", {{"value", integerId, "int"}}
+    );
+    BOOST_REQUIRE(eventId != NOMAD_INVALID_ID);
+    const auto event = runtime.getEventDefinition(eventId);
+    BOOST_REQUIRE(event.has_value());
+    BOOST_REQUIRE(event->parameters.size() == 1);
+    BOOST_TEST(event->parameters.front().typeId.id == integerId.id);
+    BOOST_TEST(*runtime.getType(event->parameters.front().typeId) == runtime.getIntegerType());
+
+    runtime.registerType(std::make_unique<ObjectType>("AddedType"));
+    BOOST_TEST(*runtime.getType(integerId) == runtime.getIntegerType());
+    const auto addedId = runtime.getTypeId("AddedType");
+    BOOST_TEST(addedId.id != integerId.id);
+    BOOST_TEST(*runtime.getType(addedId) == runtime.getTypeByName("AddedType"));
+}
 
 BOOST_AUTO_TEST_CASE(types_report_their_runtime_storage_category)
 {

@@ -154,9 +154,8 @@ public:
         const Method* factory
     );
     [[nodiscard]] std::optional<IterableDefinition> getIterableDefinition(const Type* sourceType) const;
-    // [[nodiscard]] const Type* getType(NomadId id) const;
-    [[nodiscard]] NomadId getTypeId(const NomadString& typeName) const;
-    [[nodiscard]] std::optional<const Type*> getType(NomadId id) const;
+    [[nodiscard]] TypeId getTypeId(const NomadString& typeName) const;
+    [[nodiscard]] std::optional<const Type*> getType(TypeId id) const;
     [[nodiscard]] const Type* getTypeByName(const NomadString& name) const;
     void getTypes(std::vector<const Type*>& types) const;
     [[nodiscard]] const OpaqueIdType* registerOpaqueIdType(const NomadString& name, NomadDocArg);

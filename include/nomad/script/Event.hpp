@@ -15,7 +15,7 @@ class Type;
 
 struct EventParameter {
     NomadString name;
-    NomadId typeId;
+    TypeId typeId;
     NomadString typeName;
 };
 

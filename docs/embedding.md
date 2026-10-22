@@ -21,6 +21,15 @@ Types and callables used by a context must remain valid.
 
 Neither the interpreter nor its context creates or owns a VM.
 
+### Type lookup
+
+`Runtime::getTypeId(name)` returns a `TypeId`, or the invalid value `TypeId{}`
+when the type is not registered. Pass it to `getType(id)` to retrieve an optional
+`const Type*`; invalid or unregistered IDs return an empty optional. Type IDs
+belong to the runtime that issued them and remain stable as more types are
+registered. They do not implicitly convert to integers or other ID categories.
+Event parameter definitions use `TypeId` for their `typeId` field.
+
 ### Object type property metadata
 
 `ScriptObjectType` describes a script-defined object type. Open types allow

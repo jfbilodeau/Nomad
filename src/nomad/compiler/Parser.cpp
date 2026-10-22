@@ -1293,7 +1293,7 @@ bool parseEventDispatch(CompilerContext* context, ScriptFunction* function, Toke
         const auto eventParameterType = context->getRuntime()->getType(eventParameter.typeId);
 
         if (!eventParameterType) {
-            context->getCompiler()->reportInternalError("Invalid type id in event: " + toString(eventParameter.typeId) + " (" + eventParameter.typeName + ")");
+            context->getCompiler()->reportInternalError("Invalid type id in event: " + toString(eventParameter.typeId.id) + " (" + eventParameter.typeName + ")");
         }
 
         auto expression = parseExpression(context, function, tokens);
@@ -1443,7 +1443,7 @@ bool parseCallableArguments(
                     return *type;
                 }
 
-                context->getCompiler()->reportInternalError("Invalid type id in event: " + toString(p.typeId) + " (" +
+                context->getCompiler()->reportInternalError("Invalid type id in event: " + toString(p.typeId.id) + " (" +
                                                             p.typeName + ")");
             });
 
