@@ -2,7 +2,7 @@
 Things the author wants to do.
 
 ## Problems
-
+[ ] Sprites that are consolidated in spritesheets are still exported during `nomadw package`
 
 ## Open
 [ ] File IO module.
