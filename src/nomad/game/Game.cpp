@@ -1242,6 +1242,21 @@ void Game::initRuntime() {
         registerBuildInNativeFunctions(m_runtime);
     }
 
+    for (const auto* hubName : {
+        "game",
+        "game.audio",
+        "game.music",
+        "game.inventory",
+        "game.settings",
+        "game.debug",
+        "game.debug.console",
+        "game.debug.draw",
+    }) {
+        if (!m_runtime->registerHub(hubName)) {
+            raiseError("Failed to register game API hub '" + NomadString(hubName) + "'");
+        }
+    }
+
     m_runtime->setDebug(isDebug());
 }
 
