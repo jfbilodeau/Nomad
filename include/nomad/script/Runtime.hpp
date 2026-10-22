@@ -519,7 +519,7 @@ private:
         const Type* returnType,
         const NomadString& doc
     );
-    NomadId addCallableToTable(std::unique_ptr<Callable> callable);
+    NomadId addCallableToTable(std::unique_ptr<Function> function);
     [[nodiscard]] bool canOverloadCallable(
         const NomadString& name,
         const std::vector<Parameter>& parameters,
@@ -574,7 +574,7 @@ private:
     std::vector<NomadString> m_constructorSpecializations;
     std::vector<UnaryOperatorRegistration> m_unaryOperators;
     std::vector<BinaryOperatorRegistration> m_binaryOperators;
-    std::vector<std::unique_ptr<Callable>> m_functions;
+    std::vector<std::unique_ptr<Function>> m_functions;
     std::vector<Callable*> m_callables;
     std::vector<KeywordDefinition> m_keywords;
     VariableMap m_constantsMap;

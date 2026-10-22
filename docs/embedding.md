@@ -523,6 +523,11 @@ Use `registerNativeFunction` for a global function and `registerNativeMethod` fo
 method on a non-null object type.
 Global function lookup and enumeration exclude methods.
 
+`ObjectType::getMethods()` lists the type's registered methods as borrowed
+`const Method*` pointers, in registration order.
+The pointers remain valid until the runtime is destroyed, even when additional
+methods are registered. Use a method's `getId()` with Runtime's callable accessors.
+
 `getThis()` returns the borrowed instance; `getThisAs<T>()` performs a static cast.
 The host must pair the descriptor with the correct C++ class. Access without an
 active method or with a null instance faults. Retain a reference explicitly if the

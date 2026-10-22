@@ -556,7 +556,17 @@ NomadId Runtime::registerNativeCallable(
     NomadId id;
 
     if (objectType != nullptr) {
-        id = addCallableToTable(std::make_unique<NativeMethod>(name, objectType, std::move(fn), parameters, returnType, doc));
+        auto* mutableType = getMutableObjectType(objectType);
+        if (mutableType == nullptr) {
+            log::error("Cannot register native method '" + name + "': object type is not registered");
+            return NOMAD_INVALID_ID;
+        }
+        id = mutableType->registerMethod(
+            *this, std::make_unique<NativeMethod>(name, objectType, std::move(fn), parameters, returnType, doc)
+        );
+        if (id == NOMAD_INVALID_ID) {
+            return NOMAD_INVALID_ID;
+        }
 
         const auto memberId = toNomadId(m_nativeMembers.size());
         m_nativeMembers.push_back({MemberType::Method, toNomadIndex(id)});
@@ -571,12 +581,12 @@ NomadId Runtime::registerNativeCallable(
     return id;
 }
 
-NomadId Runtime::addCallableToTable(std::unique_ptr<Callable> callable) {
-    if (callable == nullptr) {
+NomadId Runtime::addCallableToTable(std::unique_ptr<Function> function) {
+    if (function == nullptr) {
         return NOMAD_INVALID_ID;
     }
 
-    m_functions.push_back(std::move(callable));
+    m_functions.push_back(std::move(function));
     const auto id = m_functions.back()->registerWithRuntime(*this);
     if (id == NOMAD_INVALID_ID) {
         m_functions.pop_back();

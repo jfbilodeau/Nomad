@@ -790,6 +790,100 @@ BOOST_AUTO_TEST_CASE(type_owned_constructor_factory_is_released_once)
     BOOST_TEST(destructions == 1);
 }
 
+BOOST_AUTO_TEST_CASE(methods_belong_to_the_receiver_type)
+{
+    Runtime runtime;
+    const auto* type = registerResolutionType(runtime, "MethodOwner");
+    const auto* otherType = registerResolutionType(runtime, "OtherMethodOwner");
+    const auto memberId = runtime.registerNativeMethod(
+        type, "update", [](VirtualMachine*) {},
+        {defParameter("value", runtime.getIntegerType(), "")}, runtime.getVoidType(), ""
+    );
+    BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
+    const auto methods = type->getMethods();
+    BOOST_REQUIRE(methods.size() == 1);
+    BOOST_TEST(methods.front() == runtime.getNativeMemberMethod(memberId));
+    const auto callableId = methods.front()->getId();
+    BOOST_TEST(methods.front() == runtime.getMethod(callableId));
+    BOOST_TEST(otherType->getMethods().empty());
+
+    const auto overloadId = runtime.registerNativeMethod(
+        otherType, "update", [](VirtualMachine*) {},
+        {defParameter("value", runtime.getFloatType(), "")}, runtime.getVoidType(), ""
+    );
+    BOOST_REQUIRE(overloadId != NOMAD_INVALID_ID);
+    BOOST_TEST(type->getMethods().size() == 1);
+    BOOST_TEST(otherType->getMethods().size() == 1);
+    BOOST_TEST(runtime.resolveMethod(type, "update", {runtime.getIntegerType()}).id == callableId);
+    BOOST_TEST(runtime.resolveMethod(otherType, "update", {runtime.getFloatType()}).id ==
+        runtime.getNativeMemberMethod(overloadId)->getId());
+    BOOST_TEST(runtime.getCallableId("update") == NOMAD_INVALID_ID);
+
+    BOOST_TEST(runtime.registerNativeMethod(
+        type, "update", [](VirtualMachine*) {},
+        {defParameter("value", runtime.getIntegerType(), "")}, runtime.getVoidType(), ""
+    ) == NOMAD_INVALID_ID);
+    BOOST_TEST(type->getMethods().size() == 1);
+
+    Runtime otherRuntime;
+    const auto callableCount = otherRuntime.getFunctionTableSize();
+    BOOST_TEST(otherRuntime.registerNativeMethod(
+        type, "update", [](VirtualMachine*) {}, {}, otherRuntime.getVoidType(), ""
+    ) == NOMAD_INVALID_ID);
+    BOOST_TEST(otherRuntime.getFunctionTableSize() == callableCount);
+    BOOST_TEST(type->getMethods().size() == 1);
+
+    for (auto index = 0; index < 32; ++index) {
+        BOOST_REQUIRE(runtime.registerNativeMethod(
+            type, "extra" + std::to_string(index), [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+        ) != NOMAD_INVALID_ID);
+    }
+    BOOST_TEST(runtime.getMethod(callableId) == methods.front());
+    BOOST_TEST(runtime.getNativeMemberMethod(memberId) == methods.front());
+}
+
+BOOST_AUTO_TEST_CASE(type_owned_method_callback_is_released_once)
+{
+    auto destructions = 0;
+    auto aliveAtTypeDestruction = false;
+    {
+        class MethodOwner final : public ObjectType {
+        public:
+            MethodOwner(int& destructions, bool& alive):
+                ObjectType("MethodLifetimeOwner"),
+                m_destructions(destructions),
+                m_alive(alive)
+            {
+            }
+
+            ~MethodOwner() override {
+                m_alive = m_destructions == 0 && getMethods().size() == 1;
+            }
+
+        private:
+            int& m_destructions;
+            bool& m_alive;
+        };
+
+        Runtime runtime;
+        auto descriptor = std::make_unique<MethodOwner>(destructions, aliveAtTypeDestruction);
+        const auto* type = descriptor.get();
+        runtime.registerType(std::move(descriptor));
+        auto lifetime = std::shared_ptr<int>(new int{0}, [&destructions](int* value) {
+            ++destructions;
+            delete value;
+        });
+        const auto memberId = runtime.registerNativeMethod(
+            type, "update", [lifetime = std::move(lifetime)](VirtualMachine*) {},
+            {}, runtime.getVoidType(), ""
+        );
+        BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
+        BOOST_TEST(destructions == 0);
+    }
+    BOOST_TEST(aliveAtTypeDestruction);
+    BOOST_TEST(destructions == 1);
+}
+
 BOOST_AUTO_TEST_CASE(category_getters_and_conversions_use_resolved_callable_ids)
 {
     Runtime runtime;

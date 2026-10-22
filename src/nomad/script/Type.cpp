@@ -343,6 +343,34 @@ std::vector<const Constructor*> ObjectType::getConstructors() const {
     return constructors;
 }
 
+NomadId ObjectType::registerMethod(
+    Runtime& runtime,
+    std::unique_ptr<Method> method
+) {
+    if (method == nullptr || method->getObjectType() != this ||
+        method->getId() != NOMAD_INVALID_ID || runtime.getTypeByName(getTypeName()) != this) {
+        log::error("Cannot register method: invalid owner or previously registered callable");
+        return NOMAD_INVALID_ID;
+    }
+
+    m_methods.push_back(std::move(method));
+    const auto id = m_methods.back()->registerWithRuntime(runtime);
+    if (id == NOMAD_INVALID_ID) {
+        m_methods.pop_back();
+        log::error("Cannot register method: callable registration failed");
+    }
+    return id;
+}
+
+std::vector<const Method*> ObjectType::getMethods() const {
+    std::vector<const Method*> methods;
+    methods.reserve(m_methods.size());
+    for (const auto& method : m_methods) {
+        methods.push_back(method.get());
+    }
+    return methods;
+}
+
 ObjectType::ObjectType(
     NomadString name,
     std::vector<const Type*> typeArguments,

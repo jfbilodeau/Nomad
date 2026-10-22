@@ -24,6 +24,7 @@ class Runtime;
 class FunctionType;
 class EnumType;
 class Constructor;
+class Method;
 
 enum class TypeStorage {
     None = 1,  // for `void`
@@ -249,6 +250,11 @@ public:
         std::unique_ptr<Constructor> constructor
     );
     [[nodiscard]] std::vector<const Constructor*> getConstructors() const;
+    [[nodiscard]] NomadId registerMethod(
+        Runtime& runtime,
+        std::unique_ptr<Method> method
+    );
+    [[nodiscard]] std::vector<const Method*> getMethods() const;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 
     void initValue(RuntimeValue& value) const override;
@@ -270,6 +276,7 @@ private:
     std::vector<const Type*> m_typeArguments;
     std::vector<ObjectPropertyDefinition> m_properties;
     std::vector<std::unique_ptr<Constructor>> m_constructors;
+    std::vector<std::unique_ptr<Method>> m_methods;
 };
 
 class BaseStringType : public ObjectType {
