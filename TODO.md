@@ -8,7 +8,6 @@ Things the author wants to do.
 ## Open
 [ ] Object serialization
 [ ] File IO module.
-[ ] Readonly collections
 [ ] Replace ref counting with garbage collector.
 [ ] Game debug console--root should be Game/Inventory/Windows/etc.
 [ ] Need to add `game.mouse.x/y`, `scene.mouse.x/y` and `this.mouse.x/y`
@@ -40,6 +39,7 @@ a = new 20  # Type for `a` is known. Reused.
 [X] Rename `init` to `main`
 [X] Indexer notation.
 [X] `$"{1+2}"` in interpreter causes fault
+[X] Readonly collections
 [X] LSP
 [X] Make runtime plugable (Game, system, etc...)
 [X] Make `font` an intrinsic instead of ID.
