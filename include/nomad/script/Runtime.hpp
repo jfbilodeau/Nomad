@@ -447,8 +447,27 @@ public:
     void dumpDocumentation(std::ostream& out) const;
 
 private:
-    // Runs the closure's function and returns it, or nullptr when the closure is invalid.
-    const ScriptFunction* runClosure(const Closure* closure, const std::vector<RuntimeValue>& args);
+    // Nested types
+    struct ParameterizedTypeRegistration {
+        NomadString name;
+        NomadIndex argumentCount;
+        ParameterizedTypeFactory factory;
+        ParameterizedTypeInitializer initializer;
+        std::optional<std::vector<TemplateParameter>> constructorTemplate;
+        std::unordered_map<NomadString, MemberSignature> memberTemplates;
+    };
+
+    struct TypeSpecialization {
+        NomadString name;
+        std::vector<const Type*> arguments;
+        const Type* type;
+    };
+
+    struct ParameterizedConstructorRegistration {
+        NomadString name;
+        NomadIndex argumentCount;
+        ParameterizedConstructorInitializer initializer;
+    };
 
     struct UnaryOperatorRegistration {
         UnaryOperator op;
@@ -467,66 +486,31 @@ private:
         BinaryFoldingFn fn;
     };
 
+    struct NativeMemberRegistration {
+        MemberType type;
+        NomadIndex definitionIndex;
+    };
+
     struct FormatStringRegistration {
         NomadId id;
         NomadId functionId;
         std::unique_ptr<FormatString> formatString;
     };
 
-    struct NativeMemberRegistration {
-        MemberType type;
-        NomadIndex definitionIndex;
+    enum class ScriptInitializationState {
+        Pending = 1,
+        Running,
+        Complete,
+        Failed
     };
 
-    void registerDefaultInstructions();
-    NomadId internContextVariable(NomadId contextId, NomadId localVariableId);
-    [[nodiscard]] const ContextVariable* getContextVariable(NomadId contextVariableId) const;
-    [[nodiscard]] bool canOverloadCallable(const NomadString& name,
-                                           const std::vector<Parameter>& parameters,
-                                           const Type* returnType, NomadString& error) const;
-    NomadId addCallableToTable(std::unique_ptr<Callable> callable);
-    [[nodiscard]] ResolveResult resolveAmong(
-        std::vector<NomadId> candidates,
-        const std::vector<const Type*>& argumentTypes
-    ) const;
-    [[nodiscard]] bool ownsType(const Type* type) const;
-    [[nodiscard]] bool canRegisterNativeMember(const Type* objectType, const NomadString& name, MemberType type,
-                                                  const std::vector<Parameter>& parameters,
-                                                  NomadString& error) const;
-    [[nodiscard]] bool canRegisterMemberSignature(
-        const NomadString& name,
-        MemberType type,
-        const std::vector<Parameter>& parameters,
-        NomadString& error
-    ) const;
+    struct ScriptInitialization {
+        NomadId functionId = NOMAD_INVALID_ID;
+        ScriptInitializationState state = ScriptInitializationState::Pending;
+        NomadString error;
+    };
 
-    std::vector<Instruction> m_instructions;
-    std::vector<OpCodeDefinition> m_opCodes;
-    struct ParameterizedTypeRegistration {
-        NomadString name;
-        NomadIndex argumentCount;
-        ParameterizedTypeFactory factory;
-        ParameterizedTypeInitializer initializer;
-        std::optional<std::vector<TemplateParameter>> constructorTemplate;
-        std::unordered_map<NomadString, MemberSignature> memberTemplates;
-    };
-    struct TypeSpecialization {
-        NomadString name;
-        std::vector<const Type*> arguments;
-        const Type* type;
-    };
-    std::vector<std::unique_ptr<Type>> m_types;
-    std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;
-    std::vector<TypeSpecialization> m_typeSpecializations;
-    struct ParameterizedConstructorRegistration {
-        NomadString name;
-        NomadIndex argumentCount;
-        ParameterizedConstructorInitializer initializer;
-    };
-    std::vector<ParameterizedConstructorRegistration> m_parameterizedConstructors;
-    std::vector<NomadString> m_constructorSpecializations;
-    std::vector<UnaryOperatorRegistration> m_unaryOperators;
-    std::vector<BinaryOperatorRegistration> m_binaryOperators;
+    // Callable registration and resolution
     NomadId registerNativeCallable(
         const ObjectType* objectType,
         const NomadString& name,
@@ -535,6 +519,60 @@ private:
         const Type* returnType,
         const NomadString& doc
     );
+    NomadId addCallableToTable(std::unique_ptr<Callable> callable);
+    [[nodiscard]] bool canOverloadCallable(
+        const NomadString& name,
+        const std::vector<Parameter>& parameters,
+        const Type* returnType,
+        NomadString& error
+    ) const;
+    [[nodiscard]] ResolveResult resolveAmong(
+        std::vector<NomadId> candidates,
+        const std::vector<const Type*>& argumentTypes
+    ) const;
+    // Type and member validation
+    [[nodiscard]] bool ownsType(const Type* type) const;
+    [[nodiscard]] bool canRegisterNativeMember(
+        const Type* objectType,
+        const NomadString& name,
+        MemberType type,
+        const std::vector<Parameter>& parameters,
+        NomadString& error
+    ) const;
+    [[nodiscard]] bool canRegisterMemberSignature(
+        const NomadString& name,
+        MemberType type,
+        const std::vector<Parameter>& parameters,
+        NomadString& error
+    ) const;
+
+    // Hub registration
+    void registerHubMember(const NomadString& name, HubMember member);
+    [[nodiscard]] bool canRegisterHubMember(const NomadString& name, bool function = false) const;
+    void rebuildHubMembers();
+
+    // Context variables
+    NomadId internContextVariable(NomadId contextId, NomadId localVariableId);
+    [[nodiscard]] const ContextVariable* getContextVariable(NomadId contextVariableId) const;
+
+    // Script execution
+    void validateScriptExecution() const;
+    // Runs the closure's function and returns it, or nullptr when the closure is invalid.
+    const ScriptFunction* runClosure(const Closure* closure, const std::vector<RuntimeValue>& args);
+
+    // Instruction registration
+    void registerDefaultInstructions();
+
+    // Data members
+    std::vector<Instruction> m_instructions;
+    std::vector<OpCodeDefinition> m_opCodes;
+    std::vector<std::unique_ptr<Type>> m_types;
+    std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;
+    std::vector<TypeSpecialization> m_typeSpecializations;
+    std::vector<ParameterizedConstructorRegistration> m_parameterizedConstructors;
+    std::vector<NomadString> m_constructorSpecializations;
+    std::vector<UnaryOperatorRegistration> m_unaryOperators;
+    std::vector<BinaryOperatorRegistration> m_binaryOperators;
     std::vector<std::unique_ptr<Callable>> m_functions;
     std::vector<Callable*> m_callables;
     std::vector<KeywordDefinition> m_keywords;
@@ -551,22 +589,7 @@ private:
     std::unordered_map<const Type*, IterableDefinition> m_iterableTypes;
     std::vector<NativePropertyDefinition> m_nativeProperties;
     std::vector<std::unique_ptr<Hub>> m_hubs;
-    enum class ScriptInitializationState {
-        Pending = 1,
-        Running,
-        Complete,
-        Failed
-    };
-    struct ScriptInitialization {
-        NomadId functionId = NOMAD_INVALID_ID;
-        ScriptInitializationState state = ScriptInitializationState::Pending;
-        NomadString error;
-    };
     ScriptInitialization m_scriptInitialization;
-    void registerHubMember(const NomadString& name, HubMember member);
-    [[nodiscard]] bool canRegisterHubMember(const NomadString& name, bool function = false) const;
-    void rebuildHubMembers();
-    void validateScriptExecution() const;
     std::vector<NativeIndexerDefinition> m_nativeIndexers;
     std::unordered_map<NomadString, std::vector<NomadId>> m_nativeMembersByName;
     bool m_debug = false;
