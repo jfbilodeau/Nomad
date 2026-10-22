@@ -188,7 +188,7 @@ std::optional<NomadString> compileFormatString(
 
             switch (identifier.identifierType) {
                 case IdentifierType::Function: {
-                    const auto placeholderFunction = compiler->getRuntime()->getScriptFunction(identifier.variableId);
+                    const auto placeholderFunction = compiler->getRuntime()->getScriptFunction(identifier.functionId);
 
                     if (placeholderFunction != nullptr && placeholderFunction->getParameterCount() != 0) {
                         return "Cannot use function with parameters in format string: " + variableName;

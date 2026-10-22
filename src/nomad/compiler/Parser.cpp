@@ -175,7 +175,7 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
                                                               const Expression* parent, const NomadString& name,
                                                               const NomadIndex line, const NomadIndex column) {
     const auto functionId = context->getRuntime()->getCallableId(name);
-    if (functionId != NOMAD_INVALID_ID) {
+    if (functionId.isValid()) {
         const auto* targetFunction = context->getRuntime()->getFunction(functionId);
         if (targetFunction->getParameterCount() != 0) {
             context->reportError("Function receiver '" + name + "' requires arguments");
@@ -423,7 +423,7 @@ std::unique_ptr<Statement> parseStatement(
     const auto qualifiedName = context->resolveName(statementName, function);
     const auto functionId = context->getRuntime()->getCallableId(qualifiedName);
 
-    if (functionId != NOMAD_INVALID_ID) {
+    if (functionId.isValid()) {
         const auto callLine = tokens->getLineIndex();
         auto statement = parseFunctionCall(context, function, tokens, qualifiedName);
 
@@ -439,7 +439,7 @@ std::unique_ptr<Statement> parseStatement(
     return nullptr;
 }
 
-NomadId parseCallbackParameter(
+CallableId parseCallbackParameter(
     CompilerContext* context,
     ScriptFunction* function,
     Tokenizer* tokens,
@@ -453,7 +453,7 @@ NomadId parseCallbackParameter(
                 "`then` is only allowed at the root of a script or function body. "
                 "Use an explicit `fun ... end` callback inside control-flow blocks.", tokens
             );
-            return NOMAD_INVALID_ID;
+            return CallableId{};
         }
         if (context->getMode() != CompilerMode::Script) {
             context->reportError(
@@ -468,7 +468,7 @@ NomadId parseCallbackParameter(
         const auto functionName = generateFunFunctionName(context, function, tokens->getLineIndex());
         auto* compiler = context->getCompiler();
         const auto functionId = compiler->createFunction(context, compiler->getScriptId(function->getId()), functionName);
-        if (functionId == NOMAD_INVALID_ID) {
+        if (functionId.isInvalid()) {
             return NOMAD_INVALID_ID;
         }
 
@@ -509,7 +509,7 @@ NomadId parseCallbackParameter(
 
     const auto funId = context->getRuntime()->getFunctionId(funName);
 
-    if (funId == NOMAD_INVALID_ID) {
+    if (funId.isInvalid()) {
         context->reportError("Unknown callback function name '" + funName + "'", tokens);
 
         return NOMAD_INVALID_ID;
@@ -549,7 +549,7 @@ std::unique_ptr<Statement> parseFunctionCall(
 
     const auto functionId = context->getRuntime()->getCallableId(functionName);
 
-    if (functionId == NOMAD_INVALID_ID) {
+    if (functionId.isInvalid()) {
         context->reportError("Unknown function name: '" + functionName + "'", tokens);
 
         return nullptr;
@@ -962,7 +962,7 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
         return IdentifierType::Constant;
     }
 
-    if (compiler->getRuntime()->getFunctionId(name) != NOMAD_INVALID_ID) {
+    if (compiler->getRuntime()->getFunctionId(name).isValid()) {
         return IdentifierType::Function;
     }
 
@@ -1035,7 +1035,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     if (!runtime->getContainingHub(variableName).empty() &&
         !runtime->isHubVariable(variableName) &&
         runtime->getConstantId(variableName) == NOMAD_INVALID_ID &&
-        runtime->getCallableId(variableName) == NOMAD_INVALID_ID &&
+        runtime->getCallableId(variableName).isInvalid() &&
         runtime->getDynamicVariableId(variableName) == NOMAD_INVALID_ID &&
         runtime->getTypeByName(variableName) == nullptr &&
         !hasValueReceiver) {
@@ -1170,7 +1170,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
     if (token.type == TokenType::Identifier) {
         const auto functionId = context->getRuntime()->getCallableId(token.textValue);
 
-        if (functionId != NOMAD_INVALID_ID) {
+        if (functionId.isValid()) {
             return parseFunctionCallExpression(context, function, tokens, parent, token.textValue);
         }
 
@@ -1327,7 +1327,7 @@ bool parseCallableArguments(
     auto allowOmitted = allowOmittedArguments;
     auto* runtime = context->getRuntime();
     if (runtime->getFunction(callable.getId()) == &callable) {
-        std::vector<NomadId> overloads;
+        std::vector<CallableId> overloads;
         runtime->getCallableOverloads(callable.getName(), overloads);
         for (const auto id : overloads) {
             const auto* candidate = runtime->getFunction(id);
@@ -1456,7 +1456,7 @@ bool parseCallableArguments(
 
             const auto functionId = parseCallbackParameter(context, function, tokens, callbackType->asCallback());
 
-            if (functionId == NOMAD_INVALID_ID) {
+            if (functionId.isInvalid()) {
                 return false;
             }
 
@@ -1479,7 +1479,7 @@ bool parseCallableArguments(
 
             auto functionId = parseCallbackParameter(context, function, tokens, callbackType);
 
-            if (functionId == NOMAD_INVALID_ID) {
+            if (functionId.isInvalid()) {
                 return false;
             }
 
@@ -1543,7 +1543,7 @@ std::unique_ptr<Argument> parsePredicateArgument(
     auto* compiler = context->getCompiler();
     const auto predicateFunctionId = compiler->createFunction(
         context, compiler->getScriptId(function->getId()), predicateFunctionName);
-    if (predicateFunctionId == NOMAD_INVALID_ID) {
+    if (predicateFunctionId.isInvalid()) {
         return nullptr;
     }
 

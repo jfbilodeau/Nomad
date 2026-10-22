@@ -266,7 +266,7 @@ private:
     std::vector<HubInitializerStatement*> m_scriptInitializers;
     std::unordered_set<NomadString> m_hubVariableDeclarations;
     bool m_allowInitialValueLookup = false;
-    NomadId m_scriptInitializerId = NOMAD_INVALID_ID;
+    CallableId m_scriptInitializerId{};
     std::vector<FunctionLink> m_functionLinks;
     std::unordered_map<CallableId, std::unordered_set<CallableId>> m_functionCallDependencies;
     std::unordered_set<CallableId> m_returningFunctions;

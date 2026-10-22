@@ -1113,7 +1113,7 @@ void Compiler::registerScript(CompilerContext* context, const ScriptSource& scri
     const auto scriptId = toNomadId(m_scripts.size());
     m_scripts.push_back({script, nullptr, NOMAD_INVALID_ID});
     const auto functionId = createFunction(context, scriptId, script.scriptName);
-    if (functionId == NOMAD_INVALID_ID) {
+    if (functionId.isInvalid()) {
         m_scripts.pop_back();
         return;
     }
@@ -1225,9 +1225,9 @@ void Compiler::registerScriptInitializer(
     const NomadId scriptId,
     std::unique_ptr<HubInitializerStatement> initializer
 ) {
-    if (m_scriptInitializerId == NOMAD_INVALID_ID) {
+    if (m_scriptInitializerId.isInvalid()) {
         m_scriptInitializerId = createFunction(context, scriptId, "$init");
-        if (m_scriptInitializerId == NOMAD_INVALID_ID) {
+        if (m_scriptInitializerId.isInvalid()) {
             return;
         }
         m_runtime->getScriptFunction(m_scriptInitializerId)->setHub({});
@@ -1508,7 +1508,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     if (!beginPhase(CompilationPhase::Completed)) {
         return false;
     }
-    if (m_scriptInitializerId != NOMAD_INVALID_ID) {
+    if (m_scriptInitializerId.isValid()) {
         reportExceptions({}, [&] {
             installScriptInitialValues();
             m_runtime->setScriptInitializer(m_scriptInitializerId);
@@ -1566,7 +1566,7 @@ void Compiler::linkFunctions() {
         auto function = m_runtime->getScriptFunction(link.functionId);
 
         if (function == nullptr) {
-            reportInternalError("Failed to link function '" + toString(link.functionId) + "'");
+            reportInternalError("Failed to link function '" + toString(link.functionId.id) + "'");
         }
         if (function->getFunctionStart() == NOMAD_INVALID_INDEX) {
             reportInternalError("Function '" + function->getName() + "' has not been compiled");
@@ -1610,7 +1610,7 @@ NomadString Compiler::generateFunctionName(const NomadString& generatedName, con
     do {
         generatedFunctionName = FUNCTION_INTERNAL_NAME_PREFIX + generatedName + "_" + hostFunctionName + "_" + std::to_string(line) + "_" + std::to_string(index);
         ++index;
-    } while (m_runtime->getFunctionId(generatedFunctionName) != NOMAD_INVALID_ID);
+    } while (m_runtime->getFunctionId(generatedFunctionName).isValid());
 
     return generatedFunctionName;
 }

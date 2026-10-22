@@ -1389,12 +1389,12 @@ bool FormatStringLiteral::parsePlaceholders(
         const auto functionId = compiler->createFunction(
             context, compiler->getScriptId(function->getId()), name, context->isHubInitializer()
         );
-        if (functionId == NOMAD_INVALID_ID) {
+        if (functionId.isInvalid()) {
             return false;
         }
         auto* expressionFunction = context->getRuntime()->getScriptFunction(functionId);
         expressionFunction->setParentId(
-            context->isHubInitializer() && function->getParentId() == NOMAD_INVALID_ID
+            context->isHubInitializer() && function->getParentId().isInvalid()
                 ? context->getRuntime()->getFunctionId("$init")
                 : function->getId()
         );
@@ -1450,11 +1450,11 @@ void FormatStringLiteral::onResolve(CompilerContext* context, ScriptFunction* fu
 }
 
 void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) {
-    const NomadId functionId = function->getId();
+    const auto functionId = function->getId();
 
     auto formatKey = m_variableFormat;
     for (const auto& placeholder : m_expressionPlaceholders) {
-        formatKey += "@" + std::to_string(placeholder.functionId);
+        formatKey += "@" + std::to_string(placeholder.functionId.id);
     }
     auto formatStringId = compiler->getRuntime()->getFormatStringId(formatKey, functionId);
 
@@ -1857,7 +1857,7 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
     for (;;) {
         const auto parentId = currentFunction->getParentId();
 
-        if (parentId == NOMAD_INVALID_ID) {
+        if (parentId.isInvalid()) {
             // We've gone past the root function and haven't found the identifier.
             return false;
         }
@@ -1900,7 +1900,7 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
     for (const auto intermediateFunction : std::ranges::reverse_view(intermediateFunctions)) {
         const auto parentId = intermediateFunction->getParentId();
 
-        if (parentId == NOMAD_INVALID_ID) {
+        if (parentId.isInvalid()) {
             throw NomadBug("Failed to retrieve parent function during capture propagation");
         }
 

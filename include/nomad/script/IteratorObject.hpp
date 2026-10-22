@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <nomad/script/Callable.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/RuntimeValue.hpp>
 #include <nomad/script/Type.hpp>
@@ -29,7 +30,7 @@ private:
 struct IterableDefinition {
     const Type* valueType;
     const ObjectType* iteratorType;
-    NomadId factoryId;
+    CallableId factoryId;
 };
 
 } // namespace nomad

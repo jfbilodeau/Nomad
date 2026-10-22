@@ -7,6 +7,7 @@
 
 #include <nomad/Nomad.hpp>
 
+#include <nomad/script/Callable.hpp>
 #include <nomad/script/OpCode.hpp>
 
 #include <functional>

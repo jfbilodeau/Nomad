@@ -88,7 +88,7 @@ public:
     }
 
     NomadId createCapture(
-        const CallableId id,
+        const NomadId id,
         const NomadString& name,
         const CaptureSource source,
         const Type* type
@@ -248,7 +248,7 @@ private:
 class ScriptFunction : public ScriptCallable<Function> {
 public:
     ScriptFunction(
-        const NomadId id,
+        const CallableId id,
         NomadString name,
         NomadString path,
         NomadString source

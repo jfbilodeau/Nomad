@@ -25,7 +25,7 @@ NomadString generateFunFunctionName(CompilerContext* context, ScriptFunction* fu
     // Generate function name
     NomadString testFunctionName;
     auto count = 0;
-    auto testId = NOMAD_INVALID_ID;
+    auto testId = CallableId{};
 
     do {
         testFunctionName = function->getName() + "@" + toString(line) + "[" + toString(count) + "]";
@@ -36,7 +36,7 @@ NomadString generateFunFunctionName(CompilerContext* context, ScriptFunction* fu
             // Hopefully this will never happen...
             context->getCompiler()->reportInternalError("could not generate `fun` function name");
         }
-    } while (testId != NOMAD_INVALID_ID);
+    } while (testId.isValid());
 
     return testFunctionName;
 }
@@ -190,7 +190,7 @@ bool preParseFunStatement(CompilerContext* context, ScriptFunction* function, To
     // Generate `fun`
     auto* compiler = context->getCompiler();
     const auto funId = compiler->createFunction(context, compiler->getScriptId(function->getId()), funName);
-    if (funId == NOMAD_INVALID_ID) {
+    if (funId.isInvalid()) {
         return false;
     }
 
