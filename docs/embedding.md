@@ -21,6 +21,26 @@ Types and callables used by a context must remain valid.
 
 Neither the interpreter nor its context creates or owns a VM.
 
+### Object type property metadata
+
+`ScriptObjectType` describes a script-defined object type. It is open by default;
+pass `false` to its constructor to make it closed. Existing native object types
+are closed by default and may opt in by overriding `isOpen()`.
+
+`addProperty` returns a `NomadId`, or `NOMAD_INVALID_ID` if registration fails.
+Adding a property with the same name and type returns its existing ID.
+Each property's storage index is a `NomadIndex`; metadata is ordered by first
+declaration. A conflicting type or null property type is rejected without
+changing the metadata.
+
+The compiler is responsible for validating declarations, enforcing closed-type
+extension rules, and reporting diagnostics. Closed types can register their own
+declared properties. The compiler must finish registering properties before
+execution; property metadata must not change at runtime.
+
+This API currently records the type schema only. Script class syntax, instance
+property storage, and property access from scripts are not yet implemented.
+
 ### Callable access
 
 Registered native functions, script functions, methods, and constructors share

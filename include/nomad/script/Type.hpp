@@ -209,6 +209,12 @@ public:
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 
+struct ObjectPropertyDefinition {
+    NomadId id = NOMAD_INVALID_ID;
+    NomadString name;
+    const Type* type = nullptr;
+};
+
 class ObjectTypeBase : public Type {
 public:
     explicit ObjectTypeBase(NomadString documentation = {});
@@ -216,6 +222,18 @@ public:
     void freeValue(RuntimeValue& value) const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
+
+    [[nodiscard]] virtual bool isOpen() const;
+    [[nodiscard]] virtual NomadId addProperty(
+        const NomadString& name,
+        const Type* propertyType
+    );
+    [[nodiscard]] virtual const ObjectPropertyDefinition* getProperty(const NomadString& name) const;
+    [[nodiscard]] virtual const ObjectPropertyDefinition* getProperty(NomadId id) const;
+    [[nodiscard]] virtual NomadIndex getPropertyCount() const;
+
+private:
+    std::vector<ObjectPropertyDefinition> m_properties;
 };
 
 class ObjectType : public ObjectTypeBase {

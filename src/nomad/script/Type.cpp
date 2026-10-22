@@ -361,6 +361,60 @@ bool ObjectTypeBase::sameType(const Type* other) const {
     return this == other;
 }
 
+bool ObjectTypeBase::isOpen() const {
+    return false;
+}
+
+NomadId ObjectTypeBase::addProperty(
+    const NomadString& name,
+    const Type* propertyType
+) {
+    if (propertyType == nullptr) {
+        return NOMAD_INVALID_ID;
+    }
+
+    const auto existing = std::find_if(
+        m_properties.begin(),
+        m_properties.end(),
+        [&](const ObjectPropertyDefinition& property) {
+            return property.name == name;
+        }
+    );
+    if (existing != m_properties.end()) {
+        if (!existing->type->sameType(propertyType)) {
+            return NOMAD_INVALID_ID;
+        }
+        return existing->id;
+    }
+
+    const auto propertyId = m_properties.size();
+    if (propertyId >= toNomadIndex(NOMAD_ID_MAX)) {
+        return NOMAD_INVALID_ID;
+    }
+    const auto id = toNomadId(propertyId);
+    m_properties.push_back({id, name, propertyType});
+    return id;
+}
+
+const ObjectPropertyDefinition* ObjectTypeBase::getProperty(const NomadString& name) const {
+    const auto property = std::find_if(
+        m_properties.begin(),
+        m_properties.end(),
+        [&](const ObjectPropertyDefinition& candidate) {
+            return candidate.name == name;
+        }
+    );
+    return property == m_properties.end() ? nullptr : &*property;
+}
+
+const ObjectPropertyDefinition* ObjectTypeBase::getProperty(const NomadId id) const {
+    return isIdInRange(id, m_properties.size()) ? &m_properties[toNomadIndex(id)] : nullptr;
+}
+
+NomadIndex ObjectTypeBase::getPropertyCount() const {
+    return static_cast<NomadIndex>(m_properties.size());
+}
+
 ObjectType::ObjectType(
     NomadString name,
     std::vector<const Type*> typeArguments,

@@ -57,6 +57,7 @@ add_executable(
     ./ReadOnlyCollectionTest.cpp
     ./RectanglePackerTest.cpp
     ./RuntimeTest.cpp
+    ./ScriptObjectTypeTest.cpp
     ./SourceLoaderTest.cpp
     ./SpriteCatalogTest.cpp
     ./SpriteDiscoveryTest.cpp
