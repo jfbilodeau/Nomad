@@ -230,14 +230,23 @@ struct ObjectPropertyDefinition {
     const Type* type = nullptr;
 };
 
-class ObjectTypeBase : public Type {
+class ObjectType : public Type {
 public:
-    explicit ObjectTypeBase(NomadString documentation = {});
+    explicit ObjectType(
+        NomadString name,
+        std::vector<const Type*> typeArguments = {},
+        NomadString documentation = {}
+    );
+    using Type::toString;
+    [[nodiscard]] NomadString getTypeName() const override;
+    [[nodiscard]] TypeStorage getStorage() const override;
+    [[nodiscard]] const std::vector<const Type*>& getTypeArguments() const;
+    void toString(const RuntimeValue& value, NomadString& string) const override;
+
     void initValue(RuntimeValue& value) const override;
     void freeValue(RuntimeValue& value) const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
-    [[nodiscard]] TypeStorage getStorage() const override;
 
     [[nodiscard]] virtual bool isOpen() const;
     [[nodiscard]] virtual NomadId addProperty(
@@ -249,27 +258,12 @@ public:
     [[nodiscard]] virtual NomadIndex getPropertyCount() const;
 
 private:
+    NomadString m_name;
+    std::vector<const Type*> m_typeArguments;
     std::vector<ObjectPropertyDefinition> m_properties;
 };
 
-class ObjectType : public ObjectTypeBase {
-public:
-    explicit ObjectType(
-        NomadString name,
-        std::vector<const Type*> typeArguments = {},
-        NomadString documentation = {}
-    );
-    using Type::toString;
-    [[nodiscard]] NomadString getTypeName() const override;
-    [[nodiscard]] const std::vector<const Type*>& getTypeArguments() const;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
-
-private:
-    NomadString m_name;
-    std::vector<const Type*> m_typeArguments;
-};
-
-class BaseStringType : public ObjectTypeBase {
+class BaseStringType : public ObjectType {
 public:
     BaseStringType();
 

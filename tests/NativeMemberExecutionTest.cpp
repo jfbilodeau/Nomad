@@ -21,7 +21,7 @@ public:
     NomadInteger value = 4;
 };
 
-const ObjectTypeBase* registerTestObject(Runtime& runtime) {
+const ObjectType* registerTestObject(Runtime& runtime) {
     auto descriptor = std::make_unique<ObjectType>("TestObject");
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));

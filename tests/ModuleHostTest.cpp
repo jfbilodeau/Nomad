@@ -1741,12 +1741,14 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_prese
 }
 
 BOOST_AUTO_TEST_CASE(collections_maps_release_partial_copies_and_preserve_entries_on_failure) {
-    class MapValueType final : public ObjectTypeBase {
+    class MapValueType final : public ObjectType {
     public:
+        MapValueType(): ObjectType("MapValue") {}
+
         [[nodiscard]] NomadString getTypeName() const override { return "MapValue"; }
         void toString(const RuntimeValue&, NomadString& text) const override { text = getTypeName(); }
         void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override {
-            ObjectTypeBase::copyValue(source, destination);
+            ObjectType::copyValue(source, destination);
             if (failCopy) {
                 throw NomadException("Map value copy failed");
             }
@@ -2611,7 +2613,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
     const auto* listType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(listType != nullptr);
     runtime.registerNativeProperty(
-        static_cast<const ObjectTypeBase*>(listType),
+        static_cast<const ObjectType*>(listType),
         "testPresent",
         runtime.getBooleanType(),
         [](VirtualMachine* machine, RuntimeValue& result) {
@@ -2904,7 +2906,7 @@ BOOST_AUTO_TEST_CASE(collections_native_returns_do_not_allocate_unused_list_defa
         {}, type, ""
     );
     const auto memberId = runtime.registerNativeMethod(
-        static_cast<const ObjectTypeBase*>(type),
+        static_cast<const ObjectType*>(type),
         "copyReference",
         [](VirtualMachine* machine) {
             addRef(machine->getThis());

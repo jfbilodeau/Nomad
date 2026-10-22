@@ -36,8 +36,10 @@ CountingObject::~CountingObject() {
     ++m_destroyed;
 }
 
-class FailingCopyType final : public ObjectTypeBase {
+class FailingCopyType final : public ObjectType {
 public:
+    FailingCopyType(): ObjectType("FailingCopy") {}
+
     NomadString getTypeName() const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
     void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override;
@@ -83,7 +85,7 @@ void FailingCopyType::toString(const RuntimeValue&, NomadString& string) const {
 }
 
 void FailingCopyType::copyValue(const RuntimeValue& source, RuntimeValue& destination) const {
-    ObjectTypeBase::copyValue(source, destination);
+    ObjectType::copyValue(source, destination);
     throw NomadException("Copy failed");
 }
 
@@ -321,12 +323,14 @@ BOOST_AUTO_TEST_CASE(ListInsertionCopiesAliasedValuesBeforeReallocation) {
 }
 
 BOOST_AUTO_TEST_CASE(ListFailedInsertionPreservesExistingElements) {
-    class ConditionalCopyType final : public ObjectTypeBase {
+    class ConditionalCopyType final : public ObjectType {
     public:
+        ConditionalCopyType(): ObjectType("ConditionalCopy") {}
+
         NomadString getTypeName() const override { return "ConditionalCopy"; }
         void toString(const RuntimeValue&, NomadString& string) const override { string = getTypeName(); }
         void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override {
-            ObjectTypeBase::copyValue(source, destination);
+            ObjectType::copyValue(source, destination);
             if (failCopy) {
                 throw NomadException("Copy failed");
             }

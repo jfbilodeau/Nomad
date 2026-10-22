@@ -28,7 +28,7 @@ NativeFunctionFn methodFunction() {
     return [](VirtualMachine*) {};
 }
 
-const ObjectTypeBase* registerTestType(Runtime& runtime) {
+const ObjectType* registerTestType(Runtime& runtime) {
     auto descriptor = std::make_unique<ObjectType>("TestObject");
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));

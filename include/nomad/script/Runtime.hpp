@@ -32,7 +32,7 @@
 namespace nomad {
 
 // Forward declarations
-class ObjectTypeBase;
+class ObjectType;
 class Compiler;
 class Closure;
 class FormatString;
@@ -147,7 +147,7 @@ public:
         const std::vector<const Type*>& argumentTypes
     ) const;
     void registerType(std::unique_ptr<Type>&& type);
-    [[nodiscard]] const ObjectTypeBase* getIteratorType(const Type* valueType);
+    [[nodiscard]] const ObjectType* getIteratorType(const Type* valueType);
     void registerIterableType(
         const Type* sourceType,
         const Type* valueType,
@@ -171,15 +171,15 @@ public:
     // `objectType` is the class being constructed and the constructor is invoked by its name. `createdType` is the
     // type of the object that gets created; it differs from `objectType` when one class builds several kinds of object.
     NomadId registerNativeConstructor(
-        const ObjectTypeBase* objectType,
+        const ObjectType* objectType,
         const std::vector<Parameter>& parameters,
-        const ObjectTypeBase* createdType,
+        const ObjectType* createdType,
         ConstructorFactory factory,
         NomadDocArg
     );
     // Shorthand for a constructor whose class and created type are the same.
     NomadId registerNativeConstructor(
-        const ObjectTypeBase* objectType,
+        const ObjectType* objectType,
         const std::vector<Parameter>& parameters,
         ConstructorFactory factory,
         NomadDocArg
@@ -213,7 +213,7 @@ public:
 
     // Native members
     NomadId registerNativeIndexer(
-        const ObjectTypeBase* objectType,
+        const ObjectType* objectType,
         std::vector<const Type*> indexTypes,
         const Type* valueType,
         NativeFunctionFn getFn,
@@ -225,14 +225,14 @@ public:
     [[nodiscard]] const std::vector<NativeIndexerDefinition>& getNativeIndexers() const;
 
     NomadId registerNativeMethod(
-        const ObjectTypeBase* objectType,
+        const ObjectType* objectType,
         const NomadString& name,
         NativeFunctionFn fn,
         const std::vector<Parameter>& parameters,
         const Type* returnType,
         NomadDocArg
     );
-    NomadId registerNativeProperty(const ObjectTypeBase* objectType, const NomadString& name, const Type* valueType,
+    NomadId registerNativeProperty(const ObjectType* objectType, const NomadString& name, const Type* valueType,
                                       NativePropertyGetFn getFn, NativePropertySetFn setFn, NomadDocArg);
     [[nodiscard]] NomadId getNativeMemberId(const Type* objectType, const NomadString& name) const;
     [[nodiscard]] MemberType getMemberType(NomadId memberId) const;
@@ -530,7 +530,7 @@ private:
     std::vector<UnaryOperatorRegistration> m_unaryOperators;
     std::vector<BinaryOperatorRegistration> m_binaryOperators;
     NomadId registerNativeCallable(
-        const ObjectTypeBase* objectType,
+        const ObjectType* objectType,
         const NomadString& name,
         NativeFunctionFn fn,
         const std::vector<Parameter>& parameters,

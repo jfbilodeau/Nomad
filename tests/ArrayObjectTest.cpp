@@ -71,8 +71,10 @@ TrackedArrayElement::~TrackedArrayElement() {
     ++m_destroyed;
 }
 
-class FailingElementType final : public ObjectTypeBase {
+class FailingElementType final : public ObjectType {
 public:
+    FailingElementType(): ObjectType("FailingElement") {}
+
     [[nodiscard]] NomadString getTypeName() const override;
     void toString(const RuntimeValue& value, NomadString& text) const override;
     void initValue(RuntimeValue& value) const override;
@@ -103,11 +105,11 @@ void FailingElementType::initValue(RuntimeValue& value) const {
 
 void FailingElementType::freeValue(RuntimeValue& value) const {
     ++freed;
-    ObjectTypeBase::freeValue(value);
+    ObjectType::freeValue(value);
 }
 
 void FailingElementType::copyValue(const RuntimeValue& source, RuntimeValue& destination) const {
-    ObjectTypeBase::copyValue(source, destination);
+    ObjectType::copyValue(source, destination);
     if (failCopy) {
         throw NomadException("Element copy failed");
     }

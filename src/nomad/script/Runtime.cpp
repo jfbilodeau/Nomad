@@ -24,7 +24,7 @@
 
 namespace nomad {
 
-const ObjectTypeBase* Runtime::getIteratorType(const Type* valueType) {
+const ObjectType* Runtime::getIteratorType(const Type* valueType) {
     if (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
         throw NomadException("Iterator value type must be a registered non-void type");
     }
@@ -32,7 +32,7 @@ const ObjectTypeBase* Runtime::getIteratorType(const Type* valueType) {
     if (type == nullptr) {
         throw NomadException("Failed to specialize iterator type");
     }
-    return static_cast<const ObjectTypeBase*>(type);
+    return static_cast<const ObjectType*>(type);
 }
 
 void Runtime::registerIterableType(
@@ -519,7 +519,7 @@ void Runtime::validateScriptExecution() const {
 }
 
 NomadId Runtime::registerNativeCallable(
-    const ObjectTypeBase* objectType,
+    const ObjectType* objectType,
     const NomadString& name,
     NativeFunctionFn fn,
     const std::vector<Parameter>& parameters,
@@ -1322,7 +1322,7 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
         return false;
     }
 
-    if (dynamic_cast<const ObjectTypeBase*>(objectType) == nullptr) {
+    if (dynamic_cast<const ObjectType*>(objectType) == nullptr) {
         error = "only object types can have native members";
         return false;
     }
@@ -1447,7 +1447,7 @@ std::optional<MemberSignature> Runtime::getMemberSignature(const NomadString& na
 }
 
 NomadId Runtime::registerNativeConstructor(
-    const ObjectTypeBase* objectType,
+    const ObjectType* objectType,
     const std::vector<Parameter>& parameters,
     ConstructorFactory factory,
     const NomadString& doc
@@ -1456,9 +1456,9 @@ NomadId Runtime::registerNativeConstructor(
 }
 
 NomadId Runtime::registerNativeConstructor(
-    const ObjectTypeBase* objectType,
+    const ObjectType* objectType,
     const std::vector<Parameter>& parameters,
-    const ObjectTypeBase* createdType,
+    const ObjectType* createdType,
     ConstructorFactory factory,
     const NomadString& doc
 ) {
@@ -1582,7 +1582,7 @@ NomadString Runtime::getParameterizedConstructorName(
 }
 
 NomadId Runtime::registerNativeIndexer(
-    const ObjectTypeBase* objectType,
+    const ObjectType* objectType,
     std::vector<const Type*> indexTypes,
     const Type* valueType,
     NativeFunctionFn getFn,
@@ -1637,7 +1637,7 @@ const std::vector<NativeIndexerDefinition>& Runtime::getNativeIndexers() const {
     return m_nativeIndexers;
 }
 
-NomadId Runtime::registerNativeProperty(const ObjectTypeBase* objectType, const NomadString& name, const Type* valueType,
+NomadId Runtime::registerNativeProperty(const ObjectType* objectType, const NomadString& name, const Type* valueType,
                                            NativePropertyGetFn getFn, NativePropertySetFn setFn,
                                            const NomadString& doc) {
     if (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
@@ -1675,7 +1675,7 @@ NomadId Runtime::registerNativeProperty(const ObjectTypeBase* objectType, const 
 }
 
 NomadId Runtime::registerNativeMethod(
-    const ObjectTypeBase* objectType,
+    const ObjectType* objectType,
     const NomadString& name,
     NativeFunctionFn fn,
     const std::vector<Parameter>& parameters,

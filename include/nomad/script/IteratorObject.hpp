@@ -28,7 +28,7 @@ private:
 
 struct IterableDefinition {
     const Type* valueType;
-    const ObjectTypeBase* iteratorType;
+    const ObjectType* iteratorType;
     NomadId factoryId;
 };
 

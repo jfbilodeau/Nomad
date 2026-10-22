@@ -311,9 +311,15 @@ void BooleanType::toString(const RuntimeValue& value, NomadString& string) const
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// BaseStringType
-ObjectTypeBase::ObjectTypeBase(NomadString documentation):
-    Type(std::move(documentation))
+// ObjectType
+ObjectType::ObjectType(
+    NomadString name,
+    std::vector<const Type*> typeArguments,
+    NomadString documentation
+):
+    Type(std::move(documentation)),
+    m_name(std::move(name)),
+    m_typeArguments(std::move(typeArguments))
 {
     m_typeOpCodes.initResult = op_object_init_r;
     m_typeOpCodes.initIntermediate = op_object_init_i;
@@ -351,15 +357,15 @@ ObjectTypeBase::ObjectTypeBase(NomadString documentation):
     m_typeOpCodes.setContextVariable = op_context_variable_set;
 }
 
-void ObjectTypeBase::initValue(RuntimeValue& value) const {
+void ObjectType::initValue(RuntimeValue& value) const {
     value.setObjectValue(nullptr);
 }
 
-void ObjectTypeBase::freeValue(RuntimeValue& value) const {
+void ObjectType::freeValue(RuntimeValue& value) const {
     value.freeObjectValue();
 }
 
-void ObjectTypeBase::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
+void ObjectType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
     if (&sourceValue == &destinationValue) {
         return;
     }
@@ -369,19 +375,19 @@ void ObjectTypeBase::copyValue(const RuntimeValue& sourceValue, RuntimeValue& de
     destinationValue = copy;
 }
 
-bool ObjectTypeBase::sameType(const Type* other) const {
+bool ObjectType::sameType(const Type* other) const {
     return this == other;
 }
 
-TypeStorage ObjectTypeBase::getStorage() const {
+TypeStorage ObjectType::getStorage() const {
     return TypeStorage::Object;
 }
 
-bool ObjectTypeBase::isOpen() const {
+bool ObjectType::isOpen() const {
     return false;
 }
 
-NomadId ObjectTypeBase::addProperty(
+NomadId ObjectType::addProperty(
     const NomadString& name,
     const Type* propertyType
 ) {
@@ -412,7 +418,7 @@ NomadId ObjectTypeBase::addProperty(
     return id;
 }
 
-const ObjectPropertyDefinition* ObjectTypeBase::getProperty(const NomadString& name) const {
+const ObjectPropertyDefinition* ObjectType::getProperty(const NomadString& name) const {
     const auto property = std::find_if(
         m_properties.begin(),
         m_properties.end(),
@@ -423,23 +429,12 @@ const ObjectPropertyDefinition* ObjectTypeBase::getProperty(const NomadString& n
     return property == m_properties.end() ? nullptr : &*property;
 }
 
-const ObjectPropertyDefinition* ObjectTypeBase::getProperty(const NomadId id) const {
+const ObjectPropertyDefinition* ObjectType::getProperty(const NomadId id) const {
     return isIdInRange(id, m_properties.size()) ? &m_properties[toNomadIndex(id)] : nullptr;
 }
 
-NomadIndex ObjectTypeBase::getPropertyCount() const {
+NomadIndex ObjectType::getPropertyCount() const {
     return static_cast<NomadIndex>(m_properties.size());
-}
-
-ObjectType::ObjectType(
-    NomadString name,
-    std::vector<const Type*> typeArguments,
-    NomadString documentation
-):
-    ObjectTypeBase(std::move(documentation)),
-    m_name(std::move(name)),
-    m_typeArguments(std::move(typeArguments))
-{
 }
 
 NomadString ObjectType::getTypeName() const {
@@ -454,7 +449,11 @@ void ObjectType::toString(const RuntimeValue&, NomadString& string) const {
     string = m_name;
 }
 
-BaseStringType::BaseStringType() {
+///////////////////////////////////////////////////////////////////////////////
+// BaseStringType
+BaseStringType::BaseStringType():
+    ObjectType(STRING_TYPE_NAME)
+{
     m_typeOpCodes.initResult = op_string_init_r;
     m_typeOpCodes.initIntermediate = op_string_init_i;
 }

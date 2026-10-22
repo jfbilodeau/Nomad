@@ -254,7 +254,7 @@ void registerArrayType(Runtime* runtime) {
                 if (constructor == nullptr || runtime->registerNativeConstructor(
                     arrayClass,
                     constructor->getParameters(),
-                    static_cast<const nomad::ObjectTypeBase*>(constructor->getReturnType()),
+                    static_cast<const nomad::ObjectType*>(constructor->getReturnType()),
                     constructor->getFactory(),
                     ""
                 ) == nomad::NOMAD_INVALID_ID) {
