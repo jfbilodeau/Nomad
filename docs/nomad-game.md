@@ -31,14 +31,14 @@ resource directories, and validation rules.
 ## Game API hubs
 
 Before scripts are compiled, the game module registers the `game` hub and its
-`game.audio`, `game.music`, `game.inventory`, `game.settings`, and `game.debug`
-hubs. The debug hub also contains `game.debug.console` and `game.debug.draw`.
-Existing native function and dynamic-variable names stay the same; the hubs
-group these APIs and can be extended by scripts.
+`game.audio`, `game.music`, and `game.debug` hubs. The debug hub also contains
+`game.debug.console` and `game.debug.draw`. Existing native function and
+dynamic-variable names stay the same; these hubs group the APIs and can be
+extended by scripts.
 
-`game.inventory` and `game.settings` contain persistence functions. The
-variables they save and load remain in the separate `inventory.*` and
-`settings.*` contexts.
+`game.inventory` and `game.settings` are left for scripts to declare. The
+native persistence functions keep their existing qualified names, and their
+data remains in the separate `inventory.*` and `settings.*` contexts.
 
 ## Features and guides
 

@@ -74,14 +74,17 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
         "game",
         "game.audio",
         "game.music",
-        "game.inventory",
-        "game.settings",
         "game.debug",
         "game.debug.console",
         "game.debug.draw",
     }) {
         BOOST_TEST(runtime.getHubId(hubName) != NOMAD_INVALID_ID);
     }
+
+    BOOST_TEST(runtime.getHubId("game.inventory") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getHubId("game.settings") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getCallableId("game.inventory.save") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getCallableId("game.settings.save") != NOMAD_INVALID_ID);
 
     const auto* gameHub = runtime.getHub(runtime.getHubId("game"));
     BOOST_REQUIRE(gameHub != nullptr);
@@ -104,6 +107,35 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
     BOOST_TEST(runtime.getContextId("inventory") != NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getContextId("settings") != NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getVariableContextIdByPrefix("game.inventory.gold") == NOMAD_INVALID_ID);
+
+    const auto declarationFunctionId = compile(
+        "declareGameDataHubs",
+        "hub game.inventory\n"
+        "fun customSave\n"
+        "return 42\n"
+        "end\n"
+        "end\n"
+        "hub game.settings\n"
+        "fun customSetting\n"
+        "return 7\n"
+        "end\n"
+        "end"
+    );
+    BOOST_TEST(declarationFunctionId != NOMAD_INVALID_ID);
+
+    const auto* inventoryHub = runtime.getHub(runtime.getHubId("game.inventory"));
+    BOOST_REQUIRE(inventoryHub != nullptr);
+    const auto* inventorySaveMember = inventoryHub->getMember("save");
+    BOOST_REQUIRE(inventorySaveMember != nullptr);
+    BOOST_TEST(std::holds_alternative<HubFunctions>(*inventorySaveMember));
+    BOOST_TEST(inventoryHub->getMember("customSave") != nullptr);
+
+    const auto* settingsHub = runtime.getHub(runtime.getHubId("game.settings"));
+    BOOST_REQUIRE(settingsHub != nullptr);
+    const auto* settingsSaveMember = settingsHub->getMember("save");
+    BOOST_REQUIRE(settingsSaveMember != nullptr);
+    BOOST_TEST(std::holds_alternative<HubFunctions>(*settingsSaveMember));
+    BOOST_TEST(settingsHub->getMember("customSetting") != nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(borrowed_runtime_remains_usable_after_game_destruction)

@@ -1246,8 +1246,6 @@ void Game::initRuntime() {
         "game",
         "game.audio",
         "game.music",
-        "game.inventory",
-        "game.settings",
         "game.debug",
         "game.debug.console",
         "game.debug.draw",
