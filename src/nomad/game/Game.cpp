@@ -1308,21 +1308,21 @@ void Game::initVariableContext() {
     auto sceneVariableContext = std::make_unique<SimpleVariableContext>();
     auto thisEntityVariableContext = std::make_unique<ThisEntityVariableContext>(this);
     auto otherEntityVariableContext = std::make_unique<OtherEntityVariableContext>(thisEntityVariableContext.get());
-    auto inventoryVariableContext = std::make_unique<SimpleVariableContext>();
-    auto settingsVariableContext = std::make_unique<SimpleVariableContext>();
+    // auto inventoryVariableContext = std::make_unique<SimpleVariableContext>();
+    // auto settingsVariableContext = std::make_unique<SimpleVariableContext>();
 
     m_sceneVariableMap = sceneVariableContext->getVariableMap();
     m_thisEntityVariableMap = thisEntityVariableContext->getThisVariableMap();
     m_otherEntityVariableMap = thisEntityVariableContext->getOtherVariableMap();
-    m_inventoryVariableMap = inventoryVariableContext->getVariableMap();
-    m_inventoryContext = inventoryVariableContext.get();
-    m_settingsContext = settingsVariableContext.get();
+    // m_inventoryVariableMap = inventoryVariableContext->getVariableMap();
+    // m_inventoryContext = inventoryVariableContext.get();
+    // m_settingsContext = settingsVariableContext.get();
 
     const auto sceneContextId = m_runtime->registerVariableContext("scene", "scene.", std::move(sceneVariableContext));
     const auto thisEntityContextId = m_runtime->registerVariableContext(THIS_ENTITY_VARIABLE_CONTEXT, THIS_ENTITY_VARIABLE_PREFIX, std::move(thisEntityVariableContext));
     const auto otherEntityContextId = m_runtime->registerVariableContext(OTHER_ENTITY_VARIABLE_CONTEXT, OTHER_ENTITY_VARIABLE_PREFIX, std::move(otherEntityVariableContext));
-    const auto inventoryContextId = m_runtime->registerVariableContext("inventory", "inventory.", std::move(inventoryVariableContext));
-    const auto settingsContextId = m_runtime->registerVariableContext("settings", "settings.", std::move(settingsVariableContext));
+    // const auto inventoryContextId = m_runtime->registerVariableContext("inventory", "inventory.", std::move(inventoryVariableContext));
+    // const auto settingsContextId = m_runtime->registerVariableContext("settings", "settings.", std::move(settingsVariableContext));
 
     if (sceneContextId == NOMAD_INVALID_ID) {
         raiseError("Failed to register scene variable context");
@@ -1333,12 +1333,12 @@ void Game::initVariableContext() {
     if (otherEntityContextId == NOMAD_INVALID_ID) {
         raiseError("Failed to register `other` entity variable context");
     }
-    if (inventoryContextId == NOMAD_INVALID_ID) {
-        raiseError("Failed to register inventory variable context");
-    }
-    if (settingsContextId == NOMAD_INVALID_ID) {
-        raiseError("Failed to register settings variable context");
-    }
+    // if (inventoryContextId == NOMAD_INVALID_ID) {
+    //     raiseError("Failed to register inventory variable context");
+    // }
+    // if (settingsContextId == NOMAD_INVALID_ID) {
+    //     raiseError("Failed to register settings variable context");
+    // }
 }
 
 void Game::initResourceManager() {
