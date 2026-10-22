@@ -15,6 +15,9 @@ add_library(nomad-collections SHARED
     ${NOMAD_INCLUDE_DIR}/nomad/collections/ListType.hpp
     ${NOMAD_INCLUDE_DIR}/nomad/collections/MapObject.hpp
     ${NOMAD_INCLUDE_DIR}/nomad/collections/MapType.hpp
+    ${NOMAD_INCLUDE_DIR}/nomad/collections/ReadOnlyArrayType.hpp
+    ${NOMAD_INCLUDE_DIR}/nomad/collections/ReadOnlyListType.hpp
+    ${NOMAD_INCLUDE_DIR}/nomad/collections/ReadOnlyMapType.hpp
     ${NOMAD_INCLUDE_DIR}/nomad/collections/RegisterArrayType.hpp
     ${NOMAD_INCLUDE_DIR}/nomad/collections/RegisterKeyValueType.hpp
     ${NOMAD_INCLUDE_DIR}/nomad/collections/RegisterListType.hpp
@@ -37,6 +40,9 @@ add_library(nomad-collections SHARED
     ${NOMAD_SOURCE_DIR}/nomad/collections/ListType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/collections/MapObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/collections/MapType.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/collections/ReadOnlyArrayType.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/collections/ReadOnlyListType.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/collections/ReadOnlyMapType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/collections/RegisterArrayType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/collections/RegisterKeyValueType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/collections/RegisterListType.cpp

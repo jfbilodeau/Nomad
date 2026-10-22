@@ -23,7 +23,7 @@ Things the author wants to do.
 [ ] WASM
 [ ] Persist/load scene
 [ ] First decompiled script should start at index 1 instead of 0 in decompiler (instructions.txt). Or add a 'default' function at start that just stops execution.
-[ ] Command overloading (WIP)
+[ ] Function overloading (WIP)
 [ ] Auto publish Nomad plugin to VS Code extensions
 [ ] Compile to binary
 [ ] LLVM

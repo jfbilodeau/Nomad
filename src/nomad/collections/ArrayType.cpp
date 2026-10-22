@@ -24,11 +24,13 @@ NomadString getArrayTypeName(const Type* elementType, const NomadIndex dimension
 
 ArrayType::ArrayType(
     const Type* elementType,
-    const NomadIndex dimensionCount
+    const NomadIndex dimensionCount,
+    const bool readOnly
 ):
     ObjectType(
-        getArrayTypeName(elementType, dimensionCount), {elementType},
-        "A fixed-size array. Explicit construction requires one positive int size per dimension."
+        (readOnly ? "ReadOnly" : "") + getArrayTypeName(elementType, dimensionCount), {elementType},
+        readOnly ? "A read-only fixed-size array." :
+            "A fixed-size array. Explicit construction requires one positive int size per dimension."
     ),
     m_dimensionCount(dimensionCount)
 {}

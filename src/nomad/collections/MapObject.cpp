@@ -30,6 +30,14 @@ NomadIndex MapObject::getCount() const {
     return m_values.size();
 }
 
+std::unique_ptr<MapObject> MapObject::createCopy() const {
+    auto snapshot = std::make_unique<MapObject>(m_valueType);
+    for (const auto& [key, value] : m_values) {
+        snapshot->setValue(key, value);
+    }
+    return snapshot;
+}
+
 std::unique_ptr<Array1dObject> MapObject::getKeys(const Type* keyType) const {
     if (keyType == nullptr || !keyType->isString() || keyType->isInternal()) {
         throw NomadException("Map key type must be string");

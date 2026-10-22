@@ -13,21 +13,21 @@ modules = ["nomad-os"]
 
 | Binding | Type | Value |
 | --- | --- | --- |
-| `os.argv` | `Array1<string>` | Application arguments following the first `--`, in order. |
-| `os.env` | `Map<string string>` | Process environment variables, keyed by name. |
+| `os.argv` | `ReadOnlyArray1<string>` | Application arguments following the first `--`, in order. |
+| `os.env` | `ReadOnlyMap<string string>` | Process environment variables, keyed by name. |
 | `os.platform` | `os.Platform` | The operating system running the application. |
 | `os.architecture` | `os.Architecture` | The architecture of the running executable, not necessarily the physical CPU. |
 | `os.currentDirectory` | `string` | Working directory at startup. |
 | `os.executablePath` | `string` | Absolute path to the running executable. |
 | `os.tempDirectory` | `string` | The operating system's temporary directory at startup. |
 
-`os.argv` is a one-dimensional array, the same type created by
-`new Array<string> size`. Use `Array1<string>` in parameter type annotations.
+`os.argv` is a read-only one-dimensional array. Use `ReadOnlyArray1<string>`
+in parameter type annotations.
 
 These bindings are read-only: scripts cannot assign a different array, map,
-enum, or string to them. The contents of `os.argv` and `os.env` remain mutable.
-Changing an array element or map entry changes only that application's snapshot;
-it does not modify the real command line or process environment. Environment
+enum, or string to them. Their collection contents are also read-only: scripts
+cannot replace argument elements, insert or replace environment entries, or
+remove or clear environment entries. Environment
 keys use the map's normal case-sensitive matching, including on Windows.
 Windows' hidden drive-directory entries are not included.
 
@@ -86,13 +86,11 @@ is empty. Subsequent `--` strings are ordinary application arguments.
 ```nomad
 if os.argv.count > 0
     firstArgument = os.argv[0]
-    os.argv[0] = "processed"
 end
 
 if os.env.contains "HOME"
     homeDirectory = os.env["HOME"]
 end
-os.env["APPLICATION_MODE"] = "preview"
 ```
 
 Packaged applications retain `nomad-os` and its collections dependency and
