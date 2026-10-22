@@ -32,7 +32,6 @@
 namespace nomad {
 
 // Forward declarations
-class ObjectType;
 class Compiler;
 class Closure;
 class FormatString;
@@ -43,6 +42,7 @@ class Parser;
 class FunctionBuilder;
 class Tokenizer;
 class Type;
+class ObjectType;
 class EnumType;
 class OpaqueIdType;
 struct EnumValueDefinition;
@@ -275,7 +275,13 @@ public:
     [[nodiscard]] const std::vector<Operand>& getInstructionOperands(NomadId id) const;
 
     // NativeFunctions
-    NomadId registerNativeFunction(const NomadString& name, NativeFunctionFn nativeFunction_fn, const std::vector<Parameter>& parameters, const Type* returnType, NomadDocArg);
+    NomadId registerNativeFunction(
+        const NomadString& name, 
+        NativeFunctionFn nativeFunction_fn, 
+        const std::vector<Parameter>& parameters, 
+        const Type* returnType, 
+        NomadDocArg
+    );
     [[nodiscard]] NomadId getNativeFunctionId(const NomadString& name) const;
     [[nodiscard]] NativeFunctionFn getNativeFunctionFn(NomadId id) const;
 
@@ -298,6 +304,7 @@ public:
     void getCallableOverloads(const NomadString& name, std::vector<NomadId>& overloads) const;
     [[nodiscard]] NomadIndex getCallableOverloadCount(const NomadString& name) const;
     [[nodiscard]] ParameterShape getParameterShape(const Type* type) const;
+    [[nodiscard]] NomadId catalogCallable(Callable* callable);
 
     // Function table
     // Every function, method and constructor shares this ID space. Native member IDs are separate.
@@ -466,11 +473,6 @@ private:
         std::unique_ptr<FormatString> formatString;
     };
 
-    struct CallableOverloadSet {
-        NomadString name;
-        std::vector<NomadId> overloads;
-    };
-
     struct NativeMemberRegistration {
         MemberType type;
         NomadIndex definitionIndex;
@@ -479,11 +481,7 @@ private:
     void registerDefaultInstructions();
     NomadId internContextVariable(NomadId contextId, NomadId localVariableId);
     [[nodiscard]] const ContextVariable* getContextVariable(NomadId contextVariableId) const;
-    // Adds `callable` to the overload set for `name`, creating the set when needed.
-    void addCallable(const NomadString& name, NomadId callable);
-    [[nodiscard]] const CallableOverloadSet* findCallableOverloadSet(const NomadString& name) const;
-    // Checks that a native function with these parameters may join `overloadSet` as an overload.
-    [[nodiscard]] bool canOverloadCallable(const CallableOverloadSet& overloadSet,
+    [[nodiscard]] bool canOverloadCallable(const NomadString& name,
                                            const std::vector<Parameter>& parameters,
                                            const Type* returnType, NomadString& error) const;
     NomadId addCallableToTable(std::unique_ptr<Callable> callable);
@@ -537,8 +535,8 @@ private:
         const Type* returnType,
         const NomadString& doc
     );
-    std::vector<std::unique_ptr<Callable>> m_functionTable;
-    std::unordered_map<NomadString, std::vector<NomadId>> m_functionsByName;
+    std::vector<std::unique_ptr<Callable>> m_functions;
+    std::vector<Callable*> m_callables;
     std::vector<KeywordDefinition> m_keywords;
     VariableMap m_constantsMap;
     std::vector<RuntimeValue> m_constants;
@@ -549,9 +547,6 @@ private:
     std::vector<VariableContextRegistration> m_variables;
     std::vector<ContextVariable> m_contextVariables;
     std::vector<FormatStringRegistration> m_formatStrings;
-    std::vector<CallableOverloadSet> m_callables;
-    // Maps a callable name to its index in `m_callables`.
-    std::unordered_map<NomadString, NomadIndex> m_callablesByName;
     std::vector<NativeMemberRegistration> m_nativeMembers;
     std::unordered_map<const Type*, IterableDefinition> m_iterableTypes;
     std::vector<NativePropertyDefinition> m_nativeProperties;

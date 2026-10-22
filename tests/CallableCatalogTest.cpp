@@ -707,6 +707,8 @@ BOOST_AUTO_TEST_CASE(registered_callables_share_one_id_space)
     BOOST_TEST(runtime.getCallable(functionResult.id)->getType() == CallableType::Function);
     BOOST_TEST(runtime.getCallable(methodResult.id)->getType() == CallableType::Method);
     BOOST_TEST(runtime.getCallable(constructorResult.id)->getType() == CallableType::Constructor);
+    BOOST_TEST(runtime.getCallable(functionResult.id) == runtime.getNativeFunction(functionResult.id));
+    BOOST_TEST(runtime.getCallable(methodResult.id) == runtime.getNativeMethod(methodResult.id));
     BOOST_TEST(runtime.getCallable(NOMAD_INVALID_ID) == nullptr);
 }
 

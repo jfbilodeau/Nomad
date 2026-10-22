@@ -417,7 +417,7 @@ void Runtime::rebuildHubMembers() {
             add(hub.m_variables->getVariableName(id), HubVariable{id});
         }
     }
-    for (const auto& callable : m_functionTable) {
+    for (const auto* callable : m_callables) {
         if (callable->getType() == CallableType::Function) {
             add(callable->getName(), HubFunctions{{callable->getId()}});
         }
@@ -544,8 +544,8 @@ NomadId Runtime::registerNativeCallable(
         }
     }
     if (objectType == nullptr) {
-        if (const auto* overloadSet = findCallableOverloadSet(name)) {
-            if (NomadString error; !canOverloadCallable(*overloadSet, parameters, returnType, error)) {
+        if (getCallableOverloadCount(name) != 0) {
+            if (NomadString error; !canOverloadCallable(name, parameters, returnType, error)) {
                 log::error("Cannot register native function '" + name + "': " + error);
 
                 return NOMAD_INVALID_ID;
@@ -564,31 +564,44 @@ NomadId Runtime::registerNativeCallable(
 
         return memberId;
     }
-
     id = addCallableToTable(std::make_unique<NativeFunction>(name, std::move(fn), parameters, returnType, doc));
 
-    addCallable(name, id);
     registerHubMember(name, HubFunctions{{id}});
 
     return id;
 }
 
 NomadId Runtime::addCallableToTable(std::unique_ptr<Callable> callable) {
-    const auto id = toNomadId(m_functionTable.size());
+    if (callable == nullptr) {
+        return NOMAD_INVALID_ID;
+    }
 
-    callable->setId(id);
-    m_functionsByName[callable->getName()].push_back(id);
-    m_functionTable.push_back(std::move(callable));
+    m_functions.push_back(std::move(callable));
+    const auto id = m_functions.back()->registerWithRuntime(*this);
+    if (id == NOMAD_INVALID_ID) {
+        m_functions.pop_back();
+    }
 
     return id;
 }
 
+NomadId Runtime::catalogCallable(Callable* callable) {
+    if (callable == nullptr || callable->getId() != NOMAD_INVALID_ID ||
+        m_callables.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+        return NOMAD_INVALID_ID;
+    }
+
+    const auto id = toNomadId(m_callables.size());
+    m_callables.push_back(callable);
+    return id;
+}
+
 const Callable* Runtime::getCallable(const NomadId functionId) const {
-    if (isIdOutOfRange(functionId, m_functionTable.size())) {
+    if (isIdOutOfRange(functionId, m_callables.size())) {
         return nullptr;
     }
 
-    return m_functionTable[toNomadIndex(functionId)].get();
+    return m_callables[toNomadIndex(functionId)];
 }
 
 const Function* Runtime::getFunction(const NomadId functionId) const {
@@ -631,7 +644,7 @@ const NativeConstructor* Runtime::getNativeConstructor(const NomadId functionId)
 }
 
 NomadIndex Runtime::getFunctionTableSize() const {
-    return m_functionTable.size();
+    return m_callables.size();
 }
 
 ResolveResult Runtime::resolveAmong(
@@ -654,7 +667,11 @@ ResolveResult Runtime::resolveAmong(
     auto hasArity = false;
 
     for (const auto candidateId : candidates) {
-        const auto& parameters = m_functionTable[toNomadIndex(candidateId)]->getParameters();
+        const auto* callable = getCallable(candidateId);
+        if (callable == nullptr) {
+            continue;
+        }
+        const auto& parameters = callable->getParameters();
 
         if (parameters.size() != argumentTypes.size()) {
             continue;
@@ -716,11 +733,9 @@ ResolveResult Runtime::resolveFunction(
 ) const {
     std::vector<NomadId> candidates;
 
-    if (const auto entry = m_functionsByName.find(name); entry != m_functionsByName.end()) {
-        for (const auto id : entry->second) {
-            if (m_functionTable[toNomadIndex(id)]->getType() == CallableType::Function) {
-                candidates.push_back(id);
-            }
+    for (const auto* callable : m_callables) {
+        if (callable->getName() == name && callable->getType() == CallableType::Function) {
+            candidates.push_back(callable->getId());
         }
     }
 
@@ -734,13 +749,11 @@ ResolveResult Runtime::resolveMethod(
 ) const {
     std::vector<NomadId> candidates;
 
-    if (const auto entry = m_functionsByName.find(name); entry != m_functionsByName.end()) {
-        for (const auto id : entry->second) {
-            const auto& callable = *m_functionTable[toNomadIndex(id)];
-
-            if (callable.getType() == CallableType::Method && callable.getObjectType() == objectType) {
-                candidates.push_back(id);
-            }
+    for (const auto* callable : m_callables) {
+        if (callable->getName() == name &&
+            callable->getType() == CallableType::Method &&
+            callable->getObjectType() == objectType) {
+            candidates.push_back(callable->getId());
         }
     }
 
@@ -753,7 +766,7 @@ ResolveResult Runtime::resolveConstructor(
 ) const {
     std::vector<NomadId> candidates;
 
-    for (const auto& callable : m_functionTable) {
+    for (const auto* callable : m_callables) {
         if (callable->getType() == CallableType::Constructor && callable->getObjectType() == objectType) {
             candidates.push_back(callable->getId());
         }
@@ -793,51 +806,30 @@ NomadString Runtime::describeResolveFailure(const NomadString& name, const Resol
     return {};
 }
 
-void Runtime::addCallable(const NomadString& name, const NomadId callable) {
-    const auto existing = m_callablesByName.find(name);
-
-    if (existing == m_callablesByName.end()) {
-        m_callablesByName.emplace(name, m_callables.size());
-        m_callables.push_back(CallableOverloadSet{name, {callable}});
-
-        return;
-    }
-
-    m_callables[existing->second].overloads.push_back(callable);
-}
-
-const Runtime::CallableOverloadSet* Runtime::findCallableOverloadSet(const NomadString& name) const {
-    const auto entry = m_callablesByName.find(name);
-
-    if (entry == m_callablesByName.end()) {
-        return nullptr;
-    }
-
-    return &m_callables[entry->second];
-}
-
 NomadId Runtime::getCallableId(const NomadString& name) const {
-    const auto* overloadSet = findCallableOverloadSet(name);
-
-    if (overloadSet == nullptr || overloadSet->overloads.empty()) {
-        return NOMAD_INVALID_ID;
+    for (const auto* callable : m_callables) {
+        if (callable->getName() == name && callable->getType() == CallableType::Function) {
+            return callable->getId();
+        }
     }
 
-    return overloadSet->overloads.front();
+    return NOMAD_INVALID_ID;
 }
 
 void Runtime::getCallableOverloads(const NomadString& name, std::vector<NomadId>& overloads) const {
     overloads.clear();
 
-    if (const auto* overloadSet = findCallableOverloadSet(name)) {
-        overloads = overloadSet->overloads;
+    for (const auto* callable : m_callables) {
+        if (callable->getName() == name && callable->getType() == CallableType::Function) {
+            overloads.push_back(callable->getId());
+        }
     }
 }
 
 NomadIndex Runtime::getCallableOverloadCount(const NomadString& name) const {
-    const auto* overloadSet = findCallableOverloadSet(name);
-
-    return overloadSet == nullptr ? 0 : overloadSet->overloads.size();
+    return static_cast<NomadIndex>(std::ranges::count_if(m_callables, [&name](const auto* callable) {
+        return callable->getName() == name && callable->getType() == CallableType::Function;
+    }));
 }
 
 ParameterShape Runtime::getParameterShape(const Type* type) const {
@@ -870,7 +862,7 @@ ParameterShape Runtime::getParameterShape(const Type* type) const {
 }
 
 bool Runtime::canOverloadCallable(
-    const CallableOverloadSet& overloadSet,
+    const NomadString& name,
     const std::vector<Parameter>& parameters,
     const Type* returnType,
     NomadString& error
@@ -887,8 +879,11 @@ bool Runtime::canOverloadCallable(
 
     const auto returnsValue = returnType != nullptr && !returnType->isVoid();
 
-    for (const auto existing : overloadSet.overloads) {
-        const auto* existingFunction = getFunction(existing);
+    for (const auto* callable : m_callables) {
+        if (callable->getName() != name || callable->getType() != CallableType::Function) {
+            continue;
+        }
+        const auto* existingFunction = static_cast<const Function*>(callable);
         if (existingFunction == nullptr || existingFunction->asNativeFunction() == nullptr) {
             error = "a callable of a different kind is already registered under that name";
 
@@ -1497,9 +1492,9 @@ NomadId Runtime::registerNativeConstructor(
 
 std::vector<const NativeConstructor*> Runtime::getConstructors() const {
     std::vector<const NativeConstructor*> constructors;
-    for (const auto& callable : m_functionTable) {
+    for (const auto* callable : m_callables) {
         if (callable->getType() == CallableType::Constructor) {
-            constructors.push_back(static_cast<const NativeConstructor*>(callable.get()));
+            constructors.push_back(static_cast<const NativeConstructor*>(callable));
         }
     }
     return constructors;
@@ -1523,7 +1518,7 @@ bool Runtime::registerNativeParameterizedConstructor(
     if (name.empty() || isHub(name) || !canRegisterHubMember(name) || argumentCount == 0 || !initializer ||
         getParameterizedConstructorArgumentCount(name) || getParameterizedTypeArgumentCount(name) ||
         getTypeByName(name) != nullptr ||
-        std::ranges::any_of(m_functionTable, [&](const auto& callable) {
+        std::ranges::any_of(m_callables, [&](const auto* callable) {
             return callable->getType() == CallableType::Constructor && callable->getName() == name;
         })) {
         log::error("Cannot register parameterized constructor '" + name + "': invalid or duplicate definition");
@@ -1571,7 +1566,7 @@ NomadString Runtime::getParameterizedConstructorName(
     }
     const auto initializer = registration->initializer;
     initializer(specializedName, arguments);
-    if (std::ranges::none_of(m_functionTable, [&](const auto& callable) {
+    if (std::ranges::none_of(m_callables, [&](const auto* callable) {
         return callable->getType() == CallableType::Constructor && callable->getName() == specializedName;
     })) {
         log::error("No constructors registered for '" + specializedName + "'");
@@ -2091,7 +2086,7 @@ std::vector<const NativeFunction*> Runtime::getNativeFunctions() const {
 }
 
 NomadId Runtime::getFirstNativeFunctionId() const {
-    for (const auto& callable : m_functionTable) {
+    for (const auto* callable : m_callables) {
         if (callable->getSource() == CallableSource::Native && callable->getType() == CallableType::Function) {
             return callable->getId();
         }
@@ -2100,9 +2095,9 @@ NomadId Runtime::getFirstNativeFunctionId() const {
 }
 
 NomadId Runtime::getNextNativeFunctionId(const NomadId currentId) const {
-    for (auto index = toNomadIndex(currentId) + 1; index < m_functionTable.size(); ++index) {
-        if (m_functionTable[index]->getSource() == CallableSource::Native &&
-            m_functionTable[index]->getType() == CallableType::Function) {
+    for (auto index = toNomadIndex(currentId) + 1; index < m_callables.size(); ++index) {
+        if (m_callables[index]->getSource() == CallableSource::Native &&
+            m_callables[index]->getType() == CallableType::Function) {
             return toNomadId(index);
         }
     }
@@ -2666,17 +2661,16 @@ NomadId Runtime::registerScriptFunction(
 
     const auto id = addCallableToTable(std::make_unique<ScriptFunction>(NOMAD_INVALID_ID, name, path, source));
 
-    addCallable(name, id);
     registerHubMember(name, HubFunctions{{id}});
 
     return id;
 }
 
 ScriptFunction* Runtime::getScriptFunction(const NomadId functionId) {
-    if (isIdOutOfRange(functionId, m_functionTable.size())) {
+    if (isIdOutOfRange(functionId, m_callables.size())) {
         return nullptr;
     }
-    auto* callable = m_functionTable[toNomadIndex(functionId)].get();
+    auto* callable = m_callables[toNomadIndex(functionId)];
     if (callable->getType() != CallableType::Function) {
         return nullptr;
     }
@@ -2711,11 +2705,11 @@ ScriptFunction* Runtime::getFunctionAtLine(
 ) const {
     ScriptFunction* selected = nullptr;
     auto selectedSpan = NOMAD_INVALID_INDEX;
-    for (const auto& callable : m_functionTable) {
+    for (auto* callable : m_callables) {
         if (callable->getType() != CallableType::Function || callable->getSource() != CallableSource::Script) {
             continue;
         }
-        auto* function = static_cast<ScriptFunction*>(callable.get());
+        auto* function = static_cast<ScriptFunction*>(callable);
         if (function->getPath() != sourceName) continue;
         const auto start = function->getSourceStartLine();
         const auto end = function->getSourceEndLine();
@@ -2739,11 +2733,11 @@ std::optional<NomadString> Runtime::getFunctionName(NomadId functionId) const {
 }
 
 ScriptFunction * Runtime::getFunctionByStartAddress(NomadIndex startAddress) const {
-    for (const auto& callable : m_functionTable) {
+    for (auto* callable : m_callables) {
         if (callable->getType() != CallableType::Function || callable->getSource() != CallableSource::Script) {
             continue;
         }
-        auto* function = static_cast<ScriptFunction*>(callable.get());
+        auto* function = static_cast<ScriptFunction*>(callable);
         if (function->getFunctionStart() == startAddress) {
             return function;
         }
@@ -2753,7 +2747,7 @@ ScriptFunction * Runtime::getFunctionByStartAddress(NomadIndex startAddress) con
 }
 
 NomadIndex Runtime::getFunctionCount() const {
-    return static_cast<NomadIndex>(std::count_if(m_functionTable.begin(), m_functionTable.end(), [](const auto& callable) {
+    return static_cast<NomadIndex>(std::count_if(m_callables.begin(), m_callables.end(), [](const auto* callable) {
         return callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script;
     }));
 }
@@ -2762,9 +2756,9 @@ void Runtime::getFunctions(std::vector<ScriptFunction*>& functions) const {
     functions.clear();
     functions.reserve(getFunctionCount());
 
-    for (const auto& callable : m_functionTable) {
+    for (auto* callable : m_callables) {
         if (callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script) {
-            functions.push_back(static_cast<ScriptFunction*>(callable.get()));
+            functions.push_back(static_cast<ScriptFunction*>(callable));
         }
     }
 }
@@ -2773,19 +2767,19 @@ void Runtime::getFunctions(TempVector<ScriptFunction*>& functions) {
     functions.clear();
     functions.reserve(getFunctionCount());
 
-    for (const auto& callable : m_functionTable) {
+    for (auto* callable : m_callables) {
         if (callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script) {
-            functions.push_back(static_cast<ScriptFunction*>(callable.get()));
+            functions.push_back(static_cast<ScriptFunction*>(callable));
         }
     }
 }
 
 ScriptFunction * Runtime::getFunctionAtInstructionIndex(const NomadIndex instructionIndex) const {
-    for (const auto& callable : m_functionTable) {
+    for (auto* callable : m_callables) {
         if (callable->getType() != CallableType::Function || callable->getSource() != CallableSource::Script) {
             continue;
         }
-        auto* function = static_cast<ScriptFunction*>(callable.get());
+        auto* function = static_cast<ScriptFunction*>(callable);
         if (instructionIndex >= function->getFunctionStart() && instructionIndex < function->getFunctionEnd()) {
             return function;
         }
@@ -2797,9 +2791,9 @@ ScriptFunction * Runtime::getFunctionAtInstructionIndex(const NomadIndex instruc
 NomadIndex Runtime::getFunctionSize() const {
     NomadIndex size = 0;
 
-    for (const auto& callable : m_functionTable) {
+    for (const auto* callable : m_callables) {
         if (callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script) {
-            size += static_cast<const ScriptFunction*>(callable.get())->getFunctionLength();
+            size += static_cast<const ScriptFunction*>(callable)->getFunctionLength();
         }
     }
 

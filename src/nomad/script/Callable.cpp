@@ -2,6 +2,8 @@
 
 #include <nomad/script/Callable.hpp>
 
+#include <nomad/script/Runtime.hpp>
+
 #include <utility>
 
 namespace nomad {
@@ -77,6 +79,15 @@ const Type* Callable::getObjectType() const {
 
 const NomadString& Callable::getDoc() const {
     return m_doc;
+}
+
+NomadId Callable::registerWithRuntime(Runtime& runtime) {
+    if (m_id != NOMAD_INVALID_ID) {
+        return NOMAD_INVALID_ID;
+    }
+
+    m_id = runtime.catalogCallable(this);
+    return m_id;
 }
 
 void Callable::setId(const NomadId id) {

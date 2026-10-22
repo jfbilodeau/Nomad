@@ -21,44 +21,25 @@ Types and callables used by a context must remain valid.
 
 Neither the interpreter nor its context creates or owns a VM.
 
-### Type storage
-
-`Type::getStorage()` describes how a type is represented in runtime values:
-`None` for types such as `void`, `Value` for scalar and ID-backed types, and
-`Object` for reference-counted `NomadObject` values such as strings. `Struct` is
-reserved for a future storage model. This category describes representation;
-the type's existing initialization, copy, and release operations continue to
-define its value lifecycle.
-
 ### Object type property metadata
 
-`ScriptObjectType` describes a script-defined object type. It is open by default;
-pass `false` to its constructor to make it closed. Existing native object types
-are closed by default and may opt in by overriding `isOpen()`.
+`ScriptObjectType` describes a script-defined object type. Open types allow
+additional properties to be declared; closed types reject additions.
 
-`addProperty` returns a `NomadId`, or `NOMAD_INVALID_ID` if registration fails.
-Adding a property with the same name and type returns its existing ID.
-Each property's storage index is a `NomadIndex`; metadata is ordered by first
-declaration. A conflicting type or null property type is rejected without
-changing the metadata.
+`addProperty` returns a `NomadId`, or `NOMAD_INVALID_ID` if the property cannot
+be added. Adding a property with the same name and type returns its existing ID.
+A conflicting type is rejected without changing the type's properties.
 
-The compiler is responsible for validating declarations, enforcing closed-type
-extension rules, and reporting diagnostics. Closed types can register their own
-declared properties. The compiler must finish registering properties before
-execution; property metadata must not change at runtime.
-
-This API currently records the type schema only. Script class syntax, instance
-property storage, and property access from scripts are not yet implemented.
+This API describes type properties. Script class syntax and property access from
+scripts are not yet implemented.
 
 ### Callable access
 
-Registered native functions, script functions, methods, and constructors share
-one runtime-owned callable table and ID space. `getCallable(id)` returns a
-borrowed `const Callable*`; `getFunction(id)` returns a borrowed `const Function*`
-for either a native or a script free function. `getMethod(id)` and
-`getConstructor(id)` return borrowed `const Method*` and `const Constructor*`.
-These category getters return `nullptr` for invalid IDs or the wrong category.
-All take callable-table IDs.
+Use `getCallable(id)` to retrieve a callable, or `getFunction(id)`,
+`getMethod(id)`, and `getConstructor(id)` to retrieve a callable of a specific
+category. Category getters return `nullptr` for invalid IDs or a different
+category. Function, method, and constructor IDs are accepted by the callable
+accessors.
 
 Each category offers conversions to its implementation: `asNativeFunction()` /
 `asScriptFunction()`, `asNativeMethod()` / `asScriptMethod()`, and
@@ -81,32 +62,22 @@ Native and script functions use the same call syntax in expressions and
 statements. A statement discards any returned value.
 
 `getCallableId(name)` returns the first free-function overload as a `NomadId`,
-or `NOMAD_INVALID_ID` when absent. It supplies a signature for parsing; it does
-not select an overload. `getCallableOverloads(name, ids)` lists free-function
-overloads as callable-table IDs. Read metadata through `getFunction(id)` or
-`getCallable(id)` rather than the removed callable metadata forwarding APIs.
-`CallableId`, `CallableKind`, and `resolveCallableOverload` have been removed;
-use plain IDs, category conversions, and `resolveFunction` instead.
+or `NOMAD_INVALID_ID` when absent. It does not select an overload.
+`getCallableOverloads(name, ids)` lists free-function overload IDs.
 
-Native member IDs are a separate namespace. `registerNativeMethod` and
+Native member IDs are distinct from callable IDs. `registerNativeMethod` and
 `getNativeMemberId` return member IDs; pass these to
-`getNativeMemberMethod(memberId)`, then use the returned method's `getId()` for
-callable-table access. `getNativeMethod(callableId)` takes a callable-table ID.
+`getNativeMemberMethod(memberId)`. `getNativeMethod(callableId)` takes a callable ID.
 `getMemberType(memberId)` returns `MemberType::Property` or `MemberType::Method`.
 Include `<nomad/script/Member.hpp>` for `MemberType`; native property callbacks
-and indexer definitions remain in `<nomad/script/NativeMember.hpp>`.
-This replaces `getNativeMemberType` and `NativeMemberType`; native registration
-and callback APIs keep their native-specific names.
+and indexer definitions are available in `<nomad/script/NativeMember.hpp>`.
 
 Use `getNativeFunction(id)` or `getScriptFunction(id)` for implementation-specific
 access. These return `nullptr` for the wrong implementation kind. A const runtime
 returns a `const ScriptFunction*`; a mutable runtime also permits script
-parameter and inferred return-type updates. All views refer to the same object,
-so signature changes are immediately visible through generic accessors.
-Pointers remain valid until the runtime is destroyed, including when more
-callables are registered.
-Registering additional APIs does not change the selected targets of already
-resolved function, method, or constructor calls.
+parameter and inferred return-type updates. Registering additional APIs does not
+change the selected targets of already resolved function, method, or constructor
+calls.
 
 Signatures expose `Parameter` entries through `getParameters()`. Script
 parameters added with `addParameter(name, type, doc)` require a documentation
@@ -118,9 +89,7 @@ lookups continue to include only script functions.
 
 Include `<nomad/script/Callable.hpp>` for common callable metadata,
 `<nomad/script/NativeCallable.hpp>` for native implementations, and
-`<nomad/script/ScriptCallable.hpp>` for script implementations. The former
-`ScriptFunction.hpp` header and callable definition-copy APIs have been removed;
-use the borrowed pointer accessors instead.
+`<nomad/script/ScriptCallable.hpp>` for script implementations.
 
 ## Module configuration
 
@@ -161,24 +130,22 @@ of an existing hub. Dotted names, such as `"game.audio"`, also register their
 parent hubs. Invalid names and conflicts with existing values, callables, or
 types are logged and return `false` without partially registering the name.
 Use `Runtime::isHub(name)` to test whether a hub is registered.
-`getHubId(name)` returns its table ID or `NOMAD_INVALID_ID`; `getHub(id)` returns
+`getHubId(name)` returns its ID or `NOMAD_INVALID_ID`; `getHub(id)` returns
 a borrowed `const Hub*`, or `nullptr` for an invalid ID. A hub exposes its
 qualified name, parent ID, and locally named members. Function members refer
-to the existing callable table; types and events retain their runtime IDs or
-type references. Hub pointers remain valid when more hubs are registered.
+to registered callables; types and events refer to their registered definitions.
+Hub pointers remain valid when more hubs are registered.
 
 Register native APIs under their qualified names using the existing runtime
 registration functions. For example, register hub `"os"`, enum `"os.Platform"`,
-and constant `"os.platform"`. Hub registration does not create an object or
-change the signatures or ownership of these APIs. Scripts may reopen native
-hubs and add distinct members.
+and constant `"os.platform"`. Scripts may reopen native hubs and add distinct
+members.
 
 Successful executable compilation installs safely resolved hub initial values
 and typed defaults for runtime-dependent members. It does not execute application
-code. The remaining assignments are compiled into one internal `$init` function,
-ordered by script name and then declaration order. Developers are responsible
-for dependencies between runtime initializers; premature reads see typed defaults
-or the value assigned so far, without a special initialization-order check.
+code. Runtime-dependent initializers run in script-name order and then declaration
+order. Developers are responsible for dependencies between initializers; reads
+observe typed defaults or the value assigned so far.
 
 After compilation and resource preparation, call `ModuleHost::run()` to
 initialize scripts and invoke the runnable module. The module receives fully
@@ -190,15 +157,12 @@ It returns a `CompilationResult` containing diagnostics and error/warning counts
 the caller chooses how to display them. Application sessions produce executable
 scripts, analysis sessions perform analysis, and packaging sessions cannot
 compile. For supplied text or editor overrides, use `compileSources(sourceBatch, target)`.
-Neither form executes `$init` or an entry function. Failed compilation prevents
+Neither form executes initializers or an entry function. Failed compilation prevents
 `run()` from initializing scripts or invoking the runnable module.
 
 The host does not impose an entry convention or validate a configured entry
 during compilation. Each runnable module executes its own entry; game entry
 errors are reported during startup rather than by `nomad check`.
-Compiler phase hooks remain available to modules. Resource preparation is
-coordinated internally by the host rather than through caller-supplied
-compilation callbacks.
 
 Create a host with `ModuleHost::create(...)`, which returns a
 `std::unique_ptr<ModuleHost>`. `ModuleHost` is a pure virtual interface; callers
@@ -214,11 +178,11 @@ for applications; `Game::createForRuntime` registers the game API against a
 borrowed runtime without compiling or executing scripts.
 
 Embedders invoking callbacks or using their own VM without a module host must
-call `Runtime::initializeScripts()` first. It executes `$init` once; repeated
-successful calls do nothing. `VirtualMachine::run` never performs initialization
-automatically. Analysis resolves initializers but installs neither initial values
-nor executable initialization code. `initializeScripts` rejects analysis-only
-hub variables.
+call `Runtime::initializeScripts()` first. It executes script initializers once;
+repeated successful calls do nothing. `VirtualMachine::run` never performs
+initialization automatically. Analysis resolves initializers but installs neither
+initial values nor executable initialization. `initializeScripts` rejects
+analysis-only hub variables.
 Initialization failure propagates to the caller, is not retried, and prevents
 subsequent high-level script execution. Use a fresh runtime for a new application
 execution.
@@ -255,9 +219,8 @@ void compileSources() {
 }
 ```
 
-`registerSources` is the only script-input API. A single script is a batch with
-one entry; the former `registerScriptFile` API is replaced by this entry point.
-It copies the input, so the batch may be changed or destroyed
+`registerSources` accepts a batch of script inputs; a single script is a batch
+with one entry. It copies the input, so the batch may be changed or destroyed
 after registration. It appends sources; it does not replace already registered
 functions. Duplicate script names are reported immediately to the supplied
 `CompilerContext`. That same context collects loading and compilation diagnostics;
@@ -265,23 +228,13 @@ compilation refuses to proceed if it already contains errors. Use a fresh runtim
 for independent analysis snapshots, or provide a runtime containing the host APIs
 needed by the scripts. Compilation does not execute scripts.
 
-The compiler owns `ScriptSource` snapshots alongside per-script tokenizers and
-top-level function IDs. Its function compilation records separately hold ASTs
-and a compiler-local `NomadId` referring to the owning script. Script IDs remain
-stable when more batches are registered and when scripts are processed in sorted
-order; references returned by `getScript(id)` should be reacquired after
-registration.
-
-Parser integrations use `createFunction(context, scriptId, functionName)` for
-declared or generated functions, replacing `registerFunctionSource`. This creates
-a function within an existing script, not another script input. The script ID can
-be obtained from a compiled or currently compiling function with
-`getScriptId(functionId)`. Function creation inherits the script's source name
-and full text and reports name collisions to the supplied context.
+`createFunction(context, scriptId, functionName)` creates a declared or generated
+function within an existing script. Obtain the script ID with
+`getScriptId(functionId)`. Function creation uses the script's source name and
+text and reports name collisions to the supplied context.
 
 For disk input, call `loadSourcePaths(paths)` with a vector or span of filesystem
-paths, then register the returned batch. This replaces the former
-`Compiler::loadScriptsFromPath` API. The CLI tools and game use this same adapter.
+paths, then register the returned batch.
 Each directory is a separate compile root; relative paths become dotted script
 names. Individual files use their filename stem. Discovery ignores non-`.nomad`
 files, skips symbolic links within directories, and visits at most ten directory
@@ -492,17 +445,13 @@ construction through the existing native constructor execution paths.
 
 ### Native object types and constructors
 
-`ObjectTypeBase` provides shared reference-counted value handling and object
-opcodes. `ObjectType` supplies a name and type-argument metadata; its text
-representation is its type name. Its initial value is a null object reference,
-not a constructed collection. Specialized descriptors may override initialization
-and formatting. Strings reuse the base while retaining empty-string initialization.
+`ObjectType` describes an object type and its type arguments. Its default value
+is null, and its text representation is its type name. Specialized types may
+provide other default values and formatting.
 
-`Type::initValue(value)` is pure virtual and initializes fresh storage with an
-owned default value; it does not release existing contents. Implement it when
-defining a type descriptor, and release initialized values through `freeValue`
-when they are no longer needed. Keep descriptors alive until all values using
-them have been released.
+`Type::initValue(value)` initializes a fresh value with the type's default.
+Implement it when defining a type descriptor, and release initialized values
+through `freeValue` when they are no longer needed.
 
 Register a constructor with the type it constructs, its parameters, and a factory.
 Scripts invoke it with `new` and the type's name:
@@ -555,7 +504,7 @@ Specializations are reused on subsequent requests through
 ## Native object methods
 
 Use `Runtime::registerNativeMethod(objectType, name, callback, parameters, returnType, doc)`
-for methods on an `ObjectTypeBase` descriptor. Read the instance inside the callback:
+for methods on an `ObjectType` descriptor. Read the instance inside the callback:
 
 ```cpp
 [](nomad::VirtualMachine* vm) {
@@ -675,15 +624,15 @@ runtime.registerIterableType(
 );
 ```
 
-`registerIterableType` accepts a runtime-owned `Method`, not a native member ID.
-The factory must belong to the source type, take no arguments, and return the
+Pass a registered `Method` to `registerIterableType`; it does not accept a native
+member ID. The factory must belong to the source type, take no arguments, and return the
 matching iterator type. Duplicate associations and invalid registrations throw
 `NomadException`. `getIterableDefinition(sourceType)` returns an optional association.
 
 Each factory invocation must create independent iteration state. An iterator
 owns its published value; consumers receive normal typed copies, including
-reference ownership for object values. Completion is permanent. Loop completion,
-`break`, and normal function return release loop-owned cursors and values.
+reference ownership for object values. Iteration state is released when iteration
+completes, a loop exits with `break`, or the function returns.
 
 ## Member declarations for parameterized type families
 
