@@ -43,7 +43,7 @@ public:
     void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override;
 };
 
-class UnmanagedType final : public Type {
+class UnmanagedType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
     NomadString getTypeName() const override;

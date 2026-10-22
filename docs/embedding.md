@@ -21,6 +21,15 @@ Types and callables used by a context must remain valid.
 
 Neither the interpreter nor its context creates or owns a VM.
 
+### Type storage
+
+`Type::getStorage()` describes how a type is represented in runtime values:
+`None` for types such as `void`, `Value` for scalar and ID-backed types, and
+`Object` for reference-counted `NomadObject` values such as strings. `Struct` is
+reserved for a future storage model. This category describes representation;
+the type's existing initialization, copy, and release operations continue to
+define its value lifecycle.
+
 ### Object type property metadata
 
 `ScriptObjectType` describes a script-defined object type. It is open by default;

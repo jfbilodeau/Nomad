@@ -92,6 +92,14 @@ const EnumType* Type::asEnum() const {
     return nullptr;
 }
 
+ValueType::ValueType(NomadString documentation):
+    Type(std::move(documentation))
+{}
+
+TypeStorage ValueType::getStorage() const {
+    return TypeStorage::Value;
+}
+
 bool Type::isVoid() const {
     return false;
 }
@@ -117,6 +125,10 @@ void VoidType::initValue(RuntimeValue& value) const {
 
 NomadString VoidType::getTypeName() const {
     return VOID_TYPE_NAME;
+}
+
+TypeStorage VoidType::getStorage() const {
+    return TypeStorage::None;
 }
 
 void VoidType::copyValue(const RuntimeValue& /*sourceValue*/, RuntimeValue& /*destinationValue*/) const {
@@ -153,7 +165,7 @@ void IdType::toString(const RuntimeValue& value, NomadString& string) const {
 ///////////////////////////////////////////////////////////////////////////////
 // OpaqueIdType
 OpaqueIdType::OpaqueIdType(NomadString name, NomadString documentation):
-    Type(std::move(documentation)),
+    ValueType(std::move(documentation)),
     m_name(std::move(name))
 {
 }
@@ -359,6 +371,10 @@ void ObjectTypeBase::copyValue(const RuntimeValue& sourceValue, RuntimeValue& de
 
 bool ObjectTypeBase::sameType(const Type* other) const {
     return this == other;
+}
+
+TypeStorage ObjectTypeBase::getStorage() const {
+    return TypeStorage::Object;
 }
 
 bool ObjectTypeBase::isOpen() const {

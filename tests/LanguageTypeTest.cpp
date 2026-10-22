@@ -29,6 +29,19 @@ struct TypeCase {
 
 BOOST_AUTO_TEST_SUITE(language_types)
 
+BOOST_AUTO_TEST_CASE(types_report_their_runtime_storage_category)
+{
+    Runtime runtime;
+    const EnumType enumType("State", {{"idle", 1}});
+
+    BOOST_TEST(static_cast<int>(runtime.getVoidType()->getStorage()) == static_cast<int>(TypeStorage::None));
+    BOOST_TEST(static_cast<int>(runtime.getIntegerType()->getStorage()) == static_cast<int>(TypeStorage::Value));
+    BOOST_TEST(static_cast<int>(runtime.getFloatType()->getStorage()) == static_cast<int>(TypeStorage::Value));
+    BOOST_TEST(static_cast<int>(runtime.getBooleanType()->getStorage()) == static_cast<int>(TypeStorage::Value));
+    BOOST_TEST(static_cast<int>(enumType.getStorage()) == static_cast<int>(TypeStorage::Value));
+    BOOST_TEST(static_cast<int>(runtime.getStringType()->getStorage()) == static_cast<int>(TypeStorage::Object));
+}
+
 BOOST_AUTO_TEST_CASE(variable_type_is_inferred_from_first_assignment)
 {
     const std::vector<TypeCase> cases = {

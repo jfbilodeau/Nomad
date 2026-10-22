@@ -23,6 +23,13 @@ class Runtime;
 class FunctionType;
 class EnumType;
 
+enum class TypeStorage {
+    None = 1,  // for `void`
+    Value,
+    Object,
+    Struct,
+};
+
 // Opcodes loading a value into the `r` register, the `i` register or onto the stack.
 struct TargetOpCodes {
     InstructionFn result = nullptr;
@@ -69,6 +76,7 @@ public:
     virtual ~Type() = default;
 
     [[nodiscard]] virtual NomadString getTypeName() const = 0;
+    [[nodiscard]] virtual TypeStorage getStorage() const = 0;
     [[nodiscard]] const NomadString& getDocumentation() const;
     // Initializes fresh storage with an owned default value. Does not release existing contents.
     virtual void initValue(RuntimeValue& value) const = 0;
@@ -114,6 +122,12 @@ private:
     NomadString m_documentation;
 };
 
+class ValueType : public Type {
+public:
+    explicit ValueType(NomadString documentation = {});
+    [[nodiscard]] TypeStorage getStorage() const override;
+};
+
 [[nodiscard]] NomadString getTypeDisplayName(const Type* type);
 
 const NomadString VOID_TYPE_NAME = "void";
@@ -121,6 +135,7 @@ class VoidType final : public Type {
 public:
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
+    [[nodiscard]] TypeStorage getStorage() const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 
@@ -128,7 +143,7 @@ public:
 };
 
 const NomadString ID_TYPE_NAME = "id";
-class IdType final : public Type {
+class IdType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
@@ -136,7 +151,7 @@ public:
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 
-class OpaqueIdType final : public Type {
+class OpaqueIdType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
     OpaqueIdType(NomadString name, NomadString documentation);
@@ -153,7 +168,7 @@ private:
 };
 
 const NomadString INTEGER_TYPE_NAME = "int";
-class IntegerType final : public Type {
+class IntegerType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
@@ -166,7 +181,7 @@ struct EnumValueDefinition {
     NomadInteger value;
 };
 
-class EnumType final : public Type {
+class EnumType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
     EnumType(NomadString name, std::vector<EnumValueDefinition> values);
@@ -190,7 +205,7 @@ private:
 };
 
 const NomadString FLOAT_TYPE_NAME = "float";
-class FloatType final : public Type {
+class FloatType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
@@ -201,7 +216,7 @@ public:
 const NomadString BOOLEAN_TYPE_NAME = "bool";
 const NomadString BOOLEAN_TRUE_STRING = "true";
 const NomadString BOOLEAN_FALSE_STRING = "false";
-class BooleanType final : public Type {
+class BooleanType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
@@ -222,6 +237,7 @@ public:
     void freeValue(RuntimeValue& value) const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
+    [[nodiscard]] TypeStorage getStorage() const override;
 
     [[nodiscard]] virtual bool isOpen() const;
     [[nodiscard]] virtual NomadId addProperty(
@@ -288,7 +304,7 @@ public:
 };
 
 const NomadString FUNCTION_LINE_NUMBER_TYPE_NAME = "$line";
-class FunctionLineNumberType final : public Type {
+class FunctionLineNumberType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
@@ -297,7 +313,7 @@ public:
 };
 
 const NomadString FUNCTION_TYPE_NAME = "callback";
-class FunctionType final : public Type {
+class FunctionType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
     FunctionType(const std::vector<const Type*>& parameter_types, const Type* return_type);
@@ -320,7 +336,7 @@ private:
 };
 
 const NomadString EVENT_TYPE_NAME = "event";
-class EventType final : public Type {
+class EventType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
     explicit EventType(const EventDefinition* declaration);
@@ -337,7 +353,7 @@ private:
 };
 
 const NomadString EVENT_CALLBACK_TYPE_NAME = "eventCallback";
-class EventCallbackType final : public Type {
+class EventCallbackType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
@@ -346,7 +362,7 @@ public:
 };
 
 const NomadString EVENT_DISPATCH_TYPE_NAME = "eventDispatch";
-class EventDispatchType final : public Type {
+class EventDispatchType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;

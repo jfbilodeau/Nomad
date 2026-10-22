@@ -17,7 +17,7 @@ const NomadString& getEventName(const GameEvent& event) {
     return std::get<GameEventTriggerEvent>(event).eventName;
 }
 
-class TrackingType final : public Type {
+class TrackingType final : public ValueType {
 public:
     explicit TrackingType(bool& valueFreed) : m_valueFreed(valueFreed) {}
 
