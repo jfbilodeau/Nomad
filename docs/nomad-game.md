@@ -28,6 +28,18 @@ are project-relative, with `scripts.directories = ["res/scripts"]` in generated
 game projects. See [Project configuration](configuration.md) for defaults,
 resource directories, and validation rules.
 
+## Game API hubs
+
+Before scripts are compiled, the game module registers the `game` hub and its
+`game.audio`, `game.music`, `game.inventory`, `game.settings`, and `game.debug`
+hubs. The debug hub also contains `game.debug.console` and `game.debug.draw`.
+Existing native function and dynamic-variable names stay the same; the hubs
+group these APIs and can be extended by scripts.
+
+`game.inventory` and `game.settings` contain persistence functions. The
+variables they save and load remain in the separate `inventory.*` and
+`settings.*` contexts.
+
 ## Features and guides
 
 | Feature | Guide |
