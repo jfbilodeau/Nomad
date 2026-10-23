@@ -694,7 +694,7 @@ BOOST_AUTO_TEST_CASE(indexers_support_arbitrary_arity_and_restore_native_paramet
                 BOOST_TEST(machine->getStringParameter(count - 1)->getString() == "key");
                 machine->getThisAs<TestObject>()->value = machine->getIntegerParameter(count);
             }, "Arbitrary arity"
-        ) != NOMAD_INVALID_ID);
+        ).isValid());
     }
     RuntimeValue empty;
     runtime.getStringType()->initValue(empty);

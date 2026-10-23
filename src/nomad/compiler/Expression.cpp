@@ -1001,14 +1001,14 @@ void IndexerExpression::compileOperands(Compiler* compiler, ScriptFunction* func
 void IndexerExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
     compileOperands(compiler, function);
     compiler->addOpCode(op_native_index_get);
-    compiler->addId(m_indexerId);
+    compiler->addId(m_indexerId.id);
     compiler->addMoveResult(getType(), target);
 }
 
 void IndexerExpression::compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression) {
     compileOperands(compiler, function, expression);
     compiler->addOpCode(op_native_index_set);
-    compiler->addId(m_indexerId);
+    compiler->addId(m_indexerId.id);
 }
 
 void IndexerExpression::onEvaluate(InterpreterContext& context) const {

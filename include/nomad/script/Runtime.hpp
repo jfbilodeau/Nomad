@@ -211,7 +211,7 @@ public:
     [[nodiscard]] std::optional<MemberSignature> getMemberSignature(const NomadString& name) const;
 
     // Native members
-    NomadId registerNativeIndexer(
+    IndexerId registerNativeIndexer(
         const ObjectType* objectType,
         std::vector<const Type*> indexTypes,
         const Type* valueType,
@@ -219,8 +219,8 @@ public:
         NativeFunctionFn setFn,
         NomadDocArg
     );
-    [[nodiscard]] NomadId getNativeIndexerId(const Type* objectType, NomadIndex indexCount) const;
-    [[nodiscard]] bool getNativeIndexerDefinition(NomadId indexerId, NativeIndexerDefinition& definition) const;
+    [[nodiscard]] IndexerId getNativeIndexerId(const Type* objectType, NomadIndex indexCount) const;
+    [[nodiscard]] bool getNativeIndexerDefinition(IndexerId indexerId, NativeIndexerDefinition& definition) const;
     [[nodiscard]] const std::vector<NativeIndexerDefinition>& getNativeIndexers() const;
 
     CallableId registerNativeMethod(

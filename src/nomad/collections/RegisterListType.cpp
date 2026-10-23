@@ -51,7 +51,7 @@ void registerListReaders(Runtime* runtime, const ObjectType* objectType, const b
             ? NomadDoc("Reads or replaces an element at a zero-based index. Out-of-range indices fault.")
             : NomadDoc("Reads an element at a zero-based index. Out-of-range indices fault.")
     );
-    if (iteratorId.isInvalid() || countId.isInvalid() || indexerId == NOMAD_INVALID_ID) {
+    if (iteratorId.isInvalid() || countId.isInvalid() || indexerId.isInvalid()) {
         throw NomadException("Failed to register List readers");
     }
     runtime->registerIterableType(objectType, elementType, runtime->getNativeMemberMethod(iteratorId));

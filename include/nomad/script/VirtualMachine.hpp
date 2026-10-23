@@ -7,6 +7,7 @@
 #include <nomad/compiler/Identifier.hpp>
 
 #include <nomad/script/Documentation.hpp>
+#include <nomad/script/NativeMember.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/Property.hpp>
@@ -73,9 +74,9 @@ public:
 
     void getNativeProperty(PropertyId memberId, const RuntimeValue& receiver, RuntimeValue& result);
     void setNativeProperty(PropertyId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
-    void callNativeIndexer(NomadId indexerId, const RuntimeValue& receiver, bool write);
+    void callNativeIndexer(IndexerId indexerId, const RuntimeValue& receiver, bool write);
     void runNativeIndexer(
-        NomadId indexerId,
+        IndexerId indexerId,
         const std::vector<RuntimeValue>& args,
         const RuntimeValue& receiver,
         bool write

@@ -20,7 +20,7 @@ namespace nomad {
 namespace {
 
 void callNativeIndexer(VirtualMachine* machine, const bool write) {
-    const auto indexerId = machine->nextId();
+    const auto indexerId = IndexerId{machine->nextId()};
     NativeIndexerDefinition definition;
     if (!machine->getRuntime()->getNativeIndexerDefinition(indexerId, definition)) {
         machine->fault("Invalid native indexer");

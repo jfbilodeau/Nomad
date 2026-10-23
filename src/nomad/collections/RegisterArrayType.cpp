@@ -132,7 +132,7 @@ void registerArrayType(Runtime* runtime) {
                 writable
                     ? NomadDoc("Reads or replaces an element at a zero-based index. Invalid indices log an error; reads return a default and writes do nothing.")
                     : NomadDoc("Reads an element at a zero-based index. Invalid indices log an error and return a default.")
-            ) == nomad::NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array1 indexer");
             }
         }
@@ -180,7 +180,7 @@ void registerArrayType(Runtime* runtime) {
                 writable
                     ? NomadDoc("Reads or replaces an element at two zero-based indices. Invalid indices log an error; reads return a default and writes do nothing.")
                     : NomadDoc("Reads an element at two zero-based indices. Invalid indices log an error and return a default.")
-            ) == nomad::NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array2 indexer");
             }
         }
@@ -232,7 +232,7 @@ void registerArrayType(Runtime* runtime) {
                 writable
                     ? NomadDoc("Reads or replaces an element at three zero-based indices. Invalid indices log an error; reads return a default and writes do nothing.")
                     : NomadDoc("Reads an element at three zero-based indices. Invalid indices log an error and return a default.")
-            ) == nomad::NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array3 indexer");
             }
         }

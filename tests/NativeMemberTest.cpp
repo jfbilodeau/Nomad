@@ -14,6 +14,12 @@
 
 using namespace nomad;
 
+static_assert(std::is_same_v<decltype(NativeIndexerDefinition{}.id), IndexerId>);
+static_assert(!std::is_convertible_v<NomadId, IndexerId>);
+static_assert(!std::is_convertible_v<IndexerId, NomadId>);
+static_assert(!std::is_convertible_v<IndexerId, PropertyId>);
+static_assert(!std::is_convertible_v<IndexerId, CallableId>);
+
 namespace {
 
 NativePropertyGetFn propertyGetter() {
@@ -326,18 +332,18 @@ BOOST_AUTO_TEST_CASE(indexer_registration_validates_types_and_accessors) {
     const auto* type = registerTestType(runtime);
     const NativeFunctionFn getter = [](VirtualMachine*) {};
     const NativeFunctionFn setter = [](VirtualMachine*) {};
-    BOOST_TEST(runtime.registerNativeIndexer(nullptr, {runtime.getIntegerType()}, runtime.getIntegerType(), getter, {}, "") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeIndexer(type, {nullptr}, runtime.getIntegerType(), getter, {}, "") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeIndexer(type, {}, runtime.getIntegerType(), getter, {}, "") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeIndexer(type, {runtime.getVoidType()}, runtime.getIntegerType(), getter, {}, "") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeIndexer(type, {runtime.getIntegerType()}, other.getIntegerType(), getter, {}, "") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeIndexer(type, {runtime.getIntegerType()}, runtime.getVoidType(), getter, {}, "") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeIndexer(type, {runtime.getFileNameType()}, runtime.getIntegerType(), getter, {}, "") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeIndexer(type, {runtime.getIntegerType()}, runtime.getIntegerType(), {}, {}, "") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerNativeIndexer(nullptr, {runtime.getIntegerType()}, runtime.getIntegerType(), getter, {}, "").isInvalid());
+    BOOST_TEST(runtime.registerNativeIndexer(type, {nullptr}, runtime.getIntegerType(), getter, {}, "").isInvalid());
+    BOOST_TEST(runtime.registerNativeIndexer(type, {}, runtime.getIntegerType(), getter, {}, "").isInvalid());
+    BOOST_TEST(runtime.registerNativeIndexer(type, {runtime.getVoidType()}, runtime.getIntegerType(), getter, {}, "").isInvalid());
+    BOOST_TEST(runtime.registerNativeIndexer(type, {runtime.getIntegerType()}, other.getIntegerType(), getter, {}, "").isInvalid());
+    BOOST_TEST(runtime.registerNativeIndexer(type, {runtime.getIntegerType()}, runtime.getVoidType(), getter, {}, "").isInvalid());
+    BOOST_TEST(runtime.registerNativeIndexer(type, {runtime.getFileNameType()}, runtime.getIntegerType(), getter, {}, "").isInvalid());
+    BOOST_TEST(runtime.registerNativeIndexer(type, {runtime.getIntegerType()}, runtime.getIntegerType(), {}, {}, "").isInvalid());
     const auto id = runtime.registerNativeIndexer(type, {runtime.getIntegerType()}, runtime.getIntegerType(), {}, setter, "Test indexer");
-    BOOST_REQUIRE(id != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(id.isValid());
     BOOST_TEST(runtime.getNativeIndexerId(type, 1) == id);
-    BOOST_TEST(runtime.registerNativeIndexer(type, {runtime.getIntegerType()}, runtime.getIntegerType(), getter, setter, "") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerNativeIndexer(type, {runtime.getIntegerType()}, runtime.getIntegerType(), getter, setter, "").isInvalid());
     NativeIndexerDefinition definition;
     BOOST_REQUIRE(runtime.getNativeIndexerDefinition(id, definition));
     BOOST_TEST(definition.objectType == type);
@@ -346,8 +352,8 @@ BOOST_AUTO_TEST_CASE(indexer_registration_validates_types_and_accessors) {
     BOOST_TEST(definition.valueType == runtime.getIntegerType());
     BOOST_TEST(!definition.getFn);
     BOOST_TEST(static_cast<bool>(definition.setFn));
-    BOOST_TEST(!runtime.getNativeIndexerDefinition(NOMAD_INVALID_ID, definition));
-    BOOST_TEST(runtime.getNativeIndexerId(runtime.getIntegerType(), 1) == NOMAD_INVALID_ID);
+    BOOST_TEST(!runtime.getNativeIndexerDefinition(IndexerId::INVALID, definition));
+    BOOST_TEST(runtime.getNativeIndexerId(runtime.getIntegerType(), 1).isInvalid());
 }
 
 BOOST_AUTO_TEST_CASE(two_dimensional_indexers_validate_metadata_and_coexist_with_one_dimension) {
@@ -358,22 +364,22 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_validate_metadata_and_coexist_with
     const NativeFunctionFn setter = [](VirtualMachine*) {};
     const auto* integer = runtime.getIntegerType();
     const auto* string = runtime.getStringType();
-    BOOST_TEST(runtime.registerNativeIndexer(nullptr, {integer, string}, integer, getter, {}, "") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerNativeIndexer(nullptr, {integer, string}, integer, getter, {}, "").isInvalid());
     ObjectType unregistered("Unregistered");
-    BOOST_TEST(runtime.registerNativeIndexer(&unregistered, {integer, string}, integer, getter, {}, "") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerNativeIndexer(&unregistered, {integer, string}, integer, getter, {}, "").isInvalid());
     for (const Type* invalid : std::array<const Type*, 4>{nullptr, runtime.getVoidType(),
         runtime.getFileNameType(), other.getIntegerType()}) {
-        BOOST_TEST(runtime.registerNativeIndexer(type, {invalid, string}, integer, getter, {}, "") == NOMAD_INVALID_ID);
-        BOOST_TEST(runtime.registerNativeIndexer(type, {integer, invalid}, integer, getter, {}, "") == NOMAD_INVALID_ID);
-        BOOST_TEST(runtime.registerNativeIndexer(type, {integer, string}, invalid, getter, {}, "") == NOMAD_INVALID_ID);
+        BOOST_TEST(runtime.registerNativeIndexer(type, {invalid, string}, integer, getter, {}, "").isInvalid());
+        BOOST_TEST(runtime.registerNativeIndexer(type, {integer, invalid}, integer, getter, {}, "").isInvalid());
+        BOOST_TEST(runtime.registerNativeIndexer(type, {integer, string}, invalid, getter, {}, "").isInvalid());
     }
-    BOOST_TEST(runtime.registerNativeIndexer(type, {integer, string}, integer, {}, {}, "") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerNativeIndexer(type, {integer, string}, integer, {}, {}, "").isInvalid());
     const auto id = runtime.registerNativeIndexer(type, {integer, string}, integer, getter, setter, "Two keys");
-    BOOST_REQUIRE(id != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(id.isValid());
     BOOST_TEST(runtime.getNativeIndexerId(type, 2) == id);
-    BOOST_TEST(runtime.registerNativeIndexer(type, {integer, string}, integer, getter, {}, "") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeIndexer(type, {string, integer}, integer, getter, {}, "") == NOMAD_INVALID_ID);
-    BOOST_REQUIRE(runtime.registerNativeIndexer(type, {integer}, integer, {}, setter, "") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerNativeIndexer(type, {integer, string}, integer, getter, {}, "").isInvalid());
+    BOOST_TEST(runtime.registerNativeIndexer(type, {string, integer}, integer, getter, {}, "").isInvalid());
+    BOOST_REQUIRE(runtime.registerNativeIndexer(type, {integer}, integer, {}, setter, "").isValid());
     NativeIndexerDefinition definition;
     BOOST_REQUIRE(runtime.getNativeIndexerDefinition(id, definition));
     BOOST_TEST(definition.id == id);
@@ -385,15 +391,39 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_validate_metadata_and_coexist_with
     BOOST_TEST(static_cast<bool>(definition.getFn));
     BOOST_TEST(static_cast<bool>(definition.setFn));
     BOOST_TEST(runtime.getNativeIndexers().size() == 3u);
-    BOOST_TEST(!runtime.getNativeIndexerDefinition(NOMAD_INVALID_ID, definition));
-    BOOST_TEST(!runtime.getNativeIndexerDefinition(static_cast<NomadId>(runtime.getNativeIndexers().size()), definition));
-    BOOST_TEST(runtime.getNativeIndexerId(integer, 2) == NOMAD_INVALID_ID);
+    BOOST_TEST(!runtime.getNativeIndexerDefinition(IndexerId::INVALID, definition));
+    BOOST_TEST(!runtime.getNativeIndexerDefinition(IndexerId{toNomadId(runtime.getNativeIndexers().size())}, definition));
+    BOOST_TEST(runtime.getNativeIndexerId(integer, 2).isInvalid());
     std::ostringstream documentation;
     generateNativeMemberDocumentation(&runtime, documentation);
     BOOST_TEST(documentation.str().find("TestObject[index1 index2]") != NomadString::npos);
     BOOST_TEST(documentation.str().find("- Index 1: `int`") != NomadString::npos);
     BOOST_TEST(documentation.str().find("- Index 2: `string`") != NomadString::npos);
     BOOST_TEST(documentation.str().find("Two keys") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(indexer_ids_remain_stable_as_the_catalog_grows) {
+    Runtime runtime;
+    const auto* type = registerTestType(runtime);
+    const NativeFunctionFn getter = [](VirtualMachine*) {};
+    const auto id = runtime.registerNativeIndexer(type, {runtime.getIntegerType()},
+        runtime.getIntegerType(), getter, {}, "Stable indexer");
+    BOOST_REQUIRE(id.isValid());
+    for (auto count = NomadIndex{2}; count <= 32; ++count) {
+        BOOST_REQUIRE(runtime.registerNativeIndexer(type,
+            std::vector<const Type*>(count, runtime.getIntegerType()),
+            runtime.getIntegerType(), getter, {}, "").isValid());
+    }
+    NativeIndexerDefinition definition;
+    BOOST_REQUIRE(runtime.getNativeIndexerDefinition(id, definition));
+    BOOST_TEST(definition.id == id);
+    BOOST_TEST(definition.doc == "Stable indexer");
+    BOOST_TEST(definition.objectType == type);
+    BOOST_TEST(runtime.getNativeIndexerId(type, 1) == id);
+    for (const auto invalid : {IndexerId::INVALID, IndexerId{-2},
+        IndexerId{NOMAD_ID_MAX - 1}, IndexerId{NOMAD_ID_MAX}}) {
+        BOOST_TEST(!runtime.getNativeIndexerDefinition(invalid, definition));
+    }
 }
 
 BOOST_AUTO_TEST_CASE(string_indexer_is_read_only_and_documented) {

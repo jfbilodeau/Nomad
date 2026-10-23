@@ -589,6 +589,14 @@ and be public, non-void types. An object type may register one indexer per index
 count; lookup uses the receiver type and number of indices, not index-type
 overloading.
 
+Registration and `getNativeIndexerId(objectType, indexCount)` return an
+`IndexerId`, or `IndexerId::INVALID` on failure or missing lookup. Registration
+failures are logged. Include `<nomad/script/NativeMember.hpp>` for the ID and
+`NativeIndexerDefinition`. IDs are runtime-local and remain stable as more
+indexers are registered. They do not implicitly convert to integers or other
+ID categories. `getNativeIndexerDefinition(id, definition)` returns `false` for
+invalid or unregistered IDs.
+
 Omit the setter for read-only indexing, or omit
 the getter for write-only indexing. Invalid access is rejected during compilation.
 

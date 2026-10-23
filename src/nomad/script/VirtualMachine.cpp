@@ -287,7 +287,7 @@ void VirtualMachine::setNativeProperty(
 }
 
 void VirtualMachine::callNativeIndexer(
-    const NomadId indexerId,
+    const IndexerId indexerId,
     const RuntimeValue& receiver,
     const bool write
 ) {
@@ -304,7 +304,7 @@ void VirtualMachine::callNativeIndexer(
 }
 
 void VirtualMachine::runNativeIndexer(
-    const NomadId indexerId,
+    const IndexerId indexerId,
     const std::vector<RuntimeValue>& args,
     const RuntimeValue& receiver,
     const bool write

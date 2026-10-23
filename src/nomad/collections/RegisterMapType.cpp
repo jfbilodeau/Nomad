@@ -135,7 +135,7 @@ void registerMapFamily(
                 runtime->getBooleanType(),
                 NomadDoc("Returns whether the key exists, without logging or changing the map.")
             );
-            if (countId.isInvalid() || indexerId == NOMAD_INVALID_ID || containsId.isInvalid() ||
+            if (countId.isInvalid() || indexerId.isInvalid() || containsId.isInvalid() ||
                 keysId.isInvalid() || valuesId.isInvalid() || entriesId.isInvalid()) {
                 throw NomadException("Failed to register Map readers");
             }

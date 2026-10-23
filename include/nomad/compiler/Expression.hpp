@@ -7,6 +7,7 @@
 #include <nomad/compiler/SyntaxTree.hpp>
 
 #include <nomad/script/Member.hpp>
+#include <nomad/script/NativeMember.hpp>
 
 #include <nomad/Nomad.hpp>
 
@@ -160,7 +161,7 @@ private:
 
     std::unique_ptr<Expression> m_receiver;
     std::vector<std::unique_ptr<Expression>> m_indexes;
-    NomadId m_indexerId = NOMAD_INVALID_ID;
+    IndexerId m_indexerId;
     bool m_canRead = false;
     bool m_canWrite = false;
 };

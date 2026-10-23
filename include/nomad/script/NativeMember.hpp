@@ -32,8 +32,10 @@ struct NativePropertyDefinition {
     NomadDocField;
 };
 
+DeclareId(IndexerId);
+
 struct NativeIndexerDefinition {
-    NomadId id = NOMAD_INVALID_ID;
+    IndexerId id;
     const ObjectType* objectType = nullptr;
     std::vector<const Type*> indexTypes;
     const Type* valueType = nullptr;
