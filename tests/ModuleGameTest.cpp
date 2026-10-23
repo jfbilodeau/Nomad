@@ -78,11 +78,11 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
         "game.debug.console",
         "game.debug.draw",
     }) {
-        BOOST_TEST(runtime.getHubId(hubName) != NOMAD_INVALID_ID);
+        BOOST_TEST(runtime.getHubId(hubName).isValid());
     }
 
-    BOOST_TEST(runtime.getHubId("game.inventory") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getHubId("game.settings") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getHubId("game.inventory").isInvalid());
+    BOOST_TEST(runtime.getHubId("game.settings").isInvalid());
     BOOST_TEST(runtime.getCallableId("game.inventory.save").isValid());
     BOOST_TEST(runtime.getCallableId("game.settings.save").isValid());
 

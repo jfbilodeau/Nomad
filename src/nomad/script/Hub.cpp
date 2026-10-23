@@ -6,7 +6,7 @@
 
 namespace nomad {
 
-Hub::Hub(NomadString name, const NomadId parentId):
+Hub::Hub(NomadString name, const HubId parentId):
     m_name(std::move(name)),
     m_parentId(parentId),
     m_variables(std::make_shared<SimpleVariableContext>())
@@ -16,7 +16,7 @@ const NomadString& Hub::getName() const {
     return m_name;
 }
 
-NomadId Hub::getParentId() const {
+HubId Hub::getParentId() const {
     return m_parentId;
 }
 

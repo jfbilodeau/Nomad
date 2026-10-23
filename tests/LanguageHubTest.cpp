@@ -7,10 +7,57 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <type_traits>
+
 using namespace nomad;
 using namespace nomad::test;
 
+static_assert(!std::is_convertible_v<NomadId, HubId>);
+static_assert(!std::is_convertible_v<HubId, NomadId>);
+static_assert(!std::is_convertible_v<CallableId, HubId>);
+static_assert(!std::is_convertible_v<HubId, CallableId>);
+static_assert(!std::is_invocable_v<decltype(&Runtime::getHub), Runtime&, CallableId>);
+
 BOOST_AUTO_TEST_SUITE(language_hubs)
+
+BOOST_AUTO_TEST_CASE(hub_ids_support_lookup_parentage_and_catalog_growth)
+{
+    Runtime runtime;
+    BOOST_TEST(runtime.getHubId("missing") == HubId::INVALID);
+    BOOST_TEST(runtime.getHub(HubId::INVALID) == nullptr);
+    BOOST_TEST(runtime.getHub(HubId{-2}) == nullptr);
+    BOOST_TEST(runtime.getHub(HubId{NOMAD_ID_MAX}) == nullptr);
+    BOOST_TEST(runtime.getHub(HubId{999999}) == nullptr);
+
+    BOOST_REQUIRE(runtime.registerHub("example.child"));
+    const auto parentId = runtime.getHubId("example");
+    const auto childId = runtime.getHubId("example.child");
+    BOOST_REQUIRE(parentId.isValid());
+    BOOST_REQUIRE(childId.isValid());
+    BOOST_TEST(parentId != childId);
+    const auto* parent = runtime.getHub(parentId);
+    const auto* child = runtime.getHub(childId);
+    BOOST_REQUIRE(parent != nullptr);
+    BOOST_REQUIRE(child != nullptr);
+    BOOST_TEST(parent->getParentId() == HubId::INVALID);
+    BOOST_TEST(child->getParentId() == parentId);
+
+    BOOST_REQUIRE(runtime.registerHub("example.child"));
+    for (auto index = 0; index < 64; ++index) {
+        BOOST_REQUIRE(runtime.registerHub("additional" + std::to_string(index)));
+    }
+
+    BOOST_TEST(runtime.getHubId("example") == parentId);
+    BOOST_TEST(runtime.getHubId("example.child") == childId);
+    BOOST_TEST(runtime.getHub(parentId) == parent);
+    BOOST_TEST(runtime.getHub(childId) == child);
+    BOOST_TEST(child->getParentId() == parentId);
+    const auto* member = parent->getMember("child");
+    BOOST_REQUIRE(member != nullptr);
+    const auto* childMember = std::get_if<HubChild>(member);
+    BOOST_REQUIRE(childMember != nullptr);
+    BOOST_TEST(childMember->id == childId);
+}
 
 BOOST_AUTO_TEST_CASE(native_registration_is_idempotent_and_reserves_names)
 {

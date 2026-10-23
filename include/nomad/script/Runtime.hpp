@@ -89,8 +89,8 @@ public:
 
     [[nodiscard]] bool registerHub(const NomadString& name);
     [[nodiscard]] bool isHub(const NomadString& name) const;
-    [[nodiscard]] NomadId getHubId(const NomadString& name) const;
-    [[nodiscard]] const Hub* getHub(NomadId id) const;
+    [[nodiscard]] HubId getHubId(const NomadString& name) const;
+    [[nodiscard]] const Hub* getHub(HubId id) const;
     [[nodiscard]] NomadString getContainingHub(const NomadString& name) const;
     [[nodiscard]] NomadId registerHubVariable(const NomadString& name);
     [[nodiscard]] bool isHubVariable(const NomadString& name) const;

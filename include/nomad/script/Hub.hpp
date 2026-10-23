@@ -13,6 +13,8 @@
 
 namespace nomad {
 
+DeclareId(HubId);
+
 struct HubVariable {
     NomadId id;
 };
@@ -34,7 +36,7 @@ struct HubEvent {
 };
 
 struct HubChild {
-    NomadId id;
+    HubId id;
 };
 
 struct HubDynamicVariable {
@@ -51,12 +53,12 @@ using HubMember = std::variant<
 
 class Hub {
 public:
-    Hub(NomadString name, NomadId parentId);
+    Hub(NomadString name, HubId parentId);
     Hub(const Hub&) = delete;
     Hub& operator=(const Hub&) = delete;
 
     [[nodiscard]] const NomadString& getName() const;
-    [[nodiscard]] NomadId getParentId() const;
+    [[nodiscard]] HubId getParentId() const;
     [[nodiscard]] const HubMember* getMember(const NomadString& name) const;
     [[nodiscard]] const std::unordered_map<NomadString, HubMember>& getMembers() const;
 
@@ -64,7 +66,7 @@ private:
     friend class Runtime;
 
     NomadString m_name;
-    NomadId m_parentId;
+    HubId m_parentId;
     std::unordered_map<NomadString, HubMember> m_members;
     // The context table indexes this same storage for existing variable bytecode.
     std::shared_ptr<VariableContext> m_variables;

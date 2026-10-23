@@ -242,20 +242,20 @@ CallableId Runtime::registerNativeFunction(
 }
 
 bool Runtime::isHub(const NomadString& name) const {
-    return getHubId(name) != NOMAD_INVALID_ID;
+    return getHubId(name).isValid();
 }
 
-NomadId Runtime::getHubId(const NomadString& name) const {
+HubId Runtime::getHubId(const NomadString& name) const {
     for (auto index = NomadIndex{0}; index < m_hubs.size(); ++index) {
         if (m_hubs[index]->getName() == name) {
-            return toNomadId(index);
+            return HubId{toNomadId(index)};
         }
     }
-    return NOMAD_INVALID_ID;
+    return HubId::INVALID;
 }
 
-const Hub* Runtime::getHub(const NomadId id) const {
-    return isIdOutOfRange(id, m_hubs.size()) ? nullptr : m_hubs[toNomadIndex(id)].get();
+const Hub* Runtime::getHub(const HubId id) const {
+    return isIdOutOfRange(id.id, m_hubs.size()) ? nullptr : m_hubs[toNomadIndex(id.id)].get();
 }
 
 NomadString Runtime::getContainingHub(const NomadString& name) const {
@@ -292,7 +292,7 @@ NomadId Runtime::registerHubVariable(const NomadString& name) {
         log::error("Cannot register hub variable '" + name + "': missing hub or conflicting declaration");
         return NOMAD_INVALID_ID;
     }
-    auto& hub = *m_hubs[toNomadIndex(getHubId(getContainingHub(name)))];
+    auto& hub = *m_hubs[toNomadIndex(getHubId(getContainingHub(name)).id)];
     if (hub.m_variableContextId == NOMAD_INVALID_ID) {
         hub.m_variableContextId = toNomadId(m_variables.size());
         m_variables.push_back({
@@ -392,8 +392,8 @@ void Runtime::registerHubMember(const NomadString& name, HubMember member) {
         return;
     }
     const auto id = getHubId(getContainingHub(name));
-    if (id != NOMAD_INVALID_ID) {
-        auto& hub = *m_hubs[toNomadIndex(id)];
+    if (id.isValid()) {
+        auto& hub = *m_hubs[toNomadIndex(id.id)];
         addHubMember(hub.m_members, name.substr(hub.getName().size() + 1), std::move(member));
     }
 }
@@ -405,14 +405,14 @@ void Runtime::rebuildHubMembers() {
             return;
         }
         const auto id = getHubId(getContainingHub(name));
-        if (id != NOMAD_INVALID_ID) {
-            const auto index = toNomadIndex(id);
+        if (id.isValid()) {
+            const auto index = toNomadIndex(id.id);
             addHubMember(members[index], name.substr(m_hubs[index]->getName().size() + 1), std::move(member));
         }
     };
     for (auto index = NomadIndex{0}; index < m_hubs.size(); ++index) {
         const auto& hub = *m_hubs[index];
-        add(hub.getName(), HubChild{toNomadId(index)});
+        add(hub.getName(), HubChild{HubId{toNomadId(index)}});
         for (auto id = hub.m_variables->getFirstVariableId(); id != NOMAD_INVALID_ID;
              id = hub.m_variables->getNextVariableId(id)) {
             add(hub.m_variables->getVariableName(id), HubVariable{id});
@@ -2555,7 +2555,7 @@ NomadId Runtime::getContextVariableId(const NomadString& variableName) {
 
 NomadId Runtime::getVariableContextIdByPrefix(const NomadString& variableName) const {
     if (isHubVariable(variableName)) {
-        return m_hubs[toNomadIndex(getHubId(getContainingHub(variableName)))]->m_variableContextId;
+        return m_hubs[toNomadIndex(getHubId(getContainingHub(variableName)).id)]->m_variableContextId;
     }
     for (const auto& context: m_variables) {
         if (variableName.rfind(context.prefix, 0) == 0) {

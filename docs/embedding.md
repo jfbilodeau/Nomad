@@ -188,9 +188,13 @@ of an existing hub. Dotted names, such as `"game.audio"`, also register their
 parent hubs. Invalid names and conflicts with existing values, callables, or
 types are logged and return `false` without partially registering the name.
 Use `Runtime::isHub(name)` to test whether a hub is registered.
-`getHubId(name)` returns its ID or `NOMAD_INVALID_ID`; `getHub(id)` returns
-a borrowed `const Hub*`, or `nullptr` for an invalid ID. A hub exposes its
-qualified name, parent ID, and locally named members. Function members refer
+Include `<nomad/script/Hub.hpp>` for `HubId` and hub metadata.
+`getHubId(name)` returns a `HubId` or `HubId::INVALID`; `getHub(id)` accepts
+a `HubId` and returns a borrowed `const Hub*`, or `nullptr` for an invalid or
+unregistered ID. IDs belong to the runtime that issued them and are not
+interchangeable with callable or other ID categories. A hub exposes its
+qualified name, parent `HubId` (`HubId::INVALID` for a root hub), and locally
+named members. Child hub members contain a `HubId`. Function members refer
 to registered callables; types and events refer to their registered definitions.
 Hub pointers remain valid when more hubs are registered.
 
