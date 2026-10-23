@@ -205,7 +205,7 @@ Runtime::Runtime() {
 
 Runtime::~Runtime() {
     for (NomadIndex constantIndex = 0; constantIndex < m_constants.size(); ++constantIndex) {
-        if (const auto* type = m_constantsMap.getVariableType(toNomadId(constantIndex))) {
+        if (const auto* type = m_constantsMap.getVariableType(VariableId{toNomadId(constantIndex)})) {
             type->freeValue(m_constants[constantIndex]);
         }
     }
@@ -413,7 +413,7 @@ void Runtime::rebuildHubMembers() {
     for (auto index = NomadIndex{0}; index < m_hubs.size(); ++index) {
         const auto& hub = *m_hubs[index];
         add(hub.getName(), HubChild{HubId{toNomadId(index)}});
-        for (auto id = hub.m_variables->getFirstVariableId(); id != NOMAD_INVALID_ID;
+        for (auto id = hub.m_variables->getFirstVariableId(); id.isValid();
              id = hub.m_variables->getNextVariableId(id)) {
             add(hub.m_variables->getVariableName(id), HubVariable{id});
         }
@@ -2188,7 +2188,7 @@ ConstantId Runtime::registerConstant(const NomadString& name, const RuntimeValue
         return ConstantId::INVALID;
     }
 
-    const auto constantId = ConstantId{m_constantsMap.registerVariable(name, type)};
+    const auto constantId = ConstantId{m_constantsMap.registerVariable(name, type).id};
     const auto constantIndex = toNomadIndex(constantId.id);
 
     m_constants.resize(constantIndex + 1);
@@ -2209,15 +2209,15 @@ void Runtime::getConstantValue(const ConstantId id, RuntimeValue& value) const {
 }
 
 ConstantId Runtime::getConstantId(const NomadString& name) const {
-    return ConstantId{m_constantsMap.getVariableId(name)};
+    return ConstantId{m_constantsMap.getVariableId(name).id};
 }
 
 const NomadString& Runtime::getConstantName(const ConstantId id) const {
-    return m_constantsMap.getVariableName(id.id);
+    return m_constantsMap.getVariableName(VariableId{id.id});
 }
 
 const Type* Runtime::getConstantType(const ConstantId id) const {
-    return m_constantsMap.getVariableType(id.id);
+    return m_constantsMap.getVariableType(VariableId{id.id});
 }
 
 ConstantId Runtime::getFirstConstantId() const
@@ -2510,7 +2510,7 @@ ContextVariableId Runtime::registerContextVariable(
 
     const auto localVariableId = m_variables[contextIndex].context->registerVariable(variableName, type);
 
-    if (localVariableId == NOMAD_INVALID_ID) {
+    if (localVariableId.isInvalid()) {
         return ContextVariableId::INVALID;
     }
 
@@ -2551,7 +2551,7 @@ ContextVariableId Runtime::getContextVariableId(const NomadString& variableName)
     const auto contextIndex = toNomadIndex(contextId.id);
     const auto localVariableId = m_variables[contextIndex].context->getVariableId(variableName);
 
-    if (localVariableId == NOMAD_INVALID_ID) {
+    if (localVariableId.isInvalid()) {
         return ContextVariableId::INVALID;
     }
 
@@ -2652,7 +2652,7 @@ void Runtime::getStringContextVariableValue(const ContextVariableId contextVaria
     value = stringValue.getStringValue();
 }
 
-ContextVariableId Runtime::internContextVariable(const VariableContextId contextId, const NomadId localVariableId) {
+ContextVariableId Runtime::internContextVariable(const VariableContextId contextId, const VariableId localVariableId) {
     for (NomadIndex contextVariableIndex = 0; contextVariableIndex < m_contextVariables.size(); ++contextVariableIndex) {
         const auto& contextVariable = m_contextVariables[contextVariableIndex];
 
@@ -3093,7 +3093,7 @@ void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function
             }
             case Operand::FunctionVariable:
                 textValue =
-                    function->getVariableName(value.getIdValue()) + " (" + std::to_string(value.getIdValue()) + ")";
+                    function->getVariableName(VariableId{value.getIdValue()}) + " (" + std::to_string(value.getIdValue()) + ")";
                 break;
             case Operand::DynamicVariable:
                 textValue =

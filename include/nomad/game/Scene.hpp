@@ -67,8 +67,8 @@ public:
     void render(Canvas* canvas) const;
     void processInputEvent(const InputEvent& event);
 
-    void setVariableValue(NomadId variableId, const RuntimeValue& value);
-    void getVariableValue(NomadId variableId, RuntimeValue& value) const;
+    void setVariableValue(VariableId variableId, const RuntimeValue& value);
+    void getVariableValue(VariableId variableId, RuntimeValue& value) const;
 
     void addEntity(std::unique_ptr<Entity> entity);
     void removeEntity(Entity* entity);

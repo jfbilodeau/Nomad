@@ -20,7 +20,10 @@ enum class CaptureSource {
 
 struct Capture {
     NomadString name;
-    NomadId id = NOMAD_INVALID_ID;
+    union {
+        VariableId variableId = VariableId::INVALID;
+        NomadId parameterId;
+    };
     const Type* type = nullptr;
     CaptureSource source = CaptureSource::Variable;
 };
@@ -88,34 +91,28 @@ public:
     }
 
     NomadId createCapture(
-        const NomadId id,
+        const VariableId variableId,
         const NomadString& name,
-        const CaptureSource source,
         const Type* type
     ) {
-        const auto existingCaptureId = getCaptureId(name);
-        if (existingCaptureId != NOMAD_INVALID_ID) {
-            const auto& capture = m_captures[toNomadIndex(existingCaptureId)];
-            if (capture.id != id) {
-                throw NomadBug("Internal error: Capture '" + name + "' has a different id than expected");
-            }
-            if (capture.source != source) {
-                throw NomadBug("Internal error: Capture '" + name + "' has a different source than expected");
-            }
-            if (capture.type != type) {
-                throw NomadBug("Internal error: Capture '" + name + "' has a different type than expected");
-            }
-            return existingCaptureId;
-        }
-        if (getVariableId(name) != NOMAD_INVALID_ID) {
-            throw NomadBug("Internal error: Capture '" + name + "' is already registered as a variable");
-        }
-        if (getParameterId(name) != NOMAD_INVALID_ID) {
-            throw NomadBug("Internal error: Capture '" + name + "' is already registered as a parameter");
-        }
-        m_captures.push_back({name, id, type, source});
-        addParameter(name, type, "");
-        return toNomadId(m_captures.size() - 1);
+        Capture capture;
+        capture.name = name;
+        capture.variableId = variableId;
+        capture.type = type;
+        return registerCapture(capture);
+    }
+
+    NomadId createCapture(
+        const NomadId parameterId,
+        const NomadString& name,
+        const Type* type
+    ) {
+        Capture capture;
+        capture.name = name;
+        capture.parameterId = parameterId;
+        capture.type = type;
+        capture.source = CaptureSource::Parameter;
+        return registerCapture(capture);
     }
 
     NomadId flagParameterAsCaptured(
@@ -123,15 +120,15 @@ public:
         const NomadString& parameterName,
         const Type* parameterType
     ) {
-        return createCapture(parameterId, parameterName, CaptureSource::Parameter, parameterType);
+        return createCapture(parameterId, parameterName, parameterType);
     }
 
     NomadId flagVariableAsCaptured(
-        const NomadId variableId,
+        const VariableId variableId,
         const NomadString& variableName,
         const Type* variableType
     ) {
-        return createCapture(variableId, variableName, CaptureSource::Variable, variableType);
+        return createCapture(variableId, variableName, variableType);
     }
 
     [[nodiscard]] NomadId getCaptureId(const NomadString& name) const {
@@ -156,9 +153,18 @@ public:
         return index < m_captures.size() ? m_captures[index].type : nullptr;
     }
 
-    [[nodiscard]] bool isCaptured(const NomadId id, const CaptureSource source) const {
+    [[nodiscard]] bool isCaptured(const VariableId variableId) const {
         for (const auto& capture : m_captures) {
-            if (capture.id == id && capture.source == source) {
+            if (capture.source == CaptureSource::Variable && capture.variableId == variableId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] bool isCaptured(const NomadId parameterId) const {
+        for (const auto& capture : m_captures) {
+            if (capture.source == CaptureSource::Parameter && capture.parameterId == parameterId) {
                 return true;
             }
         }
@@ -172,9 +178,9 @@ public:
     [[nodiscard]] CallableId getParentId() const { return m_parentId; }
     [[nodiscard]] NomadIndex isNested() const { return m_parentId != CallableId{}; }
 
-    NomadId registerVariable(const NomadString& variableName, const Type* type) {
+    VariableId registerVariable(const NomadString& variableName, const Type* type) {
         const auto variableId = getVariableId(variableName);
-        if (variableId != NOMAD_INVALID_ID) {
+        if (variableId.isValid()) {
             const auto* currentType = getVariableType(variableId);
             if (currentType == nullptr) {
                 setVariableType(variableId, type);
@@ -186,25 +192,25 @@ public:
         return m_variables.registerVariable(variableName, type);
     }
 
-    [[nodiscard]] NomadId getVariableId(const NomadString& variableName) const {
+    [[nodiscard]] VariableId getVariableId(const NomadString& variableName) const {
         return m_variables.getVariableId(variableName);
     }
 
-    [[nodiscard]] const NomadString& getVariableName(const NomadId variableId) const {
+    [[nodiscard]] const NomadString& getVariableName(const VariableId variableId) const {
         return m_variables.getVariableName(variableId);
     }
 
-    void setVariableType(const NomadId variableId, const Type* type) {
+    void setVariableType(const VariableId variableId, const Type* type) {
         m_variables.setVariableType(variableId, type);
     }
 
-    [[nodiscard]] const Type* getVariableType(const NomadId variableId) const {
+    [[nodiscard]] const Type* getVariableType(const VariableId variableId) const {
         return m_variables.getVariableType(variableId);
     }
 
     [[nodiscard]] NomadIndex getVariableCount() const { return m_variables.getVariableCount(); }
 
-    [[nodiscard]] NomadString getVisibleVariableName(NomadId variableId) const {
+    [[nodiscard]] NomadString getVisibleVariableName(VariableId variableId) const {
         const auto& storageName = getVariableName(variableId);
         return storageName.find('@') == NomadString::npos ? storageName : NomadString{};
     }
@@ -233,6 +239,35 @@ protected:
     }
 
 private:
+    NomadId registerCapture(const Capture& capture) {
+        const auto& name = capture.name;
+        const auto existingCaptureId = getCaptureId(name);
+        if (existingCaptureId != NOMAD_INVALID_ID) {
+            const auto& existing = m_captures[toNomadIndex(existingCaptureId)];
+            if (existing.source != capture.source) {
+                throw NomadBug("Internal error: Capture '" + name + "' has a different source than expected");
+            }
+            const auto sameId = capture.source == CaptureSource::Variable ?
+                existing.variableId == capture.variableId : existing.parameterId == capture.parameterId;
+            if (!sameId) {
+                throw NomadBug("Internal error: Capture '" + name + "' has a different id than expected");
+            }
+            if (existing.type != capture.type) {
+                throw NomadBug("Internal error: Capture '" + name + "' has a different type than expected");
+            }
+            return existingCaptureId;
+        }
+        if (getVariableId(name).isValid()) {
+            throw NomadBug("Internal error: Capture '" + name + "' is already registered as a variable");
+        }
+        if (getParameterId(name) != NOMAD_INVALID_ID) {
+            throw NomadBug("Internal error: Capture '" + name + "' is already registered as a parameter");
+        }
+        m_captures.push_back(capture);
+        addParameter(name, capture.type, "");
+        return toNomadId(m_captures.size() - 1);
+    }
+
     NomadString m_path;
     NomadString m_source;
     NomadString m_hub;

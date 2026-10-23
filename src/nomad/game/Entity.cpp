@@ -1294,11 +1294,11 @@ FontObject* Entity::getFont() const {
     return m_textFont;
 }
 
-void Entity::setVariableValue(const NomadId variableId, const RuntimeValue& value) {
+void Entity::setVariableValue(const VariableId variableId, const RuntimeValue& value) {
     m_variables.setVariableValue(variableId, value);
 }
 
-void Entity::getVariableValue(const NomadId variableId, RuntimeValue& value) const {
+void Entity::getVariableValue(const VariableId variableId, RuntimeValue& value) const {
     m_variables.getVariableValue(variableId, value);
 }
 

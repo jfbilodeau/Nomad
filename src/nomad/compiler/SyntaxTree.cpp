@@ -434,9 +434,9 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptFunction* function
     switch (identifier.identifierType) {
     case IdentifierType::FunctionVariable:
         // `r` is moved into the variable, so its previous value is released first.
-        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(identifier.variableId));
+        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(identifier.variableId.id));
         compiler->addOpCode(typeOpCodes->setFunctionVariable);
-        compiler->addId(identifier.variableId);
+        compiler->addId(identifier.variableId.id);
         break;
 
     case IdentifierType::DynamicVariable:

@@ -35,7 +35,8 @@ struct IdentifierDefinition {
     union {
         CallableId nativeFunctionId = CallableId{};
         EventId eventId;
-        NomadId variableId;
+        VariableId variableId;
+        NomadId parameterId;
         ConstantId constantId;
         DynamicVariableId dynamicVariableId;
         ContextVariableId contextVariableId;

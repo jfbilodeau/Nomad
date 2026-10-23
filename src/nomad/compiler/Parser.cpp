@@ -974,7 +974,7 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
         return IdentifierType::ContextVariable;
     }
 
-    if (function && function->getVariableId(name) != NOMAD_INVALID_ID) {
+    if (function && function->getVariableId(name).isValid()) {
         return IdentifierType::FunctionVariable;
     }
 

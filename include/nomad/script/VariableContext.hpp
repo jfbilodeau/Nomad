@@ -19,28 +19,28 @@ public:
     virtual ~VariableContext() = default;
 
     [[nodiscard]] virtual NomadIndex getVariableCount() const = 0;
-    [[nodiscard]] virtual NomadId getFirstVariableId() const = 0;
-    [[nodiscard]] virtual NomadId getNextVariableId(NomadId variableId) const = 0;
+    [[nodiscard]] virtual VariableId getFirstVariableId() const = 0;
+    [[nodiscard]] virtual VariableId getNextVariableId(VariableId variableId) const = 0;
 
-    virtual NomadId registerVariable(const NomadString& name, const Type* type) = 0;
+    virtual VariableId registerVariable(const NomadString& name, const Type* type) = 0;
     [[nodiscard]]
-    virtual const NomadString& getVariableName(NomadId variableId) const = 0;
-
-    [[nodiscard]]
-    virtual NomadId getVariableId(const NomadString& name) const = 0;
-    virtual void setVariableType(NomadId variableId, const Type* type) = 0;
-    [[nodiscard]]
-    virtual const Type* getVariableType(NomadId variableId) const = 0;
-
-    virtual void setValue(NomadId variableId, const RuntimeValue& value) = 0;
-    virtual void getValue(NomadId variableId, RuntimeValue& value) = 0;
+    virtual const NomadString& getVariableName(VariableId variableId) const = 0;
 
     [[nodiscard]]
-    virtual bool isWritten(NomadId variableId) const = 0;
-    virtual void setWritten(NomadId variableId, bool written) = 0;
+    virtual VariableId getVariableId(const NomadString& name) const = 0;
+    virtual void setVariableType(VariableId variableId, const Type* type) = 0;
     [[nodiscard]]
-    virtual bool isRead(NomadId variableId) const = 0;
-    virtual void setRead(NomadId variableId, bool read) = 0;
+    virtual const Type* getVariableType(VariableId variableId) const = 0;
+
+    virtual void setValue(VariableId variableId, const RuntimeValue& value) = 0;
+    virtual void getValue(VariableId variableId, RuntimeValue& value) = 0;
+
+    [[nodiscard]]
+    virtual bool isWritten(VariableId variableId) const = 0;
+    virtual void setWritten(VariableId variableId, bool written) = 0;
+    [[nodiscard]]
+    virtual bool isRead(VariableId variableId) const = 0;
+    virtual void setRead(VariableId variableId, bool read) = 0;
 };
 
 class SimpleVariableContext : public VariableContext {
@@ -50,28 +50,28 @@ public:
     ~SimpleVariableContext() override;
 
     [[nodiscard]] NomadIndex getVariableCount() const override;
-    [[nodiscard]] NomadId getFirstVariableId() const override;
-    [[nodiscard]] NomadId getNextVariableId(NomadId variableId) const override;
+    [[nodiscard]] VariableId getFirstVariableId() const override;
+    [[nodiscard]] VariableId getNextVariableId(VariableId variableId) const override;
 
-    NomadId registerVariable(const NomadString& name, const Type* type) override;
+    VariableId registerVariable(const NomadString& name, const Type* type) override;
     [[nodiscard]]
-    const NomadString& getVariableName(NomadId variableId) const override;
-
-    [[nodiscard]]
-    NomadId getVariableId(const NomadString& name) const override;
-    void setVariableType(NomadId variableId, const Type* type) override;
-    [[nodiscard]]
-    const Type* getVariableType(NomadId variableId) const override;
-
-    void setValue(NomadId variableId, const RuntimeValue& value) override;
-    void getValue(NomadId variableId, RuntimeValue& value) override;
+    const NomadString& getVariableName(VariableId variableId) const override;
 
     [[nodiscard]]
-    bool isWritten(NomadId variableId) const override;
-    void setWritten(NomadId variableId, bool written) override;
+    VariableId getVariableId(const NomadString& name) const override;
+    void setVariableType(VariableId variableId, const Type* type) override;
     [[nodiscard]]
-    bool isRead(NomadId variableId) const override;
-    void setRead(NomadId variableId, bool read) override;
+    const Type* getVariableType(VariableId variableId) const override;
+
+    void setValue(VariableId variableId, const RuntimeValue& value) override;
+    void getValue(VariableId variableId, RuntimeValue& value) override;
+
+    [[nodiscard]]
+    bool isWritten(VariableId variableId) const override;
+    void setWritten(VariableId variableId, bool written) override;
+    [[nodiscard]]
+    bool isRead(VariableId variableId) const override;
+    void setRead(VariableId variableId, bool read) override;
 
     [[nodiscard]]
     const VariableMap* getVariableMap() const;

@@ -21,7 +21,7 @@ using namespace nomad::test;
 
 namespace {
 
-NomadId registerValue(SimpleVariableContext& context, const NomadString& name, const Type* type, RuntimeValue value) {
+VariableId registerValue(SimpleVariableContext& context, const NomadString& name, const Type* type, RuntimeValue value) {
     const auto variableId = context.registerVariable(name, type);
     context.setValue(variableId, value);
     type->freeValue(value);
@@ -252,7 +252,7 @@ BOOST_AUTO_TEST_CASE(variable_persistence_skips_mismatched_missing_and_unknown_v
     BOOST_TEST(getValue(context, "settings.volume").getFloatValue() == 0.5f);
     BOOST_TEST(NomadString(getValue(context, "settings.keys.jump").getStringValue()) == "space");
     BOOST_TEST(getValue(context, "settings.missing").getIntegerValue() == 7);
-    BOOST_TEST(context.getVariableId("settings.unknown.value") == NOMAD_INVALID_ID);
+    BOOST_TEST(context.getVariableId("settings.unknown.value") == VariableId::INVALID);
 }
 
 BOOST_AUTO_TEST_CASE(variable_persistence_allows_parent_and_child_variable_names)

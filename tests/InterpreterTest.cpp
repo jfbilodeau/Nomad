@@ -216,7 +216,7 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
     function->setParentId(parentId);
     function->addParameter("value", runtime.getIntegerType(), "");
     function->addParameter("text", runtime.getStringType(), "");
-    function->createCapture(0, "captured", CaptureSource::Variable, runtime.getIntegerType());
+    function->createCapture(VariableId{0}, "captured", runtime.getIntegerType());
     function->registerVariable("local", runtime.getIntegerType());
     function->registerVariable("localText", runtime.getStringType());
     function->setReturnType(runtime.getVoidType());
@@ -497,7 +497,7 @@ BOOST_AUTO_TEST_CASE(interpreter_reads_and_writes_context_variables)
     auto* variableContext = runtime.getVariableContext(contextId);
     BOOST_REQUIRE(variableContext != nullptr);
     const auto variableId = variableContext->getVariableId("global.score");
-    BOOST_REQUIRE(variableId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(variableId.isValid());
 
     RuntimeValue stored;
     variableContext->getValue(variableId, stored);
@@ -791,7 +791,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_variables_may_change_type)
 
     const auto* function = context.getFunction();
     const auto variableId = function->getVariableId("value");
-    BOOST_REQUIRE(variableId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(variableId.isValid());
     BOOST_TEST(function->getVariableType(variableId) == runtime.getFloatType());
     BOOST_TEST(function->getVariableCount() == 1U);
 }
@@ -825,9 +825,9 @@ BOOST_AUTO_TEST_CASE(interpreter_context_defines_variables_in_console_function)
     BOOST_TEST(function->getId().isInvalid());
     BOOST_TEST(runtime.getFunctionId(function->getName()).isInvalid());
     BOOST_TEST(function->getVariableCount() == 2U);
-    BOOST_TEST(function->getVariableId("first") == NomadId{0});
-    BOOST_TEST(function->getVariableId("second") == NomadId{1});
-    BOOST_TEST(function->getVariableType(1) == runtime.getBooleanType());
+    BOOST_TEST(function->getVariableId("first") == VariableId{0});
+    BOOST_TEST(function->getVariableId("second") == VariableId{1});
+    BOOST_TEST(function->getVariableType(VariableId{1}) == runtime.getBooleanType());
 }
 
 BOOST_AUTO_TEST_CASE(interpreter_context_failed_line_does_not_assign_variables)

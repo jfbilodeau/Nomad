@@ -26,7 +26,7 @@ static_assert(!std::is_invocable_v<decltype(&Runtime::getContextVariableType), R
 static_assert(!std::is_invocable_v<decltype(&Runtime::getContextVariableType), Runtime&, DynamicVariableId>);
 static_assert(!std::is_invocable_v<decltype(&Compiler::addLoadContextVariable),
     Compiler&, NomadId, const Type*, ExpressionTarget>);
-static_assert(std::is_same_v<decltype(HubVariable{}.id), NomadId>);
+static_assert(std::is_same_v<decltype(HubVariable{}.id), VariableId>);
 
 BOOST_AUTO_TEST_SUITE(language_context_variables)
 
@@ -97,7 +97,7 @@ BOOST_AUTO_TEST_CASE(global_handles_preserve_context_and_local_identity_after_gr
     const auto firstLocalId = firstContext->getVariableId("first.value");
     const auto secondLocalId = secondContext->getVariableId("second.value");
     BOOST_TEST(firstLocalId == secondLocalId);
-    BOOST_TEST(second.id != secondLocalId);
+    BOOST_TEST(second.id != secondLocalId.id);
     BOOST_TEST(runtime.registerOrUpdateContextVariable("second.value", runtime.getIntegerType()) == second);
     BOOST_TEST(runtime.getContextVariableId("second.missing") == ContextVariableId::INVALID);
 

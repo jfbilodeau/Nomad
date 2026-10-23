@@ -221,11 +221,11 @@ BOOST_AUTO_TEST_CASE(string_operands_evaluate_left_first_and_snapshot_before_rig
                 machine->setStringResult("before");
             }, {}, runtime.getStringType(), NomadDoc("Right string"));
             runtime.registerNativeFunction("test.replaceLocal", [&](VirtualMachine* machine) {
-                auto previous = machine->getFunctionVariableValue(0);
+                auto previous = machine->getFunctionVariableValue(VariableId{0});
                 runtime.getStringType()->freeValue(previous);
                 RuntimeValue replacement;
                 replacement.setStringValue("after");
-                machine->setFunctionVariableValue(0, replacement);
+                machine->setFunctionVariableValue(VariableId{0}, replacement);
                 machine->setStringResult("before");
             }, {}, runtime.getStringType(), NomadDoc("Replace the left local"));
             const auto expression = NomadString{"(test.leftText) "} + operation + " (test.rightText)";

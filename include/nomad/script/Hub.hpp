@@ -19,7 +19,7 @@ namespace nomad {
 DeclareId(HubId);
 
 struct HubVariable {
-    NomadId id;
+    VariableId id;
 };
 
 struct HubFunctions {

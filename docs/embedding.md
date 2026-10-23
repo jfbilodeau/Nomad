@@ -138,10 +138,33 @@ metadata, read/write tracking, and value APIs. Values read through
 `setStringContextVariableValue` releases its temporary string after assigning
 it through the context.
 
-The `VariableContext` interface still uses raw context-local `NomadId` values.
-Do not pass a runtime-global handle's numeric value to that interface; use the
-runtime's context-variable APIs to resolve it. Hub variable members also retain
-context-local IDs.
+The `VariableContext` interface uses context-local `VariableId` values.
+Do not construct a local ID from a runtime-global handle's numeric value; use
+the runtime's context-variable APIs to resolve it. Hub variable members contain
+context-local `VariableId` values.
+
+### Local variable IDs
+
+Include `<nomad/script/Variable.hpp>` for `VariableId`. Variable maps, variable
+lists, context-local APIs, script-callable locals, interpreter variable-by-ID
+lookups, and VM local-variable access use this type. Scene and entity variable
+access also takes `VariableId`.
+
+`VariableId` belongs to its owning map or function's local layout, not to a
+runtime-wide registry. Different owners can issue IDs with equal numeric
+values. IDs remain stable as variables are added to their owner. Missing name
+lookups and the end of context-local iteration return `VariableId::INVALID`.
+The type does not implicitly convert to integers, `ContextVariableId`, or
+other ID categories. Numeric validity does not verify ownership.
+
+Parameter positions, capture-list positions, and stack offsets remain numeric.
+Compiler identifier metadata separates `variableId` from `parameterId`.
+Capture metadata retains `CaptureSource`; read `variableId` only for
+`CaptureSource::Variable`, and `parameterId` only for `CaptureSource::Parameter`.
+Script-callable `createCapture` overloads take either a `VariableId` for a
+variable source or a numeric `NomadId` for a parameter source, followed by the
+name and type. `flagVariableAsCaptured` and `flagParameterAsCaptured` provide
+the corresponding source-specific registration APIs.
 
 ### Object type property metadata
 

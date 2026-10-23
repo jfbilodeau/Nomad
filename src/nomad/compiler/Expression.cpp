@@ -1655,7 +1655,7 @@ void IdentifierExpression::onCompile(Compiler* compiler, ScriptFunction* /*funct
             break;
 
         case IdentifierType::Parameter:
-            compiler->addLoadParameter(m_identifierDefinition.variableId, m_identifierDefinition.valueType, target);
+            compiler->addLoadParameter(m_identifierDefinition.parameterId, m_identifierDefinition.valueType, target);
             break;
 
         default:
@@ -1688,9 +1688,9 @@ void IdentifierExpression::compileStore(Compiler* compiler) const {
 
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::FunctionVariable:
-        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(m_identifierDefinition.variableId));
+        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(m_identifierDefinition.variableId.id));
         compiler->addOpCode(typeOpCodes->setFunctionVariable);
-        compiler->addId(m_identifierDefinition.variableId);
+        compiler->addId(m_identifierDefinition.variableId.id);
         break;
 
     case IdentifierType::DynamicVariable:
@@ -1743,7 +1743,7 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
         break;
     }
     case IdentifierType::Parameter:
-        context.setParameterResult(m_identifierDefinition.variableId);
+        context.setParameterResult(m_identifierDefinition.parameterId);
         break;
     case IdentifierType::FunctionVariable: {
         const auto* value = context.getVariableValueById(m_identifierDefinition.variableId);
@@ -1820,18 +1820,20 @@ bool IdentifierExpression::parseCapture(const Compiler* compiler, ScriptFunction
     return resolveIdentifier(m_identifier, compiler, function, m_identifierDefinition);
 }
 
-bool getCapture(const NomadString& identifier, const ScriptFunction* function, NomadId& id, CaptureSource& captureSource) {
-    const NomadId variableId = function->getVariableId(identifier);
-    if (variableId != NOMAD_INVALID_ID) {
-        id = variableId;
-        captureSource = CaptureSource::Variable;
+bool getCapture(const NomadString& identifier, const ScriptFunction* function, Capture& capture) {
+    const auto variableId = function->getVariableId(identifier);
+    if (variableId.isValid()) {
+        capture.variableId = variableId;
+        capture.source = CaptureSource::Variable;
+        capture.type = function->getVariableType(variableId);
         return true;
     }
 
     const auto parameterId = function->getParameterId(identifier);
     if (parameterId != NOMAD_INVALID_ID) {
-        id = parameterId;
-        captureSource = CaptureSource::Parameter;
+        capture.parameterId = parameterId;
+        capture.source = CaptureSource::Parameter;
+        capture.type = function->getParameterType(parameterId);
         return true;
     }
 
@@ -1864,19 +1866,11 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
             compiler->reportInternalError("Failed to retrieve parent function during capture resolution");
         }
 
-        NomadId id;
-        CaptureSource source;
+        Capture capture;
 
-        if (getCapture(identifier, parentFunction, id, source)) {
+        if (getCapture(identifier, parentFunction, capture)) {
             // Found a capturable parameter or variable.
-            // Need to determine the type.
-            if (source == CaptureSource::Variable) {
-                captureType = parentFunction->getVariableType(id);
-            } else if (source == CaptureSource::Parameter) {
-                captureType = parentFunction->getParameterType(id);
-            } else {
-                compiler->reportInternalError("Unexpected capture source type");
-            }
+            captureType = capture.type;
 
             break;
         }
@@ -1906,11 +1900,14 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
             throw NomadBug("Failed to retrieve parent function during capture propagation");
         }
 
-        NomadId id;
-        CaptureSource source;
+        Capture capture;
 
-        if (getCapture(identifier, parentFunction, id, source)) {
-            intermediateFunction->createCapture(id, identifier, source, captureType);
+        if (getCapture(identifier, parentFunction, capture)) {
+            if (capture.source == CaptureSource::Variable) {
+                intermediateFunction->createCapture(capture.variableId, identifier, captureType);
+            } else {
+                intermediateFunction->createCapture(capture.parameterId, identifier, captureType);
+            }
         } else {
             compiler->reportInternalError("Failed to retrieve capture propagation");
         }

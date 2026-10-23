@@ -54,8 +54,8 @@ public:
 
     [[nodiscard]] Runtime* getRuntime() const { return m_runtime; }
 
-    void setFunctionVariableValue(NomadId variableId, const RuntimeValue& value);
-    [[nodiscard]] const RuntimeValue& getFunctionVariableValue(NomadId variableId) const;
+    void setFunctionVariableValue(VariableId variableId, const RuntimeValue& value);
+    [[nodiscard]] const RuntimeValue& getFunctionVariableValue(VariableId variableId) const;
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
     void yield(const RuntimeValue& result);
@@ -144,25 +144,25 @@ public:
     [[nodiscard]] NomadId getIdEnclosingParameter(const NomadIndex parameterIndex) const { return m_stack[m_enclosingParameterIndex - parameterIndex].getIdValue(); }
     [[nodiscard]] NomadStringObject* getStringEnclosingParameter(const NomadIndex parameterIndex) const { return m_stack[m_enclosingParameterIndex - parameterIndex].getStringObject(); }
 
-    void setVariableValue(const NomadId variableId, const RuntimeValue& value) { m_stack[m_variableIndex + variableId] = value; }
-    void setBooleanVariableValue(const NomadId variableId, const NomadBoolean value) { m_stack[m_variableIndex + variableId].setBooleanValue(value); }
-    void setIntegerVariableValue(const NomadId variableId, const NomadInteger value) { m_stack[m_variableIndex + variableId].setIntegerValue(value); }
-    void setFloatVariableValue(const NomadId variableId, const NomadFloat value) { m_stack[m_variableIndex + variableId].setFloatValue(value); }
-    void setIdVariableValue(const NomadId variableId, const NomadId value) { m_stack[m_variableIndex + variableId].setIdValue(value); }
-    void setStringVariableValue(const NomadId variableId, const NomadChar* value) { m_stack[m_variableIndex + variableId].setStringValue(value); }
-    void setStringVariableValue(const NomadId variableId, const NomadString& value) { m_stack[m_variableIndex + variableId].setStringValue(value); }
+    void setVariableValue(const VariableId variableId, const RuntimeValue& value) { m_stack[m_variableIndex + variableId.id] = value; }
+    void setBooleanVariableValue(const VariableId variableId, const NomadBoolean value) { m_stack[m_variableIndex + variableId.id].setBooleanValue(value); }
+    void setIntegerVariableValue(const VariableId variableId, const NomadInteger value) { m_stack[m_variableIndex + variableId.id].setIntegerValue(value); }
+    void setFloatVariableValue(const VariableId variableId, const NomadFloat value) { m_stack[m_variableIndex + variableId.id].setFloatValue(value); }
+    void setIdVariableValue(const VariableId variableId, const NomadId value) { m_stack[m_variableIndex + variableId.id].setIdValue(value); }
+    void setStringVariableValue(const VariableId variableId, const NomadChar* value) { m_stack[m_variableIndex + variableId.id].setStringValue(value); }
+    void setStringVariableValue(const VariableId variableId, const NomadString& value) { m_stack[m_variableIndex + variableId.id].setStringValue(value); }
 
-    void getFunctionVariableValue(const NomadId variableId, RuntimeValue& value) const { value = m_stack[m_variableIndex + variableId]; }
-    [[nodiscard]] NomadBoolean getFunctionBooleanVariableValue(const NomadId variable_id) const { return m_stack[m_variableIndex + variable_id].getBooleanValue(); }
-    [[nodiscard]] NomadInteger getFunctionIntegerVariableValue(const NomadId variable_id) const { return m_stack[m_variableIndex + variable_id].getIntegerValue(); }
-    [[nodiscard]] NomadFloat getFunctionFloatVariableValue(const NomadId variable_id) const { return m_stack[m_variableIndex + variable_id].getFloatValue(); }
-    [[nodiscard]] NomadId getFunctionIdVariableValue(const NomadId variable_id) const { return m_stack[m_variableIndex + variable_id].getIdValue(); }
-    [[nodiscard]] NomadStringObject* getFunctionStringVariableValue(const NomadId variable_id) const { return m_stack[m_variableIndex + variable_id].getStringObject(); }
+    void getFunctionVariableValue(const VariableId variableId, RuntimeValue& value) const { value = m_stack[m_variableIndex + variableId.id]; }
+    [[nodiscard]] NomadBoolean getFunctionBooleanVariableValue(const VariableId variable_id) const { return m_stack[m_variableIndex + variable_id.id].getBooleanValue(); }
+    [[nodiscard]] NomadInteger getFunctionIntegerVariableValue(const VariableId variable_id) const { return m_stack[m_variableIndex + variable_id.id].getIntegerValue(); }
+    [[nodiscard]] NomadFloat getFunctionFloatVariableValue(const VariableId variable_id) const { return m_stack[m_variableIndex + variable_id.id].getFloatValue(); }
+    [[nodiscard]] NomadId getFunctionIdVariableValue(const VariableId variable_id) const { return m_stack[m_variableIndex + variable_id.id].getIdValue(); }
+    [[nodiscard]] NomadStringObject* getFunctionStringVariableValue(const VariableId variable_id) const { return m_stack[m_variableIndex + variable_id.id].getStringObject(); }
 
     [[nodiscard]]
     const RuntimeValue& peekStack(const NomadIndex index) const { return m_stack[m_stackIndex - index]; }
 
-    void initStringVariable(const NomadIndex variableIndex) { m_stack[m_variableIndex + variableIndex].initStringValue(); }
+    void initStringVariable(const VariableId variableId) { m_stack[m_variableIndex + variableId.id].initStringValue(); }
     void initStringResult() { m_result.initStringValue(); }
     void initStringIntermediate() { m_intermediate.initStringValue(); }
 
@@ -173,7 +173,7 @@ public:
     void moveObjectResultToIntermediate() { m_intermediate.moveObjectValue(m_result); }
     void moveObjectResultToStack();
 
-    void freeObjectVariable(NomadIndex variable);
+    void freeObjectVariable(VariableId variableId);
     void freeObjectStack(NomadIndex index);
 
     void pushResult();

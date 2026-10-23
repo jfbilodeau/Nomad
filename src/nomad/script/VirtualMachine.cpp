@@ -32,12 +32,12 @@ VirtualMachine::VirtualMachine(Runtime* runtime, NomadIndex stack_size):
 
 VirtualMachine::~VirtualMachine() = default;
 
-void VirtualMachine::setFunctionVariableValue(const NomadId variableId, const RuntimeValue& value) {
-    m_stack[m_variableIndex + variableId] = value;
+void VirtualMachine::setFunctionVariableValue(const VariableId variableId, const RuntimeValue& value) {
+    m_stack[m_variableIndex + variableId.id] = value;
 }
 
-const RuntimeValue& VirtualMachine::getFunctionVariableValue(const NomadId variableId) const {
-    return m_stack[m_variableIndex + variableId];
+const RuntimeValue& VirtualMachine::getFunctionVariableValue(const VariableId variableId) const {
+    return m_stack[m_variableIndex + variableId.id];
 }
 
 void VirtualMachine::run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures) {
@@ -115,15 +115,15 @@ void VirtualMachine::initializeFunctionVariables(const ScriptFunction* function)
     const auto variableCount = function->getVariableCount();
 
     for (NomadIndex variableIndex = 0; variableIndex < variableCount; ++variableIndex) {
-        const auto type = function->getVariableType(toNomadId(variableIndex));
+        const auto type = function->getVariableType(VariableId{toNomadId(variableIndex)});
         m_stack[m_variableIndex + variableIndex] = RuntimeValue{};
 
-        const auto parameterId = function->getParameterId(function->getVariableName(toNomadId(variableIndex)));
+        const auto parameterId = function->getParameterId(function->getVariableName(VariableId{toNomadId(variableIndex)}));
         if (type != nullptr && parameterId != NOMAD_INVALID_ID) {
             // Mutable bindings own copies; argument storage remains owned by the caller.
             type->copyValue(getParameter(toNomadIndex(parameterId)), m_stack[m_variableIndex + variableIndex]);
         } else if (type != nullptr && type->isString()) {
-            initStringVariable(variableIndex);
+            initStringVariable(VariableId{toNomadId(variableIndex)});
         }
     }
 }
@@ -467,15 +467,15 @@ std::vector<TypedValue> VirtualMachine::captureCurrentFrame(const ScriptFunction
             fault("Invalid value type for current-frame capture");
         }
         if (capture.source == CaptureSource::Parameter) {
-            if (!isIdInRange(capture.id, parent->getParameterCount())) {
+            if (!isIdInRange(capture.parameterId, parent->getParameterCount())) {
                 fault("Invalid parameter for current-frame capture");
             }
-            values.emplace_back(capture.type, getParameter(capture.id));
+            values.emplace_back(capture.type, getParameter(capture.parameterId));
         } else if (capture.source == CaptureSource::Variable) {
-            if (!isIdInRange(capture.id, parent->getVariableCount())) {
+            if (!isIdInRange(capture.variableId.id, parent->getVariableCount())) {
                 fault("Invalid variable for current-frame capture");
             }
-            values.emplace_back(capture.type, getFunctionVariableValue(capture.id));
+            values.emplace_back(capture.type, getFunctionVariableValue(capture.variableId));
         } else {
             fault("Invalid source for current-frame capture");
         }
@@ -494,7 +494,6 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, c
     std::vector<RuntimeValue> captureValues;
 
     for (const auto& capture : captures) {
-        const auto captureId = capture.id;
         const auto captureType = capture.type;
         const auto captureSource = capture.source;
 
@@ -502,12 +501,12 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, c
 
         if (captureSource == CaptureSource::Parameter) {
             // Capture from the enclosing function's parameter frame
-            const auto& value = getEnclosingParameter(captureId);
+            const auto& value = getEnclosingParameter(capture.parameterId);
 
             captureType->copyValue(value, captureValue);
         } else if (captureSource == CaptureSource::Variable) {
             // Capture from the enclosing function's variable frame
-            const auto& value = getFunctionVariableValue(captureId);
+            const auto& value = getFunctionVariableValue(capture.variableId);
 
             captureType->copyValue(value, captureValue);
         } else {
@@ -558,8 +557,8 @@ void VirtualMachine::moveObjectResultToStack() {
     m_stack[m_stackIndex].moveObjectValue(m_result);
 }
 
-void VirtualMachine::freeObjectVariable(const NomadIndex variable_index) {
-    m_stack[m_variableIndex + variable_index].freeObjectValue();
+void VirtualMachine::freeObjectVariable(const VariableId variableId) {
+    m_stack[m_variableIndex + variableId.id].freeObjectValue();
 }
 
 void VirtualMachine::freeObjectStack(const NomadIndex index) {
@@ -766,7 +765,7 @@ bool VirtualMachine::getVariableValue(IdentifierType identifierType, NomadId var
         return true;
 
     case IdentifierType::FunctionVariable:
-        getFunctionVariableValue(variableId, value);
+        getFunctionVariableValue(VariableId{variableId}, value);
         return true;
 
     case IdentifierType::Parameter:

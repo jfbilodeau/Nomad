@@ -430,7 +430,7 @@ bool saveVariableContext(const Runtime* runtime, VariableContext& context, boost
     auto success = true;
 
     for (auto variableId = context.getFirstVariableId();
-         variableId != NOMAD_INVALID_ID;
+         variableId.isValid();
          variableId = context.getNextVariableId(variableId)) {
         const auto* type = context.getVariableType(variableId);
         const auto& variableName = context.getVariableName(variableId);
@@ -458,7 +458,7 @@ bool saveVariableContext(const Runtime* runtime, VariableContext& context, boost
 
 void loadVariableContext(const Runtime* runtime, VariableContext& context, const boost::json::object& root) {
     struct PendingValue {
-        NomadId variableId;
+        VariableId variableId;
         const Type* type;
         RuntimeValue value;
     };
@@ -466,7 +466,7 @@ void loadVariableContext(const Runtime* runtime, VariableContext& context, const
     std::vector<PendingValue> pendingValues;
 
     for (auto variableId = context.getFirstVariableId();
-         variableId != NOMAD_INVALID_ID;
+         variableId.isValid();
          variableId = context.getNextVariableId(variableId)) {
         const auto* type = context.getVariableType(variableId);
 

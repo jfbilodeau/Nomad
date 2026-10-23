@@ -41,11 +41,11 @@ void VariableDefinition::setRead(const bool read) {
     m_isRead = read;
 }
 
-NomadId VariableMap::registerVariable(const NomadString& name, const Type* type) {
+VariableId VariableMap::registerVariable(const NomadString& name, const Type* type) {
     auto variableId = getVariableId(name);
 
-    if (variableId == NOMAD_INVALID_ID) {
-        variableId = toNomadId(m_variables.size());
+    if (variableId.isInvalid()) {
+        variableId = VariableId{toNomadId(m_variables.size())};
         m_variables.emplace_back(name, type);
     } else {
         const auto existingType = getVariableType(variableId);
@@ -63,46 +63,46 @@ NomadId VariableMap::registerVariable(const NomadString& name, const Type* type)
     return variableId;
 }
 
-NomadId VariableMap::getVariableId(const NomadString& name) const {
+VariableId VariableMap::getVariableId(const NomadString& name) const {
     for (NomadIndex i = 0; i < m_variables.size(); ++i) {
         if (m_variables[i].getName() == name) {
-            return toNomadId(i);
+            return VariableId{toNomadId(i)};
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return VariableId::INVALID;
 }
 
-const NomadString& VariableMap::getVariableName(const NomadId variableId) const {
-    return m_variables[toNomadIndex(variableId)].getName();
+const NomadString& VariableMap::getVariableName(const VariableId variableId) const {
+    return m_variables[toNomadIndex(variableId.id)].getName();
 }
 
-void VariableMap::setVariableType(const NomadId variableId, const Type* type) {
-    m_variables[toNomadIndex(variableId)].setType(type);
+void VariableMap::setVariableType(const VariableId variableId, const Type* type) {
+    m_variables[toNomadIndex(variableId.id)].setType(type);
 }
 
-const Type* VariableMap::getVariableType(const NomadId variableId) const {
-    return m_variables[toNomadIndex(variableId)].getType();
+const Type* VariableMap::getVariableType(const VariableId variableId) const {
+    return m_variables[toNomadIndex(variableId.id)].getType();
 }
 
 NomadIndex VariableMap::getVariableCount() const {
     return m_variables.size();
 }
 
-bool VariableMap::isWritten(const NomadId variableId) const {
-    return m_variables[toNomadIndex(variableId)].isWritten();
+bool VariableMap::isWritten(const VariableId variableId) const {
+    return m_variables[toNomadIndex(variableId.id)].isWritten();
 }
 
-void VariableMap::setWritten(const NomadId variableId, const bool written) {
-    m_variables[toNomadIndex(variableId)].setWritten(written);
+void VariableMap::setWritten(const VariableId variableId, const bool written) {
+    m_variables[toNomadIndex(variableId.id)].setWritten(written);
 }
 
-bool VariableMap::isRead(const NomadId variableId) const {
-    return m_variables[toNomadIndex(variableId)].isRead();
+bool VariableMap::isRead(const VariableId variableId) const {
+    return m_variables[toNomadIndex(variableId.id)].isRead();
 }
 
-void VariableMap::setRead(const NomadId variableId, const bool read) {
-    m_variables[toNomadIndex(variableId)].setRead(read);
+void VariableMap::setRead(const VariableId variableId, const bool read) {
+    m_variables[toNomadIndex(variableId.id)].setRead(read);
 }
 
 VariableList::VariableList(const VariableMap* variableMap):
@@ -110,20 +110,20 @@ VariableList::VariableList(const VariableMap* variableMap):
     m_variableValues.resize(m_variableMap.getVariableCount());
 
     for (NomadIndex i = 0; i < m_variableMap.getVariableCount(); ++i) {
-        const NomadId variableId = toNomadId(i);
+        const auto variableId = VariableId{toNomadId(i)};
         const auto type = m_variableMap.getVariableType(variableId);
 
         if (type != nullptr) {
             type->initValue(m_variableValues[i]);
         } else {
-            log::warning("Initializing variable ID " + toString(variableId) + " with null type" );
+            log::warning("Initializing variable ID " + toString(variableId.id) + " with null type" );
         }
     }
 }
 
 VariableList::~VariableList() {
     for (NomadIndex i = 0; i < m_variableMap.getVariableCount(); ++i) {
-        const NomadId variableId = toNomadId(i);
+        const auto variableId = VariableId{toNomadId(i)};
 
         auto type = m_variableMap.getVariableType(variableId);
 
@@ -131,15 +131,15 @@ VariableList::~VariableList() {
     }
 }
 
-NomadId VariableList::getVariableId(const NomadString& name) const {
+VariableId VariableList::getVariableId(const NomadString& name) const {
     return m_variableMap.getVariableId(name);
 }
 
-const NomadString& VariableList::getVariableName(NomadId variableId) const {
+const NomadString& VariableList::getVariableName(VariableId variableId) const {
     return m_variableMap.getVariableName(variableId);
 }
 
-const Type* VariableList::getVariableType(NomadId variableId) const {
+const Type* VariableList::getVariableType(VariableId variableId) const {
     return m_variableMap.getVariableType(variableId);
 }
 
@@ -147,8 +147,8 @@ NomadIndex VariableList::getVariableCount() const {
     return m_variableMap.getVariableCount();
 }
 
-void VariableList::setVariableValue(const NomadId variableId, const RuntimeValue& value) {
-    const auto variableIndex = toNomadIndex(variableId);
+void VariableList::setVariableValue(const VariableId variableId, const RuntimeValue& value) {
+    const auto variableIndex = toNomadIndex(variableId.id);
 
 #ifdef NOMAD_DEBUG
     if (variableIndex >= m_variableValues.size()) {
@@ -166,8 +166,8 @@ void VariableList::setVariableValue(const NomadId variableId, const RuntimeValue
     type->assignValue(value, m_variableValues[variableIndex]);
 }
 
-void VariableList::getVariableValue(const NomadId variableId, RuntimeValue& value) const {
-    const auto variableIndex = toNomadIndex(variableId);
+void VariableList::getVariableValue(const VariableId variableId, RuntimeValue& value) const {
+    const auto variableIndex = toNomadIndex(variableId.id);
 
 #ifdef NOMAD_DEBUG
     if (variableIndex >= m_variableValues.size()) {

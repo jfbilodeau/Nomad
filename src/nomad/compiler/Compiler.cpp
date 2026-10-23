@@ -189,7 +189,7 @@ NomadString Compiler::resolveName(
     while (!receiver.empty()) {
         for (auto* scope = function; scope != nullptr;
              scope = m_runtime->getScriptFunction(scope->getParentId())) {
-            if (scope->getVariableId(receiver) != NOMAD_INVALID_ID ||
+            if (scope->getVariableId(receiver).isValid() ||
                 scope->getParameterId(receiver) != NOMAD_INVALID_ID) {
                 return name;
             }
@@ -260,7 +260,7 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
         return IdentifierType::Unknown;
     }
 
-    if (function->getVariableId(name) != NOMAD_INVALID_ID) {
+    if (function->getVariableId(name).isValid()) {
         return IdentifierType::FunctionVariable;
     }
 
@@ -359,9 +359,9 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
     }
 
     // Check if this is a local variable
-    const NomadId variableId = function->getVariableId(name);
+    const VariableId variableId = function->getVariableId(name);
 
-    if (variableId != NOMAD_INVALID_ID) {
+    if (variableId.isValid()) {
         definition.identifierType = IdentifierType::FunctionVariable;
         definition.variableId = variableId;
         definition.valueType = function->getVariableType(variableId);
@@ -372,7 +372,7 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
     const auto parameterId = function->getParameterId(name);
     if (parameterId != NOMAD_INVALID_ID) {
         definition.identifierType = IdentifierType::Parameter;
-        definition.variableId = parameterId;
+        definition.parameterId = parameterId;
         definition.valueType = function->getParameterType(parameterId);
         return;
     }
@@ -660,8 +660,8 @@ NomadIndex Compiler::addLoadTarget(const TargetOpCodes& opCodes, const NomadId o
     reportInternalError("BUG: Invalid expression target");
 }
 
-NomadIndex Compiler::addLoadFunctionVariable(const NomadId variableId, const Type* type, const ExpressionTarget target) {
-    return addLoadTarget(type->getTypeOpCodes()->loadFunctionVariable, variableId, target);
+NomadIndex Compiler::addLoadFunctionVariable(const VariableId variableId, const Type* type, const ExpressionTarget target) {
+    return addLoadTarget(type->getTypeOpCodes()->loadFunctionVariable, variableId.id, target);
 }
 
 NomadIndex Compiler::addLoadDynamicVariable(const DynamicVariableId variableId, const Type* type, const ExpressionTarget target) {
@@ -1056,7 +1056,7 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
         types.push_back(source.function->getReturnType());
 
         for (NomadIndex variableIndex = 0; variableIndex < source.function->getVariableCount(); ++variableIndex) {
-            types.push_back(source.function->getVariableType(toNomadId(variableIndex)));
+            types.push_back(source.function->getVariableType(VariableId{toNomadId(variableIndex)}));
         }
     }
 
@@ -1064,7 +1064,7 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
          contextId = m_runtime->getNextVariableContextId(contextId)) {
         const auto* variableContext = m_runtime->getVariableContext(contextId);
 
-        for (auto variableId = variableContext->getFirstVariableId(); variableId != NOMAD_INVALID_ID;
+        for (auto variableId = variableContext->getFirstVariableId(); variableId.isValid();
              variableId = variableContext->getNextVariableId(variableId)) {
             types.push_back(variableContext->getVariableType(variableId));
         }
@@ -1102,7 +1102,7 @@ void Compiler::addFunctionReturn(const ScriptFunction* function) {
 
     // Free owned variables before releasing the function's variable slots.
     for (auto i = NomadIndex{0}; i < variableCount; ++i) {
-        addFreeValue(function->getVariableType(toNomadId(i))->getTypeOpCodes()->freeFunctionVariable, i);
+        addFreeValue(function->getVariableType(VariableId{toNomadId(i)})->getTypeOpCodes()->freeFunctionVariable, i);
     }
 
     addOpCode(OpCodes::op_return_n);
@@ -1590,7 +1590,7 @@ void Compiler::postCompile(CompilerContext* compilerContext) {
 
         auto variableId = context->getFirstVariableId();
 
-        while (variableId != NOMAD_INVALID_ID) {
+        while (variableId.isValid()) {
             const auto variableName = context->getVariableName(variableId);
 
             if (!context->isWritten(variableId)) {

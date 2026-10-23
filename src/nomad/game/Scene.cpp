@@ -114,11 +114,11 @@ void Scene::processInputEvent(const InputEvent& event) {
     }
 }
 
-void Scene::setVariableValue(NomadId variableId, const RuntimeValue& value) {
+void Scene::setVariableValue(VariableId variableId, const RuntimeValue& value) {
     m_variables.setVariableValue(variableId, value);
 }
 
-void Scene::getVariableValue(NomadId variableId, RuntimeValue& value) const {
+void Scene::getVariableValue(VariableId variableId, RuntimeValue& value) const {
     m_variables.getVariableValue(variableId, value);
 }
 

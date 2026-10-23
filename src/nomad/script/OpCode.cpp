@@ -253,14 +253,14 @@ void op_object_parameter_push(VirtualMachine* interpreter) {
 }
 
 void op_function_variable_set(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = VariableId{interpreter->nextId()};
 
     interpreter->setFunctionVariableValue(variableId, interpreter->getResult());
 }
 
 
 void op_function_variable_get_r(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = VariableId{interpreter->nextId()};
 
     RuntimeValue value;
     interpreter->getFunctionVariableValue(variableId, value);
@@ -269,7 +269,7 @@ void op_function_variable_get_r(VirtualMachine* interpreter) {
 }
 
 void op_function_variable_object_get_r(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = VariableId{interpreter->nextId()};
 
     RuntimeValue value;
     interpreter->getFunctionVariableValue(variableId, value);
@@ -278,7 +278,7 @@ void op_function_variable_object_get_r(VirtualMachine* interpreter) {
 }
 
 void op_function_variable_get_i(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = VariableId{interpreter->nextId()};
 
     RuntimeValue value;
     interpreter->getFunctionVariableValue(variableId, value);
@@ -287,7 +287,7 @@ void op_function_variable_get_i(VirtualMachine* interpreter) {
 }
 
 void op_function_variable_object_get_i(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = VariableId{interpreter->nextId()};
 
     RuntimeValue value;
     interpreter->getFunctionVariableValue(variableId, value);
@@ -296,7 +296,7 @@ void op_function_variable_object_get_i(VirtualMachine* interpreter) {
 }
 
 void op_function_variable_push(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = VariableId{interpreter->nextId()};
 
     RuntimeValue value;
     interpreter->getFunctionVariableValue(variableId, value);
@@ -305,7 +305,7 @@ void op_function_variable_push(VirtualMachine* interpreter) {
 }
 
 void op_function_variable_object_push(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = VariableId{interpreter->nextId()};
 
     RuntimeValue value;
     interpreter->getFunctionVariableValue(variableId, value);
@@ -928,9 +928,9 @@ void op_object_free_i(VirtualMachine* interpreter) {
 }
 
 void op_object_free_variable(VirtualMachine* interpreter) {
-    auto variableIndex = interpreter->nextIndex();
+    const auto variableId = VariableId{toNomadId(interpreter->nextIndex())};
 
-    interpreter->freeObjectVariable(variableIndex);
+    interpreter->freeObjectVariable(variableId);
 }
 
 void op_object_free_stack(VirtualMachine* interpreter) {

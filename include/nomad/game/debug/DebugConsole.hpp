@@ -94,7 +94,7 @@ private:
         NomadString value;
         Source source = Source::Context;
         VariableContextId contextId = VariableContextId::INVALID;
-        NomadId variableId = NOMAD_INVALID_ID;
+        VariableId variableId = VariableId::INVALID;
         bool editable = false;
         DynamicVariableId dynamicVariableId = DynamicVariableId::INVALID;
     };

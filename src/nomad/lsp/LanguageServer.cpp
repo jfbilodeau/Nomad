@@ -170,7 +170,7 @@ ApiAnalysis analyzeApiSymbols(
     for (auto contextId = runtime->getFirstVariableContextId(); contextId.isValid();
         contextId = runtime->getNextVariableContextId(contextId)) {
         const auto* context = runtime->getVariableContext(contextId);
-        for (auto id = context->getFirstVariableId(); id != NOMAD_INVALID_ID;
+        for (auto id = context->getFirstVariableId(); id.isValid();
             id = context->getNextVariableId(id)) {
             const auto name = context->getVariableName(id);
             const auto* type = context->getVariableType(id);
@@ -238,7 +238,10 @@ ApiAnalysis analyzeApiSymbols(
                 "Local to `" + function->getName() + "`.", type ? typeName : NomadString{}});
         };
         for (auto index = NomadIndex{0}; index < function->getVariableCount(); ++index) {
-            addLocal(function->getVisibleVariableName(toNomadId(index)), function->getVariableType(toNomadId(index)));
+            addLocal(
+                function->getVisibleVariableName(VariableId{toNomadId(index)}),
+                function->getVariableType(VariableId{toNomadId(index)})
+            );
         }
         for (auto index = NomadIndex{0}; index < function->getParameterCount(); ++index) {
             addLocal(function->getParameterName(toNomadId(index)), function->getParameterType(toNomadId(index)));

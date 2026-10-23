@@ -268,7 +268,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
         auto variableId = context->getFirstVariableId();
 
-        while (variableId != NOMAD_INVALID_ID) {
+        while (variableId.isValid()) {
             auto name = context->getVariableName(variableId);
             auto type = context->getVariableType(variableId);
 

@@ -37,6 +37,7 @@ add_executable(
     ./LanguageStringLifetimeTest.cpp
     ./LanguageTestFixture.cpp
     ./LanguageTypeTest.cpp
+    ./LanguageVariableIdTest.cpp
     ./LogTest.cpp
     ./ModuleGameTest.cpp
     ./ModuleHostTest.cpp

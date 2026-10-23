@@ -234,11 +234,13 @@ std::optional<NomadString> compileFormatString(
                     formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.dynamicVariableId.id);
                 } else if (identifier.identifierType == IdentifierType::ContextVariable) {
                     formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.contextVariableId.id);
+                } else if (identifier.identifierType == IdentifierType::FunctionVariable) {
+                    formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.variableId.id);
                 } else {
                     formatString->addVariable(
                         identifier.identifierType,
                         identifier.valueType,
-                        identifier.variableId
+                        identifier.parameterId
                     );
                 }
             }

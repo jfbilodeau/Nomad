@@ -6,8 +6,9 @@
 
 #include <nomad/compiler/CompilerContext.hpp>
 
-#include <nomad/script/RuntimeValue.hpp>
 #include <nomad/script/Callable.hpp>
+#include <nomad/script/RuntimeValue.hpp>
+#include <nomad/script/Variable.hpp>
 
 #include <memory>
 #include <optional>
@@ -69,7 +70,7 @@ public:
     // Context-owned resolution metadata, never registered with the Runtime.
     [[nodiscard]] const ScriptFunction* getFunction() const;
     [[nodiscard]] bool isFrameBacked() const;
-    [[nodiscard]] bool isFrameVariable(NomadId variableId) const;
+    [[nodiscard]] bool isFrameVariable(VariableId variableId) const;
     void evaluateFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
     void evaluateNativeFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
     void setParameterResult(NomadId parameterId);
@@ -94,9 +95,9 @@ public:
     void clearVariableValue(const NomadString& name);
 
     [[nodiscard]] const Type* getVariableType(const NomadString& name) const;
-    [[nodiscard]] const Type* getVariableTypeById(NomadId variableId) const;
+    [[nodiscard]] const Type* getVariableTypeById(VariableId variableId) const;
     [[nodiscard]] const RuntimeValue* getVariableValue(const NomadString& name) const;
-    [[nodiscard]] const RuntimeValue* getVariableValueById(NomadId variableId) const;
+    [[nodiscard]] const RuntimeValue* getVariableValueById(VariableId variableId) const;
     [[nodiscard]] std::vector<InterpreterVariableInfo> listVariables() const;
 
 private:

@@ -279,8 +279,8 @@ public:
     void setFont(FontObject* font);
     [[nodiscard]] FontObject* getFont() const;
 
-    void setVariableValue(NomadId variableId, const RuntimeValue& value);
-    void getVariableValue(NomadId variableId, RuntimeValue& value) const;
+    void setVariableValue(VariableId variableId, const RuntimeValue& value);
+    void getVariableValue(VariableId variableId, RuntimeValue& value) const;
 
     void registerUserEvent(const NomadString& name, CallableId functionId);
     void unregisterUserEvent(const NomadString& name);

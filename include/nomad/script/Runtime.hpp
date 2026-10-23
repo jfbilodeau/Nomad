@@ -69,7 +69,7 @@ private:
 
     struct ContextVariable {
         VariableContextId contextId;
-        NomadId localVariableId;
+        VariableId localVariableId;
     };
 
     struct VariableContextRegistration {
@@ -541,7 +541,7 @@ private:
     void rebuildHubMembers();
 
     // Context variables
-    ContextVariableId internContextVariable(VariableContextId contextId, NomadId localVariableId);
+    ContextVariableId internContextVariable(VariableContextId contextId, VariableId localVariableId);
     [[nodiscard]] const ContextVariable* getContextVariable(ContextVariableId contextVariableId) const;
 
     // Script execution
