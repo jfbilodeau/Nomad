@@ -752,11 +752,11 @@ Canvas* Game::getCanvas() const {
     return m_canvas.get();
 }
 
-NomadId Game::getFunctionId(const NomadString& functionName) const {
+CallableId Game::getFunctionId(const NomadString& functionName) const {
     return m_runtime->getFunctionId(functionName);
 }
 
-void Game::executeFunction(const NomadId functionId, Scene *scene, Entity *thisEntity, Entity *otherEntity) {
+void Game::executeFunction(const CallableId functionId, Scene *scene, Entity *thisEntity, Entity *otherEntity) {
     m_currentContext.reset(scene, thisEntity);
 
     if (otherEntity) {
@@ -767,7 +767,7 @@ void Game::executeFunction(const NomadId functionId, Scene *scene, Entity *thisE
 }
 
 void Game::executeFunction(
-    const NomadId functionId,
+    const CallableId functionId,
     Scene *scene,
     Entity *entity,
     const std::vector<RuntimeValue> &args,
@@ -779,7 +779,7 @@ void Game::executeFunction(
 }
 
 void Game::executeFunction(
-    const NomadId functionId,
+    const CallableId functionId,
     Scene* scene,
     Entity* entity,
     const std::vector<Entity*>& others,
@@ -792,7 +792,7 @@ void Game::executeFunction(
 }
 
 void Game::executeFunction(
-    const NomadId functionId,
+    const CallableId functionId,
     Scene* scene,
     Entity* entity,
     const std::vector<Entity*>& others,
@@ -913,7 +913,7 @@ void Game::executeFunction(
 //     executeFunctionInNewContext(function_id, scene, entity, returnValue);
 // }
 
-bool Game::executePredicate(const NomadId functionId) const {
+bool Game::executePredicate(const CallableId functionId) const {
     RuntimeValue return_value;
 
     m_runtime->executeFunction(functionId, {}, return_value);
@@ -923,7 +923,7 @@ bool Game::executePredicate(const NomadId functionId) const {
 
 NomadId Game::createScene(
     const NomadString& sceneName,
-    const NomadId functionId,
+    const CallableId functionId,
     std::unique_ptr<Closure> postCreateClosure
 ) {
     // Generate scene ID
@@ -979,7 +979,7 @@ void Game::forEachScene(const std::function<void(Scene*)>& callback) const {
 
 NomadId Game::addEntityToScene(
     const NomadId sceneId,
-    const NomadId initFunctionId,
+    const CallableId initFunctionId,
     const NomadFloat x,
     const NomadFloat y,
     const NomadFloat width,
@@ -1098,7 +1098,7 @@ void Game::scheduleEntityCallback(
     const NomadId entityId,
     const NomadInteger frameCount,
     const NomadBoolean repeat,
-    const NomadId callback)
+    const CallableId callback)
 {
     m_eventQueue.push(GameEventTriggerEntityCallback {
         sceneId,
@@ -1584,9 +1584,9 @@ NomadString& Game::getText(const NomadString& key, NomadString& text) const {
 void Game::executeEntry() {
     log::info("Executing `" + m_options.entryFunction + "` entry function");
 
-    const NomadId initFunctionId = m_runtime->getFunctionId(m_options.entryFunction);
+    const auto initFunctionId = m_runtime->getFunctionId(m_options.entryFunction);
 
-    if (initFunctionId == NOMAD_INVALID_ID) {
+    if (initFunctionId.isInvalid()) {
         raiseError("Configured entry function '" + m_options.entryFunction + "' was not found");
     }
 
@@ -1659,7 +1659,7 @@ bool Game::processGameEventCreateScene(const GameEventCreateScene &event) {
 
     m_scenes.push_back(std::move(scene));
 
-    if (event.initFunctionId != NOMAD_INVALID_ID) {
+    if (!event.initFunctionId.isInvalid()) {
         executeFunction(event.initFunctionId, scenePtr, nullptr);
     } else {
         log::error("No init function for scene " + toString(event.sceneId));
@@ -1722,7 +1722,7 @@ bool Game::processGameEventCreateEntity(const GameEventCreateEntity &event) {
             return true;
         }
 
-        if (event.initFunctionId != NOMAD_INVALID_ID) {
+        if (!event.initFunctionId.isInvalid()) {
             // Set entity name to be the name of its init function.
             auto function = m_runtime->getScriptFunction(event.initFunctionId);
             

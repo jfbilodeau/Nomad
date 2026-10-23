@@ -8,6 +8,7 @@
 #include <limits>
 #include <memory>
 #include <numbers>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -85,6 +86,9 @@ constexpr NomadId NOMAD_ID_MAX = 1000000;  // std::numeric_limits<NomadId>::max(
             return id >= ::nomad::NOMAD_ID_MIN && id < ::nomad::NOMAD_ID_MAX; \
         } \
         [[nodiscard]] constexpr bool isInvalid() const noexcept { return !isValid(); } \
+        friend std::ostream& operator<<(std::ostream& output, const name value) { \
+            return output << #name << '{' << value.id << '}'; \
+        } \
     }; \
     inline constexpr name name::INVALID{}
 

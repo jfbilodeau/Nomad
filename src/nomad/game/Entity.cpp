@@ -53,7 +53,7 @@ void Entity::update(const Scene* scene) {
 
     const auto updateFunctionId = m_oldEvents.getFunctionIdForSystemEvent(SystemEvent::Update);
 
-    if (updateFunctionId != NOMAD_INVALID_ID) {
+    if (updateFunctionId.isValid()) {
         game->executeFunction(updateFunctionId, m_scene, this);
     }
 
@@ -79,7 +79,7 @@ void Entity::update(const Scene* scene) {
 
             if (m_onArriveAtDestinationClosure != nullptr) {
                 game->executeFunction(m_onArriveAtDestinationClosure.get(), m_scene, this);
-            } else if (m_onArriveAtDestination != NOMAD_INVALID_ID) {
+            } else if (m_onArriveAtDestination.isValid()) {
                 game->executeFunction(m_onArriveAtDestination, m_scene, this);
             }
         }
@@ -123,7 +123,7 @@ void Entity::update(const Scene* scene) {
 
                     if (m_onAnimationEndClosure != nullptr) {
                         game->executeFunction(m_onAnimationEndClosure.get(), m_scene, this);
-                    } else if (m_onAnimationEnd != NOMAD_INVALID_ID) {
+                    } else if (m_onAnimationEnd.isValid()) {
                         game->executeFunction(m_onAnimationEnd, m_scene, this);
                     }
                 }
@@ -140,7 +140,7 @@ void Entity::update(const Scene* scene) {
 
                     if (m_onAnimationEndClosure != nullptr) {
                         game->executeFunction(m_onAnimationEndClosure.get(), m_scene, this);
-                    } else if (m_onAnimationEnd != NOMAD_INVALID_ID) {
+                    } else if (m_onAnimationEnd.isValid()) {
                         game->executeFunction(m_onAnimationEnd, m_scene, this);
                     }
                 }
@@ -150,7 +150,7 @@ void Entity::update(const Scene* scene) {
             if (m_animation) {
                 m_frameCount = m_animationDuration;
 
-                m_sprite = m_animation->getFrame(m_currentFrame);
+                m_sprite = m_animation->getFrame(static_cast<NomadIndex>(m_currentFrame));
             }
         }
     }
@@ -444,11 +444,11 @@ void Entity::startMovingInDirection(const NomadFloat angle, const NomadFloat spe
     m_moveToDestination = false;
 }
 
-void Entity::moveTo(const PointF& destination, const NomadFloat speed, const NomadId onArriveAtDestination) {
+void Entity::moveTo(const PointF& destination, const NomadFloat speed, const CallableId onArriveAtDestination) {
     moveTo(destination.getX(), destination.getY(), speed, onArriveAtDestination);
 }
 
-void Entity::moveTo(const NomadFloat x, const NomadFloat y, const NomadFloat speed, const NomadId onArriveAtDestination) {
+void Entity::moveTo(const NomadFloat x, const NomadFloat y, const NomadFloat speed, const CallableId onArriveAtDestination) {
     m_destination.set(x, y);
     m_speed = speed;
     m_velocityInvalidated = true;
@@ -466,7 +466,7 @@ void Entity::moveTo(const NomadFloat x, const NomadFloat y, const NomadFloat spe
     m_speed = speed;
     m_velocityInvalidated = true;
     m_moveToDestination = true;
-    m_onArriveAtDestination = NOMAD_INVALID_ID;
+    m_onArriveAtDestination = CallableId::INVALID;
     m_onArriveAtDestinationClosure = std::move(onArriveAtDestination);
 }
 
@@ -750,7 +750,7 @@ RectangleF& Entity::getBoundingBox(RectangleF &boundingBox) const {
     return boundingBox;
 }
 
-void Entity::addSystemBeforeUpdate(NomadString systemId, NomadId functionId) {
+void Entity::addSystemBeforeUpdate(NomadString systemId, CallableId functionId) {
     // Is system already registered?
     auto i = std::ranges::find_if(m_systemsBeforeUpdate, [systemId](auto& s) { return s.systemId == systemId; });
 
@@ -763,7 +763,7 @@ void Entity::addSystemBeforeUpdate(NomadString systemId, NomadId functionId) {
     }
 }
 
-void Entity::addSystemAfterUpdate(NomadString systemId, NomadId functionId) {
+void Entity::addSystemAfterUpdate(NomadString systemId, CallableId functionId) {
     // Is system already registered?
     auto i = std::ranges::find_if(m_systemsAfterUpdate, [systemId](auto& s) { return s.systemId == systemId; });
 
@@ -801,7 +801,7 @@ void Entity::executeSystemsAfterUpdate() {
 void Entity::triggerBeginCollision(Entity* other, const NomadInteger mask) {
     const auto functionId = m_oldEvents.getFunctionIdForSystemEvent(SystemEvent::BeginCollision);
 
-    if (functionId != NOMAD_INVALID_ID) {
+    if (functionId.isValid()) {
         m_scene->getGame()->executeFunction(functionId, m_scene, this, other);
     }
 
@@ -820,7 +820,7 @@ void Entity::triggerBeginCollision(Entity* other, const NomadInteger mask) {
 void Entity::triggerEndCollision(Entity *other, const NomadInteger mask) {
     const auto functionId = m_oldEvents.getFunctionIdForSystemEvent(SystemEvent::EndCollision);
 
-    if (functionId != NOMAD_INVALID_ID) {
+    if (functionId.isValid()) {
         m_scene->getGame()->executeFunction(functionId, m_scene, this, other);
     }
 
@@ -831,7 +831,7 @@ void Entity::triggerEndCollision(Entity *other, const NomadInteger mask) {
                 m_scene,
                 this,
                 other
-                );
+            );
         }
     });
 }
@@ -843,7 +843,7 @@ void Entity::enterCamera() {
 
     const auto functionId = m_oldEvents.getFunctionIdForSystemEvent(SystemEvent::EnterCamera);
 
-    if (functionId != NOMAD_INVALID_ID) {
+    if (functionId.isValid()) {
         m_scene->getGame()->executeFunction(functionId, m_scene, this);
     }
 }
@@ -855,24 +855,24 @@ void Entity::exitCamera() {
 
     auto functionId = m_oldEvents.getFunctionIdForSystemEvent(SystemEvent::ExitCamera);
 
-    if (functionId != NOMAD_INVALID_ID) {
+    if (functionId.isValid()) {
         m_scene->getGame()->executeFunction(functionId, m_scene, this);
     }
 }
 
-void Entity::setOnEnterCamera(NomadId functionId) {
-    m_oldEvents.registerSystemEvent(SystemEvent::EnterCamera, functionId);
+void Entity::setOnEnterCamera(CallableId callableId) {
+    m_oldEvents.registerSystemEvent(SystemEvent::EnterCamera, callableId);
 }
 
-NomadId Entity::getOnEnterCamera() const {
+CallableId Entity::getOnEnterCamera() const {
     return m_oldEvents.getFunctionIdForSystemEvent(SystemEvent::EnterCamera);
 }
 
-void Entity::setOnExitCamera(NomadId functionId) {
-    m_oldEvents.registerSystemEvent(SystemEvent::ExitCamera, functionId);
+void Entity::setOnExitCamera(CallableId callableId) {
+    m_oldEvents.registerSystemEvent(SystemEvent::ExitCamera, callableId);
 }
 
-NomadId Entity::getOnExitCamera() const {
+CallableId Entity::getOnExitCamera() const {
     return m_oldEvents.getFunctionIdForSystemEvent(SystemEvent::ExitCamera);
 }
 
@@ -1122,17 +1122,17 @@ bool Entity::getAnimationReverse() const {
     return m_animationReverse;
 }
 
-void Entity::setOnAnimationEnd(const NomadId functionId) {
-    m_onAnimationEnd = functionId;
+void Entity::setOnAnimationEnd(const CallableId callableId) {
+    m_onAnimationEnd = callableId;
     m_onAnimationEndClosure.reset();
 }
 
 void Entity::setOnAnimationEnd(std::unique_ptr<Closure> closure) {
-    m_onAnimationEnd = NOMAD_INVALID_ID;
+    m_onAnimationEnd = CallableId::INVALID;
     m_onAnimationEndClosure = std::move(closure);
 }
 
-NomadId Entity::getOnAnimationEnd() const {
+CallableId Entity::getOnAnimationEnd() const {
     return m_onAnimationEnd;
 }
 
@@ -1141,7 +1141,7 @@ void Entity::playAnimation(
     const NomadInteger duration,
     const NomadBoolean repeat,
     const NomadBoolean reverse,
-    const NomadId onAnimationEnd
+    const CallableId onAnimationEnd
     ) {
     m_animationVariant = variant;
     m_animationDuration = duration;
@@ -1164,7 +1164,7 @@ void Entity::playAnimation(
     m_animationDuration = duration;
     m_animationRepeat = repeat;
     m_animationReverse = reverse;
-    m_onAnimationEnd = NOMAD_INVALID_ID;
+    m_onAnimationEnd = CallableId::INVALID;
     m_onAnimationEndClosure = std::move(onAnimationEnd);
 
     m_animationDirty = true;
@@ -1302,8 +1302,8 @@ void Entity::getVariableValue(const NomadId variableId, RuntimeValue& value) con
     m_variables.getVariableValue(variableId, value);
 }
 
-void Entity::registerUserEvent(const NomadString& name, const NomadId functionId) {
-    m_oldEvents.registerUserEvent(name, functionId);
+void Entity::registerUserEvent(const NomadString& name, const CallableId callableId) {
+    m_oldEvents.registerUserEvent(name, callableId);
 }
 
 void Entity::unregisterUserEvent(const NomadString& name) {
@@ -1313,7 +1313,7 @@ void Entity::unregisterUserEvent(const NomadString& name) {
 void Entity::triggerUserEvent(const NomadString &name) {
     const auto functionId = m_oldEvents.getFunctionIdForUserEvent(name);
 
-    if (functionId != NOMAD_INVALID_ID) {
+    if (functionId.isValid()) {
         m_scene->getGame()->executeFunction(functionId, m_scene, this);
     }
 }
@@ -1379,43 +1379,43 @@ void Entity::dispatchEvent(const EventDispatch& dispatch) {
     m_scene->getGame()->executeFunction(callback->closure.get(), m_scene, this, {}, dispatch.arguments);
 }
 
-NomadId Entity::getOnUpdate() const {
+CallableId Entity::getOnUpdate() const {
     return m_oldEvents.getFunctionIdForSystemEvent(SystemEvent::Update);
 }
 
-void Entity::setOnUpdate(const NomadId functionId) {
-    m_oldEvents.registerSystemEvent(SystemEvent::Update, functionId);
+void Entity::setOnUpdate(const CallableId callableId) {
+    m_oldEvents.registerSystemEvent(SystemEvent::Update, callableId);
 }
 
-void Entity::setOnBeginCollision(const NomadId functionId) {
-    m_oldEvents.registerSystemEvent(SystemEvent::BeginCollision, functionId);
+void Entity::setOnBeginCollision(const CallableId callableId) {
+    m_oldEvents.registerSystemEvent(SystemEvent::BeginCollision, callableId);
 }
 
-NomadId Entity::getOnBeginCollision() const {
+CallableId Entity::getOnBeginCollision() const {
     return m_oldEvents.getFunctionIdForSystemEvent(SystemEvent::BeginCollisionWith);
 }
 
-void Entity::setOnBeginCollisionWith(const NomadInteger mask, const NomadId functionId) {
-    m_oldEvents.registerMaskEvent(SystemEvent::BeginCollisionWith, functionId, mask);
+void Entity::setOnBeginCollisionWith(const NomadInteger mask, const CallableId callableId) {
+    m_oldEvents.registerMaskEvent(SystemEvent::BeginCollisionWith, callableId, mask);
 }
 
-NomadId Entity::getOnBeginCollisionWith(const NomadInteger mask) const {
+CallableId Entity::getOnBeginCollisionWith(const NomadInteger mask) const {
     return m_oldEvents.getFunctionIdForMaskEvent(SystemEvent::BeginCollisionWith, mask);
 }
 
-void Entity::setOnEndCollision(const NomadId functionId) {
-    m_oldEvents.registerSystemEvent(SystemEvent::EndCollision, functionId);
+void Entity::setOnEndCollision(const CallableId callableId) {
+    m_oldEvents.registerSystemEvent(SystemEvent::EndCollision, callableId);
 }
 
-NomadId Entity::getOnEndCollision() const {
+CallableId Entity::getOnEndCollision() const {
     return m_oldEvents.getFunctionIdForSystemEvent(SystemEvent::EndCollision);
 }
 
-void Entity::setOnEndCollisionWith(const NomadInteger mask, const NomadId functionId) {
-    m_oldEvents.registerMaskEvent(SystemEvent::EndCollisionWith, functionId, mask);
+void Entity::setOnEndCollisionWith(const NomadInteger mask, const CallableId callableId) {
+    m_oldEvents.registerMaskEvent(SystemEvent::EndCollisionWith, callableId, mask);
 }
 
-NomadId Entity::getOnEndCollisionWith(const NomadInteger mask) const {
+CallableId Entity::getOnEndCollisionWith(const NomadInteger mask) const {
     return m_oldEvents.getFunctionIdForMaskEvent(SystemEvent::EndCollisionWith, mask);
 }
 
@@ -1488,12 +1488,12 @@ b2ShapeId Entity::createShape(const bool sensor) {
 
     std::uint64_t mask;
 
-    const std::uint64_t categoryMask = m_mask; // All categories
+    const auto categoryMask = static_cast<std::uint64_t>(m_mask); // All categories
 
     if (sensor) {
-        mask = m_sensorMask;
+        mask = static_cast<std::uint64_t>(m_sensorMask);
     } else {
-        mask = m_collisionMask;
+        mask = static_cast<std::uint64_t>(m_collisionMask);
     }
 
     shapeDef.userData = this;

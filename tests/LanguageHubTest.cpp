@@ -228,19 +228,19 @@ BOOST_AUTO_TEST_CASE(hub_objects_index_members_without_duplicating_callable_owne
         "example.answer", [](VirtualMachine* machine) { machine->setIntegerResult(42); },
         {}, runtime.getIntegerType(), ""
     );
-    BOOST_REQUIRE(functionId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(functionId.isValid());
     const auto overloadId = runtime.registerNativeFunction(
         "example.answer", [](VirtualMachine* machine) { machine->setIntegerResult(machine->getIntegerParameter(0)); },
         {defParameter("value", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
     );
-    BOOST_REQUIRE(overloadId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(overloadId.isValid());
     const auto* member = hub->getMember("answer");
     BOOST_REQUIRE(member != nullptr);
     const auto* functions = std::get_if<HubFunctions>(member);
     BOOST_REQUIRE(functions != nullptr);
     BOOST_REQUIRE(functions->ids.size() == 2U);
-    BOOST_TEST(functions->ids[0] == functionId);
-    BOOST_TEST(functions->ids[1] == overloadId);
+    BOOST_TEST((functions->ids[0] == functionId));
+    BOOST_TEST((functions->ids[1] == overloadId));
     BOOST_TEST(runtime.getFunction(functions->ids[0])->getName() == "example.answer");
     BOOST_REQUIRE(runtime.registerEnum("example.State", {{"Ready", 1}}) != nullptr);
     BOOST_REQUIRE(hub->getMember("State") != nullptr);
@@ -281,7 +281,7 @@ BOOST_AUTO_TEST_CASE(initialization_is_explicit_and_independent_of_compiler_life
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "initialValue", [&calls](VirtualMachine* machine) { ++calls; machine->setIntegerResult(42); },
         {}, runtime.getIntegerType(), ""
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     {
         auto compiler = runtime.createCompiler();
         CompilerContext context(compiler.get());
@@ -405,11 +405,11 @@ BOOST_AUTO_TEST_CASE(runtime_dependent_strings_have_initialized_empty_storage)
             machine->setStringResult(value.getStringValue());
         },
         {}, runtime.getStringType(), ""
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "initialText", [](VirtualMachine* machine) { machine->setStringResult("ready"); },
         {}, runtime.getStringType(), ""
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     fixture.addFunction("main",
         "hub example\nfirst = readLater\nlater = initialText\nend\n"
         "assert example.later == \"ready\"\nreturn example.first");

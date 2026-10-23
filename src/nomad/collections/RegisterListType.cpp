@@ -193,7 +193,7 @@ void registerListType(Runtime* runtime) {
                 runtime->getVoidType(),
                 NomadDoc("Removes all elements. Clearing an empty list does nothing and does not log.")
             );
-            if (constructorId == nomad::NOMAD_INVALID_ID ||
+            if (constructorId.isInvalid() ||
                 appendId == nomad::NOMAD_INVALID_ID || prependId == nomad::NOMAD_INVALID_ID ||
                 insertId == nomad::NOMAD_INVALID_ID || removeId == nomad::NOMAD_INVALID_ID ||
                 removeFirstId == nomad::NOMAD_INVALID_ID || removeLastId == nomad::NOMAD_INVALID_ID ||

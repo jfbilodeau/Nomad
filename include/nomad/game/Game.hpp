@@ -179,7 +179,7 @@ public:
     void triggerEntityEvent(NomadId sceneId, NomadId entityId, const NomadString& eventName, std::vector<RuntimeValue> args = {});
     void triggerEntityEvent(NomadId eventId, NomadId sceneId, NomadId entityId, std::vector<RuntimeValue> args);
     void scheduleEntityEvent(NomadId sceneId, NomadId entityId, NomadInteger frameCount, NomadBoolean repeat, const NomadString& eventName);
-    void scheduleEntityCallback(NomadId sceneId, NomadId entityId, NomadInteger frameCount, NomadBoolean repeat, NomadId callback);
+    void scheduleEntityCallback(NomadId sceneId, NomadId entityId, NomadInteger frameCount, NomadBoolean repeat, CallableId callback);
 
     [[nodiscard]] bool running() const;
     [[nodiscard]] bool isPaused() const;
@@ -303,7 +303,7 @@ private:
     NomadString m_title = "Nomad";
     Point m_resolution = {800, 600};
     Point m_windowSize = m_resolution;
-    NomadIndex m_fps = 30;
+    NomadInteger m_fps = 30;
 
     const VariableMap* m_sceneVariableMap = nullptr;
     const VariableMap* m_thisEntityVariableMap = nullptr;

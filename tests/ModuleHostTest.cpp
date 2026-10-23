@@ -249,7 +249,7 @@ BOOST_AUTO_TEST_CASE(script_initialization_runs_after_compilation_before_entry)
             machine->setIntegerResult(42);
         },
         {}, host->getRuntime()->getIntegerType(), ""
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     const auto result = host->compileSources(SourceBatch{{
         {"init", {"init.nomad", "hub example\nvalue = fixture.initialValue\nend\nassert example.value == 42\nfixture.exit"}}
     }, {}});
@@ -498,7 +498,7 @@ BOOST_AUTO_TEST_CASE(range_arguments_are_evaluated_once_and_loop_controls_use_no
             machine->setIntegerResult(machine->getIntegerParameter(0));
         },
         {defParameter("value", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     const NomadString source =
         "total = 0\n"
         "sequence = range (test.bound 0) (test.bound 10) (test.bound 1)\n"

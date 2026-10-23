@@ -31,7 +31,7 @@ void registerCallbackNativeFunctions(Runtime& runtime, CallbackStore& store) {
     runtime.registerNativeFunction(
         "test.store",
         [&runtime, &store](VirtualMachine* virtualMachine) {
-            store.closure = virtualMachine->createClosure(&runtime, virtualMachine->getIdParameter(0));
+            store.closure = virtualMachine->createClosure(&runtime, CallableId{virtualMachine->getIdParameter(0)});
         },
         {
             defParameter(
@@ -47,7 +47,7 @@ void registerCallbackNativeFunctions(Runtime& runtime, CallbackStore& store) {
     runtime.registerNativeFunction(
         "test.storeVoid",
         [&runtime, &store](VirtualMachine* virtualMachine) {
-            store.closure = virtualMachine->createClosure(&runtime, virtualMachine->getIdParameter(0));
+            store.closure = virtualMachine->createClosure(&runtime, CallableId{virtualMachine->getIdParameter(0)});
         },
         {
             defParameter("callback", runtime.getCallbackType({}, runtime.getVoidType()), NomadParamDoc("Callback to store")),
@@ -60,7 +60,7 @@ void registerCallbackNativeFunctions(Runtime& runtime, CallbackStore& store) {
         "test.on",
         [&runtime, &store](VirtualMachine* virtualMachine) {
             store.eventId = virtualMachine->getParameter(0).getIdValue();
-            store.closure = virtualMachine->createClosure(&runtime, virtualMachine->getParameter(1).getIdValue());
+            store.closure = virtualMachine->createClosure(&runtime, CallableId{virtualMachine->getParameter(1).getIdValue()});
         },
         {
             defParameter("event", runtime.getEventCallbackType(), NomadParamDoc("Event to handle")),
@@ -142,7 +142,7 @@ BOOST_AUTO_TEST_CASE(loop_callbacks_capture_each_iteration_value)
     runtime.registerNativeFunction(
         "test.keep",
         [&runtime, &callbacks](VirtualMachine* machine) {
-            callbacks.push_back(machine->createClosure(&runtime, machine->getIdParameter(0)));
+            callbacks.push_back(machine->createClosure(&runtime, CallableId{machine->getIdParameter(0)}));
         },
         {defParameter("callback", runtime.getCallbackType({}, runtime.getIntegerType()), "")},
         runtime.getVoidType(), ""
@@ -172,7 +172,7 @@ BOOST_AUTO_TEST_CASE(callbacks_capture_mutated_parameters_and_allow_parameter_re
     runtime.registerNativeFunction(
         "test.keep",
         [&runtime, &callbacks](VirtualMachine* machine) {
-            callbacks.push_back(machine->createClosure(&runtime, machine->getIdParameter(0)));
+            callbacks.push_back(machine->createClosure(&runtime, CallableId{machine->getIdParameter(0)}));
         },
         {defParameter("callback", runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()), "")},
         runtime.getVoidType(), ""

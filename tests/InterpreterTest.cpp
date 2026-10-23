@@ -151,7 +151,7 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_requires_an_active_script_function)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    ScriptFunction function(NOMAD_INVALID_ID, "inactive", "inactive.nomad", "");
+    ScriptFunction function(CallableId::INVALID, "inactive", "inactive.nomad", "");
     BOOST_CHECK_THROW((InterpreterContext{*machine, function}), NomadBug);
 }
 
@@ -653,7 +653,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_compiled_value_returning_funct
     compiler->registerSources(&compileContext, {{{"increment", {"increment.nomad",
         "params value:int\nreturn value + 1"}}}, {}});
     const auto functionId = runtime.getFunctionId("increment");
-    BOOST_REQUIRE(functionId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(functionId.isValid());
     BOOST_REQUIRE(compiler->compileFunctions(&compileContext));
 
     auto machine = runtime.createVirtualMachine();
@@ -822,8 +822,8 @@ BOOST_AUTO_TEST_CASE(interpreter_context_defines_variables_in_console_function)
 
     const auto* function = context.getFunction();
     BOOST_REQUIRE(function != nullptr);
-    BOOST_TEST(function->getId() == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getFunctionId(function->getName()) == NOMAD_INVALID_ID);
+    BOOST_TEST(function->getId().isInvalid());
+    BOOST_TEST(runtime.getFunctionId(function->getName()).isInvalid());
     BOOST_TEST(function->getVariableCount() == 2U);
     BOOST_TEST(function->getVariableId("first") == NomadId{0});
     BOOST_TEST(function->getVariableId("second") == NomadId{1});

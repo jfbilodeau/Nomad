@@ -108,7 +108,7 @@ void Scene::processInputEvent(const InputEvent& event) {
 
                 const auto entity = getEntityById(map.entityId);
 
-                m_game->executeFunction(map.functionId, this, entity);
+                m_game->executeFunction(map.callableId, this, entity);
             }
         }
     }
@@ -281,36 +281,36 @@ void Scene::resetActionMapping(const NomadString& mappingName) {
     m_actionManager.resetMappingToDefaults(m_game, mappingName);
 }
 
-void Scene::addActionPressed(const NomadString& actionName, NomadId functionId, NomadId entityId) {
+void Scene::addActionPressed(const NomadString& actionName, CallableId callableId, NomadId entityId) {
     auto mapping = getActionMapping(actionName, InputAction::Pressed, entityId);
 
     if (mapping) {
         // Update mapping:
-        mapping->functionId = functionId;
+        mapping->callableId = callableId;
     } else {
         m_actionMapping.emplace_back(
             ActionMapping{
                 actionName,
                 InputAction::Pressed,
-                functionId,
+                callableId,
                 entityId
             }
         );
     }
 }
 
-void Scene::addActionReleased(const NomadString& actionName, NomadId id, NomadId entityId) {
+void Scene::addActionReleased(const NomadString& actionName, CallableId callableId, NomadId entityId) {
     auto mapping = getActionMapping(actionName, InputAction::Released, entityId);
 
     if (mapping) {
         // Update mapping:
-        mapping->functionId = id;
+        mapping->callableId = callableId;
     } else {
         m_actionMapping.emplace_back(
             ActionMapping{
                 actionName,
                 InputAction::Released,
-                id,
+                callableId,
                 entityId
             }
         );
@@ -419,7 +419,7 @@ void Scene::initTileSet(
                 return;
             }
 
-            m_tiles[tileIndex].source = Rectangle(
+            m_tiles[static_cast<NomadIndex>(tileIndex)].source = Rectangle(
                 x * tileWidth,
                 y * tileHeight,
                 tileWidth,
@@ -447,15 +447,15 @@ NomadInteger Scene::getTileMask(NomadIndex tileIndex) const {
 
 void Scene::setTileMapSize(NomadInteger width, NomadInteger height) {
     for (auto& layer : m_layers) {
-        std::vector<NomadIndex> newTileLayer(width * height);
-        std::vector<NomadIndex> newWallTileLayer(width * height);
+        std::vector<NomadIndex> newTileLayer(static_cast<size_t>(width * height));
+        std::vector<NomadIndex> newWallTileLayer(static_cast<size_t>(width * height));
 
         for (NomadInteger y = 0; y < height; ++y) {
             for (NomadInteger x = 0; x < width; ++x) {
                 if (x < m_tileMapWidth && y < m_tileMapHeight) {
-                    newTileLayer[y * width + x] = layer.tileMap[y * m_tileMapWidth + x];
+                    newTileLayer[static_cast<size_t>(y * width + x)] = layer.tileMap[static_cast<size_t>(y * m_tileMapWidth + x)];
                 } else {
-                    newTileLayer[y * width + x] = 0;
+                    newTileLayer[static_cast<size_t>(y * width + x)] = 0;
                 }
             }
         }
@@ -483,40 +483,42 @@ NomadInteger Scene::getTileMapHeight() const {
     return m_tileMapHeight;
 }
 
-void Scene::setTileId(const NomadIndex layer, const NomadInteger x, const NomadInteger y, const NomadIndex tileId) {
-    if (layer >= m_layers.size()) {
+void Scene::setTileId(const NomadInteger layer, const NomadInteger x, const NomadInteger y, const NomadIndex tileId) {
+    const auto layerIndex = static_cast<size_t>(layer);
+
+    if (layerIndex >= m_layers.size()) {
         return;
     }
 
-    auto& tile_layer = m_layers[layer];
+    auto& tile_layer = m_layers[layerIndex];
 
     if (x < 0 || x >= m_tileMapWidth || y < 0 || y >= m_tileMapHeight) {
         return;
     }
 
-    tile_layer.tileMap[y * m_tileMapWidth + x] = tileId;
+    tile_layer.tileMap[static_cast<size_t>(y * m_tileMapWidth + x)] = tileId;
 }
 
-NomadIndex Scene::getTileId(const NomadIndex layer, const NomadInteger x, const NomadInteger y) const {
-    if (
-        layer >= m_layers.size() ||
-        x < 0 ||
-        x >= m_tileMapWidth ||
-        y < 0 ||
-        y >= m_tileMapHeight
-    ) {
+NomadIndex Scene::getTileId(const NomadInteger layer, const NomadInteger x, const NomadInteger y) const {
+    const auto layerIndex = static_cast<size_t>(layer);
+    if (layerIndex >= m_layers.size()) {
+        return 0;
+    }
+    if (x < 0 || x >= m_tileMapWidth || y < 0 || y >= m_tileMapHeight) {
         return 0;
     }
 
-    return m_layers[layer].tileMap[y * m_tileMapWidth + x];
+    return m_layers[layerIndex].tileMap[static_cast<size_t>(y * m_tileMapWidth + x)];
 }
 
-NomadInteger Scene::getTileMask(const NomadIndex layerId, const NomadInteger x, const NomadInteger y) const {
-    if (layerId >= m_layers.size()) {
+NomadInteger Scene::getTileMask(const NomadInteger layerId, const NomadInteger x, const NomadInteger y) const {
+    const auto layer = static_cast<std::size_t>(layerId);
+
+    if (layer >= m_layers.size()) {
         return 0;
     }
 
-    auto tileId = getTileId(layerId, x, y);
+    const auto tileId = getTileId(layerId, x, y);
 
     if (tileId >= m_tiles.size()) {
         return 0;
@@ -525,12 +527,12 @@ NomadInteger Scene::getTileMask(const NomadIndex layerId, const NomadInteger x, 
     return m_tiles[tileId].mask;
 }
 
-void Scene::processGroundTilesAt(const NomadIndex layer, const Rectangle& rectangle, const TileCallback& callback) const {
-    if (layer >= m_layers.size()) {
+void Scene::processGroundTilesAt(const NomadInteger layer, const Rectangle& rectangle, const TileCallback& callback) const {
+    if (layer >= static_cast<NomadInteger>(m_layers.size())) {
         return;
     }
 
-    auto& tileLayer = m_layers[layer];
+    auto& tileLayer = m_layers[static_cast<NomadIndex>(layer)];
 
     const auto tileLeft = std::max(rectangle.getLeft() / m_tileWidth, static_cast<NomadInteger>(0));
     const auto tileRight = std::min(rectangle.getRight() / m_tileWidth, m_tileMapWidth - 1);
@@ -539,7 +541,7 @@ void Scene::processGroundTilesAt(const NomadIndex layer, const Rectangle& rectan
 
     for (NomadInteger y = tileTop; y <= tileBottom; ++y) {
         for (NomadInteger x = tileLeft; x <= tileRight; ++x) {
-            const auto tileId = tileLayer.tileMap[y * m_tileMapWidth + x];
+            const auto tileId = tileLayer.tileMap[static_cast<size_t>(y * m_tileMapWidth + x)];
             const auto tileMask = m_tiles[tileId].mask;
 
             TileInformation information {
@@ -592,8 +594,8 @@ NomadFloat Scene::getCameraY() const {
     return m_cameraPosition.getY();
 }
 
-NomadInteger Scene::getMaskAtLocation(const NomadIndex layer, const PointF &location, const Entity * /*exclude*/) const {
-    const auto& l = m_layers[layer];
+NomadInteger Scene::getMaskAtLocation(const NomadInteger layer, const PointF &location, const Entity * /*exclude*/) const {
+    const auto& l = m_layers[static_cast<NomadIndex>(layer)];
 
     const auto x = location.getX();
     const auto y = location.getY();
@@ -604,7 +606,7 @@ NomadInteger Scene::getMaskAtLocation(const NomadIndex layer, const PointF &loca
     NomadInteger mask = 0;
 
     if (tileX >= 0 && tileX < m_tileMapWidth && tileY >= 0 && tileY < m_tileMapHeight) {
-        const auto tileId = l.tileMap[tileY * m_tileMapWidth + tileX];
+        const auto tileId = l.tileMap[static_cast<size_t>(tileY * m_tileMapWidth + tileX)];
 
         if (tileId < m_tiles.size()) {
             mask |= m_tiles[tileId].mask;
@@ -660,7 +662,7 @@ NomadInteger Scene::getMaskAtEntity(const Entity* entity, const PointF& location
     return getMaskAtLocation(entity->getLayer(), { x, y }, entity);
 }
 
-NomadInteger Scene::getMaskFromEntitiesAt(NomadIndex /*layer*/, const RectangleF& /*rectangle*/, const Entity* /*exclude*/) const {
+NomadInteger Scene::getMaskFromEntitiesAt(NomadInteger /*layer*/, const RectangleF& /*rectangle*/, const Entity* /*exclude*/) const {
    // if (layer >= m_layers.size()) {
    //     return 0;
    // }
@@ -681,7 +683,7 @@ NomadInteger Scene::getMaskFromEntitiesAt(NomadIndex /*layer*/, const RectangleF
     return 0;
 }
 
-NomadInteger Scene::getMaskFromEntitiesAt(NomadIndex /*layer*/, const CircleF& /*circle*/, const Entity* /*exclude*/) const {
+NomadInteger Scene::getMaskFromEntitiesAt(NomadInteger /*layer*/, const CircleF& /*circle*/, const Entity* /*exclude*/) const {
 //    if (layer >= m_layers.size()) {
 //        return 0;
 //    }
@@ -702,8 +704,8 @@ NomadInteger Scene::getMaskFromEntitiesAt(NomadIndex /*layer*/, const CircleF& /
     return 0;
 }
 
-NomadInteger Scene::getMaskInRectangle(NomadIndex layer, const RectangleF& rectangle, const Entity* exclude) const {
-    if (layer >= m_layers.size()) {
+NomadInteger Scene::getMaskInRectangle(NomadInteger layer, const RectangleF& rectangle, const Entity* exclude) const {
+    if (layer >= static_cast<NomadInteger>(m_layers.size())) {
         return 0;
     }
 
@@ -725,8 +727,8 @@ NomadInteger Scene::getMaskInRectangle(NomadIndex layer, const RectangleF& recta
     return mask;
 }
 
-NomadInteger Scene::getMaskInCircle(const NomadIndex layer, const CircleF& circle, const Entity* exclude) const {
-    if (layer >= m_layers.size()) {
+NomadInteger Scene::getMaskInCircle(const NomadInteger layer, const CircleF& circle, const Entity* exclude) const {
+    if (layer >= static_cast<NomadInteger>(m_layers.size())) {
         return 0;
     }
 
@@ -748,39 +750,39 @@ NomadInteger Scene::getMaskInCircle(const NomadIndex layer, const CircleF& circl
     return mask;
 }
 
-void Scene::registerUserEvent(const NomadString &eventName, const NomadId functionId) {
-    m_events.registerUserEvent(eventName, functionId);
+void Scene::registerUserEvent(const NomadString &eventName, const CallableId callableId) {
+    m_events.registerUserEvent(eventName, callableId);
 }
 
 void Scene::unregisterUserEvent(const NomadString &eventName) {
     m_events.unregisterUserEvent(eventName);
 }
 
-void Scene::setOnUpdate(const NomadId functionId) {
-    m_events.registerSystemEvent(SystemEvent::Update, functionId);
+void Scene::setOnUpdate(const CallableId callableId) {
+    m_events.registerSystemEvent(SystemEvent::Update, callableId);
 }
 
 void Scene::clearUpdate() {
     m_events.unregisterSystemEvent(SystemEvent::Update);
 }
 
-NomadId Scene::getOnUpdateCallback() const {
+CallableId Scene::getOnUpdateCallback() const {
     return m_events.getFunctionIdForSystemEvent(SystemEvent::PostUpdate);
 }
 
-void Scene::setOnPostUpdateCallback(const NomadId functionId) {
-    m_events.registerSystemEvent(SystemEvent::PostUpdate, functionId);
+void Scene::setOnPostUpdateCallback(const CallableId callableId) {
+    m_events.registerSystemEvent(SystemEvent::PostUpdate, callableId);
 }
 
 void Scene::clearPostUpdateCallback() {
     m_events.unregisterSystemEvent(SystemEvent::PostUpdate);
 }
 
-NomadId Scene::getOnPostUpdateCallback() const {
+CallableId Scene::getOnPostUpdateCallback() const {
     return m_events.getFunctionIdForSystemEvent(SystemEvent::PostUpdate);
 }
 
-void Scene::registerEntityEvent(const NomadString &name, NomadId entityId, NomadId functionId) {
+void Scene::registerEntityEvent(const NomadString &name, NomadId entityId, CallableId callableId) {
     const auto registrationsIt = std::ranges::find_if(
         m_entityEvents,
         [&name](const auto& event) {
@@ -790,7 +792,7 @@ void Scene::registerEntityEvent(const NomadString &name, NomadId entityId, Nomad
 
     if (registrationsIt == m_entityEvents.end()) {
         auto registration = std::vector<Event>();
-        registration.emplace_back(entityId, functionId);
+        registration.emplace_back(entityId, callableId);
         m_entityEvents.emplace_back(name, registration);
     } else {
         auto& registrations = registrationsIt->registrations;
@@ -803,16 +805,16 @@ void Scene::registerEntityEvent(const NomadString &name, NomadId entityId, Nomad
         );
 
         if (it == registrations.end()) {
-            registrations.emplace_back(entityId, functionId);
+            registrations.emplace_back(entityId, callableId);
         } else {
-            it->functionId = functionId;
+            it->callableId = callableId;
         }
     }
 }
 
-void Scene::registerEntityEvent(const NomadId eventId, const NomadId entityId, const NomadId functionId) {
+void Scene::registerEntityEvent(const NomadId eventId, const NomadId entityId, const CallableId callableId) {
     if (const auto eventDeclaration = m_game->getRuntime()->getEventDefinition(eventId)) {
-        registerEntityEvent(eventDeclaration->name, entityId, functionId);
+        registerEntityEvent(eventDeclaration->name, entityId, callableId);
     } else {
         log::warning("Event ID " + toString(eventId) + " not found");
     }
@@ -874,10 +876,10 @@ void Scene::dispatchEvent(const EventDispatch& dispatch) {
 }
 
 void Scene::triggerUserEvent(const NomadString &name) {
-    const auto functionId = m_events.getFunctionIdForUserEvent(name);
+    const auto callableId = m_events.getFunctionIdForUserEvent(name);
 
-    if (functionId != NOMAD_INVALID_ID) {
-        m_game->executeFunction(functionId, this, nullptr);
+    if (callableId.isValid()) {
+        m_game->executeFunction(callableId, this, nullptr);
     }
 
     for (const auto& entity: m_entities) {
@@ -886,7 +888,7 @@ void Scene::triggerUserEvent(const NomadString &name) {
     // m_game->triggerSceneEvent(m_id, name);
 }
 
-void Scene::triggerEventLayer(const NomadString &name, const NomadIndex layerId) {
+void Scene::triggerEventLayer(const NomadString &name, const NomadInteger layer) {
     const auto eventsIt = std::ranges::find_if(m_entityEvents,
          [&name](const auto& event) {
              return event.name == name;
@@ -899,7 +901,7 @@ void Scene::triggerEventLayer(const NomadString &name, const NomadIndex layerId)
         for (const auto&[entityId, functionId] : registrations) {
             const auto entity = getEntityById(entityId);
 
-            if (entity && entity->getLayer() == static_cast<NomadInteger>(layerId)) {
+            if (entity && entity->getLayer() == static_cast<NomadInteger>(layer)) {
                 m_game->executeFunction(functionId, this, entity);
             }
         }
@@ -939,7 +941,7 @@ void Scene::dispatchEvent(const NomadString &name) {
             const auto entity = getEntityById(registration.entityId);
 
             if (entity) {
-                m_game->executeFunction(registration.functionId, this, entity);
+                m_game->executeFunction(registration.callableId, this, entity);
             }
         }
     } else {
@@ -964,7 +966,7 @@ void Scene::dispatchEventForEntity(const NomadString &name, Entity *entity) {
 
     for (const auto& registration : registrations) {
         if (registration.entityId == entity->getId()) {
-            m_game->executeFunction(registration.functionId, this, entity);
+            m_game->executeFunction(registration.callableId, this, entity);
             return;
         }
     }
@@ -976,12 +978,14 @@ void Scene::forEachEntities(const std::function<void(Entity*)>& callback) const 
     }
 }
 
-void Scene::forEachEntityByLayer(NomadIndex layerIndex, const std::function<void(Entity*)>& callback) const {
-    if (layerIndex >= m_layers.size()) {
+void Scene::forEachEntityByLayer(const NomadInteger layerIndex, const std::function<void(Entity*)>& callback) const {
+    const auto index = static_cast<NomadIndex>(layerIndex);
+
+    if (index >= m_layers.size()) {
         return;
     }
 
-    auto& layer = m_layers[layerIndex];
+    const auto& layer = m_layers[index];
 
     for (auto entity : layer.entities) {
         callback(entity);

@@ -59,7 +59,7 @@ void registerRangeType(Runtime* runtime) {
         {start, stop, step}, rangeType,
         NomadDoc("Creates a range with an exclusive stop. A zero step raises a runtime error.")
     );
-    if (stopId == NOMAD_INVALID_ID || boundsId == NOMAD_INVALID_ID || stepId == NOMAD_INVALID_ID) {
+    if (stopId.isInvalid() || boundsId.isInvalid() || stepId.isInvalid()) {
         throw NomadException("Failed to register range functions");
     }
 }

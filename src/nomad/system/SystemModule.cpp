@@ -19,7 +19,7 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         context->runtime->getVoidType(),
         NomadDoc("Requests orderly application shutdown after the current script invocation.")
     );
-    if (id == nomad::NOMAD_INVALID_ID) {
+    if (id.isInvalid()) {
         throw nomad::NomadException("Failed to register system.exit");
     }
 }

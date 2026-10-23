@@ -5,6 +5,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <concepts>
+#include <sstream>
 #include <type_traits>
 #include <unordered_set>
 
@@ -49,4 +50,14 @@ BOOST_AUTO_TEST_CASE(declared_ids_support_shared_hashing)
     BOOST_TEST(ids.contains(TestTypeId{}));
     BOOST_TEST(ids.contains(TestTypeId{42}));
     BOOST_TEST(!ids.contains(TestTypeId{43}));
+}
+
+BOOST_AUTO_TEST_CASE(declared_ids_stream_their_type_and_numeric_value)
+{
+    std::ostringstream output;
+    auto& result = output << TestTypeId{42} << ' ' << TestCallableId::INVALID
+                          << ' ' << TestTypeId{-2};
+    BOOST_TEST(&result == &output);
+    BOOST_TEST(output.str() == "TestTypeId{42} TestCallableId{-1} TestTypeId{-2}");
+    BOOST_TEST(TestTypeId{42} == TestTypeId{42});
 }

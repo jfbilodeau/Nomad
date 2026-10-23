@@ -49,7 +49,7 @@ const ObjectType* registerTestObject(Runtime& runtime) {
     return type;
 }
 
-NomadId compileFunction(Runtime& runtime, const NomadString& source) {
+CallableId compileFunction(Runtime& runtime, const NomadString& source) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"test", {"test.nomad", source}}}, {}});
@@ -88,7 +88,7 @@ BOOST_AUTO_TEST_CASE(resolved_method_and_constructor_survive_catalog_growth) {
             object->value = 100;
             return object;
         }, ""
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     BOOST_REQUIRE(runtime.registerNativeMethod(
         runtime.getStringType(), "increment",
         [](VirtualMachine* machine) { machine->setIntegerResult(200); },
@@ -97,7 +97,7 @@ BOOST_AUTO_TEST_CASE(resolved_method_and_constructor_survive_catalog_growth) {
     for (auto index = NomadInteger{0}; index < 64; ++index) {
         BOOST_REQUIRE(runtime.registerNativeFunction(
             "growth" + toString(index), [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
-        ) != NOMAD_INVALID_ID);
+        ).isValid());
     }
 
     const auto liveObjects = NomadObject::getLiveObjectCount();
@@ -233,16 +233,16 @@ BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_ca
         "catalog.last", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     );
     BOOST_REQUIRE(method != NOMAD_INVALID_ID);
-    BOOST_TEST(last > first + 1);
-    BOOST_TEST(runtime.getNextNativeFunctionId(first) == last);
-    BOOST_TEST(runtime.getNativeFunctionId("catalogMethod") == NOMAD_INVALID_ID);
+    BOOST_TEST(last.id > first.id + 1);
+    BOOST_TEST((runtime.getNextNativeFunctionId(first) == last));
+    BOOST_TEST(runtime.getNativeFunctionId("catalogMethod").isInvalid());
     BOOST_TEST(runtime.getNativeMemberId(type, "catalogMethod") == method);
     const auto* methodCallable = runtime.getNativeMemberMethod(method);
     BOOST_REQUIRE(methodCallable != nullptr);
     BOOST_TEST(methodCallable->getObjectType() == type);
     const auto functions = runtime.getNativeFunctions();
     NomadIndex enumerated = 0;
-    for (auto id = runtime.getFirstNativeFunctionId(); id != NOMAD_INVALID_ID;
+    for (auto id = runtime.getFirstNativeFunctionId(); id.isValid();
          id = runtime.getNextNativeFunctionId(id)) {
         const auto* function = runtime.getNativeFunction(id);
         BOOST_REQUIRE(function != nullptr);

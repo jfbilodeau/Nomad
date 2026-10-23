@@ -2,11 +2,11 @@
 
 BEGIN_ENTITY_FUNCTION(addSystem)
     [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto functionId = interpreter->getIdParameter(0);
+        auto functionId = interpreter->getCallableIdParameter(0);
 
         BEGIN_ENTITY_BLOCK()
 
-        if (functionId == NOMAD_INVALID_ID) {
+        if (functionId.isInvalid()) {
             log::error("Function for system not found");
             return;
         }
@@ -113,14 +113,14 @@ BEGIN_ENTITY_FUNCTION(getMaskAt)
 END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(moveTo)
-    [this, ENTITY_FUNCTION_NAME](VirtualMachine* interperter) {
-        auto x = interperter->getFloatParameter(0);
-        auto y = interperter->getFloatParameter(1);
-        auto speed = interperter->getFloatParameter(2);
+    [this, ENTITY_FUNCTION_NAME](const VirtualMachine* interpreter) {
+        auto x = interpreter->getFloatParameter(0);
+        auto y = interpreter->getFloatParameter(1);
+        auto speed = interpreter->getFloatParameter(2);
 
         BEGIN_ENTITY_BLOCK()
 
-        entity->moveTo(x, y, speed, NOMAD_INVALID_ID);
+        entity->moveTo(x, y, speed, CallableId::INVALID);
 
         END_ENTITY_BLOCK()
     },
@@ -138,7 +138,7 @@ BEGIN_ENTITY_FUNCTION(moveToThen)
         auto x = interpreter->getFloatParameter(0);
         auto y = interpreter->getFloatParameter(1);
         auto speed = interpreter->getFloatParameter(2);
-        auto functionId = interpreter->getIdParameter(3);
+        auto functionId = interpreter->getCallableIdParameter(3);
 
         auto closure = interpreter->createClosure(m_runtime, functionId);
 
@@ -159,14 +159,14 @@ BEGIN_ENTITY_FUNCTION(moveToThen)
 END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(oldon)
-    [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
+    [this, ENTITY_FUNCTION_NAME](const VirtualMachine* interpreter) {
         NomadString eventName = interpreter->getParameter(0).getStringValue();
-        auto functionId = interpreter->getParameter(1).getIdValue();
+        auto functionId = interpreter->getCallableIdParameter(1);
         auto scene = getCurrentContext()->getScene();
 
         BEGIN_ENTITY_BLOCK()
 
-        if (functionId == NOMAD_INVALID_ID) {
+        if (functionId.isInvalid()) {
             log::error("Function or function for event '" + eventName + "' not found");
             return;
         }
@@ -205,9 +205,9 @@ BEGIN_ENTITY_FUNCTION(oldtrigger)
 END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(on)
-    [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto eventId = interpreter->getParameter(0).getIdValue();
-        auto functionId = interpreter->getParameter(1).getIdValue();
+    [this, ENTITY_FUNCTION_NAME](const VirtualMachine* interpreter) {
+        auto eventId = interpreter->getIdParameter(0);
+        auto functionId = interpreter->getCallableIdParameter(1);
 
         auto closure = interpreter->createClosure(m_runtime, functionId);
 
@@ -224,12 +224,12 @@ BEGIN_ENTITY_FUNCTION(on)
 END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(onBeginCollision)
-    [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto functionId = interpreter->getIdParameter(0);
+    [this, ENTITY_FUNCTION_NAME](const VirtualMachine* interpreter) {
+        auto functionId = interpreter->getCallableIdParameter(0);
 
         BEGIN_ENTITY_BLOCK()
 
-        if (functionId == NOMAD_INVALID_ID) {
+        if (functionId.isInvalid()) {
             log::error("Function for begin collision event not found");
             return;
         }
@@ -245,13 +245,13 @@ BEGIN_ENTITY_FUNCTION(onBeginCollision)
 END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(onBeginCollisionWith)
-    [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
+    [this, ENTITY_FUNCTION_NAME](const VirtualMachine* interpreter) {
         auto mask = interpreter->getIntegerParameter(0);
-        auto functionId = interpreter->getIdParameter(1);
+        auto functionId = interpreter->getCallableIdParameter(1);
 
         BEGIN_ENTITY_BLOCK()
 
-        if (functionId == NOMAD_INVALID_ID) {
+        if (functionId.isInvalid()) {
             log::error("Function for onBeginCollisionWith not found");
             return;
         }
@@ -268,12 +268,12 @@ BEGIN_ENTITY_FUNCTION(onBeginCollisionWith)
 END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(onEndCollision)
-    [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto functionId = interpreter->getIdParameter(0);
+    [this, ENTITY_FUNCTION_NAME](const VirtualMachine* interpreter) {
+        auto functionId = interpreter->getCallableIdParameter(0);
 
         BEGIN_ENTITY_BLOCK()
 
-        if (functionId == NOMAD_INVALID_ID) {
+        if (functionId.isInvalid()) {
             log::error("Function or function for collision end event not found");
             return;
         }
@@ -289,13 +289,13 @@ BEGIN_ENTITY_FUNCTION(onEndCollision)
 END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(onEndCollisionWith)
-    [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
+    [this, ENTITY_FUNCTION_NAME](const VirtualMachine* interpreter) {
         auto mask = interpreter->getIntegerParameter(0);
-        auto functionId = interpreter->getIdParameter(1);
+        auto functionId = interpreter->getCallableIdParameter(1);
 
         BEGIN_ENTITY_BLOCK()
 
-        if (functionId == NOMAD_INVALID_ID) {
+        if (functionId.isInvalid()) {
             log::error("Function or function for end collision with event not found");
             return;
         }
@@ -316,7 +316,7 @@ BEGIN_ENTITY_FUNCTION(onPress)
         BEGIN_ENTITY_BLOCK()
 
         const auto& actionName = interpreter->getStringParameter(0)->getString();
-        const auto functionId = interpreter->getIdParameter(1);
+        const auto functionId = interpreter->getCallableIdParameter(1);
         const auto entityId = entity->getId();
 
         getCurrentContext()->getScene()->addActionPressed(
@@ -335,9 +335,9 @@ BEGIN_ENTITY_FUNCTION(onPress)
 END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(onRelease)
-    [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
+    [this, ENTITY_FUNCTION_NAME](const VirtualMachine* interpreter) {
         const auto& actionName = interpreter->getStringParameter(0)->getString();
-        auto functionId = interpreter->getIdParameter(1);
+        auto functionId = interpreter->getCallableIdParameter(1);
 
         BEGIN_ENTITY_BLOCK()
 
@@ -357,10 +357,10 @@ BEGIN_ENTITY_FUNCTION(onRelease)
 END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(onTimer)
-    [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
+    [this, ENTITY_FUNCTION_NAME](const VirtualMachine* interpreter) {
         const auto frameCount = interpreter->getIntegerParameter(0);
         const auto repeat = interpreter->getBooleanParameter(1);
-        const auto functionId = interpreter->getIdParameter(2);
+        const auto functionId = interpreter->getCallableIdParameter(2);
 
         const auto scene = getCurrentContext()->getScene();
         const auto sceneId = scene->getId();
@@ -368,7 +368,7 @@ BEGIN_ENTITY_FUNCTION(onTimer)
 
         BEGIN_ENTITY_BLOCK()
 
-        if (functionId == NOMAD_INVALID_ID) {
+        if (functionId.isInvalid()) {
             log::error("Function for onTimer not found");
             return;
         }
@@ -388,12 +388,12 @@ BEGIN_ENTITY_FUNCTION(onTimer)
 END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(onUpdate)
-    [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto functionId = interpreter->getIdParameter(0);
+    [this, ENTITY_FUNCTION_NAME](const VirtualMachine* interpreter) {
+        auto functionId = interpreter->getCallableIdParameter(0);
 
         BEGIN_ENTITY_BLOCK()
 
-        if (functionId == NOMAD_INVALID_ID) {
+        if (functionId.isInvalid()) {
             log::error("Function for update event not found");
             return;
         }
@@ -441,7 +441,7 @@ BEGIN_ENTITY_FUNCTION(playAnimationAndThen)
         auto duration = interpreter->getIntegerParameter(1);
         auto repeat = interpreter->getBooleanParameter(2);
         auto reverse = interpreter->getBooleanParameter(3);
-        auto functionId = interpreter->getIdParameter(4);
+        auto functionId = interpreter->getCallableIdParameter(4);
 
         auto closure = interpreter->createClosure(m_runtime, functionId);
 
@@ -468,7 +468,7 @@ BEGIN_ENTITY_FUNCTION(playAnimationAndThen)
 END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(removeAllSystems)
-    [this, ENTITY_FUNCTION_NAME](VirtualMachine* /*interpreter*/) {
+    [this, ENTITY_FUNCTION_NAME](const VirtualMachine* /*interpreter*/) {
         BEGIN_ENTITY_BLOCK()
 
         entity->removeAllSystems();
@@ -481,7 +481,7 @@ BEGIN_ENTITY_FUNCTION(removeAllSystems)
 END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(removeSelf)
-    [this, ENTITY_FUNCTION_NAME](VirtualMachine* /*interpreter*/) {
+    [this, ENTITY_FUNCTION_NAME](const VirtualMachine* /*interpreter*/) {
         BEGIN_ENTITY_BLOCK()
 
         auto scene = entity->getScene();
@@ -634,13 +634,13 @@ BEGIN_ENTITY_FUNCTION(setText)
 END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(systems.afterUpdate)
-    [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
+    [this, ENTITY_FUNCTION_NAME](const VirtualMachine* interpreter) {
         const auto& systemId = interpreter->getStringParameter(0)->getString();
-        auto functionId = interpreter->getIdParameter(1);
+        auto functionId = interpreter->getCallableIdParameter(1);
 
         BEGIN_ENTITY_BLOCK()
 
-        if (functionId == NOMAD_INVALID_ID) {
+        if (functionId.isInvalid()) {
             log::error("Function for systems.afterUpdate not found");
             return;
         }
@@ -657,13 +657,13 @@ BEGIN_ENTITY_FUNCTION(systems.afterUpdate)
 END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(systems.beforeUpdate)
-    [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
+    [this, ENTITY_FUNCTION_NAME](const VirtualMachine* interpreter) {
         const auto& systemId = interpreter->getStringParameter(0)->getString();
-        auto functionId = interpreter->getIdParameter(1);
+        auto functionId = interpreter->getCallableIdParameter(1);
 
         BEGIN_ENTITY_BLOCK()
 
-        if (functionId == NOMAD_INVALID_ID) {
+        if (functionId.isInvalid()) {
             log::error("Function for systems.beforeUpdate not found");
             return;
         }

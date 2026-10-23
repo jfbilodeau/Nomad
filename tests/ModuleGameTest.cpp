@@ -53,7 +53,7 @@ struct ModuleGameFixture {
         compile("init", "markEntryExecuted\n");
     }
 
-    NomadId compile(const NomadString& name, const NomadString& source) {
+    CallableId compile(const NomadString& name, const NomadString& source) {
         auto compiler = runtime.createCompiler();
         CompilerContext context(compiler.get());
         compiler->registerSources(&context, {{{name, {name + ".nomad", source}}}, {}});
@@ -83,8 +83,8 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
 
     BOOST_TEST(runtime.getHubId("game.inventory") == NOMAD_INVALID_ID);
     BOOST_TEST(runtime.getHubId("game.settings") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getCallableId("game.inventory.save") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getCallableId("game.settings.save") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getCallableId("game.inventory.save").isValid());
+    BOOST_TEST(runtime.getCallableId("game.settings.save").isValid());
 
     const auto* gameHub = runtime.getHub(runtime.getHubId("game"));
     BOOST_REQUIRE(gameHub != nullptr);
@@ -121,7 +121,7 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
         "end\n"
         "end"
     );
-    BOOST_TEST(declarationFunctionId != NOMAD_INVALID_ID);
+    BOOST_TEST(declarationFunctionId.isValid());
 
     const auto* inventoryHub = runtime.getHub(runtime.getHubId("game.inventory"));
     BOOST_REQUIRE(inventoryHub != nullptr);

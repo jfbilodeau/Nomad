@@ -23,14 +23,13 @@ namespace nomad {
 namespace {
 
 AudioManager::CompletionCallback createCompletionCallback(
-    Game* game,
-    VirtualMachine* virtualMachine,
+    Game* game, const VirtualMachine* virtualMachine,
     const NomadIndex parameterIndex
 ) {
-    auto closure = std::shared_ptr<Closure>(
+    auto closure = std::shared_ptr(
         virtualMachine->createClosure(
             game->getRuntime(),
-            virtualMachine->getIdParameter(parameterIndex)
+            virtualMachine->getCallableIdParameter(parameterIndex)
         )
     );
     const auto* context = game->getCurrentContext();
@@ -207,7 +206,7 @@ void Game::initAudioFunctions() {
     m_runtime->registerNativeMethod(
         audioType,
         "play",
-        [this](VirtualMachine* virtualMachine) {
+        [](VirtualMachine* virtualMachine) {
             executeAudioAction(virtualMachine, [&] {
                 getAudioObject(virtualMachine)->playOnce();
             });
@@ -220,7 +219,7 @@ void Game::initAudioFunctions() {
     m_runtime->registerNativeMethod(
         audioType,
         "playLoop",
-        [this](VirtualMachine* virtualMachine) {
+        [](VirtualMachine* virtualMachine) {
             executeAudioAction(virtualMachine, [&] {
                 getAudioObject(virtualMachine)->playLoop();
             });
@@ -252,7 +251,7 @@ void Game::initAudioFunctions() {
     m_runtime->registerNativeMethod(
         audioType,
         "pause",
-        [this](VirtualMachine* virtualMachine) {
+        [](VirtualMachine* virtualMachine) {
             executeAudioAction(virtualMachine, [&] {
                 getAudioObject(virtualMachine)->pause();
             });
@@ -265,7 +264,7 @@ void Game::initAudioFunctions() {
     m_runtime->registerNativeMethod(
         audioType,
         "resume",
-        [this](VirtualMachine* virtualMachine) {
+        [](VirtualMachine* virtualMachine) {
             executeAudioAction(virtualMachine, [&] {
                 getAudioObject(virtualMachine)->resume();
             });
@@ -278,7 +277,7 @@ void Game::initAudioFunctions() {
     m_runtime->registerNativeMethod(
         audioType,
         "stop",
-        [this](VirtualMachine* virtualMachine) {
+        [](VirtualMachine* virtualMachine) {
             executeAudioAction(virtualMachine, [&] {
                 getAudioObject(virtualMachine)->stop();
             });
@@ -290,7 +289,7 @@ void Game::initAudioFunctions() {
 
     m_runtime->registerNativeFunction(
         "game.music.play",
-        [this](VirtualMachine* virtualMachine) {
+        [this](const VirtualMachine* virtualMachine) {
             const auto& resourceName = virtualMachine->getStringParameter(0)->getString();
             (void)m_resourceManager->getAudio()->playMusic(
                 pathFromUtf8(m_options.resourcePath),

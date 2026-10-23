@@ -131,6 +131,7 @@ public:
     [[nodiscard]] NomadInteger getIntegerParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getIntegerValue(); }
     [[nodiscard]] NomadFloat getFloatParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getFloatValue(); }
     [[nodiscard]] NomadId getIdParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getIdValue(); }
+    [[nodiscard]] CallableId getCallableIdParameter(const NomadIndex parameterIndex) const { return CallableId{m_stack[m_parameterIndex - parameterIndex].getIdValue() }; }
     [[nodiscard]] NomadStringObject* getStringParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getStringObject(); }
 
     // Closure capture: read from enclosing function's parameter frame (not the nativeFunction's frame)

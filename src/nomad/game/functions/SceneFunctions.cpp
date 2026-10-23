@@ -9,8 +9,6 @@
 
 #include <nomad/game/resource/ResourceManager.hpp>
 
-#include <nomad/script/NativeFunction.hpp>
-#include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>
 
 namespace nomad {
@@ -83,14 +81,14 @@ void Game::initSceneFunctions() {
         [this](const VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot create entity outside of a scene")
 
-            const auto functionId = interpreter->getIdParameter(0);
+            const auto callableId = interpreter->getCallableIdParameter(0);
             const auto entityX = interpreter->getFloatParameter(1);
             const auto entityY = interpreter->getFloatParameter(2);
             const auto layer = interpreter->getIntegerParameter(3);
 
             addEntityToScene(
                 scene->getId(),
-                functionId,
+                callableId,
                 entityX,
                 entityY,
                 0.0,
@@ -122,9 +120,9 @@ void Game::initSceneFunctions() {
             const auto entityY = interpreter->getFloatParameter(2);
             const auto layer = interpreter->getIntegerParameter(3);
 
-            const NomadId initFunctionId = getFunctionId(initFunctionName);
+            const auto initFunctionId = getFunctionId(initFunctionName);
 
-            if (initFunctionId != NOMAD_INVALID_ID) {
+            if (initFunctionId.isValid()) {
                 addEntityToScene(
                     scene->getId(),
                     initFunctionId,
@@ -160,8 +158,8 @@ void Game::initSceneFunctions() {
             const auto entityX = interpreter->getFloatParameter(1);
             const auto entityY = interpreter->getFloatParameter(2);
             const auto layer = interpreter->getIntegerParameter(3);
-            const auto functionId = interpreter->getIdParameter(4);
-            auto postFunctionClosure = interpreter->createClosure(m_runtime, functionId);
+            const auto callableId = interpreter->getCallableIdParameter(4);
+            auto postFunctionClosure = interpreter->createClosure(m_runtime, callableId);
 
             addEntityToScene(
                 scene->getId(),
@@ -193,11 +191,11 @@ void Game::initSceneFunctions() {
         [this](const VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot create entity outside of a scene")
 
-            auto functionId = interpreter->getIdParameter(0);
+            auto functionId = interpreter->getCallableIdParameter(0);
             const auto entityX = interpreter->getFloatParameter(1);
             const auto entityY = interpreter->getFloatParameter(2);
             const auto layer = interpreter->getIntegerParameter(3);
-            const auto postFunctionId = interpreter->getIdParameter(4);
+            const auto postFunctionId = interpreter->getCallableIdParameter(4);
             auto postFunctionClosure = interpreter->createClosure(m_runtime, postFunctionId);
 
             addEntityToScene(
@@ -266,7 +264,7 @@ void Game::initSceneFunctions() {
         [this](const VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot create entity outside of a scene")
 
-            const auto function = interpreter->getIdParameter(0);
+            const auto function = interpreter->getCallableIdParameter(0);
             const auto entityX = interpreter->getFloatParameter(1);
             const auto entityY = interpreter->getFloatParameter(2);
             const auto layer = interpreter->getIntegerParameter(3);
@@ -307,7 +305,7 @@ void Game::initSceneFunctions() {
             const auto entityY = interpreter->getFloatParameter(2);
             const auto layer = interpreter->getIntegerParameter(3);
             const auto& text = interpreter->getStringParameter(4)->getString();
-            const auto functionId = interpreter->getIdParameter(5);
+            const auto functionId = interpreter->getCallableIdParameter(5);
             auto postFunctionClosure = interpreter->createClosure(m_runtime, functionId);
 
             addEntityToScene(
@@ -378,8 +376,8 @@ void Game::initSceneFunctions() {
         [this](const VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot set onEvent outside of a scene")
 
-            const auto eventId = interpreter->getParameter(0).getIdValue();
-            const auto functionId = interpreter->getParameter(1).getIdValue();
+            const auto eventId = interpreter->getIdParameter(0);
+            const auto functionId = interpreter->getCallableIdParameter(1);
 
             const auto event = m_runtime->getEventDefinition(eventId);
 
@@ -406,7 +404,7 @@ void Game::initSceneFunctions() {
         [this](const VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot set onPostUpdate outside of a scene")
 
-            const auto functionId = interpreter->getIdParameter(0);
+            const auto functionId = interpreter->getCallableIdParameter(0);
 
             scene->setOnPostUpdateCallback(functionId);
         },
@@ -426,7 +424,7 @@ void Game::initSceneFunctions() {
         [this](const VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot set onUpdate outside of a scene")
 
-            const auto functionId = interpreter->getIdParameter(0);
+            const auto functionId = interpreter->getCallableIdParameter(0);
 
             scene->setOnUpdate(functionId);
         },
@@ -596,7 +594,7 @@ void Game::initSceneFunctions() {
         [this](VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot load input mapping outside of a scene")
 
-            auto predicateId = interpreter->getIdParameter(0);
+            auto predicateId = interpreter->getCallableIdParameter(0);
 
             auto executionContext = getCurrentContext();
             auto thisEntity = executionContext->getThisEntity();
@@ -633,10 +631,10 @@ void Game::initSceneFunctions() {
 
     m_runtime->registerNativeFunction(
         "select.all",
-        [this](VirtualMachine* interpreter) {
+        [this](const VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot load input mapping outside of a scene")
 
-            auto predicateId = interpreter->getIdParameter(0);
+            auto predicateId = interpreter->getCallableIdParameter(0);
 
             auto executionContext = getCurrentContext();
             auto thisEntity = executionContext->getThisEntity();

@@ -89,6 +89,17 @@ void FormatString::addVariable(const IdentifierType variable_type, const Type* v
     });
 }
 
+void FormatString::addFunction(const Type* valueType, const CallableId functionId) {
+    m_segments.push_back({
+        SegmentType::Variable,
+        IdentifierType::Function,
+        valueType,
+        NOMAD_INVALID_ID,
+        functionId,
+        "",
+    });
+}
+
 void FormatString::addExpression(const Type* valueType, const CallableId functionId) {
     m_segments.push_back({
         SegmentType::Expression,

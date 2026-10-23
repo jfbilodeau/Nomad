@@ -23,12 +23,19 @@ Neither the interpreter nor its context creates or owns a VM.
 
 ### Type lookup
 
-`Runtime::getTypeId(name)` returns a `TypeId`, or the invalid value `TypeId{}`
+`Runtime::getTypeId(name)` returns a `TypeId`, or `TypeId::INVALID`
 when the type is not registered. Pass it to `getType(id)` to retrieve an optional
 `const Type*`; invalid or unregistered IDs return an empty optional. Type IDs
 belong to the runtime that issued them and remain stable as more types are
 registered. They do not implicitly convert to integers or other ID categories.
 Event parameter definitions use `TypeId` for their `typeId` field.
+
+Strong IDs are invalid when default-constructed. Use `isValid()` and
+`isInvalid()` to check their numeric validity; these checks do not verify that
+the ID belongs to a particular runtime or is registered. `IdHash` supports
+strong IDs as keys in standard unordered containers.
+Streaming an ID prints its type and numeric value, for example `CallableId{42}`
+or `CallableId{-1}`.
 
 ### Object type property metadata
 
@@ -70,8 +77,10 @@ functions; script-defined overload declarations are not yet supported.
 Native and script functions use the same call syntax in expressions and
 statements. A statement discards any returned value.
 
-`getCallableId(name)` returns the first free-function overload as a `NomadId`,
-or `NOMAD_INVALID_ID` when absent. It does not select an overload.
+Functions, methods, and constructors share the `CallableId` type. Callable IDs
+do not implicitly convert to integers or other ID categories.
+`getCallableId(name)` returns the first free-function overload as a `CallableId`,
+or `CallableId::INVALID` when absent. It does not select an overload.
 `getCallableOverloads(name, ids)` lists free-function overload IDs.
 
 Native member IDs are distinct from callable IDs. `registerNativeMethod` and
@@ -483,13 +492,13 @@ const auto constructorId = runtime.registerNativeConstructor(
     },
     ""
 );
-if (constructorId == nomad::NOMAD_INVALID_ID) {
+if (constructorId.isInvalid()) {
     throw nomad::NomadException("Failed to register Example constructor");
 }
 ```
 
 Parameter types and the constructed type must be types registered with that runtime;
-parameters cannot be `void`. Registration failures are logged and return `NOMAD_INVALID_ID`.
+parameters cannot be `void`. Registration failures are logged and return `CallableId::INVALID`.
 Constructors of one type may differ in parameter count or types. Duplicate parameter
 signatures are rejected, even if their parameter names differ. Use an empty parameter
 list for a parameterless constructor.

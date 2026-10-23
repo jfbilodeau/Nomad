@@ -25,9 +25,9 @@ void Game::initGameFunctions() {
     m_runtime->registerNativeFunction(
         "game.createScene",
         [this](VirtualMachine* interpreter) {
-            const auto functionId = interpreter->getIdParameter(0);
+            const auto callableId = interpreter->getCallableIdParameter(0);
 
-            const auto result = m_runtime->getFunctionName(functionId);
+            const auto result = m_runtime->getFunctionName(callableId);
 
             if (!result) {
                 log::error("Function ID for scene not found");
@@ -37,7 +37,7 @@ void Game::initGameFunctions() {
 
             const auto& functionName = result.value();
 
-            const auto sceneId = createScene(functionName, functionId);
+            const auto sceneId = createScene(functionName, callableId);
 
             interpreter->setIdResult(sceneId);
         }, {
@@ -58,7 +58,7 @@ void Game::initGameFunctions() {
 
             const auto functionId = getFunctionId(functionName);
 
-            if (functionId == NOMAD_INVALID_ID) {
+            if (functionId.isInvalid()) {
                 log::error("Function for scene '" + functionName + "' not found");
                 return;
             }
@@ -80,13 +80,13 @@ void Game::initGameFunctions() {
         "game.createSceneByNameThen",
         [this](VirtualMachine* interpreter) {
             const auto& functionName = interpreter->getStringParameter(0)->getString();
-            const NomadId postCreateFunction = interpreter->getIdParameter(1);
+            const auto postCreateFunction = interpreter->getCallableIdParameter(1);
 
             auto postCreateClosure = interpreter->createClosure(m_runtime, postCreateFunction);
 
             const auto functionId = getFunctionId(functionName);
 
-            if (functionId == NOMAD_INVALID_ID) {
+            if (functionId.isInvalid()) {
                 log::error("Function for scene '" + functionName + "' not found");
                 return;
             }
@@ -114,8 +114,8 @@ void Game::initGameFunctions() {
     m_runtime->registerNativeFunction(
         "game.createSceneThen",
         [this](VirtualMachine* interpreter) {
-            const NomadId functionId = interpreter->getIdParameter(0);
-            const NomadId postCreateFunction = interpreter->getIdParameter(1);
+            const auto functionId = interpreter->getCallableIdParameter(0);
+            const auto postCreateFunction = interpreter->getCallableIdParameter(1);
 
             auto postCreateClosure = interpreter->createClosure(m_runtime, postCreateFunction);
 

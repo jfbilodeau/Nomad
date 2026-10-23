@@ -284,7 +284,7 @@ NomadId Runtime::registerHubVariable(const NomadString& name) {
     if (m_scriptInitialization.state != ScriptInitializationState::Pending ||
         getContainingHub(name).empty() || !canRegisterHubMember(name) ||
         isHub(name) || isHubVariable(name) ||
-        getCallableId(name) != NOMAD_INVALID_ID || getConstantId(name) != NOMAD_INVALID_ID ||
+        getCallableId(name).isValid() || getConstantId(name) != NOMAD_INVALID_ID ||
         getTypeByName(name) != nullptr || getEventId(name) != NOMAD_INVALID_ID ||
         getDynamicVariableId(name) != NOMAD_INVALID_ID ||
         getVariableContextIdByPrefix(name) != NOMAD_INVALID_ID) {
@@ -466,7 +466,7 @@ bool Runtime::registerHub(const NomadString& name) {
             return false;
         }
         auto prefix = name.substr(0, start + length);
-        if (!isHub(prefix) && (getCallableId(prefix) != NOMAD_INVALID_ID ||
+        if (!isHub(prefix) && (getCallableId(prefix).isValid() ||
             getConstantId(prefix) != NOMAD_INVALID_ID || getTypeByName(prefix) != nullptr ||
             getEventId(prefix) != NOMAD_INVALID_ID || getDynamicVariableId(prefix) != NOMAD_INVALID_ID ||
             isHubVariable(prefix) ||
@@ -1605,11 +1605,11 @@ NomadId Runtime::registerNativeIndexer(
 ) {
     if (!ownsType(objectType) || !ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
         log::error("Cannot register native indexer: types must be registered, public, and non-void");
-        return CallableId::INVALID;
+        return NOMAD_INVALID_ID;
     }
     if (indexTypes.empty()) {
         log::error("Cannot register native indexer: at least one index type is required");
-        return CallableId::INVALID;
+        return NOMAD_INVALID_ID;
     }
     for (const auto* indexType : indexTypes) {
         if (!ownsType(indexType) || indexType->isVoid() || indexType->isInternal()) {
@@ -1771,7 +1771,7 @@ const NativeMethod* Runtime::getNativeMemberMethod(const NomadId memberId) const
         return nullptr;
     }
 
-    return getNativeMethod(toNomadId(member.definitionIndex));
+    return getNativeMethod(CallableId{toNomadId(member.definitionIndex)});
 }
 
 void Runtime::getNativeMembers(const Type* objectType, std::vector<NomadId>& members) const {
@@ -3050,14 +3050,14 @@ void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function
 
                     const auto calledFunction = getFunctionByStartAddress(functionStart);
 
-                textValue = calledFunction->getName() + " (" + std::to_string(calledFunction->getId()) + ")";
+                textValue = calledFunction->getName() + " (" + std::to_string(calledFunction->getId().id) + ")";
                 break;
             }
             case Operand::NativeFunction: {
-                const auto* nativeFunction = getNativeFunction(value.getIdValue());
+                const auto* nativeFunction = getNativeFunction(CallableId{value.getIdValue()});
 
                 if (nativeFunction != nullptr) {
-                    textValue = nativeFunction->getName() + " (" + std::to_string(nativeFunction->getId()) + ")";
+                    textValue = nativeFunction->getName() + " (" + std::to_string(nativeFunction->getId().id) + ")";
                 } else {
                     textValue = "<unknown native function> (" + std::to_string(value.getIdValue()) + ")";
                 }
@@ -3152,7 +3152,7 @@ void Runtime::dumpDocumentation(std::ostream &out) const {
             }
             constantTextValue = std::format("\"{}\"", escaped);
         } else if (constantType == getFunctionType()) {
-            constantTextValue = getFunction(constantValue.getIdValue())->getName();
+            constantTextValue = getFunction(CallableId{constantValue.getIdValue()})->getName();
         } else {
             constantTextValue = "<unknown_type>";
         }
@@ -3180,7 +3180,7 @@ void Runtime::dumpDocumentation(std::ostream &out) const {
 
     out << "## NativeFunctions" << std::endl;
 
-    for (auto id = getFirstNativeFunctionId(); id != NOMAD_INVALID_ID; id = getNextNativeFunctionId(id)) {
+    for (auto id = getFirstNativeFunctionId(); id.isValid(); id = getNextNativeFunctionId(id)) {
         const auto& nativeFunction = *getNativeFunction(id);
         out << "### `" << nativeFunction.getName() << "`" << std::endl;
 

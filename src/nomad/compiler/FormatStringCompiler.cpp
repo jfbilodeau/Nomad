@@ -226,11 +226,15 @@ std::optional<NomadString> compileFormatString(
             }
 
             if (formatString != nullptr) {
-                formatString->addVariable(
-                    identifier.identifierType,
-                    identifier.valueType,
-                    identifier.variableId
-                );
+                if (identifier.identifierType == IdentifierType::Function) {
+                    formatString->addFunction(identifier.valueType, identifier.functionId);
+                } else {
+                    formatString->addVariable(
+                        identifier.identifierType,
+                        identifier.valueType,
+                        identifier.variableId
+                    );
+                }
             }
         }
     }

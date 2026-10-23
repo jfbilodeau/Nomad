@@ -2,12 +2,14 @@
 
 #include <nomad/game/EventRegistration.hpp>
 
+#include "nomad/script/Callable.hpp"
+
 namespace nomad {
 
-void EventRegistrationManager::registerSystemEvent(SystemEvent event, NomadId functionId) {
+void EventRegistrationManager::registerSystemEvent(SystemEvent event, CallableId callableId) {
     unregisterSystemEvent(event);
 
-    m_registrations.emplace_back(event, functionId);
+    m_registrations.emplace_back(event, callableId);
 }
 
 void EventRegistrationManager::unregisterSystemEvent(SystemEvent event) {
@@ -19,10 +21,10 @@ void EventRegistrationManager::unregisterSystemEvent(SystemEvent event) {
     );
 }
 
-void EventRegistrationManager::registerUserEvent(const NomadString &name, NomadId functionId) {
+void EventRegistrationManager::registerUserEvent(const NomadString &name, CallableId callableId) {
     unregisterUserEvent(name);
 
-    m_registrations.emplace_back(SystemEvent::User, functionId, name);
+    m_registrations.emplace_back(SystemEvent::User, callableId, name);
 }
 
 void EventRegistrationManager::unregisterUserEvent(const NomadString &name) {
@@ -34,40 +36,40 @@ void EventRegistrationManager::unregisterUserEvent(const NomadString &name) {
     );
 }
 
-NomadId EventRegistrationManager::getFunctionIdForSystemEvent(SystemEvent event) const {
+CallableId EventRegistrationManager::getFunctionIdForSystemEvent(const SystemEvent event) const {
     for (const auto& registration : m_registrations) {
         if (registration.eventId == event && registration.mask == 0) {
             return registration.functionId;
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return CallableId::INVALID;
 }
 
-NomadId EventRegistrationManager::getFunctionIdForUserEvent(const NomadString &name) const {
+CallableId EventRegistrationManager::getFunctionIdForUserEvent(const NomadString &name) const {
     for (const auto& registration : m_registrations) {
         if (registration.eventId == SystemEvent::User && registration.name == name) {
             return registration.functionId;
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return CallableId::INVALID;
 }
 
-NomadId EventRegistrationManager::getFunctionIdForMaskEvent(SystemEvent event, NomadInteger mask) const {
+CallableId EventRegistrationManager::getFunctionIdForMaskEvent(SystemEvent event, NomadInteger mask) const {
     for (const auto& registration : m_registrations) {
         if (registration.eventId == event && registration.mask == mask) {
             return registration.functionId;
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return CallableId::INVALID;
 }
 
-void EventRegistrationManager::registerMaskEvent(SystemEvent event, NomadId functionId, NomadInteger mask) {
+void EventRegistrationManager::registerMaskEvent(SystemEvent event, CallableId callableId, NomadInteger mask) {
     unregisterMaskEvent(event, mask);
 
-    m_registrations.emplace_back(event, functionId, NOMAD_EMPTY_STRING, mask);
+    m_registrations.emplace_back(event, callableId, NOMAD_EMPTY_STRING, mask);
 }
 
 void EventRegistrationManager::unregisterMaskEvent(SystemEvent event, NomadInteger mask) {

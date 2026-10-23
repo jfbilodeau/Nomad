@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "nomad/script/Callable.hpp"
+
 #include <functional>
 #include <nomad/Nomad.hpp>
 
@@ -36,11 +38,11 @@ public:
     EventRegistrationManager(const EventRegistrationManager&) = delete;
     ~EventRegistrationManager() = default;
 
-    void registerSystemEvent(SystemEvent event, CallableId functionId);
+    void registerSystemEvent(SystemEvent event, CallableId callableId);
     void unregisterSystemEvent(SystemEvent event);
-    void registerUserEvent(const NomadString& name, CallableId functionId);
+    void registerUserEvent(const NomadString& name, CallableId callableId);
     void unregisterMaskEvent(SystemEvent event, NomadInteger mask);
-    void registerMaskEvent(SystemEvent event, CallableId functionId, NomadInteger mask);
+    void registerMaskEvent(SystemEvent event, CallableId callableId, NomadInteger mask);
     void unregisterUserEvent(const NomadString& name);
 
     [[nodiscard]]

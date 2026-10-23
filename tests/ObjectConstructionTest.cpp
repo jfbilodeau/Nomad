@@ -25,7 +25,7 @@ const ObjectType* registerObjectType(Runtime& runtime, const NomadString& name) 
     return type;
 }
 
-NomadId compileConstruction(Runtime& runtime, const NomadString& source, const NomadString& name = "main") {
+CallableId compileConstruction(Runtime& runtime, const NomadString& source, const NomadString& name = "main") {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{name, {name + ".nomad", source}}}, {}});
@@ -57,7 +57,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_resolve_execute_and_reuse_specializat
                     ++constructions;
                     return new ConstructedObject;
                 }, ""
-            ) != NOMAD_INVALID_ID);
+            ).isValid());
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate(
@@ -122,7 +122,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_validate_bindings_and_concrete_constr
             BOOST_REQUIRE(runtime.registerNativeConstructor(
                 objectType, {defParameter("first", valueType, ""), defParameter("second", valueType, "")},
                 [](std::span<const RuntimeValue>) { return new ConstructedObject; }, ""
-            ) != NOMAD_INVALID_ID);
+            ).isValid());
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate(
@@ -182,7 +182,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_arguments_preserve_execution_mode_eval
                     BOOST_TEST(arguments[1].getIntegerValue() == 2);
                     return new ConstructedObject;
                 }, ""
-            ) != NOMAD_INVALID_ID);
+            ).isValid());
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate(
@@ -220,7 +220,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_require_a_matching_specialized_constr
                         static_cast<const ObjectType*>(type),
                         {defParameter("value", runtime.getStringType(), "")},
                         [](std::span<const RuntimeValue>) { return new ConstructedObject; }, ""
-                    ) != NOMAD_INVALID_ID);
+                    ).isValid());
                 }
             }
         ));
@@ -340,7 +340,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reuses_concrete_and_hidden_par
                     ++calls;
                     return new ConstructedObject;
                 }, ""
-            ) != NOMAD_INVALID_ID);
+            ).isValid());
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate(
@@ -490,7 +490,7 @@ BOOST_AUTO_TEST_CASE(constructor_template_registration_preserves_explicit_constr
                     ++calls;
                     return new ConstructedObject;
                 }, ""
-            ) != NOMAD_INVALID_ID);
+            ).isValid());
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate(
@@ -672,7 +672,7 @@ BOOST_AUTO_TEST_CASE(constructors_accept_heterogeneous_arguments_and_type_specif
             ++calls;
             return new ConstructedObject;
         }, ""
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     const auto id = compileConstruction(runtime, "return new Example 0 \"hello\" true");
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
@@ -701,7 +701,7 @@ BOOST_AUTO_TEST_CASE(constructor_faults_and_null_factories_release_object_argume
                 }
                 throw NomadException("Constructor failed");
             }, ""
-        ) != NOMAD_INVALID_ID);
+        ).isValid());
         const auto id = compileConstruction(runtime, "return new Example (\"hello\".toUpper)");
         const auto before = NomadObject::getLiveObjectCount();
         auto machine = runtime.createVirtualMachine();
@@ -723,7 +723,7 @@ BOOST_AUTO_TEST_CASE(parameterless_constructors_are_explicitly_registered) {
     const auto* type = registerObjectType(runtime, "Plain");
     BOOST_REQUIRE(runtime.registerNativeConstructor(
         type, {}, [](std::span<const RuntimeValue>) { return new ConstructedObject; }, ""
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     const auto id = compileConstruction(runtime, "return new Plain");
     RuntimeValue result;
     runtime.executeFunction(id, {}, result);
@@ -753,7 +753,7 @@ BOOST_AUTO_TEST_CASE(source_parameters_are_supplied_by_the_compiler) {
             line = arguments[3].getIntegerValue();
             return new ConstructedObject;
         }, ""
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
 
     const auto id = compileConstruction(runtime, "\nreturn new Located 42");
     RuntimeValue result;
@@ -784,31 +784,31 @@ BOOST_AUTO_TEST_CASE(registration_rejects_collisions_invalid_types_and_missing_f
     const auto factory = [](std::span<const RuntimeValue>) { return new ConstructedObject; };
     const auto parameters = std::vector{defParameter("value", runtime.getIntegerType(), "")};
     const auto id = runtime.registerNativeConstructor(type, parameters, factory, "");
-    BOOST_REQUIRE(id != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeConstructor(type, parameters, factory, "") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeConstructor(type, parameters, otherType, factory, "") == NOMAD_INVALID_ID);
+    BOOST_REQUIRE(id.isValid());
+    BOOST_TEST(runtime.registerNativeConstructor(type, parameters, factory, "").isInvalid());
+    BOOST_TEST(runtime.registerNativeConstructor(type, parameters, otherType, factory, "").isInvalid());
     BOOST_TEST(runtime.registerNativeConstructor(
         type, {defParameter("renamed", runtime.getIntegerType(), "")}, factory, ""
-    ) == NOMAD_INVALID_ID);
+    ).isInvalid());
     BOOST_TEST(runtime.registerNativeConstructor(
         type, {defParameter("value", other.getIntegerType(), "")}, factory, ""
-    ) == NOMAD_INVALID_ID);
+    ).isInvalid());
     for (const auto* invalid : {runtime.getVoidType(), static_cast<const Type*>(nullptr)}) {
         BOOST_TEST(runtime.registerNativeConstructor(
             otherType, {defParameter("value", invalid, "")}, factory, ""
-        ) == NOMAD_INVALID_ID);
+        ).isInvalid());
     }
-    BOOST_TEST(runtime.registerNativeConstructor(nullptr, {}, factory, "") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeConstructor(registerObjectType(other, "Foreign"), {}, factory, "") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerNativeConstructor(nullptr, {}, factory, "").isInvalid());
+    BOOST_TEST(runtime.registerNativeConstructor(registerObjectType(other, "Foreign"), {}, factory, "").isInvalid());
     BOOST_TEST(runtime.registerNativeConstructor(
         type, {}, registerObjectType(other, "ForeignCreated"), factory, ""
-    ) == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerNativeConstructor(type, {}, {}, "") == NOMAD_INVALID_ID);
+    ).isInvalid());
+    BOOST_TEST(runtime.registerNativeConstructor(type, {}, {}, "").isInvalid());
     BOOST_TEST(runtime.getConstructors().size() == 1u);
     const auto* constructor = runtime.getConstructor(id);
     BOOST_REQUIRE(constructor != nullptr);
     BOOST_TEST(constructor->getReturnType() == type);
-    BOOST_TEST(runtime.getConstructor(NOMAD_INVALID_ID) == nullptr);
+    BOOST_TEST(runtime.getConstructor(CallableId::INVALID) == nullptr);
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"invalid", {"invalid.nomad", "return new Example true"}}}, {}});
@@ -834,7 +834,7 @@ BOOST_AUTO_TEST_CASE(overloads_select_by_argument_types_and_count_with_distinct_
                 calls += marker;
                 return new ConstructedObject;
             }, ""
-        ) != NOMAD_INVALID_ID);
+        ).isValid());
     };
     registerFactory({}, emptyType, "E");
     registerFactory({defParameter("value", runtime.getIntegerType(), "")}, singleType, "I");
@@ -891,7 +891,7 @@ BOOST_AUTO_TEST_CASE(parameterized_constructor_registration_validates_and_reuses
         BOOST_REQUIRE(runtime.registerNativeConstructor(
             classType, {defParameter("value", arguments[0], "")},
             [](std::span<const RuntimeValue>) { return new ConstructedObject; }, ""
-        ) != NOMAD_INVALID_ID);
+        ).isValid());
     };
     BOOST_TEST(!runtime.registerNativeParameterizedConstructor("", 1, initializer));
     BOOST_TEST(!runtime.registerNativeParameterizedConstructor("Create", 0, initializer));
@@ -901,7 +901,7 @@ BOOST_AUTO_TEST_CASE(parameterized_constructor_registration_validates_and_reuses
     BOOST_TEST(!runtime.registerNativeParameterizedConstructor("Create", 1, initializer));
     BOOST_TEST(runtime.registerNativeConstructor(
         registerObjectType(runtime, "Create"), {}, [](std::span<const RuntimeValue>) { return new ConstructedObject; }, ""
-    ) == NOMAD_INVALID_ID);
+    ).isInvalid());
     BOOST_TEST(!runtime.registerParameterizedType("Create", 1, [](const auto&) {
         return std::make_unique<ObjectType>("Collision");
     }));
@@ -934,7 +934,7 @@ BOOST_AUTO_TEST_CASE(failed_parameterized_initialization_is_not_cached_as_succes
                 BOOST_REQUIRE(runtime.registerNativeConstructor(
                     registerObjectType(runtime, name), {},
                     [](std::span<const RuntimeValue>) { return new ConstructedObject; }, ""
-                ) != NOMAD_INVALID_ID);
+                ).isValid());
             }
             throw NomadException("Initialization failed");
         }

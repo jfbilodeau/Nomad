@@ -33,7 +33,7 @@ BOOST_AUTO_TEST_CASE(checks_named_in_memory_sources_without_reading_files)
     const auto result = checkSources(batch, &runtime);
 
     BOOST_REQUIRE(result.succeeded());
-    BOOST_TEST(runtime.getFunctionId("helpers.answer") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getFunctionId("helpers.answer").isValid());
     BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("init"))->getPath() == "untitled:init");
 }
 

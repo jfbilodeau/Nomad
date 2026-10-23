@@ -150,7 +150,7 @@ private:
 
     NomadId m_selectedSceneId = NOMAD_INVALID_ID;
     NomadId m_selectedEntityId = NOMAD_INVALID_ID;
-    NomadId m_selectedFunctionId = NOMAD_INVALID_ID;
+    CallableId m_selectedFunctionId = CallableId::INVALID;
     SelectionKind m_selectionKind = SelectionKind::Game;
 
     NomadString m_editingVariableName;

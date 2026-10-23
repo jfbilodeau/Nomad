@@ -64,6 +64,7 @@ public:
 
     void addLiteral(const NomadString& literal);
     void addVariable(IdentifierType identifierType, const Type* valueType, NomadId variableId);
+    void addFunction(const Type* valueType, CallableId functionId);
     void addExpression(const Type* valueType, CallableId functionId);
 
     NomadString format(VirtualMachine* interpreter) const;

@@ -100,7 +100,7 @@ void registerArrayType(Runtime* runtime) {
                     const auto size = arguments[0].getIntegerValue();
                     return new Array1dObject(arrayType->getElementType(), size);
                 }, ""
-            ) == nomad::NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array1 constructor");
             }
             const auto* elementType = arrayType->getElementType();
@@ -156,7 +156,7 @@ void registerArrayType(Runtime* runtime) {
                     const auto size2 = arguments[1].getIntegerValue();
                     return new Array2dObject(arrayType->getElementType(), size1, size2);
                 }, ""
-            ) == nomad::NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array2 constructor");
             }
             if (runtime->registerNativeIndexer(
@@ -206,7 +206,7 @@ void registerArrayType(Runtime* runtime) {
                     const auto size3 = arguments[2].getIntegerValue();
                     return new Array3dObject(arrayType->getElementType(), size1, size2, size3);
                 }, ""
-            ) == nomad::NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array3 constructor");
             }
             if (runtime->registerNativeIndexer(
@@ -257,7 +257,7 @@ void registerArrayType(Runtime* runtime) {
                     static_cast<const nomad::ObjectType*>(constructor->getReturnType()),
                     constructor->getFactory(),
                     ""
-                ) == nomad::NOMAD_INVALID_ID) {
+                ).isInvalid()) {
                     throw nomad::NomadException("Failed to register Array constructor");
                 }
             }

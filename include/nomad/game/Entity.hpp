@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include "nomad/script/Event.hpp"
+
 #include <nomad/Nomad.hpp>
 
 #include <nomad/game/Alignment.hpp>
@@ -103,8 +105,8 @@ public:
     void move(const PointF& velocity);
     void move(NomadFloat x, NomadFloat y);
     void startMovingInDirection(NomadFloat angle, NomadFloat speed);
-    void moveTo(const PointF& destination, NomadFloat speed, NomadId onArriveAtDestination = NOMAD_INVALID_ID);
-    void moveTo(NomadFloat x, NomadFloat y, NomadFloat speed, NomadId onArriveAtDestination = NOMAD_INVALID_ID);
+    void moveTo(const PointF& destination, NomadFloat speed, CallableId callableId = CallableId::INVALID);
+    void moveTo(NomadFloat x, NomadFloat y, NomadFloat speed, CallableId onArriveAtDestination = CallableId::INVALID);
     void moveTo(const PointF& destination, NomadFloat speed, std::unique_ptr<Closure> onArriveAtDestination);
     void moveTo(NomadFloat x, NomadFloat y, NomadFloat speed, std::unique_ptr<Closure> onArriveAtDestination);
     [[nodiscard]]
@@ -287,7 +289,7 @@ public:
     void unregisterEvent(NomadId eventId);
     void dispatchEvent(const EventDispatch& dispatch);
 
-    [[nodiscard]] NomadId getOnUpdate() const;
+    [[nodiscard]] CallableId getOnUpdate() const;
     void setOnUpdate(CallableId functionId);
 
     void setOnBeginCollision(CallableId functionId);
@@ -332,7 +334,7 @@ private: // Data members
     bool m_moveToDestination = false;
     PointF m_destination = {};
     NomadFloat m_speed = 0;
-    NomadId m_onArriveAtDestination = NOMAD_INVALID_ID;
+    CallableId m_onArriveAtDestination{};
     std::unique_ptr<Closure> m_onArriveAtDestinationClosure;
 
     // Mask, body and collision
@@ -373,7 +375,7 @@ private: // Data members
     NomadInteger m_animationDuration = 1;
     NomadBoolean m_animationRepeat = true;
     NomadBoolean m_animationReverse = false;
-    NomadId m_onAnimationEnd = NOMAD_INVALID_ID;
+    CallableId m_onAnimationEnd = CallableId::INVALID;
     std::unique_ptr<Closure> m_onAnimationEndClosure;
     bool m_animationDirty = false;
 

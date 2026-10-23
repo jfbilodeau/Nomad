@@ -1352,7 +1352,7 @@ void DebugConsole::renderFunctionInspector() {
             m_game->getRuntime()->getFunctions(functions);
             std::ranges::sort(functions, {}, &ScriptFunction::getName);
 
-            const auto* selectedFunction = m_selectedFunctionId == NOMAD_INVALID_ID
+            const auto* selectedFunction = m_selectedFunctionId.isInvalid()
                 ? nullptr
                 : m_game->getRuntime()->getScriptFunction(m_selectedFunctionId);
             if (ImGui::BeginCombo(

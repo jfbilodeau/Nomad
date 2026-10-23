@@ -48,7 +48,7 @@ void registerMapFamily(
                     return new nomad::MapObject(valueType);
                 },
                 NomadDoc("Creates an empty map with string keys.")
-            ) == NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw NomadException("Failed to register Map constructor");
             }
             const auto countId = runtime->registerNativeProperty(

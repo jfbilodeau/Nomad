@@ -47,7 +47,7 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         return;
     }
     record(context, "register");
-    if (context->runtime->getNativeFunctionId("toInt") == nomad::NOMAD_INVALID_ID) {
+    if (context->runtime->getNativeFunctionId("toInt").isInvalid()) {
         throw nomad::NomadException("Fixture requires prior system registration");
     }
     if (context->configuration->getBoolean("fixture.fail-registration").value_or(false)) {

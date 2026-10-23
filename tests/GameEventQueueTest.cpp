@@ -117,7 +117,7 @@ BOOST_AUTO_TEST_CASE(game_event_queue_destroys_queued_move_only_payloads)
 {
     auto valueFreed = false;
     TrackingType trackingType(valueFreed);
-    ScriptFunction function(0, "function", "function.nomad", "");
+    ScriptFunction function(CallableId{0}, "function", "function.nomad", "");
     function.createCapture(0, "capture", CaptureSource::Variable, &trackingType);
 
     {

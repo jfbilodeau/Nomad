@@ -20,7 +20,7 @@ using namespace nomad;
 
 namespace {
 
-NomadId compileFunction(Runtime& runtime, const NomadString& source) {
+CallableId compileFunction(Runtime& runtime, const NomadString& source) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"test", {"test.nomad", source}}}, {}});

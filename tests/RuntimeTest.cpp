@@ -20,8 +20,8 @@ BOOST_AUTO_TEST_CASE(bare_runtime_has_core_string_natives_without_standard_nativ
 
     for (const auto* name : {"toFloat", "toInt", "log.info", "math.floor"}) {
         BOOST_TEST_CONTEXT(name) {
-            BOOST_TEST(runtime.getNativeFunctionId(name) == NOMAD_INVALID_ID);
-            BOOST_TEST(runtime.getCallableId(name) == NOMAD_INVALID_ID);
+            BOOST_TEST(runtime.getNativeFunctionId(name).isInvalid());
+            BOOST_TEST(runtime.getCallableId(name).isInvalid());
         }
     }
     BOOST_TEST(runtime.getNativeMemberId(runtime.getStringType(), "length") != NOMAD_INVALID_ID);
@@ -37,12 +37,12 @@ BOOST_AUTO_TEST_CASE(runtime_owns_registered_functions_and_exposes_observer_view
         const auto firstFunctionId = runtime.registerScriptFunction("first", "first.nomad", "");
         const auto secondFunctionId = runtime.registerScriptFunction("second", "second.nomad", "");
 
-        BOOST_TEST(firstFunctionId != NOMAD_INVALID_ID);
-        BOOST_TEST(secondFunctionId == firstFunctionId + 1);
+        BOOST_TEST(firstFunctionId.isValid());
+        BOOST_TEST(secondFunctionId.id == firstFunctionId.id + 1);
         BOOST_TEST(runtime.getFunctionCount() == 2U);
         BOOST_TEST(runtime.getScriptFunction(firstFunctionId) != nullptr);
         BOOST_TEST(runtime.getScriptFunction(secondFunctionId) != nullptr);
-        BOOST_TEST(runtime.getFunctionId("first") == firstFunctionId);
+        BOOST_TEST((runtime.getFunctionId("first") == firstFunctionId));
         BOOST_TEST(runtime.getFunctionName(secondFunctionId).value() == "second");
 
         std::vector<ScriptFunction*> functions;
@@ -60,15 +60,15 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_and_duplicate_function_ids)
 
     const auto functionId = runtime.registerScriptFunction("function", "function.nomad", "");
 
-    BOOST_TEST(functionId != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.registerScriptFunction("function", "duplicate.nomad", "") == NOMAD_INVALID_ID);
+    BOOST_TEST(functionId.isValid());
+    BOOST_TEST(runtime.registerScriptFunction("function", "duplicate.nomad", "").isInvalid());
     BOOST_TEST(runtime.getFunctionCount() == 1U);
-    BOOST_TEST(runtime.getScriptFunction(NOMAD_INVALID_ID) == nullptr);
-    BOOST_TEST(runtime.getScriptFunction(-2) == nullptr);
-    BOOST_TEST(runtime.getScriptFunction(1) == nullptr);
-    BOOST_TEST(!runtime.getFunctionName(NOMAD_INVALID_ID).has_value());
-    BOOST_TEST(!runtime.getFunctionName(-2).has_value());
-    BOOST_TEST(!runtime.getFunctionName(1).has_value());
+    BOOST_TEST(runtime.getScriptFunction(CallableId::INVALID) == nullptr);
+    BOOST_TEST(runtime.getScriptFunction(CallableId{-2}) == nullptr);
+    BOOST_TEST(runtime.getScriptFunction(CallableId{1}) == nullptr);
+    BOOST_TEST(!runtime.getFunctionName(CallableId::INVALID).has_value());
+    BOOST_TEST(!runtime.getFunctionName(CallableId{-2}).has_value());
+    BOOST_TEST(!runtime.getFunctionName(CallableId{1}).has_value());
 }
 
 BOOST_AUTO_TEST_CASE(runtime_source_lookup_ignores_unknown_ranges_and_prefers_inner_functions)
