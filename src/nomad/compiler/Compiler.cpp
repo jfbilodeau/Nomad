@@ -141,11 +141,11 @@ const Type* Compiler::getBinaryOperatorResultType(BinaryOperator op, const Type*
     return m_runtime->getBinaryOperatorResultType(op, lhsType, rhsType);
 }
 
-NomadId Compiler::getUnaryOperatorOpCodeId(UnaryOperator op, const Type* operand) const {
+OpCodeId Compiler::getUnaryOperatorOpCodeId(UnaryOperator op, const Type* operand) const {
     return m_runtime->getUnaryOperatorOpCodeId(op, operand);
 }
 
-NomadId Compiler::getBinaryOperatorOpCodeId(const BinaryOperator op, const Type* lhs, const Type* rhs) const {
+OpCodeId Compiler::getBinaryOperatorOpCodeId(const BinaryOperator op, const Type* lhs, const Type* rhs) const {
     return m_runtime->getBinaryOperatorOpCodeId(op, lhs, rhs);
 }
 
@@ -434,11 +434,11 @@ NomadIndex Compiler::getOpCodeSize() const {
     return m_instructions.size();
 }
 
-NomadIndex Compiler::addOpCode(NomadId opCode) {
+NomadIndex Compiler::addOpCode(OpCodeId opCode) {
     auto fn = m_runtime->getInstructionFn(opCode);
 
     if (fn == nullptr) {
-        reportInternalError("Unknown op code: " + toString(opCode));
+        reportInternalError("Unknown op code: " + toString(opCode.id));
     }
 
     m_instructions.emplace_back(fn);
@@ -449,7 +449,7 @@ NomadIndex Compiler::addOpCode(NomadId opCode) {
 NomadIndex Compiler::addOpCode(const NomadString& opCodeName) {
     const auto opCodeId = m_runtime->getInstructionId(opCodeName);
 
-    if (opCodeId == NOMAD_INVALID_ID) {
+    if (opCodeId.isInvalid()) {
         reportError("Unknown instruction: " + opCodeName);
     }
 
@@ -457,7 +457,7 @@ NomadIndex Compiler::addOpCode(const NomadString& opCodeName) {
 }
 
 NomadIndex Compiler::addOpCode(const InstructionFn opCode) {
-    if (opCode == nullptr || m_runtime->getInstructionId(opCode) == NOMAD_INVALID_ID) {
+    if (opCode == nullptr || m_runtime->getInstructionId(opCode).isInvalid()) {
         reportInternalError("BUG: Unregistered op code function");
     }
 
@@ -847,20 +847,20 @@ NomadIndex Compiler::addNativeMethodCall(const CallableId memberId, ScriptFuncti
 }
 
 void Compiler::setOpCode(const NomadIndex index, const NomadString& opCodeName) {
-    NomadId opCodeId = m_runtime->getInstructionId(opCodeName);
+    const auto opCodeId = m_runtime->getInstructionId(opCodeName);
 
-    if (opCodeId == NOMAD_INVALID_ID) {
+    if (opCodeId.isInvalid()) {
         reportInternalError("Unknown op code: " + opCodeName);
     }
 
     setOpCode(index, opCodeId);
 }
 
-void Compiler::setOpCode(NomadIndex index, NomadId opCodeId) {
+void Compiler::setOpCode(NomadIndex index, OpCodeId opCodeId) {
     auto fn = m_runtime->getInstructionFn(opCodeId);
 
     if (fn == nullptr) {
-        reportInternalError("Unknown op code: " + toString(opCodeId));
+        reportInternalError("Unknown op code: " + toString(opCodeId.id));
     }
 
     m_instructions[index].fn = fn;

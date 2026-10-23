@@ -78,8 +78,8 @@ public:
     void registerBinaryOperator(BinaryOperator op, const Type* lhs, const Type* rhs, const Type* result, const NomadString& opCodeName, BinaryFoldingFn fn);
     [[nodiscard]] const Type* getUnaryOperatorResultType(UnaryOperator op, const Type* operandType) const;
     [[nodiscard]] const Type* getBinaryOperatorResultType(BinaryOperator op, const Type* lhsType, const Type* rhsType) const;
-    [[nodiscard]] NomadId getUnaryOperatorOpCodeId(UnaryOperator op, const Type* operand) const;
-    [[nodiscard]] NomadId getBinaryOperatorOpCodeId(BinaryOperator op, const Type* lhs, const Type* rhs) const;
+    [[nodiscard]] OpCodeId getUnaryOperatorOpCodeId(UnaryOperator op, const Type* operand) const;
+    [[nodiscard]] OpCodeId getBinaryOperatorOpCodeId(BinaryOperator op, const Type* lhs, const Type* rhs) const;
     [[nodiscard]] bool foldUnary(
         UnaryOperator op,
         const Type* operandType,
@@ -110,7 +110,7 @@ public:
     // Opcode generation
     [[nodiscard]] NomadIndex getOpCodeSize() const;
 
-    NomadIndex addOpCode(NomadId opCode);
+    NomadIndex addOpCode(OpCodeId opCode);
     NomadIndex addOpCode(const NomadString& opCodeName);
     NomadIndex addOpCode(InstructionFn opCode);
     void addFunctionReturn(const ScriptFunction* function);
@@ -151,7 +151,7 @@ public:
     void addFreeArguments(const ArgumentList* arguments);
 
     void setOpCode(NomadIndex index, const NomadString& opCodeName);
-    void setOpCode(NomadIndex index, NomadId opCodeId);
+    void setOpCode(NomadIndex index, OpCodeId opCodeId);
     void setId(NomadIndex index, NomadId id);
     void setIndex(NomadIndex index, NomadIndex value);
 

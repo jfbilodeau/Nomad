@@ -4,11 +4,40 @@
 
 #include <nomad/Nomad.hpp>
 
+#include <nomad/script/Documentation.hpp>
+
+#include <vector>
+
 namespace nomad {
 
 class VirtualMachine;
 
 using InstructionFn = void (*)(VirtualMachine*);
+
+enum class Operand {
+    Boolean,
+    Integer,
+    Float,
+    String,
+    Id,
+    Function,
+    NativeFunction,
+    FunctionVariable,
+    DynamicVariable,
+    ContextVariableId,
+    FormatString,
+    Index,
+};
+
+DeclareId(OpCodeId);
+
+struct OpCodeDefinition {
+    OpCodeId id;
+    NomadString name;
+    InstructionFn fn;
+    std::vector<Operand> operands;
+    NomadDocField;
+};
 
 namespace OpCodes {
     // OpCode definition below

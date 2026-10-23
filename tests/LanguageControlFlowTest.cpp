@@ -84,8 +84,8 @@ BOOST_AUTO_TEST_CASE(range_loops_lower_to_generic_calls_and_jumps)
     fixture.addFunction("main", "for value in range 3\nif value == 1 continue\nend\nreturn 0");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    BOOST_TEST(runtime.getInstructionId("op_numeric_for_test") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getInstructionId("op_numeric_for_advance") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getInstructionId("op_numeric_for_test").isInvalid());
+    BOOST_TEST(runtime.getInstructionId("op_numeric_for_advance").isInvalid());
     std::ostringstream instructions;
     runtime.dumpInstructions(instructions, runtime.getScriptFunction(runtime.getFunctionId("main")));
     const auto text = instructions.str();

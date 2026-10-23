@@ -47,30 +47,6 @@ class EnumType;
 class OpaqueIdType;
 struct EnumValueDefinition;
 
-enum class Operand {
-    Boolean,
-    Integer,
-    Float,
-    String,
-    Id,
-    Function,
-    NativeFunction,
-    FunctionVariable,
-    DynamicVariable,
-    ContextVariableId,
-    FormatString,
-    Index,
-};
-
-//using CompilerStatementFn = void (*)(Compiler*, Tokenizer*, FunctionBuilder*);
-struct OpCodeDefinition {
-    NomadId id;
-    NomadString name;
-    InstructionFn fn;
-    std::vector<Operand> operands;
-    NomadDocField;
-};
-
 struct KeywordDefinition {
     NomadString keyword;
     NomadDocField;
@@ -263,18 +239,18 @@ public:
     void registerBinaryOperator(BinaryOperator op, const Type* lhs, const Type* rhs, const Type* result, const NomadString& opCodeName, BinaryFoldingFn fn);
     [[nodiscard]] const Type* getUnaryOperatorResultType(UnaryOperator op, const Type* operandType) const;
     [[nodiscard]] const Type* getBinaryOperatorResultType(BinaryOperator op, const Type* lhsType, const Type* rhsType) const;
-    [[nodiscard]] NomadId getUnaryOperatorOpCodeId(UnaryOperator op, const Type* operand) const;
-    [[nodiscard]] NomadId getBinaryOperatorOpCodeId(BinaryOperator op, const Type* lhs, const Type* rhs) const;
+    [[nodiscard]] OpCodeId getUnaryOperatorOpCodeId(UnaryOperator op, const Type* operand) const;
+    [[nodiscard]] OpCodeId getBinaryOperatorOpCodeId(BinaryOperator op, const Type* lhs, const Type* rhs) const;
     [[nodiscard]] bool foldUnary(UnaryOperator op, const Type* operandType, const RuntimeValue& value, RuntimeValue& result) const;
     [[nodiscard]] bool foldBinary(BinaryOperator op, const Type* lhsType, const RuntimeValue& lhs, const Type* rhsType, const RuntimeValue& rhs, RuntimeValue& result) const;
 
     // OpCodes
-    NomadId registerInstruction(const NomadString& name, InstructionFn fn, NomadDocArg, std::vector<Operand> operands);
-    [[nodiscard]] NomadId getInstructionId(const NomadString& name) const;
-    [[nodiscard]] NomadId getInstructionId(InstructionFn fn) const;
-    [[nodiscard]] InstructionFn getInstructionFn(NomadId id) const;
-    [[nodiscard]] const NomadString& getInstructionName(NomadId id) const;
-    [[nodiscard]] const std::vector<Operand>& getInstructionOperands(NomadId id) const;
+    OpCodeId registerInstruction(const NomadString& name, InstructionFn fn, NomadDocArg, std::vector<Operand> operands);
+    [[nodiscard]] OpCodeId getInstructionId(const NomadString& name) const;
+    [[nodiscard]] OpCodeId getInstructionId(InstructionFn fn) const;
+    [[nodiscard]] InstructionFn getInstructionFn(OpCodeId id) const;
+    [[nodiscard]] const NomadString& getInstructionName(OpCodeId id) const;
+    [[nodiscard]] const std::vector<Operand>& getInstructionOperands(OpCodeId id) const;
 
     // NativeFunctions
     CallableId registerNativeFunction(
@@ -475,7 +451,7 @@ private:
         UnaryOperator op;
         const Type* operand;
         const Type* result;
-        NomadId opCodeId;
+        OpCodeId opCodeId;
         UnaryFoldingFn fn;
     };
 
@@ -484,7 +460,7 @@ private:
         const Type* lhs;
         const Type* rhs;
         const Type* result;
-        NomadId opCodeId;
+        OpCodeId opCodeId;
         BinaryFoldingFn fn;
     };
 

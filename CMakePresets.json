@@ -113,13 +113,15 @@
       "name": "windows-debug",
       "inherits": "base",
       "configurePreset": "windows-debug",
-      "configuration": "Debug"
+      "configuration": "Debug",
+      "jobs": 0
     },
     {
       "name": "windows-release",
       "inherits": "base",
       "configurePreset": "windows-release",
-      "configuration": "Release"
+      "configuration": "Release",
+      "jobs": 0
     },
     {
       "name": "ci",

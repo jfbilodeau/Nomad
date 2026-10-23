@@ -1841,17 +1841,17 @@ NomadIndex Runtime::getNativeMemberOverloadCount(const NomadString& name) const 
     return members == m_nativeMembersByName.end() ? 0 : members->second.size();
 }
 
-NomadId Runtime::registerInstruction(const NomadString& name, const InstructionFn fn, const NomadString& doc,
+OpCodeId Runtime::registerInstruction(const NomadString& name, const InstructionFn fn, const NomadString& doc,
                                      std::vector<Operand> operands) {
     auto id = getInstructionId(name);
 
-    if (id != NOMAD_INVALID_ID) {
+    if (id.isValid()) {
         log::warning("Instruction '" + name + "' already registered");
 
         return id;
     }
 
-    id = toNomadId(m_opCodes.size());
+    id = OpCodeId{toNomadId(m_opCodes.size())};
 
     m_opCodes.emplace_back(
         OpCodeDefinition{
@@ -1922,7 +1922,7 @@ void Runtime::registerUnaryOperator(
     const UnaryFoldingFn fn
 ) {
     const auto opCodeId = getInstructionId(opCodeName);
-    if (opCodeId == NOMAD_INVALID_ID) {
+    if (opCodeId.isInvalid()) {
         throw NomadBug("Unknown op code '" + opCodeName + "'");
     }
 
@@ -1944,7 +1944,7 @@ void Runtime::registerBinaryOperator(
     const BinaryFoldingFn fn
 ) {
     const auto opCodeId = getInstructionId(opCodeName);
-    if (opCodeId == NOMAD_INVALID_ID) {
+    if (opCodeId.isInvalid()) {
         throw NomadBug("Unknown op code '" + opCodeName + "'");
     }
 
@@ -1981,23 +1981,23 @@ const Type* Runtime::getBinaryOperatorResultType(
     return nullptr;
 }
 
-NomadId Runtime::getUnaryOperatorOpCodeId(const UnaryOperator op, const Type* operand) const {
+OpCodeId Runtime::getUnaryOperatorOpCodeId(const UnaryOperator op, const Type* operand) const {
     for (const auto& definition: m_unaryOperators) {
         if (definition.op == op && definition.operand == operand) {
             return definition.opCodeId;
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return OpCodeId::INVALID;
 }
 
-NomadId Runtime::getBinaryOperatorOpCodeId(
+OpCodeId Runtime::getBinaryOperatorOpCodeId(
     const BinaryOperator op,
     const Type* lhs,
     const Type* rhs
 ) const {
     if (lhs == nullptr || rhs == nullptr) {
-        return NOMAD_INVALID_ID;
+        return OpCodeId::INVALID;
     }
 
     for (const auto& definition: m_binaryOperators) {
@@ -2006,7 +2006,7 @@ NomadId Runtime::getBinaryOperatorOpCodeId(
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return OpCodeId::INVALID;
 }
 
 bool Runtime::foldUnary(
@@ -2043,36 +2043,36 @@ bool Runtime::foldBinary(
     return false;
 }
 
-NomadId Runtime::getInstructionId(const NomadString& name) const {
+OpCodeId Runtime::getInstructionId(const NomadString& name) const {
     for (NomadIndex i = 0; i < m_opCodes.size(); ++i) {
         if (m_opCodes[i].name == name) {
-            return static_cast<NomadId>(i);
+            return m_opCodes[i].id;
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return OpCodeId::INVALID;
 }
 
-NomadId Runtime::getInstructionId(const InstructionFn fn) const {
+OpCodeId Runtime::getInstructionId(const InstructionFn fn) const {
     for (auto& op_code: m_opCodes) {
         if (op_code.fn == fn) {
             return op_code.id;
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return OpCodeId::INVALID;
 }
 
-InstructionFn Runtime::getInstructionFn(const NomadId id) const {
-    return m_opCodes[toNomadIndex(id)].fn;
+InstructionFn Runtime::getInstructionFn(const OpCodeId id) const {
+    return m_opCodes[toNomadIndex(id.id)].fn;
 }
 
-const NomadString& Runtime::getInstructionName(const NomadId id) const {
-    return m_opCodes[toNomadIndex(id)].name;
+const NomadString& Runtime::getInstructionName(const OpCodeId id) const {
+    return m_opCodes[toNomadIndex(id.id)].name;
 }
 
-const std::vector<Operand>& Runtime::getInstructionOperands(const NomadId id) const {
-    return m_opCodes[toNomadIndex(id)].operands;
+const std::vector<Operand>& Runtime::getInstructionOperands(const OpCodeId id) const {
+    return m_opCodes[toNomadIndex(id.id)].operands;
 }
 
 CallableId Runtime::getNativeFunctionId(const NomadString& name) const {
@@ -3035,7 +3035,7 @@ void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function
 
         auto instructionId = getInstructionId(fn);
 
-        if (instructionId == NOMAD_INVALID_ID) {
+        if (instructionId.isInvalid()) {
             out << std::setfill('0') << std::setw(6) << i << ": Unknown instruction" << std::endl;
             continue;
         }

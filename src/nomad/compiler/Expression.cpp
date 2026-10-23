@@ -448,7 +448,7 @@ void BinaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, c
         rightType
     );
 
-    if (opCodeId == NOMAD_INVALID_ID) {
+    if (opCodeId.isInvalid()) {
         raiseException("Invalid binary operator for " + leftType->getTypeName() + " and " + rightType->getTypeName());
     }
 
