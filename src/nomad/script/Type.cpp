@@ -564,6 +564,25 @@ std::vector<const NativeIndexerDefinition*> ObjectType::getNativeIndexers() cons
     return indexers;
 }
 
+void ObjectType::registerIterableType(
+    Runtime& runtime,
+    const Type* valueType,
+    const Method* factory
+) {
+    const auto* iteratorType = runtime.getIteratorType(valueType);
+    if (runtime.getTypeByName(getTypeName()) != this ||
+        factory == nullptr || runtime.getMethod(factory->getId()) != factory ||
+        factory->getObjectType() != this || factory->getParameterCount() != 0 ||
+        factory->getReturnType() != iteratorType || m_iterableDefinition.has_value()) {
+        throw NomadException("Invalid iterable registration");
+    }
+    m_iterableDefinition = IterableDefinition{valueType, iteratorType, factory->getId()};
+}
+
+std::optional<IterableDefinition> ObjectType::getIterableDefinition() const {
+    return m_iterableDefinition;
+}
+
 NomadString ObjectType::getTypeName() const {
     return m_name;
 }

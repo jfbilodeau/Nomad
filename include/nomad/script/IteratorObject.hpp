@@ -27,10 +27,4 @@ private:
     bool m_completed = false;
 };
 
-struct IterableDefinition {
-    const Type* valueType;
-    const ObjectType* iteratorType;
-    CallableId factoryId;
-};
-
 } // namespace nomad

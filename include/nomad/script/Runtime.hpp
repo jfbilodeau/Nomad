@@ -591,7 +591,6 @@ private:
     std::vector<ContextVariable> m_contextVariables;
     std::vector<FormatStringRegistration> m_formatStrings;
     std::vector<MemberReference> m_nativeMembers;
-    std::unordered_map<const Type*, IterableDefinition> m_iterableTypes;
     std::vector<Property*> m_properties;
     std::vector<std::unique_ptr<Hub>> m_hubs;
     ScriptInitialization m_scriptInitialization;

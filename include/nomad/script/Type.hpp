@@ -13,6 +13,7 @@
 #include <nomad/script/Property.hpp>
 
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -27,6 +28,7 @@ class FunctionType;
 class EnumType;
 class Constructor;
 class Method;
+class ObjectType;
 
 enum class TypeStorage {
     None = 1,  // for `void`
@@ -229,6 +231,12 @@ public:
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 
+struct IterableDefinition {
+    const Type* valueType;
+    const ObjectType* iteratorType;
+    CallableId factoryId;
+};
+
 class ObjectType : public Type {
 public:
     explicit ObjectType(
@@ -273,6 +281,12 @@ public:
     );
     [[nodiscard]] const NativeIndexerDefinition* getNativeIndexer(NomadIndex indexCount) const;
     [[nodiscard]] std::vector<const NativeIndexerDefinition*> getNativeIndexers() const;
+    void registerIterableType(
+        Runtime& runtime,
+        const Type* valueType,
+        const Method* factory
+    );
+    [[nodiscard]] std::optional<IterableDefinition> getIterableDefinition() const;
 
 private:
     NomadString m_name;
@@ -281,6 +295,7 @@ private:
     std::vector<std::unique_ptr<Constructor>> m_constructors;
     std::vector<std::unique_ptr<Method>> m_methods;
     std::vector<std::unique_ptr<NativeIndexerDefinition>> m_nativeIndexers;
+    std::optional<IterableDefinition> m_iterableDefinition;
 };
 
 class BaseStringType : public ObjectType {

@@ -42,19 +42,19 @@ void Runtime::registerIterableType(
     const Type* valueType,
     const Method* factory
 ) {
-    const auto* iteratorType = getIteratorType(valueType);
-    if (!ownsType(sourceType) ||
-        factory == nullptr || getMethod(factory->getId()) != factory ||
-        factory->getObjectType() != sourceType || factory->getParameterCount() != 0 ||
-        factory->getReturnType() != iteratorType || m_iterableTypes.contains(sourceType)) {
+    auto* owner = ownsType(sourceType) ? getMutableObjectType(dynamic_cast<const ObjectType*>(sourceType)) : nullptr;
+    if (owner == nullptr) {
         throw NomadException("Invalid iterable registration");
     }
-    m_iterableTypes.emplace(sourceType, IterableDefinition{valueType, iteratorType, factory->getId()});
+    owner->registerIterableType(*this, valueType, factory);
 }
 
 std::optional<IterableDefinition> Runtime::getIterableDefinition(const Type* sourceType) const {
-    const auto existing = m_iterableTypes.find(sourceType);
-    return existing == m_iterableTypes.end() ? std::nullopt : std::optional{existing->second};
+    if (!ownsType(sourceType)) {
+        return std::nullopt;
+    }
+    const auto* owner = dynamic_cast<const ObjectType*>(sourceType);
+    return owner == nullptr ? std::nullopt : owner->getIterableDefinition();
 }
 
 namespace {

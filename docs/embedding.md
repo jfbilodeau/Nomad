@@ -851,6 +851,16 @@ member ID. The factory must belong to the source type, take no arguments, and re
 matching iterator type. Duplicate associations and invalid registrations throw
 `NomadException`. `getIterableDefinition(sourceType)` returns an optional association.
 
+The source `ObjectType` owns its iterable association. Include
+`<nomad/script/Type.hpp>` for `IterableDefinition`.
+`ObjectType::getIterableDefinition()` returns an optional snapshot containing
+the element type, iterator type, and factory `CallableId`. Runtime lookup returns
+the same snapshot, or an empty optional for a non-iterable or foreign-runtime type.
+Hosts retaining a mutable registered object type may call
+`ObjectType::registerIterableType(runtime, elementType, factory)` directly;
+the same ownership, signature, and duplicate-registration checks apply.
+Neither lookup permits changing the registered association.
+
 Each factory invocation must create independent iteration state. An iterator
 owns its published value; consumers receive normal typed copies, including
 reference ownership for object values. Iteration state is released when iteration
