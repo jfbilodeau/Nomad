@@ -288,7 +288,7 @@ protected:
 
 private:
     NomadString m_constantName;
-    NomadId m_constantId = NOMAD_INVALID_ID;
+    ConstantId m_constantId = ConstantId::INVALID;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

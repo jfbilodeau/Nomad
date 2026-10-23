@@ -119,7 +119,7 @@ public:
     NomadIndex addInteger(NomadInteger value);
     NomadIndex addFloat(NomadFloat value);
     NomadIndex addLoadValue(const Type* type, const RuntimeValue& value, ExpressionTarget target);
-    NomadIndex addLoadConstant(NomadId constantId, ExpressionTarget target);
+    NomadIndex addLoadConstant(ConstantId constantId, ExpressionTarget target);
     NomadIndex addLoadBooleanValue(NomadBoolean value, ExpressionTarget target);
     NomadIndex addLoadFloatValue(NomadFloat value, ExpressionTarget target);
     NomadIndex addLoadIntegerValue(NomadInteger value, ExpressionTarget target);

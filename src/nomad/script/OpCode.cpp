@@ -314,7 +314,7 @@ void op_function_variable_object_push(VirtualMachine* interpreter) {
 }
 
 void op_constant_get_r(VirtualMachine* machine) {
-    const auto id = machine->nextId();
+    const auto id = ConstantId{machine->nextId()};
     RuntimeValue value;
     machine->getRuntime()->getConstantValue(id, value);
     RuntimeValue copy;
@@ -323,7 +323,7 @@ void op_constant_get_r(VirtualMachine* machine) {
 }
 
 void op_constant_get_i(VirtualMachine* machine) {
-    const auto id = machine->nextId();
+    const auto id = ConstantId{machine->nextId()};
     RuntimeValue value;
     machine->getRuntime()->getConstantValue(id, value);
     RuntimeValue copy;
@@ -332,7 +332,7 @@ void op_constant_get_i(VirtualMachine* machine) {
 }
 
 void op_constant_push(VirtualMachine* machine) {
-    const auto id = machine->nextId();
+    const auto id = ConstantId{machine->nextId()};
     RuntimeValue value;
     machine->getRuntime()->getConstantValue(id, value);
     RuntimeValue copy;

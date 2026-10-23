@@ -23,6 +23,7 @@ add_executable(
     ./GeometryTest.cpp
     ./InterpreterTest.cpp
     ./LanguageCallbackEventTest.cpp
+    ./LanguageConstantTest.cpp
     ./LanguageControlFlowTest.cpp
     ./LanguageFormatStringFunctionTest.cpp
     ./LanguageFunctionTest.cpp

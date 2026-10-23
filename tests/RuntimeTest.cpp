@@ -132,7 +132,7 @@ BOOST_AUTO_TEST_CASE(runtime_registers_strongly_typed_enums_with_explicit_values
     BOOST_TEST(!bodyType->getNameByValue(99, name));
 
     const auto staticId = runtime.getConstantId("body.static");
-    BOOST_REQUIRE(staticId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(staticId.isValid());
     BOOST_TEST(runtime.getConstantType(staticId) == bodyType);
 
     RuntimeValue staticValue;
@@ -191,9 +191,9 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_enum_definitions_without_partial_re
 
     BOOST_REQUIRE(runtime.registerEnum("valid", {{"first", 1}}) != nullptr);
     BOOST_TEST(runtime.registerEnum("valid", {{"second", 2}}) == nullptr);
-    BOOST_TEST(runtime.getConstantId("valid.second") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getConstantId("valid.second").isInvalid());
     BOOST_TEST(runtime.getTypeByName("duplicateName") == nullptr);
-    BOOST_TEST(runtime.getConstantId("duplicateName.value") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getConstantId("duplicateName.value").isInvalid());
 }
 
 BOOST_AUTO_TEST_CASE(runtime_registers_nominal_opaque_id_types)

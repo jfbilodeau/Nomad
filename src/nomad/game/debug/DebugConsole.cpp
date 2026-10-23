@@ -1409,7 +1409,7 @@ void DebugConsole::renderFunctionInspector() {
             std::vector<ConstantRow> constants;
             const auto* runtime = m_game->getRuntime();
             auto constantId = runtime->getFirstConstantId();
-            while (constantId != NOMAD_INVALID_ID) {
+            while (constantId.isValid()) {
                 const auto* type = runtime->getConstantType(constantId);
                 const auto& name = runtime->getConstantName(constantId);
                 if (type->asEnum() == nullptr && containsText(name, m_constantFilter.data())) {
@@ -1460,7 +1460,7 @@ void DebugConsole::renderFunctionInspector() {
             std::vector<const EnumType*> enumTypes;
             const auto* runtime = m_game->getRuntime();
             auto constantId = runtime->getFirstConstantId();
-            while (constantId != NOMAD_INVALID_ID) {
+            while (constantId.isValid()) {
                 const auto* enumType = runtime->getConstantType(constantId)->asEnum();
                 if (enumType != nullptr &&
                     containsText(enumType->getTypeName(), m_enumFilter.data()) &&

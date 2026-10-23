@@ -61,7 +61,7 @@ NomadInteger getArchitecture() {
 // registerConstant retains object values; release the original reference even if registration fails.
 void registerSnapshot(Runtime* runtime, const NomadString& name, RuntimeValue value, const Type* type) {
     try {
-        if (runtime->registerConstant(name, value, type) == NOMAD_INVALID_ID) {
+        if (runtime->registerConstant(name, value, type).isInvalid()) {
             throw NomadException("Failed to register " + name);
         }
     } catch (...) {

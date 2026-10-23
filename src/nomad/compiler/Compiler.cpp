@@ -240,7 +240,7 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
         return IdentifierType::NativeFunction;
     }
 
-    if (m_runtime->getConstantId(name) != NOMAD_INVALID_ID) {
+    if (m_runtime->getConstantId(name).isValid()) {
         return IdentifierType::Constant;
     }
 
@@ -315,11 +315,11 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
         return;
     }
 
-    const NomadId constantId = m_runtime->getConstantId(name);
+    const auto constantId = m_runtime->getConstantId(name);
 
-    if (constantId != NOMAD_INVALID_ID) {
+    if (constantId.isValid()) {
         definition.identifierType = IdentifierType::Constant;
-        definition.variableId = constantId;
+        definition.constantId = constantId;
         definition.valueType = m_runtime->getConstantType(constantId);
 
         return;
@@ -500,8 +500,8 @@ NomadIndex Compiler::addFloat(NomadFloat value) {
     return instruction;
 }
 
-NomadIndex Compiler::addLoadConstant(const NomadId constantId, const ExpressionTarget target) {
-    return addLoadTarget({op_constant_get_r, op_constant_get_i, op_constant_push}, constantId, target);
+NomadIndex Compiler::addLoadConstant(const ConstantId constantId, const ExpressionTarget target) {
+    return addLoadTarget({op_constant_get_r, op_constant_get_i, op_constant_push}, constantId.id, target);
 }
 
 NomadIndex Compiler::addLoadValue(const Type* type, const RuntimeValue& value, ExpressionTarget target) {

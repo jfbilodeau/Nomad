@@ -13,6 +13,7 @@
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/script/Callable.hpp>
+#include <nomad/script/ConstantId.hpp>
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
@@ -321,15 +322,15 @@ public:
     void getKeywords(std::vector<KeywordDefinition>& keywords) const;
 
     // Constants
-    NomadId registerConstant(const NomadString& name, const RuntimeValue& value, const Type* type);
+    ConstantId registerConstant(const NomadString& name, const RuntimeValue& value, const Type* type);
     // Borrows the constant's value. The runtime retains ownership, so callers must not free the
     // returned value; copy it with `Type::copyValue` first if they need to own it.
-    void getConstantValue(NomadId id, RuntimeValue& value) const;
-    [[nodiscard]] NomadId getConstantId(const NomadString& name) const;
-    [[nodiscard]] const NomadString& getConstantName(NomadId id) const;
-    [[nodiscard]] const Type* getConstantType(NomadId id) const;
-    [[nodiscard]] NomadId getFirstConstantId() const;
-    [[nodiscard]] NomadId getNextConstantId(NomadId currentId) const;
+    void getConstantValue(ConstantId id, RuntimeValue& value) const;
+    [[nodiscard]] ConstantId getConstantId(const NomadString& name) const;
+    [[nodiscard]] const NomadString& getConstantName(ConstantId id) const;
+    [[nodiscard]] const Type* getConstantType(ConstantId id) const;
+    [[nodiscard]] ConstantId getFirstConstantId() const;
+    [[nodiscard]] ConstantId getNextConstantId(ConstantId currentId) const;
 
     // Events
     NomadId registerEvent(const NomadString& name, const std::vector<EventParameter>& parameterTypes);

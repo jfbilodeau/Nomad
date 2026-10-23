@@ -1282,7 +1282,7 @@ void ConstantValueExpression::onResolve(CompilerContext* context, ScriptFunction
     auto* runtime = context->getRuntime();
     m_constantId = runtime->getConstantId(m_constantName);
 
-    if (m_constantId == NOMAD_INVALID_ID) {
+    if (m_constantId.isInvalid()) {
         reportError(context, function, "Unknown constant: " + m_constantName);
         return;
     }
@@ -1299,7 +1299,7 @@ void ConstantValueExpression::onResolve(CompilerContext* context, ScriptFunction
 }
 
 void ConstantValueExpression::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget target) {
-    if (m_constantId == NOMAD_INVALID_ID) {
+    if (m_constantId.isInvalid()) {
         raiseException("Unknown constant: " + m_constantName);
     }
 
@@ -1589,7 +1589,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
 
     if (m_identifierDefinition.identifierType == IdentifierType::Constant) {
         RuntimeValue constantValue;
-        context->getRuntime()->getConstantValue(m_identifierDefinition.variableId, constantValue);
+        context->getRuntime()->getConstantValue(m_identifierDefinition.constantId, constantValue);
         const auto* type = m_identifierDefinition.valueType;
         if (type->needsFree() && !type->isString()) {
             setType(type);
@@ -1633,7 +1633,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
 void IdentifierExpression::onCompile(Compiler* compiler, ScriptFunction* /*function*/, const ExpressionTarget target) {
     switch (m_identifierDefinition.identifierType) {
         case IdentifierType::Constant:
-            compiler->addLoadConstant(m_identifierDefinition.variableId, target);
+            compiler->addLoadConstant(m_identifierDefinition.constantId, target);
             break;
 
         case IdentifierType::FunctionVariable:
@@ -1738,7 +1738,7 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::Constant: {
         RuntimeValue value;
-        context.getRuntime()->getConstantValue(m_identifierDefinition.variableId, value);
+        context.getRuntime()->getConstantValue(m_identifierDefinition.constantId, value);
         context.setResult(getType(), value);
         break;
     }

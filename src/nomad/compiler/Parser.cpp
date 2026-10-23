@@ -185,7 +185,7 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
         return std::make_unique<FunctionCallExpression>(parent, line, column, name);
     }
 
-    if (context->getRuntime()->getConstantId(name) != NOMAD_INVALID_ID) {
+    if (context->getRuntime()->getConstantId(name).isValid()) {
         return std::make_unique<ConstantValueExpression>(parent, line, column, name);
     }
 
@@ -958,7 +958,7 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
         return IdentifierType::NativeFunction;
     }
 
-    if (compiler->getRuntime()->getConstantId(name) != NOMAD_INVALID_ID) {
+    if (compiler->getRuntime()->getConstantId(name).isValid()) {
         return IdentifierType::Constant;
     }
 
@@ -1034,7 +1034,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     }
     if (!runtime->getContainingHub(variableName).empty() &&
         !runtime->isHubVariable(variableName) &&
-        runtime->getConstantId(variableName) == NOMAD_INVALID_ID &&
+        runtime->getConstantId(variableName).isInvalid() &&
         runtime->getCallableId(variableName).isInvalid() &&
         runtime->getDynamicVariableId(variableName) == NOMAD_INVALID_ID &&
         runtime->getTypeByName(variableName) == nullptr &&
@@ -1177,7 +1177,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
         // Constant?
         const auto constantId = context->getRuntime()->getConstantId(token.textValue);
 
-        if (constantId != NOMAD_INVALID_ID) {
+        if (constantId.isValid()) {
             return std::make_unique<ConstantValueExpression>(parent, tokens->getLineIndex(), tokens->getColumnIndex(),
                                                              token.textValue);
         }

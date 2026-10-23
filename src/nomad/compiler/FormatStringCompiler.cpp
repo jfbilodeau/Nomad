@@ -228,6 +228,8 @@ std::optional<NomadString> compileFormatString(
             if (formatString != nullptr) {
                 if (identifier.identifierType == IdentifierType::Function) {
                     formatString->addFunction(identifier.valueType, identifier.functionId);
+                } else if (identifier.identifierType == IdentifierType::Constant) {
+                    formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.constantId.id);
                 } else {
                     formatString->addVariable(
                         identifier.identifierType,

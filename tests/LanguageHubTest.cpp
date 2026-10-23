@@ -68,8 +68,8 @@ BOOST_AUTO_TEST_CASE(native_registration_is_idempotent_and_reserves_names)
     BOOST_REQUIRE(runtime.registerHub("example").isValid());
     BOOST_REQUIRE(runtime.registerHub("example.inner").isValid());
     BOOST_TEST(runtime.isHub("example.inner"));
-    BOOST_TEST(runtime.registerConstant("example", RuntimeValue(NomadInteger{1}), runtime.getIntegerType()) == NOMAD_INVALID_ID);
-    BOOST_REQUIRE(runtime.registerConstant("occupied", RuntimeValue(NomadInteger{1}), runtime.getIntegerType()) != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.registerConstant("example", RuntimeValue(NomadInteger{1}), runtime.getIntegerType()).isInvalid());
+    BOOST_REQUIRE(runtime.registerConstant("occupied", RuntimeValue(NomadInteger{1}), runtime.getIntegerType()).isValid());
     BOOST_TEST(runtime.registerHub("occupied.child") == HubId::INVALID);
     BOOST_TEST(!runtime.isHub("occupied"));
     BOOST_TEST(runtime.registerHub("") == HubId::INVALID);
@@ -298,7 +298,7 @@ BOOST_AUTO_TEST_CASE(native_hubs_can_be_extended_by_scripts)
     BOOST_REQUIRE(fixture.getRuntime().registerHub("example").isValid());
     BOOST_REQUIRE(fixture.getRuntime().registerConstant(
         "example.nativeValue", RuntimeValue(NomadInteger{40}), fixture.getRuntime().getIntegerType()
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     fixture.addFunction("main", "hub example\nextra = 2\nend\nreturn example.nativeValue + example.extra");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     BOOST_TEST(fixture.execute("main").integerValue == 42);
@@ -352,7 +352,7 @@ BOOST_AUTO_TEST_CASE(explicit_hubs_adopt_existing_qualified_native_registrations
     const auto constantId = runtime.registerConstant(
         "example.child.value", RuntimeValue(NomadInteger{42}), runtime.getIntegerType()
     );
-    BOOST_REQUIRE(constantId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(constantId.isValid());
     BOOST_REQUIRE(runtime.registerHub("example").isValid());
     const auto* parent = runtime.getHub(runtime.getHubId("example"));
     BOOST_REQUIRE(parent->getMember("child.value") != nullptr);

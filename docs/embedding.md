@@ -38,6 +38,22 @@ Streaming an ID prints its type and numeric value, for example `CallableId{42}`
 or `CallableId{-1}`.
 
 
+### Constant IDs
+
+Include `<nomad/script/ConstantId.hpp>` for `ConstantId`.
+`Runtime::registerConstant(name, value, type)` returns a `ConstantId`, or
+`ConstantId::INVALID` when registration fails. Duplicate names are logged and
+rejected without replacing the original value. `getConstantId(name)` returns
+`ConstantId::INVALID` when absent. Constant IDs belong to the runtime that issued
+them and remain stable as more constants are registered.
+
+Pass a registered ID to `getConstantName`, `getConstantType`, or
+`getConstantValue`. The value is borrowed; the runtime retains ownership.
+`getFirstConstantId` and `getNextConstantId` enumerate registered constants in
+registration order, ending at `ConstantId::INVALID`. Hub constant members also
+contain a `ConstantId`. Constant IDs do not implicitly convert to integers or
+other ID categories.
+
 ### Object type property metadata
 
 `ScriptObjectType` describes a script-defined object type. `isOpen()` reports

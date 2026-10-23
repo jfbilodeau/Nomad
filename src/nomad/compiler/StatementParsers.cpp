@@ -468,7 +468,7 @@ bool parseConstantPrimary(CompilerContext* context, Tokenizer* tokens, ConstantV
     if (token.type == TokenType::Identifier) {
         auto constantId = context->getRuntime()->getConstantId(context->resolveName(token.textValue));
 
-        if (constantId == NOMAD_INVALID_ID) {
+        if (constantId.isInvalid()) {
             context->reportError("Unknown constant '" + token.textValue + "'", tokens);
 
             return false;
@@ -718,7 +718,7 @@ bool preParseConstStatement(CompilerContext* context, ScriptFunction* /*function
         context->reportError("Constant name '" + constantName + "' is reserved by a hub", tokens);
         return false;
     }
-    if (context->getRuntime()->getConstantId(constantName) != NOMAD_INVALID_ID) {
+    if (context->getRuntime()->getConstantId(constantName).isValid()) {
         context->reportError("Constant '" + constantName + "' is already defined", tokens);
 
         return false;
@@ -730,7 +730,7 @@ bool preParseConstStatement(CompilerContext* context, ScriptFunction* /*function
         return false;
     }
 
-    if (context->getRuntime()->registerConstant(constantName, constant.value, constant.type) == NOMAD_INVALID_ID) {
+    if (context->getRuntime()->registerConstant(constantName, constant.value, constant.type).isInvalid()) {
         context->reportError("Failed to register constant '" + constantName + "'", tokens);
         return false;
     }

@@ -154,7 +154,7 @@ ApiAnalysis analyzeApiSymbols(
         symbols.push_back({function->getName(), CompletionItemKind::Function,
             std::move(signature), std::move(documentation)});
     }
-    for (auto id = runtime->getFirstConstantId(); id != NOMAD_INVALID_ID;
+    for (auto id = runtime->getFirstConstantId(); id.isValid();
         id = runtime->getNextConstantId(id)) {
         const auto& name = runtime->getConstantName(id);
         symbols.push_back({name, CompletionItemKind::Constant,

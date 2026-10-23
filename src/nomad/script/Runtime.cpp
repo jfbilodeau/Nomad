@@ -285,7 +285,7 @@ NomadId Runtime::registerHubVariable(const NomadString& name) {
     if (m_scriptInitialization.state != ScriptInitializationState::Pending ||
         getContainingHub(name).empty() || !canRegisterHubMember(name) ||
         isHub(name) || isHubVariable(name) ||
-        getCallableId(name).isValid() || getConstantId(name) != NOMAD_INVALID_ID ||
+        getCallableId(name).isValid() || getConstantId(name).isValid() ||
         getTypeByName(name) != nullptr || getEventId(name) != NOMAD_INVALID_ID ||
         getDynamicVariableId(name) != NOMAD_INVALID_ID ||
         getVariableContextIdByPrefix(name) != NOMAD_INVALID_ID) {
@@ -423,7 +423,7 @@ void Runtime::rebuildHubMembers() {
             add(callable->getName(), HubFunctions{{callable->getId()}});
         }
     }
-    for (auto id = getFirstConstantId(); id != NOMAD_INVALID_ID; id = getNextConstantId(id)) {
+    for (auto id = getFirstConstantId(); id.isValid(); id = getNextConstantId(id)) {
         add(getConstantName(id), HubConstant{id});
     }
     for (const auto& type : m_types) {
@@ -464,7 +464,7 @@ HubId Runtime::registerHub(const NomadString& name) {
         }
         auto prefix = name.substr(0, start + length);
         if (!isHub(prefix) && (getCallableId(prefix).isValid() ||
-            getConstantId(prefix) != NOMAD_INVALID_ID || getTypeByName(prefix) != nullptr ||
+            getConstantId(prefix).isValid() || getTypeByName(prefix) != nullptr ||
             getEventId(prefix) != NOMAD_INVALID_ID || getDynamicVariableId(prefix) != NOMAD_INVALID_ID ||
             isHubVariable(prefix) ||
             getVariableContextIdByPrefix(prefix + ".") != NOMAD_INVALID_ID ||
@@ -1055,7 +1055,7 @@ const EnumType* Runtime::registerEnum(
             return nullptr;
         }
 
-        if (getConstantId(constantName) != NOMAD_INVALID_ID) {
+        if (getConstantId(constantName).isValid()) {
             log::error("Constant with name '" + constantName + "' already registered");
             return nullptr;
         }
@@ -2177,19 +2177,19 @@ void Runtime::getKeywords(std::vector<KeywordDefinition>& keywords) const {
     keywords = m_keywords;
 }
 
-NomadId Runtime::registerConstant(const NomadString& name, const RuntimeValue& value, const Type* type) {
+ConstantId Runtime::registerConstant(const NomadString& name, const RuntimeValue& value, const Type* type) {
     if (isHub(name) || !canRegisterHubMember(name)) {
         log::error("Cannot register constant '" + name + "': name is reserved by a hub");
-        return NOMAD_INVALID_ID;
+        return ConstantId::INVALID;
     }
-    if (getConstantId(name) != NOMAD_INVALID_ID) {
+    if (getConstantId(name).isValid()) {
         log::error("Constant with name '" + name + "' already registered.");
 
-        return NOMAD_INVALID_ID;
+        return ConstantId::INVALID;
     }
 
-    auto constantId = m_constantsMap.registerVariable(name, type);
-    const auto constantIndex = toNomadIndex(constantId);
+    const auto constantId = ConstantId{m_constantsMap.registerVariable(name, type)};
+    const auto constantIndex = toNomadIndex(constantId.id);
 
     m_constants.resize(constantIndex + 1);
     type->copyValue(value, m_constants[constantIndex]);
@@ -2198,8 +2198,8 @@ NomadId Runtime::registerConstant(const NomadString& name, const RuntimeValue& v
     return constantId;
 }
 
-void Runtime::getConstantValue(const NomadId id, RuntimeValue& value) const {
-    const auto constantIndex = toNomadIndex(id);
+void Runtime::getConstantValue(const ConstantId id, RuntimeValue& value) const {
+    const auto constantIndex = toNomadIndex(id.id);
 
     if (constantIndex >= m_constants.size()) {
         return;
@@ -2208,35 +2208,35 @@ void Runtime::getConstantValue(const NomadId id, RuntimeValue& value) const {
     value = m_constants[constantIndex];
 }
 
-NomadId Runtime::getConstantId(const NomadString& name) const {
-    return m_constantsMap.getVariableId(name);
+ConstantId Runtime::getConstantId(const NomadString& name) const {
+    return ConstantId{m_constantsMap.getVariableId(name)};
 }
 
-const NomadString& Runtime::getConstantName(const NomadId id) const {
-    return m_constantsMap.getVariableName(id);
+const NomadString& Runtime::getConstantName(const ConstantId id) const {
+    return m_constantsMap.getVariableName(id.id);
 }
 
-const Type* Runtime::getConstantType(const NomadId id) const {
-    return m_constantsMap.getVariableType(id);
+const Type* Runtime::getConstantType(const ConstantId id) const {
+    return m_constantsMap.getVariableType(id.id);
 }
 
-NomadId Runtime::getFirstConstantId() const
+ConstantId Runtime::getFirstConstantId() const
 {
     if (m_constants.empty()) {
-        return NOMAD_INVALID_ID;
+        return ConstantId::INVALID;
     }
 
-    return 0;
+    return ConstantId{0};
 }
 
-NomadId Runtime::getNextConstantId(const NomadId currentId) const {
-    const auto currentIndex = toNomadIndex(currentId);
+ConstantId Runtime::getNextConstantId(const ConstantId currentId) const {
+    const auto currentIndex = toNomadIndex(currentId.id);
 
     if (currentIndex + 1 >= m_constants.size()) {
-        return NOMAD_INVALID_ID;
+        return ConstantId::INVALID;
     }
 
-    return currentId + 1;
+    return ConstantId{currentId.id + 1};
 }
 
 NomadId Runtime::registerEvent(const NomadString &name, const std::vector<EventParameter> &parameterTypes) {
@@ -3141,7 +3141,7 @@ void Runtime::dumpDocumentation(std::ostream &out) const {
         RuntimeValue constantValue;
         NomadString constantTextValue;
 
-        const auto constantId = toNomadId(i);
+        const auto constantId = ConstantId{toNomadId(i)};
 
         const auto constantType = getConstantType(constantId);
         getConstantValue(constantId, constantValue);

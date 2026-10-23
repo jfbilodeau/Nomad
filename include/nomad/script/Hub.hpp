@@ -4,6 +4,7 @@
 
 #include <nomad/Nomad.hpp>
 
+#include <nomad/script/ConstantId.hpp>
 #include <nomad/script/VariableContext.hpp>
 
 #include <memory>
@@ -24,7 +25,7 @@ struct HubFunctions {
 };
 
 struct HubConstant {
-    NomadId id;
+    ConstantId id;
 };
 
 struct HubType {

@@ -152,9 +152,9 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     std::vector<constantInfo> constants;
     std::vector<const EnumType*> enums;
 
-    NomadId constantId = runtime->getFirstConstantId();
+    auto constantId = runtime->getFirstConstantId();
 
-    while (constantId != NOMAD_INVALID_ID) {
+    while (constantId.isValid()) {
         auto name = runtime->getConstantName(constantId);
         auto type = runtime->getConstantType(constantId);
         RuntimeValue value;

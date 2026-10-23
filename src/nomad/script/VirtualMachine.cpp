@@ -754,7 +754,7 @@ void VirtualMachine::jump(NomadIndex index) {
 bool VirtualMachine::getVariableValue(IdentifierType identifierType, NomadId variableId, RuntimeValue& value) {
     switch (identifierType) {
     case IdentifierType::Constant:
-        m_runtime->getConstantValue(variableId, value);
+        m_runtime->getConstantValue(ConstantId{variableId}, value);
         return true;
 
     case IdentifierType::DynamicVariable:
