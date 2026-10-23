@@ -43,8 +43,8 @@ BOOST_AUTO_TEST_CASE(registers_immutable_string_members) {
     const auto lengthId = runtime.getNativeMemberId(runtime.getStringType(), "length");
     const auto toUpperId = runtime.getNativeMemberId(runtime.getStringType(), "toUpper");
 
-    BOOST_REQUIRE(lengthId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(toUpperId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE((runtime.getMemberType(lengthId) == MemberType::Property));
+    BOOST_REQUIRE((runtime.getMemberType(toUpperId) == MemberType::Method));
 
     NativePropertyDefinition length;
     BOOST_REQUIRE(runtime.getNativePropertyDefinition(lengthId, length));

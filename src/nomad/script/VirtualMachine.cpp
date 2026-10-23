@@ -210,10 +210,10 @@ void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
     m_enclosingParameterIndex = previousEnclosingParameterIndex;
 }
 
-void VirtualMachine::callNativeMethod(const NomadId memberId, const RuntimeValue& receiver) {
+void VirtualMachine::callNativeMethod(const CallableId memberId, const RuntimeValue& receiver) {
     const auto* method = m_runtime->getNativeMemberMethod(memberId);
     if (method == nullptr || !method->getFn()) {
-        fault("Invalid native method id: " + toString(memberId));
+        fault("Invalid native method id: " + toString(memberId.id));
     }
     invokeNativeMethod(method->getFn(), receiver);
 }
@@ -263,7 +263,7 @@ void VirtualMachine::invokeNativeMember(const NativeFunctionFn& callback, const 
 }
 
 void VirtualMachine::getNativeProperty(
-    const NomadId memberId,
+    const PropertyId memberId,
     const RuntimeValue& receiver,
     RuntimeValue& result
 ) {
@@ -275,7 +275,7 @@ void VirtualMachine::getNativeProperty(
 }
 
 void VirtualMachine::setNativeProperty(
-    const NomadId memberId,
+    const PropertyId memberId,
     const RuntimeValue& receiver,
     const RuntimeValue& value
 ) {
@@ -398,11 +398,11 @@ void VirtualMachine::runNativeFunction(const CallableId nativeFunctionId, const 
     releaseArguments();
 }
 
-void VirtualMachine::runNativeMethod(const NomadId memberId, const std::vector<RuntimeValue>& args,
+void VirtualMachine::runNativeMethod(const CallableId memberId, const std::vector<RuntimeValue>& args,
                                         RuntimeValue& receiver) {
     const auto* method = m_runtime->getNativeMemberMethod(memberId);
     if (method == nullptr) {
-        fault("Invalid native method id: " + toString(memberId));
+        fault("Invalid native method id: " + toString(memberId.id));
     }
     if (method->getReturnType() == nullptr) {
         fault("Native method '" + method->getName() + "' has no return type");

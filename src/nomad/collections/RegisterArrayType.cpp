@@ -46,7 +46,7 @@ void registerArrayFamily(
                 },
                 {}, NomadDoc("The total number of elements in the fixed-size array.")
             );
-            if (countId == NOMAD_INVALID_ID) {
+            if (countId.isInvalid()) {
                 throw NomadException("Failed to register Array members");
             }
             if (writable) {
@@ -61,7 +61,7 @@ void registerArrayFamily(
                     },
                     {}, readOnlyType,
                     NomadDoc("Creates an independent read-only snapshot with the same dimensions. Object elements share references.")
-                ) == NOMAD_INVALID_ID) {
+                ).isInvalid()) {
                     throw NomadException("Failed to register Array.toReadOnly");
                 }
             }

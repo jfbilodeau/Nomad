@@ -2914,7 +2914,7 @@ BOOST_AUTO_TEST_CASE(collections_native_returns_do_not_allocate_unused_list_defa
         },
         {}, type, ""
     );
-    BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(memberId.isValid());
     const auto before = NomadObject::getLiveObjectCount();
     {
         auto machine = runtime.createVirtualMachine();

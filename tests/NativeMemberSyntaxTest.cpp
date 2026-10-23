@@ -56,14 +56,14 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
             ).isValid());
             BOOST_REQUIRE(runtime.registerNativeProperty(
                 objectType, "declaredProperty", valueType, [](VirtualMachine*, RuntimeValue&) {}, {}, ""
-            ) != NOMAD_INVALID_ID);
+            ).isValid());
             BOOST_REQUIRE(runtime.registerNativeMethod(
                 objectType, "declaredMethod", methodFunction(),
                 {
                     defParameter("value", valueType, ""),
                     defParameter("line", runtime.getLineNumberType(), "")
                 }, valueType, ""
-            ) != NOMAD_INVALID_ID);
+            ).isValid());
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate("Box", {
@@ -152,7 +152,7 @@ BOOST_AUTO_TEST_CASE(rejects_reading_write_only_property) {
     CompilerContext context(compiler.get());
 
     BOOST_REQUIRE(runtime.registerNativeProperty(runtime.getStringType(), "sink", runtime.getIntegerType(), {},
-                                                    propertySetter(), NomadDoc("Sink")) != NOMAD_INVALID_ID);
+                                                    propertySetter(), NomadDoc("Sink")).isValid());
 
     auto expression = parseExpression(context, nullptr, "\"Nomad\".sink");
 
@@ -234,7 +234,7 @@ BOOST_AUTO_TEST_CASE(allows_object_method_on_temporary) {
     CompilerContext context(compiler.get());
 
     BOOST_REQUIRE(runtime.registerNativeMethod(runtime.getStringType(), "clear", methodFunction(), {},
-                                                  runtime.getVoidType(), NomadDoc("Clear")) != NOMAD_INVALID_ID);
+                                                  runtime.getVoidType(), NomadDoc("Clear")).isValid());
 
     Tokenizer tokens(&context, "test.nomad", "\"Nomad\".clear");
     auto statement = parser::parseLine(&context, nullptr, &tokens);
@@ -265,7 +265,7 @@ BOOST_AUTO_TEST_CASE(context_assignment_takes_precedence_over_native_member_name
     BOOST_REQUIRE(runtime.registerNativeProperty(
         runtime.getStringType(), "value", runtime.getIntegerType(),
         [](VirtualMachine*, RuntimeValue&) {}, {}, ""
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"test", {"test.nomad",

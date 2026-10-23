@@ -51,7 +51,7 @@ void registerListReaders(Runtime* runtime, const ObjectType* objectType, const b
             ? NomadDoc("Reads or replaces an element at a zero-based index. Out-of-range indices fault.")
             : NomadDoc("Reads an element at a zero-based index. Out-of-range indices fault.")
     );
-    if (iteratorId == NOMAD_INVALID_ID || countId == NOMAD_INVALID_ID || indexerId == NOMAD_INVALID_ID) {
+    if (iteratorId.isInvalid() || countId.isInvalid() || indexerId == NOMAD_INVALID_ID) {
         throw NomadException("Failed to register List readers");
     }
     runtime->registerIterableType(objectType, elementType, runtime->getNativeMemberMethod(iteratorId));
@@ -95,7 +95,7 @@ void registerListType(Runtime* runtime) {
                 },
                 {}, readOnlyType,
                 NomadDoc("Creates an independent read-only snapshot. Object elements share references.")
-            ) == NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw NomadException("Failed to register List.toReadOnly");
             }
             const auto constructorId = runtime->registerNativeConstructor(
@@ -194,10 +194,10 @@ void registerListType(Runtime* runtime) {
                 NomadDoc("Removes all elements. Clearing an empty list does nothing and does not log.")
             );
             if (constructorId.isInvalid() ||
-                appendId == nomad::NOMAD_INVALID_ID || prependId == nomad::NOMAD_INVALID_ID ||
-                insertId == nomad::NOMAD_INVALID_ID || removeId == nomad::NOMAD_INVALID_ID ||
-                removeFirstId == nomad::NOMAD_INVALID_ID || removeLastId == nomad::NOMAD_INVALID_ID ||
-                clearId == nomad::NOMAD_INVALID_ID) {
+                appendId.isInvalid() || prependId.isInvalid() ||
+                insertId.isInvalid() || removeId.isInvalid() ||
+                removeFirstId.isInvalid() || removeLastId.isInvalid() ||
+                clearId.isInvalid()) {
                 throw nomad::NomadException("Failed to register List members");
             }
         }

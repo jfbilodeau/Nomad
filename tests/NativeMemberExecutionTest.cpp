@@ -93,7 +93,7 @@ BOOST_AUTO_TEST_CASE(resolved_method_and_constructor_survive_catalog_growth) {
         runtime.getStringType(), "increment",
         [](VirtualMachine* machine) { machine->setIntegerResult(200); },
         {defParameter("amount", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     for (auto index = NomadInteger{0}; index < 64; ++index) {
         BOOST_REQUIRE(runtime.registerNativeFunction(
             "growth" + toString(index), [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
@@ -170,7 +170,7 @@ BOOST_AUTO_TEST_CASE(typed_method_supports_a_host_defined_object) {
         runtime.getIntegerType(),
         NomadDoc("Test a host-defined receiver")
     );
-    BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(memberId.isValid());
     auto virtualMachine = runtime.createVirtualMachine();
     RuntimeValue receiver;
     receiver.setObjectValue(new TestObject);
@@ -207,7 +207,7 @@ BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) 
         runtime.getIntegerType(),
         ""
     );
-    BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(memberId.isValid());
     BOOST_REQUIRE(runtime.getNativeMemberMethod(memberId) != nullptr);
     auto machine = runtime.createVirtualMachine();
     RuntimeValue receiver;
@@ -232,11 +232,11 @@ BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_ca
     const auto last = runtime.registerNativeFunction(
         "catalog.last", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     );
-    BOOST_REQUIRE(method != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(method.isValid());
     BOOST_TEST(last.id > first.id + 1);
     BOOST_TEST((runtime.getNextNativeFunctionId(first) == last));
     BOOST_TEST(runtime.getNativeFunctionId("catalogMethod").isInvalid());
-    BOOST_TEST(runtime.getNativeMemberId(type, "catalogMethod") == method);
+    BOOST_TEST(std::get<CallableId>(runtime.getNativeMemberId(type, "catalogMethod")) == method);
     const auto* methodCallable = runtime.getNativeMemberMethod(method);
     BOOST_REQUIRE(methodCallable != nullptr);
     BOOST_TEST(methodCallable->getObjectType() == type);
@@ -257,7 +257,7 @@ BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_ca
     }
     BOOST_TEST(runtime.registerNativeMethod(
         nullptr, "invalid", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
-    ) == NOMAD_INVALID_ID);
+    ).isInvalid());
 }
 
 BOOST_AUTO_TEST_CASE(compiled_property_getter_reads_temporary_receiver) {
@@ -666,7 +666,7 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexer_faults_release_object_keys_receiver
 BOOST_AUTO_TEST_CASE(indexers_support_arbitrary_arity_and_restore_native_parameter_frames) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    const auto increment = runtime.getNativeMemberId(type, "increment");
+    const auto increment = std::get<CallableId>(runtime.getNativeMemberId(type, "increment"));
     auto* nested = new TestObject;
     RuntimeValue nestedReceiver;
     nestedReceiver.setObjectValue(nested);

@@ -128,7 +128,7 @@ private:
     NomadString m_memberName;
     std::unique_ptr<Expression> m_receiver;
     ArgumentList m_arguments;
-    NomadId m_memberId = NOMAD_INVALID_ID;
+    MemberReference m_memberId;
     MemberType m_memberType = MemberType::Unknown;
     const Method* m_method = nullptr;
     bool m_allowVoid = false;

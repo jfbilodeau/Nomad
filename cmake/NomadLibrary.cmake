@@ -36,9 +36,11 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/IteratorObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeCallable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeMembers.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/NativeProperty.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NomadObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NomadStringObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/OpCode.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/Property.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RangeIterator.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RangeObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RangeType.cpp

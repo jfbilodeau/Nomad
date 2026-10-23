@@ -186,12 +186,12 @@ void op_call_native_function(VirtualMachine* interpreter) {
 }
 
 void op_native_property_get(VirtualMachine* interpreter) {
-    const auto memberId = interpreter->nextId();
+    const auto memberId = PropertyId{interpreter->nextId()};
     interpreter->getNativeProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
 }
 
 void op_native_property_set(VirtualMachine* interpreter) {
-    const auto memberId = interpreter->nextId();
+    const auto memberId = PropertyId{interpreter->nextId()};
     interpreter->setNativeProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
 }
 
@@ -204,7 +204,7 @@ void op_native_index_set(VirtualMachine* interpreter) {
 }
 
 void op_native_method_call(VirtualMachine* interpreter) {
-    const auto memberId = interpreter->nextId();
+    const auto memberId = CallableId{interpreter->nextId()};
     const auto receiverOffset = interpreter->nextIndex();
     interpreter->setIntermediate(interpreter->peekStack(receiverOffset));
     interpreter->callNativeMethod(memberId, interpreter->getIntermediate());

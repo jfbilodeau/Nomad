@@ -24,9 +24,9 @@ BOOST_AUTO_TEST_CASE(bare_runtime_has_core_string_natives_without_standard_nativ
             BOOST_TEST(runtime.getCallableId(name).isInvalid());
         }
     }
-    BOOST_TEST(runtime.getNativeMemberId(runtime.getStringType(), "length") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getNativeMemberId(runtime.getStringType(), "toUpper") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getNativeMemberId(runtime.getStringType(), "contains") != NOMAD_INVALID_ID);
+    BOOST_TEST((runtime.getMemberType(runtime.getNativeMemberId(runtime.getStringType(), "length")) == MemberType::Property));
+    BOOST_TEST((runtime.getMemberType(runtime.getNativeMemberId(runtime.getStringType(), "toUpper")) == MemberType::Method));
+    BOOST_TEST((runtime.getMemberType(runtime.getNativeMemberId(runtime.getStringType(), "contains")) == MemberType::Method));
 }
 
 BOOST_AUTO_TEST_CASE(runtime_owns_registered_functions_and_exposes_observer_views)

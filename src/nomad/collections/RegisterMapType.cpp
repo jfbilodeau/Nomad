@@ -135,8 +135,8 @@ void registerMapFamily(
                 runtime->getBooleanType(),
                 NomadDoc("Returns whether the key exists, without logging or changing the map.")
             );
-            if (countId == NOMAD_INVALID_ID || indexerId == NOMAD_INVALID_ID || containsId == NOMAD_INVALID_ID ||
-                keysId == NOMAD_INVALID_ID || valuesId == NOMAD_INVALID_ID || entriesId == NOMAD_INVALID_ID) {
+            if (countId.isInvalid() || indexerId == NOMAD_INVALID_ID || containsId.isInvalid() ||
+                keysId.isInvalid() || valuesId.isInvalid() || entriesId.isInvalid()) {
                 throw NomadException("Failed to register Map readers");
             }
             if (!writable) {
@@ -151,7 +151,7 @@ void registerMapFamily(
                 },
                 {}, readOnlyType,
                 NomadDoc("Creates an independent read-only snapshot. Object values share references.")
-            ) == NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw NomadException("Failed to register Map.toReadOnly");
             }
             const auto removeId = runtime->registerNativeMethod(
@@ -178,7 +178,7 @@ void registerMapFamily(
                 runtime->getVoidType(),
                 NomadDoc("Removes all entries. Clearing an empty map does nothing and does not log.")
             );
-            if (removeId == nomad::NOMAD_INVALID_ID || clearId == nomad::NOMAD_INVALID_ID) {
+            if (removeId.isInvalid() || clearId.isInvalid()) {
                 throw nomad::NomadException("Failed to register Map members");
             }
         }

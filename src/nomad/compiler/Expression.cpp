@@ -651,7 +651,7 @@ void NativeMemberExpression::setAllowVoid(const bool allowVoid) {
 }
 
 bool NativeMemberExpression::resolveMember(CompilerContext* context, ScriptFunction* function) {
-    m_memberId = NOMAD_INVALID_ID;
+    m_memberId = PropertyId::INVALID;
     m_memberType = MemberType::Unknown;
     m_method = nullptr;
     if (!m_receiver->resolve(context, function)) {
@@ -661,7 +661,7 @@ bool NativeMemberExpression::resolveMember(CompilerContext* context, ScriptFunct
     auto* runtime = context->getRuntime();
     m_memberId = runtime->getNativeMemberId(m_receiver->getType(), m_memberName);
 
-    if (m_memberId == NOMAD_INVALID_ID) {
+    if (runtime->getMemberType(m_memberId) == MemberType::Unknown) {
         reportError(context, function,
                     "Type '" + getTypeDisplayName(m_receiver->getType()) + "' has no native member '" +
                         m_memberName + "'");
@@ -765,7 +765,7 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptFunction* funct
 
     if (m_memberType == MemberType::Property) {
         compiler->addOpCode(op_native_property_get);
-        compiler->addId(m_memberId);
+        compiler->addId(std::get<PropertyId>(m_memberId).id);
         compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
         compiler->addMoveResult(getType(), target);
         return;
@@ -777,7 +777,7 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptFunction* funct
     }
 
     m_arguments.setReceiverType(receiverType);
-    compiler->addNativeMethodCall(m_memberId, function, &m_arguments);
+    compiler->addNativeMethodCall(std::get<CallableId>(m_memberId), function, &m_arguments);
 
     compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
 
@@ -814,7 +814,7 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
                 raiseException("Invalid native property getter: " + m_qualifiedName);
             }
 
-            context.getVirtualMachine()->getNativeProperty(m_memberId, receiver, result);
+            context.getVirtualMachine()->getNativeProperty(std::get<PropertyId>(m_memberId), receiver, result);
             context.setResult(definition.valueType, result);
             definition.valueType->freeValue(result);
             receiverType->freeValue(receiver);
@@ -845,7 +845,7 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
 
     auto* virtualMachine = context.getVirtualMachine();
     try {
-        virtualMachine->runNativeMethod(m_memberId, values, receiver);
+        virtualMachine->runNativeMethod(std::get<CallableId>(m_memberId), values, receiver);
 
 
         if (returnType->isVoid()) {
@@ -873,7 +873,7 @@ void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptFunctio
     expression->compile(compiler, function, ExpressionTarget::Result);
     compiler->addPopIntermediate(receiverType);
     compiler->addOpCode(op_native_property_set);
-    compiler->addId(m_memberId);
+    compiler->addId(std::get<PropertyId>(m_memberId).id);
     compiler->addFreeValue(propertyType->getTypeOpCodes()->freeResult);
     compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
 }
@@ -909,7 +909,7 @@ void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, con
     }
 
     try {
-        context.getVirtualMachine()->setNativeProperty(m_memberId, receiver, assignedValue->getValue());
+        context.getVirtualMachine()->setNativeProperty(std::get<PropertyId>(m_memberId), receiver, assignedValue->getValue());
         context.setResult(definition.valueType, assignedValue->getValue());
     } catch (...) {
         receiverType->freeValue(receiver);

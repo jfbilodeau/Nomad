@@ -146,7 +146,7 @@ public:
     NomadIndex addFunctionCall(CallableId targetFunctionId, ScriptFunction* function, const ArgumentList* arguments);
     NomadIndex addNativeFunctionCall(CallableId nativeFunctionId, ScriptFunction* function, const ArgumentList* arguments);
     NomadIndex addConstructorCall(CallableId constructorId, ScriptFunction* function, const ArgumentList* arguments);
-    NomadIndex addNativeMethodCall(NomadId memberId, ScriptFunction* function, const ArgumentList* arguments);
+    NomadIndex addNativeMethodCall(CallableId memberId, ScriptFunction* function, const ArgumentList* arguments);
     // After a call returns, free the arguments still on the stack.
     void addFreeArguments(const ArgumentList* arguments);
 

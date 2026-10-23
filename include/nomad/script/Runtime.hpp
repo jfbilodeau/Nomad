@@ -223,7 +223,7 @@ public:
     [[nodiscard]] bool getNativeIndexerDefinition(NomadId indexerId, NativeIndexerDefinition& definition) const;
     [[nodiscard]] const std::vector<NativeIndexerDefinition>& getNativeIndexers() const;
 
-    NomadId registerNativeMethod(
+    CallableId registerNativeMethod(
         const ObjectType* objectType,
         const NomadString& name,
         NativeFunctionFn fn,
@@ -231,16 +231,19 @@ public:
         const Type* returnType,
         NomadDocArg
     );
-    NomadId registerNativeProperty(const ObjectType* objectType, const NomadString& name, const Type* valueType,
+    PropertyId registerProperty(const ObjectType* objectType, const NomadString& name, const Type* valueType);
+    [[nodiscard]] PropertyId catalogProperty(Property* property);
+    [[nodiscard]] const Property* getProperty(PropertyId id) const;
+    [[nodiscard]] const NativeProperty* getNativeProperty(PropertyId id) const;
+    PropertyId registerNativeProperty(const ObjectType* objectType, const NomadString& name, const Type* valueType,
                                       NativePropertyGetFn getFn, NativePropertySetFn setFn, NomadDocArg);
-    [[nodiscard]] NomadId getNativeMemberId(const Type* objectType, const NomadString& name) const;
-    [[nodiscard]] MemberType getMemberType(NomadId memberId) const;
-    [[nodiscard]] bool getNativePropertyDefinition(NomadId memberId, NativePropertyDefinition& definition) const;
-    // The method behind a member id; `getId()` is its function table id. Null when `memberId` is not a method.
-    [[nodiscard]] const NativeMethod* getNativeMemberMethod(NomadId memberId) const;
-    void getNativeMembers(const Type* objectType, std::vector<NomadId>& members) const;
-    void getNativeMembers(std::vector<NomadId>& members) const;
-    void getNativeMemberOverloads(const NomadString& name, std::vector<NomadId>& overloads) const;
+    [[nodiscard]] MemberReference getNativeMemberId(const Type* objectType, const NomadString& name) const;
+    [[nodiscard]] MemberType getMemberType(const MemberReference& member) const;
+    [[nodiscard]] bool getNativePropertyDefinition(const MemberReference& member, NativePropertyDefinition& definition) const;
+    [[nodiscard]] const NativeMethod* getNativeMemberMethod(const MemberReference& member) const;
+    void getNativeMembers(const Type* objectType, std::vector<MemberReference>& members) const;
+    void getNativeMembers(std::vector<MemberReference>& members) const;
+    void getNativeMemberOverloads(const NomadString& name, std::vector<MemberReference>& overloads) const;
     [[nodiscard]] NomadIndex getNativeMemberOverloadCount(const NomadString& name) const;
 
     // Convenience type access:
@@ -485,11 +488,6 @@ private:
         BinaryFoldingFn fn;
     };
 
-    struct NativeMemberRegistration {
-        MemberType type;
-        NomadIndex definitionIndex;
-    };
-
     struct FormatStringRegistration {
         NomadId id;
         CallableId functionId;
@@ -585,13 +583,13 @@ private:
     std::vector<VariableContextRegistration> m_variables;
     std::vector<ContextVariable> m_contextVariables;
     std::vector<FormatStringRegistration> m_formatStrings;
-    std::vector<NativeMemberRegistration> m_nativeMembers;
+    std::vector<MemberReference> m_nativeMembers;
     std::unordered_map<const Type*, IterableDefinition> m_iterableTypes;
-    std::vector<NativePropertyDefinition> m_nativeProperties;
+    std::vector<Property*> m_properties;
     std::vector<std::unique_ptr<Hub>> m_hubs;
     ScriptInitialization m_scriptInitialization;
     std::vector<NativeIndexerDefinition> m_nativeIndexers;
-    std::unordered_map<NomadString, std::vector<NomadId>> m_nativeMembersByName;
+    std::unordered_map<NomadString, std::vector<MemberReference>> m_nativeMembersByName;
     bool m_debug = false;
     std::unique_ptr<VirtualMachine> m_virtualMachine = nullptr;
     std::vector<std::function<void(Compiler*)>> m_compilerSetups;

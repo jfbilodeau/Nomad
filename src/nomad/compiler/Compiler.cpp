@@ -386,7 +386,7 @@ bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type
         return false;
     }
 
-    std::vector<NomadId> members;
+    std::vector<MemberReference> members;
     m_runtime->getNativeMembers(type, members);
 
     for (const auto memberId : members) {
@@ -396,7 +396,7 @@ bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type
         case MemberType::Property: {
             NativePropertyDefinition definition;
             if (!m_runtime->getNativePropertyDefinition(memberId, definition)) {
-                reportInternalError("Invalid native property id: " + toString(memberId));
+                reportInternalError("Invalid native property id: " + toString(std::get<PropertyId>(memberId).id));
             }
             memberName = definition.name;
             break;
@@ -405,14 +405,15 @@ bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type
         case MemberType::Method: {
             const auto* method = m_runtime->getNativeMemberMethod(memberId);
             if (method == nullptr) {
-                reportInternalError("Invalid native method id: " + toString(memberId));
+                reportInternalError("Invalid native method id: " + toString(std::get<CallableId>(memberId).id));
             }
             memberName = method->getName();
             break;
         }
 
         case MemberType::Unknown:
-            reportInternalError("Invalid native member id: " + toString(memberId));
+            reportInternalError("Invalid native member id: " +
+                std::visit([](const auto id) { return toString(id.id); }, memberId));
         }
 
         const auto candidate = identifier + "." + memberName;
@@ -831,13 +832,13 @@ NomadIndex Compiler::addConstructorCall(const CallableId constructorId, ScriptFu
     return m_instructions.size() - 1;
 }
 
-NomadIndex Compiler::addNativeMethodCall(const NomadId memberId, ScriptFunction* function,
+NomadIndex Compiler::addNativeMethodCall(const CallableId memberId, ScriptFunction* function,
                                             const ArgumentList* arguments) {
     arguments->compile(this, function);
 
     const auto argumentCount = arguments->getArgumentCount();
     addOpCode(op_native_method_call);
-    addId(memberId);
+    addId(memberId.id);
     addIndex(argumentCount);
 
     addFreeArguments(arguments);

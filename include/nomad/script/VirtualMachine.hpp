@@ -9,6 +9,7 @@
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/OpCode.hpp>
+#include <nomad/script/Property.hpp>
 #include <nomad/script/RuntimeValue.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 
@@ -65,13 +66,13 @@ public:
 
     void callFunction(const ScriptFunction* function);
     void callNativeFunction(CallableId nativeFunctionId);
-    void callNativeMethod(NomadId memberId, const RuntimeValue& receiver);
+    void callNativeMethod(CallableId memberId, const RuntimeValue& receiver);
     void returnFunction(NomadIndex variableCount);
-    void runNativeMethod(NomadId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
+    void runNativeMethod(CallableId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
     void runNativeFunction(CallableId nativeFunctionId, const std::vector<RuntimeValue>& args);
 
-    void getNativeProperty(NomadId memberId, const RuntimeValue& receiver, RuntimeValue& result);
-    void setNativeProperty(NomadId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
+    void getNativeProperty(PropertyId memberId, const RuntimeValue& receiver, RuntimeValue& result);
+    void setNativeProperty(PropertyId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
     void callNativeIndexer(NomadId indexerId, const RuntimeValue& receiver, bool write);
     void runNativeIndexer(
         NomadId indexerId,

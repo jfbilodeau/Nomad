@@ -349,7 +349,8 @@ CallableId ObjectType::registerMethod(
     std::unique_ptr<Method> method
 ) {
     if (method == nullptr || method->getObjectType() != this ||
-        method->getId() != CallableId{} || runtime.getTypeByName(getTypeName()) != this) {
+        method->getId() != CallableId{} || runtime.getTypeByName(getTypeName()) != this ||
+        getProperty(method->getName()) != nullptr) {
         log::error("Cannot register method: invalid owner or previously registered callable");
         return CallableId::INVALID;
     }
@@ -447,50 +448,54 @@ bool ObjectType::isOpen() const {
     return false;
 }
 
-NomadId ObjectType::addProperty(
-    const NomadString& name,
-    const Type* propertyType
+PropertyId ObjectType::registerProperty(
+    Runtime& runtime,
+    std::unique_ptr<Property> property
 ) {
-    if (propertyType == nullptr) {
-        return NOMAD_INVALID_ID;
+    if (property == nullptr || property->getObjectType() != this || property->getId().isValid() ||
+        runtime.getTypeByName(getTypeName()) != this ||
+        property->getValueType() == nullptr || property->getValueType()->isVoid() ||
+        property->getValueType()->isInternal() ||
+        runtime.getTypeByName(property->getValueType()->getTypeName()) != property->getValueType() ||
+        getProperty(property->getName()) != nullptr ||
+        std::ranges::any_of(m_methods, [&](const auto& method) { return method->getName() == property->getName(); })) {
+        log::error("Cannot register property: invalid owner, value type, or duplicate definition");
+        return PropertyId::INVALID;
     }
-
-    const auto existing = std::find_if(
-        m_properties.begin(),
-        m_properties.end(),
-        [&](const ObjectPropertyDefinition& property) {
-            return property.name == name;
-        }
-    );
-    if (existing != m_properties.end()) {
-        if (!existing->type->sameType(propertyType)) {
-            return NOMAD_INVALID_ID;
-        }
-        return existing->id;
+    m_properties.push_back(std::move(property));
+    const auto id = m_properties.back()->registerWithRuntime(runtime);
+    if (id.isInvalid()) {
+        m_properties.pop_back();
+        log::error("Cannot register property: property registration failed");
     }
-
-    const auto propertyId = m_properties.size();
-    if (propertyId >= toNomadIndex(NOMAD_ID_MAX)) {
-        return NOMAD_INVALID_ID;
-    }
-    const auto id = toNomadId(propertyId);
-    m_properties.push_back({id, name, propertyType});
     return id;
 }
 
-const ObjectPropertyDefinition* ObjectType::getProperty(const NomadString& name) const {
+const Property* ObjectType::getProperty(const NomadString& name) const {
     const auto property = std::find_if(
         m_properties.begin(),
         m_properties.end(),
-        [&](const ObjectPropertyDefinition& candidate) {
-            return candidate.name == name;
+        [&](const auto& candidate) {
+            return candidate->getName() == name;
         }
     );
-    return property == m_properties.end() ? nullptr : &*property;
+    return property == m_properties.end() ? nullptr : property->get();
 }
 
-const ObjectPropertyDefinition* ObjectType::getProperty(const NomadId id) const {
-    return isIdInRange(id, m_properties.size()) ? &m_properties[toNomadIndex(id)] : nullptr;
+const Property* ObjectType::getProperty(const PropertyId id) const {
+    const auto property = std::find_if(m_properties.begin(), m_properties.end(), [id](const auto& candidate) {
+        return candidate->getId() == id;
+    });
+    return property == m_properties.end() ? nullptr : property->get();
+}
+
+std::vector<const Property*> ObjectType::getProperties() const {
+    std::vector<const Property*> properties;
+    properties.reserve(m_properties.size());
+    for (const auto& property : m_properties) {
+        properties.push_back(property.get());
+    }
+    return properties;
 }
 
 NomadIndex ObjectType::getPropertyCount() const {

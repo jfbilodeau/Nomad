@@ -39,15 +39,31 @@ or `CallableId{-1}`.
 
 ### Object type property metadata
 
-`ScriptObjectType` describes a script-defined object type. Open types allow
-additional properties to be declared; closed types reject additions.
+`ScriptObjectType` describes a script-defined object type. `isOpen()` reports
+whether external script declarations may extend it. Closed types are not immutable.
 
-`addProperty` returns a `NomadId`, or `NOMAD_INVALID_ID` if the property cannot
-be added. Adding a property with the same name and type returns its existing ID.
-A conflicting type is rejected without changing the type's properties.
+Register the owner type with the runtime before declaring its properties.
+`Runtime::registerProperty(objectType, name, valueType)` declares a stored/script
+property and returns a `PropertyId`, or `PropertyId::INVALID` on failure.
+The value type must also be registered with the same runtime and must be public
+and non-void. Repeating a declaration with the same name and type returns its
+existing ID. Conflicting declarations are logged and rejected without changing
+the type's properties. Host declarations are permitted on both open and closed
+types; openness controls whether scripts may add external declarations.
 
-This API describes type properties. Script class syntax and property access from
-scripts are not yet implemented.
+`Runtime::getProperty(id)` returns metadata for native or script properties;
+`getNativeProperty(id)` returns only native properties. Invalid or unregistered
+IDs return `nullptr`. Include `<nomad/script/Property.hpp>` for `PropertyId`
+and common metadata, and `<nomad/script/NativeProperty.hpp>` for native metadata.
+Use `getId()`, `getObjectType()`, `getName()`, `getValueType()`, and `getDoc()`
+to inspect a property.
+`ObjectType::getProperty(name)`, `getProperty(id)`, and `getProperties()` expose
+the owner's properties as borrowed const pointers. IDs and pointers remain
+stable as more properties are registered and are valid for the owning runtime's
+lifetime. Property IDs are runtime-wide, not per-object field offsets.
+
+This API describes type properties. Script class syntax and stored/script property
+access from scripts are not yet implemented.
 
 ### Callable access
 
@@ -83,11 +99,20 @@ do not implicitly convert to integers or other ID categories.
 or `CallableId::INVALID` when absent. It does not select an overload.
 `getCallableOverloads(name, ids)` lists free-function overload IDs.
 
-Native member IDs are distinct from callable IDs. `registerNativeMethod` and
-`getNativeMemberId` return member IDs; pass these to
-`getNativeMemberMethod(memberId)`. `getNativeMethod(callableId)` takes a callable ID.
-`getMemberType(memberId)` returns `MemberType::Property` or `MemberType::Method`.
-Include `<nomad/script/Member.hpp>` for `MemberType`; native property callbacks
+`registerNativeProperty` returns a `PropertyId`; `registerNativeMethod` returns
+the method's `CallableId`. Their failure results are `PropertyId::INVALID` and
+`CallableId::INVALID`, respectively.
+`getNativeMemberId` returns a `MemberReference`, a `std::variant<PropertyId, CallableId>`.
+An absent member is represented by `PropertyId::INVALID`.
+Member enumeration and overload APIs use `std::vector<MemberReference>`.
+`getMemberType(member)` returns `MemberType::Property`, `MemberType::Method`,
+or `MemberType::Unknown` for an invalid reference.
+Use `std::get_if` to inspect a reference's ID category.
+`getNativePropertyDefinition(member, definition)` returns a native property
+snapshot, or `false` when the reference is invalid or not a native property.
+`getNativeMemberMethod(member)` returns a native method or `nullptr`.
+`getNativeMethod(callableId)` accepts the same ID returned by method registration.
+Include `<nomad/script/Member.hpp>` for member references and `MemberType`; native property callbacks
 and indexer definitions are available in `<nomad/script/NativeMember.hpp>`.
 
 Use `getNativeFunction(id)` or `getScriptFunction(id)` for implementation-specific

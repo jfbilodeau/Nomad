@@ -7,6 +7,7 @@
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/Member.hpp>
 #include <nomad/script/NativeFunction.hpp>
+#include <nomad/script/Property.hpp>
 #include <nomad/script/RuntimeValue.hpp>
 
 #include <functional>
@@ -22,7 +23,7 @@ using NativePropertyGetFn = std::function<void(VirtualMachine*, RuntimeValue&)>;
 using NativePropertySetFn = std::function<void(VirtualMachine*, const RuntimeValue&)>;
 
 struct NativePropertyDefinition {
-    NomadId id = NOMAD_INVALID_ID;
+    PropertyId id;
     const Type* objectType = nullptr;
     NomadString name;
     const Type* valueType = nullptr;

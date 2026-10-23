@@ -8,6 +8,7 @@
 #include <nomad/Nomad.hpp>
 
 #include <nomad/script/Callable.hpp>
+#include <nomad/script/Property.hpp>
 #include <nomad/script/OpCode.hpp>
 
 #include <memory>
@@ -227,12 +228,6 @@ public:
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 
-struct ObjectPropertyDefinition {
-    NomadId id = NOMAD_INVALID_ID;
-    NomadString name;
-    const Type* type = nullptr;
-};
-
 class ObjectType : public Type {
 public:
     explicit ObjectType(
@@ -263,18 +258,19 @@ public:
     [[nodiscard]] bool sameType(const Type* other) const override;
 
     [[nodiscard]] virtual bool isOpen() const;
-    [[nodiscard]] virtual NomadId addProperty(
-        const NomadString& name,
-        const Type* propertyType
+    [[nodiscard]] PropertyId registerProperty(
+        Runtime& runtime,
+        std::unique_ptr<Property> property
     );
-    [[nodiscard]] virtual const ObjectPropertyDefinition* getProperty(const NomadString& name) const;
-    [[nodiscard]] virtual const ObjectPropertyDefinition* getProperty(NomadId id) const;
+    [[nodiscard]] const Property* getProperty(const NomadString& name) const;
+    [[nodiscard]] const Property* getProperty(PropertyId id) const;
+    [[nodiscard]] std::vector<const Property*> getProperties() const;
     [[nodiscard]] virtual NomadIndex getPropertyCount() const;
 
 private:
     NomadString m_name;
     std::vector<const Type*> m_typeArguments;
-    std::vector<ObjectPropertyDefinition> m_properties;
+    std::vector<std::unique_ptr<Property>> m_properties;
     std::vector<std::unique_ptr<Constructor>> m_constructors;
     std::vector<std::unique_ptr<Method>> m_methods;
 };

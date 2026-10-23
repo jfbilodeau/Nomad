@@ -60,7 +60,7 @@ void registerKeyValueType(Runtime* runtime) {
                 {},
                 NomadDoc("The read-only value. Object values share their referenced object.")
             );
-            if (constructorId.isInvalid() || keyId == NOMAD_INVALID_ID || valueId == NOMAD_INVALID_ID) {
+            if (constructorId.isInvalid() || keyId.isInvalid() || valueId.isInvalid()) {
                 throw NomadException("Failed to register KeyValue members");
             }
         }

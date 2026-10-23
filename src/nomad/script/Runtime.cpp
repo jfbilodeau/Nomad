@@ -7,6 +7,7 @@
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/NativeMembers.hpp>
+#include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/RegisterRangeType.hpp>
 #include <nomad/script/Type.hpp>
@@ -112,7 +113,7 @@ Runtime::Runtime() {
                 },
                 {}, NomadDoc("The value published by the last successful moveNext call.")
             );
-            if (advanceId == NOMAD_INVALID_ID || currentId == NOMAD_INVALID_ID) {
+            if (advanceId.isInvalid() || currentId.isInvalid()) {
                 throw NomadException("Failed to register iterator members");
             }
         }
@@ -568,9 +569,8 @@ CallableId Runtime::registerNativeCallable(
             return CallableId::INVALID;
         }
 
-        const auto memberId = toNomadId(m_nativeMembers.size());
-        m_nativeMembers.push_back({MemberType::Method, toNomadIndex(id.id)});
-        m_nativeMembersByName[name].push_back(memberId);
+        m_nativeMembers.push_back(id);
+        m_nativeMembersByName[name].push_back(id);
 
         return id;
     }
@@ -1339,7 +1339,9 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
         return false;
     }
 
-    if (getNativeMemberId(objectType, name) != NOMAD_INVALID_ID) {
+    const auto* owner = static_cast<const ObjectType*>(objectType);
+    if (owner->getProperty(name) != nullptr ||
+        getMemberType(getNativeMemberId(objectType, name)) != MemberType::Unknown) {
         error = "the type already has a member with that name";
         return false;
     }
@@ -1651,44 +1653,85 @@ const std::vector<NativeIndexerDefinition>& Runtime::getNativeIndexers() const {
     return m_nativeIndexers;
 }
 
-NomadId Runtime::registerNativeProperty(const ObjectType* objectType, const NomadString& name, const Type* valueType,
+PropertyId Runtime::registerProperty(
+    const ObjectType* objectType,
+    const NomadString& name,
+    const Type* valueType
+) {
+    auto* owner = getMutableObjectType(objectType);
+    if (owner == nullptr || !isNativeMemberName(name) || !ownsType(valueType) ||
+        valueType->isVoid() || valueType->isInternal()) {
+        log::error("Cannot register property '" + name + "': invalid owner, name, or value type");
+        return PropertyId::INVALID;
+    }
+    if (const auto* existing = owner->getProperty(name)) {
+        if (existing->asNativeProperty() == nullptr && existing->getValueType() == valueType) {
+            return existing->getId();
+        }
+        log::error("Cannot register property '" + name + "': conflicting definition");
+        return PropertyId::INVALID;
+    }
+    if (getMemberType(getNativeMemberId(objectType, name)) != MemberType::Unknown) {
+        log::error("Cannot register property '" + name + "': the type already has a member with that name");
+        return PropertyId::INVALID;
+    }
+    return owner->registerProperty(*this, std::make_unique<Property>(objectType, name, valueType));
+}
+
+PropertyId Runtime::catalogProperty(Property* property) {
+    if (property == nullptr || property->getId().isValid() || !ownsType(property->getObjectType()) ||
+        property->getObjectType()->getProperty(property->getName()) != property ||
+        m_properties.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+        log::error("Cannot catalog property: invalid owner, identity, or property capacity");
+        return PropertyId::INVALID;
+    }
+    const auto id = PropertyId{toNomadId(m_properties.size())};
+    m_properties.push_back(property);
+    return id;
+}
+
+const Property* Runtime::getProperty(const PropertyId id) const {
+    return isIdInRange(id.id, m_properties.size()) ? m_properties[toNomadIndex(id.id)] : nullptr;
+}
+
+const NativeProperty* Runtime::getNativeProperty(const PropertyId id) const {
+    const auto* property = getProperty(id);
+    return property == nullptr ? nullptr : property->asNativeProperty();
+}
+
+PropertyId Runtime::registerNativeProperty(const ObjectType* objectType, const NomadString& name, const Type* valueType,
                                            NativePropertyGetFn getFn, NativePropertySetFn setFn,
                                            const NomadString& doc) {
     if (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
         log::error("Cannot register native property '" + name + "': invalid value type");
-        return NOMAD_INVALID_ID;
+        return PropertyId::INVALID;
     }
 
     if (!getFn && !setFn) {
         log::error("Cannot register native property '" + name + "': property has no accessor or mutator");
-        return NOMAD_INVALID_ID;
+        return PropertyId::INVALID;
     }
 
     NomadString error;
     if (!canRegisterNativeMember(objectType, name, MemberType::Property, {}, error)) {
         log::error("Cannot register native property '" + name + "': " + error);
-        return NOMAD_INVALID_ID;
+        return PropertyId::INVALID;
     }
 
-    const auto id = toNomadId(m_nativeMembers.size());
-    const auto definitionIndex = m_nativeProperties.size();
-
-    m_nativeProperties.push_back({
-        id,
-        objectType,
-        name,
-        valueType,
-        std::move(getFn),
-        std::move(setFn),
-        doc,
-    });
-    m_nativeMembers.push_back({MemberType::Property, definitionIndex});
+    auto* owner = getMutableObjectType(objectType);
+    const auto id = owner->registerProperty(*this, std::make_unique<NativeProperty>(
+        objectType, name, valueType, std::move(getFn), std::move(setFn), doc
+    ));
+    if (id.isInvalid()) {
+        return PropertyId::INVALID;
+    }
+    m_nativeMembers.push_back(id);
     m_nativeMembersByName[name].push_back(id);
 
     return id;
 }
 
-NomadId Runtime::registerNativeMethod(
+CallableId Runtime::registerNativeMethod(
     const ObjectType* objectType,
     const NomadString& name,
     NativeFunctionFn fn,
@@ -1698,16 +1741,15 @@ NomadId Runtime::registerNativeMethod(
 ) {
     if (objectType == nullptr) {
         log::error("Cannot register native method '" + name + "': object type is null");
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
-    const auto callableId = registerNativeCallable(objectType, name, std::move(fn), parameters, returnType, doc);
-    return callableId == CallableId{} ? NOMAD_INVALID_ID : getNativeMemberId(objectType, name);
+    return registerNativeCallable(objectType, name, std::move(fn), parameters, returnType, doc);
 }
 
-NomadId Runtime::getNativeMemberId(const Type* objectType, const NomadString& name) const {
+MemberReference Runtime::getNativeMemberId(const Type* objectType, const NomadString& name) const {
     const auto overloads = m_nativeMembersByName.find(name);
     if (overloads == m_nativeMembersByName.end()) {
-        return NOMAD_INVALID_ID;
+        return PropertyId::INVALID;
     }
 
     for (const auto memberId : overloads->second) {
@@ -1733,52 +1775,38 @@ NomadId Runtime::getNativeMemberId(const Type* objectType, const NomadString& na
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return PropertyId::INVALID;
 }
 
-MemberType Runtime::getMemberType(const NomadId memberId) const {
-    const auto memberIndex = toNomadIndex(memberId);
-    if (memberIndex >= m_nativeMembers.size()) {
-        return MemberType::Unknown;
+MemberType Runtime::getMemberType(const MemberReference& member) const {
+    if (const auto* propertyId = std::get_if<PropertyId>(&member)) {
+        return getProperty(*propertyId) == nullptr ? MemberType::Unknown : MemberType::Property;
     }
-
-    return m_nativeMembers[memberIndex].type;
+    return getMethod(std::get<CallableId>(member)) == nullptr ? MemberType::Unknown : MemberType::Method;
 }
 
-bool Runtime::getNativePropertyDefinition(const NomadId memberId, NativePropertyDefinition& definition) const {
-    const auto memberIndex = toNomadIndex(memberId);
-    if (memberIndex >= m_nativeMembers.size()) {
+bool Runtime::getNativePropertyDefinition(const MemberReference& member, NativePropertyDefinition& definition) const {
+    const auto* id = std::get_if<PropertyId>(&member);
+    if (id == nullptr) {
         return false;
     }
-
-    const auto& member = m_nativeMembers[memberIndex];
-    if (member.type != MemberType::Property || member.definitionIndex >= m_nativeProperties.size()) {
+    const auto* property = getNativeProperty(*id);
+    if (property == nullptr) {
         return false;
     }
-
-    definition = m_nativeProperties[member.definitionIndex];
+    definition = property->getDefinition();
     return true;
 }
 
-const NativeMethod* Runtime::getNativeMemberMethod(const NomadId memberId) const {
-    const auto memberIndex = toNomadIndex(memberId);
-    if (memberIndex >= m_nativeMembers.size()) {
-        return nullptr;
-    }
-
-    const auto& member = m_nativeMembers[memberIndex];
-    if (member.type != MemberType::Method) {
-        return nullptr;
-    }
-
-    return getNativeMethod(CallableId{toNomadId(member.definitionIndex)});
+const NativeMethod* Runtime::getNativeMemberMethod(const MemberReference& member) const {
+    const auto* id = std::get_if<CallableId>(&member);
+    return id == nullptr ? nullptr : getNativeMethod(*id);
 }
 
-void Runtime::getNativeMembers(const Type* objectType, std::vector<NomadId>& members) const {
+void Runtime::getNativeMembers(const Type* objectType, std::vector<MemberReference>& members) const {
     members.clear();
 
-    for (NomadIndex index = 0; index < m_nativeMembers.size(); ++index) {
-        const auto memberId = toNomadId(index);
+    for (const auto& memberId : m_nativeMembers) {
         const auto type = getMemberType(memberId);
 
         if (type == MemberType::Property) {
@@ -1795,16 +1823,11 @@ void Runtime::getNativeMembers(const Type* objectType, std::vector<NomadId>& mem
     }
 }
 
-void Runtime::getNativeMembers(std::vector<NomadId>& members) const {
-    members.clear();
-    members.reserve(m_nativeMembers.size());
-
-    for (NomadIndex index = 0; index < m_nativeMembers.size(); ++index) {
-        members.push_back(toNomadId(index));
-    }
+void Runtime::getNativeMembers(std::vector<MemberReference>& members) const {
+    members = m_nativeMembers;
 }
 
-void Runtime::getNativeMemberOverloads(const NomadString& name, std::vector<NomadId>& overloads) const {
+void Runtime::getNativeMemberOverloads(const NomadString& name, std::vector<MemberReference>& overloads) const {
     overloads.clear();
 
     const auto members = m_nativeMembersByName.find(name);

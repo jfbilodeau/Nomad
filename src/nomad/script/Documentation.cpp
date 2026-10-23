@@ -18,14 +18,14 @@ namespace nomad {
 namespace {
 
 struct NativeMemberDocumentationInfo {
-    NomadId id;
+    MemberReference id;
     MemberType memberType;
     const Type* objectType;
     NomadString name;
 };
 
 std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Runtime* runtime) {
-    std::vector<NomadId> memberIds;
+    std::vector<MemberReference> memberIds;
     runtime->getNativeMembers(memberIds);
 
     std::vector<NativeMemberDocumentationInfo> members;

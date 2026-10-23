@@ -179,7 +179,7 @@ ApiAnalysis analyzeApiSymbols(
                 "Script context variable.", typeName});
         }
     }
-    std::vector<NomadId> members;
+    std::vector<MemberReference> members;
     runtime->getNativeMembers(members);
     for (const auto id : members) {
         if (runtime->getMemberType(id) == MemberType::Property) {

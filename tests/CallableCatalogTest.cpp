@@ -681,7 +681,7 @@ BOOST_AUTO_TEST_CASE(registered_callables_share_one_id_space)
     );
     const auto constructor = registerResolutionConstructor(runtime, type, {});
 
-    BOOST_REQUIRE(function.isValid() && method != NOMAD_INVALID_ID && constructor.isValid());
+    BOOST_REQUIRE(function.isValid() && method.isValid() && constructor.isValid());
     BOOST_REQUIRE(runtime.getFunctionTableSize() >= NomadIndex{3});
 
     const auto functionResult = runtime.resolveFunction("test.one", {});
@@ -799,7 +799,7 @@ BOOST_AUTO_TEST_CASE(methods_belong_to_the_receiver_type)
         type, "update", [](VirtualMachine*) {},
         {defParameter("value", runtime.getIntegerType(), "")}, runtime.getVoidType(), ""
     );
-    BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(memberId.isValid());
     const auto methods = type->getMethods();
     BOOST_REQUIRE(methods.size() == 1);
     BOOST_TEST(methods.front() == runtime.getNativeMemberMethod(memberId));
@@ -811,7 +811,7 @@ BOOST_AUTO_TEST_CASE(methods_belong_to_the_receiver_type)
         otherType, "update", [](VirtualMachine*) {},
         {defParameter("value", runtime.getFloatType(), "")}, runtime.getVoidType(), ""
     );
-    BOOST_REQUIRE(overloadId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(overloadId.isValid());
     BOOST_TEST(type->getMethods().size() == 1);
     BOOST_TEST(otherType->getMethods().size() == 1);
     BOOST_TEST(runtime.resolveMethod(type, "update", {runtime.getIntegerType()}).id == callableId);
@@ -822,21 +822,21 @@ BOOST_AUTO_TEST_CASE(methods_belong_to_the_receiver_type)
     BOOST_TEST(runtime.registerNativeMethod(
         type, "update", [](VirtualMachine*) {},
         {defParameter("value", runtime.getIntegerType(), "")}, runtime.getVoidType(), ""
-    ) == NOMAD_INVALID_ID);
+    ).isInvalid());
     BOOST_TEST(type->getMethods().size() == 1);
 
     Runtime otherRuntime;
     const auto callableCount = otherRuntime.getFunctionTableSize();
     BOOST_TEST(otherRuntime.registerNativeMethod(
         type, "update", [](VirtualMachine*) {}, {}, otherRuntime.getVoidType(), ""
-    ) == NOMAD_INVALID_ID);
+    ).isInvalid());
     BOOST_TEST(otherRuntime.getFunctionTableSize() == callableCount);
     BOOST_TEST(type->getMethods().size() == 1);
 
     for (auto index = 0; index < 32; ++index) {
         BOOST_REQUIRE(runtime.registerNativeMethod(
             type, "extra" + std::to_string(index), [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
-        ) != NOMAD_INVALID_ID);
+        ).isValid());
     }
     BOOST_TEST(runtime.getMethod(callableId) == methods.front());
     BOOST_TEST(runtime.getNativeMemberMethod(memberId) == methods.front());
@@ -877,7 +877,7 @@ BOOST_AUTO_TEST_CASE(type_owned_method_callback_is_released_once)
             type, "update", [lifetime = std::move(lifetime)](VirtualMachine*) {},
             {}, runtime.getVoidType(), ""
         );
-        BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
+        BOOST_REQUIRE(memberId.isValid());
         BOOST_TEST(destructions == 0);
     }
     BOOST_TEST(aliveAtTypeDestruction);
@@ -940,17 +940,17 @@ BOOST_AUTO_TEST_CASE(member_method_lookup_distinguishes_member_and_callable_ids)
     const auto memberId = runtime.registerNativeMethod(
         type, "size", [](VirtualMachine*) {}, {}, runtime.getIntegerType(), ""
     );
-    BOOST_REQUIRE(propertyId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(propertyId.isValid());
+    BOOST_REQUIRE(memberId.isValid());
     const auto* method = runtime.getNativeMemberMethod(memberId);
     BOOST_REQUIRE(method != nullptr);
-    // BOOST_TEST(method->getId() != memberId);
+    BOOST_TEST(method->getId() == memberId);
     BOOST_TEST(runtime.getNativeMethod(method->getId()) == method);
     BOOST_TEST(runtime.getMethod(method->getId()) == static_cast<const Method*>(method));
     BOOST_TEST(runtime.getNativeMemberMethod(propertyId) == nullptr);
-    BOOST_TEST(runtime.getNativeMemberMethod(NOMAD_INVALID_ID) == nullptr);
-    BOOST_TEST(runtime.getNativeMemberMethod(-2) == nullptr);
-    BOOST_TEST(runtime.getNativeMemberMethod(toNomadId(runtime.getFunctionTableSize())) == nullptr);
+    BOOST_TEST(runtime.getNativeMemberMethod(CallableId::INVALID) == nullptr);
+    BOOST_TEST(runtime.getNativeMemberMethod(CallableId{-2}) == nullptr);
+    BOOST_TEST(runtime.getNativeMemberMethod(CallableId{toNomadId(runtime.getFunctionTableSize())}) == nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(resolve_function_reports_each_failure_status)
@@ -1005,8 +1005,7 @@ BOOST_AUTO_TEST_CASE(resolve_method_is_scoped_to_the_object_type)
     const auto* second = registerResolutionType(runtime, "Second");
 
     BOOST_REQUIRE(
-        runtime.registerNativeMethod(first, "size", [](VirtualMachine*) {}, {}, runtime.getIntegerType(), "")
-        != NOMAD_INVALID_ID
+        runtime.registerNativeMethod(first, "size", [](VirtualMachine*) {}, {}, runtime.getIntegerType(), "").isValid()
     );
 
     BOOST_TEST(runtime.resolveMethod(first, "size", {}).isResolved());
