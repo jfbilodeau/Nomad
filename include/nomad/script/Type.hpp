@@ -8,8 +8,9 @@
 #include <nomad/Nomad.hpp>
 
 #include <nomad/script/Callable.hpp>
-#include <nomad/script/Property.hpp>
+#include <nomad/script/NativeMember.hpp>
 #include <nomad/script/OpCode.hpp>
+#include <nomad/script/Property.hpp>
 
 #include <memory>
 #include <span>
@@ -266,6 +267,12 @@ public:
     [[nodiscard]] const Property* getProperty(PropertyId id) const;
     [[nodiscard]] std::vector<const Property*> getProperties() const;
     [[nodiscard]] virtual NomadIndex getPropertyCount() const;
+    [[nodiscard]] IndexerId registerNativeIndexer(
+        Runtime& runtime,
+        NativeIndexerDefinition definition
+    );
+    [[nodiscard]] const NativeIndexerDefinition* getNativeIndexer(NomadIndex indexCount) const;
+    [[nodiscard]] std::vector<const NativeIndexerDefinition*> getNativeIndexers() const;
 
 private:
     NomadString m_name;
@@ -273,6 +280,7 @@ private:
     std::vector<std::unique_ptr<Property>> m_properties;
     std::vector<std::unique_ptr<Constructor>> m_constructors;
     std::vector<std::unique_ptr<Method>> m_methods;
+    std::vector<std::unique_ptr<NativeIndexerDefinition>> m_nativeIndexers;
 };
 
 class BaseStringType : public ObjectType {

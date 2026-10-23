@@ -216,8 +216,9 @@ public:
         NomadDocArg
     );
     [[nodiscard]] IndexerId getNativeIndexerId(const Type* objectType, NomadIndex indexCount) const;
+    [[nodiscard]] IndexerId catalogNativeIndexer(const NativeIndexerDefinition* definition);
     [[nodiscard]] bool getNativeIndexerDefinition(IndexerId indexerId, NativeIndexerDefinition& definition) const;
-    [[nodiscard]] const std::vector<NativeIndexerDefinition>& getNativeIndexers() const;
+    [[nodiscard]] const std::vector<const NativeIndexerDefinition*>& getNativeIndexers() const;
 
     CallableId registerNativeMethod(
         const ObjectType* objectType,
@@ -594,7 +595,7 @@ private:
     std::vector<Property*> m_properties;
     std::vector<std::unique_ptr<Hub>> m_hubs;
     ScriptInitialization m_scriptInitialization;
-    std::vector<NativeIndexerDefinition> m_nativeIndexers;
+    std::vector<const NativeIndexerDefinition*> m_nativeIndexers;
     std::unordered_map<NomadString, std::vector<MemberReference>> m_nativeMembersByName;
     bool m_debug = false;
     std::unique_ptr<VirtualMachine> m_virtualMachine = nullptr;

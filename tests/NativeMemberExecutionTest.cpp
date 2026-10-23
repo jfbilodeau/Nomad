@@ -401,6 +401,42 @@ BOOST_AUTO_TEST_CASE(string_indexer_faults_and_interpreter_recovers) {
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 1);
 }
 
+BOOST_AUTO_TEST_CASE(compiled_and_interpreted_indexers_keep_owner_identity_after_catalog_growth) {
+    Runtime runtime;
+    const auto* type = registerTestObject(runtime);
+    const auto indexerId = runtime.registerNativeIndexer(
+        type, {runtime.getIntegerType()}, runtime.getIntegerType(),
+        [](VirtualMachine* machine) {
+            machine->setIntegerResult(machine->getThisAs<TestObject>()->value + machine->getIntegerParameter(0));
+        },
+        [](VirtualMachine* machine) {
+            machine->getThisAs<TestObject>()->value = machine->getIntegerParameter(0) + machine->getIntegerParameter(1);
+        }, ""
+    );
+    BOOST_REQUIRE(indexerId.isValid());
+    const auto* original = type->getNativeIndexer(1);
+    BOOST_REQUIRE(original != nullptr);
+    const auto functionId = compileFunction(runtime,
+        "value = new TestObject\nvalue[2] = 40\nreturn value[3]");
+    for (auto count = NomadIndex{2}; count <= 32; ++count) {
+        BOOST_REQUIRE(runtime.registerNativeIndexer(
+            type, std::vector<const Type*>(count, runtime.getIntegerType()), runtime.getIntegerType(),
+            [](VirtualMachine* machine) { machine->setIntegerResult(-1); }, {}, ""
+        ).isValid());
+    }
+    BOOST_TEST(type->getNativeIndexer(1) == original);
+    BOOST_TEST(runtime.getNativeIndexers()[toNomadIndex(indexerId.id)] == original);
+    RuntimeValue result;
+    runtime.executeFunction(functionId, {}, result);
+    BOOST_TEST(result.getIntegerValue() == 45);
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    BOOST_REQUIRE(Interpreter{}.execute("value = new TestObject", context));
+    BOOST_REQUIRE(Interpreter{}.execute("value[5] = 7", context));
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("value[6]", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 18);
+}
+
 BOOST_AUTO_TEST_CASE(write_only_indexer_supports_assignment_but_not_reads) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);

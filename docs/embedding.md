@@ -743,6 +743,20 @@ indexers are registered. They do not implicitly convert to integers or other
 ID categories. `getNativeIndexerDefinition(id, definition)` returns `false` for
 invalid or unregistered IDs.
 
+The object type owns each indexer definition. `ObjectType::getNativeIndexer(indexCount)`
+returns a borrowed `const NativeIndexerDefinition*`, or `nullptr` when absent.
+`ObjectType::getNativeIndexers()` enumerates that type's indexers, while
+`Runtime::getNativeIndexers()` enumerates the runtime-wide borrowed catalog in
+registration order. Both enumerate const definition pointers; these pointers
+remain valid as more indexers are registered, until the runtime destroys their
+owning types. `getNativeIndexerDefinition` still returns a definition copy.
+
+Hosts retaining a mutable registered object type may also call
+`ObjectType::registerNativeIndexer(runtime, definition)`. Supply an invalid ID
+and that object type as `definition.objectType`. The same registration rules
+apply; foreign-runtime types, preassigned IDs, and duplicate index counts are
+rejected without changing the owner or catalog.
+
 Omit the setter for read-only indexing, or omit
 the getter for write-only indexing. Invalid access is rejected during compilation.
 

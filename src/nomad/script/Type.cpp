@@ -502,6 +502,68 @@ NomadIndex ObjectType::getPropertyCount() const {
     return static_cast<NomadIndex>(m_properties.size());
 }
 
+IndexerId ObjectType::registerNativeIndexer(
+    Runtime& runtime,
+    NativeIndexerDefinition definition
+) {
+    if (definition.objectType != this || definition.id.isValid() ||
+        runtime.getTypeByName(getTypeName()) != this) {
+        log::error("Cannot register native indexer: invalid owner or identity");
+        return IndexerId::INVALID;
+    }
+    const auto isValidType = [&](const Type* type) {
+        return type != nullptr && !type->isVoid() && !type->isInternal() &&
+            runtime.getTypeByName(type->getTypeName()) == type;
+    };
+    if (!isValidType(definition.valueType)) {
+        log::error("Cannot register native indexer: value type must be registered, public, and non-void");
+        return IndexerId::INVALID;
+    }
+    if (definition.indexTypes.empty()) {
+        log::error("Cannot register native indexer: at least one index type is required");
+        return IndexerId::INVALID;
+    }
+    if (!std::ranges::all_of(definition.indexTypes, isValidType)) {
+        log::error("Cannot register native indexer: index types must be registered, public, and non-void");
+        return IndexerId::INVALID;
+    }
+    if (!definition.getFn && !definition.setFn) {
+        log::error("Cannot register native indexer: indexer has no accessor or mutator");
+        return IndexerId::INVALID;
+    }
+    if (getNativeIndexer(definition.indexTypes.size()) != nullptr) {
+        log::error("Cannot register native indexer: type already has an indexer with " +
+            nomad::toString(definition.indexTypes.size()) + " indices");
+        return IndexerId::INVALID;
+    }
+    m_nativeIndexers.push_back(std::make_unique<NativeIndexerDefinition>(std::move(definition)));
+    auto& indexer = *m_nativeIndexers.back();
+    const auto id = runtime.catalogNativeIndexer(&indexer);
+    if (id.isInvalid()) {
+        m_nativeIndexers.pop_back();
+        log::error("Cannot register native indexer: indexer registration failed");
+        return IndexerId::INVALID;
+    }
+    indexer.id = id;
+    return id;
+}
+
+const NativeIndexerDefinition* ObjectType::getNativeIndexer(const NomadIndex indexCount) const {
+    const auto indexer = std::find_if(m_nativeIndexers.begin(), m_nativeIndexers.end(), [&](const auto& candidate) {
+        return candidate->indexTypes.size() == indexCount;
+    });
+    return indexer == m_nativeIndexers.end() ? nullptr : indexer->get();
+}
+
+std::vector<const NativeIndexerDefinition*> ObjectType::getNativeIndexers() const {
+    std::vector<const NativeIndexerDefinition*> indexers;
+    indexers.reserve(m_nativeIndexers.size());
+    for (const auto& indexer : m_nativeIndexers) {
+        indexers.push_back(indexer.get());
+    }
+    return indexers;
+}
+
 NomadString ObjectType::getTypeName() const {
     return m_name;
 }

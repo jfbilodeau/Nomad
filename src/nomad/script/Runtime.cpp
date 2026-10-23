@@ -1602,51 +1602,46 @@ IndexerId Runtime::registerNativeIndexer(
     NativeFunctionFn setFn,
     const NomadString& doc
 ) {
-    if (!ownsType(objectType) || !ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
-        log::error("Cannot register native indexer: types must be registered, public, and non-void");
+    auto* owner = getMutableObjectType(objectType);
+    if (owner == nullptr) {
+        log::error("Cannot register native indexer: object type must be registered with this runtime");
         return IndexerId::INVALID;
     }
-    if (indexTypes.empty()) {
-        log::error("Cannot register native indexer: at least one index type is required");
-        return IndexerId::INVALID;
-    }
-    for (const auto* indexType : indexTypes) {
-        if (!ownsType(indexType) || indexType->isVoid() || indexType->isInternal()) {
-            log::error("Cannot register native indexer: index types must be registered, public, and non-void");
-            return IndexerId::INVALID;
-        }
-    }
-    if (!getFn && !setFn) {
-        log::error("Cannot register native indexer: indexer has no accessor or mutator");
-        return IndexerId::INVALID;
-    }
-    if (getNativeIndexerId(objectType, indexTypes.size()).isValid()) {
-        log::error("Cannot register native indexer: type already has an indexer with " + toString(indexTypes.size()) + " indices");
+    return owner->registerNativeIndexer(*this, {
+        IndexerId::INVALID, objectType, std::move(indexTypes), valueType, std::move(getFn), std::move(setFn), doc
+    });
+}
+
+IndexerId Runtime::catalogNativeIndexer(const NativeIndexerDefinition* definition) {
+    if (definition == nullptr || definition->id.isValid() || !ownsType(definition->objectType) ||
+        definition->objectType->getNativeIndexer(definition->indexTypes.size()) != definition ||
+        m_nativeIndexers.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+        log::error("Cannot catalog native indexer: invalid owner, identity, or indexer capacity");
         return IndexerId::INVALID;
     }
     const auto id = IndexerId{toNomadId(m_nativeIndexers.size())};
-    m_nativeIndexers.push_back({id, objectType, std::move(indexTypes), valueType, std::move(getFn), std::move(setFn), doc});
+    m_nativeIndexers.push_back(definition);
     return id;
 }
 
 IndexerId Runtime::getNativeIndexerId(const Type* objectType, const NomadIndex indexCount) const {
-    for (const auto& definition : m_nativeIndexers) {
-        if (definition.objectType == objectType && definition.indexTypes.size() == indexCount) {
-            return definition.id;
-        }
+    if (!ownsType(objectType)) {
+        return IndexerId::INVALID;
     }
-    return IndexerId::INVALID;
+    const auto* owner = dynamic_cast<const ObjectType*>(objectType);
+    const auto* definition = owner == nullptr ? nullptr : owner->getNativeIndexer(indexCount);
+    return definition == nullptr ? IndexerId::INVALID : definition->id;
 }
 
 bool Runtime::getNativeIndexerDefinition(const IndexerId indexerId, NativeIndexerDefinition& definition) const {
     if (isIdOutOfRange(indexerId.id, m_nativeIndexers.size())) {
         return false;
     }
-    definition = m_nativeIndexers[toNomadIndex(indexerId.id)];
+    definition = *m_nativeIndexers[toNomadIndex(indexerId.id)];
     return true;
 }
 
-const std::vector<NativeIndexerDefinition>& Runtime::getNativeIndexers() const {
+const std::vector<const NativeIndexerDefinition*>& Runtime::getNativeIndexers() const {
     return m_nativeIndexers;
 }
 

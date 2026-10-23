@@ -546,7 +546,8 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
         out << "---" << std::endl;
     }
 
-    for (const auto& indexer : runtime->getNativeIndexers()) {
+    for (const auto* definition : runtime->getNativeIndexers()) {
+        const auto& indexer = *definition;
         out << std::endl;
         out << "### `" << indexer.objectType->getTypeName() << "[";
         for (auto index = NomadIndex{0}; index < indexer.indexTypes.size(); ++index) {
