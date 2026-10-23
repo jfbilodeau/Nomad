@@ -758,7 +758,7 @@ bool VirtualMachine::getVariableValue(IdentifierType identifierType, NomadId var
         return true;
 
     case IdentifierType::DynamicVariable:
-        m_runtime->getDynamicVariableValue(this, variableId, value);
+        m_runtime->getDynamicVariableValue(this, DynamicVariableId{variableId}, value);
         return true;
 
     case IdentifierType::ContextVariable:

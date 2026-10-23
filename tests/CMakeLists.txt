@@ -30,6 +30,7 @@ add_executable(
     ./LanguageHubTest.cpp
     ./LanguageLexicalTest.cpp
     ./LanguageOperatorTest.cpp
+    ./LanguageRegistryIdTest.cpp
     ./LanguageScriptDiscoveryTest.cpp
     ./LanguageServerTest.cpp
     ./LanguageStringLifetimeTest.cpp

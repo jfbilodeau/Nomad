@@ -49,6 +49,8 @@ class OpaqueIdType;
 struct EnumValueDefinition;
 
 DeclareId(KeywordId);
+DeclareId(StringId);
+DeclareId(FormatStringId);
 
 struct KeywordDefinition {
     NomadString keyword;
@@ -342,30 +344,36 @@ public:
     // Static strings
     // String literals and hidden `$file`/`$function` arguments are registered during compilation only. `$stringref`
     // values point directly into this table, so it must not grow or change once functions start executing.
-    NomadId registerString(const NomadString& string);
-    [[nodiscard]] NomadId getStringId(const NomadString& string) const;
-    [[nodiscard]] NomadStringObject* getString(NomadId stringId) const;
+    StringId registerString(const NomadString& string);
+    [[nodiscard]] StringId getStringId(const NomadString& string) const;
+    [[nodiscard]] NomadStringObject* getString(StringId stringId) const;
     [[nodiscard]] NomadStringObject* getStringByName(const NomadString& name) const;
 
     // Format strings
-    NomadId registerFormatString(const NomadString& formatString, CallableId functionId);
-    [[nodiscard]] FormatString* getFormatString(NomadId id) const;
-    [[nodiscard]] NomadId getFormatStringId(const NomadString& formatString, CallableId functionId) const;
+    FormatStringId registerFormatString(const NomadString& formatString, CallableId functionId);
+    [[nodiscard]] FormatString* getFormatString(FormatStringId id) const;
+    [[nodiscard]] FormatStringId getFormatStringId(const NomadString& formatString, CallableId functionId) const;
 
     // Dynamic variables
-    NomadId registerDynamicVariable(const NomadString& name, DynamicVariableSetFn setFn, DynamicVariableGetFn getFn, const Type* type, NomadDocArg);
-    [[nodiscard]] NomadId getDynamicVariableId(const NomadString& name) const;
-    [[nodiscard]] NomadString getDynamicVariableName(NomadId id) const;
-    [[nodiscard]] const Type* getDynamicVariableType(NomadId id) const;
-    [[nodiscard]] bool canSetDynamicVariable(NomadId id) const;
-    [[nodiscard]] bool canGetDynamicVariable(NomadId id) const;
-    void setDynamicVariable(VirtualMachine* interpreter, NomadId id, const RuntimeValue& value);
-    void getDynamicVariableValue(VirtualMachine* interpreter, NomadId id, RuntimeValue& value) const;
-    void setStringDynamicVariable(VirtualMachine* interpreter, NomadId id, const NomadString& value);
+    DynamicVariableId registerDynamicVariable(
+        const NomadString& name,
+        DynamicVariableSetFn setFn,
+        DynamicVariableGetFn getFn,
+        const Type* type,
+        NomadDocArg
+    );
+    [[nodiscard]] DynamicVariableId getDynamicVariableId(const NomadString& name) const;
+    [[nodiscard]] NomadString getDynamicVariableName(DynamicVariableId id) const;
+    [[nodiscard]] const Type* getDynamicVariableType(DynamicVariableId id) const;
+    [[nodiscard]] bool canSetDynamicVariable(DynamicVariableId id) const;
+    [[nodiscard]] bool canGetDynamicVariable(DynamicVariableId id) const;
+    void setDynamicVariable(VirtualMachine* interpreter, DynamicVariableId id, const RuntimeValue& value);
+    void getDynamicVariableValue(VirtualMachine* interpreter, DynamicVariableId id, RuntimeValue& value) const;
+    void setStringDynamicVariable(VirtualMachine* interpreter, DynamicVariableId id, const NomadString& value);
 
 
-    [[nodiscard]] NomadId getFirstDynamicVariableId() const;
-    [[nodiscard]] NomadId getNextDynamicVariableId(NomadId currentId) const;
+    [[nodiscard]] DynamicVariableId getFirstDynamicVariableId() const;
+    [[nodiscard]] DynamicVariableId getNextDynamicVariableId(DynamicVariableId currentId) const;
 
     // Variable contexts
     NomadId registerVariableContext(const NomadString& name, const NomadString& prefix, std::unique_ptr<VariableContext> context);
@@ -468,7 +476,7 @@ private:
     };
 
     struct FormatStringRegistration {
-        NomadId id;
+        FormatStringId id;
         CallableId functionId;
         std::unique_ptr<FormatString> formatString;
     };

@@ -282,7 +282,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     auto dynamicVariableId = runtime->getFirstDynamicVariableId();
 
-    while (dynamicVariableId != NOMAD_INVALID_ID) {
+    while (dynamicVariableId.isValid()) {
         auto name = runtime->getDynamicVariableName(dynamicVariableId);
         auto type = runtime->getDynamicVariableType(dynamicVariableId);
 

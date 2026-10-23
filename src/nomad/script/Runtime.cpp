@@ -287,7 +287,7 @@ NomadId Runtime::registerHubVariable(const NomadString& name) {
         isHub(name) || isHubVariable(name) ||
         getCallableId(name).isValid() || getConstantId(name).isValid() ||
         getTypeByName(name) != nullptr || getEventId(name).isValid() ||
-        getDynamicVariableId(name) != NOMAD_INVALID_ID ||
+        getDynamicVariableId(name).isValid() ||
         getVariableContextIdByPrefix(name) != NOMAD_INVALID_ID) {
         log::error("Cannot register hub variable '" + name + "': missing hub or conflicting declaration");
         return NOMAD_INVALID_ID;
@@ -435,7 +435,7 @@ void Runtime::rebuildHubMembers() {
         add(event.name, HubEvent{event.id});
     }
     for (auto index = NomadIndex{0}; index < m_dynamicVariables.size(); ++index) {
-        add(m_dynamicVariables[index].name, HubDynamicVariable{toNomadId(index)});
+        add(m_dynamicVariables[index].name, HubDynamicVariable{DynamicVariableId{toNomadId(index)}});
     }
     for (const auto& family : m_parameterizedTypes) {
         add(family.name, HubTypeFamily{family.argumentCount});
@@ -465,7 +465,7 @@ HubId Runtime::registerHub(const NomadString& name) {
         auto prefix = name.substr(0, start + length);
         if (!isHub(prefix) && (getCallableId(prefix).isValid() ||
             getConstantId(prefix).isValid() || getTypeByName(prefix) != nullptr ||
-            getEventId(prefix).isValid() || getDynamicVariableId(prefix) != NOMAD_INVALID_ID ||
+            getEventId(prefix).isValid() || getDynamicVariableId(prefix).isValid() ||
             isHubVariable(prefix) ||
             getVariableContextIdByPrefix(prefix + ".") != NOMAD_INVALID_ID ||
             getParameterizedTypeArgumentCount(prefix).has_value() ||
@@ -2299,32 +2299,32 @@ EventId Runtime::getNextEventId(const EventId currentId) const {
     return EventId{currentId.id + 1};
 }
 
-NomadId Runtime::registerString(const NomadString& string) {
+StringId Runtime::registerString(const NomadString& string) {
     auto id = getStringId(string);
 
-    if (id != NOMAD_INVALID_ID) {
+    if (id.isValid()) {
         return id;
     }
 
-    id = toNomadId(m_strings.size());
+    id = StringId{toNomadId(m_strings.size())};
 
     m_strings.push_back(NomadStringObject::create(string));
 
     return id;
 }
 
-NomadId Runtime::getStringId(const NomadString& string) const {
+StringId Runtime::getStringId(const NomadString& string) const {
     for (NomadIndex i = 0; i < m_strings.size(); ++i) {
         if (m_strings[i]->getView() == string) {
-            return toNomadId(i);
+            return StringId{toNomadId(i)};
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return StringId::INVALID;
 }
 
-NomadStringObject* Runtime::getString(const NomadId stringId) const {
-    const auto stringIndex = toNomadIndex(stringId);
+NomadStringObject* Runtime::getString(const StringId stringId) const {
+    const auto stringIndex = toNomadIndex(stringId.id);
     return m_strings[stringIndex];
 }
 
@@ -2334,14 +2334,14 @@ NomadStringObject* Runtime::getStringByName(const NomadString& name) const {
     return getString(stringId);
 }
 
-NomadId Runtime::registerFormatString(const NomadString& formatString, CallableId functionId) {
+FormatStringId Runtime::registerFormatString(const NomadString& formatString, CallableId functionId) {
     auto id = getFormatStringId(formatString, functionId);
 
-    if (id != NOMAD_INVALID_ID) {
+    if (id.isValid()) {
         return id;
     }
 
-    id = toNomadId(m_formatStrings.size());
+    id = FormatStringId{toNomadId(m_formatStrings.size())};
 
     m_formatStrings.push_back(
         {
@@ -2354,8 +2354,8 @@ NomadId Runtime::registerFormatString(const NomadString& formatString, CallableI
     return id;
 }
 
-FormatString* Runtime::getFormatString(const NomadId id) const {
-    const auto formatStringIndex = toNomadIndex(id);
+FormatString* Runtime::getFormatString(const FormatStringId id) const {
+    const auto formatStringIndex = toNomadIndex(id.id);
 
     if (formatStringIndex >= m_formatStrings.size()) {
         return nullptr;
@@ -2364,17 +2364,17 @@ FormatString* Runtime::getFormatString(const NomadId id) const {
     return m_formatStrings[formatStringIndex].formatString.get();
 }
 
-NomadId Runtime::getFormatStringId(const NomadString& formatString, const CallableId functionId) const {
+FormatStringId Runtime::getFormatStringId(const NomadString& formatString, const CallableId functionId) const {
     for (auto& i: m_formatStrings) {
         if (i.functionId == functionId && i.formatString->getFormatString() == formatString) {
             return i.id;
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return FormatStringId::INVALID;
 }
 
-NomadId Runtime::registerDynamicVariable(
+DynamicVariableId Runtime::registerDynamicVariable(
     const NomadString& name,
     DynamicVariableSetFn setFn,
     DynamicVariableGetFn getFn,
@@ -2383,9 +2383,9 @@ NomadId Runtime::registerDynamicVariable(
     ) {
     if (isHub(name) || !canRegisterHubMember(name)) {
         log::error("Cannot register dynamic variable '" + name + "': name is reserved by a hub declaration");
-        return NOMAD_INVALID_ID;
+        return DynamicVariableId::INVALID;
     }
-    auto id = toNomadId(m_dynamicVariables.size());
+    const auto id = DynamicVariableId{toNomadId(m_dynamicVariables.size())};
 
     DynamicVariableRegistration definition;
     definition.name = name;
@@ -2402,47 +2402,47 @@ NomadId Runtime::registerDynamicVariable(
     return id;
 }
 
-NomadId Runtime::getDynamicVariableId(const NomadString& name) const {
+DynamicVariableId Runtime::getDynamicVariableId(const NomadString& name) const {
     for (NomadIndex i = 0; i < m_dynamicVariables.size(); ++i) {
         if (m_dynamicVariables[i].name == name) {
-            return toNomadId(i);
+            return DynamicVariableId{toNomadId(i)};
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return DynamicVariableId::INVALID;
 }
 
-NomadString Runtime::getDynamicVariableName(const NomadId id) const {
-    const auto dynamicVariableIndex = toNomadIndex(id);
+NomadString Runtime::getDynamicVariableName(const DynamicVariableId id) const {
+    const auto dynamicVariableIndex = toNomadIndex(id.id);
     return m_dynamicVariables[dynamicVariableIndex].name;
 }
 
-const Type* Runtime::getDynamicVariableType(const NomadId id) const {
-    const auto dynamicVariableIndex = toNomadIndex(id);
+const Type* Runtime::getDynamicVariableType(const DynamicVariableId id) const {
+    const auto dynamicVariableIndex = toNomadIndex(id.id);
     return m_dynamicVariables[dynamicVariableIndex].type;
 }
 
-bool Runtime::canSetDynamicVariable(const NomadId id) const {
-    const auto dynamicVariableIndex = toNomadIndex(id);
+bool Runtime::canSetDynamicVariable(const DynamicVariableId id) const {
+    const auto dynamicVariableIndex = toNomadIndex(id.id);
     return m_dynamicVariables[dynamicVariableIndex].setFn != nullptr;
 }
 
-bool Runtime::canGetDynamicVariable(const NomadId id) const {
-    const auto dynamicVariableIndex = toNomadIndex(id);
+bool Runtime::canGetDynamicVariable(const DynamicVariableId id) const {
+    const auto dynamicVariableIndex = toNomadIndex(id.id);
     return m_dynamicVariables[dynamicVariableIndex].getFn != nullptr;
 }
 
-void Runtime::setDynamicVariable(VirtualMachine* interpreter, const NomadId id, const RuntimeValue& value) {
-    const auto dynamicVariableIndex = toNomadIndex(id);
+void Runtime::setDynamicVariable(VirtualMachine* interpreter, const DynamicVariableId id, const RuntimeValue& value) {
+    const auto dynamicVariableIndex = toNomadIndex(id.id);
     m_dynamicVariables[dynamicVariableIndex].setFn(interpreter, value);
 }
 
-void Runtime::getDynamicVariableValue(VirtualMachine* interpreter, const NomadId id, RuntimeValue& value) const {
-    const auto dynamicVariableIndex = toNomadIndex(id);
+void Runtime::getDynamicVariableValue(VirtualMachine* interpreter, const DynamicVariableId id, RuntimeValue& value) const {
+    const auto dynamicVariableIndex = toNomadIndex(id.id);
     m_dynamicVariables[dynamicVariableIndex].getFn(interpreter, value);
 }
 
-void Runtime::setStringDynamicVariable(VirtualMachine* interpreter, const NomadId id, const NomadString& value) {
+void Runtime::setStringDynamicVariable(VirtualMachine* interpreter, const DynamicVariableId id, const NomadString& value) {
     RuntimeValue stringValue;
     stringValue.setStringValue(value);
 
@@ -2451,21 +2451,21 @@ void Runtime::setStringDynamicVariable(VirtualMachine* interpreter, const NomadI
     stringValue.freeObjectValue();
 }
 
-NomadId Runtime::getFirstDynamicVariableId() const {
+DynamicVariableId Runtime::getFirstDynamicVariableId() const {
     if (m_dynamicVariables.empty()) {
-        return NOMAD_INVALID_ID;
+        return DynamicVariableId::INVALID;
     }
 
-    return toNomadId(0);
+    return DynamicVariableId{0};
 }
 
-NomadId Runtime::getNextDynamicVariableId(const NomadId currentId) const {
-    const auto dynamicVariableIndex = toNomadIndex(currentId);
+DynamicVariableId Runtime::getNextDynamicVariableId(const DynamicVariableId currentId) const {
+    const auto dynamicVariableIndex = toNomadIndex(currentId.id);
     if (dynamicVariableIndex + 1 >= m_dynamicVariables.size()) {
-        return NOMAD_INVALID_ID;
+        return DynamicVariableId::INVALID;
     }
 
-    return toNomadId(dynamicVariableIndex + 1);
+    return DynamicVariableId{toNomadId(dynamicVariableIndex + 1)};
 }
 
 NomadId Runtime::registerVariableContext(
@@ -3064,7 +3064,7 @@ void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function
                     textValue = std::to_string(value.getFloatValue());
                     break;
                 case Operand::String:
-                    textValue = "\"" + getString(value.getIdValue())->getString() + "\" (" + std::to_string(value.getIdValue()) + ")";
+                    textValue = "\"" + getString(StringId{value.getIdValue()})->getString() + "\" (" + std::to_string(value.getIdValue()) + ")";
                     break;
                 case Operand::Id:
                     textValue = std::to_string(value.getIdValue());
@@ -3093,14 +3093,14 @@ void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function
                 break;
             case Operand::DynamicVariable:
                 textValue =
-                    getDynamicVariableName(value.getIdValue()) + " (" + std::to_string(value.getIdValue()) + ")";
+                    getDynamicVariableName(DynamicVariableId{value.getIdValue()}) + " (" + std::to_string(value.getIdValue()) + ")";
                 break;
             case Operand::ContextVariableId:
                 textValue =
                     getContextVariableName(value.getIdValue()) + " (" + std::to_string(value.getIdValue()) + ")";
                 break;
             case Operand::FormatString:
-                textValue = "$\"" + getFormatString(value.getIdValue())->getFormatString() + "\" (" +
+                textValue = "$\"" + getFormatString(FormatStringId{value.getIdValue()})->getFormatString() + "\" (" +
                             std::to_string(value.getIdValue()) + ")";
                 break;
             case Operand::Index:

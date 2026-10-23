@@ -74,6 +74,40 @@ Event callback and dispatch native APIs receive raw IDs through the existing
 VM parameter slots. Construct `EventId{machine->getIdParameter(0)}` before looking
 up the definition or forwarding a dispatch request.
 
+### String and format-string IDs
+
+`Runtime::registerString(text)` returns a `StringId`, reusing the existing ID
+for identical text. `getStringId(text)` returns `StringId::INVALID` when absent.
+Pass a registered ID to `getString(id)` to borrow its string object.
+Register static strings before executing functions; the static string table
+must not grow while functions execute.
+
+`registerFormatString(text, functionId)` returns a `FormatStringId`, reusing an
+entry only when both its text and owning `CallableId` match.
+`getFormatStringId(text, functionId)` returns `FormatStringId::INVALID` when
+absent. `getFormatString(id)` returns a borrowed format string, or `nullptr`
+for an invalid or unregistered ID.
+
+Both ID types are declared in `<nomad/script/Runtime.hpp>`, belong to the runtime
+that issued them, and remain stable as registrations are added. They do not
+implicitly convert to integers or other ID categories.
+
+### Dynamic-variable IDs
+
+Include `<nomad/script/DynamicVariable.hpp>` for `DynamicVariableId`.
+`registerDynamicVariable(name, setter, getter, type, doc)` returns a
+`DynamicVariableId`, or `DynamicVariableId::INVALID` when registration fails.
+`getDynamicVariableId(name)` returns `DynamicVariableId::INVALID` when absent.
+Pass a registered ID to the dynamic-variable metadata, permission, getter, and
+setter APIs. `setStringDynamicVariable` releases its temporary string after
+invoking the setter; a setter that retains a value must copy it through its type.
+
+`getFirstDynamicVariableId` and `getNextDynamicVariableId` enumerate registrations
+in registration order, ending at `DynamicVariableId::INVALID`. IDs belong to the
+runtime that issued them and remain stable as registrations are added. Hub
+dynamic-variable members also contain a `DynamicVariableId`. These IDs do not
+implicitly convert to integers or other ID categories.
+
 ### Object type property metadata
 
 `ScriptObjectType` describes a script-defined object type. `isOpen()` reports

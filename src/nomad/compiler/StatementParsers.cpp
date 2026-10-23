@@ -366,7 +366,7 @@ protected:
         m_expression->compile(compiler, function, ExpressionTarget::Result);
 
         compiler->addOpCode(OpCodes::op_id_load_i);
-        compiler->addId(assertMessageId);
+        compiler->addId(assertMessageId.id);
 
         compiler->addOpCode(OpCodes::op_assert);
     }

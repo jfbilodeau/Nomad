@@ -248,7 +248,7 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
         return IdentifierType::Function;
     }
 
-    if (m_runtime->getDynamicVariableId(name) != NOMAD_INVALID_ID) {
+    if (m_runtime->getDynamicVariableId(name).isValid()) {
         return IdentifierType::DynamicVariable;
     }
 
@@ -325,11 +325,11 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
         return;
     }
 
-    const NomadId dynamicVariableId = m_runtime->getDynamicVariableId(name);
+    const auto dynamicVariableId = m_runtime->getDynamicVariableId(name);
 
-    if (dynamicVariableId != NOMAD_INVALID_ID) {
+    if (dynamicVariableId.isValid()) {
         definition.identifierType = IdentifierType::DynamicVariable;
-        definition.variableId = dynamicVariableId;
+        definition.dynamicVariableId = dynamicVariableId;
         definition.valueType = m_runtime->getDynamicVariableType(dynamicVariableId);
 
         return;
@@ -628,15 +628,15 @@ NomadIndex Compiler::addLoadStringValue(const NomadString& value, const Expressi
     switch (target) {
     case ExpressionTarget::Result:
         addOpCode(OpCodes::op_string_load_r);
-        return addId(stringId);
+        return addId(stringId.id);
 
     case ExpressionTarget::Intermediate:
         addOpCode(OpCodes::op_string_load_i);
-        return addId(stringId);
+        return addId(stringId.id);
 
     case ExpressionTarget::Stack:
         addOpCode(OpCodes::op_string_push_n);
-        return addId(stringId);
+        return addId(stringId.id);
     }
 
     this->reportInternalError("BUG: Invalid expression target for string value");
@@ -664,8 +664,8 @@ NomadIndex Compiler::addLoadFunctionVariable(const NomadId variableId, const Typ
     return addLoadTarget(type->getTypeOpCodes()->loadFunctionVariable, variableId, target);
 }
 
-NomadIndex Compiler::addLoadDynamicVariable(const NomadId variableId, const Type* type, const ExpressionTarget target) {
-    return addLoadTarget(type->getTypeOpCodes()->loadDynamicVariable, variableId, target);
+NomadIndex Compiler::addLoadDynamicVariable(const DynamicVariableId variableId, const Type* type, const ExpressionTarget target) {
+    return addLoadTarget(type->getTypeOpCodes()->loadDynamicVariable, variableId.id, target);
 }
 
 NomadIndex Compiler::addLoadContextVariable(const NomadId contextVariableId, const Type* type, const ExpressionTarget target) {

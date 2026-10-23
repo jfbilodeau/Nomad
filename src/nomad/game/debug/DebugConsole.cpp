@@ -1183,7 +1183,7 @@ void DebugConsole::collectDynamicVariableRows(std::vector<VariableRow>& rows) co
 
     for (
         auto variableId = runtime->getFirstDynamicVariableId();
-        variableId != NOMAD_INVALID_ID;
+        variableId.isValid();
         variableId = runtime->getNextDynamicVariableId(variableId)
     ) {
         if (!runtime->canGetDynamicVariable(variableId)) {
@@ -1231,8 +1231,9 @@ void DebugConsole::collectDynamicVariableRows(std::vector<VariableRow>& rows) co
             valueToDisplayString(type, value),
             VariableRow::Source::Dynamic,
             NOMAD_INVALID_ID,
-            variableId,
+            NOMAD_INVALID_ID,
             runtime->canSetDynamicVariable(variableId) && isEditableType(type),
+            variableId,
         });
 
         if (type != nullptr && type->isString()) {
@@ -1274,7 +1275,7 @@ bool DebugConsole::applyVariableEdit(const VariableRow& row, const NomadString& 
     // Dynamic string variables have a dedicated setter that owns the copy, so
     // no temporary allocation is needed for them.
     if (row.source == VariableRow::Source::Dynamic && row.type->isString()) {
-        runtime->setStringDynamicVariable(m_inspectionVirtualMachine.get(), row.variableId, text);
+        runtime->setStringDynamicVariable(m_inspectionVirtualMachine.get(), row.dynamicVariableId, text);
         return true;
     }
 
@@ -1309,7 +1310,7 @@ bool DebugConsole::applyVariableEdit(const VariableRow& row, const NomadString& 
         return applied;
     }
     case VariableRow::Source::Dynamic:
-        runtime->setDynamicVariable(m_inspectionVirtualMachine.get(), row.variableId, value);
+        runtime->setDynamicVariable(m_inspectionVirtualMachine.get(), row.dynamicVariableId, value);
         return true;
     case VariableRow::Source::Console: {
         // `Interpreter` copies the value, so the temporary is released here.

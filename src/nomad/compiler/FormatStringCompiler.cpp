@@ -230,6 +230,8 @@ std::optional<NomadString> compileFormatString(
                     formatString->addFunction(identifier.valueType, identifier.functionId);
                 } else if (identifier.identifierType == IdentifierType::Constant) {
                     formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.constantId.id);
+                } else if (identifier.identifierType == IdentifierType::DynamicVariable) {
+                    formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.dynamicVariableId.id);
                 } else {
                     formatString->addVariable(
                         identifier.identifierType,

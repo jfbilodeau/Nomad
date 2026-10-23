@@ -134,7 +134,7 @@ BOOST_AUTO_TEST_CASE(hub_qualified_dynamic_variables_remain_readable_and_writabl
         },
         runtime.getFloatType(),
         NomadDoc("Test game volume.")
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
 
     fixture.addFunction("main", "game.volume = 0.75\nreturn game.volume");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
@@ -166,7 +166,7 @@ BOOST_AUTO_TEST_CASE(hub_qualified_read_only_dynamic_variables_remain_unwritable
         },
         runtime.getIntegerType(),
         NomadDoc("Test read-only game frame.")
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
 
     auto machine = runtime.createVirtualMachine();
     InterpreterContext context(*machine);

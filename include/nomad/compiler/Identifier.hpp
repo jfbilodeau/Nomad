@@ -3,6 +3,7 @@
 #pragma once
 
 #include <nomad/script/ConstantId.hpp>
+#include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
 #include <nomad/script/Type.hpp>
 
@@ -35,6 +36,7 @@ struct IdentifierDefinition {
         EventId eventId;
         NomadId variableId;
         ConstantId constantId;
+        DynamicVariableId dynamicVariableId;
         CallableId functionId;
     };
 };

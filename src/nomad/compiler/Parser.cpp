@@ -966,7 +966,7 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
         return IdentifierType::Function;
     }
 
-    if (compiler->getRuntime()->getDynamicVariableId(name) != NOMAD_INVALID_ID) {
+    if (compiler->getRuntime()->getDynamicVariableId(name).isValid()) {
         return IdentifierType::DynamicVariable;
     }
 
@@ -1036,7 +1036,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
         !runtime->isHubVariable(variableName) &&
         runtime->getConstantId(variableName).isInvalid() &&
         runtime->getCallableId(variableName).isInvalid() &&
-        runtime->getDynamicVariableId(variableName) == NOMAD_INVALID_ID &&
+        runtime->getDynamicVariableId(variableName).isInvalid() &&
         runtime->getTypeByName(variableName) == nullptr &&
         !hasValueReceiver) {
         context->reportError("Hub members must be declared inside a hub block: '" + variableName + "'", tokens);

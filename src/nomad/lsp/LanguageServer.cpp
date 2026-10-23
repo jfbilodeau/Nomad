@@ -160,7 +160,7 @@ ApiAnalysis analyzeApiSymbols(
         symbols.push_back({name, CompletionItemKind::Constant,
             name + ":" + runtime->getConstantType(id)->getTypeName(), ""});
     }
-    for (auto id = runtime->getFirstDynamicVariableId(); id != NOMAD_INVALID_ID;
+    for (auto id = runtime->getFirstDynamicVariableId(); id.isValid();
         id = runtime->getNextDynamicVariableId(id)) {
         const auto name = runtime->getDynamicVariableName(id);
         const auto typeName = runtime->getDynamicVariableType(id)->getTypeName();

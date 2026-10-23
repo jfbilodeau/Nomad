@@ -7,6 +7,8 @@
 #include <nomad/game/Game.hpp>
 
 #include <nomad/log/MemorySink.hpp>
+
+#include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Interpreter.hpp>
 
 #include <SDL3/SDL.h>
@@ -93,6 +95,7 @@ private:
         NomadId contextId = NOMAD_INVALID_ID;
         NomadId variableId = NOMAD_INVALID_ID;
         bool editable = false;
+        DynamicVariableId dynamicVariableId = DynamicVariableId::INVALID;
     };
 
     void ensureGameTexture();

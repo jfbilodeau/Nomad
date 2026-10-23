@@ -2,11 +2,16 @@
 
 #pragma once
 
-#include <nomad/script/VirtualMachine.hpp>
+#include <nomad/Nomad.hpp>
 
 #include <functional>
 
 namespace nomad {
+
+class RuntimeValue;
+class VirtualMachine;
+
+DeclareId(DynamicVariableId);
 
 using DynamicVariableSetFn = std::function<void(VirtualMachine*, const RuntimeValue&)>;
 using DynamicVariableGetFn = std::function<void(VirtualMachine*, RuntimeValue&)> ;

@@ -5,6 +5,7 @@
 #include <nomad/Nomad.hpp>
 
 #include <nomad/script/ConstantId.hpp>
+#include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
 #include <nomad/script/VariableContext.hpp>
 
@@ -42,7 +43,7 @@ struct HubChild {
 };
 
 struct HubDynamicVariable {
-    NomadId id;
+    DynamicVariableId id;
 };
 
 struct HubTypeFamily {

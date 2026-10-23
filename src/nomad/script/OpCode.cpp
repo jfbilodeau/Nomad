@@ -341,13 +341,13 @@ void op_constant_push(VirtualMachine* machine) {
 }
 
 void op_dynamic_variable_set(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = DynamicVariableId{interpreter->nextId()};
 
     interpreter->getRuntime()->setDynamicVariable(interpreter, variableId, interpreter->getResult());
 }
 
 void op_dynamic_variable_get_r(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = DynamicVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -357,7 +357,7 @@ void op_dynamic_variable_get_r(VirtualMachine* interpreter) {
 }
 
 void op_dynamic_variable_get_i(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = DynamicVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -367,7 +367,7 @@ void op_dynamic_variable_get_i(VirtualMachine* interpreter) {
 }
 
 void op_dynamic_variable_push(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = DynamicVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -948,7 +948,7 @@ void op_object_push_i(VirtualMachine* interpreter) {
 }
 
 void op_string_push_n(VirtualMachine* interpreter) {
-    const auto stringId = interpreter->nextId();
+    const auto stringId = StringId{interpreter->nextId()};
 
     auto* string = interpreter->getRuntime()->getString(stringId);
     string->addRef();
@@ -965,7 +965,7 @@ void op_object_pop_i(VirtualMachine* interpreter) {
 }
 
 void op_string_load_r(VirtualMachine* interpreter) {
-    const auto stringId = interpreter->nextId();
+    const auto stringId = StringId{interpreter->nextId()};
 
     auto* string = interpreter->getRuntime()->getString(stringId);
     string->addRef();
@@ -974,7 +974,7 @@ void op_string_load_r(VirtualMachine* interpreter) {
 }
 
 void op_string_load_i(VirtualMachine* interpreter) {
-    const auto stringId = interpreter->nextId();
+    const auto stringId = StringId{interpreter->nextId()};
 
     auto* string = interpreter->getRuntime()->getString(stringId);
     string->addRef();
@@ -1000,7 +1000,7 @@ void op_string_not_equal(VirtualMachine* interpreter) {
 }
 
 void op_format_string_execute(VirtualMachine* interpreter) {
-    const auto formatStringId = interpreter->nextId();
+    const auto formatStringId = FormatStringId{interpreter->nextId()};
 
     const auto formatString = interpreter->getRuntime()->getFormatString(formatStringId);
 
@@ -1053,7 +1053,7 @@ void op_id_load_i(VirtualMachine* interpreter) {
 
 void op_assert(VirtualMachine* interpreter) {
     const auto assertResult = interpreter->getBooleanResult();
-    const auto assertMessageId = interpreter->getIdIntermediate();
+    const auto assertMessageId = StringId{interpreter->getIdIntermediate()};
 
     // Bitwise comparison
     if (!assertResult) {

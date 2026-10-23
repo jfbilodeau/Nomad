@@ -272,12 +272,12 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
             break;
         }
         case IdentifierType::DynamicVariable: {
-            if (!interpreterRuntime->canSetDynamicVariable(identifier.variableId)) {
+            if (!interpreterRuntime->canSetDynamicVariable(identifier.dynamicVariableId)) {
                 reportError(context, function, "Dynamic variable '" + m_identifier + "' is read-only");
                 return;
             }
 
-            const auto variableType = interpreterRuntime->getDynamicVariableType(identifier.variableId);
+            const auto variableType = interpreterRuntime->getDynamicVariableType(identifier.dynamicVariableId);
             if (expressionType != nullptr && variableType != nullptr && variableType != expressionType) {
                 reportError(
                     context,
@@ -363,7 +363,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
         break;
     }
     case IdentifierType::DynamicVariable: {
-        const auto variableType = runtime->getDynamicVariableType(identifier.variableId);
+        const auto variableType = runtime->getDynamicVariableType(identifier.dynamicVariableId);
 
         if (variableType != expressionType) {
             reportError(
@@ -442,7 +442,7 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptFunction* function
     case IdentifierType::DynamicVariable:
         // The setter copies what it keeps.
         compiler->addOpCode(typeOpCodes->setDynamicVariable);
-        compiler->addId(identifier.variableId);
+        compiler->addId(identifier.dynamicVariableId.id);
         compiler->addFreeValue(typeOpCodes->freeResult);
         break;
 
@@ -479,7 +479,7 @@ void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
         auto* runtime = context.getRuntime();
         runtime->setDynamicVariable(
             context.getVirtualMachine(),
-            m_identifierDefinition.variableId,
+            m_identifierDefinition.dynamicVariableId,
             assignedValue.getValue()
         );
         break;

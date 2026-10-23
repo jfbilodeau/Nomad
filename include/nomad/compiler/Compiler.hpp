@@ -127,7 +127,7 @@ public:
     // Emit the opcode for `target` from `opCodes` followed by `operand`.
     NomadIndex addLoadTarget(const TargetOpCodes& opCodes, NomadId operand, ExpressionTarget target);
     NomadIndex addLoadFunctionVariable(NomadId variableId, const Type* type, ExpressionTarget target);
-    NomadIndex addLoadDynamicVariable(NomadId variableId, const Type* type, ExpressionTarget target);
+    NomadIndex addLoadDynamicVariable(DynamicVariableId variableId, const Type* type, ExpressionTarget target);
     NomadIndex addLoadContextVariable(NomadId contextVariableId, const Type* type, ExpressionTarget target);
     NomadIndex addLoadParameter(NomadIndex parameterId, const Type* type, ExpressionTarget target);
 

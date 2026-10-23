@@ -1263,7 +1263,7 @@ void StringLiteral::onCompile(Compiler* compiler, ScriptFunction* /*function*/, 
     const auto stringId = compiler->getRuntime()->registerString(stringValue);
 
     compiler->addOpCode(OpCodes::op_string_load_r);
-    compiler->addId(stringId);
+    compiler->addId(stringId.id);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1458,7 +1458,7 @@ void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function
     }
     auto formatStringId = compiler->getRuntime()->getFormatStringId(formatKey, functionId);
 
-    if (formatStringId == NOMAD_INVALID_ID) {
+    if (formatStringId.isInvalid()) {
         formatStringId = compiler->getRuntime()->registerFormatString(formatKey, functionId);
 
         const auto format_string = compiler->getRuntime()->getFormatString(formatStringId);
@@ -1484,7 +1484,7 @@ void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function
     }
 
     compiler->addOpCode(OpCodes::op_format_string_execute);
-    compiler->addId(formatStringId);
+    compiler->addId(formatStringId.id);
 
     compiler->addMoveResult(getType(), target);
 }
@@ -1575,7 +1575,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
 
     if (context->getMode() != CompilerMode::Script &&
         m_identifierDefinition.identifierType == IdentifierType::DynamicVariable &&
-        !context->getRuntime()->canGetDynamicVariable(m_identifierDefinition.variableId)) {
+        !context->getRuntime()->canGetDynamicVariable(m_identifierDefinition.dynamicVariableId)) {
         reportError(context, function, "Dynamic variable '" + m_identifier + "' cannot be read");
         return;
     }
@@ -1619,7 +1619,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
         break;
 
     case IdentifierType::DynamicVariable:
-        m_writable = context->getRuntime()->canSetDynamicVariable(m_identifierDefinition.variableId);
+        m_writable = context->getRuntime()->canSetDynamicVariable(m_identifierDefinition.dynamicVariableId);
         break;
 
     default:
@@ -1641,7 +1641,7 @@ void IdentifierExpression::onCompile(Compiler* compiler, ScriptFunction* /*funct
             break;
 
         case IdentifierType::DynamicVariable:
-            compiler->addLoadDynamicVariable(m_identifierDefinition.variableId, m_identifierDefinition.valueType, target);
+            compiler->addLoadDynamicVariable(m_identifierDefinition.dynamicVariableId, m_identifierDefinition.valueType, target);
         break;
 
         case IdentifierType::ContextVariable:
@@ -1695,7 +1695,7 @@ void IdentifierExpression::compileStore(Compiler* compiler) const {
 
     case IdentifierType::DynamicVariable:
         compiler->addOpCode(typeOpCodes->setDynamicVariable);
-        compiler->addId(m_identifierDefinition.variableId);
+        compiler->addId(m_identifierDefinition.dynamicVariableId.id);
         compiler->addFreeValue(typeOpCodes->freeResult);
         break;
 
@@ -1721,7 +1721,7 @@ void IdentifierExpression::evaluateStore(InterpreterContext& context, const Runt
         break;
 
     case IdentifierType::DynamicVariable:
-        runtime->setDynamicVariable(context.getVirtualMachine(), m_identifierDefinition.variableId, value);
+        runtime->setDynamicVariable(context.getVirtualMachine(), m_identifierDefinition.dynamicVariableId, value);
         break;
 
     case IdentifierType::ContextVariable:
@@ -1760,7 +1760,7 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
 
     case IdentifierType::DynamicVariable: {
         auto* runtime = context.getRuntime();
-        const auto* type = runtime->getDynamicVariableType(m_identifierDefinition.variableId);
+        const auto* type = runtime->getDynamicVariableType(m_identifierDefinition.dynamicVariableId);
         if (type == nullptr) {
             raiseException("Dynamic variable '" + m_identifier + "' has no type");
         }
@@ -1768,7 +1768,7 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
         RuntimeValue value;
         runtime->getDynamicVariableValue(
             context.getVirtualMachine(),
-            m_identifierDefinition.variableId,
+            m_identifierDefinition.dynamicVariableId,
             value
         );
 
