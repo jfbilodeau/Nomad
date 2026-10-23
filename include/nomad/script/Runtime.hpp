@@ -2,10 +2,6 @@
 
 #pragma once
 
-#include <optional>
-#include <unordered_map>
-#include <unordered_set>
-
 #include <nomad/Nomad.hpp>
 
 #include <nomad/compiler/Operators.hpp>
@@ -13,22 +9,26 @@
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/script/Callable.hpp>
-#include <nomad/script/ConstantId.hpp>
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
 #include <nomad/script/FunctionResolution.hpp>
-#include <nomad/script/Hub.hpp>
 #include <nomad/script/IteratorObject.hpp>
 #include <nomad/script/Member.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/NativeMember.hpp>
+#include <nomad/script/OpCode.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
-#include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/TempHeap.hpp>
+
+#include <optional>
+#include <unordered_map>
+#include <unordered_set>
+#include <variant>
+#include <vector>
 
 namespace nomad {
 
@@ -36,6 +36,7 @@ namespace nomad {
 class Compiler;
 class Closure;
 class FormatString;
+class Hub;
 class VirtualMachine;
 class InterpreterContext;
 class NomadStringObject;
@@ -48,9 +49,23 @@ class EnumType;
 class OpaqueIdType;
 struct EnumValueDefinition;
 
+DeclareId(ConstantId);
+DeclareId(FormatStringId);
+DeclareId(HubId);
 DeclareId(KeywordId);
 DeclareId(StringId);
-DeclareId(FormatStringId);
+
+struct HubFunctions {
+    std::vector<CallableId> ids;
+};
+
+struct HubTypeFamily {
+    NomadIndex argumentCount;
+};
+
+using HubMember = std::variant<
+    VariableId, HubFunctions, ConstantId, const Type*, EventId, HubId, DynamicVariableId, HubTypeFamily
+>;
 
 struct KeywordDefinition {
     NomadString keyword;

@@ -10,6 +10,7 @@
 #include <nomad/game/resource/Sprite.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 namespace nomad {
 

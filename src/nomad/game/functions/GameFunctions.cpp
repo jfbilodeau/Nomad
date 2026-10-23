@@ -8,9 +8,10 @@
 #include <nomad/game/resource/FontObject.hpp>
 #include <nomad/game/resource/ResourceManager.hpp>
 
-#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 namespace nomad {
 

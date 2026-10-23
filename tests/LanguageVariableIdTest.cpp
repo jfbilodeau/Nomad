@@ -23,7 +23,6 @@ static_assert(std::is_same_v<decltype(IdentifierDefinition{}.variableId), Variab
 static_assert(std::is_same_v<decltype(IdentifierDefinition{}.parameterId), NomadId>);
 static_assert(std::is_same_v<decltype(Capture{}.variableId), VariableId>);
 static_assert(std::is_same_v<decltype(Capture{}.parameterId), NomadId>);
-static_assert(std::is_same_v<decltype(HubVariable{}.id), VariableId>);
 static_assert(!std::is_convertible_v<NomadId, VariableId>);
 static_assert(!std::is_convertible_v<VariableId, NomadId>);
 static_assert(!std::is_convertible_v<ContextVariableId, VariableId>);

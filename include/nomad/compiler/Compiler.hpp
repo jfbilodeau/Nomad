@@ -6,6 +6,7 @@
 
 #include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/Identifier.hpp>
 #include <nomad/compiler/Operators.hpp>
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/Source.hpp>

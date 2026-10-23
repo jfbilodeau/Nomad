@@ -4,6 +4,7 @@
 
 #include <nomad/compiler/CallNode.hpp>
 #include <nomad/compiler/FormatStringCompiler.hpp>
+#include <nomad/compiler/Identifier.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 
 #include <nomad/script/Member.hpp>

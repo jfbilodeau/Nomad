@@ -3,8 +3,9 @@
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/script/Closure.hpp>
-#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Event.hpp>
+#include <nomad/script/Hub.hpp>
+#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -20,7 +21,6 @@ using namespace nomad::test;
 
 static_assert(std::is_same_v<decltype(EventDefinition{}.id), EventId>);
 static_assert(std::is_same_v<decltype(EventDispatch{}.eventId), EventId>);
-static_assert(std::is_same_v<decltype(HubEvent{}.id), EventId>);
 static_assert(std::is_same_v<decltype(IdentifierDefinition{}.eventId), EventId>);
 static_assert(!std::is_convertible_v<NomadId, EventId>);
 static_assert(!std::is_convertible_v<EventId, NomadId>);
@@ -492,9 +492,9 @@ BOOST_AUTO_TEST_CASE(event_ids_support_registration_lookup_iteration_and_catalog
     BOOST_TEST(afterGrowth->parameters.front().typeId == integerId);
     const auto* member = runtime.getHub(runtime.getHubId("example"))->getMember("changed");
     BOOST_REQUIRE(member != nullptr);
-    const auto* event = std::get_if<HubEvent>(member);
+    const auto* event = std::get_if<EventId>(member);
     BOOST_REQUIRE(event != nullptr);
-    BOOST_TEST(event->id == id);
+    BOOST_TEST(*event == id);
 
     auto count = NomadIndex{0};
     auto visitedId = EventId::INVALID;

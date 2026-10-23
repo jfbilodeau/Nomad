@@ -7,8 +7,10 @@
 
 #include <nomad/game/resource/SpritePacker.hpp>
 
-#include <nomad/script/Runtime.hpp>
+#include <nomad/script/Hub.hpp>
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/Runtime.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <TestDirectory.hpp>
 
@@ -90,9 +92,9 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
     BOOST_REQUIRE(gameHub != nullptr);
     const auto* volumeMember = gameHub->getMember("volume");
     BOOST_REQUIRE(volumeMember != nullptr);
-    BOOST_TEST(std::holds_alternative<HubDynamicVariable>(*volumeMember));
+    BOOST_TEST(std::holds_alternative<DynamicVariableId>(*volumeMember));
     BOOST_TEST(
-        std::get<HubDynamicVariable>(*volumeMember).id == runtime.getDynamicVariableId("game.volume")
+        std::get<DynamicVariableId>(*volumeMember) == runtime.getDynamicVariableId("game.volume")
     );
     const auto* createSceneMember = gameHub->getMember("createScene");
     BOOST_REQUIRE(createSceneMember != nullptr);

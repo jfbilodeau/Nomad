@@ -5,7 +5,9 @@
 #include <nomad/Nomad.hpp>
 
 #include <nomad/script/Documentation.hpp>
+#include <nomad/script/RuntimeValue.hpp>
 
+#include <type_traits>
 #include <vector>
 
 namespace nomad {
@@ -13,6 +15,21 @@ namespace nomad {
 class VirtualMachine;
 
 using InstructionFn = void (*)(VirtualMachine*);
+
+struct Instruction {
+    explicit Instruction(const InstructionFn fn) : fn(fn) {}
+    explicit Instruction(const RuntimeValue& value) : value(value) {}
+    Instruction(const Instruction& other) = default;
+
+    ~Instruction() = default;
+
+    union {
+        InstructionFn fn = nullptr;
+        RuntimeValue value;
+    };
+};
+
+static_assert(std::is_trivially_copyable_v<Instruction>, "Instruction must preserve its active union member when copied");
 
 enum class Operand {
     Boolean,

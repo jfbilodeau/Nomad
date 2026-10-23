@@ -9,6 +9,7 @@
 #include <nomad/project/ProjectMetadata.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/NomadConfiguration.hpp>
 

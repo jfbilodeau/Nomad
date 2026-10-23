@@ -15,6 +15,7 @@
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/String.hpp>
 

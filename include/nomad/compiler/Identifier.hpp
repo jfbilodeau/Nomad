@@ -2,11 +2,7 @@
 
 #pragma once
 
-#include <nomad/script/ConstantId.hpp>
-#include <nomad/script/DynamicVariable.hpp>
-#include <nomad/script/Event.hpp>
-#include <nomad/script/Type.hpp>
-#include <nomad/script/VariableContext.hpp>
+#include <nomad/script/Runtime.hpp>
 
 namespace nomad {
 

@@ -3,6 +3,7 @@
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/script/FormatString.hpp>
+#include <nomad/script/Hub.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/OpCode.hpp>
@@ -16,7 +17,6 @@ using namespace nomad;
 using namespace nomad::test;
 
 static_assert(std::is_same_v<decltype(IdentifierDefinition{}.dynamicVariableId), DynamicVariableId>);
-static_assert(std::is_same_v<decltype(HubDynamicVariable{}.id), DynamicVariableId>);
 static_assert(!std::is_convertible_v<NomadId, StringId>);
 static_assert(!std::is_convertible_v<StringId, NomadId>);
 static_assert(!std::is_convertible_v<NomadId, FormatStringId>);
@@ -170,9 +170,9 @@ BOOST_AUTO_TEST_CASE(dynamic_variable_ids_support_lookup_iteration_growth_and_fo
     BOOST_TEST(runtime.getNextDynamicVariableId(lastId) == DynamicVariableId::INVALID);
     const auto* member = runtime.getHub(runtime.getHubId("registry"))->getMember("answer");
     BOOST_REQUIRE(member != nullptr);
-    const auto* dynamicVariable = std::get_if<HubDynamicVariable>(member);
+    const auto* dynamicVariable = std::get_if<DynamicVariableId>(member);
     BOOST_REQUIRE(dynamicVariable != nullptr);
-    BOOST_TEST(dynamicVariable->id == id);
+    BOOST_TEST(*dynamicVariable == id);
 
     auto compiler = runtime.createCompiler();
     IdentifierDefinition identifier{};

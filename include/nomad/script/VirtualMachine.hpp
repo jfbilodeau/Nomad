@@ -15,7 +15,6 @@
 #include <nomad/script/ScriptCallable.hpp>
 
 #include <functional>
-#include <type_traits>
 #include <vector>
 
 namespace nomad {
@@ -25,21 +24,6 @@ class Runtime;
 class ScriptFunction;
 class Closure;
 class TypedValue;
-
-struct Instruction {
-    explicit Instruction(const InstructionFn fn) : fn(fn) {}
-    explicit Instruction(const RuntimeValue& value) : value(value) {}
-    Instruction(const Instruction& other) = default;
-
-    ~Instruction() = default;
-
-    union {
-        InstructionFn fn = nullptr;
-        RuntimeValue value;
-    };
-};
-
-static_assert(std::is_trivially_copyable_v<Instruction>, "Instruction must preserve its active union member when copied");
 
 class VirtualMachineException : public NomadException {
 public:

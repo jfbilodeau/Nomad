@@ -40,7 +40,7 @@ or `CallableId{-1}`.
 
 ### Constant IDs
 
-Include `<nomad/script/ConstantId.hpp>` for `ConstantId`.
+Include `<nomad/script/Runtime.hpp>` for `ConstantId`.
 `Runtime::registerConstant(name, value, type)` returns a `ConstantId`, or
 `ConstantId::INVALID` when registration fails. Duplicate names are logged and
 rejected without replacing the original value. `getConstantId(name)` returns
@@ -307,7 +307,8 @@ identifier; each dotted segment must start with a letter or underscore.
 Native registration does not make otherwise invalid names usable in script
 declarations.
 Use `Runtime::isHub(name)` to test whether a hub is registered.
-Include `<nomad/script/Hub.hpp>` for `HubId` and hub metadata.
+Include `<nomad/script/Runtime.hpp>` for `HubId` and `HubMember`, and
+`<nomad/script/Hub.hpp>` to inspect hubs.
 `getHubId(name)` returns a `HubId` or `HubId::INVALID`; `getHub(id)` accepts
 a `HubId` and returns a borrowed `const Hub*`, or `nullptr` for an invalid or
 unregistered ID. IDs belong to the runtime that issued them and are not
@@ -316,6 +317,13 @@ qualified name, parent `HubId` (`HubId::INVALID` for a root hub), and locally
 named members. Child hub members contain a `HubId`. Function members refer
 to registered callables; types and events refer to their registered definitions.
 Hub pointers remain valid when more hubs are registered.
+
+`HubMember` stores variables, constants, events, child hubs, and dynamic
+variables directly as `VariableId`, `ConstantId`, `EventId`, `HubId`, and
+`DynamicVariableId`. Type members store a borrowed `const Type*`.
+Use `std::get_if<ConstantId>(member)` or the corresponding alternative to
+inspect a member, then pass the ID directly to its typed API. Function overloads
+use `HubFunctions::ids`; generic families use `HubTypeFamily::argumentCount`.
 
 Register native APIs under their qualified names using the existing runtime
 registration functions. For example, register hub `"os"`, enum `"os.Platform"`,

@@ -9,6 +9,7 @@
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/String.hpp>
 

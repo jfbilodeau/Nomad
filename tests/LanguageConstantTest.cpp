@@ -3,6 +3,7 @@
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/script/FormatString.hpp>
+#include <nomad/script/Hub.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -15,7 +16,6 @@ using namespace nomad;
 using namespace nomad::test;
 
 static_assert(std::is_same_v<decltype(IdentifierDefinition{}.constantId), ConstantId>);
-static_assert(std::is_same_v<decltype(HubConstant{}.id), ConstantId>);
 static_assert(!std::is_convertible_v<NomadId, ConstantId>);
 static_assert(!std::is_convertible_v<ConstantId, NomadId>);
 static_assert(!std::is_convertible_v<CallableId, ConstantId>);
@@ -62,9 +62,9 @@ BOOST_AUTO_TEST_CASE(constant_ids_support_registration_lookup_iteration_and_cata
     BOOST_TEST(value.getIntegerValue() == 42);
     const auto* member = runtime.getHub(runtime.getHubId("example"))->getMember("answer");
     BOOST_REQUIRE(member != nullptr);
-    const auto* constant = std::get_if<HubConstant>(member);
+    const auto* constant = std::get_if<ConstantId>(member);
     BOOST_REQUIRE(constant != nullptr);
-    BOOST_TEST(constant->id == id);
+    BOOST_TEST(*constant == id);
 
     auto count = NomadIndex{0};
     auto visitedId = ConstantId::INVALID;

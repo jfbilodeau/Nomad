@@ -8,6 +8,7 @@
 
 #include <nomad/compiler/Argument.hpp>
 #include <nomad/compiler/Expression.hpp>
+#include <nomad/compiler/Identifier.hpp>
 
 #include <nomad/compiler/SyntaxTree.hpp>
 

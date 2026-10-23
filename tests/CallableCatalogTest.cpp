@@ -6,8 +6,10 @@
 
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/NativeCallable.hpp>
-#include <nomad/system/NativeFunctions.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/VirtualMachine.hpp>
+
+#include <nomad/system/NativeFunctions.hpp>
 
 #include <memory>
 #include <span>

@@ -5,6 +5,7 @@
 #include <nomad/compiler/Compiler.hpp>
 
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/Hub.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/NativeMembers.hpp>
 #include <nomad/script/NativeProperty.hpp>
@@ -278,7 +279,7 @@ bool Runtime::isHubVariable(const NomadString& name) const {
         return false;
     }
     const auto* member = hub->getMember(name.substr(hub->getName().size() + 1));
-    return member != nullptr && std::holds_alternative<HubVariable>(*member);
+    return member != nullptr && std::holds_alternative<VariableId>(*member);
 }
 
 ContextVariableId Runtime::registerHubVariable(const NomadString& name) {
@@ -301,7 +302,7 @@ ContextVariableId Runtime::registerHubVariable(const NomadString& name) {
     }
     const auto id = registerContextVariable(hub.m_variableContextId, name, nullptr);
     if (id.isValid()) {
-        registerHubMember(name, HubVariable{hub.m_variables->getVariableId(name)});
+        registerHubMember(name, hub.m_variables->getVariableId(name));
     }
     return id;
 }
@@ -412,10 +413,10 @@ void Runtime::rebuildHubMembers() {
     };
     for (auto index = NomadIndex{0}; index < m_hubs.size(); ++index) {
         const auto& hub = *m_hubs[index];
-        add(hub.getName(), HubChild{HubId{toNomadId(index)}});
+        add(hub.getName(), HubId{toNomadId(index)});
         for (auto id = hub.m_variables->getFirstVariableId(); id.isValid();
              id = hub.m_variables->getNextVariableId(id)) {
-            add(hub.m_variables->getVariableName(id), HubVariable{id});
+            add(hub.m_variables->getVariableName(id), id);
         }
     }
     for (const auto* callable : m_callables) {
@@ -424,18 +425,18 @@ void Runtime::rebuildHubMembers() {
         }
     }
     for (auto id = getFirstConstantId(); id.isValid(); id = getNextConstantId(id)) {
-        add(getConstantName(id), HubConstant{id});
+        add(getConstantName(id), id);
     }
     for (const auto& type : m_types) {
         if (getEventId(type->getTypeName()).isInvalid()) {
-            add(type->getTypeName(), HubType{type.get()});
+            add(type->getTypeName(), type.get());
         }
     }
     for (const auto& event : m_events) {
-        add(event.name, HubEvent{event.id});
+        add(event.name, event.id);
     }
     for (auto index = NomadIndex{0}; index < m_dynamicVariables.size(); ++index) {
-        add(m_dynamicVariables[index].name, HubDynamicVariable{DynamicVariableId{toNomadId(index)}});
+        add(m_dynamicVariables[index].name, DynamicVariableId{toNomadId(index)});
     }
     for (const auto& family : m_parameterizedTypes) {
         add(family.name, HubTypeFamily{family.argumentCount});
@@ -959,7 +960,7 @@ void Runtime::registerType(std::unique_ptr<Type>&& type) {
         if (!canRegisterHubMember(type->getTypeName())) {
             throw NomadException("Type name '" + type->getTypeName() + "' is already a hub member");
         }
-        registerHubMember(type->getTypeName(), HubType{type.get()});
+        registerHubMember(type->getTypeName(), type.get());
     }
     m_types.push_back(std::move(type));
 
@@ -2193,7 +2194,7 @@ ConstantId Runtime::registerConstant(const NomadString& name, const RuntimeValue
 
     m_constants.resize(constantIndex + 1);
     type->copyValue(value, m_constants[constantIndex]);
-    registerHubMember(name, HubConstant{constantId});
+    registerHubMember(name, constantId);
 
     return constantId;
 }
@@ -2256,7 +2257,7 @@ EventId Runtime::registerEvent(const NomadString &name, const std::vector<EventP
 
     // Also register event type.
     registerType(std::make_unique<EventType>(&m_events.back()));
-    registerHubMember(name, HubEvent{id});
+    registerHubMember(name, id);
 
     return id;
 }
@@ -2397,7 +2398,7 @@ DynamicVariableId Runtime::registerDynamicVariable(
 #endif
 
     m_dynamicVariables.push_back(definition);
-    registerHubMember(name, HubDynamicVariable{id});
+    registerHubMember(name, id);
 
     return id;
 }

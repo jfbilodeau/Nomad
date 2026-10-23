@@ -2,6 +2,8 @@
 
 #include <nomad/script/Hub.hpp>
 
+#include <nomad/script/VariableContext.hpp>
+
 #include <utility>
 
 namespace nomad {

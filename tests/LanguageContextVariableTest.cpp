@@ -3,6 +3,7 @@
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/script/FormatString.hpp>
+#include <nomad/script/Hub.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/VariableContext.hpp>
@@ -26,7 +27,6 @@ static_assert(!std::is_invocable_v<decltype(&Runtime::getContextVariableType), R
 static_assert(!std::is_invocable_v<decltype(&Runtime::getContextVariableType), Runtime&, DynamicVariableId>);
 static_assert(!std::is_invocable_v<decltype(&Compiler::addLoadContextVariable),
     Compiler&, NomadId, const Type*, ExpressionTarget>);
-static_assert(std::is_same_v<decltype(HubVariable{}.id), VariableId>);
 
 BOOST_AUTO_TEST_SUITE(language_context_variables)
 
@@ -145,9 +145,9 @@ BOOST_AUTO_TEST_CASE(hub_variable_registration_returns_global_handles_but_member
     const auto* context = runtime.getVariableContext(contextId);
     const auto* member = runtime.getHub(runtime.getHubId("example"))->getMember("answer");
     BOOST_REQUIRE(member != nullptr);
-    const auto* variable = std::get_if<HubVariable>(member);
+    const auto* variable = std::get_if<VariableId>(member);
     BOOST_REQUIRE(variable != nullptr);
-    BOOST_TEST(variable->id == context->getVariableId("example.answer"));
+    BOOST_TEST(*variable == context->getVariableId("example.answer"));
     BOOST_TEST(runtime.registerOrUpdateContextVariable("example.answer", runtime.getIntegerType()) == id);
     runtime.setContextVariableValue(id, RuntimeValue{NomadInteger{42}});
     RuntimeValue value;
