@@ -528,11 +528,13 @@ NomadInteger Scene::getTileMask(const NomadInteger layerId, const NomadInteger x
 }
 
 void Scene::processGroundTilesAt(const NomadInteger layer, const Rectangle& rectangle, const TileCallback& callback) const {
-    if (layer >= static_cast<NomadInteger>(m_layers.size())) {
+    const auto layerIndex = static_cast<std::size_t>(layer);
+
+    if (layerIndex >= m_layers.size()) {
         return;
     }
 
-    auto& tileLayer = m_layers[static_cast<NomadIndex>(layer)];
+    auto& tileLayer = m_layers[layerIndex];
 
     const auto tileLeft = std::max(rectangle.getLeft() / m_tileWidth, static_cast<NomadInteger>(0));
     const auto tileRight = std::min(rectangle.getRight() / m_tileWidth, m_tileMapWidth - 1);
@@ -595,7 +597,8 @@ NomadFloat Scene::getCameraY() const {
 }
 
 NomadInteger Scene::getMaskAtLocation(const NomadInteger layer, const PointF &location, const Entity * /*exclude*/) const {
-    const auto& l = m_layers[static_cast<NomadIndex>(layer)];
+    const auto layerIndex = static_cast<std::size_t>(layer);
+    const auto& l = m_layers[layerIndex];
 
     const auto x = location.getX();
     const auto y = location.getY();
