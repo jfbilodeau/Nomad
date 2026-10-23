@@ -1020,13 +1020,13 @@ void Game::removeEntityFromScene(const NomadId sceneId, const NomadId entityId) 
 }
 
 void Game::dispatchEvent(const EventDispatch& dispatch) {
-    if (dispatch.eventId == NOMAD_INVALID_ID) {
+    if (dispatch.eventId == EventId::INVALID) {
         log::error("Cannot dispatch event: invalid event id");
         return;
     }
 
     if (!m_runtime->getEventDefinition(dispatch.eventId)) {
-        log::error("Cannot dispatch event: event id " + toString(dispatch.eventId) + " not found");
+        log::error("Cannot dispatch event: event id " + toString(dispatch.eventId.id) + " not found");
         return;
     }
 
@@ -1065,11 +1065,16 @@ void Game::triggerEntityEvent(const NomadId sceneId, const NomadId entityId, con
     });
 }
 
-void Game::triggerEntityEvent(const NomadId eventId, const NomadId sceneId, const NomadId entityId, std::vector<RuntimeValue> args) {
+void Game::triggerEntityEvent(
+    const EventId eventId,
+    const NomadId sceneId,
+    const NomadId entityId,
+    std::vector<RuntimeValue> args
+) {
     if (const auto event = m_runtime->getEventDefinition(eventId)) {
        triggerEntityEvent(sceneId, entityId, event->name, std::move(args));
     } else {
-        log::warning("Event ID " + toString(eventId) + " not found");
+        log::warning("Event ID " + toString(eventId.id) + " not found");
     }
 }
 

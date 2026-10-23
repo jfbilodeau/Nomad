@@ -22,7 +22,7 @@ bool preParseEventStatement(CompilerContext* context, ScriptFunction* /*function
     }
 
     // Make sure event is not already declared
-    if (context->getRuntime()->getEventId(eventName) != NOMAD_INVALID_ID) {
+    if (context->getRuntime()->getEventId(eventName).isValid()) {
         context->reportError("Event '" + eventName + "' is already declared", tokens);
 
         return false;
@@ -59,7 +59,7 @@ bool preParseEventStatement(CompilerContext* context, ScriptFunction* /*function
 
     const auto eventId = context->getRuntime()->registerEvent(eventName, parameters);
 
-    if (eventId == NOMAD_INVALID_ID) {
+    if (eventId.isInvalid()) {
         context->reportError("Failed to register event '" + eventName + "'", tokens);
 
         return false;

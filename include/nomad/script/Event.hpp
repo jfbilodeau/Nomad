@@ -14,6 +14,8 @@ namespace nomad {
 // Forward declarations
 class Type;
 
+DeclareId(EventId);
+
 struct EventParameter {
     NomadString name;
     TypeId typeId;
@@ -21,7 +23,7 @@ struct EventParameter {
 };
 
 struct EventDefinition {
-    NomadId id;
+    EventId id;
     NomadString name;
     std::vector<EventParameter> parameters;
     NomadString doc;
@@ -45,7 +47,7 @@ private:
 };
 
 struct EventDispatch {
-    NomadId eventId;
+    EventId eventId;
     NomadId sceneId;
     NomadId layerId;
     NomadId entityId;

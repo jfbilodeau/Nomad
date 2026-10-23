@@ -376,13 +376,13 @@ void Game::initSceneFunctions() {
         [this](const VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot set onEvent outside of a scene")
 
-            const auto eventId = interpreter->getIdParameter(0);
+            const auto eventId = EventId{interpreter->getIdParameter(0)};
             const auto functionId = interpreter->getCallableIdParameter(1);
 
             const auto event = m_runtime->getEventDefinition(eventId);
 
             if (!event) {
-                log::error(NomadString("Invalid event id for scene.on: ") + toString(eventId));
+                log::error(NomadString("Invalid event id for scene.on: ") + toString(eventId.id));
                 return;
             }
 
@@ -486,14 +486,14 @@ void Game::initSceneFunctions() {
         [this](VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot trigger event outside of a scene")
 
-            const auto eventId = interpreter->getIdParameter(0);
+            const auto eventId = EventId{interpreter->getIdParameter(0)};
 
             std::vector<RuntimeValue> args;
 
             const auto event = m_runtime->getEventDefinition(eventId);
 
             if (!event) {
-                log::error(NomadString("Invalid event id for scene.trigger: ") + toString(eventId));
+                log::error(NomadString("Invalid event id for scene.trigger: ") + toString(eventId.id));
                 return;
             }
 
@@ -533,7 +533,7 @@ void Game::initSceneFunctions() {
         [this](VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot trigger event outside of a scene")
 
-            const auto eventId = interpreter->getIdParameter(0);
+            const auto eventId = EventId{interpreter->getIdParameter(0)};
             const auto layerId = interpreter->getIntegerParameter(1);
 
             std::vector<RuntimeValue> args;
@@ -541,7 +541,7 @@ void Game::initSceneFunctions() {
             const auto event = m_runtime->getEventDefinition(eventId);
 
             if (!event) {
-                log::error(NomadString("Invalid event id for scene.trigger.layer: ") + toString(eventId));
+                log::error(NomadString("Invalid event id for scene.trigger.layer: ") + toString(eventId.id));
                 return;
             }
 

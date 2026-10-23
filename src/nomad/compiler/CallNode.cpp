@@ -86,7 +86,7 @@ void ArgumentList::addEventCallbackArgument(
     NomadIndex line,
     NomadIndex column,
     const Type* type,
-    NomadId eventId,
+    EventId eventId,
     CallableId functionId
 ) {
     m_arguments.emplace_back(createEventCallbackArgument(line, column, type, eventId, functionId));

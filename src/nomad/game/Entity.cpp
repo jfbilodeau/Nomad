@@ -1318,8 +1318,8 @@ void Entity::triggerUserEvent(const NomadString &name) {
     }
 }
 
-void Entity::registerEvent(NomadId eventId, std::unique_ptr<Closure> closure) {
-    if (eventId == NOMAD_INVALID_ID) return;
+void Entity::registerEvent(EventId eventId, std::unique_ptr<Closure> closure) {
+    if (eventId == EventId::INVALID) return;
     if (closure == nullptr) return;
 
     // Update event if already defined.
@@ -1338,8 +1338,8 @@ void Entity::registerEvent(NomadId eventId, std::unique_ptr<Closure> closure) {
     });
 }
 
-void Entity::unregisterEvent(NomadId eventId) {
-    if (eventId == NOMAD_INVALID_ID) return;
+void Entity::unregisterEvent(EventId eventId) {
+    if (eventId == EventId::INVALID) return;
 
     std::erase_if(
         m_eventRegistrations,
@@ -1352,7 +1352,7 @@ void Entity::unregisterEvent(NomadId eventId) {
 void Entity::dispatchEvent(const EventDispatch& dispatch) {
     if (dispatch.entityId != m_id && dispatch.entityId != NOMAD_INVALID_ID) return;
 
-    if (dispatch.eventId == NOMAD_INVALID_ID) {
+    if (dispatch.eventId == EventId::INVALID) {
         return;
     }
 
@@ -1372,7 +1372,7 @@ void Entity::dispatchEvent(const EventDispatch& dispatch) {
     const auto function = callback->closure->getFunction();
 
     if (function == nullptr) {
-        log::error("Unable to resolve event callback function for event " + toString(dispatch.eventId));
+        log::error("Unable to resolve event callback function for event " + toString(dispatch.eventId.id));
         return;
     }
 

@@ -206,7 +206,7 @@ END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(on)
     [this, ENTITY_FUNCTION_NAME](const VirtualMachine* interpreter) {
-        auto eventId = interpreter->getIdParameter(0);
+        const auto eventId = EventId{interpreter->getIdParameter(0)};
         auto functionId = interpreter->getCallableIdParameter(1);
 
         auto closure = interpreter->createClosure(m_runtime, functionId);
@@ -681,7 +681,7 @@ END_ENTITY_FUNCTION()
 
 BEGIN_ENTITY_FUNCTION(trigger)
     [this, ENTITY_FUNCTION_NAME](VirtualMachine* interpreter) {
-        auto eventId = interpreter->getIdParameter(0);
+        const auto eventId = EventId{interpreter->getIdParameter(0)};
 
         auto scene = getCurrentContext()->getScene();
 
@@ -690,7 +690,7 @@ BEGIN_ENTITY_FUNCTION(trigger)
         auto event = m_runtime->getEventDefinition(eventId);
 
         if (!event) {
-            log::error(NomadString("Invalid event id for ") + ENTITY_FUNCTION_NAME + ": " + toString(eventId));
+            log::error(NomadString("Invalid event id for ") + ENTITY_FUNCTION_NAME + ": " + toString(eventId.id));
 
             return;
         }

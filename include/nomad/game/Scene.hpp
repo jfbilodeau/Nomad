@@ -164,7 +164,7 @@ public:
 
     // Entity events
     void registerEntityEvent(const NomadString& name, NomadId entityId, CallableId callableId);
-    void registerEntityEvent(NomadId eventId, NomadId entityId, CallableId callableId);
+    void registerEntityEvent(EventId eventId, NomadId entityId, CallableId callableId);
     void unregisterEntityEvent(const NomadString& name, NomadId entityId);
     void unregisterEntityFromAllEvents(NomadId entityId);
     void triggerUserEvent(const NomadString& name, Entity* entity) const;

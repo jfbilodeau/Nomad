@@ -180,7 +180,7 @@ NomadString Compiler::resolveName(
         }
         return getIdentifierType(candidate, nullptr) != IdentifierType::Unknown ||
             m_runtime->getTypeByName(candidate) != nullptr ||
-            m_runtime->getEventId(candidate) != NOMAD_INVALID_ID ||
+            m_runtime->getEventId(candidate).isValid() ||
             m_runtime->isHub(candidate) ||
             m_runtime->getParameterizedTypeArgumentCount(candidate).has_value() ||
             m_runtime->getParameterizedConstructorArgumentCount(candidate).has_value();
@@ -306,9 +306,9 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
         return;
     }
 
-    const NomadId eventId = m_runtime->getEventId(name);
+    const auto eventId = m_runtime->getEventId(name);
 
-    if (eventId != NOMAD_INVALID_ID) {
+    if (eventId.isValid()) {
         definition.identifierType = IdentifierType::Event;
         definition.eventId = eventId;
 

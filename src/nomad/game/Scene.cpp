@@ -812,11 +812,11 @@ void Scene::registerEntityEvent(const NomadString &name, NomadId entityId, Calla
     }
 }
 
-void Scene::registerEntityEvent(const NomadId eventId, const NomadId entityId, const CallableId callableId) {
+void Scene::registerEntityEvent(const EventId eventId, const NomadId entityId, const CallableId callableId) {
     if (const auto eventDeclaration = m_game->getRuntime()->getEventDefinition(eventId)) {
         registerEntityEvent(eventDeclaration->name, entityId, callableId);
     } else {
-        log::warning("Event ID " + toString(eventId) + " not found");
+        log::warning("Event ID " + toString(eventId.id) + " not found");
     }
 }
 
@@ -858,7 +858,7 @@ void Scene::triggerUserEvent(const NomadString &name, Entity *entity) const {
 }
 
 void Scene::dispatchEvent(const EventDispatch& dispatch) {
-    if (dispatch.eventId == NOMAD_INVALID_ID) {
+    if (dispatch.eventId == EventId::INVALID) {
         return;
     }
 

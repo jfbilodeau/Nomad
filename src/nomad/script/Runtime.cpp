@@ -286,7 +286,7 @@ NomadId Runtime::registerHubVariable(const NomadString& name) {
         getContainingHub(name).empty() || !canRegisterHubMember(name) ||
         isHub(name) || isHubVariable(name) ||
         getCallableId(name).isValid() || getConstantId(name).isValid() ||
-        getTypeByName(name) != nullptr || getEventId(name) != NOMAD_INVALID_ID ||
+        getTypeByName(name) != nullptr || getEventId(name).isValid() ||
         getDynamicVariableId(name) != NOMAD_INVALID_ID ||
         getVariableContextIdByPrefix(name) != NOMAD_INVALID_ID) {
         log::error("Cannot register hub variable '" + name + "': missing hub or conflicting declaration");
@@ -427,7 +427,7 @@ void Runtime::rebuildHubMembers() {
         add(getConstantName(id), HubConstant{id});
     }
     for (const auto& type : m_types) {
-        if (getEventId(type->getTypeName()) == NOMAD_INVALID_ID) {
+        if (getEventId(type->getTypeName()).isInvalid()) {
             add(type->getTypeName(), HubType{type.get()});
         }
     }
@@ -465,7 +465,7 @@ HubId Runtime::registerHub(const NomadString& name) {
         auto prefix = name.substr(0, start + length);
         if (!isHub(prefix) && (getCallableId(prefix).isValid() ||
             getConstantId(prefix).isValid() || getTypeByName(prefix) != nullptr ||
-            getEventId(prefix) != NOMAD_INVALID_ID || getDynamicVariableId(prefix) != NOMAD_INVALID_ID ||
+            getEventId(prefix).isValid() || getDynamicVariableId(prefix) != NOMAD_INVALID_ID ||
             isHubVariable(prefix) ||
             getVariableContextIdByPrefix(prefix + ".") != NOMAD_INVALID_ID ||
             getParameterizedTypeArgumentCount(prefix).has_value() ||
@@ -955,7 +955,7 @@ void Runtime::registerType(std::unique_ptr<Type>&& type) {
     if (isHub(type->getTypeName()) || isHubVariable(type->getTypeName())) {
         throw NomadException("Type name '" + type->getTypeName() + "' is reserved by a hub");
     }
-    if (getEventId(type->getTypeName()) == NOMAD_INVALID_ID) {
+    if (getEventId(type->getTypeName()).isInvalid()) {
         if (!canRegisterHubMember(type->getTypeName())) {
             throw NomadException("Type name '" + type->getTypeName() + "' is already a hub member");
         }
@@ -2239,18 +2239,18 @@ ConstantId Runtime::getNextConstantId(const ConstantId currentId) const {
     return ConstantId{currentId.id + 1};
 }
 
-NomadId Runtime::registerEvent(const NomadString &name, const std::vector<EventParameter> &parameterTypes) {
+EventId Runtime::registerEvent(const NomadString &name, const std::vector<EventParameter> &parameterTypes) {
     if (isHub(name) || !canRegisterHubMember(name)) {
         log::error("Cannot register event '" + name + "': name is reserved by a hub");
-        return NOMAD_INVALID_ID;
+        return EventId::INVALID;
     }
-    if (getEventId(name) != NOMAD_INVALID_ID) {
+    if (getEventId(name).isValid()) {
         log::error("Event with name '" + name + "' already registered.");
 
-        return NOMAD_INVALID_ID;
+        return EventId::INVALID;
     }
 
-    NomadId id = toNomadId(m_events.size());
+    const auto id = EventId{toNomadId(m_events.size())};
 
     m_events.emplace_back(id, name, parameterTypes);
 
@@ -2261,17 +2261,17 @@ NomadId Runtime::registerEvent(const NomadString &name, const std::vector<EventP
     return id;
 }
 
-NomadId Runtime::getEventId(const NomadString &name) const {
+EventId Runtime::getEventId(const NomadString &name) const {
     for (auto& event: m_events) {
         if (event.name == name) {
             return event.id;
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return EventId::INVALID;
 }
 
-std::optional<EventDefinition> Runtime::getEventDefinition(NomadId id) const {
+std::optional<EventDefinition> Runtime::getEventDefinition(EventId id) const {
     for (const auto& event: m_events) {
         if (event.id == id) {
             return event;
@@ -2281,22 +2281,22 @@ std::optional<EventDefinition> Runtime::getEventDefinition(NomadId id) const {
     return std::nullopt;
 }
 
-NomadId Runtime::getFirstEventId() const {
+EventId Runtime::getFirstEventId() const {
     if (m_events.empty()) {
-        return NOMAD_INVALID_ID;
+        return EventId::INVALID;
     }
 
-    return toNomadId(0);
+    return EventId{0};
 }
 
-NomadId Runtime::getNextEventId(const NomadId currentId) const {
-    const auto currentIndex = toNomadIndex(currentId);
+EventId Runtime::getNextEventId(const EventId currentId) const {
+    const auto currentIndex = toNomadIndex(currentId.id);
 
     if (currentIndex + 1 >= m_events.size()) {
-        return NOMAD_INVALID_ID;
+        return EventId::INVALID;
     }
 
-    return currentId + 1;
+    return EventId{currentId.id + 1};
 }
 
 NomadId Runtime::registerString(const NomadString& string) {

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <nomad/script/ConstantId.hpp>
+#include <nomad/script/Event.hpp>
 #include <nomad/script/Type.hpp>
 
 namespace nomad {
@@ -31,7 +32,7 @@ struct IdentifierDefinition {
     const Type* valueType = nullptr;
     union {
         CallableId nativeFunctionId = CallableId{};
-        NomadId eventId;
+        EventId eventId;
         NomadId variableId;
         ConstantId constantId;
         CallableId functionId;

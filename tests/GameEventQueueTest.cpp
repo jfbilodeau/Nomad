@@ -95,6 +95,35 @@ BOOST_AUTO_TEST_CASE(game_event_queue_requeues_unprocessed_events)
     BOOST_TEST(queue.empty());
 }
 
+BOOST_AUTO_TEST_CASE(game_event_queue_preserves_typed_event_dispatch_when_deferred)
+{
+    GameEventQueue queue;
+    const auto eventId = EventId{42};
+    queue.push(GameEventDispatch{EventDispatch{
+        eventId, 3, 2, 7, 5, {RuntimeValue{NomadInteger{19}}}
+    }});
+
+    auto attempts = 0;
+    const auto process = [&](const GameEvent& event) {
+        const auto* payload = std::get_if<GameEventDispatch>(&event);
+        BOOST_REQUIRE(payload != nullptr);
+        const auto& dispatch = payload->dispatch;
+        BOOST_TEST(dispatch.eventId == eventId);
+        BOOST_TEST(dispatch.sceneId == 3);
+        BOOST_TEST(dispatch.layerId == 2);
+        BOOST_TEST(dispatch.entityId == 7);
+        BOOST_TEST(dispatch.mask == 5);
+        BOOST_REQUIRE(dispatch.arguments.size() == 1U);
+        BOOST_TEST(dispatch.arguments.front().getIntegerValue() == 19);
+        return ++attempts == 2;
+    };
+    queue.processFrame(process);
+    BOOST_TEST(queue.size() == 1U);
+    queue.processFrame(process);
+    BOOST_TEST(attempts == 2);
+    BOOST_TEST(queue.empty());
+}
+
 BOOST_AUTO_TEST_CASE(game_event_queue_preserves_fifo_order)
 {
     GameEventQueue queue;

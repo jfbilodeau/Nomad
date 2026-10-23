@@ -285,8 +285,8 @@ public:
     void registerUserEvent(const NomadString& name, CallableId functionId);
     void unregisterUserEvent(const NomadString& name);
     void triggerUserEvent(const NomadString& name);
-    void registerEvent(NomadId eventId, std::unique_ptr<Closure> closure);
-    void unregisterEvent(NomadId eventId);
+    void registerEvent(EventId eventId, std::unique_ptr<Closure> closure);
+    void unregisterEvent(EventId eventId);
     void dispatchEvent(const EventDispatch& dispatch);
 
     [[nodiscard]] CallableId getOnUpdate() const;
@@ -396,7 +396,7 @@ private: // Data members
     EventRegistrationManager m_oldEvents;
 
     struct NewEventRegistration {
-        NomadId eventId;
+        EventId eventId;
         std::unique_ptr<Closure> closure;
     };
     std::vector<NewEventRegistration> m_eventRegistrations;

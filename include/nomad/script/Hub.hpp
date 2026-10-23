@@ -5,6 +5,7 @@
 #include <nomad/Nomad.hpp>
 
 #include <nomad/script/ConstantId.hpp>
+#include <nomad/script/Event.hpp>
 #include <nomad/script/VariableContext.hpp>
 
 #include <memory>
@@ -33,7 +34,7 @@ struct HubType {
 };
 
 struct HubEvent {
-    NomadId id;
+    EventId id;
 };
 
 struct HubChild {

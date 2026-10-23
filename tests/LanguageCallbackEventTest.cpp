@@ -12,17 +12,31 @@
 
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 using namespace nomad;
 using namespace nomad::test;
 
+static_assert(std::is_same_v<decltype(EventDefinition{}.id), EventId>);
+static_assert(std::is_same_v<decltype(EventDispatch{}.eventId), EventId>);
+static_assert(std::is_same_v<decltype(HubEvent{}.id), EventId>);
+static_assert(std::is_same_v<decltype(IdentifierDefinition{}.eventId), EventId>);
+static_assert(!std::is_convertible_v<NomadId, EventId>);
+static_assert(!std::is_convertible_v<EventId, NomadId>);
+static_assert(!std::is_convertible_v<CallableId, EventId>);
+static_assert(!std::is_convertible_v<EventId, CallableId>);
+static_assert(!std::is_convertible_v<ConstantId, EventId>);
+static_assert(!std::is_convertible_v<EventId, ConstantId>);
+static_assert(!std::is_convertible_v<TypeId, EventId>);
+static_assert(!std::is_invocable_v<decltype(&Runtime::getEventDefinition), Runtime&, NomadId>);
+
 namespace {
 
 struct CallbackStore {
     std::unique_ptr<Closure> closure;
-    NomadId eventId = NOMAD_INVALID_ID;
-    std::vector<NomadId> dispatchedEvents;
+    EventId eventId = EventId::INVALID;
+    std::vector<EventId> dispatchedEvents;
     std::vector<NomadInteger> dispatchedIntegers;
 };
 
@@ -59,7 +73,7 @@ void registerCallbackNativeFunctions(Runtime& runtime, CallbackStore& store) {
     runtime.registerNativeFunction(
         "test.on",
         [&runtime, &store](VirtualMachine* virtualMachine) {
-            store.eventId = virtualMachine->getParameter(0).getIdValue();
+            store.eventId = EventId{virtualMachine->getParameter(0).getIdValue()};
             store.closure = virtualMachine->createClosure(&runtime, CallableId{virtualMachine->getParameter(1).getIdValue()});
         },
         {
@@ -72,7 +86,7 @@ void registerCallbackNativeFunctions(Runtime& runtime, CallbackStore& store) {
     runtime.registerNativeFunction(
         "test.trigger",
         [&runtime, &store](VirtualMachine* virtualMachine) {
-            const auto eventId = virtualMachine->getIdParameter(0);
+            const auto eventId = EventId{virtualMachine->getIdParameter(0)};
             const auto event = runtime.getEventDefinition(eventId);
 
             store.dispatchedEvents.push_back(eventId);
@@ -438,6 +452,70 @@ BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(language_events)
 
+BOOST_AUTO_TEST_CASE(event_ids_support_registration_lookup_iteration_and_catalog_growth)
+{
+    Runtime runtime;
+    BOOST_TEST(runtime.getEventId("missing") == EventId::INVALID);
+    BOOST_TEST(runtime.getFirstEventId() == EventId::INVALID);
+    for (const auto id : {EventId::INVALID, EventId{-2}, EventId{0}, EventId{NOMAD_ID_MAX}}) {
+        BOOST_TEST(!runtime.getEventDefinition(id).has_value());
+    }
+
+    BOOST_REQUIRE(runtime.registerHub("example").isValid());
+    const auto integerId = runtime.getTypeId("int");
+    const auto id = runtime.registerEvent("example.changed", {{"value", integerId, "int"}});
+    BOOST_REQUIRE(id.isValid());
+    BOOST_TEST(runtime.getFirstEventId() == id);
+    BOOST_TEST(runtime.getEventId("example.changed") == id);
+    BOOST_TEST(runtime.registerEvent("example.changed", {}) == EventId::INVALID);
+    BOOST_TEST(runtime.registerEvent("example", {}) == EventId::INVALID);
+    const auto definition = runtime.getEventDefinition(id);
+    BOOST_REQUIRE(definition.has_value());
+    BOOST_TEST(definition->id == id);
+    BOOST_TEST(definition->name == "example.changed");
+    BOOST_REQUIRE(definition->parameters.size() == 1U);
+    BOOST_TEST(definition->parameters.front().typeId == integerId);
+
+    auto lastId = id;
+    for (auto index = 0; index < 64; ++index) {
+        lastId = runtime.registerEvent("additional" + std::to_string(index), {});
+        BOOST_REQUIRE(lastId.isValid());
+    }
+    BOOST_REQUIRE(runtime.registerHub("example.child").isValid());
+    BOOST_TEST(runtime.getEventId("example.changed") == id);
+    const auto afterGrowth = runtime.getEventDefinition(id);
+    BOOST_REQUIRE(afterGrowth.has_value());
+    BOOST_TEST(afterGrowth->id == id);
+    BOOST_TEST(afterGrowth->name == definition->name);
+    BOOST_REQUIRE(afterGrowth->parameters.size() == 1U);
+    BOOST_TEST(afterGrowth->parameters.front().name == "value");
+    BOOST_TEST(afterGrowth->parameters.front().typeId == integerId);
+    const auto* member = runtime.getHub(runtime.getHubId("example"))->getMember("changed");
+    BOOST_REQUIRE(member != nullptr);
+    const auto* event = std::get_if<HubEvent>(member);
+    BOOST_REQUIRE(event != nullptr);
+    BOOST_TEST(event->id == id);
+
+    auto count = NomadIndex{0};
+    auto visitedId = EventId::INVALID;
+    for (auto currentId = runtime.getFirstEventId(); currentId.isValid();
+         currentId = runtime.getNextEventId(currentId)) {
+        BOOST_REQUIRE(count < 65U);
+        visitedId = currentId;
+        ++count;
+    }
+    BOOST_TEST(count == 65U);
+    BOOST_TEST(visitedId == lastId);
+    BOOST_TEST(runtime.getNextEventId(lastId) == EventId::INVALID);
+    BOOST_TEST(!runtime.getEventDefinition(EventId{NOMAD_ID_MAX - 1}).has_value());
+
+    const auto compiler = runtime.createCompiler();
+    IdentifierDefinition identifier{};
+    compiler->getIdentifierDefinition("example.changed", nullptr, identifier);
+    BOOST_TEST((identifier.identifierType == IdentifierType::Event));
+    BOOST_TEST(identifier.eventId == id);
+}
+
 BOOST_AUTO_TEST_CASE(event_declaration_registers_event)
 {
     LanguageTestFixture fixture;
@@ -447,7 +525,7 @@ BOOST_AUTO_TEST_CASE(event_declaration_registers_event)
 
     auto& runtime = fixture.getRuntime();
     const auto eventId = runtime.getEventId("bespokeEvent");
-    BOOST_REQUIRE(eventId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(eventId.isValid());
 
     const auto event = runtime.getEventDefinition(eventId);
     BOOST_REQUIRE(event.has_value());

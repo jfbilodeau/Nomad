@@ -56,7 +56,7 @@ BOOST_AUTO_TEST_CASE(type_lookup_uses_strong_ids)
     const auto eventId = runtime.registerEvent(
         "typedEvent", {{"value", integerId, "int"}}
     );
-    BOOST_REQUIRE(eventId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(eventId.isValid());
     const auto event = runtime.getEventDefinition(eventId);
     BOOST_REQUIRE(event.has_value());
     BOOST_REQUIRE(event->parameters.size() == 1);

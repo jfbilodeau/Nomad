@@ -177,7 +177,12 @@ public:
     void triggerSceneEvent(NomadId sceneId, const NomadString& eventName);
     void triggerSceneLayerEvent(NomadId sceneId, NomadInteger layerNumber, const NomadString& eventName);
     void triggerEntityEvent(NomadId sceneId, NomadId entityId, const NomadString& eventName, std::vector<RuntimeValue> args = {});
-    void triggerEntityEvent(NomadId eventId, NomadId sceneId, NomadId entityId, std::vector<RuntimeValue> args);
+    void triggerEntityEvent(
+        EventId eventId,
+        NomadId sceneId,
+        NomadId entityId,
+        std::vector<RuntimeValue> args
+    );
     void scheduleEntityEvent(NomadId sceneId, NomadId entityId, NomadInteger frameCount, NomadBoolean repeat, const NomadString& eventName);
     void scheduleEntityCallback(NomadId sceneId, NomadId entityId, NomadInteger frameCount, NomadBoolean repeat, CallableId callback);
 

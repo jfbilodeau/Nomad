@@ -1268,7 +1268,7 @@ bool parseEventDispatch(CompilerContext* context, ScriptFunction* function, Toke
 
     const auto eventId = context->getRuntime()->getEventId(eventName);
 
-    if (eventId == NOMAD_INVALID_ID) {
+    if (eventId.isInvalid()) {
         context->reportError("Unknown event name '" + eventName + "'", tokens);
 
         return false;
@@ -1422,7 +1422,7 @@ bool parseCallableArguments(
 
             const auto eventId = context->getRuntime()->getEventId(eventName);
 
-            if (eventId == NOMAD_INVALID_ID) {
+            if (eventId.isInvalid()) {
                 context->reportError("Unknown event name '" + eventName + "'", tokens);
 
                 return false;

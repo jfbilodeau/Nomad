@@ -268,14 +268,14 @@ void Game::initGameFunctions() {
     m_runtime->registerNativeFunction(
         "game.trigger",
         [this](VirtualMachine* interpreter) {
-            const auto eventId = interpreter->getIdParameter(0);
+            const auto eventId = EventId{interpreter->getIdParameter(0)};
 
             std::vector<RuntimeValue> args;
 
             const auto event = m_runtime->getEventDefinition(eventId);
 
             if (!event) {
-                log::error(NomadString("Invalid event id for game.trigger: ") + toString(eventId));
+                log::error(NomadString("Invalid event id for game.trigger: ") + toString(eventId.id));
                 return;
             }
 

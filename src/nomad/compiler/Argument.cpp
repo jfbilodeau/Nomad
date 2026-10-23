@@ -80,7 +80,7 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 class EventCallbackArgument : public Argument {
 public:
-    EventCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, NomadId eventId, CallableId functionId);
+    EventCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, EventId eventId, CallableId functionId);
 
     [[nodiscard]]
     NomadIndex getStackValueCount() const override { return 2; }
@@ -89,7 +89,7 @@ protected:
     void onCompile(Compiler* compiler, ScriptFunction* function) override;
 
 private:
-    NomadId m_eventId;
+    EventId m_eventId;
     CallableId m_functionId;
 };
 
@@ -332,7 +332,7 @@ EventCallbackArgument::EventCallbackArgument(
     NomadIndex line,
     NomadIndex column,
     const Type* type,
-    NomadId eventId,
+    EventId eventId,
     CallableId functionId
 ):
     Argument(line, column, type),
@@ -345,7 +345,7 @@ void EventCallbackArgument::onCompile(Compiler* compiler, ScriptFunction* /*func
     compiler->addOpCode(OpCodes::op_id_push_v);
     compiler->addIndex(toNomadIndex(m_functionId.id));
     compiler->addOpCode(OpCodes::op_id_push_v);
-    compiler->addIndex(m_eventId);
+    compiler->addIndex(toNomadIndex(m_eventId.id));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -364,7 +364,7 @@ EventDispatchArgument::EventDispatchArgument(
 
 void EventDispatchArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*/) {
     compiler->addOpCode(OpCodes::op_id_push_v);
-    compiler->addIndex(m_eventDefinition.id);
+    compiler->addIndex(toNomadIndex(m_eventDefinition.id.id));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -472,7 +472,7 @@ std::unique_ptr<Argument> createEventCallbackArgument(
     NomadIndex line,
     NomadIndex column,
     const Type* type,
-    NomadId eventId,
+    EventId eventId,
     CallableId functionId
 ) {
     return std::make_unique<EventCallbackArgument>(line, column, type, eventId, functionId);

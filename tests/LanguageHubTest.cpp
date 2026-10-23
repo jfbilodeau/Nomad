@@ -336,7 +336,7 @@ BOOST_AUTO_TEST_CASE(hub_objects_index_members_without_duplicating_callable_owne
     BOOST_TEST(std::holds_alternative<HubType>(*hub->getMember("State")));
     BOOST_REQUIRE(hub->getMember("State.Ready") != nullptr);
     BOOST_TEST(std::holds_alternative<HubConstant>(*hub->getMember("State.Ready")));
-    BOOST_REQUIRE(runtime.registerEvent("example.changed", {}) != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(runtime.registerEvent("example.changed", {}).isValid());
     BOOST_REQUIRE(hub->getMember("changed") != nullptr);
     BOOST_TEST(std::holds_alternative<HubEvent>(*hub->getMember("changed")));
     BOOST_REQUIRE(runtime.registerHub("example.child").isValid());

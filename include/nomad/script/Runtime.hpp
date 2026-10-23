@@ -333,11 +333,11 @@ public:
     [[nodiscard]] ConstantId getNextConstantId(ConstantId currentId) const;
 
     // Events
-    NomadId registerEvent(const NomadString& name, const std::vector<EventParameter>& parameterTypes);
-    [[nodiscard]] NomadId getEventId(const NomadString& name) const;
-    [[nodiscard]] std::optional<EventDefinition> getEventDefinition(NomadId id) const;
-    [[nodiscard]] NomadId getFirstEventId() const;
-    [[nodiscard]] NomadId getNextEventId(NomadId currentId) const;
+    EventId registerEvent(const NomadString& name, const std::vector<EventParameter>& parameterTypes);
+    [[nodiscard]] EventId getEventId(const NomadString& name) const;
+    [[nodiscard]] std::optional<EventDefinition> getEventDefinition(EventId id) const;
+    [[nodiscard]] EventId getFirstEventId() const;
+    [[nodiscard]] EventId getNextEventId(EventId currentId) const;
 
     // Static strings
     // String literals and hidden `$file`/`$function` arguments are registered during compilation only. `$stringref`

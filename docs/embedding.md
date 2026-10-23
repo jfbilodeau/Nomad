@@ -54,6 +54,26 @@ registration order, ending at `ConstantId::INVALID`. Hub constant members also
 contain a `ConstantId`. Constant IDs do not implicitly convert to integers or
 other ID categories.
 
+### Event IDs
+
+Include `<nomad/script/Event.hpp>` for `EventId`, `EventDefinition`, and
+`EventDispatch`. `Runtime::registerEvent(name, parameters)` returns an `EventId`,
+or `EventId::INVALID` when registration fails. Duplicate names are logged and
+rejected without replacing the original definition. `getEventId(name)` returns
+`EventId::INVALID` when absent; `getEventDefinition(id)` returns a definition
+snapshot, or an empty optional for an invalid or unregistered ID.
+
+`getFirstEventId` and `getNextEventId` enumerate registered events in registration
+order, ending at `EventId::INVALID`. IDs belong to the runtime that issued them
+and remain stable as more events are registered. Event definitions, hub event
+members, and dispatch requests use `EventId`; scene, layer, and entity IDs are
+separate identities. Event IDs do not implicitly convert to integers or other ID
+categories.
+
+Event callback and dispatch native APIs receive raw IDs through the existing
+VM parameter slots. Construct `EventId{machine->getIdParameter(0)}` before looking
+up the definition or forwarding a dispatch request.
+
 ### Object type property metadata
 
 `ScriptObjectType` describes a script-defined object type. `isOpen()` reports

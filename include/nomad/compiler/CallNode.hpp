@@ -5,6 +5,7 @@
 #include <nomad/compiler/SyntaxTree.hpp>
 
 #include <nomad/script/Callable.hpp>
+#include <nomad/script/Event.hpp>
 
 namespace nomad {
 
@@ -21,7 +22,7 @@ public:
     void addExpressionArgument(NomadIndex line, NomadIndex column, const Type* type, std::unique_ptr<Expression> expression);
     void addPredicateArgument(NomadIndex line, NomadIndex column, CallableId predicateFunctionId);
     void addCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, CallableId functionId);
-    void addEventCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, NomadId eventId, CallableId functionId);
+    void addEventCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, EventId eventId, CallableId functionId);
     void addEventDispatchArgument(NomadIndex line, NomadIndex column, const Type* type, const EventDefinition& eventDefinition);
     void addFileNameArgument(NomadIndex line, NomadIndex column, const Type* type, NomadString fileName);
     void addLineNumberArgument(NomadIndex line, NomadIndex column, const Type* type);
