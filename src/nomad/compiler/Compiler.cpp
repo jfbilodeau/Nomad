@@ -908,7 +908,7 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
             }
             const auto qualifiedName = context->qualifyDeclaration(name);
             blocks.push_back({context->getHub(), true});
-            if (!m_runtime->registerHub(qualifiedName)) {
+            if (m_runtime->registerHub(qualifiedName).isInvalid()) {
                 context->reportError("Cannot declare hub '" + qualifiedName + "': invalid or conflicting name", &tokens);
             }
             context->setHub(qualifiedName);

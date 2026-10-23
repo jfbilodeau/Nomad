@@ -448,23 +448,19 @@ void Runtime::rebuildHubMembers() {
     }
 }
 
-bool Runtime::registerHub(const NomadString& name) {
+HubId Runtime::registerHub(const NomadString& name) {
     if (name.empty()) {
         log::error("Cannot register a hub with an empty name");
-        return false;
+        return HubId::INVALID;
     }
     std::vector<NomadString> prefixes;
     NomadIndex start = 0;
     while (start < name.size()) {
         const auto end = name.find('.', start);
         const auto length = (end == NomadString::npos ? name.size() : end) - start;
-        const auto segment = name.substr(start, length);
-        if (segment.empty() || !((segment[0] >= 'A' && segment[0] <= 'Z') ||
-            (segment[0] >= 'a' && segment[0] <= 'z') || segment[0] == '_') ||
-            segment.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") !=
-                NomadString::npos || getKeywordId(segment).isValid()) {
+        if (length == 0) {
             log::error("Invalid hub name '" + name + "'");
-            return false;
+            return HubId::INVALID;
         }
         auto prefix = name.substr(0, start + length);
         if (!isHub(prefix) && (getCallableId(prefix).isValid() ||
@@ -475,7 +471,7 @@ bool Runtime::registerHub(const NomadString& name) {
             getParameterizedTypeArgumentCount(prefix).has_value() ||
             getParameterizedConstructorArgumentCount(prefix).has_value())) {
             log::error("Cannot register hub '" + name + "': identifier '" + prefix + "' is already used");
-            return false;
+            return HubId::INVALID;
         }
         prefixes.push_back(std::move(prefix));
         if (end == NomadString::npos) {
@@ -484,7 +480,7 @@ bool Runtime::registerHub(const NomadString& name) {
         start = end + 1;
         if (start == name.size()) {
             log::error("Invalid hub name '" + name + "'");
-            return false;
+            return HubId::INVALID;
         }
     }
     const auto previousCount = m_hubs.size();
@@ -499,10 +495,10 @@ bool Runtime::registerHub(const NomadString& name) {
         } catch (const NomadException& exception) {
             m_hubs.resize(previousCount);
             log::error("Cannot register hub '" + name + "': " + exception.what());
-            return false;
+            return HubId::INVALID;
         }
     }
-    return true;
+    return getHubId(name);
 }
 
 void Runtime::validateScriptExecution() const {

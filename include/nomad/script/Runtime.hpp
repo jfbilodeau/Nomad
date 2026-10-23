@@ -89,7 +89,7 @@ public:
     // Instructions
     [[nodiscard]] const std::vector<Instruction>& getInstructions() const;
 
-    [[nodiscard]] bool registerHub(const NomadString& name);
+    [[nodiscard]] HubId registerHub(const NomadString& name);
     [[nodiscard]] bool isHub(const NomadString& name) const;
     [[nodiscard]] HubId getHubId(const NomadString& name) const;
     [[nodiscard]] const Hub* getHub(HubId id) const;

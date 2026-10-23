@@ -82,9 +82,9 @@ BOOST_AUTO_TEST_CASE(keyword_ids_support_registration_lookup_and_catalog_growth)
     const auto compiler = runtime.createCompiler();
     BOOST_TEST((compiler->getIdentifierType("reservedword", nullptr) == IdentifierType::Keyword));
     BOOST_TEST((parser::getIdentifierType(compiler.get(), "reservedword") == IdentifierType::Keyword));
-    BOOST_TEST(!runtime.registerHub("reservedword"));
-    BOOST_TEST(!runtime.registerHub("example.reservedword"));
-    BOOST_TEST(runtime.getHubId("example").isInvalid());
+    BOOST_TEST(runtime.registerHub("reservedword").isValid());
+    BOOST_TEST(runtime.registerHub("example.reservedword").isValid());
+    BOOST_TEST(runtime.getHubId("example").isValid());
 }
 
 BOOST_AUTO_TEST_CASE(iterator_types_are_specialized_and_interned)

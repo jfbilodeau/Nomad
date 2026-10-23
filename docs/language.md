@@ -90,6 +90,7 @@ Function names (whether compiled from a script or declared with `fun`), native f
 
 - Allowed characters: letters (A–Z, a–z), numbers (0–9), underscore (`_`) and dot (`.`).
 - Must begin with a letter or underscore.
+- Each segment after a dot must also begin with a letter or underscore, not a digit.
 - Must end with a letter, number, or underscore (i.e. may not end with a dot).
 
 Examples:

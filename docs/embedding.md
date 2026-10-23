@@ -169,10 +169,15 @@ directory containing scripts.
 ## Hubs
 
 Call `Runtime::registerHub(name)` to reserve an open name prefix before
-compilation. It returns `true` both for a new hub and for repeated registration
-of an existing hub. Dotted names, such as `"game.audio"`, also register their
-parent hubs. Invalid names and conflicts with existing values, callables, or
-types are logged and return `false` without partially registering the name.
+compilation. It returns the new `HubId`, or the existing ID for repeated
+registration. Dotted names, such as `"game.audio"`, also register their
+parent hubs. Native hub names need not follow script identifier syntax and may
+use keyword names. Empty names, empty dotted segments, and conflicts with existing
+values, callables, or types are logged and return `HubId::INVALID` without partially
+registering the name. Script hub declarations require a tokenizer-recognized
+identifier; each dotted segment must start with a letter or underscore.
+Native registration does not make otherwise invalid names usable in script
+declarations.
 Use `Runtime::isHub(name)` to test whether a hub is registered.
 Include `<nomad/script/Hub.hpp>` for `HubId` and hub metadata.
 `getHubId(name)` returns a `HubId` or `HubId::INVALID`; `getHub(id)` accepts
