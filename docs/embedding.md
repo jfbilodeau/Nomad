@@ -37,20 +37,6 @@ strong IDs as keys in standard unordered containers.
 Streaming an ID prints its type and numeric value, for example `CallableId{42}`
 or `CallableId{-1}`.
 
-### Instruction IDs
-
-Include `<nomad/script/OpCode.hpp>` for `OpCodeId`, `OpCodeDefinition`, and
-operand metadata. `registerInstruction` returns an `OpCodeId`; registering an
-existing name logs a warning and returns its original ID without replacing it.
-`getInstructionId(name)` and `getInstructionId(callback)` return
-`OpCodeId::INVALID` when no match exists. IDs belong to the runtime that issued
-them and remain stable as more instructions are registered.
-
-Pass a registered ID to `getInstructionFn`, `getInstructionName`, or
-`getInstructionOperands` to inspect the instruction. Unary and binary operator
-opcode lookups also return `OpCodeId`, or `OpCodeId::INVALID` if unsupported.
-Compiler `addOpCode` and `setOpCode` accept these IDs. Instruction positions
-remain `NomadIndex`; they are not opcode identities.
 
 ### Object type property metadata
 

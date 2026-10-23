@@ -462,7 +462,7 @@ bool Runtime::registerHub(const NomadString& name) {
         if (segment.empty() || !((segment[0] >= 'A' && segment[0] <= 'Z') ||
             (segment[0] >= 'a' && segment[0] <= 'z') || segment[0] == '_') ||
             segment.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") !=
-                NomadString::npos || getKeywordId(segment) != NOMAD_INVALID_ID) {
+                NomadString::npos || getKeywordId(segment).isValid()) {
             log::error("Invalid hub name '" + name + "'");
             return false;
         }
@@ -2147,8 +2147,13 @@ CallableId Runtime::getNextNativeFunctionId(const CallableId currentId) const {
     return CallableId::INVALID;
 }
 
-NomadId Runtime::registerKeyword(const NomadString& keyword, const NomadString& /*doc*/) {
-    auto id = toNomadId(m_keywords.size());
+KeywordId Runtime::registerKeyword(const NomadString& keyword, const NomadString& /*doc*/) {
+    const auto existingId = getKeywordId(keyword);
+    if (existingId.isValid()) {
+        return existingId;
+    }
+
+    const auto id = KeywordId{toNomadId(m_keywords.size())};
 
     KeywordDefinition definition;
 
@@ -2162,14 +2167,14 @@ NomadId Runtime::registerKeyword(const NomadString& keyword, const NomadString& 
     return id;
 }
 
-NomadId Runtime::getKeywordId(const NomadString& keyword) const {
+KeywordId Runtime::getKeywordId(const NomadString& keyword) const {
     for (NomadIndex i = 0; i < m_keywords.size(); ++i) {
         if (m_keywords[i].keyword == keyword) {
-            return toNomadId(i);
+            return KeywordId{toNomadId(i)};
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return KeywordId::INVALID;
 }
 
 void Runtime::getKeywords(std::vector<KeywordDefinition>& keywords) const {

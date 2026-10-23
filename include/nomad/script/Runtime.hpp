@@ -47,6 +47,8 @@ class EnumType;
 class OpaqueIdType;
 struct EnumValueDefinition;
 
+DeclareId(KeywordId);
+
 struct KeywordDefinition {
     NomadString keyword;
     NomadDocField;
@@ -314,8 +316,8 @@ public:
     [[nodiscard]] NomadString describeResolveFailure(const NomadString& name, const ResolveResult& result) const;
 
     // Keywords
-    NomadId registerKeyword(const NomadString& keyword, NomadDocArg);
-    [[nodiscard]] NomadId getKeywordId(const NomadString& keyword) const;
+    KeywordId registerKeyword(const NomadString& keyword, NomadDocArg);
+    [[nodiscard]] KeywordId getKeywordId(const NomadString& keyword) const;
     void getKeywords(std::vector<KeywordDefinition>& keywords) const;
 
     // Constants

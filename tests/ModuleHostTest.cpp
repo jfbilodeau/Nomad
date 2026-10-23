@@ -2609,7 +2609,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
-    BOOST_TEST(runtime.getKeywordId("new") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getKeywordId("new").isValid());
     const auto* listType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(listType != nullptr);
     runtime.registerNativeProperty(

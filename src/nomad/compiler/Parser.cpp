@@ -946,7 +946,7 @@ bool expectEndOfLine(
 }
 
 IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& name, const ScriptFunction* function) {
-    if (compiler->getRuntime()->getKeywordId(name) != NOMAD_INVALID_ID) {
+    if (compiler->getRuntime()->getKeywordId(name).isValid()) {
         return IdentifierType::Keyword;
     }
 

@@ -226,7 +226,7 @@ NomadString Compiler::resolveName(
 }
 
 IdentifierType Compiler::getIdentifierType(const NomadString& name, const ScriptFunction* function) const {
-    if (m_runtime->getKeywordId(name) != NOMAD_INVALID_ID) {
+    if (m_runtime->getKeywordId(name).isValid()) {
         return IdentifierType::Keyword;
     }
 

@@ -2,6 +2,8 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/compiler/Parser.hpp>
+
 #include <nomad/script/IteratorObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -10,10 +12,18 @@
 #include <algorithm>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 using namespace nomad;
 using namespace nomad::test;
+
+static_assert(!std::is_convertible_v<NomadId, KeywordId>);
+static_assert(!std::is_convertible_v<KeywordId, NomadId>);
+static_assert(!std::is_convertible_v<HubId, KeywordId>);
+static_assert(!std::is_convertible_v<KeywordId, HubId>);
+static_assert(!std::is_convertible_v<CallableId, KeywordId>);
+static_assert(!std::is_convertible_v<KeywordId, CallableId>);
 
 namespace {
 
@@ -34,6 +44,48 @@ FunctionOutcome runWithInteger(const std::string& source, NomadInteger argument)
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(language_control_flow)
+
+BOOST_AUTO_TEST_CASE(keyword_ids_support_registration_lookup_and_catalog_growth)
+{
+    Runtime runtime;
+    BOOST_TEST(runtime.getKeywordId("missing") == KeywordId::INVALID);
+    const auto builtinId = runtime.getKeywordId("new");
+    BOOST_REQUIRE(builtinId.isValid());
+    std::vector<KeywordDefinition> keywords;
+    runtime.getKeywords(keywords);
+    const auto originalCount = keywords.size();
+
+    const auto keywordId = runtime.registerKeyword("reservedword", NomadDoc("Test keyword."));
+    BOOST_REQUIRE(keywordId.isValid());
+    BOOST_TEST(runtime.getKeywordId("reservedword") == keywordId);
+    const auto duplicateId = runtime.registerKeyword("reservedword", NomadDoc("Duplicate keyword."));
+    BOOST_TEST(duplicateId == keywordId);
+    BOOST_TEST(runtime.getKeywordId("reservedword") == keywordId);
+    BOOST_TEST(runtime.registerKeyword("new", NomadDoc("Replacement documentation.")) == builtinId);
+    runtime.getKeywords(keywords);
+    BOOST_REQUIRE(keywords.size() == originalCount + 1);
+
+    for (auto index = 0; index < 64; ++index) {
+        BOOST_REQUIRE(runtime.registerKeyword("reserved" + std::to_string(index), NomadDoc("")).isValid());
+    }
+    BOOST_TEST(runtime.getKeywordId("new") == builtinId);
+    BOOST_TEST(runtime.getKeywordId("reservedword") == keywordId);
+    BOOST_TEST(runtime.getKeywordId("missing") == KeywordId::INVALID);
+    BOOST_TEST(runtime.registerKeyword("reservedword", NomadDoc("After growth.")) == keywordId);
+    runtime.getKeywords(keywords);
+    BOOST_REQUIRE(keywords.size() == originalCount + 65);
+    BOOST_TEST(keywords[originalCount].keyword == "reservedword");
+#if defined(NOMAD_FUNCTION_DOC)
+    BOOST_TEST(keywords[originalCount].doc == "Test keyword.");
+#endif
+
+    const auto compiler = runtime.createCompiler();
+    BOOST_TEST((compiler->getIdentifierType("reservedword", nullptr) == IdentifierType::Keyword));
+    BOOST_TEST((parser::getIdentifierType(compiler.get(), "reservedword") == IdentifierType::Keyword));
+    BOOST_TEST(!runtime.registerHub("reservedword"));
+    BOOST_TEST(!runtime.registerHub("example.reservedword"));
+    BOOST_TEST(runtime.getHubId("example").isInvalid());
+}
 
 BOOST_AUTO_TEST_CASE(iterator_types_are_specialized_and_interned)
 {
