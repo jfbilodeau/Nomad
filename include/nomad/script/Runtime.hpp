@@ -68,12 +68,12 @@ private:
     };
 
     struct ContextVariable {
-        NomadId contextId;
+        VariableContextId contextId;
         NomadId localVariableId;
     };
 
     struct VariableContextRegistration {
-        NomadId id;
+        VariableContextId id;
         NomadString name;
         NomadString prefix;
         std::shared_ptr<VariableContext> context;
@@ -97,7 +97,7 @@ public:
     [[nodiscard]] HubId getHubId(const NomadString& name) const;
     [[nodiscard]] const Hub* getHub(HubId id) const;
     [[nodiscard]] NomadString getContainingHub(const NomadString& name) const;
-    [[nodiscard]] NomadId registerHubVariable(const NomadString& name);
+    [[nodiscard]] ContextVariableId registerHubVariable(const NomadString& name);
     [[nodiscard]] bool isHubVariable(const NomadString& name) const;
     void setScriptInitializer(CallableId functionId);
     void initializeScripts();
@@ -376,25 +376,29 @@ public:
     [[nodiscard]] DynamicVariableId getNextDynamicVariableId(DynamicVariableId currentId) const;
 
     // Variable contexts
-    NomadId registerVariableContext(const NomadString& name, const NomadString& prefix, std::unique_ptr<VariableContext> context);
-    [[nodiscard]] NomadId getContextId(const NomadString& name) const;
-    NomadId registerContextVariable(NomadId contextId, const NomadString& variableName, const Type* type);
-    NomadId registerOrUpdateContextVariable(const NomadString& variableName, const Type* type);
-    [[nodiscard]] VariableContext* getVariableContext(NomadId contextId) const;
-    [[nodiscard]] NomadString getContextName(NomadId id) const;
-    NomadId getContextVariableId(const NomadString& variableName);
-    [[nodiscard]] NomadId getVariableContextIdByPrefix(const NomadString& variableName) const;
-    [[nodiscard]] NomadString getContextVariableName(NomadId contextVariableId) const;
-    [[nodiscard]] const Type* getContextVariableType(NomadId contextVariableId) const;
-    void setContextVariableWritten(NomadId contextVariableId, bool written) const;
-    void setContextVariableRead(NomadId contextVariableId, bool read) const;
-    void setContextVariableValue(NomadId contextVariableId, const RuntimeValue& value) const;
-    void getContextVariableValue(NomadId contextVariableId, RuntimeValue& value) const;
-    void setStringContextVariableValue(NomadId contextVariableId, const NomadString& value) const;
-    void getStringContextVariableValue(NomadId contextVariableId, NomadString& value) const;
+    VariableContextId registerVariableContext(
+        const NomadString& name,
+        const NomadString& prefix,
+        std::unique_ptr<VariableContext> context
+    );
+    [[nodiscard]] VariableContextId getContextId(const NomadString& name) const;
+    ContextVariableId registerContextVariable(VariableContextId contextId, const NomadString& variableName, const Type* type);
+    ContextVariableId registerOrUpdateContextVariable(const NomadString& variableName, const Type* type);
+    [[nodiscard]] VariableContext* getVariableContext(VariableContextId contextId) const;
+    [[nodiscard]] NomadString getContextName(VariableContextId id) const;
+    ContextVariableId getContextVariableId(const NomadString& variableName);
+    [[nodiscard]] VariableContextId getVariableContextIdByPrefix(const NomadString& variableName) const;
+    [[nodiscard]] NomadString getContextVariableName(ContextVariableId contextVariableId) const;
+    [[nodiscard]] const Type* getContextVariableType(ContextVariableId contextVariableId) const;
+    void setContextVariableWritten(ContextVariableId contextVariableId, bool written) const;
+    void setContextVariableRead(ContextVariableId contextVariableId, bool read) const;
+    void setContextVariableValue(ContextVariableId contextVariableId, const RuntimeValue& value) const;
+    void getContextVariableValue(ContextVariableId contextVariableId, RuntimeValue& value) const;
+    void setStringContextVariableValue(ContextVariableId contextVariableId, const NomadString& value) const;
+    void getStringContextVariableValue(ContextVariableId contextVariableId, NomadString& value) const;
 
-    [[nodiscard]] NomadId getFirstVariableContextId() const;
-    [[nodiscard]] NomadId getNextVariableContextId(NomadId currentId) const;
+    [[nodiscard]] VariableContextId getFirstVariableContextId() const;
+    [[nodiscard]] VariableContextId getNextVariableContextId(VariableContextId currentId) const;
 
     // Script functions. Enumeration and source/bytecode lookups exclude native callables.
     CallableId registerScriptFunction(const NomadString& name, const NomadString& path, const NomadString& source);
@@ -537,8 +541,8 @@ private:
     void rebuildHubMembers();
 
     // Context variables
-    NomadId internContextVariable(NomadId contextId, NomadId localVariableId);
-    [[nodiscard]] const ContextVariable* getContextVariable(NomadId contextVariableId) const;
+    ContextVariableId internContextVariable(VariableContextId contextId, NomadId localVariableId);
+    [[nodiscard]] const ContextVariable* getContextVariable(ContextVariableId contextVariableId) const;
 
     // Script execution
     void validateScriptExecution() const;

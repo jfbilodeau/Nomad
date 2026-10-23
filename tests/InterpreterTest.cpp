@@ -493,7 +493,7 @@ BOOST_AUTO_TEST_CASE(interpreter_reads_and_writes_context_variables)
 
     // The value must land in the runtime's global context, not in a console variable.
     const auto contextId = runtime.getContextId("global");
-    BOOST_REQUIRE(contextId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(contextId.isValid());
     auto* variableContext = runtime.getVariableContext(contextId);
     BOOST_REQUIRE(variableContext != nullptr);
     const auto variableId = variableContext->getVariableId("global.score");

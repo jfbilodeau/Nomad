@@ -321,8 +321,8 @@ BOOST_AUTO_TEST_CASE(runtime_context_variable_ids_are_global_and_stable)
     secondContext->registerVariable("second.value", runtime.getIntegerType());
     const auto secondContextId = runtime.registerVariableContext("second", "second.", std::move(secondContext));
 
-    BOOST_REQUIRE(firstContextId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(secondContextId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(firstContextId.isValid());
+    BOOST_REQUIRE(secondContextId.isValid());
 
     const auto firstVariableId = runtime.registerContextVariable(
         firstContextId,
@@ -335,8 +335,8 @@ BOOST_AUTO_TEST_CASE(runtime_context_variable_ids_are_global_and_stable)
         runtime.getIntegerType()
     );
 
-    BOOST_REQUIRE(firstVariableId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(secondVariableId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(firstVariableId.isValid());
+    BOOST_REQUIRE(secondVariableId.isValid());
     BOOST_TEST(firstVariableId != secondVariableId);
     BOOST_TEST(runtime.getContextVariableId("first.value") == firstVariableId);
     BOOST_TEST(runtime.getContextVariableName(firstVariableId) == "first.value");
@@ -402,8 +402,8 @@ BOOST_AUTO_TEST_CASE(runtime_assigns_distinct_global_ids_to_mirrored_entity_vari
         runtime.getIntegerType()
     );
 
-    BOOST_REQUIRE(thisVariableId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(otherVariableId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(thisVariableId.isValid());
+    BOOST_REQUIRE(otherVariableId.isValid());
     BOOST_TEST(thisVariableId != otherVariableId);
     BOOST_TEST(runtime.getContextVariableId("this.health") == thisVariableId);
     BOOST_TEST(runtime.getContextVariableId("other.health") == otherVariableId);

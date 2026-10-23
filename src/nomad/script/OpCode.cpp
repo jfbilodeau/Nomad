@@ -377,13 +377,13 @@ void op_dynamic_variable_push(VirtualMachine* interpreter) {
 }
 
 void op_context_variable_set(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = ContextVariableId{interpreter->nextId()};
 
     interpreter->getRuntime()->setContextVariableValue(variableId, interpreter->getResult());
 }
 
 void op_context_variable_get_r(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = ContextVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -393,7 +393,7 @@ void op_context_variable_get_r(VirtualMachine* interpreter) {
 }
 
 void op_context_variable_object_get_r(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = ContextVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -403,7 +403,7 @@ void op_context_variable_object_get_r(VirtualMachine* interpreter) {
 }
 
 void op_context_variable_get_i(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = ContextVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -413,7 +413,7 @@ void op_context_variable_get_i(VirtualMachine* interpreter) {
 }
 
 void op_context_variable_object_get_i(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = ContextVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -423,7 +423,7 @@ void op_context_variable_object_get_i(VirtualMachine* interpreter) {
 }
 
 void op_context_variable_push(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = ContextVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -433,7 +433,7 @@ void op_context_variable_push(VirtualMachine* interpreter) {
 }
 
 void op_context_variable_object_push(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = ContextVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 

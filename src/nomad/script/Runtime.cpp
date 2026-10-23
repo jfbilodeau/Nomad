@@ -281,26 +281,26 @@ bool Runtime::isHubVariable(const NomadString& name) const {
     return member != nullptr && std::holds_alternative<HubVariable>(*member);
 }
 
-NomadId Runtime::registerHubVariable(const NomadString& name) {
+ContextVariableId Runtime::registerHubVariable(const NomadString& name) {
     if (m_scriptInitialization.state != ScriptInitializationState::Pending ||
         getContainingHub(name).empty() || !canRegisterHubMember(name) ||
         isHub(name) || isHubVariable(name) ||
         getCallableId(name).isValid() || getConstantId(name).isValid() ||
         getTypeByName(name) != nullptr || getEventId(name).isValid() ||
         getDynamicVariableId(name).isValid() ||
-        getVariableContextIdByPrefix(name) != NOMAD_INVALID_ID) {
+        getVariableContextIdByPrefix(name).isValid()) {
         log::error("Cannot register hub variable '" + name + "': missing hub or conflicting declaration");
-        return NOMAD_INVALID_ID;
+        return ContextVariableId::INVALID;
     }
     auto& hub = *m_hubs[toNomadIndex(getHubId(getContainingHub(name)).id)];
-    if (hub.m_variableContextId == NOMAD_INVALID_ID) {
-        hub.m_variableContextId = toNomadId(m_variables.size());
+    if (hub.m_variableContextId.isInvalid()) {
+        hub.m_variableContextId = VariableContextId{toNomadId(m_variables.size())};
         m_variables.push_back({
             hub.m_variableContextId, hub.getName(), "$hub." + hub.getName() + ".", hub.m_variables
         });
     }
     const auto id = registerContextVariable(hub.m_variableContextId, name, nullptr);
-    if (id != NOMAD_INVALID_ID) {
+    if (id.isValid()) {
         registerHubMember(name, HubVariable{hub.m_variables->getVariableId(name)});
     }
     return id;
@@ -467,7 +467,7 @@ HubId Runtime::registerHub(const NomadString& name) {
             getConstantId(prefix).isValid() || getTypeByName(prefix) != nullptr ||
             getEventId(prefix).isValid() || getDynamicVariableId(prefix).isValid() ||
             isHubVariable(prefix) ||
-            getVariableContextIdByPrefix(prefix + ".") != NOMAD_INVALID_ID ||
+            getVariableContextIdByPrefix(prefix + ".").isValid() ||
             getParameterizedTypeArgumentCount(prefix).has_value() ||
             getParameterizedConstructorArgumentCount(prefix).has_value())) {
             log::error("Cannot register hub '" + name + "': identifier '" + prefix + "' is already used");
@@ -2468,12 +2468,12 @@ DynamicVariableId Runtime::getNextDynamicVariableId(const DynamicVariableId curr
     return DynamicVariableId{toNomadId(dynamicVariableIndex + 1)};
 }
 
-NomadId Runtime::registerVariableContext(
+VariableContextId Runtime::registerVariableContext(
     const NomadString& name,
     const NomadString& prefix,
     std::unique_ptr<VariableContext> context
     ) {
-    NomadId id = toNomadId(m_variables.size());
+    const auto id = VariableContextId{toNomadId(m_variables.size())};
 
     auto registration = VariableContextRegistration{
         id,
@@ -2487,44 +2487,48 @@ NomadId Runtime::registerVariableContext(
     return id;
 }
 
-NomadId Runtime::getContextId(const NomadString& name) const {
+VariableContextId Runtime::getContextId(const NomadString& name) const {
     for (NomadIndex i = 0; i < m_variables.size(); ++i) {
         if (m_variables[i].name == name) {
-            return toNomadId(i);
+            return VariableContextId{toNomadId(i)};
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return VariableContextId::INVALID;
 }
 
-NomadId Runtime::registerContextVariable(const NomadId contextId, const NomadString &variableName, const Type *type) {
-    const auto contextIndex = toNomadIndex(contextId);
+ContextVariableId Runtime::registerContextVariable(
+    const VariableContextId contextId,
+    const NomadString& variableName,
+    const Type* type
+) {
+    const auto contextIndex = toNomadIndex(contextId.id);
 
     if (contextIndex >= m_variables.size()) {
-        return NOMAD_INVALID_ID;
+        return ContextVariableId::INVALID;
     }
 
     const auto localVariableId = m_variables[contextIndex].context->registerVariable(variableName, type);
 
     if (localVariableId == NOMAD_INVALID_ID) {
-        return NOMAD_INVALID_ID;
+        return ContextVariableId::INVALID;
     }
 
     return internContextVariable(contextId, localVariableId);
 }
 
-NomadId Runtime::registerOrUpdateContextVariable(const NomadString &variableName, const Type *type) {
+ContextVariableId Runtime::registerOrUpdateContextVariable(const NomadString &variableName, const Type *type) {
     const auto contextId = getVariableContextIdByPrefix(variableName);
 
-    if (contextId == NOMAD_INVALID_ID) {
-        return NOMAD_INVALID_ID;
+    if (contextId.isInvalid()) {
+        return ContextVariableId::INVALID;
     }
 
     return registerContextVariable(contextId, variableName, type);
 }
 
-VariableContext* Runtime::getVariableContext(const NomadId contextId) const {
-    const auto contextIndex = toNomadIndex(contextId);
+VariableContext* Runtime::getVariableContext(const VariableContextId contextId) const {
+    const auto contextIndex = toNomadIndex(contextId.id);
     if (contextIndex >= m_variables.size()) {
         return nullptr;
     }
@@ -2532,29 +2536,29 @@ VariableContext* Runtime::getVariableContext(const NomadId contextId) const {
     return m_variables[contextIndex].context.get();
 }
 
-NomadString Runtime::getContextName(const NomadId id) const {
-    const auto contextIndex = toNomadIndex(id);
+NomadString Runtime::getContextName(const VariableContextId id) const {
+    const auto contextIndex = toNomadIndex(id.id);
     return m_variables[contextIndex].name;
 }
 
-NomadId Runtime::getContextVariableId(const NomadString& variableName) {
+ContextVariableId Runtime::getContextVariableId(const NomadString& variableName) {
     const auto contextId = getVariableContextIdByPrefix(variableName);
 
-    if (contextId == NOMAD_INVALID_ID) {
-        return NOMAD_INVALID_ID;
+    if (contextId.isInvalid()) {
+        return ContextVariableId::INVALID;
     }
 
-    const auto contextIndex = toNomadIndex(contextId);
+    const auto contextIndex = toNomadIndex(contextId.id);
     const auto localVariableId = m_variables[contextIndex].context->getVariableId(variableName);
 
     if (localVariableId == NOMAD_INVALID_ID) {
-        return NOMAD_INVALID_ID;
+        return ContextVariableId::INVALID;
     }
 
     return internContextVariable(contextId, localVariableId);
 }
 
-NomadId Runtime::getVariableContextIdByPrefix(const NomadString& variableName) const {
+VariableContextId Runtime::getVariableContextIdByPrefix(const NomadString& variableName) const {
     if (isHubVariable(variableName)) {
         return m_hubs[toNomadIndex(getHubId(getContainingHub(variableName)).id)]->m_variableContextId;
     }
@@ -2564,76 +2568,76 @@ NomadId Runtime::getVariableContextIdByPrefix(const NomadString& variableName) c
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return VariableContextId::INVALID;
 }
 
-NomadString Runtime::getContextVariableName(const NomadId contextVariableId) const {
+NomadString Runtime::getContextVariableName(const ContextVariableId contextVariableId) const {
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId));
+        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
         return NOMAD_EMPTY_STRING;
     }
 
     return getVariableContext(contextVariable->contextId)->getVariableName(contextVariable->localVariableId);
 }
 
-const Type* Runtime::getContextVariableType(const NomadId contextVariableId) const {
+const Type* Runtime::getContextVariableType(const ContextVariableId contextVariableId) const {
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId));
+        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
         return nullptr;
     }
 
     return getVariableContext(contextVariable->contextId)->getVariableType(contextVariable->localVariableId);
 }
 
-void Runtime::setContextVariableWritten(const NomadId contextVariableId, const bool written) const {
+void Runtime::setContextVariableWritten(const ContextVariableId contextVariableId, const bool written) const {
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId));
+        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
         return;
     }
 
     getVariableContext(contextVariable->contextId)->setWritten(contextVariable->localVariableId, written);
 }
 
-void Runtime::setContextVariableRead(const NomadId contextVariableId, const bool read) const {
+void Runtime::setContextVariableRead(const ContextVariableId contextVariableId, const bool read) const {
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId));
+        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
         return;
     }
 
     getVariableContext(contextVariable->contextId)->setRead(contextVariable->localVariableId, read);
 }
 
-void Runtime::setContextVariableValue(const NomadId contextVariableId, const RuntimeValue& value) const {
+void Runtime::setContextVariableValue(const ContextVariableId contextVariableId, const RuntimeValue& value) const {
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId));
+        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
         return;
     }
 
     getVariableContext(contextVariable->contextId)->setValue(contextVariable->localVariableId, value);
 }
 
-void Runtime::getContextVariableValue(const NomadId contextVariableId, RuntimeValue& value) const {
+void Runtime::getContextVariableValue(const ContextVariableId contextVariableId, RuntimeValue& value) const {
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId));
+        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
         return;
     }
 
     getVariableContext(contextVariable->contextId)->getValue(contextVariable->localVariableId, value);
 }
 
-void Runtime::setStringContextVariableValue(const NomadId contextVariableId, const NomadString& value) const {
+void Runtime::setStringContextVariableValue(const ContextVariableId contextVariableId, const NomadString& value) const {
     RuntimeValue stringValue;
     stringValue.setStringValue(value);
 
@@ -2642,50 +2646,50 @@ void Runtime::setStringContextVariableValue(const NomadId contextVariableId, con
     stringValue.freeObjectValue();
 }
 
-void Runtime::getStringContextVariableValue(const NomadId contextVariableId, NomadString& value) const {
+void Runtime::getStringContextVariableValue(const ContextVariableId contextVariableId, NomadString& value) const {
     RuntimeValue stringValue;
     getContextVariableValue(contextVariableId, stringValue);
     value = stringValue.getStringValue();
 }
 
-NomadId Runtime::internContextVariable(const NomadId contextId, const NomadId localVariableId) {
+ContextVariableId Runtime::internContextVariable(const VariableContextId contextId, const NomadId localVariableId) {
     for (NomadIndex contextVariableIndex = 0; contextVariableIndex < m_contextVariables.size(); ++contextVariableIndex) {
         const auto& contextVariable = m_contextVariables[contextVariableIndex];
 
         if (contextVariable.contextId == contextId && contextVariable.localVariableId == localVariableId) {
-            return toNomadId(contextVariableIndex);
+            return ContextVariableId{toNomadId(contextVariableIndex)};
         }
     }
 
-    const auto contextVariableId = toNomadId(m_contextVariables.size());
+    const auto contextVariableId = ContextVariableId{toNomadId(m_contextVariables.size())};
     m_contextVariables.push_back({contextId, localVariableId});
     return contextVariableId;
 }
 
-const Runtime::ContextVariable* Runtime::getContextVariable(const NomadId contextVariableId) const {
-    if (isIdOutOfRange(contextVariableId, m_contextVariables.size())) {
+const Runtime::ContextVariable* Runtime::getContextVariable(const ContextVariableId contextVariableId) const {
+    if (isIdOutOfRange(contextVariableId.id, m_contextVariables.size())) {
         return nullptr;
     }
 
-    return &m_contextVariables[toNomadIndex(contextVariableId)];
+    return &m_contextVariables[toNomadIndex(contextVariableId.id)];
 }
 
-NomadId Runtime::getFirstVariableContextId() const {
+VariableContextId Runtime::getFirstVariableContextId() const {
     if (m_variables.empty()) {
-        return NOMAD_INVALID_ID;
+        return VariableContextId::INVALID;
     }
 
-    return toNomadId(0);
+    return VariableContextId{0};
 }
 
-NomadId Runtime::getNextVariableContextId(const NomadId currentId) const {
-    const auto currentIndex = toNomadIndex(currentId);
+VariableContextId Runtime::getNextVariableContextId(const VariableContextId currentId) const {
+    const auto currentIndex = toNomadIndex(currentId.id);
 
     if (currentIndex + 1 >= m_variables.size()) {
-        return NOMAD_INVALID_ID;
+        return VariableContextId::INVALID;
     }
 
-    return currentId + 1;
+    return VariableContextId{currentId.id + 1};
 }
 
 CallableId Runtime::registerScriptFunction(
@@ -3097,7 +3101,7 @@ void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function
                 break;
             case Operand::ContextVariableId:
                 textValue =
-                    getContextVariableName(value.getIdValue()) + " (" + std::to_string(value.getIdValue()) + ")";
+                    getContextVariableName(ContextVariableId{value.getIdValue()}) + " (" + std::to_string(value.getIdValue()) + ")";
                 break;
             case Operand::FormatString:
                 textValue = "$\"" + getFormatString(FormatStringId{value.getIdValue()})->getFormatString() + "\" (" +

@@ -263,7 +263,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     auto variableContextId = runtime->getFirstVariableContextId();
 
-    while (variableContextId != NOMAD_INVALID_ID) {
+    while (variableContextId.isValid()) {
         auto context = runtime->getVariableContext(variableContextId);
 
         auto variableId = context->getFirstVariableId();

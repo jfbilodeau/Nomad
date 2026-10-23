@@ -167,7 +167,7 @@ ApiAnalysis analyzeApiSymbols(
         symbols.push_back({name, CompletionItemKind::Variable, name + ":" + typeName,
             "Registered engine variable.", typeName});
     }
-    for (auto contextId = runtime->getFirstVariableContextId(); contextId != NOMAD_INVALID_ID;
+    for (auto contextId = runtime->getFirstVariableContextId(); contextId.isValid();
         contextId = runtime->getNextVariableContextId(contextId)) {
         const auto* context = runtime->getVariableContext(contextId);
         for (auto id = context->getFirstVariableId(); id != NOMAD_INVALID_ID;

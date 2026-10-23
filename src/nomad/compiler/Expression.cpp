@@ -1646,12 +1646,12 @@ void IdentifierExpression::onCompile(Compiler* compiler, ScriptFunction* /*funct
 
         case IdentifierType::ContextVariable:
             compiler->addLoadContextVariable(
-                m_identifierDefinition.variableId,
+                m_identifierDefinition.contextVariableId,
                 m_identifierDefinition.valueType,
                 target
             );
 
-            compiler->getRuntime()->setContextVariableRead(m_identifierDefinition.variableId, true);
+            compiler->getRuntime()->setContextVariableRead(m_identifierDefinition.contextVariableId, true);
             break;
 
         case IdentifierType::Parameter:
@@ -1701,9 +1701,9 @@ void IdentifierExpression::compileStore(Compiler* compiler) const {
 
     case IdentifierType::ContextVariable:
         compiler->addOpCode(typeOpCodes->setContextVariable);
-        compiler->addId(m_identifierDefinition.variableId);
+        compiler->addId(m_identifierDefinition.contextVariableId.id);
         compiler->addFreeValue(typeOpCodes->freeResult);
-        compiler->getRuntime()->setContextVariableWritten(m_identifierDefinition.variableId, true);
+        compiler->getRuntime()->setContextVariableWritten(m_identifierDefinition.contextVariableId, true);
         break;
 
     default:
@@ -1725,8 +1725,8 @@ void IdentifierExpression::evaluateStore(InterpreterContext& context, const Runt
         break;
 
     case IdentifierType::ContextVariable:
-        runtime->setContextVariableValue(m_identifierDefinition.variableId, value);
-        runtime->setContextVariableWritten(m_identifierDefinition.variableId, true);
+        runtime->setContextVariableValue(m_identifierDefinition.contextVariableId, value);
+        runtime->setContextVariableWritten(m_identifierDefinition.contextVariableId, true);
         break;
 
     default:
@@ -1786,7 +1786,7 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
     case IdentifierType::ContextVariable: {
         auto* runtime = context.getRuntime();
         const auto contextId = runtime->getVariableContextIdByPrefix(m_identifier);
-        if (contextId == NOMAD_INVALID_ID) {
+        if (contextId.isInvalid()) {
             raiseException("Unknown context for variable '" + m_identifier + "'");
         }
 
@@ -1797,11 +1797,7 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
 
         // The context owns the value, so it is read without taking ownership.
         RuntimeValue value;
-        if (context.isFrameBacked()) {
-            runtime->getContextVariableValue(m_identifierDefinition.variableId, value);
-        } else {
-            runtime->getVariableContext(contextId)->getValue(m_identifierDefinition.variableId, value);
-        }
+        runtime->getContextVariableValue(m_identifierDefinition.contextVariableId, value);
 
         if (type->isString() && value.getObjectValue() == nullptr) {
             RuntimeValue emptyValue;

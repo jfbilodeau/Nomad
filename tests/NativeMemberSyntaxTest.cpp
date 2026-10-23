@@ -278,8 +278,8 @@ BOOST_AUTO_TEST_CASE(context_assignment_takes_precedence_over_native_member_name
 
     const auto compiled = compiler->compileFunctions(&context);
     BOOST_REQUIRE_MESSAGE(compiled, (context.getFirstError() ? context.getFirstError()->message : "Compilation failed"));
-    BOOST_TEST(runtime.getContextVariableId("this.value") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getContextVariableId("this.length") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getContextVariableId("this.value").isValid());
+    BOOST_TEST(runtime.getContextVariableId("this.length").isValid());
 
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("test"), {}, result);

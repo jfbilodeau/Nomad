@@ -73,7 +73,7 @@ private:
     std::unordered_map<NomadString, HubMember> m_members;
     // The context table indexes this same storage for existing variable bytecode.
     std::shared_ptr<VariableContext> m_variables;
-    NomadId m_variableContextId = NOMAD_INVALID_ID;
+    VariableContextId m_variableContextId = VariableContextId::INVALID;
 };
 
 } // namespace nomad

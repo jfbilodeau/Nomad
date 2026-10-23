@@ -970,7 +970,7 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
         return IdentifierType::DynamicVariable;
     }
 
-    if (compiler->getRuntime()->getVariableContextIdByPrefix(name) != NOMAD_INVALID_ID) {
+    if (compiler->getRuntime()->getVariableContextIdByPrefix(name).isValid()) {
         return IdentifierType::ContextVariable;
     }
 
@@ -1079,11 +1079,11 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
         // Runtime context variables keep their normal registration path.
         const auto contextId = context->getRuntime()->getVariableContextIdByPrefix(variableName);
 
-        if (contextId != NOMAD_INVALID_ID) {
+        if (contextId.isValid()) {
             // Register new context variable
             const auto variableId = context->getRuntime()->registerOrUpdateContextVariable(variableName, nullptr);
 
-            if (variableId == NOMAD_INVALID_ID) {
+            if (variableId.isInvalid()) {
                 context->getCompiler()->reportInternalError("Failed to register context variable: " + variableName);
             }
         } else if (context->getMode() == CompilerMode::Script) {

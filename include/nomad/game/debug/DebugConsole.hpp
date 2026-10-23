@@ -10,6 +10,7 @@
 
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/VariableContext.hpp>
 
 #include <SDL3/SDL.h>
 
@@ -92,7 +93,7 @@ private:
         const Type* type = nullptr;
         NomadString value;
         Source source = Source::Context;
-        NomadId contextId = NOMAD_INVALID_ID;
+        VariableContextId contextId = VariableContextId::INVALID;
         NomadId variableId = NOMAD_INVALID_ID;
         bool editable = false;
         DynamicVariableId dynamicVariableId = DynamicVariableId::INVALID;

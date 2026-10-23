@@ -252,7 +252,7 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
         return IdentifierType::DynamicVariable;
     }
 
-    if (m_runtime->getVariableContextIdByPrefix(name) != NOMAD_INVALID_ID) {
+    if (m_runtime->getVariableContextIdByPrefix(name).isValid()) {
         return IdentifierType::ContextVariable;
     }
 
@@ -335,18 +335,18 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
         return;
     }
 
-    const NomadId contextId = m_runtime->getVariableContextIdByPrefix(name);
+    const auto contextId = m_runtime->getVariableContextIdByPrefix(name);
 
-    if (contextId != NOMAD_INVALID_ID) {
+    if (contextId.isValid()) {
         const auto variableId = m_runtime->getContextVariableId(name);
 
-        if (variableId == NOMAD_INVALID_ID) {
+        if (variableId.isInvalid()) {
             definition.identifierType = IdentifierType::Unknown;
 
             return;
         }
 
-        definition.variableId = variableId;
+        definition.contextVariableId = variableId;
         definition.valueType = m_runtime->getContextVariableType(variableId);
 
         return;
@@ -668,8 +668,12 @@ NomadIndex Compiler::addLoadDynamicVariable(const DynamicVariableId variableId, 
     return addLoadTarget(type->getTypeOpCodes()->loadDynamicVariable, variableId.id, target);
 }
 
-NomadIndex Compiler::addLoadContextVariable(const NomadId contextVariableId, const Type* type, const ExpressionTarget target) {
-    return addLoadTarget(type->getTypeOpCodes()->loadContextVariable, contextVariableId, target);
+NomadIndex Compiler::addLoadContextVariable(
+    const ContextVariableId contextVariableId,
+    const Type* type,
+    const ExpressionTarget target
+) {
+    return addLoadTarget(type->getTypeOpCodes()->loadContextVariable, contextVariableId.id, target);
 }
 
 NomadIndex Compiler::addLoadParameter(const NomadIndex parameterId, const Type* type, const ExpressionTarget target) {
@@ -929,7 +933,7 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
                 context->reportError("Hub variable declarations require an unqualified member name", &tokens);
             } else if (!m_hubVariableDeclarations.insert(name).second) {
                 context->reportError("Hub variable '" + name + "' has more than one initializer", &tokens);
-            } else if (m_runtime->registerHubVariable(name) == NOMAD_INVALID_ID) {
+            } else if (m_runtime->registerHubVariable(name).isInvalid()) {
                 context->reportError("Hub member '" + name + "' is already declared or conflicts with an identifier", &tokens);
             }
         }
@@ -1056,7 +1060,7 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
         }
     }
 
-    for (auto contextId = m_runtime->getFirstVariableContextId(); contextId != NOMAD_INVALID_ID;
+    for (auto contextId = m_runtime->getFirstVariableContextId(); contextId.isValid();
          contextId = m_runtime->getNextVariableContextId(contextId)) {
         const auto* variableContext = m_runtime->getVariableContext(contextId);
 
@@ -1581,7 +1585,7 @@ void Compiler::postCompile(CompilerContext* compilerContext) {
     // verify that all variables have been initialized and are used
     auto contextId = m_runtime->getFirstVariableContextId();
 
-    while (contextId != NOMAD_INVALID_ID) {
+    while (contextId.isValid()) {
         const auto context = m_runtime->getVariableContext(contextId);
 
         auto variableId = context->getFirstVariableId();

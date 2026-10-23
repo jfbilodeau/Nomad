@@ -24,6 +24,7 @@ add_executable(
     ./InterpreterTest.cpp
     ./LanguageCallbackEventTest.cpp
     ./LanguageConstantTest.cpp
+    ./LanguageContextVariableTest.cpp
     ./LanguageControlFlowTest.cpp
     ./LanguageFormatStringFunctionTest.cpp
     ./LanguageFunctionTest.cpp

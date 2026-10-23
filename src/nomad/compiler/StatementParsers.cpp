@@ -172,13 +172,13 @@ bool preParseFunStatement(CompilerContext* context, ScriptFunction* function, To
         // See if the name of the context variable is used.
         const auto contextId = context->getRuntime()->getVariableContextIdByPrefix(funName);
 
-        if (contextId == NOMAD_INVALID_ID) {
+        if (contextId.isInvalid()) {
             context->getCompiler()->reportInternalError("Unknown variable context for '" + funName + "'");
         }
 
         const auto variableId = context->getRuntime()->getContextVariableId(funName);
 
-        if (variableId != NOMAD_INVALID_ID) {
+        if (variableId.isValid()) {
             log::warning("Function name '" + funName + "' is already used as a context variable name");
         }
     } else if (identifierType != IdentifierType::Unknown) {

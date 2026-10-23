@@ -9,6 +9,9 @@
 
 namespace nomad {
 
+DeclareId(VariableContextId);
+DeclareId(ContextVariableId);
+
 class Type;
 
 class VariableContext {

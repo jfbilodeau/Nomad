@@ -108,6 +108,41 @@ runtime that issued them and remain stable as registrations are added. Hub
 dynamic-variable members also contain a `DynamicVariableId`. These IDs do not
 implicitly convert to integers or other ID categories.
 
+### Variable-context IDs
+
+Include `<nomad/script/VariableContext.hpp>` for `VariableContextId` and
+`ContextVariableId`. Both types belong to the runtime that issued them, remain
+stable as registrations are added, and do not implicitly convert to integers
+or other ID categories.
+
+`registerVariableContext(name, prefix, context)` returns a `VariableContextId`.
+`getContextId(name)` and `getVariableContextIdByPrefix(variableName)` return
+`VariableContextId::INVALID` when no context matches. Pass a registered context
+ID to `getContextName` or `getVariableContext`; the latter returns a borrowed
+pointer, or `nullptr` for an invalid or unregistered ID.
+`getFirstVariableContextId` and `getNextVariableContextId` enumerate contexts
+in registration order, ending at `VariableContextId::INVALID`.
+
+`registerContextVariable(contextId, variableName, type)`,
+`registerOrUpdateContextVariable(variableName, type)`, and
+`getContextVariableId(variableName)` return a `ContextVariableId`, or
+`ContextVariableId::INVALID` when the context or variable cannot be resolved.
+Repeated resolution of the same context and local variable returns the same
+handle. Variables in different contexts have distinct handles even when their
+context-local IDs are equal. `registerHubVariable` also returns a
+`ContextVariableId`.
+
+Pass a registered context-variable handle to the runtime's context-variable
+metadata, read/write tracking, and value APIs. Values read through
+`getContextVariableValue` are borrowed; the context retains ownership.
+`setStringContextVariableValue` releases its temporary string after assigning
+it through the context.
+
+The `VariableContext` interface still uses raw context-local `NomadId` values.
+Do not pass a runtime-global handle's numeric value to that interface; use the
+runtime's context-variable APIs to resolve it. Hub variable members also retain
+context-local IDs.
+
 ### Object type property metadata
 
 `ScriptObjectType` describes a script-defined object type. `isOpen()` reports

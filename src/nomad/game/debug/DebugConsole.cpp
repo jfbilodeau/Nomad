@@ -1109,7 +1109,7 @@ void DebugConsole::collectContextVariableRows(std::vector<VariableRow>& rows) co
 
     for (
         auto contextId = runtime->getFirstVariableContextId();
-        contextId != NOMAD_INVALID_ID;
+        contextId.isValid();
         contextId = runtime->getNextVariableContextId(contextId)
     ) {
         const auto contextName = runtime->getContextName(contextId);
@@ -1230,7 +1230,7 @@ void DebugConsole::collectDynamicVariableRows(std::vector<VariableRow>& rows) co
             type,
             valueToDisplayString(type, value),
             VariableRow::Source::Dynamic,
-            NOMAD_INVALID_ID,
+            VariableContextId::INVALID,
             NOMAD_INVALID_ID,
             runtime->canSetDynamicVariable(variableId) && isEditableType(type),
             variableId,
@@ -1258,7 +1258,7 @@ void DebugConsole::collectConsoleVariableRows(std::vector<VariableRow>& rows) co
             variable.type,
             variable.value,
             VariableRow::Source::Console,
-            NOMAD_INVALID_ID,
+            VariableContextId::INVALID,
             NOMAD_INVALID_ID,
             isEditableType(variable.type),
         });

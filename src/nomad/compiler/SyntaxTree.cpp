@@ -291,7 +291,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
         }
 
         case IdentifierType::ContextVariable: {
-            const auto variableType = interpreterRuntime->getContextVariableType(identifier.variableId);
+            const auto variableType = interpreterRuntime->getContextVariableType(identifier.contextVariableId);
 
             if (variableType != nullptr && expressionType != nullptr && variableType != expressionType) {
                 reportError(
@@ -314,7 +314,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
             // New unqualified names belong to the interpreter context, not the script frame.
             const auto isNewConsoleVariable = identifier.identifierType == IdentifierType::Unknown &&
                 m_identifier.find('.') == NomadString::npos &&
-                interpreterRuntime->getVariableContextIdByPrefix(m_identifier) == NOMAD_INVALID_ID;
+                interpreterRuntime->getVariableContextIdByPrefix(m_identifier).isInvalid();
 
             if (identifier.identifierType != IdentifierType::FunctionVariable && !isNewConsoleVariable) {
                 reportError(context, function, "Cannot assign value to '" + m_identifier + "' in the interpreter");
@@ -377,7 +377,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
     }
     case IdentifierType::ContextVariable: {
         // Make sure type is unknown or the same as the expression.
-        const auto variableType = runtime->getContextVariableType(identifier.variableId);
+        const auto variableType = runtime->getContextVariableType(identifier.contextVariableId);
 
         if (variableType != nullptr && variableType != expressionType) {
             reportError(
@@ -449,10 +449,10 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptFunction* function
     case IdentifierType::ContextVariable: {
         // The variable context copies what it keeps.
         compiler->addOpCode(typeOpCodes->setContextVariable);
-        compiler->addId(identifier.variableId);
+        compiler->addId(identifier.contextVariableId.id);
         compiler->addFreeValue(typeOpCodes->freeResult);
 
-        compiler->getRuntime()->setContextVariableWritten(identifier.variableId, true);
+        compiler->getRuntime()->setContextVariableWritten(identifier.contextVariableId, true);
         break;
     }
     default:
@@ -489,8 +489,8 @@ void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
         auto* runtime = context.getRuntime();
 
         // The variable context copies what it keeps.
-        runtime->setContextVariableValue(m_identifierDefinition.variableId, assignedValue.getValue());
-        runtime->setContextVariableWritten(m_identifierDefinition.variableId, true);
+        runtime->setContextVariableValue(m_identifierDefinition.contextVariableId, assignedValue.getValue());
+        runtime->setContextVariableWritten(m_identifierDefinition.contextVariableId, true);
         break;
     }
 

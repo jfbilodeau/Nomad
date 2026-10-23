@@ -104,9 +104,9 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
     BOOST_REQUIRE(loadAudioMember != nullptr);
     BOOST_TEST(std::holds_alternative<HubFunctions>(*loadAudioMember));
 
-    BOOST_TEST(runtime.getContextId("inventory") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getContextId("settings") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getVariableContextIdByPrefix("game.inventory.gold") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getContextId("inventory").isValid());
+    BOOST_TEST(runtime.getContextId("settings").isValid());
+    BOOST_TEST(runtime.getVariableContextIdByPrefix("game.inventory.gold").isInvalid());
 
     const auto declarationFunctionId = compile(
         "declareGameDataHubs",

@@ -762,7 +762,7 @@ bool VirtualMachine::getVariableValue(IdentifierType identifierType, NomadId var
         return true;
 
     case IdentifierType::ContextVariable:
-        m_runtime->getContextVariableValue(variableId, value);
+        m_runtime->getContextVariableValue(ContextVariableId{variableId}, value);
         return true;
 
     case IdentifierType::FunctionVariable:

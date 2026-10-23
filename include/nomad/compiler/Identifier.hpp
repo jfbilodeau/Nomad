@@ -6,6 +6,7 @@
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
 #include <nomad/script/Type.hpp>
+#include <nomad/script/VariableContext.hpp>
 
 namespace nomad {
 
@@ -37,6 +38,7 @@ struct IdentifierDefinition {
         NomadId variableId;
         ConstantId constantId;
         DynamicVariableId dynamicVariableId;
+        ContextVariableId contextVariableId;
         CallableId functionId;
     };
 };

@@ -1329,13 +1329,13 @@ void Game::initVariableContext() {
     // const auto inventoryContextId = m_runtime->registerVariableContext("inventory", "inventory.", std::move(inventoryVariableContext));
     // const auto settingsContextId = m_runtime->registerVariableContext("settings", "settings.", std::move(settingsVariableContext));
 
-    if (sceneContextId == NOMAD_INVALID_ID) {
+    if (sceneContextId.isInvalid()) {
         raiseError("Failed to register scene variable context");
     }
-    if (thisEntityContextId == NOMAD_INVALID_ID) {
+    if (thisEntityContextId.isInvalid()) {
         raiseError("Failed to register `this` entity variable context");
     }
-    if (otherEntityContextId == NOMAD_INVALID_ID) {
+    if (otherEntityContextId.isInvalid()) {
         raiseError("Failed to register `other` entity variable context");
     }
     // if (inventoryContextId == NOMAD_INVALID_ID) {
