@@ -19,14 +19,15 @@ namespace {
 
 void registerListReaders(Runtime* runtime, const ObjectType* objectType, const bool writable) {
     const auto* elementType = objectType->getTypeArguments()[0];
-    const auto iteratorId = runtime->registerNativeMethod(
-        objectType, "iterator",
-        [](VirtualMachine* machine) {
+    const auto iteratorId = runtime->addMethod(runtime->getTypeId(objectType->getTypeName()), {
+        .name = "iterator",
+        .parameters = {},
+        .returnTypeId = runtime->getTypeId(runtime->getIteratorType(elementType)->getTypeName()),
+        .function = [](VirtualMachine* machine) {
             machine->getResult().setObjectValue(new ListIterator(machine->getThisAs<ListObject>()));
         },
-        {}, runtime->getIteratorType(elementType),
-        NomadDoc("Creates an independent live iterator. Structural changes invalidate its next advance.")
-    );
+        .documentation = NomadDoc("Creates an independent live iterator. Structural changes invalidate its next advance.")
+    });
     const auto countId = runtime->addProperty(runtime->getTypeId(objectType->getTypeName()), {
         .valueTypeId = runtime->getTypeId("int"),
         .name = "count",
@@ -92,9 +93,11 @@ void registerListType(Runtime* runtime) {
             const auto* elementType = objectType->getTypeArguments()[0];
             registerListReaders(runtime, objectType, true);
             const auto* readOnlyType = runtime->getParameterizedType("ReadOnlyList", {elementType});
-            if (readOnlyType == nullptr || runtime->registerNativeMethod(
-                objectType, "toReadOnly",
-                [](VirtualMachine* machine) {
+            if (readOnlyType == nullptr || runtime->addMethod(id, {
+                .name = "toReadOnly",
+                .parameters = {},
+                .returnTypeId = runtime->getTypeId(readOnlyType->getTypeName()),
+                .function = [](VirtualMachine* machine) {
                     const auto* source = machine->getThisAs<ListObject>();
                     auto snapshot = std::make_unique<ListObject>(source->getElementType());
                     for (auto index = NomadIndex{0}; index < source->getCount(); ++index) {
@@ -102,9 +105,8 @@ void registerListType(Runtime* runtime) {
                     }
                     machine->getResult().setObjectValue(snapshot.release());
                 },
-                {}, readOnlyType,
-                NomadDoc("Creates an independent read-only snapshot. Object elements share references.")
-            ).isInvalid()) {
+                .documentation = NomadDoc("Creates an independent read-only snapshot. Object elements share references.")
+            }).isInvalid()) {
                 throw NomadException("Failed to register List.toReadOnly");
             }
             const auto constructorId = runtime->registerNativeConstructor(
@@ -113,95 +115,88 @@ void registerListType(Runtime* runtime) {
                     return new nomad::ListObject(elementType);
                 }, ""
             );
-            const auto appendId = runtime->registerNativeMethod(
-                objectType,
-                "append",
-                [](nomad::VirtualMachine* vm) {
+            const auto appendId = runtime->addMethod(id, {
+                .name = "append",
+                .parameters = {{runtime->getTypeId(elementType->getTypeName()), "value", NomadDoc("The value to append.")}},
+                .returnTypeId = runtime->getTypeId("int"),
+                .function = [](nomad::VirtualMachine* vm) {
                     auto* list = vm->getThisAs<nomad::ListObject>();
                     const auto& value = vm->getParameter(0);
                     const auto index = list->append(value);
                     vm->setIntegerResult(index);
                 },
-                {nomad::defParameter("value", elementType, NomadDoc("The value to append."))},
-                runtime->getIntegerType(),
-                NomadDoc("Appends a value and returns its zero-based index.")
-            );
-            const auto prependId = runtime->registerNativeMethod(
-                objectType,
-                "prepend",
-                [](nomad::VirtualMachine* machine) {
+                .documentation = NomadDoc("Appends a value and returns its zero-based index.")
+            });
+            const auto prependId = runtime->addMethod(id, {
+                .name = "prepend",
+                .parameters = {{runtime->getTypeId(elementType->getTypeName()), "value", NomadDoc("The value to insert at the beginning.")}},
+                .returnTypeId = runtime->getTypeId("void"),
+                .function = [](nomad::VirtualMachine* machine) {
                     auto* list = machine->getThisAs<nomad::ListObject>();
                     const auto& value = machine->getParameter(0);
                     list->prepend(value);
                 },
-                {nomad::defParameter("value", elementType, NomadDoc("The value to insert at the beginning."))},
-                runtime->getVoidType(),
-                NomadDoc("Inserts a value at the beginning, shifting existing elements right.")
-            );
-            const auto insertId = runtime->registerNativeMethod(
-                objectType,
-                "insert",
-                [](nomad::VirtualMachine* machine) {
+                .documentation = NomadDoc("Inserts a value at the beginning, shifting existing elements right.")
+            });
+            const auto insertId = runtime->addMethod(id, {
+                .name = "insert",
+                .parameters = {
+                    {runtime->getTypeId("int"), "index", NomadDoc("The insertion position from zero through count.")},
+                    {runtime->getTypeId(elementType->getTypeName()), "value", NomadDoc("The value to insert.")}
+                },
+                .returnTypeId = runtime->getTypeId("void"),
+                .function = [](nomad::VirtualMachine* machine) {
                     auto* list = machine->getThisAs<nomad::ListObject>();
                     const auto index = machine->getIntegerParameter(0);
                     const auto& value = machine->getParameter(1);
                     list->insert(index, value);
                 },
-                {
-                    nomad::defParameter("index", runtime->getIntegerType(), NomadDoc("The insertion position from zero through count.")),
-                    nomad::defParameter("value", elementType, NomadDoc("The value to insert."))
-                },
-                runtime->getVoidType(),
-                NomadDoc("Inserts before the index, shifting later elements right. Index count appends; out-of-range indices fault.")
-            );
-            const auto removeId = runtime->registerNativeMethod(
-                objectType,
-                "remove",
-                [](nomad::VirtualMachine* machine) {
+                .documentation = NomadDoc("Inserts before the index, shifting later elements right. Index count appends; out-of-range indices fault.")
+            });
+            const auto removeId = runtime->addMethod(id, {
+                .name = "remove",
+                .parameters = {{runtime->getTypeId("int"), "index", NomadDoc("The zero-based index to remove.")}},
+                .returnTypeId = runtime->getTypeId("bool"),
+                .function = [](nomad::VirtualMachine* machine) {
                     auto* list = machine->getThisAs<nomad::ListObject>();
                     const auto index = machine->getIntegerParameter(0);
                     const auto removed = list->remove(index);
                     machine->setBooleanResult(removed);
                 },
-                {nomad::defParameter("index", runtime->getIntegerType(), NomadDoc("The zero-based index to remove."))},
-                runtime->getBooleanType(),
-                NomadDoc("Removes the indexed element and shifts later elements left. Returns false without logging for out-of-range indices.")
-            );
-            const auto removeFirstId = runtime->registerNativeMethod(
-                objectType,
-                "removeFirst",
-                [](nomad::VirtualMachine* machine) {
+                .documentation = NomadDoc("Removes the indexed element and shifts later elements left. Returns false without logging for out-of-range indices.")
+            });
+            const auto removeFirstId = runtime->addMethod(id, {
+                .name = "removeFirst",
+                .parameters = {},
+                .returnTypeId = runtime->getTypeId("bool"),
+                .function = [](nomad::VirtualMachine* machine) {
                     auto* list = machine->getThisAs<nomad::ListObject>();
                     const auto removed = list->removeFirst();
                     machine->setBooleanResult(removed);
                 },
-                {},
-                runtime->getBooleanType(),
-                NomadDoc("Removes the first element. Returns false without logging if the list is empty.")
-            );
-            const auto removeLastId = runtime->registerNativeMethod(
-                objectType,
-                "removeLast",
-                [](nomad::VirtualMachine* machine) {
+                .documentation = NomadDoc("Removes the first element. Returns false without logging if the list is empty.")
+            });
+            const auto removeLastId = runtime->addMethod(id, {
+                .name = "removeLast",
+                .parameters = {},
+                .returnTypeId = runtime->getTypeId("bool"),
+                .function = [](nomad::VirtualMachine* machine) {
                     auto* list = machine->getThisAs<nomad::ListObject>();
                     const auto removed = list->removeLast();
                     machine->setBooleanResult(removed);
                 },
-                {},
-                runtime->getBooleanType(),
-                NomadDoc("Removes the last element. Returns false without logging if the list is empty.")
-            );
-            const auto clearId = runtime->registerNativeMethod(
-                objectType,
-                "clear",
-                [](nomad::VirtualMachine* machine) {
+                .documentation = NomadDoc("Removes the last element. Returns false without logging if the list is empty.")
+            });
+            const auto clearId = runtime->addMethod(id, {
+                .name = "clear",
+                .parameters = {},
+                .returnTypeId = runtime->getTypeId("void"),
+                .function = [](nomad::VirtualMachine* machine) {
                     auto* list = machine->getThisAs<nomad::ListObject>();
                     list->clear();
                 },
-                {},
-                runtime->getVoidType(),
-                NomadDoc("Removes all elements. Clearing an empty list does nothing and does not log.")
-            );
+                .documentation = NomadDoc("Removes all elements. Clearing an empty list does nothing and does not log.")
+            });
             if (constructorId.isInvalid() ||
                 appendId.isInvalid() || prependId.isInvalid() ||
                 insertId.isInvalid() || removeId.isInvalid() ||

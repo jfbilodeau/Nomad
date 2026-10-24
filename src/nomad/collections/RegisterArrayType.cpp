@@ -56,15 +56,16 @@ void registerArrayFamily(
                 const auto* readOnlyType = runtime->getParameterizedType(
                     "ReadOnly" + name, {objectType->getElementType()}
                 );
-                if (readOnlyType == nullptr || runtime->registerNativeMethod(
-                    objectType, "toReadOnly",
-                    [](VirtualMachine* machine) {
+                if (readOnlyType == nullptr || runtime->addMethod(id, {
+                    .name = "toReadOnly",
+                    .parameters = {},
+                    .returnTypeId = runtime->getTypeId(readOnlyType->getTypeName()),
+                    .function = [](VirtualMachine* machine) {
                         auto snapshot = machine->getThisAs<ArrayObject>()->createCopy();
                         machine->getResult().setObjectValue(snapshot.release());
                     },
-                    {}, readOnlyType,
-                    NomadDoc("Creates an independent read-only snapshot with the same dimensions. Object elements share references.")
-                ).isInvalid()) {
+                    .documentation = NomadDoc("Creates an independent read-only snapshot with the same dimensions. Object elements share references.")
+                }).isInvalid()) {
                     throw NomadException("Failed to register Array.toReadOnly");
                 }
             }
@@ -115,14 +116,15 @@ void registerArrayType(Runtime* runtime) {
                 throw nomad::NomadException("Failed to register Array1 constructor");
             }
             const auto* elementType = arrayType->getElementType();
-            const auto iteratorId = runtime->registerNativeMethod(
-                arrayType, "iterator",
-                [](VirtualMachine* machine) {
+            const auto iteratorId = runtime->addMethod(runtime->getTypeId(arrayType->getTypeName()), {
+                .name = "iterator",
+                .parameters = {},
+                .returnTypeId = runtime->getTypeId(runtime->getIteratorType(elementType)->getTypeName()),
+                .function = [](VirtualMachine* machine) {
                     machine->getResult().setObjectValue(new ArrayIterator(machine->getThisAs<Array1dObject>()));
                 },
-                {}, runtime->getIteratorType(elementType),
-                NomadDoc("Creates an independent live iterator over the array.")
-            );
+                .documentation = NomadDoc("Creates an independent live iterator over the array.")
+            });
             runtime->registerIterableType(arrayType, elementType, runtime->getNativeMemberMethod(iteratorId));
             if (runtime->registerNativeIndexer(
                 arrayType,
