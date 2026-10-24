@@ -10,6 +10,7 @@ add_executable(
     ./CompilerTest.cpp
     ./CompilerToolsTest.cpp
     ./DebugDrawTest.cpp
+    ./DeclareIdTest.cpp
     ./EntitySpriteAnchorTest.cpp
     ./EntityTextTest.cpp
     ./EventRegistrationTest.cpp
@@ -22,17 +23,21 @@ add_executable(
     ./GeometryTest.cpp
     ./InterpreterTest.cpp
     ./LanguageCallbackEventTest.cpp
+    ./LanguageConstantTest.cpp
+    ./LanguageContextVariableTest.cpp
     ./LanguageControlFlowTest.cpp
     ./LanguageFormatStringFunctionTest.cpp
     ./LanguageFunctionTest.cpp
     ./LanguageHubTest.cpp
     ./LanguageLexicalTest.cpp
     ./LanguageOperatorTest.cpp
+    ./LanguageRegistryIdTest.cpp
     ./LanguageScriptDiscoveryTest.cpp
     ./LanguageServerTest.cpp
     ./LanguageStringLifetimeTest.cpp
     ./LanguageTestFixture.cpp
     ./LanguageTypeTest.cpp
+    ./LanguageVariableIdTest.cpp
     ./LogTest.cpp
     ./ModuleGameTest.cpp
     ./ModuleHostTest.cpp
@@ -57,6 +62,7 @@ add_executable(
     ./ReadOnlyCollectionTest.cpp
     ./RectanglePackerTest.cpp
     ./RuntimeTest.cpp
+    ./ScriptObjectTypeTest.cpp
     ./SourceLoaderTest.cpp
     ./SpriteCatalogTest.cpp
     ./SpriteDiscoveryTest.cpp

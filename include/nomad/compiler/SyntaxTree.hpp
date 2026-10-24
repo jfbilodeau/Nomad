@@ -316,8 +316,8 @@ private:
 class FunctionDeclaration : public Statement {
 public:
     FunctionDeclaration(NomadIndex line, NomadIndex column, NomadString name);
-    void setFunctionId(NomadId id);
-    [[nodiscard]] NomadId getFunctionId() const;
+    void setFunctionId(CallableId id);
+    [[nodiscard]] CallableId getFunctionId() const;
 
     void addParam(std::unique_ptr<ParameterDeclaration> param);
     void setBody(std::unique_ptr<FunctionNode> body);
@@ -336,7 +336,7 @@ private:
     std::vector<std::unique_ptr<ParameterDeclaration>> m_params;
     std::unique_ptr<FunctionNode> m_body;
     const Type* m_returnType = nullptr;
-    NomadId m_functionId = NOMAD_INVALID_ID;
+    CallableId m_functionId = CallableId{};
 };
 
 class EventDeclaration : public Statement {

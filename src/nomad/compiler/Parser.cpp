@@ -175,7 +175,7 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
                                                               const Expression* parent, const NomadString& name,
                                                               const NomadIndex line, const NomadIndex column) {
     const auto functionId = context->getRuntime()->getCallableId(name);
-    if (functionId != NOMAD_INVALID_ID) {
+    if (functionId.isValid()) {
         const auto* targetFunction = context->getRuntime()->getFunction(functionId);
         if (targetFunction->getParameterCount() != 0) {
             context->reportError("Function receiver '" + name + "' requires arguments");
@@ -185,7 +185,7 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
         return std::make_unique<FunctionCallExpression>(parent, line, column, name);
     }
 
-    if (context->getRuntime()->getConstantId(name) != NOMAD_INVALID_ID) {
+    if (context->getRuntime()->getConstantId(name).isValid()) {
         return std::make_unique<ConstantValueExpression>(parent, line, column, name);
     }
 
@@ -423,7 +423,7 @@ std::unique_ptr<Statement> parseStatement(
     const auto qualifiedName = context->resolveName(statementName, function);
     const auto functionId = context->getRuntime()->getCallableId(qualifiedName);
 
-    if (functionId != NOMAD_INVALID_ID) {
+    if (functionId.isValid()) {
         const auto callLine = tokens->getLineIndex();
         auto statement = parseFunctionCall(context, function, tokens, qualifiedName);
 
@@ -439,7 +439,7 @@ std::unique_ptr<Statement> parseStatement(
     return nullptr;
 }
 
-NomadId parseCallbackParameter(
+CallableId parseCallbackParameter(
     CompilerContext* context,
     ScriptFunction* function,
     Tokenizer* tokens,
@@ -453,14 +453,14 @@ NomadId parseCallbackParameter(
                 "`then` is only allowed at the root of a script or function body. "
                 "Use an explicit `fun ... end` callback inside control-flow blocks.", tokens
             );
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
         if (context->getMode() != CompilerMode::Script) {
             context->reportError(
                 NomadString("Inline `") + (isFun ? "fun" : "then") + "` callbacks are not supported by the interpreter"
             , tokens);
 
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
 
         tokens->next();
@@ -468,8 +468,8 @@ NomadId parseCallbackParameter(
         const auto functionName = generateFunFunctionName(context, function, tokens->getLineIndex());
         auto* compiler = context->getCompiler();
         const auto functionId = compiler->createFunction(context, compiler->getScriptId(function->getId()), functionName);
-        if (functionId == NOMAD_INVALID_ID) {
-            return NOMAD_INVALID_ID;
+        if (functionId.isInvalid()) {
+            return CallableId::INVALID;
         }
 
         const auto callbackFunction = context->getRuntime()->getScriptFunction(functionId);
@@ -492,7 +492,7 @@ NomadId parseCallbackParameter(
             : parseThenBody(context, callbackFunction, tokens, declarationLine);
 
         if (!parametersParsed || callbackBody == nullptr) {
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
 
         context->getCompiler()->setFunctionNode(functionId, std::move(callbackBody));
@@ -503,22 +503,22 @@ NomadId parseCallbackParameter(
     NomadString funName;
 
     if (!tokens->nextIdentifier(funName)) {
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
     funName = context->resolveName(funName, function);
 
     const auto funId = context->getRuntime()->getFunctionId(funName);
 
-    if (funId == NOMAD_INVALID_ID) {
+    if (funId.isInvalid()) {
         context->reportError("Unknown callback function name '" + funName + "'", tokens);
 
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
 
     if (context->getRuntime()->getScriptFunction(funId)->getParameterCount() != callbackType->getParameterCount()) {
         context->reportError("Callback function '" + funName + "' has incorrect number of parameters", tokens);
 
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
 
     for (auto i = NomadIndex{0}; i < callbackType->getParameterCount(); ++i) {
@@ -528,7 +528,7 @@ NomadId parseCallbackParameter(
         if (expectedType != actualType) {
             context->reportError("Callback function '" + funName + "' parameter type mismatch at index " + toString(i), tokens);
 
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
     }
 
@@ -549,7 +549,7 @@ std::unique_ptr<Statement> parseFunctionCall(
 
     const auto functionId = context->getRuntime()->getCallableId(functionName);
 
-    if (functionId == NOMAD_INVALID_ID) {
+    if (functionId.isInvalid()) {
         context->reportError("Unknown function name: '" + functionName + "'", tokens);
 
         return nullptr;
@@ -946,7 +946,7 @@ bool expectEndOfLine(
 }
 
 IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& name, const ScriptFunction* function) {
-    if (compiler->getRuntime()->getKeywordId(name) != NOMAD_INVALID_ID) {
+    if (compiler->getRuntime()->getKeywordId(name).isValid()) {
         return IdentifierType::Keyword;
     }
 
@@ -958,23 +958,23 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
         return IdentifierType::NativeFunction;
     }
 
-    if (compiler->getRuntime()->getConstantId(name) != NOMAD_INVALID_ID) {
+    if (compiler->getRuntime()->getConstantId(name).isValid()) {
         return IdentifierType::Constant;
     }
 
-    if (compiler->getRuntime()->getFunctionId(name) != NOMAD_INVALID_ID) {
+    if (compiler->getRuntime()->getFunctionId(name).isValid()) {
         return IdentifierType::Function;
     }
 
-    if (compiler->getRuntime()->getDynamicVariableId(name) != NOMAD_INVALID_ID) {
+    if (compiler->getRuntime()->getDynamicVariableId(name).isValid()) {
         return IdentifierType::DynamicVariable;
     }
 
-    if (compiler->getRuntime()->getVariableContextIdByPrefix(name) != NOMAD_INVALID_ID) {
+    if (compiler->getRuntime()->getVariableContextIdByPrefix(name).isValid()) {
         return IdentifierType::ContextVariable;
     }
 
-    if (function && function->getVariableId(name) != NOMAD_INVALID_ID) {
+    if (function && function->getVariableId(name).isValid()) {
         return IdentifierType::FunctionVariable;
     }
 
@@ -1034,9 +1034,9 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     }
     if (!runtime->getContainingHub(variableName).empty() &&
         !runtime->isHubVariable(variableName) &&
-        runtime->getConstantId(variableName) == NOMAD_INVALID_ID &&
-        runtime->getCallableId(variableName) == NOMAD_INVALID_ID &&
-        runtime->getDynamicVariableId(variableName) == NOMAD_INVALID_ID &&
+        runtime->getConstantId(variableName).isInvalid() &&
+        runtime->getCallableId(variableName).isInvalid() &&
+        runtime->getDynamicVariableId(variableName).isInvalid() &&
         runtime->getTypeByName(variableName) == nullptr &&
         !hasValueReceiver) {
         context->reportError("Hub members must be declared inside a hub block: '" + variableName + "'", tokens);
@@ -1079,11 +1079,11 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
         // Runtime context variables keep their normal registration path.
         const auto contextId = context->getRuntime()->getVariableContextIdByPrefix(variableName);
 
-        if (contextId != NOMAD_INVALID_ID) {
+        if (contextId.isValid()) {
             // Register new context variable
             const auto variableId = context->getRuntime()->registerOrUpdateContextVariable(variableName, nullptr);
 
-            if (variableId == NOMAD_INVALID_ID) {
+            if (variableId.isInvalid()) {
                 context->getCompiler()->reportInternalError("Failed to register context variable: " + variableName);
             }
         } else if (context->getMode() == CompilerMode::Script) {
@@ -1170,14 +1170,14 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
     if (token.type == TokenType::Identifier) {
         const auto functionId = context->getRuntime()->getCallableId(token.textValue);
 
-        if (functionId != NOMAD_INVALID_ID) {
+        if (functionId.isValid()) {
             return parseFunctionCallExpression(context, function, tokens, parent, token.textValue);
         }
 
         // Constant?
         const auto constantId = context->getRuntime()->getConstantId(token.textValue);
 
-        if (constantId != NOMAD_INVALID_ID) {
+        if (constantId.isValid()) {
             return std::make_unique<ConstantValueExpression>(parent, tokens->getLineIndex(), tokens->getColumnIndex(),
                                                              token.textValue);
         }
@@ -1268,7 +1268,7 @@ bool parseEventDispatch(CompilerContext* context, ScriptFunction* function, Toke
 
     const auto eventId = context->getRuntime()->getEventId(eventName);
 
-    if (eventId == NOMAD_INVALID_ID) {
+    if (eventId.isInvalid()) {
         context->reportError("Unknown event name '" + eventName + "'", tokens);
 
         return false;
@@ -1293,7 +1293,7 @@ bool parseEventDispatch(CompilerContext* context, ScriptFunction* function, Toke
         const auto eventParameterType = context->getRuntime()->getType(eventParameter.typeId);
 
         if (!eventParameterType) {
-            context->getCompiler()->reportInternalError("Invalid type id in event: " + toString(eventParameter.typeId) + " (" + eventParameter.typeName + ")");
+            context->getCompiler()->reportInternalError("Invalid type id in event: " + toString(eventParameter.typeId.id) + " (" + eventParameter.typeName + ")");
         }
 
         auto expression = parseExpression(context, function, tokens);
@@ -1327,7 +1327,7 @@ bool parseCallableArguments(
     auto allowOmitted = allowOmittedArguments;
     auto* runtime = context->getRuntime();
     if (runtime->getFunction(callable.getId()) == &callable) {
-        std::vector<NomadId> overloads;
+        std::vector<CallableId> overloads;
         runtime->getCallableOverloads(callable.getName(), overloads);
         for (const auto id : overloads) {
             const auto* candidate = runtime->getFunction(id);
@@ -1422,7 +1422,7 @@ bool parseCallableArguments(
 
             const auto eventId = context->getRuntime()->getEventId(eventName);
 
-            if (eventId == NOMAD_INVALID_ID) {
+            if (eventId.isInvalid()) {
                 context->reportError("Unknown event name '" + eventName + "'", tokens);
 
                 return false;
@@ -1443,7 +1443,7 @@ bool parseCallableArguments(
                     return *type;
                 }
 
-                context->getCompiler()->reportInternalError("Invalid type id in event: " + toString(p.typeId) + " (" +
+                context->getCompiler()->reportInternalError("Invalid type id in event: " + toString(p.typeId.id) + " (" +
                                                             p.typeName + ")");
             });
 
@@ -1456,7 +1456,7 @@ bool parseCallableArguments(
 
             const auto functionId = parseCallbackParameter(context, function, tokens, callbackType->asCallback());
 
-            if (functionId == NOMAD_INVALID_ID) {
+            if (functionId.isInvalid()) {
                 return false;
             }
 
@@ -1479,7 +1479,7 @@ bool parseCallableArguments(
 
             auto functionId = parseCallbackParameter(context, function, tokens, callbackType);
 
-            if (functionId == NOMAD_INVALID_ID) {
+            if (functionId.isInvalid()) {
                 return false;
             }
 
@@ -1543,7 +1543,7 @@ std::unique_ptr<Argument> parsePredicateArgument(
     auto* compiler = context->getCompiler();
     const auto predicateFunctionId = compiler->createFunction(
         context, compiler->getScriptId(function->getId()), predicateFunctionName);
-    if (predicateFunctionId == NOMAD_INVALID_ID) {
+    if (predicateFunctionId.isInvalid()) {
         return nullptr;
     }
 

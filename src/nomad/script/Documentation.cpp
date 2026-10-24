@@ -18,14 +18,14 @@ namespace nomad {
 namespace {
 
 struct NativeMemberDocumentationInfo {
-    NomadId id;
+    MemberReference id;
     MemberType memberType;
     const Type* objectType;
     NomadString name;
 };
 
 std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Runtime* runtime) {
-    std::vector<NomadId> memberIds;
+    std::vector<MemberReference> memberIds;
     runtime->getNativeMembers(memberIds);
 
     std::vector<NativeMemberDocumentationInfo> members;
@@ -34,9 +34,8 @@ std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Ru
     for (const auto memberId : memberIds) {
         switch (runtime->getMemberType(memberId)) {
         case MemberType::Property: {
-            NativePropertyDefinition definition;
-            if (runtime->getNativePropertyDefinition(memberId, definition)) {
-                members.emplace_back(memberId, MemberType::Property, definition.objectType, definition.name);
+            if (const auto info = runtime->getNativePropertyInfo(memberId)) {
+                members.emplace_back(memberId, MemberType::Property, info->objectType, info->name);
             }
             break;
         }
@@ -152,9 +151,9 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     std::vector<constantInfo> constants;
     std::vector<const EnumType*> enums;
 
-    NomadId constantId = runtime->getFirstConstantId();
+    auto constantId = runtime->getFirstConstantId();
 
-    while (constantId != NOMAD_INVALID_ID) {
+    while (constantId.isValid()) {
         auto name = runtime->getConstantName(constantId);
         auto type = runtime->getConstantType(constantId);
         RuntimeValue value;
@@ -212,7 +211,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
             }
             constantTextValue = std::format("\"{}\"", escaped);
         } else if (constant.type == runtime->getFunctionType()) {
-            constantTextValue = runtime->getScriptFunction(constant.value.getIdValue())->getName();
+            constantTextValue = runtime->getScriptFunction(CallableId{constant.value.getIdValue()})->getName();
         } else {
             constantTextValue = "<unknown_type>";
         }
@@ -263,12 +262,12 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     auto variableContextId = runtime->getFirstVariableContextId();
 
-    while (variableContextId != NOMAD_INVALID_ID) {
+    while (variableContextId.isValid()) {
         auto context = runtime->getVariableContext(variableContextId);
 
         auto variableId = context->getFirstVariableId();
 
-        while (variableId != NOMAD_INVALID_ID) {
+        while (variableId.isValid()) {
             auto name = context->getVariableName(variableId);
             auto type = context->getVariableType(variableId);
 
@@ -282,7 +281,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     auto dynamicVariableId = runtime->getFirstDynamicVariableId();
 
-    while (dynamicVariableId != NOMAD_INVALID_ID) {
+    while (dynamicVariableId.isValid()) {
         auto name = runtime->getDynamicVariableName(dynamicVariableId);
         auto type = runtime->getDynamicVariableType(dynamicVariableId);
 
@@ -328,7 +327,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     auto nativeFunctionId = runtime->getFirstNativeFunctionId();
 
-    while (nativeFunctionId != NOMAD_INVALID_ID) {
+    while (nativeFunctionId.isValid()) {
         const auto* nativeFunction = runtime->getNativeFunction(nativeFunctionId);
         if (nativeFunction != nullptr) {
             functions.emplace_back(
@@ -489,13 +488,15 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
         out << "#### `" << member.name << "`";
 
         if (member.memberType == MemberType::Property) {
-            NativePropertyDefinition definition;
-            (void)runtime->getNativePropertyDefinition(member.id, definition);
+            const auto info = runtime->getNativePropertyInfo(member.id);
+            if (!info) {
+                throw NomadException("Registered native property is unavailable");
+            }
 
             NomadString access;
-            if (definition.getFn && definition.setFn) {
+            if (info->getFn && info->setFn) {
                 access = "read/write";
-            } else if (definition.getFn) {
+            } else if (info->getFn) {
                 access = "read-only";
             } else {
                 access = "write-only";
@@ -503,11 +504,11 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
 
             out << " (*" << access << " property*)" << std::endl;
             out << std::endl;
-            out << "`" << member.name << ":" << getDocumentedTypeName(runtime, definition.valueType) << "`"
+            out << "`" << member.name << ":" << getDocumentedTypeName(runtime, info->valueType) << "`"
                 << std::endl;
             out << std::endl;
-            if (!definition.doc.empty()) {
-                out << definition.doc << std::endl;
+            if (!info->doc.empty()) {
+                out << info->doc << std::endl;
                 out << std::endl;
             }
         } else {
@@ -546,7 +547,8 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
         out << "---" << std::endl;
     }
 
-    for (const auto& indexer : runtime->getNativeIndexers()) {
+    for (const auto* info : runtime->getNativeIndexers()) {
+        const auto& indexer = *info;
         out << std::endl;
         out << "### `" << indexer.objectType->getTypeName() << "[";
         for (auto index = NomadIndex{0}; index < indexer.indexTypes.size(); ++index) {

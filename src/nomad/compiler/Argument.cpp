@@ -47,13 +47,13 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 class PredicateArgument : public Argument {
 public:
-    PredicateArgument(NomadIndex line, NomadIndex column, NomadId predicateFunctionId);
+    PredicateArgument(NomadIndex line, NomadIndex column, CallableId predicateFunctionId);
 
 protected:
     void onCompile(Compiler* compiler, ScriptFunction* function) override;
 
 private:
-    NomadId m_predicateFunctionId;
+    CallableId m_predicateFunctionId;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -61,10 +61,10 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 class CallbackArgument : public Argument {
 public:
-    CallbackArgument(NomadIndex line, NomadIndex column, const Type* type, NomadId functionId);
+    CallbackArgument(NomadIndex line, NomadIndex column, const Type* type, CallableId functionId);
 
     [[nodiscard]]
-    NomadId getFunctionId() const;
+    CallableId getFunctionId() const;
 
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
@@ -72,7 +72,7 @@ protected:
     [[nodiscard]] TypedValue onEvaluate(InterpreterContext& context) const override;
 
 private:
-    NomadId m_functionId;
+    CallableId m_functionId;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -80,7 +80,7 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 class EventCallbackArgument : public Argument {
 public:
-    EventCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, NomadId eventId, NomadId functionId);
+    EventCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, EventId eventId, CallableId functionId);
 
     [[nodiscard]]
     NomadIndex getStackValueCount() const override { return 2; }
@@ -89,8 +89,8 @@ protected:
     void onCompile(Compiler* compiler, ScriptFunction* function) override;
 
 private:
-    NomadId m_eventId;
-    NomadId m_functionId;
+    EventId m_eventId;
+    CallableId m_functionId;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -233,7 +233,7 @@ TypedValue ExpressionArgument::onEvaluate(InterpreterContext& context) const {
 PredicateArgument::PredicateArgument(
     const NomadIndex line,
     const NomadIndex column,
-    const NomadId predicateFunctionId
+    const CallableId predicateFunctionId
 ):
     Argument(line, column, nullptr),
     m_predicateFunctionId(predicateFunctionId)
@@ -241,20 +241,20 @@ PredicateArgument::PredicateArgument(
 }
 
 void PredicateArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*/) {
-    compiler->addIndex(m_predicateFunctionId);
+    compiler->addIndex(toNomadIndex(m_predicateFunctionId.id));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // FunCallbackArgument
 ///////////////////////////////////////////////////////////////////////////////
-CallbackArgument::CallbackArgument(NomadIndex line, NomadIndex column, const Type* type, const NomadId functionId):
+CallbackArgument::CallbackArgument(NomadIndex line, NomadIndex column, const Type* type, const CallableId functionId):
     Argument(line, column, type),
     m_functionId(functionId)
 {
 
 }
 
-NomadId CallbackArgument::getFunctionId() const {
+CallableId CallbackArgument::getFunctionId() const {
     return m_functionId;
 }
 
@@ -286,7 +286,7 @@ void CallbackArgument::onResolve(CompilerContext* context, ScriptFunction* funct
 
 void CallbackArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*/) {
     compiler->addOpCode(OpCodes::op_id_push_v);
-    compiler->addIndex(m_functionId);
+    compiler->addIndex(toNomadIndex(m_functionId.id));
 }
 
 TypedValue CallbackArgument::onEvaluate(InterpreterContext& context) const {
@@ -322,7 +322,7 @@ TypedValue CallbackArgument::onEvaluate(InterpreterContext& context) const {
         }
     }
 
-    return TypedValue(getType(), RuntimeValue{m_functionId});
+    return TypedValue(getType(), RuntimeValue{m_functionId.id});
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -332,8 +332,8 @@ EventCallbackArgument::EventCallbackArgument(
     NomadIndex line,
     NomadIndex column,
     const Type* type,
-    NomadId eventId,
-    NomadId functionId
+    EventId eventId,
+    CallableId functionId
 ):
     Argument(line, column, type),
     m_eventId(eventId),
@@ -343,9 +343,9 @@ EventCallbackArgument::EventCallbackArgument(
 
 void EventCallbackArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*/) {
     compiler->addOpCode(OpCodes::op_id_push_v);
-    compiler->addIndex(m_functionId);
+    compiler->addIndex(toNomadIndex(m_functionId.id));
     compiler->addOpCode(OpCodes::op_id_push_v);
-    compiler->addIndex(m_eventId);
+    compiler->addIndex(toNomadIndex(m_eventId.id));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -364,7 +364,7 @@ EventDispatchArgument::EventDispatchArgument(
 
 void EventDispatchArgument::onCompile(Compiler* compiler, ScriptFunction* /*function*/) {
     compiler->addOpCode(OpCodes::op_id_push_v);
-    compiler->addIndex(m_eventDefinition.id);
+    compiler->addIndex(toNomadIndex(m_eventDefinition.id.id));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -454,7 +454,7 @@ std::unique_ptr<Argument> createExpressionArgument(
 std::unique_ptr<Argument> createPredicateArgument(
     NomadIndex line,
     NomadIndex column,
-    NomadId predicateFunctionId
+    CallableId predicateFunctionId
 ) {
     return std::make_unique<PredicateArgument>(line, column, predicateFunctionId);
 }
@@ -463,7 +463,7 @@ std::unique_ptr<Argument> createCallbackArgument(
     NomadIndex line,
     NomadIndex column,
     const Type* type,
-    NomadId functionId
+    CallableId functionId
 ) {
     return std::make_unique<CallbackArgument>(line, column, type, functionId);
 }
@@ -472,8 +472,8 @@ std::unique_ptr<Argument> createEventCallbackArgument(
     NomadIndex line,
     NomadIndex column,
     const Type* type,
-    NomadId eventId,
-    NomadId functionId
+    EventId eventId,
+    CallableId functionId
 ) {
     return std::make_unique<EventCallbackArgument>(line, column, type, eventId, functionId);
 }

@@ -6,6 +6,8 @@ Things the author wants to do.
 [ ] `$init` shows up in LSP
 
 ## Open
+[ ] `struct` (Embedded types, pass by copy)
+[ ] Nomad scripts in modules
 [ ] Object serialization
 [ ] File IO module.
 [ ] Replace ref counting with garbage collector.

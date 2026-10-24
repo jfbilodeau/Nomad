@@ -28,7 +28,8 @@ void registerMapFamily(
         name,
         2,
         std::move(factory),
-        [runtime, writable](const nomad::Type* type) {
+        [writable](Runtime* runtime, const TypeId id) {
+            const auto* type = runtime->getType(id).value();
             const auto* objectType = static_cast<const nomad::ObjectType*>(type);
             const auto* valueType = objectType->getTypeArguments()[1];
             const auto* keyType = objectType->getTypeArguments()[0];
@@ -48,21 +49,20 @@ void registerMapFamily(
                     return new nomad::MapObject(valueType);
                 },
                 NomadDoc("Creates an empty map with string keys.")
-            ) == NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw NomadException("Failed to register Map constructor");
             }
-            const auto countId = runtime->registerNativeProperty(
-                objectType,
-                "count",
-                runtime->getIntegerType(),
-                [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
+            const auto countId = runtime->addProperty(id, {
+                .valueTypeId = runtime->getTypeId("int"),
+                .name = "count",
+                .getter = [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
                     const auto count = static_cast<nomad::NomadInteger>(map->getCount());
                     result.setIntegerValue(count);
                 },
-                {},
-                NomadDoc("The number of entries in the map.")
-            );
+                .setter = {},
+                .documentation = NomadDoc("The number of entries in the map.")
+            });
             const auto keysId = runtime->registerNativeMethod(
                 objectType,
                 "keys",
@@ -135,8 +135,8 @@ void registerMapFamily(
                 runtime->getBooleanType(),
                 NomadDoc("Returns whether the key exists, without logging or changing the map.")
             );
-            if (countId == NOMAD_INVALID_ID || indexerId == NOMAD_INVALID_ID || containsId == NOMAD_INVALID_ID ||
-                keysId == NOMAD_INVALID_ID || valuesId == NOMAD_INVALID_ID || entriesId == NOMAD_INVALID_ID) {
+            if (countId.isInvalid() || indexerId.isInvalid() || containsId.isInvalid() ||
+                keysId.isInvalid() || valuesId.isInvalid() || entriesId.isInvalid()) {
                 throw NomadException("Failed to register Map readers");
             }
             if (!writable) {
@@ -151,7 +151,7 @@ void registerMapFamily(
                 },
                 {}, readOnlyType,
                 NomadDoc("Creates an independent read-only snapshot. Object values share references.")
-            ) == NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw NomadException("Failed to register Map.toReadOnly");
             }
             const auto removeId = runtime->registerNativeMethod(
@@ -178,7 +178,7 @@ void registerMapFamily(
                 runtime->getVoidType(),
                 NomadDoc("Removes all entries. Clearing an empty map does nothing and does not log.")
             );
-            if (removeId == nomad::NOMAD_INVALID_ID || clearId == nomad::NOMAD_INVALID_ID) {
+            if (removeId.isInvalid() || clearId.isInvalid()) {
                 throw nomad::NomadException("Failed to register Map members");
             }
         }
@@ -190,11 +190,17 @@ void registerMapFamily(
 } // namespace
 
 void registerMapType(Runtime* runtime) {
-    registerMapFamily(runtime, "ReadOnlyMap", [](const std::vector<const Type*>& arguments) {
-        return std::make_unique<ReadOnlyMapType>(arguments[0], arguments[1]);
+    registerMapFamily(runtime, "ReadOnlyMap", [](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+        return std::make_unique<ReadOnlyMapType>(
+            owningRuntime, "ReadOnlyMap<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
+            ObjectTypeMode::Closed, arguments[0], arguments[1]
+        );
     }, false);
-    registerMapFamily(runtime, "Map", [](const std::vector<const Type*>& arguments) {
-        return std::make_unique<MapType>(arguments[0], arguments[1]);
+    registerMapFamily(runtime, "Map", [](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+        return std::make_unique<MapType>(
+            owningRuntime, "Map<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
+            ObjectTypeMode::Closed, arguments[0], arguments[1]
+        );
     }, true);
 }
 

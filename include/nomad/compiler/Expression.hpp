@@ -4,15 +4,17 @@
 
 #include <nomad/compiler/CallNode.hpp>
 #include <nomad/compiler/FormatStringCompiler.hpp>
+#include <nomad/compiler/Identifier.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 
 #include <nomad/script/Member.hpp>
+#include <nomad/script/NativeMember.hpp>
 
 #include <nomad/Nomad.hpp>
 
 namespace nomad {
 
-class ObjectTypeBase;
+class ObjectType;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Unary expressions
@@ -128,7 +130,7 @@ private:
     NomadString m_memberName;
     std::unique_ptr<Expression> m_receiver;
     ArgumentList m_arguments;
-    NomadId m_memberId = NOMAD_INVALID_ID;
+    MemberReference m_memberId;
     MemberType m_memberType = MemberType::Unknown;
     const Method* m_method = nullptr;
     bool m_allowVoid = false;
@@ -160,7 +162,7 @@ private:
 
     std::unique_ptr<Expression> m_receiver;
     std::vector<std::unique_ptr<Expression>> m_indexes;
-    NomadId m_indexerId = NOMAD_INVALID_ID;
+    IndexerId m_indexerId;
     bool m_canRead = false;
     bool m_canWrite = false;
 };
@@ -265,7 +267,7 @@ protected:
 
 private:
     struct ExpressionPlaceholder {
-        NomadId functionId;
+        CallableId functionId;
         NomadIndex column;
         NomadIndex segmentIndex;
     };
@@ -287,7 +289,7 @@ protected:
 
 private:
     NomadString m_constantName;
-    NomadId m_constantId = NOMAD_INVALID_ID;
+    ConstantId m_constantId = ConstantId::INVALID;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

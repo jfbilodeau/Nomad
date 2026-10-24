@@ -5,14 +5,12 @@
 #include <nomad/game/Entity.hpp>
 #include <nomad/game/Scene.hpp>
 
-#include <nomad/game/resource/Animation.hpp>
 #include <nomad/game/resource/FontObject.hpp>
 #include <nomad/game/resource/ResourceManager.hpp>
 #include <nomad/game/resource/Sprite.hpp>
 
-#include <nomad/script/Closure.hpp>
-#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 namespace nomad {
 
@@ -47,10 +45,11 @@ namespace nomad {
         interpreter->setResult(RuntimeValue(defaultValue)); \
     }
 
+
 void Game::initThisEntityFunctions() {
     log::debug("Initializing this entity functions");
 
-    #include "_EntityFunctions.inl"
+#include "_EntityFunctions.inl"
 
     // Custom nativeFunctions
     m_runtime->registerNativeFunction(
@@ -78,7 +77,6 @@ void Game::initThisEntityFunctions() {
         {},
         m_runtime->getVoidType(),
         NomadDoc("Pauses all other entities in the scene except `this`.")
-    );
+        );
 }
-
 } // namespace nomad

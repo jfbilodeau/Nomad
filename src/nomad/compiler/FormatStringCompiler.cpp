@@ -188,7 +188,7 @@ std::optional<NomadString> compileFormatString(
 
             switch (identifier.identifierType) {
                 case IdentifierType::Function: {
-                    const auto placeholderFunction = compiler->getRuntime()->getScriptFunction(identifier.variableId);
+                    const auto placeholderFunction = compiler->getRuntime()->getScriptFunction(identifier.functionId);
 
                     if (placeholderFunction != nullptr && placeholderFunction->getParameterCount() != 0) {
                         return "Cannot use function with parameters in format string: " + variableName;
@@ -226,11 +226,23 @@ std::optional<NomadString> compileFormatString(
             }
 
             if (formatString != nullptr) {
-                formatString->addVariable(
-                    identifier.identifierType,
-                    identifier.valueType,
-                    identifier.variableId
-                );
+                if (identifier.identifierType == IdentifierType::Function) {
+                    formatString->addFunction(identifier.valueType, identifier.functionId);
+                } else if (identifier.identifierType == IdentifierType::Constant) {
+                    formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.constantId.id);
+                } else if (identifier.identifierType == IdentifierType::DynamicVariable) {
+                    formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.dynamicVariableId.id);
+                } else if (identifier.identifierType == IdentifierType::ContextVariable) {
+                    formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.contextVariableId.id);
+                } else if (identifier.identifierType == IdentifierType::FunctionVariable) {
+                    formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.variableId.id);
+                } else {
+                    formatString->addVariable(
+                        identifier.identifierType,
+                        identifier.valueType,
+                        identifier.parameterId
+                    );
+                }
             }
         }
     }

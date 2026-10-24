@@ -8,6 +8,7 @@
 
 #include <nomad/compiler/Argument.hpp>
 #include <nomad/compiler/Expression.hpp>
+#include <nomad/compiler/Identifier.hpp>
 
 #include <nomad/compiler/SyntaxTree.hpp>
 
@@ -85,7 +86,7 @@ std::unique_ptr<Expression> parseFunctionCallExpression(CompilerContext* context
     ArgumentList* arguments,
     bool allowOmittedArguments = false
 );
-[[nodiscard]] NomadId parseCallbackParameter(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const FunctionType* callbackType);
+[[nodiscard]] CallableId parseCallbackParameter(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const FunctionType* callbackType);
 std::unique_ptr<Argument> parseExpressionArgument(
     CompilerContext* context,
     const Type* argumentType,

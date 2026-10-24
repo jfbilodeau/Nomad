@@ -10,6 +10,8 @@
 
 namespace nomad {
 
+DeclareId(VariableId);
+
 class VariableDefinition {
 public:
     VariableDefinition(const NomadString& name, const Type* type);
@@ -36,19 +38,19 @@ class VariableMap {
 public:
     VariableMap() = default;
 
-    NomadId registerVariable(const NomadString& name, const Type* type);
-    [[nodiscard]] NomadId getVariableId(const NomadString& name) const;
-    [[nodiscard]] const NomadString& getVariableName(NomadId variableId) const;
-    void setVariableType(NomadId variableId, const Type* type);
-    [[nodiscard]] const Type* getVariableType(NomadId variableId) const;
+    VariableId registerVariable(const NomadString& name, const Type* type);
+    [[nodiscard]] VariableId getVariableId(const NomadString& name) const;
+    [[nodiscard]] const NomadString& getVariableName(VariableId variableId) const;
+    void setVariableType(VariableId variableId, const Type* type);
+    [[nodiscard]] const Type* getVariableType(VariableId variableId) const;
     [[nodiscard]] NomadIndex getVariableCount() const;
 
     [[nodiscard]]
-    bool isWritten(NomadId variableId) const;
-    void setWritten(NomadId variableId, bool written);
+    bool isWritten(VariableId variableId) const;
+    void setWritten(VariableId variableId, bool written);
     [[nodiscard]]
-    bool isRead(NomadId variableId) const;
-    void setRead(NomadId variableId, bool read);
+    bool isRead(VariableId variableId) const;
+    void setRead(VariableId variableId, bool read);
 
 private:
     std::vector<VariableDefinition> m_variables;
@@ -59,13 +61,13 @@ public:
     explicit VariableList(const VariableMap* variableMap);
     ~VariableList();
 
-    [[nodiscard]] NomadId getVariableId(const NomadString& name) const;
-    [[nodiscard]] const NomadString& getVariableName(NomadId variableId) const;
-    [[nodiscard]] const Type* getVariableType(NomadId variableId) const;
+    [[nodiscard]] VariableId getVariableId(const NomadString& name) const;
+    [[nodiscard]] const NomadString& getVariableName(VariableId variableId) const;
+    [[nodiscard]] const Type* getVariableType(VariableId variableId) const;
     [[nodiscard]] NomadIndex getVariableCount() const;
 
-    void setVariableValue(NomadId variableId, const RuntimeValue& value);
-    void getVariableValue(NomadId variableId, RuntimeValue& value) const;
+    void setVariableValue(VariableId variableId, const RuntimeValue& value);
+    void getVariableValue(VariableId variableId, RuntimeValue& value) const;
 
 private:
     const VariableMap m_variableMap;

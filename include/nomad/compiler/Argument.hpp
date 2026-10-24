@@ -4,7 +4,11 @@
 
 #include <nomad/compiler/SyntaxTree.hpp>
 
+#include <nomad/script/Event.hpp>
+
 namespace nomad {
+
+struct EventDefinition;
 
 ///////////////////////////////////////////////////////////////////////////////
 /// Argument
@@ -50,9 +54,9 @@ std::unique_ptr<Argument> createExpressionArgument(
     const Type* type,
     std::unique_ptr<Expression> expression
 );
-std::unique_ptr<Argument> createPredicateArgument(NomadIndex line, NomadIndex column, NomadId predicateFunctionId);
-std::unique_ptr<Argument> createCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, NomadId functionId);
-std::unique_ptr<Argument> createEventCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, NomadId eventId, NomadId functionId);
+std::unique_ptr<Argument> createPredicateArgument(NomadIndex line, NomadIndex column, CallableId predicateFunctionId);
+std::unique_ptr<Argument> createCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, CallableId functionId);
+std::unique_ptr<Argument> createEventCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, EventId eventId, CallableId functionId);
 std::unique_ptr<Argument> createEventDispatchArgument(NomadIndex line, NomadIndex column, const Type* type, const EventDefinition& eventDefinition);
 std::unique_ptr<Argument> createFileNameArgument(NomadIndex line, NomadIndex column, const Type* type, NomadString fileName);
 std::unique_ptr<Argument> createFunctionNameArgument(NomadIndex line, NomadIndex column, const Type* type, NomadString functionName);

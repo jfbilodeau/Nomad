@@ -132,7 +132,7 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
                                  compiler->isStatement(firstToken.textValue);
         const auto functionId = firstToken.type == TokenType::Identifier
             ? evaluation.m_runtime->getCallableId(firstToken.textValue)
-            : NOMAD_INVALID_ID;
+            : CallableId{};
         const auto* function = evaluation.m_runtime->getFunction(functionId);
         const auto isValueReturningCall =
             function != nullptr && function->getReturnType() != nullptr && !function->getReturnType()->isVoid();

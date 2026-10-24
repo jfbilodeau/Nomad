@@ -116,7 +116,7 @@ void InterpreterContext::setVariable(
             type->freeValue(replacement);
             throw;
         }
-        auto& previous = m_virtualMachine.m_stack[m_variableIndex + frameId];
+        auto& previous = m_virtualMachine.m_stack[m_variableIndex + frameId.id];
         type->freeValue(previous);
         previous = replacement;
         return;
@@ -125,14 +125,14 @@ void InterpreterContext::setVariable(
     auto replacement = std::make_unique<TypedValue>(type, value);
 
     auto variableId = m_function->getVariableId(name);
-    if (variableId == NOMAD_INVALID_ID) {
+    if (variableId.isInvalid()) {
         variableId = m_function->registerVariable(name, type);
     } else {
         // Unlike compiled functions, console variables may change type on reassignment.
         m_function->setVariableType(variableId, type);
     }
 
-    const auto index = toNomadIndex(variableId);
+    const auto index = toNomadIndex(variableId.id);
     if (index >= m_variables.size()) {
         m_variables.resize(index + 1);
     }
@@ -141,9 +141,9 @@ void InterpreterContext::setVariable(
 
 void InterpreterContext::clearVariableValue(const NomadString& name) {
     const auto variableId = m_function->getVariableId(name);
-    if (variableId != NOMAD_INVALID_ID && !isFrameVariable(variableId) &&
-        toNomadIndex(variableId) < m_variables.size()) {
-        m_variables[toNomadIndex(variableId)].reset();
+    if (variableId.isValid() && !isFrameVariable(variableId) &&
+        toNomadIndex(variableId.id) < m_variables.size()) {
+        m_variables[toNomadIndex(variableId.id)].reset();
     }
 }
 
@@ -151,15 +151,15 @@ const Type* InterpreterContext::getVariableType(const NomadString& name) const {
     return getVariableTypeById(getFunction()->getVariableId(name));
 }
 
-const Type* InterpreterContext::getVariableTypeById(const NomadId variableId) const {
+const Type* InterpreterContext::getVariableTypeById(const VariableId variableId) const {
     if (isFrameVariable(variableId)) {
         return m_function->getVariableType(variableId);
     }
-    if (variableId == NOMAD_INVALID_ID) {
+    if (variableId.isInvalid()) {
         return nullptr;
     }
 
-    const auto index = toNomadIndex(variableId);
+    const auto index = toNomadIndex(variableId.id);
     if (index >= m_variables.size()) {
         return nullptr;
     }
@@ -172,16 +172,16 @@ const RuntimeValue* InterpreterContext::getVariableValue(const NomadString& name
     return getVariableValueById(getFunction()->getVariableId(name));
 }
 
-const RuntimeValue* InterpreterContext::getVariableValueById(const NomadId variableId) const {
+const RuntimeValue* InterpreterContext::getVariableValueById(const VariableId variableId) const {
     if (isFrameVariable(variableId)) {
         validateFrame();
-        return &m_virtualMachine.m_stack[m_variableIndex + variableId];
+        return &m_virtualMachine.m_stack[m_variableIndex + variableId.id];
     }
-    if (variableId == NOMAD_INVALID_ID) {
+    if (variableId.isInvalid()) {
         return nullptr;
     }
 
-    const auto index = toNomadIndex(variableId);
+    const auto index = toNomadIndex(variableId.id);
     if (index >= m_variables.size()) {
         return nullptr;
     }
@@ -200,7 +200,7 @@ std::vector<InterpreterVariableInfo> InterpreterContext::listVariables() const {
             continue;
         }
 
-        const auto variableId = toNomadId(variableIndex);
+        const auto variableId = VariableId{toNomadId(variableIndex)};
         variables.push_back({
             m_function->getVariableName(variableId),
             variable->getType(),
@@ -215,7 +215,9 @@ std::vector<InterpreterVariableInfo> InterpreterContext::listVariables() const {
 
 InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine):
     m_runtime(virtualMachine.getRuntime()),
-    m_function(std::make_unique<ScriptFunction>(NOMAD_INVALID_ID, CONSOLE_SOURCE_NAME, CONSOLE_SOURCE_NAME, "")),
+    m_function(std::make_unique<ScriptFunction>(
+        CallableId{}, CONSOLE_SOURCE_NAME, CONSOLE_SOURCE_NAME, ""
+    )),
     m_virtualMachine(virtualMachine)
 {
 }
@@ -234,7 +236,7 @@ InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine, ScriptFun
     m_frameVariableCount = function.getVariableCount();
     m_function = std::make_unique<ScriptFunction>(function.getId(), function.getName(), function.getPath(), "");
     for (NomadIndex index = 0; index < m_frameVariableCount; ++index) {
-        const auto id = toNomadId(index);
+        const auto id = VariableId{toNomadId(index)};
         m_function->registerVariable(function.getVariableName(id), function.getVariableType(id));
     }
     for (NomadIndex index = 0; index < function.getParameterCount(); ++index) {
@@ -252,8 +254,8 @@ bool InterpreterContext::isFrameBacked() const {
     return m_frameFunction != nullptr;
 }
 
-bool InterpreterContext::isFrameVariable(const NomadId variableId) const {
-    return isIdInRange(variableId, m_frameVariableCount);
+bool InterpreterContext::isFrameVariable(const VariableId variableId) const {
+    return isIdInRange(variableId.id, m_frameVariableCount);
 }
 
 void InterpreterContext::validateFrame() const {
@@ -341,7 +343,7 @@ void InterpreterContext::setParameterResult(const NomadId parameterId) {
     setResult(m_function->getParameterType(parameterId), m_virtualMachine.m_stack[m_parameterIndex - parameterId]);
 }
 
-void InterpreterContext::evaluateFunctionCall(const NomadId functionId, const std::vector<RuntimeValue>& arguments) {
+void InterpreterContext::evaluateFunctionCall(const CallableId functionId, const std::vector<RuntimeValue>& arguments) {
     const auto* function = getRuntime()->getScriptFunction(functionId);
     if (function == nullptr || function->getReturnType() == nullptr) {
         throw NomadBug("Invalid interpreted function call");
@@ -369,7 +371,7 @@ void InterpreterContext::evaluateFunctionCall(const NomadId functionId, const st
     machine->setIntermediate(savedIntermediate);
 }
 
-void InterpreterContext::evaluateNativeFunctionCall(const NomadId functionId, const std::vector<RuntimeValue>& arguments) {
+void InterpreterContext::evaluateNativeFunctionCall(const CallableId functionId, const std::vector<RuntimeValue>& arguments) {
     const auto* function = getRuntime()->getNativeFunction(functionId);
     if (function == nullptr || function->getReturnType() == nullptr) {
         throw NomadBug("Invalid interpreted native function call");

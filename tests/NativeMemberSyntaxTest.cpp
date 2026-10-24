@@ -43,27 +43,32 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
     auto specializations = NomadIndex{0};
     BOOST_REQUIRE(runtime.registerParameterizedType(
         "Box", 1,
-        [&](const std::vector<const Type*>& arguments) {
+        [&](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
             ++specializations;
-            return std::make_unique<ObjectType>("Box<" + arguments[0]->getTypeName() + ">", arguments);
+            return std::make_unique<ObjectType>(owningRuntime, "Box<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments);
         },
-        [&](const Type* type) {
+        [&](Runtime* owningRuntime, const TypeId id) {
+            const auto* type = owningRuntime->getType(id).value();
             const auto* objectType = static_cast<const ObjectType*>(type);
             const auto* valueType = objectType->getTypeArguments()[0];
             BOOST_REQUIRE(runtime.registerNativeConstructor(
                 objectType, {defParameter("value", valueType, "")},
                 [](std::span<const RuntimeValue>) { return new NomadObject; }, ""
-            ) != NOMAD_INVALID_ID);
-            BOOST_REQUIRE(runtime.registerNativeProperty(
-                objectType, "declaredProperty", valueType, [](VirtualMachine*, RuntimeValue&) {}, {}, ""
-            ) != NOMAD_INVALID_ID);
+            ).isValid());
+            BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId(objectType->getTypeName()), {
+                .valueTypeId = runtime.getTypeId(valueType->getTypeName()),
+                .name = "declaredProperty",
+                .getter = [](VirtualMachine*, RuntimeValue&) {},
+                .setter = {},
+                .documentation = ""
+            }).isValid());
             BOOST_REQUIRE(runtime.registerNativeMethod(
                 objectType, "declaredMethod", methodFunction(),
                 {
                     defParameter("value", valueType, ""),
                     defParameter("line", runtime.getLineNumberType(), "")
                 }, valueType, ""
-            ) != NOMAD_INVALID_ID);
+            ).isValid());
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate("Box", {
@@ -107,7 +112,7 @@ BOOST_AUTO_TEST_CASE(resolves_property_on_qualified_local) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    ScriptFunction function(NOMAD_INVALID_ID, "test", "test.nomad", "");
+    ScriptFunction function(CallableId::INVALID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
 
     auto expression = parseExpression(context, &function, "name.length");
@@ -121,7 +126,7 @@ BOOST_AUTO_TEST_CASE(resolves_method_arguments_using_receiver_type) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    ScriptFunction function(NOMAD_INVALID_ID, "test", "test.nomad", "");
+    ScriptFunction function(CallableId::INVALID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
 
     auto expression = parseExpression(context, &function, "name.contains \"mad\"");
@@ -151,8 +156,13 @@ BOOST_AUTO_TEST_CASE(rejects_reading_write_only_property) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    BOOST_REQUIRE(runtime.registerNativeProperty(runtime.getStringType(), "sink", runtime.getIntegerType(), {},
-                                                    propertySetter(), NomadDoc("Sink")) != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "sink",
+        .getter = {},
+        .setter = propertySetter(),
+        .documentation = NomadDoc("Sink")
+    }).isValid());
 
     auto expression = parseExpression(context, nullptr, "\"Nomad\".sink");
 
@@ -166,7 +176,7 @@ BOOST_AUTO_TEST_CASE(rejects_writing_read_only_property) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    ScriptFunction function(NOMAD_INVALID_ID, "test", "test.nomad", "");
+    ScriptFunction function(CallableId::INVALID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
 
     Tokenizer tokens(&context, "test.nomad", "name.length = 10");
@@ -182,11 +192,15 @@ BOOST_AUTO_TEST_CASE(allows_assigning_write_only_property) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    ScriptFunction function(NOMAD_INVALID_ID, "test", "test.nomad", "");
+    ScriptFunction function(CallableId::INVALID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
-    runtime.registerNativeProperty(
-        runtime.getStringType(), "sink", runtime.getIntegerType(), {}, propertySetter(), ""
-    );
+    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "sink",
+        .getter = {},
+        .setter = propertySetter(),
+        .documentation = ""
+    }).isValid());
 
     Tokenizer tokens(&context, "test.nomad", "name.sink = 10");
     auto statement = parser::parseLine(&context, &function, &tokens);
@@ -200,9 +214,13 @@ BOOST_AUTO_TEST_CASE(chained_assignment_reads_receiver_but_only_requires_final_s
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    runtime.registerNativeProperty(
-        runtime.getStringType(), "sink", runtime.getIntegerType(), {}, propertySetter(), ""
-    );
+    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "sink",
+        .getter = {},
+        .setter = propertySetter(),
+        .documentation = ""
+    }).isValid());
 
     Tokenizer tokens(&context, "test.nomad", "\"Nomad\".toUpper.sink = 10");
     auto statement = parser::parseLine(&context, nullptr, &tokens);
@@ -216,7 +234,7 @@ BOOST_AUTO_TEST_CASE(rejects_assignment_to_method) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    ScriptFunction function(NOMAD_INVALID_ID, "test", "test.nomad", "");
+    ScriptFunction function(CallableId::INVALID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
 
     Tokenizer tokens(&context, "test.nomad", "name.toUpper = \"Other\"");
@@ -234,7 +252,7 @@ BOOST_AUTO_TEST_CASE(allows_object_method_on_temporary) {
     CompilerContext context(compiler.get());
 
     BOOST_REQUIRE(runtime.registerNativeMethod(runtime.getStringType(), "clear", methodFunction(), {},
-                                                  runtime.getVoidType(), NomadDoc("Clear")) != NOMAD_INVALID_ID);
+                                                  runtime.getVoidType(), NomadDoc("Clear")).isValid());
 
     Tokenizer tokens(&context, "test.nomad", "\"Nomad\".clear");
     auto statement = parser::parseLine(&context, nullptr, &tokens);
@@ -248,7 +266,7 @@ BOOST_AUTO_TEST_CASE(preserves_existing_qualified_identifier) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    ScriptFunction function(NOMAD_INVALID_ID, "test", "test.nomad", "");
+    ScriptFunction function(CallableId::INVALID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
     function.registerVariable("name.length", runtime.getIntegerType());
 
@@ -262,10 +280,13 @@ BOOST_AUTO_TEST_CASE(preserves_existing_qualified_identifier) {
 BOOST_AUTO_TEST_CASE(context_assignment_takes_precedence_over_native_member_names) {
     Runtime runtime;
     runtime.registerVariableContext("entity", "this.", std::make_unique<SimpleVariableContext>());
-    BOOST_REQUIRE(runtime.registerNativeProperty(
-        runtime.getStringType(), "value", runtime.getIntegerType(),
-        [](VirtualMachine*, RuntimeValue&) {}, {}, ""
-    ) != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "value",
+        .getter = [](VirtualMachine*, RuntimeValue&) {},
+        .setter = {},
+        .documentation = ""
+    }).isValid());
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"test", {"test.nomad",
@@ -278,8 +299,8 @@ BOOST_AUTO_TEST_CASE(context_assignment_takes_precedence_over_native_member_name
 
     const auto compiled = compiler->compileFunctions(&context);
     BOOST_REQUIRE_MESSAGE(compiled, (context.getFirstError() ? context.getFirstError()->message : "Compilation failed"));
-    BOOST_TEST(runtime.getContextVariableId("this.value") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getContextVariableId("this.length") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getContextVariableId("this.value").isValid());
+    BOOST_TEST(runtime.getContextVariableId("this.length").isValid());
 
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("test"), {}, result);

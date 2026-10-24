@@ -2,6 +2,8 @@
 
 #include <nomad/script/Callable.hpp>
 
+#include <nomad/script/Runtime.hpp>
+
 #include <utility>
 
 namespace nomad {
@@ -43,7 +45,7 @@ Callable::Callable(
 
 Callable::~Callable() = default;
 
-NomadId Callable::getId() const {
+CallableId Callable::getId() const {
     return m_id;
 }
 
@@ -79,7 +81,16 @@ const NomadString& Callable::getDoc() const {
     return m_doc;
 }
 
-void Callable::setId(const NomadId id) {
+CallableId Callable::registerWithRuntime(Runtime& runtime) {
+    if (m_id != CallableId{}) {
+        return CallableId::INVALID;
+    }
+
+    m_id = runtime.catalogCallable(this);
+    return m_id;
+}
+
+void Callable::setId(const CallableId id) {
     m_id = id;
 }
 

@@ -31,6 +31,57 @@ BOOST_AUTO_TEST_CASE(tokenizer_requires_compiler_context)
     BOOST_CHECK_THROW(Tokenizer(nullptr, "test.nomad", "score = 1"), NomadBug);
 }
 
+BOOST_AUTO_TEST_CASE(tokenizer_accepts_letters_and_underscores_after_identifier_dots)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    for (const auto* name : {"player.score1", "player._score", "player1.child2._value3"}) {
+        CompilerContext context(compiler.get());
+        Tokenizer tokens(&context, "identifier.nomad", name);
+
+        BOOST_TEST(!context.hasError());
+        BOOST_REQUIRE_EQUAL(tokens.getTokenCount(), 1);
+        BOOST_TEST(tokens.getTokenTypeAt(0) == TokenType::Identifier);
+        BOOST_TEST(tokens.getTokenAt(0) == name);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(tokenizer_rejects_digits_after_identifier_dots_and_recovers)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    for (const auto* name : {"player.1", "player.1score", "player.child.2value"}) {
+        CompilerContext context(compiler.get());
+        Tokenizer tokens(&context, "identifier.nomad", NomadString("    ") + name + " = 1\nnext = 2");
+
+        BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
+        const auto* error = context.getFirstError();
+        BOOST_REQUIRE(error != nullptr);
+        BOOST_TEST(error->message.find("Unrecognized token") != NomadString::npos);
+        BOOST_TEST(error->sourceName == "identifier.nomad");
+        BOOST_TEST(error->line == 1);
+        BOOST_TEST(error->column == 5);
+        BOOST_TEST(tokens.getTokenCount() == 0);
+        BOOST_REQUIRE(tokens.nextLine());
+        BOOST_TEST(tokens.currentToken().textValue == "next");
+        BOOST_TEST(tokens.getLineIndex() == 2);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(tokenizer_preserves_decimal_literals)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    Tokenizer tokens(&context, "decimal.nomad", "1.25 .5 -2.75");
+
+    BOOST_TEST(!context.hasError());
+    BOOST_REQUIRE_EQUAL(tokens.getTokenCount(), 3);
+    BOOST_TEST(tokens.getTokenTypeAt(0) == TokenType::Float);
+    BOOST_TEST(tokens.getTokenTypeAt(1) == TokenType::Float);
+    BOOST_TEST(tokens.getTokenTypeAt(2) == TokenType::Float);
+}
+
 BOOST_AUTO_TEST_CASE(tokenizer_preserves_expression_strings_inside_format_tokens)
 {
     Runtime runtime;

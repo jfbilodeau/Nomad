@@ -12,9 +12,11 @@
 namespace nomad {
 
 void registerRangeType(Runtime* runtime) {
-    auto type = std::make_unique<RangeType>();
-    const auto* rangeType = type.get();
-    runtime->registerType(std::move(type));
+    const auto id = runtime->createObjectType<RangeType>("Range", ObjectTypeMode::Closed);
+    if (id.isInvalid()) {
+        throw NomadException("Failed to create Range type");
+    }
+    const auto* rangeType = static_cast<const RangeType*>(runtime->getType(id).value());
     const auto* integerType = runtime->getIntegerType();
     const auto iteratorId = runtime->registerNativeMethod(
         rangeType, "iterator",
@@ -59,7 +61,7 @@ void registerRangeType(Runtime* runtime) {
         {start, stop, step}, rangeType,
         NomadDoc("Creates a range with an exclusive stop. A zero step raises a runtime error.")
     );
-    if (stopId == NOMAD_INVALID_ID || boundsId == NOMAD_INVALID_ID || stepId == NOMAD_INVALID_ID) {
+    if (stopId.isInvalid() || boundsId.isInvalid() || stepId.isInvalid()) {
         throw NomadException("Failed to register range functions");
     }
 }

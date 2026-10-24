@@ -21,6 +21,7 @@ constexpr NomadInteger SCENE_LAYER_COUNT = 5;
 
 // Forward declarations
 class Canvas;
+struct EventDispatch;
 class Game;
 
 struct TileInformation {
@@ -66,8 +67,8 @@ public:
     void render(Canvas* canvas) const;
     void processInputEvent(const InputEvent& event);
 
-    void setVariableValue(NomadId variableId, const RuntimeValue& value);
-    void getVariableValue(NomadId variableId, RuntimeValue& value) const;
+    void setVariableValue(VariableId variableId, const RuntimeValue& value);
+    void getVariableValue(VariableId variableId, RuntimeValue& value) const;
 
     void addEntity(std::unique_ptr<Entity> entity);
     void removeEntity(Entity* entity);
@@ -92,8 +93,8 @@ public:
     void saveActionMapping(const NomadString& mappingName);
     void resetActionMapping(const NomadString& mappingName);
 
-    void addActionPressed(const NomadString& actionName, NomadId functionId, NomadId entityId = NOMAD_INVALID_ID);
-    void addActionReleased(const NomadString& actionName, NomadId functionId, NomadId entityId = NOMAD_INVALID_ID);
+    void addActionPressed(const NomadString& actionName, CallableId callableId, NomadId entityId = NOMAD_INVALID_ID);
+    void addActionReleased(const NomadString& actionName, CallableId callableId, NomadId entityId = NOMAD_INVALID_ID);
 
     void removeActionPressed(const NomadString& actionName, NomadId entityId = NOMAD_INVALID_ID);
     void removeActionReleased(const NomadString& actionName, NomadId entityId = NOMAD_INVALID_ID);
@@ -118,11 +119,11 @@ public:
     [[nodiscard]] NomadInteger getTileMapWidth() const;
     [[nodiscard]] NomadInteger getTileMapHeight() const;
 
-    void setTileId(NomadIndex layer, NomadInteger x, NomadInteger y, NomadIndex tileId);
-    [[nodiscard]] NomadIndex getTileId(NomadIndex layer, NomadInteger x, NomadInteger y) const;
-    [[nodiscard]] NomadInteger getTileMask(NomadIndex layerId, NomadInteger x, NomadInteger y) const;
+    void setTileId(NomadInteger layer, NomadInteger x, NomadInteger y, NomadIndex tileId);
+    [[nodiscard]] NomadIndex getTileId(NomadInteger layer, NomadInteger x, NomadInteger y) const;
+    [[nodiscard]] NomadInteger getTileMask(NomadInteger layerId, NomadInteger x, NomadInteger y) const;
 
-    void processGroundTilesAt(NomadIndex layer, const Rectangle& rectangle, const TileCallback &callback) const;
+    void processGroundTilesAt(NomadInteger layer, const Rectangle& rectangle, const TileCallback &callback) const;
 
     // Camera
     void setCameraPosition(const PointF& position);
@@ -137,33 +138,33 @@ public:
     [[nodiscard]] NomadFloat getCameraY() const;
 
     // Mask
-    [[nodiscard]] NomadInteger getMaskAtLocation(NomadIndex layer, const PointF& location, const Entity* exclude = nullptr) const;
+    [[nodiscard]] NomadInteger getMaskAtLocation(NomadInteger layer, const PointF& location, const Entity* exclude = nullptr) const;
     [[nodiscard]] NomadInteger getMaskAtEntity(const Entity* entity) const;
     [[nodiscard]] NomadInteger getMaskAtEntity(const Entity* entity, const PointF& location) const;
-    [[nodiscard]] NomadInteger getMaskFromEntitiesAt(NomadIndex layer, const RectangleF& rectangle, const Entity* exclude) const;
-    [[nodiscard]] NomadInteger getMaskFromEntitiesAt(NomadIndex layer, const CircleF& circle, const Entity* exclude) const;
-    [[nodiscard]] NomadInteger getMaskInRectangle(NomadIndex layer, const RectangleF& rectangle, const Entity* exclude) const;
-    [[nodiscard]] NomadInteger getMaskInCircle(NomadIndex layer, const CircleF& circle, const Entity* exclude) const;
+    [[nodiscard]] NomadInteger getMaskFromEntitiesAt(NomadInteger layer, const RectangleF& rectangle, const Entity* exclude) const;
+    [[nodiscard]] NomadInteger getMaskFromEntitiesAt(NomadInteger layer, const CircleF& circle, const Entity* exclude) const;
+    [[nodiscard]] NomadInteger getMaskInRectangle(NomadInteger layer, const RectangleF& rectangle, const Entity* exclude) const;
+    [[nodiscard]] NomadInteger getMaskInCircle(NomadInteger layer, const CircleF& circle, const Entity* exclude) const;
 
     // Scene events
-    void registerUserEvent(const NomadString& eventName, NomadId functionId);
+    void registerUserEvent(const NomadString& eventName, CallableId callableId);
     void unregisterUserEvent(const NomadString& eventName);
     void triggerUserEvent(const NomadString& name);
     void scheduleEvent(const NomadString &name, NomadInteger frameCount);
 
-    void setOnUpdate(NomadId functionId);
+    void setOnUpdate(CallableId callableId);
     void clearUpdate();
-    [[nodiscard]] NomadId getOnUpdateCallback() const;
-    void setOnPostUpdateCallback(NomadId functionId);
+    [[nodiscard]] CallableId getOnUpdateCallback() const;
+    void setOnPostUpdateCallback(CallableId callableId);
     void clearPostUpdateCallback();
-    [[nodiscard]] NomadId getOnPostUpdateCallback() const;
+    [[nodiscard]] CallableId getOnPostUpdateCallback() const;
 
     // Layer events
-    void triggerEventLayer(const NomadString& name, NomadIndex layerId);
+    void triggerEventLayer(const NomadString& name, NomadInteger layer);
 
     // Entity events
-    void registerEntityEvent(const NomadString& name, NomadId entityId, NomadId functionId);
-    void registerEntityEvent(NomadId eventId, NomadId entityId, NomadId functionId);
+    void registerEntityEvent(const NomadString& name, NomadId entityId, CallableId callableId);
+    void registerEntityEvent(EventId eventId, NomadId entityId, CallableId callableId);
     void unregisterEntityEvent(const NomadString& name, NomadId entityId);
     void unregisterEntityFromAllEvents(NomadId entityId);
     void triggerUserEvent(const NomadString& name, Entity* entity) const;
@@ -174,7 +175,7 @@ public:
 
     // Entity iteration
     void forEachEntities(const std::function<void(Entity*)>& callback) const;
-    void forEachEntityByLayer(NomadIndex layerIndex, const std::function<void(Entity*)>& callback) const;
+    void forEachEntityByLayer(NomadInteger layerIndex, const std::function<void(Entity*)>& callback) const;
 
     // Presentation / FXs
     void setTint(const Color& color);
@@ -215,7 +216,7 @@ private: // structs
     struct ActionMapping {
         NomadString name;
         InputAction action = InputAction::Unknown;
-        NomadId functionId = NOMAD_INVALID_ID;
+        CallableId callableId;
         NomadId entityId = NOMAD_INVALID_ID;
         NomadBoolean pressed = false;
         NomadBoolean released = false;
@@ -223,7 +224,7 @@ private: // structs
     };
 
     struct AddedEntity {
-        NomadId initFunctionId;
+        CallableId initFunctionId;
         NomadFloat x, y;
         NomadInteger layer;
         NomadId id;
@@ -232,7 +233,7 @@ private: // structs
 
     struct Event {
         NomadId entityId;
-        NomadId functionId;
+        CallableId callableId;
     };
 
     struct EventRegistrations {

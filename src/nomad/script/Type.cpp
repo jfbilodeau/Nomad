@@ -4,6 +4,8 @@
 
 #include <nomad/log/Logger.hpp>
 
+#include <nomad/script/Callable.hpp>
+#include <nomad/script/Event.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/String.hpp>
@@ -14,9 +16,17 @@ namespace nomad {
 
 ///////////////////////////////////////////////////////////////////////////////
 // Type
-Type::Type(NomadString documentation):
+Type::Type(Runtime* runtime, NomadString documentation):
+    m_runtime(runtime),
     m_documentation(std::move(documentation))
 {
+    if (runtime == nullptr) {
+        throw NomadException("A type requires an owning runtime");
+    }
+}
+
+Runtime* Type::getRuntime() const {
+    return m_runtime;
 }
 
 const NomadString& Type::getDocumentation() const {
@@ -92,6 +102,18 @@ const EnumType* Type::asEnum() const {
     return nullptr;
 }
 
+const ObjectType* Type::asObjectType() const {
+    return nullptr;
+}
+
+ValueType::ValueType(Runtime* runtime, NomadString documentation):
+    Type(runtime, std::move(documentation))
+{}
+
+TypeStorage ValueType::getStorage() const {
+    return TypeStorage::Value;
+}
+
 bool Type::isVoid() const {
     return false;
 }
@@ -117,6 +139,10 @@ void VoidType::initValue(RuntimeValue& value) const {
 
 NomadString VoidType::getTypeName() const {
     return VOID_TYPE_NAME;
+}
+
+TypeStorage VoidType::getStorage() const {
+    return TypeStorage::None;
 }
 
 void VoidType::copyValue(const RuntimeValue& /*sourceValue*/, RuntimeValue& /*destinationValue*/) const {
@@ -152,8 +178,8 @@ void IdType::toString(const RuntimeValue& value, NomadString& string) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // OpaqueIdType
-OpaqueIdType::OpaqueIdType(NomadString name, NomadString documentation):
-    Type(std::move(documentation)),
+OpaqueIdType::OpaqueIdType(Runtime* runtime, NomadString name, NomadString documentation):
+    ValueType(runtime, std::move(documentation)),
     m_name(std::move(name))
 {
 }
@@ -216,7 +242,13 @@ void IntegerType::toString(const RuntimeValue& value, NomadString& string) const
 
 ///////////////////////////////////////////////////////////////////////////////
 // EnumType
-EnumType::EnumType(NomadString name, std::vector<EnumValueDefinition> values):
+EnumType::EnumType(
+    Runtime* runtime,
+    NomadString name,
+    std::vector<EnumValueDefinition> values,
+    NomadString documentation
+):
+    ValueType(runtime, std::move(documentation)),
     m_name(std::move(name)),
     m_values(std::move(values))
 {
@@ -299,9 +331,77 @@ void BooleanType::toString(const RuntimeValue& value, NomadString& string) const
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// BaseStringType
-ObjectTypeBase::ObjectTypeBase(NomadString documentation):
-    Type(std::move(documentation))
+// ObjectType
+ObjectType::~ObjectType() = default;
+
+CallableId ObjectType::registerConstructor(
+    Runtime& runtime,
+    std::unique_ptr<Constructor> constructor
+) {
+    if (constructor == nullptr || constructor->getObjectType() != this ||
+        constructor->getId() != CallableId{} || runtime.getTypeByName(getTypeName()) != this) {
+        log::error("Cannot register constructor: invalid owner or previously registered callable");
+        return CallableId::INVALID;
+    }
+
+    m_constructors.push_back(std::move(constructor));
+    const auto id = m_constructors.back()->registerWithRuntime(runtime);
+    if (id == CallableId{}) {
+        m_constructors.pop_back();
+        log::error("Cannot register constructor: callable registration failed");
+    }
+    return id;
+}
+
+std::vector<const Constructor*> ObjectType::getConstructors() const {
+    std::vector<const Constructor*> constructors;
+    constructors.reserve(m_constructors.size());
+    for (const auto& constructor : m_constructors) {
+        constructors.push_back(constructor.get());
+    }
+    return constructors;
+}
+
+CallableId ObjectType::registerMethod(
+    Runtime& runtime,
+    std::unique_ptr<Method> method
+) {
+    if (method == nullptr || method->getObjectType() != this ||
+        method->getId() != CallableId{} || runtime.getTypeByName(getTypeName()) != this ||
+        getProperty(method->getName()) != nullptr) {
+        log::error("Cannot register method: invalid owner or previously registered callable");
+        return CallableId::INVALID;
+    }
+
+    m_methods.push_back(std::move(method));
+    const auto id = m_methods.back()->registerWithRuntime(runtime);
+    if (id == CallableId{}) {
+        m_methods.pop_back();
+        log::error("Cannot register method: callable registration failed");
+    }
+    return id;
+}
+
+std::vector<const Method*> ObjectType::getMethods() const {
+    std::vector<const Method*> methods;
+    methods.reserve(m_methods.size());
+    for (const auto& method : m_methods) {
+        methods.push_back(method.get());
+    }
+    return methods;
+}
+
+ObjectType::ObjectType(
+    Runtime* runtime,
+    NomadString name,
+    const ObjectTypeMode mode,
+    std::vector<const Type*> typeArguments,
+    NomadString documentation
+):
+    Type(runtime, std::move(documentation)),
+    m_name(std::move(name)),
+    m_mode(mode),
+    m_typeArguments(std::move(typeArguments))
 {
     m_typeOpCodes.initResult = op_object_init_r;
     m_typeOpCodes.initIntermediate = op_object_init_i;
@@ -339,15 +439,15 @@ ObjectTypeBase::ObjectTypeBase(NomadString documentation):
     m_typeOpCodes.setContextVariable = op_context_variable_set;
 }
 
-void ObjectTypeBase::initValue(RuntimeValue& value) const {
+void ObjectType::initValue(RuntimeValue& value) const {
     value.setObjectValue(nullptr);
 }
 
-void ObjectTypeBase::freeValue(RuntimeValue& value) const {
+void ObjectType::freeValue(RuntimeValue& value) const {
     value.freeObjectValue();
 }
 
-void ObjectTypeBase::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
+void ObjectType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
     if (&sourceValue == &destinationValue) {
         return;
     }
@@ -357,19 +457,155 @@ void ObjectTypeBase::copyValue(const RuntimeValue& sourceValue, RuntimeValue& de
     destinationValue = copy;
 }
 
-bool ObjectTypeBase::sameType(const Type* other) const {
+bool ObjectType::sameType(const Type* other) const {
     return this == other;
 }
 
-ObjectType::ObjectType(
-    NomadString name,
-    std::vector<const Type*> typeArguments,
-    NomadString documentation
-):
-    ObjectTypeBase(std::move(documentation)),
-    m_name(std::move(name)),
-    m_typeArguments(std::move(typeArguments))
-{
+TypeStorage ObjectType::getStorage() const {
+    return TypeStorage::Object;
+}
+
+const ObjectType* ObjectType::asObjectType() const {
+    return this;
+}
+
+bool ObjectType::isOpen() const {
+    return m_mode == ObjectTypeMode::Opened;
+}
+
+PropertyId ObjectType::registerProperty(
+    Runtime& runtime,
+    std::unique_ptr<Property> property
+) {
+    if (property == nullptr || property->getObjectType() != this || property->getId().isValid() ||
+        runtime.getTypeByName(getTypeName()) != this ||
+        property->getValueType() == nullptr || property->getValueType()->isVoid() ||
+        property->getValueType()->isInternal() ||
+        runtime.getTypeByName(property->getValueType()->getTypeName()) != property->getValueType() ||
+        getProperty(property->getName()) != nullptr ||
+        std::ranges::any_of(m_methods, [&](const auto& method) { return method->getName() == property->getName(); })) {
+        log::error("Cannot register property: invalid owner, value type, or duplicate definition");
+        return PropertyId::INVALID;
+    }
+    m_properties.push_back(std::move(property));
+    const auto id = m_properties.back()->registerWithRuntime(runtime);
+    if (id.isInvalid()) {
+        m_properties.pop_back();
+        log::error("Cannot register property: property registration failed");
+    }
+    return id;
+}
+
+const Property* ObjectType::getProperty(const NomadString& name) const {
+    const auto property = std::find_if(
+        m_properties.begin(),
+        m_properties.end(),
+        [&](const auto& candidate) {
+            return candidate->getName() == name;
+        }
+    );
+    return property == m_properties.end() ? nullptr : property->get();
+}
+
+const Property* ObjectType::getProperty(const PropertyId id) const {
+    const auto property = std::find_if(m_properties.begin(), m_properties.end(), [id](const auto& candidate) {
+        return candidate->getId() == id;
+    });
+    return property == m_properties.end() ? nullptr : property->get();
+}
+
+std::vector<const Property*> ObjectType::getProperties() const {
+    std::vector<const Property*> properties;
+    properties.reserve(m_properties.size());
+    for (const auto& property : m_properties) {
+        properties.push_back(property.get());
+    }
+    return properties;
+}
+
+NomadIndex ObjectType::getPropertyCount() const {
+    return static_cast<NomadIndex>(m_properties.size());
+}
+
+IndexerId ObjectType::registerNativeIndexer(
+    Runtime& runtime,
+    NativeIndexerInfo info
+) {
+    if (info.objectType != this || info.id.isValid() ||
+        runtime.getTypeByName(getTypeName()) != this) {
+        log::error("Cannot register native indexer: invalid owner or identity");
+        return IndexerId::INVALID;
+    }
+    const auto isValidType = [&](const Type* type) {
+        return type != nullptr && !type->isVoid() && !type->isInternal() &&
+            runtime.getTypeByName(type->getTypeName()) == type;
+    };
+    if (!isValidType(info.valueType)) {
+        log::error("Cannot register native indexer: value type must be registered, public, and non-void");
+        return IndexerId::INVALID;
+    }
+    if (info.indexTypes.empty()) {
+        log::error("Cannot register native indexer: at least one index type is required");
+        return IndexerId::INVALID;
+    }
+    if (!std::ranges::all_of(info.indexTypes, isValidType)) {
+        log::error("Cannot register native indexer: index types must be registered, public, and non-void");
+        return IndexerId::INVALID;
+    }
+    if (!info.getFn && !info.setFn) {
+        log::error("Cannot register native indexer: indexer has no accessor or mutator");
+        return IndexerId::INVALID;
+    }
+    if (getNativeIndexer(info.indexTypes.size()) != nullptr) {
+        log::error("Cannot register native indexer: type already has an indexer with " +
+            nomad::toString(info.indexTypes.size()) + " indices");
+        return IndexerId::INVALID;
+    }
+    m_nativeIndexers.push_back(std::make_unique<NativeIndexerInfo>(std::move(info)));
+    auto& indexer = *m_nativeIndexers.back();
+    const auto id = runtime.catalogNativeIndexer(&indexer);
+    if (id.isInvalid()) {
+        m_nativeIndexers.pop_back();
+        log::error("Cannot register native indexer: indexer registration failed");
+        return IndexerId::INVALID;
+    }
+    indexer.id = id;
+    return id;
+}
+
+const NativeIndexerInfo* ObjectType::getNativeIndexer(const NomadIndex indexCount) const {
+    const auto indexer = std::find_if(m_nativeIndexers.begin(), m_nativeIndexers.end(), [&](const auto& candidate) {
+        return candidate->indexTypes.size() == indexCount;
+    });
+    return indexer == m_nativeIndexers.end() ? nullptr : indexer->get();
+}
+
+std::vector<const NativeIndexerInfo*> ObjectType::getNativeIndexers() const {
+    std::vector<const NativeIndexerInfo*> indexers;
+    indexers.reserve(m_nativeIndexers.size());
+    for (const auto& indexer : m_nativeIndexers) {
+        indexers.push_back(indexer.get());
+    }
+    return indexers;
+}
+
+void ObjectType::registerIterableType(
+    Runtime& runtime,
+    const Type* valueType,
+    const Method* factory
+) {
+    const auto* iteratorType = runtime.getIteratorType(valueType);
+    if (runtime.getTypeByName(getTypeName()) != this ||
+        factory == nullptr || runtime.getMethod(factory->getId()) != factory ||
+        factory->getObjectType() != this || factory->getParameterCount() != 0 ||
+        factory->getReturnType() != iteratorType || m_iterableInfo.has_value()) {
+        throw NomadException("Invalid iterable registration");
+    }
+    m_iterableInfo = IterableInfo{valueType, iteratorType, factory->getId()};
+}
+
+std::optional<IterableInfo> ObjectType::getIterableInfo() const {
+    return m_iterableInfo;
 }
 
 NomadString ObjectType::getTypeName() const {
@@ -384,7 +620,11 @@ void ObjectType::toString(const RuntimeValue&, NomadString& string) const {
     string = m_name;
 }
 
-BaseStringType::BaseStringType() {
+///////////////////////////////////////////////////////////////////////////////
+// BaseStringType
+BaseStringType::BaseStringType(Runtime* runtime):
+    ObjectType(runtime, STRING_TYPE_NAME, ObjectTypeMode::Closed)
+{
     m_typeOpCodes.initResult = op_string_init_r;
     m_typeOpCodes.initIntermediate = op_string_init_i;
 }
@@ -443,21 +683,26 @@ void FunctionLineNumberType::toString(const RuntimeValue& value, NomadString& st
 
 ///////////////////////////////////////////////////////////////////////////////
 // FunctionReferenceType
-FunctionType::FunctionType(const std::vector<const Type*>& parameter_types, const Type* return_type):
-    m_parameterTypes(parameter_types),
-    m_returnType(return_type)
+FunctionType::FunctionType(
+    Runtime* runtime,
+    const std::vector<const Type*>& parameterTypes,
+    const Type* returnType
+):
+    ValueType(runtime),
+    m_parameterTypes(parameterTypes),
+    m_returnType(returnType)
 {
     m_name = FUNCTION_TYPE_NAME + "(";
 
-    for (auto parameter_type : parameter_types) {
-        m_name += parameter_type->getTypeName();
+    for (const auto* parameterType : parameterTypes) {
+        m_name += parameterType->getTypeName();
 
-        if (parameter_type != parameter_types.back()) {
+        if (parameterType != parameterTypes.back()) {
             m_name += ", ";
         }
     }
 
-    m_name += "):" + return_type->getTypeName();
+    m_name += "):" + returnType->getTypeName();
 }
 
 void FunctionType::initValue(RuntimeValue& value) const {
@@ -519,7 +764,8 @@ const FunctionType* FunctionType::asCallback() const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // EventType
-EventType::EventType(const EventDefinition* declaration):
+EventType::EventType(Runtime* runtime, const EventDefinition* declaration):
+    ValueType(runtime),
     m_event(*declaration)
 {}
 

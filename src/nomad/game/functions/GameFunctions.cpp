@@ -8,9 +8,10 @@
 #include <nomad/game/resource/FontObject.hpp>
 #include <nomad/game/resource/ResourceManager.hpp>
 
-#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 namespace nomad {
 
@@ -25,9 +26,9 @@ void Game::initGameFunctions() {
     m_runtime->registerNativeFunction(
         "game.createScene",
         [this](VirtualMachine* interpreter) {
-            const auto functionId = interpreter->getIdParameter(0);
+            const auto callableId = interpreter->getCallableIdParameter(0);
 
-            const auto result = m_runtime->getFunctionName(functionId);
+            const auto result = m_runtime->getFunctionName(callableId);
 
             if (!result) {
                 log::error("Function ID for scene not found");
@@ -37,7 +38,7 @@ void Game::initGameFunctions() {
 
             const auto& functionName = result.value();
 
-            const auto sceneId = createScene(functionName, functionId);
+            const auto sceneId = createScene(functionName, callableId);
 
             interpreter->setIdResult(sceneId);
         }, {
@@ -58,7 +59,7 @@ void Game::initGameFunctions() {
 
             const auto functionId = getFunctionId(functionName);
 
-            if (functionId == NOMAD_INVALID_ID) {
+            if (functionId.isInvalid()) {
                 log::error("Function for scene '" + functionName + "' not found");
                 return;
             }
@@ -80,13 +81,13 @@ void Game::initGameFunctions() {
         "game.createSceneByNameThen",
         [this](VirtualMachine* interpreter) {
             const auto& functionName = interpreter->getStringParameter(0)->getString();
-            const NomadId postCreateFunction = interpreter->getIdParameter(1);
+            const auto postCreateFunction = interpreter->getCallableIdParameter(1);
 
             auto postCreateClosure = interpreter->createClosure(m_runtime, postCreateFunction);
 
             const auto functionId = getFunctionId(functionName);
 
-            if (functionId == NOMAD_INVALID_ID) {
+            if (functionId.isInvalid()) {
                 log::error("Function for scene '" + functionName + "' not found");
                 return;
             }
@@ -114,8 +115,8 @@ void Game::initGameFunctions() {
     m_runtime->registerNativeFunction(
         "game.createSceneThen",
         [this](VirtualMachine* interpreter) {
-            const NomadId functionId = interpreter->getIdParameter(0);
-            const NomadId postCreateFunction = interpreter->getIdParameter(1);
+            const auto functionId = interpreter->getCallableIdParameter(0);
+            const auto postCreateFunction = interpreter->getCallableIdParameter(1);
 
             auto postCreateClosure = interpreter->createClosure(m_runtime, postCreateFunction);
 
@@ -201,81 +202,16 @@ void Game::initGameFunctions() {
     );
 
     m_runtime->registerNativeFunction(
-        "game.inventory.load",
-        [this](const VirtualMachine* interpreter) {
-            const auto& saveName = interpreter->getStringParameter(0)->getString();
-
-            loadGame(saveName);
-        }, {
-            defParameter("saveName", m_runtime->getStringType(), NomadParamDoc("Name of the save to load.")),
-        },
-        m_runtime->getVoidType(),
-        NomadDoc(
-            "Loads `inventory.*` variables from `<pref>/save/<saveName>.json`. Variables absent from the save keep "
-            "their current value."
-        )
-    );
-
-    m_runtime->registerNativeFunction(
-        "game.inventory.save",
-        [this](const VirtualMachine* interpreter) {
-            const auto& saveName = interpreter->getStringParameter(0)->getString();
-
-            saveGame(saveName);
-        }, {
-            defParameter(            "saveName", m_runtime->getStringType(), NomadParamDoc("Name of the save.")),
-        },
-        m_runtime->getVoidType(),
-        NomadDoc("Saves all `inventory.*` variables to `<pref>/save/<saveName>.json`.")
-    );
-
-    m_runtime->registerNativeFunction(
-        "game.inventory.saveExists",
-        [this](VirtualMachine* interpreter) {
-            const auto& saveName = interpreter->getStringParameter(0)->getString();
-
-            interpreter->setBooleanResult(saveExists(saveName));
-        }, {
-            defParameter(            "saveName", m_runtime->getStringType(), NomadParamDoc("Name of the save.")),
-        },
-        m_runtime->getBooleanType(),
-        NomadDoc("Returns true if the save `<pref>/save/<saveName>.json` exists.")
-    );
-
-    m_runtime->registerNativeFunction(
-        "game.settings.load",
-        [this](const VirtualMachine* /*interpreter*/) {
-            loadSettings();
-        },
-        { },
-        m_runtime->getVoidType(),
-        NomadDoc(
-            "Loads `settings.*` variables from `<pref>/settings.json`. Variables absent from the file keep their "
-            "current value."
-        )
-    );
-
-    m_runtime->registerNativeFunction(
-        "game.settings.save",
-        [this](const VirtualMachine* /*interpreter*/) {
-            saveSettings();
-        },
-        { },
-        m_runtime->getVoidType(),
-        NomadDoc("Saves all `settings.*` variables to `<pref>/settings.json`.")
-    );
-
-    m_runtime->registerNativeFunction(
         "game.trigger",
         [this](VirtualMachine* interpreter) {
-            const auto eventId = interpreter->getIdParameter(0);
+            const auto eventId = EventId{interpreter->getIdParameter(0)};
 
             std::vector<RuntimeValue> args;
 
             const auto event = m_runtime->getEventDefinition(eventId);
 
             if (!event) {
-                log::error(NomadString("Invalid event id for game.trigger: ") + toString(eventId));
+                log::error(NomadString("Invalid event id for game.trigger: ") + toString(eventId.id));
                 return;
             }
 
@@ -289,7 +225,7 @@ void Game::initGameFunctions() {
                 if (type) {
                     (*type)->copyValue(interpreter->peekStack(static_cast<NomadIndex>(i) + 1), value);
                 } else {
-                    log::error("Invalid type id for event parameter: " + toString(parameter.typeId));
+                    log::error("Invalid type id for event parameter: " + toString(parameter.typeId.id));
                 }
 
                 args.emplace_back(value);

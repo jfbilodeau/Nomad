@@ -21,15 +21,356 @@ Types and callables used by a context must remain valid.
 
 Neither the interpreter nor its context creates or owns a VM.
 
+### Creation inputs and metadata
+
+API structures use these naming conventions:
+
+- `*Definition` contains inputs for creating or registering an item. It has no
+  newly assigned ID, but may reference existing items through IDs. An owning
+  type is not repeated when the operation supplies it separately.
+- `*Info` describes an already registered item. An assigned primary ID comes
+  first when the item has one. Metadata is borrowed through const access or
+  returned as a detached snapshot; modifying a snapshot does not change the
+  registered item.
+- `*Declaration` is reserved for source-language declarations in the compiler.
+
+Include `<nomad/script/Runtime.hpp>` for `ParameterDefinition`,
+`NativeMethodDefinition`, `NativeConstructorDefinition`,
+`NativePropertyDefinition`, `NativeIndexerDefinition`, and
+`NativeInterableDefinition`. These aggregate inputs own their names,
+documentation, parameter lists, and callback objects. Referenced type IDs are
+runtime-local; captured callback state follows the host's C++ capture lifetime.
+
+`ParameterDefinition` begins with its referenced `TypeId`:
+
+```cpp
+const ParameterDefinition distance{
+    runtime.getTypeId("float"),
+    "distance",
+    "Distance to move."
+};
+```
+
+These input structures do not register anything when constructed.
+`addProperty(TypeId, NativePropertyDefinition)` and
+`addMethod(TypeId, NativeMethodDefinition)` register native properties and methods
+using their creation inputs. The existing
+`registerNativeMethod`, `registerNativeConstructor`,
+`registerNativeIndexer`, and `registerIterableType` operations retain their
+current argument forms; they do not yet accept the new input structures.
+Their metadata structures are now named `NativePropertyInfo`,
+`NativeIndexerInfo`, and `IterableInfo`. Corresponding lookup operations are
+`getNativePropertyInfo`, `getNativeIndexerInfo`, and `getIterableInfo`;
+`NativeProperty::getInfo()` returns a property snapshot.
+
+Fallible metadata snapshot lookups return `std::optional<Info>`. An empty
+optional means the item is absent, invalid, or of the wrong kind. No output
+parameter is retained or reused from an earlier lookup. A getter on an
+already-valid descriptor, such as `NativeProperty::getInfo()`, returns its
+snapshot directly.
+
+### Type lookup
+
+`Runtime::getTypeId(name)` returns a `TypeId`, or `TypeId::INVALID`
+when the type is not registered. Pass it to `getType(id)` to retrieve an optional
+`const Type*`; invalid or unregistered IDs return an empty optional. Type IDs
+belong to the runtime that issued them and remain stable as more types are
+registered. They do not implicitly convert to integers or other ID categories.
+Event parameter definitions use `TypeId` for their `typeId` field.
+
+Strong IDs are invalid when default-constructed. Use `isValid()` and
+`isInvalid()` to check their numeric validity; these checks do not verify that
+the ID belongs to a particular runtime or is registered. `IdHash` supports
+strong IDs as keys in standard unordered containers.
+Streaming an ID prints its type and numeric value, for example `CallableId{42}`
+or `CallableId{-1}`.
+
+
+### Object type creation
+
+`Runtime::createObjectType(name, mode, documentation = {})` creates an object
+type and returns its `TypeId`. The mode is required:
+`ObjectTypeMode::Opened` permits external script member declarations, while
+`ObjectTypeMode::Closed` prevents them. Neither mode makes existing properties
+immutable or prevents the type's own declarations. Native and script objects
+use the same `ObjectType` descriptor; `isOpen()` reports its mode.
+
+The runtime owns the descriptor and its name and documentation. Use
+`getType(id)` to retrieve a borrowed descriptor. Empty names, invalid modes,
+already-registered type names, and conflicting hub declarations are logged and
+return `TypeId::INVALID`. Duplicate creation is rejected even when the mode
+and documentation are identical, without replacing the existing type.
+
+Every type descriptor requires a non-null owning `Runtime*` as its first
+constructor argument. `Type::getRuntime()` returns that runtime, which must
+outlive the descriptor. A descriptor cannot be registered with another runtime.
+
+`createObjectType<Descriptor>(name, mode, arguments...)` creates specialized
+`ObjectType` subclasses. It calls
+`Descriptor(Runtime*, name, mode, arguments...)`, forwarding additional arguments.
+Invalid creation requests are rejected before calling the descriptor constructor.
+The constructor initializes the descriptor without registering it; the runtime
+registers the completed descriptor and returns its `TypeId`. The descriptor's
+runtime, name, and mode must match the creation request.
+
+Type creation does not register constructors or finalize a script field layout.
+
+### Enum creation
+
+`Runtime::createEnum(name, values, documentation = {})` creates an enum and
+returns its `TypeId`. Each `EnumValueDefinition` supplies a member name and an
+explicit integer value. The runtime owns the resulting type and copies or moves
+the supplied names, values, and documentation.
+
+Creation also registers typed constants named `EnumName.MemberName` and
+same-enum equality and inequality operators. Existing script enum syntax is
+unchanged. Use `getType(id)` to retrieve the descriptor and `asEnum()` for enum
+member lookups; `getDocumentation()` returns the supplied type documentation.
+
+Invalid definitions are logged and return `TypeId::INVALID`: empty names or
+value lists, unnamed members, duplicate member names or integer values,
+already-registered type names, and conflicts with existing constants or hub
+declarations. Duplicate type creation is rejected even when the definition is
+identical. Rejected definitions do not replace existing registrations.
+
+### Constant IDs
+
+Include `<nomad/script/Runtime.hpp>` for `ConstantId`.
+`Runtime::registerConstant(name, value, type)` returns a `ConstantId`, or
+`ConstantId::INVALID` when registration fails. Duplicate names are logged and
+rejected without replacing the original value. `getConstantId(name)` returns
+`ConstantId::INVALID` when absent. Constant IDs belong to the runtime that issued
+them and remain stable as more constants are registered.
+
+Pass a registered ID to `getConstantName`, `getConstantType`, or
+`getConstantValue`. The value is borrowed; the runtime retains ownership.
+`getFirstConstantId` and `getNextConstantId` enumerate registered constants in
+registration order, ending at `ConstantId::INVALID`. Hub constant members also
+contain a `ConstantId`. Constant IDs do not implicitly convert to integers or
+other ID categories.
+
+### Event IDs
+
+Include `<nomad/script/Event.hpp>` for `EventId`, `EventDefinition`, and
+`EventDispatch`. `Runtime::registerEvent(name, parameters)` returns an `EventId`,
+or `EventId::INVALID` when registration fails. Duplicate names are logged and
+rejected without replacing the original definition. `getEventId(name)` returns
+`EventId::INVALID` when absent; `getEventDefinition(id)` returns a definition
+snapshot, or an empty optional for an invalid or unregistered ID.
+
+`getFirstEventId` and `getNextEventId` enumerate registered events in registration
+order, ending at `EventId::INVALID`. IDs belong to the runtime that issued them
+and remain stable as more events are registered. Event definitions, hub event
+members, and dispatch requests use `EventId`; scene, layer, and entity IDs are
+separate identities. Event IDs do not implicitly convert to integers or other ID
+categories.
+
+Event callback and dispatch native APIs receive raw IDs through the existing
+VM parameter slots. Construct `EventId{machine->getIdParameter(0)}` before looking
+up the definition or forwarding a dispatch request.
+
+### String and format-string IDs
+
+`Runtime::registerString(text)` returns a `StringId`, reusing the existing ID
+for identical text. `getStringId(text)` returns `StringId::INVALID` when absent.
+Pass a registered ID to `getString(id)` to borrow its string object.
+Register static strings before executing functions; the static string table
+must not grow while functions execute.
+
+`registerFormatString(text, functionId)` returns a `FormatStringId`, reusing an
+entry only when both its text and owning `CallableId` match.
+`getFormatStringId(text, functionId)` returns `FormatStringId::INVALID` when
+absent. `getFormatString(id)` returns a borrowed format string, or `nullptr`
+for an invalid or unregistered ID.
+
+Both ID types are declared in `<nomad/script/Runtime.hpp>`, belong to the runtime
+that issued them, and remain stable as registrations are added. They do not
+implicitly convert to integers or other ID categories.
+
+### Dynamic-variable IDs
+
+Include `<nomad/script/DynamicVariable.hpp>` for `DynamicVariableId`.
+`registerDynamicVariable(name, setter, getter, type, doc)` returns a
+`DynamicVariableId`, or `DynamicVariableId::INVALID` when registration fails.
+`getDynamicVariableId(name)` returns `DynamicVariableId::INVALID` when absent.
+Pass a registered ID to the dynamic-variable metadata, permission, getter, and
+setter APIs. `setStringDynamicVariable` releases its temporary string after
+invoking the setter; a setter that retains a value must copy it through its type.
+
+`getFirstDynamicVariableId` and `getNextDynamicVariableId` enumerate registrations
+in registration order, ending at `DynamicVariableId::INVALID`. IDs belong to the
+runtime that issued them and remain stable as registrations are added. Hub
+dynamic-variable members also contain a `DynamicVariableId`. These IDs do not
+implicitly convert to integers or other ID categories.
+
+### Variable-context IDs
+
+Include `<nomad/script/VariableContext.hpp>` for `VariableContextId` and
+`ContextVariableId`. Both types belong to the runtime that issued them, remain
+stable as registrations are added, and do not implicitly convert to integers
+or other ID categories.
+
+`registerVariableContext(name, prefix, context)` returns a `VariableContextId`.
+`getContextId(name)` and `getVariableContextIdByPrefix(variableName)` return
+`VariableContextId::INVALID` when no context matches. Pass a registered context
+ID to `getContextName` or `getVariableContext`; the latter returns a borrowed
+pointer, or `nullptr` for an invalid or unregistered ID.
+`getFirstVariableContextId` and `getNextVariableContextId` enumerate contexts
+in registration order, ending at `VariableContextId::INVALID`.
+
+`registerContextVariable(contextId, variableName, type)`,
+`registerOrUpdateContextVariable(variableName, type)`, and
+`getContextVariableId(variableName)` return a `ContextVariableId`, or
+`ContextVariableId::INVALID` when the context or variable cannot be resolved.
+Repeated resolution of the same context and local variable returns the same
+handle. Variables in different contexts have distinct handles even when their
+context-local IDs are equal. `registerHubVariable` also returns a
+`ContextVariableId`.
+
+Pass a registered context-variable handle to the runtime's context-variable
+metadata, read/write tracking, and value APIs. Values read through
+`getContextVariableValue` are borrowed; the context retains ownership.
+`setStringContextVariableValue` releases its temporary string after assigning
+it through the context.
+
+The `VariableContext` interface uses context-local `VariableId` values.
+Do not construct a local ID from a runtime-global handle's numeric value; use
+the runtime's context-variable APIs to resolve it. Hub variable members contain
+context-local `VariableId` values.
+
+### Local variable IDs
+
+Include `<nomad/script/Variable.hpp>` for `VariableId`. Variable maps, variable
+lists, context-local APIs, script-callable locals, interpreter variable-by-ID
+lookups, and VM local-variable access use this type. Scene and entity variable
+access also takes `VariableId`.
+
+`VariableId` belongs to its owning map or function's local layout, not to a
+runtime-wide registry. Different owners can issue IDs with equal numeric
+values. IDs remain stable as variables are added to their owner. Missing name
+lookups and the end of context-local iteration return `VariableId::INVALID`.
+The type does not implicitly convert to integers, `ContextVariableId`, or
+other ID categories. Numeric validity does not verify ownership.
+
+Parameter positions, capture-list positions, and stack offsets remain numeric.
+Compiler identifier metadata separates `variableId` from `parameterId`.
+Capture metadata retains `CaptureSource`; read `variableId` only for
+`CaptureSource::Variable`, and `parameterId` only for `CaptureSource::Parameter`.
+Script-callable `createCapture` overloads take either a `VariableId` for a
+variable source or a numeric `NomadId` for a parameter source, followed by the
+name and type. `flagVariableAsCaptured` and `flagParameterAsCaptured` provide
+the corresponding source-specific registration APIs.
+
+### Object type property metadata
+
+`ObjectType` describes both native and script-defined object types. `isOpen()` reports
+whether external script declarations may extend it. Closed types are not immutable.
+`Type::asObjectType()` returns the same descriptor as a borrowed `const ObjectType*`
+for object types and their subclasses, including strings, or `nullptr` for other types.
+
+Register the owner type with the runtime before declaring its properties.
+`Runtime::registerProperty(objectType, name, valueType)` declares a stored/script
+property and returns a `PropertyId`, or `PropertyId::INVALID` on failure.
+The value type must also be registered with the same runtime and must be public
+and non-void. Repeating a declaration with the same name and type returns its
+existing ID. Conflicting declarations are logged and rejected without changing
+the type's properties. Host declarations are permitted on both open and closed
+types; openness controls whether scripts may add external declarations.
+
+`Runtime::getProperty(id)` returns metadata for native or script properties;
+`getNativeProperty(id)` returns only native properties. Invalid or unregistered
+IDs return `nullptr`. Include `<nomad/script/Property.hpp>` for `PropertyId`
+and common metadata, and `<nomad/script/NativeProperty.hpp>` for native metadata.
+Use `getId()`, `getObjectType()`, `getName()`, `getValueType()`, and `getDoc()`
+to inspect a property.
+`ObjectType::getProperty(name)`, `getProperty(id)`, and `getProperties()` expose
+the owner's properties as borrowed const pointers. IDs and pointers remain
+stable as more properties are registered and are valid for the owning runtime's
+lifetime. Property IDs are runtime-wide, not per-object field offsets.
+
+This API describes type properties. Script class syntax and stored/script property
+access from scripts are not yet implemented.
+
+### Native property creation
+
+`Runtime::addProperty(TypeId id, NativePropertyDefinition definition)` registers
+a native property and returns its `PropertyId`. The owner ID must identify an
+object type. Both it and `definition.valueTypeId` are resolved in that runtime;
+IDs are runtime-local, not portable between runtimes. The value type must be
+public and non-void. Host registration is permitted on both open and closed types.
+
+Provide a getter, a setter, or both. A getter-only property is read-only; a
+setter-only property is write-only. The runtime owns the registered name,
+documentation, and callbacks. Captured references must remain valid whenever
+the callbacks are invoked.
+
+For an already registered object type identified by `typeId`:
+
+```cpp
+const auto propertyId = runtime.addProperty(typeId, {
+    .valueTypeId = runtime.getTypeId("int"),
+    .name = "answer",
+    .getter = [](nomad::VirtualMachine*, nomad::RuntimeValue& value) {
+        value.setIntegerValue(42);
+    },
+    .setter = {},
+    .documentation = "The answer."
+});
+if (propertyId.isInvalid()) {
+    throw nomad::NomadException("Failed to register answer property");
+}
+```
+
+Invalid IDs, non-object owners, invalid value types or names, missing callbacks,
+and conflicting members are logged and return `PropertyId::INVALID` without
+registering a property. Duplicate native properties are rejected even if their
+definitions match. Use the existing property and native member lookup APIs to
+retrieve the registered metadata.
+
+### Native method creation
+
+`Runtime::addMethod(TypeId id, NativeMethodDefinition definition)` registers a
+native method and returns its `CallableId`. The owner ID must identify an object
+type. Parameter and return-type IDs are resolved in the same runtime; IDs are
+runtime-local and must not be transferred between runtimes.
+
+Each `ParameterDefinition` supplies its type ID, name, and documentation.
+Parameters must have nonempty names and non-void types. Compiler-supplied
+parameter types retain their existing calling conventions. The return type may
+be `void`, but otherwise must be public. The callback must be nonempty.
+
+```cpp
+const auto methodId = runtime.addMethod(typeId, {
+    .name = "move",
+    .parameters = {{runtime.getTypeId("float"), "distance", "Distance to move."}},
+    .returnTypeId = runtime.getTypeId("void"),
+    .function = [](nomad::VirtualMachine* vm) {
+        vm->getThisAs<MyObject>()->move(vm->getFloatParameter(0));
+    },
+    .documentation = "Moves this instance."
+});
+if (methodId.isInvalid()) {
+    throw nomad::NomadException("Failed to register move method");
+}
+```
+
+The runtime owns the registered names, documentation, parameter list, and callback.
+Captured references must remain valid whenever the callback is invoked.
+Host registration is permitted on both open and closed types.
+Invalid definitions and conflicting members are logged and return
+`CallableId::INVALID` without registering a method.
+Existing member-name and overload rules apply, including when mixed with the
+pointer-based `registerNativeMethod` operation, which remains available.
+Use `getNativeMethod(id)`, `getMethod(id)`, or the member lookup APIs to retrieve
+the registered method.
+
 ### Callable access
 
-Registered native functions, script functions, methods, and constructors share
-one runtime-owned callable table and ID space. `getCallable(id)` returns a
-borrowed `const Callable*`; `getFunction(id)` returns a borrowed `const Function*`
-for either a native or a script free function. `getMethod(id)` and
-`getConstructor(id)` return borrowed `const Method*` and `const Constructor*`.
-These category getters return `nullptr` for invalid IDs or the wrong category.
-All take callable-table IDs.
+Use `getCallable(id)` to retrieve a callable, or `getFunction(id)`,
+`getMethod(id)`, and `getConstructor(id)` to retrieve a callable of a specific
+category. Category getters return `nullptr` for invalid IDs or a different
+category. Function, method, and constructor IDs are accepted by the callable
+accessors.
 
 Each category offers conversions to its implementation: `asNativeFunction()` /
 `asScriptFunction()`, `asNativeMethod()` / `asScriptMethod()`, and
@@ -51,33 +392,34 @@ functions; script-defined overload declarations are not yet supported.
 Native and script functions use the same call syntax in expressions and
 statements. A statement discards any returned value.
 
-`getCallableId(name)` returns the first free-function overload as a `NomadId`,
-or `NOMAD_INVALID_ID` when absent. It supplies a signature for parsing; it does
-not select an overload. `getCallableOverloads(name, ids)` lists free-function
-overloads as callable-table IDs. Read metadata through `getFunction(id)` or
-`getCallable(id)` rather than the removed callable metadata forwarding APIs.
-`CallableId`, `CallableKind`, and `resolveCallableOverload` have been removed;
-use plain IDs, category conversions, and `resolveFunction` instead.
+Functions, methods, and constructors share the `CallableId` type. Callable IDs
+do not implicitly convert to integers or other ID categories.
+`getCallableId(name)` returns the first free-function overload as a `CallableId`,
+or `CallableId::INVALID` when absent. It does not select an overload.
+`getCallableOverloads(name, ids)` lists free-function overload IDs.
 
-Native member IDs are a separate namespace. `registerNativeMethod` and
-`getNativeMemberId` return member IDs; pass these to
-`getNativeMemberMethod(memberId)`, then use the returned method's `getId()` for
-callable-table access. `getNativeMethod(callableId)` takes a callable-table ID.
-`getMemberType(memberId)` returns `MemberType::Property` or `MemberType::Method`.
-Include `<nomad/script/Member.hpp>` for `MemberType`; native property callbacks
-and indexer definitions remain in `<nomad/script/NativeMember.hpp>`.
-This replaces `getNativeMemberType` and `NativeMemberType`; native registration
-and callback APIs keep their native-specific names.
+`addProperty` returns a `PropertyId`; `registerNativeMethod` returns
+the method's `CallableId`. Their failure results are `PropertyId::INVALID` and
+`CallableId::INVALID`, respectively.
+`getNativeMemberId` returns a `MemberReference`, a `std::variant<PropertyId, CallableId>`.
+An absent member is represented by `PropertyId::INVALID`.
+Member enumeration and overload APIs use `std::vector<MemberReference>`.
+`getMemberType(member)` returns `MemberType::Property`, `MemberType::Method`,
+or `MemberType::Unknown` for an invalid reference.
+Use `std::get_if` to inspect a reference's ID category.
+`getNativePropertyInfo(member)` returns `std::optional<NativePropertyInfo>`,
+empty when the reference is invalid or not a native property.
+`getNativeMemberMethod(member)` returns a native method or `nullptr`.
+`getNativeMethod(callableId)` accepts the same ID returned by method registration.
+Include `<nomad/script/Member.hpp>` for member references and `MemberType`; native property callbacks
+and indexer definitions are available in `<nomad/script/NativeMember.hpp>`.
 
 Use `getNativeFunction(id)` or `getScriptFunction(id)` for implementation-specific
 access. These return `nullptr` for the wrong implementation kind. A const runtime
 returns a `const ScriptFunction*`; a mutable runtime also permits script
-parameter and inferred return-type updates. All views refer to the same object,
-so signature changes are immediately visible through generic accessors.
-Pointers remain valid until the runtime is destroyed, including when more
-callables are registered.
-Registering additional APIs does not change the selected targets of already
-resolved function, method, or constructor calls.
+parameter and inferred return-type updates. Registering additional APIs does not
+change the selected targets of already resolved function, method, or constructor
+calls.
 
 Signatures expose `Parameter` entries through `getParameters()`. Script
 parameters added with `addParameter(name, type, doc)` require a documentation
@@ -89,9 +431,7 @@ lookups continue to include only script functions.
 
 Include `<nomad/script/Callable.hpp>` for common callable metadata,
 `<nomad/script/NativeCallable.hpp>` for native implementations, and
-`<nomad/script/ScriptCallable.hpp>` for script implementations. The former
-`ScriptFunction.hpp` header and callable definition-copy APIs have been removed;
-use the borrowed pointer accessors instead.
+`<nomad/script/ScriptCallable.hpp>` for script implementations.
 
 ## Module configuration
 
@@ -127,29 +467,44 @@ directory containing scripts.
 ## Hubs
 
 Call `Runtime::registerHub(name)` to reserve an open name prefix before
-compilation. It returns `true` both for a new hub and for repeated registration
-of an existing hub. Dotted names, such as `"game.audio"`, also register their
-parent hubs. Invalid names and conflicts with existing values, callables, or
-types are logged and return `false` without partially registering the name.
+compilation. It returns the new `HubId`, or the existing ID for repeated
+registration. Dotted names, such as `"game.audio"`, also register their
+parent hubs. Native hub names need not follow script identifier syntax and may
+use keyword names. Empty names, empty dotted segments, and conflicts with existing
+values, callables, or types are logged and return `HubId::INVALID` without partially
+registering the name. Script hub declarations require a tokenizer-recognized
+identifier; each dotted segment must start with a letter or underscore.
+Native registration does not make otherwise invalid names usable in script
+declarations.
 Use `Runtime::isHub(name)` to test whether a hub is registered.
-`getHubId(name)` returns its table ID or `NOMAD_INVALID_ID`; `getHub(id)` returns
-a borrowed `const Hub*`, or `nullptr` for an invalid ID. A hub exposes its
-qualified name, parent ID, and locally named members. Function members refer
-to the existing callable table; types and events retain their runtime IDs or
-type references. Hub pointers remain valid when more hubs are registered.
+Include `<nomad/script/Runtime.hpp>` for `HubId` and `HubMember`, and
+`<nomad/script/Hub.hpp>` to inspect hubs.
+`getHubId(name)` returns a `HubId` or `HubId::INVALID`; `getHub(id)` accepts
+a `HubId` and returns a borrowed `const Hub*`, or `nullptr` for an invalid or
+unregistered ID. IDs belong to the runtime that issued them and are not
+interchangeable with callable or other ID categories. A hub exposes its
+qualified name, parent `HubId` (`HubId::INVALID` for a root hub), and locally
+named members. Child hub members contain a `HubId`. Function members refer
+to registered callables; types and events refer to their registered definitions.
+Hub pointers remain valid when more hubs are registered.
+
+`HubMember` stores variables, constants, events, child hubs, and dynamic
+variables directly as `VariableId`, `ConstantId`, `EventId`, `HubId`, and
+`DynamicVariableId`. Type members store a borrowed `const Type*`.
+Use `std::get_if<ConstantId>(member)` or the corresponding alternative to
+inspect a member, then pass the ID directly to its typed API. Function overloads
+use `HubFunctions::ids`; generic families use `HubTypeFamily::argumentCount`.
 
 Register native APIs under their qualified names using the existing runtime
 registration functions. For example, register hub `"os"`, enum `"os.Platform"`,
-and constant `"os.platform"`. Hub registration does not create an object or
-change the signatures or ownership of these APIs. Scripts may reopen native
-hubs and add distinct members.
+and constant `"os.platform"`. Scripts may reopen native hubs and add distinct
+members.
 
 Successful executable compilation installs safely resolved hub initial values
 and typed defaults for runtime-dependent members. It does not execute application
-code. The remaining assignments are compiled into one internal `$init` function,
-ordered by script name and then declaration order. Developers are responsible
-for dependencies between runtime initializers; premature reads see typed defaults
-or the value assigned so far, without a special initialization-order check.
+code. Runtime-dependent initializers run in script-name order and then declaration
+order. Developers are responsible for dependencies between initializers; reads
+observe typed defaults or the value assigned so far.
 
 After compilation and resource preparation, call `ModuleHost::run()` to
 initialize scripts and invoke the runnable module. The module receives fully
@@ -161,15 +516,12 @@ It returns a `CompilationResult` containing diagnostics and error/warning counts
 the caller chooses how to display them. Application sessions produce executable
 scripts, analysis sessions perform analysis, and packaging sessions cannot
 compile. For supplied text or editor overrides, use `compileSources(sourceBatch, target)`.
-Neither form executes `$init` or an entry function. Failed compilation prevents
+Neither form executes initializers or an entry function. Failed compilation prevents
 `run()` from initializing scripts or invoking the runnable module.
 
 The host does not impose an entry convention or validate a configured entry
 during compilation. Each runnable module executes its own entry; game entry
 errors are reported during startup rather than by `nomad check`.
-Compiler phase hooks remain available to modules. Resource preparation is
-coordinated internally by the host rather than through caller-supplied
-compilation callbacks.
 
 Create a host with `ModuleHost::create(...)`, which returns a
 `std::unique_ptr<ModuleHost>`. `ModuleHost` is a pure virtual interface; callers
@@ -185,11 +537,11 @@ for applications; `Game::createForRuntime` registers the game API against a
 borrowed runtime without compiling or executing scripts.
 
 Embedders invoking callbacks or using their own VM without a module host must
-call `Runtime::initializeScripts()` first. It executes `$init` once; repeated
-successful calls do nothing. `VirtualMachine::run` never performs initialization
-automatically. Analysis resolves initializers but installs neither initial values
-nor executable initialization code. `initializeScripts` rejects analysis-only
-hub variables.
+call `Runtime::initializeScripts()` first. It executes script initializers once;
+repeated successful calls do nothing. `VirtualMachine::run` never performs
+initialization automatically. Analysis resolves initializers but installs neither
+initial values nor executable initialization. `initializeScripts` rejects
+analysis-only hub variables.
 Initialization failure propagates to the caller, is not retried, and prevents
 subsequent high-level script execution. Use a fresh runtime for a new application
 execution.
@@ -226,9 +578,8 @@ void compileSources() {
 }
 ```
 
-`registerSources` is the only script-input API. A single script is a batch with
-one entry; the former `registerScriptFile` API is replaced by this entry point.
-It copies the input, so the batch may be changed or destroyed
+`registerSources` accepts a batch of script inputs; a single script is a batch
+with one entry. It copies the input, so the batch may be changed or destroyed
 after registration. It appends sources; it does not replace already registered
 functions. Duplicate script names are reported immediately to the supplied
 `CompilerContext`. That same context collects loading and compilation diagnostics;
@@ -236,23 +587,13 @@ compilation refuses to proceed if it already contains errors. Use a fresh runtim
 for independent analysis snapshots, or provide a runtime containing the host APIs
 needed by the scripts. Compilation does not execute scripts.
 
-The compiler owns `ScriptSource` snapshots alongside per-script tokenizers and
-top-level function IDs. Its function compilation records separately hold ASTs
-and a compiler-local `NomadId` referring to the owning script. Script IDs remain
-stable when more batches are registered and when scripts are processed in sorted
-order; references returned by `getScript(id)` should be reacquired after
-registration.
-
-Parser integrations use `createFunction(context, scriptId, functionName)` for
-declared or generated functions, replacing `registerFunctionSource`. This creates
-a function within an existing script, not another script input. The script ID can
-be obtained from a compiled or currently compiling function with
-`getScriptId(functionId)`. Function creation inherits the script's source name
-and full text and reports name collisions to the supplied context.
+`createFunction(context, scriptId, functionName)` creates a declared or generated
+function within an existing script. Obtain the script ID with
+`getScriptId(functionId)`. Function creation uses the script's source name and
+text and reports name collisions to the supplied context.
 
 For disk input, call `loadSourcePaths(paths)` with a vector or span of filesystem
-paths, then register the returned batch. This replaces the former
-`Compiler::loadScriptsFromPath` API. The CLI tools and game use this same adapter.
+paths, then register the returned batch.
 Each directory is a separate compile root; relative paths become dotted script
 names. Individual files use their filename stem. Discovery ignores non-`.nomad`
 files, skips symbolic links within directories, and visits at most ten directory
@@ -381,10 +722,19 @@ the same VM. Access to a shared context or VM must be serialized by the host.
 
 ## Parameterized types
 
-`Runtime::registerParameterizedType(name, argumentCount, factory)` registers a
-type family. The factory receives resolved type arguments and returns a
-runtime-owned descriptor. `getParameterizedType(name, arguments)` registers a
-specialization on first use and reuses it on subsequent requests. Arguments must
+`Runtime::registerParameterizedType(name, argumentCount, factory, initializer = {})`
+registers a type family. The factory has the signature
+`std::unique_ptr<Type>(Runtime*, const std::vector<const Type*>&)`. It receives
+the owning runtime and resolved type arguments and returns a fully constructed,
+unregistered descriptor associated with that runtime. It must not register the
+returned descriptor itself, including through `createObjectType`.
+
+The runtime validates and registers the descriptor, then calls the optional
+initializer with `(Runtime*, TypeId)`. The ID identifies the registered
+specialization and can be used to retrieve it and add its members. The runtime
+caches the specialization after initialization succeeds.
+`getParameterizedType(name, arguments)` creates a specialization on first use
+and reuses it on subsequent requests without rerunning either callback. Arguments must
 be non-void, public types owned by that runtime. Invalid requests are logged and
 return null.
 
@@ -463,25 +813,30 @@ construction through the existing native constructor execution paths.
 
 ### Native object types and constructors
 
-`ObjectTypeBase` provides shared reference-counted value handling and object
-opcodes. `ObjectType` supplies a name and type-argument metadata; its text
-representation is its type name. Its initial value is a null object reference,
-not a constructed collection. Specialized descriptors may override initialization
-and formatting. Strings reuse the base while retaining empty-string initialization.
+`ObjectType` describes an object type and its type arguments. Its default value
+is null, and its text representation is its type name. Specialized types may
+provide other default values and formatting.
 
-`Type::initValue(value)` is pure virtual and initializes fresh storage with an
-owned default value; it does not release existing contents. Implement it when
-defining a type descriptor, and release initialized values through `freeValue`
-when they are no longer needed. Keep descriptors alive until all values using
-them have been released.
+`Type::initValue(value)` initializes a fresh value with the type's default.
+Implement it when defining a type descriptor, and release initialized values
+through `freeValue` when they are no longer needed.
 
-Register a constructor with the type it constructs, its parameters, and a factory.
-Scripts invoke it with `new` and the type's name:
+Register a constructor through `Runtime::registerNativeConstructor` with the type
+it constructs, its parameters, and a factory. `ObjectType::getConstructors()`
+lists that type's registered constructors as borrowed `const Constructor*`
+pointers, in registration order. These pointers remain valid until the runtime
+is destroyed. A constructor returning another type is listed under its declaring
+type, not its result type.
+
+Scripts invoke constructors with `new` and the type's name:
 
 ```cpp
-auto descriptor = std::make_unique<nomad::ObjectType>("Example");
-const auto* type = descriptor.get();
-runtime.registerType(std::move(descriptor));
+const auto typeId = runtime.createObjectType("Example", nomad::ObjectTypeMode::Closed);
+const auto registeredType = runtime.getType(typeId);
+if (!registeredType) {
+    throw nomad::NomadException("Failed to create Example type");
+}
+const auto* type = static_cast<const nomad::ObjectType*>(*registeredType);
 const auto constructorId = runtime.registerNativeConstructor(
     type,
     {nomad::defParameter("size", runtime.getIntegerType(), "")},
@@ -490,13 +845,13 @@ const auto constructorId = runtime.registerNativeConstructor(
     },
     ""
 );
-if (constructorId == nomad::NOMAD_INVALID_ID) {
+if (constructorId.isInvalid()) {
     throw nomad::NomadException("Failed to register Example constructor");
 }
 ```
 
 Parameter types and the constructed type must be types registered with that runtime;
-parameters cannot be `void`. Registration failures are logged and return `NOMAD_INVALID_ID`.
+parameters cannot be `void`. Registration failures are logged and return `CallableId::INVALID`.
 Constructors of one type may differ in parameter count or types. Duplicate parameter
 signatures are rejected, even if their parameter names differ. Use an empty parameter
 list for a parameterless constructor.
@@ -526,7 +881,7 @@ Specializations are reused on subsequent requests through
 ## Native object methods
 
 Use `Runtime::registerNativeMethod(objectType, name, callback, parameters, returnType, doc)`
-for methods on an `ObjectTypeBase` descriptor. Read the instance inside the callback:
+for methods on an `ObjectType` descriptor. Read the instance inside the callback:
 
 ```cpp
 [](nomad::VirtualMachine* vm) {
@@ -538,6 +893,11 @@ for methods on an `ObjectTypeBase` descriptor. Read the instance inside the call
 Use `registerNativeFunction` for a global function and `registerNativeMethod` for a
 method on a non-null object type.
 Global function lookup and enumeration exclude methods.
+
+`ObjectType::getMethods()` lists the type's registered methods as borrowed
+`const Method*` pointers, in registration order.
+The pointers remain valid until the runtime is destroyed, even when additional
+methods are registered. Use a method's `getId()` with Runtime's callable accessors.
 
 `getThis()` returns the borrowed instance; `getThisAs<T>()` performs a static cast.
 The host must pair the descriptor with the correct C++ class. Access without an
@@ -556,6 +916,36 @@ specifies the number and types of indices. All types must belong to the runtime
 and be public, non-void types. An object type may register one indexer per index
 count; lookup uses the receiver type and number of indices, not index-type
 overloading.
+
+Registration and `getNativeIndexerId(objectType, indexCount)` return an
+`IndexerId`, or `IndexerId::INVALID` on failure or missing lookup. Registration
+failures are logged. Include `<nomad/script/NativeMember.hpp>` for the ID and
+`NativeIndexerInfo`. IDs are runtime-local and remain stable as more
+indexers are registered. They do not implicitly convert to integers or other
+ID categories. `getNativeIndexerInfo(id)` returns
+`std::optional<NativeIndexerInfo>`, empty for invalid or unregistered IDs.
+
+```cpp
+const auto info = runtime.getNativeIndexerInfo(id);
+if (info) {
+    // Inspect the detached metadata snapshot through info->...
+}
+```
+
+The object type owns each indexer's metadata. `ObjectType::getNativeIndexer(indexCount)`
+returns a borrowed `const NativeIndexerInfo*`, or `nullptr` when absent.
+`ObjectType::getNativeIndexers()` enumerates that type's indexers, while
+`Runtime::getNativeIndexers()` enumerates the runtime-wide borrowed catalog in
+registration order. Both enumerate const metadata pointers; these pointers
+remain valid as more indexers are registered, until the runtime destroys their
+owning types. `getNativeIndexerInfo` returns a metadata copy.
+
+Hosts retaining a mutable registered object type may also call
+`ObjectType::registerNativeIndexer(runtime, info)`. This existing low-level
+operation accepts `NativeIndexerInfo`; supply an invalid ID and that object
+type as `info.objectType`. The same registration rules
+apply; foreign-runtime types, preassigned IDs, and duplicate index counts are
+rejected without changing the owner or catalog.
 
 Omit the setter for read-only indexing, or omit
 the getter for write-only indexing. Invalid access is rejected during compilation.
@@ -646,15 +1036,25 @@ runtime.registerIterableType(
 );
 ```
 
-`registerIterableType` accepts a runtime-owned `Method`, not a native member ID.
-The factory must belong to the source type, take no arguments, and return the
+Pass a registered `Method` to `registerIterableType`; it does not accept a native
+member ID. The factory must belong to the source type, take no arguments, and return the
 matching iterator type. Duplicate associations and invalid registrations throw
-`NomadException`. `getIterableDefinition(sourceType)` returns an optional association.
+`NomadException`. `getIterableInfo(sourceType)` returns an optional association.
+
+The source `ObjectType` owns its iterable association. Include
+`<nomad/script/Type.hpp>` for `IterableInfo`.
+`ObjectType::getIterableInfo()` returns an optional snapshot containing
+the element type, iterator type, and factory `CallableId`. Runtime lookup returns
+the same snapshot, or an empty optional for a non-iterable or foreign-runtime type.
+Hosts retaining a mutable registered object type may call
+`ObjectType::registerIterableType(runtime, elementType, factory)` directly;
+the same ownership, signature, and duplicate-registration checks apply.
+Neither lookup permits changing the registered association.
 
 Each factory invocation must create independent iteration state. An iterator
 owns its published value; consumers receive normal typed copies, including
-reference ownership for object values. Completion is permanent. Loop completion,
-`break`, and normal function return release loop-owned cursors and values.
+reference ownership for object values. Iteration state is released when iteration
+completes, a loop exits with `break`, or the function returns.
 
 ## Member declarations for parameterized type families
 
@@ -705,7 +1105,7 @@ overload queries continue to return only concrete members.
 
 ## Native object properties
 
-Use `registerNativeProperty(objectType, name, valueType, getter, setter, doc)`.
+Use `addProperty(typeId, NativePropertyDefinition{...})`.
 Either callback may be empty for a write-only or read-only property. Both
 callbacks access the borrowed instance through `getThisAs<T>()`.
 
@@ -716,16 +1116,20 @@ assign that local to `result`; this retains object references without reading th
 output's previous contents.
 
 ```cpp
-runtime.registerNativeProperty(
-    objectType, "value", runtime.getFloatType(),
-    [](nomad::VirtualMachine* vm, nomad::RuntimeValue& result) {
+const auto propertyId = runtime.addProperty(typeId, {
+    .valueTypeId = runtime.getTypeId("float"),
+    .name = "value",
+    .getter = [](nomad::VirtualMachine* vm, nomad::RuntimeValue& result) {
         result.setFloatValue(vm->getThisAs<MyObject>()->getValue());
     },
-    [](nomad::VirtualMachine* vm, const nomad::RuntimeValue& value) {
+    .setter = [](nomad::VirtualMachine* vm, const nomad::RuntimeValue& value) {
         vm->getThisAs<MyObject>()->setValue(value.getFloatValue());
     },
-    NomadDoc("Instance value.")
-);
+    .documentation = NomadDoc("Instance value.")
+});
+if (propertyId.isInvalid()) {
+    throw nomad::NomadException("Failed to register value property");
+}
 ```
 
 Members require a registered object type. Property setters mutate that instance,

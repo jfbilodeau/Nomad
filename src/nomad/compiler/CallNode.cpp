@@ -74,11 +74,11 @@ void ArgumentList::addExpressionArgument(
     m_arguments.push_back(std::move(argument));
 }
 
-void ArgumentList::addPredicateArgument(NomadIndex line, NomadIndex column, NomadId predicateFunctionId) {
+void ArgumentList::addPredicateArgument(NomadIndex line, NomadIndex column, CallableId predicateFunctionId) {
     m_arguments.emplace_back(createPredicateArgument(line, column, predicateFunctionId));
 }
 
-void ArgumentList::addCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, NomadId functionId) {
+void ArgumentList::addCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, CallableId functionId) {
     m_arguments.emplace_back(createCallbackArgument(line, column, type, functionId));
 }
 
@@ -86,8 +86,8 @@ void ArgumentList::addEventCallbackArgument(
     NomadIndex line,
     NomadIndex column,
     const Type* type,
-    NomadId eventId,
-    NomadId functionId
+    EventId eventId,
+    CallableId functionId
 ) {
     m_arguments.emplace_back(createEventCallbackArgument(line, column, type, eventId, functionId));
 }

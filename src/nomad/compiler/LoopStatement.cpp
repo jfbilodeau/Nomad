@@ -67,7 +67,7 @@ protected:
             if (!m_source->resolve(context, function)) {
                 return;
             }
-            const auto iterable = runtime->getIterableDefinition(m_source->getType());
+            const auto iterable = runtime->getIterableInfo(m_source->getType());
             if (!iterable) {
                 reportError(context, function, "For source must be an iterable object");
                 return;
@@ -100,11 +100,11 @@ protected:
 
     void onCompile(Compiler* compiler, ScriptFunction* function) override {
         resetControls();
-        const auto store = [&](Expression* expression, const Type* type, NomadId id) {
+        const auto store = [&](Expression* expression, const Type* type, VariableId id) {
             expression->compile(compiler, function, ExpressionTarget::Result);
-            compiler->addFreeValue(type->getTypeOpCodes()->freeFunctionVariable, toNomadIndex(id));
+            compiler->addFreeValue(type->getTypeOpCodes()->freeFunctionVariable, toNomadIndex(id.id));
             compiler->addOpCode(type->getTypeOpCodes()->setFunctionVariable);
-            compiler->addId(id);
+            compiler->addId(id.id);
         };
         store(m_factory.get(), m_iteratorType, m_iteratorId);
         const auto continuation = compiler->getOpCodeSize();
@@ -118,7 +118,7 @@ protected:
         const auto cleanup = compiler->getOpCodeSize();
         compiler->setIndex(exit, cleanup);
         patchControls(compiler, continuation, cleanup);
-        compiler->addFreeValue(m_iteratorType->getTypeOpCodes()->freeFunctionVariable, toNomadIndex(m_iteratorId));
+        compiler->addFreeValue(m_iteratorType->getTypeOpCodes()->freeFunctionVariable, toNomadIndex(m_iteratorId.id));
     }
 
     void onEvaluate(InterpreterContext& context) const override {
@@ -179,8 +179,8 @@ private:
     std::unique_ptr<Expression> m_current;
     const Type* m_valueType = nullptr;
     const Type* m_iteratorType = nullptr;
-    NomadId m_valueId = NOMAD_INVALID_ID;
-    NomadId m_iteratorId = NOMAD_INVALID_ID;
+    VariableId m_valueId = VariableId::INVALID;
+    VariableId m_iteratorId = VariableId::INVALID;
 };
 
 std::unique_ptr<Statement> createControl(

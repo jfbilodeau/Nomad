@@ -25,7 +25,7 @@ NomadString generateFunFunctionName(CompilerContext* context, ScriptFunction* fu
     // Generate function name
     NomadString testFunctionName;
     auto count = 0;
-    auto testId = NOMAD_INVALID_ID;
+    auto testId = CallableId{};
 
     do {
         testFunctionName = function->getName() + "@" + toString(line) + "[" + toString(count) + "]";
@@ -36,7 +36,7 @@ NomadString generateFunFunctionName(CompilerContext* context, ScriptFunction* fu
             // Hopefully this will never happen...
             context->getCompiler()->reportInternalError("could not generate `fun` function name");
         }
-    } while (testId != NOMAD_INVALID_ID);
+    } while (testId.isValid());
 
     return testFunctionName;
 }
@@ -172,13 +172,13 @@ bool preParseFunStatement(CompilerContext* context, ScriptFunction* function, To
         // See if the name of the context variable is used.
         const auto contextId = context->getRuntime()->getVariableContextIdByPrefix(funName);
 
-        if (contextId == NOMAD_INVALID_ID) {
+        if (contextId.isInvalid()) {
             context->getCompiler()->reportInternalError("Unknown variable context for '" + funName + "'");
         }
 
         const auto variableId = context->getRuntime()->getContextVariableId(funName);
 
-        if (variableId != NOMAD_INVALID_ID) {
+        if (variableId.isValid()) {
             log::warning("Function name '" + funName + "' is already used as a context variable name");
         }
     } else if (identifierType != IdentifierType::Unknown) {
@@ -190,7 +190,7 @@ bool preParseFunStatement(CompilerContext* context, ScriptFunction* function, To
     // Generate `fun`
     auto* compiler = context->getCompiler();
     const auto funId = compiler->createFunction(context, compiler->getScriptId(function->getId()), funName);
-    if (funId == NOMAD_INVALID_ID) {
+    if (funId.isInvalid()) {
         return false;
     }
 
@@ -366,7 +366,7 @@ protected:
         m_expression->compile(compiler, function, ExpressionTarget::Result);
 
         compiler->addOpCode(OpCodes::op_id_load_i);
-        compiler->addId(assertMessageId);
+        compiler->addId(assertMessageId.id);
 
         compiler->addOpCode(OpCodes::op_assert);
     }
@@ -468,7 +468,7 @@ bool parseConstantPrimary(CompilerContext* context, Tokenizer* tokens, ConstantV
     if (token.type == TokenType::Identifier) {
         auto constantId = context->getRuntime()->getConstantId(context->resolveName(token.textValue));
 
-        if (constantId == NOMAD_INVALID_ID) {
+        if (constantId.isInvalid()) {
             context->reportError("Unknown constant '" + token.textValue + "'", tokens);
 
             return false;
@@ -718,7 +718,7 @@ bool preParseConstStatement(CompilerContext* context, ScriptFunction* /*function
         context->reportError("Constant name '" + constantName + "' is reserved by a hub", tokens);
         return false;
     }
-    if (context->getRuntime()->getConstantId(constantName) != NOMAD_INVALID_ID) {
+    if (context->getRuntime()->getConstantId(constantName).isValid()) {
         context->reportError("Constant '" + constantName + "' is already defined", tokens);
 
         return false;
@@ -730,7 +730,7 @@ bool preParseConstStatement(CompilerContext* context, ScriptFunction* /*function
         return false;
     }
 
-    if (context->getRuntime()->registerConstant(constantName, constant.value, constant.type) == NOMAD_INVALID_ID) {
+    if (context->getRuntime()->registerConstant(constantName, constant.value, constant.type).isInvalid()) {
         context->reportError("Failed to register constant '" + constantName + "'", tokens);
         return false;
     }
@@ -856,7 +856,7 @@ bool preParseEnumStatement(CompilerContext* context, ScriptFunction* function, T
         }
     }
 
-    if (runtime->registerEnum(enumName, values) == nullptr) {
+    if (runtime->createEnum(enumName, values).isInvalid()) {
         context->reportError("Failed to register enum '" + enumName + "'", tokens);
         return false;
     }
@@ -942,7 +942,7 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
         auto* compiler = context->getCompiler();
         const auto handlerFunctionId = compiler->createFunction(
             context, compiler->getScriptId(function->getId()), handlerFunctionName);
-        if (handlerFunctionId == NOMAD_INVALID_ID) {
+        if (handlerFunctionId.isInvalid()) {
             return nullptr;
         }
         auto handlerFunction = context->getRuntime()->getScriptFunction(handlerFunctionId);
@@ -975,7 +975,7 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
 
     const auto handlerFunctionId = context->getRuntime()->getFunctionId(handlerName);
 
-    if (handlerFunctionId == NOMAD_INVALID_ID) {
+    if (handlerFunctionId.isInvalid()) {
         context->reportError("Unknown handler function '" + handlerName + "'", tokens);
 
         return nullptr;

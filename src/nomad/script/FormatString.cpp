@@ -9,6 +9,7 @@
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/String.hpp>
 
@@ -60,7 +61,7 @@ DynamicFormatResult formatDynamicString(const NomadStringView format, Interprete
     return result;
 }
 
-FormatString::FormatString(const NomadString& formatString, NomadId functionId):
+FormatString::FormatString(const NomadString& formatString, CallableId functionId):
     m_formatString(formatString),
     m_functionId(functionId)
 {}
@@ -73,6 +74,7 @@ void FormatString::addLiteral(const NomadString& literal) {
     IdentifierType::Unknown,
     nullptr,
     NOMAD_INVALID_ID,
+    CallableId{},
     literal
     });
 }
@@ -83,15 +85,28 @@ void FormatString::addVariable(const IdentifierType variable_type, const Type* v
         variable_type,
         valueType,
         variableId,
+        CallableId{},
         "",
     });
 }
 
-void FormatString::addExpression(const Type* valueType, const NomadId functionId) {
+void FormatString::addFunction(const Type* valueType, const CallableId functionId) {
+    m_segments.push_back({
+        SegmentType::Variable,
+        IdentifierType::Function,
+        valueType,
+        NOMAD_INVALID_ID,
+        functionId,
+        "",
+    });
+}
+
+void FormatString::addExpression(const Type* valueType, const CallableId functionId) {
     m_segments.push_back({
         SegmentType::Expression,
         IdentifierType::Function,
         valueType,
+        NOMAD_INVALID_ID,
         functionId,
         "",
     });
@@ -101,7 +116,7 @@ NomadString FormatString::format(VirtualMachine *interpreter) const {
     NomadString string;
 
     const auto appendFunction = [&](const Segment& segment, const bool captureFrame) {
-        const auto* function = interpreter->getRuntime()->getScriptFunction(segment.variableId);
+        const auto* function = interpreter->getRuntime()->getScriptFunction(segment.functionId);
         if (function == nullptr || segment.valueType == nullptr || segment.valueType->isVoid() ||
             function->getReturnType() != segment.valueType) {
             interpreter->fault("Internal error: Invalid function in format string segment");

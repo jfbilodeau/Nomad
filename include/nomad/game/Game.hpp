@@ -35,7 +35,6 @@ class Resource;
 class ResourceManager;
 class Scene;
 class ScriptFunction;
-class SimpleVariableContext;
 class Closure;
 
 class GameException final : public NomadException {
@@ -109,13 +108,6 @@ public:
     [[nodiscard]] bool fileExists(const NomadString& fileName) const;
     void deleteFile(const NomadString& fileName) const;
 
-    // Game state (`inventory.*`) and settings (`settings.*`) persistence.
-    bool saveGame(const NomadString& saveName);
-    bool loadGame(const NomadString& saveName);
-    [[nodiscard]] bool saveExists(const NomadString& saveName) const;
-    bool saveSettings();
-    bool loadSettings();
-
     // Debug settings. Changes are saved to `debug.json` automatically.
     void setDebugConsoleVisible(bool visible);
     [[nodiscard]] bool isDebugConsoleVisible() const;
@@ -138,20 +130,20 @@ public:
     [[nodiscard]] uint64_t getUpdateDuration() const;
     [[nodiscard]] uint64_t getRenderDuration() const;
 
-    [[nodiscard]] NomadId getFunctionId(const NomadString& functionName) const;
-    void executeFunction(NomadId functionId, Scene* scene, Entity* thisEntity, Entity* otherEntity = nullptr);
-    void executeFunction(NomadId functionId, Scene* scene, Entity* entity, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue);
-    void executeFunction(NomadId functionId, Scene* scene, Entity* entity, const std::vector<Entity*>& others, const std::vector<RuntimeValue>& args);
-    void executeFunction(NomadId functionId, Scene* scene, Entity* entity, const std::vector<Entity*>& others, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue);
+    [[nodiscard]] CallableId getFunctionId(const NomadString& functionName) const;
+    void executeFunction(CallableId functionId, Scene* scene, Entity* thisEntity, Entity* otherEntity = nullptr);
+    void executeFunction(CallableId functionId, Scene* scene, Entity* entity, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue);
+    void executeFunction(CallableId functionId, Scene* scene, Entity* entity, const std::vector<Entity*>& others, const std::vector<RuntimeValue>& args);
+    void executeFunction(CallableId functionId, Scene* scene, Entity* entity, const std::vector<Entity*>& others, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue);
     void executeFunction(const Closure* closure, Scene* scene, Entity* entity, const std::vector<Entity*>& others = {}, const std::vector<RuntimeValue>& args = {});
     // The caller owns the copy placed in `returnValue` and must free it through the function's return type.
     void executeFunction(const Closure* closure, Scene* scene, Entity* entity, const std::vector<Entity*>& others, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue);
 
-    [[nodiscard]] bool executePredicate(NomadId functionId) const;
+    [[nodiscard]] bool executePredicate(CallableId functionId) const;
 
     NomadId createScene(
         const NomadString& sceneName,
-        NomadId functionId,
+        CallableId functionId,
         std::unique_ptr<Closure> postCreateClosure = nullptr
     );
     void removeScene(const Scene* scene);
@@ -161,7 +153,7 @@ public:
 
     NomadId addEntityToScene(
         NomadId sceneId,
-        NomadId initFunctionId,
+        CallableId initFunctionId,
         NomadFloat x,
         NomadFloat y,
         NomadFloat width,
@@ -177,9 +169,14 @@ public:
     void triggerSceneEvent(NomadId sceneId, const NomadString& eventName);
     void triggerSceneLayerEvent(NomadId sceneId, NomadInteger layerNumber, const NomadString& eventName);
     void triggerEntityEvent(NomadId sceneId, NomadId entityId, const NomadString& eventName, std::vector<RuntimeValue> args = {});
-    void triggerEntityEvent(NomadId eventId, NomadId sceneId, NomadId entityId, std::vector<RuntimeValue> args);
+    void triggerEntityEvent(
+        EventId eventId,
+        NomadId sceneId,
+        NomadId entityId,
+        std::vector<RuntimeValue> args
+    );
     void scheduleEntityEvent(NomadId sceneId, NomadId entityId, NomadInteger frameCount, NomadBoolean repeat, const NomadString& eventName);
-    void scheduleEntityCallback(NomadId sceneId, NomadId entityId, NomadInteger frameCount, NomadBoolean repeat, NomadId callback);
+    void scheduleEntityCallback(NomadId sceneId, NomadId entityId, NomadInteger frameCount, NomadBoolean repeat, CallableId callback);
 
     [[nodiscard]] bool running() const;
     [[nodiscard]] bool isPaused() const;
@@ -248,7 +245,6 @@ private:
 
     void initDebugConsole();
 
-    [[nodiscard]] NomadString getSettingsFilePath() const;
     [[nodiscard]] NomadString getDebugSettingsFilePath() const;
     void ensureDebugSettingsLoaded();
     void loadDebugSettings();
@@ -303,16 +299,11 @@ private:
     NomadString m_title = "Nomad";
     Point m_resolution = {800, 600};
     Point m_windowSize = m_resolution;
-    NomadIndex m_fps = 30;
+    NomadInteger m_fps = 30;
 
     const VariableMap* m_sceneVariableMap = nullptr;
     const VariableMap* m_thisEntityVariableMap = nullptr;
     const VariableMap* m_otherEntityVariableMap = nullptr;
-    const VariableMap* m_inventoryVariableMap = nullptr;
-
-    // Owned by the runtime.
-    SimpleVariableContext* m_inventoryContext = nullptr;
-    SimpleVariableContext* m_settingsContext = nullptr;
 
     bool m_debugSettingsLoaded = false;
     bool m_debugConsoleVisible = false;

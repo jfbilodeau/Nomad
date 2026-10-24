@@ -20,7 +20,7 @@ using namespace nomad;
 
 namespace {
 
-NomadId compileFunction(Runtime& runtime, const NomadString& source) {
+CallableId compileFunction(Runtime& runtime, const NomadString& source) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"test", {"test.nomad", source}}}, {}});
@@ -43,14 +43,14 @@ BOOST_AUTO_TEST_CASE(registers_immutable_string_members) {
     const auto lengthId = runtime.getNativeMemberId(runtime.getStringType(), "length");
     const auto toUpperId = runtime.getNativeMemberId(runtime.getStringType(), "toUpper");
 
-    BOOST_REQUIRE(lengthId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(toUpperId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE((runtime.getMemberType(lengthId) == MemberType::Property));
+    BOOST_REQUIRE((runtime.getMemberType(toUpperId) == MemberType::Method));
 
-    NativePropertyDefinition length;
-    BOOST_REQUIRE(runtime.getNativePropertyDefinition(lengthId, length));
-    BOOST_TEST(static_cast<bool>(length.getFn));
-    BOOST_TEST(!length.setFn);
-    BOOST_TEST(length.valueType == runtime.getIntegerType());
+    const auto lengthInfo = runtime.getNativePropertyInfo(lengthId);
+    BOOST_REQUIRE(lengthInfo.has_value());
+    BOOST_TEST(static_cast<bool>(lengthInfo->getFn));
+    BOOST_TEST(!lengthInfo->setFn);
+    BOOST_TEST(lengthInfo->valueType == runtime.getIntegerType());
 
     const auto* toUpper = runtime.getNativeMemberMethod(toUpperId);
     BOOST_REQUIRE(toUpper != nullptr);

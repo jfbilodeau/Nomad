@@ -21,28 +21,28 @@ public:
     ~ThisEntityVariableContext() override = default;
 
     [[nodiscard]] NomadIndex getVariableCount() const override;
-    NomadId getFirstVariableId() const override;
-    NomadId getNextVariableId(NomadId variableId) const override;
+    VariableId getFirstVariableId() const override;
+    VariableId getNextVariableId(VariableId variableId) const override;
 
-    NomadId registerVariable(const NomadString &name, const Type* type) override;
+    VariableId registerVariable(const NomadString &name, const Type* type) override;
     [[nodiscard]]
-    const NomadString & getVariableName(NomadId variableId) const override;
+    const NomadString & getVariableName(VariableId variableId) const override;
     [[nodiscard]]
-    NomadId getVariableId(const NomadString &name) const override;
+    VariableId getVariableId(const NomadString &name) const override;
 
-    void setVariableType(NomadId variableId, const Type* type) override;
+    void setVariableType(VariableId variableId, const Type* type) override;
     [[nodiscard]]
-    const Type* getVariableType(NomadId variableId) const override;
+    const Type* getVariableType(VariableId variableId) const override;
 
-    void setValue(NomadId variableId, const RuntimeValue& value) override;
-    void getValue(NomadId variableId, RuntimeValue& value) override;
+    void setValue(VariableId variableId, const RuntimeValue& value) override;
+    void getValue(VariableId variableId, RuntimeValue& value) override;
 
     [[nodiscard]]
-    bool isWritten(NomadId variableId) const override;
-    void setWritten(NomadId variableId, bool written) override;
+    bool isWritten(VariableId variableId) const override;
+    void setWritten(VariableId variableId, bool written) override;
     [[nodiscard]]
-    bool isRead(NomadId variableId) const override;
-    void setRead(NomadId variableId, bool read) override;
+    bool isRead(VariableId variableId) const override;
+    void setRead(VariableId variableId, bool read) override;
 
     [[nodiscard]]
     Game* getGame() const;
@@ -65,28 +65,28 @@ public:
     ~OtherEntityVariableContext() override = default;
 
     [[nodiscard]] NomadIndex getVariableCount() const override;
-    NomadId getFirstVariableId() const override;
-    NomadId getNextVariableId(NomadId variableId) const override;
+    VariableId getFirstVariableId() const override;
+    VariableId getNextVariableId(VariableId variableId) const override;
 
-    NomadId registerVariable(const NomadString &name, const Type *type) override;
+    VariableId registerVariable(const NomadString &name, const Type *type) override;
     [[nodiscard]]
-    const NomadString & getVariableName(NomadId variableId) const override;
+    const NomadString & getVariableName(VariableId variableId) const override;
     [[nodiscard]]
-    NomadId getVariableId(const NomadString &name) const override;
+    VariableId getVariableId(const NomadString &name) const override;
 
-    void setVariableType(NomadId variableId, const Type *type) override;
+    void setVariableType(VariableId variableId, const Type *type) override;
     [[nodiscard]]
-    const Type * getVariableType(NomadId variableId) const override;
+    const Type * getVariableType(VariableId variableId) const override;
 
-    void setValue(NomadId variableId, const RuntimeValue& value) override;
-    void getValue(NomadId variableId, RuntimeValue& value) override;
+    void setValue(VariableId variableId, const RuntimeValue& value) override;
+    void getValue(VariableId variableId, RuntimeValue& value) override;
 
     [[nodiscard]]
-    bool isWritten(NomadId variableId) const override;
-    void setWritten(NomadId variableId, bool written) override;
+    bool isWritten(VariableId variableId) const override;
+    void setWritten(VariableId variableId, bool written) override;
     [[nodiscard]]
-    bool isRead(NomadId variableId) const override;
-    void setRead(NomadId variableId, bool read) override;
+    bool isRead(VariableId variableId) const override;
+    void setRead(VariableId variableId, bool read) override;
 
 private:
     ThisEntityVariableContext* m_thisEntityVariableContext;

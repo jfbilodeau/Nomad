@@ -110,7 +110,7 @@ BOOST_AUTO_TEST_CASE(native_lists_can_be_exposed_directly_as_read_only) {
     (void)list->append(RuntimeValue(NomadInteger{42}));
     RuntimeValue value;
     value.setObjectValue(list.get());
-    BOOST_REQUIRE(runtime.registerConstant("snapshot", value, type) != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(runtime.registerConstant("snapshot", value, type).isValid());
     list.release()->releaseRef();
     execute(runtime, "assert snapshot.count == 1\nassert snapshot[0] == 42");
 }

@@ -16,20 +16,20 @@ namespace nomad {
 
 class SelectStatement : public Statement {
 public:
-    SelectStatement(NomadIndex line, NomadIndex column, NomadId predicateFunctionId);
+    SelectStatement(NomadIndex line, NomadIndex column, CallableId predicateFunctionId);
 
 protected:
     void onResolve(CompilerContext* context, ScriptFunction* function) override;
 
 private:
-    NomadId m_predicateFunctionId;
+    CallableId m_predicateFunctionId;
 
 };
 
 SelectStatement::SelectStatement(
     const NomadIndex line,
     const NomadIndex column,
-    const NomadId predicateFunctionId
+    const CallableId predicateFunctionId
 ):
     Statement(line, column),
     m_predicateFunctionId(predicateFunctionId)
@@ -51,7 +51,7 @@ std::unique_ptr<Statement> parseSelectStatement(CompilerContext* context, Script
     auto* compiler = context->getCompiler();
     const auto functionId = compiler->createFunction(
         context, compiler->getScriptId(function->getId()), functionName);
-    if (functionId == NOMAD_INVALID_ID) {
+    if (functionId.isInvalid()) {
         return nullptr;
     }
 

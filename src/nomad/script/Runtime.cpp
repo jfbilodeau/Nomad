@@ -5,8 +5,10 @@
 #include <nomad/compiler/Compiler.hpp>
 
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/Hub.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/NativeMembers.hpp>
+#include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/RegisterRangeType.hpp>
 #include <nomad/script/Type.hpp>
@@ -24,7 +26,7 @@
 
 namespace nomad {
 
-const ObjectTypeBase* Runtime::getIteratorType(const Type* valueType) {
+const ObjectType* Runtime::getIteratorType(const Type* valueType) {
     if (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
         throw NomadException("Iterator value type must be a registered non-void type");
     }
@@ -32,7 +34,7 @@ const ObjectTypeBase* Runtime::getIteratorType(const Type* valueType) {
     if (type == nullptr) {
         throw NomadException("Failed to specialize iterator type");
     }
-    return static_cast<const ObjectTypeBase*>(type);
+    return static_cast<const ObjectType*>(type);
 }
 
 void Runtime::registerIterableType(
@@ -40,19 +42,19 @@ void Runtime::registerIterableType(
     const Type* valueType,
     const Method* factory
 ) {
-    const auto* iteratorType = getIteratorType(valueType);
-    if (!ownsType(sourceType) ||
-        factory == nullptr || getMethod(factory->getId()) != factory ||
-        factory->getObjectType() != sourceType || factory->getParameterCount() != 0 ||
-        factory->getReturnType() != iteratorType || m_iterableTypes.contains(sourceType)) {
+    auto* owner = ownsType(sourceType) ? getMutableObjectType(sourceType->asObjectType()) : nullptr;
+    if (owner == nullptr) {
         throw NomadException("Invalid iterable registration");
     }
-    m_iterableTypes.emplace(sourceType, IterableDefinition{valueType, iteratorType, factory->getId()});
+    owner->registerIterableType(*this, valueType, factory);
 }
 
-std::optional<IterableDefinition> Runtime::getIterableDefinition(const Type* sourceType) const {
-    const auto existing = m_iterableTypes.find(sourceType);
-    return existing == m_iterableTypes.end() ? std::nullopt : std::optional{existing->second};
+std::optional<IterableInfo> Runtime::getIterableInfo(const Type* sourceType) const {
+    if (!ownsType(sourceType)) {
+        return std::nullopt;
+    }
+    const auto* owner = sourceType->asObjectType();
+    return owner == nullptr ? std::nullopt : owner->getIterableInfo();
 }
 
 namespace {
@@ -77,42 +79,47 @@ bool isNativeMemberName(const NomadString& name) {
 
 Runtime::Runtime() {
     // Types
-    registerType(std::make_unique<VoidType>());
-    registerType(std::make_unique<IdType>());
-    registerType(std::make_unique<FloatType>());
-    registerType(std::make_unique<IntegerType>());
-    registerType(std::make_unique<BooleanType>());
-    registerType(std::make_unique<StringType>());
-    registerType(std::make_unique<FileNameType>());
-    registerType(std::make_unique<FunctionNameType>());
-    registerType(std::make_unique<FunctionLineNumberType>());
-    registerType(std::make_unique<EventCallbackType>());
-    registerType(std::make_unique<EventDispatchType>());
+    registerType(std::make_unique<VoidType>(this));
+    registerType(std::make_unique<IdType>(this));
+    registerType(std::make_unique<FloatType>(this));
+    registerType(std::make_unique<IntegerType>(this));
+    registerType(std::make_unique<BooleanType>(this));
+    registerType(std::make_unique<StringType>(this));
+    registerType(std::make_unique<FileNameType>(this));
+    registerType(std::make_unique<FunctionNameType>(this));
+    registerType(std::make_unique<FunctionLineNumberType>(this));
+    registerType(std::make_unique<EventCallbackType>(this));
+    registerType(std::make_unique<EventDispatchType>(this));
     if (!registerParameterizedType(
         "Iterator", 1,
-        [](const std::vector<const Type*>& arguments) {
-            return std::make_unique<ObjectType>("Iterator<" + arguments[0]->getTypeName() + ">", arguments);
+        [](Runtime* runtime, const std::vector<const Type*>& arguments) {
+            return std::make_unique<ObjectType>(
+                runtime, "Iterator<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments
+            );
         },
-        [this](const Type* type) {
+        [](Runtime* runtime, const TypeId id) {
+            const auto* type = runtime->getType(id).value();
             const auto* iteratorType = static_cast<const ObjectType*>(type);
             const auto* valueType = iteratorType->getTypeArguments()[0];
-            const auto advanceId = registerNativeMethod(
+            const auto advanceId = runtime->registerNativeMethod(
                 iteratorType, "moveNext",
                 [](VirtualMachine* machine) {
                     machine->setBooleanResult(machine->getThisAs<IteratorObject>()->moveNext());
                 },
-                {}, getBooleanType(), NomadDoc("Advances the iterator. Returns false at the end.")
+                {}, runtime->getBooleanType(), NomadDoc("Advances the iterator. Returns false at the end.")
             );
-            const auto currentId = registerNativeProperty(
-                iteratorType, "current", valueType,
-                [valueType](VirtualMachine* machine, RuntimeValue& result) {
+            const auto currentId = runtime->addProperty(id, {
+                .valueTypeId = runtime->getTypeId(valueType->getTypeName()),
+                .name = "current",
+                .getter = [valueType](VirtualMachine* machine, RuntimeValue& result) {
                     RuntimeValue owned;
                     valueType->assignValue(machine->getThisAs<IteratorObject>()->getCurrent(), owned);
                     result = owned;
                 },
-                {}, NomadDoc("The value published by the last successful moveNext call.")
-            );
-            if (advanceId == NOMAD_INVALID_ID || currentId == NOMAD_INVALID_ID) {
+                .setter = {},
+                .documentation = NomadDoc("The value published by the last successful moveNext call.")
+            });
+            if (advanceId.isInvalid() || currentId.isInvalid()) {
                 throw NomadException("Failed to register iterator members");
             }
         }
@@ -204,7 +211,7 @@ Runtime::Runtime() {
 
 Runtime::~Runtime() {
     for (NomadIndex constantIndex = 0; constantIndex < m_constants.size(); ++constantIndex) {
-        if (const auto* type = m_constantsMap.getVariableType(toNomadId(constantIndex))) {
+        if (const auto* type = m_constantsMap.getVariableType(VariableId{toNomadId(constantIndex)})) {
             type->freeValue(m_constants[constantIndex]);
         }
     }
@@ -226,7 +233,7 @@ const std::vector<Instruction>& Runtime::getInstructions() const {
     return m_instructions;
 }
 
-NomadId Runtime::registerNativeFunction(
+CallableId Runtime::registerNativeFunction(
     const NomadString& name,
     NativeFunctionFn nativeFunction_fn,
     const std::vector<Parameter>& parameters,
@@ -235,26 +242,26 @@ NomadId Runtime::registerNativeFunction(
 ) {
     if (isHub(name) || !canRegisterHubMember(name, true)) {
         log::error("Cannot register function '" + name + "': name is reserved by a hub");
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
     return registerNativeCallable(nullptr, name, std::move(nativeFunction_fn), parameters, returnType, doc);
 }
 
 bool Runtime::isHub(const NomadString& name) const {
-    return getHubId(name) != NOMAD_INVALID_ID;
+    return getHubId(name).isValid();
 }
 
-NomadId Runtime::getHubId(const NomadString& name) const {
+HubId Runtime::getHubId(const NomadString& name) const {
     for (auto index = NomadIndex{0}; index < m_hubs.size(); ++index) {
         if (m_hubs[index]->getName() == name) {
-            return toNomadId(index);
+            return HubId{toNomadId(index)};
         }
     }
-    return NOMAD_INVALID_ID;
+    return HubId::INVALID;
 }
 
-const Hub* Runtime::getHub(const NomadId id) const {
-    return isIdOutOfRange(id, m_hubs.size()) ? nullptr : m_hubs[toNomadIndex(id)].get();
+const Hub* Runtime::getHub(const HubId id) const {
+    return isIdOutOfRange(id.id, m_hubs.size()) ? nullptr : m_hubs[toNomadIndex(id.id)].get();
 }
 
 NomadString Runtime::getContainingHub(const NomadString& name) const {
@@ -277,38 +284,38 @@ bool Runtime::isHubVariable(const NomadString& name) const {
         return false;
     }
     const auto* member = hub->getMember(name.substr(hub->getName().size() + 1));
-    return member != nullptr && std::holds_alternative<HubVariable>(*member);
+    return member != nullptr && std::holds_alternative<VariableId>(*member);
 }
 
-NomadId Runtime::registerHubVariable(const NomadString& name) {
+ContextVariableId Runtime::registerHubVariable(const NomadString& name) {
     if (m_scriptInitialization.state != ScriptInitializationState::Pending ||
         getContainingHub(name).empty() || !canRegisterHubMember(name) ||
         isHub(name) || isHubVariable(name) ||
-        getCallableId(name) != NOMAD_INVALID_ID || getConstantId(name) != NOMAD_INVALID_ID ||
-        getTypeByName(name) != nullptr || getEventId(name) != NOMAD_INVALID_ID ||
-        getDynamicVariableId(name) != NOMAD_INVALID_ID ||
-        getVariableContextIdByPrefix(name) != NOMAD_INVALID_ID) {
+        getCallableId(name).isValid() || getConstantId(name).isValid() ||
+        getTypeByName(name) != nullptr || getEventId(name).isValid() ||
+        getDynamicVariableId(name).isValid() ||
+        getVariableContextIdByPrefix(name).isValid()) {
         log::error("Cannot register hub variable '" + name + "': missing hub or conflicting declaration");
-        return NOMAD_INVALID_ID;
+        return ContextVariableId::INVALID;
     }
-    auto& hub = *m_hubs[toNomadIndex(getHubId(getContainingHub(name)))];
-    if (hub.m_variableContextId == NOMAD_INVALID_ID) {
-        hub.m_variableContextId = toNomadId(m_variables.size());
+    auto& hub = *m_hubs[toNomadIndex(getHubId(getContainingHub(name)).id)];
+    if (hub.m_variableContextId.isInvalid()) {
+        hub.m_variableContextId = VariableContextId{toNomadId(m_variables.size())};
         m_variables.push_back({
             hub.m_variableContextId, hub.getName(), "$hub." + hub.getName() + ".", hub.m_variables
         });
     }
     const auto id = registerContextVariable(hub.m_variableContextId, name, nullptr);
-    if (id != NOMAD_INVALID_ID) {
-        registerHubMember(name, HubVariable{hub.m_variables->getVariableId(name)});
+    if (id.isValid()) {
+        registerHubMember(name, hub.m_variables->getVariableId(name));
     }
     return id;
 }
 
-void Runtime::setScriptInitializer(const NomadId functionId) {
+void Runtime::setScriptInitializer(const CallableId functionId) {
     const auto* function = getScriptFunction(functionId);
     if (m_scriptInitialization.state != ScriptInitializationState::Pending ||
-        m_scriptInitialization.functionId != NOMAD_INVALID_ID || function == nullptr ||
+        m_scriptInitialization.functionId != CallableId{} || function == nullptr ||
         function->getParameterCount() != 0 || function->getReturnType() != getVoidType() ||
         function->getFunctionStart() == NOMAD_INVALID_INDEX) {
         throw NomadException("Script initialization requires a compiled, parameterless void function before startup");
@@ -327,7 +334,7 @@ void Runtime::initializeScripts() {
     if (initialization.state == ScriptInitializationState::Running) {
         throw VirtualMachineException("Script initialization cannot be re-entered");
     }
-    if (initialization.functionId == NOMAD_INVALID_ID) {
+    if (initialization.functionId == CallableId{}) {
         for (const auto& hub : m_hubs) {
             if (hub->m_variables->getVariableCount() != 0) {
                 throw VirtualMachineException("Script initialization requires successful executable compilation");
@@ -391,8 +398,8 @@ void Runtime::registerHubMember(const NomadString& name, HubMember member) {
         return;
     }
     const auto id = getHubId(getContainingHub(name));
-    if (id != NOMAD_INVALID_ID) {
-        auto& hub = *m_hubs[toNomadIndex(id)];
+    if (id.isValid()) {
+        auto& hub = *m_hubs[toNomadIndex(id.id)];
         addHubMember(hub.m_members, name.substr(hub.getName().size() + 1), std::move(member));
     }
 }
@@ -404,37 +411,37 @@ void Runtime::rebuildHubMembers() {
             return;
         }
         const auto id = getHubId(getContainingHub(name));
-        if (id != NOMAD_INVALID_ID) {
-            const auto index = toNomadIndex(id);
+        if (id.isValid()) {
+            const auto index = toNomadIndex(id.id);
             addHubMember(members[index], name.substr(m_hubs[index]->getName().size() + 1), std::move(member));
         }
     };
     for (auto index = NomadIndex{0}; index < m_hubs.size(); ++index) {
         const auto& hub = *m_hubs[index];
-        add(hub.getName(), HubChild{toNomadId(index)});
-        for (auto id = hub.m_variables->getFirstVariableId(); id != NOMAD_INVALID_ID;
+        add(hub.getName(), HubId{toNomadId(index)});
+        for (auto id = hub.m_variables->getFirstVariableId(); id.isValid();
              id = hub.m_variables->getNextVariableId(id)) {
-            add(hub.m_variables->getVariableName(id), HubVariable{id});
+            add(hub.m_variables->getVariableName(id), id);
         }
     }
-    for (const auto& callable : m_functionTable) {
+    for (const auto* callable : m_callables) {
         if (callable->getType() == CallableType::Function) {
             add(callable->getName(), HubFunctions{{callable->getId()}});
         }
     }
-    for (auto id = getFirstConstantId(); id != NOMAD_INVALID_ID; id = getNextConstantId(id)) {
-        add(getConstantName(id), HubConstant{id});
+    for (auto id = getFirstConstantId(); id.isValid(); id = getNextConstantId(id)) {
+        add(getConstantName(id), id);
     }
     for (const auto& type : m_types) {
-        if (getEventId(type->getTypeName()) == NOMAD_INVALID_ID) {
-            add(type->getTypeName(), HubType{type.get()});
+        if (getEventId(type->getTypeName()).isInvalid()) {
+            add(type->getTypeName(), type.get());
         }
     }
     for (const auto& event : m_events) {
-        add(event.name, HubEvent{event.id});
+        add(event.name, event.id);
     }
     for (auto index = NomadIndex{0}; index < m_dynamicVariables.size(); ++index) {
-        add(m_dynamicVariables[index].name, HubDynamicVariable{toNomadId(index)});
+        add(m_dynamicVariables[index].name, DynamicVariableId{toNomadId(index)});
     }
     for (const auto& family : m_parameterizedTypes) {
         add(family.name, HubTypeFamily{family.argumentCount});
@@ -447,34 +454,30 @@ void Runtime::rebuildHubMembers() {
     }
 }
 
-bool Runtime::registerHub(const NomadString& name) {
+HubId Runtime::registerHub(const NomadString& name) {
     if (name.empty()) {
         log::error("Cannot register a hub with an empty name");
-        return false;
+        return HubId::INVALID;
     }
     std::vector<NomadString> prefixes;
     NomadIndex start = 0;
     while (start < name.size()) {
         const auto end = name.find('.', start);
         const auto length = (end == NomadString::npos ? name.size() : end) - start;
-        const auto segment = name.substr(start, length);
-        if (segment.empty() || !((segment[0] >= 'A' && segment[0] <= 'Z') ||
-            (segment[0] >= 'a' && segment[0] <= 'z') || segment[0] == '_') ||
-            segment.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") !=
-                NomadString::npos || getKeywordId(segment) != NOMAD_INVALID_ID) {
+        if (length == 0) {
             log::error("Invalid hub name '" + name + "'");
-            return false;
+            return HubId::INVALID;
         }
         auto prefix = name.substr(0, start + length);
-        if (!isHub(prefix) && (getCallableId(prefix) != NOMAD_INVALID_ID ||
-            getConstantId(prefix) != NOMAD_INVALID_ID || getTypeByName(prefix) != nullptr ||
-            getEventId(prefix) != NOMAD_INVALID_ID || getDynamicVariableId(prefix) != NOMAD_INVALID_ID ||
+        if (!isHub(prefix) && (getCallableId(prefix).isValid() ||
+            getConstantId(prefix).isValid() || getTypeByName(prefix) != nullptr ||
+            getEventId(prefix).isValid() || getDynamicVariableId(prefix).isValid() ||
             isHubVariable(prefix) ||
-            getVariableContextIdByPrefix(prefix + ".") != NOMAD_INVALID_ID ||
+            getVariableContextIdByPrefix(prefix + ".").isValid() ||
             getParameterizedTypeArgumentCount(prefix).has_value() ||
             getParameterizedConstructorArgumentCount(prefix).has_value())) {
             log::error("Cannot register hub '" + name + "': identifier '" + prefix + "' is already used");
-            return false;
+            return HubId::INVALID;
         }
         prefixes.push_back(std::move(prefix));
         if (end == NomadString::npos) {
@@ -483,7 +486,7 @@ bool Runtime::registerHub(const NomadString& name) {
         start = end + 1;
         if (start == name.size()) {
             log::error("Invalid hub name '" + name + "'");
-            return false;
+            return HubId::INVALID;
         }
     }
     const auto previousCount = m_hubs.size();
@@ -498,10 +501,10 @@ bool Runtime::registerHub(const NomadString& name) {
         } catch (const NomadException& exception) {
             m_hubs.resize(previousCount);
             log::error("Cannot register hub '" + name + "': " + exception.what());
-            return false;
+            return HubId::INVALID;
         }
     }
-    return true;
+    return getHubId(name);
 }
 
 void Runtime::validateScriptExecution() const {
@@ -509,7 +512,7 @@ void Runtime::validateScriptExecution() const {
         throw VirtualMachineException("Script initialization failed: " + m_scriptInitialization.error);
     }
     if (m_scriptInitialization.state == ScriptInitializationState::Pending) {
-        if (m_scriptInitialization.functionId != NOMAD_INVALID_ID ||
+        if (m_scriptInitialization.functionId != CallableId{} ||
             std::ranges::any_of(m_hubs, [](const auto& hub) {
                 return hub->m_variables->getVariableCount() != 0;
             })) {
@@ -518,8 +521,8 @@ void Runtime::validateScriptExecution() const {
     }
 }
 
-NomadId Runtime::registerNativeCallable(
-    const ObjectTypeBase* objectType,
+CallableId Runtime::registerNativeCallable(
+    const ObjectType* objectType,
     const NomadString& name,
     NativeFunctionFn fn,
     const std::vector<Parameter>& parameters,
@@ -529,69 +532,91 @@ NomadId Runtime::registerNativeCallable(
     if (objectType != nullptr) {
         if (!fn || !ownsType(returnType) || (returnType->isInternal() && !returnType->isVoid())) {
             log::error("Cannot register native method '" + name + "': invalid callback or return type");
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
         for (const auto& parameter : parameters) {
             if (parameter.name.empty() || !ownsType(parameter.type) || parameter.type->isVoid()) {
                 log::error("Cannot register native method '" + name + "': invalid parameter definition");
-                return NOMAD_INVALID_ID;
+                return CallableId::INVALID;
             }
         }
         NomadString error;
         if (!canRegisterNativeMember(objectType, name, MemberType::Method, parameters, error)) {
             log::error("Cannot register native method '" + name + "': " + error);
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
     }
     if (objectType == nullptr) {
-        if (const auto* overloadSet = findCallableOverloadSet(name)) {
-            if (NomadString error; !canOverloadCallable(*overloadSet, parameters, returnType, error)) {
+        if (getCallableOverloadCount(name) != 0) {
+            if (NomadString error; !canOverloadCallable(name, parameters, returnType, error)) {
                 log::error("Cannot register native function '" + name + "': " + error);
 
-                return NOMAD_INVALID_ID;
+                return CallableId::INVALID;
             }
         }
     }
 
-    NomadId id;
+    CallableId id;
 
     if (objectType != nullptr) {
-        id = addCallableToTable(std::make_unique<NativeMethod>(name, objectType, std::move(fn), parameters, returnType, doc));
+        auto* mutableType = getMutableObjectType(objectType);
+        if (mutableType == nullptr) {
+            log::error("Cannot register native method '" + name + "': object type is not registered");
+            return CallableId::INVALID;
+        }
+        id = mutableType->registerMethod(
+            *this, std::make_unique<NativeMethod>(name, objectType, std::move(fn), parameters, returnType, doc)
+        );
+        if (id == CallableId{}) {
+            return CallableId::INVALID;
+        }
 
-        const auto memberId = toNomadId(m_nativeMembers.size());
-        m_nativeMembers.push_back({MemberType::Method, toNomadIndex(id)});
-        m_nativeMembersByName[name].push_back(memberId);
+        m_nativeMembers.push_back(id);
+        m_nativeMembersByName[name].push_back(id);
 
-        return memberId;
+        return id;
     }
-
     id = addCallableToTable(std::make_unique<NativeFunction>(name, std::move(fn), parameters, returnType, doc));
 
-    addCallable(name, id);
     registerHubMember(name, HubFunctions{{id}});
 
     return id;
 }
 
-NomadId Runtime::addCallableToTable(std::unique_ptr<Callable> callable) {
-    const auto id = toNomadId(m_functionTable.size());
+CallableId Runtime::addCallableToTable(std::unique_ptr<Function> function) {
+    if (function == nullptr) {
+        return CallableId::INVALID;
+    }
 
-    callable->setId(id);
-    m_functionsByName[callable->getName()].push_back(id);
-    m_functionTable.push_back(std::move(callable));
+    m_functions.push_back(std::move(function));
+    const auto id = m_functions.back()->registerWithRuntime(*this);
+    if (id == CallableId{}) {
+        m_functions.pop_back();
+    }
 
     return id;
 }
 
-const Callable* Runtime::getCallable(const NomadId functionId) const {
-    if (isIdOutOfRange(functionId, m_functionTable.size())) {
+CallableId Runtime::catalogCallable(Callable* callable) {
+    if (callable == nullptr || callable->getId() != CallableId{} ||
+        m_callables.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+        return CallableId::INVALID;
+    }
+
+    const auto id = CallableId{toNomadId(m_callables.size())};
+    m_callables.push_back(callable);
+    return id;
+}
+
+const Callable* Runtime::getCallable(const CallableId functionId) const {
+    if (isIdOutOfRange(functionId.id, m_callables.size())) {
         return nullptr;
     }
 
-    return m_functionTable[toNomadIndex(functionId)].get();
+    return m_callables[toNomadIndex(functionId.id)];
 }
 
-const Function* Runtime::getFunction(const NomadId functionId) const {
+const Function* Runtime::getFunction(const CallableId functionId) const {
     const auto* callable = getCallable(functionId);
     if (callable == nullptr || callable->getType() != CallableType::Function) {
         return nullptr;
@@ -599,12 +624,12 @@ const Function* Runtime::getFunction(const NomadId functionId) const {
     return static_cast<const Function*>(callable);
 }
 
-const NativeFunction* Runtime::getNativeFunction(const NomadId functionId) const {
+const NativeFunction* Runtime::getNativeFunction(const CallableId functionId) const {
     const auto* function = getFunction(functionId);
     return function == nullptr ? nullptr : function->asNativeFunction();
 }
 
-const Method* Runtime::getMethod(const NomadId callableId) const {
+const Method* Runtime::getMethod(const CallableId callableId) const {
     const auto* callable = getCallable(callableId);
     if (callable == nullptr || callable->getType() != CallableType::Method) {
         return nullptr;
@@ -612,7 +637,7 @@ const Method* Runtime::getMethod(const NomadId callableId) const {
     return static_cast<const Method*>(callable);
 }
 
-const Constructor* Runtime::getConstructor(const NomadId callableId) const {
+const Constructor* Runtime::getConstructor(const CallableId callableId) const {
     const auto* callable = getCallable(callableId);
     if (callable == nullptr || callable->getType() != CallableType::Constructor) {
         return nullptr;
@@ -620,22 +645,22 @@ const Constructor* Runtime::getConstructor(const NomadId callableId) const {
     return static_cast<const Constructor*>(callable);
 }
 
-const NativeMethod* Runtime::getNativeMethod(const NomadId callableId) const {
+const NativeMethod* Runtime::getNativeMethod(const CallableId callableId) const {
     const auto* method = getMethod(callableId);
     return method == nullptr ? nullptr : method->asNativeMethod();
 }
 
-const NativeConstructor* Runtime::getNativeConstructor(const NomadId functionId) const {
+const NativeConstructor* Runtime::getNativeConstructor(const CallableId functionId) const {
     const auto* constructor = getConstructor(functionId);
     return constructor == nullptr ? nullptr : constructor->asNativeConstructor();
 }
 
 NomadIndex Runtime::getFunctionTableSize() const {
-    return m_functionTable.size();
+    return m_callables.size();
 }
 
 ResolveResult Runtime::resolveAmong(
-    std::vector<NomadId> candidates,
+    std::vector<CallableId> candidates,
     const std::vector<const Type*>& argumentTypes
 ) const {
     ResolveResult result;
@@ -649,12 +674,16 @@ ResolveResult Runtime::resolveAmong(
 
     result.candidates = candidates;
 
-    std::vector<NomadId> exactMatches;
-    std::vector<NomadId> compatibleMatches;
+    std::vector<CallableId> exactMatches;
+    std::vector<CallableId> compatibleMatches;
     auto hasArity = false;
 
     for (const auto candidateId : candidates) {
-        const auto& parameters = m_functionTable[toNomadIndex(candidateId)]->getParameters();
+        const auto* callable = getCallable(candidateId);
+        if (callable == nullptr) {
+            continue;
+        }
+        const auto& parameters = callable->getParameters();
 
         if (parameters.size() != argumentTypes.size()) {
             continue;
@@ -714,13 +743,11 @@ ResolveResult Runtime::resolveFunction(
     const NomadString& name,
     const std::vector<const Type*>& argumentTypes
 ) const {
-    std::vector<NomadId> candidates;
+    std::vector<CallableId> candidates;
 
-    if (const auto entry = m_functionsByName.find(name); entry != m_functionsByName.end()) {
-        for (const auto id : entry->second) {
-            if (m_functionTable[toNomadIndex(id)]->getType() == CallableType::Function) {
-                candidates.push_back(id);
-            }
+    for (const auto* callable : m_callables) {
+        if (callable->getName() == name && callable->getType() == CallableType::Function) {
+            candidates.push_back(callable->getId());
         }
     }
 
@@ -732,15 +759,13 @@ ResolveResult Runtime::resolveMethod(
     const NomadString& name,
     const std::vector<const Type*>& argumentTypes
 ) const {
-    std::vector<NomadId> candidates;
+    std::vector<CallableId> candidates;
 
-    if (const auto entry = m_functionsByName.find(name); entry != m_functionsByName.end()) {
-        for (const auto id : entry->second) {
-            const auto& callable = *m_functionTable[toNomadIndex(id)];
-
-            if (callable.getType() == CallableType::Method && callable.getObjectType() == objectType) {
-                candidates.push_back(id);
-            }
+    for (const auto* callable : m_callables) {
+        if (callable->getName() == name &&
+            callable->getType() == CallableType::Method &&
+            callable->getObjectType() == objectType) {
+            candidates.push_back(callable->getId());
         }
     }
 
@@ -751,9 +776,9 @@ ResolveResult Runtime::resolveConstructor(
     const Type* objectType,
     const std::vector<const Type*>& argumentTypes
 ) const {
-    std::vector<NomadId> candidates;
+    std::vector<CallableId> candidates;
 
-    for (const auto& callable : m_functionTable) {
+    for (const auto* callable : m_callables) {
         if (callable->getType() == CallableType::Constructor && callable->getObjectType() == objectType) {
             candidates.push_back(callable->getId());
         }
@@ -793,51 +818,30 @@ NomadString Runtime::describeResolveFailure(const NomadString& name, const Resol
     return {};
 }
 
-void Runtime::addCallable(const NomadString& name, const NomadId callable) {
-    const auto existing = m_callablesByName.find(name);
-
-    if (existing == m_callablesByName.end()) {
-        m_callablesByName.emplace(name, m_callables.size());
-        m_callables.push_back(CallableOverloadSet{name, {callable}});
-
-        return;
+CallableId Runtime::getCallableId(const NomadString& name) const {
+    for (const auto* callable : m_callables) {
+        if (callable->getName() == name && callable->getType() == CallableType::Function) {
+            return callable->getId();
+        }
     }
 
-    m_callables[existing->second].overloads.push_back(callable);
+    return CallableId::INVALID;
 }
 
-const Runtime::CallableOverloadSet* Runtime::findCallableOverloadSet(const NomadString& name) const {
-    const auto entry = m_callablesByName.find(name);
-
-    if (entry == m_callablesByName.end()) {
-        return nullptr;
-    }
-
-    return &m_callables[entry->second];
-}
-
-NomadId Runtime::getCallableId(const NomadString& name) const {
-    const auto* overloadSet = findCallableOverloadSet(name);
-
-    if (overloadSet == nullptr || overloadSet->overloads.empty()) {
-        return NOMAD_INVALID_ID;
-    }
-
-    return overloadSet->overloads.front();
-}
-
-void Runtime::getCallableOverloads(const NomadString& name, std::vector<NomadId>& overloads) const {
+void Runtime::getCallableOverloads(const NomadString& name, std::vector<CallableId>& overloads) const {
     overloads.clear();
 
-    if (const auto* overloadSet = findCallableOverloadSet(name)) {
-        overloads = overloadSet->overloads;
+    for (const auto* callable : m_callables) {
+        if (callable->getName() == name && callable->getType() == CallableType::Function) {
+            overloads.push_back(callable->getId());
+        }
     }
 }
 
 NomadIndex Runtime::getCallableOverloadCount(const NomadString& name) const {
-    const auto* overloadSet = findCallableOverloadSet(name);
-
-    return overloadSet == nullptr ? 0 : overloadSet->overloads.size();
+    return static_cast<NomadIndex>(std::ranges::count_if(m_callables, [&name](const auto* callable) {
+        return callable->getName() == name && callable->getType() == CallableType::Function;
+    }));
 }
 
 ParameterShape Runtime::getParameterShape(const Type* type) const {
@@ -870,7 +874,7 @@ ParameterShape Runtime::getParameterShape(const Type* type) const {
 }
 
 bool Runtime::canOverloadCallable(
-    const CallableOverloadSet& overloadSet,
+    const NomadString& name,
     const std::vector<Parameter>& parameters,
     const Type* returnType,
     NomadString& error
@@ -887,8 +891,11 @@ bool Runtime::canOverloadCallable(
 
     const auto returnsValue = returnType != nullptr && !returnType->isVoid();
 
-    for (const auto existing : overloadSet.overloads) {
-        const auto* existingFunction = getFunction(existing);
+    for (const auto* callable : m_callables) {
+        if (callable->getName() != name || callable->getType() != CallableType::Function) {
+            continue;
+        }
+        const auto* existingFunction = static_cast<const Function*>(callable);
         if (existingFunction == nullptr || existingFunction->asNativeFunction() == nullptr) {
             error = "a callable of a different kind is already registered under that name";
 
@@ -951,38 +958,85 @@ bool Runtime::canOverloadCallable(
 }
 
 void Runtime::registerType(std::unique_ptr<Type>&& type) {
+    if (type == nullptr || type->getRuntime() != this) {
+        throw NomadException("Cannot register a type without the matching owning runtime");
+    }
     if (isHub(type->getTypeName()) || isHubVariable(type->getTypeName())) {
         throw NomadException("Type name '" + type->getTypeName() + "' is reserved by a hub");
     }
-    if (getEventId(type->getTypeName()) == NOMAD_INVALID_ID) {
+    if (getEventId(type->getTypeName()).isInvalid()) {
         if (!canRegisterHubMember(type->getTypeName())) {
             throw NomadException("Type name '" + type->getTypeName() + "' is already a hub member");
         }
-        registerHubMember(type->getTypeName(), HubType{type.get()});
+        registerHubMember(type->getTypeName(), type.get());
     }
     m_types.push_back(std::move(type));
 
     // return toNomadId(m_types.size() - 1);
 }
 
-NomadId Runtime::getTypeId(const NomadString& typeName) const {
+TypeId Runtime::createObjectType(
+    NomadString name,
+    const ObjectTypeMode mode,
+    NomadString documentation
+) {
+    return createObjectType<ObjectType>(
+        std::move(name), mode, std::vector<const Type*>{}, std::move(documentation)
+    );
+}
+
+bool Runtime::canCreateObjectType(const NomadString& name, const ObjectTypeMode mode) const {
+    if (name.empty()) {
+        log::error("Cannot create an object type with an empty name");
+        return false;
+    }
+    if (mode != ObjectTypeMode::Opened && mode != ObjectTypeMode::Closed) {
+        log::error("Cannot create object type '" + name + "': invalid type mode");
+        return false;
+    }
+    if (getTypeId(name).isValid()) {
+        log::error("Type with name '" + name + "' already registered");
+        return false;
+    }
+    if (isHub(name) || isHubVariable(name) || !canRegisterHubMember(name)) {
+        log::error("Cannot create object type '" + name + "': name is reserved by a hub declaration");
+        return false;
+    }
+
+    return true;
+}
+
+TypeId Runtime::publishObjectType(
+    const NomadString& name,
+    const ObjectTypeMode mode,
+    std::unique_ptr<ObjectType> type
+) {
+    if (type->getRuntime() != this || type->getTypeName() != name ||
+        type->isOpen() != (mode == ObjectTypeMode::Opened)) {
+        log::error("Cannot create object type '" + name + "': descriptor does not match its creation request");
+        return TypeId::INVALID;
+    }
+    const auto id = TypeId{toNomadId(m_types.size())};
+    registerType(std::move(type));
+    return id;
+}
+
+TypeId Runtime::getTypeId(const NomadString& typeName) const {
     for (NomadIndex i = 0; i < m_types.size(); ++i) {
         if (m_types[i]->getTypeName() == typeName) {
-            return toNomadId(i);
+            return TypeId{toNomadId(i)};
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return TypeId::INVALID;
 }
 
-std::optional<const Type*> Runtime::getType(const NomadId id) const {
-    const auto typeIndex = toNomadIndex(id);
-
-    if (typeIndex >= m_types.size()) {
+std::optional<const Type*> Runtime::getType(const TypeId id) const {
+    if (isIdOutOfRange(id.id, m_types.size())) {
         return std::nullopt;
     }
 
-    return m_types[typeIndex].get();
+    return m_types[toNomadIndex(id.id)].get();
 }
 
 const Type* Runtime::getTypeByName(const NomadString& name) const {
@@ -1018,33 +1072,34 @@ const OpaqueIdType* Runtime::registerOpaqueIdType(const NomadString& name, const
         return nullptr;
     }
 
-    auto opaqueType = std::make_unique<OpaqueIdType>(name, doc);
+    auto opaqueType = std::make_unique<OpaqueIdType>(this, name, doc);
     const auto* registeredType = opaqueType.get();
     registerType(std::move(opaqueType));
     return registeredType;
 }
 
-const EnumType* Runtime::registerEnum(
-    const NomadString& name,
-    const std::vector<EnumValueDefinition>& values
+TypeId Runtime::createEnum(
+    NomadString name,
+    std::vector<EnumValueDefinition> values,
+    NomadString documentation
 ) {
-    if (isHub(name) || isHubVariable(name)) {
-        log::error("Cannot register enum '" + name + "': name is reserved by a hub declaration");
-        return nullptr;
+    if (isHub(name) || isHubVariable(name) || !canRegisterHubMember(name)) {
+        log::error("Cannot create enum '" + name + "': name is reserved by a hub declaration");
+        return TypeId::INVALID;
     }
     if (name.empty()) {
-        log::error("Cannot register an enum with an empty name");
-        return nullptr;
+        log::error("Cannot create an enum with an empty name");
+        return TypeId::INVALID;
     }
 
     if (getTypeByName(name) != nullptr) {
         log::error("Type with name '" + name + "' already registered");
-        return nullptr;
+        return TypeId::INVALID;
     }
 
     if (values.empty()) {
-        log::error("Cannot register enum '" + name + "' without values");
-        return nullptr;
+        log::error("Cannot create enum '" + name + "' without values");
+        return TypeId::INVALID;
     }
 
     for (NomadIndex index = 0; index < values.size(); ++index) {
@@ -1052,13 +1107,17 @@ const EnumType* Runtime::registerEnum(
         const auto constantName = name + "." + definition.name;
 
         if (definition.name.empty()) {
-            log::error("Cannot register an unnamed value in enum '" + name + "'");
-            return nullptr;
+            log::error("Cannot create an unnamed value in enum '" + name + "'");
+            return TypeId::INVALID;
         }
 
-        if (getConstantId(constantName) != NOMAD_INVALID_ID) {
+        if (isHub(constantName) || !canRegisterHubMember(constantName)) {
+            log::error("Cannot create enum '" + name + "': value '" + constantName + "' is reserved by a hub");
+            return TypeId::INVALID;
+        }
+        if (getConstantId(constantName).isValid()) {
             log::error("Constant with name '" + constantName + "' already registered");
-            return nullptr;
+            return TypeId::INVALID;
         }
 
         for (NomadIndex previousIndex = 0; previousIndex < index; ++previousIndex) {
@@ -1066,28 +1125,32 @@ const EnumType* Runtime::registerEnum(
 
             if (previousDefinition.name == definition.name) {
                 log::error("Enum '" + name + "' has duplicate value name '" + definition.name + "'");
-                return nullptr;
+                return TypeId::INVALID;
             }
 
             if (previousDefinition.value == definition.value) {
                 log::error(
                     "Enum '" + name + "' assigns value " + std::to_string(definition.value) + " more than once"
                 );
-                return nullptr;
+                return TypeId::INVALID;
             }
         }
     }
 
-    auto enumType = std::make_unique<EnumType>(name, values);
+    auto enumType = std::make_unique<EnumType>(this, name, std::move(values), std::move(documentation));
     const auto* registeredType = enumType.get();
+    const auto id = TypeId{toNomadId(m_types.size())};
     registerType(std::move(enumType));
 
-    for (const auto& definition: values) {
-        registerConstant(
+    for (NomadIndex index = 0; index < registeredType->getValueCount(); ++index) {
+        const auto& definition = registeredType->getValue(index);
+        if (registerConstant(
             name + "." + definition.name,
             RuntimeValue(definition.value),
             registeredType
-        );
+        ).isInvalid()) {
+            throw NomadException("Failed to register value '" + definition.name + "' in enum '" + name + "'");
+        }
     }
 
     registerBinaryOperator(
@@ -1107,7 +1170,7 @@ const EnumType* Runtime::registerEnum(
         foldIntegerBinaryBangEqual
     );
 
-    return registeredType;
+    return id;
 }
 
 bool Runtime::registerParameterizedType(
@@ -1267,22 +1330,23 @@ const Type* Runtime::getParameterizedType(
     }
     const auto factory = registration->factory;
     const auto initializer = registration->initializer;
-    auto type = factory(arguments);
-    if (type == nullptr || type->getTypeName().empty() || getTypeByName(type->getTypeName()) != nullptr) {
+    auto type = factory(this, arguments);
+    if (type == nullptr || type->getRuntime() != this ||
+        type->getTypeName().empty() || getTypeByName(type->getTypeName()) != nullptr) {
         log::error("Factory for '" + name + "' returned an invalid or duplicate type");
         return nullptr;
     }
     const auto* result = type.get();
     registerType(std::move(type));
     if (initializer) {
-        initializer(result);
+        initializer(this, getTypeId(result->getTypeName()));
     }
     m_typeSpecializations.push_back({name, arguments, result});
     return result;
 }
 
 const Type* Runtime::getCallbackType(const std::vector<const Type*>& parameterTypes, const Type* returnType) {
-    auto test_type = std::make_unique<FunctionType>(parameterTypes, returnType);
+    auto test_type = std::make_unique<FunctionType>(this, parameterTypes, returnType);
 
     for (const auto& type: m_types) {
         if (type->sameType(test_type.get())) {
@@ -1310,8 +1374,17 @@ const Type* Runtime::getPredicateType() {
 }
 
 bool Runtime::ownsType(const Type* type) const {
-    return type != nullptr &&
+    return type != nullptr && type->getRuntime() == this &&
            std::ranges::any_of(m_types, [type](const auto& registeredType) { return registeredType.get() == type; });
+}
+
+ObjectType* Runtime::getMutableObjectType(const ObjectType* type) {
+    for (const auto& registeredType : m_types) {
+        if (registeredType.get() == type) {
+            return static_cast<ObjectType*>(registeredType.get());
+        }
+    }
+    return nullptr;
 }
 
 bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString& name, const MemberType type,
@@ -1322,12 +1395,14 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
         return false;
     }
 
-    if (dynamic_cast<const ObjectTypeBase*>(objectType) == nullptr) {
+    const auto* owner = objectType->asObjectType();
+    if (owner == nullptr) {
         error = "only object types can have native members";
         return false;
     }
 
-    if (getNativeMemberId(objectType, name) != NOMAD_INVALID_ID) {
+    if (owner->getProperty(name) != nullptr ||
+        getMemberType(getNativeMemberId(objectType, name)) != MemberType::Unknown) {
         error = "the type already has a member with that name";
         return false;
     }
@@ -1446,8 +1521,8 @@ std::optional<MemberSignature> Runtime::getMemberSignature(const NomadString& na
     return MemberSignature{type, {}};
 }
 
-NomadId Runtime::registerNativeConstructor(
-    const ObjectTypeBase* objectType,
+CallableId Runtime::registerNativeConstructor(
+    const ObjectType* objectType,
     const std::vector<Parameter>& parameters,
     ConstructorFactory factory,
     const NomadString& doc
@@ -1455,26 +1530,27 @@ NomadId Runtime::registerNativeConstructor(
     return registerNativeConstructor(objectType, parameters, objectType, std::move(factory), doc);
 }
 
-NomadId Runtime::registerNativeConstructor(
-    const ObjectTypeBase* objectType,
+CallableId Runtime::registerNativeConstructor(
+    const ObjectType* objectType,
     const std::vector<Parameter>& parameters,
-    const ObjectTypeBase* createdType,
+    const ObjectType* createdType,
     ConstructorFactory factory,
     const NomadString& doc
 ) {
-    if (!ownsType(objectType) || !ownsType(createdType) || createdType->isInternal() || !factory) {
+    auto* ownedType = getMutableObjectType(objectType);
+    if (ownedType == nullptr || !ownsType(createdType) || createdType->isInternal() || !factory) {
         log::error("Cannot register constructor: a registered class, registered public object type, and factory are required");
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
     const auto name = objectType->getTypeName();
     if (name.empty() || getParameterizedConstructorArgumentCount(name) || getParameterizedTypeArgumentCount(name)) {
         log::error("Cannot register constructor '" + name + "': the name is reserved");
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
     for (const auto& parameter : parameters) {
         if (!ownsType(parameter.type) || parameter.type->isVoid()) {
             log::error("Cannot register constructor: parameter types must be registered and non-void");
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
     }
     for (const auto* existing : getConstructors(objectType)) {
@@ -1487,19 +1563,20 @@ NomadId Runtime::registerNativeConstructor(
         );
         if (collides) {
             log::error("Cannot register constructor '" + name + "': duplicate signature");
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
     }
-    return addCallableToTable(
+    return ownedType->registerConstructor(
+        *this,
         std::make_unique<NativeConstructor>(name, objectType, createdType, std::move(factory), parameters, doc)
     );
 }
 
 std::vector<const NativeConstructor*> Runtime::getConstructors() const {
     std::vector<const NativeConstructor*> constructors;
-    for (const auto& callable : m_functionTable) {
+    for (const auto* callable : m_callables) {
         if (callable->getType() == CallableType::Constructor) {
-            constructors.push_back(static_cast<const NativeConstructor*>(callable.get()));
+            constructors.push_back(static_cast<const NativeConstructor*>(callable));
         }
     }
     return constructors;
@@ -1523,7 +1600,7 @@ bool Runtime::registerNativeParameterizedConstructor(
     if (name.empty() || isHub(name) || !canRegisterHubMember(name) || argumentCount == 0 || !initializer ||
         getParameterizedConstructorArgumentCount(name) || getParameterizedTypeArgumentCount(name) ||
         getTypeByName(name) != nullptr ||
-        std::ranges::any_of(m_functionTable, [&](const auto& callable) {
+        std::ranges::any_of(m_callables, [&](const auto* callable) {
             return callable->getType() == CallableType::Constructor && callable->getName() == name;
         })) {
         log::error("Cannot register parameterized constructor '" + name + "': invalid or duplicate definition");
@@ -1571,7 +1648,7 @@ NomadString Runtime::getParameterizedConstructorName(
     }
     const auto initializer = registration->initializer;
     initializer(specializedName, arguments);
-    if (std::ranges::none_of(m_functionTable, [&](const auto& callable) {
+    if (std::ranges::none_of(m_callables, [&](const auto* callable) {
         return callable->getType() == CallableType::Constructor && callable->getName() == specializedName;
     })) {
         log::error("No constructors registered for '" + specializedName + "'");
@@ -1581,101 +1658,170 @@ NomadString Runtime::getParameterizedConstructorName(
     return specializedName;
 }
 
-NomadId Runtime::registerNativeIndexer(
-    const ObjectTypeBase* objectType,
+IndexerId Runtime::registerNativeIndexer(
+    const ObjectType* objectType,
     std::vector<const Type*> indexTypes,
     const Type* valueType,
     NativeFunctionFn getFn,
     NativeFunctionFn setFn,
     const NomadString& doc
 ) {
-    if (!ownsType(objectType) || !ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
-        log::error("Cannot register native indexer: types must be registered, public, and non-void");
-        return NOMAD_INVALID_ID;
+    auto* owner = getMutableObjectType(objectType);
+    if (owner == nullptr) {
+        log::error("Cannot register native indexer: object type must be registered with this runtime");
+        return IndexerId::INVALID;
     }
-    if (indexTypes.empty()) {
-        log::error("Cannot register native indexer: at least one index type is required");
-        return NOMAD_INVALID_ID;
+    return owner->registerNativeIndexer(*this, {
+        IndexerId::INVALID, objectType, std::move(indexTypes), valueType, std::move(getFn), std::move(setFn), doc
+    });
+}
+
+IndexerId Runtime::catalogNativeIndexer(const NativeIndexerInfo* info) {
+    if (info == nullptr || info->id.isValid() || !ownsType(info->objectType) ||
+        info->objectType->getNativeIndexer(info->indexTypes.size()) != info ||
+        m_nativeIndexers.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+        log::error("Cannot catalog native indexer: invalid owner, identity, or indexer capacity");
+        return IndexerId::INVALID;
     }
-    for (const auto* indexType : indexTypes) {
-        if (!ownsType(indexType) || indexType->isVoid() || indexType->isInternal()) {
-            log::error("Cannot register native indexer: index types must be registered, public, and non-void");
-            return NOMAD_INVALID_ID;
-        }
-    }
-    if (!getFn && !setFn) {
-        log::error("Cannot register native indexer: indexer has no accessor or mutator");
-        return NOMAD_INVALID_ID;
-    }
-    if (getNativeIndexerId(objectType, indexTypes.size()) != NOMAD_INVALID_ID) {
-        log::error("Cannot register native indexer: type already has an indexer with " + toString(indexTypes.size()) + " indices");
-        return NOMAD_INVALID_ID;
-    }
-    const auto id = toNomadId(m_nativeIndexers.size());
-    m_nativeIndexers.push_back({id, objectType, std::move(indexTypes), valueType, std::move(getFn), std::move(setFn), doc});
+    const auto id = IndexerId{toNomadId(m_nativeIndexers.size())};
+    m_nativeIndexers.push_back(info);
     return id;
 }
 
-NomadId Runtime::getNativeIndexerId(const Type* objectType, const NomadIndex indexCount) const {
-    for (const auto& definition : m_nativeIndexers) {
-        if (definition.objectType == objectType && definition.indexTypes.size() == indexCount) {
-            return definition.id;
-        }
+IndexerId Runtime::getNativeIndexerId(const Type* objectType, const NomadIndex indexCount) const {
+    if (!ownsType(objectType)) {
+        return IndexerId::INVALID;
     }
-    return NOMAD_INVALID_ID;
+    const auto* owner = objectType->asObjectType();
+    const auto* info = owner == nullptr ? nullptr : owner->getNativeIndexer(indexCount);
+    return info == nullptr ? IndexerId::INVALID : info->id;
 }
 
-bool Runtime::getNativeIndexerDefinition(const NomadId indexerId, NativeIndexerDefinition& definition) const {
-    if (isIdOutOfRange(indexerId, m_nativeIndexers.size())) {
-        return false;
+std::optional<NativeIndexerInfo> Runtime::getNativeIndexerInfo(const IndexerId indexerId) const {
+    if (isIdOutOfRange(indexerId.id, m_nativeIndexers.size())) {
+        return std::nullopt;
     }
-    definition = m_nativeIndexers[indexerId];
-    return true;
+    return *m_nativeIndexers[toNomadIndex(indexerId.id)];
 }
 
-const std::vector<NativeIndexerDefinition>& Runtime::getNativeIndexers() const {
+const std::vector<const NativeIndexerInfo*>& Runtime::getNativeIndexers() const {
     return m_nativeIndexers;
 }
 
-NomadId Runtime::registerNativeProperty(const ObjectTypeBase* objectType, const NomadString& name, const Type* valueType,
-                                           NativePropertyGetFn getFn, NativePropertySetFn setFn,
-                                           const NomadString& doc) {
-    if (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
-        log::error("Cannot register native property '" + name + "': invalid value type");
-        return NOMAD_INVALID_ID;
+PropertyId Runtime::registerProperty(
+    const ObjectType* objectType,
+    const NomadString& name,
+    const Type* valueType
+) {
+    auto* owner = getMutableObjectType(objectType);
+    if (owner == nullptr || !isNativeMemberName(name) || !ownsType(valueType) ||
+        valueType->isVoid() || valueType->isInternal()) {
+        log::error("Cannot register property '" + name + "': invalid owner, name, or value type");
+        return PropertyId::INVALID;
     }
-
-    if (!getFn && !setFn) {
-        log::error("Cannot register native property '" + name + "': property has no accessor or mutator");
-        return NOMAD_INVALID_ID;
+    if (const auto* existing = owner->getProperty(name)) {
+        if (existing->asNativeProperty() == nullptr && existing->getValueType() == valueType) {
+            return existing->getId();
+        }
+        log::error("Cannot register property '" + name + "': conflicting definition");
+        return PropertyId::INVALID;
     }
-
-    NomadString error;
-    if (!canRegisterNativeMember(objectType, name, MemberType::Property, {}, error)) {
-        log::error("Cannot register native property '" + name + "': " + error);
-        return NOMAD_INVALID_ID;
+    if (getMemberType(getNativeMemberId(objectType, name)) != MemberType::Unknown) {
+        log::error("Cannot register property '" + name + "': the type already has a member with that name");
+        return PropertyId::INVALID;
     }
+    return owner->registerProperty(*this, std::make_unique<Property>(objectType, name, valueType));
+}
 
-    const auto id = toNomadId(m_nativeMembers.size());
-    const auto definitionIndex = m_nativeProperties.size();
-
-    m_nativeProperties.push_back({
-        id,
-        objectType,
-        name,
-        valueType,
-        std::move(getFn),
-        std::move(setFn),
-        doc,
-    });
-    m_nativeMembers.push_back({MemberType::Property, definitionIndex});
-    m_nativeMembersByName[name].push_back(id);
-
+PropertyId Runtime::catalogProperty(Property* property) {
+    if (property == nullptr || property->getId().isValid() || !ownsType(property->getObjectType()) ||
+        property->getObjectType()->getProperty(property->getName()) != property ||
+        m_properties.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+        log::error("Cannot catalog property: invalid owner, identity, or property capacity");
+        return PropertyId::INVALID;
+    }
+    const auto id = PropertyId{toNomadId(m_properties.size())};
+    m_properties.push_back(property);
     return id;
 }
 
-NomadId Runtime::registerNativeMethod(
-    const ObjectTypeBase* objectType,
+const Property* Runtime::getProperty(const PropertyId id) const {
+    return isIdInRange(id.id, m_properties.size()) ? m_properties[toNomadIndex(id.id)] : nullptr;
+}
+
+const NativeProperty* Runtime::getNativeProperty(const PropertyId id) const {
+    const auto* property = getProperty(id);
+    return property == nullptr ? nullptr : property->asNativeProperty();
+}
+
+PropertyId Runtime::addProperty(const TypeId id, NativePropertyDefinition definition) {
+    const auto type = getType(id);
+    const auto* objectType = type.has_value() ? (*type)->asObjectType() : nullptr;
+    if (objectType == nullptr) {
+        log::error("Cannot register native property '" + definition.name + "': owner must identify an object type");
+        return PropertyId::INVALID;
+    }
+    const auto valueType = getType(definition.valueTypeId);
+    if (!valueType.has_value() || (*valueType)->isVoid() || (*valueType)->isInternal()) {
+        log::error("Cannot register native property '" + definition.name + "': invalid value type");
+        return PropertyId::INVALID;
+    }
+    if (!definition.getter && !definition.setter) {
+        log::error("Cannot register native property '" + definition.name + "': property has no accessor or mutator");
+        return PropertyId::INVALID;
+    }
+
+    NomadString error;
+    if (!canRegisterNativeMember(objectType, definition.name, MemberType::Property, {}, error)) {
+        log::error("Cannot register native property '" + definition.name + "': " + error);
+        return PropertyId::INVALID;
+    }
+
+    auto* owner = getMutableObjectType(objectType);
+    const auto propertyId = owner->registerProperty(*this, std::make_unique<NativeProperty>(
+        objectType, definition.name, *valueType,
+        std::move(definition.getter), std::move(definition.setter), std::move(definition.documentation)
+    ));
+    if (propertyId.isInvalid()) {
+        return PropertyId::INVALID;
+    }
+    m_nativeMembers.push_back(propertyId);
+    m_nativeMembersByName[definition.name].push_back(propertyId);
+
+    return propertyId;
+}
+
+CallableId Runtime::addMethod(const TypeId id, NativeMethodDefinition definition) {
+    const auto type = getType(id);
+    const auto* objectType = type.has_value() ? (*type)->asObjectType() : nullptr;
+    if (objectType == nullptr) {
+        log::error("Cannot register native method '" + definition.name + "': owner must identify an object type");
+        return CallableId::INVALID;
+    }
+    const auto returnType = getType(definition.returnTypeId);
+    if (!returnType.has_value()) {
+        log::error("Cannot register native method '" + definition.name + "': invalid return type ID");
+        return CallableId::INVALID;
+    }
+    std::vector<Parameter> parameters;
+    parameters.reserve(definition.parameters.size());
+    for (const auto& parameterDefinition : definition.parameters) {
+        const auto parameterType = getType(parameterDefinition.typeId);
+        if (!parameterType.has_value()) {
+            log::error("Cannot register native method '" + definition.name + "': invalid parameter type ID");
+            return CallableId::INVALID;
+        }
+        parameters.push_back(defParameter(
+            parameterDefinition.name, *parameterType, parameterDefinition.documentation
+        ));
+    }
+    return registerNativeMethod(
+        objectType, definition.name, std::move(definition.function), parameters, *returnType, definition.documentation
+    );
+}
+
+CallableId Runtime::registerNativeMethod(
+    const ObjectType* objectType,
     const NomadString& name,
     NativeFunctionFn fn,
     const std::vector<Parameter>& parameters,
@@ -1684,22 +1830,22 @@ NomadId Runtime::registerNativeMethod(
 ) {
     if (objectType == nullptr) {
         log::error("Cannot register native method '" + name + "': object type is null");
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
     return registerNativeCallable(objectType, name, std::move(fn), parameters, returnType, doc);
 }
 
-NomadId Runtime::getNativeMemberId(const Type* objectType, const NomadString& name) const {
+MemberReference Runtime::getNativeMemberId(const Type* objectType, const NomadString& name) const {
     const auto overloads = m_nativeMembersByName.find(name);
     if (overloads == m_nativeMembersByName.end()) {
-        return NOMAD_INVALID_ID;
+        return PropertyId::INVALID;
     }
 
     for (const auto memberId : overloads->second) {
         switch (getMemberType(memberId)) {
         case MemberType::Property: {
-            NativePropertyDefinition definition;
-            if (getNativePropertyDefinition(memberId, definition) && definition.objectType == objectType) {
+            const auto info = getNativePropertyInfo(memberId);
+            if (info && info->objectType == objectType) {
                 return memberId;
             }
             break;
@@ -1718,57 +1864,42 @@ NomadId Runtime::getNativeMemberId(const Type* objectType, const NomadString& na
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return PropertyId::INVALID;
 }
 
-MemberType Runtime::getMemberType(const NomadId memberId) const {
-    const auto memberIndex = toNomadIndex(memberId);
-    if (memberIndex >= m_nativeMembers.size()) {
-        return MemberType::Unknown;
+MemberType Runtime::getMemberType(const MemberReference& member) const {
+    if (const auto* propertyId = std::get_if<PropertyId>(&member)) {
+        return getProperty(*propertyId) == nullptr ? MemberType::Unknown : MemberType::Property;
     }
-
-    return m_nativeMembers[memberIndex].type;
+    return getMethod(std::get<CallableId>(member)) == nullptr ? MemberType::Unknown : MemberType::Method;
 }
 
-bool Runtime::getNativePropertyDefinition(const NomadId memberId, NativePropertyDefinition& definition) const {
-    const auto memberIndex = toNomadIndex(memberId);
-    if (memberIndex >= m_nativeMembers.size()) {
-        return false;
+std::optional<NativePropertyInfo> Runtime::getNativePropertyInfo(const MemberReference& member) const {
+    const auto* id = std::get_if<PropertyId>(&member);
+    if (id == nullptr) {
+        return std::nullopt;
     }
-
-    const auto& member = m_nativeMembers[memberIndex];
-    if (member.type != MemberType::Property || member.definitionIndex >= m_nativeProperties.size()) {
-        return false;
+    const auto* property = getNativeProperty(*id);
+    if (property == nullptr) {
+        return std::nullopt;
     }
-
-    definition = m_nativeProperties[member.definitionIndex];
-    return true;
+    return property->getInfo();
 }
 
-const NativeMethod* Runtime::getNativeMemberMethod(const NomadId memberId) const {
-    const auto memberIndex = toNomadIndex(memberId);
-    if (memberIndex >= m_nativeMembers.size()) {
-        return nullptr;
-    }
-
-    const auto& member = m_nativeMembers[memberIndex];
-    if (member.type != MemberType::Method) {
-        return nullptr;
-    }
-
-    return getNativeMethod(toNomadId(member.definitionIndex));
+const NativeMethod* Runtime::getNativeMemberMethod(const MemberReference& member) const {
+    const auto* id = std::get_if<CallableId>(&member);
+    return id == nullptr ? nullptr : getNativeMethod(*id);
 }
 
-void Runtime::getNativeMembers(const Type* objectType, std::vector<NomadId>& members) const {
+void Runtime::getNativeMembers(const Type* objectType, std::vector<MemberReference>& members) const {
     members.clear();
 
-    for (NomadIndex index = 0; index < m_nativeMembers.size(); ++index) {
-        const auto memberId = toNomadId(index);
+    for (const auto& memberId : m_nativeMembers) {
         const auto type = getMemberType(memberId);
 
         if (type == MemberType::Property) {
-            NativePropertyDefinition definition;
-            if (getNativePropertyDefinition(memberId, definition) && definition.objectType == objectType) {
+            const auto info = getNativePropertyInfo(memberId);
+            if (info && info->objectType == objectType) {
                 members.push_back(memberId);
             }
         } else if (type == MemberType::Method) {
@@ -1780,16 +1911,11 @@ void Runtime::getNativeMembers(const Type* objectType, std::vector<NomadId>& mem
     }
 }
 
-void Runtime::getNativeMembers(std::vector<NomadId>& members) const {
-    members.clear();
-    members.reserve(m_nativeMembers.size());
-
-    for (NomadIndex index = 0; index < m_nativeMembers.size(); ++index) {
-        members.push_back(toNomadId(index));
-    }
+void Runtime::getNativeMembers(std::vector<MemberReference>& members) const {
+    members = m_nativeMembers;
 }
 
-void Runtime::getNativeMemberOverloads(const NomadString& name, std::vector<NomadId>& overloads) const {
+void Runtime::getNativeMemberOverloads(const NomadString& name, std::vector<MemberReference>& overloads) const {
     overloads.clear();
 
     const auto members = m_nativeMembersByName.find(name);
@@ -1803,17 +1929,17 @@ NomadIndex Runtime::getNativeMemberOverloadCount(const NomadString& name) const 
     return members == m_nativeMembersByName.end() ? 0 : members->second.size();
 }
 
-NomadId Runtime::registerInstruction(const NomadString& name, const InstructionFn fn, const NomadString& doc,
+OpCodeId Runtime::registerInstruction(const NomadString& name, const InstructionFn fn, const NomadString& doc,
                                      std::vector<Operand> operands) {
     auto id = getInstructionId(name);
 
-    if (id != NOMAD_INVALID_ID) {
+    if (id.isValid()) {
         log::warning("Instruction '" + name + "' already registered");
 
         return id;
     }
 
-    id = toNomadId(m_opCodes.size());
+    id = OpCodeId{toNomadId(m_opCodes.size())};
 
     m_opCodes.emplace_back(
         OpCodeDefinition{
@@ -1884,7 +2010,7 @@ void Runtime::registerUnaryOperator(
     const UnaryFoldingFn fn
 ) {
     const auto opCodeId = getInstructionId(opCodeName);
-    if (opCodeId == NOMAD_INVALID_ID) {
+    if (opCodeId.isInvalid()) {
         throw NomadBug("Unknown op code '" + opCodeName + "'");
     }
 
@@ -1906,7 +2032,7 @@ void Runtime::registerBinaryOperator(
     const BinaryFoldingFn fn
 ) {
     const auto opCodeId = getInstructionId(opCodeName);
-    if (opCodeId == NOMAD_INVALID_ID) {
+    if (opCodeId.isInvalid()) {
         throw NomadBug("Unknown op code '" + opCodeName + "'");
     }
 
@@ -1943,23 +2069,23 @@ const Type* Runtime::getBinaryOperatorResultType(
     return nullptr;
 }
 
-NomadId Runtime::getUnaryOperatorOpCodeId(const UnaryOperator op, const Type* operand) const {
+OpCodeId Runtime::getUnaryOperatorOpCodeId(const UnaryOperator op, const Type* operand) const {
     for (const auto& definition: m_unaryOperators) {
         if (definition.op == op && definition.operand == operand) {
             return definition.opCodeId;
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return OpCodeId::INVALID;
 }
 
-NomadId Runtime::getBinaryOperatorOpCodeId(
+OpCodeId Runtime::getBinaryOperatorOpCodeId(
     const BinaryOperator op,
     const Type* lhs,
     const Type* rhs
 ) const {
     if (lhs == nullptr || rhs == nullptr) {
-        return NOMAD_INVALID_ID;
+        return OpCodeId::INVALID;
     }
 
     for (const auto& definition: m_binaryOperators) {
@@ -1968,7 +2094,7 @@ NomadId Runtime::getBinaryOperatorOpCodeId(
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return OpCodeId::INVALID;
 }
 
 bool Runtime::foldUnary(
@@ -2005,44 +2131,44 @@ bool Runtime::foldBinary(
     return false;
 }
 
-NomadId Runtime::getInstructionId(const NomadString& name) const {
+OpCodeId Runtime::getInstructionId(const NomadString& name) const {
     for (NomadIndex i = 0; i < m_opCodes.size(); ++i) {
         if (m_opCodes[i].name == name) {
-            return static_cast<NomadId>(i);
+            return m_opCodes[i].id;
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return OpCodeId::INVALID;
 }
 
-NomadId Runtime::getInstructionId(const InstructionFn fn) const {
+OpCodeId Runtime::getInstructionId(const InstructionFn fn) const {
     for (auto& op_code: m_opCodes) {
         if (op_code.fn == fn) {
             return op_code.id;
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return OpCodeId::INVALID;
 }
 
-InstructionFn Runtime::getInstructionFn(const NomadId id) const {
-    return m_opCodes[toNomadIndex(id)].fn;
+InstructionFn Runtime::getInstructionFn(const OpCodeId id) const {
+    return m_opCodes[toNomadIndex(id.id)].fn;
 }
 
-const NomadString& Runtime::getInstructionName(const NomadId id) const {
-    return m_opCodes[toNomadIndex(id)].name;
+const NomadString& Runtime::getInstructionName(const OpCodeId id) const {
+    return m_opCodes[toNomadIndex(id.id)].name;
 }
 
-const std::vector<Operand>& Runtime::getInstructionOperands(const NomadId id) const {
-    return m_opCodes[toNomadIndex(id)].operands;
+const std::vector<Operand>& Runtime::getInstructionOperands(const OpCodeId id) const {
+    return m_opCodes[toNomadIndex(id.id)].operands;
 }
 
-NomadId Runtime::getNativeFunctionId(const NomadString& name) const {
+CallableId Runtime::getNativeFunctionId(const NomadString& name) const {
     const auto* function = getNativeFunction(getCallableId(name));
-    return function == nullptr ? NOMAD_INVALID_ID : function->getId();
+    return function == nullptr ? CallableId{} : function->getId();
 }
 
-NativeFunctionFn Runtime::getNativeFunctionFn(const NomadId id) const {
+NativeFunctionFn Runtime::getNativeFunctionFn(const CallableId id) const {
     return getNativeFunction(id)->getFn();
 }
 
@@ -2077,40 +2203,45 @@ NativeFunctionFn Runtime::getNativeFunctionFn(const NomadId id) const {
 const NativeFunction* Runtime::getNativeFunction(const NomadString& name) const {
     const auto id = getNativeFunctionId(name);
 
-    return id == NOMAD_INVALID_ID ? nullptr : getNativeFunction(id);
+    return id == CallableId{} ? nullptr : getNativeFunction(id);
 }
 
 std::vector<const NativeFunction*> Runtime::getNativeFunctions() const {
     std::vector<const NativeFunction*> nativeFunctions;
 
-    for (auto id = getFirstNativeFunctionId(); id != NOMAD_INVALID_ID; id = getNextNativeFunctionId(id)) {
+    for (auto id = getFirstNativeFunctionId(); id != CallableId{}; id = getNextNativeFunctionId(id)) {
         nativeFunctions.push_back(getNativeFunction(id));
     }
 
     return nativeFunctions;
 }
 
-NomadId Runtime::getFirstNativeFunctionId() const {
-    for (const auto& callable : m_functionTable) {
+CallableId Runtime::getFirstNativeFunctionId() const {
+    for (const auto* callable : m_callables) {
         if (callable->getSource() == CallableSource::Native && callable->getType() == CallableType::Function) {
             return callable->getId();
         }
     }
-    return NOMAD_INVALID_ID;
+    return CallableId::INVALID;
 }
 
-NomadId Runtime::getNextNativeFunctionId(const NomadId currentId) const {
-    for (auto index = toNomadIndex(currentId) + 1; index < m_functionTable.size(); ++index) {
-        if (m_functionTable[index]->getSource() == CallableSource::Native &&
-            m_functionTable[index]->getType() == CallableType::Function) {
-            return toNomadId(index);
+CallableId Runtime::getNextNativeFunctionId(const CallableId currentId) const {
+    for (auto index = toNomadIndex(currentId.id) + 1; index < m_callables.size(); ++index) {
+        if (m_callables[index]->getSource() == CallableSource::Native &&
+            m_callables[index]->getType() == CallableType::Function) {
+            return CallableId{toNomadId(index)};
         }
     }
-    return NOMAD_INVALID_ID;
+    return CallableId::INVALID;
 }
 
-NomadId Runtime::registerKeyword(const NomadString& keyword, const NomadString& /*doc*/) {
-    auto id = toNomadId(m_keywords.size());
+KeywordId Runtime::registerKeyword(const NomadString& keyword, const NomadString& /*doc*/) {
+    const auto existingId = getKeywordId(keyword);
+    if (existingId.isValid()) {
+        return existingId;
+    }
+
+    const auto id = KeywordId{toNomadId(m_keywords.size())};
 
     KeywordDefinition definition;
 
@@ -2124,43 +2255,43 @@ NomadId Runtime::registerKeyword(const NomadString& keyword, const NomadString& 
     return id;
 }
 
-NomadId Runtime::getKeywordId(const NomadString& keyword) const {
+KeywordId Runtime::getKeywordId(const NomadString& keyword) const {
     for (NomadIndex i = 0; i < m_keywords.size(); ++i) {
         if (m_keywords[i].keyword == keyword) {
-            return toNomadId(i);
+            return KeywordId{toNomadId(i)};
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return KeywordId::INVALID;
 }
 
 void Runtime::getKeywords(std::vector<KeywordDefinition>& keywords) const {
     keywords = m_keywords;
 }
 
-NomadId Runtime::registerConstant(const NomadString& name, const RuntimeValue& value, const Type* type) {
+ConstantId Runtime::registerConstant(const NomadString& name, const RuntimeValue& value, const Type* type) {
     if (isHub(name) || !canRegisterHubMember(name)) {
         log::error("Cannot register constant '" + name + "': name is reserved by a hub");
-        return NOMAD_INVALID_ID;
+        return ConstantId::INVALID;
     }
-    if (getConstantId(name) != NOMAD_INVALID_ID) {
+    if (getConstantId(name).isValid()) {
         log::error("Constant with name '" + name + "' already registered.");
 
-        return NOMAD_INVALID_ID;
+        return ConstantId::INVALID;
     }
 
-    auto constantId = m_constantsMap.registerVariable(name, type);
-    const auto constantIndex = toNomadIndex(constantId);
+    const auto constantId = ConstantId{m_constantsMap.registerVariable(name, type).id};
+    const auto constantIndex = toNomadIndex(constantId.id);
 
     m_constants.resize(constantIndex + 1);
     type->copyValue(value, m_constants[constantIndex]);
-    registerHubMember(name, HubConstant{constantId});
+    registerHubMember(name, constantId);
 
     return constantId;
 }
 
-void Runtime::getConstantValue(const NomadId id, RuntimeValue& value) const {
-    const auto constantIndex = toNomadIndex(id);
+void Runtime::getConstantValue(const ConstantId id, RuntimeValue& value) const {
+    const auto constantIndex = toNomadIndex(id.id);
 
     if (constantIndex >= m_constants.size()) {
         return;
@@ -2169,70 +2300,70 @@ void Runtime::getConstantValue(const NomadId id, RuntimeValue& value) const {
     value = m_constants[constantIndex];
 }
 
-NomadId Runtime::getConstantId(const NomadString& name) const {
-    return m_constantsMap.getVariableId(name);
+ConstantId Runtime::getConstantId(const NomadString& name) const {
+    return ConstantId{m_constantsMap.getVariableId(name).id};
 }
 
-const NomadString& Runtime::getConstantName(const NomadId id) const {
-    return m_constantsMap.getVariableName(id);
+const NomadString& Runtime::getConstantName(const ConstantId id) const {
+    return m_constantsMap.getVariableName(VariableId{id.id});
 }
 
-const Type* Runtime::getConstantType(const NomadId id) const {
-    return m_constantsMap.getVariableType(id);
+const Type* Runtime::getConstantType(const ConstantId id) const {
+    return m_constantsMap.getVariableType(VariableId{id.id});
 }
 
-NomadId Runtime::getFirstConstantId() const
+ConstantId Runtime::getFirstConstantId() const
 {
     if (m_constants.empty()) {
-        return NOMAD_INVALID_ID;
+        return ConstantId::INVALID;
     }
 
-    return 0;
+    return ConstantId{0};
 }
 
-NomadId Runtime::getNextConstantId(const NomadId currentId) const {
-    const auto currentIndex = toNomadIndex(currentId);
+ConstantId Runtime::getNextConstantId(const ConstantId currentId) const {
+    const auto currentIndex = toNomadIndex(currentId.id);
 
     if (currentIndex + 1 >= m_constants.size()) {
-        return NOMAD_INVALID_ID;
+        return ConstantId::INVALID;
     }
 
-    return currentId + 1;
+    return ConstantId{currentId.id + 1};
 }
 
-NomadId Runtime::registerEvent(const NomadString &name, const std::vector<EventParameter> &parameterTypes) {
+EventId Runtime::registerEvent(const NomadString &name, const std::vector<EventParameter> &parameterTypes) {
     if (isHub(name) || !canRegisterHubMember(name)) {
         log::error("Cannot register event '" + name + "': name is reserved by a hub");
-        return NOMAD_INVALID_ID;
+        return EventId::INVALID;
     }
-    if (getEventId(name) != NOMAD_INVALID_ID) {
+    if (getEventId(name).isValid()) {
         log::error("Event with name '" + name + "' already registered.");
 
-        return NOMAD_INVALID_ID;
+        return EventId::INVALID;
     }
 
-    NomadId id = toNomadId(m_events.size());
+    const auto id = EventId{toNomadId(m_events.size())};
 
     m_events.emplace_back(id, name, parameterTypes);
 
     // Also register event type.
-    registerType(std::make_unique<EventType>(&m_events.back()));
-    registerHubMember(name, HubEvent{id});
+    registerType(std::make_unique<EventType>(this, &m_events.back()));
+    registerHubMember(name, id);
 
     return id;
 }
 
-NomadId Runtime::getEventId(const NomadString &name) const {
+EventId Runtime::getEventId(const NomadString &name) const {
     for (auto& event: m_events) {
         if (event.name == name) {
             return event.id;
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return EventId::INVALID;
 }
 
-std::optional<EventDefinition> Runtime::getEventDefinition(NomadId id) const {
+std::optional<EventDefinition> Runtime::getEventDefinition(EventId id) const {
     for (const auto& event: m_events) {
         if (event.id == id) {
             return event;
@@ -2242,50 +2373,50 @@ std::optional<EventDefinition> Runtime::getEventDefinition(NomadId id) const {
     return std::nullopt;
 }
 
-NomadId Runtime::getFirstEventId() const {
+EventId Runtime::getFirstEventId() const {
     if (m_events.empty()) {
-        return NOMAD_INVALID_ID;
+        return EventId::INVALID;
     }
 
-    return toNomadId(0);
+    return EventId{0};
 }
 
-NomadId Runtime::getNextEventId(const NomadId currentId) const {
-    const auto currentIndex = toNomadIndex(currentId);
+EventId Runtime::getNextEventId(const EventId currentId) const {
+    const auto currentIndex = toNomadIndex(currentId.id);
 
     if (currentIndex + 1 >= m_events.size()) {
-        return NOMAD_INVALID_ID;
+        return EventId::INVALID;
     }
 
-    return currentId + 1;
+    return EventId{currentId.id + 1};
 }
 
-NomadId Runtime::registerString(const NomadString& string) {
+StringId Runtime::registerString(const NomadString& string) {
     auto id = getStringId(string);
 
-    if (id != NOMAD_INVALID_ID) {
+    if (id.isValid()) {
         return id;
     }
 
-    id = toNomadId(m_strings.size());
+    id = StringId{toNomadId(m_strings.size())};
 
     m_strings.push_back(NomadStringObject::create(string));
 
     return id;
 }
 
-NomadId Runtime::getStringId(const NomadString& string) const {
+StringId Runtime::getStringId(const NomadString& string) const {
     for (NomadIndex i = 0; i < m_strings.size(); ++i) {
         if (m_strings[i]->getView() == string) {
-            return toNomadId(i);
+            return StringId{toNomadId(i)};
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return StringId::INVALID;
 }
 
-NomadStringObject* Runtime::getString(const NomadId stringId) const {
-    const auto stringIndex = toNomadIndex(stringId);
+NomadStringObject* Runtime::getString(const StringId stringId) const {
+    const auto stringIndex = toNomadIndex(stringId.id);
     return m_strings[stringIndex];
 }
 
@@ -2295,14 +2426,14 @@ NomadStringObject* Runtime::getStringByName(const NomadString& name) const {
     return getString(stringId);
 }
 
-NomadId Runtime::registerFormatString(const NomadString& formatString, NomadId functionId) {
+FormatStringId Runtime::registerFormatString(const NomadString& formatString, CallableId functionId) {
     auto id = getFormatStringId(formatString, functionId);
 
-    if (id != NOMAD_INVALID_ID) {
+    if (id.isValid()) {
         return id;
     }
 
-    id = toNomadId(m_formatStrings.size());
+    id = FormatStringId{toNomadId(m_formatStrings.size())};
 
     m_formatStrings.push_back(
         {
@@ -2315,8 +2446,8 @@ NomadId Runtime::registerFormatString(const NomadString& formatString, NomadId f
     return id;
 }
 
-FormatString* Runtime::getFormatString(const NomadId id) const {
-    const auto formatStringIndex = toNomadIndex(id);
+FormatString* Runtime::getFormatString(const FormatStringId id) const {
+    const auto formatStringIndex = toNomadIndex(id.id);
 
     if (formatStringIndex >= m_formatStrings.size()) {
         return nullptr;
@@ -2325,17 +2456,17 @@ FormatString* Runtime::getFormatString(const NomadId id) const {
     return m_formatStrings[formatStringIndex].formatString.get();
 }
 
-NomadId Runtime::getFormatStringId(const NomadString& formatString, const NomadId functionId) const {
+FormatStringId Runtime::getFormatStringId(const NomadString& formatString, const CallableId functionId) const {
     for (auto& i: m_formatStrings) {
         if (i.functionId == functionId && i.formatString->getFormatString() == formatString) {
             return i.id;
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return FormatStringId::INVALID;
 }
 
-NomadId Runtime::registerDynamicVariable(
+DynamicVariableId Runtime::registerDynamicVariable(
     const NomadString& name,
     DynamicVariableSetFn setFn,
     DynamicVariableGetFn getFn,
@@ -2344,9 +2475,9 @@ NomadId Runtime::registerDynamicVariable(
     ) {
     if (isHub(name) || !canRegisterHubMember(name)) {
         log::error("Cannot register dynamic variable '" + name + "': name is reserved by a hub declaration");
-        return NOMAD_INVALID_ID;
+        return DynamicVariableId::INVALID;
     }
-    auto id = toNomadId(m_dynamicVariables.size());
+    const auto id = DynamicVariableId{toNomadId(m_dynamicVariables.size())};
 
     DynamicVariableRegistration definition;
     definition.name = name;
@@ -2358,52 +2489,52 @@ NomadId Runtime::registerDynamicVariable(
 #endif
 
     m_dynamicVariables.push_back(definition);
-    registerHubMember(name, HubDynamicVariable{id});
+    registerHubMember(name, id);
 
     return id;
 }
 
-NomadId Runtime::getDynamicVariableId(const NomadString& name) const {
+DynamicVariableId Runtime::getDynamicVariableId(const NomadString& name) const {
     for (NomadIndex i = 0; i < m_dynamicVariables.size(); ++i) {
         if (m_dynamicVariables[i].name == name) {
-            return toNomadId(i);
+            return DynamicVariableId{toNomadId(i)};
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return DynamicVariableId::INVALID;
 }
 
-NomadString Runtime::getDynamicVariableName(const NomadId id) const {
-    const auto dynamicVariableIndex = toNomadIndex(id);
+NomadString Runtime::getDynamicVariableName(const DynamicVariableId id) const {
+    const auto dynamicVariableIndex = toNomadIndex(id.id);
     return m_dynamicVariables[dynamicVariableIndex].name;
 }
 
-const Type* Runtime::getDynamicVariableType(const NomadId id) const {
-    const auto dynamicVariableIndex = toNomadIndex(id);
+const Type* Runtime::getDynamicVariableType(const DynamicVariableId id) const {
+    const auto dynamicVariableIndex = toNomadIndex(id.id);
     return m_dynamicVariables[dynamicVariableIndex].type;
 }
 
-bool Runtime::canSetDynamicVariable(const NomadId id) const {
-    const auto dynamicVariableIndex = toNomadIndex(id);
+bool Runtime::canSetDynamicVariable(const DynamicVariableId id) const {
+    const auto dynamicVariableIndex = toNomadIndex(id.id);
     return m_dynamicVariables[dynamicVariableIndex].setFn != nullptr;
 }
 
-bool Runtime::canGetDynamicVariable(const NomadId id) const {
-    const auto dynamicVariableIndex = toNomadIndex(id);
+bool Runtime::canGetDynamicVariable(const DynamicVariableId id) const {
+    const auto dynamicVariableIndex = toNomadIndex(id.id);
     return m_dynamicVariables[dynamicVariableIndex].getFn != nullptr;
 }
 
-void Runtime::setDynamicVariable(VirtualMachine* interpreter, const NomadId id, const RuntimeValue& value) {
-    const auto dynamicVariableIndex = toNomadIndex(id);
+void Runtime::setDynamicVariable(VirtualMachine* interpreter, const DynamicVariableId id, const RuntimeValue& value) {
+    const auto dynamicVariableIndex = toNomadIndex(id.id);
     m_dynamicVariables[dynamicVariableIndex].setFn(interpreter, value);
 }
 
-void Runtime::getDynamicVariableValue(VirtualMachine* interpreter, const NomadId id, RuntimeValue& value) const {
-    const auto dynamicVariableIndex = toNomadIndex(id);
+void Runtime::getDynamicVariableValue(VirtualMachine* interpreter, const DynamicVariableId id, RuntimeValue& value) const {
+    const auto dynamicVariableIndex = toNomadIndex(id.id);
     m_dynamicVariables[dynamicVariableIndex].getFn(interpreter, value);
 }
 
-void Runtime::setStringDynamicVariable(VirtualMachine* interpreter, const NomadId id, const NomadString& value) {
+void Runtime::setStringDynamicVariable(VirtualMachine* interpreter, const DynamicVariableId id, const NomadString& value) {
     RuntimeValue stringValue;
     stringValue.setStringValue(value);
 
@@ -2412,29 +2543,29 @@ void Runtime::setStringDynamicVariable(VirtualMachine* interpreter, const NomadI
     stringValue.freeObjectValue();
 }
 
-NomadId Runtime::getFirstDynamicVariableId() const {
+DynamicVariableId Runtime::getFirstDynamicVariableId() const {
     if (m_dynamicVariables.empty()) {
-        return NOMAD_INVALID_ID;
+        return DynamicVariableId::INVALID;
     }
 
-    return toNomadId(0);
+    return DynamicVariableId{0};
 }
 
-NomadId Runtime::getNextDynamicVariableId(const NomadId currentId) const {
-    const auto dynamicVariableIndex = toNomadIndex(currentId);
+DynamicVariableId Runtime::getNextDynamicVariableId(const DynamicVariableId currentId) const {
+    const auto dynamicVariableIndex = toNomadIndex(currentId.id);
     if (dynamicVariableIndex + 1 >= m_dynamicVariables.size()) {
-        return NOMAD_INVALID_ID;
+        return DynamicVariableId::INVALID;
     }
 
-    return toNomadId(dynamicVariableIndex + 1);
+    return DynamicVariableId{toNomadId(dynamicVariableIndex + 1)};
 }
 
-NomadId Runtime::registerVariableContext(
+VariableContextId Runtime::registerVariableContext(
     const NomadString& name,
     const NomadString& prefix,
     std::unique_ptr<VariableContext> context
     ) {
-    NomadId id = toNomadId(m_variables.size());
+    const auto id = VariableContextId{toNomadId(m_variables.size())};
 
     auto registration = VariableContextRegistration{
         id,
@@ -2448,44 +2579,48 @@ NomadId Runtime::registerVariableContext(
     return id;
 }
 
-NomadId Runtime::getContextId(const NomadString& name) const {
+VariableContextId Runtime::getContextId(const NomadString& name) const {
     for (NomadIndex i = 0; i < m_variables.size(); ++i) {
         if (m_variables[i].name == name) {
-            return toNomadId(i);
+            return VariableContextId{toNomadId(i)};
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return VariableContextId::INVALID;
 }
 
-NomadId Runtime::registerContextVariable(const NomadId contextId, const NomadString &variableName, const Type *type) {
-    const auto contextIndex = toNomadIndex(contextId);
+ContextVariableId Runtime::registerContextVariable(
+    const VariableContextId contextId,
+    const NomadString& variableName,
+    const Type* type
+) {
+    const auto contextIndex = toNomadIndex(contextId.id);
 
     if (contextIndex >= m_variables.size()) {
-        return NOMAD_INVALID_ID;
+        return ContextVariableId::INVALID;
     }
 
     const auto localVariableId = m_variables[contextIndex].context->registerVariable(variableName, type);
 
-    if (localVariableId == NOMAD_INVALID_ID) {
-        return NOMAD_INVALID_ID;
+    if (localVariableId.isInvalid()) {
+        return ContextVariableId::INVALID;
     }
 
     return internContextVariable(contextId, localVariableId);
 }
 
-NomadId Runtime::registerOrUpdateContextVariable(const NomadString &variableName, const Type *type) {
+ContextVariableId Runtime::registerOrUpdateContextVariable(const NomadString &variableName, const Type *type) {
     const auto contextId = getVariableContextIdByPrefix(variableName);
 
-    if (contextId == NOMAD_INVALID_ID) {
-        return NOMAD_INVALID_ID;
+    if (contextId.isInvalid()) {
+        return ContextVariableId::INVALID;
     }
 
     return registerContextVariable(contextId, variableName, type);
 }
 
-VariableContext* Runtime::getVariableContext(const NomadId contextId) const {
-    const auto contextIndex = toNomadIndex(contextId);
+VariableContext* Runtime::getVariableContext(const VariableContextId contextId) const {
+    const auto contextIndex = toNomadIndex(contextId.id);
     if (contextIndex >= m_variables.size()) {
         return nullptr;
     }
@@ -2493,31 +2628,31 @@ VariableContext* Runtime::getVariableContext(const NomadId contextId) const {
     return m_variables[contextIndex].context.get();
 }
 
-NomadString Runtime::getContextName(const NomadId id) const {
-    const auto contextIndex = toNomadIndex(id);
+NomadString Runtime::getContextName(const VariableContextId id) const {
+    const auto contextIndex = toNomadIndex(id.id);
     return m_variables[contextIndex].name;
 }
 
-NomadId Runtime::getContextVariableId(const NomadString& variableName) {
+ContextVariableId Runtime::getContextVariableId(const NomadString& variableName) {
     const auto contextId = getVariableContextIdByPrefix(variableName);
 
-    if (contextId == NOMAD_INVALID_ID) {
-        return NOMAD_INVALID_ID;
+    if (contextId.isInvalid()) {
+        return ContextVariableId::INVALID;
     }
 
-    const auto contextIndex = toNomadIndex(contextId);
+    const auto contextIndex = toNomadIndex(contextId.id);
     const auto localVariableId = m_variables[contextIndex].context->getVariableId(variableName);
 
-    if (localVariableId == NOMAD_INVALID_ID) {
-        return NOMAD_INVALID_ID;
+    if (localVariableId.isInvalid()) {
+        return ContextVariableId::INVALID;
     }
 
     return internContextVariable(contextId, localVariableId);
 }
 
-NomadId Runtime::getVariableContextIdByPrefix(const NomadString& variableName) const {
+VariableContextId Runtime::getVariableContextIdByPrefix(const NomadString& variableName) const {
     if (isHubVariable(variableName)) {
-        return m_hubs[toNomadIndex(getHubId(getContainingHub(variableName)))]->m_variableContextId;
+        return m_hubs[toNomadIndex(getHubId(getContainingHub(variableName)).id)]->m_variableContextId;
     }
     for (const auto& context: m_variables) {
         if (variableName.rfind(context.prefix, 0) == 0) {
@@ -2525,76 +2660,76 @@ NomadId Runtime::getVariableContextIdByPrefix(const NomadString& variableName) c
         }
     }
 
-    return NOMAD_INVALID_ID;
+    return VariableContextId::INVALID;
 }
 
-NomadString Runtime::getContextVariableName(const NomadId contextVariableId) const {
+NomadString Runtime::getContextVariableName(const ContextVariableId contextVariableId) const {
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId));
+        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
         return NOMAD_EMPTY_STRING;
     }
 
     return getVariableContext(contextVariable->contextId)->getVariableName(contextVariable->localVariableId);
 }
 
-const Type* Runtime::getContextVariableType(const NomadId contextVariableId) const {
+const Type* Runtime::getContextVariableType(const ContextVariableId contextVariableId) const {
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId));
+        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
         return nullptr;
     }
 
     return getVariableContext(contextVariable->contextId)->getVariableType(contextVariable->localVariableId);
 }
 
-void Runtime::setContextVariableWritten(const NomadId contextVariableId, const bool written) const {
+void Runtime::setContextVariableWritten(const ContextVariableId contextVariableId, const bool written) const {
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId));
+        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
         return;
     }
 
     getVariableContext(contextVariable->contextId)->setWritten(contextVariable->localVariableId, written);
 }
 
-void Runtime::setContextVariableRead(const NomadId contextVariableId, const bool read) const {
+void Runtime::setContextVariableRead(const ContextVariableId contextVariableId, const bool read) const {
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId));
+        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
         return;
     }
 
     getVariableContext(contextVariable->contextId)->setRead(contextVariable->localVariableId, read);
 }
 
-void Runtime::setContextVariableValue(const NomadId contextVariableId, const RuntimeValue& value) const {
+void Runtime::setContextVariableValue(const ContextVariableId contextVariableId, const RuntimeValue& value) const {
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId));
+        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
         return;
     }
 
     getVariableContext(contextVariable->contextId)->setValue(contextVariable->localVariableId, value);
 }
 
-void Runtime::getContextVariableValue(const NomadId contextVariableId, RuntimeValue& value) const {
+void Runtime::getContextVariableValue(const ContextVariableId contextVariableId, RuntimeValue& value) const {
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId));
+        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
         return;
     }
 
     getVariableContext(contextVariable->contextId)->getValue(contextVariable->localVariableId, value);
 }
 
-void Runtime::setStringContextVariableValue(const NomadId contextVariableId, const NomadString& value) const {
+void Runtime::setStringContextVariableValue(const ContextVariableId contextVariableId, const NomadString& value) const {
     RuntimeValue stringValue;
     stringValue.setStringValue(value);
 
@@ -2603,92 +2738,93 @@ void Runtime::setStringContextVariableValue(const NomadId contextVariableId, con
     stringValue.freeObjectValue();
 }
 
-void Runtime::getStringContextVariableValue(const NomadId contextVariableId, NomadString& value) const {
+void Runtime::getStringContextVariableValue(const ContextVariableId contextVariableId, NomadString& value) const {
     RuntimeValue stringValue;
     getContextVariableValue(contextVariableId, stringValue);
     value = stringValue.getStringValue();
 }
 
-NomadId Runtime::internContextVariable(const NomadId contextId, const NomadId localVariableId) {
+ContextVariableId Runtime::internContextVariable(const VariableContextId contextId, const VariableId localVariableId) {
     for (NomadIndex contextVariableIndex = 0; contextVariableIndex < m_contextVariables.size(); ++contextVariableIndex) {
         const auto& contextVariable = m_contextVariables[contextVariableIndex];
 
         if (contextVariable.contextId == contextId && contextVariable.localVariableId == localVariableId) {
-            return toNomadId(contextVariableIndex);
+            return ContextVariableId{toNomadId(contextVariableIndex)};
         }
     }
 
-    const auto contextVariableId = toNomadId(m_contextVariables.size());
+    const auto contextVariableId = ContextVariableId{toNomadId(m_contextVariables.size())};
     m_contextVariables.push_back({contextId, localVariableId});
     return contextVariableId;
 }
 
-const Runtime::ContextVariable* Runtime::getContextVariable(const NomadId contextVariableId) const {
-    if (isIdOutOfRange(contextVariableId, m_contextVariables.size())) {
+const Runtime::ContextVariable* Runtime::getContextVariable(const ContextVariableId contextVariableId) const {
+    if (isIdOutOfRange(contextVariableId.id, m_contextVariables.size())) {
         return nullptr;
     }
 
-    return &m_contextVariables[toNomadIndex(contextVariableId)];
+    return &m_contextVariables[toNomadIndex(contextVariableId.id)];
 }
 
-NomadId Runtime::getFirstVariableContextId() const {
+VariableContextId Runtime::getFirstVariableContextId() const {
     if (m_variables.empty()) {
-        return NOMAD_INVALID_ID;
+        return VariableContextId::INVALID;
     }
 
-    return toNomadId(0);
+    return VariableContextId{0};
 }
 
-NomadId Runtime::getNextVariableContextId(const NomadId currentId) const {
-    const auto currentIndex = toNomadIndex(currentId);
+VariableContextId Runtime::getNextVariableContextId(const VariableContextId currentId) const {
+    const auto currentIndex = toNomadIndex(currentId.id);
 
     if (currentIndex + 1 >= m_variables.size()) {
-        return NOMAD_INVALID_ID;
+        return VariableContextId::INVALID;
     }
 
-    return currentId + 1;
+    return VariableContextId{currentId.id + 1};
 }
 
-NomadId Runtime::registerScriptFunction(
+CallableId Runtime::registerScriptFunction(
     const NomadString& name,
     const NomadString& path,
     const NomadString& source
     ) {
     if (isHub(name) || !canRegisterHubMember(name, true)) {
         log::error("Cannot register function '" + name + "': name is reserved by a hub declaration");
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
-    if (getCallableId(name) != NOMAD_INVALID_ID) {
+    if (getCallableId(name) != CallableId{}) {
         log::error("Function with name '" + name + "' conflicts with an already registered callable.");
 
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
 
-    const auto id = addCallableToTable(std::make_unique<ScriptFunction>(NOMAD_INVALID_ID, name, path, source));
+    const auto id = addCallableToTable(
+        std::make_unique<ScriptFunction>(CallableId{}, name, path, source)
+    );
 
-    addCallable(name, id);
     registerHubMember(name, HubFunctions{{id}});
 
     return id;
 }
 
-ScriptFunction* Runtime::getScriptFunction(const NomadId functionId) {
-    if (isIdOutOfRange(functionId, m_functionTable.size())) {
+ScriptFunction* Runtime::getScriptFunction(const CallableId functionId) {
+    if (isIdOutOfRange(functionId.id, m_callables.size())) {
         return nullptr;
     }
-    auto* callable = m_functionTable[toNomadIndex(functionId)].get();
+    auto* callable = m_callables[toNomadIndex(functionId.id)];
     if (callable->getType() != CallableType::Function) {
         return nullptr;
     }
     return static_cast<Function*>(callable)->asScriptFunction();
 }
 
-const ScriptFunction* Runtime::getScriptFunction(const NomadId functionId) const {
+const ScriptFunction* Runtime::getScriptFunction(const CallableId functionId) const {
     const auto* function = getFunction(functionId);
     return function == nullptr ? nullptr : function->asScriptFunction();
 }
 
-bool Runtime::setScriptFunctionReturnType(const NomadId functionId, const Type* returnType) {
+bool Runtime::setScriptFunctionReturnType(const CallableId functionId, const Type* returnType) {
     auto* function = getScriptFunction(functionId);
 
     if (function == nullptr) {
@@ -2700,9 +2836,9 @@ bool Runtime::setScriptFunctionReturnType(const NomadId functionId, const Type* 
     return true;
 }
 
-NomadId Runtime::getFunctionId(const NomadString& name) const {
+CallableId Runtime::getFunctionId(const NomadString& name) const {
     const auto* function = getScriptFunction(getCallableId(name));
-    return function == nullptr ? NOMAD_INVALID_ID : function->getId();
+    return function == nullptr ? CallableId{} : function->getId();
 }
 
 ScriptFunction* Runtime::getFunctionAtLine(
@@ -2711,11 +2847,11 @@ ScriptFunction* Runtime::getFunctionAtLine(
 ) const {
     ScriptFunction* selected = nullptr;
     auto selectedSpan = NOMAD_INVALID_INDEX;
-    for (const auto& callable : m_functionTable) {
+    for (auto* callable : m_callables) {
         if (callable->getType() != CallableType::Function || callable->getSource() != CallableSource::Script) {
             continue;
         }
-        auto* function = static_cast<ScriptFunction*>(callable.get());
+        auto* function = static_cast<ScriptFunction*>(callable);
         if (function->getPath() != sourceName) continue;
         const auto start = function->getSourceStartLine();
         const auto end = function->getSourceEndLine();
@@ -2728,7 +2864,7 @@ ScriptFunction* Runtime::getFunctionAtLine(
     return selected;
 }
 
-std::optional<NomadString> Runtime::getFunctionName(NomadId functionId) const {
+std::optional<NomadString> Runtime::getFunctionName(CallableId functionId) const {
     const auto* function = getScriptFunction(functionId);
 
     if (function == nullptr) {
@@ -2739,11 +2875,11 @@ std::optional<NomadString> Runtime::getFunctionName(NomadId functionId) const {
 }
 
 ScriptFunction * Runtime::getFunctionByStartAddress(NomadIndex startAddress) const {
-    for (const auto& callable : m_functionTable) {
+    for (auto* callable : m_callables) {
         if (callable->getType() != CallableType::Function || callable->getSource() != CallableSource::Script) {
             continue;
         }
-        auto* function = static_cast<ScriptFunction*>(callable.get());
+        auto* function = static_cast<ScriptFunction*>(callable);
         if (function->getFunctionStart() == startAddress) {
             return function;
         }
@@ -2753,7 +2889,7 @@ ScriptFunction * Runtime::getFunctionByStartAddress(NomadIndex startAddress) con
 }
 
 NomadIndex Runtime::getFunctionCount() const {
-    return static_cast<NomadIndex>(std::count_if(m_functionTable.begin(), m_functionTable.end(), [](const auto& callable) {
+    return static_cast<NomadIndex>(std::count_if(m_callables.begin(), m_callables.end(), [](const auto* callable) {
         return callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script;
     }));
 }
@@ -2762,9 +2898,9 @@ void Runtime::getFunctions(std::vector<ScriptFunction*>& functions) const {
     functions.clear();
     functions.reserve(getFunctionCount());
 
-    for (const auto& callable : m_functionTable) {
+    for (auto* callable : m_callables) {
         if (callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script) {
-            functions.push_back(static_cast<ScriptFunction*>(callable.get()));
+            functions.push_back(static_cast<ScriptFunction*>(callable));
         }
     }
 }
@@ -2773,19 +2909,19 @@ void Runtime::getFunctions(TempVector<ScriptFunction*>& functions) {
     functions.clear();
     functions.reserve(getFunctionCount());
 
-    for (const auto& callable : m_functionTable) {
+    for (auto* callable : m_callables) {
         if (callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script) {
-            functions.push_back(static_cast<ScriptFunction*>(callable.get()));
+            functions.push_back(static_cast<ScriptFunction*>(callable));
         }
     }
 }
 
 ScriptFunction * Runtime::getFunctionAtInstructionIndex(const NomadIndex instructionIndex) const {
-    for (const auto& callable : m_functionTable) {
+    for (auto* callable : m_callables) {
         if (callable->getType() != CallableType::Function || callable->getSource() != CallableSource::Script) {
             continue;
         }
-        auto* function = static_cast<ScriptFunction*>(callable.get());
+        auto* function = static_cast<ScriptFunction*>(callable);
         if (instructionIndex >= function->getFunctionStart() && instructionIndex < function->getFunctionEnd()) {
             return function;
         }
@@ -2797,9 +2933,9 @@ ScriptFunction * Runtime::getFunctionAtInstructionIndex(const NomadIndex instruc
 NomadIndex Runtime::getFunctionSize() const {
     NomadIndex size = 0;
 
-    for (const auto& callable : m_functionTable) {
+    for (const auto* callable : m_callables) {
         if (callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script) {
-            size += static_cast<const ScriptFunction*>(callable.get())->getFunctionLength();
+            size += static_cast<const ScriptFunction*>(callable)->getFunctionLength();
         }
     }
 
@@ -2825,7 +2961,7 @@ std::unique_ptr<VirtualMachine> Runtime::createVirtualMachine() {
     return std::make_unique<VirtualMachine>(this);
 }
 
-void Runtime::executeFunction(const NomadId functionId) {
+void Runtime::executeFunction(const CallableId functionId) {
     executeFunction(functionId, {});
 }
 
@@ -2881,7 +3017,7 @@ void Runtime::executeFunction(const Closure* closure, const std::vector<RuntimeV
     }  // Else keep existing value
 }
 
-void Runtime::executeFunction(const NomadId functionId, const std::vector<RuntimeValue> &args) {
+void Runtime::executeFunction(const CallableId functionId, const std::vector<RuntimeValue> &args) {
     validateScriptExecution();
     if (m_virtualMachine == nullptr) {
         m_virtualMachine = std::make_unique<VirtualMachine>(this);
@@ -2902,7 +3038,7 @@ void Runtime::executeFunction(const NomadId functionId, const std::vector<Runtim
     }
 }
 
-void Runtime::executeFunction(const NomadId functionId, const std::vector<RuntimeValue> &args, RuntimeValue& returnValue) {
+void Runtime::executeFunction(const CallableId functionId, const std::vector<RuntimeValue> &args, RuntimeValue& returnValue) {
     validateScriptExecution();
     if (m_virtualMachine == nullptr) {
         m_virtualMachine = std::make_unique<VirtualMachine>(this);
@@ -2927,7 +3063,7 @@ void Runtime::executeFunction(const NomadId functionId, const std::vector<Runtim
 }
 
 void Runtime::executeNativeFunction(
-    const NomadId nativeFunctionId,
+    const CallableId nativeFunctionId,
     const std::vector<RuntimeValue>& args,
     InterpreterContext& context
 ) {
@@ -2996,7 +3132,7 @@ void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function
 
         auto instructionId = getInstructionId(fn);
 
-        if (instructionId == NOMAD_INVALID_ID) {
+        if (instructionId.isInvalid()) {
             out << std::setfill('0') << std::setw(6) << i << ": Unknown instruction" << std::endl;
             continue;
         }
@@ -3024,7 +3160,7 @@ void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function
                     textValue = std::to_string(value.getFloatValue());
                     break;
                 case Operand::String:
-                    textValue = "\"" + getString(value.getIdValue())->getString() + "\" (" + std::to_string(value.getIdValue()) + ")";
+                    textValue = "\"" + getString(StringId{value.getIdValue()})->getString() + "\" (" + std::to_string(value.getIdValue()) + ")";
                     break;
                 case Operand::Id:
                     textValue = std::to_string(value.getIdValue());
@@ -3034,14 +3170,14 @@ void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function
 
                     const auto calledFunction = getFunctionByStartAddress(functionStart);
 
-                textValue = calledFunction->getName() + " (" + std::to_string(calledFunction->getId()) + ")";
+                textValue = calledFunction->getName() + " (" + std::to_string(calledFunction->getId().id) + ")";
                 break;
             }
             case Operand::NativeFunction: {
-                const auto* nativeFunction = getNativeFunction(value.getIdValue());
+                const auto* nativeFunction = getNativeFunction(CallableId{value.getIdValue()});
 
                 if (nativeFunction != nullptr) {
-                    textValue = nativeFunction->getName() + " (" + std::to_string(nativeFunction->getId()) + ")";
+                    textValue = nativeFunction->getName() + " (" + std::to_string(nativeFunction->getId().id) + ")";
                 } else {
                     textValue = "<unknown native function> (" + std::to_string(value.getIdValue()) + ")";
                 }
@@ -3049,18 +3185,18 @@ void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function
             }
             case Operand::FunctionVariable:
                 textValue =
-                    function->getVariableName(value.getIdValue()) + " (" + std::to_string(value.getIdValue()) + ")";
+                    function->getVariableName(VariableId{value.getIdValue()}) + " (" + std::to_string(value.getIdValue()) + ")";
                 break;
             case Operand::DynamicVariable:
                 textValue =
-                    getDynamicVariableName(value.getIdValue()) + " (" + std::to_string(value.getIdValue()) + ")";
+                    getDynamicVariableName(DynamicVariableId{value.getIdValue()}) + " (" + std::to_string(value.getIdValue()) + ")";
                 break;
             case Operand::ContextVariableId:
                 textValue =
-                    getContextVariableName(value.getIdValue()) + " (" + std::to_string(value.getIdValue()) + ")";
+                    getContextVariableName(ContextVariableId{value.getIdValue()}) + " (" + std::to_string(value.getIdValue()) + ")";
                 break;
             case Operand::FormatString:
-                textValue = "$\"" + getFormatString(value.getIdValue())->getFormatString() + "\" (" +
+                textValue = "$\"" + getFormatString(FormatStringId{value.getIdValue()})->getFormatString() + "\" (" +
                             std::to_string(value.getIdValue()) + ")";
                 break;
             case Operand::Index:
@@ -3101,7 +3237,7 @@ void Runtime::dumpDocumentation(std::ostream &out) const {
         RuntimeValue constantValue;
         NomadString constantTextValue;
 
-        const auto constantId = toNomadId(i);
+        const auto constantId = ConstantId{toNomadId(i)};
 
         const auto constantType = getConstantType(constantId);
         getConstantValue(constantId, constantValue);
@@ -3136,7 +3272,7 @@ void Runtime::dumpDocumentation(std::ostream &out) const {
             }
             constantTextValue = std::format("\"{}\"", escaped);
         } else if (constantType == getFunctionType()) {
-            constantTextValue = getFunction(constantValue.getIdValue())->getName();
+            constantTextValue = getFunction(CallableId{constantValue.getIdValue()})->getName();
         } else {
             constantTextValue = "<unknown_type>";
         }
@@ -3164,7 +3300,7 @@ void Runtime::dumpDocumentation(std::ostream &out) const {
 
     out << "## NativeFunctions" << std::endl;
 
-    for (auto id = getFirstNativeFunctionId(); id != NOMAD_INVALID_ID; id = getNextNativeFunctionId(id)) {
+    for (auto id = getFirstNativeFunctionId(); id.isValid(); id = getNextNativeFunctionId(id)) {
         const auto& nativeFunction = *getNativeFunction(id);
         out << "### `" << nativeFunction.getName() << "`" << std::endl;
 

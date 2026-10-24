@@ -2,30 +2,128 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/script/Hub.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
+#include <type_traits>
+
 using namespace nomad;
 using namespace nomad::test;
 
+static_assert(!std::is_convertible_v<NomadId, HubId>);
+static_assert(!std::is_convertible_v<HubId, NomadId>);
+static_assert(!std::is_convertible_v<CallableId, HubId>);
+static_assert(!std::is_convertible_v<HubId, CallableId>);
+static_assert(!std::is_invocable_v<decltype(&Runtime::getHub), Runtime&, CallableId>);
+static_assert(std::is_same_v<std::variant_alternative_t<0, HubMember>, VariableId>);
+static_assert(std::is_same_v<std::variant_alternative_t<1, HubMember>, HubFunctions>);
+static_assert(std::is_same_v<std::variant_alternative_t<2, HubMember>, ConstantId>);
+static_assert(std::is_same_v<std::variant_alternative_t<3, HubMember>, const Type*>);
+static_assert(std::is_same_v<std::variant_alternative_t<4, HubMember>, EventId>);
+static_assert(std::is_same_v<std::variant_alternative_t<5, HubMember>, HubId>);
+static_assert(std::is_same_v<std::variant_alternative_t<6, HubMember>, DynamicVariableId>);
+static_assert(std::is_same_v<std::variant_alternative_t<7, HubMember>, HubTypeFamily>);
+
 BOOST_AUTO_TEST_SUITE(language_hubs)
+
+BOOST_AUTO_TEST_CASE(hub_ids_support_lookup_parentage_and_catalog_growth)
+{
+    Runtime runtime;
+    BOOST_TEST(runtime.getHubId("missing") == HubId::INVALID);
+    BOOST_TEST(runtime.getHub(HubId::INVALID) == nullptr);
+    BOOST_TEST(runtime.getHub(HubId{-2}) == nullptr);
+    BOOST_TEST(runtime.getHub(HubId{NOMAD_ID_MAX}) == nullptr);
+    BOOST_TEST(runtime.getHub(HubId{999999}) == nullptr);
+
+    const auto registeredId = runtime.registerHub("example.child");
+    BOOST_REQUIRE(registeredId.isValid());
+    const auto parentId = runtime.getHubId("example");
+    const auto childId = runtime.getHubId("example.child");
+    BOOST_TEST(registeredId == childId);
+    BOOST_REQUIRE(parentId.isValid());
+    BOOST_REQUIRE(childId.isValid());
+    BOOST_TEST(parentId != childId);
+    const auto* parent = runtime.getHub(parentId);
+    const auto* child = runtime.getHub(childId);
+    BOOST_REQUIRE(parent != nullptr);
+    BOOST_REQUIRE(child != nullptr);
+    BOOST_TEST(parent->getParentId() == HubId::INVALID);
+    BOOST_TEST(child->getParentId() == parentId);
+
+    BOOST_TEST(runtime.registerHub("example.child") == childId);
+    for (auto index = 0; index < 64; ++index) {
+        BOOST_REQUIRE(runtime.registerHub("additional" + std::to_string(index)).isValid());
+    }
+
+    BOOST_TEST(runtime.getHubId("example") == parentId);
+    BOOST_TEST(runtime.getHubId("example.child") == childId);
+    BOOST_TEST(runtime.getHub(parentId) == parent);
+    BOOST_TEST(runtime.getHub(childId) == child);
+    BOOST_TEST(child->getParentId() == parentId);
+    const auto* member = parent->getMember("child");
+    BOOST_REQUIRE(member != nullptr);
+    const auto* childMember = std::get_if<HubId>(member);
+    BOOST_REQUIRE(childMember != nullptr);
+    BOOST_TEST(*childMember == childId);
+}
 
 BOOST_AUTO_TEST_CASE(native_registration_is_idempotent_and_reserves_names)
 {
     Runtime runtime;
-    BOOST_REQUIRE(runtime.registerHub("example"));
-    BOOST_REQUIRE(runtime.registerHub("example"));
-    BOOST_REQUIRE(runtime.registerHub("example.inner"));
+    BOOST_REQUIRE(runtime.registerHub("example").isValid());
+    BOOST_REQUIRE(runtime.registerHub("example").isValid());
+    BOOST_REQUIRE(runtime.registerHub("example.inner").isValid());
     BOOST_TEST(runtime.isHub("example.inner"));
-    BOOST_TEST(runtime.registerConstant("example", RuntimeValue(NomadInteger{1}), runtime.getIntegerType()) == NOMAD_INVALID_ID);
-    BOOST_REQUIRE(runtime.registerConstant("occupied", RuntimeValue(NomadInteger{1}), runtime.getIntegerType()) != NOMAD_INVALID_ID);
-    BOOST_TEST(!runtime.registerHub("occupied.child"));
+    BOOST_TEST(runtime.registerConstant("example", RuntimeValue(NomadInteger{1}), runtime.getIntegerType()).isInvalid());
+    BOOST_REQUIRE(runtime.registerConstant("occupied", RuntimeValue(NomadInteger{1}), runtime.getIntegerType()).isValid());
+    BOOST_TEST(runtime.registerHub("occupied.child") == HubId::INVALID);
     BOOST_TEST(!runtime.isHub("occupied"));
-    BOOST_TEST(!runtime.registerHub("invalid."));
-    BOOST_TEST(!runtime.registerHub("invalid..name"));
-    BOOST_TEST(!runtime.registerHub("fun"));
+    BOOST_TEST(runtime.registerHub("") == HubId::INVALID);
+    BOOST_TEST(runtime.registerHub(".invalid") == HubId::INVALID);
+    BOOST_TEST(runtime.registerHub("invalid.") == HubId::INVALID);
+    BOOST_TEST(runtime.registerHub("invalid..name") == HubId::INVALID);
+    BOOST_TEST(!runtime.isHub("invalid"));
+}
+
+BOOST_AUTO_TEST_CASE(native_hub_names_are_not_restricted_to_script_identifiers)
+{
+    Runtime runtime;
+    for (const auto* name : {"fun", "123", "with spaces", "with-hyphens", "9 host.child-name"}) {
+        const auto id = runtime.registerHub(name);
+        BOOST_REQUIRE(id.isValid());
+        BOOST_TEST(runtime.registerHub(name) == id);
+        BOOST_TEST(runtime.getHubId(name) == id);
+        const auto* hub = runtime.getHub(id);
+        BOOST_REQUIRE(hub != nullptr);
+        BOOST_TEST(hub->getName() == name);
+    }
+    const auto parentId = runtime.getHubId("9 host");
+    BOOST_REQUIRE(parentId.isValid());
+    const auto childId = runtime.getHubId("9 host.child-name");
+    BOOST_TEST(runtime.getHub(childId)->getParentId() == parentId);
+    const auto* member = runtime.getHub(parentId)->getMember("child-name");
+    BOOST_REQUIRE(member != nullptr);
+    const auto* child = std::get_if<HubId>(member);
+    BOOST_REQUIRE(child != nullptr);
+    BOOST_TEST(*child == childId);
+}
+
+BOOST_AUTO_TEST_CASE(script_hub_names_require_identifier_tokens)
+{
+    for (const auto* name : {"123", "example.123", "example.1child", "with spaces", "with-hyphens"}) {
+        BOOST_TEST(!compileErrors(NomadString("hub ") + name + "\nend").empty());
+    }
+    for (const auto* name : {"fun", "example.fun", "reservedword", "example.reservedword", "example._child2"}) {
+        LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        BOOST_REQUIRE(runtime.registerKeyword("reservedword", NomadDoc("Test keyword.")).isValid());
+        BOOST_REQUIRE(runtime.registerHub(name).isValid());
+        fixture.addFunction("main", NomadString("hub ") + name + "\nend");
+        BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    }
 }
 
 BOOST_AUTO_TEST_CASE(hub_qualified_dynamic_variables_remain_readable_and_writable)
@@ -34,7 +132,7 @@ BOOST_AUTO_TEST_CASE(hub_qualified_dynamic_variables_remain_readable_and_writabl
     auto& runtime = fixture.getRuntime();
     NomadFloat volume = 0.25f;
 
-    BOOST_REQUIRE(runtime.registerHub("game"));
+    BOOST_REQUIRE(runtime.registerHub("game").isValid());
     BOOST_REQUIRE(runtime.registerDynamicVariable(
         "game.volume",
         [&volume](VirtualMachine*, const RuntimeValue& value) {
@@ -45,7 +143,7 @@ BOOST_AUTO_TEST_CASE(hub_qualified_dynamic_variables_remain_readable_and_writabl
         },
         runtime.getFloatType(),
         NomadDoc("Test game volume.")
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
 
     fixture.addFunction("main", "game.volume = 0.75\nreturn game.volume");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
@@ -68,7 +166,7 @@ BOOST_AUTO_TEST_CASE(hub_qualified_read_only_dynamic_variables_remain_unwritable
 {
     Runtime runtime;
 
-    BOOST_REQUIRE(runtime.registerHub("game"));
+    BOOST_REQUIRE(runtime.registerHub("game").isValid());
     BOOST_REQUIRE(runtime.registerDynamicVariable(
         "game.frame",
         nullptr,
@@ -77,7 +175,7 @@ BOOST_AUTO_TEST_CASE(hub_qualified_read_only_dynamic_variables_remain_unwritable
         },
         runtime.getIntegerType(),
         NomadDoc("Test read-only game frame.")
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
 
     auto machine = runtime.createVirtualMachine();
     InterpreterContext context(*machine);
@@ -89,7 +187,7 @@ BOOST_AUTO_TEST_CASE(hub_qualified_read_only_dynamic_variables_remain_unwritable
 BOOST_AUTO_TEST_CASE(hub_qualified_unknown_members_remain_undeclarable_by_assignment)
 {
     LanguageTestFixture fixture;
-    BOOST_REQUIRE(fixture.getRuntime().registerHub("game"));
+    BOOST_REQUIRE(fixture.getRuntime().registerHub("game").isValid());
 
     fixture.addFunction("main", "game.unknown = 10");
     BOOST_TEST(!fixture.compile());
@@ -206,10 +304,10 @@ BOOST_AUTO_TEST_CASE(malformed_or_misplaced_hubs_are_errors)
 BOOST_AUTO_TEST_CASE(native_hubs_can_be_extended_by_scripts)
 {
     LanguageTestFixture fixture;
-    BOOST_REQUIRE(fixture.getRuntime().registerHub("example"));
+    BOOST_REQUIRE(fixture.getRuntime().registerHub("example").isValid());
     BOOST_REQUIRE(fixture.getRuntime().registerConstant(
         "example.nativeValue", RuntimeValue(NomadInteger{40}), fixture.getRuntime().getIntegerType()
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     fixture.addFunction("main", "hub example\nextra = 2\nend\nreturn example.nativeValue + example.extra");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     BOOST_TEST(fixture.execute("main").integerValue == 42);
@@ -218,43 +316,43 @@ BOOST_AUTO_TEST_CASE(native_hubs_can_be_extended_by_scripts)
 BOOST_AUTO_TEST_CASE(hub_objects_index_members_without_duplicating_callable_ownership)
 {
     Runtime runtime;
-    BOOST_REQUIRE(runtime.registerHub("example"));
+    BOOST_REQUIRE(runtime.registerHub("example").isValid());
     const auto id = runtime.getHubId("example");
     const auto* hub = runtime.getHub(id);
     BOOST_REQUIRE(hub != nullptr);
-    BOOST_REQUIRE(runtime.registerHub("example"));
+    BOOST_REQUIRE(runtime.registerHub("example").isValid());
     BOOST_TEST(runtime.getHub(id) == hub);
     const auto functionId = runtime.registerNativeFunction(
         "example.answer", [](VirtualMachine* machine) { machine->setIntegerResult(42); },
         {}, runtime.getIntegerType(), ""
     );
-    BOOST_REQUIRE(functionId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(functionId.isValid());
     const auto overloadId = runtime.registerNativeFunction(
         "example.answer", [](VirtualMachine* machine) { machine->setIntegerResult(machine->getIntegerParameter(0)); },
         {defParameter("value", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
     );
-    BOOST_REQUIRE(overloadId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(overloadId.isValid());
     const auto* member = hub->getMember("answer");
     BOOST_REQUIRE(member != nullptr);
     const auto* functions = std::get_if<HubFunctions>(member);
     BOOST_REQUIRE(functions != nullptr);
     BOOST_REQUIRE(functions->ids.size() == 2U);
-    BOOST_TEST(functions->ids[0] == functionId);
-    BOOST_TEST(functions->ids[1] == overloadId);
+    BOOST_TEST((functions->ids[0] == functionId));
+    BOOST_TEST((functions->ids[1] == overloadId));
     BOOST_TEST(runtime.getFunction(functions->ids[0])->getName() == "example.answer");
-    BOOST_REQUIRE(runtime.registerEnum("example.State", {{"Ready", 1}}) != nullptr);
+    BOOST_REQUIRE(runtime.createEnum("example.State", {{"Ready", 1}}).isValid());
     BOOST_REQUIRE(hub->getMember("State") != nullptr);
-    BOOST_TEST(std::holds_alternative<HubType>(*hub->getMember("State")));
+    BOOST_TEST(std::get<const Type*>(*hub->getMember("State")) == runtime.getTypeByName("example.State"));
     BOOST_REQUIRE(hub->getMember("State.Ready") != nullptr);
-    BOOST_TEST(std::holds_alternative<HubConstant>(*hub->getMember("State.Ready")));
-    BOOST_REQUIRE(runtime.registerEvent("example.changed", {}) != NOMAD_INVALID_ID);
+    BOOST_TEST(std::holds_alternative<ConstantId>(*hub->getMember("State.Ready")));
+    BOOST_REQUIRE(runtime.registerEvent("example.changed", {}).isValid());
     BOOST_REQUIRE(hub->getMember("changed") != nullptr);
-    BOOST_TEST(std::holds_alternative<HubEvent>(*hub->getMember("changed")));
-    BOOST_REQUIRE(runtime.registerHub("example.child"));
+    BOOST_TEST(std::holds_alternative<EventId>(*hub->getMember("changed")));
+    BOOST_REQUIRE(runtime.registerHub("example.child").isValid());
     const auto childId = runtime.getHubId("example.child");
     BOOST_TEST(runtime.getHub(childId)->getParentId() == id);
     BOOST_REQUIRE(hub->getMember("child") != nullptr);
-    BOOST_TEST(std::get<HubChild>(*hub->getMember("child")).id == childId);
+    BOOST_TEST(std::get<HubId>(*hub->getMember("child")) == childId);
 }
 
 BOOST_AUTO_TEST_CASE(explicit_hubs_adopt_existing_qualified_native_registrations)
@@ -263,15 +361,92 @@ BOOST_AUTO_TEST_CASE(explicit_hubs_adopt_existing_qualified_native_registrations
     const auto constantId = runtime.registerConstant(
         "example.child.value", RuntimeValue(NomadInteger{42}), runtime.getIntegerType()
     );
-    BOOST_REQUIRE(constantId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(runtime.registerHub("example"));
+    BOOST_REQUIRE(constantId.isValid());
+    BOOST_REQUIRE(runtime.registerHub("example").isValid());
     const auto* parent = runtime.getHub(runtime.getHubId("example"));
     BOOST_REQUIRE(parent->getMember("child.value") != nullptr);
-    BOOST_REQUIRE(runtime.registerHub("example.child"));
+    BOOST_REQUIRE(runtime.registerHub("example.child").isValid());
     BOOST_TEST(parent->getMember("child.value") == nullptr);
     const auto* child = runtime.getHub(runtime.getHubId("example.child"));
     BOOST_REQUIRE(child->getMember("value") != nullptr);
-    BOOST_TEST(std::get<HubConstant>(*child->getMember("value")).id == constantId);
+    BOOST_TEST(std::get<ConstantId>(*child->getMember("value")) == constantId);
+}
+
+BOOST_AUTO_TEST_CASE(rebuilding_hubs_preserves_native_member_values_and_overloads)
+{
+    Runtime runtime;
+    const auto constantId = runtime.registerConstant(
+        "example.child.answer", RuntimeValue(NomadInteger{42}), runtime.getIntegerType()
+    );
+    const auto typeId = runtime.createEnum("example.child.State", {{"Ready", 1}});
+    BOOST_REQUIRE(typeId.isValid());
+    const auto* type = runtime.getType(typeId).value();
+    const auto eventId = runtime.registerEvent("example.child.changed", {});
+    const auto dynamicVariableId = runtime.registerDynamicVariable(
+        "example.child.current", nullptr,
+        [](VirtualMachine*, RuntimeValue& value) { value.setIntegerValue(42); },
+        runtime.getIntegerType(), ""
+    );
+    const auto functionId = runtime.registerNativeFunction(
+        "example.child.read", [](VirtualMachine* machine) { machine->setIntegerResult(42); },
+        {}, runtime.getIntegerType(), ""
+    );
+    const auto overloadId = runtime.registerNativeFunction(
+        "example.child.read",
+        [](VirtualMachine* machine) { machine->setIntegerResult(machine->getIntegerParameter(0)); },
+        {defParameter("value", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
+    );
+    BOOST_REQUIRE(constantId.isValid());
+    BOOST_REQUIRE(type != nullptr);
+    BOOST_REQUIRE(eventId.isValid());
+    BOOST_REQUIRE(dynamicVariableId.isValid());
+    BOOST_REQUIRE(functionId.isValid());
+    BOOST_REQUIRE(overloadId.isValid());
+    BOOST_REQUIRE(runtime.registerParameterizedType(
+        "example.child.Box", 1, [](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+            return std::make_unique<ObjectType>(owningRuntime, "example.child.Box<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments
+            );
+        }
+    ));
+
+    const auto parentId = runtime.registerHub("example");
+    BOOST_REQUIRE(parentId.isValid());
+    const auto* parent = runtime.getHub(parentId);
+    const auto verifyMembers = [&](const Hub* hub, const NomadString& prefix) {
+        const auto requireMember = [&](const NomadString& name) {
+            const auto* member = hub->getMember(prefix + name);
+            BOOST_REQUIRE(member != nullptr);
+            return member;
+        };
+        BOOST_TEST(std::get<ConstantId>(*requireMember("answer")) == constantId);
+        BOOST_TEST(std::get<const Type*>(*requireMember("State")) == type);
+        BOOST_TEST(std::get<EventId>(*requireMember("changed")) == eventId);
+        BOOST_TEST(std::get<DynamicVariableId>(*requireMember("current")) == dynamicVariableId);
+        BOOST_TEST(std::get<HubTypeFamily>(*requireMember("Box")).argumentCount == 1U);
+        const auto& functions = std::get<HubFunctions>(*requireMember("read")).ids;
+        BOOST_REQUIRE(functions.size() == 2U);
+        BOOST_TEST(functions[0] == functionId);
+        BOOST_TEST(functions[1] == overloadId);
+    };
+    verifyMembers(parent, "child.");
+
+    const auto childId = runtime.registerHub("example.child");
+    BOOST_REQUIRE(childId.isValid());
+    BOOST_TEST(parent->getMember("child.answer") == nullptr);
+    BOOST_REQUIRE(parent->getMember("child") != nullptr);
+    BOOST_TEST(std::get<HubId>(*parent->getMember("child")) == childId);
+    const auto* child = runtime.getHub(childId);
+    verifyMembers(child, "");
+
+    BOOST_TEST(runtime.registerHub("example.child.answer.nested") == HubId::INVALID);
+    BOOST_TEST(!runtime.isHub("example.child.answer"));
+    BOOST_TEST(!runtime.isHub("example.child.answer.nested"));
+    BOOST_TEST(runtime.getHub(parentId) == parent);
+    BOOST_TEST(runtime.getHub(childId) == child);
+    verifyMembers(child, "");
+    BOOST_TEST(runtime.registerHub("example.child") == childId);
+    BOOST_REQUIRE(runtime.registerHub("unrelated").isValid());
+    verifyMembers(child, "");
 }
 
 BOOST_AUTO_TEST_CASE(initialization_is_explicit_and_independent_of_compiler_lifetime)
@@ -281,7 +456,7 @@ BOOST_AUTO_TEST_CASE(initialization_is_explicit_and_independent_of_compiler_life
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "initialValue", [&calls](VirtualMachine* machine) { ++calls; machine->setIntegerResult(42); },
         {}, runtime.getIntegerType(), ""
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     {
         auto compiler = runtime.createCompiler();
         CompilerContext context(compiler.get());
@@ -308,7 +483,7 @@ BOOST_AUTO_TEST_CASE(initialization_is_explicit_and_independent_of_compiler_life
     const auto* hub = runtime.getHub(runtime.getHubId("example"));
     BOOST_REQUIRE(hub != nullptr);
     BOOST_REQUIRE(hub->getMember("x") != nullptr);
-    BOOST_TEST(std::holds_alternative<HubVariable>(*hub->getMember("x")));
+    BOOST_TEST(std::holds_alternative<VariableId>(*hub->getMember("x")));
     BOOST_TEST(hub->getMembers().size() == 1U);
 }
 
@@ -405,11 +580,11 @@ BOOST_AUTO_TEST_CASE(runtime_dependent_strings_have_initialized_empty_storage)
             machine->setStringResult(value.getStringValue());
         },
         {}, runtime.getStringType(), ""
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "initialText", [](VirtualMachine* machine) { machine->setStringResult("ready"); },
         {}, runtime.getStringType(), ""
-    ) != NOMAD_INVALID_ID);
+    ).isValid());
     fixture.addFunction("main",
         "hub example\nfirst = readLater\nlater = initialText\nend\n"
         "assert example.later == \"ready\"\nreturn example.first");

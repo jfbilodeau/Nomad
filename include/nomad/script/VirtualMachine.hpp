@@ -7,13 +7,14 @@
 #include <nomad/compiler/Identifier.hpp>
 
 #include <nomad/script/Documentation.hpp>
+#include <nomad/script/NativeMember.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/OpCode.hpp>
+#include <nomad/script/Property.hpp>
 #include <nomad/script/RuntimeValue.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 
 #include <functional>
-#include <type_traits>
 #include <vector>
 
 namespace nomad {
@@ -23,21 +24,6 @@ class Runtime;
 class ScriptFunction;
 class Closure;
 class TypedValue;
-
-struct Instruction {
-    explicit Instruction(const InstructionFn fn) : fn(fn) {}
-    explicit Instruction(const RuntimeValue& value) : value(value) {}
-    Instruction(const Instruction& other) = default;
-
-    ~Instruction() = default;
-
-    union {
-        InstructionFn fn = nullptr;
-        RuntimeValue value;
-    };
-};
-
-static_assert(std::is_trivially_copyable_v<Instruction>, "Instruction must preserve its active union member when copied");
 
 class VirtualMachineException : public NomadException {
 public:
@@ -52,8 +38,8 @@ public:
 
     [[nodiscard]] Runtime* getRuntime() const { return m_runtime; }
 
-    void setFunctionVariableValue(NomadId variableId, const RuntimeValue& value);
-    [[nodiscard]] const RuntimeValue& getFunctionVariableValue(NomadId variableId) const;
+    void setFunctionVariableValue(VariableId variableId, const RuntimeValue& value);
+    [[nodiscard]] const RuntimeValue& getFunctionVariableValue(VariableId variableId) const;
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
     void yield(const RuntimeValue& result);
@@ -64,17 +50,17 @@ public:
     ScriptFunction* getCurrentFunction() const;
 
     void callFunction(const ScriptFunction* function);
-    void callNativeFunction(NomadId nativeFunctionId);
-    void callNativeMethod(NomadId memberId, const RuntimeValue& receiver);
+    void callNativeFunction(CallableId nativeFunctionId);
+    void callNativeMethod(CallableId memberId, const RuntimeValue& receiver);
     void returnFunction(NomadIndex variableCount);
-    void runNativeMethod(NomadId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
-    void runNativeFunction(NomadId nativeFunctionId, const std::vector<RuntimeValue>& args);
+    void runNativeMethod(CallableId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
+    void runNativeFunction(CallableId nativeFunctionId, const std::vector<RuntimeValue>& args);
 
-    void getNativeProperty(NomadId memberId, const RuntimeValue& receiver, RuntimeValue& result);
-    void setNativeProperty(NomadId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
-    void callNativeIndexer(NomadId indexerId, const RuntimeValue& receiver, bool write);
+    void getNativeProperty(PropertyId memberId, const RuntimeValue& receiver, RuntimeValue& result);
+    void setNativeProperty(PropertyId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
+    void callNativeIndexer(IndexerId indexerId, const RuntimeValue& receiver, bool write);
     void runNativeIndexer(
-        NomadId indexerId,
+        IndexerId indexerId,
         const std::vector<RuntimeValue>& args,
         const RuntimeValue& receiver,
         bool write
@@ -85,7 +71,7 @@ public:
     [[nodiscard]] Object* getThisAs() const;
 
     [[nodiscard]]
-    std::unique_ptr<Closure> createClosure(const Runtime* runtime, NomadId functionId) const;
+    std::unique_ptr<Closure> createClosure(const Runtime* runtime, CallableId functionId) const;
 
     // Copies captures from the active script frame, not an enclosing native-call parameter frame.
     [[nodiscard]] std::vector<TypedValue> captureCurrentFrame(const ScriptFunction* function) const;
@@ -131,6 +117,7 @@ public:
     [[nodiscard]] NomadInteger getIntegerParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getIntegerValue(); }
     [[nodiscard]] NomadFloat getFloatParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getFloatValue(); }
     [[nodiscard]] NomadId getIdParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getIdValue(); }
+    [[nodiscard]] CallableId getCallableIdParameter(const NomadIndex parameterIndex) const { return CallableId{m_stack[m_parameterIndex - parameterIndex].getIdValue() }; }
     [[nodiscard]] NomadStringObject* getStringParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getStringObject(); }
 
     // Closure capture: read from enclosing function's parameter frame (not the nativeFunction's frame)
@@ -141,25 +128,25 @@ public:
     [[nodiscard]] NomadId getIdEnclosingParameter(const NomadIndex parameterIndex) const { return m_stack[m_enclosingParameterIndex - parameterIndex].getIdValue(); }
     [[nodiscard]] NomadStringObject* getStringEnclosingParameter(const NomadIndex parameterIndex) const { return m_stack[m_enclosingParameterIndex - parameterIndex].getStringObject(); }
 
-    void setVariableValue(const NomadId variableId, const RuntimeValue& value) { m_stack[m_variableIndex + variableId] = value; }
-    void setBooleanVariableValue(const NomadId variableId, const NomadBoolean value) { m_stack[m_variableIndex + variableId].setBooleanValue(value); }
-    void setIntegerVariableValue(const NomadId variableId, const NomadInteger value) { m_stack[m_variableIndex + variableId].setIntegerValue(value); }
-    void setFloatVariableValue(const NomadId variableId, const NomadFloat value) { m_stack[m_variableIndex + variableId].setFloatValue(value); }
-    void setIdVariableValue(const NomadId variableId, const NomadId value) { m_stack[m_variableIndex + variableId].setIdValue(value); }
-    void setStringVariableValue(const NomadId variableId, const NomadChar* value) { m_stack[m_variableIndex + variableId].setStringValue(value); }
-    void setStringVariableValue(const NomadId variableId, const NomadString& value) { m_stack[m_variableIndex + variableId].setStringValue(value); }
+    void setVariableValue(const VariableId variableId, const RuntimeValue& value) { m_stack[m_variableIndex + variableId.id] = value; }
+    void setBooleanVariableValue(const VariableId variableId, const NomadBoolean value) { m_stack[m_variableIndex + variableId.id].setBooleanValue(value); }
+    void setIntegerVariableValue(const VariableId variableId, const NomadInteger value) { m_stack[m_variableIndex + variableId.id].setIntegerValue(value); }
+    void setFloatVariableValue(const VariableId variableId, const NomadFloat value) { m_stack[m_variableIndex + variableId.id].setFloatValue(value); }
+    void setIdVariableValue(const VariableId variableId, const NomadId value) { m_stack[m_variableIndex + variableId.id].setIdValue(value); }
+    void setStringVariableValue(const VariableId variableId, const NomadChar* value) { m_stack[m_variableIndex + variableId.id].setStringValue(value); }
+    void setStringVariableValue(const VariableId variableId, const NomadString& value) { m_stack[m_variableIndex + variableId.id].setStringValue(value); }
 
-    void getFunctionVariableValue(const NomadId variableId, RuntimeValue& value) const { value = m_stack[m_variableIndex + variableId]; }
-    [[nodiscard]] NomadBoolean getFunctionBooleanVariableValue(const NomadId variable_id) const { return m_stack[m_variableIndex + variable_id].getBooleanValue(); }
-    [[nodiscard]] NomadInteger getFunctionIntegerVariableValue(const NomadId variable_id) const { return m_stack[m_variableIndex + variable_id].getIntegerValue(); }
-    [[nodiscard]] NomadFloat getFunctionFloatVariableValue(const NomadId variable_id) const { return m_stack[m_variableIndex + variable_id].getFloatValue(); }
-    [[nodiscard]] NomadId getFunctionIdVariableValue(const NomadId variable_id) const { return m_stack[m_variableIndex + variable_id].getIdValue(); }
-    [[nodiscard]] NomadStringObject* getFunctionStringVariableValue(const NomadId variable_id) const { return m_stack[m_variableIndex + variable_id].getStringObject(); }
+    void getFunctionVariableValue(const VariableId variableId, RuntimeValue& value) const { value = m_stack[m_variableIndex + variableId.id]; }
+    [[nodiscard]] NomadBoolean getFunctionBooleanVariableValue(const VariableId variable_id) const { return m_stack[m_variableIndex + variable_id.id].getBooleanValue(); }
+    [[nodiscard]] NomadInteger getFunctionIntegerVariableValue(const VariableId variable_id) const { return m_stack[m_variableIndex + variable_id.id].getIntegerValue(); }
+    [[nodiscard]] NomadFloat getFunctionFloatVariableValue(const VariableId variable_id) const { return m_stack[m_variableIndex + variable_id.id].getFloatValue(); }
+    [[nodiscard]] NomadId getFunctionIdVariableValue(const VariableId variable_id) const { return m_stack[m_variableIndex + variable_id.id].getIdValue(); }
+    [[nodiscard]] NomadStringObject* getFunctionStringVariableValue(const VariableId variable_id) const { return m_stack[m_variableIndex + variable_id.id].getStringObject(); }
 
     [[nodiscard]]
     const RuntimeValue& peekStack(const NomadIndex index) const { return m_stack[m_stackIndex - index]; }
 
-    void initStringVariable(const NomadIndex variableIndex) { m_stack[m_variableIndex + variableIndex].initStringValue(); }
+    void initStringVariable(const VariableId variableId) { m_stack[m_variableIndex + variableId.id].initStringValue(); }
     void initStringResult() { m_result.initStringValue(); }
     void initStringIntermediate() { m_intermediate.initStringValue(); }
 
@@ -170,7 +157,7 @@ public:
     void moveObjectResultToIntermediate() { m_intermediate.moveObjectValue(m_result); }
     void moveObjectResultToStack();
 
-    void freeObjectVariable(NomadIndex variable);
+    void freeObjectVariable(VariableId variableId);
     void freeObjectStack(NomadIndex index);
 
     void pushResult();

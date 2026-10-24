@@ -6,7 +6,13 @@ namespace nomad {
 
 class ReadOnlyMapType final : public ObjectType {
 public:
-    ReadOnlyMapType(const Type* keyType, const Type* valueType);
+    ReadOnlyMapType(
+        Runtime* runtime,
+        NomadString name,
+        ObjectTypeMode mode,
+        const Type* keyType,
+        const Type* valueType
+    );
 
     void initValue(RuntimeValue& value) const override;
 };

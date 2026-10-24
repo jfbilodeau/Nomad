@@ -27,13 +27,15 @@ void registerListReaders(Runtime* runtime, const ObjectType* objectType, const b
         {}, runtime->getIteratorType(elementType),
         NomadDoc("Creates an independent live iterator. Structural changes invalidate its next advance.")
     );
-    const auto countId = runtime->registerNativeProperty(
-        objectType, "count", runtime->getIntegerType(),
-        [](VirtualMachine* machine, RuntimeValue& result) {
+    const auto countId = runtime->addProperty(runtime->getTypeId(objectType->getTypeName()), {
+        .valueTypeId = runtime->getTypeId("int"),
+        .name = "count",
+        .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             result.setIntegerValue(static_cast<NomadInteger>(machine->getThisAs<ListObject>()->getCount()));
         },
-        {}, NomadDoc("The number of elements in the list.")
-    );
+        .setter = {},
+        .documentation = NomadDoc("The number of elements in the list.")
+    });
     NativeFunctionFn setter;
     if (writable) {
         setter = [](VirtualMachine* machine) {
@@ -51,7 +53,7 @@ void registerListReaders(Runtime* runtime, const ObjectType* objectType, const b
             ? NomadDoc("Reads or replaces an element at a zero-based index. Out-of-range indices fault.")
             : NomadDoc("Reads an element at a zero-based index. Out-of-range indices fault.")
     );
-    if (iteratorId == NOMAD_INVALID_ID || countId == NOMAD_INVALID_ID || indexerId == NOMAD_INVALID_ID) {
+    if (iteratorId.isInvalid() || countId.isInvalid() || indexerId.isInvalid()) {
         throw NomadException("Failed to register List readers");
     }
     runtime->registerIterableType(objectType, elementType, runtime->getNativeMemberMethod(iteratorId));
@@ -62,10 +64,14 @@ void registerListReaders(Runtime* runtime, const ObjectType* objectType, const b
 void registerListType(Runtime* runtime) {
     if (!runtime->registerParameterizedType(
         "ReadOnlyList", 1,
-        [](const std::vector<const Type*>& arguments) {
-            return std::make_unique<ReadOnlyListType>(arguments[0]);
+        [](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+            return std::make_unique<ReadOnlyListType>(
+                owningRuntime, "ReadOnlyList<" + arguments[0]->getTypeName() + ">",
+                ObjectTypeMode::Closed, arguments[0]
+            );
         },
-        [runtime](const Type* type) {
+        [](Runtime* runtime, const TypeId id) {
+            const auto* type = runtime->getType(id).value();
             registerListReaders(runtime, static_cast<const ObjectType*>(type), false);
         }
     )) {
@@ -74,11 +80,14 @@ void registerListType(Runtime* runtime) {
     if (!runtime->registerParameterizedType(
         "List",
         1,
-        [](const std::vector<const nomad::Type*>& arguments) {
+        [](Runtime* owningRuntime, const std::vector<const nomad::Type*>& arguments) {
             const auto* elementType = arguments[0];
-            return std::make_unique<nomad::ListType>(elementType);
+            return std::make_unique<nomad::ListType>(
+                owningRuntime, "List<" + elementType->getTypeName() + ">", ObjectTypeMode::Closed, elementType
+            );
         },
-        [runtime](const nomad::Type* type) {
+        [](Runtime* runtime, const TypeId id) {
+            const auto* type = runtime->getType(id).value();
             const auto* objectType = static_cast<const nomad::ObjectType*>(type);
             const auto* elementType = objectType->getTypeArguments()[0];
             registerListReaders(runtime, objectType, true);
@@ -95,7 +104,7 @@ void registerListType(Runtime* runtime) {
                 },
                 {}, readOnlyType,
                 NomadDoc("Creates an independent read-only snapshot. Object elements share references.")
-            ) == NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw NomadException("Failed to register List.toReadOnly");
             }
             const auto constructorId = runtime->registerNativeConstructor(
@@ -193,11 +202,11 @@ void registerListType(Runtime* runtime) {
                 runtime->getVoidType(),
                 NomadDoc("Removes all elements. Clearing an empty list does nothing and does not log.")
             );
-            if (constructorId == nomad::NOMAD_INVALID_ID ||
-                appendId == nomad::NOMAD_INVALID_ID || prependId == nomad::NOMAD_INVALID_ID ||
-                insertId == nomad::NOMAD_INVALID_ID || removeId == nomad::NOMAD_INVALID_ID ||
-                removeFirstId == nomad::NOMAD_INVALID_ID || removeLastId == nomad::NOMAD_INVALID_ID ||
-                clearId == nomad::NOMAD_INVALID_ID) {
+            if (constructorId.isInvalid() ||
+                appendId.isInvalid() || prependId.isInvalid() ||
+                insertId.isInvalid() || removeId.isInvalid() ||
+                removeFirstId.isInvalid() || removeLastId.isInvalid() ||
+                clearId.isInvalid()) {
                 throw nomad::NomadException("Failed to register List members");
             }
         }

@@ -35,18 +35,21 @@ void registerArrayFamily(
         family,
         1,
         std::move(factory),
-        [runtime, registerMembers, writable, name](const Type* type) {
+        [registerMembers, writable, name](Runtime* runtime, const TypeId id) {
+            const auto* type = runtime->getType(id).value();
             registerMembers(type, writable);
             const auto* objectType = static_cast<const ArrayType*>(type);
-            const auto countId = runtime->registerNativeProperty(
-                objectType, "count", runtime->getIntegerType(),
-                [](VirtualMachine* machine, RuntimeValue& result) {
+            const auto countId = runtime->addProperty(id, {
+                .valueTypeId = runtime->getTypeId("int"),
+                .name = "count",
+                .getter = [](VirtualMachine* machine, RuntimeValue& result) {
                     const auto* array = machine->getThisAs<ArrayObject>();
                     result.setIntegerValue(static_cast<NomadInteger>(array->getCount()));
                 },
-                {}, NomadDoc("The total number of elements in the fixed-size array.")
-            );
-            if (countId == NOMAD_INVALID_ID) {
+                .setter = {},
+                .documentation = NomadDoc("The total number of elements in the fixed-size array.")
+            });
+            if (countId.isInvalid()) {
                 throw NomadException("Failed to register Array members");
             }
             if (writable) {
@@ -61,7 +64,7 @@ void registerArrayFamily(
                     },
                     {}, readOnlyType,
                     NomadDoc("Creates an independent read-only snapshot with the same dimensions. Object elements share references.")
-                ) == NOMAD_INVALID_ID) {
+                ).isInvalid()) {
                     throw NomadException("Failed to register Array.toReadOnly");
                 }
             }
@@ -80,16 +83,24 @@ void registerArrayType(Runtime* runtime) {
         nomad::Runtime::ParameterizedTypeFactory factory,
         std::function<void(const Type*, bool)> registerMembers
     ) {
-        registerArrayFamily(runtime, name, "ReadOnly" + name, [dimensionCount](const std::vector<const Type*>& arguments) {
-            return std::make_unique<ReadOnlyArrayType>(arguments[0], dimensionCount);
+        registerArrayFamily(runtime, name, "ReadOnly" + name, [dimensionCount, name](
+            Runtime* owningRuntime,
+            const std::vector<const Type*>& arguments
+        ) {
+            return std::make_unique<ReadOnlyArrayType>(
+                owningRuntime, "ReadOnly" + name + "<" + arguments[0]->getTypeName() + ">",
+                ObjectTypeMode::Closed, arguments[0], dimensionCount
+            );
         }, registerMembers, false);
         registerArrayFamily(runtime, name, name, std::move(factory), registerMembers, true);
     };
     registerArrayType(
         "Array1", 1,
-        [](const std::vector<const nomad::Type*>& arguments) {
+        [](Runtime* owningRuntime, const std::vector<const nomad::Type*>& arguments) {
             const auto* elementType = arguments[0];
-            return std::make_unique<nomad::Array1Type>(elementType);
+            return std::make_unique<nomad::Array1Type>(
+                owningRuntime, "Array1<" + elementType->getTypeName() + ">", ObjectTypeMode::Closed, elementType
+            );
         },
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
@@ -100,7 +111,7 @@ void registerArrayType(Runtime* runtime) {
                     const auto size = arguments[0].getIntegerValue();
                     return new Array1dObject(arrayType->getElementType(), size);
                 }, ""
-            ) == nomad::NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array1 constructor");
             }
             const auto* elementType = arrayType->getElementType();
@@ -132,16 +143,18 @@ void registerArrayType(Runtime* runtime) {
                 writable
                     ? NomadDoc("Reads or replaces an element at a zero-based index. Invalid indices log an error; reads return a default and writes do nothing.")
                     : NomadDoc("Reads an element at a zero-based index. Invalid indices log an error and return a default.")
-            ) == nomad::NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array1 indexer");
             }
         }
     );
     registerArrayType(
         "Array2", 2,
-        [](const std::vector<const nomad::Type*>& arguments) {
+        [](Runtime* owningRuntime, const std::vector<const nomad::Type*>& arguments) {
             const auto* elementType = arguments[0];
-            return std::make_unique<nomad::Array2Type>(elementType);
+            return std::make_unique<nomad::Array2Type>(
+                owningRuntime, "Array2<" + elementType->getTypeName() + ">", ObjectTypeMode::Closed, elementType
+            );
         },
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
@@ -156,7 +169,7 @@ void registerArrayType(Runtime* runtime) {
                     const auto size2 = arguments[1].getIntegerValue();
                     return new Array2dObject(arrayType->getElementType(), size1, size2);
                 }, ""
-            ) == nomad::NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array2 constructor");
             }
             if (runtime->registerNativeIndexer(
@@ -180,16 +193,18 @@ void registerArrayType(Runtime* runtime) {
                 writable
                     ? NomadDoc("Reads or replaces an element at two zero-based indices. Invalid indices log an error; reads return a default and writes do nothing.")
                     : NomadDoc("Reads an element at two zero-based indices. Invalid indices log an error and return a default.")
-            ) == nomad::NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array2 indexer");
             }
         }
     );
     registerArrayType(
         "Array3", 3,
-        [](const std::vector<const nomad::Type*>& arguments) {
+        [](Runtime* owningRuntime, const std::vector<const nomad::Type*>& arguments) {
             const auto* elementType = arguments[0];
-            return std::make_unique<nomad::Array3Type>(elementType);
+            return std::make_unique<nomad::Array3Type>(
+                owningRuntime, "Array3<" + elementType->getTypeName() + ">", ObjectTypeMode::Closed, elementType
+            );
         },
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
@@ -206,7 +221,7 @@ void registerArrayType(Runtime* runtime) {
                     const auto size3 = arguments[2].getIntegerValue();
                     return new Array3dObject(arrayType->getElementType(), size1, size2, size3);
                 }, ""
-            ) == nomad::NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array3 constructor");
             }
             if (runtime->registerNativeIndexer(
@@ -232,7 +247,7 @@ void registerArrayType(Runtime* runtime) {
                 writable
                     ? NomadDoc("Reads or replaces an element at three zero-based indices. Invalid indices log an error; reads return a default and writes do nothing.")
                     : NomadDoc("Reads an element at three zero-based indices. Invalid indices log an error and return a default.")
-            ) == nomad::NOMAD_INVALID_ID) {
+            ).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array3 indexer");
             }
         }
@@ -241,7 +256,7 @@ void registerArrayType(Runtime* runtime) {
         "Array", 1,
         [runtime](const NomadString& name, const std::vector<const nomad::Type*>& arguments) {
             // One class per specialization (e.g. `Array<int>`); each rank constructor builds a different array type.
-            auto classType = std::make_unique<nomad::ObjectType>(name);
+            auto classType = std::make_unique<nomad::ObjectType>(runtime, name, nomad::ObjectTypeMode::Closed);
             const auto* arrayClass = classType.get();
             runtime->registerType(std::move(classType));
             for (const auto* family : {"Array1", "Array2", "Array3"}) {
@@ -254,10 +269,10 @@ void registerArrayType(Runtime* runtime) {
                 if (constructor == nullptr || runtime->registerNativeConstructor(
                     arrayClass,
                     constructor->getParameters(),
-                    static_cast<const nomad::ObjectTypeBase*>(constructor->getReturnType()),
+                    static_cast<const nomad::ObjectType*>(constructor->getReturnType()),
                     constructor->getFactory(),
                     ""
-                ) == nomad::NOMAD_INVALID_ID) {
+                ).isInvalid()) {
                     throw nomad::NomadException("Failed to register Array constructor");
                 }
             }

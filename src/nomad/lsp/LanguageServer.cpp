@@ -154,23 +154,23 @@ ApiAnalysis analyzeApiSymbols(
         symbols.push_back({function->getName(), CompletionItemKind::Function,
             std::move(signature), std::move(documentation)});
     }
-    for (auto id = runtime->getFirstConstantId(); id != NOMAD_INVALID_ID;
+    for (auto id = runtime->getFirstConstantId(); id.isValid();
         id = runtime->getNextConstantId(id)) {
         const auto& name = runtime->getConstantName(id);
         symbols.push_back({name, CompletionItemKind::Constant,
             name + ":" + runtime->getConstantType(id)->getTypeName(), ""});
     }
-    for (auto id = runtime->getFirstDynamicVariableId(); id != NOMAD_INVALID_ID;
+    for (auto id = runtime->getFirstDynamicVariableId(); id.isValid();
         id = runtime->getNextDynamicVariableId(id)) {
         const auto name = runtime->getDynamicVariableName(id);
         const auto typeName = runtime->getDynamicVariableType(id)->getTypeName();
         symbols.push_back({name, CompletionItemKind::Variable, name + ":" + typeName,
             "Registered engine variable.", typeName});
     }
-    for (auto contextId = runtime->getFirstVariableContextId(); contextId != NOMAD_INVALID_ID;
+    for (auto contextId = runtime->getFirstVariableContextId(); contextId.isValid();
         contextId = runtime->getNextVariableContextId(contextId)) {
         const auto* context = runtime->getVariableContext(contextId);
-        for (auto id = context->getFirstVariableId(); id != NOMAD_INVALID_ID;
+        for (auto id = context->getFirstVariableId(); id.isValid();
             id = context->getNextVariableId(id)) {
             const auto name = context->getVariableName(id);
             const auto* type = context->getVariableType(id);
@@ -179,18 +179,18 @@ ApiAnalysis analyzeApiSymbols(
                 "Script context variable.", typeName});
         }
     }
-    std::vector<NomadId> members;
+    std::vector<MemberReference> members;
     runtime->getNativeMembers(members);
     for (const auto id : members) {
         if (runtime->getMemberType(id) == MemberType::Property) {
-            NativePropertyDefinition definition;
-            if (!runtime->getNativePropertyDefinition(id, definition)) {
+            const auto info = runtime->getNativePropertyInfo(id);
+            if (!info) {
                 throw std::runtime_error("Registered native property is unavailable");
             }
-            const auto receiver = definition.objectType->getTypeName();
-            const auto value = definition.valueType->getTypeName();
-            symbols.push_back({definition.name, CompletionItemKind::Property,
-                receiver + "." + definition.name + ":" + value, definition.doc, value, receiver});
+            const auto receiver = info->objectType->getTypeName();
+            const auto value = info->valueType->getTypeName();
+            symbols.push_back({info->name, CompletionItemKind::Property,
+                receiver + "." + info->name + ":" + value, info->doc, value, receiver});
         } else if (runtime->getMemberType(id) == MemberType::Method) {
             const auto* method = runtime->getNativeMemberMethod(id);
             if (method == nullptr) {
@@ -238,7 +238,10 @@ ApiAnalysis analyzeApiSymbols(
                 "Local to `" + function->getName() + "`.", type ? typeName : NomadString{}});
         };
         for (auto index = NomadIndex{0}; index < function->getVariableCount(); ++index) {
-            addLocal(function->getVisibleVariableName(toNomadId(index)), function->getVariableType(toNomadId(index)));
+            addLocal(
+                function->getVisibleVariableName(VariableId{toNomadId(index)}),
+                function->getVariableType(VariableId{toNomadId(index)})
+            );
         }
         for (auto index = NomadIndex{0}; index < function->getParameterCount(); ++index) {
             addLocal(function->getParameterName(toNomadId(index)), function->getParameterType(toNomadId(index)));

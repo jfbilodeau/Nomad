@@ -20,10 +20,10 @@ static inline bool shapeIdsEqual(const b2ShapeId& a, const b2ShapeId& b) {
 
 // Scene tick update
 void Scene::update(Game* game) {
-    const auto functionId = getOnUpdateCallback();
+    const auto callableId = getOnUpdateCallback();
 
-    if (functionId != NOMAD_INVALID_ID) {
-        game->executeFunction(functionId, this, nullptr);
+    if (callableId.isValid()) {
+        game->executeFunction(callableId, this, nullptr);
     }
 
     for (const auto& entity : m_entities) {
@@ -67,7 +67,7 @@ void Scene::update(Game* game) {
     // Execute post-update event
     const auto postUpdateFunctionId = getOnPostUpdateCallback();
 
-    if (postUpdateFunctionId != NOMAD_INVALID_ID) {
+    if (postUpdateFunctionId.isValid()) {
         game->executeFunction(postUpdateFunctionId, this, nullptr);
     }
 
@@ -95,14 +95,14 @@ void Scene::generateLayerPhysicsBodies(Scene::Layer& layer) const {
     layer.bodies.clear();
 
     // Auxiliary vector to track processed tiles
-    auto processed = createTempVector<bool>(m_tileMapHeight * m_tileMapWidth, false);
+    auto processed = createTempVector<bool>(static_cast<size_t>(m_tileMapHeight * m_tileMapWidth), false);
     // std::vector<bool> processed(m_tileMapHeight * m_tileMapWidth, false);
 
     for (auto y = 0; y < m_tileMapHeight; ++y) {
         for (auto x = 0; x < m_tileMapWidth; ++x) {
             const auto currentMask = getTileMask(layer.number, x, y);;
 
-            if (currentMask == 0 || processed[y * m_tileMapWidth + x]) {
+            if (currentMask == 0 || processed[static_cast<std::size_t>(y * m_tileMapWidth + x)]) {
                 continue; // Skip empty or already processed tiles
             }
 
@@ -114,7 +114,7 @@ void Scene::generateLayerPhysicsBodies(Scene::Layer& layer) const {
             while (
                 endX + 1 < m_tileMapWidth &&
                 getTileMask(layer.number, endX + 1, y) == currentMask &&
-                !processed[y * m_tileMapWidth + (endX + 1)]
+                !processed[static_cast<std::size_t>(y * m_tileMapWidth + (endX + 1))]
             ) {
                 ++endX;
             }
@@ -125,7 +125,7 @@ void Scene::generateLayerPhysicsBodies(Scene::Layer& layer) const {
                 for (int i = startX; i <= endX; ++i) {
                     if (
                         getTileMask(layer.number, i, endY + 1) != currentMask ||
-                        processed[(endY + 1) * m_tileMapWidth + i]
+                        processed[static_cast<std::size_t>((endY + 1) * m_tileMapWidth + i)]
                     ) {
                         canExpandVertically = false;
                         break;
@@ -139,7 +139,7 @@ void Scene::generateLayerPhysicsBodies(Scene::Layer& layer) const {
             // Mark tiles as processed
             for (int i = startY; i <= endY; ++i) {
                 for (int j = startX; j <= endX; ++j) {
-                    processed[i * m_tileMapWidth + j] = true;
+                    processed[static_cast<std::size_t>(i * m_tileMapWidth + j)] = true;
                 }
             }
 
@@ -207,7 +207,9 @@ void Scene::updatePhysics() {
             auto entitySensor = static_cast<Entity*>(b2Body_GetUserData(bodyIdSensor));
             auto entityVisitor = static_cast<Entity*>(b2Body_GetUserData(bodyIdVisitor));
 
-            NomadInteger visitorMask = entityVisitor ? entityVisitor->getMask() : b2Shape_GetFilter(shapeIdVisitor).categoryBits;
+            NomadInteger visitorMask = entityVisitor ?
+                entityVisitor->getMask() :
+                static_cast<NomadInteger>(b2Shape_GetFilter(shapeIdVisitor).categoryBits);
 
             // Store collision pair for later use when collision ends
             layer.activeSensorCollisions.push_back({
@@ -256,7 +258,9 @@ void Scene::updatePhysics() {
                 entitySensor = static_cast<Entity*>(b2Body_GetUserData(bodyIdSensor));
                 entityVisitor = static_cast<Entity*>(b2Body_GetUserData(bodyIdVisitor));
 
-                visitorMask = entityVisitor ? entityVisitor->getMask() : b2Shape_GetFilter(shapeIdVisitor).categoryBits;
+                visitorMask = entityVisitor ?
+                    entityVisitor->getMask() :
+                    static_cast<NomadInteger>(b2Shape_GetFilter(shapeIdVisitor).categoryBits);
             } else {
                 // Shapes are invalid, and we don't have the pair tracked
                 // This shouldn't normally happen, but skip if it does
@@ -283,14 +287,14 @@ void Scene::updatePhysics() {
             auto entityA = static_cast<Entity*>(b2Body_GetUserData(bodyIdA));
             auto entityB = static_cast<Entity*>(b2Body_GetUserData(bodyIdB));
 
-            auto functionIdA = entityA ? entityA->getOnBeginCollision() : NOMAD_INVALID_ID;
-            auto functionIdB = entityB ? entityB->getOnBeginCollision() : NOMAD_INVALID_ID;
+            auto functionIdA = entityA ? entityA->getOnBeginCollision() : CallableId::INVALID;
+            auto functionIdB = entityB ? entityB->getOnBeginCollision() : CallableId::INVALID;
 
-            if (functionIdA != NOMAD_INVALID_ID && entityB) {
+            if (!functionIdA.isInvalid() && entityB) {
                 m_game->executeFunction(functionIdA, this, entityA, entityB);
             }
 
-            if (functionIdB != NOMAD_INVALID_ID && entityA) {
+            if (!functionIdB.isInvalid() && entityA) {
                 m_game->executeFunction(functionIdB, this, entityB, entityA);
             }
         }
@@ -306,10 +310,10 @@ void Scene::updatePhysics() {
             auto entityA = static_cast<Entity*>(b2Body_GetUserData(bodyIdA));
             auto entityB = static_cast<Entity*>(b2Body_GetUserData(bodyIdB));
 
-            auto functionIdA = entityA ? entityA->getOnEndCollision() : NOMAD_INVALID_ID;
-            auto functionIdB = entityB ? entityB->getOnEndCollision() : NOMAD_INVALID_ID;
+            auto functionIdA = entityA ? entityA->getOnEndCollision() : CallableId::INVALID;
+            auto functionIdB = entityB ? entityB->getOnEndCollision() : CallableId::INVALID;
 
-            if (functionIdA != NOMAD_INVALID_ID) {
+            if (!functionIdA.isInvalid()) {
                 if (entityB) {
                     m_game->executeFunction(functionIdA, this, entityA, entityB);
                 } else {
@@ -317,7 +321,7 @@ void Scene::updatePhysics() {
                 }
             }
 
-            if (functionIdB != NOMAD_INVALID_ID) {
+            if (!functionIdB.isInvalid()) {
                 if (entityA) {
                     m_game->executeFunction(functionIdB, this, entityB, entityA);
                 } else {
@@ -365,7 +369,7 @@ void Scene::updateEntityLayers() {
                     }
                 }
 
-                m_layers[entityLayer].entities.push_back(entity);
+                m_layers[static_cast<std::size_t>(entityLayer)].entities.push_back(entity);
                 layer->entities.erase(layer->entities.begin() + entityIndex);
             }
             else {

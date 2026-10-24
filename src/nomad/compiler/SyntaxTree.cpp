@@ -272,12 +272,12 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
             break;
         }
         case IdentifierType::DynamicVariable: {
-            if (!interpreterRuntime->canSetDynamicVariable(identifier.variableId)) {
+            if (!interpreterRuntime->canSetDynamicVariable(identifier.dynamicVariableId)) {
                 reportError(context, function, "Dynamic variable '" + m_identifier + "' is read-only");
                 return;
             }
 
-            const auto variableType = interpreterRuntime->getDynamicVariableType(identifier.variableId);
+            const auto variableType = interpreterRuntime->getDynamicVariableType(identifier.dynamicVariableId);
             if (expressionType != nullptr && variableType != nullptr && variableType != expressionType) {
                 reportError(
                     context,
@@ -291,7 +291,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
         }
 
         case IdentifierType::ContextVariable: {
-            const auto variableType = interpreterRuntime->getContextVariableType(identifier.variableId);
+            const auto variableType = interpreterRuntime->getContextVariableType(identifier.contextVariableId);
 
             if (variableType != nullptr && expressionType != nullptr && variableType != expressionType) {
                 reportError(
@@ -314,7 +314,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
             // New unqualified names belong to the interpreter context, not the script frame.
             const auto isNewConsoleVariable = identifier.identifierType == IdentifierType::Unknown &&
                 m_identifier.find('.') == NomadString::npos &&
-                interpreterRuntime->getVariableContextIdByPrefix(m_identifier) == NOMAD_INVALID_ID;
+                interpreterRuntime->getVariableContextIdByPrefix(m_identifier).isInvalid();
 
             if (identifier.identifierType != IdentifierType::FunctionVariable && !isNewConsoleVariable) {
                 reportError(context, function, "Cannot assign value to '" + m_identifier + "' in the interpreter");
@@ -363,7 +363,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
         break;
     }
     case IdentifierType::DynamicVariable: {
-        const auto variableType = runtime->getDynamicVariableType(identifier.variableId);
+        const auto variableType = runtime->getDynamicVariableType(identifier.dynamicVariableId);
 
         if (variableType != expressionType) {
             reportError(
@@ -377,7 +377,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
     }
     case IdentifierType::ContextVariable: {
         // Make sure type is unknown or the same as the expression.
-        const auto variableType = runtime->getContextVariableType(identifier.variableId);
+        const auto variableType = runtime->getContextVariableType(identifier.contextVariableId);
 
         if (variableType != nullptr && variableType != expressionType) {
             reportError(
@@ -434,25 +434,25 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptFunction* function
     switch (identifier.identifierType) {
     case IdentifierType::FunctionVariable:
         // `r` is moved into the variable, so its previous value is released first.
-        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(identifier.variableId));
+        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(identifier.variableId.id));
         compiler->addOpCode(typeOpCodes->setFunctionVariable);
-        compiler->addId(identifier.variableId);
+        compiler->addId(identifier.variableId.id);
         break;
 
     case IdentifierType::DynamicVariable:
         // The setter copies what it keeps.
         compiler->addOpCode(typeOpCodes->setDynamicVariable);
-        compiler->addId(identifier.variableId);
+        compiler->addId(identifier.dynamicVariableId.id);
         compiler->addFreeValue(typeOpCodes->freeResult);
         break;
 
     case IdentifierType::ContextVariable: {
         // The variable context copies what it keeps.
         compiler->addOpCode(typeOpCodes->setContextVariable);
-        compiler->addId(identifier.variableId);
+        compiler->addId(identifier.contextVariableId.id);
         compiler->addFreeValue(typeOpCodes->freeResult);
 
-        compiler->getRuntime()->setContextVariableWritten(identifier.variableId, true);
+        compiler->getRuntime()->setContextVariableWritten(identifier.contextVariableId, true);
         break;
     }
     default:
@@ -479,7 +479,7 @@ void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
         auto* runtime = context.getRuntime();
         runtime->setDynamicVariable(
             context.getVirtualMachine(),
-            m_identifierDefinition.variableId,
+            m_identifierDefinition.dynamicVariableId,
             assignedValue.getValue()
         );
         break;
@@ -489,8 +489,8 @@ void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
         auto* runtime = context.getRuntime();
 
         // The variable context copies what it keeps.
-        runtime->setContextVariableValue(m_identifierDefinition.variableId, assignedValue.getValue());
-        runtime->setContextVariableWritten(m_identifierDefinition.variableId, true);
+        runtime->setContextVariableValue(m_identifierDefinition.contextVariableId, assignedValue.getValue());
+        runtime->setContextVariableWritten(m_identifierDefinition.contextVariableId, true);
         break;
     }
 
@@ -700,11 +700,11 @@ void FunctionDeclaration::addParam(std::unique_ptr<ParameterDeclaration> param) 
     m_params.push_back(std::move(param));
 }
 
-void FunctionDeclaration::setFunctionId(NomadId id) {
+void FunctionDeclaration::setFunctionId(CallableId id) {
     m_functionId = id;
 }
 
-NomadId FunctionDeclaration::getFunctionId() const {
+CallableId FunctionDeclaration::getFunctionId() const {
     return m_functionId;
 }
 

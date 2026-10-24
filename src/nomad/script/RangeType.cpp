@@ -6,8 +6,8 @@
 
 namespace nomad {
 
-RangeType::RangeType():
-    ObjectType("Range", {}, "An immutable integer sequence with an exclusive stop.")
+RangeType::RangeType(Runtime* runtime, NomadString name, const ObjectTypeMode mode):
+    ObjectType(runtime, std::move(name), mode, {}, "An immutable integer sequence with an exclusive stop.")
 {}
 
 void RangeType::initValue(RuntimeValue& value) const {

@@ -33,7 +33,7 @@ BOOST_AUTO_TEST_CASE(checks_named_in_memory_sources_without_reading_files)
     const auto result = checkSources(batch, &runtime);
 
     BOOST_REQUIRE(result.succeeded());
-    BOOST_TEST(runtime.getFunctionId("helpers.answer") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getFunctionId("helpers.answer").isValid());
     BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("init"))->getPath() == "untitled:init");
 }
 
@@ -461,11 +461,11 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     const auto thisFontId = runtime->getDynamicVariableId("this.text.font");
     const auto otherFontId = runtime->getDynamicVariableId("other.text.font");
     const auto debugDrawVisibleId = runtime->getDynamicVariableId(DEBUG_DRAW_VISIBLE_VARIABLE);
-    BOOST_REQUIRE(thisAlignmentId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(otherAlignmentId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(thisFontId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(otherFontId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(debugDrawVisibleId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(thisAlignmentId.isValid());
+    BOOST_REQUIRE(otherAlignmentId.isValid());
+    BOOST_REQUIRE(thisFontId.isValid());
+    BOOST_REQUIRE(otherFontId.isValid());
+    BOOST_REQUIRE(debugDrawVisibleId.isValid());
     BOOST_TEST(runtime->getDynamicVariableType(thisAlignmentId) == alignmentType);
     BOOST_TEST(runtime->getDynamicVariableType(otherAlignmentId) == alignmentType);
     BOOST_TEST(runtime->getDynamicVariableType(thisFontId) == fontType);
