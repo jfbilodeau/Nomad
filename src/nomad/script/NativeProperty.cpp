@@ -25,7 +25,7 @@ const NativeProperty* NativeProperty::asNativeProperty() const {
     return this;
 }
 
-NativePropertyDefinition NativeProperty::getDefinition() const {
+NativePropertyInfo NativeProperty::getInfo() const {
     return {getId(), getObjectType(), getName(), getValueType(), m_getFn, m_setFn, getDoc()};
 }
 

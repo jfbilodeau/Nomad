@@ -100,10 +100,10 @@ BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_cata
     BOOST_TEST(nativeProperty->getDoc() == "Native value");
     BOOST_TEST(first->getProperties() == std::vector<const Property*>({scriptProperty}));
     BOOST_TEST(std::holds_alternative<PropertyId>(runtime.getNativeMemberId(second, "value")));
-    NativePropertyDefinition definition;
-    BOOST_REQUIRE(runtime.getNativePropertyDefinition(nativeId, definition));
-    BOOST_TEST(definition.id == nativeId);
-    BOOST_TEST(!runtime.getNativePropertyDefinition(scriptId, definition));
+    NativePropertyInfo info;
+    BOOST_REQUIRE(runtime.getNativePropertyInfo(nativeId, info));
+    BOOST_TEST(info.id == nativeId);
+    BOOST_TEST(!runtime.getNativePropertyInfo(scriptId, info));
 
     for (auto index = 0; index < 64; ++index) {
         BOOST_REQUIRE(runtime.registerProperty(first, "extra" + std::to_string(index), runtime.getFloatType()).isValid());

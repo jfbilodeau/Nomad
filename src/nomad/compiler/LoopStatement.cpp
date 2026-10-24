@@ -67,7 +67,7 @@ protected:
             if (!m_source->resolve(context, function)) {
                 return;
             }
-            const auto iterable = runtime->getIterableDefinition(m_source->getType());
+            const auto iterable = runtime->getIterableInfo(m_source->getType());
             if (!iterable) {
                 reportError(context, function, "For source must be an iterable object");
                 return;

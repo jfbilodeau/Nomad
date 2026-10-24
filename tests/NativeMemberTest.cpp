@@ -3,6 +3,8 @@
 #include <boost/test/unit_test.hpp>
 
 #include <nomad/script/NativeMember.hpp>
+#include <nomad/script/NativeMemberDefinitions.hpp>
+#include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <algorithm>
@@ -14,15 +16,40 @@
 
 using namespace nomad;
 
-static_assert(std::is_same_v<decltype(NativeIndexerDefinition{}.id), IndexerId>);
+static_assert(std::is_same_v<decltype(NativeIndexerInfo{}.id), IndexerId>);
 static_assert(!std::is_convertible_v<NomadId, IndexerId>);
 static_assert(!std::is_convertible_v<IndexerId, NomadId>);
 static_assert(!std::is_convertible_v<IndexerId, PropertyId>);
 static_assert(!std::is_convertible_v<IndexerId, CallableId>);
 static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getNativeIndexers()),
-    const std::vector<const NativeIndexerDefinition*>&>);
+    const std::vector<const NativeIndexerInfo*>&>);
+static_assert(std::is_same_v<decltype(ParameterDefinition{}.typeId), TypeId>);
+static_assert(std::is_same_v<decltype(NativeMethodDefinition{}.returnTypeId), TypeId>);
+static_assert(std::is_same_v<decltype(NativePropertyDefinition{}.valueTypeId), TypeId>);
+static_assert(std::is_same_v<decltype(NativeIndexerDefinition{}.indexTypes), std::vector<TypeId>>);
+static_assert(std::is_same_v<decltype(NativeInterableDefinition{}.factory), NativeMethodDefinition>);
+static_assert(std::is_same_v<decltype(NativePropertyInfo{}.id), PropertyId>);
+static_assert(std::is_same_v<decltype(std::declval<const NativeProperty&>().getInfo()), NativePropertyInfo>);
+static_assert(!std::is_same_v<NativePropertyDefinition, NativePropertyInfo>);
+static_assert(!std::is_same_v<NativeIndexerDefinition, NativeIndexerInfo>);
+static_assert(std::is_aggregate_v<ParameterDefinition>);
+static_assert(std::is_aggregate_v<NativeMethodDefinition>);
+static_assert(std::is_aggregate_v<NativeConstructorDefinition>);
+static_assert(std::is_aggregate_v<NativePropertyDefinition>);
+static_assert(std::is_aggregate_v<NativeIndexerDefinition>);
+static_assert(std::is_aggregate_v<NativeInterableDefinition>);
 
 namespace {
+
+template<typename T>
+concept HasAssignedId = requires(T value) { value.id; };
+
+static_assert(!HasAssignedId<ParameterDefinition>);
+static_assert(!HasAssignedId<NativeMethodDefinition>);
+static_assert(!HasAssignedId<NativeConstructorDefinition>);
+static_assert(!HasAssignedId<NativePropertyDefinition>);
+static_assert(!HasAssignedId<NativeIndexerDefinition>);
+static_assert(!HasAssignedId<NativeInterableDefinition>);
 
 NativePropertyGetFn propertyGetter() {
     return [](VirtualMachine*, RuntimeValue&) {};
@@ -46,6 +73,107 @@ const ObjectType* registerTestType(Runtime& runtime) {
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(native_members)
+
+BOOST_AUTO_TEST_CASE(native_creation_definitions_own_their_inputs_without_registering_members) {
+    Runtime runtime;
+    const auto integerId = runtime.getTypeId("int");
+    BOOST_REQUIRE(integerId.isValid());
+    const auto originalIndexerCount = runtime.getNativeIndexers().size();
+    std::vector<ParameterDefinition> parameters{
+        {integerId, "value", "Input value."}
+    };
+    auto methodCalls = 0;
+    NativeMethodDefinition method{
+        .name = "answer",
+        .parameters = parameters,
+        .returnTypeId = integerId,
+        .function = [&methodCalls](VirtualMachine*) { ++methodCalls; },
+        .documentation = "Returns an answer."
+    };
+    parameters[0].name = "changed";
+    BOOST_TEST(method.parameters[0].typeId == integerId);
+    BOOST_TEST(method.parameters[0].name == "value");
+    BOOST_TEST(method.parameters[0].documentation == "Input value.");
+    BOOST_TEST(method.returnTypeId == integerId);
+    BOOST_TEST(method.documentation == "Returns an answer.");
+
+    NativeInterableDefinition iterable{integerId, method};
+    method.name = "changed";
+    method.parameters.clear();
+    BOOST_TEST(iterable.valueTypeId == integerId);
+    BOOST_TEST(iterable.factory.name == "answer");
+    BOOST_REQUIRE(iterable.factory.parameters.size() == 1U);
+    auto movedIterable = std::move(iterable);
+    movedIterable.factory.function(nullptr);
+    BOOST_TEST(methodCalls == 1);
+
+    NativeConstructorDefinition constructor{
+        .parameters = parameters,
+        .factory = [](std::span<const RuntimeValue>) -> NomadObject* { return nullptr; },
+        .documentation = "Constructs an object."
+    };
+    BOOST_TEST(constructor.parameters[0].typeId == integerId);
+    BOOST_TEST(constructor.documentation == "Constructs an object.");
+    BOOST_TEST(static_cast<bool>(constructor.factory));
+
+    auto propertyValue = NomadInteger{0};
+    NativePropertyDefinition property{
+        .valueTypeId = integerId,
+        .name = "value",
+        .getter = [&propertyValue](VirtualMachine*, RuntimeValue& value) {
+            value.setIntegerValue(propertyValue);
+        },
+        .setter = [&propertyValue](VirtualMachine*, const RuntimeValue& value) {
+            propertyValue = value.getIntegerValue();
+        },
+        .documentation = "Stored value."
+    };
+    BOOST_TEST(property.valueTypeId == integerId);
+    property.setter(nullptr, RuntimeValue(NomadInteger{42}));
+    RuntimeValue value;
+    property.getter(nullptr, value);
+    BOOST_TEST(value.getIntegerValue() == 42);
+
+    NativeIndexerDefinition indexer{
+        .valueTypeId = integerId,
+        .indexTypes = {integerId},
+        .getter = method.function,
+        .setter = {},
+        .documentation = "Reads a value."
+    };
+    BOOST_TEST(indexer.valueTypeId == integerId);
+    BOOST_REQUIRE(indexer.indexTypes.size() == 1U);
+    BOOST_TEST(indexer.indexTypes[0] == integerId);
+    BOOST_TEST(!indexer.setter);
+    indexer.getter(nullptr);
+    BOOST_TEST(methodCalls == 2);
+    BOOST_TEST(runtime.getCallableId("answer").isInvalid());
+    BOOST_TEST(runtime.getNativeIndexers().size() == originalIndexerCount);
+}
+
+BOOST_AUTO_TEST_CASE(native_property_info_is_a_snapshot_of_registered_metadata) {
+    Runtime runtime;
+    const auto* type = registerTestType(runtime);
+    const auto id = runtime.registerNativeProperty(
+        type, "value", runtime.getIntegerType(), propertyGetter(), propertySetter(), "Original documentation"
+    );
+    BOOST_REQUIRE(id.isValid());
+    const auto* property = runtime.getNativeProperty(id);
+    BOOST_REQUIRE(property != nullptr);
+    auto info = property->getInfo();
+    BOOST_TEST(info.id == id);
+    BOOST_TEST(info.objectType == type);
+    BOOST_TEST(info.valueType == runtime.getIntegerType());
+    BOOST_TEST(info.name == "value");
+    BOOST_TEST(info.doc == "Original documentation");
+    info.name = "changed";
+    info.getFn = {};
+    NativePropertyInfo lookup;
+    BOOST_REQUIRE(runtime.getNativePropertyInfo(MemberReference{id}, lookup));
+    BOOST_TEST(lookup.name == "value");
+    BOOST_TEST(static_cast<bool>(lookup.getFn));
+    BOOST_TEST(property->getInfo().id == id);
+}
 
 BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate_shared_shapes) {
     Runtime runtime;
@@ -188,22 +316,22 @@ BOOST_AUTO_TEST_CASE(registers_read_only_write_only_and_read_write_properties) {
     BOOST_REQUIRE(writeOnlyId.isValid());
     BOOST_REQUIRE(readWriteId.isValid());
 
-    NativePropertyDefinition definition;
-    BOOST_REQUIRE(runtime.getNativePropertyDefinition(readOnlyId, definition));
-    BOOST_TEST(definition.id == std::get<PropertyId>(readOnlyId));
-    BOOST_TEST(definition.objectType == runtime.getStringType());
-    BOOST_TEST(definition.name == "length");
-    BOOST_TEST(definition.valueType == runtime.getIntegerType());
-    BOOST_TEST(static_cast<bool>(definition.getFn));
-    BOOST_TEST(!definition.setFn);
+    NativePropertyInfo info;
+    BOOST_REQUIRE(runtime.getNativePropertyInfo(readOnlyId, info));
+    BOOST_TEST(info.id == std::get<PropertyId>(readOnlyId));
+    BOOST_TEST(info.objectType == runtime.getStringType());
+    BOOST_TEST(info.name == "length");
+    BOOST_TEST(info.valueType == runtime.getIntegerType());
+    BOOST_TEST(static_cast<bool>(info.getFn));
+    BOOST_TEST(!info.setFn);
 
-    BOOST_REQUIRE(runtime.getNativePropertyDefinition(writeOnlyId, definition));
-    BOOST_TEST(!definition.getFn);
-    BOOST_TEST(static_cast<bool>(definition.setFn));
+    BOOST_REQUIRE(runtime.getNativePropertyInfo(writeOnlyId, info));
+    BOOST_TEST(!info.getFn);
+    BOOST_TEST(static_cast<bool>(info.setFn));
 
-    BOOST_REQUIRE(runtime.getNativePropertyDefinition(readWriteId, definition));
-    BOOST_TEST(static_cast<bool>(definition.getFn));
-    BOOST_TEST(static_cast<bool>(definition.setFn));
+    BOOST_REQUIRE(runtime.getNativePropertyInfo(readWriteId, info));
+    BOOST_TEST(static_cast<bool>(info.getFn));
+    BOOST_TEST(static_cast<bool>(info.setFn));
 }
 
 BOOST_AUTO_TEST_CASE(registers_method_metadata) {
@@ -346,15 +474,15 @@ BOOST_AUTO_TEST_CASE(indexer_registration_validates_types_and_accessors) {
     BOOST_REQUIRE(id.isValid());
     BOOST_TEST(runtime.getNativeIndexerId(type, 1) == id);
     BOOST_TEST(runtime.registerNativeIndexer(type, {runtime.getIntegerType()}, runtime.getIntegerType(), getter, setter, "").isInvalid());
-    NativeIndexerDefinition definition;
-    BOOST_REQUIRE(runtime.getNativeIndexerDefinition(id, definition));
-    BOOST_TEST(definition.objectType == type);
-    BOOST_REQUIRE(definition.indexTypes.size() == 1u);
-    BOOST_TEST(definition.indexTypes[0] == runtime.getIntegerType());
-    BOOST_TEST(definition.valueType == runtime.getIntegerType());
-    BOOST_TEST(!definition.getFn);
-    BOOST_TEST(static_cast<bool>(definition.setFn));
-    BOOST_TEST(!runtime.getNativeIndexerDefinition(IndexerId::INVALID, definition));
+    NativeIndexerInfo info;
+    BOOST_REQUIRE(runtime.getNativeIndexerInfo(id, info));
+    BOOST_TEST(info.objectType == type);
+    BOOST_REQUIRE(info.indexTypes.size() == 1u);
+    BOOST_TEST(info.indexTypes[0] == runtime.getIntegerType());
+    BOOST_TEST(info.valueType == runtime.getIntegerType());
+    BOOST_TEST(!info.getFn);
+    BOOST_TEST(static_cast<bool>(info.setFn));
+    BOOST_TEST(!runtime.getNativeIndexerInfo(IndexerId::INVALID, info));
     BOOST_TEST(runtime.getNativeIndexerId(runtime.getIntegerType(), 1).isInvalid());
 }
 
@@ -382,19 +510,19 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_validate_metadata_and_coexist_with
     BOOST_TEST(runtime.registerNativeIndexer(type, {integer, string}, integer, getter, {}, "").isInvalid());
     BOOST_TEST(runtime.registerNativeIndexer(type, {string, integer}, integer, getter, {}, "").isInvalid());
     BOOST_REQUIRE(runtime.registerNativeIndexer(type, {integer}, integer, {}, setter, "").isValid());
-    NativeIndexerDefinition definition;
-    BOOST_REQUIRE(runtime.getNativeIndexerDefinition(id, definition));
-    BOOST_TEST(definition.id == id);
-    BOOST_TEST(definition.objectType == type);
-    BOOST_REQUIRE(definition.indexTypes.size() == 2u);
-    BOOST_TEST(definition.indexTypes[0] == integer);
-    BOOST_TEST(definition.indexTypes[1] == string);
-    BOOST_TEST(definition.valueType == integer);
-    BOOST_TEST(static_cast<bool>(definition.getFn));
-    BOOST_TEST(static_cast<bool>(definition.setFn));
+    NativeIndexerInfo info;
+    BOOST_REQUIRE(runtime.getNativeIndexerInfo(id, info));
+    BOOST_TEST(info.id == id);
+    BOOST_TEST(info.objectType == type);
+    BOOST_REQUIRE(info.indexTypes.size() == 2u);
+    BOOST_TEST(info.indexTypes[0] == integer);
+    BOOST_TEST(info.indexTypes[1] == string);
+    BOOST_TEST(info.valueType == integer);
+    BOOST_TEST(static_cast<bool>(info.getFn));
+    BOOST_TEST(static_cast<bool>(info.setFn));
     BOOST_TEST(runtime.getNativeIndexers().size() == 3u);
-    BOOST_TEST(!runtime.getNativeIndexerDefinition(IndexerId::INVALID, definition));
-    BOOST_TEST(!runtime.getNativeIndexerDefinition(IndexerId{toNomadId(runtime.getNativeIndexers().size())}, definition));
+    BOOST_TEST(!runtime.getNativeIndexerInfo(IndexerId::INVALID, info));
+    BOOST_TEST(!runtime.getNativeIndexerInfo(IndexerId{toNomadId(runtime.getNativeIndexers().size())}, info));
     BOOST_TEST(runtime.getNativeIndexerId(integer, 2).isInvalid());
     std::ostringstream documentation;
     generateNativeMemberDocumentation(&runtime, documentation);
@@ -434,15 +562,15 @@ BOOST_AUTO_TEST_CASE(indexer_ids_remain_stable_as_the_catalog_grows) {
     BOOST_TEST(original->doc == "Stable indexer");
     BOOST_TEST(type->getNativeIndexers().size() == 32U);
     BOOST_TEST(runtime.getNativeIndexers()[toNomadIndex(id.id)] == original);
-    NativeIndexerDefinition definition;
-    BOOST_REQUIRE(runtime.getNativeIndexerDefinition(id, definition));
-    BOOST_TEST(definition.id == id);
-    BOOST_TEST(definition.doc == "Stable indexer");
-    BOOST_TEST(definition.objectType == type);
+    NativeIndexerInfo info;
+    BOOST_REQUIRE(runtime.getNativeIndexerInfo(id, info));
+    BOOST_TEST(info.id == id);
+    BOOST_TEST(info.doc == "Stable indexer");
+    BOOST_TEST(info.objectType == type);
     BOOST_TEST(runtime.getNativeIndexerId(type, 1) == id);
     for (const auto invalid : {IndexerId::INVALID, IndexerId{-2},
         IndexerId{NOMAD_ID_MAX - 1}, IndexerId{NOMAD_ID_MAX}}) {
-        BOOST_TEST(!runtime.getNativeIndexerDefinition(invalid, definition));
+        BOOST_TEST(!runtime.getNativeIndexerInfo(invalid, info));
     }
 }
 
@@ -453,45 +581,45 @@ BOOST_AUTO_TEST_CASE(type_owned_indexers_validate_direct_registration_and_catalo
     auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
     const auto originalCount = runtime.getNativeIndexers().size();
-    const NativeIndexerDefinition definition{
+    const NativeIndexerInfo info{
         IndexerId::INVALID, type, {runtime.getIntegerType()}, runtime.getIntegerType(),
         methodFunction(), {}, "Direct indexer"
     };
     BOOST_TEST(runtime.catalogNativeIndexer(nullptr).isInvalid());
-    BOOST_TEST(runtime.catalogNativeIndexer(&definition).isInvalid());
-    BOOST_TEST(type->registerNativeIndexer(other, definition).isInvalid());
+    BOOST_TEST(runtime.catalogNativeIndexer(&info).isInvalid());
+    BOOST_TEST(type->registerNativeIndexer(other, info).isInvalid());
     BOOST_TEST(other.getNativeIndexerId(type, 1).isInvalid());
     BOOST_TEST(runtime.getNativeIndexerId(other.getStringType(), 1).isInvalid());
     for (auto invalid : {IndexerId{0}, IndexerId{NOMAD_ID_MAX - 1}}) {
-        auto preassigned = definition;
+        auto preassigned = info;
         preassigned.id = invalid;
         BOOST_TEST(type->registerNativeIndexer(runtime, std::move(preassigned)).isInvalid());
     }
-    auto wrongOwner = definition;
+    auto wrongOwner = info;
     wrongOwner.objectType = runtime.getStringType();
     BOOST_TEST(type->registerNativeIndexer(runtime, std::move(wrongOwner)).isInvalid());
     ObjectType unregistered("UnregisteredIndexer");
-    auto unregisteredDefinition = definition;
-    unregisteredDefinition.objectType = &unregistered;
-    BOOST_TEST(unregistered.registerNativeIndexer(runtime, std::move(unregisteredDefinition)).isInvalid());
+    auto unregisteredInfo = info;
+    unregisteredInfo.objectType = &unregistered;
+    BOOST_TEST(unregistered.registerNativeIndexer(runtime, std::move(unregisteredInfo)).isInvalid());
     for (const auto* invalidType : {other.getIntegerType(), runtime.getVoidType(), runtime.getFileNameType()}) {
-        auto invalidValue = definition;
+        auto invalidValue = info;
         invalidValue.valueType = invalidType;
         BOOST_TEST(type->registerNativeIndexer(runtime, std::move(invalidValue)).isInvalid());
-        auto invalidIndex = definition;
+        auto invalidIndex = info;
         invalidIndex.indexTypes = {invalidType};
         BOOST_TEST(type->registerNativeIndexer(runtime, std::move(invalidIndex)).isInvalid());
     }
-    auto noIndices = definition;
+    auto noIndices = info;
     noIndices.indexTypes.clear();
     BOOST_TEST(type->registerNativeIndexer(runtime, std::move(noIndices)).isInvalid());
-    auto noCallbacks = definition;
+    auto noCallbacks = info;
     noCallbacks.getFn = {};
     BOOST_TEST(type->registerNativeIndexer(runtime, std::move(noCallbacks)).isInvalid());
     BOOST_TEST(type->getNativeIndexers().empty());
     BOOST_TEST(runtime.getNativeIndexers().size() == originalCount);
 
-    const auto id = type->registerNativeIndexer(runtime, definition);
+    const auto id = type->registerNativeIndexer(runtime, info);
     BOOST_REQUIRE(id.isValid());
     const auto* registered = type->getNativeIndexer(1);
     BOOST_REQUIRE(registered != nullptr);
@@ -500,15 +628,15 @@ BOOST_AUTO_TEST_CASE(type_owned_indexers_validate_direct_registration_and_catalo
     BOOST_TEST(runtime.getNativeIndexers().size() == originalCount + 1);
     BOOST_TEST(runtime.getNativeIndexers().back() == registered);
     BOOST_TEST(runtime.catalogNativeIndexer(registered).isInvalid());
-    BOOST_TEST(type->registerNativeIndexer(runtime, definition).isInvalid());
-    auto sameArity = definition;
+    BOOST_TEST(type->registerNativeIndexer(runtime, info).isInvalid());
+    auto sameArity = info;
     sameArity.indexTypes = {runtime.getStringType()};
     BOOST_TEST(type->registerNativeIndexer(runtime, std::move(sameArity)).isInvalid());
     BOOST_TEST(type->getNativeIndexers().size() == 1U);
     BOOST_TEST(runtime.getNativeIndexers().size() == originalCount + 1);
     BOOST_TEST(type->getNativeIndexer(2) == nullptr);
-    NativeIndexerDefinition snapshot;
-    BOOST_REQUIRE(runtime.getNativeIndexerDefinition(id, snapshot));
+    NativeIndexerInfo snapshot;
+    BOOST_REQUIRE(runtime.getNativeIndexerInfo(id, snapshot));
     snapshot.indexTypes.clear();
     snapshot.getFn = {};
     BOOST_TEST(registered->indexTypes.size() == 1U);
@@ -545,11 +673,11 @@ BOOST_AUTO_TEST_CASE(type_owned_indexer_callbacks_are_released_once_at_runtime_d
 
 BOOST_AUTO_TEST_CASE(string_indexer_is_read_only_and_documented) {
     Runtime runtime;
-    NativeIndexerDefinition definition;
-    BOOST_REQUIRE(runtime.getNativeIndexerDefinition(runtime.getNativeIndexerId(runtime.getStringType(), 1), definition));
-    BOOST_TEST(static_cast<bool>(definition.getFn));
-    BOOST_TEST(!definition.setFn);
-    BOOST_TEST(definition.valueType == runtime.getStringType());
+    NativeIndexerInfo info;
+    BOOST_REQUIRE(runtime.getNativeIndexerInfo(runtime.getNativeIndexerId(runtime.getStringType(), 1), info));
+    BOOST_TEST(static_cast<bool>(info.getFn));
+    BOOST_TEST(!info.setFn);
+    BOOST_TEST(info.valueType == runtime.getStringType());
     std::ostringstream documentation;
     generateNativeMemberDocumentation(&runtime, documentation);
     BOOST_TEST(documentation.str().find("string[index]") != NomadString::npos);

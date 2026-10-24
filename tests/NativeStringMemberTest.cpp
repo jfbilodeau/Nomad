@@ -46,11 +46,11 @@ BOOST_AUTO_TEST_CASE(registers_immutable_string_members) {
     BOOST_REQUIRE((runtime.getMemberType(lengthId) == MemberType::Property));
     BOOST_REQUIRE((runtime.getMemberType(toUpperId) == MemberType::Method));
 
-    NativePropertyDefinition length;
-    BOOST_REQUIRE(runtime.getNativePropertyDefinition(lengthId, length));
-    BOOST_TEST(static_cast<bool>(length.getFn));
-    BOOST_TEST(!length.setFn);
-    BOOST_TEST(length.valueType == runtime.getIntegerType());
+    NativePropertyInfo lengthInfo;
+    BOOST_REQUIRE(runtime.getNativePropertyInfo(lengthId, lengthInfo));
+    BOOST_TEST(static_cast<bool>(lengthInfo.getFn));
+    BOOST_TEST(!lengthInfo.setFn);
+    BOOST_TEST(lengthInfo.valueType == runtime.getIntegerType());
 
     const auto* toUpper = runtime.getNativeMemberMethod(toUpperId);
     BOOST_REQUIRE(toUpper != nullptr);

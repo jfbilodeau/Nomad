@@ -504,9 +504,9 @@ NomadIndex ObjectType::getPropertyCount() const {
 
 IndexerId ObjectType::registerNativeIndexer(
     Runtime& runtime,
-    NativeIndexerDefinition definition
+    NativeIndexerInfo info
 ) {
-    if (definition.objectType != this || definition.id.isValid() ||
+    if (info.objectType != this || info.id.isValid() ||
         runtime.getTypeByName(getTypeName()) != this) {
         log::error("Cannot register native indexer: invalid owner or identity");
         return IndexerId::INVALID;
@@ -515,28 +515,28 @@ IndexerId ObjectType::registerNativeIndexer(
         return type != nullptr && !type->isVoid() && !type->isInternal() &&
             runtime.getTypeByName(type->getTypeName()) == type;
     };
-    if (!isValidType(definition.valueType)) {
+    if (!isValidType(info.valueType)) {
         log::error("Cannot register native indexer: value type must be registered, public, and non-void");
         return IndexerId::INVALID;
     }
-    if (definition.indexTypes.empty()) {
+    if (info.indexTypes.empty()) {
         log::error("Cannot register native indexer: at least one index type is required");
         return IndexerId::INVALID;
     }
-    if (!std::ranges::all_of(definition.indexTypes, isValidType)) {
+    if (!std::ranges::all_of(info.indexTypes, isValidType)) {
         log::error("Cannot register native indexer: index types must be registered, public, and non-void");
         return IndexerId::INVALID;
     }
-    if (!definition.getFn && !definition.setFn) {
+    if (!info.getFn && !info.setFn) {
         log::error("Cannot register native indexer: indexer has no accessor or mutator");
         return IndexerId::INVALID;
     }
-    if (getNativeIndexer(definition.indexTypes.size()) != nullptr) {
+    if (getNativeIndexer(info.indexTypes.size()) != nullptr) {
         log::error("Cannot register native indexer: type already has an indexer with " +
-            nomad::toString(definition.indexTypes.size()) + " indices");
+            nomad::toString(info.indexTypes.size()) + " indices");
         return IndexerId::INVALID;
     }
-    m_nativeIndexers.push_back(std::make_unique<NativeIndexerDefinition>(std::move(definition)));
+    m_nativeIndexers.push_back(std::make_unique<NativeIndexerInfo>(std::move(info)));
     auto& indexer = *m_nativeIndexers.back();
     const auto id = runtime.catalogNativeIndexer(&indexer);
     if (id.isInvalid()) {
@@ -548,15 +548,15 @@ IndexerId ObjectType::registerNativeIndexer(
     return id;
 }
 
-const NativeIndexerDefinition* ObjectType::getNativeIndexer(const NomadIndex indexCount) const {
+const NativeIndexerInfo* ObjectType::getNativeIndexer(const NomadIndex indexCount) const {
     const auto indexer = std::find_if(m_nativeIndexers.begin(), m_nativeIndexers.end(), [&](const auto& candidate) {
         return candidate->indexTypes.size() == indexCount;
     });
     return indexer == m_nativeIndexers.end() ? nullptr : indexer->get();
 }
 
-std::vector<const NativeIndexerDefinition*> ObjectType::getNativeIndexers() const {
-    std::vector<const NativeIndexerDefinition*> indexers;
+std::vector<const NativeIndexerInfo*> ObjectType::getNativeIndexers() const {
+    std::vector<const NativeIndexerInfo*> indexers;
     indexers.reserve(m_nativeIndexers.size());
     for (const auto& indexer : m_nativeIndexers) {
         indexers.push_back(indexer.get());
@@ -573,14 +573,14 @@ void ObjectType::registerIterableType(
     if (runtime.getTypeByName(getTypeName()) != this ||
         factory == nullptr || runtime.getMethod(factory->getId()) != factory ||
         factory->getObjectType() != this || factory->getParameterCount() != 0 ||
-        factory->getReturnType() != iteratorType || m_iterableDefinition.has_value()) {
+        factory->getReturnType() != iteratorType || m_iterableInfo.has_value()) {
         throw NomadException("Invalid iterable registration");
     }
-    m_iterableDefinition = IterableDefinition{valueType, iteratorType, factory->getId()};
+    m_iterableInfo = IterableInfo{valueType, iteratorType, factory->getId()};
 }
 
-std::optional<IterableDefinition> ObjectType::getIterableDefinition() const {
-    return m_iterableDefinition;
+std::optional<IterableInfo> ObjectType::getIterableInfo() const {
+    return m_iterableInfo;
 }
 
 NomadString ObjectType::getTypeName() const {

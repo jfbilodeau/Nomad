@@ -21,6 +21,45 @@ Types and callables used by a context must remain valid.
 
 Neither the interpreter nor its context creates or owns a VM.
 
+### Creation inputs and metadata
+
+API structures use these naming conventions:
+
+- `*Definition` contains inputs for creating or registering an item. It has no
+  newly assigned ID, but may reference existing items through IDs. An owning
+  type is not repeated when the operation supplies it separately.
+- `*Info` describes an already registered item. An assigned primary ID comes
+  first when the item has one. Metadata is borrowed through const access or
+  returned as a detached snapshot; modifying a snapshot does not change the
+  registered item.
+- `*Declaration` is reserved for source-language declarations in the compiler.
+
+Include `<nomad/script/NativeMemberDefinitions.hpp>` for `ParameterDefinition`,
+`NativeMethodDefinition`, `NativeConstructorDefinition`,
+`NativePropertyDefinition`, `NativeIndexerDefinition`, and
+`NativeInterableDefinition`. These aggregate inputs own their names,
+documentation, parameter lists, and callback objects. Referenced type IDs are
+runtime-local; captured callback state follows the host's C++ capture lifetime.
+
+`ParameterDefinition` begins with its referenced `TypeId`:
+
+```cpp
+const ParameterDefinition distance{
+    runtime.getTypeId("float"),
+    "distance",
+    "Distance to move."
+};
+```
+
+These input structures do not register anything when constructed. The existing
+`registerNativeMethod`, `registerNativeConstructor`, `registerNativeProperty`,
+`registerNativeIndexer`, and `registerIterableType` operations retain their
+current argument forms; they do not yet accept the new input structures.
+Their metadata structures are now named `NativePropertyInfo`,
+`NativeIndexerInfo`, and `IterableInfo`. Corresponding lookup operations are
+`getNativePropertyInfo`, `getNativeIndexerInfo`, and `getIterableInfo`;
+`NativeProperty::getInfo()` returns a property snapshot.
+
 ### Type lookup
 
 `Runtime::getTypeId(name)` returns a `TypeId`, or `TypeId::INVALID`
@@ -237,7 +276,7 @@ Member enumeration and overload APIs use `std::vector<MemberReference>`.
 `getMemberType(member)` returns `MemberType::Property`, `MemberType::Method`,
 or `MemberType::Unknown` for an invalid reference.
 Use `std::get_if` to inspect a reference's ID category.
-`getNativePropertyDefinition(member, definition)` returns a native property
+`getNativePropertyInfo(member, definition)` returns a native property
 snapshot, or `false` when the reference is invalid or not a native property.
 `getNativeMemberMethod(member)` returns a native method or `nullptr`.
 `getNativeMethod(callableId)` accepts the same ID returned by method registration.
@@ -738,22 +777,23 @@ overloading.
 Registration and `getNativeIndexerId(objectType, indexCount)` return an
 `IndexerId`, or `IndexerId::INVALID` on failure or missing lookup. Registration
 failures are logged. Include `<nomad/script/NativeMember.hpp>` for the ID and
-`NativeIndexerDefinition`. IDs are runtime-local and remain stable as more
+`NativeIndexerInfo`. IDs are runtime-local and remain stable as more
 indexers are registered. They do not implicitly convert to integers or other
-ID categories. `getNativeIndexerDefinition(id, definition)` returns `false` for
+ID categories. `getNativeIndexerInfo(id, definition)` returns `false` for
 invalid or unregistered IDs.
 
-The object type owns each indexer definition. `ObjectType::getNativeIndexer(indexCount)`
-returns a borrowed `const NativeIndexerDefinition*`, or `nullptr` when absent.
+The object type owns each indexer's metadata. `ObjectType::getNativeIndexer(indexCount)`
+returns a borrowed `const NativeIndexerInfo*`, or `nullptr` when absent.
 `ObjectType::getNativeIndexers()` enumerates that type's indexers, while
 `Runtime::getNativeIndexers()` enumerates the runtime-wide borrowed catalog in
-registration order. Both enumerate const definition pointers; these pointers
+registration order. Both enumerate const metadata pointers; these pointers
 remain valid as more indexers are registered, until the runtime destroys their
-owning types. `getNativeIndexerDefinition` still returns a definition copy.
+owning types. `getNativeIndexerInfo` returns a metadata copy.
 
 Hosts retaining a mutable registered object type may also call
-`ObjectType::registerNativeIndexer(runtime, definition)`. Supply an invalid ID
-and that object type as `definition.objectType`. The same registration rules
+`ObjectType::registerNativeIndexer(runtime, info)`. This existing low-level
+operation accepts `NativeIndexerInfo`; supply an invalid ID and that object
+type as `info.objectType`. The same registration rules
 apply; foreign-runtime types, preassigned IDs, and duplicate index counts are
 rejected without changing the owner or catalog.
 
@@ -849,11 +889,11 @@ runtime.registerIterableType(
 Pass a registered `Method` to `registerIterableType`; it does not accept a native
 member ID. The factory must belong to the source type, take no arguments, and return the
 matching iterator type. Duplicate associations and invalid registrations throw
-`NomadException`. `getIterableDefinition(sourceType)` returns an optional association.
+`NomadException`. `getIterableInfo(sourceType)` returns an optional association.
 
 The source `ObjectType` owns its iterable association. Include
-`<nomad/script/Type.hpp>` for `IterableDefinition`.
-`ObjectType::getIterableDefinition()` returns an optional snapshot containing
+`<nomad/script/Type.hpp>` for `IterableInfo`.
+`ObjectType::getIterableInfo()` returns an optional snapshot containing
 the element type, iterator type, and factory `CallableId`. Runtime lookup returns
 the same snapshot, or an empty optional for a non-iterable or foreign-runtime type.
 Hosts retaining a mutable registered object type may call

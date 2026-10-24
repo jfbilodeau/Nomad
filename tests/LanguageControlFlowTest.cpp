@@ -114,14 +114,14 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
     );
     BOOST_REQUIRE(factoryId.isValid());
     const auto* factory = runtime.getMethod(factoryId);
-    BOOST_TEST(!type->getIterableDefinition().has_value());
-    BOOST_TEST(!runtime.getIterableDefinition(type).has_value());
-    BOOST_TEST(!runtime.getIterableDefinition(nullptr).has_value());
-    BOOST_TEST(!runtime.getIterableDefinition(integer).has_value());
-    BOOST_TEST(!other.getIterableDefinition(type).has_value());
-    BOOST_TEST(!runtime.getIterableDefinition(other.getStringType()).has_value());
+    BOOST_TEST(!type->getIterableInfo().has_value());
+    BOOST_TEST(!runtime.getIterableInfo(type).has_value());
+    BOOST_TEST(!runtime.getIterableInfo(nullptr).has_value());
+    BOOST_TEST(!runtime.getIterableInfo(integer).has_value());
+    BOOST_TEST(!other.getIterableInfo(type).has_value());
+    BOOST_TEST(!runtime.getIterableInfo(other.getStringType()).has_value());
     ObjectType unregistered("SequenceMetadata");
-    BOOST_TEST(!runtime.getIterableDefinition(&unregistered).has_value());
+    BOOST_TEST(!runtime.getIterableInfo(&unregistered).has_value());
     BOOST_CHECK_THROW(unregistered.registerIterableType(runtime, integer, factory), NomadException);
     BOOST_CHECK_THROW(type->registerIterableType(other, other.getIntegerType(), factory), NomadException);
     BOOST_CHECK_THROW(runtime.registerIterableType(nullptr, integer, factory), NomadException);
@@ -150,13 +150,13 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
         BOOST_CHECK_THROW(type->registerIterableType(runtime, integer, runtime.getMethod(invalidId)), NomadException);
         BOOST_CHECK_THROW(runtime.registerIterableType(type, integer, runtime.getMethod(invalidId)), NomadException);
     }
-    BOOST_TEST(!type->getIterableDefinition().has_value());
-    BOOST_TEST(!runtime.getIterableDefinition(type).has_value());
+    BOOST_TEST(!type->getIterableInfo().has_value());
+    BOOST_TEST(!runtime.getIterableInfo(type).has_value());
 
     runtime.registerIterableType(type, integer, factory);
     const auto verifyAssociation = [&]() {
-        const auto owned = type->getIterableDefinition();
-        const auto forwarded = runtime.getIterableDefinition(type);
+        const auto owned = type->getIterableInfo();
+        const auto forwarded = runtime.getIterableInfo(type);
         BOOST_REQUIRE(owned.has_value());
         BOOST_REQUIRE(forwarded.has_value());
         BOOST_TEST(owned->valueType == integer);
@@ -171,7 +171,7 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
     BOOST_CHECK_THROW(runtime.registerIterableType(type, integer, factory), NomadException);
     BOOST_CHECK_THROW(type->registerIterableType(runtime, integer, factory), NomadException);
     BOOST_CHECK_THROW(type->registerIterableType(runtime, runtime.getStringType(), factory), NomadException);
-    auto snapshot = type->getIterableDefinition();
+    auto snapshot = type->getIterableInfo();
     snapshot->valueType = runtime.getStringType();
     snapshot->factoryId = CallableId::INVALID;
     for (auto index = 0; index < 32; ++index) {
@@ -183,8 +183,8 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
         );
         BOOST_REQUIRE(additionalFactoryId.isValid());
         additionalType->registerIterableType(runtime, integer, runtime.getMethod(additionalFactoryId));
-        BOOST_REQUIRE(runtime.getIterableDefinition(additionalType).has_value());
-        BOOST_TEST(runtime.getIterableDefinition(additionalType)->factoryId == additionalFactoryId);
+        BOOST_REQUIRE(runtime.getIterableInfo(additionalType).has_value());
+        BOOST_TEST(runtime.getIterableInfo(additionalType)->factoryId == additionalFactoryId);
     }
     verifyAssociation();
 }
@@ -194,8 +194,8 @@ BOOST_AUTO_TEST_CASE(range_iterable_metadata_is_exposed_by_its_owner)
     Runtime runtime;
     const auto* range = dynamic_cast<const ObjectType*>(runtime.getTypeByName("Range"));
     BOOST_REQUIRE(range != nullptr);
-    const auto owned = range->getIterableDefinition();
-    const auto forwarded = runtime.getIterableDefinition(range);
+    const auto owned = range->getIterableInfo();
+    const auto forwarded = runtime.getIterableInfo(range);
     BOOST_REQUIRE(owned.has_value());
     BOOST_REQUIRE(forwarded.has_value());
     BOOST_TEST(owned->valueType == runtime.getIntegerType());

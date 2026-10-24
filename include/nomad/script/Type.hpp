@@ -231,7 +231,7 @@ public:
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 
-struct IterableDefinition {
+struct IterableInfo {
     const Type* valueType;
     const ObjectType* iteratorType;
     CallableId factoryId;
@@ -277,16 +277,16 @@ public:
     [[nodiscard]] virtual NomadIndex getPropertyCount() const;
     [[nodiscard]] IndexerId registerNativeIndexer(
         Runtime& runtime,
-        NativeIndexerDefinition definition
+        NativeIndexerInfo info
     );
-    [[nodiscard]] const NativeIndexerDefinition* getNativeIndexer(NomadIndex indexCount) const;
-    [[nodiscard]] std::vector<const NativeIndexerDefinition*> getNativeIndexers() const;
+    [[nodiscard]] const NativeIndexerInfo* getNativeIndexer(NomadIndex indexCount) const;
+    [[nodiscard]] std::vector<const NativeIndexerInfo*> getNativeIndexers() const;
     void registerIterableType(
         Runtime& runtime,
         const Type* valueType,
         const Method* factory
     );
-    [[nodiscard]] std::optional<IterableDefinition> getIterableDefinition() const;
+    [[nodiscard]] std::optional<IterableInfo> getIterableInfo() const;
 
 private:
     NomadString m_name;
@@ -294,8 +294,8 @@ private:
     std::vector<std::unique_ptr<Property>> m_properties;
     std::vector<std::unique_ptr<Constructor>> m_constructors;
     std::vector<std::unique_ptr<Method>> m_methods;
-    std::vector<std::unique_ptr<NativeIndexerDefinition>> m_nativeIndexers;
-    std::optional<IterableDefinition> m_iterableDefinition;
+    std::vector<std::unique_ptr<NativeIndexerInfo>> m_nativeIndexers;
+    std::optional<IterableInfo> m_iterableInfo;
 };
 
 class BaseStringType : public ObjectType {

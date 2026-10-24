@@ -21,24 +21,24 @@ namespace {
 
 void callNativeIndexer(VirtualMachine* machine, const bool write) {
     const auto indexerId = IndexerId{machine->nextId()};
-    NativeIndexerDefinition definition;
-    if (!machine->getRuntime()->getNativeIndexerDefinition(indexerId, definition)) {
+    NativeIndexerInfo info;
+    if (!machine->getRuntime()->getNativeIndexerInfo(indexerId, info)) {
         machine->fault("Invalid native indexer");
     }
 
-    const auto argumentCount = definition.indexTypes.size() + (write ? 1 : 0);
+    const auto argumentCount = info.indexTypes.size() + (write ? 1 : 0);
     const auto receiver = machine->peekStack(argumentCount);
     const auto releaseArguments = [&]() {
-        for (const auto* type : definition.indexTypes) {
+        for (const auto* type : info.indexTypes) {
             auto value = machine->popValue();
             type->freeValue(value);
         }
         if (write) {
             auto value = machine->popValue();
-            definition.valueType->freeValue(value);
+            info.valueType->freeValue(value);
         }
         auto savedReceiver = machine->popValue();
-        definition.objectType->freeValue(savedReceiver);
+        info.objectType->freeValue(savedReceiver);
     };
 
     try {
@@ -46,7 +46,7 @@ void callNativeIndexer(VirtualMachine* machine, const bool write) {
     } catch (...) {
         releaseArguments();
         if (!write) {
-            definition.valueType->freeValue(machine->getResult());
+            info.valueType->freeValue(machine->getResult());
         }
         throw;
     }

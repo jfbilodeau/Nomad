@@ -22,7 +22,7 @@ class VirtualMachine;
 using NativePropertyGetFn = std::function<void(VirtualMachine*, RuntimeValue&)>;
 using NativePropertySetFn = std::function<void(VirtualMachine*, const RuntimeValue&)>;
 
-struct NativePropertyDefinition {
+struct NativePropertyInfo {
     PropertyId id;
     const Type* objectType = nullptr;
     NomadString name;
@@ -34,7 +34,7 @@ struct NativePropertyDefinition {
 
 DeclareId(IndexerId);
 
-struct NativeIndexerDefinition {
+struct NativeIndexerInfo {
     IndexerId id;
     const ObjectType* objectType = nullptr;
     std::vector<const Type*> indexTypes;

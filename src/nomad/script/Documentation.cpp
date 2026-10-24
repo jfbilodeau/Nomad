@@ -34,9 +34,9 @@ std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Ru
     for (const auto memberId : memberIds) {
         switch (runtime->getMemberType(memberId)) {
         case MemberType::Property: {
-            NativePropertyDefinition definition;
-            if (runtime->getNativePropertyDefinition(memberId, definition)) {
-                members.emplace_back(memberId, MemberType::Property, definition.objectType, definition.name);
+            NativePropertyInfo info;
+            if (runtime->getNativePropertyInfo(memberId, info)) {
+                members.emplace_back(memberId, MemberType::Property, info.objectType, info.name);
             }
             break;
         }
@@ -489,13 +489,13 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
         out << "#### `" << member.name << "`";
 
         if (member.memberType == MemberType::Property) {
-            NativePropertyDefinition definition;
-            (void)runtime->getNativePropertyDefinition(member.id, definition);
+            NativePropertyInfo info;
+            (void)runtime->getNativePropertyInfo(member.id, info);
 
             NomadString access;
-            if (definition.getFn && definition.setFn) {
+            if (info.getFn && info.setFn) {
                 access = "read/write";
-            } else if (definition.getFn) {
+            } else if (info.getFn) {
                 access = "read-only";
             } else {
                 access = "write-only";
@@ -503,11 +503,11 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
 
             out << " (*" << access << " property*)" << std::endl;
             out << std::endl;
-            out << "`" << member.name << ":" << getDocumentedTypeName(runtime, definition.valueType) << "`"
+            out << "`" << member.name << ":" << getDocumentedTypeName(runtime, info.valueType) << "`"
                 << std::endl;
             out << std::endl;
-            if (!definition.doc.empty()) {
-                out << definition.doc << std::endl;
+            if (!info.doc.empty()) {
+                out << info.doc << std::endl;
                 out << std::endl;
             }
         } else {
@@ -546,8 +546,8 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
         out << "---" << std::endl;
     }
 
-    for (const auto* definition : runtime->getNativeIndexers()) {
-        const auto& indexer = *definition;
+    for (const auto* info : runtime->getNativeIndexers()) {
+        const auto& indexer = *info;
         out << std::endl;
         out << "### `" << indexer.objectType->getTypeName() << "[";
         for (auto index = NomadIndex{0}; index < indexer.indexTypes.size(); ++index) {

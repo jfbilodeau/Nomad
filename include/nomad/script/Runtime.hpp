@@ -149,7 +149,7 @@ public:
         const Type* valueType,
         const Method* factory
     );
-    [[nodiscard]] std::optional<IterableDefinition> getIterableDefinition(const Type* sourceType) const;
+    [[nodiscard]] std::optional<IterableInfo> getIterableInfo(const Type* sourceType) const;
     [[nodiscard]] TypeId getTypeId(const NomadString& typeName) const;
     [[nodiscard]] std::optional<const Type*> getType(TypeId id) const;
     [[nodiscard]] const Type* getTypeByName(const NomadString& name) const;
@@ -216,9 +216,9 @@ public:
         NomadDocArg
     );
     [[nodiscard]] IndexerId getNativeIndexerId(const Type* objectType, NomadIndex indexCount) const;
-    [[nodiscard]] IndexerId catalogNativeIndexer(const NativeIndexerDefinition* definition);
-    [[nodiscard]] bool getNativeIndexerDefinition(IndexerId indexerId, NativeIndexerDefinition& definition) const;
-    [[nodiscard]] const std::vector<const NativeIndexerDefinition*>& getNativeIndexers() const;
+    [[nodiscard]] IndexerId catalogNativeIndexer(const NativeIndexerInfo* info);
+    [[nodiscard]] bool getNativeIndexerInfo(IndexerId indexerId, NativeIndexerInfo& info) const;
+    [[nodiscard]] const std::vector<const NativeIndexerInfo*>& getNativeIndexers() const;
 
     CallableId registerNativeMethod(
         const ObjectType* objectType,
@@ -236,7 +236,7 @@ public:
                                       NativePropertyGetFn getFn, NativePropertySetFn setFn, NomadDocArg);
     [[nodiscard]] MemberReference getNativeMemberId(const Type* objectType, const NomadString& name) const;
     [[nodiscard]] MemberType getMemberType(const MemberReference& member) const;
-    [[nodiscard]] bool getNativePropertyDefinition(const MemberReference& member, NativePropertyDefinition& definition) const;
+    [[nodiscard]] bool getNativePropertyInfo(const MemberReference& member, NativePropertyInfo& info) const;
     [[nodiscard]] const NativeMethod* getNativeMemberMethod(const MemberReference& member) const;
     void getNativeMembers(const Type* objectType, std::vector<MemberReference>& members) const;
     void getNativeMembers(std::vector<MemberReference>& members) const;
@@ -594,7 +594,7 @@ private:
     std::vector<Property*> m_properties;
     std::vector<std::unique_ptr<Hub>> m_hubs;
     ScriptInitialization m_scriptInitialization;
-    std::vector<const NativeIndexerDefinition*> m_nativeIndexers;
+    std::vector<const NativeIndexerInfo*> m_nativeIndexers;
     std::unordered_map<NomadString, std::vector<MemberReference>> m_nativeMembersByName;
     bool m_debug = false;
     std::unique_ptr<VirtualMachine> m_virtualMachine = nullptr;

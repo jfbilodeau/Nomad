@@ -19,7 +19,7 @@ public:
     );
 
     [[nodiscard]] const NativeProperty* asNativeProperty() const override;
-    [[nodiscard]] NativePropertyDefinition getDefinition() const;
+    [[nodiscard]] NativePropertyInfo getInfo() const;
 
 private:
     NativePropertyGetFn m_getFn;

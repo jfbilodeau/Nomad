@@ -49,12 +49,12 @@ void Runtime::registerIterableType(
     owner->registerIterableType(*this, valueType, factory);
 }
 
-std::optional<IterableDefinition> Runtime::getIterableDefinition(const Type* sourceType) const {
+std::optional<IterableInfo> Runtime::getIterableInfo(const Type* sourceType) const {
     if (!ownsType(sourceType)) {
         return std::nullopt;
     }
     const auto* owner = dynamic_cast<const ObjectType*>(sourceType);
-    return owner == nullptr ? std::nullopt : owner->getIterableDefinition();
+    return owner == nullptr ? std::nullopt : owner->getIterableInfo();
 }
 
 namespace {
@@ -1612,15 +1612,15 @@ IndexerId Runtime::registerNativeIndexer(
     });
 }
 
-IndexerId Runtime::catalogNativeIndexer(const NativeIndexerDefinition* definition) {
-    if (definition == nullptr || definition->id.isValid() || !ownsType(definition->objectType) ||
-        definition->objectType->getNativeIndexer(definition->indexTypes.size()) != definition ||
+IndexerId Runtime::catalogNativeIndexer(const NativeIndexerInfo* info) {
+    if (info == nullptr || info->id.isValid() || !ownsType(info->objectType) ||
+        info->objectType->getNativeIndexer(info->indexTypes.size()) != info ||
         m_nativeIndexers.size() >= toNomadIndex(NOMAD_ID_MAX)) {
         log::error("Cannot catalog native indexer: invalid owner, identity, or indexer capacity");
         return IndexerId::INVALID;
     }
     const auto id = IndexerId{toNomadId(m_nativeIndexers.size())};
-    m_nativeIndexers.push_back(definition);
+    m_nativeIndexers.push_back(info);
     return id;
 }
 
@@ -1629,19 +1629,19 @@ IndexerId Runtime::getNativeIndexerId(const Type* objectType, const NomadIndex i
         return IndexerId::INVALID;
     }
     const auto* owner = dynamic_cast<const ObjectType*>(objectType);
-    const auto* definition = owner == nullptr ? nullptr : owner->getNativeIndexer(indexCount);
-    return definition == nullptr ? IndexerId::INVALID : definition->id;
+    const auto* info = owner == nullptr ? nullptr : owner->getNativeIndexer(indexCount);
+    return info == nullptr ? IndexerId::INVALID : info->id;
 }
 
-bool Runtime::getNativeIndexerDefinition(const IndexerId indexerId, NativeIndexerDefinition& definition) const {
+bool Runtime::getNativeIndexerInfo(const IndexerId indexerId, NativeIndexerInfo& info) const {
     if (isIdOutOfRange(indexerId.id, m_nativeIndexers.size())) {
         return false;
     }
-    definition = *m_nativeIndexers[toNomadIndex(indexerId.id)];
+    info = *m_nativeIndexers[toNomadIndex(indexerId.id)];
     return true;
 }
 
-const std::vector<const NativeIndexerDefinition*>& Runtime::getNativeIndexers() const {
+const std::vector<const NativeIndexerInfo*>& Runtime::getNativeIndexers() const {
     return m_nativeIndexers;
 }
 
@@ -1747,8 +1747,8 @@ MemberReference Runtime::getNativeMemberId(const Type* objectType, const NomadSt
     for (const auto memberId : overloads->second) {
         switch (getMemberType(memberId)) {
         case MemberType::Property: {
-            NativePropertyDefinition definition;
-            if (getNativePropertyDefinition(memberId, definition) && definition.objectType == objectType) {
+            NativePropertyInfo info;
+            if (getNativePropertyInfo(memberId, info) && info.objectType == objectType) {
                 return memberId;
             }
             break;
@@ -1777,7 +1777,7 @@ MemberType Runtime::getMemberType(const MemberReference& member) const {
     return getMethod(std::get<CallableId>(member)) == nullptr ? MemberType::Unknown : MemberType::Method;
 }
 
-bool Runtime::getNativePropertyDefinition(const MemberReference& member, NativePropertyDefinition& definition) const {
+bool Runtime::getNativePropertyInfo(const MemberReference& member, NativePropertyInfo& info) const {
     const auto* id = std::get_if<PropertyId>(&member);
     if (id == nullptr) {
         return false;
@@ -1786,7 +1786,7 @@ bool Runtime::getNativePropertyDefinition(const MemberReference& member, NativeP
     if (property == nullptr) {
         return false;
     }
-    definition = property->getDefinition();
+    info = property->getInfo();
     return true;
 }
 
@@ -1802,8 +1802,8 @@ void Runtime::getNativeMembers(const Type* objectType, std::vector<MemberReferen
         const auto type = getMemberType(memberId);
 
         if (type == MemberType::Property) {
-            NativePropertyDefinition definition;
-            if (getNativePropertyDefinition(memberId, definition) && definition.objectType == objectType) {
+            NativePropertyInfo info;
+            if (getNativePropertyInfo(memberId, info) && info.objectType == objectType) {
                 members.push_back(memberId);
             }
         } else if (type == MemberType::Method) {
