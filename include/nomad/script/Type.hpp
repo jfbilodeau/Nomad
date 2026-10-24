@@ -126,6 +126,7 @@ public:
     [[nodiscard]] virtual const FunctionType* asCallback() const;
     [[nodiscard]] virtual const EventType* asEvent() const;
     [[nodiscard]] virtual const EnumType* asEnum() const;
+    [[nodiscard]] virtual const ObjectType* asObjectType() const;
 
 protected:
     // Types owning heap memory replace the defaults in their constructor.
@@ -268,6 +269,7 @@ public:
     [[nodiscard]] NomadString getTypeName() const override;
     [[nodiscard]] TypeStorage getStorage() const override;
     [[nodiscard]] const std::vector<const Type*>& getTypeArguments() const;
+    [[nodiscard]] const ObjectType* asObjectType() const override;
     [[nodiscard]] CallableId registerConstructor(
         Runtime& runtime,
         std::unique_ptr<Constructor> constructor

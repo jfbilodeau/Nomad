@@ -36,6 +36,34 @@ const ObjectType* createTestType(Runtime& runtime, const NomadString& name, cons
 
 BOOST_AUTO_TEST_SUITE(object_type)
 
+BOOST_AUTO_TEST_CASE(object_conversion_returns_the_original_descriptor_for_objects_and_derived_types) {
+    Runtime runtime;
+    const Type* opened = createTestType(runtime, "Opened", ObjectTypeMode::Opened);
+    const Type* closed = createTestType(runtime, "Closed", ObjectTypeMode::Closed);
+    BOOST_TEST(opened->asObjectType() == opened);
+    BOOST_TEST(closed->asObjectType() == closed);
+    const Type* stringType = runtime.getStringType();
+    BOOST_TEST(stringType->asObjectType() == runtime.getStringType());
+    const auto* fileNameType = runtime.getFileNameType();
+    BOOST_TEST(fileNameType->asObjectType() == fileNameType);
+}
+
+BOOST_AUTO_TEST_CASE(object_conversion_returns_null_for_non_object_descriptors) {
+    Runtime runtime;
+    const auto enumId = runtime.createEnum("State", {{"Ready", 1}});
+    BOOST_REQUIRE(enumId.isValid());
+    for (const auto* type : {
+        runtime.getVoidType(), runtime.getIntegerType(), runtime.getFloatType(), runtime.getBooleanType(),
+        runtime.getType(enumId).value(),
+        runtime.getCallbackType({runtime.getIntegerType()}, runtime.getBooleanType())
+    }) {
+        BOOST_REQUIRE(type != nullptr);
+        BOOST_TEST_CONTEXT(type->getTypeName()) {
+            BOOST_TEST(type->asObjectType() == nullptr);
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(open_type_registers_and_reuses_property_ids) {
     Runtime runtime;
     const auto* type = createTestType(runtime, "Point", ObjectTypeMode::Opened);

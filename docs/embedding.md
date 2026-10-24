@@ -264,6 +264,8 @@ the corresponding source-specific registration APIs.
 
 `ObjectType` describes both native and script-defined object types. `isOpen()` reports
 whether external script declarations may extend it. Closed types are not immutable.
+`Type::asObjectType()` returns the same descriptor as a borrowed `const ObjectType*`
+for object types and their subclasses, including strings, or `nullptr` for other types.
 
 Register the owner type with the runtime before declaring its properties.
 `Runtime::registerProperty(objectType, name, valueType)` declares a stored/script

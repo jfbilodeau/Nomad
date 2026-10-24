@@ -102,6 +102,10 @@ const EnumType* Type::asEnum() const {
     return nullptr;
 }
 
+const ObjectType* Type::asObjectType() const {
+    return nullptr;
+}
+
 ValueType::ValueType(Runtime* runtime, NomadString documentation):
     Type(runtime, std::move(documentation))
 {}
@@ -459,6 +463,10 @@ bool ObjectType::sameType(const Type* other) const {
 
 TypeStorage ObjectType::getStorage() const {
     return TypeStorage::Object;
+}
+
+const ObjectType* ObjectType::asObjectType() const {
+    return this;
 }
 
 bool ObjectType::isOpen() const {

@@ -42,7 +42,7 @@ void Runtime::registerIterableType(
     const Type* valueType,
     const Method* factory
 ) {
-    auto* owner = ownsType(sourceType) ? getMutableObjectType(dynamic_cast<const ObjectType*>(sourceType)) : nullptr;
+    auto* owner = ownsType(sourceType) ? getMutableObjectType(sourceType->asObjectType()) : nullptr;
     if (owner == nullptr) {
         throw NomadException("Invalid iterable registration");
     }
@@ -53,7 +53,7 @@ std::optional<IterableInfo> Runtime::getIterableInfo(const Type* sourceType) con
     if (!ownsType(sourceType)) {
         return std::nullopt;
     }
-    const auto* owner = dynamic_cast<const ObjectType*>(sourceType);
+    const auto* owner = sourceType->asObjectType();
     return owner == nullptr ? std::nullopt : owner->getIterableInfo();
 }
 
@@ -1393,12 +1393,12 @@ bool Runtime::canRegisterNativeMember(const Type* objectType, const NomadString&
         return false;
     }
 
-    if (dynamic_cast<const ObjectType*>(objectType) == nullptr) {
+    const auto* owner = objectType->asObjectType();
+    if (owner == nullptr) {
         error = "only object types can have native members";
         return false;
     }
 
-    const auto* owner = static_cast<const ObjectType*>(objectType);
     if (owner->getProperty(name) != nullptr ||
         getMemberType(getNativeMemberId(objectType, name)) != MemberType::Unknown) {
         error = "the type already has a member with that name";
@@ -1690,7 +1690,7 @@ IndexerId Runtime::getNativeIndexerId(const Type* objectType, const NomadIndex i
     if (!ownsType(objectType)) {
         return IndexerId::INVALID;
     }
-    const auto* owner = dynamic_cast<const ObjectType*>(objectType);
+    const auto* owner = objectType->asObjectType();
     const auto* info = owner == nullptr ? nullptr : owner->getNativeIndexer(indexCount);
     return info == nullptr ? IndexerId::INVALID : info->id;
 }
@@ -1754,7 +1754,7 @@ const NativeProperty* Runtime::getNativeProperty(const PropertyId id) const {
 
 PropertyId Runtime::addProperty(const TypeId id, NativePropertyDefinition definition) {
     const auto type = getType(id);
-    const auto* objectType = type.has_value() ? dynamic_cast<const ObjectType*>(*type) : nullptr;
+    const auto* objectType = type.has_value() ? (*type)->asObjectType() : nullptr;
     if (objectType == nullptr) {
         log::error("Cannot register native property '" + definition.name + "': owner must identify an object type");
         return PropertyId::INVALID;
