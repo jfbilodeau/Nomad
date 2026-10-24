@@ -265,6 +265,7 @@ public:
     [[nodiscard]] std::optional<MemberSignature> getMemberSignature(const NomadString& name) const;
 
     // Native members
+    [[nodiscard]] IndexerId addIndexer(TypeId id, NativeIndexerDefinition definition);
     IndexerId registerNativeIndexer(
         const ObjectType* objectType,
         std::vector<const Type*> indexTypes,

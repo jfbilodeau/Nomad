@@ -1699,6 +1699,34 @@ NomadString Runtime::getParameterizedConstructorName(
     return specializedName;
 }
 
+IndexerId Runtime::addIndexer(const TypeId id, NativeIndexerDefinition definition) {
+    const auto type = getType(id);
+    const auto* objectType = type.has_value() ? (*type)->asObjectType() : nullptr;
+    if (objectType == nullptr) {
+        log::error("Cannot register native indexer: owner must identify an object type");
+        return IndexerId::INVALID;
+    }
+    const auto valueType = getType(definition.valueTypeId);
+    if (!valueType.has_value()) {
+        log::error("Cannot register native indexer: invalid value type ID");
+        return IndexerId::INVALID;
+    }
+    std::vector<const Type*> indexTypes;
+    indexTypes.reserve(definition.indexTypes.size());
+    for (const auto indexTypeId : definition.indexTypes) {
+        const auto indexType = getType(indexTypeId);
+        if (!indexType.has_value()) {
+            log::error("Cannot register native indexer: invalid index type ID");
+            return IndexerId::INVALID;
+        }
+        indexTypes.push_back(*indexType);
+    }
+    return registerNativeIndexer(
+        objectType, std::move(indexTypes), *valueType,
+        std::move(definition.getter), std::move(definition.setter), definition.documentation
+    );
+}
+
 IndexerId Runtime::registerNativeIndexer(
     const ObjectType* objectType,
     std::vector<const Type*> indexTypes,

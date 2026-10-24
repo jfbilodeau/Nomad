@@ -53,11 +53,11 @@ const ParameterDefinition distance{
 
 These input structures do not register anything when constructed.
 `addProperty(TypeId, NativePropertyDefinition)`,
-`addMethod(TypeId, NativeMethodDefinition)`, and
-`addConstructor(TypeId, NativeConstructorDefinition)` register native members
-using their creation inputs. The existing
-`registerNativeIndexer`, and `registerIterableType` operations retain their
-current argument forms; they do not yet accept the new input structures.
+`addMethod(TypeId, NativeMethodDefinition)`,
+`addConstructor(TypeId, NativeConstructorDefinition)`, and
+`addIndexer(TypeId, NativeIndexerDefinition)` register native members
+using their creation inputs. `registerIterableType` retains its current argument
+form; it does not yet accept the new input structure.
 Their metadata structures are now named `NativePropertyInfo`,
 `NativeIndexerInfo`, and `IterableInfo`. Corresponding lookup operations are
 `getNativePropertyInfo`, `getNativeIndexerInfo`, and `getIterableInfo`;
@@ -924,9 +924,11 @@ Script-defined methods are not supported yet.
 
 ## Native indexers
 
-Register an indexer with `registerNativeIndexer(objectType, indexTypes,
-valueType, getter, setter, doc)`. The non-empty `std::vector<const Type*>`
-specifies the number and types of indices. All types must belong to the runtime
+Register an indexer with `addIndexer(typeId, NativeIndexerDefinition{...})`.
+The definition supplies `valueTypeId`, a non-empty `std::vector<TypeId>` named
+`indexTypes`, `getter`, `setter`, and `documentation`.
+The index vector specifies the number and types of indices. All IDs are local
+to the receiving runtime, and all value/index types must belong to that runtime
 and be public, non-void types. An object type may register one indexer per index
 count; lookup uses the receiver type and number of indices, not index-type
 overloading.
@@ -938,6 +940,12 @@ failures are logged. Include `<nomad/script/NativeMember.hpp>` for the ID and
 indexers are registered. They do not implicitly convert to integers or other
 ID categories. `getNativeIndexerInfo(id)` returns
 `std::optional<NativeIndexerInfo>`, empty for invalid or unregistered IDs.
+
+Invalid or non-object owner IDs, invalid value/index IDs, and definitions with
+neither callback are rejected without publishing an indexer. Definitions are
+owned inputs; modifying one after registration does not change the registered
+indexer. The pointer-based `registerNativeIndexer` operation remains available
+and shares the same validation and duplicate-index-count rules.
 
 ```cpp
 const auto info = runtime.getNativeIndexerInfo(id);
@@ -965,17 +973,19 @@ Omit the setter for read-only indexing, or omit
 the getter for write-only indexing. Invalid access is rejected during compilation.
 
 ```cpp
-runtime.registerNativeIndexer(
-    objectType,
-    {runtime.getIntegerType()},
-    runtime.getStringType(),
-    [](nomad::VirtualMachine* machine) {
+const auto indexerId = runtime.addIndexer(objectType->getId(), {
+    .valueTypeId = runtime.getStringType()->getId(),
+    .indexTypes = {runtime.getIntegerType()->getId()},
+    .getter = [](nomad::VirtualMachine* machine) {
         const auto* object = machine->getThisAs<MyObject>();
         machine->setStringResult(object->getText(machine->getIntegerParameter(0)));
     },
-    {},
-    NomadDoc("Read text at the given index.")
-);
+    .setter = {},
+    .documentation = NomadDoc("Read text at the given index.")
+});
+if (indexerId.isInvalid()) {
+    throw nomad::NomadException("Failed to register text indexer");
+}
 ```
 
 Callbacks use the native-method calling convention: `getThisAs<T>()` accesses
