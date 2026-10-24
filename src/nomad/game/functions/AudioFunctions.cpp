@@ -89,6 +89,7 @@ void Game::initAudioFunctions() {
     if (audioType == nullptr) {
         raiseError("Audio type is not registered");
     }
+    const auto audioTypeId = m_runtime->getTypeId("Audio");
 
     m_runtime->registerNativeFunction(
         "game.audio.load",
@@ -155,53 +156,52 @@ void Game::initAudioFunctions() {
         NomadDoc("Stops every playing or paused sound effect.")
     );
 
-    m_runtime->registerNativeProperty(
-        audioType,
-        "volume",
-        m_runtime->getFloatType(),
-        [](VirtualMachine* virtualMachine, RuntimeValue& result) {
+    const auto volumeId = m_runtime->addProperty(audioTypeId, {
+        .valueTypeId = m_runtime->getTypeId("float"),
+        .name = "volume",
+        .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
             result.setFloatValue(getAudioObject(virtualMachine)->getVolume());
         },
-        [](VirtualMachine* virtualMachine, const RuntimeValue& value) {
+        .setter = [](VirtualMachine* virtualMachine, const RuntimeValue& value) {
             executeAudioAction(virtualMachine, [&] {
                 getAudioObject(virtualMachine)->setVolume(value.getFloatValue());
             });
         },
-        NomadDoc("The sound-effect instance volume from 0.0 to 1.0.")
-    );
+        .documentation = NomadDoc("The sound-effect instance volume from 0.0 to 1.0.")
+    });
 
-    m_runtime->registerNativeProperty(
-        audioType,
-        "playing",
-        m_runtime->getBooleanType(),
-        [](VirtualMachine* virtualMachine, RuntimeValue& result) {
+    const auto playingId = m_runtime->addProperty(audioTypeId, {
+        .valueTypeId = m_runtime->getTypeId("bool"),
+        .name = "playing",
+        .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
             result.setBooleanValue(getAudioObject(virtualMachine)->isPlaying());
         },
-        {},
-        NomadDoc("Whether the sound effect is currently playing.")
-    );
+        .setter = {},
+        .documentation = NomadDoc("Whether the sound effect is currently playing.")
+    });
 
-    m_runtime->registerNativeProperty(
-        audioType,
-        "paused",
-        m_runtime->getBooleanType(),
-        [](VirtualMachine* virtualMachine, RuntimeValue& result) {
+    const auto pausedId = m_runtime->addProperty(audioTypeId, {
+        .valueTypeId = m_runtime->getTypeId("bool"),
+        .name = "paused",
+        .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
             result.setBooleanValue(getAudioObject(virtualMachine)->isPaused());
         },
-        {},
-        NomadDoc("Whether the sound effect is currently paused.")
-    );
+        .setter = {},
+        .documentation = NomadDoc("Whether the sound effect is currently paused.")
+    });
 
-    m_runtime->registerNativeProperty(
-        audioType,
-        "looping",
-        m_runtime->getBooleanType(),
-        [](VirtualMachine* virtualMachine, RuntimeValue& result) {
+    const auto loopingId = m_runtime->addProperty(audioTypeId, {
+        .valueTypeId = m_runtime->getTypeId("bool"),
+        .name = "looping",
+        .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
             result.setBooleanValue(getAudioObject(virtualMachine)->isLooping());
         },
-        {},
-        NomadDoc("Whether the sound effect will repeat indefinitely.")
-    );
+        .setter = {},
+        .documentation = NomadDoc("Whether the sound effect will repeat indefinitely.")
+    });
+    if (volumeId.isInvalid() || playingId.isInvalid() || pausedId.isInvalid() || loopingId.isInvalid()) {
+        raiseError("Failed to register Audio properties");
+    }
 
     m_runtime->registerNativeMethod(
         audioType,

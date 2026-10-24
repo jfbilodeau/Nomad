@@ -108,15 +108,17 @@ Runtime::Runtime() {
                 },
                 {}, runtime->getBooleanType(), NomadDoc("Advances the iterator. Returns false at the end.")
             );
-            const auto currentId = runtime->registerNativeProperty(
-                iteratorType, "current", valueType,
-                [valueType](VirtualMachine* machine, RuntimeValue& result) {
+            const auto currentId = runtime->addProperty(id, {
+                .valueTypeId = runtime->getTypeId(valueType->getTypeName()),
+                .name = "current",
+                .getter = [valueType](VirtualMachine* machine, RuntimeValue& result) {
                     RuntimeValue owned;
                     valueType->assignValue(machine->getThisAs<IteratorObject>()->getCurrent(), owned);
                     result = owned;
                 },
-                {}, NomadDoc("The value published by the last successful moveNext call.")
-            );
+                .setter = {},
+                .documentation = NomadDoc("The value published by the last successful moveNext call.")
+            });
             if (advanceId.isInvalid() || currentId.isInvalid()) {
                 throw NomadException("Failed to register iterator members");
             }

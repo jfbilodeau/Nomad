@@ -40,30 +40,32 @@ void registerKeyValueType(Runtime* runtime) {
                 },
                 NomadDoc("Creates a pair with read-only key and value properties.")
             );
-            const auto keyId = runtime->registerNativeProperty(
-                objectType, "key", keyType,
-                [keyType](VirtualMachine* machine, RuntimeValue& result) {
+            const auto keyId = runtime->addProperty(id, {
+                .valueTypeId = runtime->getTypeId(keyType->getTypeName()),
+                .name = "key",
+                .getter = [keyType](VirtualMachine* machine, RuntimeValue& result) {
                     const auto* pair = machine->getThisAs<KeyValueObject>();
                     const auto& key = pair->getKey();
                     RuntimeValue keyCopy;
                     keyType->assignValue(key, keyCopy);
                     result = keyCopy;
                 },
-                {},
-                NomadDoc("The read-only key. Object keys share their referenced object.")
-            );
-            const auto valueId = runtime->registerNativeProperty(
-                objectType, "value", valueType,
-                [valueType](VirtualMachine* machine, RuntimeValue& result) {
+                .setter = {},
+                .documentation = NomadDoc("The read-only key. Object keys share their referenced object.")
+            });
+            const auto valueId = runtime->addProperty(id, {
+                .valueTypeId = runtime->getTypeId(valueType->getTypeName()),
+                .name = "value",
+                .getter = [valueType](VirtualMachine* machine, RuntimeValue& result) {
                     const auto* pair = machine->getThisAs<KeyValueObject>();
                     const auto& value = pair->getValue();
                     RuntimeValue valueCopy;
                     valueType->assignValue(value, valueCopy);
                     result = valueCopy;
                 },
-                {},
-                NomadDoc("The read-only value. Object values share their referenced object.")
-            );
+                .setter = {},
+                .documentation = NomadDoc("The read-only value. Object values share their referenced object.")
+            });
             if (constructorId.isInvalid() || keyId.isInvalid() || valueId.isInvalid()) {
                 throw NomadException("Failed to register KeyValue members");
             }

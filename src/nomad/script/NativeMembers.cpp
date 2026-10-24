@@ -32,6 +32,7 @@ void validateSearchOperands(VirtualMachine* virtualMachine, const NomadString& r
 
 void registerBuiltInNativeMembers(Runtime* runtime) {
     const auto* stringType = runtime->getStringType();
+    const auto stringTypeId = runtime->getTypeId("string");
     runtime->registerNativeIndexer(
         stringType,
         {runtime->getIntegerType()},
@@ -51,11 +52,10 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
         {},
         NomadDoc("Returns one Unicode code point as a string at a zero-based index. Read-only; out-of-range indices fault.")
     );
-    runtime->registerNativeProperty(
-        stringType,
-        "length",
-        runtime->getIntegerType(),
-        [](VirtualMachine* virtualMachine, RuntimeValue& result) {
+    const auto lengthId = runtime->addProperty(stringTypeId, {
+        .valueTypeId = runtime->getTypeId("int"),
+        .name = "length",
+        .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
             const auto& text = virtualMachine->getThisAs<NomadStringObject>()->getString();
 
             try {
@@ -66,31 +66,32 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
                 virtualMachine->fault("Native string member 'length' requires valid UTF-8");
             }
         },
-        {},
-        NomadDoc("The number of characters (Unicode code points) in the string.")
-    );
+        .setter = {},
+        .documentation = NomadDoc("The number of characters (Unicode code points) in the string.")
+    });
 
-    runtime->registerNativeProperty(
-        stringType,
-        "byteLength",
-        runtime->getIntegerType(),
-        [](VirtualMachine* machine, RuntimeValue& result) {
+    const auto byteLengthId = runtime->addProperty(stringTypeId, {
+        .valueTypeId = runtime->getTypeId("int"),
+        .name = "byteLength",
+        .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             result.setIntegerValue(static_cast<NomadInteger>(machine->getThisAs<NomadStringObject>()->getLength()));
         },
-        {},
-        NomadDoc("The number of bytes in the UTF-8 encoding of the string.")
-    );
+        .setter = {},
+        .documentation = NomadDoc("The number of bytes in the UTF-8 encoding of the string.")
+    });
 
-    runtime->registerNativeProperty(
-        stringType,
-        "isEmpty",
-        runtime->getBooleanType(),
-        [](VirtualMachine* machine, RuntimeValue& result) {
+    const auto isEmptyId = runtime->addProperty(stringTypeId, {
+        .valueTypeId = runtime->getTypeId("bool"),
+        .name = "isEmpty",
+        .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             result.setBooleanValue(machine->getThisAs<NomadStringObject>()->getString().empty());
         },
-        {},
-        NomadDoc("True when the string is empty.")
-    );
+        .setter = {},
+        .documentation = NomadDoc("True when the string is empty.")
+    });
+    if (lengthId.isInvalid() || byteLengthId.isInvalid() || isEmptyId.isInvalid()) {
+        throw NomadException("Failed to register string properties");
+    }
 
     runtime->registerNativeMethod(
         stringType,

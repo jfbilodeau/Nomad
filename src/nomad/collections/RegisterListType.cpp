@@ -27,13 +27,15 @@ void registerListReaders(Runtime* runtime, const ObjectType* objectType, const b
         {}, runtime->getIteratorType(elementType),
         NomadDoc("Creates an independent live iterator. Structural changes invalidate its next advance.")
     );
-    const auto countId = runtime->registerNativeProperty(
-        objectType, "count", runtime->getIntegerType(),
-        [](VirtualMachine* machine, RuntimeValue& result) {
+    const auto countId = runtime->addProperty(runtime->getTypeId(objectType->getTypeName()), {
+        .valueTypeId = runtime->getTypeId("int"),
+        .name = "count",
+        .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             result.setIntegerValue(static_cast<NomadInteger>(machine->getThisAs<ListObject>()->getCount()));
         },
-        {}, NomadDoc("The number of elements in the list.")
-    );
+        .setter = {},
+        .documentation = NomadDoc("The number of elements in the list.")
+    });
     NativeFunctionFn setter;
     if (writable) {
         setter = [](VirtualMachine* machine) {

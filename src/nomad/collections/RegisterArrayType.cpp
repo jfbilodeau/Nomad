@@ -39,14 +39,16 @@ void registerArrayFamily(
             const auto* type = runtime->getType(id).value();
             registerMembers(type, writable);
             const auto* objectType = static_cast<const ArrayType*>(type);
-            const auto countId = runtime->registerNativeProperty(
-                objectType, "count", runtime->getIntegerType(),
-                [](VirtualMachine* machine, RuntimeValue& result) {
+            const auto countId = runtime->addProperty(id, {
+                .valueTypeId = runtime->getTypeId("int"),
+                .name = "count",
+                .getter = [](VirtualMachine* machine, RuntimeValue& result) {
                     const auto* array = machine->getThisAs<ArrayObject>();
                     result.setIntegerValue(static_cast<NomadInteger>(array->getCount()));
                 },
-                {}, NomadDoc("The total number of elements in the fixed-size array.")
-            );
+                .setter = {},
+                .documentation = NomadDoc("The total number of elements in the fixed-size array.")
+            });
             if (countId.isInvalid()) {
                 throw NomadException("Failed to register Array members");
             }
