@@ -101,13 +101,15 @@ Runtime::Runtime() {
             const auto* type = runtime->getType(id).value();
             const auto* iteratorType = static_cast<const ObjectType*>(type);
             const auto* valueType = iteratorType->getTypeArguments()[0];
-            const auto advanceId = runtime->registerNativeMethod(
-                iteratorType, "moveNext",
-                [](VirtualMachine* machine) {
+            const auto advanceId = runtime->addMethod(id, {
+                .name = "moveNext",
+                .parameters = {},
+                .returnTypeId = runtime->getTypeId("bool"),
+                .function = [](VirtualMachine* machine) {
                     machine->setBooleanResult(machine->getThisAs<IteratorObject>()->moveNext());
                 },
-                {}, runtime->getBooleanType(), NomadDoc("Advances the iterator. Returns false at the end.")
-            );
+                .documentation = NomadDoc("Advances the iterator. Returns false at the end.")
+            });
             const auto currentId = runtime->addProperty(id, {
                 .valueTypeId = runtime->getTypeId(valueType->getTypeName()),
                 .name = "current",
