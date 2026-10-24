@@ -266,14 +266,6 @@ public:
 
     // Native members
     [[nodiscard]] IndexerId addIndexer(TypeId id, NativeIndexerDefinition definition);
-    IndexerId registerNativeIndexer(
-        const ObjectType* objectType,
-        std::vector<const Type*> indexTypes,
-        const Type* valueType,
-        NativeFunctionFn getFn,
-        NativeFunctionFn setFn,
-        NomadDocArg
-    );
     [[nodiscard]] IndexerId getNativeIndexerId(const Type* objectType, NomadIndex indexCount) const;
     [[nodiscard]] IndexerId catalogNativeIndexer(const NativeIndexerInfo* info);
     [[nodiscard]] std::optional<NativeIndexerInfo> getNativeIndexerInfo(IndexerId indexerId) const;

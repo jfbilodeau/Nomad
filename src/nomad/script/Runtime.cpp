@@ -1721,27 +1721,14 @@ IndexerId Runtime::addIndexer(const TypeId id, NativeIndexerDefinition definitio
         }
         indexTypes.push_back(*indexType);
     }
-    return registerNativeIndexer(
-        objectType, std::move(indexTypes), *valueType,
-        std::move(definition.getter), std::move(definition.setter), definition.documentation
-    );
-}
-
-IndexerId Runtime::registerNativeIndexer(
-    const ObjectType* objectType,
-    std::vector<const Type*> indexTypes,
-    const Type* valueType,
-    NativeFunctionFn getFn,
-    NativeFunctionFn setFn,
-    const NomadString& doc
-) {
     auto* owner = getMutableObjectType(objectType);
     if (owner == nullptr) {
         log::error("Cannot register native indexer: object type must be registered with this runtime");
         return IndexerId::INVALID;
     }
     return owner->registerNativeIndexer(*this, {
-        IndexerId::INVALID, objectType, std::move(indexTypes), valueType, std::move(getFn), std::move(setFn), doc
+        IndexerId::INVALID, objectType, std::move(indexTypes), *valueType,
+        std::move(definition.getter), std::move(definition.setter), definition.documentation
     });
 }
 

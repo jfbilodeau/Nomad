@@ -417,25 +417,30 @@ BOOST_AUTO_TEST_CASE(string_indexer_faults_and_interpreter_recovers) {
 BOOST_AUTO_TEST_CASE(compiled_and_interpreted_indexers_keep_owner_identity_after_catalog_growth) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    const auto indexerId = runtime.registerNativeIndexer(
-        type, {runtime.getIntegerType()}, runtime.getIntegerType(),
-        [](VirtualMachine* machine) {
+    const auto indexerId = runtime.addIndexer(type->getId(), {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .indexTypes = {runtime.getIntegerType()->getId()},
+        .getter = [](VirtualMachine* machine) {
             machine->setIntegerResult(machine->getThisAs<TestObject>()->value + machine->getIntegerParameter(0));
         },
-        [](VirtualMachine* machine) {
+        .setter = [](VirtualMachine* machine) {
             machine->getThisAs<TestObject>()->value = machine->getIntegerParameter(0) + machine->getIntegerParameter(1);
-        }, ""
-    );
+        },
+        .documentation = ""
+    });
     BOOST_REQUIRE(indexerId.isValid());
     const auto* original = type->getNativeIndexer(1);
     BOOST_REQUIRE(original != nullptr);
     const auto functionId = compileFunction(runtime,
         "value = new TestObject\nvalue[2] = 40\nreturn value[3]");
     for (auto count = NomadIndex{2}; count <= 32; ++count) {
-        BOOST_REQUIRE(runtime.registerNativeIndexer(
-            type, std::vector<const Type*>(count, runtime.getIntegerType()), runtime.getIntegerType(),
-            [](VirtualMachine* machine) { machine->setIntegerResult(-1); }, {}, ""
-        ).isValid());
+        BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+            .valueTypeId = runtime.getIntegerType()->getId(),
+            .indexTypes = std::vector<TypeId>(count, runtime.getIntegerType()->getId()),
+            .getter = [](VirtualMachine* machine) { machine->setIntegerResult(-1); },
+            .setter = {},
+            .documentation = ""
+        }).isValid());
     }
     BOOST_TEST(type->getNativeIndexer(1) == original);
     BOOST_TEST(runtime.getNativeIndexers()[toNomadIndex(indexerId.id)] == original);
@@ -453,12 +458,15 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_indexers_keep_owner_identity_after
 BOOST_AUTO_TEST_CASE(write_only_indexer_supports_assignment_but_not_reads) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    runtime.registerNativeIndexer(
-        type, {runtime.getIntegerType()}, runtime.getIntegerType(), {},
-        [](VirtualMachine* vm) {
+    BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .indexTypes = {runtime.getIntegerType()->getId()},
+        .getter = {},
+        .setter = [](VirtualMachine* vm) {
             vm->getThisAs<TestObject>()->value = vm->getIntegerParameter(0) + vm->getIntegerParameter(1);
-        }, ""
-    );
+        },
+        .documentation = ""
+    }).isValid());
     const auto id = compileFunction(runtime, "value = new TestObject\nvalue[2] = 5\nreturn value.value");
     RuntimeValue result;
     runtime.executeFunction(id, {}, result);
@@ -478,16 +486,18 @@ BOOST_AUTO_TEST_CASE(indexer_callbacks_release_operands_and_partial_results_on_f
     for (const auto* source : {"return (new TestObject)[0]", "(new TestObject)[0] = \"assigned\""}) {
         Runtime runtime;
         const auto* type = registerTestObject(runtime);
-        runtime.registerNativeIndexer(
-            type, {runtime.getIntegerType()}, runtime.getStringType(),
-            [](VirtualMachine* vm) {
+        BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+            .valueTypeId = runtime.getStringType()->getId(),
+            .indexTypes = {runtime.getIntegerType()->getId()},
+            .getter = [](VirtualMachine* vm) {
                 vm->setStringResult("partial");
                 vm->fault("Indexer getter failed");
             },
-            [](VirtualMachine* vm) {
+            .setter = [](VirtualMachine* vm) {
                 vm->fault("Indexer setter failed");
-            }, ""
-        );
+            },
+            .documentation = ""
+        }).isValid());
         const auto id = compileFunction(runtime, source);
         auto machine = runtime.createVirtualMachine();
         const auto before = NomadObject::getLiveObjectCount();
@@ -502,17 +512,19 @@ BOOST_AUTO_TEST_CASE(indexer_callbacks_release_operands_and_partial_results_on_f
 BOOST_AUTO_TEST_CASE(indexers_support_object_valued_keys_and_literal_delimiters) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    runtime.registerNativeIndexer(
-        type, {runtime.getStringType()}, runtime.getIntegerType(),
-        [](VirtualMachine* vm) {
+    BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .indexTypes = {runtime.getStringType()->getId()},
+        .getter = [](VirtualMachine* vm) {
             BOOST_TEST(vm->getStringParameter(0)->getLength() == 1);
             vm->setIntegerResult(vm->getThisAs<TestObject>()->value);
         },
-        [](VirtualMachine* vm) {
+        .setter = [](VirtualMachine* vm) {
             BOOST_TEST(vm->getStringParameter(0)->getString() == "]");
             vm->getThisAs<TestObject>()->value = vm->getIntegerParameter(1);
-        }, ""
-    );
+        },
+        .documentation = ""
+    }).isValid());
     const auto id = compileFunction(runtime, "value = new TestObject\nvalue[\"]\"] = 9\nreturn value[\"[\"]");
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
@@ -534,19 +546,21 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_evaluate_once_in_order_with_distin
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
     NomadString calls;
-    runtime.registerNativeIndexer(
-        type, {runtime.getStringType(), runtime.getIntegerType()}, runtime.getIntegerType(),
-        [&calls](VirtualMachine* machine) {
+    BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .indexTypes = {runtime.getStringType()->getId(), runtime.getIntegerType()->getId()},
+        .getter = [&calls](VirtualMachine* machine) {
             calls += "get";
             machine->setIntegerResult(machine->getThisAs<TestObject>()->value +
                 static_cast<NomadInteger>(machine->getStringParameter(0)->getLength()) + machine->getIntegerParameter(1));
         },
-        [&calls](VirtualMachine* machine) {
+        .setter = [&calls](VirtualMachine* machine) {
             calls += "set";
             machine->getThisAs<TestObject>()->value = machine->getIntegerParameter(2) +
                 static_cast<NomadInteger>(machine->getStringParameter(0)->getLength()) + machine->getIntegerParameter(1);
-        }, ""
-    );
+        },
+        .documentation = ""
+    }).isValid());
     runtime.registerNativeFunction("receiver", [&calls](VirtualMachine* machine) {
         calls += "receiver";
         machine->getResult().setObjectValue(new TestObject);
@@ -603,8 +617,13 @@ BOOST_AUTO_TEST_CASE(two_dimensional_access_permissions_are_checked_in_both_exec
             machine->getThisAs<TestObject>()->value =
                 machine->getIntegerParameter(0) + machine->getIntegerParameter(1) + machine->getIntegerParameter(2);
         };
-        runtime.registerNativeIndexer(type, {runtime.getIntegerType(), runtime.getIntegerType()}, runtime.getIntegerType(),
-            readOnly ? getter : NativeFunctionFn{}, readOnly ? NativeFunctionFn{} : setter, "");
+        BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+            .valueTypeId = runtime.getIntegerType()->getId(),
+            .indexTypes = {runtime.getIntegerType()->getId(), runtime.getIntegerType()->getId()},
+            .getter = readOnly ? getter : NativeFunctionFn{},
+            .setter = readOnly ? NativeFunctionFn{} : setter,
+            .documentation = ""
+        }).isValid());
         const auto id = compileFunction(runtime, readOnly
             ? "object = new TestObject\nreturn object[1 2]"
             : "object = new TestObject\nobject[1 2] = 7\nreturn object.value");
@@ -634,14 +653,18 @@ BOOST_AUTO_TEST_CASE(two_dimensional_interpreter_stops_after_a_failed_index_with
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
     NomadString calls;
-    runtime.registerNativeIndexer(type, {runtime.getStringType(), runtime.getStringType()}, runtime.getIntegerType(),
-        [&calls](VirtualMachine* machine) {
+    BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .indexTypes = {runtime.getStringType()->getId(), runtime.getStringType()->getId()},
+        .getter = [&calls](VirtualMachine* machine) {
             calls += "get";
             machine->setIntegerResult(1);
         },
-        [&calls](VirtualMachine*) {
+        .setter = [&calls](VirtualMachine*) {
             calls += "set";
-        }, "");
+        },
+        .documentation = ""
+    }).isValid());
     runtime.registerNativeFunction("first", [&calls](VirtualMachine* machine) {
         calls += "first";
         machine->fault("First index failed");
@@ -682,14 +705,18 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexer_faults_release_object_keys_receiver
     }) {
         Runtime runtime;
         const auto* type = registerTestObject(runtime);
-        runtime.registerNativeIndexer(type, {runtime.getStringType(), runtime.getStringType()}, runtime.getStringType(),
-            [](VirtualMachine* machine) {
+        BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+            .valueTypeId = runtime.getStringType()->getId(),
+            .indexTypes = {runtime.getStringType()->getId(), runtime.getStringType()->getId()},
+            .getter = [](VirtualMachine* machine) {
                 machine->setStringResult("partial");
                 machine->fault("Getter failed");
             },
-            [](VirtualMachine* machine) {
+            .setter = [](VirtualMachine* machine) {
                 machine->fault("Setter failed");
-            }, "");
+            },
+            .documentation = ""
+        }).isValid());
         const auto id = compileFunction(runtime, source);
         auto machine = runtime.createVirtualMachine();
         const auto before = NomadObject::getLiveObjectCount();
@@ -720,11 +747,12 @@ BOOST_AUTO_TEST_CASE(indexers_support_arbitrary_arity_and_restore_native_paramet
     RuntimeValue nestedReceiver;
     nestedReceiver.setObjectValue(nested);
     for (const auto count : {NomadIndex{1}, NomadIndex{2}, NomadIndex{3}, NomadIndex{5}, NomadIndex{8}}) {
-        std::vector<const Type*> types(count, runtime.getIntegerType());
-        types.back() = runtime.getStringType();
-        BOOST_REQUIRE(runtime.registerNativeIndexer(
-            type, types, runtime.getIntegerType(),
-            [count, increment, &nestedReceiver](VirtualMachine* machine) {
+        std::vector<TypeId> types(count, runtime.getIntegerType()->getId());
+        types.back() = runtime.getStringType()->getId();
+        BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+            .valueTypeId = runtime.getIntegerType()->getId(),
+            .indexTypes = types,
+            .getter = [count, increment, &nestedReceiver](VirtualMachine* machine) {
                 const auto* receiver = machine->getThisAs<TestObject>();
                 const auto first = machine->getParameter(0);
                 machine->runNativeMethod(increment, {RuntimeValue(NomadInteger{1})}, nestedReceiver);
@@ -739,11 +767,12 @@ BOOST_AUTO_TEST_CASE(indexers_support_arbitrary_arity_and_restore_native_paramet
                 total += static_cast<NomadInteger>(machine->getStringParameter(count - 1)->getLength());
                 machine->setIntegerResult(total);
             },
-            [count](VirtualMachine* machine) {
+            .setter = [count](VirtualMachine* machine) {
                 BOOST_TEST(machine->getStringParameter(count - 1)->getString() == "key");
                 machine->getThisAs<TestObject>()->value = machine->getIntegerParameter(count);
-            }, "Arbitrary arity"
-        ).isValid());
+            },
+            .documentation = "Arbitrary arity"
+        }).isValid());
     }
     RuntimeValue empty;
     runtime.getStringType()->initValue(empty);

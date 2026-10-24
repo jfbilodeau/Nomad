@@ -944,8 +944,7 @@ ID categories. `getNativeIndexerInfo(id)` returns
 Invalid or non-object owner IDs, invalid value/index IDs, and definitions with
 neither callback are rejected without publishing an indexer. Definitions are
 owned inputs; modifying one after registration does not change the registered
-indexer. The pointer-based `registerNativeIndexer` operation remains available
-and shares the same validation and duplicate-index-count rules.
+indexer.
 
 ```cpp
 const auto info = runtime.getNativeIndexerInfo(id);
