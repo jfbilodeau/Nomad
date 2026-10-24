@@ -109,9 +109,13 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
     runtime.registerType(std::move(descriptor));
     const auto* integer = runtime.getIntegerType();
     const auto* iterator = runtime.getIteratorType(integer);
-    const auto factoryId = runtime.registerNativeMethod(
-        type, "iterator", [](VirtualMachine*) {}, {}, iterator, ""
-    );
+    const auto factoryId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "iterator",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId(iterator->getTypeName()),
+        .function = [](VirtualMachine*) {},
+        .documentation = ""
+    });
     BOOST_REQUIRE(factoryId.isValid());
     const auto* factory = runtime.getMethod(factoryId);
     BOOST_TEST(!type->getIterableInfo().has_value());
@@ -133,16 +137,27 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
         BOOST_CHECK_THROW(runtime.registerIterableType(type, invalid, factory), NomadException);
     }
     BOOST_CHECK_THROW(type->registerIterableType(runtime, integer, nullptr), NomadException);
-    const auto wrongOwnerId = runtime.registerNativeMethod(
-        runtime.getStringType(), "metadataIterator", [](VirtualMachine*) {}, {}, iterator, ""
-    );
-    const auto wrongReturnId = runtime.registerNativeMethod(
-        type, "wrongReturn", [](VirtualMachine*) {}, {}, integer, ""
-    );
-    const auto wrongArgumentsId = runtime.registerNativeMethod(
-        type, "wrongArguments", [](VirtualMachine*) {},
-        {defParameter("value", integer, "")}, iterator, ""
-    );
+    const auto wrongOwnerId = runtime.addMethod(runtime.getTypeId("string"), {
+        .name = "metadataIterator",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId(iterator->getTypeName()),
+        .function = [](VirtualMachine*) {},
+        .documentation = ""
+    });
+    const auto wrongReturnId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "wrongReturn",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId(integer->getTypeName()),
+        .function = [](VirtualMachine*) {},
+        .documentation = ""
+    });
+    const auto wrongArgumentsId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "wrongArguments",
+        .parameters = {{runtime.getTypeId(integer->getTypeName()), "value", ""}},
+        .returnTypeId = runtime.getTypeId(iterator->getTypeName()),
+        .function = [](VirtualMachine*) {},
+        .documentation = ""
+    });
     BOOST_REQUIRE(wrongOwnerId.isValid());
     BOOST_REQUIRE(wrongReturnId.isValid());
     BOOST_REQUIRE(wrongArgumentsId.isValid());
@@ -178,9 +193,13 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
         auto additional = std::make_unique<ObjectType>(&runtime, "AdditionalSequence" + std::to_string(index), ObjectTypeMode::Closed);
         auto* additionalType = additional.get();
         runtime.registerType(std::move(additional));
-        const auto additionalFactoryId = runtime.registerNativeMethod(
-            additionalType, "iterator", [](VirtualMachine*) {}, {}, iterator, ""
-        );
+        const auto additionalFactoryId = runtime.addMethod(runtime.getTypeId(additionalType->getTypeName()), {
+            .name = "iterator",
+            .parameters = {},
+            .returnTypeId = runtime.getTypeId(iterator->getTypeName()),
+            .function = [](VirtualMachine*) {},
+            .documentation = ""
+        });
         BOOST_REQUIRE(additionalFactoryId.isValid());
         additionalType->registerIterableType(runtime, integer, runtime.getMethod(additionalFactoryId));
         BOOST_REQUIRE(runtime.getIterableInfo(additionalType).has_value());
@@ -278,14 +297,16 @@ BOOST_AUTO_TEST_CASE(for_uses_registered_iteration_not_collection_names)
         return new SequenceObject;
     }, "");
     auto factoryCalls = 0;
-    const auto factoryId = runtime.registerNativeMethod(
-        sourceType, "startTraversal",
-        [&factoryCalls](VirtualMachine* machine) {
+    const auto factoryId = runtime.addMethod(runtime.getTypeId(sourceType->getTypeName()), {
+        .name = "startTraversal",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId(runtime.getIteratorType(runtime.getIntegerType())->getTypeName()),
+        .function = [&factoryCalls](VirtualMachine* machine) {
             ++factoryCalls;
             machine->getResult().setObjectValue(new SequenceIterator(machine->getRuntime()->getIntegerType()));
         },
-        {}, runtime.getIteratorType(runtime.getIntegerType()), ""
-    );
+        .documentation = ""
+    });
     sourceType->registerIterableType(runtime, runtime.getIntegerType(), runtime.getNativeMemberMethod(factoryId));
     fixture.addFunction("main",
         "total = 0\n"

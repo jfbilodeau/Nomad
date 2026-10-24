@@ -288,14 +288,6 @@ public:
     [[nodiscard]] const std::vector<const NativeIndexerInfo*>& getNativeIndexers() const;
 
     [[nodiscard]] CallableId addMethod(TypeId id, NativeMethodDefinition definition);
-    CallableId registerNativeMethod(
-        const ObjectType* objectType,
-        const NomadString& name,
-        NativeFunctionFn fn,
-        const std::vector<Parameter>& parameters,
-        const Type* returnType,
-        NomadDocArg
-    );
     PropertyId registerProperty(const ObjectType* objectType, const NomadString& name, const Type* valueType);
     [[nodiscard]] PropertyId catalogProperty(Property* property);
     [[nodiscard]] const Property* getProperty(PropertyId id) const;

@@ -181,14 +181,13 @@ BOOST_AUTO_TEST_CASE(add_method_rejects_invalid_definitions_without_partial_regi
     BOOST_REQUIRE(runtime.addMethod(typeId, std::move(definition)).isValid());
 }
 
-BOOST_AUTO_TEST_CASE(add_method_shares_member_conflict_and_overload_rules_with_legacy_registration) {
+BOOST_AUTO_TEST_CASE(add_method_rejects_conflicts_and_preserves_compatible_receiver_overloads) {
     Runtime runtime;
     const auto firstId = runtime.createObjectType("FirstMethodOwner", ObjectTypeMode::Closed);
     const auto secondId = runtime.createObjectType("SecondMethodOwner", ObjectTypeMode::Opened);
     BOOST_REQUIRE(firstId.isValid());
     BOOST_REQUIRE(secondId.isValid());
     const auto* first = runtime.getType(firstId).value()->asObjectType();
-    const auto* second = runtime.getType(secondId).value()->asObjectType();
     NativeMethodDefinition definition{
         .name = "convert",
         .parameters = {{runtime.getTypeId("int"), "value", ""}},
@@ -199,15 +198,14 @@ BOOST_AUTO_TEST_CASE(add_method_shares_member_conflict_and_overload_rules_with_l
     const auto methodId = runtime.addMethod(firstId, definition);
     BOOST_REQUIRE(methodId.isValid());
     BOOST_TEST(runtime.addMethod(firstId, definition).isInvalid());
-    BOOST_TEST(runtime.registerNativeMethod(
-        first, "convert", methodFunction(), {defParameter("value", runtime.getIntegerType(), "")},
-        runtime.getIntegerType(), ""
-    ).isInvalid());
-    const auto legacyId = runtime.registerNativeMethod(
-        second, "convert", methodFunction(), {defParameter("value", runtime.getFloatType(), "")},
-        runtime.getFloatType(), ""
-    );
-    BOOST_REQUIRE(legacyId.isValid());
+    const auto secondMethodId = runtime.addMethod(secondId, {
+        .name = "convert",
+        .parameters = {{runtime.getTypeId("float"), "value", ""}},
+        .returnTypeId = runtime.getTypeId("float"),
+        .function = methodFunction(),
+        .documentation = ""
+    });
+    BOOST_REQUIRE(secondMethodId.isValid());
     BOOST_TEST(runtime.addMethod(secondId, definition).isInvalid());
     definition.name = "stored";
     BOOST_REQUIRE(runtime.registerProperty(first, "stored", runtime.getIntegerType()).isValid());
@@ -226,7 +224,7 @@ BOOST_AUTO_TEST_CASE(add_method_shares_member_conflict_and_overload_rules_with_l
     runtime.getNativeMemberOverloads("convert", overloads);
     BOOST_REQUIRE(overloads.size() == 2u);
     BOOST_TEST(std::get<CallableId>(overloads[0]) == methodId);
-    BOOST_TEST(std::get<CallableId>(overloads[1]) == legacyId);
+    BOOST_TEST(std::get<CallableId>(overloads[1]) == secondMethodId);
     BOOST_TEST(runtime.getNativeMethod(methodId)->getDoc() == "Original method.");
 }
 
@@ -403,9 +401,13 @@ BOOST_AUTO_TEST_CASE(add_property_rejects_duplicate_and_conflicting_members) {
     readOnlyDefinition.setter = {};
     BOOST_REQUIRE(runtime.addProperty(typeId, std::move(readOnlyDefinition)).isValid());
     BOOST_REQUIRE(runtime.registerProperty(type, "stored", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerNativeMethod(
-        type, "method", methodFunction(), {}, runtime.getIntegerType(), ""
-    ).isValid());
+    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "method",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = methodFunction(),
+        .documentation = ""
+    }).isValid());
     std::vector<MemberReference> membersBefore;
     runtime.getNativeMembers(membersBefore);
 
@@ -544,9 +546,13 @@ BOOST_AUTO_TEST_CASE(native_property_info_is_a_snapshot_of_registered_metadata) 
         PropertyId{NOMAD_ID_MAX - 1}, PropertyId{NOMAD_ID_MAX}}) {
         BOOST_TEST(!runtime.getNativePropertyInfo(invalid).has_value());
     }
-    const auto methodId = runtime.registerNativeMethod(
-        type, "read", methodFunction(), {}, runtime.getIntegerType(), ""
-    );
+    const auto methodId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "read",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = methodFunction(),
+        .documentation = ""
+    });
     BOOST_REQUIRE(methodId.isValid());
     BOOST_TEST(!runtime.getNativePropertyInfo(MemberReference{methodId}).has_value());
     BOOST_TEST(!runtime.getNativePropertyInfo(MemberReference{CallableId::INVALID}).has_value());
@@ -609,24 +615,33 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
     BOOST_TEST(!runtime.getMemberSignature("badIndex").has_value());
     BOOST_TEST(!runtime.getMemberSignature("badName").has_value());
     const auto* objectType = registerTestType(runtime);
-    BOOST_TEST(runtime.registerNativeMethod(
-        objectType, "declaredMethod", methodFunction(),
-        {defParameter("value", runtime.getIntegerType(), "")}, runtime.getVoidType(), ""
-    ).isInvalid());
-    BOOST_TEST(runtime.registerNativeMethod(
-        objectType, "declaredMethod", methodFunction(),
-        {
-            defParameter("value", runtime.getIntegerType(), ""),
-            defParameter("line", runtime.getFileNameType(), "")
-        }, runtime.getVoidType(), ""
-    ).isInvalid());
-    BOOST_REQUIRE(runtime.registerNativeMethod(
-        objectType, "declaredMethod", methodFunction(),
-        {
-            defParameter("value", runtime.getIntegerType(), ""),
-            defParameter("line", runtime.getLineNumberType(), "")
-        }, runtime.getVoidType(), ""
-    ).isValid());
+    BOOST_TEST(runtime.addMethod(runtime.getTypeId(objectType->getTypeName()), {
+        .name = "declaredMethod",
+        .parameters = {{runtime.getTypeId("int"), "value", ""}},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = methodFunction(),
+        .documentation = ""
+    }).isInvalid());
+    BOOST_TEST(runtime.addMethod(runtime.getTypeId(objectType->getTypeName()), {
+        .name = "declaredMethod",
+        .parameters = {
+            {runtime.getTypeId("int"), "value", ""},
+            {runtime.getTypeId(runtime.getFileNameType()->getTypeName()), "line", ""}
+        },
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = methodFunction(),
+        .documentation = ""
+    }).isInvalid());
+    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId(objectType->getTypeName()), {
+        .name = "declaredMethod",
+        .parameters = {
+            {runtime.getTypeId("int"), "value", ""},
+            {runtime.getTypeId(runtime.getLineNumberType()->getTypeName()), "line", ""}
+        },
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = methodFunction(),
+        .documentation = ""
+    }).isValid());
     BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId(objectType->getTypeName()), {
         .valueTypeId = runtime.getTypeId("int"),
         .name = "declaredProperty",
@@ -641,15 +656,20 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
     BOOST_TEST(!runtime.registerMemberTemplate("Other", "declaredCallback", MemberType::Method, {
         defTemplateParameter("value", TypeParameterIndex{0}, "")
     }));
-    BOOST_TEST(runtime.registerNativeMethod(
-        objectType, "declaredCallback", methodFunction(),
-        {defParameter("callback", runtime.getCallbackType({}, runtime.getBooleanType()), "")},
-        runtime.getVoidType(), ""
-    ).isInvalid());
-    BOOST_REQUIRE(runtime.registerNativeMethod(
-        objectType, "declaredCallback", methodFunction(),
-        {defParameter("callback", callbackType, "")}, runtime.getVoidType(), ""
-    ).isValid());
+    BOOST_TEST(runtime.addMethod(runtime.getTypeId(objectType->getTypeName()), {
+        .name = "declaredCallback",
+        .parameters = {{runtime.getTypeId(runtime.getCallbackType({}, runtime.getBooleanType())->getTypeName()), "callback", ""}},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = methodFunction(),
+        .documentation = ""
+    }).isInvalid());
+    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId(objectType->getTypeName()), {
+        .name = "declaredCallback",
+        .parameters = {{runtime.getTypeId(callbackType->getTypeName()), "callback", ""}},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = methodFunction(),
+        .documentation = ""
+    }).isValid());
     BOOST_TEST(specializations == 0u);
 }
 
@@ -660,10 +680,13 @@ BOOST_AUTO_TEST_CASE(member_templates_validate_against_existing_concrete_members
         );
     }));
     const auto* type = registerTestType(runtime);
-    BOOST_REQUIRE(runtime.registerNativeMethod(
-        type, "existingMethod", methodFunction(),
-        {defParameter("value", runtime.getIntegerType(), "")}, runtime.getVoidType(), ""
-    ).isValid());
+    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "existingMethod",
+        .parameters = {{runtime.getTypeId("int"), "value", ""}},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = methodFunction(),
+        .documentation = ""
+    }).isValid());
     BOOST_TEST(!runtime.registerMemberTemplate("Family", "existingMethod", MemberType::Property));
     BOOST_TEST(!runtime.registerMemberTemplate("Family", "existingMethod", MemberType::Method));
     BOOST_TEST(!runtime.registerMemberTemplate("Family", "existingMethod", MemberType::Method, {
@@ -672,9 +695,13 @@ BOOST_AUTO_TEST_CASE(member_templates_validate_against_existing_concrete_members
     BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "existingMethod", MemberType::Method, {
         defTemplateParameter("value", TypeParameterIndex{0}, "")
     }));
-    BOOST_REQUIRE(runtime.registerNativeMethod(
-        type, "zeroArguments", methodFunction(), {}, runtime.getVoidType(), ""
-    ).isValid());
+    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "zeroArguments",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = methodFunction(),
+        .documentation = ""
+    }).isValid());
     BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "zeroArguments", MemberType::Property));
 }
 
@@ -735,12 +762,16 @@ BOOST_AUTO_TEST_CASE(registers_method_metadata) {
     Runtime runtime;
 
     const auto methodId =
-        runtime.registerNativeMethod(runtime.getStringType(), "replace", methodFunction(),
-                                        {
-                                            defParameter("from", runtime.getStringType(), NomadDoc("Text to replace")),
-                                            defParameter("to", runtime.getStringType(), NomadDoc("Replacement text")),
+        runtime.addMethod(runtime.getTypeId("string"), {
+            .name = "replace",
+            .parameters = {
+                                            {runtime.getTypeId("string"), "from", NomadDoc("Text to replace")},
+                                            {runtime.getTypeId("string"), "to", NomadDoc("Replacement text")},
                                         },
-                                        runtime.getStringType(), NomadDoc("Return a replaced string"));
+            .returnTypeId = runtime.getTypeId("string"),
+            .function = methodFunction(),
+            .documentation = NomadDoc("Return a replaced string")
+        });
 
     BOOST_REQUIRE(methodId.isValid());
     BOOST_TEST((runtime.getMemberType(methodId) == MemberType::Method));
@@ -765,9 +796,13 @@ BOOST_AUTO_TEST_CASE(rejects_duplicate_member_name_on_same_type) {
         .documentation = NomadDoc("Property")
     }).isValid());
 
-    BOOST_TEST(runtime.registerNativeMethod(runtime.getStringType(), "value", methodFunction(), {},
-                                               runtime.getIntegerType(),
-                                               NomadDoc("Method")).isInvalid());
+    BOOST_TEST(runtime.addMethod(runtime.getTypeId("string"), {
+        .name = "value",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = methodFunction(),
+        .documentation = NomadDoc("Method")
+    }).isInvalid());
 }
 
 BOOST_AUTO_TEST_CASE(allows_compatible_member_names_on_different_types) {
@@ -775,13 +810,21 @@ BOOST_AUTO_TEST_CASE(allows_compatible_member_names_on_different_types) {
     const auto* type = registerTestType(runtime);
 
     const auto stringId =
-        runtime.registerNativeMethod(runtime.getStringType(), "find", methodFunction(),
-                                        {defParameter("value", runtime.getStringType(), NomadDoc("Value"))},
-                                        runtime.getIntegerType(), NomadDoc("Find string"));
+        runtime.addMethod(runtime.getTypeId("string"), {
+            .name = "find",
+            .parameters = {{runtime.getTypeId("string"), "value", NomadDoc("Value")}},
+            .returnTypeId = runtime.getTypeId("int"),
+            .function = methodFunction(),
+            .documentation = NomadDoc("Find string")
+        });
     const auto integerId =
-        runtime.registerNativeMethod(type, "find", methodFunction(),
-                                        {defParameter("value", runtime.getIntegerType(), NomadDoc("Value"))},
-                                        runtime.getBooleanType(), NomadDoc("Find integer"));
+        runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+            .name = "find",
+            .parameters = {{runtime.getTypeId("int"), "value", NomadDoc("Value")}},
+            .returnTypeId = runtime.getTypeId("bool"),
+            .function = methodFunction(),
+            .documentation = NomadDoc("Find integer")
+        });
 
     BOOST_REQUIRE(stringId.isValid());
     BOOST_REQUIRE(integerId.isValid());
@@ -797,25 +840,42 @@ BOOST_AUTO_TEST_CASE(rejects_incompatible_member_shapes) {
     Runtime runtime;
     const auto* type = registerTestType(runtime);
 
-    BOOST_REQUIRE(runtime.registerNativeMethod(runtime.getStringType(), "find", methodFunction(),
-                                                  {defParameter("value", runtime.getStringType(), NomadDoc("Value"))},
-                                                  runtime.getIntegerType(),
-                                                  NomadDoc("Find string")).isValid());
+    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId("string"), {
+        .name = "find",
+        .parameters = {{runtime.getTypeId("string"), "value", NomadDoc("Value")}},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = methodFunction(),
+        .documentation = NomadDoc("Find string")
+    }).isValid());
 
-    BOOST_TEST(runtime.registerNativeMethod(type, "find", methodFunction(),
-                                               {
-                                                   defParameter("value", runtime.getIntegerType(), NomadDoc("Value")),
-                                                   defParameter("start", runtime.getIntegerType(), NomadDoc("Start")),
+    BOOST_TEST(runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "find",
+        .parameters = {
+                                                   {runtime.getTypeId("int"), "value", NomadDoc("Value")},
+                                                   {runtime.getTypeId("int"), "start", NomadDoc("Start")},
                                                },
-                                               runtime.getBooleanType(),
-                                               NomadDoc("Find integer")).isInvalid());
+        .returnTypeId = runtime.getTypeId("bool"),
+        .function = methodFunction(),
+        .documentation = NomadDoc("Find integer")
+    }).isInvalid());
 }
 
 BOOST_AUTO_TEST_CASE(rejects_invalid_member_definitions) {
     Runtime runtime;
-    BOOST_TEST(runtime.registerNativeMethod(runtime.getStringType(), "convert", {}, {}, runtime.getStringType(), NomadDoc("No function")).isInvalid());
-    BOOST_TEST(runtime.registerNativeMethod(runtime.getStringType(), "convert", methodFunction(), {}, nullptr,
-                                               NomadDoc("No return type")).isInvalid());
+    BOOST_TEST(runtime.addMethod(runtime.getTypeId("string"), {
+        .name = "convert",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("string"),
+        .function = {},
+        .documentation = NomadDoc("No function")
+    }).isInvalid());
+    BOOST_TEST(runtime.addMethod(runtime.getTypeId("string"), {
+        .name = "convert",
+        .parameters = {},
+        .returnTypeId = TypeId::INVALID,
+        .function = methodFunction(),
+        .documentation = NomadDoc("No return type")
+    }).isInvalid());
 }
 
 BOOST_AUTO_TEST_CASE(iterates_members_by_type_and_globally) {
@@ -824,8 +884,13 @@ BOOST_AUTO_TEST_CASE(iterates_members_by_type_and_globally) {
     runtime.getNativeMembers(builtInMembers);
     const auto* type = registerTestType(runtime);
 
-    const auto stringMethodId = runtime.registerNativeMethod(
-        runtime.getStringType(), "convert", methodFunction(), {}, runtime.getStringType(), NomadDoc("Convert"));
+    const auto stringMethodId = runtime.addMethod(runtime.getTypeId("string"), {
+        .name = "convert",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("string"),
+        .function = methodFunction(),
+        .documentation = NomadDoc("Convert")
+    });
     const auto integerPropertyId = runtime.addProperty(runtime.getTypeId(type->getTypeName()), {
         .valueTypeId = runtime.getTypeId("int"),
         .name = "sign",

@@ -2908,15 +2908,16 @@ BOOST_AUTO_TEST_CASE(collections_native_returns_do_not_allocate_unused_list_defa
         },
         {}, type, ""
     );
-    const auto memberId = runtime.registerNativeMethod(
-        static_cast<const ObjectType*>(type),
-        "copyReference",
-        [](VirtualMachine* machine) {
+    const auto memberId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "copyReference",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId(type->getTypeName()),
+        .function = [](VirtualMachine* machine) {
             addRef(machine->getThis());
             machine->getResult().setObjectValue(machine->getThis());
         },
-        {}, type, ""
-    );
+        .documentation = ""
+    });
     BOOST_REQUIRE(memberId.isValid());
     const auto before = NomadObject::getLiveObjectCount();
     {

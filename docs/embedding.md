@@ -55,7 +55,7 @@ These input structures do not register anything when constructed.
 `addProperty(TypeId, NativePropertyDefinition)` and
 `addMethod(TypeId, NativeMethodDefinition)` register native properties and methods
 using their creation inputs. The existing
-`registerNativeMethod`, `registerNativeConstructor`,
+`registerNativeConstructor`,
 `registerNativeIndexer`, and `registerIterableType` operations retain their
 current argument forms; they do not yet accept the new input structures.
 Their metadata structures are now named `NativePropertyInfo`,
@@ -359,8 +359,7 @@ Captured references must remain valid whenever the callback is invoked.
 Host registration is permitted on both open and closed types.
 Invalid definitions and conflicting members are logged and return
 `CallableId::INVALID` without registering a method.
-Existing member-name and overload rules apply, including when mixed with the
-pointer-based `registerNativeMethod` operation, which remains available.
+Existing member-name and overload rules apply.
 Use `getNativeMethod(id)`, `getMethod(id)`, or the member lookup APIs to retrieve
 the registered method.
 
@@ -398,7 +397,7 @@ do not implicitly convert to integers or other ID categories.
 or `CallableId::INVALID` when absent. It does not select an overload.
 `getCallableOverloads(name, ids)` lists free-function overload IDs.
 
-`addProperty` returns a `PropertyId`; `registerNativeMethod` returns
+`addProperty` returns a `PropertyId`; `addMethod` returns
 the method's `CallableId`. Their failure results are `PropertyId::INVALID` and
 `CallableId::INVALID`, respectively.
 `getNativeMemberId` returns a `MemberReference`, a `std::variant<PropertyId, CallableId>`.
@@ -880,8 +879,8 @@ Specializations are reused on subsequent requests through
 
 ## Native object methods
 
-Use `Runtime::registerNativeMethod(objectType, name, callback, parameters, returnType, doc)`
-for methods on an `ObjectType` descriptor. Read the instance inside the callback:
+Use `Runtime::addMethod(typeId, NativeMethodDefinition{...})`
+for methods on a registered object type. Read the instance inside the callback:
 
 ```cpp
 [](nomad::VirtualMachine* vm) {
@@ -890,8 +889,8 @@ for methods on an `ObjectType` descriptor. Read the instance inside the callback
 }
 ```
 
-Use `registerNativeFunction` for a global function and `registerNativeMethod` for a
-method on a non-null object type.
+Use `registerNativeFunction` for a global function and `addMethod` for a
+method on an object type identified by its runtime-local `TypeId`.
 Global function lookup and enumeration exclude methods.
 
 `ObjectType::getMethods()` lists the type's registered methods as borrowed
@@ -985,17 +984,19 @@ Built-in string methods use the same object-method API. Read the instance with
 `getThisAs<Object>()`:
 
 ```cpp
-runtime.registerNativeMethod(
-    runtime.getStringType(),
-    "textSize",
-    [](nomad::VirtualMachine* machine) {
+const auto methodId = runtime.addMethod(runtime.getTypeId("string"), {
+    .name = "textSize",
+    .parameters = {},
+    .returnTypeId = runtime.getTypeId("int"),
+    .function = [](nomad::VirtualMachine* machine) {
         const auto* instance = machine->getThisAs<const nomad::NomadStringObject>();
         machine->setIntegerResult(static_cast<nomad::NomadInteger>(instance->getLength()));
     },
-    {},
-    runtime.getIntegerType(),
-    NomadDoc("Return the number of bytes in the string.")
-);
+    .documentation = NomadDoc("Return the number of bytes in the string.")
+});
+if (methodId.isInvalid()) {
+    throw nomad::NomadException("Failed to register textSize method");
+}
 ```
 
 The callback borrows the receiver for the duration of the call. Keeping it
@@ -1027,10 +1028,16 @@ compiler support:
 4. Register the association:
 
 ```cpp
-const auto memberId = runtime.registerNativeMethod(
-    sourceType, "iterator", createIterator, {},
-    runtime.getIteratorType(elementType), ""
-);
+const auto memberId = runtime.addMethod(runtime.getTypeId(sourceType->getTypeName()), {
+    .name = "iterator",
+    .parameters = {},
+    .returnTypeId = runtime.getTypeId(runtime.getIteratorType(elementType)->getTypeName()),
+    .function = createIterator,
+    .documentation = ""
+});
+if (memberId.isInvalid()) {
+    throw nomad::NomadException("Failed to register iterator method");
+}
 runtime.registerIterableType(
     sourceType, elementType, runtime.getNativeMemberMethod(memberId)
 );

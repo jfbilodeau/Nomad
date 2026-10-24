@@ -62,13 +62,16 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
                 .setter = {},
                 .documentation = ""
             }).isValid());
-            BOOST_REQUIRE(runtime.registerNativeMethod(
-                objectType, "declaredMethod", methodFunction(),
-                {
-                    defParameter("value", valueType, ""),
-                    defParameter("line", runtime.getLineNumberType(), "")
-                }, valueType, ""
-            ).isValid());
+            BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId(objectType->getTypeName()), {
+                .name = "declaredMethod",
+                .parameters = {
+                    {runtime.getTypeId(valueType->getTypeName()), "value", ""},
+                    {runtime.getTypeId(runtime.getLineNumberType()->getTypeName()), "line", ""}
+                },
+                .returnTypeId = runtime.getTypeId(valueType->getTypeName()),
+                .function = methodFunction(),
+                .documentation = ""
+            }).isValid());
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate("Box", {
@@ -251,8 +254,13 @@ BOOST_AUTO_TEST_CASE(allows_object_method_on_temporary) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    BOOST_REQUIRE(runtime.registerNativeMethod(runtime.getStringType(), "clear", methodFunction(), {},
-                                                  runtime.getVoidType(), NomadDoc("Clear")).isValid());
+    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId("string"), {
+        .name = "clear",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = methodFunction(),
+        .documentation = NomadDoc("Clear")
+    }).isValid());
 
     Tokenizer tokens(&context, "test.nomad", "\"Nomad\".clear");
     auto statement = parser::parseLine(&context, nullptr, &tokens);

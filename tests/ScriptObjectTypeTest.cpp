@@ -168,13 +168,23 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
     BOOST_TEST(runtime.registerProperty(type, "value", other.getIntegerType()).isInvalid());
     BOOST_TEST(runtime.registerProperty(type, "value", runtime.getVoidType()).isInvalid());
     BOOST_TEST(runtime.registerProperty(type, "invalid.name", runtime.getIntegerType()).isInvalid());
-    const auto method = runtime.registerNativeMethod(
-        type, "move", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
-    );
+    const auto method = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "move",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = [](VirtualMachine*) {},
+        .documentation = ""
+    });
     BOOST_REQUIRE(method.isValid());
     BOOST_TEST(runtime.registerProperty(type, "move", runtime.getFloatType()).isInvalid());
     BOOST_REQUIRE(runtime.registerProperty(type, "x", runtime.getFloatType()).isValid());
-    BOOST_TEST(runtime.registerNativeMethod(type, "x", [](VirtualMachine*) {}, {}, runtime.getVoidType(), "").isInvalid());
+    BOOST_TEST(runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "x",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = [](VirtualMachine*) {},
+        .documentation = ""
+    }).isInvalid());
     const auto typeId = runtime.getTypeId(type->getTypeName());
     BOOST_TEST(runtime.addProperty(typeId, {
         .valueTypeId = runtime.getTypeId("int"),

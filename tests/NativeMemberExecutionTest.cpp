@@ -39,15 +39,17 @@ const ObjectType* registerTestObject(Runtime& runtime) {
         },
         .documentation = ""
     }).isValid());
-    runtime.registerNativeMethod(
-        type, "increment",
-        [](VirtualMachine* machine) {
+    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "increment",
+        .parameters = {{runtime.getTypeId("int"), "amount", ""}},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = [](VirtualMachine* machine) {
             auto* instance = machine->getThisAs<TestObject>();
             instance->value += machine->getIntegerParameter(0);
             machine->setIntegerResult(instance->value);
         },
-        {defParameter("amount", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
-    );
+        .documentation = ""
+    }).isValid());
     return type;
 }
 
@@ -91,11 +93,13 @@ BOOST_AUTO_TEST_CASE(resolved_method_and_constructor_survive_catalog_growth) {
             return object;
         }, ""
     ).isValid());
-    BOOST_REQUIRE(runtime.registerNativeMethod(
-        runtime.getStringType(), "increment",
-        [](VirtualMachine* machine) { machine->setIntegerResult(200); },
-        {defParameter("amount", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
-    ).isValid());
+    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId("string"), {
+        .name = "increment",
+        .parameters = {{runtime.getTypeId("int"), "amount", ""}},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = [](VirtualMachine* machine) { machine->setIntegerResult(200); },
+        .documentation = ""
+    }).isValid());
     for (auto index = NomadInteger{0}; index < 64; ++index) {
         BOOST_REQUIRE(runtime.registerNativeFunction(
             "growth" + toString(index), [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
@@ -135,19 +139,18 @@ BOOST_AUTO_TEST_CASE(unresolved_method_and_constructor_evaluation_reports_an_err
 BOOST_AUTO_TEST_CASE(typed_method_borrows_the_string_receiver) {
     Runtime runtime;
     bool called = false;
-    runtime.registerNativeMethod(
-        runtime.getStringType(),
-        "typedLength",
-        [&called](VirtualMachine* virtualMachine) {
+    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId("string"), {
+        .name = "typedLength",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = [&called](VirtualMachine* virtualMachine) {
             const auto* receiver = virtualMachine->getThisAs<const NomadStringObject>();
             called = true;
             BOOST_TEST(receiver == virtualMachine->getThis());
             virtualMachine->setIntegerResult(static_cast<NomadInteger>(receiver->getLength()));
         },
-        {},
-        runtime.getIntegerType(),
-        NomadDoc("Read the string length")
-    );
+        .documentation = NomadDoc("Read the string length")
+    }).isValid());
 
     const auto functionId = compileFunction(runtime, "return \"Nomad\".typedLength");
     RuntimeValue result;
@@ -160,18 +163,17 @@ BOOST_AUTO_TEST_CASE(typed_method_borrows_the_string_receiver) {
 BOOST_AUTO_TEST_CASE(typed_method_supports_a_host_defined_object) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    const auto memberId = runtime.registerNativeMethod(
-        type,
-        "hostObject",
-        [](VirtualMachine* virtualMachine) {
+    const auto memberId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "hostObject",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = [](VirtualMachine* virtualMachine) {
             auto* receiver = virtualMachine->getThisAs<TestObject>();
             BOOST_TEST(receiver->getReferenceCount() == 1);
             virtualMachine->setIntegerResult(42);
         },
-        {},
-        runtime.getIntegerType(),
-        NomadDoc("Test a host-defined receiver")
-    );
+        .documentation = NomadDoc("Test a host-defined receiver")
+    });
     BOOST_REQUIRE(memberId.isValid());
     auto virtualMachine = runtime.createVirtualMachine();
     RuntimeValue receiver;
@@ -197,18 +199,17 @@ BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) 
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
     auto* instance = new TestObject;
-    const auto memberId = runtime.registerNativeMethod(
-        type,
-        "checkInstance",
-        [instance](VirtualMachine* machine) {
+    const auto memberId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "checkInstance",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = [instance](VirtualMachine* machine) {
             BOOST_TEST(machine->getThis() == instance);
             BOOST_TEST(machine->getThisAs<TestObject>() == instance);
             machine->setIntegerResult(42);
         },
-        {},
-        runtime.getIntegerType(),
-        ""
-    );
+        .documentation = ""
+    });
     BOOST_REQUIRE(memberId.isValid());
     BOOST_REQUIRE(runtime.getNativeMemberMethod(memberId) != nullptr);
     auto machine = runtime.createVirtualMachine();
@@ -228,9 +229,13 @@ BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_ca
     const auto first = runtime.registerNativeFunction(
         "catalog.first", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     );
-    const auto method = runtime.registerNativeMethod(
-        type, "catalogMethod", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
-    );
+    const auto method = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "catalogMethod",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = [](VirtualMachine*) {},
+        .documentation = ""
+    });
     const auto last = runtime.registerNativeFunction(
         "catalog.last", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     );
@@ -257,9 +262,13 @@ BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_ca
         BOOST_TEST(function->getObjectType() == nullptr);
         BOOST_TEST(function->getName() != "catalogMethod");
     }
-    BOOST_TEST(runtime.registerNativeMethod(
-        nullptr, "invalid", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
-    ).isInvalid());
+    BOOST_TEST(runtime.addMethod(TypeId::INVALID, {
+        .name = "invalid",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = [](VirtualMachine*) {},
+        .documentation = ""
+    }).isInvalid());
 }
 
 BOOST_AUTO_TEST_CASE(compiled_property_getter_reads_temporary_receiver) {
@@ -333,17 +342,16 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_properties_and_methods) {
 BOOST_AUTO_TEST_CASE(failed_method_preserves_object_mutations_and_restores_this) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    runtime.registerNativeMethod(
-        type,
-        "fail",
-        [](VirtualMachine* virtualMachine) {
+    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        .name = "fail",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = [](VirtualMachine* virtualMachine) {
             virtualMachine->getThisAs<TestObject>()->value = 99;
             virtualMachine->fault("Expected failure");
         },
-        {},
-        runtime.getVoidType(),
-        NomadDoc("Fail")
-    );
+        .documentation = NomadDoc("Fail")
+    }).isValid());
 
     auto machine = runtime.createVirtualMachine();
     InterpreterContext interpreter(*machine);

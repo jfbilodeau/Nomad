@@ -1817,24 +1817,9 @@ CallableId Runtime::addMethod(const TypeId id, NativeMethodDefinition definition
             parameterDefinition.name, *parameterType, parameterDefinition.documentation
         ));
     }
-    return registerNativeMethod(
+    return registerNativeCallable(
         objectType, definition.name, std::move(definition.function), parameters, *returnType, definition.documentation
     );
-}
-
-CallableId Runtime::registerNativeMethod(
-    const ObjectType* objectType,
-    const NomadString& name,
-    NativeFunctionFn fn,
-    const std::vector<Parameter>& parameters,
-    const Type* returnType,
-    const NomadString& doc
-) {
-    if (objectType == nullptr) {
-        log::error("Cannot register native method '" + name + "': object type is null");
-        return CallableId::INVALID;
-    }
-    return registerNativeCallable(objectType, name, std::move(fn), parameters, returnType, doc);
 }
 
 MemberReference Runtime::getNativeMemberId(const Type* objectType, const NomadString& name) const {
