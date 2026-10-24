@@ -84,12 +84,13 @@ struct TypeOpCodes {
 
 class Type {
 public:
-    explicit Type(Runtime* runtime, NomadString documentation = {});
+    explicit Type(Runtime* runtime, TypeId id, NomadString documentation = {});
     virtual ~Type() = default;
 
     [[nodiscard]] virtual NomadString getTypeName() const = 0;
     [[nodiscard]] virtual TypeStorage getStorage() const = 0;
     [[nodiscard]] Runtime* getRuntime() const;
+    [[nodiscard]] TypeId getId() const;
     [[nodiscard]] const NomadString& getDocumentation() const;
     // Initializes fresh storage with an owned default value. Does not release existing contents.
     virtual void initValue(RuntimeValue& value) const = 0;
@@ -134,12 +135,13 @@ protected:
 
 private:
     Runtime* m_runtime;
+    const TypeId m_id;
     NomadString m_documentation;
 };
 
 class ValueType : public Type {
 public:
-    explicit ValueType(Runtime* runtime, NomadString documentation = {});
+    explicit ValueType(Runtime* runtime, TypeId id, NomadString documentation = {});
     [[nodiscard]] TypeStorage getStorage() const override;
 };
 
@@ -171,7 +173,7 @@ public:
 class OpaqueIdType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
-    OpaqueIdType(Runtime* runtime, NomadString name, NomadString documentation);
+    OpaqueIdType(Runtime* runtime, TypeId id, NomadString name, NomadString documentation);
 
     using Type::toString;
 
@@ -204,6 +206,7 @@ public:
     void initValue(RuntimeValue& value) const override;
     EnumType(
         Runtime* runtime,
+        TypeId id,
         NomadString name,
         std::vector<EnumValueDefinition> values,
         NomadString documentation = {}
@@ -259,6 +262,7 @@ class ObjectType : public Type {
 public:
     explicit ObjectType(
         Runtime* runtime,
+        TypeId id,
         NomadString name,
         ObjectTypeMode mode,
         std::vector<const Type*> typeArguments = {},
@@ -322,7 +326,7 @@ private:
 
 class BaseStringType : public ObjectType {
 public:
-    explicit BaseStringType(Runtime* runtime);
+    explicit BaseStringType(Runtime* runtime, TypeId id);
 
     using Type::toString;
     void initValue(RuntimeValue& value) const override;
@@ -373,6 +377,7 @@ public:
     void initValue(RuntimeValue& value) const override;
     FunctionType(
         Runtime* runtime,
+        TypeId id,
         const std::vector<const Type*>& parameterTypes,
         const Type* returnType
     );

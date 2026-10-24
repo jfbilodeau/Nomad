@@ -12,6 +12,7 @@ class Array2Type final : public ArrayType {
 public:
     Array2Type(
         Runtime* runtime,
+        TypeId id,
         NomadString name,
         ObjectTypeMode mode,
         const Type* elementType

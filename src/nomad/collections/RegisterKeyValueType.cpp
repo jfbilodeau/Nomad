@@ -14,11 +14,11 @@ void registerKeyValueType(Runtime* runtime) {
     if (!runtime->registerParameterizedType(
         "KeyValue",
         2,
-        [](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+        [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             const auto* keyType = arguments[0];
             const auto* valueType = arguments[1];
             return std::make_unique<KeyValueType>(
-                owningRuntime, "KeyValue<" + keyType->getTypeName() + " " + valueType->getTypeName() + ">",
+                owningRuntime, id, "KeyValue<" + keyType->getTypeName() + " " + valueType->getTypeName() + ">",
                 ObjectTypeMode::Closed, keyType, valueType
             );
         },
@@ -41,7 +41,7 @@ void registerKeyValueType(Runtime* runtime) {
                 NomadDoc("Creates a pair with read-only key and value properties.")
             );
             const auto keyId = runtime->addProperty(id, {
-                .valueTypeId = runtime->getTypeId(keyType->getTypeName()),
+                .valueTypeId = keyType->getId(),
                 .name = "key",
                 .getter = [keyType](VirtualMachine* machine, RuntimeValue& result) {
                     const auto* pair = machine->getThisAs<KeyValueObject>();
@@ -54,7 +54,7 @@ void registerKeyValueType(Runtime* runtime) {
                 .documentation = NomadDoc("The read-only key. Object keys share their referenced object.")
             });
             const auto valueId = runtime->addProperty(id, {
-                .valueTypeId = runtime->getTypeId(valueType->getTypeName()),
+                .valueTypeId = valueType->getId(),
                 .name = "value",
                 .getter = [valueType](VirtualMachine* machine, RuntimeValue& result) {
                     const auto* pair = machine->getThisAs<KeyValueObject>();

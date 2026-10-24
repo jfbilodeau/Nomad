@@ -8,12 +8,13 @@ namespace nomad {
 
 MapType::MapType(
     Runtime* runtime,
+    TypeId id,
     NomadString name,
     const ObjectTypeMode mode,
     const Type* keyType,
     const Type* valueType
 ):
-    ObjectType(runtime, std::move(name), mode, {keyType, valueType})
+    ObjectType(runtime, id, std::move(name), mode, {keyType, valueType})
 {
     if (keyType == nullptr || !keyType->isString() || keyType->isInternal()) {
         throw NomadException("Map key type must be string");

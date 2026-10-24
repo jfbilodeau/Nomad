@@ -8,6 +8,7 @@ class ReadOnlyListType final : public ObjectType {
 public:
     ReadOnlyListType(
         Runtime* runtime,
+        TypeId id,
         NomadString name,
         ObjectTypeMode mode,
         const Type* elementType

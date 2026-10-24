@@ -18,7 +18,8 @@ static_assert(!std::is_default_constructible_v<IntegerType>);
 static_assert(!std::is_constructible_v<ObjectType, NomadString, ObjectTypeMode>);
 static_assert(!std::is_constructible_v<ObjectType, Runtime*, NomadString>);
 static_assert(!std::is_constructible_v<ObjectType, Runtime*, NomadString, bool>);
-static_assert(std::is_constructible_v<ObjectType, Runtime*, NomadString, ObjectTypeMode>);
+static_assert(!std::is_constructible_v<ObjectType, Runtime*, NomadString, ObjectTypeMode>);
+static_assert(std::is_constructible_v<ObjectType, Runtime*, TypeId, NomadString, ObjectTypeMode>);
 static_assert(static_cast<int>(ObjectTypeMode::Opened) == 1);
 static_assert(static_cast<int>(ObjectTypeMode::Closed) == 2);
 
@@ -115,7 +116,7 @@ BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_cata
     const auto* first = createTestType(runtime, "First", ObjectTypeMode::Opened);
     const auto* second = createTestType(runtime, "Second", ObjectTypeMode::Opened);
     const auto scriptId = runtime.registerProperty(first, "value", runtime.getFloatType());
-    const auto nativeId = runtime.addProperty(runtime.getTypeId(second->getTypeName()), {
+    const auto nativeId = runtime.addProperty(second->getId(), {
         .valueTypeId = runtime.getTypeId("int"),
         .name = "value",
         .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); },
@@ -159,7 +160,7 @@ BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_cata
 BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_member_collisions) {
     Runtime runtime;
     Runtime other;
-    ObjectType unregistered(&runtime, "Unregistered", ObjectTypeMode::Opened);
+    ObjectType unregistered(&runtime, TypeId::INVALID, "Unregistered", ObjectTypeMode::Opened);
     const auto* type = createTestType(runtime, "Point", ObjectTypeMode::Opened);
     const auto* foreign = createTestType(other, "Point", ObjectTypeMode::Opened);
     BOOST_TEST(runtime.registerProperty(nullptr, "value", runtime.getIntegerType()).isInvalid());
@@ -168,7 +169,7 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
     BOOST_TEST(runtime.registerProperty(type, "value", other.getIntegerType()).isInvalid());
     BOOST_TEST(runtime.registerProperty(type, "value", runtime.getVoidType()).isInvalid());
     BOOST_TEST(runtime.registerProperty(type, "invalid.name", runtime.getIntegerType()).isInvalid());
-    const auto method = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    const auto method = runtime.addMethod(type->getId(), {
         .name = "move",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),
@@ -178,14 +179,14 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
     BOOST_REQUIRE(method.isValid());
     BOOST_TEST(runtime.registerProperty(type, "move", runtime.getFloatType()).isInvalid());
     BOOST_REQUIRE(runtime.registerProperty(type, "x", runtime.getFloatType()).isValid());
-    BOOST_TEST(runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    BOOST_TEST(runtime.addMethod(type->getId(), {
         .name = "x",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),
         .function = [](VirtualMachine*) {},
         .documentation = ""
     }).isInvalid());
-    const auto typeId = runtime.getTypeId(type->getTypeName());
+    const auto typeId = type->getId();
     BOOST_TEST(runtime.addProperty(typeId, {
         .valueTypeId = runtime.getTypeId("int"),
         .name = "x",
@@ -219,7 +220,7 @@ BOOST_AUTO_TEST_CASE(type_owned_native_property_callbacks_are_destroyed_once) {
             delete value;
         });
         observer = probe;
-        const auto id = runtime.addProperty(runtime.getTypeId(type->getTypeName()), {
+        const auto id = runtime.addProperty(type->getId(), {
             .valueTypeId = runtime.getTypeId("int"),
             .name = "value",
             .getter = [probe](VirtualMachine*, RuntimeValue& value) { value.setIntegerValue(*probe); },
@@ -237,8 +238,8 @@ BOOST_AUTO_TEST_CASE(type_owned_native_property_callbacks_are_destroyed_once) {
 
 BOOST_AUTO_TEST_CASE(native_object_types_use_explicit_modes_without_special_subclasses) {
     Runtime runtime;
-    ObjectType nativeType(&runtime, "NativeType", ObjectTypeMode::Closed);
-    ObjectType openNativeType(&runtime, "OpenNativeType", ObjectTypeMode::Opened);
+    ObjectType nativeType(&runtime, TypeId::INVALID, "NativeType", ObjectTypeMode::Closed);
+    ObjectType openNativeType(&runtime, TypeId::INVALID, "OpenNativeType", ObjectTypeMode::Opened);
 
     BOOST_TEST(!nativeType.isOpen());
     BOOST_TEST(openNativeType.isOpen());

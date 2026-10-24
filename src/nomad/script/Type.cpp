@@ -16,8 +16,9 @@ namespace nomad {
 
 ///////////////////////////////////////////////////////////////////////////////
 // Type
-Type::Type(Runtime* runtime, NomadString documentation):
+Type::Type(Runtime* runtime, const TypeId id, NomadString documentation):
     m_runtime(runtime),
+    m_id(id),
     m_documentation(std::move(documentation))
 {
     if (runtime == nullptr) {
@@ -27,6 +28,10 @@ Type::Type(Runtime* runtime, NomadString documentation):
 
 Runtime* Type::getRuntime() const {
     return m_runtime;
+}
+
+TypeId Type::getId() const {
+    return m_id;
 }
 
 const NomadString& Type::getDocumentation() const {
@@ -106,8 +111,8 @@ const ObjectType* Type::asObjectType() const {
     return nullptr;
 }
 
-ValueType::ValueType(Runtime* runtime, NomadString documentation):
-    Type(runtime, std::move(documentation))
+ValueType::ValueType(Runtime* runtime, TypeId id, NomadString documentation):
+    Type(runtime, id, std::move(documentation))
 {}
 
 TypeStorage ValueType::getStorage() const {
@@ -178,8 +183,8 @@ void IdType::toString(const RuntimeValue& value, NomadString& string) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // OpaqueIdType
-OpaqueIdType::OpaqueIdType(Runtime* runtime, NomadString name, NomadString documentation):
-    ValueType(runtime, std::move(documentation)),
+OpaqueIdType::OpaqueIdType(Runtime* runtime, TypeId id, NomadString name, NomadString documentation):
+    ValueType(runtime, id, std::move(documentation)),
     m_name(std::move(name))
 {
 }
@@ -244,11 +249,12 @@ void IntegerType::toString(const RuntimeValue& value, NomadString& string) const
 // EnumType
 EnumType::EnumType(
     Runtime* runtime,
+    TypeId id,
     NomadString name,
     std::vector<EnumValueDefinition> values,
     NomadString documentation
 ):
-    ValueType(runtime, std::move(documentation)),
+    ValueType(runtime, id, std::move(documentation)),
     m_name(std::move(name)),
     m_values(std::move(values))
 {
@@ -339,7 +345,7 @@ CallableId ObjectType::registerConstructor(
     std::unique_ptr<Constructor> constructor
 ) {
     if (constructor == nullptr || constructor->getObjectType() != this ||
-        constructor->getId() != CallableId{} || runtime.getTypeByName(getTypeName()) != this) {
+        constructor->getId() != CallableId{} || runtime.getType(getId()) != this) {
         log::error("Cannot register constructor: invalid owner or previously registered callable");
         return CallableId::INVALID;
     }
@@ -367,7 +373,7 @@ CallableId ObjectType::registerMethod(
     std::unique_ptr<Method> method
 ) {
     if (method == nullptr || method->getObjectType() != this ||
-        method->getId() != CallableId{} || runtime.getTypeByName(getTypeName()) != this ||
+        method->getId() != CallableId{} || runtime.getType(getId()) != this ||
         getProperty(method->getName()) != nullptr) {
         log::error("Cannot register method: invalid owner or previously registered callable");
         return CallableId::INVALID;
@@ -393,12 +399,13 @@ std::vector<const Method*> ObjectType::getMethods() const {
 
 ObjectType::ObjectType(
     Runtime* runtime,
+    TypeId id,
     NomadString name,
     const ObjectTypeMode mode,
     std::vector<const Type*> typeArguments,
     NomadString documentation
 ):
-    Type(runtime, std::move(documentation)),
+    Type(runtime, id, std::move(documentation)),
     m_name(std::move(name)),
     m_mode(mode),
     m_typeArguments(std::move(typeArguments))
@@ -478,10 +485,10 @@ PropertyId ObjectType::registerProperty(
     std::unique_ptr<Property> property
 ) {
     if (property == nullptr || property->getObjectType() != this || property->getId().isValid() ||
-        runtime.getTypeByName(getTypeName()) != this ||
+        runtime.getType(getId()) != this ||
         property->getValueType() == nullptr || property->getValueType()->isVoid() ||
         property->getValueType()->isInternal() ||
-        runtime.getTypeByName(property->getValueType()->getTypeName()) != property->getValueType() ||
+        runtime.getType(property->getValueType()->getId()) != property->getValueType() ||
         getProperty(property->getName()) != nullptr ||
         std::ranges::any_of(m_methods, [&](const auto& method) { return method->getName() == property->getName(); })) {
         log::error("Cannot register property: invalid owner, value type, or duplicate definition");
@@ -532,13 +539,13 @@ IndexerId ObjectType::registerNativeIndexer(
     NativeIndexerInfo info
 ) {
     if (info.objectType != this || info.id.isValid() ||
-        runtime.getTypeByName(getTypeName()) != this) {
+        runtime.getType(getId()) != this) {
         log::error("Cannot register native indexer: invalid owner or identity");
         return IndexerId::INVALID;
     }
     const auto isValidType = [&](const Type* type) {
         return type != nullptr && !type->isVoid() && !type->isInternal() &&
-            runtime.getTypeByName(type->getTypeName()) == type;
+            runtime.getType(type->getId()) == type;
     };
     if (!isValidType(info.valueType)) {
         log::error("Cannot register native indexer: value type must be registered, public, and non-void");
@@ -595,7 +602,7 @@ void ObjectType::registerIterableType(
     const Method* factory
 ) {
     const auto* iteratorType = runtime.getIteratorType(valueType);
-    if (runtime.getTypeByName(getTypeName()) != this ||
+    if (runtime.getType(getId()) != this ||
         factory == nullptr || runtime.getMethod(factory->getId()) != factory ||
         factory->getObjectType() != this || factory->getParameterCount() != 0 ||
         factory->getReturnType() != iteratorType || m_iterableInfo.has_value()) {
@@ -622,8 +629,8 @@ void ObjectType::toString(const RuntimeValue&, NomadString& string) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // BaseStringType
-BaseStringType::BaseStringType(Runtime* runtime):
-    ObjectType(runtime, STRING_TYPE_NAME, ObjectTypeMode::Closed)
+BaseStringType::BaseStringType(Runtime* runtime, TypeId id):
+    ObjectType(runtime, id, STRING_TYPE_NAME, ObjectTypeMode::Closed)
 {
     m_typeOpCodes.initResult = op_string_init_r;
     m_typeOpCodes.initIntermediate = op_string_init_i;
@@ -685,10 +692,11 @@ void FunctionLineNumberType::toString(const RuntimeValue& value, NomadString& st
 // FunctionReferenceType
 FunctionType::FunctionType(
     Runtime* runtime,
+    TypeId id,
     const std::vector<const Type*>& parameterTypes,
     const Type* returnType
 ):
-    ValueType(runtime),
+    ValueType(runtime, id),
     m_parameterTypes(parameterTypes),
     m_returnType(returnType)
 {
@@ -764,8 +772,8 @@ const FunctionType* FunctionType::asCallback() const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // EventType
-EventType::EventType(Runtime* runtime, const EventDefinition* declaration):
-    ValueType(runtime),
+EventType::EventType(Runtime* runtime, TypeId id, const EventDefinition* declaration):
+    ValueType(runtime, id),
     m_event(*declaration)
 {}
 

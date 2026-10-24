@@ -12,6 +12,7 @@ class Array3Type final : public ArrayType {
 public:
     Array3Type(
         Runtime* runtime,
+        TypeId id,
         NomadString name,
         ObjectTypeMode mode,
         const Type* elementType

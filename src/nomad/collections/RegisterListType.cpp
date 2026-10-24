@@ -19,16 +19,16 @@ namespace {
 
 void registerListReaders(Runtime* runtime, const ObjectType* objectType, const bool writable) {
     const auto* elementType = objectType->getTypeArguments()[0];
-    const auto iteratorId = runtime->addMethod(runtime->getTypeId(objectType->getTypeName()), {
+    const auto iteratorId = runtime->addMethod(objectType->getId(), {
         .name = "iterator",
         .parameters = {},
-        .returnTypeId = runtime->getTypeId(runtime->getIteratorType(elementType)->getTypeName()),
+        .returnTypeId = runtime->getIteratorType(elementType)->getId(),
         .function = [](VirtualMachine* machine) {
             machine->getResult().setObjectValue(new ListIterator(machine->getThisAs<ListObject>()));
         },
         .documentation = NomadDoc("Creates an independent live iterator. Structural changes invalidate its next advance.")
     });
-    const auto countId = runtime->addProperty(runtime->getTypeId(objectType->getTypeName()), {
+    const auto countId = runtime->addProperty(objectType->getId(), {
         .valueTypeId = runtime->getTypeId("int"),
         .name = "count",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -65,9 +65,9 @@ void registerListReaders(Runtime* runtime, const ObjectType* objectType, const b
 void registerListType(Runtime* runtime) {
     if (!runtime->registerParameterizedType(
         "ReadOnlyList", 1,
-        [](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+        [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             return std::make_unique<ReadOnlyListType>(
-                owningRuntime, "ReadOnlyList<" + arguments[0]->getTypeName() + ">",
+                owningRuntime, id, "ReadOnlyList<" + arguments[0]->getTypeName() + ">",
                 ObjectTypeMode::Closed, arguments[0]
             );
         },
@@ -81,10 +81,10 @@ void registerListType(Runtime* runtime) {
     if (!runtime->registerParameterizedType(
         "List",
         1,
-        [](Runtime* owningRuntime, const std::vector<const nomad::Type*>& arguments) {
+        [](Runtime* owningRuntime, TypeId id, const std::vector<const nomad::Type*>& arguments) {
             const auto* elementType = arguments[0];
             return std::make_unique<nomad::ListType>(
-                owningRuntime, "List<" + elementType->getTypeName() + ">", ObjectTypeMode::Closed, elementType
+                owningRuntime, id, "List<" + elementType->getTypeName() + ">", ObjectTypeMode::Closed, elementType
             );
         },
         [](Runtime* runtime, const TypeId id) {
@@ -96,7 +96,7 @@ void registerListType(Runtime* runtime) {
             if (readOnlyType == nullptr || runtime->addMethod(id, {
                 .name = "toReadOnly",
                 .parameters = {},
-                .returnTypeId = runtime->getTypeId(readOnlyType->getTypeName()),
+                .returnTypeId = readOnlyType->getId(),
                 .function = [](VirtualMachine* machine) {
                     const auto* source = machine->getThisAs<ListObject>();
                     auto snapshot = std::make_unique<ListObject>(source->getElementType());
@@ -117,7 +117,7 @@ void registerListType(Runtime* runtime) {
             );
             const auto appendId = runtime->addMethod(id, {
                 .name = "append",
-                .parameters = {{runtime->getTypeId(elementType->getTypeName()), "value", NomadDoc("The value to append.")}},
+                .parameters = {{elementType->getId(), "value", NomadDoc("The value to append.")}},
                 .returnTypeId = runtime->getTypeId("int"),
                 .function = [](nomad::VirtualMachine* vm) {
                     auto* list = vm->getThisAs<nomad::ListObject>();
@@ -129,7 +129,7 @@ void registerListType(Runtime* runtime) {
             });
             const auto prependId = runtime->addMethod(id, {
                 .name = "prepend",
-                .parameters = {{runtime->getTypeId(elementType->getTypeName()), "value", NomadDoc("The value to insert at the beginning.")}},
+                .parameters = {{elementType->getId(), "value", NomadDoc("The value to insert at the beginning.")}},
                 .returnTypeId = runtime->getTypeId("void"),
                 .function = [](nomad::VirtualMachine* machine) {
                     auto* list = machine->getThisAs<nomad::ListObject>();
@@ -142,7 +142,7 @@ void registerListType(Runtime* runtime) {
                 .name = "insert",
                 .parameters = {
                     {runtime->getTypeId("int"), "index", NomadDoc("The insertion position from zero through count.")},
-                    {runtime->getTypeId(elementType->getTypeName()), "value", NomadDoc("The value to insert.")}
+                    {elementType->getId(), "value", NomadDoc("The value to insert.")}
                 },
                 .returnTypeId = runtime->getTypeId("void"),
                 .function = [](nomad::VirtualMachine* machine) {

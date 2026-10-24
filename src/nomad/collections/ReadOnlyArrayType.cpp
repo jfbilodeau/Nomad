@@ -8,12 +8,13 @@ namespace nomad {
 
 ReadOnlyArrayType::ReadOnlyArrayType(
     Runtime* runtime,
+    TypeId id,
     NomadString name,
     const ObjectTypeMode mode,
     const Type* elementType,
     const NomadIndex dimensionCount
 ):
-    ArrayType(runtime, std::move(name), mode, elementType, dimensionCount, true)
+    ArrayType(runtime, id, std::move(name), mode, elementType, dimensionCount, true)
 {}
 
 ArrayObject* ReadOnlyArrayType::createEmptyArray() const {

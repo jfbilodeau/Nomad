@@ -22,13 +22,13 @@ public:
 };
 
 const ObjectType* registerTestObject(Runtime& runtime) {
-    auto descriptor = std::make_unique<ObjectType>(&runtime, "TestObject", ObjectTypeMode::Closed);
-    const auto* type = descriptor.get();
-    runtime.registerType(std::move(descriptor));
+    const auto descriptorId = runtime.createObjectType<ObjectType>("TestObject", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(descriptorId.isValid());
+    const auto* type = runtime.getType(descriptorId).value()->asObjectType();
     runtime.registerNativeConstructor(
         type, {}, [](std::span<const RuntimeValue>) { return new TestObject; }, ""
     );
-    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId(type->getTypeName()), {
+    BOOST_REQUIRE(runtime.addProperty(type->getId(), {
         .valueTypeId = runtime.getTypeId("int"),
         .name = "value",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -39,7 +39,7 @@ const ObjectType* registerTestObject(Runtime& runtime) {
         },
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    BOOST_REQUIRE(runtime.addMethod(type->getId(), {
         .name = "increment",
         .parameters = {{runtime.getTypeId("int"), "amount", ""}},
         .returnTypeId = runtime.getTypeId("int"),
@@ -163,7 +163,7 @@ BOOST_AUTO_TEST_CASE(typed_method_borrows_the_string_receiver) {
 BOOST_AUTO_TEST_CASE(typed_method_supports_a_host_defined_object) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    const auto memberId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    const auto memberId = runtime.addMethod(type->getId(), {
         .name = "hostObject",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("int"),
@@ -195,11 +195,11 @@ BOOST_AUTO_TEST_CASE(typed_receiver_requires_an_active_method) {
 
 BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) {
     Runtime runtime;
-    auto descriptor = std::make_unique<ObjectType>(&runtime, "TestObject", ObjectTypeMode::Closed);
-    const auto* type = descriptor.get();
-    runtime.registerType(std::move(descriptor));
+    const auto descriptorId = runtime.createObjectType<ObjectType>("TestObject", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(descriptorId.isValid());
+    const auto* type = runtime.getType(descriptorId).value()->asObjectType();
     auto* instance = new TestObject;
-    const auto memberId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    const auto memberId = runtime.addMethod(type->getId(), {
         .name = "checkInstance",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("int"),
@@ -223,13 +223,13 @@ BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) 
 
 BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_catalog) {
     Runtime runtime;
-    auto descriptor = std::make_unique<ObjectType>(&runtime, "CatalogObject", ObjectTypeMode::Closed);
-    const auto* type = descriptor.get();
-    runtime.registerType(std::move(descriptor));
+    const auto descriptorId = runtime.createObjectType<ObjectType>("CatalogObject", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(descriptorId.isValid());
+    const auto* type = runtime.getType(descriptorId).value()->asObjectType();
     const auto first = runtime.registerNativeFunction(
         "catalog.first", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     );
-    const auto method = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    const auto method = runtime.addMethod(type->getId(), {
         .name = "catalogMethod",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),
@@ -342,7 +342,7 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_properties_and_methods) {
 BOOST_AUTO_TEST_CASE(failed_method_preserves_object_mutations_and_restores_this) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    BOOST_REQUIRE(runtime.addMethod(type->getId(), {
         .name = "fail",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),

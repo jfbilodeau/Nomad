@@ -101,17 +101,26 @@ already-registered type names, and conflicting hub declarations are logged and
 return `TypeId::INVALID`. Duplicate creation is rejected even when the mode
 and documentation are identical, without replacing the existing type.
 
-Every type descriptor requires a non-null owning `Runtime*` as its first
-constructor argument. `Type::getRuntime()` returns that runtime, which must
-outlive the descriptor. A descriptor cannot be registered with another runtime.
+Every type descriptor receives a non-null owning `Runtime*` and a `TypeId`
+as its first two constructor arguments. `Type::getRuntime()` returns that runtime,
+which must outlive the descriptor. `Type::getId()` returns the immutable,
+runtime-local ID. Use it when passing an existing descriptor to an ID-based API;
+name lookup does not distinguish callback signatures.
 
 `createObjectType<Descriptor>(name, mode, arguments...)` creates specialized
 `ObjectType` subclasses. It calls
-`Descriptor(Runtime*, name, mode, arguments...)`, forwarding additional arguments.
+`Descriptor(Runtime*, TypeId, name, mode, arguments...)`, forwarding additional arguments.
 Invalid creation requests are rejected before calling the descriptor constructor.
 The constructor initializes the descriptor without registering it; the runtime
 registers the completed descriptor and returns its `TypeId`. The descriptor's
-runtime, name, and mode must match the creation request.
+runtime, ID, name, and mode must match the creation request.
+
+The ID is reserved before construction and is not resolvable through `getType()`
+until the descriptor is registered. Constructors may create other types without
+changing the reserved ID. Failed creation leaves an unused ID; IDs are never
+reassigned, and `getTypes()` lists only registered descriptors. Construct
+standalone, unregistered descriptors with `TypeId::INVALID`. Registration is
+managed by the runtime's creation APIs rather than a public `registerType()`.
 
 Type creation does not register constructors or finalize a script field layout.
 
@@ -723,9 +732,10 @@ the same VM. Access to a shared context or VM must be serialized by the host.
 
 `Runtime::registerParameterizedType(name, argumentCount, factory, initializer = {})`
 registers a type family. The factory has the signature
-`std::unique_ptr<Type>(Runtime*, const std::vector<const Type*>&)`. It receives
-the owning runtime and resolved type arguments and returns a fully constructed,
-unregistered descriptor associated with that runtime. It must not register the
+`std::unique_ptr<Type>(Runtime*, TypeId, const std::vector<const Type*>&)`. It receives
+the owning runtime, reserved specialization ID, and resolved type arguments.
+It returns a fully constructed, unregistered descriptor carrying that runtime
+and ID. It must not register the
 returned descriptor itself, including through `createObjectType`.
 
 The runtime validates and registers the descriptor, then calls the optional
@@ -1028,10 +1038,10 @@ compiler support:
 4. Register the association:
 
 ```cpp
-const auto memberId = runtime.addMethod(runtime.getTypeId(sourceType->getTypeName()), {
+const auto memberId = runtime.addMethod(sourceType->getId(), {
     .name = "iterator",
     .parameters = {},
-    .returnTypeId = runtime.getTypeId(runtime.getIteratorType(elementType)->getTypeName()),
+    .returnTypeId = runtime.getIteratorType(elementType)->getId(),
     .function = createIterator,
     .documentation = ""
 });

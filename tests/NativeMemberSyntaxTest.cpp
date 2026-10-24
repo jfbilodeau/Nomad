@@ -43,9 +43,9 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
     auto specializations = NomadIndex{0};
     BOOST_REQUIRE(runtime.registerParameterizedType(
         "Box", 1,
-        [&](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+        [&](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             ++specializations;
-            return std::make_unique<ObjectType>(owningRuntime, "Box<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments);
+            return std::make_unique<ObjectType>(owningRuntime, id, "Box<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments);
         },
         [&](Runtime* owningRuntime, const TypeId id) {
             const auto* type = owningRuntime->getType(id).value();
@@ -55,20 +55,20 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
                 objectType, {defParameter("value", valueType, "")},
                 [](std::span<const RuntimeValue>) { return new NomadObject; }, ""
             ).isValid());
-            BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId(objectType->getTypeName()), {
-                .valueTypeId = runtime.getTypeId(valueType->getTypeName()),
+            BOOST_REQUIRE(runtime.addProperty(objectType->getId(), {
+                .valueTypeId = valueType->getId(),
                 .name = "declaredProperty",
                 .getter = [](VirtualMachine*, RuntimeValue&) {},
                 .setter = {},
                 .documentation = ""
             }).isValid());
-            BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId(objectType->getTypeName()), {
+            BOOST_REQUIRE(runtime.addMethod(objectType->getId(), {
                 .name = "declaredMethod",
                 .parameters = {
-                    {runtime.getTypeId(valueType->getTypeName()), "value", ""},
-                    {runtime.getTypeId(runtime.getLineNumberType()->getTypeName()), "line", ""}
+                    {valueType->getId(), "value", ""},
+                    {runtime.getLineNumberType()->getId(), "line", ""}
                 },
-                .returnTypeId = runtime.getTypeId(valueType->getTypeName()),
+                .returnTypeId = valueType->getId(),
                 .function = methodFunction(),
                 .documentation = ""
             }).isValid());

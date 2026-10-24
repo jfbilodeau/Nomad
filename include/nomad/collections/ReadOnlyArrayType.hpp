@@ -8,6 +8,7 @@ class ReadOnlyArrayType final : public ArrayType {
 public:
     ReadOnlyArrayType(
         Runtime* runtime,
+        TypeId id,
         NomadString name,
         ObjectTypeMode mode,
         const Type* elementType,

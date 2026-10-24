@@ -21,6 +21,7 @@ public:
 protected:
     ArrayType(
         Runtime* runtime,
+        TypeId id,
         NomadString name,
         ObjectTypeMode mode,
         const Type* elementType,

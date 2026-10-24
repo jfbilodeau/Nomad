@@ -104,15 +104,15 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
 {
     Runtime runtime;
     Runtime other;
-    auto descriptor = std::make_unique<ObjectType>(&runtime, "SequenceMetadata", ObjectTypeMode::Closed);
-    auto* type = descriptor.get();
-    runtime.registerType(std::move(descriptor));
+    const auto descriptorId = runtime.createObjectType("SequenceMetadata", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(descriptorId.isValid());
+    auto* type = const_cast<ObjectType*>(runtime.getType(descriptorId).value()->asObjectType());
     const auto* integer = runtime.getIntegerType();
     const auto* iterator = runtime.getIteratorType(integer);
-    const auto factoryId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    const auto factoryId = runtime.addMethod(type->getId(), {
         .name = "iterator",
         .parameters = {},
-        .returnTypeId = runtime.getTypeId(iterator->getTypeName()),
+        .returnTypeId = iterator->getId(),
         .function = [](VirtualMachine*) {},
         .documentation = ""
     });
@@ -124,7 +124,7 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
     BOOST_TEST(!runtime.getIterableInfo(integer).has_value());
     BOOST_TEST(!other.getIterableInfo(type).has_value());
     BOOST_TEST(!runtime.getIterableInfo(other.getStringType()).has_value());
-    ObjectType unregistered(&runtime, "SequenceMetadata", ObjectTypeMode::Closed);
+    ObjectType unregistered(&runtime, TypeId::INVALID, "SequenceMetadata", ObjectTypeMode::Closed);
     BOOST_TEST(!runtime.getIterableInfo(&unregistered).has_value());
     BOOST_CHECK_THROW(unregistered.registerIterableType(runtime, integer, factory), NomadException);
     BOOST_CHECK_THROW(type->registerIterableType(other, other.getIntegerType(), factory), NomadException);
@@ -140,21 +140,21 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
     const auto wrongOwnerId = runtime.addMethod(runtime.getTypeId("string"), {
         .name = "metadataIterator",
         .parameters = {},
-        .returnTypeId = runtime.getTypeId(iterator->getTypeName()),
+        .returnTypeId = iterator->getId(),
         .function = [](VirtualMachine*) {},
         .documentation = ""
     });
-    const auto wrongReturnId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    const auto wrongReturnId = runtime.addMethod(type->getId(), {
         .name = "wrongReturn",
         .parameters = {},
-        .returnTypeId = runtime.getTypeId(integer->getTypeName()),
+        .returnTypeId = integer->getId(),
         .function = [](VirtualMachine*) {},
         .documentation = ""
     });
-    const auto wrongArgumentsId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    const auto wrongArgumentsId = runtime.addMethod(type->getId(), {
         .name = "wrongArguments",
-        .parameters = {{runtime.getTypeId(integer->getTypeName()), "value", ""}},
-        .returnTypeId = runtime.getTypeId(iterator->getTypeName()),
+        .parameters = {{integer->getId(), "value", ""}},
+        .returnTypeId = iterator->getId(),
         .function = [](VirtualMachine*) {},
         .documentation = ""
     });
@@ -190,13 +190,13 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
     snapshot->valueType = runtime.getStringType();
     snapshot->factoryId = CallableId::INVALID;
     for (auto index = 0; index < 32; ++index) {
-        auto additional = std::make_unique<ObjectType>(&runtime, "AdditionalSequence" + std::to_string(index), ObjectTypeMode::Closed);
-        auto* additionalType = additional.get();
-        runtime.registerType(std::move(additional));
-        const auto additionalFactoryId = runtime.addMethod(runtime.getTypeId(additionalType->getTypeName()), {
+        const auto additionalId = runtime.createObjectType("AdditionalSequence" + std::to_string(index), ObjectTypeMode::Closed);
+    BOOST_REQUIRE(additionalId.isValid());
+    auto* additionalType = const_cast<ObjectType*>(runtime.getType(additionalId).value()->asObjectType());
+        const auto additionalFactoryId = runtime.addMethod(additionalType->getId(), {
             .name = "iterator",
             .parameters = {},
-            .returnTypeId = runtime.getTypeId(iterator->getTypeName()),
+            .returnTypeId = iterator->getId(),
             .function = [](VirtualMachine*) {},
             .documentation = ""
         });
@@ -290,17 +290,17 @@ BOOST_AUTO_TEST_CASE(for_uses_registered_iteration_not_collection_names)
 
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    auto type = std::make_unique<ObjectType>(&runtime, "Sequence", ObjectTypeMode::Closed);
-    auto* sourceType = type.get();
-    runtime.registerType(std::move(type));
+    const auto typeId = runtime.createObjectType("Sequence", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(typeId.isValid());
+    auto* sourceType = const_cast<ObjectType*>(runtime.getType(typeId).value()->asObjectType());
     runtime.registerNativeConstructor(sourceType, {}, [](std::span<const RuntimeValue>) {
         return new SequenceObject;
     }, "");
     auto factoryCalls = 0;
-    const auto factoryId = runtime.addMethod(runtime.getTypeId(sourceType->getTypeName()), {
+    const auto factoryId = runtime.addMethod(sourceType->getId(), {
         .name = "startTraversal",
         .parameters = {},
-        .returnTypeId = runtime.getTypeId(runtime.getIteratorType(runtime.getIntegerType())->getTypeName()),
+        .returnTypeId = runtime.getIteratorType(runtime.getIntegerType())->getId(),
         .function = [&factoryCalls](VirtualMachine* machine) {
             ++factoryCalls;
             machine->getResult().setObjectValue(new SequenceIterator(machine->getRuntime()->getIntegerType()));

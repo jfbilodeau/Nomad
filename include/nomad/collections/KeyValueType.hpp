@@ -10,6 +10,7 @@ class KeyValueType final : public ObjectType {
 public:
     KeyValueType(
         Runtime* runtime,
+        TypeId id,
         NomadString name,
         ObjectTypeMode mode,
         const Type* keyType,

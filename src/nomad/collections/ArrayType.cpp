@@ -8,6 +8,7 @@ namespace nomad {
 
 ArrayType::ArrayType(
     Runtime* runtime,
+    TypeId id,
     NomadString name,
     const ObjectTypeMode mode,
     const Type* elementType,
@@ -15,7 +16,7 @@ ArrayType::ArrayType(
     const bool readOnly
 ):
     ObjectType(
-        runtime, std::move(name), mode,
+        runtime, id, std::move(name), mode,
         {elementType},
         readOnly ? "A read-only fixed-size array." :
             "A fixed-size array. Explicit construction requires one positive int size per dimension."

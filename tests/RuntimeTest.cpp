@@ -29,16 +29,18 @@ BOOST_AUTO_TEST_CASE(runtime_type_descriptors_report_their_owning_runtime) {
     for (const auto* type : types) {
         BOOST_TEST_CONTEXT(type->getTypeName()) {
             BOOST_TEST(type->getRuntime() == &runtime);
+            BOOST_REQUIRE(type->getId().isValid());
+            BOOST_TEST(runtime.getType(type->getId()).value() == type);
         }
     }
-    BOOST_CHECK_THROW(static_cast<void>(IntegerType(nullptr)), NomadException);
-    BOOST_CHECK_THROW(static_cast<void>(ObjectType(nullptr, "Invalid", ObjectTypeMode::Closed)), NomadException);
+    BOOST_CHECK_THROW(static_cast<void>(IntegerType(nullptr, TypeId::INVALID)), NomadException);
+    BOOST_CHECK_THROW(static_cast<void>(ObjectType(nullptr, TypeId::INVALID, "Invalid", ObjectTypeMode::Closed)), NomadException);
 
     Runtime other;
-    auto descriptor = std::make_unique<ObjectType>(&runtime, "Unregistered", ObjectTypeMode::Closed);
+    auto descriptor = std::make_unique<ObjectType>(&runtime, TypeId::INVALID, "Unregistered", ObjectTypeMode::Closed);
     BOOST_TEST(descriptor->getRuntime() == &runtime);
     BOOST_TEST(runtime.getTypeId("Unregistered").isInvalid());
-    BOOST_CHECK_THROW(other.registerType(std::move(descriptor)), NomadException);
+    BOOST_TEST(descriptor->getId().isInvalid());
     BOOST_TEST(other.getTypeId("Unregistered").isInvalid());
     BOOST_TEST(runtime.getTypeId("Unregistered").isInvalid());
 }
@@ -48,17 +50,19 @@ BOOST_AUTO_TEST_CASE(runtime_specialized_creation_forwards_arguments_and_publish
     public:
         CreationProbe(
             Runtime* runtime,
+            TypeId id,
             NomadString name,
             ObjectTypeMode mode,
             std::unique_ptr<int> value,
             int& constructions,
             bool& unpublished
         ):
-            ObjectType(runtime, std::move(name), mode),
+            ObjectType(runtime, id, std::move(name), mode),
             m_value(std::move(value))
         {
             ++constructions;
-            unpublished = runtime->getTypeId(getTypeName()).isInvalid();
+            unpublished = runtime->getTypeId(getTypeName()).isInvalid() &&
+                !runtime->getType(id).has_value();
         }
 
         [[nodiscard]] int getValue() const { return *m_value; }
@@ -77,6 +81,7 @@ BOOST_AUTO_TEST_CASE(runtime_specialized_creation_forwards_arguments_and_publish
     const auto* type = dynamic_cast<const CreationProbe*>(runtime.getType(id).value());
     BOOST_REQUIRE(type != nullptr);
     BOOST_TEST(type->getRuntime() == &runtime);
+    BOOST_TEST(type->getId() == id);
     BOOST_TEST(type->getValue() == 42);
     BOOST_TEST(type->isOpen());
     BOOST_TEST(unpublished);
@@ -94,6 +99,148 @@ BOOST_AUTO_TEST_CASE(runtime_specialized_creation_forwards_arguments_and_publish
     BOOST_TEST(runtime.getType(id).value() == type);
 }
 
+BOOST_AUTO_TEST_CASE(runtime_type_ids_survive_nested_creation_and_failed_construction) {
+    class NestedCreation final : public ObjectType {
+    public:
+        NestedCreation(
+            Runtime* runtime,
+            TypeId id,
+            NomadString name,
+            ObjectTypeMode mode,
+            TypeId& observedId,
+            TypeId& nestedId,
+            bool fail
+        ):
+            ObjectType(runtime, id, std::move(name), mode)
+        {
+            observedId = getId();
+            BOOST_REQUIRE(id.isValid());
+            BOOST_TEST(!runtime->getType(id).has_value());
+            nestedId = runtime->createObjectType(getTypeName() + "Child", ObjectTypeMode::Closed);
+            BOOST_REQUIRE(nestedId.isValid());
+            BOOST_TEST(nestedId != id);
+            std::vector<const Type*> types;
+            runtime->getTypes(types);
+            for (const auto* type : types) {
+                BOOST_REQUIRE(type != nullptr);
+                BOOST_TEST(type->getId() != id);
+            }
+            if (fail) {
+                throw NomadException("Expected construction failure");
+            }
+        }
+    };
+
+    Runtime runtime;
+    TypeId observedId;
+    TypeId nestedId;
+    const auto id = runtime.createObjectType<NestedCreation>(
+        "Nested", ObjectTypeMode::Closed, observedId, nestedId, false
+    );
+    BOOST_REQUIRE(id.isValid());
+    BOOST_TEST(id == observedId);
+    BOOST_TEST(runtime.getType(id).value()->getId() == id);
+    const auto* nested = runtime.getType(nestedId).value();
+    BOOST_TEST(nested->getId() == nestedId);
+
+    BOOST_CHECK_THROW(static_cast<void>(runtime.createObjectType<NestedCreation>(
+        "Failed", ObjectTypeMode::Closed, observedId, nestedId, true
+    )), NomadException);
+    const auto failedId = observedId;
+    BOOST_TEST(!runtime.getType(failedId).has_value());
+    BOOST_TEST(runtime.getTypeId("Failed").isInvalid());
+    BOOST_TEST(runtime.getType(nestedId).value()->getId() == nestedId);
+    const auto subsequentId = runtime.createObjectType("Subsequent", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(subsequentId.isValid());
+    BOOST_TEST(subsequentId != failedId);
+    BOOST_TEST(runtime.getType(id).value()->getId() == id);
+    BOOST_TEST(runtime.getType(nested->getId()).value() == nested);
+
+    std::vector<const Type*> types;
+    runtime.getTypes(types);
+    for (const auto* type : types) {
+        BOOST_REQUIRE(type != nullptr);
+        BOOST_TEST(type->getId() != failedId);
+        BOOST_TEST(runtime.getType(type->getId()).value() == type);
+    }
+    BOOST_REQUIRE(runtime.getCallbackType({}, runtime.getVoidType()) != nullptr);
+    BOOST_REQUIRE(runtime.getIteratorType(runtime.getIntegerType()) != nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(runtime_rejects_descriptors_with_forged_registered_ids) {
+    Runtime runtime;
+    Runtime other;
+    const auto id = runtime.createObjectType("ActualOwner", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(id.isValid());
+    const auto* actual = runtime.getType(id).value()->asObjectType();
+    ObjectType impostor(&runtime, id, "ActualOwner", ObjectTypeMode::Closed);
+    ObjectType foreign(&other, id, "ActualOwner", ObjectTypeMode::Closed);
+    for (const auto* candidate : {&impostor, &foreign}) {
+        BOOST_TEST(runtime.registerProperty(candidate, "value", runtime.getIntegerType()).isInvalid());
+        BOOST_TEST(candidate->getProperties().empty());
+    }
+    BOOST_TEST(runtime.getType(id).value() == actual);
+    BOOST_TEST(actual->getProperties().empty());
+}
+
+BOOST_AUTO_TEST_CASE(runtime_parameterized_factories_preserve_reservations_and_reject_wrong_ids) {
+    Runtime runtime;
+    TypeId reservedId;
+    TypeId nestedId;
+    auto validId = false;
+    auto initializerCalls = 0;
+    BOOST_REQUIRE(runtime.registerParameterizedType(
+        "IdentityBox", 1,
+        [&](Runtime* owner, TypeId id, const std::vector<const Type*>& arguments) {
+            reservedId = id;
+            BOOST_TEST(!owner->getType(id).has_value());
+            if (nestedId.isInvalid()) {
+                nestedId = owner->createObjectType("FactoryChild", ObjectTypeMode::Closed);
+                BOOST_REQUIRE(nestedId.isValid());
+            }
+            return std::make_unique<ObjectType>(
+                owner, validId ? id : nestedId, "IdentityBox<int>", ObjectTypeMode::Closed, arguments
+            );
+        },
+        [&](Runtime* owner, TypeId id) {
+            ++initializerCalls;
+            BOOST_TEST(id == reservedId);
+            BOOST_TEST(owner->getType(id).value()->getId() == id);
+        }
+    ));
+    BOOST_TEST(runtime.getParameterizedType("IdentityBox", {runtime.getIntegerType()}) == nullptr);
+    const auto rejectedId = reservedId;
+    BOOST_TEST(!runtime.getType(rejectedId).has_value());
+    BOOST_TEST(initializerCalls == 0);
+    validId = true;
+    const auto* type = runtime.getParameterizedType("IdentityBox", {runtime.getIntegerType()});
+    BOOST_REQUIRE(type != nullptr);
+    BOOST_TEST(type->getId() == reservedId);
+    BOOST_TEST(type->getId() != rejectedId);
+    BOOST_TEST(type->getId() != nestedId);
+    BOOST_TEST(runtime.getParameterizedType("IdentityBox", {runtime.getIntegerType()}) == type);
+    BOOST_TEST(initializerCalls == 1);
+}
+
+BOOST_AUTO_TEST_CASE(runtime_callback_signatures_have_distinct_stable_type_ids) {
+    Runtime runtime;
+    const auto* voidCallback = runtime.getCallbackType({}, runtime.getVoidType());
+    const auto* booleanCallback = runtime.getCallbackType({}, runtime.getBooleanType());
+    const auto* parameterCallback = runtime.getCallbackType(
+        {runtime.getIntegerType()}, runtime.getVoidType()
+    );
+    BOOST_TEST(voidCallback->getTypeName() == booleanCallback->getTypeName());
+    BOOST_TEST(voidCallback->getId() != booleanCallback->getId());
+    BOOST_TEST(voidCallback->getId() != parameterCallback->getId());
+    BOOST_TEST(booleanCallback->getId() != parameterCallback->getId());
+    BOOST_TEST(runtime.getType(voidCallback->getId()).value() == voidCallback);
+    BOOST_TEST(runtime.getType(booleanCallback->getId()).value() == booleanCallback);
+    BOOST_TEST(runtime.getType(parameterCallback->getId()).value() == parameterCallback);
+    BOOST_TEST(runtime.getCallbackType({}, runtime.getVoidType()) == voidCallback);
+    BOOST_TEST(runtime.getCallbackType({}, runtime.getBooleanType()) == booleanCallback);
+    BOOST_TEST(runtime.getCallbackType({runtime.getIntegerType()}, runtime.getVoidType()) == parameterCallback);
+}
+
 BOOST_AUTO_TEST_CASE(runtime_parameterized_callbacks_receive_the_owner_and_registered_specialization_id) {
     Runtime runtime;
     int factoryCalls = 0;
@@ -101,14 +248,14 @@ BOOST_AUTO_TEST_CASE(runtime_parameterized_callbacks_receive_the_owner_and_regis
     TypeId initializedId = TypeId::INVALID;
     BOOST_REQUIRE(runtime.registerParameterizedType(
         "AssociatedBox", 1,
-        [&](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+        [&](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             ++factoryCalls;
             BOOST_TEST(owningRuntime == &runtime);
             BOOST_REQUIRE(arguments.size() == 1u);
             BOOST_TEST(arguments[0] == runtime.getIntegerType());
             BOOST_TEST(owningRuntime->getTypeId("AssociatedBox<int>").isInvalid());
             return std::make_unique<ObjectType>(
-                owningRuntime, "AssociatedBox<int>", ObjectTypeMode::Closed, arguments
+                owningRuntime, id, "AssociatedBox<int>", ObjectTypeMode::Closed, arguments
             );
         },
         [&](Runtime* owningRuntime, const TypeId id) {
@@ -142,10 +289,10 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_foreign_parameterized_descriptors_without_i
     int initializerCalls = 0;
     BOOST_REQUIRE(runtime.registerParameterizedType(
         "ForeignBox", 1,
-        [&](Runtime* owningRuntime, const std::vector<const Type*>&) {
+        [&](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>&) {
             ++factoryCalls;
             BOOST_TEST(owningRuntime == &runtime);
-            return std::make_unique<ObjectType>(&other, "ForeignBox<int>", ObjectTypeMode::Closed);
+            return std::make_unique<ObjectType>(&other, TypeId::INVALID, "ForeignBox<int>", ObjectTypeMode::Closed);
         },
         [&](Runtime*, TypeId) { ++initializerCalls; }
     ));

@@ -21,7 +21,7 @@ void registerRangeType(Runtime* runtime) {
     const auto iteratorId = runtime->addMethod(id, {
         .name = "iterator",
         .parameters = {},
-        .returnTypeId = runtime->getTypeId(runtime->getIteratorType(integerType)->getTypeName()),
+        .returnTypeId = runtime->getIteratorType(integerType)->getId(),
         .function = [integerType](VirtualMachine* machine) {
             machine->getResult().setObjectValue(
                 new RangeIterator(integerType, *machine->getThisAs<RangeObject>())

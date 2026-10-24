@@ -230,7 +230,7 @@ void Game::initAudioFunctions() {
     const auto playOnceThenId = m_runtime->addMethod(audioTypeId, {
         .name = "playOnceThen",
         .parameters = {{
-            m_runtime->getTypeId(m_runtime->getCallbackType({}, m_runtime->getVoidType())->getTypeName()),
+            m_runtime->getCallbackType({}, m_runtime->getVoidType())->getId(),
             "callback",
             NomadParamDoc("Function to execute after the sound effect finishes.")
         }},

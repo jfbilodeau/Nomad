@@ -10,6 +10,7 @@ class MapType final : public ObjectType {
 public:
     MapType(
         Runtime* runtime,
+        TypeId id,
         NomadString name,
         ObjectTypeMode mode,
         const Type* keyType,

@@ -163,7 +163,7 @@ public:
 
     // Types
     using ParameterizedTypeFactory =
-        std::function<std::unique_ptr<Type>(Runtime*, const std::vector<const Type*>&)>;
+        std::function<std::unique_ptr<Type>(Runtime*, TypeId, const std::vector<const Type*>&)>;
 
     using ParameterizedTypeInitializer = std::function<void(Runtime*, TypeId)>;
     
@@ -189,7 +189,6 @@ public:
         const NomadString& name,
         const std::vector<const Type*>& argumentTypes
     ) const;
-    void registerType(std::unique_ptr<Type>&& type);
     [[nodiscard]] TypeId createObjectType(
         NomadString name,
         ObjectTypeMode mode,
@@ -204,10 +203,11 @@ public:
         if (!canCreateObjectType(name, mode)) {
             return TypeId::INVALID;
         }
+        const auto id = reserveTypeId();
         auto type = std::make_unique<Descriptor>(
-            this, name, mode, std::forward<Arguments>(arguments)...
+            this, id, name, mode, std::forward<Arguments>(arguments)...
         );
-        return publishObjectType(name, mode, std::move(type));
+        return publishObjectType(id, name, mode, std::move(type));
     }
     [[nodiscard]] const ObjectType* getIteratorType(const Type* valueType);
     void registerIterableType(
@@ -594,10 +594,13 @@ private:
         const std::vector<const Type*>& argumentTypes
     ) const;
     // Type and member validation
+    [[nodiscard]] TypeId reserveTypeId();
+    void registerType(std::unique_ptr<Type>&& type);
     [[nodiscard]] bool ownsType(const Type* type) const;
     [[nodiscard]] ObjectType* getMutableObjectType(const ObjectType* type);
     [[nodiscard]] bool canCreateObjectType(const NomadString& name, ObjectTypeMode mode) const;
     [[nodiscard]] TypeId publishObjectType(
+        TypeId id,
         const NomadString& name,
         ObjectTypeMode mode,
         std::unique_ptr<ObjectType> type

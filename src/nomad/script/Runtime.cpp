@@ -79,22 +79,22 @@ bool isNativeMemberName(const NomadString& name) {
 
 Runtime::Runtime() {
     // Types
-    registerType(std::make_unique<VoidType>(this));
-    registerType(std::make_unique<IdType>(this));
-    registerType(std::make_unique<FloatType>(this));
-    registerType(std::make_unique<IntegerType>(this));
-    registerType(std::make_unique<BooleanType>(this));
-    registerType(std::make_unique<StringType>(this));
-    registerType(std::make_unique<FileNameType>(this));
-    registerType(std::make_unique<FunctionNameType>(this));
-    registerType(std::make_unique<FunctionLineNumberType>(this));
-    registerType(std::make_unique<EventCallbackType>(this));
-    registerType(std::make_unique<EventDispatchType>(this));
+    registerType(std::make_unique<VoidType>(this, reserveTypeId()));
+    registerType(std::make_unique<IdType>(this, reserveTypeId()));
+    registerType(std::make_unique<FloatType>(this, reserveTypeId()));
+    registerType(std::make_unique<IntegerType>(this, reserveTypeId()));
+    registerType(std::make_unique<BooleanType>(this, reserveTypeId()));
+    registerType(std::make_unique<StringType>(this, reserveTypeId()));
+    registerType(std::make_unique<FileNameType>(this, reserveTypeId()));
+    registerType(std::make_unique<FunctionNameType>(this, reserveTypeId()));
+    registerType(std::make_unique<FunctionLineNumberType>(this, reserveTypeId()));
+    registerType(std::make_unique<EventCallbackType>(this, reserveTypeId()));
+    registerType(std::make_unique<EventDispatchType>(this, reserveTypeId()));
     if (!registerParameterizedType(
         "Iterator", 1,
-        [](Runtime* runtime, const std::vector<const Type*>& arguments) {
+        [](Runtime* runtime, TypeId id, const std::vector<const Type*>& arguments) {
             return std::make_unique<ObjectType>(
-                runtime, "Iterator<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments
+                runtime, id, "Iterator<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments
             );
         },
         [](Runtime* runtime, const TypeId id) {
@@ -111,7 +111,7 @@ Runtime::Runtime() {
                 .documentation = NomadDoc("Advances the iterator. Returns false at the end.")
             });
             const auto currentId = runtime->addProperty(id, {
-                .valueTypeId = runtime->getTypeId(valueType->getTypeName()),
+                .valueTypeId = valueType->getId(),
                 .name = "current",
                 .getter = [valueType](VirtualMachine* machine, RuntimeValue& result) {
                     RuntimeValue owned;
@@ -435,7 +435,7 @@ void Runtime::rebuildHubMembers() {
         add(getConstantName(id), id);
     }
     for (const auto& type : m_types) {
-        if (getEventId(type->getTypeName()).isInvalid()) {
+        if (type != nullptr && getEventId(type->getTypeName()).isInvalid()) {
             add(type->getTypeName(), type.get());
         }
     }
@@ -959,22 +959,31 @@ bool Runtime::canOverloadCallable(
     return true;
 }
 
-void Runtime::registerType(std::unique_ptr<Type>&& type) {
-    if (type == nullptr || type->getRuntime() != this) {
-        throw NomadException("Cannot register a type without the matching owning runtime");
-    }
-    if (isHub(type->getTypeName()) || isHubVariable(type->getTypeName())) {
-        throw NomadException("Type name '" + type->getTypeName() + "' is reserved by a hub");
-    }
-    if (getEventId(type->getTypeName()).isInvalid()) {
-        if (!canRegisterHubMember(type->getTypeName())) {
-            throw NomadException("Type name '" + type->getTypeName() + "' is already a hub member");
-        }
-        registerHubMember(type->getTypeName(), type.get());
-    }
-    m_types.push_back(std::move(type));
+TypeId Runtime::reserveTypeId() {
+    const auto id = TypeId{toNomadId(m_types.size())};
+    m_types.push_back(nullptr);
+    return id;
+}
 
-    // return toNomadId(m_types.size() - 1);
+void Runtime::registerType(std::unique_ptr<Type>&& type) {
+    if (type == nullptr || type->getRuntime() != this ||
+        isIdOutOfRange(type->getId().id, m_types.size()) ||
+        m_types[toNomadIndex(type->getId().id)] != nullptr) {
+        throw NomadException("Cannot register a type without a matching runtime and reserved ID");
+    }
+    if (type->asCallback() == nullptr) {
+        if (isHub(type->getTypeName()) || isHubVariable(type->getTypeName())) {
+            throw NomadException("Type name '" + type->getTypeName() + "' is reserved by a hub");
+        }
+        if (getEventId(type->getTypeName()).isInvalid()) {
+            if (!canRegisterHubMember(type->getTypeName())) {
+                throw NomadException("Type name '" + type->getTypeName() + "' is already a hub member");
+            }
+            registerHubMember(type->getTypeName(), type.get());
+        }
+    }
+    const auto index = toNomadIndex(type->getId().id);
+    m_types[index] = std::move(type);
 }
 
 TypeId Runtime::createObjectType(
@@ -1009,23 +1018,24 @@ bool Runtime::canCreateObjectType(const NomadString& name, const ObjectTypeMode 
 }
 
 TypeId Runtime::publishObjectType(
+    const TypeId id,
     const NomadString& name,
     const ObjectTypeMode mode,
     std::unique_ptr<ObjectType> type
 ) {
-    if (type->getRuntime() != this || type->getTypeName() != name ||
+    if (type->getRuntime() != this || type->getId() != id || type->getTypeName() != name ||
+        !canCreateObjectType(name, mode) ||
         type->isOpen() != (mode == ObjectTypeMode::Opened)) {
         log::error("Cannot create object type '" + name + "': descriptor does not match its creation request");
         return TypeId::INVALID;
     }
-    const auto id = TypeId{toNomadId(m_types.size())};
     registerType(std::move(type));
     return id;
 }
 
 TypeId Runtime::getTypeId(const NomadString& typeName) const {
     for (NomadIndex i = 0; i < m_types.size(); ++i) {
-        if (m_types[i]->getTypeName() == typeName) {
+        if (m_types[i] != nullptr && m_types[i]->getTypeName() == typeName) {
             return TypeId{toNomadId(i)};
         }
     }
@@ -1034,7 +1044,7 @@ TypeId Runtime::getTypeId(const NomadString& typeName) const {
 }
 
 std::optional<const Type*> Runtime::getType(const TypeId id) const {
-    if (isIdOutOfRange(id.id, m_types.size())) {
+    if (isIdOutOfRange(id.id, m_types.size()) || m_types[toNomadIndex(id.id)] == nullptr) {
         return std::nullopt;
     }
 
@@ -1043,7 +1053,7 @@ std::optional<const Type*> Runtime::getType(const TypeId id) const {
 
 const Type* Runtime::getTypeByName(const NomadString& name) const {
     for (const auto& type: m_types) {
-        if (type->getTypeName() == name) {
+        if (type != nullptr && type->getTypeName() == name) {
             return type.get();
         }
     }
@@ -1055,7 +1065,9 @@ void Runtime::getTypes(std::vector<const Type*>& types) const {
     types.reserve(types.size() + m_types.size());
 
     for (const auto& type : m_types) {
-        types.push_back(type.get());
+        if (type != nullptr) {
+            types.push_back(type.get());
+        }
     }
 }
 
@@ -1074,7 +1086,7 @@ const OpaqueIdType* Runtime::registerOpaqueIdType(const NomadString& name, const
         return nullptr;
     }
 
-    auto opaqueType = std::make_unique<OpaqueIdType>(this, name, doc);
+    auto opaqueType = std::make_unique<OpaqueIdType>(this, reserveTypeId(), name, doc);
     const auto* registeredType = opaqueType.get();
     registerType(std::move(opaqueType));
     return registeredType;
@@ -1139,9 +1151,9 @@ TypeId Runtime::createEnum(
         }
     }
 
-    auto enumType = std::make_unique<EnumType>(this, name, std::move(values), std::move(documentation));
+    const auto id = reserveTypeId();
+    auto enumType = std::make_unique<EnumType>(this, id, name, std::move(values), std::move(documentation));
     const auto* registeredType = enumType.get();
-    const auto id = TypeId{toNomadId(m_types.size())};
     registerType(std::move(enumType));
 
     for (NomadIndex index = 0; index < registeredType->getValueCount(); ++index) {
@@ -1332,8 +1344,9 @@ const Type* Runtime::getParameterizedType(
     }
     const auto factory = registration->factory;
     const auto initializer = registration->initializer;
-    auto type = factory(this, arguments);
-    if (type == nullptr || type->getRuntime() != this ||
+    const auto id = reserveTypeId();
+    auto type = factory(this, id, arguments);
+    if (type == nullptr || type->getRuntime() != this || type->getId() != id ||
         type->getTypeName().empty() || getTypeByName(type->getTypeName()) != nullptr) {
         log::error("Factory for '" + name + "' returned an invalid or duplicate type");
         return nullptr;
@@ -1341,29 +1354,39 @@ const Type* Runtime::getParameterizedType(
     const auto* result = type.get();
     registerType(std::move(type));
     if (initializer) {
-        initializer(this, getTypeId(result->getTypeName()));
+        initializer(this, id);
     }
     m_typeSpecializations.push_back({name, arguments, result});
     return result;
 }
 
 const Type* Runtime::getCallbackType(const std::vector<const Type*>& parameterTypes, const Type* returnType) {
-    auto test_type = std::make_unique<FunctionType>(this, parameterTypes, returnType);
-
     for (const auto& type: m_types) {
-        if (type->sameType(test_type.get())) {
-            return type.get();
+        const auto* callback = type == nullptr ? nullptr : type->asCallback();
+        if (callback != nullptr && callback->getReturnType() == returnType &&
+            callback->getParameterCount() == parameterTypes.size()) {
+            auto matches = true;
+            for (NomadIndex index = 0; index < parameterTypes.size(); ++index) {
+                if (callback->getParameterType(index) != parameterTypes[index]) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                return type.get();
+            }
         }
     }
-
-    m_types.push_back(std::move(test_type));
-
-    return m_types.back().get();
+    const auto id = reserveTypeId();
+    auto type = std::make_unique<FunctionType>(this, id, parameterTypes, returnType);
+    const auto* result = type.get();
+    registerType(std::move(type));
+    return result;
 }
 
 const Type * Runtime::getEventType(const NomadString &name) const {
     for (const auto& type: m_types) {
-        if (type->getTypeName() == name) {
+        if (type != nullptr && type->getTypeName() == name) {
             return type.get();
         }
     }
@@ -1376,15 +1399,12 @@ const Type* Runtime::getPredicateType() {
 }
 
 bool Runtime::ownsType(const Type* type) const {
-    return type != nullptr && type->getRuntime() == this &&
-           std::ranges::any_of(m_types, [type](const auto& registeredType) { return registeredType.get() == type; });
+    return type != nullptr && type->getRuntime() == this && getType(type->getId()) == type;
 }
 
 ObjectType* Runtime::getMutableObjectType(const ObjectType* type) {
-    for (const auto& registeredType : m_types) {
-        if (registeredType.get() == type) {
-            return static_cast<ObjectType*>(registeredType.get());
-        }
+    if (ownsType(type)) {
+        return static_cast<ObjectType*>(m_types[toNomadIndex(type->getId().id)].get());
     }
     return nullptr;
 }
@@ -2334,7 +2354,7 @@ EventId Runtime::registerEvent(const NomadString &name, const std::vector<EventP
     m_events.emplace_back(id, name, parameterTypes);
 
     // Also register event type.
-    registerType(std::make_unique<EventType>(this, &m_events.back()));
+    registerType(std::make_unique<EventType>(this, reserveTypeId(), &m_events.back()));
     registerHubMember(name, id);
 
     return id;

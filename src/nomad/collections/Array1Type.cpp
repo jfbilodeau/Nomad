@@ -8,11 +8,12 @@ namespace nomad {
 
 Array1Type::Array1Type(
     Runtime* runtime,
+    TypeId id,
     NomadString name,
     const ObjectTypeMode mode,
     const Type* elementType
 ):
-    ArrayType(runtime, std::move(name), mode, elementType, 1)
+    ArrayType(runtime, id, std::move(name), mode, elementType, 1)
 {}
 
 Array1dObject* Array1Type::createObject(const NomadInteger size) const {

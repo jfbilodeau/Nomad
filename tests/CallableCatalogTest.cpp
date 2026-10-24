@@ -651,11 +651,10 @@ class ResolutionObject final : public NomadObject {
 };
 
 const ObjectType* registerResolutionType(Runtime& runtime, const NomadString& name) {
-    auto descriptor = std::make_unique<ObjectType>(
-        &runtime, name, ObjectTypeMode::Closed, std::vector<const Type*>{}, "A test object."
+    const auto descriptorId = runtime.createObjectType<ObjectType>(name, ObjectTypeMode::Closed, std::vector<const Type*>{}, "A test object."
     );
-    const auto* type = descriptor.get();
-    runtime.registerType(std::move(descriptor));
+    BOOST_REQUIRE(descriptorId.isValid());
+    const auto* type = runtime.getType(descriptorId).value()->asObjectType();
     return type;
 }
 
@@ -680,7 +679,7 @@ BOOST_AUTO_TEST_CASE(registered_callables_share_one_id_space)
     const auto* type = registerResolutionType(runtime, "Thing");
 
     const auto function = registerNativeFunction(runtime, "test.one", {}, runtime.getIntegerType());
-    const auto method = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    const auto method = runtime.addMethod(type->getId(), {
         .name = "size",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("int"),
@@ -762,8 +761,15 @@ BOOST_AUTO_TEST_CASE(type_owned_constructor_factory_is_released_once)
     {
         class ConstructorOwner final : public ObjectType {
         public:
-            ConstructorOwner(Runtime* runtime, int& destructions, bool& alive):
-                ObjectType(runtime, "LifetimeOwner", ObjectTypeMode::Closed),
+            ConstructorOwner(
+                Runtime* runtime,
+                TypeId id,
+                NomadString name,
+                ObjectTypeMode mode,
+                int& destructions,
+                bool& alive
+            ):
+                ObjectType(runtime, id, std::move(name), mode),
                 m_destructions(destructions),
                 m_alive(alive)
             {
@@ -779,9 +785,11 @@ BOOST_AUTO_TEST_CASE(type_owned_constructor_factory_is_released_once)
         };
 
         Runtime runtime;
-        auto descriptor = std::make_unique<ConstructorOwner>(&runtime, destructions, aliveAtTypeDestruction);
-        const auto* type = descriptor.get();
-        runtime.registerType(std::move(descriptor));
+        const auto ownerId = runtime.createObjectType<ConstructorOwner>(
+            "LifetimeOwner", ObjectTypeMode::Closed, destructions, aliveAtTypeDestruction
+        );
+        BOOST_REQUIRE(ownerId.isValid());
+        const auto* type = runtime.getType(ownerId).value()->asObjectType();
         auto lifetime = std::shared_ptr<int>(new int{0}, [&destructions](int* value) {
             ++destructions;
             delete value;
@@ -803,7 +811,7 @@ BOOST_AUTO_TEST_CASE(methods_belong_to_the_receiver_type)
     Runtime runtime;
     const auto* type = registerResolutionType(runtime, "MethodOwner");
     const auto* otherType = registerResolutionType(runtime, "OtherMethodOwner");
-    const auto memberId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    const auto memberId = runtime.addMethod(type->getId(), {
         .name = "update",
         .parameters = {{runtime.getTypeId("int"), "value", ""}},
         .returnTypeId = runtime.getTypeId("void"),
@@ -818,7 +826,7 @@ BOOST_AUTO_TEST_CASE(methods_belong_to_the_receiver_type)
     BOOST_TEST(methods.front() == runtime.getMethod(callableId));
     BOOST_TEST(otherType->getMethods().empty());
 
-    const auto overloadId = runtime.addMethod(runtime.getTypeId(otherType->getTypeName()), {
+    const auto overloadId = runtime.addMethod(otherType->getId(), {
         .name = "update",
         .parameters = {{runtime.getTypeId("float"), "value", ""}},
         .returnTypeId = runtime.getTypeId("void"),
@@ -833,7 +841,7 @@ BOOST_AUTO_TEST_CASE(methods_belong_to_the_receiver_type)
         runtime.getNativeMemberMethod(overloadId)->getId());
     BOOST_TEST(runtime.getCallableId("update").isInvalid());
 
-    BOOST_TEST(runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    BOOST_TEST(runtime.addMethod(type->getId(), {
         .name = "update",
         .parameters = {{runtime.getTypeId("int"), "value", ""}},
         .returnTypeId = runtime.getTypeId("void"),
@@ -855,7 +863,7 @@ BOOST_AUTO_TEST_CASE(methods_belong_to_the_receiver_type)
     BOOST_TEST(type->getMethods().size() == 1);
 
     for (auto index = 0; index < 32; ++index) {
-        BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        BOOST_REQUIRE(runtime.addMethod(type->getId(), {
             .name = "extra" + std::to_string(index),
             .parameters = {},
             .returnTypeId = runtime.getTypeId("void"),
@@ -874,8 +882,15 @@ BOOST_AUTO_TEST_CASE(type_owned_method_callback_is_released_once)
     {
         class MethodOwner final : public ObjectType {
         public:
-            MethodOwner(Runtime* runtime, int& destructions, bool& alive):
-                ObjectType(runtime, "MethodLifetimeOwner", ObjectTypeMode::Closed),
+            MethodOwner(
+                Runtime* runtime,
+                TypeId id,
+                NomadString name,
+                ObjectTypeMode mode,
+                int& destructions,
+                bool& alive
+            ):
+                ObjectType(runtime, id, std::move(name), mode),
                 m_destructions(destructions),
                 m_alive(alive)
             {
@@ -891,14 +906,16 @@ BOOST_AUTO_TEST_CASE(type_owned_method_callback_is_released_once)
         };
 
         Runtime runtime;
-        auto descriptor = std::make_unique<MethodOwner>(&runtime, destructions, aliveAtTypeDestruction);
-        const auto* type = descriptor.get();
-        runtime.registerType(std::move(descriptor));
+        const auto ownerId = runtime.createObjectType<MethodOwner>(
+            "MethodLifetimeOwner", ObjectTypeMode::Closed, destructions, aliveAtTypeDestruction
+        );
+        BOOST_REQUIRE(ownerId.isValid());
+        const auto* type = runtime.getType(ownerId).value()->asObjectType();
         auto lifetime = std::shared_ptr<int>(new int{0}, [&destructions](int* value) {
             ++destructions;
             delete value;
         });
-        const auto memberId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+        const auto memberId = runtime.addMethod(type->getId(), {
             .name = "update",
             .parameters = {},
             .returnTypeId = runtime.getTypeId("void"),
@@ -918,7 +935,7 @@ BOOST_AUTO_TEST_CASE(category_getters_and_conversions_use_resolved_callable_ids)
     const auto* type = registerResolutionType(runtime, "Typed");
     const auto nativeId = registerNativeFunction(runtime, "native", {}, runtime.getIntegerType());
     const auto scriptId = runtime.registerScriptFunction("script", "script.nomad", "");
-    const auto memberId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    const auto memberId = runtime.addMethod(type->getId(), {
         .name = "size",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("int"),
@@ -966,14 +983,14 @@ BOOST_AUTO_TEST_CASE(member_method_lookup_distinguishes_member_and_callable_ids)
     for (NomadIndex index = 0; index < 32; ++index) {
         BOOST_REQUIRE(registerVoidNativeFunction(runtime, "padding" + std::to_string(index)).isValid());
     }
-    const auto propertyId = runtime.addProperty(runtime.getTypeId(type->getTypeName()), {
+    const auto propertyId = runtime.addProperty(type->getId(), {
         .valueTypeId = runtime.getTypeId("int"),
         .name = "value",
         .getter = [](VirtualMachine*, RuntimeValue&) {},
         .setter = {},
         .documentation = ""
     });
-    const auto memberId = runtime.addMethod(runtime.getTypeId(type->getTypeName()), {
+    const auto memberId = runtime.addMethod(type->getId(), {
         .name = "size",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("int"),
@@ -1045,7 +1062,7 @@ BOOST_AUTO_TEST_CASE(resolve_method_is_scoped_to_the_object_type)
     const auto* second = registerResolutionType(runtime, "Second");
 
     BOOST_REQUIRE(
-        runtime.addMethod(runtime.getTypeId(first->getTypeName()), {
+        runtime.addMethod(first->getId(), {
             .name = "size",
             .parameters = {},
             .returnTypeId = runtime.getTypeId("int"),

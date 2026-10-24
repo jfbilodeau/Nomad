@@ -10,6 +10,7 @@ class ListType final : public ObjectType {
 public:
     ListType(
         Runtime* runtime,
+        TypeId id,
         NomadString name,
         ObjectTypeMode mode,
         const Type* elementType

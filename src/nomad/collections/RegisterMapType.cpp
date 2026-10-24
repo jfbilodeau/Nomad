@@ -66,7 +66,7 @@ void registerMapFamily(
             const auto keysId = runtime->addMethod(id, {
                 .name = "keys",
                 .parameters = {},
-                .returnTypeId = runtime->getTypeId(keysType->getTypeName()),
+                .returnTypeId = keysType->getId(),
                 .function = [keyType](nomad::VirtualMachine* machine) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
                     auto keys = map->getKeys(keyType);
@@ -77,7 +77,7 @@ void registerMapFamily(
             const auto valuesId = runtime->addMethod(id, {
                 .name = "values",
                 .parameters = {},
-                .returnTypeId = runtime->getTypeId(valuesType->getTypeName()),
+                .returnTypeId = valuesType->getId(),
                 .function = [](nomad::VirtualMachine* machine) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
                     auto values = map->getValues();
@@ -88,7 +88,7 @@ void registerMapFamily(
             const auto entriesId = runtime->addMethod(id, {
                 .name = "entries",
                 .parameters = {},
-                .returnTypeId = runtime->getTypeId(entriesType->getTypeName()),
+                .returnTypeId = entriesType->getId(),
                 .function = [entryType](nomad::VirtualMachine* machine) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
                     auto entries = map->getEntries(entryType);
@@ -142,7 +142,7 @@ void registerMapFamily(
             if (readOnlyType == nullptr || runtime->addMethod(id, {
                 .name = "toReadOnly",
                 .parameters = {},
-                .returnTypeId = runtime->getTypeId(readOnlyType->getTypeName()),
+                .returnTypeId = readOnlyType->getId(),
                 .function = [](VirtualMachine* machine) {
                     auto snapshot = machine->getThisAs<MapObject>()->createCopy();
                     machine->getResult().setObjectValue(snapshot.release());
@@ -185,15 +185,15 @@ void registerMapFamily(
 } // namespace
 
 void registerMapType(Runtime* runtime) {
-    registerMapFamily(runtime, "ReadOnlyMap", [](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+    registerMapFamily(runtime, "ReadOnlyMap", [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
         return std::make_unique<ReadOnlyMapType>(
-            owningRuntime, "ReadOnlyMap<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
+            owningRuntime, id, "ReadOnlyMap<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
             ObjectTypeMode::Closed, arguments[0], arguments[1]
         );
     }, false);
-    registerMapFamily(runtime, "Map", [](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+    registerMapFamily(runtime, "Map", [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
         return std::make_unique<MapType>(
-            owningRuntime, "Map<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
+            owningRuntime, id, "Map<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
             ObjectTypeMode::Closed, arguments[0], arguments[1]
         );
     }, true);

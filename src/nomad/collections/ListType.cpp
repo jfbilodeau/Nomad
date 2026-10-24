@@ -8,12 +8,13 @@ namespace nomad {
 
 ListType::ListType(
     Runtime* runtime,
+    TypeId id,
     NomadString name,
     const ObjectTypeMode mode,
     const Type* elementType
 ):
     ObjectType(
-        runtime, std::move(name), mode,
+        runtime, id, std::move(name), mode,
         {elementType}
     )
 {

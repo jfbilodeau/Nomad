@@ -8,6 +8,7 @@ class ReadOnlyMapType final : public ObjectType {
 public:
     ReadOnlyMapType(
         Runtime* runtime,
+        TypeId id,
         NomadString name,
         ObjectTypeMode mode,
         const Type* keyType,

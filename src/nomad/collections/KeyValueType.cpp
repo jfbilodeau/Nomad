@@ -10,13 +10,14 @@ namespace nomad {
 
 KeyValueType::KeyValueType(
     Runtime* runtime,
+    TypeId id,
     NomadString name,
     const ObjectTypeMode mode,
     const Type* keyType,
     const Type* valueType
 ):
     ObjectType(
-        runtime, std::move(name), mode,
+        runtime, id, std::move(name), mode,
         {keyType, valueType},
         NomadDoc("A pair with read-only key and value properties. Object fields share their referenced objects.")
     )

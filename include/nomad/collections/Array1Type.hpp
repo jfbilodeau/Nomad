@@ -12,6 +12,7 @@ class Array1Type final : public ArrayType {
 public:
     Array1Type(
         Runtime* runtime,
+        TypeId id,
         NomadString name,
         ObjectTypeMode mode,
         const Type* elementType
