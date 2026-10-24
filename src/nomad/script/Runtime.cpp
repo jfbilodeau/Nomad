@@ -1762,46 +1762,33 @@ PropertyId Runtime::addProperty(const TypeId id, NativePropertyDefinition defini
         return PropertyId::INVALID;
     }
     const auto valueType = getType(definition.valueTypeId);
-    if (!valueType.has_value()) {
-        log::error("Cannot register native property '" + definition.name + "': invalid value type ID");
+    if (!valueType.has_value() || (*valueType)->isVoid() || (*valueType)->isInternal()) {
+        log::error("Cannot register native property '" + definition.name + "': invalid value type");
         return PropertyId::INVALID;
     }
-    return registerNativeProperty(
-        objectType, definition.name, *valueType,
-        std::move(definition.getter), std::move(definition.setter), definition.documentation
-    );
-}
-
-PropertyId Runtime::registerNativeProperty(const ObjectType* objectType, const NomadString& name, const Type* valueType,
-                                           NativePropertyGetFn getFn, NativePropertySetFn setFn,
-                                           const NomadString& doc) {
-    if (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
-        log::error("Cannot register native property '" + name + "': invalid value type");
-        return PropertyId::INVALID;
-    }
-
-    if (!getFn && !setFn) {
-        log::error("Cannot register native property '" + name + "': property has no accessor or mutator");
+    if (!definition.getter && !definition.setter) {
+        log::error("Cannot register native property '" + definition.name + "': property has no accessor or mutator");
         return PropertyId::INVALID;
     }
 
     NomadString error;
-    if (!canRegisterNativeMember(objectType, name, MemberType::Property, {}, error)) {
-        log::error("Cannot register native property '" + name + "': " + error);
+    if (!canRegisterNativeMember(objectType, definition.name, MemberType::Property, {}, error)) {
+        log::error("Cannot register native property '" + definition.name + "': " + error);
         return PropertyId::INVALID;
     }
 
     auto* owner = getMutableObjectType(objectType);
-    const auto id = owner->registerProperty(*this, std::make_unique<NativeProperty>(
-        objectType, name, valueType, std::move(getFn), std::move(setFn), doc
+    const auto propertyId = owner->registerProperty(*this, std::make_unique<NativeProperty>(
+        objectType, definition.name, *valueType,
+        std::move(definition.getter), std::move(definition.setter), std::move(definition.documentation)
     ));
-    if (id.isInvalid()) {
+    if (propertyId.isInvalid()) {
         return PropertyId::INVALID;
     }
-    m_nativeMembers.push_back(id);
-    m_nativeMembersByName[name].push_back(id);
+    m_nativeMembers.push_back(propertyId);
+    m_nativeMembersByName[definition.name].push_back(propertyId);
 
-    return id;
+    return propertyId;
 }
 
 CallableId Runtime::registerNativeMethod(

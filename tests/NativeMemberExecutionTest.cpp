@@ -28,15 +28,17 @@ const ObjectType* registerTestObject(Runtime& runtime) {
     runtime.registerNativeConstructor(
         type, {}, [](std::span<const RuntimeValue>) { return new TestObject; }, ""
     );
-    runtime.registerNativeProperty(
-        type, "value", runtime.getIntegerType(),
-        [](VirtualMachine* machine, RuntimeValue& result) {
+    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId(type->getTypeName()), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "value",
+        .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             result.setIntegerValue(machine->getThisAs<TestObject>()->value);
         },
-        [](VirtualMachine* machine, const RuntimeValue& value) {
+        .setter = [](VirtualMachine* machine, const RuntimeValue& value) {
             machine->getThisAs<TestObject>()->value = value.getIntegerValue();
-        }, ""
-    );
+        },
+        .documentation = ""
+    }).isValid());
     runtime.registerNativeMethod(
         type, "increment",
         [](VirtualMachine* machine) {

@@ -2614,16 +2614,15 @@ BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
     BOOST_TEST(runtime.getKeywordId("new").isValid());
     const auto* listType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(listType != nullptr);
-    runtime.registerNativeProperty(
-        static_cast<const ObjectType*>(listType),
-        "testPresent",
-        runtime.getBooleanType(),
-        [](VirtualMachine* machine, RuntimeValue& result) {
+    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId(listType->getTypeName()), {
+        .valueTypeId = runtime.getTypeId("bool"),
+        .name = "testPresent",
+        .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             result.setBooleanValue(machine->getThis() != nullptr);
         },
-        {},
-        ""
-    );
+        .setter = {},
+        .documentation = ""
+    }).isValid());
     runtime.registerNativeFunction(
         "test.distinct",
         [](VirtualMachine* machine) {

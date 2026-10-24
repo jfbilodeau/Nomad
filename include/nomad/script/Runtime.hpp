@@ -300,8 +300,6 @@ public:
     [[nodiscard]] const Property* getProperty(PropertyId id) const;
     [[nodiscard]] const NativeProperty* getNativeProperty(PropertyId id) const;
     [[nodiscard]] PropertyId addProperty(TypeId id, NativePropertyDefinition definition);
-    PropertyId registerNativeProperty(const ObjectType* objectType, const NomadString& name, const Type* valueType,
-                                      NativePropertyGetFn getFn, NativePropertySetFn setFn, NomadDocArg);
     [[nodiscard]] MemberReference getNativeMemberId(const Type* objectType, const NomadString& name) const;
     [[nodiscard]] MemberType getMemberType(const MemberReference& member) const;
     [[nodiscard]] std::optional<NativePropertyInfo> getNativePropertyInfo(const MemberReference& member) const;

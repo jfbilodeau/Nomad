@@ -54,7 +54,7 @@ const ParameterDefinition distance{
 These input structures do not register anything when constructed.
 `addProperty(TypeId, NativePropertyDefinition)` registers a native property
 using its creation input. The existing
-`registerNativeMethod`, `registerNativeConstructor`, `registerNativeProperty`,
+`registerNativeMethod`, `registerNativeConstructor`,
 `registerNativeIndexer`, and `registerIterableType` operations retain their
 current argument forms; they do not yet accept the new input structures.
 Their metadata structures are now named `NativePropertyInfo`,
@@ -326,9 +326,6 @@ registering a property. Duplicate native properties are rejected even if their
 definitions match. Use the existing property and native member lookup APIs to
 retrieve the registered metadata.
 
-The pointer-based `registerNativeProperty` operation remains available and
-shares the same property validation and registration behavior.
-
 ### Callable access
 
 Use `getCallable(id)` to retrieve a callable, or `getFunction(id)`,
@@ -363,7 +360,7 @@ do not implicitly convert to integers or other ID categories.
 or `CallableId::INVALID` when absent. It does not select an overload.
 `getCallableOverloads(name, ids)` lists free-function overload IDs.
 
-`registerNativeProperty` returns a `PropertyId`; `registerNativeMethod` returns
+`addProperty` returns a `PropertyId`; `registerNativeMethod` returns
 the method's `CallableId`. Their failure results are `PropertyId::INVALID` and
 `CallableId::INVALID`, respectively.
 `getNativeMemberId` returns a `MemberReference`, a `std::variant<PropertyId, CallableId>`.
@@ -1070,7 +1067,7 @@ overload queries continue to return only concrete members.
 
 ## Native object properties
 
-Use `registerNativeProperty(objectType, name, valueType, getter, setter, doc)`.
+Use `addProperty(typeId, NativePropertyDefinition{...})`.
 Either callback may be empty for a write-only or read-only property. Both
 callbacks access the borrowed instance through `getThisAs<T>()`.
 
@@ -1081,16 +1078,20 @@ assign that local to `result`; this retains object references without reading th
 output's previous contents.
 
 ```cpp
-runtime.registerNativeProperty(
-    objectType, "value", runtime.getFloatType(),
-    [](nomad::VirtualMachine* vm, nomad::RuntimeValue& result) {
+const auto propertyId = runtime.addProperty(typeId, {
+    .valueTypeId = runtime.getTypeId("float"),
+    .name = "value",
+    .getter = [](nomad::VirtualMachine* vm, nomad::RuntimeValue& result) {
         result.setFloatValue(vm->getThisAs<MyObject>()->getValue());
     },
-    [](nomad::VirtualMachine* vm, const nomad::RuntimeValue& value) {
+    .setter = [](nomad::VirtualMachine* vm, const nomad::RuntimeValue& value) {
         vm->getThisAs<MyObject>()->setValue(value.getFloatValue());
     },
-    NomadDoc("Instance value.")
-);
+    .documentation = NomadDoc("Instance value.")
+});
+if (propertyId.isInvalid()) {
+    throw nomad::NomadException("Failed to register value property");
+}
 ```
 
 Members require a registered object type. Property setters mutate that instance,

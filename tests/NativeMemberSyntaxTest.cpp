@@ -55,9 +55,13 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
                 objectType, {defParameter("value", valueType, "")},
                 [](std::span<const RuntimeValue>) { return new NomadObject; }, ""
             ).isValid());
-            BOOST_REQUIRE(runtime.registerNativeProperty(
-                objectType, "declaredProperty", valueType, [](VirtualMachine*, RuntimeValue&) {}, {}, ""
-            ).isValid());
+            BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId(objectType->getTypeName()), {
+                .valueTypeId = runtime.getTypeId(valueType->getTypeName()),
+                .name = "declaredProperty",
+                .getter = [](VirtualMachine*, RuntimeValue&) {},
+                .setter = {},
+                .documentation = ""
+            }).isValid());
             BOOST_REQUIRE(runtime.registerNativeMethod(
                 objectType, "declaredMethod", methodFunction(),
                 {
@@ -152,8 +156,13 @@ BOOST_AUTO_TEST_CASE(rejects_reading_write_only_property) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    BOOST_REQUIRE(runtime.registerNativeProperty(runtime.getStringType(), "sink", runtime.getIntegerType(), {},
-                                                    propertySetter(), NomadDoc("Sink")).isValid());
+    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "sink",
+        .getter = {},
+        .setter = propertySetter(),
+        .documentation = NomadDoc("Sink")
+    }).isValid());
 
     auto expression = parseExpression(context, nullptr, "\"Nomad\".sink");
 
@@ -185,9 +194,13 @@ BOOST_AUTO_TEST_CASE(allows_assigning_write_only_property) {
     CompilerContext context(compiler.get());
     ScriptFunction function(CallableId::INVALID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
-    runtime.registerNativeProperty(
-        runtime.getStringType(), "sink", runtime.getIntegerType(), {}, propertySetter(), ""
-    );
+    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "sink",
+        .getter = {},
+        .setter = propertySetter(),
+        .documentation = ""
+    }).isValid());
 
     Tokenizer tokens(&context, "test.nomad", "name.sink = 10");
     auto statement = parser::parseLine(&context, &function, &tokens);
@@ -201,9 +214,13 @@ BOOST_AUTO_TEST_CASE(chained_assignment_reads_receiver_but_only_requires_final_s
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    runtime.registerNativeProperty(
-        runtime.getStringType(), "sink", runtime.getIntegerType(), {}, propertySetter(), ""
-    );
+    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "sink",
+        .getter = {},
+        .setter = propertySetter(),
+        .documentation = ""
+    }).isValid());
 
     Tokenizer tokens(&context, "test.nomad", "\"Nomad\".toUpper.sink = 10");
     auto statement = parser::parseLine(&context, nullptr, &tokens);
@@ -263,10 +280,13 @@ BOOST_AUTO_TEST_CASE(preserves_existing_qualified_identifier) {
 BOOST_AUTO_TEST_CASE(context_assignment_takes_precedence_over_native_member_names) {
     Runtime runtime;
     runtime.registerVariableContext("entity", "this.", std::make_unique<SimpleVariableContext>());
-    BOOST_REQUIRE(runtime.registerNativeProperty(
-        runtime.getStringType(), "value", runtime.getIntegerType(),
-        [](VirtualMachine*, RuntimeValue&) {}, {}, ""
-    ).isValid());
+    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "value",
+        .getter = [](VirtualMachine*, RuntimeValue&) {},
+        .setter = {},
+        .documentation = ""
+    }).isValid());
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"test", {"test.nomad",

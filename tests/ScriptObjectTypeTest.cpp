@@ -115,10 +115,13 @@ BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_cata
     const auto* first = createTestType(runtime, "First", ObjectTypeMode::Opened);
     const auto* second = createTestType(runtime, "Second", ObjectTypeMode::Opened);
     const auto scriptId = runtime.registerProperty(first, "value", runtime.getFloatType());
-    const auto nativeId = runtime.registerNativeProperty(
-        second, "value", runtime.getIntegerType(),
-        [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); }, {}, "Native value"
-    );
+    const auto nativeId = runtime.addProperty(runtime.getTypeId(second->getTypeName()), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "value",
+        .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); },
+        .setter = {},
+        .documentation = "Native value"
+    });
     BOOST_REQUIRE(scriptId.isValid());
     BOOST_REQUIRE(nativeId.isValid());
     BOOST_TEST(scriptId != nativeId);
@@ -172,10 +175,21 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
     BOOST_TEST(runtime.registerProperty(type, "move", runtime.getFloatType()).isInvalid());
     BOOST_REQUIRE(runtime.registerProperty(type, "x", runtime.getFloatType()).isValid());
     BOOST_TEST(runtime.registerNativeMethod(type, "x", [](VirtualMachine*) {}, {}, runtime.getVoidType(), "").isInvalid());
-    BOOST_TEST(runtime.registerNativeProperty(type, "x", runtime.getIntegerType(),
-        [](VirtualMachine*, RuntimeValue&) {}, {}, "").isInvalid());
-    const auto nativeId = runtime.registerNativeProperty(type, "native", runtime.getIntegerType(),
-        [](VirtualMachine*, RuntimeValue&) {}, {}, "");
+    const auto typeId = runtime.getTypeId(type->getTypeName());
+    BOOST_TEST(runtime.addProperty(typeId, {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "x",
+        .getter = [](VirtualMachine*, RuntimeValue&) {},
+        .setter = {},
+        .documentation = ""
+    }).isInvalid());
+    const auto nativeId = runtime.addProperty(typeId, {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "native",
+        .getter = [](VirtualMachine*, RuntimeValue&) {},
+        .setter = {},
+        .documentation = ""
+    });
     BOOST_REQUIRE(nativeId.isValid());
     BOOST_TEST(runtime.registerProperty(type, "native", runtime.getIntegerType()).isInvalid());
     BOOST_TEST(type->getPropertyCount() == 2u);
@@ -195,8 +209,13 @@ BOOST_AUTO_TEST_CASE(type_owned_native_property_callbacks_are_destroyed_once) {
             delete value;
         });
         observer = probe;
-        const auto id = runtime.registerNativeProperty(type, "value", runtime.getIntegerType(),
-            [probe](VirtualMachine*, RuntimeValue& value) { value.setIntegerValue(*probe); }, {}, "");
+        const auto id = runtime.addProperty(runtime.getTypeId(type->getTypeName()), {
+            .valueTypeId = runtime.getTypeId("int"),
+            .name = "value",
+            .getter = [probe](VirtualMachine*, RuntimeValue& value) { value.setIntegerValue(*probe); },
+            .setter = {},
+            .documentation = ""
+        });
         BOOST_REQUIRE(id.isValid());
         probe.reset();
         BOOST_TEST(!observer.expired());

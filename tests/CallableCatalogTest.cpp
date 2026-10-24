@@ -938,9 +938,13 @@ BOOST_AUTO_TEST_CASE(member_method_lookup_distinguishes_member_and_callable_ids)
     for (NomadIndex index = 0; index < 32; ++index) {
         BOOST_REQUIRE(registerVoidNativeFunction(runtime, "padding" + std::to_string(index)).isValid());
     }
-    const auto propertyId = runtime.registerNativeProperty(
-        type, "value", runtime.getIntegerType(), [](VirtualMachine*, RuntimeValue&) {}, {}, ""
-    );
+    const auto propertyId = runtime.addProperty(runtime.getTypeId(type->getTypeName()), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "value",
+        .getter = [](VirtualMachine*, RuntimeValue&) {},
+        .setter = {},
+        .documentation = ""
+    });
     const auto memberId = runtime.registerNativeMethod(
         type, "size", [](VirtualMachine*) {}, {}, runtime.getIntegerType(), ""
     );

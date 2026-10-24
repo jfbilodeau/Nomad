@@ -231,7 +231,7 @@ BOOST_AUTO_TEST_CASE(add_property_rejects_invalid_definitions_without_partial_re
     BOOST_TEST(afterId.id == beforeId.id + 1);
 }
 
-BOOST_AUTO_TEST_CASE(add_property_and_legacy_registration_share_duplicate_and_member_conflict_checks) {
+BOOST_AUTO_TEST_CASE(add_property_rejects_duplicate_and_conflicting_members) {
     Runtime runtime;
     const auto typeId = runtime.createObjectType("PropertyOwner", ObjectTypeMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
@@ -245,9 +245,10 @@ BOOST_AUTO_TEST_CASE(add_property_and_legacy_registration_share_duplicate_and_me
     };
     const auto originalId = runtime.addProperty(typeId, definition);
     BOOST_REQUIRE(originalId.isValid());
-    BOOST_REQUIRE(runtime.registerNativeProperty(
-        type, "legacy", runtime.getIntegerType(), propertyGetter(), {}, "Legacy property."
-    ).isValid());
+    auto readOnlyDefinition = definition;
+    readOnlyDefinition.name = "readOnly";
+    readOnlyDefinition.setter = {};
+    BOOST_REQUIRE(runtime.addProperty(typeId, std::move(readOnlyDefinition)).isValid());
     BOOST_REQUIRE(runtime.registerProperty(type, "stored", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerNativeMethod(
         type, "method", methodFunction(), {}, runtime.getIntegerType(), ""
@@ -256,14 +257,11 @@ BOOST_AUTO_TEST_CASE(add_property_and_legacy_registration_share_duplicate_and_me
     runtime.getNativeMembers(membersBefore);
 
     BOOST_TEST(runtime.addProperty(typeId, definition).isInvalid());
-    BOOST_TEST(runtime.registerNativeProperty(
-        type, "value", runtime.getIntegerType(), propertyGetter(), propertySetter(), ""
-    ).isInvalid());
     auto conflictingDefinition = definition;
     conflictingDefinition.valueTypeId = runtime.getTypeId("float");
     conflictingDefinition.documentation = "Replacement documentation.";
     BOOST_TEST(runtime.addProperty(typeId, std::move(conflictingDefinition)).isInvalid());
-    for (const auto* name : {"legacy", "stored", "method"}) {
+    for (const auto* name : {"readOnly", "stored", "method"}) {
         auto duplicateDefinition = definition;
         duplicateDefinition.name = name;
         BOOST_TEST(runtime.addProperty(typeId, std::move(duplicateDefinition)).isInvalid());
@@ -361,9 +359,13 @@ BOOST_AUTO_TEST_CASE(native_creation_definitions_own_their_inputs_without_regist
 BOOST_AUTO_TEST_CASE(native_property_info_is_a_snapshot_of_registered_metadata) {
     Runtime runtime;
     const auto* type = registerTestType(runtime);
-    const auto id = runtime.registerNativeProperty(
-        type, "value", runtime.getIntegerType(), propertyGetter(), propertySetter(), "Original documentation"
-    );
+    const auto id = runtime.addProperty(runtime.getTypeId(type->getTypeName()), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "value",
+        .getter = propertyGetter(),
+        .setter = propertySetter(),
+        .documentation = "Original documentation"
+    });
     BOOST_REQUIRE(id.isValid());
     const auto* property = runtime.getNativeProperty(id);
     BOOST_REQUIRE(property != nullptr);
@@ -472,9 +474,13 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
             defParameter("line", runtime.getLineNumberType(), "")
         }, runtime.getVoidType(), ""
     ).isValid());
-    BOOST_REQUIRE(runtime.registerNativeProperty(
-        objectType, "declaredProperty", runtime.getIntegerType(), propertyGetter(), {}, ""
-    ).isValid());
+    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId(objectType->getTypeName()), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "declaredProperty",
+        .getter = propertyGetter(),
+        .setter = {},
+        .documentation = ""
+    }).isValid());
     const auto* callbackType = runtime.getCallbackType({}, runtime.getVoidType());
     BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "declaredCallback", MemberType::Method, {
         defTemplateParameter("callback", callbackType, "")
@@ -533,11 +539,20 @@ BOOST_AUTO_TEST_CASE(registers_read_only_write_only_and_read_write_properties) {
     Runtime runtime;
 
     const auto readOnlyId = runtime.getNativeMemberId(runtime.getStringType(), "length");
-    const auto writeOnlyId = runtime.registerNativeProperty(
-        runtime.getStringType(), "sink", runtime.getIntegerType(), {}, propertySetter(), NomadDoc("Write-only value"));
-    const auto readWriteId =
-        runtime.registerNativeProperty(runtime.getStringType(), "value", runtime.getIntegerType(), propertyGetter(),
-                                          propertySetter(), NomadDoc("Read/write value"));
+    const auto writeOnlyId = runtime.addProperty(runtime.getTypeId("string"), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "sink",
+        .getter = {},
+        .setter = propertySetter(),
+        .documentation = NomadDoc("Write-only value")
+    });
+    const auto readWriteId = runtime.addProperty(runtime.getTypeId("string"), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "value",
+        .getter = propertyGetter(),
+        .setter = propertySetter(),
+        .documentation = NomadDoc("Read/write value")
+    });
 
     BOOST_REQUIRE((runtime.getMemberType(readOnlyId) == MemberType::Property));
     BOOST_REQUIRE(writeOnlyId.isValid());
@@ -589,8 +604,13 @@ BOOST_AUTO_TEST_CASE(registers_method_metadata) {
 BOOST_AUTO_TEST_CASE(rejects_duplicate_member_name_on_same_type) {
     Runtime runtime;
 
-    BOOST_REQUIRE(runtime.registerNativeProperty(runtime.getStringType(), "value", runtime.getIntegerType(),
-                                                    propertyGetter(), {}, NomadDoc("Property")).isValid());
+    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "value",
+        .getter = propertyGetter(),
+        .setter = {},
+        .documentation = NomadDoc("Property")
+    }).isValid());
 
     BOOST_TEST(runtime.registerNativeMethod(runtime.getStringType(), "value", methodFunction(), {},
                                                runtime.getIntegerType(),
@@ -640,18 +660,6 @@ BOOST_AUTO_TEST_CASE(rejects_incompatible_member_shapes) {
 
 BOOST_AUTO_TEST_CASE(rejects_invalid_member_definitions) {
     Runtime runtime;
-    ObjectType unregisteredType(&runtime, "Unregistered", ObjectTypeMode::Closed);
-
-    BOOST_TEST(runtime.registerNativeProperty(&unregisteredType, "value", runtime.getIntegerType(),
-                                                 propertyGetter(), {}, NomadDoc("Unregistered owner")).isInvalid());
-    BOOST_TEST(runtime.registerNativeProperty(nullptr, "value", runtime.getIntegerType(), propertyGetter(), {},
-                                                 NomadDoc("Invalid owner")).isInvalid());
-    BOOST_TEST(runtime.registerNativeProperty(runtime.getStringType(), "invalid.name", runtime.getIntegerType(),
-                                                 propertyGetter(), {}, NomadDoc("Invalid name")).isInvalid());
-    BOOST_TEST(runtime.registerNativeProperty(runtime.getStringType(), "value", runtime.getIntegerType(), {}, {},
-                                                 NomadDoc("No access")).isInvalid());
-    BOOST_TEST(runtime.registerNativeProperty(runtime.getStringType(), "value", runtime.getVoidType(),
-                                                 propertyGetter(), {}, NomadDoc("Void value")).isInvalid());
     BOOST_TEST(runtime.registerNativeMethod(runtime.getStringType(), "convert", {}, {}, runtime.getStringType(), NomadDoc("No function")).isInvalid());
     BOOST_TEST(runtime.registerNativeMethod(runtime.getStringType(), "convert", methodFunction(), {}, nullptr,
                                                NomadDoc("No return type")).isInvalid());
@@ -665,8 +673,13 @@ BOOST_AUTO_TEST_CASE(iterates_members_by_type_and_globally) {
 
     const auto stringMethodId = runtime.registerNativeMethod(
         runtime.getStringType(), "convert", methodFunction(), {}, runtime.getStringType(), NomadDoc("Convert"));
-    const auto integerPropertyId = runtime.registerNativeProperty(
-        type, "sign", runtime.getIntegerType(), propertyGetter(), {}, NomadDoc("Sign"));
+    const auto integerPropertyId = runtime.addProperty(runtime.getTypeId(type->getTypeName()), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "sign",
+        .getter = propertyGetter(),
+        .setter = {},
+        .documentation = NomadDoc("Sign")
+    });
 
     std::vector<MemberReference> stringMembers;
     runtime.getNativeMembers(runtime.getStringType(), stringMembers);
