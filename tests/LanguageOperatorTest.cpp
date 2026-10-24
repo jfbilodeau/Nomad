@@ -108,8 +108,17 @@ BOOST_AUTO_TEST_SUITE(language_operators)
 BOOST_AUTO_TEST_CASE(opcode_ids_support_registration_lookup_and_catalog_growth)
 {
     Runtime runtime;
-    const InstructionFn callback = [](VirtualMachine*) {};
-    const InstructionFn unknownCallback = [](VirtualMachine*) {};
+    const InstructionFn callback = [](VirtualMachine* virtualMachine) {
+        virtualMachine->setIntegerResult(17);
+    };
+    const InstructionFn unknownCallback = [](VirtualMachine* virtualMachine) {
+        virtualMachine->setIntegerResult(29);
+    };
+    VirtualMachine virtualMachine(&runtime);
+    callback(&virtualMachine);
+    BOOST_TEST(virtualMachine.getIntegerResult() == 17);
+    unknownCallback(&virtualMachine);
+    BOOST_TEST(virtualMachine.getIntegerResult() == 29);
     const auto id = runtime.registerInstruction("test.opcode", callback, "", {Operand::Integer});
     BOOST_REQUIRE(id.isValid());
     BOOST_TEST(runtime.getInstructionId("test.opcode") == id);
