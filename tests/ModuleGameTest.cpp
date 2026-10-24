@@ -85,8 +85,14 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
 
     BOOST_TEST(runtime.getHubId("game.inventory").isInvalid());
     BOOST_TEST(runtime.getHubId("game.settings").isInvalid());
-    BOOST_TEST(runtime.getCallableId("game.inventory.save").isValid());
-    BOOST_TEST(runtime.getCallableId("game.settings.save").isValid());
+    for (const auto* name : {
+        "game.inventory.save", "game.inventory.load", "game.inventory.saveExists",
+        "game.settings.save", "game.settings.load"
+    }) {
+        BOOST_TEST_CONTEXT(name) {
+            BOOST_TEST(runtime.getCallableId(name).isInvalid());
+        }
+    }
 
     const auto* gameHub = runtime.getHub(runtime.getHubId("game"));
     BOOST_REQUIRE(gameHub != nullptr);
@@ -106,19 +112,19 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
     BOOST_REQUIRE(loadAudioMember != nullptr);
     BOOST_TEST(std::holds_alternative<HubFunctions>(*loadAudioMember));
 
-    BOOST_TEST(runtime.getContextId("inventory").isValid());
-    BOOST_TEST(runtime.getContextId("settings").isValid());
+    BOOST_TEST(runtime.getContextId("inventory").isInvalid());
+    BOOST_TEST(runtime.getContextId("settings").isInvalid());
     BOOST_TEST(runtime.getVariableContextIdByPrefix("game.inventory.gold").isInvalid());
 
     const auto declarationFunctionId = compile(
         "declareGameDataHubs",
         "hub game.inventory\n"
-        "fun customSave\n"
+        "fun save\n"
         "return 42\n"
         "end\n"
         "end\n"
         "hub game.settings\n"
-        "fun customSetting\n"
+        "fun save\n"
         "return 7\n"
         "end\n"
         "end"
@@ -130,14 +136,17 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
     const auto* inventorySaveMember = inventoryHub->getMember("save");
     BOOST_REQUIRE(inventorySaveMember != nullptr);
     BOOST_TEST(std::holds_alternative<HubFunctions>(*inventorySaveMember));
-    BOOST_TEST(inventoryHub->getMember("customSave") != nullptr);
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("game.inventory.save"), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 42);
 
     const auto* settingsHub = runtime.getHub(runtime.getHubId("game.settings"));
     BOOST_REQUIRE(settingsHub != nullptr);
     const auto* settingsSaveMember = settingsHub->getMember("save");
     BOOST_REQUIRE(settingsSaveMember != nullptr);
     BOOST_TEST(std::holds_alternative<HubFunctions>(*settingsSaveMember));
-    BOOST_TEST(settingsHub->getMember("customSetting") != nullptr);
+    runtime.executeFunction(runtime.getFunctionId("game.settings.save"), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 7);
 }
 
 BOOST_AUTO_TEST_CASE(borrowed_runtime_remains_usable_after_game_destruction)

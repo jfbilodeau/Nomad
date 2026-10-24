@@ -403,7 +403,7 @@ state = state.idle   # state enum
 Nomad supports three variable kinds:
 
 - Function variables: scoped to the function where they are defined. Type is inferred from first assignment and cannot change. For example, `a = 10` defines `a` as an integer variable and `b = 1.0` defines `b` as a float variable.
-- Context variables: bound to a named context; identified by a prefix and a dot (for example `global.score`). Contexts are provided by the embedding engine and have engine‑specific semantics for storage and persistence. The `global.` context is pre-defined by the default Nomad runtime. The game engine provides `inventory.*` for saved game state and `settings.*` for user preferences. The `global.*`, `scene.*`, `this.*`, and `other.*` contexts are not persisted by the save and settings native functions.
+- Context variables: bound to a named context; identified by a prefix and a dot (for example `global.score`). Contexts are provided by the embedding engine and have engine‑specific semantics for storage and persistence. The `global.` context is pre-defined by the default Nomad runtime. The game engine additionally provides `scene.*`, `this.*`, and `other.*` contexts, but no built-in `inventory.*` or `settings.*` contexts.
 - Dynamic variables: engine‑defined identifiers (for example `this.x`) managed directly by engine code; the engine decides read/write permissions and behavior.
 
 The interactive interpreter is an exception to compiled-code typing rules. Interpreter variables may be created by assignment and reassigned with a value of a different type. Frame variables and parameters retain their compiled types but may be reassigned. Runtime context variables and engine-defined dynamic variables continue to follow the type rules of their contexts and definitions.
@@ -1001,75 +1001,21 @@ empty, not null. Host integration details are covered in the [embedding guide](e
 
 ---
 
-## Saving and loading
+## Debug settings persistence
 
-Set `game.organization` and `game.name` before using persistence. The engine passes both values to SDL's preference-path API and stores JSON files under the resulting `<pref>` directory:
+The game engine does not provide built-in game save/load or user settings save/load APIs.
+The `game.inventory` and `game.settings` hubs are available for scripts to declare
+and populate with their own functions.
+
+Engine-owned debug settings are persisted automatically. Set `game.organization`
+and `game.name` to select their storage location. The engine passes both values
+to SDL's preference-path API and stores JSON files under the resulting `<pref>` directory:
 
 | API | Behavior | File |
 | --- | --- | --- |
-| `game.inventory.save saveName:string` | Save all defined `inventory.*` variables. | `<pref>/save/<saveName>.json` |
-| `game.inventory.load saveName:string` | Load matching `inventory.*` variables. | `<pref>/save/<saveName>.json` |
-| `game.inventory.saveExists saveName:string` | Return whether the save file exists. | `<pref>/save/<saveName>.json` |
-| `game.settings.save` | Save all defined `settings.*` variables. | `<pref>/settings.json` |
-| `game.settings.load` | Load matching `settings.*` variables. | `<pref>/settings.json` |
 | `game.debug.console.visible:bool` | Show or hide the console in debug mode. Saved automatically when changed. | `<pref>/debug.json` |
 | `game.debug.console.scale:float` | Set the console scale from `0.8` to `2.0`. Saved automatically when changed. | `<pref>/debug.json` |
 | `game.debug.draw.visible:bool` | Show or hide Box2D physics debug drawing in debug mode. Saved automatically when changed. | `<pref>/debug.json` |
-
-Context variables are defined by assignment in Nomad code; loading never creates variables. Full dotted names are written as flat keys in a pretty-printed JSON object. This allows both a variable and its child, such as `inventory.weapon` and `inventory.weapon.attack`, to be saved without ambiguity. For example:
-
-```nomad
-enum state
-    idle
-    walking
-end
-
-inventory.gold = 25
-inventory.playerName = "Nomad"
-inventory.weapon.attack = 10
-inventory.weapon.speed = 0.5
-inventory.state = state.walking
-game.inventory.save "slot1"
-```
-
-produces:
-
-```json
-{
-    "inventory.gold": 25,
-    "inventory.playerName": "Nomad",
-    "inventory.state": "walking",
-    "inventory.weapon.attack": 10,
-    "inventory.weapon.speed": 0.5
-}
-```
-
-The declared Nomad variable type controls conversion during loading, not how the number is written in JSON:
-
-- An `int` accepts a JSON integer or a whole, in-range JSON number such as `10.0`, but not `10.5`.
-- A `float` accepts either a JSON integer or floating-point number.
-- A `bool` or `string` accepts only the corresponding JSON type.
-- An enum accepts only a JSON string naming a member of that variable's enum type. Unknown names and numeric values are rejected.
-- Missing keys keep their current values, and unknown JSON keys are ignored.
-- Invalid values for individual variables are reported and ignored.
-- Malformed JSON or a non-object root changes nothing.
-- Loading never changes a variable's type.
-
-Only `int`, `float`, `bool`, `string`, and enum variables are persisted. Enum member names are saved instead of their internal integer values. Save names may optionally end in `.json`, but cannot be empty, `.` or `..`, contain control characters or `< > : " / \ | ? *`, or end in a dot or space.
-
-```nomad
-game.organization = "Example Studio"
-game.name = "Example Game"
-
-settings.fullscreen = true
-game.settings.load
-
-if game.inventory.saveExists "slot1"
-    game.inventory.load "slot1"
-end
-
-game.settings.save
-```
 
 Debug settings are loaded lazily after both `game.organization` and `game.name` are set. Assigning a debug setting before those values are available does not save it.
 

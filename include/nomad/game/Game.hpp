@@ -35,7 +35,6 @@ class Resource;
 class ResourceManager;
 class Scene;
 class ScriptFunction;
-class SimpleVariableContext;
 class Closure;
 
 class GameException final : public NomadException {
@@ -108,13 +107,6 @@ public:
 
     [[nodiscard]] bool fileExists(const NomadString& fileName) const;
     void deleteFile(const NomadString& fileName) const;
-
-    // Game state (`inventory.*`) and settings (`settings.*`) persistence.
-    bool saveGame(const NomadString& saveName);
-    bool loadGame(const NomadString& saveName);
-    [[nodiscard]] bool saveExists(const NomadString& saveName) const;
-    bool saveSettings();
-    bool loadSettings();
 
     // Debug settings. Changes are saved to `debug.json` automatically.
     void setDebugConsoleVisible(bool visible);
@@ -253,7 +245,6 @@ private:
 
     void initDebugConsole();
 
-    [[nodiscard]] NomadString getSettingsFilePath() const;
     [[nodiscard]] NomadString getDebugSettingsFilePath() const;
     void ensureDebugSettingsLoaded();
     void loadDebugSettings();
@@ -313,11 +304,6 @@ private:
     const VariableMap* m_sceneVariableMap = nullptr;
     const VariableMap* m_thisEntityVariableMap = nullptr;
     const VariableMap* m_otherEntityVariableMap = nullptr;
-    const VariableMap* m_inventoryVariableMap = nullptr;
-
-    // Owned by the runtime.
-    SimpleVariableContext* m_inventoryContext = nullptr;
-    SimpleVariableContext* m_settingsContext = nullptr;
 
     bool m_debugSettingsLoaded = false;
     bool m_debugConsoleVisible = false;

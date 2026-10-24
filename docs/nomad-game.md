@@ -36,10 +36,6 @@ Before scripts are compiled, the game module registers the `game` hub and its
 dynamic-variable names stay the same; these hubs group the APIs and can be
 extended by scripts.
 
-`game.inventory` and `game.settings` are left for scripts to declare. The
-native persistence functions keep their existing qualified names, and their
-data remains in the separate `inventory.*` and `settings.*` contexts.
-
 ## Features and guides
 
 | Feature | Guide |
