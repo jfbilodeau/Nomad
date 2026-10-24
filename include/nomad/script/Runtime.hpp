@@ -644,7 +644,7 @@ private:
     std::vector<const NativeIndexerInfo*> m_nativeIndexers;
     std::unordered_map<NomadString, std::vector<MemberReference>> m_nativeMembersByName;
     bool m_debug = false;
-    std::unique_ptr<VirtualMachine> m_virtualMachine = nullptr;
+    std::unique_ptr<VirtualMachine> m_virtualMachine;
     std::vector<std::function<void(Compiler*)>> m_compilerSetups;
 };
 } // namespace nomad
