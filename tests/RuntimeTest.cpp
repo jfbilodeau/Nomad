@@ -100,21 +100,31 @@ BOOST_AUTO_TEST_CASE(runtime_source_lookup_ignores_unknown_ranges_and_prefers_in
     BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 2) == inner);
 }
 
-BOOST_AUTO_TEST_CASE(runtime_registers_strongly_typed_enums_with_explicit_values)
+BOOST_AUTO_TEST_CASE(runtime_creates_strongly_typed_enums_with_explicit_values)
 {
     Runtime runtime;
 
-    const auto* bodyType = runtime.registerEnum(
-        "body",
-        {
-            {"static", 3},
-            {"dynamic", 7},
-            {"kinematic", 11},
-        }
-    );
+    NomadString enumName = "body";
+    std::vector<EnumValueDefinition> values{
+        {"static", 3},
+        {"dynamic", 7},
+        {"kinematic", 11},
+    };
+    NomadString documentation = "Physics body modes.";
+    const auto bodyId = runtime.createEnum(enumName, values, documentation);
+    BOOST_REQUIRE(bodyId.isValid());
+    const auto registeredType = runtime.getType(bodyId);
+    BOOST_REQUIRE(registeredType.has_value());
+    const auto* bodyType = (*registeredType)->asEnum();
+    enumName = "changed";
+    values[0].name = "changed";
+    values[0].value = 99;
+    documentation.clear();
 
     BOOST_REQUIRE(bodyType != nullptr);
+    BOOST_TEST(runtime.getTypeId("body") == bodyId);
     BOOST_TEST(runtime.getTypeByName("body") == bodyType);
+    BOOST_TEST(bodyType->getDocumentation() == "Physics body modes.");
     BOOST_TEST(bodyType->getValueCount() == 3U);
     BOOST_TEST(bodyType->getValue(0).name == "static");
     BOOST_TEST(bodyType->getValue(0).value == 3);
@@ -143,11 +153,16 @@ BOOST_AUTO_TEST_CASE(runtime_registers_strongly_typed_enums_with_explicit_values
 BOOST_AUTO_TEST_CASE(runtime_enum_types_only_support_same_type_equality)
 {
     Runtime runtime;
-    const auto* bodyType = runtime.registerEnum("body", {{"static", 1}, {"dynamic", 2}});
-    const auto* cardinalType = runtime.registerEnum("cardinal", {{"north", 1}, {"south", 2}});
+    const auto bodyId = runtime.createEnum("body", {{"static", 1}, {"dynamic", 2}});
+    const auto cardinalId = runtime.createEnum("cardinal", {{"north", 1}, {"south", 2}});
+    BOOST_REQUIRE(bodyId.isValid());
+    BOOST_REQUIRE(cardinalId.isValid());
+    const auto* bodyType = runtime.getType(bodyId).value()->asEnum();
+    const auto* cardinalType = runtime.getType(cardinalId).value()->asEnum();
 
     BOOST_REQUIRE(bodyType != nullptr);
     BOOST_REQUIRE(cardinalType != nullptr);
+    BOOST_TEST(bodyType->getDocumentation().empty());
     BOOST_TEST(!bodyType->sameType(cardinalType));
     BOOST_TEST(!bodyType->sameType(runtime.getIntegerType()));
     BOOST_TEST(
@@ -182,18 +197,79 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_enum_definitions_without_partial_re
 {
     Runtime runtime;
 
-    BOOST_TEST(runtime.registerEnum("", {{"value", 1}}) == nullptr);
-    BOOST_TEST(runtime.registerEnum("empty", {}) == nullptr);
-    BOOST_TEST(runtime.registerEnum("unnamed", {{"", 1}}) == nullptr);
-    BOOST_TEST(runtime.registerEnum("duplicateName", {{"value", 1}, {"value", 2}}) == nullptr);
-    BOOST_TEST(runtime.registerEnum("duplicateValue", {{"first", 1}, {"second", 1}}) == nullptr);
-    BOOST_TEST(runtime.registerEnum("int", {{"value", 1}}) == nullptr);
+    std::vector<const Type*> originalTypes;
+    runtime.getTypes(originalTypes);
+    const auto integerId = runtime.getTypeId("int");
+    BOOST_TEST(runtime.createEnum("", {{"value", 1}}).isInvalid());
+    BOOST_TEST(runtime.createEnum("empty", {}).isInvalid());
+    BOOST_TEST(runtime.createEnum("unnamed", {{"", 1}}).isInvalid());
+    BOOST_TEST(runtime.createEnum("duplicateName", {{"value", 1}, {"value", 2}}).isInvalid());
+    BOOST_TEST(runtime.createEnum("duplicateValue", {{"first", 1}, {"second", 1}}).isInvalid());
+    BOOST_TEST(runtime.createEnum("int", {{"value", 1}}).isInvalid());
+    std::vector<const Type*> typesAfterRejection;
+    runtime.getTypes(typesAfterRejection);
+    BOOST_TEST(typesAfterRejection == originalTypes, boost::test_tools::per_element());
+    BOOST_TEST(runtime.getTypeId("int") == integerId);
+    BOOST_TEST(runtime.getConstantId("int.value").isInvalid());
+    BOOST_TEST(runtime.getConstantId("duplicateValue.first").isInvalid());
 
-    BOOST_REQUIRE(runtime.registerEnum("valid", {{"first", 1}}) != nullptr);
-    BOOST_TEST(runtime.registerEnum("valid", {{"second", 2}}) == nullptr);
+    const auto validId = runtime.createEnum("valid", {{"first", 1}}, "Original documentation.");
+    BOOST_REQUIRE(validId.isValid());
+    const auto* originalType = runtime.getType(validId).value();
+    const auto firstId = runtime.getConstantId("valid.first");
+    BOOST_REQUIRE(firstId.isValid());
+    BOOST_TEST(runtime.createEnum("valid", {{"first", 1}}, "Original documentation.").isInvalid());
+    BOOST_TEST(runtime.createEnum("valid", {{"second", 2}}, "Replacement documentation.").isInvalid());
+    BOOST_TEST(runtime.getTypeId("valid") == validId);
+    BOOST_TEST(runtime.getType(validId).value() == originalType);
+    BOOST_TEST(originalType->getDocumentation() == "Original documentation.");
+    BOOST_TEST(runtime.getConstantId("valid.first") == firstId);
+    BOOST_TEST(runtime.getConstantType(firstId) == originalType);
+    RuntimeValue firstValue;
+    runtime.getConstantValue(firstId, firstValue);
+    BOOST_TEST(firstValue.getIntegerValue() == 1);
     BOOST_TEST(runtime.getConstantId("valid.second").isInvalid());
     BOOST_TEST(runtime.getTypeByName("duplicateName") == nullptr);
     BOOST_TEST(runtime.getConstantId("duplicateName.value").isInvalid());
+}
+
+BOOST_AUTO_TEST_CASE(runtime_enum_creation_rejects_hub_conflicts_before_publishing_values) {
+    Runtime runtime;
+    BOOST_REQUIRE(runtime.registerHub("example").isValid());
+    const auto constantId = runtime.registerConstant(
+        "example.State", RuntimeValue{NomadInteger{42}}, runtime.getIntegerType()
+    );
+    BOOST_REQUIRE(constantId.isValid());
+    const auto valueId = runtime.registerConstant(
+        "example.ConstantConflict.Reserved", RuntimeValue{NomadInteger{7}}, runtime.getIntegerType()
+    );
+    BOOST_REQUIRE(valueId.isValid());
+    BOOST_REQUIRE(runtime.registerHub("example.HubConflict.Reserved").isValid());
+    const auto functionId = runtime.registerNativeFunction(
+        "example.FunctionConflict.Reserved", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    );
+    BOOST_REQUIRE(functionId.isValid());
+    std::vector<const Type*> originalTypes;
+    runtime.getTypes(originalTypes);
+
+    BOOST_TEST(runtime.createEnum("example", {{"Ready", 1}}).isInvalid());
+    BOOST_TEST(runtime.createEnum("example.State", {{"Ready", 1}}).isInvalid());
+    for (const auto* name : {"example.ConstantConflict", "example.HubConflict", "example.FunctionConflict"}) {
+        BOOST_TEST_CONTEXT(name) {
+            BOOST_TEST(runtime.createEnum(name, {{"First", 1}, {"Reserved", 2}}).isInvalid());
+            BOOST_TEST(runtime.getTypeId(name).isInvalid());
+            BOOST_TEST(runtime.getConstantId(NomadString{name} + ".First").isInvalid());
+        }
+    }
+    std::vector<const Type*> typesAfterRejection;
+    runtime.getTypes(typesAfterRejection);
+    BOOST_TEST(typesAfterRejection == originalTypes, boost::test_tools::per_element());
+    BOOST_TEST(runtime.getTypeId("example.State").isInvalid());
+    BOOST_TEST(runtime.getConstantId("example.State.Ready").isInvalid());
+    BOOST_TEST(runtime.getConstantId("example.State") == constantId);
+    BOOST_TEST(runtime.getConstantId("example.ConstantConflict.Reserved") == valueId);
+    BOOST_TEST(runtime.getCallableId("example.FunctionConflict.Reserved") == functionId);
+    BOOST_TEST(runtime.getHubId("example.HubConflict.Reserved").isValid());
 }
 
 BOOST_AUTO_TEST_CASE(runtime_registers_nominal_opaque_id_types)

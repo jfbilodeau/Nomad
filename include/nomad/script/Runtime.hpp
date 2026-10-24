@@ -196,9 +196,10 @@ public:
     [[nodiscard]] const Type* getTypeByName(const NomadString& name) const;
     void getTypes(std::vector<const Type*>& types) const;
     [[nodiscard]] const OpaqueIdType* registerOpaqueIdType(const NomadString& name, NomadDocArg);
-    [[nodiscard]] const EnumType* registerEnum(
-        const NomadString& name,
-        const std::vector<EnumValueDefinition>& values
+    [[nodiscard]] TypeId createEnum(
+        NomadString name,
+        std::vector<EnumValueDefinition> values,
+        NomadString documentation = {}
     );
     [[nodiscard]] const Type* getCallbackType(const std::vector<const Type*>& parameterTypes, const Type* returnType);
     [[nodiscard]] const Type* getEventType(const NomadString& name) const;

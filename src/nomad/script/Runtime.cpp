@@ -1024,27 +1024,28 @@ const OpaqueIdType* Runtime::registerOpaqueIdType(const NomadString& name, const
     return registeredType;
 }
 
-const EnumType* Runtime::registerEnum(
-    const NomadString& name,
-    const std::vector<EnumValueDefinition>& values
+TypeId Runtime::createEnum(
+    NomadString name,
+    std::vector<EnumValueDefinition> values,
+    NomadString documentation
 ) {
-    if (isHub(name) || isHubVariable(name)) {
-        log::error("Cannot register enum '" + name + "': name is reserved by a hub declaration");
-        return nullptr;
+    if (isHub(name) || isHubVariable(name) || !canRegisterHubMember(name)) {
+        log::error("Cannot create enum '" + name + "': name is reserved by a hub declaration");
+        return TypeId::INVALID;
     }
     if (name.empty()) {
-        log::error("Cannot register an enum with an empty name");
-        return nullptr;
+        log::error("Cannot create an enum with an empty name");
+        return TypeId::INVALID;
     }
 
     if (getTypeByName(name) != nullptr) {
         log::error("Type with name '" + name + "' already registered");
-        return nullptr;
+        return TypeId::INVALID;
     }
 
     if (values.empty()) {
-        log::error("Cannot register enum '" + name + "' without values");
-        return nullptr;
+        log::error("Cannot create enum '" + name + "' without values");
+        return TypeId::INVALID;
     }
 
     for (NomadIndex index = 0; index < values.size(); ++index) {
@@ -1052,13 +1053,17 @@ const EnumType* Runtime::registerEnum(
         const auto constantName = name + "." + definition.name;
 
         if (definition.name.empty()) {
-            log::error("Cannot register an unnamed value in enum '" + name + "'");
-            return nullptr;
+            log::error("Cannot create an unnamed value in enum '" + name + "'");
+            return TypeId::INVALID;
         }
 
+        if (isHub(constantName) || !canRegisterHubMember(constantName)) {
+            log::error("Cannot create enum '" + name + "': value '" + constantName + "' is reserved by a hub");
+            return TypeId::INVALID;
+        }
         if (getConstantId(constantName).isValid()) {
             log::error("Constant with name '" + constantName + "' already registered");
-            return nullptr;
+            return TypeId::INVALID;
         }
 
         for (NomadIndex previousIndex = 0; previousIndex < index; ++previousIndex) {
@@ -1066,28 +1071,32 @@ const EnumType* Runtime::registerEnum(
 
             if (previousDefinition.name == definition.name) {
                 log::error("Enum '" + name + "' has duplicate value name '" + definition.name + "'");
-                return nullptr;
+                return TypeId::INVALID;
             }
 
             if (previousDefinition.value == definition.value) {
                 log::error(
                     "Enum '" + name + "' assigns value " + std::to_string(definition.value) + " more than once"
                 );
-                return nullptr;
+                return TypeId::INVALID;
             }
         }
     }
 
-    auto enumType = std::make_unique<EnumType>(name, values);
+    auto enumType = std::make_unique<EnumType>(name, std::move(values), std::move(documentation));
     const auto* registeredType = enumType.get();
+    const auto id = TypeId{toNomadId(m_types.size())};
     registerType(std::move(enumType));
 
-    for (const auto& definition: values) {
-        registerConstant(
+    for (NomadIndex index = 0; index < registeredType->getValueCount(); ++index) {
+        const auto& definition = registeredType->getValue(index);
+        if (registerConstant(
             name + "." + definition.name,
             RuntimeValue(definition.value),
             registeredType
-        );
+        ).isInvalid()) {
+            throw NomadException("Failed to register value '" + definition.name + "' in enum '" + name + "'");
+        }
     }
 
     registerBinaryOperator(
@@ -1107,7 +1116,7 @@ const EnumType* Runtime::registerEnum(
         foldIntegerBinaryBangEqual
     );
 
-    return registeredType;
+    return id;
 }
 
 bool Runtime::registerParameterizedType(

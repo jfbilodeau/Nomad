@@ -1355,16 +1355,16 @@ void Game::initResourceManager() {
 void Game::initEnums() {
     log::info("Initializing enums");
 
-    const auto registerEnum = [this](
+    const auto createEnum = [this](
         const NomadString& name,
         const std::vector<EnumValueDefinition>& values
     ) {
-        if (m_runtime->registerEnum(name, values) == nullptr) {
+        if (m_runtime->createEnum(name, values).isInvalid()) {
             raiseError("Failed to register enum '" + name + "'");
         }
     };
 
-    registerEnum("alignment", {
+    createEnum("alignment", {
         {"topLeft", static_cast<NomadInteger>(Alignment::TopLeft)},
         {"topMiddle", static_cast<NomadInteger>(Alignment::TopMiddle)},
         {"topRight", static_cast<NomadInteger>(Alignment::TopRight)},
@@ -1375,22 +1375,22 @@ void Game::initEnums() {
         {"bottomMiddle", static_cast<NomadInteger>(Alignment::BottomMiddle)},
         {"bottomRight", static_cast<NomadInteger>(Alignment::BottomRight)},
     });
-    registerEnum("horizontalAlignment", {
+    createEnum("horizontalAlignment", {
         {"left", static_cast<NomadInteger>(HorizontalAlignment::Left)},
         {"middle", static_cast<NomadInteger>(HorizontalAlignment::Middle)},
         {"right", static_cast<NomadInteger>(HorizontalAlignment::Right)},
     });
-    registerEnum("verticalAlignment", {
+    createEnum("verticalAlignment", {
         {"top", static_cast<NomadInteger>(VerticalAlignment::Top)},
         {"center", static_cast<NomadInteger>(VerticalAlignment::Center)},
         {"bottom", static_cast<NomadInteger>(VerticalAlignment::Bottom)},
     });
-    registerEnum("body", {
+    createEnum("body", {
         {"static", static_cast<NomadInteger>(BodyType::Static)},
         {"dynamic", static_cast<NomadInteger>(BodyType::Dynamic)},
         {"kinematic", static_cast<NomadInteger>(BodyType::Kinematic)},
     });
-    registerEnum("cardinal", {
+    createEnum("cardinal", {
         {"north", static_cast<NomadInteger>(Cardinal::North)},
         {"east", static_cast<NomadInteger>(Cardinal::East)},
         {"south", static_cast<NomadInteger>(Cardinal::South)},

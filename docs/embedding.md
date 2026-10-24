@@ -83,6 +83,24 @@ Streaming an ID prints its type and numeric value, for example `CallableId{42}`
 or `CallableId{-1}`.
 
 
+### Enum creation
+
+`Runtime::createEnum(name, values, documentation = {})` creates an enum and
+returns its `TypeId`. Each `EnumValueDefinition` supplies a member name and an
+explicit integer value. The runtime owns the resulting type and copies or moves
+the supplied names, values, and documentation.
+
+Creation also registers typed constants named `EnumName.MemberName` and
+same-enum equality and inequality operators. Existing script enum syntax is
+unchanged. Use `getType(id)` to retrieve the descriptor and `asEnum()` for enum
+member lookups; `getDocumentation()` returns the supplied type documentation.
+
+Invalid definitions are logged and return `TypeId::INVALID`: empty names or
+value lists, unnamed members, duplicate member names or integer values,
+already-registered type names, and conflicts with existing constants or hub
+declarations. Duplicate type creation is rejected even when the definition is
+identical. Rejected definitions do not replace existing registrations.
+
 ### Constant IDs
 
 Include `<nomad/script/Runtime.hpp>` for `ConstantId`.

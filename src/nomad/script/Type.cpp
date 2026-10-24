@@ -230,7 +230,12 @@ void IntegerType::toString(const RuntimeValue& value, NomadString& string) const
 
 ///////////////////////////////////////////////////////////////////////////////
 // EnumType
-EnumType::EnumType(NomadString name, std::vector<EnumValueDefinition> values):
+EnumType::EnumType(
+    NomadString name,
+    std::vector<EnumValueDefinition> values,
+    NomadString documentation
+):
+    ValueType(std::move(documentation)),
     m_name(std::move(name)),
     m_values(std::move(values))
 {

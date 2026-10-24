@@ -340,7 +340,7 @@ BOOST_AUTO_TEST_CASE(hub_objects_index_members_without_duplicating_callable_owne
     BOOST_TEST((functions->ids[0] == functionId));
     BOOST_TEST((functions->ids[1] == overloadId));
     BOOST_TEST(runtime.getFunction(functions->ids[0])->getName() == "example.answer");
-    BOOST_REQUIRE(runtime.registerEnum("example.State", {{"Ready", 1}}) != nullptr);
+    BOOST_REQUIRE(runtime.createEnum("example.State", {{"Ready", 1}}).isValid());
     BOOST_REQUIRE(hub->getMember("State") != nullptr);
     BOOST_TEST(std::get<const Type*>(*hub->getMember("State")) == runtime.getTypeByName("example.State"));
     BOOST_REQUIRE(hub->getMember("State.Ready") != nullptr);
@@ -378,7 +378,9 @@ BOOST_AUTO_TEST_CASE(rebuilding_hubs_preserves_native_member_values_and_overload
     const auto constantId = runtime.registerConstant(
         "example.child.answer", RuntimeValue(NomadInteger{42}), runtime.getIntegerType()
     );
-    const auto* type = runtime.registerEnum("example.child.State", {{"Ready", 1}});
+    const auto typeId = runtime.createEnum("example.child.State", {{"Ready", 1}});
+    BOOST_REQUIRE(typeId.isValid());
+    const auto* type = runtime.getType(typeId).value();
     const auto eventId = runtime.registerEvent("example.child.changed", {});
     const auto dynamicVariableId = runtime.registerDynamicVariable(
         "example.child.current", nullptr,

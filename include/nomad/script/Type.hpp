@@ -191,7 +191,11 @@ struct EnumValueDefinition {
 class EnumType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
-    EnumType(NomadString name, std::vector<EnumValueDefinition> values);
+    EnumType(
+        NomadString name,
+        std::vector<EnumValueDefinition> values,
+        NomadString documentation = {}
+    );
 
     using Type::toString;
 

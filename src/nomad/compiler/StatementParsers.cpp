@@ -856,7 +856,7 @@ bool preParseEnumStatement(CompilerContext* context, ScriptFunction* function, T
         }
     }
 
-    if (runtime->registerEnum(enumName, values) == nullptr) {
+    if (runtime->createEnum(enumName, values).isInvalid()) {
         context->reportError("Failed to register enum '" + enumName + "'", tokens);
         return false;
     }
