@@ -1633,12 +1633,11 @@ IndexerId Runtime::getNativeIndexerId(const Type* objectType, const NomadIndex i
     return info == nullptr ? IndexerId::INVALID : info->id;
 }
 
-bool Runtime::getNativeIndexerInfo(const IndexerId indexerId, NativeIndexerInfo& info) const {
+std::optional<NativeIndexerInfo> Runtime::getNativeIndexerInfo(const IndexerId indexerId) const {
     if (isIdOutOfRange(indexerId.id, m_nativeIndexers.size())) {
-        return false;
+        return std::nullopt;
     }
-    info = *m_nativeIndexers[toNomadIndex(indexerId.id)];
-    return true;
+    return *m_nativeIndexers[toNomadIndex(indexerId.id)];
 }
 
 const std::vector<const NativeIndexerInfo*>& Runtime::getNativeIndexers() const {
@@ -1747,8 +1746,8 @@ MemberReference Runtime::getNativeMemberId(const Type* objectType, const NomadSt
     for (const auto memberId : overloads->second) {
         switch (getMemberType(memberId)) {
         case MemberType::Property: {
-            NativePropertyInfo info;
-            if (getNativePropertyInfo(memberId, info) && info.objectType == objectType) {
+            const auto info = getNativePropertyInfo(memberId);
+            if (info && info->objectType == objectType) {
                 return memberId;
             }
             break;
@@ -1777,17 +1776,16 @@ MemberType Runtime::getMemberType(const MemberReference& member) const {
     return getMethod(std::get<CallableId>(member)) == nullptr ? MemberType::Unknown : MemberType::Method;
 }
 
-bool Runtime::getNativePropertyInfo(const MemberReference& member, NativePropertyInfo& info) const {
+std::optional<NativePropertyInfo> Runtime::getNativePropertyInfo(const MemberReference& member) const {
     const auto* id = std::get_if<PropertyId>(&member);
     if (id == nullptr) {
-        return false;
+        return std::nullopt;
     }
     const auto* property = getNativeProperty(*id);
     if (property == nullptr) {
-        return false;
+        return std::nullopt;
     }
-    info = property->getInfo();
-    return true;
+    return property->getInfo();
 }
 
 const NativeMethod* Runtime::getNativeMemberMethod(const MemberReference& member) const {
@@ -1802,8 +1800,8 @@ void Runtime::getNativeMembers(const Type* objectType, std::vector<MemberReferen
         const auto type = getMemberType(memberId);
 
         if (type == MemberType::Property) {
-            NativePropertyInfo info;
-            if (getNativePropertyInfo(memberId, info) && info.objectType == objectType) {
+            const auto info = getNativePropertyInfo(memberId);
+            if (info && info->objectType == objectType) {
                 members.push_back(memberId);
             }
         } else if (type == MemberType::Method) {

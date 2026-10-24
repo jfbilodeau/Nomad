@@ -217,7 +217,7 @@ public:
     );
     [[nodiscard]] IndexerId getNativeIndexerId(const Type* objectType, NomadIndex indexCount) const;
     [[nodiscard]] IndexerId catalogNativeIndexer(const NativeIndexerInfo* info);
-    [[nodiscard]] bool getNativeIndexerInfo(IndexerId indexerId, NativeIndexerInfo& info) const;
+    [[nodiscard]] std::optional<NativeIndexerInfo> getNativeIndexerInfo(IndexerId indexerId) const;
     [[nodiscard]] const std::vector<const NativeIndexerInfo*>& getNativeIndexers() const;
 
     CallableId registerNativeMethod(
@@ -236,7 +236,7 @@ public:
                                       NativePropertyGetFn getFn, NativePropertySetFn setFn, NomadDocArg);
     [[nodiscard]] MemberReference getNativeMemberId(const Type* objectType, const NomadString& name) const;
     [[nodiscard]] MemberType getMemberType(const MemberReference& member) const;
-    [[nodiscard]] bool getNativePropertyInfo(const MemberReference& member, NativePropertyInfo& info) const;
+    [[nodiscard]] std::optional<NativePropertyInfo> getNativePropertyInfo(const MemberReference& member) const;
     [[nodiscard]] const NativeMethod* getNativeMemberMethod(const MemberReference& member) const;
     void getNativeMembers(const Type* objectType, std::vector<MemberReference>& members) const;
     void getNativeMembers(std::vector<MemberReference>& members) const;

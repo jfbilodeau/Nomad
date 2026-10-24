@@ -183,14 +183,14 @@ ApiAnalysis analyzeApiSymbols(
     runtime->getNativeMembers(members);
     for (const auto id : members) {
         if (runtime->getMemberType(id) == MemberType::Property) {
-            NativePropertyInfo info;
-            if (!runtime->getNativePropertyInfo(id, info)) {
+            const auto info = runtime->getNativePropertyInfo(id);
+            if (!info) {
                 throw std::runtime_error("Registered native property is unavailable");
             }
-            const auto receiver = info.objectType->getTypeName();
-            const auto value = info.valueType->getTypeName();
-            symbols.push_back({info.name, CompletionItemKind::Property,
-                receiver + "." + info.name + ":" + value, info.doc, value, receiver});
+            const auto receiver = info->objectType->getTypeName();
+            const auto value = info->valueType->getTypeName();
+            symbols.push_back({info->name, CompletionItemKind::Property,
+                receiver + "." + info->name + ":" + value, info->doc, value, receiver});
         } else if (runtime->getMemberType(id) == MemberType::Method) {
             const auto* method = runtime->getNativeMemberMethod(id);
             if (method == nullptr) {

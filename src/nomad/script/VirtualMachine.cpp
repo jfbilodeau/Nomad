@@ -267,11 +267,11 @@ void VirtualMachine::getNativeProperty(
     const RuntimeValue& receiver,
     RuntimeValue& result
 ) {
-    NativePropertyInfo info;
-    if (!m_runtime->getNativePropertyInfo(memberId, info) || !info.getFn) {
+    const auto info = m_runtime->getNativePropertyInfo(memberId);
+    if (!info || !info->getFn) {
         fault("Invalid native property getter");
     }
-    invokeNativeMember([&](VirtualMachine* machine) { info.getFn(machine, result); }, receiver);
+    invokeNativeMember([&](VirtualMachine* machine) { info->getFn(machine, result); }, receiver);
 }
 
 void VirtualMachine::setNativeProperty(
@@ -279,11 +279,11 @@ void VirtualMachine::setNativeProperty(
     const RuntimeValue& receiver,
     const RuntimeValue& value
 ) {
-    NativePropertyInfo info;
-    if (!m_runtime->getNativePropertyInfo(memberId, info) || !info.setFn) {
+    const auto info = m_runtime->getNativePropertyInfo(memberId);
+    if (!info || !info->setFn) {
         fault("Invalid native property setter");
     }
-    invokeNativeMember([&](VirtualMachine* machine) { info.setFn(machine, value); }, receiver);
+    invokeNativeMember([&](VirtualMachine* machine) { info->setFn(machine, value); }, receiver);
 }
 
 void VirtualMachine::callNativeIndexer(
@@ -291,11 +291,11 @@ void VirtualMachine::callNativeIndexer(
     const RuntimeValue& receiver,
     const bool write
 ) {
-    NativeIndexerInfo info;
-    if (!m_runtime->getNativeIndexerInfo(indexerId, info)) {
+    const auto info = m_runtime->getNativeIndexerInfo(indexerId);
+    if (!info) {
         fault("Invalid native indexer");
     }
-    const auto& callback = write ? info.setFn : info.getFn;
+    const auto& callback = write ? info->setFn : info->getFn;
     if (!callback) {
         fault(write ? "Invalid native indexer setter" : "Invalid native indexer getter");
     }
@@ -309,11 +309,11 @@ void VirtualMachine::runNativeIndexer(
     const RuntimeValue& receiver,
     const bool write
 ) {
-    NativeIndexerInfo info;
-    if (!m_runtime->getNativeIndexerInfo(indexerId, info)) {
+    const auto info = m_runtime->getNativeIndexerInfo(indexerId);
+    if (!info) {
         fault("Invalid native indexer");
     }
-    if (args.size() != info.indexTypes.size() + (write ? 1 : 0)) {
+    if (args.size() != info->indexTypes.size() + (write ? 1 : 0)) {
         fault("Incorrect argument count when calling native indexer");
     }
     if (m_stackIndex >= m_stack.size() || args.size() > m_stack.size() - m_stackIndex - 1) {
@@ -321,7 +321,7 @@ void VirtualMachine::runNativeIndexer(
     }
     const auto initialStackIndex = m_stackIndex;
     const auto parameterType = [&](const NomadIndex index) {
-        return index < info.indexTypes.size() ? info.indexTypes[index] : info.valueType;
+        return index < info->indexTypes.size() ? info->indexTypes[index] : info->valueType;
     };
     const auto releaseArguments = [&]() {
         while (m_stackIndex > initialStackIndex) {

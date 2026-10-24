@@ -60,6 +60,12 @@ Their metadata structures are now named `NativePropertyInfo`,
 `getNativePropertyInfo`, `getNativeIndexerInfo`, and `getIterableInfo`;
 `NativeProperty::getInfo()` returns a property snapshot.
 
+Fallible metadata snapshot lookups return `std::optional<Info>`. An empty
+optional means the item is absent, invalid, or of the wrong kind. No output
+parameter is retained or reused from an earlier lookup. A getter on an
+already-valid descriptor, such as `NativeProperty::getInfo()`, returns its
+snapshot directly.
+
 ### Type lookup
 
 `Runtime::getTypeId(name)` returns a `TypeId`, or `TypeId::INVALID`
@@ -276,8 +282,8 @@ Member enumeration and overload APIs use `std::vector<MemberReference>`.
 `getMemberType(member)` returns `MemberType::Property`, `MemberType::Method`,
 or `MemberType::Unknown` for an invalid reference.
 Use `std::get_if` to inspect a reference's ID category.
-`getNativePropertyInfo(member, definition)` returns a native property
-snapshot, or `false` when the reference is invalid or not a native property.
+`getNativePropertyInfo(member)` returns `std::optional<NativePropertyInfo>`,
+empty when the reference is invalid or not a native property.
 `getNativeMemberMethod(member)` returns a native method or `nullptr`.
 `getNativeMethod(callableId)` accepts the same ID returned by method registration.
 Include `<nomad/script/Member.hpp>` for member references and `MemberType`; native property callbacks
@@ -779,8 +785,15 @@ Registration and `getNativeIndexerId(objectType, indexCount)` return an
 failures are logged. Include `<nomad/script/NativeMember.hpp>` for the ID and
 `NativeIndexerInfo`. IDs are runtime-local and remain stable as more
 indexers are registered. They do not implicitly convert to integers or other
-ID categories. `getNativeIndexerInfo(id, definition)` returns `false` for
-invalid or unregistered IDs.
+ID categories. `getNativeIndexerInfo(id)` returns
+`std::optional<NativeIndexerInfo>`, empty for invalid or unregistered IDs.
+
+```cpp
+const auto info = runtime.getNativeIndexerInfo(id);
+if (info) {
+    // Inspect the detached metadata snapshot through info->...
+}
+```
 
 The object type owns each indexer's metadata. `ObjectType::getNativeIndexer(indexCount)`
 returns a borrowed `const NativeIndexerInfo*`, or `nullptr` when absent.

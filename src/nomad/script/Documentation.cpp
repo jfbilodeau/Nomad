@@ -34,9 +34,8 @@ std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Ru
     for (const auto memberId : memberIds) {
         switch (runtime->getMemberType(memberId)) {
         case MemberType::Property: {
-            NativePropertyInfo info;
-            if (runtime->getNativePropertyInfo(memberId, info)) {
-                members.emplace_back(memberId, MemberType::Property, info.objectType, info.name);
+            if (const auto info = runtime->getNativePropertyInfo(memberId)) {
+                members.emplace_back(memberId, MemberType::Property, info->objectType, info->name);
             }
             break;
         }
@@ -489,13 +488,15 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
         out << "#### `" << member.name << "`";
 
         if (member.memberType == MemberType::Property) {
-            NativePropertyInfo info;
-            (void)runtime->getNativePropertyInfo(member.id, info);
+            const auto info = runtime->getNativePropertyInfo(member.id);
+            if (!info) {
+                throw NomadException("Registered native property is unavailable");
+            }
 
             NomadString access;
-            if (info.getFn && info.setFn) {
+            if (info->getFn && info->setFn) {
                 access = "read/write";
-            } else if (info.getFn) {
+            } else if (info->getFn) {
                 access = "read-only";
             } else {
                 access = "write-only";
@@ -503,11 +504,11 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
 
             out << " (*" << access << " property*)" << std::endl;
             out << std::endl;
-            out << "`" << member.name << ":" << getDocumentedTypeName(runtime, info.valueType) << "`"
+            out << "`" << member.name << ":" << getDocumentedTypeName(runtime, info->valueType) << "`"
                 << std::endl;
             out << std::endl;
-            if (!info.doc.empty()) {
-                out << info.doc << std::endl;
+            if (!info->doc.empty()) {
+                out << info->doc << std::endl;
                 out << std::endl;
             }
         } else {

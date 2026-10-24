@@ -394,11 +394,11 @@ bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type
 
         switch (m_runtime->getMemberType(memberId)) {
         case MemberType::Property: {
-            NativePropertyInfo info;
-            if (!m_runtime->getNativePropertyInfo(memberId, info)) {
+            const auto info = m_runtime->getNativePropertyInfo(memberId);
+            if (!info) {
                 reportInternalError("Invalid native property id: " + toString(std::get<PropertyId>(memberId).id));
             }
-            memberName = info.name;
+            memberName = info->name;
             break;
         }
 

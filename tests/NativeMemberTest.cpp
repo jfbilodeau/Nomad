@@ -30,6 +30,10 @@ static_assert(std::is_same_v<decltype(NativeIndexerDefinition{}.indexTypes), std
 static_assert(std::is_same_v<decltype(NativeInterableDefinition{}.factory), NativeMethodDefinition>);
 static_assert(std::is_same_v<decltype(NativePropertyInfo{}.id), PropertyId>);
 static_assert(std::is_same_v<decltype(std::declval<const NativeProperty&>().getInfo()), NativePropertyInfo>);
+static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getNativePropertyInfo(PropertyId{})),
+    std::optional<NativePropertyInfo>>);
+static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getNativeIndexerInfo(IndexerId{})),
+    std::optional<NativeIndexerInfo>>);
 static_assert(!std::is_same_v<NativePropertyDefinition, NativePropertyInfo>);
 static_assert(!std::is_same_v<NativeIndexerDefinition, NativeIndexerInfo>);
 static_assert(std::is_aggregate_v<ParameterDefinition>);
@@ -168,10 +172,28 @@ BOOST_AUTO_TEST_CASE(native_property_info_is_a_snapshot_of_registered_metadata) 
     BOOST_TEST(info.doc == "Original documentation");
     info.name = "changed";
     info.getFn = {};
-    NativePropertyInfo lookup;
-    BOOST_REQUIRE(runtime.getNativePropertyInfo(MemberReference{id}, lookup));
-    BOOST_TEST(lookup.name == "value");
-    BOOST_TEST(static_cast<bool>(lookup.getFn));
+    auto lookup = runtime.getNativePropertyInfo(MemberReference{id});
+    BOOST_REQUIRE(lookup.has_value());
+    BOOST_TEST(lookup->name == "value");
+    BOOST_TEST(static_cast<bool>(lookup->getFn));
+    lookup->name = "local snapshot";
+    lookup->getFn = {};
+    const auto freshInfo = runtime.getNativePropertyInfo(id);
+    BOOST_REQUIRE(freshInfo.has_value());
+    BOOST_TEST(freshInfo->name == "value");
+    BOOST_TEST(static_cast<bool>(freshInfo->getFn));
+    for (const auto invalid : {PropertyId::INVALID, PropertyId{-2},
+        PropertyId{NOMAD_ID_MAX - 1}, PropertyId{NOMAD_ID_MAX}}) {
+        BOOST_TEST(!runtime.getNativePropertyInfo(invalid).has_value());
+    }
+    const auto methodId = runtime.registerNativeMethod(
+        type, "read", methodFunction(), {}, runtime.getIntegerType(), ""
+    );
+    BOOST_REQUIRE(methodId.isValid());
+    BOOST_TEST(!runtime.getNativePropertyInfo(MemberReference{methodId}).has_value());
+    BOOST_TEST(!runtime.getNativePropertyInfo(MemberReference{CallableId::INVALID}).has_value());
+    BOOST_TEST(lookup.has_value());
+    BOOST_TEST(lookup->name == "local snapshot");
     BOOST_TEST(property->getInfo().id == id);
 }
 
@@ -316,22 +338,24 @@ BOOST_AUTO_TEST_CASE(registers_read_only_write_only_and_read_write_properties) {
     BOOST_REQUIRE(writeOnlyId.isValid());
     BOOST_REQUIRE(readWriteId.isValid());
 
-    NativePropertyInfo info;
-    BOOST_REQUIRE(runtime.getNativePropertyInfo(readOnlyId, info));
-    BOOST_TEST(info.id == std::get<PropertyId>(readOnlyId));
-    BOOST_TEST(info.objectType == runtime.getStringType());
-    BOOST_TEST(info.name == "length");
-    BOOST_TEST(info.valueType == runtime.getIntegerType());
-    BOOST_TEST(static_cast<bool>(info.getFn));
-    BOOST_TEST(!info.setFn);
+    const auto readOnlyInfo = runtime.getNativePropertyInfo(readOnlyId);
+    BOOST_REQUIRE(readOnlyInfo.has_value());
+    BOOST_TEST(readOnlyInfo->id == std::get<PropertyId>(readOnlyId));
+    BOOST_TEST(readOnlyInfo->objectType == runtime.getStringType());
+    BOOST_TEST(readOnlyInfo->name == "length");
+    BOOST_TEST(readOnlyInfo->valueType == runtime.getIntegerType());
+    BOOST_TEST(static_cast<bool>(readOnlyInfo->getFn));
+    BOOST_TEST(!readOnlyInfo->setFn);
 
-    BOOST_REQUIRE(runtime.getNativePropertyInfo(writeOnlyId, info));
-    BOOST_TEST(!info.getFn);
-    BOOST_TEST(static_cast<bool>(info.setFn));
+    const auto writeOnlyInfo = runtime.getNativePropertyInfo(writeOnlyId);
+    BOOST_REQUIRE(writeOnlyInfo.has_value());
+    BOOST_TEST(!writeOnlyInfo->getFn);
+    BOOST_TEST(static_cast<bool>(writeOnlyInfo->setFn));
 
-    BOOST_REQUIRE(runtime.getNativePropertyInfo(readWriteId, info));
-    BOOST_TEST(static_cast<bool>(info.getFn));
-    BOOST_TEST(static_cast<bool>(info.setFn));
+    const auto readWriteInfo = runtime.getNativePropertyInfo(readWriteId);
+    BOOST_REQUIRE(readWriteInfo.has_value());
+    BOOST_TEST(static_cast<bool>(readWriteInfo->getFn));
+    BOOST_TEST(static_cast<bool>(readWriteInfo->setFn));
 }
 
 BOOST_AUTO_TEST_CASE(registers_method_metadata) {
@@ -474,15 +498,15 @@ BOOST_AUTO_TEST_CASE(indexer_registration_validates_types_and_accessors) {
     BOOST_REQUIRE(id.isValid());
     BOOST_TEST(runtime.getNativeIndexerId(type, 1) == id);
     BOOST_TEST(runtime.registerNativeIndexer(type, {runtime.getIntegerType()}, runtime.getIntegerType(), getter, setter, "").isInvalid());
-    NativeIndexerInfo info;
-    BOOST_REQUIRE(runtime.getNativeIndexerInfo(id, info));
-    BOOST_TEST(info.objectType == type);
-    BOOST_REQUIRE(info.indexTypes.size() == 1u);
-    BOOST_TEST(info.indexTypes[0] == runtime.getIntegerType());
-    BOOST_TEST(info.valueType == runtime.getIntegerType());
-    BOOST_TEST(!info.getFn);
-    BOOST_TEST(static_cast<bool>(info.setFn));
-    BOOST_TEST(!runtime.getNativeIndexerInfo(IndexerId::INVALID, info));
+    const auto info = runtime.getNativeIndexerInfo(id);
+    BOOST_REQUIRE(info.has_value());
+    BOOST_TEST(info->objectType == type);
+    BOOST_REQUIRE(info->indexTypes.size() == 1u);
+    BOOST_TEST(info->indexTypes[0] == runtime.getIntegerType());
+    BOOST_TEST(info->valueType == runtime.getIntegerType());
+    BOOST_TEST(!info->getFn);
+    BOOST_TEST(static_cast<bool>(info->setFn));
+    BOOST_TEST(!runtime.getNativeIndexerInfo(IndexerId::INVALID).has_value());
     BOOST_TEST(runtime.getNativeIndexerId(runtime.getIntegerType(), 1).isInvalid());
 }
 
@@ -510,19 +534,19 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_validate_metadata_and_coexist_with
     BOOST_TEST(runtime.registerNativeIndexer(type, {integer, string}, integer, getter, {}, "").isInvalid());
     BOOST_TEST(runtime.registerNativeIndexer(type, {string, integer}, integer, getter, {}, "").isInvalid());
     BOOST_REQUIRE(runtime.registerNativeIndexer(type, {integer}, integer, {}, setter, "").isValid());
-    NativeIndexerInfo info;
-    BOOST_REQUIRE(runtime.getNativeIndexerInfo(id, info));
-    BOOST_TEST(info.id == id);
-    BOOST_TEST(info.objectType == type);
-    BOOST_REQUIRE(info.indexTypes.size() == 2u);
-    BOOST_TEST(info.indexTypes[0] == integer);
-    BOOST_TEST(info.indexTypes[1] == string);
-    BOOST_TEST(info.valueType == integer);
-    BOOST_TEST(static_cast<bool>(info.getFn));
-    BOOST_TEST(static_cast<bool>(info.setFn));
+    const auto info = runtime.getNativeIndexerInfo(id);
+    BOOST_REQUIRE(info.has_value());
+    BOOST_TEST(info->id == id);
+    BOOST_TEST(info->objectType == type);
+    BOOST_REQUIRE(info->indexTypes.size() == 2u);
+    BOOST_TEST(info->indexTypes[0] == integer);
+    BOOST_TEST(info->indexTypes[1] == string);
+    BOOST_TEST(info->valueType == integer);
+    BOOST_TEST(static_cast<bool>(info->getFn));
+    BOOST_TEST(static_cast<bool>(info->setFn));
     BOOST_TEST(runtime.getNativeIndexers().size() == 3u);
-    BOOST_TEST(!runtime.getNativeIndexerInfo(IndexerId::INVALID, info));
-    BOOST_TEST(!runtime.getNativeIndexerInfo(IndexerId{toNomadId(runtime.getNativeIndexers().size())}, info));
+    BOOST_TEST(!runtime.getNativeIndexerInfo(IndexerId::INVALID).has_value());
+    BOOST_TEST(!runtime.getNativeIndexerInfo(IndexerId{toNomadId(runtime.getNativeIndexers().size())}).has_value());
     BOOST_TEST(runtime.getNativeIndexerId(integer, 2).isInvalid());
     std::ostringstream documentation;
     generateNativeMemberDocumentation(&runtime, documentation);
@@ -562,16 +586,18 @@ BOOST_AUTO_TEST_CASE(indexer_ids_remain_stable_as_the_catalog_grows) {
     BOOST_TEST(original->doc == "Stable indexer");
     BOOST_TEST(type->getNativeIndexers().size() == 32U);
     BOOST_TEST(runtime.getNativeIndexers()[toNomadIndex(id.id)] == original);
-    NativeIndexerInfo info;
-    BOOST_REQUIRE(runtime.getNativeIndexerInfo(id, info));
-    BOOST_TEST(info.id == id);
-    BOOST_TEST(info.doc == "Stable indexer");
-    BOOST_TEST(info.objectType == type);
+    const auto info = runtime.getNativeIndexerInfo(id);
+    BOOST_REQUIRE(info.has_value());
+    BOOST_TEST(info->id == id);
+    BOOST_TEST(info->doc == "Stable indexer");
+    BOOST_TEST(info->objectType == type);
     BOOST_TEST(runtime.getNativeIndexerId(type, 1) == id);
     for (const auto invalid : {IndexerId::INVALID, IndexerId{-2},
         IndexerId{NOMAD_ID_MAX - 1}, IndexerId{NOMAD_ID_MAX}}) {
-        BOOST_TEST(!runtime.getNativeIndexerInfo(invalid, info));
+        BOOST_TEST(!runtime.getNativeIndexerInfo(invalid).has_value());
     }
+    BOOST_TEST(info->id == id);
+    BOOST_TEST(info->doc == "Stable indexer");
 }
 
 BOOST_AUTO_TEST_CASE(type_owned_indexers_validate_direct_registration_and_catalog_membership) {
@@ -635,10 +661,10 @@ BOOST_AUTO_TEST_CASE(type_owned_indexers_validate_direct_registration_and_catalo
     BOOST_TEST(type->getNativeIndexers().size() == 1U);
     BOOST_TEST(runtime.getNativeIndexers().size() == originalCount + 1);
     BOOST_TEST(type->getNativeIndexer(2) == nullptr);
-    NativeIndexerInfo snapshot;
-    BOOST_REQUIRE(runtime.getNativeIndexerInfo(id, snapshot));
-    snapshot.indexTypes.clear();
-    snapshot.getFn = {};
+    auto snapshot = runtime.getNativeIndexerInfo(id);
+    BOOST_REQUIRE(snapshot.has_value());
+    snapshot->indexTypes.clear();
+    snapshot->getFn = {};
     BOOST_TEST(registered->indexTypes.size() == 1U);
     BOOST_TEST(static_cast<bool>(registered->getFn));
 }
@@ -673,11 +699,11 @@ BOOST_AUTO_TEST_CASE(type_owned_indexer_callbacks_are_released_once_at_runtime_d
 
 BOOST_AUTO_TEST_CASE(string_indexer_is_read_only_and_documented) {
     Runtime runtime;
-    NativeIndexerInfo info;
-    BOOST_REQUIRE(runtime.getNativeIndexerInfo(runtime.getNativeIndexerId(runtime.getStringType(), 1), info));
-    BOOST_TEST(static_cast<bool>(info.getFn));
-    BOOST_TEST(!info.setFn);
-    BOOST_TEST(info.valueType == runtime.getStringType());
+    const auto info = runtime.getNativeIndexerInfo(runtime.getNativeIndexerId(runtime.getStringType(), 1));
+    BOOST_REQUIRE(info.has_value());
+    BOOST_TEST(static_cast<bool>(info->getFn));
+    BOOST_TEST(!info->setFn);
+    BOOST_TEST(info->valueType == runtime.getStringType());
     std::ostringstream documentation;
     generateNativeMemberDocumentation(&runtime, documentation);
     BOOST_TEST(documentation.str().find("string[index]") != NomadString::npos);

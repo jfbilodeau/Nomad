@@ -689,15 +689,15 @@ bool NativeMemberExpression::resolveAssignmentTarget(CompilerContext* context, S
         return false;
     }
 
-    NativePropertyInfo info;
-    if (!runtime->getNativePropertyInfo(m_memberId, info)) {
+    const auto info = runtime->getNativePropertyInfo(m_memberId);
+    if (!info) {
         context->getCompiler()->reportInternalError("Invalid native property: " + m_qualifiedName);
     }
-    if (!info.setFn) {
+    if (!info->setFn) {
         reportError(context, function, "Native property '" + m_qualifiedName + "' is read-only");
         return false;
     }
-    setType(info.valueType);
+    setType(info->valueType);
     return true;
 }
 
@@ -709,17 +709,17 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptFunction*
     auto* runtime = context->getRuntime();
     switch (m_memberType) {
     case MemberType::Property: {
-        NativePropertyInfo info;
-        if (!runtime->getNativePropertyInfo(m_memberId, info)) {
+        const auto info = runtime->getNativePropertyInfo(m_memberId);
+        if (!info) {
             context->getCompiler()->reportInternalError("Invalid native property: " + m_qualifiedName);
         }
 
-        if (!info.getFn) {
+        if (!info->getFn) {
             reportError(context, function, "Native property '" + m_qualifiedName + "' is write-only");
             return;
         }
 
-        setType(info.valueType);
+        setType(info->valueType);
         return;
     }
 
@@ -805,22 +805,22 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
 
     auto* runtime = context.getRuntime();
     if (m_memberType == MemberType::Property) {
-        NativePropertyInfo info;
+        std::optional<NativePropertyInfo> info;
         RuntimeValue result;
-        info.valueType = nullptr;
 
         try {
-            if (!runtime->getNativePropertyInfo(m_memberId, info) || !info.getFn) {
+            info = runtime->getNativePropertyInfo(m_memberId);
+            if (!info || !info->getFn) {
                 raiseException("Invalid native property getter: " + m_qualifiedName);
             }
 
             context.getVirtualMachine()->getNativeProperty(std::get<PropertyId>(m_memberId), receiver, result);
-            context.setResult(info.valueType, result);
-            info.valueType->freeValue(result);
+            context.setResult(info->valueType, result);
+            info->valueType->freeValue(result);
             receiverType->freeValue(receiver);
         } catch (...) {
-            if (info.valueType != nullptr) {
-                info.valueType->freeValue(result);
+            if (info && info->valueType != nullptr) {
+                info->valueType->freeValue(result);
             }
             receiverType->freeValue(receiver);
             throw;
@@ -902,15 +902,15 @@ void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, con
         return;
     }
 
-    NativePropertyInfo info;
-    if (!context.getRuntime()->getNativePropertyInfo(m_memberId, info) || !info.setFn) {
+    const auto info = context.getRuntime()->getNativePropertyInfo(m_memberId);
+    if (!info || !info->setFn) {
         receiverType->freeValue(receiver);
         raiseException("Invalid native property setter: " + m_qualifiedName);
     }
 
     try {
         context.getVirtualMachine()->setNativeProperty(std::get<PropertyId>(m_memberId), receiver, assignedValue->getValue());
-        context.setResult(info.valueType, assignedValue->getValue());
+        context.setResult(info->valueType, assignedValue->getValue());
     } catch (...) {
         receiverType->freeValue(receiver);
         throw;
@@ -948,23 +948,23 @@ bool IndexerExpression::resolveIndexer(CompilerContext* context, ScriptFunction*
     }
     auto* runtime = context->getRuntime();
     m_indexerId = runtime->getNativeIndexerId(m_receiver->getType(), m_indexes.size());
-    NativeIndexerInfo info;
-    if (!runtime->getNativeIndexerInfo(m_indexerId, info)) {
+    const auto info = runtime->getNativeIndexerInfo(m_indexerId);
+    if (!info) {
         reportError(context, function, "Type '" + getTypeDisplayName(m_receiver->getType()) +
             "' has no indexer with " + toString(m_indexes.size()) + " indices");
         return false;
     }
     for (auto index = NomadIndex{0}; index < m_indexes.size(); ++index) {
-        if (!info.indexTypes[index]->acceptsArgument(m_indexes[index]->getType())) {
+        if (!info->indexTypes[index]->acceptsArgument(m_indexes[index]->getType())) {
             reportError(context, function, "Indexer parameter " + toString(index + 1) + " requires type '" +
-                getTypeDisplayName(info.indexTypes[index]) + "', not '" +
+                getTypeDisplayName(info->indexTypes[index]) + "', not '" +
                 getTypeDisplayName(m_indexes[index]->getType()) + "'");
             return false;
         }
     }
-    setType(info.valueType);
-    m_canRead = static_cast<bool>(info.getFn);
-    m_canWrite = static_cast<bool>(info.setFn);
+    setType(info->valueType);
+    m_canRead = static_cast<bool>(info->getFn);
+    m_canWrite = static_cast<bool>(info->setFn);
     return true;
 }
 
