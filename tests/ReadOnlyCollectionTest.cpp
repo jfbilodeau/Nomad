@@ -8,6 +8,7 @@
 #include <nomad/compiler/CompilerContext.hpp>
 
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -60,6 +61,8 @@ void reject(const NomadString& setup, const NomadString& expression) {
 BOOST_AUTO_TEST_SUITE(read_only_collections)
 
 BOOST_AUTO_TEST_CASE(list_snapshots_copy_containers_share_nested_values_and_release_ownership) {
+    // Include the process-wide empty string in the lifetime baseline.
+    NomadStringObject::createEmpty()->releaseRef();
     const auto before = NomadObject::getLiveObjectCount();
     {
         Runtime runtime;
@@ -116,6 +119,8 @@ BOOST_AUTO_TEST_CASE(native_lists_can_be_exposed_directly_as_read_only) {
 }
 
 BOOST_AUTO_TEST_CASE(map_snapshots_preserve_readers_and_shallow_copy_entries) {
+    // Include the process-wide empty string in the lifetime baseline.
+    NomadStringObject::createEmpty()->releaseRef();
     const auto before = NomadObject::getLiveObjectCount();
     {
         Runtime runtime;
@@ -152,6 +157,8 @@ BOOST_AUTO_TEST_CASE(map_mutators_and_constructors_are_unavailable_in_both_execu
 }
 
 BOOST_AUTO_TEST_CASE(array_snapshots_preserve_rank_dimensions_and_shallow_values) {
+    // Include the process-wide empty string in the lifetime baseline.
+    NomadStringObject::createEmpty()->releaseRef();
     const auto before = NomadObject::getLiveObjectCount();
     {
         Runtime runtime;
