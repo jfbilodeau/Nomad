@@ -3,7 +3,6 @@
 #include <boost/test/unit_test.hpp>
 
 #include <nomad/script/NativeMember.hpp>
-#include <nomad/script/NativeMemberDefinitions.hpp>
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
 

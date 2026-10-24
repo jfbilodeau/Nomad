@@ -34,7 +34,7 @@ API structures use these naming conventions:
   registered item.
 - `*Declaration` is reserved for source-language declarations in the compiler.
 
-Include `<nomad/script/NativeMemberDefinitions.hpp>` for `ParameterDefinition`,
+Include `<nomad/script/Runtime.hpp>` for `ParameterDefinition`,
 `NativeMethodDefinition`, `NativeConstructorDefinition`,
 `NativePropertyDefinition`, `NativeIndexerDefinition`, and
 `NativeInterableDefinition`. These aggregate inputs own their names,
