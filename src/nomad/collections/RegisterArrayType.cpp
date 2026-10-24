@@ -120,16 +120,18 @@ void registerArrayType(Runtime* runtime) {
                 }
             }
             const auto* elementType = arrayType->getElementType();
-            const auto iteratorId = runtime->addMethod(arrayType->getId(), {
-                .name = "iterator",
-                .parameters = {},
-                .returnTypeId = runtime->getIteratorType(elementType)->getId(),
-                .function = [](VirtualMachine* machine) {
-                    machine->getResult().setObjectValue(new ArrayIterator(machine->getThisAs<Array1dObject>()));
-                },
-                .documentation = NomadDoc("Creates an independent live iterator over the array.")
+            runtime->addIterable(arrayType->getId(), {
+                .valueTypeId = elementType->getId(),
+                .factory = {
+                    .name = "iterator",
+                    .parameters = {},
+                    .returnTypeId = runtime->getIteratorType(elementType)->getId(),
+                    .function = [](VirtualMachine* machine) {
+                        machine->getResult().setObjectValue(new ArrayIterator(machine->getThisAs<Array1dObject>()));
+                    },
+                    .documentation = NomadDoc("Creates an independent live iterator over the array.")
+                }
             });
-            runtime->registerIterableType(arrayType, elementType, runtime->getNativeMemberMethod(iteratorId));
             if (runtime->addIndexer(arrayType->getId(), {
                 .valueTypeId = elementType->getId(),
                 .indexTypes = {runtime->getIntegerType()->getId()},

@@ -19,14 +19,17 @@ namespace {
 
 void registerListReaders(Runtime* runtime, const ObjectType* objectType, const bool writable) {
     const auto* elementType = objectType->getTypeArguments()[0];
-    const auto iteratorId = runtime->addMethod(objectType->getId(), {
-        .name = "iterator",
-        .parameters = {},
-        .returnTypeId = runtime->getIteratorType(elementType)->getId(),
-        .function = [](VirtualMachine* machine) {
-            machine->getResult().setObjectValue(new ListIterator(machine->getThisAs<ListObject>()));
-        },
-        .documentation = NomadDoc("Creates an independent live iterator. Structural changes invalidate its next advance.")
+    runtime->addIterable(objectType->getId(), {
+        .valueTypeId = elementType->getId(),
+        .factory = {
+            .name = "iterator",
+            .parameters = {},
+            .returnTypeId = runtime->getIteratorType(elementType)->getId(),
+            .function = [](VirtualMachine* machine) {
+                machine->getResult().setObjectValue(new ListIterator(machine->getThisAs<ListObject>()));
+            },
+            .documentation = NomadDoc("Creates an independent live iterator. Structural changes invalidate its next advance.")
+        }
     });
     const auto countId = runtime->addProperty(objectType->getId(), {
         .valueTypeId = runtime->getTypeId("int"),
@@ -55,10 +58,9 @@ void registerListReaders(Runtime* runtime, const ObjectType* objectType, const b
             ? NomadDoc("Reads or replaces an element at a zero-based index. Out-of-range indices fault.")
             : NomadDoc("Reads an element at a zero-based index. Out-of-range indices fault.")
     });
-    if (iteratorId.isInvalid() || countId.isInvalid() || indexerId.isInvalid()) {
+    if (countId.isInvalid() || indexerId.isInvalid()) {
         throw NomadException("Failed to register List readers");
     }
-    runtime->registerIterableType(objectType, elementType, runtime->getNativeMemberMethod(iteratorId));
 }
 
 } // namespace

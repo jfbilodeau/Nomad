@@ -18,18 +18,20 @@ void registerRangeType(Runtime* runtime) {
     }
     const auto* rangeType = static_cast<const RangeType*>(runtime->getType(id).value());
     const auto* integerType = runtime->getIntegerType();
-    const auto iteratorId = runtime->addMethod(id, {
-        .name = "iterator",
-        .parameters = {},
-        .returnTypeId = runtime->getIteratorType(integerType)->getId(),
-        .function = [integerType](VirtualMachine* machine) {
-            machine->getResult().setObjectValue(
-                new RangeIterator(integerType, *machine->getThisAs<RangeObject>())
-            );
-        },
-        .documentation = NomadDoc("Creates an independent iterator over the range.")
+    runtime->addIterable(id, {
+        .valueTypeId = integerType->getId(),
+        .factory = {
+            .name = "iterator",
+            .parameters = {},
+            .returnTypeId = runtime->getIteratorType(integerType)->getId(),
+            .function = [integerType](VirtualMachine* machine) {
+                machine->getResult().setObjectValue(
+                    new RangeIterator(integerType, *machine->getThisAs<RangeObject>())
+                );
+            },
+            .documentation = NomadDoc("Creates an independent iterator over the range.")
+        }
     });
-    runtime->registerIterableType(rangeType, integerType, runtime->getNativeMemberMethod(iteratorId));
 
     const auto stop = defParameter("stop", integerType, NomadParamDoc("Exclusive end of the range."));
     const auto start = defParameter("start", integerType, NomadParamDoc("Inclusive start of the range."));

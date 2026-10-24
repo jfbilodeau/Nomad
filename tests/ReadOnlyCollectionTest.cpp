@@ -60,6 +60,31 @@ void reject(const NomadString& setup, const NomadString& expression) {
 
 BOOST_AUTO_TEST_SUITE(read_only_collections)
 
+BOOST_AUTO_TEST_CASE(collection_iterable_factories_belong_to_their_specialized_types) {
+    Runtime runtime;
+    registerCollections(runtime);
+    const auto* integerType = runtime.getIntegerType();
+    for (const auto* name : {"Array1", "ReadOnlyArray1", "List", "ReadOnlyList"}) {
+        BOOST_TEST_CONTEXT(name) {
+            const auto* type = runtime.getParameterizedType(name, {integerType});
+            BOOST_REQUIRE(type != nullptr);
+            const auto* objectType = type->asObjectType();
+            BOOST_REQUIRE(objectType != nullptr);
+            const auto owned = objectType->getIterableInfo();
+            const auto forwarded = runtime.getIterableInfo(type);
+            BOOST_REQUIRE(owned.has_value());
+            BOOST_REQUIRE(forwarded.has_value());
+            BOOST_TEST(owned->valueType == integerType);
+            BOOST_TEST(owned->iteratorType == runtime.getIteratorType(integerType));
+            BOOST_TEST(forwarded->factoryId == owned->factoryId);
+            const auto* factory = runtime.getMethod(owned->factoryId);
+            BOOST_REQUIRE(factory != nullptr);
+            BOOST_TEST(factory->getObjectType() == objectType);
+            BOOST_TEST(factory->getName() == "iterator");
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(list_snapshots_copy_containers_share_nested_values_and_release_ownership) {
     // Include the process-wide empty string in the lifetime baseline.
     NomadStringObject::createEmpty()->releaseRef();
