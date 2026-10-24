@@ -1791,6 +1791,35 @@ PropertyId Runtime::addProperty(const TypeId id, NativePropertyDefinition defini
     return propertyId;
 }
 
+CallableId Runtime::addMethod(const TypeId id, NativeMethodDefinition definition) {
+    const auto type = getType(id);
+    const auto* objectType = type.has_value() ? (*type)->asObjectType() : nullptr;
+    if (objectType == nullptr) {
+        log::error("Cannot register native method '" + definition.name + "': owner must identify an object type");
+        return CallableId::INVALID;
+    }
+    const auto returnType = getType(definition.returnTypeId);
+    if (!returnType.has_value()) {
+        log::error("Cannot register native method '" + definition.name + "': invalid return type ID");
+        return CallableId::INVALID;
+    }
+    std::vector<Parameter> parameters;
+    parameters.reserve(definition.parameters.size());
+    for (const auto& parameterDefinition : definition.parameters) {
+        const auto parameterType = getType(parameterDefinition.typeId);
+        if (!parameterType.has_value()) {
+            log::error("Cannot register native method '" + definition.name + "': invalid parameter type ID");
+            return CallableId::INVALID;
+        }
+        parameters.push_back(defParameter(
+            parameterDefinition.name, *parameterType, parameterDefinition.documentation
+        ));
+    }
+    return registerNativeMethod(
+        objectType, definition.name, std::move(definition.function), parameters, *returnType, definition.documentation
+    );
+}
+
 CallableId Runtime::registerNativeMethod(
     const ObjectType* objectType,
     const NomadString& name,

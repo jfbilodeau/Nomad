@@ -52,8 +52,9 @@ const ParameterDefinition distance{
 ```
 
 These input structures do not register anything when constructed.
-`addProperty(TypeId, NativePropertyDefinition)` registers a native property
-using its creation input. The existing
+`addProperty(TypeId, NativePropertyDefinition)` and
+`addMethod(TypeId, NativeMethodDefinition)` register native properties and methods
+using their creation inputs. The existing
 `registerNativeMethod`, `registerNativeConstructor`,
 `registerNativeIndexer`, and `registerIterableType` operations retain their
 current argument forms; they do not yet accept the new input structures.
@@ -325,6 +326,43 @@ and conflicting members are logged and return `PropertyId::INVALID` without
 registering a property. Duplicate native properties are rejected even if their
 definitions match. Use the existing property and native member lookup APIs to
 retrieve the registered metadata.
+
+### Native method creation
+
+`Runtime::addMethod(TypeId id, NativeMethodDefinition definition)` registers a
+native method and returns its `CallableId`. The owner ID must identify an object
+type. Parameter and return-type IDs are resolved in the same runtime; IDs are
+runtime-local and must not be transferred between runtimes.
+
+Each `ParameterDefinition` supplies its type ID, name, and documentation.
+Parameters must have nonempty names and non-void types. Compiler-supplied
+parameter types retain their existing calling conventions. The return type may
+be `void`, but otherwise must be public. The callback must be nonempty.
+
+```cpp
+const auto methodId = runtime.addMethod(typeId, {
+    .name = "move",
+    .parameters = {{runtime.getTypeId("float"), "distance", "Distance to move."}},
+    .returnTypeId = runtime.getTypeId("void"),
+    .function = [](nomad::VirtualMachine* vm) {
+        vm->getThisAs<MyObject>()->move(vm->getFloatParameter(0));
+    },
+    .documentation = "Moves this instance."
+});
+if (methodId.isInvalid()) {
+    throw nomad::NomadException("Failed to register move method");
+}
+```
+
+The runtime owns the registered names, documentation, parameter list, and callback.
+Captured references must remain valid whenever the callback is invoked.
+Host registration is permitted on both open and closed types.
+Invalid definitions and conflicting members are logged and return
+`CallableId::INVALID` without registering a method.
+Existing member-name and overload rules apply, including when mixed with the
+pointer-based `registerNativeMethod` operation, which remains available.
+Use `getNativeMethod(id)`, `getMethod(id)`, or the member lookup APIs to retrieve
+the registered method.
 
 ### Callable access
 

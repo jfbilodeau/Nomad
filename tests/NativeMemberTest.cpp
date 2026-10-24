@@ -77,6 +77,159 @@ const ObjectType* registerTestType(Runtime& runtime) {
 
 BOOST_AUTO_TEST_SUITE(native_members)
 
+BOOST_AUTO_TEST_CASE(add_method_resolves_ids_and_owns_registered_metadata_and_callback) {
+    Runtime runtime;
+    const auto typeId = runtime.createObjectType("MethodOwner", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(typeId.isValid());
+    const auto* type = runtime.getType(typeId).value()->asObjectType();
+    auto calls = 0;
+    NativeMethodDefinition definition{
+        .name = "answer",
+        .parameters = {{runtime.getTypeId("int"), "value", "Input value."}},
+        .returnTypeId = runtime.getTypeId("bool"),
+        .function = [&](VirtualMachine*) { ++calls; },
+        .documentation = "Returns an answer."
+    };
+    const auto id = runtime.addMethod(typeId, definition);
+    BOOST_REQUIRE(id.isValid());
+    definition.name = "changed";
+    definition.parameters.clear();
+    definition.returnTypeId = runtime.getTypeId("float");
+    definition.function = {};
+    definition.documentation = "Changed documentation.";
+    const auto* method = runtime.getNativeMethod(id);
+    BOOST_REQUIRE(method != nullptr);
+    BOOST_TEST(method->getId() == id);
+    BOOST_TEST(method->getObjectType() == type);
+    BOOST_TEST(method->getName() == "answer");
+    BOOST_TEST(method->getDoc() == "Returns an answer.");
+    BOOST_TEST(method->getReturnType() == runtime.getBooleanType());
+    BOOST_REQUIRE(method->getParameters().size() == 1u);
+    BOOST_TEST(method->getParameters()[0].type == runtime.getIntegerType());
+    BOOST_TEST(method->getParameters()[0].name == "value");
+    BOOST_TEST(method->getParameters()[0].doc == "Input value.");
+    BOOST_TEST(runtime.getMethod(id) == method);
+    BOOST_TEST(runtime.getNativeMemberMethod(id) == method);
+    BOOST_TEST((runtime.getMemberType(id) == MemberType::Method));
+    BOOST_TEST(std::get<CallableId>(runtime.getNativeMemberId(type, "answer")) == id);
+    const auto methods = type->getMethods();
+    BOOST_REQUIRE(methods.size() == 1u);
+    BOOST_TEST(methods[0] == method);
+    BOOST_TEST(calls == 0);
+    method->getFn()(nullptr);
+    BOOST_TEST(calls == 1);
+
+    const auto voidId = runtime.addMethod(typeId, {
+        .name = "clear",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = methodFunction(),
+        .documentation = ""
+    });
+    BOOST_REQUIRE(voidId.isValid());
+    BOOST_TEST(runtime.getNativeMethod(voidId)->getReturnType() == runtime.getVoidType());
+}
+
+BOOST_AUTO_TEST_CASE(add_method_rejects_invalid_definitions_without_partial_registration) {
+    Runtime runtime;
+    const auto typeId = runtime.createObjectType("MethodOwner", ObjectTypeMode::Opened);
+    BOOST_REQUIRE(typeId.isValid());
+    const auto* type = runtime.getType(typeId).value()->asObjectType();
+    NativeMethodDefinition definition{
+        .name = "convert",
+        .parameters = {{runtime.getTypeId("int"), "value", ""}},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = methodFunction(),
+        .documentation = ""
+    };
+    std::vector<MemberReference> membersBefore;
+    runtime.getNativeMembers(membersBefore);
+    for (const auto ownerId : {
+        TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getTypeId("int"), runtime.getTypeId("void")
+    }) {
+        BOOST_TEST(runtime.addMethod(ownerId, definition).isInvalid());
+    }
+    for (const auto returnTypeId : {
+        TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getTypeId(runtime.getFileNameType()->getTypeName())
+    }) {
+        auto invalidDefinition = definition;
+        invalidDefinition.returnTypeId = returnTypeId;
+        BOOST_TEST(runtime.addMethod(typeId, std::move(invalidDefinition)).isInvalid());
+    }
+    for (const auto parameterTypeId : {
+        TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getTypeId("void")
+    }) {
+        auto invalidDefinition = definition;
+        invalidDefinition.parameters.push_back({parameterTypeId, "second", ""});
+        BOOST_TEST(runtime.addMethod(typeId, std::move(invalidDefinition)).isInvalid());
+    }
+    for (const auto* name : {"", "invalid.name"}) {
+        auto invalidDefinition = definition;
+        invalidDefinition.name = name;
+        BOOST_TEST(runtime.addMethod(typeId, std::move(invalidDefinition)).isInvalid());
+    }
+    auto unnamedParameter = definition;
+    unnamedParameter.parameters[0].name.clear();
+    BOOST_TEST(runtime.addMethod(typeId, std::move(unnamedParameter)).isInvalid());
+    auto missingFunction = definition;
+    missingFunction.function = {};
+    BOOST_TEST(runtime.addMethod(typeId, std::move(missingFunction)).isInvalid());
+    BOOST_TEST(type->getMethods().empty());
+    std::vector<MemberReference> membersAfter;
+    runtime.getNativeMembers(membersAfter);
+    BOOST_TEST(membersAfter == membersBefore);
+    BOOST_REQUIRE(runtime.addMethod(typeId, std::move(definition)).isValid());
+}
+
+BOOST_AUTO_TEST_CASE(add_method_shares_member_conflict_and_overload_rules_with_legacy_registration) {
+    Runtime runtime;
+    const auto firstId = runtime.createObjectType("FirstMethodOwner", ObjectTypeMode::Closed);
+    const auto secondId = runtime.createObjectType("SecondMethodOwner", ObjectTypeMode::Opened);
+    BOOST_REQUIRE(firstId.isValid());
+    BOOST_REQUIRE(secondId.isValid());
+    const auto* first = runtime.getType(firstId).value()->asObjectType();
+    const auto* second = runtime.getType(secondId).value()->asObjectType();
+    NativeMethodDefinition definition{
+        .name = "convert",
+        .parameters = {{runtime.getTypeId("int"), "value", ""}},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = methodFunction(),
+        .documentation = "Original method."
+    };
+    const auto methodId = runtime.addMethod(firstId, definition);
+    BOOST_REQUIRE(methodId.isValid());
+    BOOST_TEST(runtime.addMethod(firstId, definition).isInvalid());
+    BOOST_TEST(runtime.registerNativeMethod(
+        first, "convert", methodFunction(), {defParameter("value", runtime.getIntegerType(), "")},
+        runtime.getIntegerType(), ""
+    ).isInvalid());
+    const auto legacyId = runtime.registerNativeMethod(
+        second, "convert", methodFunction(), {defParameter("value", runtime.getFloatType(), "")},
+        runtime.getFloatType(), ""
+    );
+    BOOST_REQUIRE(legacyId.isValid());
+    BOOST_TEST(runtime.addMethod(secondId, definition).isInvalid());
+    definition.name = "stored";
+    BOOST_REQUIRE(runtime.registerProperty(first, "stored", runtime.getIntegerType()).isValid());
+    BOOST_TEST(runtime.addMethod(firstId, definition).isInvalid());
+    definition.name = "native";
+    BOOST_REQUIRE(runtime.addProperty(firstId, {
+        runtime.getTypeId("int"), "native", propertyGetter(), {}, ""
+    }).isValid());
+    BOOST_TEST(runtime.addMethod(firstId, definition).isInvalid());
+    definition.name = "convert";
+    definition.parameters.push_back({runtime.getTypeId("int"), "extra", ""});
+    const auto thirdId = runtime.createObjectType("ThirdMethodOwner", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(thirdId.isValid());
+    BOOST_TEST(runtime.addMethod(thirdId, definition).isInvalid());
+    std::vector<MemberReference> overloads;
+    runtime.getNativeMemberOverloads("convert", overloads);
+    BOOST_REQUIRE(overloads.size() == 2u);
+    BOOST_TEST(std::get<CallableId>(overloads[0]) == methodId);
+    BOOST_TEST(std::get<CallableId>(overloads[1]) == legacyId);
+    BOOST_TEST(runtime.getNativeMethod(methodId)->getDoc() == "Original method.");
+}
+
 BOOST_AUTO_TEST_CASE(add_property_owns_its_definition_and_exposes_registered_callbacks_and_metadata) {
     Runtime runtime;
     const auto typeId = runtime.createObjectType("PropertyOwner", ObjectTypeMode::Closed);

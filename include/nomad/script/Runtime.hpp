@@ -287,6 +287,7 @@ public:
     [[nodiscard]] std::optional<NativeIndexerInfo> getNativeIndexerInfo(IndexerId indexerId) const;
     [[nodiscard]] const std::vector<const NativeIndexerInfo*>& getNativeIndexers() const;
 
+    [[nodiscard]] CallableId addMethod(TypeId id, NativeMethodDefinition definition);
     CallableId registerNativeMethod(
         const ObjectType* objectType,
         const NomadString& name,
