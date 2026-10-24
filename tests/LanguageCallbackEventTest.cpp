@@ -461,7 +461,7 @@ BOOST_AUTO_TEST_CASE(event_ids_support_registration_lookup_iteration_and_catalog
         BOOST_TEST(!runtime.getEventDefinition(id).has_value());
     }
 
-    BOOST_REQUIRE(runtime.registerHub("example").isValid());
+    BOOST_REQUIRE(runtime.registerHub("example", HubMode::Opened).isValid());
     const auto integerId = runtime.getTypeId("int");
     const auto id = runtime.registerEvent("example.changed", {{"value", integerId, "int"}});
     BOOST_REQUIRE(id.isValid());
@@ -481,7 +481,7 @@ BOOST_AUTO_TEST_CASE(event_ids_support_registration_lookup_iteration_and_catalog
         lastId = runtime.registerEvent("additional" + std::to_string(index), {});
         BOOST_REQUIRE(lastId.isValid());
     }
-    BOOST_REQUIRE(runtime.registerHub("example.child").isValid());
+    BOOST_REQUIRE(runtime.registerHub("example.child", HubMode::Opened).isValid());
     BOOST_TEST(runtime.getEventId("example.changed") == id);
     const auto afterGrowth = runtime.getEventDefinition(id);
     BOOST_REQUIRE(afterGrowth.has_value());

@@ -474,10 +474,13 @@ directory containing scripts.
 
 ## Hubs
 
-Call `Runtime::registerHub(name)` to reserve an open name prefix before
-compilation. It returns the new `HubId`, or the existing ID for repeated
-registration. Dotted names, such as `"game.audio"`, also register their
-parent hubs. Native hub names need not follow script identifier syntax and may
+Call `Runtime::registerHub(name, HubMode::Opened)` or
+`Runtime::registerHub(name, HubMode::Closed)` before compilation. The mode is
+required. Registration returns the new `HubId`; repeated registrations return
+the existing ID only when both are open. Repeated closed registrations and
+mixed modes fail. Dotted names such as `"game.audio"` identify independent
+namespaces and do not create or require `"game"`.
+Native hub names need not follow script identifier syntax and may
 use keyword names. Empty names, empty dotted segments, and conflicts with existing
 values, callables, or types are logged and return `HubId::INVALID` without partially
 registering the name. Script hub declarations require a tokenizer-recognized
@@ -491,13 +494,13 @@ Include `<nomad/script/Runtime.hpp>` for `HubId` and `HubMember`, and
 a `HubId` and returns a borrowed `const Hub*`, or `nullptr` for an invalid or
 unregistered ID. IDs belong to the runtime that issued them and are not
 interchangeable with callable or other ID categories. A hub exposes its
-qualified name, parent `HubId` (`HubId::INVALID` for a root hub), and locally
-named members. Child hub members contain a `HubId`. Function members refer
+qualified name, `getMode()`, and locally named members. Hubs have no parent or
+child namespace members. Function members refer
 to registered callables; types and events refer to their registered definitions.
 Hub pointers remain valid when more hubs are registered.
 
-`HubMember` stores variables, constants, events, child hubs, and dynamic
-variables directly as `VariableId`, `ConstantId`, `EventId`, `HubId`, and
+`HubMember` stores variables, constants, events, and dynamic
+variables directly as `VariableId`, `ConstantId`, `EventId`, and
 `DynamicVariableId`. Type members store a borrowed `const Type*`.
 Use `std::get_if<ConstantId>(member)` or the corresponding alternative to
 inspect a member, then pass the ID directly to its typed API. Function overloads
@@ -505,8 +508,11 @@ use `HubFunctions::ids`; generic families use `HubTypeFamily::argumentCount`.
 
 Register native APIs under their qualified names using the existing runtime
 registration functions. For example, register hub `"os"`, enum `"os.Platform"`,
-and constant `"os.platform"`. Scripts may reopen native hubs and add distinct
-members.
+and constant `"os.platform"`. Scripts may add distinct members only to native
+hubs registered as open, using matching `open hub` blocks. Existing writable
+members remain assignable regardless of hub mode. Hub references must be fully
+qualified, including in initializers and signatures; nesting only prefixes
+declaration names. Qualified assignments cannot introduce new members.
 
 Successful executable compilation installs safely resolved hub initial values
 and typed defaults for runtime-dependent members. It does not execute application

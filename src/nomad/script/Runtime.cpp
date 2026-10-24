@@ -203,7 +203,7 @@ Runtime::Runtime() {
 
 //    register_keyword("stringId" NomadDoc("Load the string id of the given string"));
     registerKeyword("fun", NomadDoc("Function declaration"));
-    registerKeyword("hub", NomadDoc("Groups declarations under an open, shared name prefix"));
+    registerKeyword("hub", NomadDoc("Groups declarations in a namespace; use open hub to allow additional declaration blocks"));
     registerKeyword("new", NomadDoc("Constructs a new object"));
     registerKeyword("if", NomadDoc("if statement"));
     registerKeyword("else", NomadDoc("`else` branch of an `if` statement"));
@@ -435,7 +435,6 @@ void Runtime::rebuildHubMembers() {
     };
     for (auto index = NomadIndex{0}; index < m_hubs.size(); ++index) {
         const auto& hub = *m_hubs[index];
-        add(hub.getName(), HubId{toNomadId(index)});
         for (auto id = hub.m_variables->getFirstVariableId(); id.isValid();
              id = hub.m_variables->getNextVariableId(id)) {
             add(hub.m_variables->getVariableName(id), id);
@@ -471,12 +470,20 @@ void Runtime::rebuildHubMembers() {
     }
 }
 
-HubId Runtime::registerHub(const NomadString& name) {
-    if (name.empty()) {
-        log::error("Cannot register a hub with an empty name");
+HubId Runtime::registerHub(const NomadString& name, const HubMode mode) {
+    if (name.empty() || (mode != HubMode::Opened && mode != HubMode::Closed)) {
+        log::error("Cannot register a hub with an empty name or invalid mode");
         return HubId::INVALID;
     }
-    std::vector<NomadString> prefixes;
+    const auto existingId = getHubId(name);
+    if (existingId.isValid()) {
+        const auto* existing = getHub(existingId);
+        if (existing->getMode() != mode || mode == HubMode::Closed) {
+            log::error("Cannot redeclare hub '" + name + "': declarations must all be open");
+            return HubId::INVALID;
+        }
+        return existingId;
+    }
     NomadIndex start = 0;
     while (start < name.size()) {
         const auto end = name.find('.', start);
@@ -485,18 +492,6 @@ HubId Runtime::registerHub(const NomadString& name) {
             log::error("Invalid hub name '" + name + "'");
             return HubId::INVALID;
         }
-        auto prefix = name.substr(0, start + length);
-        if (!isHub(prefix) && (getCallableId(prefix).isValid() ||
-            getConstantId(prefix).isValid() || getTypeByName(prefix) != nullptr ||
-            getEventId(prefix).isValid() || getDynamicVariableId(prefix).isValid() ||
-            isHubVariable(prefix) ||
-            getVariableContextIdByPrefix(prefix + ".").isValid() ||
-            getParameterizedTypeArgumentCount(prefix).has_value() ||
-            getParameterizedConstructorArgumentCount(prefix).has_value())) {
-            log::error("Cannot register hub '" + name + "': identifier '" + prefix + "' is already used");
-            return HubId::INVALID;
-        }
-        prefixes.push_back(std::move(prefix));
         if (end == NomadString::npos) {
             break;
         }
@@ -506,12 +501,17 @@ HubId Runtime::registerHub(const NomadString& name) {
             return HubId::INVALID;
         }
     }
-    const auto previousCount = m_hubs.size();
-    for (const auto& prefix : prefixes) {
-        if (!isHub(prefix)) {
-            m_hubs.push_back(std::make_unique<Hub>(prefix, getHubId(getContainingHub(prefix))));
-        }
+    if (getCallableId(name).isValid() || getConstantId(name).isValid() ||
+        getTypeByName(name) != nullptr || getEventId(name).isValid() ||
+        getDynamicVariableId(name).isValid() || isHubVariable(name) ||
+        getVariableContextIdByPrefix(name + ".").isValid() ||
+        getParameterizedTypeArgumentCount(name).has_value() ||
+        getParameterizedConstructorArgumentCount(name).has_value()) {
+        log::error("Cannot register hub '" + name + "': identifier is already used");
+        return HubId::INVALID;
     }
+    const auto previousCount = m_hubs.size();
+    m_hubs.push_back(std::make_unique<Hub>(name, mode));
     if (previousCount != m_hubs.size()) {
         try {
             rebuildHubMembers();

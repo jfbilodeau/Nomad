@@ -135,7 +135,7 @@ BOOST_AUTO_TEST_CASE(dynamic_variable_ids_support_lookup_iteration_growth_and_fo
     for (auto id = runtime.getFirstDynamicVariableId(); id.isValid(); id = runtime.getNextDynamicVariableId(id)) {
         ++originalCount;
     }
-    BOOST_REQUIRE(runtime.registerHub("registry").isValid());
+    BOOST_REQUIRE(runtime.registerHub("registry", HubMode::Opened).isValid());
     NomadInteger answer = 42;
     const auto id = runtime.registerDynamicVariable("registry.answer",
         [&answer](VirtualMachine*, const RuntimeValue& value) { answer = value.getIntegerValue(); },

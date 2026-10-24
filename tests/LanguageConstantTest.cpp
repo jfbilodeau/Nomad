@@ -36,7 +36,7 @@ BOOST_AUTO_TEST_CASE(constant_ids_support_registration_lookup_iteration_and_cata
         ++originalCount;
     }
 
-    BOOST_REQUIRE(runtime.registerHub("example").isValid());
+    BOOST_REQUIRE(runtime.registerHub("example", HubMode::Opened).isValid());
     const auto id = runtime.registerConstant("example.answer", RuntimeValue{NomadInteger{42}}, runtime.getIntegerType());
     BOOST_REQUIRE(id.isValid());
     BOOST_TEST(runtime.getConstantId("example.answer") == id);
@@ -53,7 +53,7 @@ BOOST_AUTO_TEST_CASE(constant_ids_support_registration_lookup_iteration_and_cata
             RuntimeValue{NomadInteger{index}}, runtime.getIntegerType());
         BOOST_REQUIRE(lastId.isValid());
     }
-    BOOST_REQUIRE(runtime.registerHub("example.child").isValid());
+    BOOST_REQUIRE(runtime.registerHub("example.child", HubMode::Opened).isValid());
     BOOST_TEST(runtime.getConstantId("example.answer") == id);
     BOOST_TEST(runtime.getConstantName(id) == "example.answer");
     BOOST_TEST(runtime.getConstantType(id) == runtime.getIntegerType());

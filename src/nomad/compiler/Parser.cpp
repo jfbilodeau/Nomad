@@ -388,8 +388,10 @@ std::unique_ptr<Statement> parseStatement(
     ScriptFunction* function,
     Tokenizer* tokens
 ) {
-    auto& statementToken = tokens->next();
-    const auto statementName = statementToken.textValue;
+    auto statementName = tokens->next().textValue;
+    if (statementName == "open" && tokens->is("hub")) {
+        statementName = tokens->next().textValue;
+    }
 
     ParseStatementFn statementFn;
 

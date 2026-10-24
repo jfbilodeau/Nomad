@@ -139,7 +139,9 @@ std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptFun
             );
             continue;
         }
-        if (!tokens->is("hub") && !tokens->is("fun") && !tokens->is("const") &&
+        const auto openHub = tokens->is("open") && tokens->getTokenCount() >= 2 &&
+            tokens->getTokenAt(1) == "hub";
+        if (!openHub && !tokens->is("hub") && !tokens->is("fun") && !tokens->is("const") &&
             !tokens->is("enum") && !tokens->is("event")) {
             context->reportError("A hub may contain only variable, hub, function, constant, enum, or event declarations", tokens);
             continue;

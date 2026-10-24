@@ -153,7 +153,7 @@ std::unique_ptr<Array1dObject> captureArguments(const ModuleContext& context, co
 
 void registerOs(ModuleContext* context) {
     auto* runtime = context->runtime;
-    if (runtime->registerHub("os").isInvalid()) {
+    if (runtime->registerHub("os", HubMode::Closed).isInvalid()) {
         throw NomadException("Failed to register os hub");
     }
     const auto platformTypeId = runtime->createEnum("os.Platform", {

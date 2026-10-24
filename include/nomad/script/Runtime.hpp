@@ -58,6 +58,11 @@ DeclareId(HubId);
 DeclareId(KeywordId);
 DeclareId(StringId);
 
+enum class HubMode {
+    Opened = 1,
+    Closed
+};
+
 struct HubFunctions {
     std::vector<CallableId> ids;
 };
@@ -67,7 +72,7 @@ struct HubTypeFamily {
 };
 
 using HubMember = std::variant<
-    VariableId, HubFunctions, ConstantId, const Type*, EventId, HubId, DynamicVariableId, HubTypeFamily
+    VariableId, HubFunctions, ConstantId, const Type*, EventId, DynamicVariableId, HubTypeFamily
 >;
 
 struct KeywordDefinition {
@@ -151,7 +156,7 @@ public:
     // Instructions
     [[nodiscard]] const std::vector<Instruction>& getInstructions() const;
 
-    [[nodiscard]] HubId registerHub(const NomadString& name);
+    [[nodiscard]] HubId registerHub(const NomadString& name, HubMode mode);
     [[nodiscard]] bool isHub(const NomadString& name) const;
     [[nodiscard]] HubId getHubId(const NomadString& name) const;
     [[nodiscard]] const Hub* getHub(HubId id) const;

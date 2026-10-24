@@ -135,7 +135,7 @@ BOOST_AUTO_TEST_CASE(global_handles_preserve_context_and_local_identity_after_gr
 BOOST_AUTO_TEST_CASE(hub_variable_registration_returns_global_handles_but_members_keep_local_ids)
 {
     Runtime runtime;
-    BOOST_REQUIRE(runtime.registerHub("example").isValid());
+    BOOST_REQUIRE(runtime.registerHub("example", HubMode::Opened).isValid());
     const auto id = runtime.registerHubVariable("example.answer");
     BOOST_REQUIRE(id.isValid());
     BOOST_TEST(runtime.getContextVariableId("example.answer") == id);

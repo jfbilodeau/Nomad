@@ -466,7 +466,7 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_and_duplicate_object_creation_witho
 
 BOOST_AUTO_TEST_CASE(runtime_creates_object_hub_members_and_rejects_conflicting_names) {
     Runtime runtime;
-    const auto hubId = runtime.registerHub("example");
+    const auto hubId = runtime.registerHub("example", HubMode::Opened);
     BOOST_REQUIRE(hubId.isValid());
     const auto variableId = runtime.registerHubVariable("example.current");
     const auto constantId = runtime.registerConstant(
@@ -640,7 +640,7 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_enum_definitions_without_partial_re
 
 BOOST_AUTO_TEST_CASE(runtime_enum_creation_rejects_hub_conflicts_before_publishing_values) {
     Runtime runtime;
-    BOOST_REQUIRE(runtime.registerHub("example").isValid());
+    BOOST_REQUIRE(runtime.registerHub("example", HubMode::Opened).isValid());
     const auto constantId = runtime.registerConstant(
         "example.State", RuntimeValue{NomadInteger{42}}, runtime.getIntegerType()
     );
@@ -649,7 +649,7 @@ BOOST_AUTO_TEST_CASE(runtime_enum_creation_rejects_hub_conflicts_before_publishi
         "example.ConstantConflict.Reserved", RuntimeValue{NomadInteger{7}}, runtime.getIntegerType()
     );
     BOOST_REQUIRE(valueId.isValid());
-    BOOST_REQUIRE(runtime.registerHub("example.HubConflict.Reserved").isValid());
+    BOOST_REQUIRE(runtime.registerHub("example.HubConflict.Reserved", HubMode::Opened).isValid());
     const auto functionId = runtime.registerNativeFunction(
         "example.FunctionConflict.Reserved", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     );

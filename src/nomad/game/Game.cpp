@@ -1255,7 +1255,7 @@ void Game::initRuntime() {
         "game.debug.console",
         "game.debug.draw",
     }) {
-        if (m_runtime->registerHub(hubName).isInvalid()) {
+        if (m_runtime->registerHub(hubName, HubMode::Opened).isInvalid()) {
             raiseError("Failed to register game API hub '" + NomadString(hubName) + "'");
         }
     }

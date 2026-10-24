@@ -112,12 +112,15 @@ Notes:
 
 ## Hubs
 
-A hub groups variables, functions, constants, enums, and events under a shared
-name prefix. Hubs are optional, are not types, and cannot be instantiated.
-Declare a hub with `hub name ... end`:
+A hub groups variables, functions, constants, enums, and events in a namespace.
+Hubs are optional, are not types, and cannot be instantiated. Hubs are closed by
+default: `hub name ... end` permits one declaration block. Use
+`open hub name ... end` when multiple blocks should contribute members.
+Closed hubs still allow assignment to their existing writable variables.
+`open` is a contextual modifier before `hub`, not a reserved identifier elsewhere.
 
 ```nomad
-hub example
+open hub example
     x = 10
     name = "test"
 
@@ -150,7 +153,7 @@ fun changeA
     return example.a
 end
 
-hub example
+open hub example
     a = 10
     b = changeA
     c = example.a # Reads 11 during $init, not the original 10.
@@ -171,37 +174,44 @@ can update existing variables, but cannot introduce new members:
 example.x = 20 # Updates the existing variable.
 # example.y = 30 # Invalid: y has not been declared in a hub block.
 
-hub example
+open hub example
     y = 30 # Extends the same hub.
 end
 ```
 
-The same hub may be declared repeatedly, including in different scripts or
-after native registration. Reopening preserves its members. Declaring the same
-variable twice is an error, not reassignment. Hubs may appear at script level
-or inside other hubs, but not inside functions or control-flow blocks.
+Every declaration of the same namespace must be explicitly open to allow
+multiple blocks, including across scripts or after native registration.
+Mixing open and closed declarations is an error in either source order;
+repeating a closed declaration is also an error. Declaring the same variable
+twice remains an error, not reassignment. Hubs may appear at script level or
+inside other hubs, but not inside functions or control-flow blocks.
 
-Nested blocks and dotted names both declare nested hubs:
+Namespaces are independent, even when their names contain dots. Declaring
+`hub game.audio` does not require or create `game`, and does not extend `game`
+if it exists. Nested syntax only prefixes declaration names:
 
 ```nomad
 hub game
-    hub audio
+    open hub audio
         volume = 1.0
     end
 end
 
-hub game.audio
+open hub game.audio
     muted = false
 end
 ```
 
-Hub variable reads and writes always require their qualified name, such as
-`game.audio.volume`, including inside the declaring hub. Unqualified references
-to other declarations, including constants and functions, search the current hub,
-its parent hubs, and then global names; local variables and parameters retain
-their local meaning. Hub initializers cannot read script locals or parameters:
-use constants or qualified hub variables instead. Enum types and values have
-qualified names too:
+The example declares `game` and `game.audio`, each with its own mode. Closing
+`game` does not restrict declarations of `game.audio`. A hub has no parent or
+child namespace members.
+
+Only declaration names receive the hub prefix. All hub-member references require
+their fully qualified names, including inside hub initializers, function
+signatures, function bodies, and format strings. There is no implicit current-
+or parent-namespace lookup. Globals, built-ins, local variables, and parameters
+retain ordinary unqualified names. Hub initializers cannot read script locals
+or parameters. Enum types and values have qualified names too:
 an enum `State` inside `hub game` is named `game.State`, with values such as
 `game.State.Ready`.
 

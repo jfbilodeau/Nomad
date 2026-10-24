@@ -171,57 +171,9 @@ bool Compiler::foldBinary(
 
 NomadString Compiler::resolveName(
     const NomadString& name,
-    const ScriptFunction* function,
-    NomadString hub
+    const ScriptFunction*,
+    NomadString
 ) const {
-    const auto exists = [this](const NomadString& candidate) {
-        if (m_runtime->isHubVariable(candidate)) {
-            return false;
-        }
-        return getIdentifierType(candidate, nullptr) != IdentifierType::Unknown ||
-            m_runtime->getTypeByName(candidate) != nullptr ||
-            m_runtime->getEventId(candidate).isValid() ||
-            m_runtime->isHub(candidate) ||
-            m_runtime->getParameterizedTypeArgumentCount(candidate).has_value() ||
-            m_runtime->getParameterizedConstructorArgumentCount(candidate).has_value();
-    };
-    auto receiver = name;
-    while (!receiver.empty()) {
-        for (auto* scope = function; scope != nullptr;
-             scope = m_runtime->getScriptFunction(scope->getParentId())) {
-            if (scope->getVariableId(receiver).isValid() ||
-                scope->getParameterId(receiver) != NOMAD_INVALID_ID) {
-                return name;
-            }
-        }
-        const auto separator = receiver.rfind('.');
-        if (separator == NomadString::npos) {
-            break;
-        }
-        receiver.resize(separator);
-    }
-    if (hub.empty() && function != nullptr) {
-        hub = function->getHub();
-    }
-    while (!hub.empty()) {
-        const auto candidate = hub + "." + name;
-        auto prefix = candidate;
-        while (prefix.size() > hub.size() + 1) {
-            if (exists(prefix)) {
-                return candidate;
-            }
-            const auto separator = prefix.rfind('.');
-            if (separator == NomadString::npos) {
-                break;
-            }
-            prefix.resize(separator);
-        }
-        const auto separator = hub.rfind('.');
-        if (separator == NomadString::npos) {
-            break;
-        }
-        hub.resize(separator);
-    }
     return name;
 }
 
@@ -892,7 +844,12 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
     };
     std::vector<DeclarationBlock> blocks;
     while (tokens.nextLine()) {
-        const auto statement = tokens.next().textValue;
+        auto statement = tokens.next().textValue;
+        const auto openHub = statement == "open" && tokens.getTokenCount() >= 2 &&
+            tokens.getTokenAt(1) == "hub";
+        if (openHub) {
+            statement = tokens.next().textValue;
+        }
         if (statement == "end") {
             if (!blocks.empty()) {
                 context->setHub(std::move(blocks.back().hub));
@@ -912,7 +869,9 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
             }
             const auto qualifiedName = context->qualifyDeclaration(name);
             blocks.push_back({context->getHub(), true});
-            if (m_runtime->registerHub(qualifiedName).isInvalid()) {
+            if (hubsOnly && m_runtime->registerHub(
+                qualifiedName, openHub ? HubMode::Opened : HubMode::Closed
+            ).isInvalid()) {
                 context->reportError("Cannot declare hub '" + qualifiedName + "': invalid or conflicting name", &tokens);
             }
             context->setHub(qualifiedName);
