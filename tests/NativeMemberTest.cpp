@@ -77,6 +77,210 @@ const ObjectType* registerTestType(Runtime& runtime) {
 
 BOOST_AUTO_TEST_SUITE(native_members)
 
+BOOST_AUTO_TEST_CASE(add_property_owns_its_definition_and_exposes_registered_callbacks_and_metadata) {
+    Runtime runtime;
+    const auto typeId = runtime.createObjectType("PropertyOwner", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(typeId.isValid());
+    const auto* type = static_cast<const ObjectType*>(runtime.getType(typeId).value());
+    NomadInteger storedValue = 7;
+    auto getterCalls = 0;
+    auto setterCalls = 0;
+    NativePropertyDefinition definition{
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "value",
+        .getter = [&](VirtualMachine*, RuntimeValue& value) {
+            ++getterCalls;
+            value.setIntegerValue(storedValue);
+        },
+        .setter = [&](VirtualMachine*, const RuntimeValue& value) {
+            ++setterCalls;
+            storedValue = value.getIntegerValue();
+        },
+        .documentation = "Stored value."
+    };
+    const auto id = runtime.addProperty(typeId, definition);
+    BOOST_REQUIRE(id.isValid());
+    definition.valueTypeId = runtime.getTypeId("float");
+    definition.name = "changed";
+    definition.getter = {};
+    definition.setter = {};
+    definition.documentation = "Changed documentation.";
+
+    const auto info = runtime.getNativePropertyInfo(id);
+    BOOST_REQUIRE(info.has_value());
+    BOOST_TEST(info->id == id);
+    BOOST_TEST(info->objectType == type);
+    BOOST_TEST(info->valueType == runtime.getIntegerType());
+    BOOST_TEST(info->name == "value");
+    BOOST_TEST(info->doc == "Stored value.");
+    BOOST_REQUIRE(static_cast<bool>(info->getFn));
+    BOOST_REQUIRE(static_cast<bool>(info->setFn));
+    BOOST_TEST(runtime.getProperty(id) == type->getProperty("value"));
+    BOOST_TEST(runtime.getNativeProperty(id) == type->getProperty(id));
+    BOOST_TEST((runtime.getMemberType(id) == MemberType::Property));
+    BOOST_TEST(std::get<PropertyId>(runtime.getNativeMemberId(type, "value")) == id);
+    std::vector<MemberReference> members;
+    runtime.getNativeMembers(type, members);
+    BOOST_REQUIRE(members.size() == 1u);
+    BOOST_TEST(std::get<PropertyId>(members[0]) == id);
+    std::vector<MemberReference> overloads;
+    runtime.getNativeMemberOverloads("value", overloads);
+    BOOST_REQUIRE(overloads.size() == 1u);
+    BOOST_TEST(std::get<PropertyId>(overloads[0]) == id);
+
+    BOOST_TEST(getterCalls == 0);
+    BOOST_TEST(setterCalls == 0);
+    RuntimeValue value;
+    info->getFn(nullptr, value);
+    BOOST_TEST(value.getIntegerValue() == 7);
+    info->setFn(nullptr, RuntimeValue(NomadInteger{42}));
+    info->getFn(nullptr, value);
+    BOOST_TEST(value.getIntegerValue() == 42);
+    BOOST_TEST(storedValue == 42);
+    BOOST_TEST(getterCalls == 2);
+    BOOST_TEST(setterCalls == 1);
+}
+
+BOOST_AUTO_TEST_CASE(add_property_accepts_read_only_and_write_only_properties_on_open_and_closed_types) {
+    Runtime runtime;
+    for (const auto mode : {ObjectTypeMode::Opened, ObjectTypeMode::Closed}) {
+        const auto typeId = runtime.createObjectType(
+            mode == ObjectTypeMode::Opened ? "OpenedProperties" : "ClosedProperties", mode
+        );
+        BOOST_REQUIRE(typeId.isValid());
+        const auto readOnlyId = runtime.addProperty(typeId, {
+            .valueTypeId = runtime.getTypeId("int"),
+            .name = "readOnly",
+            .getter = propertyGetter(),
+            .setter = {},
+            .documentation = "Read only."
+        });
+        const auto writeOnlyId = runtime.addProperty(typeId, {
+            .valueTypeId = runtime.getTypeId("int"),
+            .name = "writeOnly",
+            .getter = {},
+            .setter = propertySetter(),
+            .documentation = "Write only."
+        });
+        BOOST_REQUIRE(readOnlyId.isValid());
+        BOOST_REQUIRE(writeOnlyId.isValid());
+        const auto readOnly = runtime.getNativePropertyInfo(readOnlyId);
+        const auto writeOnly = runtime.getNativePropertyInfo(writeOnlyId);
+        BOOST_REQUIRE(readOnly.has_value());
+        BOOST_REQUIRE(writeOnly.has_value());
+        BOOST_TEST(static_cast<bool>(readOnly->getFn));
+        BOOST_TEST(!readOnly->setFn);
+        BOOST_TEST(!writeOnly->getFn);
+        BOOST_TEST(static_cast<bool>(writeOnly->setFn));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(add_property_rejects_invalid_definitions_without_partial_registration) {
+    Runtime runtime;
+    const auto typeId = runtime.createObjectType("PropertyOwner", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(typeId.isValid());
+    const auto* type = static_cast<const ObjectType*>(runtime.getType(typeId).value());
+    NativePropertyDefinition definition{
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "before",
+        .getter = propertyGetter(),
+        .setter = propertySetter(),
+        .documentation = "Original documentation."
+    };
+    const auto beforeId = runtime.addProperty(typeId, definition);
+    BOOST_REQUIRE(beforeId.isValid());
+    std::vector<MemberReference> membersBefore;
+    runtime.getNativeMembers(membersBefore);
+    definition.name = "value";
+
+    for (const auto invalidOwner : {
+        TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getTypeId("int"), runtime.getTypeId("void")
+    }) {
+        BOOST_TEST(runtime.addProperty(invalidOwner, definition).isInvalid());
+    }
+    for (const auto invalidValueType : {
+        TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getTypeId("void"),
+        runtime.getTypeId(runtime.getFileNameType()->getTypeName())
+    }) {
+        auto invalidDefinition = definition;
+        invalidDefinition.valueTypeId = invalidValueType;
+        BOOST_TEST(runtime.addProperty(typeId, std::move(invalidDefinition)).isInvalid());
+    }
+    for (const auto* invalidName : {"", "invalid.name"}) {
+        auto invalidDefinition = definition;
+        invalidDefinition.name = invalidName;
+        BOOST_TEST(runtime.addProperty(typeId, std::move(invalidDefinition)).isInvalid());
+    }
+    auto inaccessibleDefinition = definition;
+    inaccessibleDefinition.getter = {};
+    inaccessibleDefinition.setter = {};
+    BOOST_TEST(runtime.addProperty(typeId, std::move(inaccessibleDefinition)).isInvalid());
+
+    BOOST_TEST(type->getProperty("value") == nullptr);
+    BOOST_TEST(type->getProperties().size() == 1u);
+    std::vector<MemberReference> membersAfter;
+    runtime.getNativeMembers(membersAfter);
+    BOOST_TEST(membersAfter == membersBefore);
+    const auto original = runtime.getNativePropertyInfo(beforeId);
+    BOOST_REQUIRE(original.has_value());
+    BOOST_TEST(original->name == "before");
+    BOOST_TEST(original->doc == "Original documentation.");
+    definition.name = "after";
+    const auto afterId = runtime.addProperty(typeId, std::move(definition));
+    BOOST_REQUIRE(afterId.isValid());
+    BOOST_TEST(afterId.id == beforeId.id + 1);
+}
+
+BOOST_AUTO_TEST_CASE(add_property_and_legacy_registration_share_duplicate_and_member_conflict_checks) {
+    Runtime runtime;
+    const auto typeId = runtime.createObjectType("PropertyOwner", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(typeId.isValid());
+    const auto* type = static_cast<const ObjectType*>(runtime.getType(typeId).value());
+    NativePropertyDefinition definition{
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "value",
+        .getter = propertyGetter(),
+        .setter = propertySetter(),
+        .documentation = "Original documentation."
+    };
+    const auto originalId = runtime.addProperty(typeId, definition);
+    BOOST_REQUIRE(originalId.isValid());
+    BOOST_REQUIRE(runtime.registerNativeProperty(
+        type, "legacy", runtime.getIntegerType(), propertyGetter(), {}, "Legacy property."
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(type, "stored", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerNativeMethod(
+        type, "method", methodFunction(), {}, runtime.getIntegerType(), ""
+    ).isValid());
+    std::vector<MemberReference> membersBefore;
+    runtime.getNativeMembers(membersBefore);
+
+    BOOST_TEST(runtime.addProperty(typeId, definition).isInvalid());
+    BOOST_TEST(runtime.registerNativeProperty(
+        type, "value", runtime.getIntegerType(), propertyGetter(), propertySetter(), ""
+    ).isInvalid());
+    auto conflictingDefinition = definition;
+    conflictingDefinition.valueTypeId = runtime.getTypeId("float");
+    conflictingDefinition.documentation = "Replacement documentation.";
+    BOOST_TEST(runtime.addProperty(typeId, std::move(conflictingDefinition)).isInvalid());
+    for (const auto* name : {"legacy", "stored", "method"}) {
+        auto duplicateDefinition = definition;
+        duplicateDefinition.name = name;
+        BOOST_TEST(runtime.addProperty(typeId, std::move(duplicateDefinition)).isInvalid());
+    }
+
+    const auto original = runtime.getNativePropertyInfo(originalId);
+    BOOST_REQUIRE(original.has_value());
+    BOOST_TEST(original->valueType == runtime.getIntegerType());
+    BOOST_TEST(original->doc == "Original documentation.");
+    BOOST_TEST(static_cast<bool>(original->getFn));
+    BOOST_TEST(static_cast<bool>(original->setFn));
+    BOOST_TEST(type->getProperties().size() == 3u);
+    std::vector<MemberReference> membersAfter;
+    runtime.getNativeMembers(membersAfter);
+    BOOST_TEST(membersAfter == membersBefore);
+}
+
 BOOST_AUTO_TEST_CASE(native_creation_definitions_own_their_inputs_without_registering_members) {
     Runtime runtime;
     const auto integerId = runtime.getTypeId("int");

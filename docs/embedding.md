@@ -51,7 +51,9 @@ const ParameterDefinition distance{
 };
 ```
 
-These input structures do not register anything when constructed. The existing
+These input structures do not register anything when constructed.
+`addProperty(TypeId, NativePropertyDefinition)` registers a native property
+using its creation input. The existing
 `registerNativeMethod`, `registerNativeConstructor`, `registerNativeProperty`,
 `registerNativeIndexer`, and `registerIterableType` operations retain their
 current argument forms; they do not yet accept the new input structures.
@@ -285,6 +287,45 @@ lifetime. Property IDs are runtime-wide, not per-object field offsets.
 
 This API describes type properties. Script class syntax and stored/script property
 access from scripts are not yet implemented.
+
+### Native property creation
+
+`Runtime::addProperty(TypeId id, NativePropertyDefinition definition)` registers
+a native property and returns its `PropertyId`. The owner ID must identify an
+object type. Both it and `definition.valueTypeId` are resolved in that runtime;
+IDs are runtime-local, not portable between runtimes. The value type must be
+public and non-void. Host registration is permitted on both open and closed types.
+
+Provide a getter, a setter, or both. A getter-only property is read-only; a
+setter-only property is write-only. The runtime owns the registered name,
+documentation, and callbacks. Captured references must remain valid whenever
+the callbacks are invoked.
+
+For an already registered object type identified by `typeId`:
+
+```cpp
+const auto propertyId = runtime.addProperty(typeId, {
+    .valueTypeId = runtime.getTypeId("int"),
+    .name = "answer",
+    .getter = [](nomad::VirtualMachine*, nomad::RuntimeValue& value) {
+        value.setIntegerValue(42);
+    },
+    .setter = {},
+    .documentation = "The answer."
+});
+if (propertyId.isInvalid()) {
+    throw nomad::NomadException("Failed to register answer property");
+}
+```
+
+Invalid IDs, non-object owners, invalid value types or names, missing callbacks,
+and conflicting members are logged and return `PropertyId::INVALID` without
+registering a property. Duplicate native properties are rejected even if their
+definitions match. Use the existing property and native member lookup APIs to
+retrieve the registered metadata.
+
+The pointer-based `registerNativeProperty` operation remains available and
+shares the same property validation and registration behavior.
 
 ### Callable access
 

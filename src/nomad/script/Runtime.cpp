@@ -1752,6 +1752,24 @@ const NativeProperty* Runtime::getNativeProperty(const PropertyId id) const {
     return property == nullptr ? nullptr : property->asNativeProperty();
 }
 
+PropertyId Runtime::addProperty(const TypeId id, NativePropertyDefinition definition) {
+    const auto type = getType(id);
+    const auto* objectType = type.has_value() ? dynamic_cast<const ObjectType*>(*type) : nullptr;
+    if (objectType == nullptr) {
+        log::error("Cannot register native property '" + definition.name + "': owner must identify an object type");
+        return PropertyId::INVALID;
+    }
+    const auto valueType = getType(definition.valueTypeId);
+    if (!valueType.has_value()) {
+        log::error("Cannot register native property '" + definition.name + "': invalid value type ID");
+        return PropertyId::INVALID;
+    }
+    return registerNativeProperty(
+        objectType, definition.name, *valueType,
+        std::move(definition.getter), std::move(definition.setter), definition.documentation
+    );
+}
+
 PropertyId Runtime::registerNativeProperty(const ObjectType* objectType, const NomadString& name, const Type* valueType,
                                            NativePropertyGetFn getFn, NativePropertySetFn setFn,
                                            const NomadString& doc) {

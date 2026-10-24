@@ -299,6 +299,7 @@ public:
     [[nodiscard]] PropertyId catalogProperty(Property* property);
     [[nodiscard]] const Property* getProperty(PropertyId id) const;
     [[nodiscard]] const NativeProperty* getNativeProperty(PropertyId id) const;
+    [[nodiscard]] PropertyId addProperty(TypeId id, NativePropertyDefinition definition);
     PropertyId registerNativeProperty(const ObjectType* objectType, const NomadString& name, const Type* valueType,
                                       NativePropertyGetFn getFn, NativePropertySetFn setFn, NomadDocArg);
     [[nodiscard]] MemberReference getNativeMemberId(const Type* objectType, const NomadString& name) const;
