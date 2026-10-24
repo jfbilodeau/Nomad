@@ -210,6 +210,7 @@ public:
         return publishObjectType(id, name, mode, std::move(type));
     }
     [[nodiscard]] const ObjectType* getIteratorType(const Type* valueType);
+    void addIterable(TypeId id, NativeInterableDefinition definition);
     void registerIterableType(
         const Type* sourceType,
         const Type* valueType,

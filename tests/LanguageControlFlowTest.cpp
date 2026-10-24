@@ -4,6 +4,7 @@
 
 #include <nomad/compiler/Parser.hpp>
 
+#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/IteratorObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -98,6 +99,211 @@ BOOST_AUTO_TEST_CASE(iterator_types_are_specialized_and_interned)
     BOOST_TEST(runtime.getIteratorType(runtime.getIntegerType()) == integers);
     BOOST_TEST(runtime.getParameterizedType("Iterator", {runtime.getStringType()}) == strings);
     BOOST_CHECK_THROW(static_cast<void>(runtime.getIteratorType(runtime.getVoidType())), NomadException);
+}
+
+BOOST_AUTO_TEST_CASE(add_iterable_owns_factory_metadata_and_association)
+{
+    Runtime runtime;
+    const auto id = runtime.createObjectType("DefinitionSequence", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(id.isValid());
+    const auto* type = runtime.getType(id).value()->asObjectType();
+    const auto* valueType = runtime.getIntegerType();
+    const auto* iteratorType = runtime.getIteratorType(valueType);
+    auto calls = 0;
+    NativeInterableDefinition definition{
+        .valueTypeId = valueType->getId(),
+        .factory = {
+            .name = "startTraversal",
+            .parameters = {},
+            .returnTypeId = iteratorType->getId(),
+            .function = [&](VirtualMachine*) { ++calls; },
+            .documentation = "Creates a fresh cursor."
+        }
+    };
+    runtime.addIterable(id, definition);
+    definition.valueTypeId = runtime.getStringType()->getId();
+    definition.factory.name = "changed";
+    definition.factory.function = {};
+    definition.factory.documentation = "Changed.";
+    const auto owned = type->getIterableInfo();
+    const auto info = runtime.getIterableInfo(type);
+    BOOST_REQUIRE(owned.has_value());
+    BOOST_REQUIRE(info.has_value());
+    BOOST_TEST(info->valueType == valueType);
+    BOOST_TEST(info->iteratorType == iteratorType);
+    BOOST_TEST(info->factoryId == owned->factoryId);
+    const auto* factory = runtime.getNativeMethod(info->factoryId);
+    BOOST_REQUIRE(factory != nullptr);
+    BOOST_TEST(factory->getObjectType() == type);
+    BOOST_TEST(factory->getName() == "startTraversal");
+    BOOST_TEST(factory->getReturnType() == iteratorType);
+    BOOST_TEST(factory->getParameters().empty());
+    BOOST_TEST(factory->getDoc() == "Creates a fresh cursor.");
+    BOOST_REQUIRE(type->getMethods().size() == 1u);
+    BOOST_TEST(type->getMethods()[0] == factory);
+    BOOST_TEST(runtime.getMethod(info->factoryId) == factory);
+    BOOST_TEST(calls == 0);
+    factory->getFn()(nullptr);
+    BOOST_TEST(calls == 1);
+    const auto count = runtime.getFunctionTableSize();
+    definition.factory.name = "secondTraversal";
+    definition.factory.function = [](VirtualMachine*) {};
+    BOOST_CHECK_THROW(runtime.addIterable(id, definition), NomadException);
+    BOOST_TEST(runtime.getFunctionTableSize() == count);
+    BOOST_TEST(type->getMethods().size() == 1u);
+    BOOST_TEST(type->getIterableInfo()->factoryId == info->factoryId);
+    BOOST_CHECK_THROW(runtime.registerIterableType(type, valueType, factory), NomadException);
+}
+
+BOOST_AUTO_TEST_CASE(add_iterable_rejects_invalid_definitions_before_publishing_a_factory)
+{
+    Runtime runtime;
+    const auto id = runtime.createObjectType("InvalidDefinitionSequence", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(id.isValid());
+    const auto* type = runtime.getType(id).value()->asObjectType();
+    const auto* integer = runtime.getIntegerType();
+    const NativeInterableDefinition definition{
+        integer->getId(),
+        {"traverse", {}, runtime.getIteratorType(integer)->getId(), [](VirtualMachine*) {}, ""}
+    };
+    const auto stringIteratorId = runtime.getIteratorType(runtime.getStringType())->getId();
+    const auto count = runtime.getFunctionTableSize();
+    const auto verifyUnchanged = [&]() {
+        BOOST_TEST(runtime.getFunctionTableSize() == count);
+        BOOST_TEST(type->getMethods().empty());
+        BOOST_TEST(!type->getIterableInfo().has_value());
+    };
+    for (const auto invalid : {TypeId::INVALID, TypeId{NOMAD_ID_MAX}, integer->getId()}) {
+        BOOST_CHECK_THROW(runtime.addIterable(invalid, definition), NomadException);
+        verifyUnchanged();
+    }
+    for (const auto invalid : {
+        TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getVoidType()->getId(),
+        runtime.getFileNameType()->getId()
+    }) {
+        auto candidate = definition;
+        candidate.valueTypeId = invalid;
+        BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
+        verifyUnchanged();
+    }
+    for (const auto invalid : {
+        TypeId::INVALID, TypeId{NOMAD_ID_MAX}, integer->getId(),
+        stringIteratorId
+    }) {
+        auto candidate = definition;
+        candidate.factory.returnTypeId = invalid;
+        BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
+        verifyUnchanged();
+    }
+    auto candidate = definition;
+    candidate.factory.function = {};
+    BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
+    verifyUnchanged();
+    candidate = definition;
+    candidate.factory.parameters = {{integer->getId(), "value", ""}};
+    BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
+    verifyUnchanged();
+    candidate.factory.parameters = {{runtime.getLineNumberType()->getId(), "line", ""}};
+    BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
+    verifyUnchanged();
+    for (const auto* name : {"", "invalid.name"}) {
+        candidate = definition;
+        candidate.factory.name = name;
+        BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
+        verifyUnchanged();
+    }
+    runtime.addIterable(id, definition);
+    BOOST_TEST(type->getMethods().size() == 1u);
+    BOOST_TEST(type->getIterableInfo().has_value());
+}
+
+BOOST_AUTO_TEST_CASE(add_iterable_preserves_existing_member_conflicts_and_legacy_associations)
+{
+    Runtime runtime;
+    const auto id = runtime.createObjectType("ConflictingSequence", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(id.isValid());
+    const auto* type = runtime.getType(id).value()->asObjectType();
+    const auto* integer = runtime.getIntegerType();
+    const NativeInterableDefinition definition{
+        integer->getId(),
+        {"traverse", {}, runtime.getIteratorType(integer)->getId(), [](VirtualMachine*) {}, ""}
+    };
+    const auto methodId = runtime.addMethod(id, definition.factory);
+    BOOST_REQUIRE(methodId.isValid());
+    const auto count = runtime.getFunctionTableSize();
+    BOOST_CHECK_THROW(runtime.addIterable(id, definition), NomadException);
+    BOOST_TEST(runtime.getFunctionTableSize() == count);
+    BOOST_TEST(type->getMethods().size() == 1u);
+    BOOST_TEST(!type->getIterableInfo().has_value());
+    runtime.registerIterableType(type, integer, runtime.getMethod(methodId));
+    auto candidate = definition;
+    candidate.factory.name = "anotherTraversal";
+    BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
+    BOOST_TEST(runtime.getFunctionTableSize() == count);
+    BOOST_TEST(type->getIterableInfo()->factoryId == methodId);
+}
+
+BOOST_AUTO_TEST_CASE(add_iterable_supports_compiled_and_interpreted_loops)
+{
+    class DefinitionIterator final : public IteratorObject {
+    public:
+        explicit DefinitionIterator(const Type* type): IteratorObject(type) {}
+    protected:
+        bool onMoveNext(RuntimeValue& value) override {
+            if (m_next > 3) {
+                return false;
+            }
+            value.setIntegerValue(m_next++);
+            return true;
+        }
+    private:
+        NomadInteger m_next = 1;
+    };
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto id = runtime.createObjectType("LoopDefinition", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(id.isValid());
+    BOOST_REQUIRE(runtime.addConstructor(id, {
+        {}, [](std::span<const RuntimeValue>) { return new NomadObject; }, ""
+    }).isValid());
+    auto factoryCalls = 0;
+    runtime.addIterable(id, {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .factory = {
+            .name = "beginTraversal",
+            .parameters = {},
+            .returnTypeId = runtime.getIteratorType(runtime.getIntegerType())->getId(),
+            .function = [&](VirtualMachine* machine) {
+                ++factoryCalls;
+                machine->getResult().setObjectValue(new DefinitionIterator(runtime.getIntegerType()));
+            },
+            .documentation = ""
+        }
+    });
+    const NomadString source =
+        "total = 0\n"
+        "for value in new LoopDefinition\n"
+        "    total = total + value\n"
+        "end\n"
+        "return total";
+    fixture.addFunction("main", source);
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto before = NomadObject::getLiveObjectCount();
+    const auto outcome = fixture.execute("main");
+    BOOST_TEST(!outcome.fault.has_value());
+    BOOST_TEST(outcome.integerValue == 6);
+    BOOST_TEST(factoryCalls == 1);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext context(*machine);
+        BOOST_REQUIRE(Interpreter{}.execute(source.substr(0, source.find("return total")), context));
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("total", context));
+        BOOST_REQUIRE(context.getResult() != nullptr);
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 6);
+    }
+    BOOST_TEST(factoryCalls == 2);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
 BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)

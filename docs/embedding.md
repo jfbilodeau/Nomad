@@ -56,8 +56,8 @@ These input structures do not register anything when constructed.
 `addMethod(TypeId, NativeMethodDefinition)`,
 `addConstructor(TypeId, NativeConstructorDefinition)`, and
 `addIndexer(TypeId, NativeIndexerDefinition)` register native members
-using their creation inputs. `registerIterableType` retains its current argument
-form; it does not yet accept the new input structure.
+using their creation inputs. `addIterable(TypeId, NativeInterableDefinition)`
+registers a native factory method and its iterable association.
 Their metadata structures are now named `NativePropertyInfo`,
 `NativeIndexerInfo`, and `IterableInfo`. Corresponding lookup operations are
 `getNativePropertyInfo`, `getNativeIndexerInfo`, and `getIterableInfo`;
@@ -1047,30 +1047,39 @@ compiler support:
 2. Obtain the cursor's script type with `runtime.getIteratorType(elementType)`.
    It exposes parameterless `moveNext` and the read-only `current` property.
    Reading `current` before a successful advance or after completion faults.
-3. Register a parameterless native method on the source type that returns a fresh
-   cursor of that iterator type. The method name is not prescribed.
-4. Register the association:
+3. Use `addIterable` to register a parameterless native factory method and its
+   association with the source type. The factory returns a fresh cursor of that
+   iterator type. Its name is not prescribed:
 
 ```cpp
-const auto memberId = runtime.addMethod(sourceType->getId(), {
-    .name = "iterator",
-    .parameters = {},
-    .returnTypeId = runtime.getIteratorType(elementType)->getId(),
-    .function = createIterator,
-    .documentation = ""
+runtime.addIterable(sourceType->getId(), {
+    .valueTypeId = elementType->getId(),
+    .factory = {
+        .name = "iterator",
+        .parameters = {},
+        .returnTypeId = runtime.getIteratorType(elementType)->getId(),
+        .function = createIterator,
+        .documentation = ""
+    }
 });
-if (memberId.isInvalid()) {
-    throw nomad::NomadException("Failed to register iterator method");
-}
-runtime.registerIterableType(
-    sourceType, elementType, runtime.getNativeMemberMethod(memberId)
-);
 ```
 
-Pass a registered `Method` to `registerIterableType`; it does not accept a native
-member ID. The factory must belong to the source type, take no arguments, and return the
-matching iterator type. Duplicate associations and invalid registrations throw
-`NomadException`. `getIterableInfo(sourceType)` returns an optional association.
+`NativeInterableDefinition` supplies the element type ID and a
+`NativeMethodDefinition` for the factory. All IDs are runtime-local. The source
+must be an object type, and the element type must be registered, public, and
+non-void. The factory must have a callback, take no arguments (including
+compiler-supplied parameters), and return the matching iterator type.
+Duplicate associations, conflicting member names, and invalid registrations throw
+`NomadException`. Invalid definitions do not publish a factory or association;
+resolving the iterator type may create its registered specialization.
+The runtime owns the factory metadata and callback; changing the input definition
+after registration does not change the registered factory.
+`getIterableInfo(sourceType)` returns an optional association containing its
+factory ID.
+
+The existing `registerIterableType(sourceType, elementType, factory)` operation
+remains available for associating an already registered `Method`. The method must
+belong to the source type and satisfy the same parameter/return-type requirements.
 
 The source `ObjectType` owns its iterable association. Include
 `<nomad/script/Type.hpp>` for `IterableInfo`.

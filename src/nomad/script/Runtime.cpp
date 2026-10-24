@@ -37,6 +37,33 @@ const ObjectType* Runtime::getIteratorType(const Type* valueType) {
     return static_cast<const ObjectType*>(type);
 }
 
+void Runtime::addIterable(const TypeId id, NativeInterableDefinition definition) {
+    const auto type = getType(id);
+    auto* owner = type.has_value() ? getMutableObjectType((*type)->asObjectType()) : nullptr;
+    if (owner == nullptr) {
+        throw NomadException("Cannot register iterable: owner must identify an object type");
+    }
+    const auto valueType = getType(definition.valueTypeId);
+    if (!valueType.has_value() || (*valueType)->isVoid() || (*valueType)->isInternal()) {
+        throw NomadException("Cannot register iterable: value type must identify a public, non-void type");
+    }
+    if (owner->getIterableInfo().has_value()) {
+        throw NomadException("Cannot register iterable: type already has an iterable association");
+    }
+    if (!definition.factory.parameters.empty() || !definition.factory.function) {
+        throw NomadException("Cannot register iterable: a parameterless factory callback is required");
+    }
+    const auto returnType = getType(definition.factory.returnTypeId);
+    if (!returnType.has_value() || *returnType != getIteratorType(*valueType)) {
+        throw NomadException("Cannot register iterable: factory must return the matching iterator type");
+    }
+    const auto factoryId = addMethod(id, std::move(definition.factory));
+    if (factoryId.isInvalid()) {
+        throw NomadException("Cannot register iterable: failed to register factory method");
+    }
+    owner->registerIterableType(*this, *valueType, getMethod(factoryId));
+}
+
 void Runtime::registerIterableType(
     const Type* sourceType,
     const Type* valueType,
