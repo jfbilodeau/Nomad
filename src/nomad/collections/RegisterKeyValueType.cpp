@@ -14,12 +14,16 @@ void registerKeyValueType(Runtime* runtime) {
     if (!runtime->registerParameterizedType(
         "KeyValue",
         2,
-        [](const std::vector<const Type*>& arguments) {
+        [](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
             const auto* keyType = arguments[0];
             const auto* valueType = arguments[1];
-            return std::make_unique<KeyValueType>(keyType, valueType);
+            return std::make_unique<KeyValueType>(
+                owningRuntime, "KeyValue<" + keyType->getTypeName() + " " + valueType->getTypeName() + ">",
+                ObjectTypeMode::Closed, keyType, valueType
+            );
         },
-        [runtime](const Type* type) {
+        [](Runtime* runtime, const TypeId id) {
+            const auto* type = runtime->getType(id).value();
             const auto* objectType = static_cast<const KeyValueType*>(type);
             const auto* keyType = objectType->getTypeArguments()[0];
             const auto* valueType = objectType->getTypeArguments()[1];

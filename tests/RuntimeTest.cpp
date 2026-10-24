@@ -15,6 +15,154 @@
 
 using namespace nomad;
 
+BOOST_AUTO_TEST_CASE(runtime_type_descriptors_report_their_owning_runtime) {
+    Runtime runtime;
+    BOOST_REQUIRE(runtime.createObjectType("AssociatedObject", ObjectTypeMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.createEnum("AssociatedEnum", {{"Ready", 1}}).isValid());
+    BOOST_REQUIRE(runtime.registerOpaqueIdType("AssociatedHandle", "") != nullptr);
+    BOOST_REQUIRE(runtime.registerEvent("AssociatedEvent", {}).isValid());
+    BOOST_REQUIRE(runtime.getCallbackType({runtime.getIntegerType()}, runtime.getBooleanType()) != nullptr);
+    BOOST_REQUIRE(runtime.getIteratorType(runtime.getIntegerType()) != nullptr);
+
+    std::vector<const Type*> types;
+    runtime.getTypes(types);
+    for (const auto* type : types) {
+        BOOST_TEST_CONTEXT(type->getTypeName()) {
+            BOOST_TEST(type->getRuntime() == &runtime);
+        }
+    }
+    BOOST_CHECK_THROW(static_cast<void>(IntegerType(nullptr)), NomadException);
+    BOOST_CHECK_THROW(static_cast<void>(ObjectType(nullptr, "Invalid", ObjectTypeMode::Closed)), NomadException);
+
+    Runtime other;
+    auto descriptor = std::make_unique<ObjectType>(&runtime, "Unregistered", ObjectTypeMode::Closed);
+    BOOST_TEST(descriptor->getRuntime() == &runtime);
+    BOOST_TEST(runtime.getTypeId("Unregistered").isInvalid());
+    BOOST_CHECK_THROW(other.registerType(std::move(descriptor)), NomadException);
+    BOOST_TEST(other.getTypeId("Unregistered").isInvalid());
+    BOOST_TEST(runtime.getTypeId("Unregistered").isInvalid());
+}
+
+BOOST_AUTO_TEST_CASE(runtime_specialized_creation_forwards_arguments_and_publishes_after_construction) {
+    class CreationProbe final : public ObjectType {
+    public:
+        CreationProbe(
+            Runtime* runtime,
+            NomadString name,
+            ObjectTypeMode mode,
+            std::unique_ptr<int> value,
+            int& constructions,
+            bool& unpublished
+        ):
+            ObjectType(runtime, std::move(name), mode),
+            m_value(std::move(value))
+        {
+            ++constructions;
+            unpublished = runtime->getTypeId(getTypeName()).isInvalid();
+        }
+
+        [[nodiscard]] int getValue() const { return *m_value; }
+
+    private:
+        std::unique_ptr<int> m_value;
+    };
+
+    Runtime runtime;
+    int constructions = 0;
+    bool unpublished = false;
+    const auto id = runtime.createObjectType<CreationProbe>(
+        "CreationProbe", ObjectTypeMode::Opened, std::make_unique<int>(42), constructions, unpublished
+    );
+    BOOST_REQUIRE(id.isValid());
+    const auto* type = dynamic_cast<const CreationProbe*>(runtime.getType(id).value());
+    BOOST_REQUIRE(type != nullptr);
+    BOOST_TEST(type->getRuntime() == &runtime);
+    BOOST_TEST(type->getValue() == 42);
+    BOOST_TEST(type->isOpen());
+    BOOST_TEST(unpublished);
+    BOOST_TEST(constructions == 1);
+
+    for (const auto& name : {"CreationProbe", ""}) {
+        BOOST_TEST(runtime.createObjectType<CreationProbe>(
+            name, ObjectTypeMode::Closed, std::make_unique<int>(1), constructions, unpublished
+        ).isInvalid());
+    }
+    BOOST_TEST(runtime.createObjectType<CreationProbe>(
+        "InvalidMode", static_cast<ObjectTypeMode>(0), std::make_unique<int>(1), constructions, unpublished
+    ).isInvalid());
+    BOOST_TEST(constructions == 1);
+    BOOST_TEST(runtime.getType(id).value() == type);
+}
+
+BOOST_AUTO_TEST_CASE(runtime_parameterized_callbacks_receive_the_owner_and_registered_specialization_id) {
+    Runtime runtime;
+    int factoryCalls = 0;
+    int initializerCalls = 0;
+    TypeId initializedId = TypeId::INVALID;
+    BOOST_REQUIRE(runtime.registerParameterizedType(
+        "AssociatedBox", 1,
+        [&](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+            ++factoryCalls;
+            BOOST_TEST(owningRuntime == &runtime);
+            BOOST_REQUIRE(arguments.size() == 1u);
+            BOOST_TEST(arguments[0] == runtime.getIntegerType());
+            BOOST_TEST(owningRuntime->getTypeId("AssociatedBox<int>").isInvalid());
+            return std::make_unique<ObjectType>(
+                owningRuntime, "AssociatedBox<int>", ObjectTypeMode::Closed, arguments
+            );
+        },
+        [&](Runtime* owningRuntime, const TypeId id) {
+            ++initializerCalls;
+            initializedId = id;
+            BOOST_TEST(owningRuntime == &runtime);
+            BOOST_REQUIRE(id.isValid());
+            const auto type = owningRuntime->getType(id);
+            BOOST_REQUIRE(type.has_value());
+            BOOST_TEST((*type)->getRuntime() == owningRuntime);
+            BOOST_TEST(owningRuntime->getTypeByName("AssociatedBox<int>") == *type);
+            const auto* objectType = static_cast<const ObjectType*>(*type);
+            BOOST_REQUIRE(owningRuntime->registerProperty(objectType, "value", runtime.getIntegerType()).isValid());
+        }
+    ));
+
+    const auto* type = runtime.getParameterizedType("AssociatedBox", {runtime.getIntegerType()});
+    BOOST_REQUIRE(type != nullptr);
+    BOOST_TEST(type->getRuntime() == &runtime);
+    BOOST_TEST(initializedId == runtime.getTypeId("AssociatedBox<int>"));
+    BOOST_TEST(static_cast<const ObjectType*>(type)->getProperty("value") != nullptr);
+    BOOST_TEST(runtime.getParameterizedType("AssociatedBox", {runtime.getIntegerType()}) == type);
+    BOOST_TEST(factoryCalls == 1);
+    BOOST_TEST(initializerCalls == 1);
+}
+
+BOOST_AUTO_TEST_CASE(runtime_rejects_foreign_parameterized_descriptors_without_initializing_or_caching_them) {
+    Runtime runtime;
+    Runtime other;
+    int factoryCalls = 0;
+    int initializerCalls = 0;
+    BOOST_REQUIRE(runtime.registerParameterizedType(
+        "ForeignBox", 1,
+        [&](Runtime* owningRuntime, const std::vector<const Type*>&) {
+            ++factoryCalls;
+            BOOST_TEST(owningRuntime == &runtime);
+            return std::make_unique<ObjectType>(&other, "ForeignBox<int>", ObjectTypeMode::Closed);
+        },
+        [&](Runtime*, TypeId) { ++initializerCalls; }
+    ));
+
+    std::vector<const Type*> originalTypes;
+    runtime.getTypes(originalTypes);
+    BOOST_TEST(runtime.getParameterizedType("ForeignBox", {runtime.getIntegerType()}) == nullptr);
+    BOOST_TEST(runtime.getParameterizedType("ForeignBox", {runtime.getIntegerType()}) == nullptr);
+    BOOST_TEST(factoryCalls == 2);
+    BOOST_TEST(initializerCalls == 0);
+    BOOST_TEST(runtime.getTypeId("ForeignBox<int>").isInvalid());
+    BOOST_TEST(other.getTypeId("ForeignBox<int>").isInvalid());
+    std::vector<const Type*> typesAfterRejection;
+    runtime.getTypes(typesAfterRejection);
+    BOOST_TEST(typesAfterRejection == originalTypes, boost::test_tools::per_element());
+}
+
 BOOST_AUTO_TEST_CASE(bare_runtime_has_core_string_natives_without_standard_native_functions)
 {
     Runtime runtime;

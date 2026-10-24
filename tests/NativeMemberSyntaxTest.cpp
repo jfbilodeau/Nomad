@@ -43,11 +43,12 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
     auto specializations = NomadIndex{0};
     BOOST_REQUIRE(runtime.registerParameterizedType(
         "Box", 1,
-        [&](const std::vector<const Type*>& arguments) {
+        [&](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
             ++specializations;
-            return std::make_unique<ObjectType>("Box<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments);
+            return std::make_unique<ObjectType>(owningRuntime, "Box<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments);
         },
-        [&](const Type* type) {
+        [&](Runtime* owningRuntime, const TypeId id) {
+            const auto* type = owningRuntime->getType(id).value();
             const auto* objectType = static_cast<const ObjectType*>(type);
             const auto* valueType = objectType->getTypeArguments()[0];
             BOOST_REQUIRE(runtime.registerNativeConstructor(

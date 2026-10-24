@@ -62,10 +62,14 @@ void registerListReaders(Runtime* runtime, const ObjectType* objectType, const b
 void registerListType(Runtime* runtime) {
     if (!runtime->registerParameterizedType(
         "ReadOnlyList", 1,
-        [](const std::vector<const Type*>& arguments) {
-            return std::make_unique<ReadOnlyListType>(arguments[0]);
+        [](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+            return std::make_unique<ReadOnlyListType>(
+                owningRuntime, "ReadOnlyList<" + arguments[0]->getTypeName() + ">",
+                ObjectTypeMode::Closed, arguments[0]
+            );
         },
-        [runtime](const Type* type) {
+        [](Runtime* runtime, const TypeId id) {
+            const auto* type = runtime->getType(id).value();
             registerListReaders(runtime, static_cast<const ObjectType*>(type), false);
         }
     )) {
@@ -74,11 +78,14 @@ void registerListType(Runtime* runtime) {
     if (!runtime->registerParameterizedType(
         "List",
         1,
-        [](const std::vector<const nomad::Type*>& arguments) {
+        [](Runtime* owningRuntime, const std::vector<const nomad::Type*>& arguments) {
             const auto* elementType = arguments[0];
-            return std::make_unique<nomad::ListType>(elementType);
+            return std::make_unique<nomad::ListType>(
+                owningRuntime, "List<" + elementType->getTypeName() + ">", ObjectTypeMode::Closed, elementType
+            );
         },
-        [runtime](const nomad::Type* type) {
+        [](Runtime* runtime, const TypeId id) {
+            const auto* type = runtime->getType(id).value();
             const auto* objectType = static_cast<const nomad::ObjectType*>(type);
             const auto* elementType = objectType->getTypeArguments()[0];
             registerListReaders(runtime, objectType, true);

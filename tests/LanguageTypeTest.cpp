@@ -63,7 +63,7 @@ BOOST_AUTO_TEST_CASE(type_lookup_uses_strong_ids)
     BOOST_TEST(event->parameters.front().typeId.id == integerId.id);
     BOOST_TEST(*runtime.getType(event->parameters.front().typeId) == runtime.getIntegerType());
 
-    runtime.registerType(std::make_unique<ObjectType>("AddedType", ObjectTypeMode::Closed));
+    runtime.registerType(std::make_unique<ObjectType>(&runtime, "AddedType", ObjectTypeMode::Closed));
     BOOST_TEST(*runtime.getType(integerId) == runtime.getIntegerType());
     const auto addedId = runtime.getTypeId("AddedType");
     BOOST_TEST(addedId.id != integerId.id);
@@ -73,7 +73,7 @@ BOOST_AUTO_TEST_CASE(type_lookup_uses_strong_ids)
 BOOST_AUTO_TEST_CASE(types_report_their_runtime_storage_category)
 {
     Runtime runtime;
-    const EnumType enumType("State", {{"idle", 1}});
+    const EnumType enumType(&runtime, "State", {{"idle", 1}});
 
     BOOST_TEST(static_cast<int>(runtime.getVoidType()->getStorage()) == static_cast<int>(TypeStorage::None));
     BOOST_TEST(static_cast<int>(runtime.getIntegerType()->getStorage()) == static_cast<int>(TypeStorage::Value));

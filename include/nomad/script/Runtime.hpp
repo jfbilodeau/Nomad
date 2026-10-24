@@ -24,9 +24,12 @@
 
 #include <nomad/system/TempHeap.hpp>
 
+#include <concepts>
+#include <memory>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -159,8 +162,11 @@ public:
     void initializeScripts();
 
     // Types
-    using ParameterizedTypeFactory = std::function<std::unique_ptr<Type>(const std::vector<const Type*>&)>;
-    using ParameterizedTypeInitializer = std::function<void(const Type*)>;
+    using ParameterizedTypeFactory =
+        std::function<std::unique_ptr<Type>(Runtime*, const std::vector<const Type*>&)>;
+
+    using ParameterizedTypeInitializer = std::function<void(Runtime*, TypeId)>;
+    
     [[nodiscard]] std::optional<NomadIndex> getParameterizedTypeArgumentCount(const NomadString& name) const;
     bool registerParameterizedType(
         const NomadString& name,
@@ -189,6 +195,20 @@ public:
         ObjectTypeMode mode,
         NomadString documentation = {}
     );
+    template<std::derived_from<ObjectType> Descriptor, typename... Arguments>
+    [[nodiscard]] TypeId createObjectType(
+        NomadString name,
+        ObjectTypeMode mode,
+        Arguments&&... arguments
+    ) {
+        if (!canCreateObjectType(name, mode)) {
+            return TypeId::INVALID;
+        }
+        auto type = std::make_unique<Descriptor>(
+            this, name, mode, std::forward<Arguments>(arguments)...
+        );
+        return publishObjectType(name, mode, std::move(type));
+    }
     [[nodiscard]] const ObjectType* getIteratorType(const Type* valueType);
     void registerIterableType(
         const Type* sourceType,
@@ -584,6 +604,12 @@ private:
     // Type and member validation
     [[nodiscard]] bool ownsType(const Type* type) const;
     [[nodiscard]] ObjectType* getMutableObjectType(const ObjectType* type);
+    [[nodiscard]] bool canCreateObjectType(const NomadString& name, ObjectTypeMode mode) const;
+    [[nodiscard]] TypeId publishObjectType(
+        const NomadString& name,
+        ObjectTypeMode mode,
+        std::unique_ptr<ObjectType> type
+    );
     [[nodiscard]] bool canRegisterNativeMember(
         const Type* objectType,
         const NomadString& name,

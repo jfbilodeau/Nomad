@@ -8,26 +8,24 @@
 
 namespace nomad {
 
-namespace {
-
-NomadString getKeyValueTypeName(const Type* keyType, const Type* valueType) {
+KeyValueType::KeyValueType(
+    Runtime* runtime,
+    NomadString name,
+    const ObjectTypeMode mode,
+    const Type* keyType,
+    const Type* valueType
+):
+    ObjectType(
+        runtime, std::move(name), mode,
+        {keyType, valueType},
+        NomadDoc("A pair with read-only key and value properties. Object fields share their referenced objects.")
+    )
+{
     if (keyType == nullptr || keyType->isVoid() || keyType->isInternal() ||
         valueType == nullptr || valueType->isVoid() || valueType->isInternal()) {
         throw NomadException("KeyValue types must be public, non-void types");
     }
-    return "KeyValue<" + keyType->getTypeName() + " " + valueType->getTypeName() + ">";
 }
-
-} // namespace
-
-KeyValueType::KeyValueType(const Type* keyType, const Type* valueType):
-    ObjectType(
-        getKeyValueTypeName(keyType, valueType),
-        ObjectTypeMode::Closed,
-        {keyType, valueType},
-        NomadDoc("A pair with read-only key and value properties. Object fields share their referenced objects.")
-    )
-{}
 
 void KeyValueType::initValue(RuntimeValue& value) const {
     value.setObjectValue(new KeyValueObject(getTypeArguments()[0], getTypeArguments()[1]));

@@ -87,8 +87,8 @@ or `CallableId{-1}`.
 
 `Runtime::createObjectType(name, mode, documentation = {})` creates an object
 type and returns its `TypeId`. The mode is required:
-`TypeMode::Opened` permits external script member declarations, while
-`TypeMode::Closed` prevents them. Neither mode makes existing properties
+`ObjectTypeMode::Opened` permits external script member declarations, while
+`ObjectTypeMode::Closed` prevents them. Neither mode makes existing properties
 immutable or prevents the type's own declarations. Native and script objects
 use the same `ObjectType` descriptor; `isOpen()` reports its mode.
 
@@ -98,9 +98,19 @@ already-registered type names, and conflicting hub declarations are logged and
 return `TypeId::INVALID`. Duplicate creation is rejected even when the mode
 and documentation are identical, without replacing the existing type.
 
+Every type descriptor requires a non-null owning `Runtime*` as its first
+constructor argument. `Type::getRuntime()` returns that runtime, which must
+outlive the descriptor. A descriptor cannot be registered with another runtime.
+
+`createObjectType<Descriptor>(name, mode, arguments...)` creates specialized
+`ObjectType` subclasses. It calls
+`Descriptor(Runtime*, name, mode, arguments...)`, forwarding additional arguments.
+Invalid creation requests are rejected before calling the descriptor constructor.
+The constructor initializes the descriptor without registering it; the runtime
+registers the completed descriptor and returns its `TypeId`. The descriptor's
+runtime, name, and mode must match the creation request.
+
 Type creation does not register constructors or finalize a script field layout.
-Specialized native descriptors continue to use their own lifecycle behavior
-and explicitly supply a mode to the `ObjectType` base constructor.
 
 ### Enum creation
 
@@ -634,10 +644,19 @@ the same VM. Access to a shared context or VM must be serialized by the host.
 
 ## Parameterized types
 
-`Runtime::registerParameterizedType(name, argumentCount, factory)` registers a
-type family. The factory receives resolved type arguments and returns a
-runtime-owned descriptor. `getParameterizedType(name, arguments)` registers a
-specialization on first use and reuses it on subsequent requests. Arguments must
+`Runtime::registerParameterizedType(name, argumentCount, factory, initializer = {})`
+registers a type family. The factory has the signature
+`std::unique_ptr<Type>(Runtime*, const std::vector<const Type*>&)`. It receives
+the owning runtime and resolved type arguments and returns a fully constructed,
+unregistered descriptor associated with that runtime. It must not register the
+returned descriptor itself, including through `createObjectType`.
+
+The runtime validates and registers the descriptor, then calls the optional
+initializer with `(Runtime*, TypeId)`. The ID identifies the registered
+specialization and can be used to retrieve it and add its members. The runtime
+caches the specialization after initialization succeeds.
+`getParameterizedType(name, arguments)` creates a specialization on first use
+and reuses it on subsequent requests without rerunning either callback. Arguments must
 be non-void, public types owned by that runtime. Invalid requests are logged and
 return null.
 
@@ -734,7 +753,7 @@ type, not its result type.
 Scripts invoke constructors with `new` and the type's name:
 
 ```cpp
-const auto typeId = runtime.createObjectType("Example", nomad::TypeMode::Closed);
+const auto typeId = runtime.createObjectType("Example", nomad::ObjectTypeMode::Closed);
 const auto registeredType = runtime.getType(typeId);
 if (!registeredType) {
     throw nomad::NomadException("Failed to create Example type");

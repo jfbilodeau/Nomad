@@ -403,9 +403,8 @@ BOOST_AUTO_TEST_CASE(rebuilding_hubs_preserves_native_member_values_and_overload
     BOOST_REQUIRE(functionId.isValid());
     BOOST_REQUIRE(overloadId.isValid());
     BOOST_REQUIRE(runtime.registerParameterizedType(
-        "example.child.Box", 1, [](const std::vector<const Type*>& arguments) {
-            return std::make_unique<ObjectType>(
-                "example.child.Box<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments
+        "example.child.Box", 1, [](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+            return std::make_unique<ObjectType>(owningRuntime, "example.child.Box<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments
             );
         }
     ));

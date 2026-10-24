@@ -14,9 +14,11 @@ static_assert(!std::is_convertible_v<NomadId, PropertyId>);
 static_assert(!std::is_convertible_v<PropertyId, NomadId>);
 static_assert(!std::is_convertible_v<PropertyId, CallableId>);
 static_assert(!std::is_copy_constructible_v<Property>);
-static_assert(!std::is_constructible_v<ObjectType, NomadString>);
-static_assert(!std::is_constructible_v<ObjectType, NomadString, bool>);
-static_assert(std::is_constructible_v<ObjectType, NomadString, ObjectTypeMode>);
+static_assert(!std::is_default_constructible_v<IntegerType>);
+static_assert(!std::is_constructible_v<ObjectType, NomadString, ObjectTypeMode>);
+static_assert(!std::is_constructible_v<ObjectType, Runtime*, NomadString>);
+static_assert(!std::is_constructible_v<ObjectType, Runtime*, NomadString, bool>);
+static_assert(std::is_constructible_v<ObjectType, Runtime*, NomadString, ObjectTypeMode>);
 static_assert(static_cast<int>(ObjectTypeMode::Opened) == 1);
 static_assert(static_cast<int>(ObjectTypeMode::Closed) == 2);
 
@@ -126,7 +128,7 @@ BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_cata
 BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_member_collisions) {
     Runtime runtime;
     Runtime other;
-    ObjectType unregistered("Unregistered", ObjectTypeMode::Opened);
+    ObjectType unregistered(&runtime, "Unregistered", ObjectTypeMode::Opened);
     const auto* type = createTestType(runtime, "Point", ObjectTypeMode::Opened);
     const auto* foreign = createTestType(other, "Point", ObjectTypeMode::Opened);
     BOOST_TEST(runtime.registerProperty(nullptr, "value", runtime.getIntegerType()).isInvalid());
@@ -177,8 +179,9 @@ BOOST_AUTO_TEST_CASE(type_owned_native_property_callbacks_are_destroyed_once) {
 }
 
 BOOST_AUTO_TEST_CASE(native_object_types_use_explicit_modes_without_special_subclasses) {
-    ObjectType nativeType("NativeType", ObjectTypeMode::Closed);
-    ObjectType openNativeType("OpenNativeType", ObjectTypeMode::Opened);
+    Runtime runtime;
+    ObjectType nativeType(&runtime, "NativeType", ObjectTypeMode::Closed);
+    ObjectType openNativeType(&runtime, "OpenNativeType", ObjectTypeMode::Opened);
 
     BOOST_TEST(!nativeType.isOpen());
     BOOST_TEST(openNativeType.isOpen());

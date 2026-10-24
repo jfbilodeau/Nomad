@@ -28,7 +28,8 @@ void registerMapFamily(
         name,
         2,
         std::move(factory),
-        [runtime, writable](const nomad::Type* type) {
+        [writable](Runtime* runtime, const TypeId id) {
+            const auto* type = runtime->getType(id).value();
             const auto* objectType = static_cast<const nomad::ObjectType*>(type);
             const auto* valueType = objectType->getTypeArguments()[1];
             const auto* keyType = objectType->getTypeArguments()[0];
@@ -190,11 +191,17 @@ void registerMapFamily(
 } // namespace
 
 void registerMapType(Runtime* runtime) {
-    registerMapFamily(runtime, "ReadOnlyMap", [](const std::vector<const Type*>& arguments) {
-        return std::make_unique<ReadOnlyMapType>(arguments[0], arguments[1]);
+    registerMapFamily(runtime, "ReadOnlyMap", [](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+        return std::make_unique<ReadOnlyMapType>(
+            owningRuntime, "ReadOnlyMap<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
+            ObjectTypeMode::Closed, arguments[0], arguments[1]
+        );
     }, false);
-    registerMapFamily(runtime, "Map", [](const std::vector<const Type*>& arguments) {
-        return std::make_unique<MapType>(arguments[0], arguments[1]);
+    registerMapFamily(runtime, "Map", [](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+        return std::make_unique<MapType>(
+            owningRuntime, "Map<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
+            ObjectTypeMode::Closed, arguments[0], arguments[1]
+        );
     }, true);
 }
 

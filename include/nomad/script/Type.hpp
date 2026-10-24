@@ -84,11 +84,12 @@ struct TypeOpCodes {
 
 class Type {
 public:
-    explicit Type(NomadString documentation = {});
+    explicit Type(Runtime* runtime, NomadString documentation = {});
     virtual ~Type() = default;
 
     [[nodiscard]] virtual NomadString getTypeName() const = 0;
     [[nodiscard]] virtual TypeStorage getStorage() const = 0;
+    [[nodiscard]] Runtime* getRuntime() const;
     [[nodiscard]] const NomadString& getDocumentation() const;
     // Initializes fresh storage with an owned default value. Does not release existing contents.
     virtual void initValue(RuntimeValue& value) const = 0;
@@ -131,12 +132,13 @@ protected:
     TypeOpCodes m_typeOpCodes;
 
 private:
+    Runtime* m_runtime;
     NomadString m_documentation;
 };
 
 class ValueType : public Type {
 public:
-    explicit ValueType(NomadString documentation = {});
+    explicit ValueType(Runtime* runtime, NomadString documentation = {});
     [[nodiscard]] TypeStorage getStorage() const override;
 };
 
@@ -145,6 +147,7 @@ public:
 const NomadString VOID_TYPE_NAME = "void";
 class VoidType final : public Type {
 public:
+    using Type::Type;
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     [[nodiscard]] TypeStorage getStorage() const override;
@@ -157,6 +160,7 @@ public:
 const NomadString ID_TYPE_NAME = "id";
 class IdType final : public ValueType {
 public:
+    using ValueType::ValueType;
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
@@ -166,7 +170,7 @@ public:
 class OpaqueIdType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
-    OpaqueIdType(NomadString name, NomadString documentation);
+    OpaqueIdType(Runtime* runtime, NomadString name, NomadString documentation);
 
     using Type::toString;
 
@@ -182,6 +186,7 @@ private:
 const NomadString INTEGER_TYPE_NAME = "int";
 class IntegerType final : public ValueType {
 public:
+    using ValueType::ValueType;
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
@@ -197,6 +202,7 @@ class EnumType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
     EnumType(
+        Runtime* runtime,
         NomadString name,
         std::vector<EnumValueDefinition> values,
         NomadString documentation = {}
@@ -223,6 +229,7 @@ private:
 const NomadString FLOAT_TYPE_NAME = "float";
 class FloatType final : public ValueType {
 public:
+    using ValueType::ValueType;
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
@@ -234,6 +241,7 @@ const NomadString BOOLEAN_TRUE_STRING = "true";
 const NomadString BOOLEAN_FALSE_STRING = "false";
 class BooleanType final : public ValueType {
 public:
+    using ValueType::ValueType;
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
@@ -249,6 +257,7 @@ struct IterableInfo {
 class ObjectType : public Type {
 public:
     explicit ObjectType(
+        Runtime* runtime,
         NomadString name,
         ObjectTypeMode mode,
         std::vector<const Type*> typeArguments = {},
@@ -311,7 +320,7 @@ private:
 
 class BaseStringType : public ObjectType {
 public:
-    BaseStringType();
+    explicit BaseStringType(Runtime* runtime);
 
     using Type::toString;
     void initValue(RuntimeValue& value) const override;
@@ -324,6 +333,7 @@ public:
 const NomadString STRING_TYPE_NAME = "string";
 class StringType final : public BaseStringType {
 public:
+    using BaseStringType::BaseStringType;
     [[nodiscard]] NomadString getTypeName() const override;
 };
 
@@ -333,6 +343,7 @@ public:
 const NomadString FILE_NAME_TYPE_NAME = "$file";
 class FileNameType final : public BaseStringType {
 public:
+    using BaseStringType::BaseStringType;
     [[nodiscard]] NomadString getTypeName() const override;
 };
 
@@ -340,12 +351,14 @@ public:
 const NomadString FUNCTION_NAME_TYPE_NAME = "$function";
 class FunctionNameType final : public BaseStringType {
 public:
+    using BaseStringType::BaseStringType;
     [[nodiscard]] NomadString getTypeName() const override;
 };
 
 const NomadString FUNCTION_LINE_NUMBER_TYPE_NAME = "$line";
 class FunctionLineNumberType final : public ValueType {
 public:
+    using ValueType::ValueType;
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
@@ -356,7 +369,11 @@ const NomadString FUNCTION_TYPE_NAME = "callback";
 class FunctionType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
-    FunctionType(const std::vector<const Type*>& parameter_types, const Type* return_type);
+    FunctionType(
+        Runtime* runtime,
+        const std::vector<const Type*>& parameterTypes,
+        const Type* returnType
+    );
 
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
@@ -378,6 +395,7 @@ private:
 const NomadString EVENT_CALLBACK_TYPE_NAME = "eventCallback";
 class EventCallbackType final : public ValueType {
 public:
+    using ValueType::ValueType;
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
@@ -387,6 +405,7 @@ public:
 const NomadString EVENT_DISPATCH_TYPE_NAME = "eventDispatch";
 class EventDispatchType final : public ValueType {
 public:
+    using ValueType::ValueType;
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;

@@ -33,7 +33,7 @@ const NomadString EVENT_TYPE_NAME = "event";
 class EventType final : public ValueType {
 public:
     void initValue(RuntimeValue& value) const override;
-    explicit EventType(const EventDefinition* declaration);
+    EventType(Runtime* runtime, const EventDefinition* declaration);
 
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;

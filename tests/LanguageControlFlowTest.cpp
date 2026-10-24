@@ -104,7 +104,7 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
 {
     Runtime runtime;
     Runtime other;
-    auto descriptor = std::make_unique<ObjectType>("SequenceMetadata", ObjectTypeMode::Closed);
+    auto descriptor = std::make_unique<ObjectType>(&runtime, "SequenceMetadata", ObjectTypeMode::Closed);
     auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
     const auto* integer = runtime.getIntegerType();
@@ -120,7 +120,7 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
     BOOST_TEST(!runtime.getIterableInfo(integer).has_value());
     BOOST_TEST(!other.getIterableInfo(type).has_value());
     BOOST_TEST(!runtime.getIterableInfo(other.getStringType()).has_value());
-    ObjectType unregistered("SequenceMetadata", ObjectTypeMode::Closed);
+    ObjectType unregistered(&runtime, "SequenceMetadata", ObjectTypeMode::Closed);
     BOOST_TEST(!runtime.getIterableInfo(&unregistered).has_value());
     BOOST_CHECK_THROW(unregistered.registerIterableType(runtime, integer, factory), NomadException);
     BOOST_CHECK_THROW(type->registerIterableType(other, other.getIntegerType(), factory), NomadException);
@@ -175,7 +175,7 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
     snapshot->valueType = runtime.getStringType();
     snapshot->factoryId = CallableId::INVALID;
     for (auto index = 0; index < 32; ++index) {
-        auto additional = std::make_unique<ObjectType>("AdditionalSequence" + std::to_string(index), ObjectTypeMode::Closed);
+        auto additional = std::make_unique<ObjectType>(&runtime, "AdditionalSequence" + std::to_string(index), ObjectTypeMode::Closed);
         auto* additionalType = additional.get();
         runtime.registerType(std::move(additional));
         const auto additionalFactoryId = runtime.registerNativeMethod(
@@ -271,7 +271,7 @@ BOOST_AUTO_TEST_CASE(for_uses_registered_iteration_not_collection_names)
 
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    auto type = std::make_unique<ObjectType>("Sequence", ObjectTypeMode::Closed);
+    auto type = std::make_unique<ObjectType>(&runtime, "Sequence", ObjectTypeMode::Closed);
     auto* sourceType = type.get();
     runtime.registerType(std::move(type));
     runtime.registerNativeConstructor(sourceType, {}, [](std::span<const RuntimeValue>) {

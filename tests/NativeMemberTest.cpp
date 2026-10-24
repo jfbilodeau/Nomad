@@ -67,7 +67,7 @@ NativeFunctionFn methodFunction() {
 }
 
 const ObjectType* registerTestType(Runtime& runtime) {
-    auto descriptor = std::make_unique<ObjectType>("TestObject", ObjectTypeMode::Closed);
+    auto descriptor = std::make_unique<ObjectType>(&runtime, "TestObject", ObjectTypeMode::Closed);
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
     return type;
@@ -202,10 +202,9 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
     for (const auto* family : {"Family", "Other"}) {
         BOOST_REQUIRE(runtime.registerParameterizedType(
             family, 1,
-            [&](const std::vector<const Type*>& arguments) {
+            [&](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
                 ++specializations;
-                return std::make_unique<ObjectType>(
-                    "Family<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments
+                return std::make_unique<ObjectType>(owningRuntime, "Family<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments
                 );
             }
         ));
@@ -238,7 +237,7 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
     BOOST_TEST(!runtime.registerMemberTemplate("Family", "badIndex", MemberType::Method, {
         defTemplateParameter("value", TypeParameterIndex{1}, "")
     }));
-    IntegerType foreignType;
+    IntegerType foreignType(&runtime);
     for (const auto* type : {static_cast<const Type*>(nullptr), runtime.getVoidType(), static_cast<const Type*>(&foreignType)}) {
         BOOST_TEST(!runtime.registerMemberTemplate("Family", "badType", MemberType::Method, {
             defTemplateParameter("value", type, "")
@@ -293,9 +292,8 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
 
 BOOST_AUTO_TEST_CASE(member_templates_validate_against_existing_concrete_members) {
     Runtime runtime;
-    BOOST_REQUIRE(runtime.registerParameterizedType("Family", 1, [](const std::vector<const Type*>& arguments) {
-        return std::make_unique<ObjectType>(
-            "Family<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments
+    BOOST_REQUIRE(runtime.registerParameterizedType("Family", 1, [](Runtime* owningRuntime, const std::vector<const Type*>& arguments) {
+        return std::make_unique<ObjectType>(owningRuntime, "Family<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments
         );
     }));
     const auto* type = registerTestType(runtime);
@@ -438,7 +436,7 @@ BOOST_AUTO_TEST_CASE(rejects_incompatible_member_shapes) {
 
 BOOST_AUTO_TEST_CASE(rejects_invalid_member_definitions) {
     Runtime runtime;
-    ObjectType unregisteredType("Unregistered", ObjectTypeMode::Closed);
+    ObjectType unregisteredType(&runtime, "Unregistered", ObjectTypeMode::Closed);
 
     BOOST_TEST(runtime.registerNativeProperty(&unregisteredType, "value", runtime.getIntegerType(),
                                                  propertyGetter(), {}, NomadDoc("Unregistered owner")).isInvalid());
@@ -522,7 +520,7 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_validate_metadata_and_coexist_with
     const auto* integer = runtime.getIntegerType();
     const auto* string = runtime.getStringType();
     BOOST_TEST(runtime.registerNativeIndexer(nullptr, {integer, string}, integer, getter, {}, "").isInvalid());
-    ObjectType unregistered("Unregistered", ObjectTypeMode::Closed);
+    ObjectType unregistered(&runtime, "Unregistered", ObjectTypeMode::Closed);
     BOOST_TEST(runtime.registerNativeIndexer(&unregistered, {integer, string}, integer, getter, {}, "").isInvalid());
     for (const Type* invalid : std::array<const Type*, 4>{nullptr, runtime.getVoidType(),
         runtime.getFileNameType(), other.getIntegerType()}) {
@@ -579,7 +577,7 @@ BOOST_AUTO_TEST_CASE(indexer_ids_remain_stable_as_the_catalog_grows) {
             runtime.getIntegerType(), getter, {}, "").isValid());
     }
     for (auto index = 0; index < 32; ++index) {
-        auto descriptor = std::make_unique<ObjectType>("Additional" + std::to_string(index), ObjectTypeMode::Closed);
+        auto descriptor = std::make_unique<ObjectType>(&runtime, "Additional" + std::to_string(index), ObjectTypeMode::Closed);
         const auto* additional = descriptor.get();
         runtime.registerType(std::move(descriptor));
         BOOST_REQUIRE(runtime.registerNativeIndexer(additional, {runtime.getIntegerType()},
@@ -606,7 +604,7 @@ BOOST_AUTO_TEST_CASE(indexer_ids_remain_stable_as_the_catalog_grows) {
 BOOST_AUTO_TEST_CASE(type_owned_indexers_validate_direct_registration_and_catalog_membership) {
     Runtime runtime;
     Runtime other;
-    auto descriptor = std::make_unique<ObjectType>("DirectIndexer", ObjectTypeMode::Closed);
+    auto descriptor = std::make_unique<ObjectType>(&runtime, "DirectIndexer", ObjectTypeMode::Closed);
     auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
     const auto originalCount = runtime.getNativeIndexers().size();
@@ -627,7 +625,7 @@ BOOST_AUTO_TEST_CASE(type_owned_indexers_validate_direct_registration_and_catalo
     auto wrongOwner = info;
     wrongOwner.objectType = runtime.getStringType();
     BOOST_TEST(type->registerNativeIndexer(runtime, std::move(wrongOwner)).isInvalid());
-    ObjectType unregistered("UnregisteredIndexer", ObjectTypeMode::Closed);
+    ObjectType unregistered(&runtime, "UnregisteredIndexer", ObjectTypeMode::Closed);
     auto unregisteredInfo = info;
     unregisteredInfo.objectType = &unregistered;
     BOOST_TEST(unregistered.registerNativeIndexer(runtime, std::move(unregisteredInfo)).isInvalid());

@@ -16,9 +16,17 @@ namespace nomad {
 
 ///////////////////////////////////////////////////////////////////////////////
 // Type
-Type::Type(NomadString documentation):
+Type::Type(Runtime* runtime, NomadString documentation):
+    m_runtime(runtime),
     m_documentation(std::move(documentation))
 {
+    if (runtime == nullptr) {
+        throw NomadException("A type requires an owning runtime");
+    }
+}
+
+Runtime* Type::getRuntime() const {
+    return m_runtime;
 }
 
 const NomadString& Type::getDocumentation() const {
@@ -94,8 +102,8 @@ const EnumType* Type::asEnum() const {
     return nullptr;
 }
 
-ValueType::ValueType(NomadString documentation):
-    Type(std::move(documentation))
+ValueType::ValueType(Runtime* runtime, NomadString documentation):
+    Type(runtime, std::move(documentation))
 {}
 
 TypeStorage ValueType::getStorage() const {
@@ -166,8 +174,8 @@ void IdType::toString(const RuntimeValue& value, NomadString& string) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // OpaqueIdType
-OpaqueIdType::OpaqueIdType(NomadString name, NomadString documentation):
-    ValueType(std::move(documentation)),
+OpaqueIdType::OpaqueIdType(Runtime* runtime, NomadString name, NomadString documentation):
+    ValueType(runtime, std::move(documentation)),
     m_name(std::move(name))
 {
 }
@@ -231,11 +239,12 @@ void IntegerType::toString(const RuntimeValue& value, NomadString& string) const
 ///////////////////////////////////////////////////////////////////////////////
 // EnumType
 EnumType::EnumType(
+    Runtime* runtime,
     NomadString name,
     std::vector<EnumValueDefinition> values,
     NomadString documentation
 ):
-    ValueType(std::move(documentation)),
+    ValueType(runtime, std::move(documentation)),
     m_name(std::move(name)),
     m_values(std::move(values))
 {
@@ -379,12 +388,13 @@ std::vector<const Method*> ObjectType::getMethods() const {
 }
 
 ObjectType::ObjectType(
+    Runtime* runtime,
     NomadString name,
     const ObjectTypeMode mode,
     std::vector<const Type*> typeArguments,
     NomadString documentation
 ):
-    Type(std::move(documentation)),
+    Type(runtime, std::move(documentation)),
     m_name(std::move(name)),
     m_mode(mode),
     m_typeArguments(std::move(typeArguments))
@@ -604,8 +614,8 @@ void ObjectType::toString(const RuntimeValue&, NomadString& string) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // BaseStringType
-BaseStringType::BaseStringType():
-    ObjectType(STRING_TYPE_NAME, ObjectTypeMode::Closed)
+BaseStringType::BaseStringType(Runtime* runtime):
+    ObjectType(runtime, STRING_TYPE_NAME, ObjectTypeMode::Closed)
 {
     m_typeOpCodes.initResult = op_string_init_r;
     m_typeOpCodes.initIntermediate = op_string_init_i;
@@ -665,21 +675,26 @@ void FunctionLineNumberType::toString(const RuntimeValue& value, NomadString& st
 
 ///////////////////////////////////////////////////////////////////////////////
 // FunctionReferenceType
-FunctionType::FunctionType(const std::vector<const Type*>& parameter_types, const Type* return_type):
-    m_parameterTypes(parameter_types),
-    m_returnType(return_type)
+FunctionType::FunctionType(
+    Runtime* runtime,
+    const std::vector<const Type*>& parameterTypes,
+    const Type* returnType
+):
+    ValueType(runtime),
+    m_parameterTypes(parameterTypes),
+    m_returnType(returnType)
 {
     m_name = FUNCTION_TYPE_NAME + "(";
 
-    for (auto parameter_type : parameter_types) {
-        m_name += parameter_type->getTypeName();
+    for (const auto* parameterType : parameterTypes) {
+        m_name += parameterType->getTypeName();
 
-        if (parameter_type != parameter_types.back()) {
+        if (parameterType != parameterTypes.back()) {
             m_name += ", ";
         }
     }
 
-    m_name += "):" + return_type->getTypeName();
+    m_name += "):" + returnType->getTypeName();
 }
 
 void FunctionType::initValue(RuntimeValue& value) const {
@@ -741,7 +756,8 @@ const FunctionType* FunctionType::asCallback() const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // EventType
-EventType::EventType(const EventDefinition* declaration):
+EventType::EventType(Runtime* runtime, const EventDefinition* declaration):
+    ValueType(runtime),
     m_event(*declaration)
 {}
 

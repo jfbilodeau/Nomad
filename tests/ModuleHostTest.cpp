@@ -1001,8 +1001,8 @@ BOOST_AUTO_TEST_CASE(collections_key_values_reject_invalid_construction_and_prop
             BOOST_TEST(evaluation.hasError());
         }
     }
-    BOOST_CHECK_THROW(KeyValueType(runtime.getFileNameType(), runtime.getIntegerType()), NomadException);
-    BOOST_CHECK_THROW(KeyValueType(runtime.getIntegerType(), runtime.getFileNameType()), NomadException);
+    BOOST_CHECK_THROW(KeyValueType(&runtime, "Invalid", ObjectTypeMode::Closed, runtime.getFileNameType(), runtime.getIntegerType()), NomadException);
+    BOOST_CHECK_THROW(KeyValueType(&runtime, "Invalid", ObjectTypeMode::Closed, runtime.getIntegerType(), runtime.getFileNameType()), NomadException);
     BOOST_CHECK_THROW(KeyValueObject(runtime.getFileNameType(), runtime.getIntegerType()), NomadException);
 }
 
@@ -1741,9 +1741,10 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_prese
 }
 
 BOOST_AUTO_TEST_CASE(collections_maps_release_partial_copies_and_preserve_entries_on_failure) {
+    Runtime runtime;
     class MapValueType final : public ObjectType {
     public:
-        MapValueType(): ObjectType("MapValue", ObjectTypeMode::Closed) {}
+        explicit MapValueType(Runtime* runtime): ObjectType(runtime, "MapValue", ObjectTypeMode::Closed) {}
 
         [[nodiscard]] NomadString getTypeName() const override { return "MapValue"; }
         void toString(const RuntimeValue&, NomadString& text) const override { text = getTypeName(); }
@@ -1754,7 +1755,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_release_partial_copies_and_preserve_entrie
             }
         }
         bool failCopy = false;
-    } type;
+    } type(&runtime);
     const auto before = NomadObject::getLiveObjectCount();
     {
         MapObject map(&type);
@@ -1789,9 +1790,10 @@ BOOST_AUTO_TEST_CASE(collections_maps_release_partial_copies_and_preserve_entrie
 }
 
 BOOST_AUTO_TEST_CASE(collections_map_snapshots_own_references_and_release_partial_results) {
+    Runtime runtime;
     class SnapshotValueType final : public ObjectType {
     public:
-        SnapshotValueType(): ObjectType("SnapshotValue", ObjectTypeMode::Closed) {}
+        explicit SnapshotValueType(Runtime* runtime): ObjectType(runtime, "SnapshotValue", ObjectTypeMode::Closed) {}
         void initValue(RuntimeValue& value) const override {
             if (failInitialization) {
                 value.setObjectValue(new NomadObject);
@@ -1810,9 +1812,9 @@ BOOST_AUTO_TEST_CASE(collections_map_snapshots_own_references_and_release_partia
         }
         mutable NomadInteger copiesUntilFailure = -1;
         bool failInitialization = false;
-    } valueType;
-    StringType keyType;
-    KeyValueType entryType(&keyType, &valueType);
+    } valueType(&runtime);
+    StringType keyType(&runtime);
+    KeyValueType entryType(&runtime, "KeyValue<string SnapshotValue>", ObjectTypeMode::Closed, &keyType, &valueType);
     RuntimeValue empty;
     keyType.initValue(empty);
     keyType.freeValue(empty);
@@ -1870,9 +1872,9 @@ BOOST_AUTO_TEST_CASE(collections_map_snapshots_own_references_and_release_partia
         BOOST_TEST(map.getValues()->getCount() == 0u);
         BOOST_TEST(map.getEntries(&entryType)->getCount() == 0u);
         BOOST_CHECK_THROW(static_cast<void>(map.getEntries(nullptr)), NomadException);
-        IntegerType integerType;
-        KeyValueType wrongKeyType(&integerType, &valueType);
-        KeyValueType wrongValueType(&keyType, &integerType);
+        IntegerType integerType(&runtime);
+        KeyValueType wrongKeyType(&runtime, "KeyValue<int SnapshotValue>", ObjectTypeMode::Closed, &integerType, &valueType);
+        KeyValueType wrongValueType(&runtime, "KeyValue<string int>", ObjectTypeMode::Closed, &keyType, &integerType);
         BOOST_CHECK_THROW(static_cast<void>(map.getEntries(&wrongKeyType)), NomadException);
         BOOST_CHECK_THROW(static_cast<void>(map.getEntries(&wrongValueType)), NomadException);
     }
@@ -1886,8 +1888,8 @@ BOOST_AUTO_TEST_CASE(collections_maps_reject_unsupported_operations_and_types) {
     auto& runtime = *host->getRuntime();
     BOOST_CHECK_THROW(MapObject(nullptr), NomadException);
     BOOST_CHECK_THROW(MapObject(runtime.getVoidType()), NomadException);
-    BOOST_CHECK_THROW(MapType(runtime.getIntegerType(), runtime.getIntegerType()), NomadException);
-    BOOST_CHECK_THROW(MapType(runtime.getStringType(), runtime.getFileNameType()), NomadException);
+    BOOST_CHECK_THROW(MapType(&runtime, "Invalid", ObjectTypeMode::Closed, runtime.getIntegerType(), runtime.getIntegerType()), NomadException);
+    BOOST_CHECK_THROW(MapType(&runtime, "Invalid", ObjectTypeMode::Closed, runtime.getStringType(), runtime.getFileNameType()), NomadException);
     VirtualMachine machine(&runtime);
     InterpreterContext context(machine);
     for (const auto* source : {
@@ -2696,7 +2698,9 @@ BOOST_AUTO_TEST_CASE(compiler_rejects_invalid_object_construction) {
             TestDirectory directory("nomad_host_bad_construction");
             const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
             auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
-            host->getRuntime()->registerType(std::make_unique<ObjectType>("Unconstructible", ObjectTypeMode::Closed));
+            host->getRuntime()->registerType(std::make_unique<ObjectType>(
+                host->getRuntime(), "Unconstructible", ObjectTypeMode::Closed
+            ));
             auto compiler = host->getRuntime()->createCompiler();
             CompilerContext context(compiler.get());
             compiler->registerSources(&context, {{{"init", {"init.nomad", source}}}, {}});
@@ -2708,7 +2712,7 @@ BOOST_AUTO_TEST_CASE(compiler_rejects_invalid_object_construction) {
 
 BOOST_AUTO_TEST_CASE(object_construction_reports_factory_failures) {
     Runtime runtime;
-    auto descriptor = std::make_unique<ObjectType>("Broken", ObjectTypeMode::Closed);
+    auto descriptor = std::make_unique<ObjectType>(&runtime, "Broken", ObjectTypeMode::Closed);
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
     runtime.registerNativeConstructor(
@@ -2745,9 +2749,8 @@ BOOST_AUTO_TEST_CASE(compiler_resolves_parameterized_annotations_from_collection
         const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-collections"});
         auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
         auto& runtime = *host->getRuntime();
-        BOOST_REQUIRE(runtime.registerParameterizedType("Pair", 2, [](const auto& arguments) {
-            return std::make_unique<ObjectType>(
-                "Pair<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
+        BOOST_REQUIRE(runtime.registerParameterizedType("Pair", 2, [](Runtime* owningRuntime, const auto& arguments) {
+            return std::make_unique<ObjectType>(owningRuntime, "Pair<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
                 ObjectTypeMode::Closed,
                 arguments
             );
@@ -2867,8 +2870,8 @@ BOOST_AUTO_TEST_CASE(collections_interns_list_specializations) {
     Runtime other;
     BOOST_TEST(runtime.getParameterizedType("List", {other.getIntegerType()}) == nullptr);
     BOOST_TEST(runtime.getParameterizedType("Missing", {}) == nullptr);
-    BOOST_TEST(!runtime.registerParameterizedType("List", 1, [](const auto&) {
-        return std::make_unique<ObjectType>("Duplicate", ObjectTypeMode::Closed);
+    BOOST_TEST(!runtime.registerParameterizedType("List", 1, [](Runtime* owningRuntime, const auto&) {
+        return std::make_unique<ObjectType>(owningRuntime, "Duplicate", ObjectTypeMode::Closed);
     }));
 }
 
@@ -2932,9 +2935,9 @@ BOOST_AUTO_TEST_CASE(collections_native_returns_do_not_allocate_unused_list_defa
 BOOST_AUTO_TEST_CASE(parameterized_types_validate_factories_and_cache_by_arguments) {
     Runtime runtime;
     NomadIndex calls = 0;
-    BOOST_TEST(runtime.registerParameterizedType("Example", 1, [&calls](const auto& arguments) {
+    BOOST_TEST(runtime.registerParameterizedType("Example", 1, [&calls](Runtime* owningRuntime, const auto& arguments) {
         ++calls;
-        return std::make_unique<ObjectType>("Example<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments);
+        return std::make_unique<ObjectType>(owningRuntime, "Example<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments);
     }));
     const auto* first = runtime.getParameterizedType("Example", {runtime.getIntegerType()});
     BOOST_REQUIRE(first != nullptr);
@@ -2942,12 +2945,12 @@ BOOST_AUTO_TEST_CASE(parameterized_types_validate_factories_and_cache_by_argumen
     BOOST_TEST(calls == 1u);
     BOOST_TEST(!runtime.registerParameterizedType("Empty", 1, {}));
     BOOST_TEST(!runtime.registerParameterizedType("", 1, {}));
-    BOOST_TEST(runtime.registerParameterizedType("Broken", 1, [](const auto&) {
+    BOOST_TEST(runtime.registerParameterizedType("Broken", 1, [](Runtime*, const auto&) {
         return std::unique_ptr<Type>{};
     }));
     BOOST_TEST(runtime.getParameterizedType("Broken", {runtime.getIntegerType()}) == nullptr);
-    BOOST_TEST(runtime.registerParameterizedType("Collision", 1, [](const auto&) {
-        return std::make_unique<ObjectType>("int", ObjectTypeMode::Closed);
+    BOOST_TEST(runtime.registerParameterizedType("Collision", 1, [](Runtime* owningRuntime, const auto&) {
+        return std::make_unique<ObjectType>(owningRuntime, "int", ObjectTypeMode::Closed);
     }));
     BOOST_TEST(runtime.getParameterizedType("Collision", {runtime.getIntegerType()}) == nullptr);
 }

@@ -652,7 +652,7 @@ class ResolutionObject final : public NomadObject {
 
 const ObjectType* registerResolutionType(Runtime& runtime, const NomadString& name) {
     auto descriptor = std::make_unique<ObjectType>(
-        name, ObjectTypeMode::Closed, std::vector<const Type*>{}, "A test object."
+        &runtime, name, ObjectTypeMode::Closed, std::vector<const Type*>{}, "A test object."
     );
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
@@ -758,8 +758,8 @@ BOOST_AUTO_TEST_CASE(type_owned_constructor_factory_is_released_once)
     {
         class ConstructorOwner final : public ObjectType {
         public:
-            ConstructorOwner(int& destructions, bool& alive):
-                ObjectType("LifetimeOwner", ObjectTypeMode::Closed),
+            ConstructorOwner(Runtime* runtime, int& destructions, bool& alive):
+                ObjectType(runtime, "LifetimeOwner", ObjectTypeMode::Closed),
                 m_destructions(destructions),
                 m_alive(alive)
             {
@@ -775,7 +775,7 @@ BOOST_AUTO_TEST_CASE(type_owned_constructor_factory_is_released_once)
         };
 
         Runtime runtime;
-        auto descriptor = std::make_unique<ConstructorOwner>(destructions, aliveAtTypeDestruction);
+        auto descriptor = std::make_unique<ConstructorOwner>(&runtime, destructions, aliveAtTypeDestruction);
         const auto* type = descriptor.get();
         runtime.registerType(std::move(descriptor));
         auto lifetime = std::shared_ptr<int>(new int{0}, [&destructions](int* value) {
@@ -853,8 +853,8 @@ BOOST_AUTO_TEST_CASE(type_owned_method_callback_is_released_once)
     {
         class MethodOwner final : public ObjectType {
         public:
-            MethodOwner(int& destructions, bool& alive):
-                ObjectType("MethodLifetimeOwner", ObjectTypeMode::Closed),
+            MethodOwner(Runtime* runtime, int& destructions, bool& alive):
+                ObjectType(runtime, "MethodLifetimeOwner", ObjectTypeMode::Closed),
                 m_destructions(destructions),
                 m_alive(alive)
             {
@@ -870,7 +870,7 @@ BOOST_AUTO_TEST_CASE(type_owned_method_callback_is_released_once)
         };
 
         Runtime runtime;
-        auto descriptor = std::make_unique<MethodOwner>(destructions, aliveAtTypeDestruction);
+        auto descriptor = std::make_unique<MethodOwner>(&runtime, destructions, aliveAtTypeDestruction);
         const auto* type = descriptor.get();
         runtime.registerType(std::move(descriptor));
         auto lifetime = std::shared_ptr<int>(new int{0}, [&destructions](int* value) {

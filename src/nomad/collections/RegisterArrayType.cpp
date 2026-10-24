@@ -35,7 +35,8 @@ void registerArrayFamily(
         family,
         1,
         std::move(factory),
-        [runtime, registerMembers, writable, name](const Type* type) {
+        [registerMembers, writable, name](Runtime* runtime, const TypeId id) {
+            const auto* type = runtime->getType(id).value();
             registerMembers(type, writable);
             const auto* objectType = static_cast<const ArrayType*>(type);
             const auto countId = runtime->registerNativeProperty(
@@ -80,16 +81,24 @@ void registerArrayType(Runtime* runtime) {
         nomad::Runtime::ParameterizedTypeFactory factory,
         std::function<void(const Type*, bool)> registerMembers
     ) {
-        registerArrayFamily(runtime, name, "ReadOnly" + name, [dimensionCount](const std::vector<const Type*>& arguments) {
-            return std::make_unique<ReadOnlyArrayType>(arguments[0], dimensionCount);
+        registerArrayFamily(runtime, name, "ReadOnly" + name, [dimensionCount, name](
+            Runtime* owningRuntime,
+            const std::vector<const Type*>& arguments
+        ) {
+            return std::make_unique<ReadOnlyArrayType>(
+                owningRuntime, "ReadOnly" + name + "<" + arguments[0]->getTypeName() + ">",
+                ObjectTypeMode::Closed, arguments[0], dimensionCount
+            );
         }, registerMembers, false);
         registerArrayFamily(runtime, name, name, std::move(factory), registerMembers, true);
     };
     registerArrayType(
         "Array1", 1,
-        [](const std::vector<const nomad::Type*>& arguments) {
+        [](Runtime* owningRuntime, const std::vector<const nomad::Type*>& arguments) {
             const auto* elementType = arguments[0];
-            return std::make_unique<nomad::Array1Type>(elementType);
+            return std::make_unique<nomad::Array1Type>(
+                owningRuntime, "Array1<" + elementType->getTypeName() + ">", ObjectTypeMode::Closed, elementType
+            );
         },
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
@@ -139,9 +148,11 @@ void registerArrayType(Runtime* runtime) {
     );
     registerArrayType(
         "Array2", 2,
-        [](const std::vector<const nomad::Type*>& arguments) {
+        [](Runtime* owningRuntime, const std::vector<const nomad::Type*>& arguments) {
             const auto* elementType = arguments[0];
-            return std::make_unique<nomad::Array2Type>(elementType);
+            return std::make_unique<nomad::Array2Type>(
+                owningRuntime, "Array2<" + elementType->getTypeName() + ">", ObjectTypeMode::Closed, elementType
+            );
         },
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
@@ -187,9 +198,11 @@ void registerArrayType(Runtime* runtime) {
     );
     registerArrayType(
         "Array3", 3,
-        [](const std::vector<const nomad::Type*>& arguments) {
+        [](Runtime* owningRuntime, const std::vector<const nomad::Type*>& arguments) {
             const auto* elementType = arguments[0];
-            return std::make_unique<nomad::Array3Type>(elementType);
+            return std::make_unique<nomad::Array3Type>(
+                owningRuntime, "Array3<" + elementType->getTypeName() + ">", ObjectTypeMode::Closed, elementType
+            );
         },
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
@@ -241,7 +254,7 @@ void registerArrayType(Runtime* runtime) {
         "Array", 1,
         [runtime](const NomadString& name, const std::vector<const nomad::Type*>& arguments) {
             // One class per specialization (e.g. `Array<int>`); each rank constructor builds a different array type.
-            auto classType = std::make_unique<nomad::ObjectType>(name, nomad::ObjectTypeMode::Closed);
+            auto classType = std::make_unique<nomad::ObjectType>(runtime, name, nomad::ObjectTypeMode::Closed);
             const auto* arrayClass = classType.get();
             runtime->registerType(std::move(classType));
             for (const auto* family : {"Array1", "Array2", "Array3"}) {

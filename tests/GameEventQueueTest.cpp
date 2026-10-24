@@ -3,6 +3,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "nomad/game/GameEventQueue.hpp"
+#include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include "nomad/script/Type.hpp"
 
@@ -19,7 +20,10 @@ const NomadString& getEventName(const GameEvent& event) {
 
 class TrackingType final : public ValueType {
 public:
-    explicit TrackingType(bool& valueFreed) : m_valueFreed(valueFreed) {}
+    TrackingType(Runtime* runtime, bool& valueFreed):
+        ValueType(runtime),
+        m_valueFreed(valueFreed)
+    {}
 
     void initValue(RuntimeValue& value) const override {
         value = RuntimeValue{};
@@ -145,7 +149,8 @@ BOOST_AUTO_TEST_CASE(game_event_queue_preserves_fifo_order)
 BOOST_AUTO_TEST_CASE(game_event_queue_destroys_queued_move_only_payloads)
 {
     auto valueFreed = false;
-    TrackingType trackingType(valueFreed);
+    Runtime runtime;
+    TrackingType trackingType(&runtime, valueFreed);
     ScriptFunction function(CallableId{0}, "function", "function.nomad", "");
     function.createCapture(VariableId{0}, "capture", &trackingType);
 
