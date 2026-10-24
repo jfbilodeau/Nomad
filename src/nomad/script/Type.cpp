@@ -380,11 +380,13 @@ std::vector<const Method*> ObjectType::getMethods() const {
 
 ObjectType::ObjectType(
     NomadString name,
+    const ObjectTypeMode mode,
     std::vector<const Type*> typeArguments,
     NomadString documentation
 ):
     Type(std::move(documentation)),
     m_name(std::move(name)),
+    m_mode(mode),
     m_typeArguments(std::move(typeArguments))
 {
     m_typeOpCodes.initResult = op_object_init_r;
@@ -450,7 +452,7 @@ TypeStorage ObjectType::getStorage() const {
 }
 
 bool ObjectType::isOpen() const {
-    return false;
+    return m_mode == ObjectTypeMode::Opened;
 }
 
 PropertyId ObjectType::registerProperty(
@@ -603,7 +605,7 @@ void ObjectType::toString(const RuntimeValue&, NomadString& string) const {
 ///////////////////////////////////////////////////////////////////////////////
 // BaseStringType
 BaseStringType::BaseStringType():
-    ObjectType(STRING_TYPE_NAME)
+    ObjectType(STRING_TYPE_NAME, ObjectTypeMode::Closed)
 {
     m_typeOpCodes.initResult = op_string_init_r;
     m_typeOpCodes.initIntermediate = op_string_init_i;

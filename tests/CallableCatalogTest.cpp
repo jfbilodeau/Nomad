@@ -651,7 +651,9 @@ class ResolutionObject final : public NomadObject {
 };
 
 const ObjectType* registerResolutionType(Runtime& runtime, const NomadString& name) {
-    auto descriptor = std::make_unique<ObjectType>(name, std::vector<const Type*>{}, "A test object.");
+    auto descriptor = std::make_unique<ObjectType>(
+        name, ObjectTypeMode::Closed, std::vector<const Type*>{}, "A test object."
+    );
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
     return type;
@@ -757,7 +759,7 @@ BOOST_AUTO_TEST_CASE(type_owned_constructor_factory_is_released_once)
         class ConstructorOwner final : public ObjectType {
         public:
             ConstructorOwner(int& destructions, bool& alive):
-                ObjectType("LifetimeOwner"),
+                ObjectType("LifetimeOwner", ObjectTypeMode::Closed),
                 m_destructions(destructions),
                 m_alive(alive)
             {
@@ -852,7 +854,7 @@ BOOST_AUTO_TEST_CASE(type_owned_method_callback_is_released_once)
         class MethodOwner final : public ObjectType {
         public:
             MethodOwner(int& destructions, bool& alive):
-                ObjectType("MethodLifetimeOwner"),
+                ObjectType("MethodLifetimeOwner", ObjectTypeMode::Closed),
                 m_destructions(destructions),
                 m_alive(alive)
             {

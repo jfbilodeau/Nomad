@@ -19,7 +19,9 @@ class ConstructedObject final : public NomadObject {
 };
 
 const ObjectType* registerObjectType(Runtime& runtime, const NomadString& name) {
-    auto descriptor = std::make_unique<ObjectType>(name, std::vector<const Type*>{}, "A constructed object.");
+    auto descriptor = std::make_unique<ObjectType>(
+        name, ObjectTypeMode::Closed, std::vector<const Type*>{}, "A constructed object."
+    );
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
     return type;
@@ -46,7 +48,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_resolve_execute_and_reuse_specializat
         "Box", 1,
         [&](const std::vector<const Type*>& arguments) {
             ++specializations;
-            return std::make_unique<ObjectType>("Box<" + arguments[0]->getTypeName() + ">", arguments);
+            return std::make_unique<ObjectType>("Box<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments);
         },
         [&](const Type* type) {
             const auto* objectType = static_cast<const ObjectType*>(type);
@@ -114,7 +116,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_validate_bindings_and_concrete_constr
     BOOST_REQUIRE(runtime.registerParameterizedType(
         "Same", 1,
         [](const std::vector<const Type*>& arguments) {
-            return std::make_unique<ObjectType>("Same<" + arguments[0]->getTypeName() + ">", arguments);
+            return std::make_unique<ObjectType>("Same<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments);
         },
         [&](const Type* type) {
             const auto* objectType = static_cast<const ObjectType*>(type);
@@ -170,7 +172,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_arguments_preserve_execution_mode_eval
     BOOST_REQUIRE(runtime.registerParameterizedType(
         "Pair", 2,
         [](const std::vector<const Type*>& arguments) {
-            return std::make_unique<ObjectType>("Pair<int int>", arguments);
+            return std::make_unique<ObjectType>("Pair<int int>", ObjectTypeMode::Closed, arguments);
         },
         [&](const Type* type) {
             const auto* objectType = static_cast<const ObjectType*>(type);
@@ -212,7 +214,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_require_a_matching_specialized_constr
         BOOST_REQUIRE(runtime.registerParameterizedType(
             "Box", 1,
             [](const std::vector<const Type*>& arguments) {
-                return std::make_unique<ObjectType>("Box<int>", arguments);
+                return std::make_unique<ObjectType>("Box<int>", ObjectTypeMode::Closed, arguments);
             },
             [&](const Type* type) {
                 if (registerConstructor) {
@@ -246,7 +248,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_parse_from_signatures_without_special
         "Pair", 2,
         [&factoryCalls](const std::vector<const Type*>& arguments) {
             ++factoryCalls;
-            return std::make_unique<ObjectType>("Pair", arguments);
+            return std::make_unique<ObjectType>("Pair", ObjectTypeMode::Closed, arguments);
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate(
@@ -288,7 +290,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reports_missing_arguments_and_
     Runtime runtime;
     BOOST_REQUIRE(runtime.registerParameterizedType(
         "Pair", 2, [](const std::vector<const Type*>& arguments) {
-            return std::make_unique<ObjectType>("Pair", arguments);
+            return std::make_unique<ObjectType>("Pair", ObjectTypeMode::Closed, arguments);
         }
     ));
     auto compiler = runtime.createCompiler();
@@ -320,7 +322,9 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reuses_concrete_and_hidden_par
     auto calls = NomadIndex{0};
     BOOST_REQUIRE(runtime.registerParameterizedType(
         "Located", 1, [](const std::vector<const Type*>& arguments) {
-            return std::make_unique<ObjectType>("Located<" + arguments[0]->getTypeName() + ">", arguments);
+            return std::make_unique<ObjectType>(
+                "Located<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments
+            );
         },
         [&](const Type* type) {
             const auto* objectType = static_cast<const ObjectType*>(type);
@@ -383,7 +387,7 @@ BOOST_AUTO_TEST_CASE(constructor_templates_store_generic_and_concrete_parameters
         "Example", 2,
         [&factoryCalls](const std::vector<const Type*>& arguments) {
             ++factoryCalls;
-            return std::make_unique<ObjectType>("Example", arguments);
+            return std::make_unique<ObjectType>("Example", ObjectTypeMode::Closed, arguments);
         }
     ));
     BOOST_TEST(!runtime.getConstructorTemplate("Missing").has_value());
@@ -418,7 +422,7 @@ BOOST_AUTO_TEST_CASE(constructor_templates_reject_invalid_definitions_without_re
     Runtime runtime;
     Runtime other;
     const auto factory = [](const std::vector<const Type*>& arguments) {
-        return std::make_unique<ObjectType>("Example", arguments);
+        return std::make_unique<ObjectType>("Example", ObjectTypeMode::Closed, arguments);
     };
     BOOST_REQUIRE(runtime.registerParameterizedType("Example", 2, factory));
     BOOST_TEST(!runtime.registerConstructorTemplate(
@@ -478,7 +482,7 @@ BOOST_AUTO_TEST_CASE(constructor_template_registration_preserves_explicit_constr
         "Box", 1,
         [](const std::vector<const Type*>& arguments) {
             const auto* elementType = arguments[0];
-            return std::make_unique<ObjectType>("Box<" + elementType->getTypeName() + ">", arguments);
+            return std::make_unique<ObjectType>("Box<" + elementType->getTypeName() + ">", ObjectTypeMode::Closed, arguments);
         },
         [&](const Type* type) {
             const auto* objectType = static_cast<const ObjectType*>(type);
@@ -515,7 +519,7 @@ BOOST_AUTO_TEST_CASE(constructor_inference_binds_static_types_without_creating_s
         "Pair", 2,
         [&factoryCalls](const std::vector<const Type*>& arguments) {
             ++factoryCalls;
-            return std::make_unique<ObjectType>("Pair", arguments);
+            return std::make_unique<ObjectType>("Pair", ObjectTypeMode::Closed, arguments);
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate(
@@ -551,7 +555,7 @@ BOOST_AUTO_TEST_CASE(constructor_inference_supports_reordered_repeated_and_concr
     Runtime runtime;
     BOOST_REQUIRE(runtime.registerParameterizedType(
         "Example", 2, [](const std::vector<const Type*>& arguments) {
-            return std::make_unique<ObjectType>("Example", arguments);
+            return std::make_unique<ObjectType>("Example", ObjectTypeMode::Closed, arguments);
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate(
@@ -584,7 +588,7 @@ BOOST_AUTO_TEST_CASE(constructor_inference_reports_failures_without_partial_bind
     Runtime other;
     BOOST_REQUIRE(runtime.registerParameterizedType(
         "Example", 1, [](const std::vector<const Type*>& arguments) {
-            return std::make_unique<ObjectType>("Example", arguments);
+            return std::make_unique<ObjectType>("Example", ObjectTypeMode::Closed, arguments);
         }
     ));
     const auto unknown = runtime.inferConstructorTypeArguments("Missing", {});
@@ -903,7 +907,7 @@ BOOST_AUTO_TEST_CASE(parameterized_constructor_registration_validates_and_reuses
         registerObjectType(runtime, "Create"), {}, [](std::span<const RuntimeValue>) { return new ConstructedObject; }, ""
     ).isInvalid());
     BOOST_TEST(!runtime.registerParameterizedType("Create", 1, [](const auto&) {
-        return std::make_unique<ObjectType>("Collision");
+        return std::make_unique<ObjectType>("Collision", ObjectTypeMode::Closed);
     }));
     BOOST_TEST(!runtime.getParameterizedConstructorArgumentCount("Missing").has_value());
     BOOST_REQUIRE(runtime.getParameterizedConstructorArgumentCount("Create").has_value());

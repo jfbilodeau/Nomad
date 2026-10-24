@@ -23,6 +23,7 @@ NomadString getKeyValueTypeName(const Type* keyType, const Type* valueType) {
 KeyValueType::KeyValueType(const Type* keyType, const Type* valueType):
     ObjectType(
         getKeyValueTypeName(keyType, valueType),
+        ObjectTypeMode::Closed,
         {keyType, valueType},
         NomadDoc("A pair with read-only key and value properties. Object fields share their referenced objects.")
     )

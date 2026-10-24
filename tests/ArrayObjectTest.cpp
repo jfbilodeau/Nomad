@@ -73,7 +73,7 @@ TrackedArrayElement::~TrackedArrayElement() {
 
 class FailingElementType final : public ObjectType {
 public:
-    FailingElementType(): ObjectType("FailingElement") {}
+    FailingElementType(): ObjectType("FailingElement", ObjectTypeMode::Closed) {}
 
     [[nodiscard]] NomadString getTypeName() const override;
     void toString(const RuntimeValue& value, NomadString& text) const override;

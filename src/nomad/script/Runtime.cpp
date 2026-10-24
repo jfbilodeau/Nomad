@@ -93,7 +93,9 @@ Runtime::Runtime() {
     if (!registerParameterizedType(
         "Iterator", 1,
         [](const std::vector<const Type*>& arguments) {
-            return std::make_unique<ObjectType>("Iterator<" + arguments[0]->getTypeName() + ">", arguments);
+            return std::make_unique<ObjectType>(
+                "Iterator<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments
+            );
         },
         [this](const Type* type) {
             const auto* iteratorType = static_cast<const ObjectType*>(type);
@@ -965,6 +967,36 @@ void Runtime::registerType(std::unique_ptr<Type>&& type) {
     m_types.push_back(std::move(type));
 
     // return toNomadId(m_types.size() - 1);
+}
+
+TypeId Runtime::createObjectType(
+    NomadString name,
+    const ObjectTypeMode mode,
+    NomadString documentation
+) {
+    if (name.empty()) {
+        log::error("Cannot create an object type with an empty name");
+        return TypeId::INVALID;
+    }
+    if (mode != ObjectTypeMode::Opened && mode != ObjectTypeMode::Closed) {
+        log::error("Cannot create object type '" + name + "': invalid type mode");
+        return TypeId::INVALID;
+    }
+    if (getTypeId(name).isValid()) {
+        log::error("Type with name '" + name + "' already registered");
+        return TypeId::INVALID;
+    }
+    if (isHub(name) || isHubVariable(name) || !canRegisterHubMember(name)) {
+        log::error("Cannot create object type '" + name + "': name is reserved by a hub declaration");
+        return TypeId::INVALID;
+    }
+
+    auto type = std::make_unique<ObjectType>(
+        std::move(name), mode, std::vector<const Type*>{}, std::move(documentation)
+    );
+    const auto id = TypeId{toNomadId(m_types.size())};
+    registerType(std::move(type));
+    return id;
 }
 
 TypeId Runtime::getTypeId(const NomadString& typeName) const {

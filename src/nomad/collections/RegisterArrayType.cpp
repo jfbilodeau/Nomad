@@ -241,7 +241,7 @@ void registerArrayType(Runtime* runtime) {
         "Array", 1,
         [runtime](const NomadString& name, const std::vector<const nomad::Type*>& arguments) {
             // One class per specialization (e.g. `Array<int>`); each rank constructor builds a different array type.
-            auto classType = std::make_unique<nomad::ObjectType>(name);
+            auto classType = std::make_unique<nomad::ObjectType>(name, nomad::ObjectTypeMode::Closed);
             const auto* arrayClass = classType.get();
             runtime->registerType(std::move(classType));
             for (const auto* family : {"Array1", "Array2", "Array3"}) {

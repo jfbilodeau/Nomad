@@ -1266,15 +1266,19 @@ void Game::initRuntime() {
 void Game::initObjects() {
     log::info("Initializing objects");
 
-    m_runtime->registerType(std::make_unique<ObjectType>(
-        "Audio", std::vector<const Type*>{},
+    if (m_runtime->createObjectType(
+        "Audio", ObjectTypeMode::Closed,
         NomadDoc("A sound effect that can be played, paused, resumed, stopped, looped, and adjusted independently.")
-    ));
+    ).isInvalid()) {
+        raiseError("Failed to create Audio type");
+    }
 
-    m_runtime->registerType(std::make_unique<ObjectType>(
-        "Font", std::vector<const Type*>{},
+    if (m_runtime->createObjectType(
+        "Font", ObjectTypeMode::Closed,
         NomadDoc("A font at a specific point size for displaying text.")
-    ));
+    ).isInvalid()) {
+        raiseError("Failed to create Font type");
+    }
 }
 
 void Game::initEvents() const {

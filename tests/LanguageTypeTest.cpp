@@ -63,7 +63,7 @@ BOOST_AUTO_TEST_CASE(type_lookup_uses_strong_ids)
     BOOST_TEST(event->parameters.front().typeId.id == integerId.id);
     BOOST_TEST(*runtime.getType(event->parameters.front().typeId) == runtime.getIntegerType());
 
-    runtime.registerType(std::make_unique<ObjectType>("AddedType"));
+    runtime.registerType(std::make_unique<ObjectType>("AddedType", ObjectTypeMode::Closed));
     BOOST_TEST(*runtime.getType(integerId) == runtime.getIntegerType());
     const auto addedId = runtime.getTypeId("AddedType");
     BOOST_TEST(addedId.id != integerId.id);

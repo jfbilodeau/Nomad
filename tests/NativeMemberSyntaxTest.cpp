@@ -45,7 +45,7 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
         "Box", 1,
         [&](const std::vector<const Type*>& arguments) {
             ++specializations;
-            return std::make_unique<ObjectType>("Box<" + arguments[0]->getTypeName() + ">", arguments);
+            return std::make_unique<ObjectType>("Box<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments);
         },
         [&](const Type* type) {
             const auto* objectType = static_cast<const ObjectType*>(type);

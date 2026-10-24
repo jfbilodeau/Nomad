@@ -184,6 +184,11 @@ public:
         const std::vector<const Type*>& argumentTypes
     ) const;
     void registerType(std::unique_ptr<Type>&& type);
+    [[nodiscard]] TypeId createObjectType(
+        NomadString name,
+        ObjectTypeMode mode,
+        NomadString documentation = {}
+    );
     [[nodiscard]] const ObjectType* getIteratorType(const Type* valueType);
     void registerIterableType(
         const Type* sourceType,

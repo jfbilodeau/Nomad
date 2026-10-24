@@ -21,7 +21,7 @@ NomadString getMapTypeName(const Type* keyType, const Type* valueType) {
 } // namespace
 
 MapType::MapType(const Type* keyType, const Type* valueType):
-    ObjectType(getMapTypeName(keyType, valueType), {keyType, valueType})
+    ObjectType(getMapTypeName(keyType, valueType), ObjectTypeMode::Closed, {keyType, valueType})
 {}
 
 void MapType::initValue(RuntimeValue& value) const {

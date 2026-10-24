@@ -38,7 +38,7 @@ CountingObject::~CountingObject() {
 
 class FailingCopyType final : public ObjectType {
 public:
-    FailingCopyType(): ObjectType("FailingCopy") {}
+    FailingCopyType(): ObjectType("FailingCopy", ObjectTypeMode::Closed) {}
 
     NomadString getTypeName() const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
@@ -94,7 +94,7 @@ void FailingCopyType::copyValue(const RuntimeValue& source, RuntimeValue& destin
 BOOST_AUTO_TEST_SUITE(NomadObjectTests)
 
 BOOST_AUTO_TEST_CASE(KeyValueRetainsBothReferencesAndReleasesThemOnDestruction) {
-    ObjectType type("Element");
+    ObjectType type("Element", ObjectTypeMode::Closed);
     NomadIndex destroyed = 0;
     RuntimeValue value;
     value.setObjectValue(new CountingObject(destroyed));
@@ -111,7 +111,7 @@ BOOST_AUTO_TEST_CASE(KeyValueRetainsBothReferencesAndReleasesThemOnDestruction) 
 }
 
 BOOST_AUTO_TEST_CASE(KeyValueReleasesPartialCopiesWhenEitherArgumentFails) {
-    ObjectType type("Element");
+    ObjectType type("Element", ObjectTypeMode::Closed);
     FailingCopyType failingType;
     NomadIndex destroyed = 0;
     RuntimeValue key;
@@ -133,7 +133,7 @@ BOOST_AUTO_TEST_CASE(KeyValueReleasesPartiallyInitializedDefaults) {
     class InitializingType final : public ObjectType {
     public:
         explicit InitializingType(NomadIndex& destroyed):
-            ObjectType("Initializing"),
+            ObjectType("Initializing", ObjectTypeMode::Closed),
             m_destroyed(destroyed)
         {}
         void initValue(RuntimeValue& value) const override {
@@ -268,7 +268,7 @@ BOOST_AUTO_TEST_CASE(ListReleasesPartialCopyWhenAppendFails) {
 }
 
 BOOST_AUTO_TEST_CASE(ListRetainsAndReleasesStoredObjects) {
-    ObjectType elementType("Element");
+    ObjectType elementType("Element", ObjectTypeMode::Closed);
     NomadIndex destroyed = 0;
     auto* list = new ListObject(&elementType);
     BOOST_TEST(list->getElementType() == &elementType);
@@ -287,7 +287,7 @@ BOOST_AUTO_TEST_CASE(ListRetainsAndReleasesStoredObjects) {
 }
 
 BOOST_AUTO_TEST_CASE(ListInsertionCopiesAliasedValuesBeforeReallocation) {
-    ObjectType elementType("Element");
+    ObjectType elementType("Element", ObjectTypeMode::Closed);
     NomadIndex destroyed = 0;
     ListObject list(&elementType);
     RuntimeValue value;
@@ -325,7 +325,7 @@ BOOST_AUTO_TEST_CASE(ListInsertionCopiesAliasedValuesBeforeReallocation) {
 BOOST_AUTO_TEST_CASE(ListFailedInsertionPreservesExistingElements) {
     class ConditionalCopyType final : public ObjectType {
     public:
-        ConditionalCopyType(): ObjectType("ConditionalCopy") {}
+        ConditionalCopyType(): ObjectType("ConditionalCopy", ObjectTypeMode::Closed) {}
 
         NomadString getTypeName() const override { return "ConditionalCopy"; }
         void toString(const RuntimeValue&, NomadString& string) const override { string = getTypeName(); }
@@ -355,7 +355,7 @@ BOOST_AUTO_TEST_CASE(ListFailedInsertionPreservesExistingElements) {
 }
 
 BOOST_AUTO_TEST_CASE(ObjectDescriptorsInitializeNullReferences) {
-    ObjectType type("Example");
+    ObjectType type("Example", ObjectTypeMode::Closed);
     RuntimeValue value;
     type.initValue(value);
     BOOST_TEST(value.getObjectValue() == nullptr);
@@ -364,7 +364,7 @@ BOOST_AUTO_TEST_CASE(ObjectDescriptorsInitializeNullReferences) {
 
 BOOST_AUTO_TEST_CASE(ObjectTypeSharesAndReleasesReferences) {
     IntegerType elementType;
-    ObjectType type("Example");
+    ObjectType type("Example", ObjectTypeMode::Closed);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue source;
     source.setObjectValue(new ListObject(&elementType));

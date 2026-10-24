@@ -6,7 +6,7 @@
 namespace nomad {
 
 ReadOnlyMapType::ReadOnlyMapType(const Type* keyType, const Type* valueType):
-    ObjectType("ReadOnly" + MapType(keyType, valueType).getTypeName(), {keyType, valueType})
+    ObjectType("ReadOnly" + MapType(keyType, valueType).getTypeName(), ObjectTypeMode::Closed, {keyType, valueType})
 {}
 
 void ReadOnlyMapType::initValue(RuntimeValue& value) const {

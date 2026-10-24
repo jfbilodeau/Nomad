@@ -20,6 +20,7 @@ NomadString getListTypeName(const Type* elementType) {
 ListType::ListType(const Type* elementType):
     ObjectType(
         getListTypeName(elementType),
+        ObjectTypeMode::Closed,
         {elementType}
     )
 {}

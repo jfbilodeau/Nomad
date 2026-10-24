@@ -6,6 +6,7 @@
 #include "nomad/game/EntityVariableContext.hpp"
 #include "nomad/game/Scene.hpp"
 #include "nomad/script/Documentation.hpp"
+#include <nomad/script/Hub.hpp>
 #include "nomad/script/Runtime.hpp"
 #include "nomad/script/Type.hpp"
 #include "nomad/script/Variable.hpp"
@@ -98,6 +99,115 @@ BOOST_AUTO_TEST_CASE(runtime_source_lookup_ignores_unknown_ranges_and_prefers_in
 
     inner->setSourceLineRange(1, 4);
     BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 2) == inner);
+}
+
+BOOST_AUTO_TEST_CASE(runtime_creates_object_types_with_explicit_modes_and_owned_documentation) {
+    Runtime runtime;
+    NomadString name = "OpenedObject";
+    NomadString documentation = "An opened object.";
+    const auto openedId = runtime.createObjectType(name, ObjectTypeMode::Opened, documentation);
+    const auto closedId = runtime.createObjectType("ClosedObject", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(openedId.isValid());
+    BOOST_REQUIRE(closedId.isValid());
+    BOOST_TEST(openedId != closedId);
+    const auto openedType = runtime.getType(openedId);
+    const auto closedType = runtime.getType(closedId);
+    BOOST_REQUIRE(openedType.has_value());
+    BOOST_REQUIRE(closedType.has_value());
+    const auto* opened = static_cast<const ObjectType*>(*openedType);
+    const auto* closed = static_cast<const ObjectType*>(*closedType);
+    name = "Changed";
+    documentation.clear();
+    BOOST_TEST(opened->getTypeName() == "OpenedObject");
+    BOOST_TEST(opened->getDocumentation() == "An opened object.");
+    BOOST_TEST(opened->isOpen());
+    BOOST_TEST(!closed->isOpen());
+    BOOST_TEST(closed->getDocumentation().empty());
+    BOOST_TEST(opened->getTypeArguments().empty());
+    BOOST_TEST((opened->getStorage() == TypeStorage::Object));
+    BOOST_TEST(runtime.getTypeId("OpenedObject") == openedId);
+    BOOST_TEST(runtime.getTypeByName("ClosedObject") == closed);
+    BOOST_TEST(opened->toString(RuntimeValue{}) == "OpenedObject");
+
+    for (auto index = 0; index < 64; ++index) {
+        BOOST_REQUIRE(runtime.createObjectType("AdditionalObject" + std::to_string(index), ObjectTypeMode::Closed).isValid());
+    }
+    BOOST_TEST(runtime.getType(openedId).value() == opened);
+    BOOST_TEST(runtime.getType(closedId).value() == closed);
+    BOOST_TEST(runtime.getTypeId("OpenedObject") == openedId);
+    BOOST_TEST(opened->isOpen());
+}
+
+BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_and_duplicate_object_creation_without_replacing_types) {
+    Runtime runtime;
+    const auto id = runtime.createObjectType("Object", ObjectTypeMode::Opened, "Original documentation.");
+    const auto enumId = runtime.createEnum("State", {{"Ready", 1}});
+    BOOST_REQUIRE(id.isValid());
+    BOOST_REQUIRE(enumId.isValid());
+    const auto* original = static_cast<const ObjectType*>(runtime.getType(id).value());
+    std::vector<const Type*> originalTypes;
+    runtime.getTypes(originalTypes);
+
+    BOOST_TEST(runtime.createObjectType("", ObjectTypeMode::Closed).isInvalid());
+    BOOST_TEST(runtime.createObjectType("InvalidMode", static_cast<ObjectTypeMode>(0)).isInvalid());
+    BOOST_TEST(runtime.createObjectType("InvalidMode", static_cast<ObjectTypeMode>(99)).isInvalid());
+    BOOST_TEST(runtime.createObjectType("int", ObjectTypeMode::Closed).isInvalid());
+    BOOST_TEST(runtime.createObjectType("State", ObjectTypeMode::Opened).isInvalid());
+    BOOST_TEST(runtime.createObjectType("Object", ObjectTypeMode::Opened, "Original documentation.").isInvalid());
+    BOOST_TEST(runtime.createObjectType("Object", ObjectTypeMode::Closed, "Replacement documentation.").isInvalid());
+    BOOST_TEST(runtime.createEnum("Object", {{"Ready", 1}}).isInvalid());
+
+    std::vector<const Type*> typesAfterRejection;
+    runtime.getTypes(typesAfterRejection);
+    BOOST_TEST(typesAfterRejection == originalTypes, boost::test_tools::per_element());
+    BOOST_TEST(runtime.getTypeId("InvalidMode").isInvalid());
+    BOOST_TEST(runtime.getTypeId("Object") == id);
+    BOOST_TEST(runtime.getTypeId("State") == enumId);
+    BOOST_TEST(runtime.getType(id).value() == original);
+    BOOST_TEST(original->getDocumentation() == "Original documentation.");
+    BOOST_TEST(original->isOpen());
+    BOOST_TEST(runtime.getConstantId("Object.Ready").isInvalid());
+}
+
+BOOST_AUTO_TEST_CASE(runtime_creates_object_hub_members_and_rejects_conflicting_names) {
+    Runtime runtime;
+    const auto hubId = runtime.registerHub("example");
+    BOOST_REQUIRE(hubId.isValid());
+    const auto variableId = runtime.registerHubVariable("example.current");
+    const auto constantId = runtime.registerConstant(
+        "example.answer", RuntimeValue{NomadInteger{42}}, runtime.getIntegerType()
+    );
+    const auto functionId = runtime.registerNativeFunction(
+        "example.read", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    );
+    BOOST_REQUIRE(variableId.isValid());
+    BOOST_REQUIRE(constantId.isValid());
+    BOOST_REQUIRE(functionId.isValid());
+    const auto id = runtime.createObjectType("example.Object", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(id.isValid());
+    const auto* type = runtime.getType(id).value();
+    const auto* hub = runtime.getHub(hubId);
+    const auto* member = hub->getMember("Object");
+    BOOST_REQUIRE(member != nullptr);
+    const auto* memberType = std::get_if<const Type*>(member);
+    BOOST_REQUIRE(memberType != nullptr);
+    BOOST_TEST(*memberType == type);
+    std::vector<const Type*> originalTypes;
+    runtime.getTypes(originalTypes);
+
+    for (const auto* name : {"example", "example.current", "example.answer", "example.read"}) {
+        BOOST_TEST_CONTEXT(name) {
+            BOOST_TEST(runtime.createObjectType(name, ObjectTypeMode::Opened).isInvalid());
+            BOOST_TEST(runtime.getTypeId(name).isInvalid());
+        }
+    }
+    std::vector<const Type*> typesAfterRejection;
+    runtime.getTypes(typesAfterRejection);
+    BOOST_TEST(typesAfterRejection == originalTypes, boost::test_tools::per_element());
+    BOOST_TEST(runtime.getHubId("example") == hubId);
+    BOOST_TEST(runtime.isHubVariable("example.current"));
+    BOOST_TEST(runtime.getConstantId("example.answer") == constantId);
+    BOOST_TEST(runtime.getCallableId("example.read") == functionId);
 }
 
 BOOST_AUTO_TEST_CASE(runtime_creates_strongly_typed_enums_with_explicit_values)

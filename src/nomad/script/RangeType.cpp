@@ -7,7 +7,7 @@
 namespace nomad {
 
 RangeType::RangeType():
-    ObjectType("Range", {}, "An immutable integer sequence with an exclusive stop.")
+    ObjectType("Range", ObjectTypeMode::Closed, {}, "An immutable integer sequence with an exclusive stop.")
 {}
 
 void RangeType::initValue(RuntimeValue& value) const {

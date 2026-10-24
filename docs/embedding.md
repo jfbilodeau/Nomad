@@ -83,6 +83,25 @@ Streaming an ID prints its type and numeric value, for example `CallableId{42}`
 or `CallableId{-1}`.
 
 
+### Object type creation
+
+`Runtime::createObjectType(name, mode, documentation = {})` creates an object
+type and returns its `TypeId`. The mode is required:
+`TypeMode::Opened` permits external script member declarations, while
+`TypeMode::Closed` prevents them. Neither mode makes existing properties
+immutable or prevents the type's own declarations. Native and script objects
+use the same `ObjectType` descriptor; `isOpen()` reports its mode.
+
+The runtime owns the descriptor and its name and documentation. Use
+`getType(id)` to retrieve a borrowed descriptor. Empty names, invalid modes,
+already-registered type names, and conflicting hub declarations are logged and
+return `TypeId::INVALID`. Duplicate creation is rejected even when the mode
+and documentation are identical, without replacing the existing type.
+
+Type creation does not register constructors or finalize a script field layout.
+Specialized native descriptors continue to use their own lifecycle behavior
+and explicitly supply a mode to the `ObjectType` base constructor.
+
 ### Enum creation
 
 `Runtime::createEnum(name, values, documentation = {})` creates an enum and
@@ -231,7 +250,7 @@ the corresponding source-specific registration APIs.
 
 ### Object type property metadata
 
-`ScriptObjectType` describes a script-defined object type. `isOpen()` reports
+`ObjectType` describes both native and script-defined object types. `isOpen()` reports
 whether external script declarations may extend it. Closed types are not immutable.
 
 Register the owner type with the runtime before declaring its properties.
@@ -715,9 +734,12 @@ type, not its result type.
 Scripts invoke constructors with `new` and the type's name:
 
 ```cpp
-auto descriptor = std::make_unique<nomad::ObjectType>("Example");
-const auto* type = descriptor.get();
-runtime.registerType(std::move(descriptor));
+const auto typeId = runtime.createObjectType("Example", nomad::TypeMode::Closed);
+const auto registeredType = runtime.getType(typeId);
+if (!registeredType) {
+    throw nomad::NomadException("Failed to create Example type");
+}
+const auto* type = static_cast<const nomad::ObjectType*>(*registeredType);
 const auto constructorId = runtime.registerNativeConstructor(
     type,
     {nomad::defParameter("size", runtime.getIntegerType(), "")},

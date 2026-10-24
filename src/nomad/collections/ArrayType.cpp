@@ -28,7 +28,9 @@ ArrayType::ArrayType(
     const bool readOnly
 ):
     ObjectType(
-        (readOnly ? "ReadOnly" : "") + getArrayTypeName(elementType, dimensionCount), {elementType},
+        (readOnly ? "ReadOnly" : "") + getArrayTypeName(elementType, dimensionCount),
+        ObjectTypeMode::Closed,
+        {elementType},
         readOnly ? "A read-only fixed-size array." :
             "A fixed-size array. Explicit construction requires one positive int size per dimension."
     ),

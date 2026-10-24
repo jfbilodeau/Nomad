@@ -1,9 +1,8 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/script/ScriptObjectType.hpp>
-
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/Type.hpp>
 
 #include <boost/test/unit_test.hpp>
 
@@ -15,23 +14,29 @@ static_assert(!std::is_convertible_v<NomadId, PropertyId>);
 static_assert(!std::is_convertible_v<PropertyId, NomadId>);
 static_assert(!std::is_convertible_v<PropertyId, CallableId>);
 static_assert(!std::is_copy_constructible_v<Property>);
+static_assert(!std::is_constructible_v<ObjectType, NomadString>);
+static_assert(!std::is_constructible_v<ObjectType, NomadString, bool>);
+static_assert(std::is_constructible_v<ObjectType, NomadString, ObjectTypeMode>);
+static_assert(static_cast<int>(ObjectTypeMode::Opened) == 1);
+static_assert(static_cast<int>(ObjectTypeMode::Closed) == 2);
 
 namespace {
 
-const ScriptObjectType* registerScriptType(Runtime& runtime, const NomadString& name, const bool open = true) {
-    auto type = std::make_unique<ScriptObjectType>(name, open);
-    const auto* result = type.get();
-    runtime.registerType(std::move(type));
-    return result;
+const ObjectType* createTestType(Runtime& runtime, const NomadString& name, const ObjectTypeMode mode) {
+    const auto id = runtime.createObjectType(name, mode);
+    BOOST_REQUIRE(id.isValid());
+    const auto type = runtime.getType(id);
+    BOOST_REQUIRE(type.has_value());
+    return static_cast<const ObjectType*>(*type);
 }
 
 } // namespace
 
-BOOST_AUTO_TEST_SUITE(script_object_type)
+BOOST_AUTO_TEST_SUITE(object_type)
 
 BOOST_AUTO_TEST_CASE(open_type_registers_and_reuses_property_ids) {
     Runtime runtime;
-    const auto* type = registerScriptType(runtime, "Point");
+    const auto* type = createTestType(runtime, "Point", ObjectTypeMode::Opened);
     BOOST_TEST(type->isOpen());
     const auto xId = runtime.registerProperty(type, "x", runtime.getFloatType());
     const auto yId = runtime.registerProperty(type, "y", runtime.getFloatType());
@@ -52,7 +57,7 @@ BOOST_AUTO_TEST_CASE(open_type_registers_and_reuses_property_ids) {
 
 BOOST_AUTO_TEST_CASE(closed_type_can_register_declared_properties) {
     Runtime runtime;
-    const auto* type = registerScriptType(runtime, "ClosedPoint", false);
+    const auto* type = createTestType(runtime, "ClosedPoint", ObjectTypeMode::Closed);
     BOOST_TEST(!type->isOpen());
     BOOST_TEST(runtime.registerProperty(type, "x", runtime.getFloatType()).isValid());
     BOOST_TEST(type->getPropertyCount() == 1u);
@@ -60,7 +65,7 @@ BOOST_AUTO_TEST_CASE(closed_type_can_register_declared_properties) {
 
 BOOST_AUTO_TEST_CASE(property_type_cannot_be_redefined) {
     Runtime runtime;
-    const auto* type = registerScriptType(runtime, "Point");
+    const auto* type = createTestType(runtime, "Point", ObjectTypeMode::Opened);
     BOOST_REQUIRE(runtime.registerProperty(type, "x", runtime.getFloatType()).isValid());
     BOOST_TEST(runtime.registerProperty(type, "x", runtime.getIntegerType()).isInvalid());
     BOOST_TEST(type->getPropertyCount() == 1u);
@@ -69,7 +74,7 @@ BOOST_AUTO_TEST_CASE(property_type_cannot_be_redefined) {
 
 BOOST_AUTO_TEST_CASE(null_property_type_is_rejected) {
     Runtime runtime;
-    const auto* type = registerScriptType(runtime, "Point");
+    const auto* type = createTestType(runtime, "Point", ObjectTypeMode::Opened);
     BOOST_TEST(runtime.registerProperty(type, "x", nullptr).isInvalid());
     BOOST_TEST(type->getPropertyCount() == 0u);
     BOOST_TEST(type->getProperty("x") == nullptr);
@@ -77,8 +82,8 @@ BOOST_AUTO_TEST_CASE(null_property_type_is_rejected) {
 
 BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_catalog) {
     Runtime runtime;
-    const auto* first = registerScriptType(runtime, "First");
-    const auto* second = registerScriptType(runtime, "Second");
+    const auto* first = createTestType(runtime, "First", ObjectTypeMode::Opened);
+    const auto* second = createTestType(runtime, "Second", ObjectTypeMode::Opened);
     const auto scriptId = runtime.registerProperty(first, "value", runtime.getFloatType());
     const auto nativeId = runtime.registerNativeProperty(
         second, "value", runtime.getIntegerType(),
@@ -121,9 +126,9 @@ BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_cata
 BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_member_collisions) {
     Runtime runtime;
     Runtime other;
-    ScriptObjectType unregistered("Unregistered");
-    const auto* type = registerScriptType(runtime, "Point");
-    const auto* foreign = registerScriptType(other, "Point");
+    ObjectType unregistered("Unregistered", ObjectTypeMode::Opened);
+    const auto* type = createTestType(runtime, "Point", ObjectTypeMode::Opened);
+    const auto* foreign = createTestType(other, "Point", ObjectTypeMode::Opened);
     BOOST_TEST(runtime.registerProperty(nullptr, "value", runtime.getIntegerType()).isInvalid());
     BOOST_TEST(runtime.registerProperty(&unregistered, "value", runtime.getIntegerType()).isInvalid());
     BOOST_TEST(runtime.registerProperty(foreign, "value", runtime.getIntegerType()).isInvalid());
@@ -154,7 +159,7 @@ BOOST_AUTO_TEST_CASE(type_owned_native_property_callbacks_are_destroyed_once) {
     std::weak_ptr<int> observer;
     {
         Runtime runtime;
-        const auto* type = registerScriptType(runtime, "Owner");
+        const auto* type = createTestType(runtime, "Owner", ObjectTypeMode::Opened);
         auto probe = std::shared_ptr<int>(new int{42}, [&destructions](int* value) {
             ++destructions;
             delete value;
@@ -171,14 +176,9 @@ BOOST_AUTO_TEST_CASE(type_owned_native_property_callbacks_are_destroyed_once) {
     BOOST_TEST(destructions == 1);
 }
 
-BOOST_AUTO_TEST_CASE(native_object_types_remain_closed_by_default) {
-    ObjectType nativeType("NativeType");
-    class OpenNativeType final : public ObjectType {
-    public:
-        OpenNativeType(): ObjectType("OpenNativeType") {}
-        bool isOpen() const override { return true; }
-    };
-    OpenNativeType openNativeType;
+BOOST_AUTO_TEST_CASE(native_object_types_use_explicit_modes_without_special_subclasses) {
+    ObjectType nativeType("NativeType", ObjectTypeMode::Closed);
+    ObjectType openNativeType("OpenNativeType", ObjectTypeMode::Opened);
 
     BOOST_TEST(!nativeType.isOpen());
     BOOST_TEST(openNativeType.isOpen());

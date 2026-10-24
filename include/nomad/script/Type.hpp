@@ -37,6 +37,11 @@ enum class TypeStorage {
     Struct,
 };
 
+enum class ObjectTypeMode {
+    Opened = 1,
+    Closed,
+};
+
 // Opcodes loading a value into the `r` register, the `i` register or onto the stack.
 struct TargetOpCodes {
     InstructionFn result = nullptr;
@@ -245,6 +250,7 @@ class ObjectType : public Type {
 public:
     explicit ObjectType(
         NomadString name,
+        ObjectTypeMode mode,
         std::vector<const Type*> typeArguments = {},
         NomadString documentation = {}
     );
@@ -270,7 +276,7 @@ public:
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
 
-    [[nodiscard]] virtual bool isOpen() const;
+    [[nodiscard]] bool isOpen() const;
     [[nodiscard]] PropertyId registerProperty(
         Runtime& runtime,
         std::unique_ptr<Property> property
@@ -294,6 +300,7 @@ public:
 
 private:
     NomadString m_name;
+    ObjectTypeMode m_mode;
     std::vector<const Type*> m_typeArguments;
     std::vector<std::unique_ptr<Property>> m_properties;
     std::vector<std::unique_ptr<Constructor>> m_constructors;

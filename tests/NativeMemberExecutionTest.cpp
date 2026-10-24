@@ -22,7 +22,7 @@ public:
 };
 
 const ObjectType* registerTestObject(Runtime& runtime) {
-    auto descriptor = std::make_unique<ObjectType>("TestObject");
+    auto descriptor = std::make_unique<ObjectType>("TestObject", ObjectTypeMode::Closed);
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
     runtime.registerNativeConstructor(
@@ -191,7 +191,7 @@ BOOST_AUTO_TEST_CASE(typed_receiver_requires_an_active_method) {
 
 BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) {
     Runtime runtime;
-    auto descriptor = std::make_unique<ObjectType>("TestObject");
+    auto descriptor = std::make_unique<ObjectType>("TestObject", ObjectTypeMode::Closed);
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
     auto* instance = new TestObject;
@@ -220,7 +220,7 @@ BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) 
 
 BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_catalog) {
     Runtime runtime;
-    auto descriptor = std::make_unique<ObjectType>("CatalogObject");
+    auto descriptor = std::make_unique<ObjectType>("CatalogObject", ObjectTypeMode::Closed);
     const auto* type = descriptor.get();
     runtime.registerType(std::move(descriptor));
     const auto first = runtime.registerNativeFunction(
