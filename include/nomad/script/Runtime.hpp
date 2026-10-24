@@ -232,6 +232,12 @@ public:
 
     // `objectType` is the class being constructed and the constructor is invoked by its name. `createdType` is the
     // type of the object that gets created; it differs from `objectType` when one class builds several kinds of object.
+    [[nodiscard]] CallableId addConstructor(TypeId id, NativeConstructorDefinition definition);
+    [[nodiscard]] CallableId addConstructor(
+        TypeId id,
+        TypeId createdTypeId,
+        NativeConstructorDefinition definition
+    );
     CallableId registerNativeConstructor(
         const ObjectType* objectType,
         const std::vector<Parameter>& parameters,

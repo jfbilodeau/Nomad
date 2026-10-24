@@ -52,10 +52,10 @@ const ParameterDefinition distance{
 ```
 
 These input structures do not register anything when constructed.
-`addProperty(TypeId, NativePropertyDefinition)` and
-`addMethod(TypeId, NativeMethodDefinition)` register native properties and methods
+`addProperty(TypeId, NativePropertyDefinition)`,
+`addMethod(TypeId, NativeMethodDefinition)`, and
+`addConstructor(TypeId, NativeConstructorDefinition)` register native members
 using their creation inputs. The existing
-`registerNativeConstructor`,
 `registerNativeIndexer`, and `registerIterableType` operations retain their
 current argument forms; they do not yet accept the new input structures.
 Their metadata structures are now named `NativePropertyInfo`,
@@ -816,7 +816,7 @@ selects `Pair<string int>`. Argument expressions can include variables and neste
 inferred constructors. Deduction does not execute argument expressions.
 The selected specialization is reused through the normal type registry, and its
 concrete constructor must still match the arguments. Hosts register that
-constructor with `registerNativeConstructor`, usually in the type-family
+constructor with `addConstructor`, usually in the type-family
 initializer. Compiled scripts and the interpreter both support inferred
 construction through the existing native constructor execution paths.
 
@@ -830,8 +830,10 @@ provide other default values and formatting.
 Implement it when defining a type descriptor, and release initialized values
 through `freeValue` when they are no longer needed.
 
-Register a constructor through `Runtime::registerNativeConstructor` with the type
-it constructs, its parameters, and a factory. `ObjectType::getConstructors()`
+Register a constructor through `Runtime::addConstructor(typeId, definition)`.
+`NativeConstructorDefinition` supplies parameter definitions, a factory, and
+documentation. By default, the constructor creates its declaring type.
+`ObjectType::getConstructors()`
 lists that type's registered constructors as borrowed `const Constructor*`
 pointers, in registration order. These pointers remain valid until the runtime
 is destroyed. A constructor returning another type is listed under its declaring
@@ -845,15 +847,13 @@ const auto registeredType = runtime.getType(typeId);
 if (!registeredType) {
     throw nomad::NomadException("Failed to create Example type");
 }
-const auto* type = static_cast<const nomad::ObjectType*>(*registeredType);
-const auto constructorId = runtime.registerNativeConstructor(
-    type,
-    {nomad::defParameter("size", runtime.getIntegerType(), "")},
-    [](std::span<const nomad::RuntimeValue> arguments) {
+const auto constructorId = runtime.addConstructor(typeId, {
+    .parameters = {{runtime.getIntegerType()->getId(), "size", ""}},
+    .factory = [](std::span<const nomad::RuntimeValue> arguments) {
         return new ExampleObject(arguments[0].getIntegerValue());
     },
-    ""
-);
+    .documentation = ""
+});
 if (constructorId.isInvalid()) {
     throw nomad::NomadException("Failed to register Example constructor");
 }
@@ -865,10 +865,17 @@ Constructors of one type may differ in parameter count or types. Duplicate param
 signatures are rejected, even if their parameter names differ. Use an empty parameter
 list for a parameterless constructor.
 
-When a class creates a different kind of object, pass the created type after the
-parameters: `registerNativeConstructor(type, parameters, createdType, factory, doc)`.
+When a class creates a different kind of object, use
+`addConstructor(typeId, createdTypeId, definition)`.
 Different overloads of one class may then create different types. The created type must be a public
 object type.
+
+All IDs are local to the receiving runtime. Invalid or non-object owner/result IDs,
+invalid parameter IDs, and missing factories are rejected before a constructor is
+published. Definitions are owned inputs; modifying one after registration does not
+change the registered constructor. `addConstructor` returns its `CallableId`.
+The pointer-based `registerNativeConstructor` overloads remain available and share
+the same validation and duplicate-signature rules.
 
 Constructor parameters follow the same conventions as native function
 parameters, including `$file`, `$function`, and `$line`.

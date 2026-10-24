@@ -1543,6 +1543,44 @@ std::optional<MemberSignature> Runtime::getMemberSignature(const NomadString& na
     return MemberSignature{type, {}};
 }
 
+CallableId Runtime::addConstructor(const TypeId id, NativeConstructorDefinition definition) {
+    return addConstructor(id, id, std::move(definition));
+}
+
+CallableId Runtime::addConstructor(
+    const TypeId id,
+    const TypeId createdTypeId,
+    NativeConstructorDefinition definition
+) {
+    const auto type = getType(id);
+    const auto* objectType = type.has_value() ? (*type)->asObjectType() : nullptr;
+    if (objectType == nullptr) {
+        log::error("Cannot register constructor: owner must identify an object type");
+        return CallableId::INVALID;
+    }
+    const auto resultType = getType(createdTypeId);
+    const auto* createdType = resultType.has_value() ? (*resultType)->asObjectType() : nullptr;
+    if (createdType == nullptr) {
+        log::error("Cannot register constructor: created type must identify an object type");
+        return CallableId::INVALID;
+    }
+    std::vector<Parameter> parameters;
+    parameters.reserve(definition.parameters.size());
+    for (const auto& parameterDefinition : definition.parameters) {
+        const auto parameterType = getType(parameterDefinition.typeId);
+        if (!parameterType.has_value()) {
+            log::error("Cannot register constructor: invalid parameter type ID");
+            return CallableId::INVALID;
+        }
+        parameters.push_back(defParameter(
+            parameterDefinition.name, *parameterType, parameterDefinition.documentation
+        ));
+    }
+    return registerNativeConstructor(
+        objectType, parameters, createdType, std::move(definition.factory), definition.documentation
+    );
+}
+
 CallableId Runtime::registerNativeConstructor(
     const ObjectType* objectType,
     const std::vector<Parameter>& parameters,
