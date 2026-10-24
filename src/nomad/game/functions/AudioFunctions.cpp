@@ -203,89 +203,85 @@ void Game::initAudioFunctions() {
         raiseError("Failed to register Audio properties");
     }
 
-    m_runtime->registerNativeMethod(
-        audioType,
-        "play",
-        [](VirtualMachine* virtualMachine) {
+    const auto playId = m_runtime->addMethod(audioTypeId, {
+        .name = "play",
+        .parameters = {},
+        .returnTypeId = m_runtime->getTypeId("void"),
+        .function = [](VirtualMachine* virtualMachine) {
             executeAudioAction(virtualMachine, [&] {
                 getAudioObject(virtualMachine)->playOnce();
             });
         },
-        {},
-        m_runtime->getVoidType(),
-        NomadDoc("Plays the sound effect once from the beginning.")
-    );
+        .documentation = NomadDoc("Plays the sound effect once from the beginning.")
+    });
 
-    m_runtime->registerNativeMethod(
-        audioType,
-        "playLoop",
-        [](VirtualMachine* virtualMachine) {
+    const auto playLoopId = m_runtime->addMethod(audioTypeId, {
+        .name = "playLoop",
+        .parameters = {},
+        .returnTypeId = m_runtime->getTypeId("void"),
+        .function = [](VirtualMachine* virtualMachine) {
             executeAudioAction(virtualMachine, [&] {
                 getAudioObject(virtualMachine)->playLoop();
             });
         },
-        {},
-        m_runtime->getVoidType(),
-        NomadDoc("Plays the sound effect repeatedly.")
-    );
+        .documentation = NomadDoc("Plays the sound effect repeatedly.")
+    });
 
-    m_runtime->registerNativeMethod(
-        audioType,
-        "playOnceThen",
-        [this](VirtualMachine* virtualMachine) {
+    const auto playOnceThenId = m_runtime->addMethod(audioTypeId, {
+        .name = "playOnceThen",
+        .parameters = {{
+            m_runtime->getTypeId(m_runtime->getCallbackType({}, m_runtime->getVoidType())->getTypeName()),
+            "callback",
+            NomadParamDoc("Function to execute after the sound effect finishes.")
+        }},
+        .returnTypeId = m_runtime->getTypeId("void"),
+        .function = [this](VirtualMachine* virtualMachine) {
             executeAudioAction(virtualMachine, [&] {
                 getAudioObject(virtualMachine)->playOnceThen(createCompletionCallback(this, virtualMachine, 0));
             });
         },
-        {
-            defParameter(
-                "callback",
-                m_runtime->getCallbackType({}, m_runtime->getVoidType()),
-                NomadParamDoc("Function to execute after the sound effect finishes.")
-            )
-        },
-        m_runtime->getVoidType(),
-        NomadDoc("Plays the sound effect once and invokes a callback when it finishes.")
-    );
+        .documentation = NomadDoc("Plays the sound effect once and invokes a callback when it finishes.")
+    });
 
-    m_runtime->registerNativeMethod(
-        audioType,
-        "pause",
-        [](VirtualMachine* virtualMachine) {
+    const auto pauseId = m_runtime->addMethod(audioTypeId, {
+        .name = "pause",
+        .parameters = {},
+        .returnTypeId = m_runtime->getTypeId("void"),
+        .function = [](VirtualMachine* virtualMachine) {
             executeAudioAction(virtualMachine, [&] {
                 getAudioObject(virtualMachine)->pause();
             });
         },
-        {},
-        m_runtime->getVoidType(),
-        NomadDoc("Pauses the sound effect.")
-    );
+        .documentation = NomadDoc("Pauses the sound effect.")
+    });
 
-    m_runtime->registerNativeMethod(
-        audioType,
-        "resume",
-        [](VirtualMachine* virtualMachine) {
+    const auto resumeId = m_runtime->addMethod(audioTypeId, {
+        .name = "resume",
+        .parameters = {},
+        .returnTypeId = m_runtime->getTypeId("void"),
+        .function = [](VirtualMachine* virtualMachine) {
             executeAudioAction(virtualMachine, [&] {
                 getAudioObject(virtualMachine)->resume();
             });
         },
-        {},
-        m_runtime->getVoidType(),
-        NomadDoc("Resumes the paused sound effect.")
-    );
+        .documentation = NomadDoc("Resumes the paused sound effect.")
+    });
 
-    m_runtime->registerNativeMethod(
-        audioType,
-        "stop",
-        [](VirtualMachine* virtualMachine) {
+    const auto stopId = m_runtime->addMethod(audioTypeId, {
+        .name = "stop",
+        .parameters = {},
+        .returnTypeId = m_runtime->getTypeId("void"),
+        .function = [](VirtualMachine* virtualMachine) {
             executeAudioAction(virtualMachine, [&] {
                 getAudioObject(virtualMachine)->stop();
             });
         },
-        {},
-        m_runtime->getVoidType(),
-        NomadDoc("Stops the sound effect.")
-    );
+        .documentation = NomadDoc("Stops the sound effect.")
+    });
+    if (playId.isInvalid() || playLoopId.isInvalid() || playOnceThenId.isInvalid() ||
+        pauseId.isInvalid() || resumeId.isInvalid() || stopId.isInvalid()) {
+        raiseError("Failed to register Audio methods");
+    }
 
     m_runtime->registerNativeFunction(
         "game.music.play",
