@@ -27,19 +27,18 @@ void registerKeyValueType(Runtime* runtime) {
             const auto* objectType = static_cast<const KeyValueType*>(type);
             const auto* keyType = objectType->getTypeArguments()[0];
             const auto* valueType = objectType->getTypeArguments()[1];
-            const auto constructorId = runtime->registerNativeConstructor(
-                objectType,
-                {
-                    defParameter("key", keyType, NomadDoc("The key to store.")),
-                    defParameter("value", valueType, NomadDoc("The value to store."))
+            const auto constructorId = runtime->addConstructor(id, {
+                .parameters = {
+                    {keyType->getId(), "key", NomadDoc("The key to store.")},
+                    {valueType->getId(), "value", NomadDoc("The value to store.")}
                 },
-                [keyType, valueType](const std::span<const RuntimeValue> arguments) {
+                .factory = [keyType, valueType](const std::span<const RuntimeValue> arguments) {
                     const auto& key = arguments[0];
                     const auto& value = arguments[1];
                     return new KeyValueObject(keyType, valueType, key, value);
                 },
-                NomadDoc("Creates a pair with read-only key and value properties.")
-            );
+                .documentation = NomadDoc("Creates a pair with read-only key and value properties.")
+            });
             const auto keyId = runtime->addProperty(id, {
                 .valueTypeId = keyType->getId(),
                 .name = "key",

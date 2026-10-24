@@ -109,12 +109,13 @@ void registerListType(Runtime* runtime) {
             }).isInvalid()) {
                 throw NomadException("Failed to register List.toReadOnly");
             }
-            const auto constructorId = runtime->registerNativeConstructor(
-                objectType, {},
-                [elementType](std::span<const nomad::RuntimeValue>) {
+            const auto constructorId = runtime->addConstructor(id, {
+                .parameters = {},
+                .factory = [elementType](std::span<const nomad::RuntimeValue>) {
                     return new nomad::ListObject(elementType);
-                }, ""
-            );
+                },
+                .documentation = ""
+            });
             const auto appendId = runtime->addMethod(id, {
                 .name = "append",
                 .parameters = {{elementType->getId(), "value", NomadDoc("The value to append.")}},

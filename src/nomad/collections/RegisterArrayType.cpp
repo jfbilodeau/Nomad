@@ -106,14 +106,14 @@ void registerArrayType(Runtime* runtime) {
         },
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
-            if (writable && runtime->registerNativeConstructor(
-                arrayType,
-                {nomad::defParameter("size", runtime->getIntegerType(), "")},
-                [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
+            if (writable && runtime->addConstructor(arrayType->getId(), {
+                .parameters = {{runtime->getIntegerType()->getId(), "size", ""}},
+                .factory = [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
                     const auto size = arguments[0].getIntegerValue();
                     return new Array1dObject(arrayType->getElementType(), size);
-                }, ""
-            ).isInvalid()) {
+                },
+                .documentation = ""
+            }).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array1 constructor");
             }
             const auto* elementType = arrayType->getElementType();
@@ -161,18 +161,18 @@ void registerArrayType(Runtime* runtime) {
         },
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
-            if (writable && runtime->registerNativeConstructor(
-                arrayType,
-                {
-                    nomad::defParameter("size1", runtime->getIntegerType(), ""),
-                    nomad::defParameter("size2", runtime->getIntegerType(), "")
+            if (writable && runtime->addConstructor(arrayType->getId(), {
+                .parameters = {
+                    {runtime->getIntegerType()->getId(), "size1", ""},
+                    {runtime->getIntegerType()->getId(), "size2", ""}
                 },
-                [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
+                .factory = [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
                     const auto size1 = arguments[0].getIntegerValue();
                     const auto size2 = arguments[1].getIntegerValue();
                     return new Array2dObject(arrayType->getElementType(), size1, size2);
-                }, ""
-            ).isInvalid()) {
+                },
+                .documentation = ""
+            }).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array2 constructor");
             }
             if (runtime->registerNativeIndexer(
@@ -211,20 +211,20 @@ void registerArrayType(Runtime* runtime) {
         },
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
-            if (writable && runtime->registerNativeConstructor(
-                arrayType,
-                {
-                    nomad::defParameter("size1", runtime->getIntegerType(), ""),
-                    nomad::defParameter("size2", runtime->getIntegerType(), ""),
-                    nomad::defParameter("size3", runtime->getIntegerType(), "")
+            if (writable && runtime->addConstructor(arrayType->getId(), {
+                .parameters = {
+                    {runtime->getIntegerType()->getId(), "size1", ""},
+                    {runtime->getIntegerType()->getId(), "size2", ""},
+                    {runtime->getIntegerType()->getId(), "size3", ""}
                 },
-                [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
+                .factory = [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
                     const auto size1 = arguments[0].getIntegerValue();
                     const auto size2 = arguments[1].getIntegerValue();
                     const auto size3 = arguments[2].getIntegerValue();
                     return new Array3dObject(arrayType->getElementType(), size1, size2, size3);
-                }, ""
-            ).isInvalid()) {
+                },
+                .documentation = ""
+            }).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array3 constructor");
             }
             if (runtime->registerNativeIndexer(
@@ -263,7 +263,6 @@ void registerArrayType(Runtime* runtime) {
             if (id.isInvalid()) {
                 throw nomad::NomadException("Failed to create Array constructor type");
             }
-            const auto* arrayClass = runtime->getType(id).value()->asObjectType();
             for (const auto* family : {"Array1", "Array2", "Array3"}) {
                 const auto* type = runtime->getParameterizedType(family, arguments);
                 if (type == nullptr) {
@@ -271,13 +270,19 @@ void registerArrayType(Runtime* runtime) {
                 }
                 const auto rankConstructors = runtime->getConstructors(type);
                 const auto* constructor = rankConstructors.empty() ? nullptr : rankConstructors.front();
-                if (constructor == nullptr || runtime->registerNativeConstructor(
-                    arrayClass,
-                    constructor->getParameters(),
-                    static_cast<const nomad::ObjectType*>(constructor->getReturnType()),
-                    constructor->getFactory(),
-                    ""
-                ).isInvalid()) {
+                if (constructor == nullptr) {
+                    throw nomad::NomadException("Failed to resolve Array rank constructor");
+                }
+                std::vector<ParameterDefinition> parameters;
+                parameters.reserve(constructor->getParameters().size());
+                for (const auto& parameter : constructor->getParameters()) {
+                    parameters.push_back({parameter.type->getId(), parameter.name, parameter.doc});
+                }
+                if (runtime->addConstructor(id, constructor->getReturnType()->getId(), {
+                    .parameters = std::move(parameters),
+                    .factory = constructor->getFactory(),
+                    .documentation = ""
+                }).isInvalid()) {
                     throw nomad::NomadException("Failed to register Array constructor");
                 }
             }

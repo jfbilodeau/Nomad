@@ -43,13 +43,13 @@ void registerMapFamily(
             if (keysType == nullptr || valuesType == nullptr || entriesType == nullptr) {
                 throw nomad::NomadException("Failed to resolve Map snapshot types");
             }
-            if (writable && runtime->registerNativeConstructor(
-                objectType, {},
-                [valueType](std::span<const nomad::RuntimeValue>) {
+            if (writable && runtime->addConstructor(id, {
+                .parameters = {},
+                .factory = [valueType](std::span<const nomad::RuntimeValue>) {
                     return new nomad::MapObject(valueType);
                 },
-                NomadDoc("Creates an empty map with string keys.")
-            ).isInvalid()) {
+                .documentation = NomadDoc("Creates an empty map with string keys.")
+            }).isInvalid()) {
                 throw NomadException("Failed to register Map constructor");
             }
             const auto countId = runtime->addProperty(id, {
