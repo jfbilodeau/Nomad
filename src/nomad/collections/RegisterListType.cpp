@@ -43,17 +43,18 @@ void registerListReaders(Runtime* runtime, const ObjectType* objectType, const b
             machine->getThisAs<ListObject>()->setValue(machine->getIntegerParameter(0), machine->getParameter(1));
         };
     }
-    const auto indexerId = runtime->registerNativeIndexer(
-        objectType, {runtime->getIntegerType()}, elementType,
-        [elementType](VirtualMachine* machine) {
+    const auto indexerId = runtime->addIndexer(objectType->getId(), {
+        .valueTypeId = elementType->getId(),
+        .indexTypes = {runtime->getIntegerType()->getId()},
+        .getter = [elementType](VirtualMachine* machine) {
             const auto* list = machine->getThisAs<ListObject>();
             elementType->copyValue(list->getValue(machine->getIntegerParameter(0)), machine->getResult());
         },
-        std::move(setter),
-        writable
+        .setter = std::move(setter),
+        .documentation = writable
             ? NomadDoc("Reads or replaces an element at a zero-based index. Out-of-range indices fault.")
             : NomadDoc("Reads an element at a zero-based index. Out-of-range indices fault.")
-    );
+    });
     if (iteratorId.isInvalid() || countId.isInvalid() || indexerId.isInvalid()) {
         throw NomadException("Failed to register List readers");
     }

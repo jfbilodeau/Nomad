@@ -31,13 +31,11 @@ void validateSearchOperands(VirtualMachine* virtualMachine, const NomadString& r
 } // namespace
 
 void registerBuiltInNativeMembers(Runtime* runtime) {
-    const auto* stringType = runtime->getStringType();
     const auto stringTypeId = runtime->getTypeId("string");
-    runtime->registerNativeIndexer(
-        stringType,
-        {runtime->getIntegerType()},
-        stringType,
-        [](VirtualMachine* machine) {
+    const auto indexerId = runtime->addIndexer(stringTypeId, {
+        .valueTypeId = stringTypeId,
+        .indexTypes = {runtime->getIntegerType()->getId()},
+        .getter = [](VirtualMachine* machine) {
             const auto& text = machine->getThisAs<NomadStringObject>()->getString();
             faultOnInvalidUtf8(machine, text, "indexer");
             const auto codePoints = boost::locale::conv::utf_to_utf<char32_t>(text, boost::locale::conv::stop);
@@ -49,9 +47,12 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
                 codePoints.substr(static_cast<NomadIndex>(index), 1), boost::locale::conv::stop
             ));
         },
-        {},
-        NomadDoc("Returns one Unicode code point as a string at a zero-based index. Read-only; out-of-range indices fault.")
-    );
+        .setter = {},
+        .documentation = NomadDoc("Returns one Unicode code point as a string at a zero-based index. Read-only; out-of-range indices fault.")
+    });
+    if (indexerId.isInvalid()) {
+        throw NomadException("Failed to register string indexer");
+    }
     const auto lengthId = runtime->addProperty(stringTypeId, {
         .valueTypeId = runtime->getTypeId("int"),
         .name = "length",

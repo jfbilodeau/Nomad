@@ -104,21 +104,20 @@ void registerMapFamily(
                     map->setValue(key, machine->getParameter(1));
                 };
             }
-            const auto indexerId = runtime->registerNativeIndexer(
-                objectType,
-                {runtime->getStringType()},
-                valueType,
-                [](nomad::VirtualMachine* machine) {
+            const auto indexerId = runtime->addIndexer(id, {
+                .valueTypeId = valueType->getId(),
+                .indexTypes = {runtime->getStringType()->getId()},
+                .getter = [](nomad::VirtualMachine* machine) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
                     const auto& key = machine->getStringParameter(0)->getString();
                     auto& result = machine->getResult();
                     map->getValue(key, result);
                 },
-                std::move(setter),
-                writable
+                .setter = std::move(setter),
+                .documentation = writable
                     ? NomadDoc("Reads, inserts, or replaces an entry by string key. Missing keys log an error and return a default without inserting.")
                     : NomadDoc("Reads an entry by string key. Missing keys log an error and return a default without inserting.")
-            );
+            });
             const auto containsId = runtime->addMethod(id, {
                 .name = "contains",
                 .parameters = {{runtime->getTypeId("string"), "key", NomadDoc("The case-sensitive key to check.")}},

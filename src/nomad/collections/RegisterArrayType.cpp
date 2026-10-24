@@ -127,26 +127,25 @@ void registerArrayType(Runtime* runtime) {
                 .documentation = NomadDoc("Creates an independent live iterator over the array.")
             });
             runtime->registerIterableType(arrayType, elementType, runtime->getNativeMemberMethod(iteratorId));
-            if (runtime->registerNativeIndexer(
-                arrayType,
-                {runtime->getIntegerType()},
-                elementType,
-                [](nomad::VirtualMachine* machine) {
+            if (runtime->addIndexer(arrayType->getId(), {
+                .valueTypeId = elementType->getId(),
+                .indexTypes = {runtime->getIntegerType()->getId()},
+                .getter = [](nomad::VirtualMachine* machine) {
                     const auto* array = machine->getThisAs<nomad::Array1dObject>();
                     const auto index = machine->getIntegerParameter(0);
                     auto& result = machine->getResult();
                     array->getValue(index, result);
                 },
-                writable ? NativeFunctionFn{[](nomad::VirtualMachine* machine) {
+                .setter = writable ? NativeFunctionFn{[](nomad::VirtualMachine* machine) {
                     auto* array = machine->getThisAs<nomad::Array1dObject>();
                     const auto index = machine->getIntegerParameter(0);
                     const auto& value = machine->getParameter(1);
                     array->setValue(index, value);
                 }} : NativeFunctionFn{},
-                writable
+                .documentation = writable
                     ? NomadDoc("Reads or replaces an element at a zero-based index. Invalid indices log an error; reads return a default and writes do nothing.")
                     : NomadDoc("Reads an element at a zero-based index. Invalid indices log an error and return a default.")
-            ).isInvalid()) {
+            }).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array1 indexer");
             }
         }
@@ -175,28 +174,27 @@ void registerArrayType(Runtime* runtime) {
             }).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array2 constructor");
             }
-            if (runtime->registerNativeIndexer(
-                arrayType,
-                {runtime->getIntegerType(), runtime->getIntegerType()},
-                arrayType->getElementType(),
-                [](nomad::VirtualMachine* machine) {
+            if (runtime->addIndexer(arrayType->getId(), {
+                .valueTypeId = arrayType->getElementType()->getId(),
+                .indexTypes = {runtime->getIntegerType()->getId(), runtime->getIntegerType()->getId()},
+                .getter = [](nomad::VirtualMachine* machine) {
                     const auto* array = machine->getThisAs<nomad::Array2dObject>();
                     const auto index1 = machine->getIntegerParameter(0);
                     const auto index2 = machine->getIntegerParameter(1);
                     auto& result = machine->getResult();
                     array->getValue(index1, index2, result);
                 },
-                writable ? NativeFunctionFn{[](nomad::VirtualMachine* machine) {
+                .setter = writable ? NativeFunctionFn{[](nomad::VirtualMachine* machine) {
                     auto* array = machine->getThisAs<nomad::Array2dObject>();
                     const auto index1 = machine->getIntegerParameter(0);
                     const auto index2 = machine->getIntegerParameter(1);
                     const auto& value = machine->getParameter(2);
                     array->setValue(index1, index2, value);
                 }} : NativeFunctionFn{},
-                writable
+                .documentation = writable
                     ? NomadDoc("Reads or replaces an element at two zero-based indices. Invalid indices log an error; reads return a default and writes do nothing.")
                     : NomadDoc("Reads an element at two zero-based indices. Invalid indices log an error and return a default.")
-            ).isInvalid()) {
+            }).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array2 indexer");
             }
         }
@@ -227,11 +225,14 @@ void registerArrayType(Runtime* runtime) {
             }).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array3 constructor");
             }
-            if (runtime->registerNativeIndexer(
-                arrayType,
-                {runtime->getIntegerType(), runtime->getIntegerType(), runtime->getIntegerType()},
-                arrayType->getElementType(),
-                [](nomad::VirtualMachine* machine) {
+            if (runtime->addIndexer(arrayType->getId(), {
+                .valueTypeId = arrayType->getElementType()->getId(),
+                .indexTypes = {
+                    runtime->getIntegerType()->getId(),
+                    runtime->getIntegerType()->getId(),
+                    runtime->getIntegerType()->getId()
+                },
+                .getter = [](nomad::VirtualMachine* machine) {
                     const auto* array = machine->getThisAs<nomad::Array3dObject>();
                     const auto index1 = machine->getIntegerParameter(0);
                     const auto index2 = machine->getIntegerParameter(1);
@@ -239,7 +240,7 @@ void registerArrayType(Runtime* runtime) {
                     auto& result = machine->getResult();
                     array->getValue(index1, index2, index3, result);
                 },
-                writable ? NativeFunctionFn{[](nomad::VirtualMachine* machine) {
+                .setter = writable ? NativeFunctionFn{[](nomad::VirtualMachine* machine) {
                     auto* array = machine->getThisAs<nomad::Array3dObject>();
                     const auto index1 = machine->getIntegerParameter(0);
                     const auto index2 = machine->getIntegerParameter(1);
@@ -247,10 +248,10 @@ void registerArrayType(Runtime* runtime) {
                     const auto& value = machine->getParameter(3);
                     array->setValue(index1, index2, index3, value);
                 }} : NativeFunctionFn{},
-                writable
+                .documentation = writable
                     ? NomadDoc("Reads or replaces an element at three zero-based indices. Invalid indices log an error; reads return a default and writes do nothing.")
                     : NomadDoc("Reads an element at three zero-based indices. Invalid indices log an error and return a default.")
-            ).isInvalid()) {
+            }).isInvalid()) {
                 throw nomad::NomadException("Failed to register Array3 indexer");
             }
         }
