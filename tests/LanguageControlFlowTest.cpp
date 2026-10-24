@@ -152,7 +152,6 @@ BOOST_AUTO_TEST_CASE(add_iterable_owns_factory_metadata_and_association)
     BOOST_TEST(runtime.getFunctionTableSize() == count);
     BOOST_TEST(type->getMethods().size() == 1u);
     BOOST_TEST(type->getIterableInfo()->factoryId == info->factoryId);
-    BOOST_CHECK_THROW(runtime.registerIterableType(type, valueType, factory), NomadException);
 }
 
 BOOST_AUTO_TEST_CASE(add_iterable_rejects_invalid_definitions_before_publishing_a_factory)
@@ -217,7 +216,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_rejects_invalid_definitions_before_publishing_
     BOOST_TEST(type->getIterableInfo().has_value());
 }
 
-BOOST_AUTO_TEST_CASE(add_iterable_preserves_existing_member_conflicts_and_legacy_associations)
+BOOST_AUTO_TEST_CASE(add_iterable_preserves_existing_member_conflicts_and_object_type_associations)
 {
     Runtime runtime;
     const auto id = runtime.createObjectType("ConflictingSequence", ObjectTypeMode::Closed);
@@ -235,7 +234,8 @@ BOOST_AUTO_TEST_CASE(add_iterable_preserves_existing_member_conflicts_and_legacy
     BOOST_TEST(runtime.getFunctionTableSize() == count);
     BOOST_TEST(type->getMethods().size() == 1u);
     BOOST_TEST(!type->getIterableInfo().has_value());
-    runtime.registerIterableType(type, integer, runtime.getMethod(methodId));
+    auto* mutableType = const_cast<ObjectType*>(type);
+    mutableType->registerIterableType(runtime, integer, runtime.getMethod(methodId));
     auto candidate = definition;
     candidate.factory.name = "anotherTraversal";
     BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
@@ -334,13 +334,9 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
     BOOST_TEST(!runtime.getIterableInfo(&unregistered).has_value());
     BOOST_CHECK_THROW(unregistered.registerIterableType(runtime, integer, factory), NomadException);
     BOOST_CHECK_THROW(type->registerIterableType(other, other.getIntegerType(), factory), NomadException);
-    BOOST_CHECK_THROW(runtime.registerIterableType(nullptr, integer, factory), NomadException);
-    BOOST_CHECK_THROW(runtime.registerIterableType(integer, integer, factory), NomadException);
-    BOOST_CHECK_THROW(other.registerIterableType(type, other.getIntegerType(), factory), NomadException);
     for (const auto* invalid : {static_cast<const Type*>(nullptr), runtime.getVoidType(),
         runtime.getFileNameType(), other.getIntegerType()}) {
         BOOST_CHECK_THROW(type->registerIterableType(runtime, invalid, factory), NomadException);
-        BOOST_CHECK_THROW(runtime.registerIterableType(type, invalid, factory), NomadException);
     }
     BOOST_CHECK_THROW(type->registerIterableType(runtime, integer, nullptr), NomadException);
     const auto wrongOwnerId = runtime.addMethod(runtime.getTypeId("string"), {
@@ -369,12 +365,11 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
     BOOST_REQUIRE(wrongArgumentsId.isValid());
     for (const auto invalidId : {wrongOwnerId, wrongReturnId, wrongArgumentsId}) {
         BOOST_CHECK_THROW(type->registerIterableType(runtime, integer, runtime.getMethod(invalidId)), NomadException);
-        BOOST_CHECK_THROW(runtime.registerIterableType(type, integer, runtime.getMethod(invalidId)), NomadException);
     }
     BOOST_TEST(!type->getIterableInfo().has_value());
     BOOST_TEST(!runtime.getIterableInfo(type).has_value());
 
-    runtime.registerIterableType(type, integer, factory);
+    type->registerIterableType(runtime, integer, factory);
     const auto verifyAssociation = [&]() {
         const auto owned = type->getIterableInfo();
         const auto forwarded = runtime.getIterableInfo(type);
@@ -389,7 +384,6 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
         BOOST_TEST(runtime.getMethod(owned->factoryId) == factory);
     };
     verifyAssociation();
-    BOOST_CHECK_THROW(runtime.registerIterableType(type, integer, factory), NomadException);
     BOOST_CHECK_THROW(type->registerIterableType(runtime, integer, factory), NomadException);
     BOOST_CHECK_THROW(type->registerIterableType(runtime, runtime.getStringType(), factory), NomadException);
     auto snapshot = type->getIterableInfo();
@@ -397,19 +391,22 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
     snapshot->factoryId = CallableId::INVALID;
     for (auto index = 0; index < 32; ++index) {
         const auto additionalId = runtime.createObjectType("AdditionalSequence" + std::to_string(index), ObjectTypeMode::Closed);
-    BOOST_REQUIRE(additionalId.isValid());
-    auto* additionalType = const_cast<ObjectType*>(runtime.getType(additionalId).value()->asObjectType());
-        const auto additionalFactoryId = runtime.addMethod(additionalType->getId(), {
-            .name = "iterator",
-            .parameters = {},
-            .returnTypeId = iterator->getId(),
-            .function = [](VirtualMachine*) {},
-            .documentation = ""
+        BOOST_REQUIRE(additionalId.isValid());
+        const auto* additionalType = runtime.getType(additionalId).value()->asObjectType();
+        runtime.addIterable(additionalId, {
+            .valueTypeId = integer->getId(),
+            .factory = {
+                .name = "iterator",
+                .parameters = {},
+                .returnTypeId = iterator->getId(),
+                .function = [](VirtualMachine*) {},
+                .documentation = ""
+            }
         });
-        BOOST_REQUIRE(additionalFactoryId.isValid());
-        additionalType->registerIterableType(runtime, integer, runtime.getMethod(additionalFactoryId));
         BOOST_REQUIRE(runtime.getIterableInfo(additionalType).has_value());
-        BOOST_TEST(runtime.getIterableInfo(additionalType)->factoryId == additionalFactoryId);
+        const auto additionalFactoryId = runtime.getIterableInfo(additionalType)->factoryId;
+        BOOST_REQUIRE(runtime.getMethod(additionalFactoryId) != nullptr);
+        BOOST_TEST(runtime.getMethod(additionalFactoryId)->getObjectType() == additionalType);
     }
     verifyAssociation();
 }

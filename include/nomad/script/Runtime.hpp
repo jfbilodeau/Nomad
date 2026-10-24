@@ -211,11 +211,6 @@ public:
     }
     [[nodiscard]] const ObjectType* getIteratorType(const Type* valueType);
     void addIterable(TypeId id, NativeInterableDefinition definition);
-    void registerIterableType(
-        const Type* sourceType,
-        const Type* valueType,
-        const Method* factory
-    );
     [[nodiscard]] std::optional<IterableInfo> getIterableInfo(const Type* sourceType) const;
     [[nodiscard]] TypeId getTypeId(const NomadString& typeName) const;
     [[nodiscard]] std::optional<const Type*> getType(TypeId id) const;

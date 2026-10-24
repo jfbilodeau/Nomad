@@ -64,18 +64,6 @@ void Runtime::addIterable(const TypeId id, NativeInterableDefinition definition)
     owner->registerIterableType(*this, *valueType, getMethod(factoryId));
 }
 
-void Runtime::registerIterableType(
-    const Type* sourceType,
-    const Type* valueType,
-    const Method* factory
-) {
-    auto* owner = ownsType(sourceType) ? getMutableObjectType(sourceType->asObjectType()) : nullptr;
-    if (owner == nullptr) {
-        throw NomadException("Invalid iterable registration");
-    }
-    owner->registerIterableType(*this, valueType, factory);
-}
-
 std::optional<IterableInfo> Runtime::getIterableInfo(const Type* sourceType) const {
     if (!ownsType(sourceType)) {
         return std::nullopt;

@@ -1077,10 +1077,6 @@ after registration does not change the registered factory.
 `getIterableInfo(sourceType)` returns an optional association containing its
 factory ID.
 
-The existing `registerIterableType(sourceType, elementType, factory)` operation
-remains available for associating an already registered `Method`. The method must
-belong to the source type and satisfy the same parameter/return-type requirements.
-
 The source `ObjectType` owns its iterable association. Include
 `<nomad/script/Type.hpp>` for `IterableInfo`.
 `ObjectType::getIterableInfo()` returns an optional snapshot containing
@@ -1088,7 +1084,9 @@ the element type, iterator type, and factory `CallableId`. Runtime lookup return
 the same snapshot, or an empty optional for a non-iterable or foreign-runtime type.
 Hosts retaining a mutable registered object type may call
 `ObjectType::registerIterableType(runtime, elementType, factory)` directly;
-the same ownership, signature, and duplicate-registration checks apply.
+the same ownership, signature, and duplicate-registration checks apply. The
+already registered factory must belong to the source type and take no arguments,
+and its return type must match the iterator type for the element type.
 Neither lookup permits changing the registered association.
 
 Each factory invocation must create independent iteration state. An iterator
