@@ -51,10 +51,11 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
             const auto* type = owningRuntime->getType(id).value();
             const auto* objectType = static_cast<const ObjectType*>(type);
             const auto* valueType = objectType->getTypeArguments()[0];
-            BOOST_REQUIRE(runtime.registerNativeConstructor(
-                objectType, {defParameter("value", valueType, "")},
-                [](std::span<const RuntimeValue>) { return new NomadObject; }, ""
-            ).isValid());
+            BOOST_REQUIRE(runtime.addConstructor(objectType->getId(), {
+                .parameters = {{valueType->getId(), "value", ""}},
+                .factory = [](std::span<const RuntimeValue>) { return new NomadObject; },
+                .documentation = ""
+            }).isValid());
             BOOST_REQUIRE(runtime.addProperty(objectType->getId(), {
                 .valueTypeId = valueType->getId(),
                 .name = "declaredProperty",

@@ -293,9 +293,13 @@ BOOST_AUTO_TEST_CASE(for_uses_registered_iteration_not_collection_names)
     const auto typeId = runtime.createObjectType("Sequence", ObjectTypeMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
     auto* sourceType = const_cast<ObjectType*>(runtime.getType(typeId).value()->asObjectType());
-    runtime.registerNativeConstructor(sourceType, {}, [](std::span<const RuntimeValue>) {
-        return new SequenceObject;
-    }, "");
+    BOOST_REQUIRE(runtime.addConstructor(sourceType->getId(), {
+        .parameters = {},
+        .factory = [](std::span<const RuntimeValue>) {
+            return new SequenceObject;
+        },
+        .documentation = ""
+    }).isValid());
     auto factoryCalls = 0;
     const auto factoryId = runtime.addMethod(sourceType->getId(), {
         .name = "startTraversal",

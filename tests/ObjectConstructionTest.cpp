@@ -106,11 +106,17 @@ BOOST_AUTO_TEST_CASE(add_constructor_preserves_distinct_created_types_and_shared
     BOOST_TEST(owner->getConstructors()[0] == constructor);
     BOOST_TEST(createdType->getConstructors().empty());
     BOOST_TEST(runtime.getConstructors(createdType).empty());
-    BOOST_TEST(runtime.registerNativeConstructor(owner, {}, factory, "").isInvalid());
-    BOOST_TEST(runtime.addConstructor(owner->getId(), {{}, factory, ""}).isInvalid());
-
-    const auto parameters = std::vector{defParameter("value", runtime.getIntegerType(), "")};
-    BOOST_REQUIRE(runtime.registerNativeConstructor(owner, parameters, factory, "").isValid());
+    BOOST_TEST(runtime.addConstructor(owner->getId(), {
+        .parameters = {},
+        .factory = factory,
+        .documentation = ""
+    }).isInvalid());
+    const auto parameters = std::vector<ParameterDefinition>{{runtime.getIntegerType()->getId(), "value", ""}};
+    BOOST_REQUIRE(runtime.addConstructor(owner->getId(), {
+        .parameters = parameters,
+        .factory = factory,
+        .documentation = ""
+    }).isValid());
     BOOST_TEST(runtime.addConstructor(owner->getId(), createdType->getId(), {
         .parameters = {{runtime.getIntegerType()->getId(), "renamed", ""}},
         .factory = factory,
@@ -203,13 +209,14 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_resolve_execute_and_reuse_specializat
             const auto* type = owningRuntime->getType(id).value();
             const auto* objectType = static_cast<const ObjectType*>(type);
             const auto* elementType = objectType->getTypeArguments()[0];
-            BOOST_REQUIRE(runtime.registerNativeConstructor(
-                objectType, {defParameter("value", elementType, "")},
-                [&](std::span<const RuntimeValue>) {
+            BOOST_REQUIRE(runtime.addConstructor(objectType->getId(), {
+                .parameters = {{elementType->getId(), "value", ""}},
+                .factory = [&](std::span<const RuntimeValue>) {
                     ++constructions;
                     return new ConstructedObject;
-                }, ""
-            ).isValid());
+                },
+                .documentation = ""
+            }).isValid());
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate(
@@ -272,10 +279,11 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_validate_bindings_and_concrete_constr
             const auto* type = owningRuntime->getType(id).value();
             const auto* objectType = static_cast<const ObjectType*>(type);
             const auto* valueType = objectType->getTypeArguments()[0];
-            BOOST_REQUIRE(runtime.registerNativeConstructor(
-                objectType, {defParameter("first", valueType, ""), defParameter("second", valueType, "")},
-                [](std::span<const RuntimeValue>) { return new ConstructedObject; }, ""
-            ).isValid());
+            BOOST_REQUIRE(runtime.addConstructor(objectType->getId(), {
+                .parameters = {{valueType->getId(), "first", ""}, {valueType->getId(), "second", ""}},
+                .factory = [](std::span<const RuntimeValue>) { return new ConstructedObject; },
+                .documentation = ""
+            }).isValid());
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate(
@@ -328,15 +336,15 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_arguments_preserve_execution_mode_eval
         [&](Runtime* owningRuntime, const TypeId id) {
             const auto* type = owningRuntime->getType(id).value();
             const auto* objectType = static_cast<const ObjectType*>(type);
-            BOOST_REQUIRE(runtime.registerNativeConstructor(
-                objectType,
-                {defParameter("first", runtime.getIntegerType(), ""), defParameter("second", runtime.getIntegerType(), "")},
-                [](const std::span<const RuntimeValue> arguments) {
+            BOOST_REQUIRE(runtime.addConstructor(objectType->getId(), {
+                .parameters = {{runtime.getIntegerType()->getId(), "first", ""}, {runtime.getIntegerType()->getId(), "second", ""}},
+                .factory = [](const std::span<const RuntimeValue> arguments) {
                     BOOST_TEST(arguments[0].getIntegerValue() == 1);
                     BOOST_TEST(arguments[1].getIntegerValue() == 2);
                     return new ConstructedObject;
-                }, ""
-            ).isValid());
+                },
+                .documentation = ""
+            }).isValid());
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate(
@@ -371,11 +379,11 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_require_a_matching_specialized_constr
             [&](Runtime* owningRuntime, const TypeId id) {
             const auto* type = owningRuntime->getType(id).value();
                 if (registerConstructor) {
-                    BOOST_REQUIRE(runtime.registerNativeConstructor(
-                        static_cast<const ObjectType*>(type),
-                        {defParameter("value", runtime.getStringType(), "")},
-                        [](std::span<const RuntimeValue>) { return new ConstructedObject; }, ""
-                    ).isValid());
+                    BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+                        .parameters = {{runtime.getStringType()->getId(), "value", ""}},
+                        .factory = [](std::span<const RuntimeValue>) { return new ConstructedObject; },
+                        .documentation = ""
+                    }).isValid());
                 }
             }
         ));
@@ -481,23 +489,23 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reuses_concrete_and_hidden_par
         [&](Runtime* owningRuntime, const TypeId id) {
             const auto* type = owningRuntime->getType(id).value();
             const auto* objectType = static_cast<const ObjectType*>(type);
-            BOOST_REQUIRE(runtime.registerNativeConstructor(
-                objectType,
-                {
-                    defParameter("file", runtime.getFileNameType(), ""),
-                    defParameter("value", objectType->getTypeArguments()[0], ""),
-                    defParameter("enabled", runtime.getBooleanType(), ""),
-                    defParameter("function", runtime.getFunctionNameType(), ""),
-                    defParameter("line", runtime.getLineNumberType(), "")
+            BOOST_REQUIRE(runtime.addConstructor(objectType->getId(), {
+                .parameters = {
+                    {runtime.getFileNameType()->getId(), "file", ""},
+                    {objectType->getTypeArguments()[0]->getId(), "value", ""},
+                    {runtime.getBooleanType()->getId(), "enabled", ""},
+                    {runtime.getFunctionNameType()->getId(), "function", ""},
+                    {runtime.getLineNumberType()->getId(), "line", ""}
                 },
-                [&](const std::span<const RuntimeValue> arguments) {
+                .factory = [&](const std::span<const RuntimeValue> arguments) {
                     BOOST_REQUIRE(arguments.size() == 5u);
                     BOOST_TEST(arguments[1].getStringObject()->getString() == "value");
                     BOOST_TEST(arguments[2].getBooleanValue());
                     ++calls;
                     return new ConstructedObject;
-                }, ""
-            ).isValid());
+                },
+                .documentation = ""
+            }).isValid());
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate(
@@ -641,14 +649,15 @@ BOOST_AUTO_TEST_CASE(constructor_template_registration_preserves_explicit_constr
             const auto* type = owningRuntime->getType(id).value();
             const auto* objectType = static_cast<const ObjectType*>(type);
             const auto* elementType = objectType->getTypeArguments()[0];
-            BOOST_REQUIRE(runtime.registerNativeConstructor(
-                objectType, {defParameter("value", elementType, "")},
-                [&](const std::span<const RuntimeValue> arguments) {
+            BOOST_REQUIRE(runtime.addConstructor(objectType->getId(), {
+                .parameters = {{elementType->getId(), "value", ""}},
+                .factory = [&](const std::span<const RuntimeValue> arguments) {
                     BOOST_TEST(arguments[0].getIntegerValue() == 42);
                     ++calls;
                     return new ConstructedObject;
-                }, ""
-            ).isValid());
+                },
+                .documentation = ""
+            }).isValid());
         }
     ));
     BOOST_REQUIRE(runtime.registerConstructorTemplate(
@@ -815,22 +824,22 @@ BOOST_AUTO_TEST_CASE(constructors_accept_heterogeneous_arguments_and_type_specif
     Runtime runtime;
     auto calls = NomadIndex{0};
     const auto* type = registerObjectType(runtime, "Example");
-    BOOST_REQUIRE(runtime.registerNativeConstructor(
-        type,
-        {
-            defParameter("number", runtime.getIntegerType(), ""),
-            defParameter("text", runtime.getStringType(), ""),
-            defParameter("enabled", runtime.getBooleanType(), "")
+    BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+        .parameters = {
+            {runtime.getIntegerType()->getId(), "number", ""},
+            {runtime.getStringType()->getId(), "text", ""},
+            {runtime.getBooleanType()->getId(), "enabled", ""}
         },
-        [&calls](const std::span<const RuntimeValue> arguments) {
+        .factory = [&calls](const std::span<const RuntimeValue> arguments) {
             BOOST_REQUIRE(arguments.size() == 3u);
             BOOST_TEST(arguments[0].getIntegerValue() == 0);
             BOOST_TEST(arguments[1].getStringObject()->getString() == "hello");
             BOOST_TEST(arguments[2].getBooleanValue());
             ++calls;
             return new ConstructedObject;
-        }, ""
-    ).isValid());
+        },
+        .documentation = ""
+    }).isValid());
     const auto id = compileConstruction(runtime, "return new Example 0 \"hello\" true");
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
@@ -851,15 +860,16 @@ BOOST_AUTO_TEST_CASE(constructor_faults_and_null_factories_release_object_argume
     for (const auto returnsNull : {false, true}) {
         Runtime runtime;
         const auto* type = registerObjectType(runtime, "Example");
-        BOOST_REQUIRE(runtime.registerNativeConstructor(
-            type, {defParameter("text", runtime.getStringType(), "")},
-            [returnsNull](std::span<const RuntimeValue>) -> NomadObject* {
+        BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+            .parameters = {{runtime.getStringType()->getId(), "text", ""}},
+            .factory = [returnsNull](std::span<const RuntimeValue>) -> NomadObject* {
                 if (returnsNull) {
                     return nullptr;
                 }
                 throw NomadException("Constructor failed");
-            }, ""
-        ).isValid());
+            },
+            .documentation = ""
+        }).isValid());
         const auto id = compileConstruction(runtime, "return new Example (\"hello\".toUpper)");
         const auto before = NomadObject::getLiveObjectCount();
         auto machine = runtime.createVirtualMachine();
@@ -879,9 +889,11 @@ BOOST_AUTO_TEST_CASE(constructor_faults_and_null_factories_release_object_argume
 BOOST_AUTO_TEST_CASE(parameterless_constructors_are_explicitly_registered) {
     Runtime runtime;
     const auto* type = registerObjectType(runtime, "Plain");
-    BOOST_REQUIRE(runtime.registerNativeConstructor(
-        type, {}, [](std::span<const RuntimeValue>) { return new ConstructedObject; }, ""
-    ).isValid());
+    BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+        .parameters = {},
+        .factory = [](std::span<const RuntimeValue>) { return new ConstructedObject; },
+        .documentation = ""
+    }).isValid());
     const auto id = compileConstruction(runtime, "return new Plain");
     RuntimeValue result;
     runtime.executeFunction(id, {}, result);
@@ -895,23 +907,23 @@ BOOST_AUTO_TEST_CASE(source_parameters_are_supplied_by_the_compiler) {
     NomadString functionName;
     NomadInteger line = 0;
     NomadInteger number = 0;
-    BOOST_REQUIRE(runtime.registerNativeConstructor(
-        type,
-        {
-            defParameter("file", runtime.getFileNameType(), ""),
-            defParameter("number", runtime.getIntegerType(), ""),
-            defParameter("function", runtime.getFunctionNameType(), ""),
-            defParameter("line", runtime.getLineNumberType(), "")
+    BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+        .parameters = {
+            {runtime.getFileNameType()->getId(), "file", ""},
+            {runtime.getIntegerType()->getId(), "number", ""},
+            {runtime.getFunctionNameType()->getId(), "function", ""},
+            {runtime.getLineNumberType()->getId(), "line", ""}
         },
-        [&](const std::span<const RuntimeValue> arguments) {
+        .factory = [&](const std::span<const RuntimeValue> arguments) {
             BOOST_REQUIRE(arguments.size() == 4u);
             file = arguments[0].getStringObject()->getString();
             number = arguments[1].getIntegerValue();
             functionName = arguments[2].getStringObject()->getString();
             line = arguments[3].getIntegerValue();
             return new ConstructedObject;
-        }, ""
-    ).isValid());
+        },
+        .documentation = ""
+    }).isValid());
 
     const auto id = compileConstruction(runtime, "\nreturn new Located 42");
     RuntimeValue result;
@@ -936,32 +948,63 @@ BOOST_AUTO_TEST_CASE(source_parameters_are_supplied_by_the_compiler) {
 
 BOOST_AUTO_TEST_CASE(registration_rejects_collisions_invalid_types_and_missing_factories) {
     Runtime runtime;
-    Runtime other;
     const auto* type = registerObjectType(runtime, "Example");
     const auto* otherType = registerObjectType(runtime, "Other");
     const auto factory = [](std::span<const RuntimeValue>) { return new ConstructedObject; };
-    const auto parameters = std::vector{defParameter("value", runtime.getIntegerType(), "")};
-    const auto id = runtime.registerNativeConstructor(type, parameters, factory, "");
+    const auto parameters = std::vector<ParameterDefinition>{{runtime.getIntegerType()->getId(), "value", ""}};
+    const auto id = runtime.addConstructor(type->getId(), {
+        .parameters = parameters,
+        .factory = factory,
+        .documentation = ""
+    });
     BOOST_REQUIRE(id.isValid());
-    BOOST_TEST(runtime.registerNativeConstructor(type, parameters, factory, "").isInvalid());
-    BOOST_TEST(runtime.registerNativeConstructor(type, parameters, otherType, factory, "").isInvalid());
-    BOOST_TEST(runtime.registerNativeConstructor(
-        type, {defParameter("renamed", runtime.getIntegerType(), "")}, factory, ""
-    ).isInvalid());
-    BOOST_TEST(runtime.registerNativeConstructor(
-        type, {defParameter("value", other.getIntegerType(), "")}, factory, ""
-    ).isInvalid());
-    for (const auto* invalid : {runtime.getVoidType(), static_cast<const Type*>(nullptr)}) {
-        BOOST_TEST(runtime.registerNativeConstructor(
-            otherType, {defParameter("value", invalid, "")}, factory, ""
-        ).isInvalid());
+    BOOST_TEST(runtime.addConstructor(type->getId(), {
+        .parameters = parameters,
+        .factory = factory,
+        .documentation = ""
+    }).isInvalid());
+    BOOST_TEST(runtime.addConstructor(type->getId(), otherType->getId(), {
+        .parameters = parameters,
+        .factory = factory,
+        .documentation = ""
+    }).isInvalid());
+    BOOST_TEST(runtime.addConstructor(type->getId(), {
+        .parameters = {{runtime.getIntegerType()->getId(), "renamed", ""}},
+        .factory = factory,
+        .documentation = ""
+    }).isInvalid());
+    BOOST_TEST(runtime.addConstructor(type->getId(), {
+        .parameters = {{TypeId{NOMAD_ID_MAX}, "value", ""}},
+        .factory = factory,
+        .documentation = ""
+    }).isInvalid());
+    for (const auto invalid : {runtime.getVoidType()->getId(), TypeId::INVALID}) {
+        BOOST_TEST(runtime.addConstructor(otherType->getId(), {
+            .parameters = {{invalid, "value", ""}},
+            .factory = factory,
+            .documentation = ""
+        }).isInvalid());
     }
-    BOOST_TEST(runtime.registerNativeConstructor(nullptr, {}, factory, "").isInvalid());
-    BOOST_TEST(runtime.registerNativeConstructor(registerObjectType(other, "Foreign"), {}, factory, "").isInvalid());
-    BOOST_TEST(runtime.registerNativeConstructor(
-        type, {}, registerObjectType(other, "ForeignCreated"), factory, ""
-    ).isInvalid());
-    BOOST_TEST(runtime.registerNativeConstructor(type, {}, {}, "").isInvalid());
+    BOOST_TEST(runtime.addConstructor(TypeId::INVALID, {
+        .parameters = {},
+        .factory = factory,
+        .documentation = ""
+    }).isInvalid());
+    BOOST_TEST(runtime.addConstructor(runtime.getTypeId("MissingOwner"), {
+        .parameters = {},
+        .factory = factory,
+        .documentation = ""
+    }).isInvalid());
+    BOOST_TEST(runtime.addConstructor(type->getId(), runtime.getTypeId("MissingCreatedType"), {
+        .parameters = {},
+        .factory = factory,
+        .documentation = ""
+    }).isInvalid());
+    BOOST_TEST(runtime.addConstructor(type->getId(), {
+        .parameters = {},
+        .factory = {},
+        .documentation = ""
+    }).isInvalid());
     BOOST_TEST(runtime.getConstructors().size() == 1u);
     const auto* constructor = runtime.getConstructor(id);
     BOOST_REQUIRE(constructor != nullptr);
@@ -984,23 +1027,24 @@ BOOST_AUTO_TEST_CASE(overloads_select_by_argument_types_and_count_with_distinct_
     const auto* emptyType = registerObjectType(runtime, "Empty");
     const auto* exampleType = registerObjectType(runtime, "Example");
     NomadString calls;
-    const auto registerFactory = [&](const std::vector<Parameter>& parameters,
+    const auto registerFactory = [&](const std::vector<ParameterDefinition>& parameters,
                                      const ObjectType* type, const NomadString& marker) {
-        BOOST_REQUIRE(runtime.registerNativeConstructor(
-            exampleType, parameters, type,
-            [&calls, marker](std::span<const RuntimeValue>) {
+        BOOST_REQUIRE(runtime.addConstructor(exampleType->getId(), type->getId(), {
+            .parameters = parameters,
+            .factory = [&calls, marker](std::span<const RuntimeValue>) {
                 calls += marker;
                 return new ConstructedObject;
-            }, ""
-        ).isValid());
+            },
+            .documentation = ""
+        }).isValid());
     };
     registerFactory({}, emptyType, "E");
-    registerFactory({defParameter("value", runtime.getIntegerType(), "")}, singleType, "I");
+    registerFactory({{runtime.getIntegerType()->getId(), "value", ""}}, singleType, "I");
     registerFactory(
-        {defParameter("first", runtime.getIntegerType(), ""), defParameter("second", runtime.getIntegerType(), "")},
+        {{runtime.getIntegerType()->getId(), "first", ""}, {runtime.getIntegerType()->getId(), "second", ""}},
         pairType, "P"
     );
-    registerFactory({defParameter("value", runtime.getStringType(), "")}, textType, "S");
+    registerFactory({{runtime.getStringType()->getId(), "value", ""}}, textType, "S");
     runtime.registerNativeFunction(
         "consume",
         [](VirtualMachine* machine) { machine->setIntegerResult(machine->getIntegerParameter(1)); },
@@ -1046,10 +1090,11 @@ BOOST_AUTO_TEST_CASE(parameterized_constructor_registration_validates_and_reuses
     const auto initializer = [&](const NomadString& name, const std::vector<const Type*>& arguments) {
         ++calls;
         const auto* classType = registerObjectType(runtime, name);
-        BOOST_REQUIRE(runtime.registerNativeConstructor(
-            classType, {defParameter("value", arguments[0], "")},
-            [](std::span<const RuntimeValue>) { return new ConstructedObject; }, ""
-        ).isValid());
+        BOOST_REQUIRE(runtime.addConstructor(classType->getId(), {
+            .parameters = {{arguments[0]->getId(), "value", ""}},
+            .factory = [](std::span<const RuntimeValue>) { return new ConstructedObject; },
+            .documentation = ""
+        }).isValid());
     };
     BOOST_TEST(!runtime.registerNativeParameterizedConstructor("", 1, initializer));
     BOOST_TEST(!runtime.registerNativeParameterizedConstructor("Create", 0, initializer));
@@ -1057,9 +1102,11 @@ BOOST_AUTO_TEST_CASE(parameterized_constructor_registration_validates_and_reuses
     BOOST_TEST(!runtime.registerNativeParameterizedConstructor("int", 1, initializer));
     BOOST_REQUIRE(runtime.registerNativeParameterizedConstructor("Create", 1, initializer));
     BOOST_TEST(!runtime.registerNativeParameterizedConstructor("Create", 1, initializer));
-    BOOST_TEST(runtime.registerNativeConstructor(
-        registerObjectType(runtime, "Create"), {}, [](std::span<const RuntimeValue>) { return new ConstructedObject; }, ""
-    ).isInvalid());
+    BOOST_TEST(runtime.addConstructor(registerObjectType(runtime, "Create")->getId(), {
+        .parameters = {},
+        .factory = [](std::span<const RuntimeValue>) { return new ConstructedObject; },
+        .documentation = ""
+    }).isInvalid());
     BOOST_TEST(!runtime.registerParameterizedType("Create", 1, [](Runtime* owningRuntime, TypeId id, const auto&) {
         return std::make_unique<ObjectType>(owningRuntime, id, "Collision", ObjectTypeMode::Closed);
     }));
@@ -1089,10 +1136,11 @@ BOOST_AUTO_TEST_CASE(failed_parameterized_initialization_is_not_cached_as_succes
         "Create", 1,
         [&](const NomadString& name, const std::vector<const Type*>&) {
             if (attempts++ == 0) {
-                BOOST_REQUIRE(runtime.registerNativeConstructor(
-                    registerObjectType(runtime, name), {},
-                    [](std::span<const RuntimeValue>) { return new ConstructedObject; }, ""
-                ).isValid());
+                BOOST_REQUIRE(runtime.addConstructor(registerObjectType(runtime, name)->getId(), {
+                    .parameters = {},
+                    .factory = [](std::span<const RuntimeValue>) { return new ConstructedObject; },
+                    .documentation = ""
+                }).isValid());
             }
             throw NomadException("Initialization failed");
         }

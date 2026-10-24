@@ -874,8 +874,6 @@ All IDs are local to the receiving runtime. Invalid or non-object owner/result I
 invalid parameter IDs, and missing factories are rejected before a constructor is
 published. Definitions are owned inputs; modifying one after registration does not
 change the registered constructor. `addConstructor` returns its `CallableId`.
-The pointer-based `registerNativeConstructor` overloads remain available and share
-the same validation and duplicate-signature rules.
 
 Constructor parameters follow the same conventions as native function
 parameters, including `$file`, `$function`, and `$line`.
@@ -890,7 +888,7 @@ time in both compiled scripts and the interpreter.
 For a constructor with type arguments, use
 `registerNativeParameterizedConstructor(name, argumentCount, initializer)`. Its
 initializer receives the specialized name and resolved type arguments; it registers
-a type with that name and its constructors with `registerNativeConstructor`.
+a type with that name and its constructors with `addConstructor`.
 Specializations are reused on subsequent requests through
 `getParameterizedConstructorName(name, arguments)`.
 

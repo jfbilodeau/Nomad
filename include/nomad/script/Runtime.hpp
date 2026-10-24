@@ -230,27 +230,12 @@ public:
     [[nodiscard]] const Type* getEventType(const NomadString& name) const;
     [[nodiscard]] const Type* getPredicateType();
 
-    // `objectType` is the class being constructed and the constructor is invoked by its name. `createdType` is the
-    // type of the object that gets created; it differs from `objectType` when one class builds several kinds of object.
+    // `id` identifies the declaring type; `createdTypeId` can identify a different result type.
     [[nodiscard]] CallableId addConstructor(TypeId id, NativeConstructorDefinition definition);
     [[nodiscard]] CallableId addConstructor(
         TypeId id,
         TypeId createdTypeId,
         NativeConstructorDefinition definition
-    );
-    CallableId registerNativeConstructor(
-        const ObjectType* objectType,
-        const std::vector<Parameter>& parameters,
-        const ObjectType* createdType,
-        ConstructorFactory factory,
-        NomadDocArg
-    );
-    // Shorthand for a constructor whose class and created type are the same.
-    CallableId registerNativeConstructor(
-        const ObjectType* objectType,
-        const std::vector<Parameter>& parameters,
-        ConstructorFactory factory,
-        NomadDocArg
     );
     // Null unless `functionId` identifies a constructor.
     [[nodiscard]] const NativeConstructor* getNativeConstructor(CallableId functionId) const;

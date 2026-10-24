@@ -661,14 +661,13 @@ const ObjectType* registerResolutionType(Runtime& runtime, const NomadString& na
 CallableId registerResolutionConstructor(
     Runtime& runtime,
     const ObjectType* type,
-    const std::vector<Parameter>& parameters
+    const std::vector<ParameterDefinition>& parameters
 ) {
-    return runtime.registerNativeConstructor(
-        type,
-        parameters,
-        [](std::span<const RuntimeValue>) { return new ResolutionObject; },
-        ""
-    );
+    return runtime.addConstructor(type->getId(), {
+        .parameters = parameters,
+        .factory = [](std::span<const RuntimeValue>) { return new ResolutionObject; },
+        .documentation = ""
+    });
 }
 
 } // namespace
@@ -726,10 +725,11 @@ BOOST_AUTO_TEST_CASE(constructors_belong_to_the_declaring_type)
     Runtime runtime;
     const auto* declaringType = registerResolutionType(runtime, "ConstructorOwner");
     const auto* createdType = registerResolutionType(runtime, "ConstructorResult");
-    const auto id = runtime.registerNativeConstructor(
-        declaringType, {}, createdType,
-        [](std::span<const RuntimeValue>) { return new ResolutionObject; }, ""
-    );
+    const auto id = runtime.addConstructor(declaringType->getId(), createdType->getId(), {
+        .parameters = {},
+        .factory = [](std::span<const RuntimeValue>) { return new ResolutionObject; },
+        .documentation = ""
+    });
     BOOST_REQUIRE(id.isValid());
     const auto constructors = declaringType->getConstructors();
     BOOST_REQUIRE(constructors.size() == 1);
@@ -743,7 +743,11 @@ BOOST_AUTO_TEST_CASE(constructors_belong_to_the_declaring_type)
 
     Runtime otherRuntime;
     const auto otherCallableCount = otherRuntime.getFunctionTableSize();
-    BOOST_TEST(registerResolutionConstructor(otherRuntime, declaringType, {}).isInvalid());
+    BOOST_TEST(otherRuntime.addConstructor(otherRuntime.getTypeId(declaringType->getTypeName()), {
+        .parameters = {},
+        .factory = [](std::span<const RuntimeValue>) { return new ResolutionObject; },
+        .documentation = ""
+    }).isInvalid());
     BOOST_TEST(otherRuntime.getFunctionTableSize() == otherCallableCount);
     BOOST_TEST(declaringType->getConstructors().size() == 1);
 
@@ -794,11 +798,11 @@ BOOST_AUTO_TEST_CASE(type_owned_constructor_factory_is_released_once)
             ++destructions;
             delete value;
         });
-        const auto id = runtime.registerNativeConstructor(
-            type, {},
-            [lifetime = std::move(lifetime)](std::span<const RuntimeValue>) { return new ResolutionObject; },
-            ""
-        );
+        const auto id = runtime.addConstructor(type->getId(), {
+            .parameters = {},
+            .factory = [lifetime = std::move(lifetime)](std::span<const RuntimeValue>) { return new ResolutionObject; },
+            .documentation = ""
+        });
         BOOST_REQUIRE(id.isValid());
         BOOST_TEST(destructions == 0);
     }
@@ -1085,11 +1089,11 @@ BOOST_AUTO_TEST_CASE(resolve_constructor_selects_by_argument_types)
 
     const auto empty = registerResolutionConstructor(runtime, type, {});
     const auto fromInteger = registerResolutionConstructor(
-        runtime, type, {defParameter("value", runtime.getIntegerType(), "")}
+        runtime, type, {{runtime.getIntegerType()->getId(), "value", ""}}
     );
     const auto fromPair = registerResolutionConstructor(
         runtime, type,
-        {defParameter("x", runtime.getIntegerType(), ""), defParameter("y", runtime.getIntegerType(), "")}
+        {{runtime.getIntegerType()->getId(), "x", ""}, {runtime.getIntegerType()->getId(), "y", ""}}
     );
 
     BOOST_REQUIRE(empty.isValid() && fromInteger.isValid() && fromPair.isValid());

@@ -2714,9 +2714,11 @@ BOOST_AUTO_TEST_CASE(object_construction_reports_factory_failures) {
     const auto descriptorId = runtime.createObjectType<ObjectType>("Broken", ObjectTypeMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asObjectType();
-    runtime.registerNativeConstructor(
-        type, {}, [](std::span<const RuntimeValue>) -> NomadObject* { return nullptr; }, ""
-    );
+    BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+        .parameters = {},
+        .factory = [](std::span<const RuntimeValue>) -> NomadObject* { return nullptr; },
+        .documentation = ""
+    }).isValid());
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad", "return new Broken"}}}, {}});

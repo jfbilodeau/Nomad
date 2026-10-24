@@ -1576,29 +1576,8 @@ CallableId Runtime::addConstructor(
             parameterDefinition.name, *parameterType, parameterDefinition.documentation
         ));
     }
-    return registerNativeConstructor(
-        objectType, parameters, createdType, std::move(definition.factory), definition.documentation
-    );
-}
-
-CallableId Runtime::registerNativeConstructor(
-    const ObjectType* objectType,
-    const std::vector<Parameter>& parameters,
-    ConstructorFactory factory,
-    const NomadString& doc
-) {
-    return registerNativeConstructor(objectType, parameters, objectType, std::move(factory), doc);
-}
-
-CallableId Runtime::registerNativeConstructor(
-    const ObjectType* objectType,
-    const std::vector<Parameter>& parameters,
-    const ObjectType* createdType,
-    ConstructorFactory factory,
-    const NomadString& doc
-) {
     auto* ownedType = getMutableObjectType(objectType);
-    if (ownedType == nullptr || !ownsType(createdType) || createdType->isInternal() || !factory) {
+    if (ownedType == nullptr || !ownsType(createdType) || createdType->isInternal() || !definition.factory) {
         log::error("Cannot register constructor: a registered class, registered public object type, and factory are required");
         return CallableId::INVALID;
     }
@@ -1628,7 +1607,9 @@ CallableId Runtime::registerNativeConstructor(
     }
     return ownedType->registerConstructor(
         *this,
-        std::make_unique<NativeConstructor>(name, objectType, createdType, std::move(factory), parameters, doc)
+        std::make_unique<NativeConstructor>(
+            name, objectType, createdType, std::move(definition.factory), parameters, definition.documentation
+        )
     );
 }
 

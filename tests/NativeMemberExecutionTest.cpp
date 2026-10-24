@@ -25,9 +25,11 @@ const ObjectType* registerTestObject(Runtime& runtime) {
     const auto descriptorId = runtime.createObjectType<ObjectType>("TestObject", ObjectTypeMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asObjectType();
-    runtime.registerNativeConstructor(
-        type, {}, [](std::span<const RuntimeValue>) { return new TestObject; }, ""
-    );
+    BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+        .parameters = {},
+        .factory = [](std::span<const RuntimeValue>) { return new TestObject; },
+        .documentation = ""
+    }).isValid());
     BOOST_REQUIRE(runtime.addProperty(type->getId(), {
         .valueTypeId = runtime.getTypeId("int"),
         .name = "value",
@@ -85,14 +87,15 @@ BOOST_AUTO_TEST_CASE(resolved_method_and_constructor_survive_catalog_growth) {
         std::move(receiver), std::move(arguments));
     BOOST_REQUIRE(expression.resolve(&compilation, nullptr));
 
-    BOOST_REQUIRE(runtime.registerNativeConstructor(
-        type, {defParameter("value", runtime.getIntegerType(), "")},
-        [](std::span<const RuntimeValue>) {
+    BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+        .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
+        .factory = [](std::span<const RuntimeValue>) {
             auto* object = new TestObject;
             object->value = 100;
             return object;
-        }, ""
-    ).isValid());
+        },
+        .documentation = ""
+    }).isValid());
     BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId("string"), {
         .name = "increment",
         .parameters = {{runtime.getTypeId("int"), "amount", ""}},
