@@ -85,11 +85,7 @@ BOOST_AUTO_TEST_CASE(statement_parsers_register_without_interpreter_metadata)
     Runtime runtime;
     auto compiler = runtime.createCompiler();
 
-    compiler->registerParseStatementFn(
-        "console.test",
-        nullptr,
-        StatementAvailability::Compiler
-    );
+    compiler->registerParseStatementFn("console.test", StatementAvailability::Compiler, nullptr);
 
     BOOST_TEST(compiler->isStatement("console.test"));
 }

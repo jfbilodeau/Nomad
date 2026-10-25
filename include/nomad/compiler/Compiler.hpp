@@ -66,8 +66,8 @@ public:
     // Statements
     void registerParseStatementFn(
         const NomadString& name,
-        ParseStatementFn fn,
         StatementAvailability availability,
+        ParseStatementFn fn,
         PreParseStatementFn preFn = nullptr
     );
     [[nodiscard]] bool isStatement(const NomadString& name) const;

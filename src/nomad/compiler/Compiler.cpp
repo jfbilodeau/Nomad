@@ -29,23 +29,23 @@ Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
         addOpCode(OpCodes::op_stop);
     }
 
-    registerParseStatementFn("const", parseConstStatement, StatementAvailability::Compiler, preParseConstStatement);
-    registerParseStatementFn("enum", parseEnumStatement, StatementAvailability::Compiler, preParseEnumStatement);
-    registerParseStatementFn("event", parseEventStatement, StatementAvailability::Compiler, preParseEventStatement);
-    registerParseStatementFn("fun", parseFunStatement, StatementAvailability::Compiler, preParseFunStatement);
-    registerParseStatementFn("hub", parseHubStatement, StatementAvailability::Compiler, preParseHubStatement);
-    registerParseStatementFn("class", parseClassStatement, StatementAvailability::Compiler, preParseClassStatement);
-    registerParseStatementFn("open", parseOpenStatement, StatementAvailability::Compiler, preParseOpenStatement);
-    registerParseStatementFn("assert", parseAssertStatement, StatementAvailability::Compiler);
-    registerParseStatementFn("if", parseIfStatement, StatementAvailability::Both);
-    registerParseStatementFn("params", nullptr, StatementAvailability::Compiler, preParseParamsStatement);
-    registerParseStatementFn("return", parseReturnStatement, StatementAvailability::Compiler);
-    registerParseStatementFn("while", parseWhileStatement, StatementAvailability::Both);
-    registerParseStatementFn("until", parseUntilStatement, StatementAvailability::Both);
-    registerParseStatementFn("do", parseDoStatement, StatementAvailability::Both);
-    registerParseStatementFn("break", parseBreakStatement, StatementAvailability::Both);
-    registerParseStatementFn("continue", parseContinueStatement, StatementAvailability::Both);
-    registerParseStatementFn("for", parseForStatement, StatementAvailability::Both);
+    registerParseStatementFn("const", StatementAvailability::Compiler, parseConstStatement, preParseConstStatement);
+    registerParseStatementFn("enum", StatementAvailability::Compiler, parseEnumStatement, preParseEnumStatement);
+    registerParseStatementFn("event", StatementAvailability::Compiler, parseEventStatement, preParseEventStatement);
+    registerParseStatementFn("fun", StatementAvailability::Compiler, parseFunStatement, preParseFunStatement);
+    registerParseStatementFn("hub", StatementAvailability::Compiler, parseHubStatement, preParseHubStatement);
+    registerParseStatementFn("class", StatementAvailability::Compiler, parseClassStatement, preParseClassStatement);
+    registerParseStatementFn("open", StatementAvailability::Compiler, parseOpenStatement, preParseOpenStatement);
+    registerParseStatementFn("assert", StatementAvailability::Compiler, parseAssertStatement);
+    registerParseStatementFn("if", StatementAvailability::Both, parseIfStatement);
+    registerParseStatementFn("params", StatementAvailability::Compiler, nullptr, preParseParamsStatement);
+    registerParseStatementFn("return", StatementAvailability::Compiler, parseReturnStatement);
+    registerParseStatementFn("while", StatementAvailability::Both, parseWhileStatement);
+    registerParseStatementFn("until", StatementAvailability::Both, parseUntilStatement);
+    registerParseStatementFn("do", StatementAvailability::Both, parseDoStatement);
+    registerParseStatementFn("break", StatementAvailability::Both, parseBreakStatement);
+    registerParseStatementFn("continue", StatementAvailability::Both, parseContinueStatement);
+    registerParseStatementFn("for", StatementAvailability::Both, parseForStatement);
 
 }
 
@@ -75,10 +75,10 @@ void Compiler::reportInternalError(const NomadString& message) const {
 
 void Compiler::registerParseStatementFn(
     const NomadString& name,
-    ParseStatementFn fn,
     const StatementAvailability availability,
-    PreParseStatementFn preFn
-) {
+    const ParseStatementFn fn,
+    const PreParseStatementFn preFn)
+{
     m_statements.emplace(name, ParseStatementFnRegistration{ preFn, fn, availability });
 }
 

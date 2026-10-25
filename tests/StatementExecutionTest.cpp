@@ -115,9 +115,9 @@ BOOST_AUTO_TEST_CASE(statement_evaluation_defaults_to_unsupported)
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     compiler->registerParseStatementFn(
-        "supported",
-        parseExecutableTestStatement,
-        StatementAvailability::Both
+        "supported", 
+        StatementAvailability::Both, 
+        parseExecutableTestStatement
     );
 
     auto machine = runtime.createVirtualMachine();
@@ -141,7 +141,7 @@ BOOST_AUTO_TEST_CASE(statement_availability_is_enforced_from_registration)
         for (const auto mode : {CompilerMode::Script, CompilerMode::Interpreter}) {
             Runtime runtime;
             auto compiler = runtime.createCompiler();
-            compiler->registerParseStatementFn("custom", parseExecutableTestStatement, availability);
+            compiler->registerParseStatementFn("custom", availability, parseExecutableTestStatement);
             CompilerContext context(compiler.get(), mode);
             Tokenizer tokens(&context, "availability.nomad", "custom");
             const auto statement = parser::parseStatement(&context, nullptr, &tokens);
@@ -159,9 +159,8 @@ BOOST_AUTO_TEST_CASE(statement_pre_parser_receives_both_phases_without_separate_
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     preParsePhases.clear();
-    compiler->registerParseStatementFn(
-        "custom", parseExecutableTestStatement, StatementAvailability::Both, preParseTestStatement
-    );
+    compiler->registerParseStatementFn("custom", StatementAvailability::Both, parseExecutableTestStatement,
+                                       preParseTestStatement);
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"phases.nomad", "custom"}}}, {}});
     BOOST_REQUIRE(compiler->compileFunctions(&context));
@@ -176,9 +175,8 @@ BOOST_AUTO_TEST_CASE(interpreter_only_statements_do_not_run_compiler_pre_parsers
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     preParsePhases.clear();
-    compiler->registerParseStatementFn(
-        "custom", parseExecutableTestStatement, StatementAvailability::Interpreter, preParseTestStatement
-    );
+    compiler->registerParseStatementFn("custom", StatementAvailability::Interpreter, parseExecutableTestStatement,
+                                       preParseTestStatement);
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"phases.nomad", "custom"}}}, {}});
     BOOST_TEST(!compiler->compileFunctions(&context));
