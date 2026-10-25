@@ -53,6 +53,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptCallableBase.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptConstructor.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptMethod.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/ScriptObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Type.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Variable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/VariableContext.cpp

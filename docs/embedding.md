@@ -306,6 +306,33 @@ registration order, not necessarily source declaration order.
 This API describes type properties. The compiler publishes script class field
 metadata, but stored/script property execution is not yet implemented.
 
+### Script object storage
+
+`ScriptObject` (include `<nomad/script/ScriptObject.hpp>`) provides fixed
+instance storage for stored properties. Construct it with a `const ObjectType*`
+whose field layout has been resolved. The runtime and its type descriptors must
+outlive the object. Native properties do not occupy storage slots.
+
+Allocation captures the field layout without running type defaults or field
+initializer expressions. Call `initializeFields()` once to establish each
+field's type default. This operation is reserved for the future class
+initialization path; script constructors and initializer expressions are not
+executed by this API. Failed initialization cannot be retried, and destruction
+releases values from partially initialized fields.
+
+`getObjectType()` and `getFieldCount()` describe the instance. `getField(index)`
+returns a borrowed const value; `setField(index, value)` copies a value of the
+field's declared type, retaining object references and releasing the previous
+value. Callers must supply the correct value type. Both use owner-local
+`NomadIndex` slots, not `PropertyId` values. Access before successful
+initialization, out-of-range slots, and repeated initialization throw
+`NomadException`.
+
+Each instance owns its values; aliases to the same object share those values.
+Instances never resize when type metadata changes. Finish field discovery
+before creating instances. This API does not attach fields to native objects
+or enable stored-field access in scripts. Reference cycles are not collected.
+
 ### Native property creation
 
 `Runtime::addProperty(TypeId id, NativePropertyDefinition definition)` registers
