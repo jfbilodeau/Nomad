@@ -102,11 +102,7 @@
       "name": "base",
       "hidden": true,
       "targets": [
-        "nomad-cli",
-        "nomad-lsp",
-        "nomad-runtime",
-        "nomadc",
-        "nomad_test"
+        "nomad-development"
       ]
     },
     {

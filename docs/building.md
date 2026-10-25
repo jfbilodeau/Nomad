@@ -46,6 +46,13 @@ Build output can still list targets, check file globs, and run DLL export checks
 when no source needs recompilation. Those messages alone do not indicate a full
 rebuild.
 
+The standard build presets use the `nomad-development` target to build the
+enabled project manager, language server, runtime, compiler, and unit tests
+together. On Visual Studio, this avoids separate MSBuild invocations that repeat
+shared dependency checks and bundle steps for each program. Individual targets
+remain available for focused builds; the sanitizer preset retains its focused
+target selection.
+
 ## Running tests
 
 Test presets allow up to four concurrent test processes. Unit tests are split
