@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <nomad/compiler/ClassMemberDeclaration.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 
 namespace nomad {
@@ -13,12 +14,22 @@ class Tokenizer;
 
 class ClassDeclaration final : public Statement {
 public:
-    ClassDeclaration(NomadIndex line, NomadIndex column, const ObjectType* type);
+    ClassDeclaration(
+        NomadIndex line,
+        NomadIndex column,
+        const ObjectType* type,
+        std::vector<std::unique_ptr<ClassMemberDeclaration>> members
+    );
     [[nodiscard]] const ObjectType* getType() const;
+    [[nodiscard]] const std::vector<std::unique_ptr<ClassMemberDeclaration>>& getMembers() const;
     [[nodiscard]] NomadBoolean isDeclaration() const override;
+
+protected:
+    void onResolve(CompilerContext* context, ScriptFunction* function) override;
 
 private:
     const ObjectType* m_type;
+    std::vector<std::unique_ptr<ClassMemberDeclaration>> m_members;
 };
 
 bool preParseClassStatement(

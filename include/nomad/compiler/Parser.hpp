@@ -41,6 +41,13 @@ using ParseStatementFn = std::unique_ptr<Statement> (*)(CompilerContext*, Script
 namespace parser {
 
 [[nodiscard]] const Type* parseType(CompilerContext* context, Tokenizer* tokens);
+[[nodiscard]] bool parseParameters(
+    CompilerContext* context,
+    Tokenizer* tokens,
+    std::vector<Parameter>& parameters
+);
+// Counts end-delimited blocks opened on a line, including inline fun callbacks but not then continuations.
+[[nodiscard]] NomadIndex countBlockOpenings(const Tokenizer* tokens);
 
 [[nodiscard]] bool expectEndOfLine(
     CompilerContext* context,

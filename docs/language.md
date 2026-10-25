@@ -244,9 +244,44 @@ Each class has one declaration block, even when open. Duplicate declarations and
 conflicts with existing identifiers are errors. Classes cannot be declared inside
 functions or control-flow blocks, or through the interpreter.
 
-This is declaration-only support: fields, `init`, methods, external field
-additions, and construction with `new` are not available yet. A class body must
-be empty apart from comments and blank lines.
+Class member syntax can be parsed, but classes containing members cannot yet be
+compiled or executed. Only empty classes are currently usable in compiled scripts.
+The following illustrates the accepted declaration forms, not a runnable program:
+
+```nomad
+class Point
+    name = ""
+
+    init
+        this.x = 0.0
+        this.y = 0.0
+    end
+
+    init x:float y:float
+        this.x = x
+        this.y = y
+    end
+
+    fun moveTo x:float y:float
+        this.x = x
+        this.y = y
+    end
+end
+```
+
+Explicit fields use `name = initializer`. Constructors use `init`, optionally
+followed by typed parameters. Methods use `fun name` and the same typed parameter
+syntax as functions. Member names are unqualified. Parameter types must be fully
+qualified, including inside a hub; class types declared in other files are
+available to member signatures regardless of source order.
+
+Duplicate fields, field/method name conflicts, and duplicate callable signatures
+are errors. Parameter names do not distinguish signatures.
+Initializers and callable bodies are retained for later processing; their
+expression syntax, names, and types are not yet checked. Nonempty classes report
+an explicit unsupported-execution diagnostic rather than ignoring their members.
+Field discovery, instance initialization, member calls, external field additions,
+and construction with `new` remain unavailable.
 
 ## Data types and numeric ranges
 
@@ -356,7 +391,8 @@ back if a property setter or method fails.
 
 Assigning a new reference to the parameter itself remains invalid.
 
-Nomad does not currently support defining object types, properties, or methods in scripts.
+Script classes currently have declaration-only support; executable properties and
+methods must still be provided by the host. See [Class declarations](#class-declarations).
 
 The available members for each object type are listed in the [engine API](engine-api.md#object-members).
 

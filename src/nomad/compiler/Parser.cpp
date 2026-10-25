@@ -95,6 +95,74 @@ const Type* parseType(CompilerContext* context, Tokenizer* tokens) {
     return parseTypeName(context, tokens, 0);
 }
 
+bool parseParameters(
+    CompilerContext* context,
+    Tokenizer* tokens,
+    std::vector<Parameter>& parameters
+) {
+    while (!tokens->endOfLine()) {
+        NomadString name;
+        if (!tokens->nextIdentifier(name) || !tokens->expect(":")) {
+            return false;
+        }
+        if (context->getRuntime()->getKeywordId(name).isValid()) {
+            context->reportError("Parameter name '" + name + "' is a reserved keyword", tokens);
+            return false;
+        }
+        if (std::ranges::any_of(parameters, [&name](const auto& parameter) { return parameter.name == name; })) {
+            context->reportError("Parameter '" + name + "' is already defined", tokens);
+            return false;
+        }
+        if (context->getRuntime()->isHub(name)) {
+            context->reportError("Parameter name '" + name + "' is reserved by a hub", tokens);
+            return false;
+        }
+        const auto* type = parseType(context, tokens);
+        if (type == nullptr) {
+            return false;
+        }
+        parameters.push_back(defParameter(name, type, ""));
+    }
+    return true;
+}
+
+NomadIndex countBlockOpenings(const Tokenizer* tokens) {
+    if (tokens->getTokenCount() == 0) {
+        return 0;
+    }
+    const auto statement = tokens->getTokenTypeAt(0) == TokenType::Identifier ?
+        tokens->getTokenAt(0) : NomadString{};
+    if (statement == "end") {
+        return 0;
+    }
+    auto count = NomadIndex{0};
+    if (statement == "while" || statement == "until" || statement == "do" ||
+        statement == "for" || statement == "hub" || statement == "class" || statement == "enum") {
+        ++count;
+    }
+    if (statement == "open" && tokens->getTokenCount() > 1 &&
+        (tokens->getTokenAt(1) == "hub" || tokens->getTokenAt(1) == "class")) {
+        ++count;
+    }
+    auto inlineLoopControl = false;
+    for (auto index = NomadIndex{0}; index < tokens->getTokenCount(); ++index) {
+        if (tokens->getTokenTypeAt(index) != TokenType::Identifier) {
+            continue;
+        }
+        const auto& token = tokens->getTokenAt(index);
+        if (token == "fun") {
+            ++count;
+        }
+        if (statement == "if" && (token == "break" || token == "continue")) {
+            inlineLoopControl = true;
+        }
+    }
+    if (statement == "if" && !inlineLoopControl) {
+        ++count;
+    }
+    return count;
+}
+
 using ParseExpressionFunction = std::unique_ptr<Expression> (*)(
     CompilerContext*, 
     ScriptFunction*, 

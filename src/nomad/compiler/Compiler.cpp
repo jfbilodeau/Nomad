@@ -894,18 +894,7 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
         if (statement == "enum") {
             continue; // Enum pre-parsing consumes its own closing end.
         }
-        auto opensBlock = statement == "fun" || statement == "while" || statement == "until" ||
-            statement == "do" || statement == "for" || statement == "if";
-        for (NomadIndex index = 1; index < tokens.getTokenCount(); ++index) {
-            const auto& token = tokens.getTokenAt(index);
-            if (token == "fun") {
-                opensBlock = true;
-            }
-            if (statement == "if" && (token == "break" || token == "continue")) {
-                opensBlock = false;
-            }
-        }
-        if (opensBlock) {
+        for (auto count = parser::countBlockOpenings(&tokens); count > 0; --count) {
             blocks.push_back({context->getHub(), false});
         }
     }

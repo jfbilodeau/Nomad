@@ -1357,35 +1357,12 @@ bool preParseParamsStatement(
         return false;
     }
 
-    while (!tokens->endOfLine()) {
-        NomadString parameterName;
-
-        if (!tokens->nextIdentifier(parameterName) ||
-            !tokens->expect(":")) {
-            return false;
-        }
-        if (context->getRuntime()->getKeywordId(parameterName).isValid()) {
-            context->reportError("Parameter name '" + parameterName + "' is a reserved keyword", tokens);
-            return false;
-        }
-
-        if (function->getParameterId(parameterName) != NOMAD_INVALID_ID) {
-            context->reportError("Parameter '" + parameterName + "' is already defined", tokens);
-
-            return false;
-        }
-        if (context->getRuntime()->isHub(parameterName)) {
-            context->reportError("Parameter name '" + parameterName + "' is reserved by a hub", tokens);
-            return false;
-        }
-
-        const auto* parameterType = parser::parseType(context, tokens);
-
-        if (parameterType == nullptr) {
-            return false;
-        }
-
-        function->addParameter(parameterName, parameterType, "");
+    std::vector<Parameter> parameters;
+    if (!parser::parseParameters(context, tokens, parameters)) {
+        return false;
+    }
+    for (const auto& parameter : parameters) {
+        function->addParameter(parameter.name, parameter.type, "");
     }
 
     return true;
