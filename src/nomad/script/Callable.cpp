@@ -8,6 +8,14 @@
 
 namespace nomad {
 
+ScriptCallableBase* Callable::asScriptCallable() {
+    return nullptr;
+}
+
+const ScriptCallableBase* Callable::asScriptCallable() const {
+    return nullptr;
+}
+
 Parameter defParameter(const NomadString& name, const Type* type, const NomadString& doc) {
     return {
         name,

@@ -30,7 +30,7 @@ protected:
 
 std::unique_ptr<Statement> parseExecutableTestStatement(
     CompilerContext* /*context*/,
-    ScriptFunction* /*function*/,
+    ScriptCallableBase* /*function*/,
     Tokenizer* /*tokens*/
 ) {
     return std::make_unique<ExecutableTestStatement>();
@@ -38,7 +38,7 @@ std::unique_ptr<Statement> parseExecutableTestStatement(
 
 std::vector<PreParsePhase> preParsePhases;
 
-bool preParseTestStatement(CompilerContext*, ScriptFunction*, Tokenizer*, const PreParsePhase phase) {
+bool preParseTestStatement(CompilerContext*, ScriptCallableBase*, Tokenizer*, const PreParsePhase phase) {
     preParsePhases.push_back(phase);
     return true;
 }

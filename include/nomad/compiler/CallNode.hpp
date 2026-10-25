@@ -30,8 +30,8 @@ public:
     void add(std::unique_ptr<Argument>&& argument);
     void addAll(std::vector<std::unique_ptr<Argument>>&& arguments);
 
-    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptFunction* function) const;
-    void compile(Compiler* compiler, ScriptFunction* function) const;
+    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptCallableBase* function) const;
+    void compile(Compiler* compiler, ScriptCallableBase* function) const;
     // Evaluates arguments in order. The entries of values share the storage owned by evaluatedArguments.
     // Stops at the first argument that reports an error through the context->
     void evaluate(
@@ -70,7 +70,7 @@ private:
 // Non-overloaded signatures retain specialized argument validation, including expanded event arguments.
 [[nodiscard]] const Function* resolveFunctionCallArguments(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     const NomadString& name,
     ArgumentList* arguments,
     NomadString& error
@@ -90,7 +90,7 @@ public:
     [[nodiscard]] const ArgumentList* getArguments() const;
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
 
 private:
     ArgumentList m_arguments;
@@ -104,8 +104,8 @@ public:
     FunctionCallStatementNode(NomadIndex line, NomadIndex column, NomadString name);
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:

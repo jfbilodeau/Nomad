@@ -27,7 +27,7 @@ ClassMemberSourceLine takeSourceLine(Tokenizer* tokens) {
 
 bool readCallableBody(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     std::vector<ClassMemberSourceLine>& sourceLines
 ) {
@@ -60,7 +60,7 @@ bool readMemberName(CompilerContext* context, Tokenizer* tokens, NomadString& na
 
 std::unique_ptr<ClassMemberDeclaration> parseMember(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const bool resolveParameters
 ) {
@@ -131,7 +131,7 @@ std::unique_ptr<ClassMemberDeclaration> parseMember(
 
 bool parseClassDefinition(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     NomadString& name,
     std::vector<std::unique_ptr<ClassMemberDeclaration>>& members,
@@ -183,7 +183,7 @@ bool parseClassDefinition(
 
 bool preDeclareClass(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const ObjectTypeMode mode
 ) {
@@ -225,7 +225,7 @@ NomadBoolean ClassDeclaration::isDeclaration() const {
     return true;
 }
 
-void ClassDeclaration::onResolve(CompilerContext* context, ScriptFunction* function) {
+void ClassDeclaration::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     if (!m_members.empty()) {
         const auto& member = m_members.front();
         context->reportError(
@@ -237,7 +237,7 @@ void ClassDeclaration::onResolve(CompilerContext* context, ScriptFunction* funct
 
 bool preParseOpenClassStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const PreParsePhase phase
 ) {
@@ -251,7 +251,7 @@ bool preParseOpenClassStatement(
 
 bool preParseClassStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const PreParsePhase phase
 ) {
@@ -263,7 +263,7 @@ bool preParseClassStatement(
     return parseClassDefinition(context, function, tokens, name, members, true);
 }
 
-std::unique_ptr<Statement> parseClassStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseClassStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     const auto line = tokens->getLineIndex();
     const auto column = tokens->getColumnIndex();
     if (context->currentBodyEndsAtEnd() || !context->isFunctionRoot(function)) {

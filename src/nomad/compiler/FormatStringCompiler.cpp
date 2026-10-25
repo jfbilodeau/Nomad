@@ -166,7 +166,7 @@ std::optional<NomadIndex> findFormatStringLiteralEnd(const NomadStringView sourc
 
 std::optional<NomadString> compileFormatString(
     const Compiler* compiler,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     const NomadString& format,
     FormatString* formatString
 ) {
@@ -188,7 +188,7 @@ std::optional<NomadString> compileFormatString(
 
             switch (identifier.identifierType) {
                 case IdentifierType::Function: {
-                    const auto placeholderFunction = compiler->getRuntime()->getScriptFunction(identifier.functionId);
+                    const auto placeholderFunction = compiler->getRuntime()->getScriptCallable(identifier.functionId);
 
                     if (placeholderFunction != nullptr && placeholderFunction->getParameterCount() != 0) {
                         return "Cannot use function with parameters in format string: " + variableName;

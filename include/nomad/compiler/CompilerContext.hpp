@@ -14,7 +14,7 @@ class Compiler;
 class InterpreterContext;
 class LoopStatement;
 class Runtime;
-class ScriptFunction;
+class ScriptCallableBase;
 class Tokenizer;
 
 enum class DiagnosticSeverity {
@@ -78,20 +78,20 @@ public:
     void clearDiagnostics();
 
     struct Block {
-        const ScriptFunction* function;
+        const ScriptCallableBase* function;
         LoopStatement* loop;
         bool functionRoot;
         bool endsAtEnd;
     };
     void enterBlock(
-        const ScriptFunction* function,
+        const ScriptCallableBase* function,
         LoopStatement* loop = nullptr,
         bool functionRoot = false,
         bool endsAtEnd = false
     );
     void leaveBlock();
-    [[nodiscard]] bool isFunctionRoot(const ScriptFunction* function) const;
-    [[nodiscard]] LoopStatement* getEnclosingLoop(const ScriptFunction* function) const;
+    [[nodiscard]] bool isFunctionRoot(const ScriptCallableBase* function) const;
+    [[nodiscard]] LoopStatement* getEnclosingLoop(const ScriptCallableBase* function) const;
     [[nodiscard]] bool currentBodyEndsAtEnd() const;
 
 private:
@@ -118,7 +118,7 @@ class ParserBlockScope {
 public:
     ParserBlockScope(
         CompilerContext& context,
-        const ScriptFunction* function,
+        const ScriptCallableBase* function,
         LoopStatement* loop = nullptr,
         bool functionRoot = false,
         bool endsAtEnd = false

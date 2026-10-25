@@ -15,7 +15,7 @@ enum class PreParsePhase;
 // Forward declaration
 class Compiler;
 class Expression;
-class ScriptFunction;
+class ScriptCallableBase;
 class Statement;
 class SyntaxTree;
 class Tokenizer;
@@ -33,7 +33,7 @@ private:
 
 bool preParseEventStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     PreParsePhase phase
 );

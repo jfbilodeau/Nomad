@@ -2877,6 +2877,18 @@ ScriptFunction* Runtime::getScriptFunction(const CallableId functionId) {
     return static_cast<Function*>(callable)->asScriptFunction();
 }
 
+ScriptCallableBase* Runtime::getScriptCallable(const CallableId callableId) {
+    if (isIdOutOfRange(callableId.id, m_callables.size())) {
+        return nullptr;
+    }
+    return m_callables[toNomadIndex(callableId.id)]->asScriptCallable();
+}
+
+const ScriptCallableBase* Runtime::getScriptCallable(const CallableId callableId) const {
+    const auto* callable = getCallable(callableId);
+    return callable == nullptr ? nullptr : callable->asScriptCallable();
+}
+
 const ScriptFunction* Runtime::getScriptFunction(const CallableId functionId) const {
     const auto* function = getFunction(functionId);
     return function == nullptr ? nullptr : function->asScriptFunction();

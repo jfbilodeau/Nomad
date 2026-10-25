@@ -10,7 +10,7 @@ namespace nomad {
 
 bool preParseEventStatement(
     CompilerContext* context,
-    ScriptFunction* /*function*/,
+    ScriptCallableBase* /*function*/,
     Tokenizer* tokens,
     const PreParsePhase phase
 ) {

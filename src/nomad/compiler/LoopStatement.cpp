@@ -33,7 +33,7 @@ public:
         Statement(line, column), m_loop(loop), m_isBreak(isBreak) {}
 
 protected:
-    void onCompile(Compiler* compiler, ScriptFunction*) override {
+    void onCompile(Compiler* compiler, ScriptCallableBase*) override {
         m_loop->compileControl(compiler, m_isBreak);
     }
     void onEvaluate(InterpreterContext& context) const override {
@@ -61,7 +61,7 @@ public:
     {}
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override {
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override {
         auto* runtime = context->getRuntime();
         if (m_factory == nullptr) {
             if (!m_source->resolve(context, function)) {
@@ -98,7 +98,7 @@ protected:
         (void)m_body.resolve(context, function);
     }
 
-    void onCompile(Compiler* compiler, ScriptFunction* function) override {
+    void onCompile(Compiler* compiler, ScriptCallableBase* function) override {
         resetControls();
         const auto store = [&](Expression* expression, const Type* type, VariableId id) {
             expression->compile(compiler, function, ExpressionTarget::Result);
@@ -185,7 +185,7 @@ private:
 
 std::unique_ptr<Statement> createControl(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     bool isBreak
 ) {
@@ -199,7 +199,7 @@ std::unique_ptr<Statement> createControl(
 
 std::unique_ptr<Statement> parseLoop(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     bool postTest,
     bool until
@@ -250,11 +250,11 @@ StatementList& LoopStatement::getBody() { return m_body; }
 void LoopStatement::setCondition(std::unique_ptr<Expression> condition) { m_condition = std::move(condition); }
 void LoopStatement::setUntil(bool until) { m_until = until; }
 
-void LoopStatement::checkReachability(CompilerContext* context, const ScriptFunction* function) const {
+void LoopStatement::checkReachability(CompilerContext* context, const ScriptCallableBase* function) const {
     m_body.checkReachability(context, function);
 }
 
-void LoopStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
+void LoopStatement::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     if (m_condition->resolve(context, function) && m_condition->getType() != context->getRuntime()->getBooleanType()) {
         reportError(context, function, "Loop condition must be a boolean expression");
     }
@@ -267,7 +267,7 @@ void LoopStatement::compileControl(Compiler* compiler, bool isBreak) {
     jumps.push_back(compiler->addIndex(NOMAD_INVALID_INDEX));
 }
 
-void LoopStatement::onCompile(Compiler* compiler, ScriptFunction* function) {
+void LoopStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     resetControls();
     const auto start = compiler->getOpCodeSize();
     auto exit = NOMAD_INVALID_INDEX;
@@ -308,7 +308,7 @@ void LoopStatement::patchControls(Compiler* compiler, NomadIndex continuation, N
 
 std::unique_ptr<Statement> parseForStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     const auto line = tokens->getLineIndex();
@@ -376,42 +376,42 @@ void LoopStatement::onEvaluate(InterpreterContext& context) const {
 
 std::unique_ptr<Statement> parseWhileStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     return parseLoop(context, function, tokens, false, false);
 }
 std::unique_ptr<Statement> parseUntilStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     return parseLoop(context, function, tokens, false, true);
 }
 std::unique_ptr<Statement> parseDoStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     return parseLoop(context, function, tokens, true, false);
 }
 std::unique_ptr<Statement> parseBreakStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     return createControl(context, function, tokens, true);
 }
 std::unique_ptr<Statement> parseContinueStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     return createControl(context, function, tokens, false);
 }
 std::unique_ptr<Statement> parseLoopControlStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     const auto isBreak = tokens->is("break");

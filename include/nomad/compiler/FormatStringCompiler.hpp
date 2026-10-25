@@ -12,7 +12,7 @@ namespace nomad {
 // Forward declarations
 class Compiler;
 class FormatString;
-class ScriptFunction;
+class ScriptCallableBase;
 
 enum class FormatTemplateSegmentType {
     Literal = 1,
@@ -55,7 +55,7 @@ struct FormatTemplate {
 // format is invalid.
 [[nodiscard]] std::optional<NomadString> compileFormatString(
     const Compiler* compiler,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     const NomadString& format,
     FormatString* formatString
 );

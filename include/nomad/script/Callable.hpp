@@ -17,6 +17,7 @@ class NativeConstructor;
 class NativeFunction;
 class NativeMethod;
 class ScriptConstructor;
+class ScriptCallableBase;
 class ScriptFunction;
 class ScriptMethod;
 class Runtime;
@@ -78,6 +79,8 @@ public:
     [[nodiscard]] const Type* getObjectType() const;
     [[nodiscard]] const NomadString& getDoc() const;
     [[nodiscard]] CallableId registerWithRuntime(Runtime& runtime);
+    [[nodiscard]] virtual ScriptCallableBase* asScriptCallable();
+    [[nodiscard]] virtual const ScriptCallableBase* asScriptCallable() const;
 
 protected:
     Callable(

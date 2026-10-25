@@ -26,7 +26,7 @@ NomadBoolean ReturnStatementNode::alwaysReturns() const {
     return true;
 }
 
-void ReturnStatementNode::onResolve(CompilerContext* context, ScriptFunction* function) {
+void ReturnStatementNode::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     if (context->getMode() == CompilerMode::Interpreter) {
         reportError(context, function, "`return` is not supported by the interpreter");
         return;
@@ -69,7 +69,7 @@ void ReturnStatementNode::onResolve(CompilerContext* context, ScriptFunction* fu
     }
 }
 
-void ReturnStatementNode::onCompile(Compiler* compiler, ScriptFunction* function) {
+void ReturnStatementNode::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     if (m_expression != nullptr) {
         m_expression->compile(compiler, function, ExpressionTarget::Result);
     }
@@ -77,7 +77,7 @@ void ReturnStatementNode::onCompile(Compiler* compiler, ScriptFunction* function
     compiler->addFunctionReturn(function);
 }
 
-std::unique_ptr<Statement> parseReturnStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseReturnStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     if (tokens->endOfLine() == false) {
         auto expression = parser::parseExpression(context, function, tokens);
 

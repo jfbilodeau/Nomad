@@ -28,19 +28,19 @@ public:
     // that expression yields. Returns `nullptr` for arguments whose value does not depend on the parameter type, and
     // for expressions that failed to resolve. Overload resolution uses this to learn the argument types before the
     // parameter types are known.
-    [[nodiscard]] virtual const Type* resolveOverloadType(CompilerContext* context, ScriptFunction* function);
+    [[nodiscard]] virtual const Type* resolveOverloadType(CompilerContext* context, ScriptCallableBase* function);
 
     [[nodiscard]]
     virtual NomadIndex getStackValueCount() const { return 1; }
 
     [[nodiscard]] TypedValue evaluate(InterpreterContext& context) const;
     // Resolves the argument's expression (if any). Returns false if errors were reported.
-    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptFunction* function);
-    void generateCode(Compiler* compiler, ScriptFunction* function);
+    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptCallableBase* function);
+    void generateCode(Compiler* compiler, ScriptCallableBase* function);
 
 protected:
-    virtual void onResolve(CompilerContext* context, ScriptFunction* function);
-    virtual void onCompile(Compiler* compiler, ScriptFunction* function) = 0;
+    virtual void onResolve(CompilerContext* context, ScriptCallableBase* function);
+    virtual void onCompile(Compiler* compiler, ScriptCallableBase* function) = 0;
     [[nodiscard]] virtual TypedValue onEvaluate(InterpreterContext& context) const;
 
 private:

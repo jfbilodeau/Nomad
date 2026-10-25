@@ -57,7 +57,7 @@ public:
     [[noreturn]]
     void reportError(const NomadString& message) const;
     [[noreturn]]
-    void reportError(const NomadString& message, const ScriptFunction* function, const Tokenizer* tokenizer) const;
+    void reportError(const NomadString& message, const ScriptCallableBase* function, const Tokenizer* tokenizer) const;
     [[noreturn]]
     void reportError(const NomadString& message, const NomadString& functionName, NomadIndex line, NomadIndex column) const;
     [[noreturn]]
@@ -105,10 +105,10 @@ public:
     ) const;
 
     // Identifier identification
-    IdentifierType getIdentifierType(const NomadString& name, const ScriptFunction* function) const;
-    void getIdentifierDefinition(const NomadString& name, const ScriptFunction* function, IdentifierDefinition& definition) const;
+    IdentifierType getIdentifierType(const NomadString& name, const ScriptCallableBase* function) const;
+    void getIdentifierDefinition(const NomadString& name, const ScriptCallableBase* function, IdentifierDefinition& definition) const;
     [[nodiscard]] bool getNativeMemberConflict(const NomadString& identifier, const Type* type,
-                                                  const ScriptFunction* function,
+                                                  const ScriptCallableBase* function,
                                                   NomadString& conflictingIdentifier) const;
 
     // Opcode generation
@@ -117,7 +117,7 @@ public:
     NomadIndex addOpCode(OpCodeId opCode);
     NomadIndex addOpCode(const NomadString& opCodeName);
     NomadIndex addOpCode(InstructionFn opCode);
-    void addFunctionReturn(const ScriptFunction* function);
+    void addFunctionReturn(const ScriptCallableBase* function);
     NomadIndex addId(NomadId id);
     NomadIndex addIndex(NomadIndex index);
     NomadIndex addInteger(NomadInteger value);
@@ -147,10 +147,10 @@ public:
     // Same, for free opcodes taking an operand (stack offset from the top or function variable index).
     void addFreeValue(InstructionFn freeOpCode, NomadIndex operand);
 
-    NomadIndex addFunctionCall(CallableId targetFunctionId, ScriptFunction* function, const ArgumentList* arguments);
-    NomadIndex addNativeFunctionCall(CallableId nativeFunctionId, ScriptFunction* function, const ArgumentList* arguments);
-    NomadIndex addConstructorCall(CallableId constructorId, ScriptFunction* function, const ArgumentList* arguments);
-    NomadIndex addNativeMethodCall(CallableId memberId, ScriptFunction* function, const ArgumentList* arguments);
+    NomadIndex addFunctionCall(CallableId targetFunctionId, ScriptCallableBase* function, const ArgumentList* arguments);
+    NomadIndex addNativeFunctionCall(CallableId nativeFunctionId, ScriptCallableBase* function, const ArgumentList* arguments);
+    NomadIndex addConstructorCall(CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments);
+    NomadIndex addNativeMethodCall(CallableId memberId, ScriptCallableBase* function, const ArgumentList* arguments);
     // After a call returns, free the arguments still on the stack.
     void addFreeArguments(const ArgumentList* arguments);
 
@@ -204,13 +204,13 @@ public:
 
     // Generate function names for internal functions
     NomadString generateFunctionName(const NomadString& generatedName, const NomadString& hostFunctionName, NomadIndex line);
-    NomadString generateFunctionName(const NomadString& name, const ScriptFunction* function, NomadIndex line);
+    NomadString generateFunctionName(const NomadString& name, const ScriptCallableBase* function, NomadIndex line);
 
 private:
     struct FunctionCompilation {
         NomadId scriptId = NOMAD_INVALID_ID;
         std::unique_ptr<FunctionNode> ast;
-        ScriptFunction* function;
+        ScriptCallableBase* function;
         bool hubInitializer = false;
     };
 

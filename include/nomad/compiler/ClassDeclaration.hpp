@@ -25,7 +25,7 @@ public:
     [[nodiscard]] NomadBoolean isDeclaration() const override;
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
 
 private:
     const ObjectType* m_type;
@@ -34,16 +34,16 @@ private:
 
 bool preParseClassStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     PreParsePhase phase
 );
 bool preParseOpenClassStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     PreParsePhase phase
 );
-std::unique_ptr<Statement> parseClassStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
+std::unique_ptr<Statement> parseClassStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens);
 
 } // namespace nomad

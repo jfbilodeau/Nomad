@@ -59,7 +59,7 @@ void Compiler::reportError(const NomadString& message) const {
     throw CompilerException(message);
 }
 
-void Compiler::reportError(const NomadString& message, const ScriptFunction* function, const Tokenizer* tokenizer) const {
+void Compiler::reportError(const NomadString& message, const ScriptCallableBase* function, const Tokenizer* tokenizer) const {
     reportError(message, function->getName(), tokenizer->getLineIndex(), tokenizer->getColumnIndex());
 }
 
@@ -181,7 +181,7 @@ bool Compiler::foldBinary(
     return m_runtime->foldBinary(op, lhsType, lhs, rhsType, rhs, result);
 }
 
-IdentifierType Compiler::getIdentifierType(const NomadString& name, const ScriptFunction* function) const {
+IdentifierType Compiler::getIdentifierType(const NomadString& name, const ScriptCallableBase* function) const {
     if (m_runtime->getKeywordId(name).isValid()) {
         return IdentifierType::Keyword;
     }
@@ -226,7 +226,7 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
     return IdentifierType::Unknown;
 }
 
-void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunction* function, IdentifierDefinition& definition) const {
+void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptCallableBase* function, IdentifierDefinition& definition) const {
     if (name.empty()) {
         definition.identifierType = IdentifierType::Unknown;
 
@@ -336,7 +336,7 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
     definition.identifierType = IdentifierType::Unknown;
 }
 
-bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type* type, const ScriptFunction* function,
+bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type* type, const ScriptCallableBase* function,
                                           NomadString& conflictingIdentifier) const {
     if (identifier.empty() || type == nullptr) {
         return false;
@@ -684,8 +684,8 @@ void Compiler::addFreeValue(const InstructionFn freeOpCode, const NomadIndex ope
     }
 }
 
-NomadIndex Compiler::addFunctionCall(const CallableId targetFunctionId, ScriptFunction* function, const ArgumentList* arguments) {
-    const auto targetFunction = getRuntime()->getScriptFunction(targetFunctionId);
+NomadIndex Compiler::addFunctionCall(const CallableId targetFunctionId, ScriptCallableBase* function, const ArgumentList* arguments) {
+    const auto targetFunction = getRuntime()->getScriptCallable(targetFunctionId);
 
     if (targetFunction == nullptr) {
         reportInternalError("Unknown function id: " + toString(targetFunctionId.id));
@@ -752,7 +752,7 @@ void Compiler::addFreeArguments(const ArgumentList* arguments) {
     }
 }
 
-NomadIndex Compiler::addNativeFunctionCall(const CallableId nativeFunctionId, ScriptFunction* function, const ArgumentList* arguments) {
+NomadIndex Compiler::addNativeFunctionCall(const CallableId nativeFunctionId, ScriptCallableBase* function, const ArgumentList* arguments) {
     arguments->compile(this, function);
 
     if (m_runtime->getNativeFunction(nativeFunctionId) == nullptr) {
@@ -781,7 +781,7 @@ NomadIndex Compiler::addNativeFunctionCall(const CallableId nativeFunctionId, Sc
     return m_instructions.size() - 1;
 }
 
-NomadIndex Compiler::addConstructorCall(const CallableId constructorId, ScriptFunction* function, const ArgumentList* arguments) {
+NomadIndex Compiler::addConstructorCall(const CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments) {
     arguments->compile(this, function);
 
     addOpCode(OpCodes::op_object_new);
@@ -792,7 +792,7 @@ NomadIndex Compiler::addConstructorCall(const CallableId constructorId, ScriptFu
     return m_instructions.size() - 1;
 }
 
-NomadIndex Compiler::addNativeMethodCall(const CallableId memberId, ScriptFunction* function,
+NomadIndex Compiler::addNativeMethodCall(const CallableId memberId, ScriptCallableBase* function,
                                             const ArgumentList* arguments) {
     arguments->compile(this, function);
 
@@ -837,7 +837,7 @@ void Compiler::setIndex(NomadIndex index, NomadIndex value) {
 
 void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scriptFile, const bool hubsOnly) {
     const CompilerHubScope scriptScope(*context, {});
-    auto function = m_runtime->getScriptFunction(scriptFile.functionId);
+    auto function = m_runtime->getScriptCallable(scriptFile.functionId);
     auto& tokens = *scriptFile.tokens;
 
     tokens.reset();
@@ -911,7 +911,7 @@ void Compiler::parseFunction(CompilerContext* context, ScriptCompilation& file) 
 
     // Statements with errors are skipped so the following lines are still parsed.
     while (tokens.nextLine()) {
-        const auto function = m_runtime->getScriptFunction(file.functionId);
+        const auto function = m_runtime->getScriptCallable(file.functionId);
 
         auto statement = parser::parseLine(context, function, &tokens);
 
@@ -1013,7 +1013,7 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
 }
 
 void Compiler::compileFunction(const FunctionCompilation& source) {
-    ScriptFunction* function = source.function;
+    ScriptCallableBase* function = source.function;
 
     function->setFunctionStart(m_instructions.size());
 
@@ -1030,7 +1030,7 @@ void Compiler::compileFunction(const FunctionCompilation& source) {
     function->setFunctionEnd(m_instructions.size());
 }
 
-void Compiler::addFunctionReturn(const ScriptFunction* function) {
+void Compiler::addFunctionReturn(const ScriptCallableBase* function) {
     const NomadIndex variableCount = function->getVariableCount();
 
     if (variableCount == 0) {
@@ -1076,7 +1076,7 @@ CallableId Compiler::createFunction(
     const auto& source = getScript(scriptId).source;
     const auto existingFunctionId = m_runtime->getFunctionId(functionName);
     if (existingFunctionId != CallableId{}) {
-        const auto* existingFunction = m_runtime->getScriptFunction(existingFunctionId);
+        const auto* existingFunction = m_runtime->getScriptCallable(existingFunctionId);
         context->reportError(
             "Function name '" + functionName + "' is already used by '" + existingFunction->getPath() + "'",
             source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
@@ -1090,7 +1090,7 @@ CallableId Compiler::createFunction(
         return CallableId::INVALID;
     }
 
-    auto function = m_runtime->getScriptFunction(functionId);
+    auto function = m_runtime->getScriptCallable(functionId);
     function->setHub(context->getHub());
 
     m_functions.emplace_back(FunctionCompilation {
@@ -1174,7 +1174,7 @@ void Compiler::registerScriptInitializer(
         if (m_scriptInitializerId.isInvalid()) {
             return;
         }
-        m_runtime->getScriptFunction(m_scriptInitializerId)->setHub({});
+        m_runtime->getScriptCallable(m_scriptInitializerId)->setHub({});
         setFunctionNode(m_scriptInitializerId, std::make_unique<FunctionNode>(0, 0));
     }
     for (auto& source : m_functions) {
@@ -1367,7 +1367,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     // Parsing a placeholder can append nested format literals to the queue.
     for (auto index = NomadIndex{0}; index < m_pendingFormatStrings.size(); ++index) {
         const auto pending = std::move(m_pendingFormatStrings[index]);
-        auto* function = m_runtime->getScriptFunction(pending.functionId);
+        auto* function = m_runtime->getScriptCallable(pending.functionId);
         reportExceptions(function->getPath(), [&] {
             CompilerContext placeholderContext(this, context->getMode(), nullptr, pending.hubInitializer);
             placeholderContext.setHub(pending.hub);
@@ -1507,7 +1507,7 @@ void Compiler::addReturningFunction(const CallableId functionId) {
 
 void Compiler::linkFunctions() {
     for (auto& link: m_functionLinks) {
-        auto function = m_runtime->getScriptFunction(link.functionId);
+        auto function = m_runtime->getScriptCallable(link.functionId);
 
         if (function == nullptr) {
             reportInternalError("Failed to link function '" + toString(link.functionId.id) + "'");
@@ -1559,7 +1559,7 @@ NomadString Compiler::generateFunctionName(const NomadString& generatedName, con
     return generatedFunctionName;
 }
 
-NomadString Compiler::generateFunctionName(const NomadString& name, const ScriptFunction* function, NomadIndex line) {
+NomadString Compiler::generateFunctionName(const NomadString& name, const ScriptCallableBase* function, NomadIndex line) {
     return generateFunctionName(name, function->getName(), line);
 }
 

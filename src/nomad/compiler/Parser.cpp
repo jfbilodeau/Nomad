@@ -165,7 +165,7 @@ NomadIndex countBlockOpenings(const Tokenizer* tokens) {
 
 using ParseExpressionFunction = std::unique_ptr<Expression> (*)(
     CompilerContext*, 
-    ScriptFunction*, 
+    ScriptCallableBase*, 
     Tokenizer*,
     const Expression*
 );
@@ -191,11 +191,11 @@ std::optional<MemberNameParts> splitNativeMemberName(const Runtime* runtime, con
     return MemberNameParts{name.substr(0, separator), std::move(member)};
 }
 
-std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptFunction* function,
+std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptCallableBase* function,
                                                               const Expression* parent, const NomadString& name,
                                                               NomadIndex line, NomadIndex column);
 
-bool parseNativeMemberArguments(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
+bool parseNativeMemberArguments(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens,
                                    const NomadString& memberName, ArgumentList& arguments) {
     const auto signature = context->getRuntime()->getMemberSignature(memberName);
     if (!signature) {
@@ -211,7 +211,7 @@ bool parseNativeMemberArguments(CompilerContext* context, ScriptFunction* functi
 }
 
 std::unique_ptr<Expression> createNativeMemberExpression(
-    CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent,
+    CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent,
     NomadString qualifiedName, NomadString memberName, std::unique_ptr<Expression> receiver,
     const bool parseArguments, const NomadIndex line, const NomadIndex column) {
     ArgumentList arguments;
@@ -238,7 +238,7 @@ std::unique_ptr<Expression> createNativeMemberExpression(
                                                        std::move(memberName), std::move(receiver), std::move(arguments));
 }
 
-std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptFunction* function,
+std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptCallableBase* function,
                                                               const Expression* parent, const NomadString& name,
                                                               const NomadIndex line, const NomadIndex column) {
     const auto functionId = context->getRuntime()->getCallableId(name);
@@ -272,7 +272,7 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
                                            false, line, column);
 }
 
-bool isPotentialMemberExpression(CompilerContext* context, ScriptFunction* function, const Tokenizer* tokens) {
+bool isPotentialMemberExpression(CompilerContext* context, ScriptCallableBase* function, const Tokenizer* tokens) {
     if (tokens->getTokenCount() == 0) {
         return false;
     }
@@ -322,7 +322,7 @@ bool hasAssignmentOperator(const Tokenizer* tokens) {
     return false;
 }
 
-bool isNativeMemberCandidate(const Compiler* compiler, const ScriptFunction* function, const NomadString& name) {
+bool isNativeMemberCandidate(const Compiler* compiler, const ScriptCallableBase* function, const NomadString& name) {
     if (!splitNativeMemberName(compiler->getRuntime(), name)) {
         return false;
     }
@@ -332,12 +332,12 @@ bool isNativeMemberCandidate(const Compiler* compiler, const ScriptFunction* fun
         if (compiler->getIdentifierType(name, scope) != IdentifierType::Unknown) {
             return false;
         }
-        scope = compiler->getRuntime()->getScriptFunction(scope->getParentId());
+        scope = compiler->getRuntime()->getScriptCallable(scope->getParentId());
     }
     return compiler->getIdentifierType(name, nullptr) == IdentifierType::Unknown;
 }
 
-std::unique_ptr<Expression> parseBinaryOperatorExpression(CompilerContext* context, ScriptFunction* function,
+std::unique_ptr<Expression> parseBinaryOperatorExpression(CompilerContext* context, ScriptCallableBase* function,
                                                           Tokenizer* tokens, const Expression* parent,
                                                           std::vector<BinaryOperator> operators,
                                                           const ParseExpressionFunction nextParseFn) {
@@ -381,7 +381,7 @@ std::unique_ptr<Expression> parseBinaryOperatorExpression(CompilerContext* conte
     }
 }
 
-std::unique_ptr<Statement> parseLine(CompilerContext* context, ScriptFunction* function, Tokenizer* tokenizer) {
+std::unique_ptr<Statement> parseLine(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokenizer) {
     if (!tokenizer->isReportingTo(context)) {
         context->getCompiler()->reportInternalError("Parser and tokenizer must share the same compiler context");
     }
@@ -415,7 +415,7 @@ std::unique_ptr<Statement> parseLine(CompilerContext* context, ScriptFunction* f
 
 bool parseBlock(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const std::vector<NomadString>& endTokens,
     StatementList* statements
@@ -452,7 +452,7 @@ bool parseBlock(
 
 std::unique_ptr<Statement> parseStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     const auto statementName = tokens->next().textValue;
@@ -508,7 +508,7 @@ std::unique_ptr<Statement> parseStatement(
 
 CallableId parseCallbackParameter(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const FunctionType* callbackType)
 {
@@ -539,7 +539,7 @@ CallableId parseCallbackParameter(
             return CallableId::INVALID;
         }
 
-        const auto callbackFunction = context->getRuntime()->getScriptFunction(functionId);
+        const auto callbackFunction = context->getRuntime()->getScriptCallable(functionId);
 
         // Wire the nested function's parent reference.
         callbackFunction->setParentId(function->getId());
@@ -581,7 +581,7 @@ CallableId parseCallbackParameter(
         return CallableId::INVALID;
     }
 
-    if (context->getRuntime()->getScriptFunction(funId)->getParameterCount() != callbackType->getParameterCount()) {
+    if (context->getRuntime()->getScriptCallable(funId)->getParameterCount() != callbackType->getParameterCount()) {
         context->reportError("Callback function '" + funName + "' has incorrect number of parameters", tokens);
 
         return CallableId::INVALID;
@@ -590,7 +590,7 @@ CallableId parseCallbackParameter(
     for (auto i = NomadIndex{0}; i < callbackType->getParameterCount(); ++i) {
         const auto parameterId = toNomadId(i);
         const auto expectedType = callbackType->getParameterType(parameterId);
-        const auto actualType = context->getRuntime()->getScriptFunction(funId)->getParameterType(parameterId);
+        const auto actualType = context->getRuntime()->getScriptCallable(funId)->getParameterType(parameterId);
         if (expectedType != actualType) {
             context->reportError("Callback function '" + funName + "' parameter type mismatch at index " + toString(i), tokens);
 
@@ -603,7 +603,7 @@ CallableId parseCallbackParameter(
 
 std::unique_ptr<Statement> parseFunctionCall(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const NomadString& functionName
 ) {
@@ -630,7 +630,7 @@ std::unique_ptr<Statement> parseFunctionCall(
     return functionCallStatement;
 }
 
-std::unique_ptr<Statement> parseReturnStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseReturnStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     auto expression = parseExpression(context, function, tokens);
 
     if (expression == nullptr) {
@@ -640,11 +640,11 @@ std::unique_ptr<Statement> parseReturnStatement(CompilerContext* context, Script
     return std::make_unique<ReturnStatementNode>(tokens->getLineIndex(), tokens->getColumnIndex(), std::move(expression));
 }
 
-std::unique_ptr<Expression> parseExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+std::unique_ptr<Expression> parseExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     return parseLogicalAndExpression(context, function, tokens, nullptr);
 }
 
-std::unique_ptr<Expression> parseLogicalAndExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseLogicalAndExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     return parseBinaryOperatorExpression(
         context,
         function,
@@ -656,7 +656,7 @@ std::unique_ptr<Expression> parseLogicalAndExpression(CompilerContext* context, 
 }
 
 
-std::unique_ptr<Expression> parseLogicalOrExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseLogicalOrExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     return parseBinaryOperatorExpression(
         context,
         function,
@@ -667,7 +667,7 @@ std::unique_ptr<Expression> parseLogicalOrExpression(CompilerContext* context, S
     );
 }
 
-std::unique_ptr<Expression> parseRelationalExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseRelationalExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     return parseBinaryOperatorExpression(
         context,
         function,
@@ -685,7 +685,7 @@ std::unique_ptr<Expression> parseRelationalExpression(CompilerContext* context, 
     );
 }
 
-std::unique_ptr<Expression> parseBitwiseAndExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseBitwiseAndExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     return parseBinaryOperatorExpression(
         context,
         function,
@@ -698,7 +698,7 @@ std::unique_ptr<Expression> parseBitwiseAndExpression(CompilerContext* context, 
     );
 }
 
-std::unique_ptr<Expression> parseBitwiseXorExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseBitwiseXorExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     return parseBinaryOperatorExpression(
         context,
         function,
@@ -711,7 +711,7 @@ std::unique_ptr<Expression> parseBitwiseXorExpression(CompilerContext* context, 
     );
 }
 
-std::unique_ptr<Expression> parseBitwiseOrExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseBitwiseOrExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     return parseBinaryOperatorExpression(
         context,
         function,
@@ -724,7 +724,7 @@ std::unique_ptr<Expression> parseBitwiseOrExpression(CompilerContext* context, S
     );
 }
 
-std::unique_ptr<Expression> parseTermExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseTermExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     return parseBinaryOperatorExpression(
         context,
         function,
@@ -738,7 +738,7 @@ std::unique_ptr<Expression> parseTermExpression(CompilerContext* context, Script
     );
 }
 
-std::unique_ptr<Expression> parseProductExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
+std::unique_ptr<Expression> parseProductExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens,
                                                    const Expression* parent) {
     return parseBinaryOperatorExpression(context, function, tokens, parent,
                                          {
@@ -749,12 +749,12 @@ std::unique_ptr<Expression> parseProductExpression(CompilerContext* context, Scr
                                          &parseUnaryOperatorExpression);
 }
 
-std::unique_ptr<Expression> parseParenthesesExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
+std::unique_ptr<Expression> parseParenthesesExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens,
                                                        const Expression* parent) {
     return parsePostfixExpression(context, function, tokens, parent);
 }
 
-std::unique_ptr<Expression> parseUnaryOperatorExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseUnaryOperatorExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     if (tokens->endOfLine()) {
         context->reportError("Unexpected end of line", tokens);
 
@@ -811,7 +811,7 @@ bool isArgumentStart(const Tokenizer* tokens) {
 
 std::unique_ptr<Expression> parseNewExpression(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const Expression* parent
 ) {
@@ -909,7 +909,7 @@ std::unique_ptr<Expression> parseNewExpression(
     );
 }
 
-std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
+std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens,
                                                    const Expression* parent) {
     std::unique_ptr<Expression> expression;
 
@@ -992,7 +992,7 @@ std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, Scr
 
 bool expectEndOfLine(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     NomadIndex statementLine
 ) {
@@ -1010,7 +1010,7 @@ bool expectEndOfLine(
     return true;
 }
 
-IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& name, const ScriptFunction* function) {
+IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& name, const ScriptCallableBase* function) {
     if (compiler->getRuntime()->getKeywordId(name).isValid()) {
         return IdentifierType::Keyword;
     }
@@ -1046,7 +1046,7 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
     return IdentifierType::Unknown;
 }
 
-std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     const auto line = tokens->getLineIndex();
     const auto column = tokens->getColumnIndex();
 
@@ -1166,7 +1166,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     return std::make_unique<AssignmentStatement>(line, column, variableName, std::move(expression));
 }
 
-std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     if (tokens->endOfLine()) {
         context->reportError("Unexpected end of line", tokens);
 
@@ -1287,7 +1287,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
 
 std::unique_ptr<Expression> parseFunctionCallExpression(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const Expression* parent,
     const NomadString& functionName
@@ -1315,7 +1315,7 @@ std::unique_ptr<Expression> parseFunctionCallExpression(
 }
 
 // Returns false on error.
-bool parseEventDispatch(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, std::vector<std::unique_ptr<Argument>>& arguments) {
+bool parseEventDispatch(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, std::vector<std::unique_ptr<Argument>>& arguments) {
     NomadString eventName;
 
     if (!tokens->nextIdentifier(eventName)) {
@@ -1373,7 +1373,7 @@ bool parseEventDispatch(CompilerContext* context, ScriptFunction* function, Toke
 
 bool parseCallableArguments(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const Callable& callable,
     ArgumentList* arguments,
@@ -1402,7 +1402,7 @@ bool parseCallableArguments(
 
 bool parseCallableArguments(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const std::vector<Parameter>& parameters,
     ArgumentList* arguments,
@@ -1571,7 +1571,7 @@ bool parseCallableArguments(
 std::unique_ptr<Argument> parseExpressionArgument(
     CompilerContext* context,
     const Type* argumentType,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     auto expression = parseExpression(context, function, tokens);
@@ -1590,7 +1590,7 @@ std::unique_ptr<Argument> parseExpressionArgument(
 
 std::unique_ptr<Argument> parsePredicateArgument(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     const auto predicateFunctionName = context->getCompiler()->generateFunctionName("predicate", function, tokens->getLineIndex());

@@ -466,6 +466,8 @@ public:
     // Null unless `functionId` identifies a script function.
     [[nodiscard]] ScriptFunction* getScriptFunction(CallableId functionId);
     [[nodiscard]] const ScriptFunction* getScriptFunction(CallableId functionId) const;
+    [[nodiscard]] ScriptCallableBase* getScriptCallable(CallableId callableId);
+    [[nodiscard]] const ScriptCallableBase* getScriptCallable(CallableId callableId) const;
     // Script return types are inferred after compilation. Returns false if `functionId` is not a script function.
     bool setScriptFunctionReturnType(CallableId functionId, const Type* returnType);
     [[nodiscard]] ScriptFunction* getFunctionAtLine(
