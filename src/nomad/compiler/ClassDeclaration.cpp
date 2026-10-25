@@ -363,9 +363,16 @@ NomadBoolean ClassDeclaration::isDeclaration() const {
 void ClassDeclaration::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     for (const auto& member : m_members) {
         if (auto* initializer = member->getInitializer()) {
-            (void)initializer->resolve(
-                context, context->getRuntime()->getScriptCallable(member->getCallableId())
-            );
+            auto* callable = context->getRuntime()->getScriptCallable(member->getCallableId());
+            if (initializer->resolve(context, callable)) {
+                const auto* property = context->getCompiler()->resolveClassField(
+                    context, callable, member->getName(), initializer->getType(), true,
+                    member->getLine(), member->getColumn()
+                );
+                if (property != nullptr) {
+                    member->setPropertyId(property->getId());
+                }
+            }
         }
     }
     if (!m_members.empty()) {

@@ -354,6 +354,67 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptCall
     definition.identifierType = IdentifierType::Unknown;
 }
 
+const Property* Compiler::resolveClassField(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    const NomadString& name,
+    const Type* valueType,
+    const bool allowDeclaration,
+    const NomadIndex line,
+    const NomadIndex column
+) {
+    const auto* receiver = getReceiverType(function);
+    const auto* owner = receiver != nullptr ? receiver->asObjectType() : nullptr;
+    if (owner == nullptr) {
+        reportInternalError("Class field resolution requires an object receiver");
+    }
+    const auto report = [&](const NomadString& message) {
+        context->reportError(message, function->getPath(), line, column);
+    };
+    IdentifierDefinition receiverDefinition;
+    if (!resolveIdentifier("this", this, function, receiverDefinition)) {
+        report("Cannot capture the class receiver 'this'");
+        return nullptr;
+    }
+    if (name.empty() || name.find('.') != NomadString::npos) {
+        report("Expected an unqualified class field name: '" + name + "'");
+        return nullptr;
+    }
+    for (const auto* method : owner->getMethods()) {
+        if (method->getName() == name) {
+            report("Class field '" + name + "' conflicts with a method");
+            return nullptr;
+        }
+    }
+    const auto* property = owner->getProperty(name);
+    if (property == nullptr && !allowDeclaration) {
+        report("Unknown class field '" + name + "'");
+        return nullptr;
+    }
+    if (valueType == nullptr) {
+        report("Cannot determine type of class field '" + name + "'");
+        return nullptr;
+    }
+    if (valueType->isVoid() || valueType->isInternal()) {
+        report("Invalid type for class field '" + name + "'");
+        return nullptr;
+    }
+    if (property != nullptr) {
+        if (property->getValueType() != valueType) {
+            report("Cannot assign type '" + valueType->getTypeName() + "' to class field '" + name +
+                "' of type '" + property->getValueType()->getTypeName() + "'");
+            return nullptr;
+        }
+        return property;
+    }
+    const auto id = m_runtime->registerProperty(owner, name, valueType);
+    if (id.isInvalid()) {
+        report("Cannot register class field '" + name + "'");
+        return nullptr;
+    }
+    return m_runtime->getProperty(id);
+}
+
 bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type* type, const ScriptCallableBase* function,
                                           NomadString& conflictingIdentifier) const {
     if (identifier.empty() || type == nullptr) {
@@ -977,7 +1038,7 @@ void Compiler::inferTypes(CompilerContext* context) {
     // resolve pass reports errors once, when every type that can be inferred is known.
     auto inferredTypes = collectInferredTypes();
 
-    for (NomadIndex pass = 0; pass <= m_functions.size(); ++pass) {
+    while (true) {
         CompilerContext inferenceContext(this, context->getMode());
 
         for (const auto& source: m_functions) {
@@ -1012,6 +1073,11 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
 
     for (const auto& source: m_functions) {
         types.push_back(source.function->getReturnType());
+        if (const auto* receiver = source.function->getObjectType()) {
+            for (const auto* property : receiver->asObjectType()->getProperties()) {
+                types.push_back(property->getValueType());
+            }
+        }
 
         for (NomadIndex variableIndex = 0; variableIndex < source.function->getVariableCount(); ++variableIndex) {
             types.push_back(source.function->getVariableType(VariableId{toNomadId(variableIndex)}));

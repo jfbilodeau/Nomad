@@ -1519,10 +1519,24 @@ IdentifierExpression::IdentifierExpression(
 {
 }
 
+const NomadString& IdentifierExpression::getIdentifier() const {
+    return m_identifier;
+}
+
 void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     if (context->getCompiler()->getReceiverType(function) != nullptr && m_identifier.starts_with("this.")) {
-        reportError(context, function, "Script class field access or member invocation is not supported yet: '" +
-            m_identifier + "'");
+        const auto* owner = context->getCompiler()->getReceiverType(function)->asObjectType();
+        const auto* property = owner->getProperty(m_identifier.substr(5));
+        if (property == nullptr) {
+            reportError(context, function, "Unknown class field '" + m_identifier.substr(5) + "'");
+            return;
+        }
+        IdentifierDefinition receiver;
+        if (!resolveIdentifier("this", context->getCompiler(), function, receiver)) {
+            reportError(context, function, "Cannot capture the class receiver 'this'");
+            return;
+        }
+        setType(property->getValueType());
         return;
     }
     auto* compiler = context->getCompiler();

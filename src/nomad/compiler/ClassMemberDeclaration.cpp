@@ -14,6 +14,14 @@ void ClassMemberDeclaration::setCallableId(const CallableId id) {
     m_callableId = id;
 }
 
+PropertyId ClassMemberDeclaration::getPropertyId() const {
+    return m_propertyId;
+}
+
+void ClassMemberDeclaration::setPropertyId(const PropertyId id) {
+    m_propertyId = id;
+}
+
 const Expression* ClassMemberDeclaration::getInitializer() const {
     return m_initializer.get();
 }

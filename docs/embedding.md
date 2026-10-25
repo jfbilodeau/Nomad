@@ -297,8 +297,14 @@ the owner's properties as borrowed const pointers. IDs and pointers remain
 stable as more properties are registered and are valid for the owning runtime's
 lifetime. Property IDs are runtime-wide, not per-object field offsets.
 
-This API describes type properties. Script class syntax and stored/script property
-access from scripts are not yet implemented.
+`ObjectType::getFieldIndex(id)` returns the zero-based owner-local slot for a
+stored/script property. Slots remain stable when properties are appended.
+Native properties do not occupy slots; native, invalid, and other owners'
+property IDs return `NOMAD_INVALID_INDEX`. Slot order follows successful
+registration order, not necessarily source declaration order.
+
+This API describes type properties. The compiler publishes script class field
+metadata, but stored/script property execution is not yet implemented.
 
 ### Native property creation
 

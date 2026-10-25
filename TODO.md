@@ -6,6 +6,7 @@ Things the author wants to do.
 [ ] `$init` shows up in LSP
 
 ## Open
+[ ] Finish converting `NomadId` to strong types.
 [ ] `struct` (Embedded types, pass by copy)
 [ ] Nomad scripts in modules
 [ ] Object serialization

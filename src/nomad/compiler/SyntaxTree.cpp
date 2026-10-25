@@ -237,6 +237,14 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
     auto* compiler = context->getCompiler();
     const auto expressionType = m_expression->getType();
 
+    if (compiler->getReceiverType(function) != nullptr && m_identifier.starts_with("this.")) {
+        (void)compiler->resolveClassField(
+            context, function, m_identifier.substr(5), expressionType,
+            context->getRuntime()->getConstructor(function->getId()) != nullptr, getLine(), getColumn()
+        );
+        return;
+    }
+
     IdentifierDefinition identifier;
     compiler->getIdentifierDefinition(m_identifier, function, identifier);
 

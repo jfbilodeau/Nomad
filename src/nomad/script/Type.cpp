@@ -534,6 +534,20 @@ NomadIndex ObjectType::getPropertyCount() const {
     return static_cast<NomadIndex>(m_properties.size());
 }
 
+NomadIndex ObjectType::getFieldIndex(const PropertyId id) const {
+    auto index = NomadIndex{0};
+    for (const auto& property : m_properties) {
+        if (property->asNativeProperty() != nullptr) {
+            continue;
+        }
+        if (property->getId() == id) {
+            return index;
+        }
+        ++index;
+    }
+    return NOMAD_INVALID_INDEX;
+}
+
 IndexerId ObjectType::registerNativeIndexer(
     Runtime& runtime,
     NativeIndexerInfo info

@@ -293,8 +293,15 @@ Inside a member body, explicit `this` refers to the declaring class instance.
 It is not a declared parameter and cannot be reassigned or used as a parameter
 name. Bare names do not implicitly resolve to fields: `value = 2` creates or
 updates a local, while `this.value = 2` denotes an instance field assignment.
-Field access/assignment and script member calls are still unsupported and report
-diagnostics; they never fall back to the game's `this.*` context.
+Field types are inferred from explicit initializers and `this.field = value`
+assignments in constructors, including conditional branches and constructor
+overloads. Each field has one type shared by all instances; conflicting
+assignments and field/method name collisions are errors. Methods may read and
+assign existing fields but cannot introduce new fields. Reads of unknown fields
+are errors. These names never fall back to the game's `this.*` context.
+Field metadata is available during compilation, but non-empty classes still
+report the unsupported-execution diagnostic. Object allocation, field storage,
+and script member calls are not executable yet.
 Script constructors may use a bare `return` but cannot return an expression.
 Member parameters are declared in the header, not with a later `params` statement.
 

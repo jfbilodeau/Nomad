@@ -299,6 +299,7 @@ class IdentifierExpression final : public PrimaryExpression {
 public:
     explicit IdentifierExpression(const Expression* parent, NomadIndex line, NomadIndex column, const NomadString& identifier);
 
+    [[nodiscard]] const NomadString& getIdentifier() const;
     [[nodiscard]] bool isWritable() const override;
     [[nodiscard]] IdentifierExpression* asIdentifierExpression() override;
     [[nodiscard]] const IdentifierExpression* asIdentifierExpression() const override;

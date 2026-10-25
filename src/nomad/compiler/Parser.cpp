@@ -214,6 +214,18 @@ std::unique_ptr<Expression> createNativeMemberExpression(
     CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent,
     NomadString qualifiedName, NomadString memberName, std::unique_ptr<Expression> receiver,
     const bool parseArguments, const NomadIndex line, const NomadIndex column) {
+    if (context->getCompiler()->getReceiverType(function) != nullptr) {
+        const auto* receiverIdentifier = receiver != nullptr ? receiver->asIdentifierExpression() : nullptr;
+        if (receiverIdentifier != nullptr &&
+            receiverIdentifier->getIdentifier() == "this") {
+            context->reportError(
+                "Script class field access or member invocation is not supported yet: '" + qualifiedName + "'",
+                tokens
+            );
+            return nullptr;
+        }
+    }
+
     ArgumentList arguments;
 
     if (parseArguments) {
@@ -241,6 +253,10 @@ std::unique_ptr<Expression> createNativeMemberExpression(
 std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptCallableBase* function,
                                                               const Expression* parent, const NomadString& name,
                                                               const NomadIndex line, const NomadIndex column) {
+    if (context->getCompiler()->getReceiverType(function) != nullptr &&
+        (name == "this" || (name.starts_with("this.") && name.find('.', 5) == NomadString::npos))) {
+        return std::make_unique<IdentifierExpression>(parent, line, column, name);
+    }
     const auto functionId = context->getRuntime()->getCallableId(name);
     if (functionId.isValid()) {
         const auto* targetFunction = context->getRuntime()->getFunction(functionId);
@@ -1058,10 +1074,18 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     const auto column = tokens->getColumnIndex();
     if (context->getCompiler()->getReceiverType(function) != nullptr && tokens->is(TokenType::Identifier)) {
         const auto& target = tokens->currentToken().textValue;
-        if (target == "this" || target.starts_with("this.")) {
-            context->reportError(target == "this" ? "Cannot reassign the class receiver 'this'" :
-                "Script class field assignment is not supported yet: '" + target + "'", tokens);
+        if (target == "this") {
+            context->reportError("Cannot reassign the class receiver 'this'", tokens);
             return nullptr;
+        }
+        if (target.starts_with("this.") && tokens->getTokenCount() >= 3 && tokens->getTokenAt(1) == "=") {
+            auto name = tokens->next().textValue;
+            tokens->next();
+            auto expression = parseExpression(context, function, tokens);
+            if (expression == nullptr || !expectEndOfLine(context, function, tokens, line)) {
+                return nullptr;
+            }
+            return std::make_unique<AssignmentStatement>(line, column, std::move(name), std::move(expression));
         }
     }
 
@@ -1240,6 +1264,13 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
     // auto& identifier = token.textValue;
 
     if (token.type == TokenType::Identifier) {
+        if (context->getCompiler()->getReceiverType(function) != nullptr &&
+            (token.textValue == "this" ||
+                (token.textValue.starts_with("this.") && token.textValue.find('.', 5) == NomadString::npos))) {
+            return std::make_unique<IdentifierExpression>(
+                parent, tokens->getLineIndex(), token.column, token.textValue
+            );
+        }
         const auto functionId = context->getRuntime()->getCallableId(token.textValue);
 
         if (functionId.isValid()) {

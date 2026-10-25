@@ -107,6 +107,15 @@ public:
     // Identifier identification
     IdentifierType getIdentifierType(const NomadString& name, const ScriptCallableBase* function) const;
     void getIdentifierDefinition(const NomadString& name, const ScriptCallableBase* function, IdentifierDefinition& definition) const;
+    [[nodiscard]] const Property* resolveClassField(
+        CompilerContext* context,
+        ScriptCallableBase* function,
+        const NomadString& name,
+        const Type* valueType,
+        bool allowDeclaration,
+        NomadIndex line,
+        NomadIndex column
+    );
     [[nodiscard]] bool getNativeMemberConflict(const NomadString& identifier, const Type* type,
                                                   const ScriptCallableBase* function,
                                                   NomadString& conflictingIdentifier) const;

@@ -446,7 +446,8 @@ BOOST_AUTO_TEST_CASE(member_bodies_and_initializers_report_ordinary_source_error
         "class Point\nfun move\nthis = 1\nend\nend",
         "class Point\nfun move\nthis.value = 1\nend\nend",
         "class Point\nfun move\nreturn this.value\nend\nend",
-        "class Point\nfun move\nthis.move\nend\nend"
+        "class Point\nfun move\nthis.move\nend\nend",
+        "class Point\nfun move\nreturn this.move()\nend\nend"
     }) {
         BOOST_TEST_CONTEXT(source) {
             LanguageTestFixture fixture;
@@ -486,6 +487,197 @@ BOOST_AUTO_TEST_CASE(bare_member_names_remain_locals_and_initializers_resolve_no
     invalidInitializer.addFunction("main", "class Point\nvalue = missing\nend");
     BOOST_TEST(!invalidInitializer.compile());
     BOOST_TEST(invalidInitializer.hasError("Unknown identifier: missing"));
+}
+
+BOOST_AUTO_TEST_CASE(class_fields_are_discovered_across_branches_and_constructor_overloads)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "class Point\n"
+        "name = \"point\"\n"
+        "fun read\nreturn this.x\nend\n"
+        "init enabled:bool\n"
+        "if enabled\nthis.x = 1.0\nelse\nthis.y = 2\nend\n"
+        "end\n"
+        "init value:float\nthis.x = value\nthis.label = this.name\nend\n"
+        "fun update value:float\nthis.x = value\nx = 42\nreturn x\nend\n"
+        "end"
+    );
+    BOOST_TEST(!fixture.compile());
+    BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
+    BOOST_TEST(fixture.getErrorCount() == 1u);
+    auto& runtime = fixture.getRuntime();
+    const auto* type = runtime.getTypeByName("Point")->asObjectType();
+    BOOST_REQUIRE(type != nullptr);
+    BOOST_REQUIRE(type->getProperties().size() == 4u);
+    for (const auto* name : {"name", "x", "y", "label"}) {
+        BOOST_REQUIRE(type->getProperty(name) != nullptr);
+        BOOST_TEST(runtime.getProperty(type->getProperty(name)->getId()) == type->getProperty(name));
+    }
+    BOOST_TEST(type->getProperty("x")->getValueType() == runtime.getFloatType());
+    BOOST_TEST(type->getProperty("y")->getValueType() == runtime.getIntegerType());
+    BOOST_TEST(type->getProperty("label")->getValueType() == runtime.getStringType());
+    for (const auto* method : type->getMethods()) {
+        if (method->getName() == "read") {
+            BOOST_TEST(method->getReturnType() == runtime.getFloatType());
+        }
+        if (method->getName() == "update") {
+            BOOST_TEST(method->getReturnType() == runtime.getIntegerType());
+            const auto* callable = runtime.getScriptCallable(method->getId());
+            BOOST_TEST(callable->getVariableId("this.x").isInvalid());
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(field_inference_retries_forward_dependencies_until_stable)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "class Chain\n"
+        "first = this.second\nsecond = this.third\nthird = this.fourth\n"
+        "fourth = this.fifth\nfifth = this.sixth\nsixth = 42\n"
+        "init\nthis.seventh = this.first\nend\n"
+        "end"
+    );
+    BOOST_TEST(!fixture.compile());
+    BOOST_TEST(fixture.getErrorCount() == 1u);
+    BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
+    const auto* type = fixture.getRuntime().getTypeByName("Chain")->asObjectType();
+    BOOST_REQUIRE(type->getProperties().size() == 7u);
+    for (const auto* property : type->getProperties()) {
+        BOOST_TEST(property->getValueType() == fixture.getRuntime().getIntegerType());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(class_fields_report_conflicts_unknown_reads_and_method_only_declarations)
+{
+    for (const auto* source : {
+        "class Point\nvalue = 1\ninit\nthis.value = \"wrong\"\nend\nend",
+        "class Point\ninit enabled:bool\nif enabled\nthis.x = 1\nelse\nthis.x = 1.0\nend\nend\nend",
+        "class Point\ninit value:int\nthis.x = value\nend\ninit value:float\nthis.x = value\nend\nend"
+    }) {
+        LanguageTestFixture fixture;
+        fixture.addFunction("main", source);
+        BOOST_TEST(!fixture.compile());
+        BOOST_TEST(fixture.hasError("Cannot assign type"));
+    }
+    for (const auto* source : {
+        "class Point\nfun x\nend\ninit\nthis.x = 1\nend\nend",
+        "class Point\ninit\nthis.x = 1\nend\nfun x\nend\nend"
+    }) {
+        LanguageTestFixture fixture;
+        fixture.addFunction("main", source);
+        BOOST_TEST(!fixture.compile());
+        BOOST_TEST(fixture.hasError("conflicts with a method"));
+    }
+    for (const auto* source : {
+        "class Point\nfun read\nreturn this.missing\nend\nend",
+        "open class Point\nfun write\nthis.missing = 1\nend\nend",
+        "class Point\nfirst = this.second\nsecond = this.first\nend"
+    }) {
+        LanguageTestFixture fixture;
+        fixture.addFunction("main", source);
+        BOOST_TEST(!fixture.compile());
+        BOOST_TEST(fixture.hasError("Unknown class field"));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(field_slots_are_owner_local_stable_and_distinct_from_catalog_ids)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "class First\nx = 1\ny = \"two\"\nend\n"
+        "class Second\nx = true\nend"
+    );
+    BOOST_TEST(!fixture.compile());
+    auto& runtime = fixture.getRuntime();
+    const auto* first = runtime.getTypeByName("First")->asObjectType();
+    const auto* second = runtime.getTypeByName("Second")->asObjectType();
+    BOOST_REQUIRE(first->getProperty("x") != nullptr);
+    BOOST_REQUIRE(first->getProperty("y") != nullptr);
+    BOOST_REQUIRE(second->getProperty("x") != nullptr);
+    const auto firstId = first->getProperty("x")->getId();
+    const auto secondId = second->getProperty("x")->getId();
+    BOOST_TEST(firstId != secondId);
+    BOOST_TEST(first->getFieldIndex(firstId) == 0u);
+    BOOST_TEST(second->getFieldIndex(secondId) == 0u);
+    BOOST_TEST(first->getFieldIndex(first->getProperty("y")->getId()) == 1u);
+    BOOST_TEST(first->getFieldIndex(secondId) == NOMAD_INVALID_INDEX);
+    BOOST_TEST(first->getFieldIndex(PropertyId{}) == NOMAD_INVALID_INDEX);
+    BOOST_TEST(runtime.registerProperty(first, "x", runtime.getIntegerType()) == firstId);
+    BOOST_REQUIRE(runtime.registerProperty(first, "later", runtime.getBooleanType()).isValid());
+    BOOST_TEST(first->getFieldIndex(firstId) == 0u);
+    BOOST_TEST(first->getFieldIndex(first->getProperty("later")->getId()) == 2u);
+    const auto nativeId = runtime.addProperty(first->getId(), {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .name = "nativeValue",
+        .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadInteger{1}}; },
+        .setter = {},
+        .documentation = ""
+    });
+    BOOST_REQUIRE(nativeId.isValid());
+    BOOST_TEST(first->getFieldIndex(nativeId) == NOMAD_INVALID_INDEX);
+    const auto lastId = runtime.registerProperty(first, "last", runtime.getBooleanType());
+    BOOST_REQUIRE(lastId.isValid());
+    BOOST_TEST(first->getFieldIndex(lastId) == 3u);
+}
+
+BOOST_AUTO_TEST_CASE(explicit_field_declarations_link_to_property_metadata)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main", "class Point\nend");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    auto* function = runtime.getScriptCallable(runtime.getFunctionId("main"));
+    CompilerContext context(&fixture.getCompiler());
+    Tokenizer tokens(&context, "fields.nomad", "class Point\nx = 42\nend");
+    BOOST_REQUIRE(prepareMembers(context, tokens, function));
+    const auto statement = parser::parseLine(&context, function, &tokens);
+    const auto* declaration = dynamic_cast<const ClassDeclaration*>(statement.get());
+    BOOST_REQUIRE(declaration != nullptr);
+    BOOST_TEST(!statement->resolve(&context, function));
+    const auto* property = declaration->getType()->getProperty("x");
+    BOOST_REQUIRE(property != nullptr);
+    BOOST_TEST(declaration->getMembers()[0]->getPropertyId() == property->getId());
+    BOOST_TEST(property->getValueType() == runtime.getIntegerType());
+}
+
+BOOST_AUTO_TEST_CASE(field_reads_and_writes_capture_this_without_native_member_name_interference)
+{
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    registerCallbackTestFunctions(runtime);
+    const auto otherId = runtime.createObjectType("Other", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(otherId.isValid());
+    BOOST_REQUIRE(runtime.addProperty(otherId, {
+        .valueTypeId = runtime.getFloatType()->getId(),
+        .name = "value",
+        .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadFloat{1.0}}; },
+        .setter = {},
+        .documentation = ""
+    }).isValid());
+    fixture.addFunction("main",
+        "class Point\nvalue = 1\n"
+        "fun callback\nresult = factory fun item\nthis.value = item\nreturn this.value\nend\nreturn result\nend\n"
+        "fun describe\nreturn $\"value {this.value}\"\nend\nend"
+    );
+    BOOST_TEST(!fixture.compile());
+    BOOST_TEST(fixture.getErrorCount() == 1u);
+    BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
+    const auto* type = runtime.getTypeByName("Point")->asObjectType();
+    BOOST_REQUIRE(type->getProperty("value") != nullptr);
+    BOOST_TEST(type->getProperty("value")->getValueType() == runtime.getIntegerType());
+    auto foundCapture = false;
+    std::vector<ScriptFunction*> functions;
+    runtime.getFunctions(functions);
+    for (const auto* function : functions) {
+        if (function->getCaptureId("this") != NOMAD_INVALID_ID) {
+            BOOST_TEST(function->getCaptureType(function->getCaptureId("this")) == type);
+            BOOST_TEST(function->getVariableId("this.value").isInvalid());
+            foundCapture = true;
+        }
+    }
+    BOOST_TEST(foundCapture);
 }
 
 BOOST_AUTO_TEST_CASE(member_callbacks_capture_this_and_format_placeholders_use_member_scope)
@@ -560,7 +752,7 @@ BOOST_AUTO_TEST_CASE(class_receiver_never_falls_back_to_entity_context_variables
         BOOST_REQUIRE(variableId.isValid());
         fixture.addFunction("main", NomadString("class Point\nfun move\n") + body + "\nend\nend");
         BOOST_TEST(!fixture.compile());
-        BOOST_TEST(fixture.hasError("Script class field"));
+        BOOST_TEST(fixture.hasError("Unknown class field 'value'"));
         const auto localId = runtime.getVariableContext(contextId)->getFirstVariableId();
         BOOST_TEST(!runtime.getVariableContext(contextId)->isRead(localId));
         BOOST_TEST(!runtime.getVariableContext(contextId)->isWritten(localId));
