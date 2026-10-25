@@ -3100,6 +3100,14 @@ void Runtime::executeFunction(const CallableId functionId) {
     executeFunction(functionId, {});
 }
 
+void Runtime::initializeObject(ScriptObject& object) {
+    validateScriptExecution();
+    if (m_virtualMachine == nullptr) {
+        m_virtualMachine = std::make_unique<VirtualMachine>(this);
+    }
+    m_virtualMachine->initializeObject(object);
+}
+
 const ScriptFunction* Runtime::runClosure(const Closure* closure, const std::vector<RuntimeValue>& args) {
     validateScriptExecution();
     if (m_virtualMachine == nullptr) {

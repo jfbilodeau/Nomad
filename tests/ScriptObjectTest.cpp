@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <LanguageTestFixture.hpp>
+
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
@@ -352,6 +354,126 @@ BOOST_AUTO_TEST_CASE(property_dispatch_rejects_missing_storage_wrong_owners_and_
     machine->getProperty(id, receiver, result);
     BOOST_TEST(NomadString(result.getStringValue()).empty());
     runtime.getStringType()->freeValue(result);
+}
+
+BOOST_AUTO_TEST_CASE(generated_initializer_runs_in_source_order_after_all_type_defaults) {
+    test::LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "open class Point\n"
+        "first = this.second\n"
+        "second = 42\n"
+        "third = this.second + 1\n"
+        "description = $\"point {this.third}\"\n"
+        "end\n"
+        "fun extend point:Point enabled:bool\n"
+        "if enabled\npoint.conditional = 7\nend\nend"
+    );
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    const auto* type = runtime.getTypeByName("Point")->asObjectType();
+    const auto before = NomadObject::getLiveObjectCount();
+    {
+        ScriptObject object(type);
+        runtime.initializeObject(object);
+        BOOST_TEST(object.getField(type->getFieldIndex(type->getProperty("first")->getId())).getIntegerValue() == 0);
+        BOOST_TEST(object.getField(type->getFieldIndex(type->getProperty("second")->getId())).getIntegerValue() == 42);
+        BOOST_TEST(object.getField(type->getFieldIndex(type->getProperty("third")->getId())).getIntegerValue() == 43);
+        BOOST_TEST(object.getField(type->getFieldIndex(type->getProperty("conditional")->getId())).getIntegerValue() == 0);
+        BOOST_TEST(NomadString(object.getField(
+            type->getFieldIndex(type->getProperty("description")->getId())).getStringValue()) == "point 43");
+        BOOST_TEST(object.getReferenceCount() == 1u);
+        BOOST_CHECK_THROW(runtime.initializeObject(object), NomadException);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(generated_initializers_run_per_instance_and_preserve_fresh_object_values) {
+    test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto* valueType = createTestType(runtime, "Value");
+    auto destroyed = NomadIndex{0};
+    auto created = NomadIndex{0};
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "fresh", [&](VirtualMachine* machine) {
+            ++created;
+            machine->getResult().setObjectValue(new CountingObject(destroyed));
+        }, {}, valueType, ""
+    ).isValid());
+    fixture.addFunction("main", "class Owner\nvalue = fresh\nend");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    BOOST_TEST(created == 0u);
+    const auto* type = runtime.getTypeByName("Owner")->asObjectType();
+    {
+        ScriptObject first(type);
+        ScriptObject second(type);
+        runtime.initializeObject(first);
+        runtime.initializeObject(second);
+        BOOST_TEST(created == 2u);
+        BOOST_TEST(first.getField(0).getObjectValue() != second.getField(0).getObjectValue());
+        BOOST_TEST(first.getField(0).getObjectValue()->getReferenceCount() == 1u);
+        BOOST_TEST(second.getField(0).getObjectValue()->getReferenceCount() == 1u);
+        BOOST_CHECK_THROW(runtime.initializeObject(first), NomadException);
+        BOOST_TEST(created == 2u);
+    }
+    BOOST_TEST(destroyed == 2u);
+}
+
+BOOST_AUTO_TEST_CASE(initializer_failure_preserves_cleanup_and_vm_recovery_without_retry) {
+    test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto* valueType = createTestType(runtime, "Value");
+    auto destroyed = NomadIndex{0};
+    auto calls = NomadIndex{0};
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "fresh", [&](VirtualMachine* machine) {
+            machine->getResult().setObjectValue(new CountingObject(destroyed));
+        }, {}, valueType, ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "fail", [&](VirtualMachine*) {
+            ++calls;
+            throw NomadException("Initializer failed");
+        }, {}, runtime.getIntegerType(), ""
+    ).isValid());
+    fixture.addFunction("main",
+        "class Broken\nvalue = fresh\nnumber = fail\nunreached = fresh\nend\n"
+        "class Working\nvalue = 42\nend"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto* broken = runtime.getTypeByName("Broken")->asObjectType();
+    const auto* working = runtime.getTypeByName("Working")->asObjectType();
+    const auto before = NomadObject::getLiveObjectCount();
+    {
+        ScriptObject object(broken);
+        BOOST_CHECK_THROW(runtime.initializeObject(object), NomadException);
+        BOOST_TEST(object.getReferenceCount() == 1u);
+        BOOST_TEST(calls == 1u);
+        BOOST_CHECK_THROW(runtime.initializeObject(object), NomadException);
+        BOOST_TEST(calls == 1u);
+        ScriptObject recovered(working);
+        runtime.initializeObject(recovered);
+        BOOST_TEST(recovered.getField(0).getIntegerValue() == 42);
+    }
+    BOOST_TEST(destroyed == 1u);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(empty_initializers_and_invalid_host_initialization_requests) {
+    test::LanguageTestFixture fixture;
+    fixture.addFunction("main", "class Empty\nend");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    ScriptObject empty(runtime.getTypeByName("Empty")->asObjectType());
+    runtime.initializeObject(empty);
+    BOOST_TEST(empty.getFieldCount() == 0u);
+    BOOST_TEST(empty.getReferenceCount() == 1u);
+    Runtime other;
+    BOOST_CHECK_THROW(other.initializeObject(empty), NomadException);
+    ScriptObject native(createTestType(runtime, "Native"));
+    BOOST_CHECK_THROW(runtime.initializeObject(native), NomadException);
+    native.initializeFields();
+    BOOST_TEST(native.getFieldCount() == 0u);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

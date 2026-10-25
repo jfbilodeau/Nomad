@@ -244,8 +244,7 @@ std::unique_ptr<Expression> createNativeMemberExpression(
 std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptCallableBase* function,
                                                               const Expression* parent, const NomadString& name,
                                                               const NomadIndex line, const NomadIndex column) {
-    if (context->getCompiler()->getReceiverType(function) != nullptr &&
-        (name == "this" || (name.starts_with("this.") && name.find('.', 5) == NomadString::npos))) {
+    if (context->getCompiler()->getReceiverType(function) != nullptr && name == "this") {
         return std::make_unique<IdentifierExpression>(parent, line, column, name);
     }
     const auto functionId = context->getRuntime()->getCallableId(name);
@@ -1267,9 +1266,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
     // auto& identifier = token.textValue;
 
     if (token.type == TokenType::Identifier) {
-        if (context->getCompiler()->getReceiverType(function) != nullptr &&
-            (token.textValue == "this" ||
-                (token.textValue.starts_with("this.") && token.textValue.find('.', 5) == NomadString::npos))) {
+        if (context->getCompiler()->getReceiverType(function) != nullptr && token.textValue == "this") {
             return std::make_unique<IdentifierExpression>(
                 parent, tokens->getLineIndex(), token.column, token.textValue
             );

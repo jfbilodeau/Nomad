@@ -244,8 +244,9 @@ Each class has one declaration block, even when open. Duplicate declarations and
 conflicts with existing identifiers are errors. Classes cannot be declared inside
 functions or control-flow blocks, or through the interpreter.
 
-Class member syntax can be parsed, but classes containing members cannot yet be
-compiled or executed. Only empty classes are currently usable in compiled scripts.
+Classes containing only fields can be compiled and initialized by an embedding
+host. Classes declaring constructors or ordinary methods are still rejected for
+execution, and script class construction with `new` is not yet available.
 The following illustrates the accepted declaration forms, not a runnable program:
 
 ```nomad
@@ -299,9 +300,14 @@ overloads. Each field has one type shared by all instances; conflicting
 assignments and field/method name collisions are errors. Methods may read and
 assign existing fields but cannot introduce new fields. Reads of unknown fields
 are errors. These names never fall back to the game's `this.*` context.
-Field metadata is available during compilation, but non-empty classes still
-report the unsupported-execution diagnostic. Script class construction,
-field initializer expressions, and script member calls are not executable yet.
+Field metadata is available during compilation. Host-initiated class
+initialization establishes all type defaults first, then evaluates explicit
+field initializers in source order. A forward read through `this` sees the
+field's type default until its initializer runs. Object-valued initializer
+expressions are evaluated separately for each instance. Fields without explicit
+initializers keep their type defaults. Initialization runs once per instance;
+failure stops subsequent initializers and cannot be retried on that instance.
+Script class construction and script member calls are not executable yet.
 Script constructors may use a bare `return` but cannot return an expression.
 Member parameters are declared in the header, not with a later `params` statement.
 
@@ -342,8 +348,8 @@ Stored fields can be read and assigned in compiled code and the interpreter
 when the host supplies an initialized instance with field storage. Field
 discovery must finish before the host creates these instances. Native objects
 without stored-field storage cannot execute these accesses.
-Automatic script instance initialization, script member calls, and script class
-construction with `new` remain unavailable.
+The embedding host can initialize class fields; automatic construction with
+`new` and script member calls remain unavailable.
 
 ## Data types and numeric ranges
 

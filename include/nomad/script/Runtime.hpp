@@ -35,6 +35,8 @@
 
 namespace nomad {
 
+class ScriptObject;
+
 // Forward declarations
 class Compiler;
 class Closure;
@@ -165,6 +167,7 @@ public:
     [[nodiscard]] bool isHubVariable(const NomadString& name) const;
     void setScriptInitializer(CallableId functionId);
     void initializeScripts();
+    void initializeObject(ScriptObject& object);
 
     // Types
     using ParameterizedTypeFactory =

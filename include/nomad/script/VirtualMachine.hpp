@@ -22,6 +22,8 @@ namespace nomad {
 class VirtualMachine;
 class Runtime;
 class ScriptFunction;
+class ScriptCallableBase;
+class ScriptObject;
 class Closure;
 class TypedValue;
 
@@ -42,6 +44,7 @@ public:
     [[nodiscard]] const RuntimeValue& getFunctionVariableValue(VariableId variableId) const;
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
+    void initializeObject(ScriptObject& object);
     void yield(const RuntimeValue& result);
     void stop(const RuntimeValue& result);
     void fault(const NomadString& faultMessage) const;
@@ -222,7 +225,14 @@ private:
     friend class Runtime;
     friend class InterpreterContext;
 
-    void initializeFunctionVariables(const ScriptFunction* function);
+    void initializeFunctionVariables(const ScriptCallableBase* function, const RuntimeValue* receiver = nullptr);
+    void callScriptCallable(const ScriptCallableBase* function, const RuntimeValue* receiver);
+    void runCallable(
+        const ScriptCallableBase* function,
+        const std::vector<RuntimeValue>& args,
+        const std::vector<RuntimeValue>& closures,
+        const RuntimeValue* receiver
+    );
 
     Runtime* m_runtime;
     NomadIndex m_instructionIndex = 0;

@@ -74,7 +74,8 @@ BOOST_AUTO_TEST_CASE(empty_declarations_publish_closed_and_open_object_types)
     BOOST_TEST(opened->isOpen());
     BOOST_TEST(closed->getId() == runtime.getTypeId("Closed"));
     BOOST_TEST(closed->getConstructors().empty());
-    BOOST_TEST(opened->getMethods().empty());
+    BOOST_REQUIRE(opened->getMethods().size() == 1u);
+    BOOST_TEST(opened->getMethods()[0]->getName() == "$init");
     BOOST_TEST(closed->getProperties().empty());
     BOOST_TEST(fixture.execute("main").integerValue == 42);
 
@@ -153,7 +154,7 @@ BOOST_AUTO_TEST_CASE(invalid_class_definitions_report_source_errors)
     for (const auto* source : {
         "class", "class Point", "class 123\nend", "class Point trailing\nend",
         "class open\nend", "class int\nend", "class Point\nend trailing",
-        "class Point\nx = 1\nend", "class Point\ninit\nend\nend",
+        "class Point\ninit\nend\nend",
         "class Point\nfun move\nend\nend", "class Point\nclass Nested\nend\nend",
         "fun inner\nclass Point\nend\nend", "if true\nopen class Point\nend\nend",
         "hub Point\nend\nclass Point\nend", "class Point\nend\nhub Point\nend",
@@ -166,7 +167,7 @@ BOOST_AUTO_TEST_CASE(invalid_class_definitions_report_source_errors)
         }
     }
     LanguageTestFixture fixture;
-    fixture.addFunction("main", "class Point\nvalue = 1\nend");
+    fixture.addFunction("main", "class Point\nfun move\nend\nend");
     BOOST_TEST(!fixture.compile());
     const auto* diagnostic = fixture.findError("Class member execution is not supported yet");
     BOOST_REQUIRE(diagnostic != nullptr);
@@ -324,7 +325,7 @@ BOOST_AUTO_TEST_CASE(member_overloads_register_distinct_parameter_types_on_the_c
         BOOST_TEST(members[index]->getSourceLines().empty());
     }
     BOOST_TEST(declaration->getType()->getConstructors().size() == 2u);
-    BOOST_TEST(declaration->getType()->getMethods().size() == 2u);
+    BOOST_TEST(declaration->getType()->getMethods().size() == 3u);
 }
 
 BOOST_AUTO_TEST_CASE(class_parameter_types_are_resolved_after_all_class_symbols_are_published)
@@ -592,7 +593,7 @@ BOOST_AUTO_TEST_CASE(field_slots_are_owner_local_stable_and_distinct_from_catalo
         "class First\nx = 1\ny = \"two\"\nend\n"
         "class Second\nx = true\nend"
     );
-    BOOST_TEST(!fixture.compile());
+    BOOST_TEST(fixture.compile());
     auto& runtime = fixture.getRuntime();
     const auto* first = runtime.getTypeByName("First")->asObjectType();
     const auto* second = runtime.getTypeByName("Second")->asObjectType();
@@ -638,7 +639,7 @@ BOOST_AUTO_TEST_CASE(explicit_field_declarations_link_to_property_metadata)
     const auto statement = parser::parseLine(&context, function, &tokens);
     const auto* declaration = dynamic_cast<const ClassDeclaration*>(statement.get());
     BOOST_REQUIRE(declaration != nullptr);
-    BOOST_TEST(!statement->resolve(&context, function));
+    BOOST_TEST(statement->resolve(&context, function));
     const auto* property = declaration->getType()->getProperty("x");
     BOOST_REQUIRE(property != nullptr);
     BOOST_TEST(declaration->getMembers()[0]->getPropertyId() == property->getId());
@@ -738,7 +739,7 @@ BOOST_AUTO_TEST_CASE(member_bodies_use_registered_declaration_pre_parsers)
     BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
     BOOST_TEST(!fixture.hasError("Unknown identifier"));
     const auto* type = fixture.getRuntime().getTypeByName("Point")->asObjectType();
-    BOOST_REQUIRE(type->getMethods().size() == 1u);
+    BOOST_REQUIRE(type->getMethods().size() == 2u);
     BOOST_TEST(type->getMethods()[0]->getReturnType() == fixture.getRuntime().getIntegerType());
 }
 
@@ -842,7 +843,7 @@ BOOST_AUTO_TEST_CASE(external_class_fields_reject_closed_types_conflicting_types
 BOOST_AUTO_TEST_CASE(internal_declarations_and_reads_do_not_produce_external_unused_warnings)
 {
     for (const auto& [source, executable] : std::vector<std::pair<NomadString, bool>>{
-        {"class Point\nvalue = 1\nend\nfun write point:Point\npoint.value = 2\nend", false},
+        {"class Point\nvalue = 1\nend\nfun write point:Point\npoint.value = 2\nend", true},
         {"open class Point\nfun read\nreturn this.extra\nend\nend\n"
             "fun write point:Point\npoint.extra = 1\nend", false},
         {"open class Point\nend\nfun read point:Point\nreturn $\"value {point.extra}\"\nend\n"

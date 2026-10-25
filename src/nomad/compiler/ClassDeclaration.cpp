@@ -2,6 +2,7 @@
 
 #include <nomad/compiler/ClassDeclaration.hpp>
 
+#include <nomad/compiler/ClassFieldInitializerStatement.hpp>
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Parser.hpp>
@@ -221,7 +222,9 @@ bool registerMemberSignatures(
         context->reportError("Class '" + name + "' has no registered object type", tokens);
         return false;
     }
-    auto initializerRegistered = false;
+    auto initializerRegistered = std::ranges::any_of(type->asObjectType()->getMethods(), [](const auto* method) {
+        return method->getName() == "$init";
+    });
     for (const auto& member : members) {
         for (const auto& parameter : member->getParameters()) {
             if (parameter.name == "this") {
@@ -259,6 +262,19 @@ bool registerMemberSignatures(
             context->getCompiler()->setFunctionNode(id, std::move(body));
         }
     }
+    if (!initializerRegistered) {
+        const auto id = runtime->registerScriptMethod(
+            type->getId(), "$init", {}, tokens->getSourceName(), tokens->getSource()
+        );
+        if (id.isInvalid()) {
+            context->reportError("Cannot register class initializer", tokens);
+            return false;
+        }
+        auto* callable = runtime->getScriptCallable(id);
+        callable->setHub(context->getHub());
+        context->getCompiler()->registerMemberCompilation(id, function->getId());
+        context->getCompiler()->setFunctionNode(id, std::make_unique<FunctionNode>(0, 0));
+    }
     return true;
 }
 
@@ -289,6 +305,14 @@ bool parseMemberBodies(
     const Tokenizer* source,
     std::vector<std::unique_ptr<ClassMemberDeclaration>>& members
 ) {
+    auto initializerBody = std::make_unique<FunctionNode>(0, 0);
+    auto initializerId = CallableId::INVALID;
+    for (const auto* method : type->getMethods()) {
+        if (method->getName() == "$init") {
+            initializerId = method->getId();
+            break;
+        }
+    }
     for (auto& member : members) {
         const auto id = findMemberCallable(type, *member);
         auto* callable = context->getRuntime()->getScriptCallable(id);
@@ -309,6 +333,7 @@ bool parseMemberBodies(
                 return false;
             }
             member->setInitializer(std::move(initializer));
+            initializerBody->addStatement(std::make_unique<ClassFieldInitializerStatement>(member.get()));
         } else {
             while (tokens.nextLine() && tokens.getLineIndex() < member->getEndLine()) {
                 const auto statement = tokens.next().textValue;
@@ -332,6 +357,7 @@ bool parseMemberBodies(
             context->getCompiler()->setFunctionNode(id, std::move(body));
         }
     }
+    context->getCompiler()->setFunctionNode(initializerId, std::move(initializerBody));
     return true;
 }
 
@@ -375,10 +401,13 @@ void ClassDeclaration::onResolve(CompilerContext* context, ScriptCallableBase* f
             }
         }
     }
-    if (!m_members.empty()) {
-        const auto& member = m_members.front();
+    const auto unsupported = std::ranges::find_if(m_members, [](const auto& member) {
+        return member->getKind() != ClassMemberKind::Field;
+    });
+    if (unsupported != m_members.end()) {
+        const auto& member = *unsupported;
         context->reportError(
-            "Class member execution is not supported yet; only empty class declarations can be compiled",
+            "Class member execution is not supported yet; only field declarations can be compiled",
             function->getPath(), member->getLine(), member->getColumn()
         );
     }

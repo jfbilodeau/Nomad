@@ -305,7 +305,7 @@ registration order, not necessarily source declaration order.
 
 Compiled code and the interpreter can read and assign stored properties on
 host-provided, initialized `ScriptObject` instances. Script class construction
-and field initializer expressions are not executable yet.
+with `new` and source-declared constructors are not executable yet.
 
 ### Script object storage
 
@@ -315,11 +315,24 @@ whose field layout has been resolved. The runtime and its type descriptors must
 outlive the object. Native properties do not occupy storage slots.
 
 Allocation captures the field layout without running type defaults or field
-initializer expressions. Call `initializeFields()` once to establish each
-field's type default. This operation is reserved for the future class
-initialization path; script constructors and initializer expressions are not
-executed by this API. Failed initialization cannot be retried, and destruction
-releases values from partially initialized fields.
+initializer expressions. For a compiled script class, call
+`Runtime::initializeObject(object)` once. It establishes all type defaults,
+then evaluates explicit field initializers in source order, with `this` bound
+to the instance. Object-valued initializer expressions run separately for each
+instance. Forward field reads see the type default until that field's
+initializer runs. Fields without explicit initializers retain their defaults.
+
+Compile the class and complete field discovery before allocating the object.
+Initialize script-level hub variables with `initializeScripts()` first when
+required. Initialization rejects foreign-runtime objects, uncompiled class
+initializers, and already initialized instances. It does not run source `init`
+constructor bodies. If a field initializer fails, later initializers do not
+run and initialization cannot be retried; release the failed instance.
+Destruction releases its owned field values.
+
+`ScriptObject::initializeFields()` is the lower-level, defaults-only operation
+for host-defined layouts. Do not call it before `Runtime::initializeObject()`:
+the latter owns the complete class field initialization sequence.
 
 `getObjectType()` and `getFieldCount()` describe the instance. `getField(index)`
 returns a borrowed const value; `setField(index, value)` copies a value of the

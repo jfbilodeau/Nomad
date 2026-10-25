@@ -42,6 +42,49 @@ const RuntimeValue& VirtualMachine::getFunctionVariableValue(const VariableId va
 }
 
 void VirtualMachine::run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures) {
+    runCallable(function, args, closures, nullptr);
+}
+
+void VirtualMachine::initializeObject(ScriptObject& object) {
+    const auto* type = object.getObjectType();
+    if (type->getRuntime() != m_runtime) {
+        fault("Cannot initialize an object from another runtime");
+    }
+    const ScriptCallableBase* initializer = nullptr;
+    for (const auto* method : type->getMethods()) {
+        if (method->getName() == "$init") {
+            initializer = method->asScriptCallable();
+            break;
+        }
+    }
+    if (initializer == nullptr || initializer->getFunctionStart() == NOMAD_INVALID_INDEX ||
+        initializer->getFunctionStart() >= initializer->getFunctionEnd()) {
+        fault("Class initializer has not been compiled");
+    }
+    object.initializeFields();
+    RuntimeValue receiver;
+    receiver.setObjectValue(&object);
+    const auto savedResult = m_result;
+    const auto savedIntermediate = m_intermediate;
+    m_result = RuntimeValue{};
+    m_intermediate = RuntimeValue{};
+    try {
+        runCallable(initializer, {}, {}, &receiver);
+    } catch (...) {
+        m_result = savedResult;
+        m_intermediate = savedIntermediate;
+        throw;
+    }
+    m_result = savedResult;
+    m_intermediate = savedIntermediate;
+}
+
+void VirtualMachine::runCallable(
+    const ScriptCallableBase* function,
+    const std::vector<RuntimeValue>& args,
+    const std::vector<RuntimeValue>& closures,
+    const RuntimeValue* receiver
+) {
     // Save the frame so `run` can be re-entered (e.g. from a nativeFunction) and so a fault leaves the VM usable.
     const auto savedInstructionIndex = m_instructionIndex;
     const auto savedStackIndex = m_stackIndex;
@@ -65,6 +108,7 @@ void VirtualMachine::run(const ScriptFunction* function, const std::vector<Runti
     // Returning from the function jumps to instruction 0 (`op_stop`).
     m_instructionIndex = 0;
 
+    auto entryVariableIndex = NOMAD_INVALID_INDEX;
     try {
         // Push closures and parameters onto the stack (right-to-left)
         // Closures first, then parameters
@@ -78,7 +122,14 @@ void VirtualMachine::run(const ScriptFunction* function, const std::vector<Runti
             pushValue(args[i]);
         }
 
-        callFunction(function);
+        if (receiver != nullptr) {
+            if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex - 1 < 3 ||
+                function->getVariableCount() > m_stack.size() - m_stackIndex - 4) {
+                fault("Stack overflow");
+            }
+            entryVariableIndex = m_stackIndex + 4;
+        }
+        callScriptCallable(function, receiver);
 
         do {
 #ifdef NOMAD_DEBUG
@@ -94,7 +145,18 @@ void VirtualMachine::run(const ScriptFunction* function, const std::vector<Runti
 
             instruction.fn(this);
         } while (m_running);
+        if (receiver != nullptr && m_yielded) {
+            fault("Class initialization cannot yield");
+        }
     } catch (...) {
+        if (entryVariableIndex != NOMAD_INVALID_INDEX) {
+            for (auto index = NomadIndex{0}; index < function->getVariableCount(); ++index) {
+                const auto* type = function->getVariableType(VariableId{toNomadId(index)});
+                if (type != nullptr) {
+                    type->freeValue(m_stack[entryVariableIndex + index]);
+                }
+            }
+        }
         m_yielded = false;
         restoreFrame();
 
@@ -108,19 +170,23 @@ void VirtualMachine::run(const ScriptFunction* function, const std::vector<Runti
     }
 }
 
-void VirtualMachine::initializeFunctionVariables(const ScriptFunction* function) {
+void VirtualMachine::initializeFunctionVariables(const ScriptCallableBase* function, const RuntimeValue* receiver) {
     if (function == nullptr) {
         return;
     }
 
     const auto variableCount = function->getVariableCount();
 
+    for (auto variableIndex = NomadIndex{0}; variableIndex < variableCount; ++variableIndex) {
+        m_stack[m_variableIndex + variableIndex] = RuntimeValue{};
+    }
     for (NomadIndex variableIndex = 0; variableIndex < variableCount; ++variableIndex) {
         const auto type = function->getVariableType(VariableId{toNomadId(variableIndex)});
-        m_stack[m_variableIndex + variableIndex] = RuntimeValue{};
 
         const auto parameterId = function->getParameterId(function->getVariableName(VariableId{toNomadId(variableIndex)}));
-        if (type != nullptr && parameterId != NOMAD_INVALID_ID) {
+        if (receiver != nullptr && function->getVariableName(VariableId{toNomadId(variableIndex)}) == "this") {
+            type->copyValue(*receiver, m_stack[m_variableIndex + variableIndex]);
+        } else if (type != nullptr && parameterId != NOMAD_INVALID_ID) {
             // Mutable bindings own copies; argument storage remains owned by the caller.
             type->copyValue(getParameter(toNomadIndex(parameterId)), m_stack[m_variableIndex + variableIndex]);
         } else if (type != nullptr && type->isString()) {
@@ -152,6 +218,10 @@ ScriptFunction* VirtualMachine::getCurrentFunction() const {
 }
 
 void VirtualMachine::callFunction(const ScriptFunction* function) {
+    callScriptCallable(function, nullptr);
+}
+
+void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, const RuntimeValue* receiver) {
     if (function == nullptr) {
         fault("Invalid function");
         return;
@@ -171,7 +241,7 @@ void VirtualMachine::callFunction(const ScriptFunction* function) {
 
     if (variableCount > 0) {
         pushN(variableCount);
-        initializeFunctionVariables(function);
+        initializeFunctionVariables(function, receiver);
     }
 
     auto functionStart = function->getFunctionStart();
@@ -497,8 +567,9 @@ std::vector<TypedValue> VirtualMachine::captureCurrentFrame(const ScriptFunction
     if (function == nullptr || function->getParentId() == CallableId{}) {
         fault("Invalid function for current-frame capture");
     }
-    const auto* parent = m_runtime->getScriptFunction(function->getParentId());
-    if (parent == nullptr || parent != getCurrentFunction()) {
+    const auto* parent = m_runtime->getScriptCallable(function->getParentId());
+    if (parent == nullptr || m_instructionIndex < parent->getFunctionStart() ||
+        m_instructionIndex >= parent->getFunctionEnd()) {
         fault("Format expression does not belong to the current script frame");
     }
 
