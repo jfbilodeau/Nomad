@@ -31,6 +31,21 @@ UndefinedBehaviorSanitizer builds.
 VS Code tasks and launch configurations are included. Select the matching
 CMake preset before building or debugging the runtime and tests.
 
+## Incremental builds
+
+Keep using the same build directory and configuration to reuse compiled objects.
+Source changes rebuild the affected files; header changes rebuild files that
+include those headers, directly or indirectly. Changing compiler options can
+also require recompilation.
+
+Nomad disables C++20 named-module dependency scanning for its own targets because
+they use headers rather than named modules. Ordinary header dependency tracking
+remains enabled. Dependency targets retain their own scanning settings.
+
+Build output can still list targets, check file globs, and run DLL export checks
+when no source needs recompilation. Those messages alone do not indicate a full
+rebuild.
+
 ## Running tests
 
 Test presets allow up to four concurrent test processes. Unit tests are split

@@ -89,6 +89,9 @@ endif()
 
 include(cmake/Dependencies.cmake)
 
+# Nomad uses headers, not C++20 named modules; avoid a separate compiler scan before compilation.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 string(TOLOWER "${CMAKE_SYSTEM_NAME}" NOMAD_PACKAGE_SYSTEM)
 if(APPLE)
     set(NOMAD_PACKAGE_SYSTEM macos)
