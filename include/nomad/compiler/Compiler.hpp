@@ -67,11 +67,16 @@ public:
     void registerParseStatementFn(
         const NomadString& name,
         ParseStatementFn fn,
-        PreParseStatementFn preFn = nullptr
+        PreParseStatementFn preFn = nullptr,
+        PreParseStatementFn declarationFn = nullptr
     );
     [[nodiscard]] bool isStatement(const NomadString& name) const;
     [[nodiscard]] bool getParseStatementFn(const NomadString& name, ParseStatementFn& fn) const;
-    [[nodiscard]] bool getGetPreParseStatementFn(const NomadString& name, PreParseStatementFn& fn) const;
+    [[nodiscard]] bool getGetPreParseStatementFn(
+        const NomadString& name,
+        PreParseStatementFn& fn,
+        bool declarationsOnly = false
+    ) const;
     void getRegisteredStatements(std::vector<NomadString>& parsers) const;
 
     // Constant folding
@@ -97,11 +102,6 @@ public:
     ) const;
 
     // Identifier identification
-    [[nodiscard]] NomadString resolveName(
-        const NomadString& name,
-        const ScriptFunction* function = nullptr,
-        NomadString hub = {}
-    ) const;
     IdentifierType getIdentifierType(const NomadString& name, const ScriptFunction* function) const;
     void getIdentifierDefinition(const NomadString& name, const ScriptFunction* function, IdentifierDefinition& definition) const;
     [[nodiscard]] bool getNativeMemberConflict(const NomadString& identifier, const Type* type,
@@ -244,6 +244,7 @@ private:
     struct ParseStatementFnRegistration {
         PreParseStatementFn preFn;
         ParseStatementFn fn;
+        PreParseStatementFn declarationFn;
     };
 
     struct OpCodeRegistration {

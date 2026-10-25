@@ -85,18 +85,79 @@ private:
     StatementList m_body;
 };
 
-std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
-    NomadString name;
+namespace {
+
+bool parseHubHeader(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, NomadString& name) {
     if (!tokens->nextIdentifier(name) || !parser::expectEndOfLine(context, function, tokens)) {
+        return false;
+    }
+    name = context->qualifyDeclaration(name);
+    if (std::ranges::count(name, '.') >= 64) {
+        context->reportError("Hub nesting exceeds the maximum depth of 64", tokens);
+        return false;
+    }
+    return true;
+}
+
+bool preParseHub(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    const HubMode mode,
+    const bool declare
+) {
+    NomadString name;
+    if (!parseHubHeader(context, function, tokens, name)) {
+        return false;
+    }
+    if (declare && context->getRuntime()->registerHub(name, mode).isInvalid()) {
+        context->reportError("Cannot declare hub '" + name + "': invalid or conflicting name", tokens);
+        return false;
+    }
+    context->setHub(std::move(name));
+    return true;
+}
+
+bool expectOpenHub(CompilerContext* context, Tokenizer* tokens) {
+    if (!tokens->expect("hub")) {
+        context->reportError("Expected 'hub' after 'open'", tokens);
+        return false;
+    }
+    return true;
+}
+
+} // namespace
+
+bool preParseHubStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+    return preParseHub(context, function, tokens, HubMode::Closed, false);
+}
+
+bool preDeclareHubStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+    return preParseHub(context, function, tokens, HubMode::Closed, true);
+}
+
+bool preParseOpenStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+    return expectOpenHub(context, tokens) && preParseHub(context, function, tokens, HubMode::Opened, false);
+}
+
+bool preDeclareOpenStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+    return expectOpenHub(context, tokens) && preParseHub(context, function, tokens, HubMode::Opened, true);
+}
+
+std::unique_ptr<Statement> parseOpenStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+    if (!expectOpenHub(context, tokens)) {
+        return nullptr;
+    }
+    return parseHubStatement(context, function, tokens);
+}
+
+std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+    NomadString qualifiedName;
+    if (!parseHubHeader(context, function, tokens, qualifiedName)) {
         return nullptr;
     }
     if (context->currentBodyEndsAtEnd() || !context->isFunctionRoot(function)) {
         context->reportError("Hubs may only be declared at script level or inside another hub", tokens);
-        return nullptr;
-    }
-    const auto qualifiedName = context->qualifyDeclaration(name);
-    if (std::ranges::count(qualifiedName, '.') >= 64) {
-        context->reportError("Hub nesting exceeds the maximum depth of 64", tokens);
         return nullptr;
     }
     const CompilerHubScope hubScope(*context, qualifiedName);
@@ -207,6 +268,10 @@ bool parseCallbackFunParameters(CompilerContext* context, ScriptFunction* functi
         NomadString parameterName;
 
         if (!tokens->nextIdentifier(parameterName)) {
+            return false;
+        }
+        if (context->getRuntime()->getKeywordId(parameterName).isValid()) {
+            context->reportError("Parameter name '" + parameterName + "' is a reserved keyword", tokens);
             return false;
         }
 
@@ -468,7 +533,7 @@ bool parseConstantPrimary(CompilerContext* context, Tokenizer* tokens, ConstantV
 
     // Constant reference?
     if (token.type == TokenType::Identifier) {
-        auto constantId = context->getRuntime()->getConstantId(context->resolveName(token.textValue));
+        auto constantId = context->getRuntime()->getConstantId(token.textValue);
 
         if (constantId.isInvalid()) {
             context->reportError("Unknown constant '" + token.textValue + "'", tokens);
@@ -704,6 +769,10 @@ bool parseConstantName(CompilerContext* context, Tokenizer* tokens, NomadString&
     }
 
     constantName = constantToken.textValue;
+    if (context->getRuntime()->getKeywordId(constantName).isValid()) {
+        context->reportError("Constant name '" + constantName + "' is a reserved keyword", tokens);
+        return false;
+    }
     constantName = context->qualifyDeclaration(constantName);
 
     return tokens->expect(TokenType::Operator) && tokens->expect("=");
@@ -933,7 +1002,7 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
         return nullptr;
     }
 
-    const auto eventName = context->resolveName(tokens->next().textValue, function);
+    const auto eventName = tokens->next().textValue;
 
     // Expect 'fun' keyword or identifier for function name
     if (tokens->is("fun")) {
@@ -973,7 +1042,6 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
     if (!tokens->nextIdentifier(handlerName)) {
         return nullptr;
     }
-    handlerName = context->resolveName(handlerName, function);
 
     const auto handlerFunctionId = context->getRuntime()->getFunctionId(handlerName);
 
@@ -1247,6 +1315,10 @@ bool preParseParamsStatement(CompilerContext* context, ScriptFunction* function,
 
         if (!tokens->nextIdentifier(parameterName) ||
             !tokens->expect(":")) {
+            return false;
+        }
+        if (context->getRuntime()->getKeywordId(parameterName).isValid()) {
+            context->reportError("Parameter name '" + parameterName + "' is a reserved keyword", tokens);
             return false;
         }
 

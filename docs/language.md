@@ -117,7 +117,7 @@ Hubs are optional, are not types, and cannot be instantiated. Hubs are closed by
 default: `hub name ... end` permits one declaration block. Use
 `open hub name ... end` when multiple blocks should contribute members.
 Closed hubs still allow assignment to their existing writable variables.
-`open` is a contextual modifier before `hub`, not a reserved identifier elsewhere.
+`open` is a reserved keyword. Use it before `hub` to allow additional declaration blocks.
 
 ```nomad
 open hub example
@@ -1099,6 +1099,7 @@ Reserved words (cannot use as identifiers):
 - `fun`
 - `hub`
 - `if`
+- `open`
 - `params`
 - `return`
 - `then`

@@ -712,9 +712,6 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
     repository["keywords"] = createPatternRepositoryEntry(
         createMatchPattern("keyword.control.nomad", createWordPattern(controlWords))
     );
-    repository["keywords"].as_object()["patterns"].as_array().push_back(
-        createMatchPattern("storage.modifier.nomad", "\\bopen(?=\\s+hub\\b)")
-    );
 
     repository["literals"] = createPatternRepositoryEntry(
         createMatchPattern("constant.language.boolean.nomad", createWordPattern({"true", "false"}))

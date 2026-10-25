@@ -57,7 +57,6 @@ public:
     [[nodiscard]] const NomadString& getHub() const;
     void setHub(NomadString hub);
     [[nodiscard]] NomadString qualifyDeclaration(const NomadString& name) const;
-    [[nodiscard]] NomadString resolveName(const NomadString& name, const ScriptFunction* function = nullptr) const;
 
     void reportDiagnostics(std::span<const Diagnostic> diagnostics);
 

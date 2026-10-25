@@ -179,7 +179,7 @@ std::optional<NomadString> compileFormatString(
                 formatString->addLiteral(segment.text);
             }
         } else {
-            const auto variableName = compiler->resolveName(segment.text, function);
+            const auto variableName = segment.text;
             IdentifierDefinition identifier{};
 
             if (resolveIdentifier(variableName, compiler, function, identifier) == false) {

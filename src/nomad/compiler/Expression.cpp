@@ -1371,7 +1371,6 @@ bool FormatStringLiteral::parsePlaceholders(
         }
         if (identifier && !needsFirstCharacter &&
             !parser::isNativeMemberCandidate(context->getCompiler(), function, segment.text)) {
-            segment.text = context->resolveName(segment.text, function);
             IdentifierDefinition definition;
             context->getCompiler()->getIdentifierDefinition(segment.text, function, definition);
             if (context->isHubInitializer() &&

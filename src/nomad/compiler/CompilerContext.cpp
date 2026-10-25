@@ -114,10 +114,6 @@ NomadString CompilerContext::qualifyDeclaration(const NomadString& name) const {
     return m_hub.empty() ? name : m_hub + "." + name;
 }
 
-NomadString CompilerContext::resolveName(const NomadString& name, const ScriptFunction* function) const {
-    return m_compiler->resolveName(name, function, m_hub);
-}
-
 CompilerMode CompilerContext::getMode() const {
     return m_mode;
 }

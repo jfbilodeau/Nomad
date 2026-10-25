@@ -111,9 +111,9 @@ BOOST_AUTO_TEST_CASE(hub_references_require_qualification_in_every_context)
         }
     }
     const auto outcome = runSource(
-        "open = 10\nhub game\nconst value = 1\ncopy = game.value\n"
+        "argument = 10\nhub game\nconst value = 1\ncopy = game.value\n"
         "fun read value:int\nlocal = value\nreturn local + game.copy\nend\nend\n"
-        "return game.read open"
+        "return game.read argument"
     );
     BOOST_REQUIRE_MESSAGE(outcome.compiled, outcome.diagnostics);
     BOOST_TEST(outcome.integerValue == 11);
@@ -122,6 +122,34 @@ BOOST_AUTO_TEST_CASE(hub_references_require_qualification_in_every_context)
     InterpreterContext context(*machine);
     BOOST_TEST(!Interpreter{}.execute("open hub game\nend", context));
     BOOST_TEST(!runtime.isHub("game"));
+}
+
+BOOST_AUTO_TEST_CASE(open_is_reserved_and_requires_a_supported_declaration)
+{
+    Runtime runtime;
+    BOOST_TEST(runtime.getKeywordId("open").isValid());
+    auto compiler = runtime.createCompiler();
+    ParseStatementFn parser;
+    BOOST_REQUIRE(compiler->getParseStatementFn("hub", parser));
+    BOOST_TEST(parser != nullptr);
+    BOOST_REQUIRE(compiler->getParseStatementFn("open", parser));
+    BOOST_TEST(parser != nullptr);
+    PreParseStatementFn preParser;
+    for (const auto* name : {"hub", "open"}) {
+        for (const auto declarationsOnly : {false, true}) {
+            BOOST_REQUIRE(compiler->getGetPreParseStatementFn(name, preParser, declarationsOnly));
+            BOOST_TEST(preParser != nullptr);
+        }
+    }
+    for (const auto* source : {
+        "open = 10", "const open = 10", "fun open\nend", "fun read open:int\nend",
+        "hub example\nconst open = 10\nend",
+        "open", "open example\nend", "open hub", "open hub example trailing\nend"
+    }) {
+        BOOST_TEST_CONTEXT(source) {
+            BOOST_TEST(!compileErrors(source).empty());
+        }
+    }
 }
 
 BOOST_AUTO_TEST_CASE(hub_ids_support_independent_namespaces_and_catalog_growth)

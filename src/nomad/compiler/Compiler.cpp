@@ -32,7 +32,8 @@ Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
     registerParseStatementFn("enum", parseEnumStatement, preParseEnumStatement);
     registerParseStatementFn("event", parseEventStatement, preParseEventStatement);
     registerParseStatementFn("fun", parseFunStatement, preParseFunStatement);
-    registerParseStatementFn("hub", parseHubStatement);
+    registerParseStatementFn("hub", parseHubStatement, preParseHubStatement, preDeclareHubStatement);
+    registerParseStatementFn("open", parseOpenStatement, preParseOpenStatement, preDeclareOpenStatement);
     registerParseStatementFn("assert", parseAssertStatement);
     registerParseStatementFn("if", parseIfStatement);
     registerParseStatementFn("params", nullptr, preParseParamsStatement);
@@ -73,9 +74,10 @@ void Compiler::reportInternalError(const NomadString& message) const {
 void Compiler::registerParseStatementFn(
     const NomadString& name,
     ParseStatementFn fn,
-    PreParseStatementFn preFn
+    PreParseStatementFn preFn,
+    PreParseStatementFn declarationFn
 ) {
-    m_statements.emplace(name, ParseStatementFnRegistration{ preFn, fn });
+    m_statements.emplace(name, ParseStatementFnRegistration{ preFn, fn, declarationFn });
 }
 
 bool Compiler::isStatement(const NomadString& name) const {
@@ -94,11 +96,15 @@ bool Compiler::getParseStatementFn(const NomadString& name, ParseStatementFn& fn
     return false;
 }
 
-bool Compiler::getGetPreParseStatementFn(const NomadString& name, PreParseStatementFn& fn) const {
+bool Compiler::getGetPreParseStatementFn(
+    const NomadString& name,
+    PreParseStatementFn& fn,
+    const bool declarationsOnly
+) const {
     const auto it = m_statements.find(name);
 
     if (it != m_statements.end()) {
-        fn = it->second.preFn;
+        fn = declarationsOnly ? it->second.declarationFn : it->second.preFn;
 
         return true;
     }
@@ -167,14 +173,6 @@ bool Compiler::foldBinary(
     RuntimeValue& result
 ) const {
     return m_runtime->foldBinary(op, lhsType, lhs, rhsType, rhs, result);
-}
-
-NomadString Compiler::resolveName(
-    const NomadString& name,
-    const ScriptFunction*,
-    NomadString
-) const {
-    return name;
 }
 
 IdentifierType Compiler::getIdentifierType(const NomadString& name, const ScriptFunction* function) const {
@@ -844,12 +842,7 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
     };
     std::vector<DeclarationBlock> blocks;
     while (tokens.nextLine()) {
-        auto statement = tokens.next().textValue;
-        const auto openHub = statement == "open" && tokens.getTokenCount() >= 2 &&
-            tokens.getTokenAt(1) == "hub";
-        if (openHub) {
-            statement = tokens.next().textValue;
-        }
+        const auto statement = tokens.next().textValue;
         if (statement == "end") {
             if (!blocks.empty()) {
                 context->setHub(std::move(blocks.back().hub));
@@ -857,28 +850,15 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
             }
             continue;
         }
-        if (statement == "hub") {
-            NomadString name;
-            if (!tokens.nextIdentifier(name) || !tokens.endOfLine()) {
-                context->reportError("Expected a hub name followed by end of line", &tokens);
-                continue;
-            }
-            if (blocks.size() >= 64) {
-                context->reportError("Hub nesting exceeds the maximum depth of 64", &tokens);
-                continue;
-            }
-            const auto qualifiedName = context->qualifyDeclaration(name);
-            blocks.push_back({context->getHub(), true});
-            if (hubsOnly && m_runtime->registerHub(
-                qualifiedName, openHub ? HubMode::Opened : HubMode::Closed
-            ).isInvalid()) {
-                context->reportError("Cannot declare hub '" + qualifiedName + "': invalid or conflicting name", &tokens);
-            }
-            context->setHub(qualifiedName);
+        PreParseStatementFn preParseStatementFn;
+        const auto previousHub = context->getHub();
+        if (getGetPreParseStatementFn(statement, preParseStatementFn, hubsOnly) && preParseStatementFn) {
+            (void)preParseStatementFn(context, function, &tokens);
+        }
+        if (context->getHub() != previousHub) {
+            blocks.push_back({previousHub, true});
             continue;
         }
-
-        PreParseStatementFn preParseStatementFn;
 
         if (hubsOnly && statement == "enum") {
             while (tokens.nextLine() && !tokens.is("end")) {}
@@ -895,10 +875,6 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
             } else if (m_runtime->registerHubVariable(name).isInvalid()) {
                 context->reportError("Hub member '" + name + "' is already declared or conflicts with an identifier", &tokens);
             }
-        }
-        if (!hubsOnly && getGetPreParseStatementFn(statement, preParseStatementFn) && preParseStatementFn) {
-            // Errors are reported to the context; keep going to collect errors from the following lines.
-            (void)preParseStatementFn(context, function, &tokens);
         }
         if (statement == "enum") {
             continue; // Enum pre-parsing consumes its own closing end.

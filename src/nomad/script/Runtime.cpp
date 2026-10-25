@@ -204,6 +204,7 @@ Runtime::Runtime() {
 //    register_keyword("stringId" NomadDoc("Load the string id of the given string"));
     registerKeyword("fun", NomadDoc("Function declaration"));
     registerKeyword("hub", NomadDoc("Groups declarations in a namespace; use open hub to allow additional declaration blocks"));
+    registerKeyword("open", NomadDoc("Allows a hub to have additional declaration blocks"));
     registerKeyword("new", NomadDoc("Constructs a new object"));
     registerKeyword("if", NomadDoc("if statement"));
     registerKeyword("else", NomadDoc("`else` branch of an `if` statement"));
