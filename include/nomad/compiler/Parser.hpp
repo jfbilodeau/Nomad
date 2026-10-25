@@ -19,11 +19,22 @@ class Compiler;
 class CompilerContext;
 class Tokenizer;
 
+enum class StatementAvailability {
+    Compiler = 1,
+    Interpreter,
+    Both
+};
+
+enum class PreParsePhase {
+    Declarations = 1,
+    Signatures
+};
+
 // Parse functions report errors to their CompilerContext, which must be the tokenizer's context. Functions returning a
 // pointer return nullptr on error, functions returning bool return false, and functions returning an id return
 // NOMAD_INVALID_ID.
 // Pre-parse functions return false on error.
-using PreParseStatementFn = bool (*)(CompilerContext*, ScriptFunction*, Tokenizer*);
+using PreParseStatementFn = bool (*)(CompilerContext*, ScriptFunction*, Tokenizer*, PreParsePhase);
 // Returns nullptr on error.
 using ParseStatementFn = std::unique_ptr<Statement> (*)(CompilerContext*, ScriptFunction*, Tokenizer*);
 

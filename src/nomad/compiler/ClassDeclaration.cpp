@@ -82,15 +82,28 @@ NomadBoolean ClassDeclaration::isDeclaration() const {
     return true;
 }
 
-bool preDeclareClassStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
-    return preDeclareClass(context, function, tokens, ObjectTypeMode::Closed);
+bool preParseOpenClassStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    if (phase == PreParsePhase::Declarations) {
+        return preDeclareClass(context, function, tokens, ObjectTypeMode::Opened);
+    }
+    NomadString name;
+    return parseClassDefinition(context, function, tokens, name);
 }
 
-bool preDeclareOpenClassStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
-    return preDeclareClass(context, function, tokens, ObjectTypeMode::Opened);
-}
-
-bool preParseClassStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+bool preParseClassStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    if (phase == PreParsePhase::Declarations) {
+        return preDeclareClass(context, function, tokens, ObjectTypeMode::Closed);
+    }
     NomadString name;
     return parseClassDefinition(context, function, tokens, name);
 }

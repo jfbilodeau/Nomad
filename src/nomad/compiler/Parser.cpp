@@ -390,14 +390,14 @@ std::unique_ptr<Statement> parseStatement(
     const auto statementName = tokens->next().textValue;
 
     ParseStatementFn statementFn;
+    StatementAvailability availability;
 
-    if (context->getCompiler()->getParseStatementFn(statementName, statementFn)) {
-        if (context->getMode() == CompilerMode::Interpreter &&
-            (statementName == "const" || statementName == "enum" || statementName == "fun" ||
-                statementName == "event" || statementName == "params" || statementName == "return" ||
-                statementName == "assert" || statementName == "hub" || statementName == "open" ||
-                statementName == "class")) {
-            context->reportError("Statement '" + statementName + "' is not supported by the interpreter", tokens);
+    if (context->getCompiler()->getParseStatementFn(statementName, statementFn, availability)) {
+        const auto interpreter = context->getMode() == CompilerMode::Interpreter;
+        if ((interpreter && availability == StatementAvailability::Compiler) ||
+            (!interpreter && availability == StatementAvailability::Interpreter)) {
+            context->reportError("Statement '" + statementName + "' is not supported by the " +
+                (interpreter ? "interpreter" : "compiler"), tokens);
             return nullptr;
         }
         if (statementFn == nullptr) {

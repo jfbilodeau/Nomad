@@ -8,7 +8,15 @@
 
 namespace nomad {
 
-bool preParseEventStatement(CompilerContext* context, ScriptFunction* /*function*/, Tokenizer* tokens) {
+bool preParseEventStatement(
+    CompilerContext* context,
+    ScriptFunction* /*function*/,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    if (phase == PreParsePhase::Declarations) {
+        return true;
+    }
     if (tokens->endOfLine()) {
         context->reportError("Event name expected", tokens);
 

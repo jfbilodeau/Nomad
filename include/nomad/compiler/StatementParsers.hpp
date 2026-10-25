@@ -11,6 +11,8 @@
 
 namespace nomad {
 
+enum class PreParsePhase;
+
 // Forward declarations
 class Compiler;
 class FunStatementNode;
@@ -68,20 +70,48 @@ std::unique_ptr<FunctionNode> parseThenBody(
 // Statement parsers. Errors are reported to the tokenizer's context; pre-parse functions return false and parse
 // functions return nullptr on error.
 std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
-bool preParseHubStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
-bool preDeclareHubStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
+bool preParseHubStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    PreParsePhase phase
+);
 std::unique_ptr<Statement> parseOpenStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
-bool preParseOpenStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
-bool preDeclareOpenStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
-bool preParseFunStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
+bool preParseOpenStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    PreParsePhase phase
+);
+bool preParseFunStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    PreParsePhase phase
+);
 std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 std::unique_ptr<Statement> parseAssertStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
-bool preParseConstStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
+bool preParseConstStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    PreParsePhase phase
+);
 std::unique_ptr<Statement> parseConstStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
-bool preParseEnumStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
+bool preParseEnumStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    PreParsePhase phase
+);
 std::unique_ptr<Statement> parseEnumStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 std::unique_ptr<Statement> parseIfStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
-bool preParseParamsStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
+bool preParseParamsStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    PreParsePhase phase
+);
 std::unique_ptr<Statement> parseEventStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 

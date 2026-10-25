@@ -6,6 +6,8 @@
 
 namespace nomad {
 
+enum class PreParsePhase;
+
 class ObjectType;
 class Tokenizer;
 
@@ -19,9 +21,18 @@ private:
     const ObjectType* m_type;
 };
 
-bool preDeclareClassStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
-bool preDeclareOpenClassStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
-bool preParseClassStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
+bool preParseClassStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    PreParsePhase phase
+);
+bool preParseOpenClassStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    PreParsePhase phase
+);
 std::unique_ptr<Statement> parseClassStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
 
 } // namespace nomad

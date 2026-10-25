@@ -119,47 +119,49 @@ bool preParseHub(
     return true;
 }
 
-bool expectOpenHub(CompilerContext* context, Tokenizer* tokens) {
-    if (!tokens->expect("hub")) {
+bool expectOpenStatement(CompilerContext* context, Tokenizer* tokens, NomadString& statement) {
+    if (!tokens->is("hub") && !tokens->is("class")) {
         context->reportError("Expected 'hub' or 'class' after 'open'", tokens);
         return false;
     }
+    statement = tokens->next().textValue;
     return true;
 }
 
 } // namespace
 
-bool preParseHubStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
-    return preParseHub(context, function, tokens, HubMode::Closed, false);
+bool preParseHubStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    return preParseHub(context, function, tokens, HubMode::Closed, phase == PreParsePhase::Declarations);
 }
 
-bool preDeclareHubStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
-    return preParseHub(context, function, tokens, HubMode::Closed, true);
-}
-
-bool preParseOpenStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
-    if (tokens->is("class")) {
-        tokens->next();
-        return preParseClassStatement(context, function, tokens);
+bool preParseOpenStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    NomadString statement;
+    if (!expectOpenStatement(context, tokens, statement)) {
+        return false;
     }
-    return expectOpenHub(context, tokens) && preParseHub(context, function, tokens, HubMode::Opened, false);
-}
-
-bool preDeclareOpenStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
-    if (tokens->is("class")) {
-        tokens->next();
-        return preDeclareOpenClassStatement(context, function, tokens);
+    if (statement == "class") {
+        return preParseOpenClassStatement(context, function, tokens, phase);
     }
-    return expectOpenHub(context, tokens) && preParseHub(context, function, tokens, HubMode::Opened, true);
+    return preParseHub(context, function, tokens, HubMode::Opened, phase == PreParsePhase::Declarations);
 }
 
 std::unique_ptr<Statement> parseOpenStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
-    if (tokens->is("class")) {
-        tokens->next();
-        return parseClassStatement(context, function, tokens);
-    }
-    if (!expectOpenHub(context, tokens)) {
+    NomadString statement;
+    if (!expectOpenStatement(context, tokens, statement)) {
         return nullptr;
+    }
+    if (statement == "class") {
+        return parseClassStatement(context, function, tokens);
     }
     return parseHubStatement(context, function, tokens);
 }
@@ -229,7 +231,15 @@ std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptFun
     return nullptr;
 }
 
-bool preParseFunStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+bool preParseFunStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    if (phase == PreParsePhase::Declarations) {
+        return true;
+    }
     NomadString funName;
 
     if (!tokens->nextIdentifier(funName)) {
@@ -273,7 +283,7 @@ bool preParseFunStatement(CompilerContext* context, ScriptFunction* function, To
     auto fun = context->getRuntime()->getScriptFunction(funId);
 
     // Parse parameters.
-    return preParseParamsStatement(context, fun, tokens);
+    return preParseParamsStatement(context, fun, tokens, PreParsePhase::Signatures);
 }
 
 bool parseCallbackFunParameters(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const FunctionType* callbackType) {
@@ -791,7 +801,15 @@ bool parseConstantName(CompilerContext* context, Tokenizer* tokens, NomadString&
     return tokens->expect(TokenType::Operator) && tokens->expect("=");
 }
 
-bool preParseConstStatement(CompilerContext* context, ScriptFunction* /*function*/, Tokenizer* tokens) {
+bool preParseConstStatement(
+    CompilerContext* context,
+    ScriptFunction* /*function*/,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    if (phase == PreParsePhase::Declarations) {
+        return true;
+    }
     NomadString constantName;
 
     if (!parseConstantName(context, tokens, constantName)) {
@@ -906,7 +924,15 @@ bool parseEnumDefinition(
     return false;
 }
 
-bool preParseEnumStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+bool preParseEnumStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    if (phase == PreParsePhase::Declarations) {
+        return true;
+    }
     NomadString enumName;
     std::vector<EnumValueDefinition> values;
 
@@ -1033,7 +1059,7 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
 
         // Parse parameters (names only for now)
         const auto declarationLine = tokens->getLineIndex();
-        const auto parametersParsed = preParseParamsStatement(context, handlerFunction, tokens);
+        const auto parametersParsed = preParseParamsStatement(context, handlerFunction, tokens, PreParsePhase::Signatures);
 
         auto handlerBody = parseFunBody(context, handlerFunction, tokens, declarationLine);
 
@@ -1316,7 +1342,15 @@ std::unique_ptr<Statement> parseIfStatement(CompilerContext* context, ScriptFunc
     return ifStatement;
 }
 
-bool preParseParamsStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+bool preParseParamsStatement(
+    CompilerContext* context,
+    ScriptFunction* function,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    if (phase == PreParsePhase::Declarations) {
+        return true;
+    }
     if (function->getParameterCount() > 0) {
         context->reportError("Function '" + function->getName() + "' already has parameters", tokens);
 

@@ -88,7 +88,7 @@ BOOST_AUTO_TEST_CASE(statement_parsers_register_without_interpreter_metadata)
     compiler->registerParseStatementFn(
         "console.test",
         nullptr,
-        nullptr
+        StatementAvailability::Compiler
     );
 
     BOOST_TEST(compiler->isStatement("console.test"));

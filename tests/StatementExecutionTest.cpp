@@ -36,6 +36,13 @@ std::unique_ptr<Statement> parseExecutableTestStatement(
     return std::make_unique<ExecutableTestStatement>();
 }
 
+std::vector<PreParsePhase> preParsePhases;
+
+bool preParseTestStatement(CompilerContext*, ScriptFunction*, Tokenizer*, const PreParsePhase phase) {
+    preParsePhases.push_back(phase);
+    return true;
+}
+
 template<typename Node>
 void resolveForInterpreter(Compiler* compiler, Node& node) {
     CompilerContext compilerContext(compiler, CompilerMode::Interpreter);
@@ -110,7 +117,7 @@ BOOST_AUTO_TEST_CASE(statement_evaluation_defaults_to_unsupported)
     compiler->registerParseStatementFn(
         "supported",
         parseExecutableTestStatement,
-        nullptr
+        StatementAvailability::Both
     );
 
     auto machine = runtime.createVirtualMachine();
@@ -124,6 +131,59 @@ BOOST_AUTO_TEST_CASE(statement_evaluation_defaults_to_unsupported)
     Statement unsupported(0, 0);
     BOOST_CHECK_THROW(unsupported.evaluate(context), AstException);
     BOOST_TEST(context.getResult() == nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(statement_availability_is_enforced_from_registration)
+{
+    for (const auto availability : {
+        StatementAvailability::Compiler, StatementAvailability::Interpreter, StatementAvailability::Both
+    }) {
+        for (const auto mode : {CompilerMode::Script, CompilerMode::Interpreter}) {
+            Runtime runtime;
+            auto compiler = runtime.createCompiler();
+            compiler->registerParseStatementFn("custom", parseExecutableTestStatement, availability);
+            CompilerContext context(compiler.get(), mode);
+            Tokenizer tokens(&context, "availability.nomad", "custom");
+            const auto statement = parser::parseStatement(&context, nullptr, &tokens);
+            const auto allowed = availability == StatementAvailability::Both ||
+                (mode == CompilerMode::Script && availability == StatementAvailability::Compiler) ||
+                (mode == CompilerMode::Interpreter && availability == StatementAvailability::Interpreter);
+            BOOST_TEST((statement != nullptr) == allowed);
+            BOOST_TEST(context.hasError() == !allowed);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(statement_pre_parser_receives_both_phases_without_separate_callbacks)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    preParsePhases.clear();
+    compiler->registerParseStatementFn(
+        "custom", parseExecutableTestStatement, StatementAvailability::Both, preParseTestStatement
+    );
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"main", {"phases.nomad", "custom"}}}, {}});
+    BOOST_REQUIRE(compiler->compileFunctions(&context));
+    BOOST_REQUIRE(preParsePhases.size() == 2u);
+    BOOST_TEST((preParsePhases[0] == PreParsePhase::Declarations));
+    BOOST_TEST((preParsePhases[1] == PreParsePhase::Signatures));
+    preParsePhases.clear();
+}
+
+BOOST_AUTO_TEST_CASE(interpreter_only_statements_do_not_run_compiler_pre_parsers)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    preParsePhases.clear();
+    compiler->registerParseStatementFn(
+        "custom", parseExecutableTestStatement, StatementAvailability::Interpreter, preParseTestStatement
+    );
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"main", {"phases.nomad", "custom"}}}, {}});
+    BOOST_TEST(!compiler->compileFunctions(&context));
+    BOOST_TEST(context.hasError());
+    BOOST_TEST(preParsePhases.empty());
 }
 
 BOOST_AUTO_TEST_CASE(statement_execution_calls_compiled_functions_with_interpreter_arguments)

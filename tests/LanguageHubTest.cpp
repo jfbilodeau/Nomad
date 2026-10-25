@@ -130,16 +130,17 @@ BOOST_AUTO_TEST_CASE(open_is_reserved_and_requires_a_supported_declaration)
     BOOST_TEST(runtime.getKeywordId("open").isValid());
     auto compiler = runtime.createCompiler();
     ParseStatementFn parser;
-    BOOST_REQUIRE(compiler->getParseStatementFn("hub", parser));
+    StatementAvailability availability;
+    BOOST_REQUIRE(compiler->getParseStatementFn("hub", parser, availability));
     BOOST_TEST(parser != nullptr);
-    BOOST_REQUIRE(compiler->getParseStatementFn("open", parser));
+    BOOST_TEST((availability == StatementAvailability::Compiler));
+    BOOST_REQUIRE(compiler->getParseStatementFn("open", parser, availability));
     BOOST_TEST(parser != nullptr);
+    BOOST_TEST((availability == StatementAvailability::Compiler));
     PreParseStatementFn preParser;
     for (const auto* name : {"hub", "open"}) {
-        for (const auto declarationsOnly : {false, true}) {
-            BOOST_REQUIRE(compiler->getGetPreParseStatementFn(name, preParser, declarationsOnly));
-            BOOST_TEST(preParser != nullptr);
-        }
+        BOOST_REQUIRE(compiler->getGetPreParseStatementFn(name, preParser));
+        BOOST_TEST(preParser != nullptr);
     }
     for (const auto* source : {
         "open = 10", "const open = 10", "fun open\nend", "fun read open:int\nend",

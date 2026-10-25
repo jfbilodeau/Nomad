@@ -29,23 +29,23 @@ Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
         addOpCode(OpCodes::op_stop);
     }
 
-    registerParseStatementFn("const", parseConstStatement, preParseConstStatement);
-    registerParseStatementFn("enum", parseEnumStatement, preParseEnumStatement);
-    registerParseStatementFn("event", parseEventStatement, preParseEventStatement);
-    registerParseStatementFn("fun", parseFunStatement, preParseFunStatement);
-    registerParseStatementFn("hub", parseHubStatement, preParseHubStatement, preDeclareHubStatement);
-    registerParseStatementFn("class", parseClassStatement, preParseClassStatement, preDeclareClassStatement);
-    registerParseStatementFn("open", parseOpenStatement, preParseOpenStatement, preDeclareOpenStatement);
-    registerParseStatementFn("assert", parseAssertStatement);
-    registerParseStatementFn("if", parseIfStatement);
-    registerParseStatementFn("params", nullptr, preParseParamsStatement);
-    registerParseStatementFn("return", parseReturnStatement);
-    registerParseStatementFn("while", parseWhileStatement);
-    registerParseStatementFn("until", parseUntilStatement);
-    registerParseStatementFn("do", parseDoStatement);
-    registerParseStatementFn("break", parseBreakStatement);
-    registerParseStatementFn("continue", parseContinueStatement);
-    registerParseStatementFn("for", parseForStatement);
+    registerParseStatementFn("const", parseConstStatement, StatementAvailability::Compiler, preParseConstStatement);
+    registerParseStatementFn("enum", parseEnumStatement, StatementAvailability::Compiler, preParseEnumStatement);
+    registerParseStatementFn("event", parseEventStatement, StatementAvailability::Compiler, preParseEventStatement);
+    registerParseStatementFn("fun", parseFunStatement, StatementAvailability::Compiler, preParseFunStatement);
+    registerParseStatementFn("hub", parseHubStatement, StatementAvailability::Compiler, preParseHubStatement);
+    registerParseStatementFn("class", parseClassStatement, StatementAvailability::Compiler, preParseClassStatement);
+    registerParseStatementFn("open", parseOpenStatement, StatementAvailability::Compiler, preParseOpenStatement);
+    registerParseStatementFn("assert", parseAssertStatement, StatementAvailability::Compiler);
+    registerParseStatementFn("if", parseIfStatement, StatementAvailability::Both);
+    registerParseStatementFn("params", nullptr, StatementAvailability::Compiler, preParseParamsStatement);
+    registerParseStatementFn("return", parseReturnStatement, StatementAvailability::Compiler);
+    registerParseStatementFn("while", parseWhileStatement, StatementAvailability::Both);
+    registerParseStatementFn("until", parseUntilStatement, StatementAvailability::Both);
+    registerParseStatementFn("do", parseDoStatement, StatementAvailability::Both);
+    registerParseStatementFn("break", parseBreakStatement, StatementAvailability::Both);
+    registerParseStatementFn("continue", parseContinueStatement, StatementAvailability::Both);
+    registerParseStatementFn("for", parseForStatement, StatementAvailability::Both);
 
 }
 
@@ -76,21 +76,26 @@ void Compiler::reportInternalError(const NomadString& message) const {
 void Compiler::registerParseStatementFn(
     const NomadString& name,
     ParseStatementFn fn,
-    PreParseStatementFn preFn,
-    PreParseStatementFn declarationFn
+    const StatementAvailability availability,
+    PreParseStatementFn preFn
 ) {
-    m_statements.emplace(name, ParseStatementFnRegistration{ preFn, fn, declarationFn });
+    m_statements.emplace(name, ParseStatementFnRegistration{ preFn, fn, availability });
 }
 
 bool Compiler::isStatement(const NomadString& name) const {
     return m_statements.find(name) != m_statements.end();
 }
 
-bool Compiler::getParseStatementFn(const NomadString& name, ParseStatementFn& fn) const {
+bool Compiler::getParseStatementFn(
+    const NomadString& name,
+    ParseStatementFn& fn,
+    StatementAvailability& availability
+) const {
     const auto it = m_statements.find(name);
 
     if (it != m_statements.end()) {
         fn = it->second.fn;
+        availability = it->second.availability;
 
         return true;
     }
@@ -100,13 +105,12 @@ bool Compiler::getParseStatementFn(const NomadString& name, ParseStatementFn& fn
 
 bool Compiler::getGetPreParseStatementFn(
     const NomadString& name,
-    PreParseStatementFn& fn,
-    const bool declarationsOnly
+    PreParseStatementFn& fn
 ) const {
     const auto it = m_statements.find(name);
 
     if (it != m_statements.end()) {
-        fn = declarationsOnly ? it->second.declarationFn : it->second.preFn;
+        fn = it->second.preFn;
 
         return true;
     }
@@ -853,9 +857,18 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
             continue;
         }
         PreParseStatementFn preParseStatementFn;
+        ParseStatementFn parseStatementFn;
+        StatementAvailability availability;
+        if (getParseStatementFn(statement, parseStatementFn, availability) &&
+            availability == StatementAvailability::Interpreter) {
+            continue;
+        }
         const auto previousHub = context->getHub();
-        if (getGetPreParseStatementFn(statement, preParseStatementFn, hubsOnly) && preParseStatementFn) {
-            (void)preParseStatementFn(context, function, &tokens);
+        if (getGetPreParseStatementFn(statement, preParseStatementFn) && preParseStatementFn) {
+            (void)preParseStatementFn(
+                context, function, &tokens,
+                hubsOnly ? PreParsePhase::Declarations : PreParsePhase::Signatures
+            );
         }
         if (context->getHub() != previousHub) {
             blocks.push_back({previousHub, true});

@@ -67,15 +67,18 @@ public:
     void registerParseStatementFn(
         const NomadString& name,
         ParseStatementFn fn,
-        PreParseStatementFn preFn = nullptr,
-        PreParseStatementFn declarationFn = nullptr
+        StatementAvailability availability,
+        PreParseStatementFn preFn = nullptr
     );
     [[nodiscard]] bool isStatement(const NomadString& name) const;
-    [[nodiscard]] bool getParseStatementFn(const NomadString& name, ParseStatementFn& fn) const;
+    [[nodiscard]] bool getParseStatementFn(
+        const NomadString& name,
+        ParseStatementFn& fn,
+        StatementAvailability& availability
+    ) const;
     [[nodiscard]] bool getGetPreParseStatementFn(
         const NomadString& name,
-        PreParseStatementFn& fn,
-        bool declarationsOnly = false
+        PreParseStatementFn& fn
     ) const;
     void getRegisteredStatements(std::vector<NomadString>& parsers) const;
 
@@ -244,7 +247,7 @@ private:
     struct ParseStatementFnRegistration {
         PreParseStatementFn preFn;
         ParseStatementFn fn;
-        PreParseStatementFn declarationFn;
+        StatementAvailability availability;
     };
 
     struct OpCodeRegistration {

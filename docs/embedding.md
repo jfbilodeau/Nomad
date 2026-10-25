@@ -601,6 +601,16 @@ compilation refuses to proceed if it already contains errors. Use a fresh runtim
 for independent analysis snapshots, or provide a runtime containing the host APIs
 needed by the scripts. Compilation does not execute scripts.
 
+Custom statements register with
+`registerParseStatementFn(name, parser, availability, preParser)`.
+The required `StatementAvailability` is `Compiler`, `Interpreter`, or `Both`;
+dispatch rejects a statement in an unavailable mode before calling its parser.
+The optional pre-parser receives `PreParsePhase::Declarations` first, then
+`PreParsePhase::Signatures`. Publish early type/namespace declarations in the
+first phase and resolve signatures in the second without registering declarations
+again. Interpreter-only statements do not run pre-parsers during compilation.
+Both enums and the callback types are declared in `<nomad/compiler/Parser.hpp>`.
+
 `createFunction(context, scriptId, functionName)` creates a declared or generated
 function within an existing script. Obtain the script ID with
 `getScriptId(functionId)`. Function creation uses the script's source name and
