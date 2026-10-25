@@ -5,6 +5,7 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Parser.hpp>
+#include <nomad/compiler/StatementParsers.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/script/Runtime.hpp>
@@ -204,6 +205,136 @@ bool preDeclareClass(
     return true;
 }
 
+bool registerMemberSignatures(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens
+) {
+    NomadString name;
+    std::vector<std::unique_ptr<ClassMemberDeclaration>> members;
+    if (!parseClassDefinition(context, function, tokens, name, members, true)) {
+        return false;
+    }
+    auto* runtime = context->getRuntime();
+    const auto* type = runtime->getTypeByName(name);
+    if (type == nullptr || type->asObjectType() == nullptr) {
+        context->reportError("Class '" + name + "' has no registered object type", tokens);
+        return false;
+    }
+    auto initializerRegistered = false;
+    for (const auto& member : members) {
+        for (const auto& parameter : member->getParameters()) {
+            if (parameter.name == "this") {
+                context->reportError("'this' names the class receiver and cannot be a parameter",
+                    tokens->getSourceName(), member->getLine(), member->getColumn());
+                return false;
+            }
+        }
+        CallableId id;
+        if (member->getKind() == ClassMemberKind::Field) {
+            if (initializerRegistered) continue;
+            initializerRegistered = true;
+            id = runtime->registerScriptMethod(type->getId(), "$init", {}, tokens->getSourceName(), tokens->getSource());
+        } else if (member->getKind() == ClassMemberKind::Constructor) {
+            id = runtime->registerScriptConstructor(
+                type->getId(), member->getParameters(), tokens->getSourceName(), tokens->getSource()
+            );
+        } else {
+            id = runtime->registerScriptMethod(
+                type->getId(), member->getName(), member->getParameters(), tokens->getSourceName(), tokens->getSource()
+            );
+        }
+        if (id.isInvalid()) {
+            context->reportError("Cannot register class member '" + member->getName() + "'",
+                tokens->getSourceName(), member->getLine(), member->getColumn());
+            return false;
+        }
+        auto* callable = runtime->getScriptCallable(id);
+        callable->setHub(context->getHub());
+        callable->setSourceLineRange(member->getLine(), member->getEndLine());
+        context->getCompiler()->registerMemberCompilation(id, function->getId());
+        if (member->getKind() == ClassMemberKind::Field) {
+            auto body = std::make_unique<FunctionNode>(member->getLine(), member->getColumn());
+            body->setEndSpan(member->getEndLine(), member->getEndColumn());
+            context->getCompiler()->setFunctionNode(id, std::move(body));
+        }
+    }
+    return true;
+}
+
+CallableId findMemberCallable(const ObjectType* type, const ClassMemberDeclaration& member) {
+    if (member.getKind() == ClassMemberKind::Constructor) {
+        for (const auto* constructor : type->getConstructors()) {
+            if (std::ranges::equal(constructor->getParameters(), member.getParameters(),
+                [](const auto& first, const auto& second) { return first.type == second.type; })) {
+                return constructor->getId();
+            }
+        }
+    } else {
+        const auto name = member.getKind() == ClassMemberKind::Field ? "$init" : member.getName();
+        for (const auto* method : type->getMethods()) {
+            if (method->getName() == name && (member.getKind() == ClassMemberKind::Field ||
+                std::ranges::equal(method->getParameters(), member.getParameters(),
+                    [](const auto& first, const auto& second) { return first.type == second.type; }))) {
+                return method->getId();
+            }
+        }
+    }
+    return CallableId::INVALID;
+}
+
+bool parseMemberBodies(
+    CompilerContext* context,
+    const ObjectType* type,
+    const Tokenizer* source,
+    std::vector<std::unique_ptr<ClassMemberDeclaration>>& members
+) {
+    for (auto& member : members) {
+        const auto id = findMemberCallable(type, *member);
+        auto* callable = context->getRuntime()->getScriptCallable(id);
+        if (callable == nullptr) {
+            context->reportError("Class member '" + member->getName() + "' has no registered signature",
+                source->getSourceName(), member->getLine(), member->getColumn());
+            return false;
+        }
+        member->setCallableId(id);
+        Tokenizer tokens(context, source->getSourceName(), source->getSource());
+        while (tokens.nextLine() && tokens.getLineIndex() < member->getLine()) {}
+        if (member->getKind() == ClassMemberKind::Field) {
+            tokens.next();
+            if (!tokens.expect("=")) return false;
+            const ParserBlockScope scope(*context, callable, nullptr, true, true);
+            auto initializer = parser::parseExpression(context, callable, &tokens);
+            if (!initializer || !parser::expectEndOfLine(context, callable, &tokens, member->getLine())) {
+                return false;
+            }
+            member->setInitializer(std::move(initializer));
+        } else {
+            while (tokens.nextLine() && tokens.getLineIndex() < member->getEndLine()) {
+                const auto statement = tokens.next().textValue;
+                PreParseStatementFn preParser = nullptr;
+                // Class/hub declarations are rejected by their ordinary parsers in a callable body.
+                if (statement == "class" || statement == "hub" || statement == "open") continue;
+                ParseStatementFn parser = nullptr;
+                StatementAvailability availability;
+                if (context->getCompiler()->getParseStatementFn(statement, parser, availability) &&
+                    availability != StatementAvailability::Interpreter &&
+                    context->getCompiler()->getPreParseStatementFn(statement, preParser) && preParser != nullptr &&
+                    !preParser(context, callable, &tokens, PreParsePhase::Signatures)) {
+                    return false;
+                }
+            }
+            tokens.reset();
+            while (tokens.nextLine() && tokens.getLineIndex() < member->getLine()) {}
+            tokens.nextLine();
+            auto body = parseFunBody(context, callable, &tokens, member->getLine());
+            if (!body) return false;
+            context->getCompiler()->setFunctionNode(id, std::move(body));
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 ClassDeclaration::ClassDeclaration(
@@ -230,6 +361,13 @@ NomadBoolean ClassDeclaration::isDeclaration() const {
 }
 
 void ClassDeclaration::onResolve(CompilerContext* context, ScriptCallableBase* function) {
+    for (const auto& member : m_members) {
+        if (auto* initializer = member->getInitializer()) {
+            (void)initializer->resolve(
+                context, context->getRuntime()->getScriptCallable(member->getCallableId())
+            );
+        }
+    }
     if (!m_members.empty()) {
         const auto& member = m_members.front();
         context->reportError(
@@ -248,9 +386,7 @@ bool preParseOpenClassStatement(
     if (phase == PreParsePhase::Declarations) {
         return preDeclareClass(context, function, tokens, ObjectTypeMode::Opened);
     }
-    NomadString name;
-    std::vector<std::unique_ptr<ClassMemberDeclaration>> members;
-    return parseClassDefinition(context, function, tokens, name, members, true);
+    return registerMemberSignatures(context, function, tokens);
 }
 
 bool preParseClassStatement(
@@ -262,9 +398,7 @@ bool preParseClassStatement(
     if (phase == PreParsePhase::Declarations) {
         return preDeclareClass(context, function, tokens, ObjectTypeMode::Closed);
     }
-    NomadString name;
-    std::vector<std::unique_ptr<ClassMemberDeclaration>> members;
-    return parseClassDefinition(context, function, tokens, name, members, true);
+    return registerMemberSignatures(context, function, tokens);
 }
 
 std::unique_ptr<Statement> parseClassStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
@@ -286,6 +420,9 @@ std::unique_ptr<Statement> parseClassStatement(CompilerContext* context, ScriptC
     const auto* type = context->getRuntime()->getTypeByName(name);
     if (type == nullptr || type->asObjectType() == nullptr) {
         context->reportError("Class '" + name + "' has no registered object type", tokens);
+        return nullptr;
+    }
+    if (!parseMemberBodies(context, type->asObjectType(), tokens, members)) {
         return nullptr;
     }
     auto declaration = std::make_unique<ClassDeclaration>(line, column, type->asObjectType(), std::move(members));

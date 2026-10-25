@@ -1351,6 +1351,10 @@ bool preParseParamsStatement(
     if (phase == PreParsePhase::Declarations) {
         return true;
     }
+    if (function->getObjectType() != nullptr) {
+        context->reportError("Class member parameters must be declared in the member header", tokens);
+        return false;
+    }
     if (function->getParameterCount() > 0) {
         context->reportError("Function '" + function->getName() + "' already has parameters", tokens);
 

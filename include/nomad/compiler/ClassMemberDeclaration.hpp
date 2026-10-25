@@ -36,12 +36,19 @@ public:
     [[nodiscard]] const std::vector<Parameter>& getParameters() const;
     // Field initializer tokens or callable body tokens, excluding the callable header and its closing end.
     [[nodiscard]] const std::vector<ClassMemberSourceLine>& getSourceLines() const;
+    [[nodiscard]] CallableId getCallableId() const;
+    void setCallableId(CallableId id);
+    [[nodiscard]] const Expression* getInitializer() const;
+    [[nodiscard]] Expression* getInitializer();
+    void setInitializer(std::unique_ptr<Expression> initializer);
 
 private:
     ClassMemberKind m_kind;
     NomadString m_name;
     std::vector<Parameter> m_parameters;
     std::vector<ClassMemberSourceLine> m_sourceLines;
+    CallableId m_callableId{};
+    std::unique_ptr<Expression> m_initializer;
 };
 
 } // namespace nomad

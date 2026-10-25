@@ -453,6 +453,15 @@ concrete member descriptors are in `<nomad/script/ScriptMethod.hpp>` and
 class member registration or execution. No receiver parameter is synthesized by
 their constructors.
 
+`Runtime::registerScriptMethod(typeId, name, parameters, path, source)` and
+`registerScriptConstructor(typeId, parameters, path, source)` publish script
+signatures on a runtime-owned object type. They return an invalid ID and log an
+error for an invalid owner, unsupported parameter types, or duplicate signatures.
+These registration APIs bind a class-typed local `this` without adding a receiver
+to the explicit parameter list. A parameter named `this` is invalid. The supplied
+source is retained for compiler diagnostics; registration alone does not parse,
+compile, or enable invocation of the member.
+
 ## Module configuration
 
 Read module settings through `NomadConfiguration` rather than parsing its serialized

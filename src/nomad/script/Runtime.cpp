@@ -11,6 +11,8 @@
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/RegisterRangeType.hpp>
+#include <nomad/script/ScriptConstructor.hpp>
+#include <nomad/script/ScriptMethod.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -1864,6 +1866,67 @@ PropertyId Runtime::addProperty(const TypeId id, NativePropertyDefinition defini
     m_nativeMembersByName[definition.name].push_back(propertyId);
 
     return propertyId;
+}
+
+CallableId Runtime::registerScriptMethod(
+    const TypeId id,
+    NomadString name,
+    std::vector<Parameter> parameters,
+    NomadString path,
+    NomadString source
+) {
+    const auto type = getType(id);
+    auto* owner = type && (*type)->asObjectType() != nullptr ? getMutableObjectType((*type)->asObjectType()) : nullptr;
+    if (owner == nullptr || name.empty() ||
+        std::ranges::any_of(parameters, [this](const auto& parameter) {
+            return parameter.name == "this" || !ownsType(parameter.type) ||
+                parameter.type->isVoid() || parameter.type->isInternal();
+        })) {
+        log::error("Cannot register script method: invalid owner, name, or parameter type");
+        return CallableId::INVALID;
+    }
+    for (const auto* method : owner->getMethods()) {
+        if (method->getName() == name && std::ranges::equal(method->getParameters(), parameters,
+            [](const auto& first, const auto& second) { return first.type == second.type; })) {
+            log::error("Cannot register script method: duplicate signature");
+            return CallableId::INVALID;
+        }
+    }
+    auto method = std::make_unique<ScriptMethod>(
+        std::move(name), owner, std::move(parameters), nullptr, std::move(path), std::move(source)
+    );
+    method->registerVariable("this", owner);
+    return owner->registerMethod(*this, std::move(method));
+}
+
+CallableId Runtime::registerScriptConstructor(
+    const TypeId id,
+    std::vector<Parameter> parameters,
+    NomadString path,
+    NomadString source
+) {
+    const auto type = getType(id);
+    auto* owner = type && (*type)->asObjectType() != nullptr ? getMutableObjectType((*type)->asObjectType()) : nullptr;
+    if (owner == nullptr ||
+        std::ranges::any_of(parameters, [this](const auto& parameter) {
+            return parameter.name == "this" || !ownsType(parameter.type) ||
+                parameter.type->isVoid() || parameter.type->isInternal();
+        })) {
+        log::error("Cannot register script constructor: invalid owner or parameter type");
+        return CallableId::INVALID;
+    }
+    for (const auto* constructor : owner->getConstructors()) {
+        if (std::ranges::equal(constructor->getParameters(), parameters,
+            [](const auto& first, const auto& second) { return first.type == second.type; })) {
+            log::error("Cannot register script constructor: duplicate signature");
+            return CallableId::INVALID;
+        }
+    }
+    auto constructor = std::make_unique<ScriptConstructor>(
+        owner, std::move(parameters), std::move(path), std::move(source)
+    );
+    constructor->registerVariable("this", owner);
+    return owner->registerConstructor(*this, std::move(constructor));
 }
 
 CallableId Runtime::addMethod(const TypeId id, NativeMethodDefinition definition) {

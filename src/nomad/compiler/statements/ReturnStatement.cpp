@@ -37,6 +37,13 @@ void ReturnStatementNode::onResolve(CompilerContext* context, ScriptCallableBase
         return;
     }
 
+    if (context->getRuntime()->getConstructor(function->getId()) != nullptr) {
+        if (m_expression != nullptr) {
+            reportError(context, function, "Script constructors cannot return a value");
+        }
+        return;
+    }
+
     context->getCompiler()->addReturningFunction(function->getId());
 
     const Type* returnType = context->getRuntime()->getVoidType();

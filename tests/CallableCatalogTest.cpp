@@ -94,6 +94,39 @@ CallableId registerNativeFunction(
 
 BOOST_AUTO_TEST_SUITE(callable_catalog)
 
+BOOST_AUTO_TEST_CASE(script_registration_binds_receiver_without_exposing_a_free_function)
+{
+    Runtime runtime;
+    const auto typeId = runtime.createObjectType("ScriptOwner", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(typeId.isValid());
+    const auto* owner = runtime.getTypeByName("ScriptOwner");
+    const auto parameters = std::vector<Parameter>{defParameter("value", runtime.getIntegerType(), "")};
+    const auto methodId = runtime.registerScriptMethod(typeId, "move", parameters, "owner.nomad", "");
+    const auto constructorId = runtime.registerScriptConstructor(typeId, parameters, "owner.nomad", "");
+    BOOST_REQUIRE(methodId.isValid());
+    BOOST_REQUIRE(constructorId.isValid());
+    for (const auto id : {methodId, constructorId}) {
+        const auto* callable = runtime.getScriptCallable(id);
+        BOOST_REQUIRE(callable != nullptr);
+        BOOST_TEST(callable->getParameterCount() == 1u);
+        BOOST_TEST(callable->getParameterId("this") == NOMAD_INVALID_ID);
+        BOOST_TEST(callable->getVariableType(callable->getVariableId("this")) == owner);
+        BOOST_TEST(runtime.getFunction(id) == nullptr);
+    }
+    BOOST_TEST(runtime.getFunctionId("move").isInvalid());
+    BOOST_TEST(runtime.registerScriptMethod(typeId, "move", parameters, "owner.nomad", "").isInvalid());
+    BOOST_TEST(runtime.registerScriptConstructor(typeId, parameters, "owner.nomad", "").isInvalid());
+    BOOST_TEST(runtime.registerScriptMethod(runtime.getIntegerType()->getId(), "move", {}, "", "").isInvalid());
+    BOOST_TEST(runtime.registerScriptConstructor(TypeId{}, {}, "", "").isInvalid());
+    BOOST_TEST(runtime.registerScriptMethod(typeId, "bad",
+        {defParameter("this", runtime.getIntegerType(), "")}, "", "").isInvalid());
+    Runtime foreign;
+    BOOST_TEST(runtime.registerScriptConstructor(typeId,
+        {defParameter("value", foreign.getIntegerType(), "")}, "", "").isInvalid());
+    BOOST_TEST(runtime.registerScriptMethod(typeId, "untyped",
+        {defParameter("value", nullptr, "")}, "", "").isInvalid());
+}
+
 BOOST_AUTO_TEST_CASE(script_callable_lookup_preserves_function_and_native_categories)
 {
     Runtime runtime;

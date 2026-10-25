@@ -9,12 +9,37 @@
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Type.hpp>
+#include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
 using namespace nomad;
 using namespace nomad::test;
+
+namespace {
+
+bool prepareMembers(CompilerContext& context, Tokenizer& tokens, ScriptCallableBase* function) {
+    tokens.reset();
+    if (!tokens.nextLine()) return false;
+    auto statement = tokens.next().textValue;
+    if (statement == "open") tokens.next();
+    const auto valid = preParseClassStatement(&context, function, &tokens, PreParsePhase::Signatures);
+    tokens.reset();
+    return valid && tokens.nextLine();
+}
+
+void registerCallbackTestFunctions(Runtime& runtime) {
+    const auto* callbackType = runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType());
+    for (const auto* name : {"factory", "invoke"}) {
+        BOOST_REQUIRE(runtime.registerNativeFunction(
+            name, [](VirtualMachine*) {}, {defParameter("callback", callbackType, "")},
+            runtime.getIntegerType(), ""
+        ).isValid());
+    }
+}
+
+} // namespace
 
 BOOST_AUTO_TEST_SUITE(language_classes)
 
@@ -50,8 +75,8 @@ BOOST_AUTO_TEST_CASE(empty_declarations_publish_closed_and_open_object_types)
     BOOST_TEST(closed->getProperties().empty());
     BOOST_TEST(fixture.execute("main").integerValue == 42);
 
-    auto compiler = runtime.createCompiler();
-    CompilerContext context(compiler.get());
+    auto* compiler = &fixture.getCompiler();
+    CompilerContext context(compiler);
     Tokenizer tokens(&context, "ast.nomad", "class Closed\nend");
     BOOST_REQUIRE(tokens.nextLine());
     const auto statement = parser::parseLine(&context, runtime.getScriptFunction(runtime.getFunctionId("main")), &tokens);
@@ -153,30 +178,31 @@ BOOST_AUTO_TEST_CASE(member_declarations_retain_typed_headers_initializers_and_b
     fixture.addFunction("main", "class Point\nend");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    auto compiler = runtime.createCompiler();
-    CompilerContext context(compiler.get());
+    auto* compiler = &fixture.getCompiler();
+    CompilerContext context(compiler);
     std::unique_ptr<Statement> statement;
     {
         Tokenizer tokens(&context, "members.nomad",
             "class Point\n"
             "    name = \"point\"\n"
-            "    scores = new Array<int> 10\n"
+            "    scores = 1 + 10\n"
             "    init\n"
-            "        this.x = 0.0\n"
+            "        x = 0.0\n"
             "    end\n"
             "    init x:float y:float\n"
-            "        this.x = x\n"
-            "        this.y = y\n"
+            "        copyX = x\n"
+            "        copyY = y\n"
             "    end\n"
             "    fun move target:Point\n"
-            "        this.x = target.x\n"
+            "        copy = target\n"
             "    end\n"
             "end\n"
             "return 42"
         );
-        BOOST_REQUIRE(tokens.nextLine());
+        BOOST_REQUIRE(prepareMembers(context, tokens, runtime.getScriptCallable(runtime.getFunctionId("main"))));
         statement = parser::parseLine(&context, runtime.getScriptFunction(runtime.getFunctionId("main")), &tokens);
-        BOOST_REQUIRE(statement != nullptr);
+        BOOST_REQUIRE_MESSAGE(statement != nullptr,
+            (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Missing class AST"));
         BOOST_TEST(!context.hasError());
         BOOST_TEST(tokens.getLineIndex() == 14u);
         BOOST_REQUIRE(tokens.nextLine());
@@ -197,8 +223,8 @@ BOOST_AUTO_TEST_CASE(member_declarations_retain_typed_headers_initializers_and_b
     BOOST_TEST((initializer[0].tokens[0].type == TokenType::String));
     BOOST_TEST(initializer[0].tokens[0].textValue == "point");
     BOOST_TEST(initializer[0].tokens[0].column == 12u);
-    BOOST_REQUIRE(members[1]->getSourceLines()[0].tokens.size() == 6u);
-    BOOST_TEST(members[1]->getSourceLines()[0].tokens[5].integerValue == 10);
+    BOOST_REQUIRE(members[1]->getSourceLines()[0].tokens.size() == 3u);
+    BOOST_TEST(members[1]->getSourceLines()[0].tokens[2].integerValue == 10);
     BOOST_TEST((members[2]->getKind() == ClassMemberKind::Constructor));
     BOOST_TEST(members[2]->getParameters().empty());
     BOOST_REQUIRE(members[2]->getSourceLines().size() == 1u);
@@ -212,8 +238,10 @@ BOOST_AUTO_TEST_CASE(member_declarations_retain_typed_headers_initializers_and_b
     BOOST_TEST(members[4]->getName() == "move");
     BOOST_REQUIRE(members[4]->getParameters().size() == 1u);
     BOOST_TEST(members[4]->getParameters()[0].type == declaration->getType());
-    BOOST_TEST(declaration->getType()->getConstructors().empty());
-    BOOST_TEST(declaration->getType()->getMethods().empty());
+    BOOST_TEST(declaration->getType()->getConstructors().size() == 2u);
+    BOOST_TEST(declaration->getType()->getMethods().size() == 2u);
+    BOOST_REQUIRE(members[0]->getInitializer() != nullptr);
+    BOOST_TEST(members[2]->getCallableId().isValid());
     BOOST_TEST(declaration->getType()->getProperties().empty());
     BOOST_TEST(runtime.getFunctionId("move").isInvalid());
     BOOST_TEST(runtime.getFunctionId("init").isInvalid());
@@ -225,8 +253,9 @@ BOOST_AUTO_TEST_CASE(member_source_scanning_balances_blocks_callbacks_and_loop_c
     fixture.addFunction("main", "open class Point\nend");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    auto compiler = runtime.createCompiler();
-    CompilerContext context(compiler.get());
+    registerCallbackTestFunctions(runtime);
+    auto* compiler = &fixture.getCompiler();
+    CompilerContext context(compiler);
     Tokenizer tokens(&context, "blocks.nomad",
         "open class Point\n"
         "callback = factory fun value\nreturn value\nend\n"
@@ -238,7 +267,7 @@ BOOST_AUTO_TEST_CASE(member_source_scanning_balances_blocks_callbacks_and_loop_c
         "if true\nvalue = \"end\"\nelse if false\nvalue = \"fun\"\nend\n"
         "end\n"
         "do\nvalue = 1\nend until true\n"
-        "for index = 1 to 2\nvalue = index\nend\n"
+        "for index in range 1 2\nvalue = index\nend\n"
         "invoke fun item\nif true\nreturn item\nend\nend\n"
         "invoke then item\nreturn item\n"
         "end\n"
@@ -246,10 +275,11 @@ BOOST_AUTO_TEST_CASE(member_source_scanning_balances_blocks_callbacks_and_loop_c
         "end\n"
         "return 7"
     );
-    BOOST_REQUIRE(tokens.nextLine());
+    BOOST_REQUIRE(prepareMembers(context, tokens, runtime.getScriptCallable(runtime.getFunctionId("main"))));
     const auto statement = parser::parseLine(&context, runtime.getScriptFunction(runtime.getFunctionId("main")), &tokens);
     const auto* declaration = dynamic_cast<const ClassDeclaration*>(statement.get());
-    BOOST_REQUIRE(declaration != nullptr);
+    BOOST_REQUIRE_MESSAGE(declaration != nullptr,
+        (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Missing class AST"));
     BOOST_TEST(!context.hasError());
     const auto& members = declaration->getMembers();
     BOOST_REQUIRE(members.size() == 3u);
@@ -263,21 +293,21 @@ BOOST_AUTO_TEST_CASE(member_source_scanning_balances_blocks_callbacks_and_loop_c
     BOOST_TEST(tokens.is("return"));
 }
 
-BOOST_AUTO_TEST_CASE(member_overloads_retain_distinct_parameter_types_without_registering_callables)
+BOOST_AUTO_TEST_CASE(member_overloads_register_distinct_parameter_types_on_the_class)
 {
     LanguageTestFixture fixture;
     fixture.addFunction("main", "class Point\nend");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    auto compiler = runtime.createCompiler();
-    CompilerContext context(compiler.get());
+    auto* compiler = &fixture.getCompiler();
+    CompilerContext context(compiler);
     Tokenizer tokens(&context, "overloads.nomad",
         "class Point\n"
         "init value:int\nend\ninit value:float\nend\n"
         "fun move value:int\nend\nfun move value:float\nend\n"
         "end"
     );
-    BOOST_REQUIRE(tokens.nextLine());
+    BOOST_REQUIRE(prepareMembers(context, tokens, runtime.getScriptCallable(runtime.getFunctionId("main"))));
     const auto statement = parser::parseLine(&context, runtime.getScriptFunction(runtime.getFunctionId("main")), &tokens);
     const auto* declaration = dynamic_cast<const ClassDeclaration*>(statement.get());
     BOOST_REQUIRE(declaration != nullptr);
@@ -290,8 +320,8 @@ BOOST_AUTO_TEST_CASE(member_overloads_retain_distinct_parameter_types_without_re
             (index % 2 == 0 ? runtime.getIntegerType() : runtime.getFloatType()));
         BOOST_TEST(members[index]->getSourceLines().empty());
     }
-    BOOST_TEST(declaration->getType()->getConstructors().empty());
-    BOOST_TEST(declaration->getType()->getMethods().empty());
+    BOOST_TEST(declaration->getType()->getConstructors().size() == 2u);
+    BOOST_TEST(declaration->getType()->getMethods().size() == 2u);
 }
 
 BOOST_AUTO_TEST_CASE(class_parameter_types_are_resolved_after_all_class_symbols_are_published)
@@ -360,6 +390,180 @@ BOOST_AUTO_TEST_CASE(class_declarations_are_not_supported_by_the_interpreter)
         BOOST_TEST(!Interpreter{}.execute(source, context));
         BOOST_TEST(context.hasError());
         BOOST_TEST(runtime.getTypeByName("Point") == nullptr);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(member_signatures_precede_body_parsing_and_receiver_types_are_inferred)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "class Point\n"
+        "value = 1.0\n"
+        "init value:float\ncopy = value\nreturn\nend\n"
+        "fun identity\nreturn this\nend\n"
+        "fun echo value:int\ncopy = value\nreturn copy\nend\n"
+        "end"
+    );
+    auto sawSignatures = false;
+    fixture.getCompiler().registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
+        if (phase != CompilationPhase::Parse) return;
+        const auto* type = fixture.getRuntime().getTypeByName("Point")->asObjectType();
+        BOOST_REQUIRE(type != nullptr);
+        BOOST_TEST(type->getConstructors().size() == 1u);
+        BOOST_TEST(type->getMethods().size() == 3u);
+        sawSignatures = true;
+    });
+    BOOST_TEST(!fixture.compile());
+    BOOST_TEST(sawSignatures);
+    BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
+    BOOST_TEST(!fixture.hasError("Missing `return`"));
+    BOOST_TEST(!fixture.hasError("Unknown identifier"));
+    auto& runtime = fixture.getRuntime();
+    const auto* type = runtime.getTypeByName("Point")->asObjectType();
+    for (const auto* method : type->getMethods()) {
+        const auto* callable = runtime.getScriptCallable(method->getId());
+        BOOST_REQUIRE(callable != nullptr);
+        BOOST_TEST(callable->getVariableType(callable->getVariableId("this")) == type);
+        BOOST_TEST(callable->getParameterId("this") == NOMAD_INVALID_ID);
+        BOOST_TEST(runtime.getScriptFunction(method->getId()) == nullptr);
+        if (method->getName() == "identity") BOOST_TEST(method->getReturnType() == type);
+        if (method->getName() == "echo") BOOST_TEST(method->getReturnType() == runtime.getIntegerType());
+    }
+    BOOST_TEST(runtime.getFunctionId("echo").isInvalid());
+    BOOST_TEST(runtime.getFunctionId("Point.echo").isInvalid());
+}
+
+BOOST_AUTO_TEST_CASE(member_bodies_and_initializers_report_ordinary_source_errors)
+{
+    for (const auto* source : {
+        "class Point\nvalue = 1 +\nend",
+        "class Point\nfun move\nreturn 1 +\nend\nend",
+        "class Point\nfun move\nreturn missing\nend\nend",
+        "class Point\nfun move\nif true\nreturn 1\nend\nend\nend",
+        "class Point\ninit\nreturn 1\nend\nend",
+        "class Point\nfun move this:int\nend\nend",
+        "class Point\nfun move\nparams this:Point\nend\nend",
+        "class Point\nfun move\nthis = 1\nend\nend",
+        "class Point\nfun move\nthis.value = 1\nend\nend",
+        "class Point\nfun move\nreturn this.value\nend\nend",
+        "class Point\nfun move\nthis.move\nend\nend"
+    }) {
+        BOOST_TEST_CONTEXT(source) {
+            LanguageTestFixture fixture;
+            fixture.addFunction("main", source);
+            BOOST_TEST(!fixture.compile());
+            BOOST_TEST(fixture.getErrorCount() > 0u);
+            BOOST_TEST(!fixture.hasError("Internal error"));
+        }
+    }
+    LanguageTestFixture fixture;
+    fixture.addFunction("main", "class Point\nfun move\nreturn missing\nend\nend");
+    BOOST_TEST(!fixture.compile());
+    const auto* diagnostic = fixture.findError("Unknown identifier: missing");
+    BOOST_REQUIRE(diagnostic != nullptr);
+    BOOST_TEST(diagnostic->sourceName == "main.nomad");
+    BOOST_TEST(diagnostic->line == 3u);
+}
+
+BOOST_AUTO_TEST_CASE(bare_member_names_remain_locals_and_initializers_resolve_normally)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "class Point\nvalue = 1.0\nfun move\nvalue = 2\nreturn value\nend\nend"
+    );
+    BOOST_TEST(!fixture.compile());
+    BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
+    const auto* type = fixture.getRuntime().getTypeByName("Point")->asObjectType();
+    for (const auto* method : type->getMethods()) {
+        if (method->getName() == "move") {
+            const auto* callable = fixture.getRuntime().getScriptCallable(method->getId());
+            BOOST_TEST(method->getReturnType() == fixture.getRuntime().getIntegerType());
+            BOOST_TEST(callable->getVariableType(callable->getVariableId("value")) ==
+                fixture.getRuntime().getIntegerType());
+        }
+    }
+    LanguageTestFixture invalidInitializer;
+    invalidInitializer.addFunction("main", "class Point\nvalue = missing\nend");
+    BOOST_TEST(!invalidInitializer.compile());
+    BOOST_TEST(invalidInitializer.hasError("Unknown identifier: missing"));
+}
+
+BOOST_AUTO_TEST_CASE(member_callbacks_capture_this_and_format_placeholders_use_member_scope)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "class Point\n"
+        "fun describe value:int\nreturn $\"value {value}\"\nend\n"
+        "fun callback\nresult = receiverFactory fun\nreturn this\nend\nreturn result\nend\n"
+        "end"
+    );
+    fixture.getCompiler().registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
+        if (phase != CompilationPhase::Parse) return;
+        auto& runtime = fixture.getRuntime();
+        const auto* type = runtime.getTypeByName("Point");
+        const auto* callback = runtime.getCallbackType({}, type);
+        BOOST_REQUIRE(runtime.registerNativeFunction(
+            "receiverFactory", [](VirtualMachine*) {}, {defParameter("callback", callback, "")}, type, ""
+        ).isValid());
+    });
+    BOOST_TEST(!fixture.compile());
+    BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
+    BOOST_TEST(!fixture.hasError("Unknown identifier"));
+    BOOST_TEST(!fixture.hasError("Callback return type"));
+    auto& runtime = fixture.getRuntime();
+    const auto* type = runtime.getTypeByName("Point")->asObjectType();
+    CallableId callbackMethod;
+    for (const auto* method : type->getMethods()) {
+        if (method->getName() == "describe") BOOST_TEST(method->getReturnType() == runtime.getStringType());
+        if (method->getName() == "callback") {
+            BOOST_TEST(method->getReturnType() == type);
+            callbackMethod = method->getId();
+        }
+    }
+    auto foundCapture = false;
+    std::vector<ScriptFunction*> functions;
+    runtime.getFunctions(functions);
+    for (const auto* function : functions) {
+        if (function->getParentId() == callbackMethod) {
+            BOOST_TEST(function->getCaptureId("this") != NOMAD_INVALID_ID);
+            BOOST_TEST(function->getCaptureType(function->getCaptureId("this")) == type);
+            foundCapture = true;
+        }
+    }
+    BOOST_TEST(foundCapture);
+}
+
+BOOST_AUTO_TEST_CASE(member_bodies_use_registered_declaration_pre_parsers)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "class Point\nfun calculate\nconst answer = 42\nreturn answer\nend\nend"
+    );
+    BOOST_TEST(!fixture.compile());
+    BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
+    BOOST_TEST(!fixture.hasError("Unknown identifier"));
+    const auto* type = fixture.getRuntime().getTypeByName("Point")->asObjectType();
+    BOOST_REQUIRE(type->getMethods().size() == 1u);
+    BOOST_TEST(type->getMethods()[0]->getReturnType() == fixture.getRuntime().getIntegerType());
+}
+
+BOOST_AUTO_TEST_CASE(class_receiver_never_falls_back_to_entity_context_variables)
+{
+    for (const auto* body : {"return this.value", "this.value = 2"}) {
+        LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        const auto contextId = runtime.registerVariableContext(
+            "entity", "this.", std::make_unique<SimpleVariableContext>()
+        );
+        BOOST_REQUIRE(contextId.isValid());
+        const auto variableId = runtime.registerContextVariable(contextId, "this.value", runtime.getIntegerType());
+        BOOST_REQUIRE(variableId.isValid());
+        fixture.addFunction("main", NomadString("class Point\nfun move\n") + body + "\nend\nend");
+        BOOST_TEST(!fixture.compile());
+        BOOST_TEST(fixture.hasError("Script class field"));
+        const auto localId = runtime.getVariableContext(contextId)->getFirstVariableId();
+        BOOST_TEST(!runtime.getVariableContext(contextId)->isRead(localId));
+        BOOST_TEST(!runtime.getVariableContext(contextId)->isWritten(localId));
     }
 }
 

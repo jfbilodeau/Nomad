@@ -456,6 +456,10 @@ std::unique_ptr<Statement> parseStatement(
     Tokenizer* tokens
 ) {
     const auto statementName = tokens->next().textValue;
+    if (context->getCompiler()->getReceiverType(function) != nullptr && statementName.starts_with("this.")) {
+        context->reportError("Script member invocation is not supported yet: '" + statementName + "'", tokens);
+        return nullptr;
+    }
 
     ParseStatementFn statementFn;
     StatementAvailability availability;
@@ -1011,6 +1015,9 @@ bool expectEndOfLine(
 }
 
 IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& name, const ScriptCallableBase* function) {
+    if (compiler->getReceiverType(function) != nullptr && (name == "this" || name.starts_with("this."))) {
+        return compiler->getIdentifierType(name, function);
+    }
     if (compiler->getRuntime()->getKeywordId(name).isValid()) {
         return IdentifierType::Keyword;
     }
@@ -1049,6 +1056,14 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
 std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     const auto line = tokens->getLineIndex();
     const auto column = tokens->getColumnIndex();
+    if (context->getCompiler()->getReceiverType(function) != nullptr && tokens->is(TokenType::Identifier)) {
+        const auto& target = tokens->currentToken().textValue;
+        if (target == "this" || target.starts_with("this.")) {
+            context->reportError(target == "this" ? "Cannot reassign the class receiver 'this'" :
+                "Script class field assignment is not supported yet: '" + target + "'", tokens);
+            return nullptr;
+        }
+    }
 
     const auto isDirectIdentifier = tokens->getTokenCount() >= 3 &&
                                     tokens->getTokenTypeAt(0) == TokenType::Identifier && tokens->getTokenAt(1) == "=";

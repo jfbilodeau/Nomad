@@ -182,6 +182,11 @@ bool Compiler::foldBinary(
 }
 
 IdentifierType Compiler::getIdentifierType(const NomadString& name, const ScriptCallableBase* function) const {
+    if (getReceiverType(function) != nullptr) {
+        if (name == "this") return function->getVariableId(name).isValid() ?
+            IdentifierType::FunctionVariable : IdentifierType::Unknown;
+        if (name.starts_with("this.")) return IdentifierType::Unknown;
+    }
     if (m_runtime->getKeywordId(name).isValid()) {
         return IdentifierType::Keyword;
     }
@@ -227,6 +232,19 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
 }
 
 void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptCallableBase* function, IdentifierDefinition& definition) const {
+    if (const auto* receiverType = getReceiverType(function)) {
+        if (name == "this") {
+            definition.variableId = function->getVariableId("this");
+            definition.identifierType = definition.variableId.isValid() ?
+                IdentifierType::FunctionVariable : IdentifierType::Unknown;
+            definition.valueType = receiverType;
+            return;
+        }
+        if (name.starts_with("this.")) {
+            definition.identifierType = IdentifierType::Unknown;
+            return;
+        }
+    }
     if (name.empty()) {
         definition.identifierType = IdentifierType::Unknown;
 
@@ -937,6 +955,7 @@ bool Compiler::resolveFunction(CompilerContext* context, const FunctionCompilati
 }
 
 void Compiler::checkReturnPaths(CompilerContext* context, const FunctionCompilation& source) const {
+    if (m_runtime->getConstructor(source.function->getId()) != nullptr) return;
     const auto* returnType = source.function->getReturnType();
 
     if (returnType == nullptr || returnType->isVoid() || source.ast->alwaysReturns()) {
@@ -1110,6 +1129,23 @@ NomadId Compiler::getScriptId(const CallableId functionId) const {
         }
     }
     throw NomadBug("Function does not belong to a registered script: " + toString(functionId.id));
+}
+
+void Compiler::registerMemberCompilation(const CallableId memberId, const CallableId sourceFunctionId) {
+    auto* member = m_runtime->getScriptCallable(memberId);
+    if (member == nullptr || member->getObjectType() == nullptr) {
+        reportInternalError("Invalid script member compilation");
+    }
+    const auto scriptId = getScriptId(sourceFunctionId);
+    m_functions.push_back({scriptId, {}, member, false});
+}
+
+const Type* Compiler::getReceiverType(const ScriptCallableBase* function) const {
+    while (function != nullptr) {
+        if (function->getObjectType() != nullptr) return function->getObjectType();
+        function = m_runtime->getScriptCallable(function->getParentId());
+    }
+    return nullptr;
 }
 
 const ScriptSource& Compiler::getScript(const NomadId scriptId) const {

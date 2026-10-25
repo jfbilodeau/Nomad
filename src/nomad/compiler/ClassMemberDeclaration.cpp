@@ -6,6 +6,26 @@
 
 namespace nomad {
 
+CallableId ClassMemberDeclaration::getCallableId() const {
+    return m_callableId;
+}
+
+void ClassMemberDeclaration::setCallableId(const CallableId id) {
+    m_callableId = id;
+}
+
+const Expression* ClassMemberDeclaration::getInitializer() const {
+    return m_initializer.get();
+}
+
+Expression* ClassMemberDeclaration::getInitializer() {
+    return m_initializer.get();
+}
+
+void ClassMemberDeclaration::setInitializer(std::unique_ptr<Expression> initializer) {
+    m_initializer = std::move(initializer);
+}
+
 ClassMemberDeclaration::ClassMemberDeclaration(
     const NomadIndex line,
     const NomadIndex column,

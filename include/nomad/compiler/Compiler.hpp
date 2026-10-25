@@ -172,6 +172,8 @@ public:
     [[nodiscard]] NomadId getScriptId(CallableId functionId) const;
     [[nodiscard]] const ScriptSource& getScript(NomadId scriptId) const;
     void setFunctionNode(CallableId functionId, std::unique_ptr<FunctionNode> ast);
+    void registerMemberCompilation(CallableId memberId, CallableId sourceFunctionId);
+    [[nodiscard]] const Type* getReceiverType(const ScriptCallableBase* function) const;
     void registerScriptInitializer(
         CompilerContext* context,
         NomadId scriptId,

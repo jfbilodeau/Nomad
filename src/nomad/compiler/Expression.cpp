@@ -1187,6 +1187,10 @@ void ConstructorExpression::onResolve(CompilerContext* context, ScriptCallableBa
         reportError(context, function, "Invalid constructor for '" + m_constructorName + "'");
         return;
     }
+    if (selected->asScriptConstructor() != nullptr) {
+        reportError(context, function, "Script class construction is not supported yet: '" + m_constructorName + "'");
+        return;
+    }
     for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
         arguments[index]->setType(selected->getParameters()[index].type);
     }
@@ -1516,6 +1520,11 @@ IdentifierExpression::IdentifierExpression(
 }
 
 void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBase* function) {
+    if (context->getCompiler()->getReceiverType(function) != nullptr && m_identifier.starts_with("this.")) {
+        reportError(context, function, "Script class field access or member invocation is not supported yet: '" +
+            m_identifier + "'");
+        return;
+    }
     auto* compiler = context->getCompiler();
 
     compiler->getIdentifierDefinition(m_identifier, function, m_identifierDefinition);

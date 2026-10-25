@@ -283,9 +283,23 @@ headers and offer `init` completion in class bodies, not inside callable bodies.
 
 Duplicate fields, field/method name conflicts, and duplicate callable signatures
 are errors. Parameter names do not distinguish signatures.
-Initializers and callable bodies are retained for later processing; their
-expression syntax, names, and types are not yet checked. Nonempty classes report
-an explicit unsupported-execution diagnostic rather than ignoring their members.
+Member signatures are registered before bodies are parsed. Initializers and
+callable bodies use the ordinary expression and statement parser, with source
+diagnostics for malformed syntax and unresolved names/types. Supported bodies can
+use locals, typed parameters, control flow, free/native functions, callbacks, and
+format strings.
+
+Inside a member body, explicit `this` refers to the declaring class instance.
+It is not a declared parameter and cannot be reassigned or used as a parameter
+name. Bare names do not implicitly resolve to fields: `value = 2` creates or
+updates a local, while `this.value = 2` denotes an instance field assignment.
+Field access/assignment and script member calls are still unsupported and report
+diagnostics; they never fall back to the game's `this.*` context.
+Script constructors may use a bare `return` but cannot return an expression.
+Member parameters are declared in the header, not with a later `params` statement.
+
+Nonempty classes still report an explicit unsupported-execution diagnostic rather
+than ignoring their members.
 Field discovery, instance initialization, member calls, external field additions,
 and construction with `new` remain unavailable.
 
