@@ -14,6 +14,7 @@ Nomad is case‑sensitive.
 - [Comments](#comments)
 - [Identifiers and naming rules](#identifiers-and-naming-rules)
 - [Hubs](#hubs)
+- [Class declarations](#class-declarations)
 - [Data types and numeric ranges](#data-types-and-numeric-ranges)
 - [Object types and members](#object-types-and-members)
 - [Variables and variable kinds](#variables-and-variable-kinds)
@@ -220,6 +221,32 @@ Existing dotted identifiers remain supported; they do not implicitly declare
 hubs.
 
 ---
+
+## Class declarations
+
+Empty script class declarations introduce object types. Classes are closed by
+default; `open class` marks a type as open for compile-time extension:
+
+```nomad
+class Point
+end
+
+open class SharedState
+end
+```
+
+Classes may be declared at script level or inside a hub, where their declaration
+names receive the hub prefix. References to these types must use their fully
+qualified names. Class symbols are available to function signatures across files,
+regardless of whether the class appears before or after the function declaration.
+
+Each class has one declaration block, even when open. Duplicate declarations and
+conflicts with existing identifiers are errors. Classes cannot be declared inside
+functions or control-flow blocks, or through the interpreter.
+
+This is declaration-only support: fields, `init`, methods, external field
+additions, and construction with `new` are not available yet. A class body must
+be empty apart from comments and blank lines.
 
 ## Data types and numeric ranges
 
@@ -1091,6 +1118,7 @@ Nomad does not support exceptions inside functions. Errors detectable at compile
 
 Reserved words (cannot use as identifiers):
 
+- `class`
 - `const`
 - `else`
 - `end`

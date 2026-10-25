@@ -395,7 +395,8 @@ std::unique_ptr<Statement> parseStatement(
         if (context->getMode() == CompilerMode::Interpreter &&
             (statementName == "const" || statementName == "enum" || statementName == "fun" ||
                 statementName == "event" || statementName == "params" || statementName == "return" ||
-                statementName == "assert" || statementName == "hub" || statementName == "open")) {
+                statementName == "assert" || statementName == "hub" || statementName == "open" ||
+                statementName == "class")) {
             context->reportError("Statement '" + statementName + "' is not supported by the interpreter", tokens);
             return nullptr;
         }

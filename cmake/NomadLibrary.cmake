@@ -3,6 +3,7 @@ add_library(nomad-language SHARED
 
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Argument.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CallNode.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/ClassDeclaration.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Compiler.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerContext.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerTools.cpp

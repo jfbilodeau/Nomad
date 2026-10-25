@@ -3,6 +3,7 @@
 #include <nomad/compiler/Compiler.hpp>
 
 #include <nomad/compiler/CallNode.hpp>
+#include <nomad/compiler/ClassDeclaration.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/CompilerException.hpp>
 #include <nomad/compiler/LoopStatement.hpp>
@@ -33,6 +34,7 @@ Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
     registerParseStatementFn("event", parseEventStatement, preParseEventStatement);
     registerParseStatementFn("fun", parseFunStatement, preParseFunStatement);
     registerParseStatementFn("hub", parseHubStatement, preParseHubStatement, preDeclareHubStatement);
+    registerParseStatementFn("class", parseClassStatement, preParseClassStatement, preDeclareClassStatement);
     registerParseStatementFn("open", parseOpenStatement, preParseOpenStatement, preDeclareOpenStatement);
     registerParseStatementFn("assert", parseAssertStatement);
     registerParseStatementFn("if", parseIfStatement);

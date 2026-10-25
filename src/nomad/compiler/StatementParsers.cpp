@@ -4,6 +4,7 @@
 
 #include <nomad/Nomad.hpp>
 
+#include <nomad/compiler/ClassDeclaration.hpp>
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/LoopStatement.hpp>
@@ -120,7 +121,7 @@ bool preParseHub(
 
 bool expectOpenHub(CompilerContext* context, Tokenizer* tokens) {
     if (!tokens->expect("hub")) {
-        context->reportError("Expected 'hub' after 'open'", tokens);
+        context->reportError("Expected 'hub' or 'class' after 'open'", tokens);
         return false;
     }
     return true;
@@ -137,14 +138,26 @@ bool preDeclareHubStatement(CompilerContext* context, ScriptFunction* function, 
 }
 
 bool preParseOpenStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+    if (tokens->is("class")) {
+        tokens->next();
+        return preParseClassStatement(context, function, tokens);
+    }
     return expectOpenHub(context, tokens) && preParseHub(context, function, tokens, HubMode::Opened, false);
 }
 
 bool preDeclareOpenStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+    if (tokens->is("class")) {
+        tokens->next();
+        return preDeclareOpenClassStatement(context, function, tokens);
+    }
     return expectOpenHub(context, tokens) && preParseHub(context, function, tokens, HubMode::Opened, true);
 }
 
 std::unique_ptr<Statement> parseOpenStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+    if (tokens->is("class")) {
+        tokens->next();
+        return parseClassStatement(context, function, tokens);
+    }
     if (!expectOpenHub(context, tokens)) {
         return nullptr;
     }
@@ -200,11 +213,11 @@ std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptFun
             );
             continue;
         }
-        const auto openHub = tokens->is("open") && tokens->getTokenCount() >= 2 &&
-            tokens->getTokenAt(1) == "hub";
-        if (!openHub && !tokens->is("hub") && !tokens->is("fun") && !tokens->is("const") &&
+        const auto openDeclaration = tokens->is("open") && tokens->getTokenCount() >= 2 &&
+            (tokens->getTokenAt(1) == "hub" || tokens->getTokenAt(1) == "class");
+        if (!openDeclaration && !tokens->is("class") && !tokens->is("hub") && !tokens->is("fun") && !tokens->is("const") &&
             !tokens->is("enum") && !tokens->is("event")) {
-            context->reportError("A hub may contain only variable, hub, function, constant, enum, or event declarations", tokens);
+            context->reportError("A hub may contain only variable, hub, class, function, constant, enum, or event declarations", tokens);
             continue;
         }
         auto statement = parser::parseLine(context, function, tokens);
