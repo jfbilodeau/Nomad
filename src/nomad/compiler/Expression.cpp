@@ -82,7 +82,7 @@ const NativeMemberExpression* Expression::asNativeExpression() const {
     return nullptr;
 }
 
-bool Expression::resolveAssignmentTarget(CompilerContext* context, ScriptCallableBase* function) {
+bool Expression::resolveAssignmentTarget(CompilerContext* context, ScriptCallableBase* function, const Type*) {
     reportError(context, function, "Assignment target must be an identifier, native property, or indexer");
     return false;
 }
@@ -625,9 +625,9 @@ PrimaryExpression::PrimaryExpression(const Expression* parent, const NomadIndex 
 NativeMemberExpression::NativeMemberExpression(const Expression* parent, const NomadIndex line,
                                                      const NomadIndex column, NomadString qualifiedName,
                                                      NomadString memberName, std::unique_ptr<Expression> receiver,
-                                                     ArgumentList arguments)
+                                                     ArgumentList arguments, const bool hasExplicitArguments)
     : Expression(parent, line, column), m_qualifiedName(std::move(qualifiedName)), m_memberName(std::move(memberName)),
-      m_receiver(std::move(receiver)), m_arguments(std::move(arguments)) {
+      m_receiver(std::move(receiver)), m_arguments(std::move(arguments)), m_hasExplicitArguments(hasExplicitArguments) {
 }
 
 bool NativeMemberExpression::isTerminal() const {
@@ -650,7 +650,12 @@ void NativeMemberExpression::setAllowVoid(const bool allowVoid) {
     m_allowVoid = allowVoid;
 }
 
-bool NativeMemberExpression::resolveMember(CompilerContext* context, ScriptCallableBase* function) {
+bool NativeMemberExpression::resolveMember(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    const Type* valueType,
+    const bool assignment
+) {
     m_memberId = PropertyId::INVALID;
     m_memberType = MemberType::Unknown;
     m_method = nullptr;
@@ -662,6 +667,28 @@ bool NativeMemberExpression::resolveMember(CompilerContext* context, ScriptCalla
     m_memberId = runtime->getNativeMemberId(m_receiver->getType(), m_memberName);
 
     if (runtime->getMemberType(m_memberId) == MemberType::Unknown) {
+        const auto* receiverType = m_receiver->getType();
+        const auto* owner = receiverType != nullptr ? receiverType->asObjectType() : nullptr;
+        if (owner != nullptr && context->getMode() == CompilerMode::Script) {
+            const auto* property = assignment ?
+                context->getCompiler()->resolveObjectField(
+                    context, function, owner, m_memberName, valueType, owner->isOpen(), getLine(), getColumn()
+                ) : owner->getProperty(m_memberName);
+            if (property != nullptr) {
+                if (m_hasExplicitArguments && m_arguments.getArgumentCount() != 0) {
+                    reportError(context, function, "Class field '" + m_qualifiedName + "' does not take arguments");
+                    return false;
+                }
+                m_memberId = property->getId();
+                m_memberType = MemberType::Property;
+                return true;
+            }
+            if (!assignment) {
+                reportError(context, function, "Unknown class field '" + m_memberName +
+                    "' on type '" + owner->getTypeName() + "'");
+            }
+            return false;
+        }
         reportError(context, function,
                     "Type '" + getTypeDisplayName(m_receiver->getType()) + "' has no native member '" +
                         m_memberName + "'");
@@ -678,8 +705,12 @@ bool NativeMemberExpression::resolveMember(CompilerContext* context, ScriptCalla
     return true;
 }
 
-bool NativeMemberExpression::resolveAssignmentTarget(CompilerContext* context, ScriptCallableBase* function) {
-    if (!resolveMember(context, function)) {
+bool NativeMemberExpression::resolveAssignmentTarget(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    const Type* valueType
+) {
+    if (!resolveMember(context, function, valueType, true)) {
         return false;
     }
 
@@ -691,7 +722,13 @@ bool NativeMemberExpression::resolveAssignmentTarget(CompilerContext* context, S
 
     const auto info = runtime->getNativePropertyInfo(m_memberId);
     if (!info) {
-        context->getCompiler()->reportInternalError("Invalid native property: " + m_qualifiedName);
+        const auto* property = runtime->getProperty(std::get<PropertyId>(m_memberId));
+        if (property == nullptr) {
+            context->getCompiler()->reportInternalError("Invalid property: " + m_qualifiedName);
+        }
+        setType(property->getValueType());
+        context->getCompiler()->recordFieldAccess(function, getLine(), getColumn());
+        return true;
     }
     if (!info->setFn) {
         reportError(context, function, "Native property '" + m_qualifiedName + "' is read-only");
@@ -711,7 +748,15 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
     case MemberType::Property: {
         const auto info = runtime->getNativePropertyInfo(m_memberId);
         if (!info) {
-            context->getCompiler()->reportInternalError("Invalid native property: " + m_qualifiedName);
+            const auto id = std::get<PropertyId>(m_memberId);
+            const auto* property = runtime->getProperty(id);
+            if (property == nullptr) {
+                context->getCompiler()->reportInternalError("Invalid property: " + m_qualifiedName);
+            }
+            setType(property->getValueType());
+            context->getCompiler()->recordFieldRead(id);
+            context->getCompiler()->recordFieldAccess(function, getLine(), getColumn());
+            return;
         }
 
         if (!info->getFn) {
@@ -728,7 +773,8 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
 
         auto& arguments = m_arguments.getArguments();
         if (arguments.size() != method->getParameterCount()) {
-            context->getCompiler()->reportInternalError("Native method argument shape changed after parsing");
+            reportError(context, function, "Incorrect argument count for native method '" + m_qualifiedName + "'");
+            return;
         }
 
         for (NomadIndex index = 0; index < arguments.size(); ++index) {
@@ -968,7 +1014,7 @@ bool IndexerExpression::resolveIndexer(CompilerContext* context, ScriptCallableB
     return true;
 }
 
-bool IndexerExpression::resolveAssignmentTarget(CompilerContext* context, ScriptCallableBase* function) {
+bool IndexerExpression::resolveAssignmentTarget(CompilerContext* context, ScriptCallableBase* function, const Type*) {
     if (!resolveIndexer(context, function)) {
         return false;
     }
@@ -1537,6 +1583,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBas
             return;
         }
         setType(property->getValueType());
+        context->getCompiler()->recordFieldRead(property->getId());
         return;
     }
     auto* compiler = context->getCompiler();

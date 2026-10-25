@@ -305,10 +305,43 @@ and script member calls are not executable yet.
 Script constructors may use a bare `return` but cannot return an expression.
 Member parameters are declared in the header, not with a later `params` statement.
 
-Nonempty classes still report an explicit unsupported-execution diagnostic rather
-than ignoring their members.
-Field discovery, instance initialization, member calls, external field additions,
-and construction with `new` remain unavailable.
+An assignment through an object reference may introduce a field on an open
+type. The field belongs to the type, so all instances and aliases share its
+name and type. Closed types permit updates to existing fields, not additions.
+For example:
+
+```nomad
+open class Point
+end
+
+fun extend point:Point
+    point.extra = 42
+end
+
+fun read point:Point
+    return point.extra
+end
+```
+
+The compiler checks all compiled files and callable bodies before diagnosing
+unknown fields; the read may appear before the assignment that introduces the
+field. A read without any declaration or valid introducing assignment is an
+error. Conflicting field types and field/method name collisions are errors.
+An externally introduced field that is assigned but never read produces a
+warning at its introducing assignment. Reads through another instance, an
+alias, `this`, a callback, or a format placeholder count as uses. These checks
+do not prove that an assignment executes before a read.
+
+The same extension rules apply to native object types marked open by the host.
+Native properties retain their getter/setter contracts and do not need a script
+assignment before a read. Host-declared fields are not subject to the
+external-introduction warning.
+Hub members must still be introduced inside a hub block, even for open hubs.
+
+External field additions and reads currently publish and validate metadata
+only; stored-field execution reports an unsupported-execution diagnostic.
+Instance initialization, member calls, and construction with `new` remain
+unavailable.
 
 ## Data types and numeric ranges
 

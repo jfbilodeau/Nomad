@@ -759,4 +759,204 @@ BOOST_AUTO_TEST_CASE(class_receiver_never_falls_back_to_entity_context_variables
     }
 }
 
+BOOST_AUTO_TEST_CASE(external_open_class_fields_are_shared_across_functions_and_aliases)
+{
+    for (const auto reversed : {false, true}) {
+        LanguageTestFixture fixture;
+        fixture.addFunction("types", "open class Point\nend");
+        fixture.addFunction(reversed ? "a" : "z",
+            "fun write point:Point enabled:bool\nalias = point\nif enabled\nalias.extra = 42\nend\nend"
+        );
+        fixture.addFunction(reversed ? "z" : "a",
+            "fun read point:Point\nreturn point.extra\nend"
+        );
+        CompilerContext context(&fixture.getCompiler());
+        BOOST_TEST(!fixture.getCompiler().compileScripts(&context));
+        BOOST_TEST(context.getWarningCount() == 0u);
+        const auto* type = fixture.getRuntime().getTypeByName("Point")->asObjectType();
+        BOOST_REQUIRE(type->getProperty("extra") != nullptr);
+        BOOST_TEST(type->getProperty("extra")->getValueType() == fixture.getRuntime().getIntegerType());
+        const auto* read = fixture.getRuntime().getScriptFunction(fixture.getRuntime().getFunctionId("read"));
+        BOOST_REQUIRE(read != nullptr);
+        BOOST_TEST(read->getReturnType() == fixture.getRuntime().getIntegerType());
+        const auto* write = fixture.getRuntime().getScriptFunction(fixture.getRuntime().getFunctionId("write"));
+        BOOST_REQUIRE(write != nullptr);
+        BOOST_TEST(write->getVariableId("alias.extra").isInvalid());
+        for (const auto& diagnostic : context.getDiagnostics()) {
+            BOOST_TEST(diagnostic.message == "Stored field execution is not supported yet");
+        }
+        BOOST_TEST(context.getErrorCount() == 2u);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(unread_external_fields_warn_once_at_the_introducing_assignment)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "open class Point\nend\n"
+        "fun write point:Point\npoint.extra = 1\npoint.extra = 2\nend"
+    );
+    CompilerContext context(&fixture.getCompiler());
+    BOOST_TEST(!fixture.getCompiler().compileScripts(&context));
+    BOOST_TEST(context.getWarningCount() == 1u);
+    const Diagnostic* warning = nullptr;
+    for (const auto& diagnostic : context.getDiagnostics()) {
+        if (diagnostic.severity == DiagnosticSeverity::Warning) warning = &diagnostic;
+    }
+    BOOST_REQUIRE(warning != nullptr);
+    BOOST_TEST(warning->message == "Externally introduced field 'Point.extra' is assigned but never read");
+    BOOST_TEST(warning->sourceName == "main.nomad");
+    BOOST_TEST(warning->line == 4u);
+    BOOST_TEST(warning->column == 1u);
+}
+
+BOOST_AUTO_TEST_CASE(external_reads_of_never_declared_fields_are_errors_not_declarations)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "open class Point\nend\nfun read point:Point\nreturn point.missing\nend"
+    );
+    BOOST_TEST(!fixture.compile());
+    const auto* error = fixture.findError("Unknown class field 'missing'");
+    BOOST_REQUIRE(error != nullptr);
+    BOOST_TEST(error->sourceName == "main.nomad");
+    BOOST_TEST(error->line == 4u);
+    BOOST_TEST(fixture.getRuntime().getTypeByName("Point")->asObjectType()->getProperties().empty());
+}
+
+BOOST_AUTO_TEST_CASE(external_class_fields_reject_closed_types_conflicting_types_and_methods)
+{
+    for (const auto* source : {
+        "class Point\nend\nfun write point:Point\npoint.extra = 1\nend",
+        "open class Point\nend\nfun write point:Point\npoint.extra = 1\npoint.extra = \"wrong\"\nend",
+        "open class Point\nfun extra\nend\nend\nfun write point:Point\npoint.extra = 1\nend"
+    }) {
+        LanguageTestFixture fixture;
+        fixture.addFunction("main", source);
+        BOOST_TEST(!fixture.compile());
+        BOOST_TEST((fixture.hasError("Unknown class field") || fixture.hasError("Cannot assign type") ||
+            fixture.hasError("conflicts with a method")));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(internal_declarations_and_reads_do_not_produce_external_unused_warnings)
+{
+    for (const auto* source : {
+        "class Point\nvalue = 1\nend\nfun write point:Point\npoint.value = 2\nend",
+        "open class Point\nfun read\nreturn this.extra\nend\nend\n"
+        "fun write point:Point\npoint.extra = 1\nend",
+        "open class Point\nend\nfun read point:Point\nreturn $\"value {point.extra}\"\nend\n"
+        "fun write point:Point\npoint.extra = 1\nend"
+    }) {
+        LanguageTestFixture fixture;
+        fixture.addFunction("main", source);
+        CompilerContext context(&fixture.getCompiler());
+        BOOST_TEST(!fixture.getCompiler().compileScripts(&context));
+        BOOST_TEST(context.getWarningCount() == 0u);
+        for (const auto& diagnostic : context.getDiagnostics()) {
+            BOOST_TEST(diagnostic.message.find("Unknown class field") == NomadString::npos);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(external_fields_work_on_native_open_types_and_preserve_native_properties)
+{
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto id = runtime.createObjectType("Host", ObjectTypeMode::Opened);
+    BOOST_REQUIRE(id.isValid());
+    BOOST_REQUIRE(runtime.addProperty(id, {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .name = "nativeValue",
+        .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadInteger{1}}; },
+        .setter = {},
+        .documentation = ""
+    }).isValid());
+    fixture.addFunction("main",
+        "fun use host:Host\nhost.extra = 1\nreturn host.extra + host.nativeValue\nend"
+    );
+    CompilerContext context(&fixture.getCompiler());
+    BOOST_TEST(!fixture.getCompiler().compileScripts(&context));
+    BOOST_TEST(context.getWarningCount() == 0u);
+    BOOST_TEST(context.getErrorCount() == 2u);
+    const auto* type = runtime.getTypeByName("Host")->asObjectType();
+    BOOST_REQUIRE(type->getProperty("extra") != nullptr);
+    BOOST_TEST(type->getFieldIndex(type->getProperty("extra")->getId()) == 0u);
+    BOOST_TEST(type->getFieldIndex(type->getProperty("nativeValue")->getId()) == NOMAD_INVALID_INDEX);
+}
+
+BOOST_AUTO_TEST_CASE(external_fields_resolve_nested_receivers_and_captured_aliases)
+{
+    LanguageTestFixture fixture;
+    registerCallbackTestFunctions(fixture.getRuntime());
+    fixture.addFunction("main",
+        "open class Inner\nend\nclass Outer\nend\n"
+        "fun callback point:Inner\n"
+        "result = factory fun item\npoint.extra = item\nreturn point.extra\nend\nreturn result\nend\n"
+        "fun nested outer:Outer inner:Inner\nreturn outer.inner.extra\nend"
+    );
+    fixture.getCompiler().registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
+        if (phase != CompilationPhase::Parse) return;
+        auto& runtime = fixture.getRuntime();
+        BOOST_REQUIRE(runtime.registerProperty(
+            runtime.getTypeByName("Outer")->asObjectType(), "inner", runtime.getTypeByName("Inner")
+        ).isValid());
+    });
+    CompilerContext context(&fixture.getCompiler());
+    BOOST_TEST(!fixture.getCompiler().compileScripts(&context));
+    BOOST_TEST(context.getWarningCount() == 0u);
+    const auto* type = fixture.getRuntime().getTypeByName("Inner")->asObjectType();
+    BOOST_REQUIRE(type->getProperty("extra") != nullptr);
+    for (const auto& diagnostic : context.getDiagnostics()) {
+        BOOST_TEST(diagnostic.message == "Stored field execution is not supported yet");
+    }
+}
+
+BOOST_AUTO_TEST_CASE(open_hubs_still_reject_external_member_introduction)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main", "open hub test\nv1 = 1\nend\ntest.v2 = 2");
+    BOOST_TEST(!fixture.compile());
+    BOOST_TEST(fixture.hasError("Hub members must be declared inside a hub block"));
+}
+
+BOOST_AUTO_TEST_CASE(stored_fields_are_not_parsed_as_other_types_native_methods)
+{
+    for (const auto sourceParameter : {false, true}) {
+        LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        const auto id = runtime.createObjectType("Other", ObjectTypeMode::Closed);
+        BOOST_REQUIRE(id.isValid());
+        BOOST_REQUIRE(runtime.addMethod(id, {
+            .name = "extra",
+            .parameters = {{
+                sourceParameter ? runtime.getLineNumberType()->getId() : runtime.getIntegerType()->getId(), "value", ""
+            }},
+            .returnTypeId = runtime.getIntegerType()->getId(),
+            .function = [](VirtualMachine* machine) { machine->setIntegerResult(1); },
+            .documentation = ""
+        }).isValid());
+        fixture.addFunction("main",
+            "open class Point\nend\n"
+            "fun read point:Point\nalias = point\nalias.extra = 42\nreturn alias.extra\nend"
+        );
+        CompilerContext context(&fixture.getCompiler());
+        BOOST_TEST(!fixture.getCompiler().compileScripts(&context));
+        BOOST_TEST(context.getWarningCount() == 0u);
+        BOOST_TEST(context.getErrorCount() == 2u);
+        const auto* read = runtime.getScriptFunction(runtime.getFunctionId("read"));
+        BOOST_REQUIRE(read != nullptr);
+        BOOST_TEST(read->getReturnType() == runtime.getIntegerType());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(missing_native_method_arguments_still_report_source_errors)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main", "value = \"text\"\nreturn value.contains");
+    BOOST_TEST(!fixture.compile());
+    BOOST_TEST(fixture.hasError("Incorrect argument count"));
+    BOOST_TEST(!fixture.hasError("Internal error"));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

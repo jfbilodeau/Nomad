@@ -520,7 +520,8 @@ MemberAssignmentStatement::MemberAssignmentStatement(const NomadIndex line, cons
 
 void MemberAssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     auto* target = m_target.get();
-    if (!target->resolveAssignmentTarget(context, function) || !m_expression->resolve(context, function)) {
+    if (!m_expression->resolve(context, function) ||
+        !target->resolveAssignmentTarget(context, function, m_expression->getType())) {
         return;
     }
 

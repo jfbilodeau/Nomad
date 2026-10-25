@@ -105,15 +105,25 @@ private:
 
 class NativeMemberExpression final : public Expression {
 public:
-    NativeMemberExpression(const Expression* parent, NomadIndex line, NomadIndex column, NomadString qualifiedName,
-                              NomadString memberName, std::unique_ptr<Expression> receiver, ArgumentList arguments);
+    NativeMemberExpression(
+        const Expression* parent,
+        NomadIndex line, 
+        NomadIndex column, 
+        NomadString qualifiedName,
+        NomadString memberName, 
+        std::unique_ptr<Expression> receiver, 
+        ArgumentList arguments,
+        bool hasExplicitArguments = true
+    );
 
     [[nodiscard]] bool isTerminal() const override;
     [[nodiscard]] bool isWritable() const override;
     [[nodiscard]] NativeMemberExpression* asNativeExpression() override;
     [[nodiscard]] const NativeMemberExpression* asNativeExpression() const override;
 
-    [[nodiscard]] bool resolveAssignmentTarget(CompilerContext* context, ScriptCallableBase* function) override;
+    [[nodiscard]] bool resolveAssignmentTarget(
+        CompilerContext* context, ScriptCallableBase* function, const Type* valueType = nullptr
+    ) override;
     void setAllowVoid(bool allowVoid);
     void compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression) override;
     void evaluateAssignment(InterpreterContext& context, const Expression* expression) const override;
@@ -124,12 +134,15 @@ protected:
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
-    [[nodiscard]] bool resolveMember(CompilerContext* context, ScriptCallableBase* function);
+    [[nodiscard]] bool resolveMember(
+        CompilerContext* context, ScriptCallableBase* function, const Type* valueType = nullptr, bool assignment = false
+    );
 
     NomadString m_qualifiedName;
     NomadString m_memberName;
     std::unique_ptr<Expression> m_receiver;
     ArgumentList m_arguments;
+    bool m_hasExplicitArguments;
     MemberReference m_memberId;
     MemberType m_memberType = MemberType::Unknown;
     const Method* m_method = nullptr;
@@ -146,7 +159,9 @@ public:
         std::vector<std::unique_ptr<Expression>> indexes
     );
     [[nodiscard]] bool isTerminal() const override;
-    [[nodiscard]] bool resolveAssignmentTarget(CompilerContext* context, ScriptCallableBase* function) override;
+    [[nodiscard]] bool resolveAssignmentTarget(
+        CompilerContext* context, ScriptCallableBase* function, const Type* valueType = nullptr
+    ) override;
     void compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression) override;
     void evaluateAssignment(InterpreterContext& context, const Expression* expression) const override;
 

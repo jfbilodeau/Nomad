@@ -105,7 +105,11 @@ public:
     [[nodiscard]] virtual const IdentifierExpression* asIdentifierExpression() const;
     [[nodiscard]] virtual NativeMemberExpression* asNativeExpression();
     [[nodiscard]] virtual const NativeMemberExpression* asNativeExpression() const;
-    [[nodiscard]] virtual bool resolveAssignmentTarget(CompilerContext* context, ScriptCallableBase* function);
+    [[nodiscard]] virtual bool resolveAssignmentTarget(
+        CompilerContext* context, 
+        ScriptCallableBase* function, 
+        const Type* valueType = nullptr
+    );
     virtual void compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression);
     virtual void evaluateAssignment(InterpreterContext& context, const Expression* expression) const;
     // The expression must have been resolved first.

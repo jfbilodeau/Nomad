@@ -177,17 +177,13 @@ struct MemberNameParts {
     NomadString member;
 };
 
-std::optional<MemberNameParts> splitNativeMemberName(const Runtime* runtime, const NomadString& name) {
+std::optional<MemberNameParts> splitMemberName(const NomadString& name) {
     const auto separator = name.rfind('.');
     if (separator == NomadString::npos || separator == 0 || separator + 1 >= name.size()) {
         return std::nullopt;
     }
 
     auto member = name.substr(separator + 1);
-    if (!runtime->getMemberSignature(member)) {
-        return std::nullopt;
-    }
-
     return MemberNameParts{name.substr(0, separator), std::move(member)};
 }
 
@@ -199,14 +195,19 @@ bool parseNativeMemberArguments(CompilerContext* context, ScriptCallableBase* fu
                                    const NomadString& memberName, ArgumentList& arguments) {
     const auto signature = context->getRuntime()->getMemberSignature(memberName);
     if (!signature) {
-        context->reportError("Unknown native member '" + memberName + "'", tokens);
-        return false;
+        return true;
     }
 
     if (signature->type == MemberType::Property) {
         return true;
     }
 
+    if (tokens->endOfLine() && std::ranges::any_of(signature->parameters, [](const auto& parameter) {
+        return parameter.type == nullptr || !parameter.type->isInternal();
+    })) {
+        // The receiver may resolve to a stored field rather than this native method.
+        return true;
+    }
     return parseCallableArguments(context, function, tokens, signature->parameters, &arguments);
 }
 
@@ -214,40 +215,30 @@ std::unique_ptr<Expression> createNativeMemberExpression(
     CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent,
     NomadString qualifiedName, NomadString memberName, std::unique_ptr<Expression> receiver,
     const bool parseArguments, const NomadIndex line, const NomadIndex column) {
-    if (context->getCompiler()->getReceiverType(function) != nullptr) {
-        const auto* receiverIdentifier = receiver != nullptr ? receiver->asIdentifierExpression() : nullptr;
-        if (receiverIdentifier != nullptr &&
-            receiverIdentifier->getIdentifier() == "this") {
-            context->reportError(
-                "Script class field access or member invocation is not supported yet: '" + qualifiedName + "'",
-                tokens
-            );
-            return nullptr;
-        }
-    }
-
     ArgumentList arguments;
 
-    if (parseArguments) {
+    auto storedField = false;
+    if (const auto* identifier = receiver->asIdentifierExpression()) {
+        IdentifierDefinition definition;
+        context->getCompiler()->getIdentifierDefinition(identifier->getIdentifier(), function, definition);
+        if (definition.valueType != nullptr && definition.valueType->asObjectType() != nullptr) {
+            storedField = context->getRuntime()->getMemberType(
+                context->getRuntime()->getNativeMemberId(definition.valueType, memberName)
+            ) == MemberType::Unknown;
+        }
+    }
+    auto hasExplicitArguments = false;
+    if (parseArguments && !storedField) {
+        const auto argumentLine = tokens->getLineIndex();
+        const auto argumentColumn = tokens->getColumnIndex();
         if (!parseNativeMemberArguments(context, function, tokens, memberName, arguments)) {
             return nullptr;
         }
-    } else {
-        const auto signature = context->getRuntime()->getMemberSignature(memberName);
-        if (!signature) {
-            context->reportError("Unknown native member '" + memberName + "'");
-            return nullptr;
-        }
-
-        if (signature->type == MemberType::Method && !signature->parameters.empty()) {
-            context->reportError("Native method '" + memberName +
-                                 "' requires arguments before another member can be accessed");
-            return nullptr;
-        }
+        hasExplicitArguments = tokens->getLineIndex() != argumentLine || tokens->getColumnIndex() != argumentColumn;
     }
 
     return std::make_unique<NativeMemberExpression>(parent, line, column, std::move(qualifiedName),
-                                                       std::move(memberName), std::move(receiver), std::move(arguments));
+        std::move(memberName), std::move(receiver), std::move(arguments), hasExplicitArguments);
 }
 
 std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptCallableBase* function,
@@ -272,7 +263,16 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
         return std::make_unique<ConstantValueExpression>(parent, line, column, name);
     }
 
-    const auto parts = splitNativeMemberName(context->getRuntime(), name);
+    for (auto* scope = function; scope != nullptr;
+        scope = context->getRuntime()->getScriptCallable(scope->getParentId())) {
+        if (context->getCompiler()->getIdentifierType(name, scope) != IdentifierType::Unknown) {
+            return std::make_unique<IdentifierExpression>(parent, line, column, name);
+        }
+    }
+    if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown) {
+        return std::make_unique<IdentifierExpression>(parent, line, column, name);
+    }
+    const auto parts = splitMemberName(name);
     if (!parts) {
         return std::make_unique<IdentifierExpression>(
             parent, line, column, name
@@ -315,7 +315,7 @@ bool isPotentialMemberExpression(CompilerContext* context, ScriptCallableBase* f
             return false;
         }
 
-        return splitNativeMemberName(context->getRuntime(), name).has_value();
+        return splitMemberName(name).has_value();
     }
 
     for (NomadIndex index = 0; index < tokens->getTokenCount(); ++index) {
@@ -339,7 +339,7 @@ bool hasAssignmentOperator(const Tokenizer* tokens) {
 }
 
 bool isNativeMemberCandidate(const Compiler* compiler, const ScriptCallableBase* function, const NomadString& name) {
-    if (!splitNativeMemberName(compiler->getRuntime(), name)) {
+    if (!splitMemberName(name)) {
         return false;
     }
 
@@ -1078,7 +1078,8 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
             context->reportError("Cannot reassign the class receiver 'this'", tokens);
             return nullptr;
         }
-        if (target.starts_with("this.") && tokens->getTokenCount() >= 3 && tokens->getTokenAt(1) == "=") {
+        if (target.starts_with("this.") && target.find('.', 5) == NomadString::npos &&
+            tokens->getTokenCount() >= 3 && tokens->getTokenAt(1) == "=") {
             auto name = tokens->next().textValue;
             tokens->next();
             auto expression = parseExpression(context, function, tokens);
@@ -1117,13 +1118,18 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
         return nullptr;
     }
     auto hasValueReceiver = false;
-    if (const auto parts = splitNativeMemberName(runtime, variableName)) {
+    if (const auto parts = splitMemberName(variableName)) {
         auto receiver = parts->receiver;
         while (!receiver.empty()) {
-            if (context->getCompiler()->getIdentifierType(receiver, function) != IdentifierType::Unknown) {
-                hasValueReceiver = true;
-                break;
+            hasValueReceiver = context->getCompiler()->getIdentifierType(receiver, nullptr) != IdentifierType::Unknown;
+            for (auto* scope = function; scope != nullptr;
+                scope = runtime->getScriptCallable(scope->getParentId())) {
+                if (context->getCompiler()->getIdentifierType(receiver, scope) != IdentifierType::Unknown) {
+                    hasValueReceiver = true;
+                    break;
+                }
             }
+            if (hasValueReceiver) break;
             const auto separator = receiver.rfind('.');
             if (separator == NomadString::npos) {
                 break;
@@ -1145,11 +1151,8 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     IdentifierDefinition identifierDefinition;
     context->getCompiler()->getIdentifierDefinition(variableName, function, identifierDefinition);
 
-    const auto memberParts = splitNativeMemberName(context->getRuntime(), variableName);
-    if (memberParts && isNativeMemberCandidate(context->getCompiler(), function, variableName) &&
-        context->getCompiler()->getIdentifierType(
-            memberParts->receiver, function
-        ) != IdentifierType::Unknown) {
+    const auto memberParts = splitMemberName(variableName);
+    if (memberParts && isNativeMemberCandidate(context->getCompiler(), function, variableName) && hasValueReceiver) {
         tokens->next();
         if (!tokens->expect("=")) {
             return nullptr;
@@ -1286,7 +1289,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
         }
 
         if (isNativeMemberCandidate(context->getCompiler(), function, token.textValue)) {
-            const auto memberParts = splitNativeMemberName(context->getRuntime(), token.textValue);
+            const auto memberParts = splitMemberName(token.textValue);
 
             if (memberParts) {
                 auto receiver = createQualifiedReceiverExpression(context, function, parent, memberParts->receiver,

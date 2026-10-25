@@ -369,13 +369,35 @@ const Property* Compiler::resolveClassField(
         reportInternalError("Class field resolution requires an object receiver");
     }
     const auto report = [&](const NomadString& message) {
-        context->reportError(message, function->getPath(), line, column);
+        context->reportError(message, function != nullptr ? function->getPath() : NomadString{}, line, column);
     };
     IdentifierDefinition receiverDefinition;
     if (!resolveIdentifier("this", this, function, receiverDefinition)) {
         report("Cannot capture the class receiver 'this'");
         return nullptr;
     }
+    const auto* property = resolveObjectField(
+        context, function, owner, name, valueType, allowDeclaration, line, column
+    );
+    if (property != nullptr && allowDeclaration) {
+        m_internalFields.insert(property->getId());
+    }
+    return property;
+}
+
+const Property* Compiler::resolveObjectField(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    const ObjectType* owner,
+    const NomadString& name,
+    const Type* valueType,
+    const bool allowDeclaration,
+    const NomadIndex line,
+    const NomadIndex column
+) {
+    const auto report = [&](const NomadString& message) {
+        context->reportError(message, function != nullptr ? function->getPath() : NomadString{}, line, column);
+    };
     if (name.empty() || name.find('.') != NomadString::npos) {
         report("Expected an unqualified class field name: '" + name + "'");
         return nullptr;
@@ -412,7 +434,38 @@ const Property* Compiler::resolveClassField(
         report("Cannot register class field '" + name + "'");
         return nullptr;
     }
+    m_externalFields.push_back({id, function != nullptr ? function->getPath() : NomadString{}, line, column});
     return m_runtime->getProperty(id);
+}
+
+void Compiler::recordFieldRead(const PropertyId id) {
+    m_readFields.insert(id);
+}
+
+void Compiler::recordFieldAccess(
+    ScriptCallableBase* function,
+    const NomadIndex line,
+    const NomadIndex column
+) {
+    m_fieldExecutionDiagnostics.push_back({
+        DiagnosticSeverity::Error, "Stored field execution is not supported yet",
+        function != nullptr ? function->getPath() : NomadString{}, line, column
+    });
+}
+
+void Compiler::reportFieldDiagnostics(CompilerContext* context) const {
+    for (const auto& field : m_externalFields) {
+        if (m_internalFields.contains(field.id) || m_readFields.contains(field.id)) {
+            continue;
+        }
+        const auto* property = m_runtime->getProperty(field.id);
+        context->reportWarning(
+            "Externally introduced field '" + property->getObjectType()->getTypeName() + "." +
+                property->getName() + "' is assigned but never read",
+            field.sourceName, field.line, field.column
+        );
+    }
+    context->reportDiagnostics(m_fieldExecutionDiagnostics);
 }
 
 bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type* type, const ScriptCallableBase* function,
@@ -1092,6 +1145,10 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
              variableId = variableContext->getNextVariableId(variableId)) {
             types.push_back(variableContext->getVariableType(variableId));
         }
+
+        for (const auto& field : m_externalFields) {
+            types.push_back(m_runtime->getProperty(field.id)->getValueType());
+        }
     }
 
     return types;
@@ -1491,6 +1548,8 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         inferTypes(context);
     });
 
+    m_readFields.clear();
+    m_fieldExecutionDiagnostics.clear();
     for (const auto& source: m_functions) {
         log::debug("Syntax checking function '" + source.function->getName() + "' (" + source.function->getPath() + ")");
 
@@ -1501,6 +1560,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         });
     }
 
+    reportFieldDiagnostics(context);
     if (hasNewErrors()) {
         return false;
     }

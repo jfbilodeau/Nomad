@@ -116,6 +116,18 @@ public:
         NomadIndex line,
         NomadIndex column
     );
+    [[nodiscard]] const Property* resolveObjectField(
+        CompilerContext* context,
+        ScriptCallableBase* function,
+        const ObjectType* owner,
+        const NomadString& name,
+        const Type* valueType,
+        bool allowDeclaration,
+        NomadIndex line,
+        NomadIndex column
+    );
+    void recordFieldRead(PropertyId id);
+    void recordFieldAccess(ScriptCallableBase* function, NomadIndex line, NomadIndex column);
     [[nodiscard]] bool getNativeMemberConflict(const NomadString& identifier, const Type* type,
                                                   const ScriptCallableBase* function,
                                                   NomadString& conflictingIdentifier) const;
@@ -250,6 +262,7 @@ private:
     // Reports functions returning a value that can reach their end without a `return`.
     void checkReturnPaths(CompilerContext* context, const FunctionCompilation& function) const;
     void inferTypes(CompilerContext* context);
+    void reportFieldDiagnostics(CompilerContext* context) const;
     [[nodiscard]] std::vector<const Type*> collectInferredTypes() const;
     void compileFunction(const FunctionCompilation& function);
 
@@ -279,6 +292,16 @@ private:
     std::vector<ScriptCompilation> m_scripts;
     std::vector<FunctionCompilation> m_functions;
     std::vector<PendingFormatString> m_pendingFormatStrings;
+    struct ExternalFieldDeclaration {
+        PropertyId id;
+        NomadString sourceName;
+        NomadIndex line;
+        NomadIndex column;
+    };
+    std::vector<ExternalFieldDeclaration> m_externalFields;
+    std::unordered_set<PropertyId, IdHash> m_internalFields;
+    std::unordered_set<PropertyId, IdHash> m_readFields;
+    std::vector<Diagnostic> m_fieldExecutionDiagnostics;
     std::vector<HubInitializerStatement*> m_scriptInitializers;
     std::unordered_set<NomadString> m_hubVariableDeclarations;
     bool m_allowInitialValueLookup = false;
