@@ -442,17 +442,6 @@ void Compiler::recordFieldRead(const PropertyId id) {
     m_readFields.insert(id);
 }
 
-void Compiler::recordFieldAccess(
-    ScriptCallableBase* function,
-    const NomadIndex line,
-    const NomadIndex column
-) {
-    m_fieldExecutionDiagnostics.push_back({
-        DiagnosticSeverity::Error, "Stored field execution is not supported yet",
-        function != nullptr ? function->getPath() : NomadString{}, line, column
-    });
-}
-
 void Compiler::reportFieldDiagnostics(CompilerContext* context) const {
     for (const auto& field : m_externalFields) {
         if (m_internalFields.contains(field.id) || m_readFields.contains(field.id)) {
@@ -465,7 +454,6 @@ void Compiler::reportFieldDiagnostics(CompilerContext* context) const {
             field.sourceName, field.line, field.column
         );
     }
-    context->reportDiagnostics(m_fieldExecutionDiagnostics);
 }
 
 bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type* type, const ScriptCallableBase* function,
@@ -1549,7 +1537,6 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     });
 
     m_readFields.clear();
-    m_fieldExecutionDiagnostics.clear();
     for (const auto& source: m_functions) {
         log::debug("Syntax checking function '" + source.function->getName() + "' (" + source.function->getPath() + ")");
 

@@ -300,8 +300,8 @@ assignments and field/method name collisions are errors. Methods may read and
 assign existing fields but cannot introduce new fields. Reads of unknown fields
 are errors. These names never fall back to the game's `this.*` context.
 Field metadata is available during compilation, but non-empty classes still
-report the unsupported-execution diagnostic. Object allocation, field storage,
-and script member calls are not executable yet.
+report the unsupported-execution diagnostic. Script class construction,
+field initializer expressions, and script member calls are not executable yet.
 Script constructors may use a bare `return` but cannot return an expression.
 Member parameters are declared in the header, not with a later `params` statement.
 
@@ -338,10 +338,12 @@ assignment before a read. Host-declared fields are not subject to the
 external-introduction warning.
 Hub members must still be introduced inside a hub block, even for open hubs.
 
-External field additions and reads currently publish and validate metadata
-only; stored-field execution reports an unsupported-execution diagnostic.
-Instance initialization, member calls, and construction with `new` remain
-unavailable.
+Stored fields can be read and assigned in compiled code and the interpreter
+when the host supplies an initialized instance with field storage. Field
+discovery must finish before the host creates these instances. Native objects
+without stored-field storage cannot execute these accesses.
+Automatic script instance initialization, script member calls, and script class
+construction with `new` remain unavailable.
 
 ## Data types and numeric ranges
 
@@ -451,8 +453,9 @@ back if a property setter or method fails.
 
 Assigning a new reference to the parameter itself remains invalid.
 
-Script classes currently have declaration-only support; executable properties and
-methods must still be provided by the host. See [Class declarations](#class-declarations).
+Script classes cannot yet construct their own instances or execute methods.
+Hosts can supply initialized instances whose stored properties are readable and
+writable. See [Class declarations](#class-declarations).
 
 The available members for each object type are listed in the [engine API](engine-api.md#object-members).
 

@@ -14,6 +14,9 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <utility>
+#include <vector>
+
 using namespace nomad;
 using namespace nomad::test;
 
@@ -771,7 +774,7 @@ BOOST_AUTO_TEST_CASE(external_open_class_fields_are_shared_across_functions_and_
             "fun read point:Point\nreturn point.extra\nend"
         );
         CompilerContext context(&fixture.getCompiler());
-        BOOST_TEST(!fixture.getCompiler().compileScripts(&context));
+        BOOST_TEST(fixture.getCompiler().compileScripts(&context));
         BOOST_TEST(context.getWarningCount() == 0u);
         const auto* type = fixture.getRuntime().getTypeByName("Point")->asObjectType();
         BOOST_REQUIRE(type->getProperty("extra") != nullptr);
@@ -782,10 +785,7 @@ BOOST_AUTO_TEST_CASE(external_open_class_fields_are_shared_across_functions_and_
         const auto* write = fixture.getRuntime().getScriptFunction(fixture.getRuntime().getFunctionId("write"));
         BOOST_REQUIRE(write != nullptr);
         BOOST_TEST(write->getVariableId("alias.extra").isInvalid());
-        for (const auto& diagnostic : context.getDiagnostics()) {
-            BOOST_TEST(diagnostic.message == "Stored field execution is not supported yet");
-        }
-        BOOST_TEST(context.getErrorCount() == 2u);
+        BOOST_TEST(context.getErrorCount() == 0u);
     }
 }
 
@@ -797,7 +797,7 @@ BOOST_AUTO_TEST_CASE(unread_external_fields_warn_once_at_the_introducing_assignm
         "fun write point:Point\npoint.extra = 1\npoint.extra = 2\nend"
     );
     CompilerContext context(&fixture.getCompiler());
-    BOOST_TEST(!fixture.getCompiler().compileScripts(&context));
+    BOOST_TEST(fixture.getCompiler().compileScripts(&context));
     BOOST_TEST(context.getWarningCount() == 1u);
     const Diagnostic* warning = nullptr;
     for (const auto& diagnostic : context.getDiagnostics()) {
@@ -841,17 +841,18 @@ BOOST_AUTO_TEST_CASE(external_class_fields_reject_closed_types_conflicting_types
 
 BOOST_AUTO_TEST_CASE(internal_declarations_and_reads_do_not_produce_external_unused_warnings)
 {
-    for (const auto* source : {
-        "class Point\nvalue = 1\nend\nfun write point:Point\npoint.value = 2\nend",
-        "open class Point\nfun read\nreturn this.extra\nend\nend\n"
-        "fun write point:Point\npoint.extra = 1\nend",
-        "open class Point\nend\nfun read point:Point\nreturn $\"value {point.extra}\"\nend\n"
-        "fun write point:Point\npoint.extra = 1\nend"
+    for (const auto& [source, executable] : std::vector<std::pair<NomadString, bool>>{
+        {"class Point\nvalue = 1\nend\nfun write point:Point\npoint.value = 2\nend", false},
+        {"open class Point\nfun read\nreturn this.extra\nend\nend\n"
+            "fun write point:Point\npoint.extra = 1\nend", false},
+        {"open class Point\nend\nfun read point:Point\nreturn $\"value {point.extra}\"\nend\n"
+            "fun write point:Point\npoint.extra = 1\nend", true}
     }) {
         LanguageTestFixture fixture;
         fixture.addFunction("main", source);
         CompilerContext context(&fixture.getCompiler());
-        BOOST_TEST(!fixture.getCompiler().compileScripts(&context));
+        const auto compiled = fixture.getCompiler().compileScripts(&context);
+        BOOST_TEST(compiled == executable);
         BOOST_TEST(context.getWarningCount() == 0u);
         for (const auto& diagnostic : context.getDiagnostics()) {
             BOOST_TEST(diagnostic.message.find("Unknown class field") == NomadString::npos);
@@ -876,9 +877,9 @@ BOOST_AUTO_TEST_CASE(external_fields_work_on_native_open_types_and_preserve_nati
         "fun use host:Host\nhost.extra = 1\nreturn host.extra + host.nativeValue\nend"
     );
     CompilerContext context(&fixture.getCompiler());
-    BOOST_TEST(!fixture.getCompiler().compileScripts(&context));
+    BOOST_TEST(fixture.getCompiler().compileScripts(&context));
     BOOST_TEST(context.getWarningCount() == 0u);
-    BOOST_TEST(context.getErrorCount() == 2u);
+    BOOST_TEST(context.getErrorCount() == 0u);
     const auto* type = runtime.getTypeByName("Host")->asObjectType();
     BOOST_REQUIRE(type->getProperty("extra") != nullptr);
     BOOST_TEST(type->getFieldIndex(type->getProperty("extra")->getId()) == 0u);
@@ -903,13 +904,11 @@ BOOST_AUTO_TEST_CASE(external_fields_resolve_nested_receivers_and_captured_alias
         ).isValid());
     });
     CompilerContext context(&fixture.getCompiler());
-    BOOST_TEST(!fixture.getCompiler().compileScripts(&context));
+    BOOST_TEST(fixture.getCompiler().compileScripts(&context));
     BOOST_TEST(context.getWarningCount() == 0u);
     const auto* type = fixture.getRuntime().getTypeByName("Inner")->asObjectType();
     BOOST_REQUIRE(type->getProperty("extra") != nullptr);
-    for (const auto& diagnostic : context.getDiagnostics()) {
-        BOOST_TEST(diagnostic.message == "Stored field execution is not supported yet");
-    }
+    BOOST_TEST(context.getErrorCount() == 0u);
 }
 
 BOOST_AUTO_TEST_CASE(open_hubs_still_reject_external_member_introduction)
@@ -941,9 +940,9 @@ BOOST_AUTO_TEST_CASE(stored_fields_are_not_parsed_as_other_types_native_methods)
             "fun read point:Point\nalias = point\nalias.extra = 42\nreturn alias.extra\nend"
         );
         CompilerContext context(&fixture.getCompiler());
-        BOOST_TEST(!fixture.getCompiler().compileScripts(&context));
+        BOOST_TEST(fixture.getCompiler().compileScripts(&context));
         BOOST_TEST(context.getWarningCount() == 0u);
-        BOOST_TEST(context.getErrorCount() == 2u);
+        BOOST_TEST(context.getErrorCount() == 0u);
         const auto* read = runtime.getScriptFunction(runtime.getFunctionId("read"));
         BOOST_REQUIRE(read != nullptr);
         BOOST_TEST(read->getReturnType() == runtime.getIntegerType());

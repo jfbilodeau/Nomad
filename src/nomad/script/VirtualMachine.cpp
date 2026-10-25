@@ -7,6 +7,7 @@
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <nomad/script/VirtualMachine.hpp>
@@ -272,6 +273,47 @@ void VirtualMachine::getNativeProperty(
         fault("Invalid native property getter");
     }
     invokeNativeMember([&](VirtualMachine* machine) { info->getFn(machine, result); }, receiver);
+}
+
+void VirtualMachine::getProperty(
+    const PropertyId memberId,
+    const RuntimeValue& receiver,
+    RuntimeValue& result
+) {
+    const auto* property = m_runtime->getProperty(memberId);
+    if (property == nullptr) {
+        fault("Invalid property getter");
+    }
+    if (property->asNativeProperty() != nullptr) {
+        getNativeProperty(memberId, receiver, result);
+        return;
+    }
+    auto* object = dynamic_cast<ScriptObject*>(receiver.getObjectValue());
+    if (object == nullptr || object->getObjectType() != property->getObjectType()) {
+        fault("Stored property receiver has no matching field storage");
+    }
+    const auto index = property->getObjectType()->getFieldIndex(memberId);
+    property->getValueType()->copyValue(object->getField(index), result);
+}
+
+void VirtualMachine::setProperty(
+    const PropertyId memberId,
+    const RuntimeValue& receiver,
+    const RuntimeValue& value
+) {
+    const auto* property = m_runtime->getProperty(memberId);
+    if (property == nullptr) {
+        fault("Invalid property setter");
+    }
+    if (property->asNativeProperty() != nullptr) {
+        setNativeProperty(memberId, receiver, value);
+        return;
+    }
+    auto* object = dynamic_cast<ScriptObject*>(receiver.getObjectValue());
+    if (object == nullptr || object->getObjectType() != property->getObjectType()) {
+        fault("Stored property receiver has no matching field storage");
+    }
+    object->setField(property->getObjectType()->getFieldIndex(memberId), value);
 }
 
 void VirtualMachine::setNativeProperty(

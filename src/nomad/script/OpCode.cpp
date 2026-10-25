@@ -187,12 +187,12 @@ void op_call_native_function(VirtualMachine* interpreter) {
 
 void op_native_property_get(VirtualMachine* interpreter) {
     const auto memberId = PropertyId{interpreter->nextId()};
-    interpreter->getNativeProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
+    interpreter->getProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
 }
 
 void op_native_property_set(VirtualMachine* interpreter) {
     const auto memberId = PropertyId{interpreter->nextId()};
-    interpreter->setNativeProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
+    interpreter->setProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
 }
 
 void op_native_index_get(VirtualMachine* interpreter) {

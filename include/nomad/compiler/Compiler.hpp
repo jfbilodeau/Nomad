@@ -127,7 +127,6 @@ public:
         NomadIndex column
     );
     void recordFieldRead(PropertyId id);
-    void recordFieldAccess(ScriptCallableBase* function, NomadIndex line, NomadIndex column);
     [[nodiscard]] bool getNativeMemberConflict(const NomadString& identifier, const Type* type,
                                                   const ScriptCallableBase* function,
                                                   NomadString& conflictingIdentifier) const;
@@ -301,7 +300,6 @@ private:
     std::vector<ExternalFieldDeclaration> m_externalFields;
     std::unordered_set<PropertyId, IdHash> m_internalFields;
     std::unordered_set<PropertyId, IdHash> m_readFields;
-    std::vector<Diagnostic> m_fieldExecutionDiagnostics;
     std::vector<HubInitializerStatement*> m_scriptInitializers;
     std::unordered_set<NomadString> m_hubVariableDeclarations;
     bool m_allowInitialValueLookup = false;

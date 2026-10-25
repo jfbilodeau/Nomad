@@ -58,6 +58,8 @@ public:
 
     void getNativeProperty(PropertyId memberId, const RuntimeValue& receiver, RuntimeValue& result);
     void setNativeProperty(PropertyId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
+    void getProperty(PropertyId memberId, const RuntimeValue& receiver, RuntimeValue& result);
+    void setProperty(PropertyId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
     void callNativeIndexer(IndexerId indexerId, const RuntimeValue& receiver, bool write);
     void runNativeIndexer(
         IndexerId indexerId,

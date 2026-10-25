@@ -1,8 +1,13 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/CompilerContext.hpp>
+
+#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/Type.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
@@ -232,6 +237,121 @@ BOOST_AUTO_TEST_CASE(layout_does_not_resize_and_invalid_access_is_rejected) {
     empty.initializeFields();
     BOOST_CHECK_THROW(empty.initializeFields(), NomadException);
     BOOST_CHECK_THROW((void)empty.getField(0), NomadException);
+}
+
+BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_preserve_ownership) {
+    for (const auto interpreted : {false, true}) {
+        Runtime runtime;
+        const auto* type = createTestType(runtime, "Stored");
+        BOOST_REQUIRE(runtime.registerProperty(type, "text", runtime.getStringType()).isValid());
+        BOOST_REQUIRE(runtime.registerProperty(type, "next", type).isValid());
+        BOOST_REQUIRE(runtime.addProperty(type->getId(), {
+            .valueTypeId = runtime.getIntegerType()->getId(),
+            .name = "nativeLength",
+            .getter = [](VirtualMachine* machine, RuntimeValue& result) {
+                const auto* object = machine->getThisAs<ScriptObject>();
+                result.setIntegerValue(static_cast<NomadInteger>(
+                    NomadString(object->getField(0).getStringValue()).size()
+                ));
+            },
+            .setter = {},
+            .documentation = ""
+        }).isValid());
+        BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+            .parameters = {},
+            .factory = [type](std::span<const RuntimeValue>) {
+                auto object = std::make_unique<ScriptObject>(type);
+                object->initializeFields();
+                return object.release();
+            },
+            .documentation = ""
+        }).isValid());
+        const auto before = NomadObject::getLiveObjectCount();
+        {
+            const NomadString source =
+                "first = new Stored\n"
+                "second = new Stored\n"
+                "alias = first\n"
+                "alias.text = \"hello\"\n"
+                "first.next = second\n"
+                "second.text = first.text\n"
+                "first.text = first.text\n"
+                "first.text = \"replaced\"\n";
+            if (interpreted) {
+                auto machine = runtime.createVirtualMachine();
+                InterpreterContext context(*machine);
+                for (auto start = NomadString::size_type{0}; start < source.size();) {
+                    const auto end = source.find('\n', start);
+                    const auto line = source.substr(start, end - start);
+                    const auto executed = Interpreter{}.execute(line, context);
+                    BOOST_REQUIRE_MESSAGE(executed,
+                        line + ": " + (context.getError() != nullptr ? *context.getError() : "No error reported"));
+                    start = end + 1;
+                }
+                BOOST_REQUIRE(Interpreter{}.execute("first.next.text", context));
+                BOOST_REQUIRE(context.getResult() != nullptr);
+                BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "hello");
+                BOOST_REQUIRE(Interpreter{}.execute("second.nativeLength", context));
+                BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 5);
+                BOOST_TEST(!Interpreter{}.execute("second.nativeLength = 2", context));
+                BOOST_TEST(!Interpreter{}.execute("second.missing = 2", context));
+                BOOST_TEST(type->getProperty("missing") == nullptr);
+                BOOST_TEST(!Interpreter{}.execute("second.text = 2", context));
+                BOOST_TEST(!Interpreter{}.execute("second.next.text", context));
+                BOOST_REQUIRE(context.getError() != nullptr);
+                BOOST_REQUIRE(Interpreter{}.execute("alias.text", context));
+                BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "replaced");
+            } else {
+                auto compiler = runtime.createCompiler();
+                CompilerContext context(compiler.get());
+                compiler->registerSources(&context, {{{"test", {"test.nomad",
+                    source + "if second.nativeLength != 5\nreturn \"invalid length\"\nend\n"
+                        "return first.next.text\n"}}}, {}});
+                BOOST_REQUIRE(compiler->compileFunctions(&context));
+                const auto beforeExecution = NomadObject::getLiveObjectCount();
+                RuntimeValue result;
+                runtime.executeFunction(runtime.getFunctionId("test"), {}, result);
+                BOOST_TEST(NomadString(result.getStringValue()) == "hello");
+                runtime.getStringType()->freeValue(result);
+                BOOST_TEST(NomadObject::getLiveObjectCount() == beforeExecution);
+            }
+        }
+        if (interpreted) {
+            BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(property_dispatch_rejects_missing_storage_wrong_owners_and_invalid_ids) {
+    Runtime runtime;
+    const auto* type = createTestType(runtime, "Owner");
+    const auto* other = createTestType(runtime, "Other");
+    const auto id = runtime.registerProperty(type, "value", runtime.getStringType());
+    BOOST_REQUIRE(id.isValid());
+    auto machine = runtime.createVirtualMachine();
+    ScriptObject object(type);
+    ScriptObject wrong(other);
+    RuntimeValue receiver;
+    RuntimeValue result;
+    BOOST_CHECK_THROW(machine->getProperty(id, receiver, result), NomadException);
+    BOOST_CHECK_THROW(machine->setProperty(id, receiver, result), NomadException);
+    receiver.setObjectValue(&wrong);
+    BOOST_CHECK_THROW(machine->getProperty(id, receiver, result), NomadException);
+    BOOST_CHECK_THROW(machine->setProperty(id, receiver, result), NomadException);
+    auto destroyed = NomadIndex{0};
+    CountingObject native(destroyed);
+    receiver.setObjectValue(&native);
+    BOOST_CHECK_THROW(machine->getProperty(id, receiver, result), NomadException);
+    BOOST_CHECK_THROW(machine->setProperty(id, receiver, result), NomadException);
+    receiver.setObjectValue(&object);
+    BOOST_CHECK_THROW(machine->getProperty(id, receiver, result), NomadException);
+    BOOST_CHECK_THROW(machine->setProperty(id, receiver, result), NomadException);
+    object.initializeFields();
+    BOOST_CHECK_THROW(machine->getProperty(PropertyId::INVALID, receiver, result), NomadException);
+    BOOST_CHECK_THROW(machine->setProperty(PropertyId::INVALID, receiver, result), NomadException);
+    machine->getProperty(id, receiver, result);
+    BOOST_TEST(NomadString(result.getStringValue()).empty());
+    runtime.getStringType()->freeValue(result);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

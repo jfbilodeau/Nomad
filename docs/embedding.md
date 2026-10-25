@@ -303,8 +303,9 @@ Native properties do not occupy slots; native, invalid, and other owners'
 property IDs return `NOMAD_INVALID_INDEX`. Slot order follows successful
 registration order, not necessarily source declaration order.
 
-This API describes type properties. The compiler publishes script class field
-metadata, but stored/script property execution is not yet implemented.
+Compiled code and the interpreter can read and assign stored properties on
+host-provided, initialized `ScriptObject` instances. Script class construction
+and field initializer expressions are not executable yet.
 
 ### Script object storage
 
@@ -330,8 +331,20 @@ initialization, out-of-range slots, and repeated initialization throw
 
 Each instance owns its values; aliases to the same object share those values.
 Instances never resize when type metadata changes. Finish field discovery
-before creating instances. This API does not attach fields to native objects
-or enable stored-field access in scripts. Reference cycles are not collected.
+before creating instances. This API does not attach fields to native objects.
+Reference cycles are not collected.
+
+`VirtualMachine::getProperty(id, receiver, result)` and
+`setProperty(id, receiver, value)` dispatch native properties to their registered
+callbacks and stored properties to instance storage. A stored-property receiver
+must be an initialized `ScriptObject` of the property's owning type. Null
+receivers, missing storage, mismatched owners, and invalid property IDs raise
+errors. Getters copy an owned result; callers must release object-valued results
+using the property's value type. Setters retain their own copy without consuming
+the caller's value. Pass empty result storage to a getter.
+
+The existing `getNativeProperty` and `setNativeProperty` host APIs remain
+native-only.
 
 ### Native property creation
 

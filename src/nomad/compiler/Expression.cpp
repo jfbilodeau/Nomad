@@ -669,11 +669,13 @@ bool NativeMemberExpression::resolveMember(
     if (runtime->getMemberType(m_memberId) == MemberType::Unknown) {
         const auto* receiverType = m_receiver->getType();
         const auto* owner = receiverType != nullptr ? receiverType->asObjectType() : nullptr;
-        if (owner != nullptr && context->getMode() == CompilerMode::Script) {
-            const auto* property = assignment ?
-                context->getCompiler()->resolveObjectField(
+        if (owner != nullptr) {
+            const auto* property = owner->getProperty(m_memberName);
+            if (assignment && context->getMode() == CompilerMode::Script) {
+                property = context->getCompiler()->resolveObjectField(
                     context, function, owner, m_memberName, valueType, owner->isOpen(), getLine(), getColumn()
-                ) : owner->getProperty(m_memberName);
+                );
+            }
             if (property != nullptr) {
                 if (m_hasExplicitArguments && m_arguments.getArgumentCount() != 0) {
                     reportError(context, function, "Class field '" + m_qualifiedName + "' does not take arguments");
@@ -683,7 +685,7 @@ bool NativeMemberExpression::resolveMember(
                 m_memberType = MemberType::Property;
                 return true;
             }
-            if (!assignment) {
+            if (!assignment || context->getMode() != CompilerMode::Script) {
                 reportError(context, function, "Unknown class field '" + m_memberName +
                     "' on type '" + owner->getTypeName() + "'");
             }
@@ -727,7 +729,6 @@ bool NativeMemberExpression::resolveAssignmentTarget(
             context->getCompiler()->reportInternalError("Invalid property: " + m_qualifiedName);
         }
         setType(property->getValueType());
-        context->getCompiler()->recordFieldAccess(function, getLine(), getColumn());
         return true;
     }
     if (!info->setFn) {
@@ -755,7 +756,6 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
             }
             setType(property->getValueType());
             context->getCompiler()->recordFieldRead(id);
-            context->getCompiler()->recordFieldAccess(function, getLine(), getColumn());
             return;
         }
 
@@ -851,26 +851,24 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
 
     auto* runtime = context.getRuntime();
     if (m_memberType == MemberType::Property) {
-        std::optional<NativePropertyInfo> info;
+        const auto* property = runtime->getProperty(std::get<PropertyId>(m_memberId));
+        if (property == nullptr) {
+            receiverType->freeValue(receiver);
+            raiseException("Invalid property getter: " + m_qualifiedName);
+        }
+        const auto* valueType = property->getValueType();
         RuntimeValue result;
 
         try {
-            info = runtime->getNativePropertyInfo(m_memberId);
-            if (!info || !info->getFn) {
-                raiseException("Invalid native property getter: " + m_qualifiedName);
-            }
-
-            context.getVirtualMachine()->getNativeProperty(std::get<PropertyId>(m_memberId), receiver, result);
-            context.setResult(info->valueType, result);
-            info->valueType->freeValue(result);
-            receiverType->freeValue(receiver);
+            context.getVirtualMachine()->getProperty(std::get<PropertyId>(m_memberId), receiver, result);
+            context.setResult(valueType, result);
         } catch (...) {
-            if (info && info->valueType != nullptr) {
-                info->valueType->freeValue(result);
-            }
+            valueType->freeValue(result);
             receiverType->freeValue(receiver);
             throw;
         }
+        valueType->freeValue(result);
+        receiverType->freeValue(receiver);
         return;
     }
 
@@ -948,15 +946,15 @@ void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, con
         return;
     }
 
-    const auto info = context.getRuntime()->getNativePropertyInfo(m_memberId);
-    if (!info || !info->setFn) {
+    const auto* property = context.getRuntime()->getProperty(std::get<PropertyId>(m_memberId));
+    if (property == nullptr) {
         receiverType->freeValue(receiver);
-        raiseException("Invalid native property setter: " + m_qualifiedName);
+        raiseException("Invalid property setter: " + m_qualifiedName);
     }
 
     try {
-        context.getVirtualMachine()->setNativeProperty(std::get<PropertyId>(m_memberId), receiver, assignedValue->getValue());
-        context.setResult(info->valueType, assignedValue->getValue());
+        context.getVirtualMachine()->setProperty(std::get<PropertyId>(m_memberId), receiver, assignedValue->getValue());
+        context.setResult(property->getValueType(), assignedValue->getValue());
     } catch (...) {
         receiverType->freeValue(receiver);
         throw;
