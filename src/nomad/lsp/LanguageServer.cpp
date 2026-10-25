@@ -2,8 +2,11 @@
 
 #include <nomad/lsp/LanguageServer.hpp>
 
+#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
+#include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/project/ProjectConfiguration.hpp>
 
@@ -101,6 +104,34 @@ ApiAnalysis analyzeApiSymbols(
     const auto session = createAnalysisSession(group, path);
     auto* runtime = session->getRuntime();
     auto batch = loadSourcePaths(group.roots, group.overrides);
+    auto classMemberPosition = false;
+    for (const auto& script : batch.sources) {
+        if (script.source.sourceName != uri) continue;
+        auto compiler = runtime->createCompiler();
+        CompilerContext context(compiler.get());
+        Tokenizer tokens(&context, uri, script.source.text);
+        std::vector<bool> classBlocks;
+        while (tokens.nextLine() && tokens.getLineIndex() < line) {
+            if (tokens.is(TokenType::Identifier) && tokens.is("end")) {
+                if (!classBlocks.empty()) classBlocks.pop_back();
+                continue;
+            }
+            const auto classHeader = tokens.is("class") ||
+                (tokens.is("open") && tokens.getTokenCount() > 1 && tokens.getTokenAt(1) == "class");
+            const auto constructorHeader = !classBlocks.empty() && classBlocks.back() && tokens.is("init");
+            auto openings = parser::countBlockOpenings(&tokens);
+            if (constructorHeader) ++openings;
+            for (auto index = NomadIndex{0}; index < openings; ++index) {
+                classBlocks.push_back(classHeader && index == 0);
+            }
+        }
+        classMemberPosition = !classBlocks.empty() && classBlocks.back();
+        // Only the declaration's first word is a constructor-keyword position.
+        if (tokens.getLineIndex() == line && tokens.getTokenCount() > 1 && !tokens.is("init")) {
+            classMemberPosition = false;
+        }
+        break;
+    }
     if (omitCurrentLine) {
         for (auto& script : batch.sources) {
             if (script.source.sourceName != uri) continue;
@@ -123,6 +154,10 @@ ApiAnalysis analyzeApiSymbols(
             diagnostic.severity == DiagnosticSeverity::Error;
     });
     std::vector<ApiSymbol> symbols;
+    if (classMemberPosition) {
+        symbols.push_back({"init", CompletionItemKind::Keyword, "init [name:Type ...]",
+            "Declares a constructor in a class body. Use explicit this.member references for instance members."});
+    }
     std::vector<KeywordDefinition> keywords;
     runtime->getKeywords(keywords);
     for (const auto& keyword : keywords) {
@@ -328,6 +363,7 @@ struct DocumentWord {
     NomadString name;
     json::object range;
     bool suppressed;
+    bool firstWord;
 };
 
 DocumentWord documentWord(const NomadString& text, const json::object& position) {
@@ -372,7 +408,10 @@ DocumentWord documentWord(const NomadString& text, const json::object& position)
     return {text.substr(start, offset - start), text.substr(start, end - start),
         {{"start", {{"line", requestedLine}, {"character", startCharacter}}},
             {"end", {{"line", requestedLine}, {"character", endCharacter}}}},
-        quoted || comment};
+        quoted || comment,
+        std::all_of(text.begin() + static_cast<std::ptrdiff_t>(lineStart),
+            text.begin() + static_cast<std::ptrdiff_t>(start),
+            [](const auto character) { return character == ' ' || character == '\t'; })};
 }
 
 json::object symbolDocumentation(const ApiSymbol& symbol) {
@@ -699,6 +738,8 @@ int runLanguageServer(
                                     symbol.name.starts_with(receiver + ".")) namespacePrefix = true;
                             }
                             for (const auto& symbol : found->second) {
+                                if (symbol.name == "init" && symbol.kind == CompletionItemKind::Keyword &&
+                                    !word.firstWord) continue;
                                 auto replacement = symbol.name;
                                 if (!symbol.receiverType.empty()) {
                                     if (separator == NomadString::npos || namespacePrefix) continue;
@@ -727,6 +768,8 @@ int runLanguageServer(
                         const auto receiverType = separator == NomadString::npos ? NomadString{}
                             : symbolValueType(found->second, word.name.substr(0, separator));
                         for (const auto& symbol : found->second) {
+                            if (symbol.name == "init" && symbol.kind == CompletionItemKind::Keyword &&
+                                !word.firstWord) continue;
                             if (!symbol.receiverType.empty()) {
                                 if (receiverType != symbol.receiverType ||
                                     symbol.name != word.name.substr(separator + 1)) continue;

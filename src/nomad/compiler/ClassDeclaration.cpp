@@ -82,6 +82,10 @@ std::unique_ptr<ClassMemberDeclaration> parseMember(
         if (!readMemberName(context, tokens, name)) {
             return nullptr;
         }
+        if (kind == ClassMemberKind::Method && name == "init") {
+            context->reportError("Use 'init' without 'fun' to declare a constructor", tokens);
+            return nullptr;
+        }
     }
 
     std::vector<Parameter> parameters;

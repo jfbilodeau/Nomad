@@ -275,6 +275,12 @@ syntax as functions. Member names are unqualified. Parameter types must be fully
 qualified, including inside a hub; class types declared in other files are
 available to member signatures regardless of source order.
 
+`init` is contextual: at class-member declaration position it introduces a
+constructor, and cannot name a field or an ordinary method (`fun init`).
+Elsewhere it remains an ordinary identifier, including function names, variables,
+and qualified members such as `example.init`. Editors highlight constructor
+headers and offer `init` completion in class bodies, not inside callable bodies.
+
 Duplicate fields, field/method name conflicts, and duplicate callable signatures
 are errors. Parameter names do not distinguish signatures.
 Initializers and callable bodies are retained for later processing; their

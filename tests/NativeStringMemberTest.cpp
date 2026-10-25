@@ -18,6 +18,31 @@
 
 using namespace nomad;
 
+BOOST_AUTO_TEST_CASE(textmate_init_is_scoped_to_constructor_headers_not_global_keywords)
+{
+    Runtime runtime;
+    std::ostringstream output;
+    generateTextMateGrammar(&runtime, output);
+    const auto grammar = boost::json::parse(output.str()).as_object();
+    const auto& repository = grammar.at("repository").as_object();
+    const auto& constructor = repository.at("constructors").as_object().at("patterns").as_array()[0].as_object();
+    const auto header = std::regex(constructor.at("begin").as_string().c_str());
+    BOOST_TEST(std::regex_search(std::string("    init value:float"), header));
+    BOOST_TEST(!std::regex_search(std::string("fun init"), header));
+    BOOST_TEST(!std::regex_search(std::string("system.init"), header));
+    const auto& keywords = repository.at("keywords").as_object().at("patterns").as_array()[0].as_object();
+    BOOST_TEST(!std::regex_search(std::string("init"), std::regex(keywords.at("match").as_string().c_str())));
+    const auto& classPatterns = repository.at("classes").as_object().at("patterns").as_array()[0]
+        .as_object().at("patterns").as_array();
+    BOOST_TEST(classPatterns[0].as_object().at("include").as_string() == "#constructors");
+    for (const auto& pattern : grammar.at("patterns").as_array()) {
+        BOOST_TEST(pattern.as_object().at("include").as_string() != "#constructors");
+    }
+    for (const auto& pattern : constructor.at("patterns").as_array()) {
+        BOOST_TEST(pattern.as_object().at("include").as_string() != "#constructors");
+    }
+}
+
 namespace {
 
 CallableId compileFunction(Runtime& runtime, const NomadString& source) {

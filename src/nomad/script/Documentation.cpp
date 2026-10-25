@@ -631,6 +631,8 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
         "formatStrings",
         "strings",
         "numbers",
+        "classes",
+        "blocks",
         "keywords",
         "literals",
         "functions",
@@ -713,6 +715,39 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
         createMatchPattern("keyword.control.nomad", createWordPattern(controlWords))
     );
 
+    const auto ordinaryPatterns = array({
+        createInclude("comments"), createInclude("formatStrings"), createInclude("strings"),
+        createInclude("numbers"), createInclude("blocks"), createInclude("keywords"),
+        createInclude("literals"), createInclude("functions"), createInclude("nativeMembers"),
+        createInclude("types"), createInclude("operators")
+    });
+    object block;
+    block["begin"] = "^\\s*(?:if\\b(?![^#\\n]*\\b(?:break|continue)\\b)|while\\b|until\\b|do\\b|for\\b)|\\bfun\\b";
+    block["beginCaptures"] = object({{"0", object({{"name", "keyword.control.nomad"}})}});
+    block["end"] = "^\\s*end\\b";
+    block["patterns"] = ordinaryPatterns;
+    repository["blocks"] = createPatternRepositoryEntry(std::move(block));
+
+    object constructor;
+    constructor["begin"] = "^\\s*(init)\\b";
+    constructor["beginCaptures"] = object({{"1", object({{"name", "keyword.control.nomad"}})}});
+    constructor["end"] = "^\\s*end\\b";
+    constructor["patterns"] = ordinaryPatterns;
+    repository["constructors"] = createPatternRepositoryEntry(std::move(constructor));
+
+    object classDeclaration;
+    classDeclaration["begin"] = "^\\s*(?:(open)\\s+)?(class)\\s+([A-Za-z_][A-Za-z0-9_.]*)\\s*(?:#.*)?$";
+    classDeclaration["beginCaptures"] = object({
+        {"1", object({{"name", "keyword.control.nomad"}})},
+        {"2", object({{"name", "keyword.control.nomad"}})},
+        {"3", object({{"name", "entity.name.type.nomad"}})}
+    });
+    classDeclaration["end"] = "^\\s*end\\b";
+    auto classPatterns = array({createInclude("constructors")});
+    for (const auto& pattern : ordinaryPatterns) classPatterns.push_back(pattern);
+    classDeclaration["patterns"] = std::move(classPatterns);
+    repository["classes"] = createPatternRepositoryEntry(std::move(classDeclaration));
+
     repository["literals"] = createPatternRepositoryEntry(
         createMatchPattern("constant.language.boolean.nomad", createWordPattern({"true", "false"}))
     );
@@ -750,7 +785,7 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
     );
 
     root["repository"] = std::move(repository);
-    root["foldingStartMarker"] = "\\b(class|fun|hub|if|else|enum)\\b";
+    root["foldingStartMarker"] = "\\b(class|fun|hub|if|else|enum)\\b|^\\s*init\\b";
     root["foldingStopMarker"] = "\\bend\\b";
     out << boost::json::serialize(root) << std::endl;
 }

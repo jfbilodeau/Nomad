@@ -76,6 +76,58 @@ json::object openDocument(
 
 BOOST_AUTO_TEST_SUITE(language_server)
 
+BOOST_AUTO_TEST_CASE(init_completion_and_hover_are_limited_to_class_member_headers)
+{
+    TestDirectory directory("nomad_lsp_contextual_init");
+    const auto uri = uriFor(directory.getPath() / "point.nomad");
+    const auto query = [&](const int id, const char* method, const int line, const int character) {
+        return frame({{"jsonrpc", "2.0"}, {"id", id}, {"method", method},
+            {"params", {{"textDocument", {{"uri", uri}}},
+                {"position", {{"line", line}, {"character", character}}}}}});
+    };
+    const auto text =
+        "hub model\nopen class Point\n"
+        "ini\n"
+        "init value:float\n"
+        "ini\n"
+        "if true\nini\nend\n"
+        "end\n"
+        "fun move\nini\nend\n"
+        "ini\n"
+        "end\nend\n"
+        "ini\n";
+    std::istringstream input(start() + frame(openDocument(uri, text)) +
+        query(10, "textDocument/completion", 2, 3) +
+        query(11, "textDocument/hover", 3, 2) +
+        query(12, "textDocument/completion", 4, 3) +
+        query(13, "textDocument/completion", 6, 3) +
+        query(14, "textDocument/completion", 10, 3) +
+        query(15, "textDocument/completion", 12, 3) +
+        query(16, "textDocument/completion", 15, 3) +
+        query(17, "textDocument/completion", 3, 5) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    std::map<std::int64_t, json::object> replies;
+    for (const auto& message : responses(output.str())) {
+        if (message.contains("id")) replies.emplace(message.at("id").as_int64(), message);
+    }
+    for (const auto id : {10, 15}) {
+        const auto& items = replies.at(id).at("result").as_object().at("items").as_array();
+        BOOST_REQUIRE(items.size() == 1u);
+        BOOST_TEST(items.front().as_object().at("label").as_string() == "init");
+        BOOST_TEST(items.front().as_object().at("kind").as_int64() == 14);
+    }
+    BOOST_TEST(!replies.at(11).at("result").is_null());
+    for (const auto id : {12, 13, 14, 16}) {
+        BOOST_TEST(replies.at(id).at("result").as_object().at("items").as_array().empty());
+    }
+    for (const auto& item : replies.at(17).at("result").as_object().at("items").as_array()) {
+        BOOST_TEST(item.as_object().at("label").as_string() != "init");
+    }
+    BOOST_TEST(errors.str().empty());
+}
+
 BOOST_AUTO_TEST_CASE(initializes_full_sync_utf16_and_shutdown)
 {
     std::istringstream input(start() + finish());

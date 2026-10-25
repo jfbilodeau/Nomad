@@ -18,6 +18,17 @@ using namespace nomad::test;
 
 BOOST_AUTO_TEST_SUITE(language_classes)
 
+BOOST_AUTO_TEST_CASE(init_is_contextual_not_a_globally_reserved_identifier)
+{
+    const Runtime runtime;
+    BOOST_TEST(runtime.getKeywordId("init").isInvalid());
+    BOOST_TEST(runSource("init = 42\nreturn init").integerValue == 42);
+    BOOST_TEST(runSource("fun init value:int\nreturn value\nend\nreturn init 42").integerValue == 42);
+    BOOST_TEST(runSource("hub example\ninit = 42\nend\nreturn example.init").integerValue == 42);
+    BOOST_TEST(!compileErrors("class Point\nfun init\nend\nend").empty());
+    BOOST_TEST(!compileErrors("class Point\ninit = 42\nend").empty());
+}
+
 BOOST_AUTO_TEST_CASE(empty_declarations_publish_closed_and_open_object_types)
 {
     LanguageTestFixture fixture;
