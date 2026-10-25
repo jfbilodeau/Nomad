@@ -31,7 +31,7 @@ class ScriptCallableBase {
 public:
     ScriptCallableBase(const ScriptCallableBase&) = delete;
     ScriptCallableBase& operator=(const ScriptCallableBase&) = delete;
-    virtual ~ScriptCallableBase() = default;
+    virtual ~ScriptCallableBase();
 
     [[nodiscard]] virtual CallableId getId() const = 0;
     [[nodiscard]] virtual const NomadString& getName() const = 0;
@@ -234,10 +234,7 @@ protected:
     ScriptCallableBase(
         NomadString path,
         NomadString source
-    ):
-        m_path(std::move(path)),
-        m_source(std::move(source))
-    {}
+    );
 
     [[nodiscard]] virtual std::vector<Parameter>& getEditableParameters() = 0;
 

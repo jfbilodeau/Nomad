@@ -1634,7 +1634,9 @@ std::vector<const NativeConstructor*> Runtime::getConstructors() const {
     std::vector<const NativeConstructor*> constructors;
     for (const auto* callable : m_callables) {
         if (callable->getType() == CallableType::Constructor) {
-            constructors.push_back(static_cast<const NativeConstructor*>(callable));
+            if (const auto* native = static_cast<const Constructor*>(callable)->asNativeConstructor()) {
+                constructors.push_back(native);
+            }
         }
     }
     return constructors;

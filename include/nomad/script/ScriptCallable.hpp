@@ -2,10 +2,7 @@
 
 #pragma once
 
-#include <nomad/log/Logger.hpp>
-
-#include <nomad/script/Callable.hpp>
-#include <nomad/script/Variable.hpp>
+#include <nomad/script/ScriptCallableBase.hpp>
 
 #include <concepts>
 #include <utility>

@@ -139,7 +139,7 @@ BOOST_AUTO_TEST_CASE(open_is_reserved_and_requires_a_supported_declaration)
     BOOST_TEST((availability == StatementAvailability::Compiler));
     PreParseStatementFn preParser;
     for (const auto* name : {"hub", "open"}) {
-        BOOST_REQUIRE(compiler->getGetPreParseStatementFn(name, preParser));
+        BOOST_REQUIRE(compiler->getPreParseStatementFn(name, preParser));
         BOOST_TEST(preParser != nullptr);
     }
     for (const auto* source : {

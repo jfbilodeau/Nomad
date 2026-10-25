@@ -437,9 +437,21 @@ Script source text is available through `getSourceCode()`; `getSource()` identif
 the callable is native or script-backed. Script enumeration and source/bytecode
 lookups continue to include only script functions.
 
+`getScriptCallable(id)` returns the shared script compilation interface for a
+script function, method, or constructor, and `nullptr` for native or invalid IDs.
+Const runtimes return a const interface. `Callable::asScriptCallable()` provides
+the same view from a descriptor. Method and constructor descriptors remain owned
+by their declaring object type; they are not returned by `getFunction(id)` or
+`getScriptFunction(id)`.
+
 Include `<nomad/script/Callable.hpp>` for common callable metadata,
 `<nomad/script/NativeCallable.hpp>` for native implementations, and
-`<nomad/script/ScriptCallable.hpp>` for script implementations.
+`<nomad/script/ScriptCallable.hpp>` for script functions and the shared implementation
+template. The common compilation interface is in `<nomad/script/ScriptCallableBase.hpp>`;
+concrete member descriptors are in `<nomad/script/ScriptMethod.hpp>` and
+`<nomad/script/ScriptConstructor.hpp>`. These descriptors do not yet enable script
+class member registration or execution. No receiver parameter is synthesized by
+their constructors.
 
 ## Module configuration
 
@@ -602,7 +614,7 @@ for independent analysis snapshots, or provide a runtime containing the host API
 needed by the scripts. Compilation does not execute scripts.
 
 Custom statements register with
-`registerParseStatementFn(name, parser, availability, preParser)`.
+`registerParseStatementFn(name, availability, parser, preParser)`.
 The required `StatementAvailability` is `Compiler`, `Interpreter`, or `Both`;
 dispatch rejects a statement in an unavailable mode before calling its parser.
 The optional pre-parser receives `PreParsePhase::Declarations` first, then
@@ -610,6 +622,10 @@ The optional pre-parser receives `PreParsePhase::Declarations` first, then
 first phase and resolve signatures in the second without registering declarations
 again. Interpreter-only statements do not run pre-parsers during compilation.
 Both enums and the callback types are declared in `<nomad/compiler/Parser.hpp>`.
+Parser and AST callbacks receive a `ScriptCallableBase*`, so the same callbacks
+can work with script functions, methods, and constructors. The interface exposes
+parameters, local variables, captures, source locations, and compilation ranges;
+it does not make a method or constructor a free function.
 
 `createFunction(context, scriptId, functionName)` creates a declared or generated
 function within an existing script. Obtain the script ID with

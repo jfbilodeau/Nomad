@@ -76,7 +76,7 @@ public:
         ParseStatementFn& fn,
         StatementAvailability& availability
     ) const;
-    [[nodiscard]] bool getGetPreParseStatementFn(
+    [[nodiscard]] bool getPreParseStatementFn(
         const NomadString& name,
         PreParseStatementFn& fn
     ) const;

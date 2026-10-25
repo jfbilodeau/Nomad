@@ -103,7 +103,7 @@ bool Compiler::getParseStatementFn(
     return false;
 }
 
-bool Compiler::getGetPreParseStatementFn(
+bool Compiler::getPreParseStatementFn(
     const NomadString& name,
     PreParseStatementFn& fn
 ) const {
@@ -685,7 +685,7 @@ void Compiler::addFreeValue(const InstructionFn freeOpCode, const NomadIndex ope
 }
 
 NomadIndex Compiler::addFunctionCall(const CallableId targetFunctionId, ScriptCallableBase* function, const ArgumentList* arguments) {
-    const auto targetFunction = getRuntime()->getScriptCallable(targetFunctionId);
+    const auto targetFunction = getRuntime()->getScriptFunction(targetFunctionId);
 
     if (targetFunction == nullptr) {
         reportInternalError("Unknown function id: " + toString(targetFunctionId.id));
@@ -864,7 +864,7 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
             continue;
         }
         const auto previousHub = context->getHub();
-        if (getGetPreParseStatementFn(statement, preParseStatementFn) && preParseStatementFn) {
+        if (getPreParseStatementFn(statement, preParseStatementFn) && preParseStatementFn) {
             (void)preParseStatementFn(
                 context, function, &tokens,
                 hubsOnly ? PreParsePhase::Declarations : PreParsePhase::Signatures

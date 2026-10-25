@@ -4,9 +4,14 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/compiler/Parser.hpp>
+#include <nomad/compiler/Tokenizer.hpp>
+
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptConstructor.hpp>
+#include <nomad/script/ScriptMethod.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/NativeFunctions.hpp>
@@ -25,7 +30,14 @@ BOOST_TEST_DONT_PRINT_LOG_VALUE(nomad::CallableType)
 BOOST_TEST_DONT_PRINT_LOG_VALUE(nomad::ResolveStatus)
 
 static_assert(std::is_base_of_v<ScriptCallable<Function>, ScriptFunction>);
+static_assert(std::is_base_of_v<ScriptCallableBase, ScriptFunction>);
+static_assert(std::is_base_of_v<ScriptCallableBase, ScriptMethod>);
+static_assert(std::is_base_of_v<ScriptCallableBase, ScriptConstructor>);
 static_assert(!std::is_copy_constructible_v<ScriptFunction>);
+static_assert(!std::is_copy_constructible_v<ScriptMethod>);
+static_assert(!std::is_copy_constructible_v<ScriptConstructor>);
+static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getScriptCallable(CallableId{})), const ScriptCallableBase*>);
+static_assert(std::is_same_v<decltype(std::declval<Runtime&>().getScriptCallable(CallableId{})), ScriptCallableBase*>);
 static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getFunction(CallableId{0})), const Function*>);
 static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getMethod(CallableId{0})), const Method*>);
 static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getConstructor(CallableId{0})), const Constructor*>);
@@ -33,6 +45,21 @@ static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getScriptFu
 static_assert(std::is_same_v<decltype(std::declval<Runtime&>().getScriptFunction(CallableId{0})), ScriptFunction*>);
 
 namespace {
+
+class ScriptCallableTestType final : public ObjectType {
+public:
+    ScriptCallableTestType(
+        Runtime* runtime,
+        const TypeId id,
+        NomadString name,
+        const ObjectTypeMode mode,
+        ObjectType*& descriptor
+    ):
+        ObjectType(runtime, id, std::move(name), mode)
+    {
+        descriptor = this;
+    }
+};
 
 CallableId registerVoidNativeFunction(
     Runtime& runtime,
@@ -66,6 +93,117 @@ CallableId registerNativeFunction(
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(callable_catalog)
+
+BOOST_AUTO_TEST_CASE(script_callable_lookup_preserves_function_and_native_categories)
+{
+    Runtime runtime;
+    const auto scriptId = runtime.registerScriptFunction("script", "script.nomad", "return 1");
+    const auto nativeId = registerVoidNativeFunction(runtime, "native");
+    BOOST_REQUIRE(scriptId.isValid());
+    BOOST_REQUIRE(nativeId.isValid());
+    auto* script = runtime.getScriptFunction(scriptId);
+    BOOST_TEST(runtime.getScriptCallable(scriptId) == static_cast<ScriptCallableBase*>(script));
+    BOOST_TEST(std::as_const(runtime).getScriptCallable(scriptId) == static_cast<const ScriptCallableBase*>(script));
+    BOOST_TEST(runtime.getCallable(scriptId)->asScriptCallable() == static_cast<const ScriptCallableBase*>(script));
+    BOOST_TEST(runtime.getScriptCallable(nativeId) == nullptr);
+    BOOST_TEST(runtime.getCallable(nativeId)->asScriptCallable() == nullptr);
+    for (const auto id : {CallableId{}, CallableId{NOMAD_ID_MAX}}) {
+        BOOST_TEST(runtime.getScriptCallable(id) == nullptr);
+        BOOST_TEST(std::as_const(runtime).getScriptCallable(id) == nullptr);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(script_member_descriptors_are_type_owned_with_shared_compilation_state)
+{
+    Runtime runtime;
+    ObjectType* type = nullptr;
+    BOOST_REQUIRE(runtime.createObjectType<ScriptCallableTestType>(
+        "Point", ObjectTypeMode::Closed, type
+    ).isValid());
+    BOOST_REQUIRE(type != nullptr);
+    const auto parameters = std::vector<Parameter>{defParameter("value", runtime.getIntegerType(), "")};
+    const auto methodId = type->registerMethod(runtime, std::make_unique<ScriptMethod>(
+        "echo", type, parameters, nullptr, "point.nomad", "return value"
+    ));
+    const auto constructorId = type->registerConstructor(runtime, std::make_unique<ScriptConstructor>(
+        type, parameters, "point.nomad", "this.value = value"
+    ));
+    BOOST_REQUIRE(methodId.isValid());
+    BOOST_REQUIRE(constructorId.isValid());
+    const auto* method = runtime.getMethod(methodId);
+    const auto* constructor = runtime.getConstructor(constructorId);
+    BOOST_REQUIRE(method != nullptr);
+    BOOST_REQUIRE(constructor != nullptr);
+    BOOST_TEST((method->getSource() == CallableSource::Script));
+    BOOST_TEST((constructor->getSource() == CallableSource::Script));
+    BOOST_TEST(method->getObjectType() == type);
+    BOOST_TEST(constructor->getObjectType() == type);
+    BOOST_TEST(constructor->getReturnType() == type);
+    BOOST_TEST(method->asNativeMethod() == nullptr);
+    BOOST_TEST(constructor->asNativeConstructor() == nullptr);
+    BOOST_REQUIRE(method->asScriptMethod() != nullptr);
+    BOOST_REQUIRE(constructor->asScriptConstructor() != nullptr);
+    BOOST_TEST(type->getMethods().front() == method);
+    BOOST_TEST(type->getConstructors().front() == constructor);
+    BOOST_TEST(runtime.getNativeConstructor(constructorId) == nullptr);
+    BOOST_TEST(runtime.getNativeMethod(methodId) == nullptr);
+    BOOST_TEST(runtime.getConstructors(type).empty());
+    for (const auto* native : runtime.getConstructors()) {
+        BOOST_REQUIRE(native != nullptr);
+        BOOST_TEST(native->getId() != constructorId);
+    }
+    std::vector<ScriptFunction*> functions;
+    runtime.getFunctions(functions);
+    BOOST_TEST(functions.empty());
+
+    for (const auto id : {methodId, constructorId}) {
+        auto* script = runtime.getScriptCallable(id);
+        BOOST_REQUIRE(script != nullptr);
+        BOOST_TEST(script == runtime.getCallable(id)->asScriptCallable());
+        BOOST_TEST(script == std::as_const(runtime).getScriptCallable(id));
+        BOOST_TEST(script->getId() == id);
+        BOOST_TEST(script->getObjectType() == type);
+        BOOST_TEST(script->getPath() == "point.nomad");
+        BOOST_TEST(!script->getSourceCode().empty());
+        BOOST_TEST(script->getParameterCount() == 1u);
+        BOOST_TEST(script->getParameterType(0) == runtime.getIntegerType());
+        BOOST_TEST(script->getVariableType(script->getVariableId("value")) == runtime.getIntegerType());
+        BOOST_TEST(script->getParameterId("this") == NOMAD_INVALID_ID);
+        BOOST_TEST(script->getVariableId("this").isInvalid());
+        script->setHub("model");
+        script->setSourceLineRange(3, 9);
+        script->setFunctionStart(100);
+        script->setFunctionEnd(120);
+        BOOST_TEST(script->getHub() == "model");
+        BOOST_TEST(script->getSourceStartLine() == 3u);
+        BOOST_TEST(script->getSourceEndLine() == 9u);
+        BOOST_TEST(script->getFunctionStart() == 100u);
+        BOOST_TEST(script->getFunctionEnd() == 120u);
+        BOOST_TEST(runtime.getFunction(id) == nullptr);
+        BOOST_TEST(runtime.getScriptFunction(id) == nullptr);
+    }
+
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    auto* script = runtime.getScriptCallable(methodId);
+    Tokenizer tokens(&context, "point.nomad", "return value");
+    BOOST_REQUIRE(tokens.nextLine());
+    auto statement = parser::parseLine(&context, script, &tokens);
+    BOOST_REQUIRE(statement != nullptr);
+    BOOST_REQUIRE(statement->resolve(&context, script));
+    BOOST_TEST(!context.hasError());
+    BOOST_TEST(script->getReturnType() == runtime.getIntegerType());
+    BOOST_TEST(method->getReturnType() == runtime.getIntegerType());
+    const ParserBlockScope scope(context, script, nullptr, true, true);
+    BOOST_TEST(context.isFunctionRoot(script));
+    {
+        const auto* constructorScript = runtime.getScriptCallable(constructorId);
+        const ParserBlockScope constructorScope(context, constructorScript);
+        BOOST_TEST(!context.isFunctionRoot(constructorScript));
+        BOOST_TEST(context.isFunctionRoot(script));
+    }
+    BOOST_TEST(context.isFunctionRoot(script));
+}
 
 BOOST_AUTO_TEST_CASE(unknown_name_resolves_to_invalid_callable)
 {
