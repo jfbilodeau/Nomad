@@ -157,7 +157,12 @@ void VirtualMachine::runCallable(
             pushArgument(function->getParameterType(toNomadId(index - 1)), args[index - 1]);
         }
 
-        callScriptCallable(function, receiver);
+        if (receiver != nullptr) {
+            m_this = *receiver;
+            callScriptMethod(function->getFunctionStart());
+        } else {
+            callScriptFunction(function->getFunctionStart());
+        }
 
         do {
 #ifdef NOMAD_DEBUG
@@ -214,53 +219,33 @@ ScriptFunction* VirtualMachine::getCurrentFunction() const {
     return m_runtime->getFunctionAtInstructionIndex(m_instructionIndex);
 }
 
-void VirtualMachine::callFunction(const NomadIndex address, const NomadIndex stackCount) {
-    if (stackCount >= m_stackIndex) {
-        fault("Invalid script call stack-slot count");
-    }
-    callScriptByAddress(address, nullptr);
+void VirtualMachine::callScriptFunction(const NomadIndex address) {
+    pushScriptFrame();
+    m_this = RuntimeValue{};
+    jump(address);
 }
 
-void VirtualMachine::callMethod(
-    const NomadIndex address,
-    const NomadIndex stackCount,
-    const TypeId allocationType
-) {
-    if (stackCount >= m_stackIndex) {
-        fault("Invalid script call stack-slot count");
-    }
-    if (allocationType.isValid()) {
-        createScriptObject(allocationType);
-    }
-    const auto receiver = m_this;
-    (void)getThis();
-    callScriptByAddress(address, &receiver);
+void VirtualMachine::callScriptMethod(const NomadIndex address) {
+    pushScriptFrame();
+    jump(address);
+}
+
+void VirtualMachine::callScriptConstructor(const NomadIndex address, const TypeId typeId) {
+    createScriptObject(typeId);
+    pushScriptFrame();
+    jump(address);
 }
 
 void VirtualMachine::createScriptObject(const TypeId typeId) {
-    const auto type = m_runtime->getType(typeId);
-    const auto* objectType = type ? (*type)->asObjectType() : nullptr;
-    if (objectType == nullptr) {
-        fault("Cannot allocate script object: invalid object type");
-    }
-    auto* object = new ScriptObject(objectType);
-    m_this.setObjectValue(object);
+    const auto* objectType = m_runtime->getType(typeId).value()->asObjectType();
+    m_this.setObjectValue(new ScriptObject(objectType));
 }
 
-void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, const RuntimeValue* receiver) {
-    if (function == nullptr) {
-        fault("Invalid function");
-        return;
-    }
-    callScriptByAddress(function->getFunctionStart(), receiver);
-}
-
-void VirtualMachine::callScriptByAddress(const NomadIndex address, const RuntimeValue* receiver) {
+void VirtualMachine::pushScriptFrame() {
     if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex - 1 < 4) {
         fault("Stack overflow");
     }
 
-    const auto nextThis = receiver != nullptr ? *receiver : RuntimeValue{};
     const auto argumentStackIndex = m_stackIndex;
     const auto returnAddress = m_instructionIndex;
     const auto previousParameterIndex = m_parameterIndex;
@@ -275,96 +260,69 @@ void VirtualMachine::callScriptByAddress(const NomadIndex address, const Runtime
     // Variables start after the saved call frame slots.
     m_parameterIndex = argumentStackIndex;
     m_variableIndex = m_stackIndex + 1;
-    m_this = nextThis;
-    jump(address);
 }
 
 void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId, const NomadIndex stackCount) {
-    if (m_runtime->getNativeConstructor(nativeFunctionId) != nullptr) {
-        callNativeConstructor(nativeFunctionId, stackCount);
-        return;
-    }
     const auto* function = m_runtime->getNativeFunction(nativeFunctionId);
-    if (function == nullptr || !function->getFn()) {
-        fault("Invalid native function id: " + toString(nativeFunctionId.id));
+    const auto frame = beginNativeCall(stackCount);
+    m_this = RuntimeValue{};
+    try {
+        function->getFn()(this);
+    } catch (...) {
+        endNativeCall(frame);
+        throw;
     }
-    invokeNativeCall(function->getFn(), stackCount, nullptr);
+    endNativeCall(frame);
 }
 
 void VirtualMachine::callNativeConstructor(const CallableId constructorId, const NomadIndex stackCount) {
     const auto* constructor = m_runtime->getNativeConstructor(constructorId);
-    if (constructor == nullptr || !constructor->getFn()) {
-        fault("Invalid native constructor id: " + toString(constructorId.id));
-    }
+    const auto frame = beginNativeCall(stackCount);
+    m_this = RuntimeValue{};
     m_result = RuntimeValue{};
     try {
-        invokeNativeCall(constructor->getFn(), stackCount, nullptr);
+        constructor->getFn()(this);
         if (m_result.getObjectValue() == nullptr) {
             fault("Native constructor for '" + constructor->getName() + "' returned null");
         }
     } catch (...) {
         constructor->getReturnType()->freeValue(m_result);
+        endNativeCall(frame);
         throw;
     }
+    endNativeCall(frame);
+    m_this.moveObjectValue(m_result);
 }
 
-void VirtualMachine::invokeNativeCall(
-    const NativeFunctionFn& callback,
-    const NomadIndex stackCount,
-    const RuntimeValue* receiver
-) {
-    if (stackCount >= m_stackIndex) {
-        fault("Invalid native call stack-slot count");
-    }
-    const auto nextThis = receiver != nullptr ? *receiver : RuntimeValue{};
-    const auto previousParameterIndex = m_parameterIndex;
-    const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
-    const auto previousReceiverSaveIndex = m_receiverSaveIndex;
+VirtualMachine::NativeCallFrame VirtualMachine::beginNativeCall(const NomadIndex stackCount) {
+    const NativeCallFrame frame{m_parameterIndex, m_enclosingParameterIndex, m_receiverSaveIndex};
     m_parameterIndex = m_stackIndex;
     m_receiverSaveIndex = m_parameterIndex - stackCount;
-    const auto receiverSaveIndex = m_receiverSaveIndex;
-    m_this = nextThis;
+    m_enclosingParameterIndex = frame.parameterIndex;
+    return frame;
+}
 
-    // Save the enclosing function's parameter frame for closure capture
-    m_enclosingParameterIndex = previousParameterIndex;
-
-    try {
-        callback(this);
-    } catch (...) {
-        m_parameterIndex = previousParameterIndex;
-        m_enclosingParameterIndex = previousEnclosingParameterIndex;
-        m_receiverSaveIndex = previousReceiverSaveIndex;
-        m_this = m_stack[receiverSaveIndex];
-        throw;
-    }
-
-    m_parameterIndex = previousParameterIndex;
-    m_enclosingParameterIndex = previousEnclosingParameterIndex;
-    m_receiverSaveIndex = previousReceiverSaveIndex;
-    m_this = m_stack[receiverSaveIndex];
+void VirtualMachine::endNativeCall(const NativeCallFrame& frame) {
+    m_this = m_stack[m_receiverSaveIndex];
+    m_parameterIndex = frame.parameterIndex;
+    m_enclosingParameterIndex = frame.enclosingParameterIndex;
+    m_receiverSaveIndex = frame.receiverSaveIndex;
 }
 
 void VirtualMachine::callNativeMethod(
     const CallableId memberId,
-    const NomadIndex stackCount,
-    const TypeId allocationType
+    const NomadIndex stackCount
 ) {
-    if (allocationType.isValid()) {
-        const auto* constructor = m_runtime->getNativeConstructor(memberId);
-        if (constructor == nullptr || constructor->getObjectType()->getId() != allocationType) {
-            fault("Invalid native constructor allocation type");
-        }
-        callNativeConstructor(memberId, stackCount);
-        m_this.moveObjectValue(m_result);
-        return;
-    }
     const auto* method = m_runtime->getNativeMemberMethod(memberId);
-    if (method == nullptr || !method->getFn()) {
-        fault("Invalid native method id: " + toString(memberId.id));
-    }
-    (void)getThis();
     const auto receiver = m_this;
-    invokeNativeCall(method->getFn(), stackCount, &receiver);
+    const auto frame = beginNativeCall(stackCount);
+    try {
+        method->getFn()(this);
+    } catch (...) {
+        endNativeCall(frame);
+        throw;
+    }
+    endNativeCall(frame);
     m_this = receiver;
 }
 
@@ -468,7 +426,15 @@ void VirtualMachine::callNativeIndexer(
         fault(write ? "Invalid native indexer setter" : "Invalid native indexer getter");
     }
     m_result = RuntimeValue{};
-    invokeNativeCall(callback, info->indexTypes.size() + (write ? 1 : 0) + 1, &receiver);
+    const auto frame = beginNativeCall(info->indexTypes.size() + (write ? 1 : 0) + 1);
+    m_this = receiver;
+    try {
+        callback(this);
+    } catch (...) {
+        endNativeCall(frame);
+        throw;
+    }
+    endNativeCall(frame);
 }
 
 void VirtualMachine::runNativeIndexer(
@@ -577,7 +543,7 @@ void VirtualMachine::runNativeCallable(
         }
 
         if (const auto* constructor = m_runtime->getNativeConstructor(function->getId())) {
-            callNativeMethod(function->getId(), args.size(), constructor->getObjectType()->getId());
+            callNativeConstructor(constructor->getId(), args.size());
             moveThisToResult();
         } else {
             callNativeFunction(function->getId(), args.size());
@@ -643,7 +609,7 @@ void VirtualMachine::runNativeMethod(const CallableId memberId, const std::vecto
         }
 
         bindThisFromStack(args.size());
-        callNativeMethod(memberId, args.size() + 1, TypeId::INVALID);
+        callNativeMethod(memberId, args.size() + 1);
     } catch (...) {
         releaseArguments();
         throw;
@@ -780,7 +746,9 @@ void VirtualMachine::copyThisToIntermediate() {
 
 void VirtualMachine::bindThisFromStack(const NomadIndex offset) {
     m_this = peekStack(offset);
-    (void)getThis();
+    if (m_this.getObjectValue() == nullptr) {
+        fault("Object method has no instance");
+    }
 }
 
 void VirtualMachine::pushResult() {

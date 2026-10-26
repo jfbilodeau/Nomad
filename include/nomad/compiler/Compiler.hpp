@@ -166,9 +166,16 @@ public:
     // Same, for free opcodes taking an operand (stack offset from the top or function variable index).
     void addFreeValue(InstructionFn freeOpCode, NomadIndex operand);
 
-    NomadIndex addFunctionCall(CallableId targetFunctionId, ScriptCallableBase* function, const ArgumentList* arguments);
+    NomadIndex addScriptFunctionCall(CallableId targetFunctionId, ScriptCallableBase* function, const ArgumentList* arguments);
+    NomadIndex addScriptMethodCall(CallableId memberId, ScriptCallableBase* function, const ArgumentList* arguments);
+    NomadIndex addScriptConstructorCall(
+        CallableId constructorId,
+        TypeId typeId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments
+    );
     NomadIndex addNativeFunctionCall(CallableId nativeFunctionId, ScriptCallableBase* function, const ArgumentList* arguments);
-    NomadIndex addConstructorCall(CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments);
+    NomadIndex addNativeConstructorCall(CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments);
     NomadIndex addNativeMethodCall(CallableId memberId, ScriptCallableBase* function, const ArgumentList* arguments);
     // After a call returns, free the arguments still on the stack.
     void addFreeArguments(const ArgumentList* arguments);
@@ -273,12 +280,6 @@ private:
     void compileFunction(const FunctionCompilation& function);
     void compileObjectInitializer(const FunctionCompilation& initializer);
     void compileConstructor(const FunctionCompilation& constructor);
-    void addCallableInvocation(
-        CallableId targetId,
-        NomadIndex stackCount,
-        bool method,
-        TypeId allocationType = TypeId::INVALID
-    );
 
     Runtime* m_runtime;
 

@@ -49,6 +49,8 @@ std::vector<NomadString> callSequence(const Runtime& runtime, const ScriptCallab
             sequence.push_back(OpCodes::op_call_script_function);
         } else if (name == OpCodes::op_call_native_method) {
             sequence.push_back(OpCodes::op_call_script_method);
+        } else if (name == OpCodes::op_call_native_constructor) {
+            sequence.push_back(OpCodes::op_call_script_constructor);
         } else {
             sequence.push_back(name);
         }
@@ -61,6 +63,32 @@ std::vector<NomadString> callSequence(const Runtime& runtime, const ScriptCallab
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(object_construction)
+
+BOOST_AUTO_TEST_CASE(call_opcodes_have_specialized_operands) {
+    Runtime runtime;
+    for (const auto& name : {OpCodes::op_call_script_function, OpCodes::op_call_script_method}) {
+        const auto id = runtime.getInstructionId(name);
+        BOOST_REQUIRE(id.isValid());
+        const auto operands = runtime.getInstructionOperands(id);
+        BOOST_REQUIRE(operands.size() == 1u);
+        BOOST_CHECK(operands[0] == Operand::Function);
+    }
+    const auto constructorId = runtime.getInstructionId(OpCodes::op_call_script_constructor);
+    BOOST_REQUIRE(constructorId.isValid());
+    const auto operands = runtime.getInstructionOperands(constructorId);
+    BOOST_REQUIRE(operands.size() == 2u);
+    BOOST_CHECK(operands[0] == Operand::Function);
+    BOOST_CHECK(operands[1] == Operand::Id);
+    for (const auto& name : {
+        OpCodes::op_call_native_function, OpCodes::op_call_native_method, OpCodes::op_call_native_constructor
+    }) {
+        const auto id = runtime.getInstructionId(name);
+        BOOST_REQUIRE(id.isValid());
+        const auto nativeOperands = runtime.getInstructionOperands(id);
+        BOOST_REQUIRE(nativeOperands.size() == 2u);
+        BOOST_CHECK(nativeOperands[1] == Operand::Index);
+    }
+}
 
 BOOST_AUTO_TEST_CASE(native_and_script_calls_share_argument_and_construction_bytecode) {
     Runtime runtime;
@@ -139,17 +167,16 @@ BOOST_AUTO_TEST_CASE(script_construction_bytecode_uses_linked_calls_and_ordinary
         runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_return)));
     const auto* main = runtime.getScriptFunction(id);
     auto foundConstructorCall = false;
-    const auto callInstruction = runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_script_method));
+    const auto callInstruction = runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_script_constructor));
     for (auto index = main->getFunctionStart(); index < main->getFunctionEnd(); ++index) {
         if (instructions[index].fn == callInstruction) {
             BOOST_TEST(instructions[index + 1].value.getIndexValue() == constructor->getFunctionStart());
-            BOOST_TEST(instructions[index + 2].value.getIndexValue() == 1u);
-            BOOST_TEST(instructions[index + 3].value.getIdValue() == type->getId().id);
-            BOOST_TEST(instructions[index + 4].fn ==
+            BOOST_TEST(instructions[index + 2].value.getIdValue() == type->getId().id);
+            BOOST_TEST(instructions[index + 3].fn ==
                 runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_pop_1)));
-            BOOST_TEST(instructions[index + 5].fn ==
+            BOOST_TEST(instructions[index + 4].fn ==
                 runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_move_this_to_r)));
-            BOOST_TEST(instructions[index + 6].fn ==
+            BOOST_TEST(instructions[index + 5].fn ==
                 runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_pop_this)));
             foundConstructorCall = true;
         }
@@ -1424,7 +1451,11 @@ BOOST_AUTO_TEST_CASE(constructor_faults_and_null_results_release_object_argument
         const auto before = NomadObject::getLiveObjectCount();
         auto machine = runtime.createVirtualMachine();
         for (auto attempt = 0; attempt < 2; ++attempt) {
-            BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(id), {}), NomadException);
+            if (returnsNull) {
+                BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(id), {}), VirtualMachineException);
+            } else {
+                BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(id), {}), NomadException);
+            }
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
         }
         {
@@ -1449,7 +1480,7 @@ BOOST_AUTO_TEST_CASE(parameterless_constructors_are_explicitly_registered) {
     BOOST_TEST(runtime.getInstructions()[start].fn ==
         runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_push_this)));
     BOOST_TEST(runtime.getInstructions()[start + 1].fn ==
-        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_native_method)));
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_native_constructor)));
     RuntimeValue result;
     runtime.executeFunction(id, {}, result);
     BOOST_REQUIRE(result.getObjectValue() != nullptr);

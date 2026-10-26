@@ -297,7 +297,7 @@ void FunctionCallStatementNode::onCompile(Compiler* compiler, ScriptCallableBase
     if (const auto* native = m_function->asNativeFunction()) {
         compiler->addNativeFunctionCall(native->getId(), function, getArguments());
     } else if (const auto* script = m_function->asScriptFunction()) {
-        compiler->addFunctionCall(script->getId(), function, getArguments());
+        compiler->addScriptFunctionCall(script->getId(), function, getArguments());
     } else {
         raiseException("Unsupported implementation of function '" + m_name + "'");
     }

@@ -570,7 +570,7 @@ void FunctionCallExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
     if (const auto* native = m_function->asNativeFunction()) {
         compiler->addNativeFunctionCall(native->getId(), function, &m_arguments);
     } else if (const auto* script = m_function->asScriptFunction()) {
-        compiler->addFunctionCall(script->getId(), function, &m_arguments);
+        compiler->addScriptFunctionCall(script->getId(), function, &m_arguments);
     } else {
         raiseException("Unsupported implementation of function '" + m_name + "'");
     }
@@ -1250,7 +1250,13 @@ void ConstructorExpression::onCompile(Compiler* compiler, ScriptCallableBase* fu
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
     }
-    compiler->addConstructorCall(m_constructor->getId(), function, &m_arguments);
+    if (m_constructor->asNativeConstructor() != nullptr) {
+        compiler->addNativeConstructorCall(m_constructor->getId(), function, &m_arguments);
+    } else {
+        compiler->addScriptConstructorCall(
+            m_constructor->getId(), m_constructor->getObjectType()->getId(), function, &m_arguments
+        );
+    }
     compiler->addMoveResult(getType(), target);
 }
 

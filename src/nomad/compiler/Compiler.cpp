@@ -806,22 +806,12 @@ void Compiler::addFreeValue(const InstructionFn freeOpCode, const NomadIndex ope
     }
 }
 
-NomadIndex Compiler::addFunctionCall(const CallableId targetFunctionId, ScriptCallableBase* function, const ArgumentList* arguments) {
-    const auto* targetFunction = getRuntime()->getCallable(targetFunctionId);
-
-    if (targetFunction == nullptr) {
-        reportInternalError("Unknown function id: " + toString(targetFunctionId.id));
-    }
-
-    const auto argumentCount = arguments->getArgumentCount();
-
-    if (targetFunction->asScriptCallable() != nullptr && argumentCount != targetFunction->getParameterCount()) {
-        reportInternalError("BUG: Argument count does not match parameters of function '" + targetFunction->getName() + "'");
-    }
-
+NomadIndex Compiler::addScriptFunctionCall(const CallableId targetFunctionId, ScriptCallableBase* function, const ArgumentList* arguments) {
     addOpCode(OpCodes::op_push_this);
     arguments->compile(this, function);
-    addCallableInvocation(targetFunctionId, arguments->getStackCount(), false);
+    addOpCode(OpCodes::op_call_script_function);
+    addFunctionLink(targetFunctionId, m_instructions.size());
+    addIndex(0);
     addFreeArguments(arguments);
     addOpCode(OpCodes::op_pop_this);
 
@@ -870,42 +860,29 @@ void Compiler::addFreeArguments(const ArgumentList* arguments) {
 }
 
 NomadIndex Compiler::addNativeFunctionCall(const CallableId nativeFunctionId, ScriptCallableBase* function, const ArgumentList* arguments) {
-    if (m_runtime->getNativeFunction(nativeFunctionId) == nullptr &&
-        m_runtime->getNativeConstructor(nativeFunctionId) == nullptr) {
-        reportInternalError("Unknown native function: " + toString(nativeFunctionId.id));
-    }
-    return addFunctionCall(nativeFunctionId, function, arguments);
-}
-
-void Compiler::addCallableInvocation(
-    const CallableId targetId,
-    const NomadIndex stackCount,
-    const bool method,
-    const TypeId allocationType
-) {
-    const auto* target = m_runtime->getCallable(targetId);
-    if (target == nullptr) {
-        reportInternalError("Invalid callable target");
-    }
-    if (const auto* script = target->asScriptCallable()) {
-        addOpCode(method ? OpCodes::op_call_script_method : OpCodes::op_call_script_function);
-        addFunctionLink(targetId, m_instructions.size());
-        addIndex(script->getFunctionStart());
-    } else {
-        addOpCode(method ? OpCodes::op_call_native_method : OpCodes::op_call_native_function);
-        addId(targetId.id);
-    }
-    addIndex(stackCount);
-    if (method) {
-        addId(allocationType.id);
-    }
-}
-
-NomadIndex Compiler::addConstructorCall(const CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments) {
-    const auto* constructor = m_runtime->getConstructor(constructorId);
     addOpCode(OpCodes::op_push_this);
     arguments->compile(this, function);
-    addCallableInvocation(constructorId, arguments->getStackCount(), true, constructor->getObjectType()->getId());
+    addOpCode(OpCodes::op_call_native_function);
+    addId(nativeFunctionId.id);
+    addIndex(arguments->getStackCount());
+    addFreeArguments(arguments);
+    addOpCode(OpCodes::op_pop_this);
+
+    return m_instructions.size() - 1;
+}
+
+NomadIndex Compiler::addScriptConstructorCall(
+    const CallableId constructorId,
+    const TypeId typeId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments
+) {
+    addOpCode(OpCodes::op_push_this);
+    arguments->compile(this, function);
+    addOpCode(OpCodes::op_call_script_constructor);
+    addFunctionLink(constructorId, m_instructions.size());
+    addIndex(0);
+    addId(typeId.id);
     addFreeArguments(arguments);
     addOpCode(OpCodes::op_move_this_to_r);
     addOpCode(OpCodes::op_pop_this);
@@ -913,14 +890,48 @@ NomadIndex Compiler::addConstructorCall(const CallableId constructorId, ScriptCa
     return m_instructions.size() - 1;
 }
 
-NomadIndex Compiler::addNativeMethodCall(const CallableId memberId, ScriptCallableBase* function,
-                                            const ArgumentList* arguments) {
+NomadIndex Compiler::addNativeConstructorCall(const CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments) {
+    addOpCode(OpCodes::op_push_this);
     arguments->compile(this, function);
+    addOpCode(OpCodes::op_call_native_constructor);
+    addId(constructorId.id);
+    addIndex(arguments->getStackCount());
+    addFreeArguments(arguments);
+    addOpCode(OpCodes::op_move_this_to_r);
+    addOpCode(OpCodes::op_pop_this);
 
-    const auto argumentCount = arguments->getArgumentCount();
+    return m_instructions.size() - 1;
+}
+
+NomadIndex Compiler::addScriptMethodCall(
+    const CallableId memberId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments
+) {
+    arguments->compile(this, function);
     addOpCode(OpCodes::op_bind_this_from_stack);
-    addIndex(argumentCount);
-    addCallableInvocation(memberId, arguments->getStackCount(), true);
+    addIndex(arguments->getArgumentCount());
+    addOpCode(OpCodes::op_call_script_method);
+    addFunctionLink(memberId, m_instructions.size());
+    addIndex(0);
+
+    addFreeArguments(arguments);
+    addOpCode(OpCodes::op_pop_this);
+
+    return m_instructions.size() - 1;
+}
+
+NomadIndex Compiler::addNativeMethodCall(
+    const CallableId memberId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments
+) {
+    arguments->compile(this, function);
+    addOpCode(OpCodes::op_bind_this_from_stack);
+    addIndex(arguments->getArgumentCount());
+    addOpCode(OpCodes::op_call_native_method);
+    addId(memberId.id);
+    addIndex(arguments->getStackCount());
 
     addFreeArguments(arguments);
     addOpCode(OpCodes::op_pop_this);
@@ -1192,7 +1203,9 @@ void Compiler::compileConstructor(const FunctionCompilation& source) {
         reportInternalError("Missing class initializer: " + type->getInitializerName());
     }
     addOpCode(OpCodes::op_push_this);
-    addCallableInvocation((*initializer)->getId(), 0, true);
+    addOpCode(OpCodes::op_call_script_method);
+    addFunctionLink((*initializer)->getId(), m_instructions.size());
+    addIndex(0);
     addOpCode(OpCodes::op_pop_this);
     source.ast->compile(this, constructor);
     addFunctionReturn(constructor);

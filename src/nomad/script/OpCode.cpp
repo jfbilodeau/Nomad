@@ -215,29 +215,40 @@ void op_code_load_default_r(VirtualMachine* interpreter) {
 }
 
 void op_call_script_function(VirtualMachine* interpreter) {
-    const auto address = interpreter->nextIndex();
-    interpreter->callFunction(address, interpreter->nextIndex());
+    interpreter->callScriptFunction(interpreter->nextIndex());
 }
 
 void op_call_script_method(VirtualMachine* interpreter) {
+    interpreter->callScriptMethod(interpreter->nextIndex());
+}
+
+void op_call_script_constructor(VirtualMachine* interpreter) {
     const auto address = interpreter->nextIndex();
-    const auto stackCount = interpreter->nextIndex();
-    interpreter->callMethod(address, stackCount, TypeId{interpreter->nextId()});
+    const auto typeId = TypeId{interpreter->nextId()};
+    interpreter->callScriptConstructor(address, typeId);
 }
 
 void op_call_native_function(VirtualMachine* interpreter) {
     const auto nativeFunctionId = CallableId{interpreter->nextId()};
-    const auto stackCount = interpreter->nextIndex();
+    interpreter->callNativeFunction(nativeFunctionId, interpreter->nextIndex());
+}
 
+void op_call_native_method(VirtualMachine* interpreter) {
+    const auto memberId = CallableId{interpreter->nextId()};
+    interpreter->callNativeMethod(memberId, interpreter->nextIndex());
+}
+
+void op_call_native_constructor(VirtualMachine* interpreter) {
+    const auto constructorId = CallableId{interpreter->nextId()};
+    const auto stackCount = interpreter->nextIndex();
     try {
-        interpreter->callNativeFunction(nativeFunctionId, stackCount);
+        interpreter->callNativeConstructor(constructorId, stackCount);
     } catch (...) {
-        if (const auto* constructor = interpreter->getRuntime()->getNativeConstructor(nativeFunctionId)) {
-            const auto& parameters = constructor->getParameters();
-            for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
-                auto argument = interpreter->peekStack(index);
-                parameters[index].type->freeValue(argument);
-            }
+        const auto* constructor = interpreter->getRuntime()->getNativeConstructor(constructorId);
+        const auto& parameters = constructor->getParameters();
+        for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
+            auto argument = interpreter->peekStack(index);
+            parameters[index].type->freeValue(argument);
         }
         throw;
     }
@@ -261,26 +272,6 @@ void op_native_index_get(VirtualMachine* interpreter) {
 
 void op_native_index_set(VirtualMachine* interpreter) {
     callNativeIndexer(interpreter, true);
-}
-
-void op_call_native_method(VirtualMachine* interpreter) {
-    const auto memberId = CallableId{interpreter->nextId()};
-    const auto stackCount = interpreter->nextIndex();
-    const auto allocationType = TypeId{interpreter->nextId()};
-    try {
-        interpreter->callNativeMethod(memberId, stackCount, allocationType);
-    } catch (...) {
-        if (allocationType.isValid()) {
-            if (const auto* constructor = interpreter->getRuntime()->getNativeConstructor(memberId)) {
-                const auto& parameters = constructor->getParameters();
-                for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
-                    auto argument = interpreter->peekStack(index);
-                    parameters[index].type->freeValue(argument);
-                }
-            }
-        }
-        throw;
-    }
 }
 
 // Parameter operations

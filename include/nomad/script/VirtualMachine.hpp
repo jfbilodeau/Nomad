@@ -54,11 +54,13 @@ public:
     [[nodiscard]]
     ScriptFunction* getCurrentFunction() const;
 
-    void callFunction(NomadIndex address, NomadIndex stackCount);
-    void callMethod(NomadIndex address, NomadIndex stackCount, TypeId allocationType);
+    void callScriptFunction(NomadIndex address);
+    void callScriptMethod(NomadIndex address);
+    void callScriptConstructor(NomadIndex address, TypeId typeId);
     void createScriptObject(TypeId typeId);
-    void callNativeFunction(CallableId nativeFunctionId, NomadIndex stackCount = 0);
-    void callNativeMethod(CallableId memberId, NomadIndex stackCount, TypeId allocationType);
+    void callNativeFunction(CallableId nativeFunctionId, NomadIndex stackCount);
+    void callNativeMethod(CallableId memberId, NomadIndex stackCount);
+    void callNativeConstructor(CallableId constructorId, NomadIndex stackCount);
     void returnFunction(NomadIndex variableCount);
     void runNativeMethod(CallableId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
     void runNativeFunction(CallableId nativeFunctionId, const std::vector<RuntimeValue>& args);
@@ -238,14 +240,19 @@ private:
     friend class Runtime;
     friend class InterpreterContext;
 
-    void invokeNativeCall(const NativeFunctionFn& callback, NomadIndex stackCount, const RuntimeValue* receiver);
-    void callNativeConstructor(CallableId constructorId, NomadIndex stackCount);
+    struct NativeCallFrame {
+        NomadIndex parameterIndex;
+        NomadIndex enclosingParameterIndex;
+        NomadIndex receiverSaveIndex;
+    };
+
+    [[nodiscard]] NativeCallFrame beginNativeCall(NomadIndex stackCount);
+    void endNativeCall(const NativeCallFrame& frame);
     void runNativeCallable(
         const Callable* callable,
         const std::vector<RuntimeValue>& args
     );
-    void callScriptCallable(const ScriptCallableBase* function, const RuntimeValue* receiver);
-    void callScriptByAddress(NomadIndex address, const RuntimeValue* receiver);
+    void pushScriptFrame();
     void runCallable(
         const ScriptCallableBase* function,
         const std::vector<RuntimeValue>& args,
