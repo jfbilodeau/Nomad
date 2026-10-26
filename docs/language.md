@@ -300,12 +300,14 @@ overloads. Each field has one type shared by all instances; conflicting
 assignments and field/method name collisions are errors. Methods may read and
 assign existing fields but cannot introduce new fields. Reads of unknown fields
 are errors. These names never fall back to the game's `this.*` context.
-Field metadata is available during compilation. Host-initiated class
-initialization establishes all type defaults first, then evaluates explicit
-field initializers in source order. A forward read through `this` sees the
-field's type default until its initializer runs. Object-valued initializer
-expressions are evaluated separately for each instance. Fields without explicit
-initializers keep their type defaults. Initialization runs once per instance;
+Field metadata is available during compilation. Class initialization evaluates
+explicit field initializers in source order, then gives the remaining fields
+their type defaults before the constructor body runs. Explicit initializers
+cannot use or capture `this`, including in callbacks or format expressions.
+Bare names in initializers resolve normally outside the class fields, not to
+other fields. Object-valued initializer expressions are evaluated separately for
+each instance. Explicitly initialized fields do not receive a separate default
+initialization. Initialization runs once per instance;
 failure stops subsequent initializers and cannot be retried on that instance.
 `new ClassName arguments` selects a constructor overload, allocates an instance,
 initializes its fields, then runs the selected constructor body. If no `init`

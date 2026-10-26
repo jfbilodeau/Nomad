@@ -5,6 +5,7 @@
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/script/Closure.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
@@ -211,13 +212,13 @@ BOOST_AUTO_TEST_CASE(script_construction_orders_defaults_initializers_and_overlo
     const auto id = compileConstruction(runtime,
         "class Child\nvalue = 1\nend\n"
         "class Point\n"
-        "forward = this.value\nvalue = nextValue\nchild = new Child\n"
+        "value = nextValue\nchild = new Child\n"
         "init\nthis.value = this.value + 10\nend\n"
         "init value:int\nthis.value = value\nvalue = 99\nthis.child.value = 7\nend\n"
         "init enabled:bool\nif enabled\nthis.conditional = 42\nend\nreturn\nend\n"
         "end\n"
         "first = new Point\nsecond = new Point 25\nthird = new Point false\n"
-        "assert first.forward == 0\nassert first.value == 11\nassert second.value == 25\n"
+        "assert first.value == 11\nassert second.value == 25\n"
         "assert third.value == 3\nassert third.conditional == 0\n"
         "assert first.child.value == 1\nassert second.child.value == 7\n"
         "alias = second\nalias.value = 50\nassert second.value == 50\n"
@@ -230,6 +231,64 @@ BOOST_AUTO_TEST_CASE(script_construction_orders_defaults_initializers_and_overlo
     BOOST_TEST(result.getIntegerValue() == 8);
     BOOST_TEST(calls == 3);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(receiver_captures_survive_native_reentry_and_outlive_the_constructor) {
+    Runtime runtime;
+    std::unique_ptr<Closure> closure;
+    const auto* callbackType = runtime.getCallbackType({}, runtime.getIntegerType());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "saveCallback", [&](VirtualMachine* machine) {
+            BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+            const auto callbackId = machine->getCallableIdParameter(0);
+            machine->run(runtime.getScriptFunction(runtime.getFunctionId("helper")), {});
+            closure = machine->createClosure(&runtime, callbackId);
+        }, {defParameter("callback", callbackType, "")}, runtime.getVoidType(), ""
+    ).isValid());
+    const auto id = compileConstruction(runtime,
+        "class Owner\nvalue = 17\ninit\nsaveCallback fun\nreturn this.value\nend\nend\nend\n"
+        "fun helper\nreturn 5\nend\nowner = new Owner\nreturn 0"
+    );
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(id, {}, result);
+    BOOST_REQUIRE(closure != nullptr);
+    BOOST_TEST(closure->getCaptureCount() == 1u);
+    BOOST_TEST(closure->getCaptureValue(0).getObjectValue()->getReferenceCount() == 1u);
+    runtime.executeFunction(closure.get(), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 17);
+    closure.reset();
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(host_arguments_remain_borrowed_while_script_parameter_slots_are_reassigned) {
+    Runtime runtime;
+    compileConstruction(runtime,
+        "class Item\nvalue = 7\nend\n"
+        "fun mutate number:int text:string item:Item\n"
+        "number = number + 1\ntext = text.toUpper\nitem = new Item\nreturn text\nend"
+    );
+    const auto* function = runtime.getScriptFunction(runtime.getFunctionId("mutate"));
+    BOOST_TEST(function->getParameterCount() == 3u);
+    BOOST_TEST(function->getVariableCount() == 0u);
+    const auto* type = runtime.getTypeByName("Item")->asObjectType();
+    auto machine = runtime.createVirtualMachine();
+    RuntimeValue item;
+    item.setObjectValue(machine->constructObject(type->getConstructors()[0]->getId(), {}));
+    RuntimeValue text;
+    text.setStringValue("original");
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(function->getId(), {RuntimeValue{NomadInteger{5}}, text, item}, result);
+    BOOST_TEST(NomadString(text.getStringValue()) == "original");
+    BOOST_TEST(text.getObjectValue()->getReferenceCount() == 1u);
+    BOOST_TEST(item.getObjectValue()->getReferenceCount() == 1u);
+    BOOST_TEST(item.asObject<ScriptObject>()->getField(0).getIntegerValue() == 7);
+    BOOST_TEST(NomadString(result.getStringValue()) == "ORIGINAL");
+    result.freeObjectValue();
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    text.freeObjectValue();
+    item.freeObjectValue();
 }
 
 BOOST_AUTO_TEST_CASE(script_construction_returns_the_instance_after_early_return_and_retains_arguments) {
@@ -325,8 +384,8 @@ BOOST_AUTO_TEST_CASE(constructor_arguments_use_the_outer_receiver_before_allocat
     const auto id = compileConstruction(runtime,
         "class Child\ninit value:int\nthis.value = value\nend\nend\n"
         "class Owner\nvalue = 42\n"
-        "child = new Child this.value\n"
         "init\n"
+        "this.child = new Child this.value\n"
         "other = new Child this.child.value\n"
         "this.value = this.value + other.value\n"
         "end\nend\n"

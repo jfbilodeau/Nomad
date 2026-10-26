@@ -230,6 +230,11 @@ void HubInitializerStatement::onCompile(Compiler* compiler, ScriptCallableBase* 
 }
 
 void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase* function) {
+    if (context->getCompiler()->isFieldInitializer(function) &&
+        (m_identifier == "this" || m_identifier.starts_with("this."))) {
+        reportError(context, function, "Field initializers cannot use or capture 'this'");
+        return;
+    }
     if (!m_expression->resolve(context, function)) {
         return;
     }

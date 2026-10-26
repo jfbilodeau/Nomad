@@ -180,6 +180,7 @@ public:
     void popThis();
     void moveThisToResult();
     void copyThisToResult();
+    void copyThisToIntermediate();
     // Adds a reference to the `r` object and pushes it onto the stack.
     void pushObjectResult();
     // Moves the `i` object onto the stack. popObjectIntermediate() moves it back.
@@ -268,7 +269,6 @@ private:
     void invokeNativeMember(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
     void invokeNativeMethod(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
     RuntimeValue m_this; // Borrowed receiver, except between op_object_new and op_move_this_to_r.
-    RuntimeValue m_enclosingThis;
 };
 
 template<typename Object>

@@ -61,6 +61,7 @@ void VirtualMachine::initializeObject(ScriptObject& object) {
         initializer->getFunctionStart() >= initializer->getFunctionEnd()) {
         fault("Class initializer has not been compiled");
     }
+    object.beginInitialization();
     RuntimeValue receiver;
     receiver.setObjectValue(&object);
     const auto savedResult = m_result;
@@ -114,6 +115,7 @@ NomadObject* VirtualMachine::constructObject(
     std::unique_ptr<NomadObject, decltype(release)> object(
         new ScriptObject(constructor->getObjectType()->asObjectType()), release
     );
+    static_cast<ScriptObject*>(object.get())->beginInitialization();
     RuntimeValue receiver;
     receiver.setObjectValue(object.get());
     try {
@@ -142,7 +144,6 @@ void VirtualMachine::runCallable(
     const auto savedVariableIndex = m_variableIndex;
     const auto savedRunning = m_running;
     const auto savedThis = m_this;
-    const auto savedEnclosingThis = m_enclosingThis;
     std::vector<const Type*> argumentTypes;
     const auto releaseArguments = [&]() {
         for (auto index = NomadIndex{0}; index < argumentTypes.size(); ++index) {
@@ -158,7 +159,6 @@ void VirtualMachine::runCallable(
         m_variableIndex = savedVariableIndex;
         m_running = savedRunning;
         m_this = savedThis;
-        m_enclosingThis = savedEnclosingThis;
     };
 
     m_running = true;
@@ -262,7 +262,9 @@ void VirtualMachine::createScriptObject(const TypeId typeId) {
     if (objectType == nullptr) {
         fault("Cannot allocate script object: invalid object type");
     }
-    m_this.setObjectValue(new ScriptObject(objectType));
+    auto* object = new ScriptObject(objectType);
+    object->beginInitialization();
+    m_this.setObjectValue(object);
 }
 
 void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, const RuntimeValue* receiver) {
@@ -329,12 +331,9 @@ void VirtualMachine::callNativeConstructor(const CallableId constructorId) {
 void VirtualMachine::invokeNativeFunction(const NativeFunctionFn& callback) {
     const auto previousParameterIndex = m_parameterIndex;
     const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
-    const auto previousThis = m_this;
-    const auto previousEnclosingThis = m_enclosingThis;
-    m_enclosingThis = m_this;
-    m_this = RuntimeValue{};
-
     m_parameterIndex = m_stackIndex;
+    pushThis();
+    m_this = RuntimeValue{};
 
     // Save the enclosing function's parameter frame for closure capture
     m_enclosingParameterIndex = previousParameterIndex;
@@ -344,15 +343,13 @@ void VirtualMachine::invokeNativeFunction(const NativeFunctionFn& callback) {
     } catch (...) {
         m_parameterIndex = previousParameterIndex;
         m_enclosingParameterIndex = previousEnclosingParameterIndex;
-        m_this = previousThis;
-        m_enclosingThis = previousEnclosingThis;
+        popThis();
         throw;
     }
 
     m_parameterIndex = previousParameterIndex;
     m_enclosingParameterIndex = previousEnclosingParameterIndex;
-    m_this = previousThis;
-    m_enclosingThis = previousEnclosingThis;
+    popThis();
 }
 
 void VirtualMachine::callNativeMethod(const CallableId memberId, const RuntimeValue& receiver) {
@@ -366,11 +363,9 @@ void VirtualMachine::callNativeMethod(const CallableId memberId, const RuntimeVa
 void VirtualMachine::invokeNativeMethod(const NativeFunctionFn& callback, const RuntimeValue& receiver) {
     const auto previousParameterIndex = m_parameterIndex;
     const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
-    const auto previousThis = m_this;
-    const auto previousEnclosingThis = m_enclosingThis;
-    m_enclosingThis = m_this;
-    m_this = receiver;
     m_parameterIndex = m_stackIndex;
+    pushThis();
+    m_this = receiver;
     m_enclosingParameterIndex = previousParameterIndex;
 
     try {
@@ -379,15 +374,13 @@ void VirtualMachine::invokeNativeMethod(const NativeFunctionFn& callback, const 
     } catch (...) {
         m_parameterIndex = previousParameterIndex;
         m_enclosingParameterIndex = previousEnclosingParameterIndex;
-        m_this = previousThis;
-        m_enclosingThis = previousEnclosingThis;
+        popThis();
         throw;
     }
 
     m_parameterIndex = previousParameterIndex;
     m_enclosingParameterIndex = previousEnclosingParameterIndex;
-    m_this = previousThis;
-    m_enclosingThis = previousEnclosingThis;
+    popThis();
 }
 
 NomadObject* VirtualMachine::getThis() const {
@@ -711,10 +704,11 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, c
 
             captureType->copyValue(value, captureValue);
         } else if (captureSource == CaptureSource::Receiver) {
-            if (m_enclosingThis.getObjectValue() == nullptr) {
+            const auto& receiver = m_stack[m_parameterIndex + 1];
+            if (receiver.getObjectValue() == nullptr) {
                 fault("Cannot capture a missing enclosing receiver");
             }
-            captureType->copyValue(m_enclosingThis, captureValue);
+            captureType->copyValue(receiver, captureValue);
         } else {
             fault("Invalid capture type");
         }
@@ -766,6 +760,11 @@ void VirtualMachine::moveThisToResult() {
 void VirtualMachine::copyThisToResult() {
     (void)getThis();
     m_result.copyObjectValue(m_this);
+}
+
+void VirtualMachine::copyThisToIntermediate() {
+    (void)getThis();
+    m_intermediate.copyObjectValue(m_this);
 }
 
 void VirtualMachine::pushResult() {

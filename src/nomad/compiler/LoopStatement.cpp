@@ -82,12 +82,17 @@ protected:
         }
         IdentifierDefinition definition;
         context->getCompiler()->getIdentifierDefinition(m_binding, function, definition);
-        if (definition.identifierType != IdentifierType::FunctionVariable ||
+        if ((definition.identifierType != IdentifierType::FunctionVariable &&
+             definition.identifierType != IdentifierType::Parameter) ||
             (definition.valueType != nullptr && definition.valueType != m_valueType)) {
             reportError(context, function, "For loop variable must be a local or parameter of the element type");
             return;
         }
-        m_valueId = function->registerVariable(m_binding, m_valueType);
+        m_parameterId = definition.identifierType == IdentifierType::Parameter ?
+            definition.parameterId : NOMAD_INVALID_ID;
+        if (m_parameterId == NOMAD_INVALID_ID) {
+            m_valueId = function->registerVariable(m_binding, m_valueType);
+        }
         m_iteratorId = function->registerVariable(m_iterator, m_iteratorType);
         if (m_advance == nullptr) {
             m_advance = member("moveNext", iteratorVariable());
@@ -111,7 +116,12 @@ protected:
         m_advance->compile(compiler, function, ExpressionTarget::Result);
         compiler->addOpCode(OpCodes::op_jump_if_false);
         const auto exit = compiler->addIndex(NOMAD_INVALID_INDEX);
-        store(m_current.get(), m_valueType, m_valueId);
+        if (m_parameterId != NOMAD_INVALID_ID) {
+            m_current->compile(compiler, function, ExpressionTarget::Result);
+            compiler->addStoreParameter(m_parameterId, m_valueType);
+        } else {
+            store(m_current.get(), m_valueType, m_valueId);
+        }
         m_body.compile(compiler, function);
         compiler->addOpCode(OpCodes::op_jump);
         compiler->addIndex(continuation);
@@ -180,6 +190,7 @@ private:
     const Type* m_valueType = nullptr;
     const Type* m_iteratorType = nullptr;
     VariableId m_valueId = VariableId::INVALID;
+    NomadId m_parameterId = NOMAD_INVALID_ID;
     VariableId m_iteratorId = VariableId::INVALID;
 };
 
@@ -324,7 +335,8 @@ std::unique_ptr<Statement> parseForStatement(
     }
     auto* compiler = context->getCompiler();
     const auto identifierType = compiler->getIdentifierType(name, function);
-    if (identifierType != IdentifierType::Unknown && identifierType != IdentifierType::FunctionVariable) {
+    if (identifierType != IdentifierType::Unknown && identifierType != IdentifierType::FunctionVariable &&
+        identifierType != IdentifierType::Parameter) {
         context->reportError("For loop variable must be a local or parameter", tokens);
         return nullptr;
     }

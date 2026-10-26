@@ -8,6 +8,7 @@
 
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -536,15 +537,20 @@ BOOST_AUTO_TEST_CASE(class_fields_are_discovered_across_branches_and_constructor
     }
 }
 
-BOOST_AUTO_TEST_CASE(field_inference_retries_forward_dependencies_until_stable)
+BOOST_AUTO_TEST_CASE(field_inference_resolves_initializer_calls_and_constructor_dependencies)
 {
     LanguageTestFixture fixture;
     fixture.addFunction("main",
         "class Chain\n"
-        "first = this.second\nsecond = this.third\nthird = this.fourth\n"
-        "fourth = this.fifth\nfifth = this.sixth\nsixth = 42\n"
+        "first = secondValue\nsecond = thirdValue\nthird = fourthValue\n"
+        "fourth = fifthValue\nfifth = sixthValue\nsixth = 42\n"
         "init\nthis.seventh = this.first\nend\n"
-        "end"
+        "end\n"
+        "fun secondValue\nreturn thirdValue\nend\n"
+        "fun thirdValue\nreturn fourthValue\nend\n"
+        "fun fourthValue\nreturn fifthValue\nend\n"
+        "fun fifthValue\nreturn sixthValue\nend\n"
+        "fun sixthValue\nreturn 42\nend"
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto* type = fixture.getRuntime().getTypeByName("Chain")->asObjectType();
@@ -577,14 +583,44 @@ BOOST_AUTO_TEST_CASE(class_fields_report_conflicts_unknown_reads_and_method_only
     }
     for (const auto* source : {
         "class Point\nfun read\nreturn this.missing\nend\nend",
-        "open class Point\nfun write\nthis.missing = 1\nend\nend",
-        "class Point\nfirst = this.second\nsecond = this.first\nend"
+        "open class Point\nfun write\nthis.missing = 1\nend\nend"
     }) {
         LanguageTestFixture fixture;
         fixture.addFunction("main", source);
         BOOST_TEST(!fixture.compile());
         BOOST_TEST(fixture.hasError("Unknown class field"));
     }
+}
+
+BOOST_AUTO_TEST_CASE(field_initializers_reject_receiver_reads_captures_and_format_expressions)
+{
+    for (const auto* source : {
+        "class Point\nfirst = 1\nsecond = this.first\nend",
+        "class Point\nvalue = this\nend",
+        "class Point\nvalue = $\"{this}\"\nend",
+        "class Point\nvalue = $\"{this.value + 1}\"\nend",
+        "class Point\nvalue = factory fun item\nreturn this.value\nend\nend",
+        "class Point\nvalue = factory fun item\nthis.value = item\nreturn item\nend\nend"
+    }) {
+        LanguageTestFixture fixture;
+        registerCallbackTestFunctions(fixture.getRuntime());
+        fixture.addFunction("main", source);
+        BOOST_TEST_CONTEXT(source) {
+            BOOST_TEST(!fixture.compile());
+            BOOST_TEST(fixture.hasError("Field initializers cannot use or capture 'this'"));
+        }
+    }
+    LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "const v1 = 23\nclass Point\nv1 = 10\nv2 = v1\nend\nreturn new Point"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    RuntimeValue result;
+    fixture.getRuntime().executeFunction(fixture.getRuntime().getFunctionId("main"), {}, result);
+    auto* object = result.asObject<ScriptObject>();
+    BOOST_TEST(object->getField(0).getIntegerValue() == 10);
+    BOOST_TEST(object->getField(1).getIntegerValue() == 23);
+    result.freeObjectValue();
 }
 
 BOOST_AUTO_TEST_CASE(field_slots_are_owner_local_stable_and_distinct_from_catalog_ids)

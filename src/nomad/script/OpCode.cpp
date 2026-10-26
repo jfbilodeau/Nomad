@@ -11,7 +11,6 @@
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
-#include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <cassert>
@@ -19,23 +18,6 @@
 namespace nomad {
 
 namespace {
-
-ScriptObject* getScriptReceiver(VirtualMachine* machine) {
-    auto* object = dynamic_cast<ScriptObject*>(machine->getThis());
-    if (object == nullptr) {
-        machine->fault("Receiver has no script field storage");
-    }
-    return object;
-}
-
-NomadIndex getReceiverFieldIndex(VirtualMachine* machine, const ScriptObject* object) {
-    const auto id = PropertyId{machine->nextId()};
-    const auto index = object->getObjectType()->getFieldIndex(id);
-    if (index == NOMAD_INVALID_INDEX) {
-        machine->fault("Invalid script field initializer");
-    }
-    return index;
-}
 
 void callNativeIndexer(VirtualMachine* machine, const bool write) {
     const auto indexerId = IndexerId{machine->nextId()};
@@ -195,22 +177,6 @@ void op_object_move_r_to_stack(VirtualMachine* interpreter) {
     interpreter->moveObjectResultToStack();
 }
 
-void op_call_function(VirtualMachine* interpreter) {
-    interpreter->callFunction(interpreter->nextIndex());
-}
-
-void op_call_method(VirtualMachine* interpreter) {
-    interpreter->callMethod(interpreter->nextIndex());
-}
-
-void op_stack_reserve(VirtualMachine* interpreter) {
-    interpreter->reserveLocals(interpreter->nextIndex());
-}
-
-void op_this_load_r(VirtualMachine* interpreter) {
-    interpreter->copyThisToResult();
-}
-
 void op_push_this(VirtualMachine* interpreter) {
     interpreter->pushThis();
 }
@@ -221,6 +187,34 @@ void op_pop_this(VirtualMachine* interpreter) {
 
 void op_move_this_to_r(VirtualMachine* interpreter) {
     interpreter->moveThisToResult();
+}
+
+void op_copy_this_to_r(VirtualMachine* interpreter) {
+    interpreter->copyThisToResult();
+}
+
+void op_copy_this_to_i(VirtualMachine* interpreter) {
+    interpreter->copyThisToIntermediate();
+}
+
+void op_stack_reserve(VirtualMachine* interpreter) {
+    interpreter->reserveLocals(interpreter->nextIndex());
+}
+
+void op_code_load_default_r(VirtualMachine* interpreter) {
+    const auto type = interpreter->getRuntime()->getType(TypeId{interpreter->nextId()});
+    if (!type || (*type)->isVoid()) {
+        interpreter->fault("Invalid type for default value");
+    }
+    (*type)->initValue(interpreter->getResult());
+}
+
+void op_call_function(VirtualMachine* interpreter) {
+    interpreter->callFunction(interpreter->nextIndex());
+}
+
+void op_call_method(VirtualMachine* interpreter) {
+    interpreter->callMethod(interpreter->nextIndex());
 }
 
 void op_call_native_function(VirtualMachine* interpreter) {
@@ -267,6 +261,7 @@ void op_native_method_call(VirtualMachine* interpreter) {
     interpreter->callNativeMethod(memberId, interpreter->getIntermediate());
 }
 
+// Parameter operations
 void op_parameter_load_r(VirtualMachine* interpreter) {
     const auto parameterId = interpreter->nextId();
 
@@ -950,20 +945,6 @@ void op_object_init_r(VirtualMachine* interpreter) {
 
 void op_object_new(VirtualMachine* interpreter) {
     interpreter->createScriptObject(TypeId{interpreter->nextId()});
-}
-
-void op_object_field_init(VirtualMachine* interpreter) {
-    auto* object = getScriptReceiver(interpreter);
-    object->initializeField(getReceiverFieldIndex(interpreter, object), interpreter->getResult());
-}
-
-void op_object_field_default(VirtualMachine* interpreter) {
-    auto* object = getScriptReceiver(interpreter);
-    object->initializeFieldDefault(getReceiverFieldIndex(interpreter, object));
-}
-
-void op_object_fields_ready(VirtualMachine* interpreter) {
-    getScriptReceiver(interpreter)->completeFieldInitialization();
 }
 
 void op_object_init_i(VirtualMachine* interpreter) {

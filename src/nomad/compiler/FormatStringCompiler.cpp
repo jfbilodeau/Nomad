@@ -180,6 +180,10 @@ std::optional<NomadString> compileFormatString(
             }
         } else {
             const auto variableName = segment.text;
+            if (compiler->isFieldInitializer(function) &&
+                (variableName == "this" || variableName.starts_with("this."))) {
+                return "Field initializers cannot use or capture 'this'";
+            }
             IdentifierDefinition identifier{};
 
             if (resolveIdentifier(variableName, compiler, function, identifier) == false) {

@@ -317,11 +317,12 @@ outlive the object. Native properties do not occupy storage slots.
 
 Allocation captures the field layout without running type defaults or field
 initializer expressions. For a compiled script class, call
-`Runtime::initializeObject(object)` once. It establishes all type defaults,
-then evaluates explicit field initializers in source order, with `this` bound
-to the instance. Object-valued initializer expressions run separately for each
-instance. Forward field reads see the type default until that field's
-initializer runs. Fields without explicit initializers retain their defaults.
+`Runtime::initializeObject(object)` once. It evaluates explicit field initializers
+in source order, then initializes the remaining fields with their declared type's
+default value. Explicitly initialized fields do not receive an additional default
+initialization. Field initializer expressions cannot use or capture `this`;
+bare names resolve normally outside the class fields. Object-valued initializer
+expressions run separately for each instance.
 The type stores its fully qualified initializer name, available through
 `ObjectType::getInitializerName()` (for example, `game.Point$init`).
 
@@ -334,20 +335,26 @@ run and initialization cannot be retried; release the failed instance.
 Destruction releases its owned field values.
 
 `VirtualMachine::getThis()` exposes the active script or native member receiver
-as a borrowed pointer. Script member frames retain their instance through their
-owned `this` local. Nested calls restore the previous receiver on return or
-failure. Free script functions and native function/constructor callbacks do not
+as a borrowed pointer. Members use the receiver register, without an implicit
+owning `this` local. Call frames and native callback boundaries save and restore
+the borrowed receiver on the VM stack. Free script functions and native function/constructor callbacks do not
 inherit a caller's receiver; `getThis()` raises an error in those calls.
 Closures and format expressions retain their existing explicit capture of `this`.
 
-When emitting bytecode directly, start every script callable with
-`op_function_enter <CallableId>` to initialize its locals. `op_call_function`
-and `op_call_method` take linked instruction addresses; the latter preserves the
+When emitting bytecode directly, `Compiler::addFunctionEntry()` emits local
+storage reservation and pooled empty-string initialization where needed.
+Parameters are owned argument-stack slots, not additional local-variable copies.
+Reassigning a parameter replaces only that slot; object values retain normal
+reference semantics. Host arguments are borrowed and copied into invocation
+slots, whose final values are released on ordinary completion.
+`op_call_function` and `op_call_method` take linked instruction addresses; the latter preserves the
 current receiver. Both save the return address after the address operand, the
 caller's parameter and local-frame indices, and the borrowed receiver on the VM
 stack before establishing the callee's frame and jumping. Free-function calls
 clear the receiver; method and constructor calls retain the bound receiver.
 All script calls use the same frame header and ordinary return instructions.
+`op_copy_this_to_r` and `op_copy_this_to_i` copy and retain the receiver;
+`op_move_this_to_r` instead transfers its owned reference.
 
 Release owned local values before returning. `op_return` discards no local
 slots; `op_return_1`, `op_return_2`, and `op_return_3` discard their respective
@@ -368,7 +375,9 @@ reference, which the caller must release. Script constructor callables have a
 `void` return type; `Constructor::getConstructedType()` reports the type produced
 by construction, including native factories whose produced type differs from
 their owner. Script construction releases the failed
-instance if field initialization or the constructor body throws. Class
+instance at a host construction boundary if initialization or the body throws.
+Nested script-call fault cleanup is deferred; do not rely on complete release
+of nested frames, temporary arguments, or instances after a fault. Class
 initialization and constructor bodies cannot yield. Compile and initialize
 required script-level hub variables before using this lower-level VM API.
 

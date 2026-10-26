@@ -356,14 +356,19 @@ BOOST_AUTO_TEST_CASE(property_dispatch_rejects_missing_storage_wrong_owners_and_
     runtime.getStringType()->freeValue(result);
 }
 
-BOOST_AUTO_TEST_CASE(generated_initializer_runs_in_source_order_after_all_type_defaults) {
+BOOST_AUTO_TEST_CASE(generated_initializer_runs_explicit_expressions_in_source_order_then_late_defaults) {
     test::LanguageTestFixture fixture;
+    auto calls = 0;
+    BOOST_REQUIRE(fixture.getRuntime().registerNativeFunction(
+        "nextValue", [&](VirtualMachine* machine) { machine->setIntegerResult(++calls); },
+        {}, fixture.getRuntime().getIntegerType(), ""
+    ).isValid());
     fixture.addFunction("main",
         "open class Point\n"
-        "first = this.second\n"
+        "first = nextValue\n"
         "second = 42\n"
-        "third = this.second + 1\n"
-        "description = $\"point {this.third}\"\n"
+        "third = nextValue\n"
+        "description = \"point\"\n"
         "end\n"
         "fun extend point:Point enabled:bool\n"
         "if enabled\npoint.conditional = 7\nend\nend"
@@ -376,12 +381,13 @@ BOOST_AUTO_TEST_CASE(generated_initializer_runs_in_source_order_after_all_type_d
     {
         ScriptObject object(type);
         runtime.initializeObject(object);
-        BOOST_TEST(object.getField(type->getFieldIndex(type->getProperty("first")->getId())).getIntegerValue() == 0);
+        BOOST_TEST(object.getField(type->getFieldIndex(type->getProperty("first")->getId())).getIntegerValue() == 1);
         BOOST_TEST(object.getField(type->getFieldIndex(type->getProperty("second")->getId())).getIntegerValue() == 42);
-        BOOST_TEST(object.getField(type->getFieldIndex(type->getProperty("third")->getId())).getIntegerValue() == 43);
+        BOOST_TEST(object.getField(type->getFieldIndex(type->getProperty("third")->getId())).getIntegerValue() == 2);
         BOOST_TEST(object.getField(type->getFieldIndex(type->getProperty("conditional")->getId())).getIntegerValue() == 0);
         BOOST_TEST(NomadString(object.getField(
-            type->getFieldIndex(type->getProperty("description")->getId())).getStringValue()) == "point 43");
+            type->getFieldIndex(type->getProperty("description")->getId())).getStringValue()) == "point");
+        BOOST_TEST(calls == 2);
         BOOST_TEST(object.getReferenceCount() == 1u);
         BOOST_CHECK_THROW(runtime.initializeObject(object), NomadException);
     }
@@ -417,6 +423,44 @@ BOOST_AUTO_TEST_CASE(generated_initializers_run_per_instance_and_preserve_fresh_
         BOOST_TEST(created == 2u);
     }
     BOOST_TEST(destroyed == 2u);
+}
+
+BOOST_AUTO_TEST_CASE(generated_defaults_honor_type_initialization_only_for_fields_without_initializers) {
+    test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto initialized = NomadIndex{0};
+    auto destroyed = NomadIndex{0};
+    auto explicitCalls = NomadIndex{0};
+    const auto valueId = runtime.createObjectType<InitializingType>(
+        "Counted", ObjectTypeMode::Closed, initialized, destroyed, false
+    );
+    BOOST_REQUIRE(valueId.isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "fresh", [&](VirtualMachine* machine) {
+            ++explicitCalls;
+            machine->getResult().setObjectValue(new CountingObject(destroyed));
+        }, {}, runtime.getType(valueId).value(), ""
+    ).isValid());
+    fixture.addFunction("main",
+        "open class Owner\nvalue = fresh\n"
+        "init enabled:bool\nif enabled\nthis.late = fresh\nend\nend\nend\n"
+        "fun extend owner:Owner enabled:bool\nif enabled\nowner.external = fresh\nend\nend\n"
+        "return new Owner false"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    BOOST_TEST(initialized == 0u);
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(explicitCalls == 1u);
+    BOOST_TEST(initialized == 2u);
+    auto* object = result.asObject<ScriptObject>();
+    BOOST_TEST(object->getFieldCount() == 3u);
+    for (auto index = NomadIndex{0}; index < object->getFieldCount(); ++index) {
+        BOOST_REQUIRE(object->getField(index).getObjectValue() != nullptr);
+        BOOST_TEST(object->getField(index).getObjectValue()->getReferenceCount() == 1u);
+    }
+    result.freeObjectValue();
+    BOOST_TEST(destroyed == 3u);
 }
 
 BOOST_AUTO_TEST_CASE(initializer_failure_preserves_cleanup_and_vm_recovery_without_retry) {
@@ -536,9 +580,12 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
     auto compiler = runtime.createCompiler();
     initializer->setFunctionStart(runtime.getInstructions().size());
     compiler->addFunctionEntry(initializer);
-    compiler->addOpCode(OpCodes::op_object_field_default);
+    compiler->addOpCode(OpCodes::op_code_load_default_r);
+    compiler->addId(runtime.getIntegerType()->getId().id);
+    compiler->addOpCode(OpCodes::op_copy_this_to_i);
+    compiler->addOpCode(OpCodes::op_native_property_set);
     compiler->addId(type->getProperty("visits")->getId().id);
-    compiler->addOpCode(OpCodes::op_object_fields_ready);
+    compiler->addOpCode(OpCodes::op_object_free_i);
     compiler->addOpCode(probe);
     compiler->addOpCode(OpCodes::op_call_function);
     compiler->addIndex(runtime.getScriptFunction(runtime.getFunctionId("helper"))->getFunctionStart());
@@ -588,7 +635,6 @@ BOOST_AUTO_TEST_CASE(script_receiver_restores_after_nested_initialization_and_fa
         auto* initializer = runtime.getScriptCallable(id);
         initializer->setFunctionStart(runtime.getInstructions().size());
         compiler->addFunctionEntry(initializer);
-        compiler->addOpCode(OpCodes::op_object_fields_ready);
         compiler->addOpCode(probe);
         compiler->addFunctionReturn(initializer);
         initializer->setFunctionEnd(runtime.getInstructions().size());

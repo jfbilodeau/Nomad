@@ -1158,22 +1158,21 @@ void Compiler::compileFunction(const FunctionCompilation& source) {
     function->setFunctionStart(m_instructions.size());
     addFunctionEntry(function);
     const auto* owner = function->getObjectType() != nullptr ? function->getObjectType()->asObjectType() : nullptr;
+    source.ast->compile(this, function);
     if (owner != nullptr && function->getName() == owner->getInitializerName()) {
         for (const auto* property : owner->getProperties()) {
-            if (property->asNativeProperty() != nullptr) {
+            if (property->asNativeProperty() != nullptr || m_emittedFieldInitializers.contains(property->getId())) {
                 continue;
             }
-            if (property->getValueType()->isString()) {
-                addLoadStringValue("", ExpressionTarget::Result);
-                addOpCode(OpCodes::op_object_field_init);
-            } else {
-                addOpCode(OpCodes::op_object_field_default);
-            }
+            addOpCode(OpCodes::op_code_load_default_r);
+            addId(property->getValueType()->getId().id);
+            addLoadReceiver(function, ExpressionTarget::Intermediate);
+            addOpCode(OpCodes::op_native_property_set);
             addId(property->getId().id);
+            addFreeValue(property->getValueType()->getTypeOpCodes()->freeResult);
+            addFreeValue(owner->getTypeOpCodes()->freeIntermediate);
         }
-        addOpCode(OpCodes::op_object_fields_ready);
     }
-    source.ast->compile(this, function);
     // Safety net for the inferred string return type; valid value-returning bodies cannot fall through.
     if (const auto* returnType = function->getReturnType(); returnType != nullptr && returnType->isString()) {
         addLoadStringValue("", ExpressionTarget::Result);
@@ -1228,8 +1227,12 @@ void Compiler::addStoreParameter(const NomadId parameterId, const Type* type) {
 
 void Compiler::addLoadReceiver(ScriptCallableBase* function, const ExpressionTarget target) {
     if (function->getObjectType() != nullptr) {
-        addOpCode(OpCodes::op_this_load_r);
-        addMoveResult(function->getObjectType(), target);
+        if (target == ExpressionTarget::Intermediate) {
+            addOpCode(OpCodes::op_copy_this_to_i);
+        } else {
+            addOpCode(OpCodes::op_copy_this_to_r);
+            addMoveResult(function->getObjectType(), target);
+        }
     } else {
         const auto parameterId = function->getParameterId("this");
         if (parameterId == NOMAD_INVALID_ID) {
@@ -1347,6 +1350,21 @@ const Type* Compiler::getReceiverType(const ScriptCallableBase* function) const 
         function = m_runtime->getScriptCallable(function->getParentId());
     }
     return nullptr;
+}
+
+bool Compiler::isFieldInitializer(const ScriptCallableBase* function) const {
+    while (function != nullptr) {
+        const auto* owner = function->getObjectType() != nullptr ? function->getObjectType()->asObjectType() : nullptr;
+        if (owner != nullptr && function->getName() == owner->getInitializerName()) {
+            return true;
+        }
+        function = m_runtime->getScriptCallable(function->getParentId());
+    }
+    return false;
+}
+
+void Compiler::recordFieldInitializer(const PropertyId id) {
+    m_emittedFieldInitializers.insert(id);
 }
 
 const ScriptSource& Compiler::getScript(const NomadId scriptId) const {

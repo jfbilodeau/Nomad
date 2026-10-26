@@ -1386,6 +1386,11 @@ bool FormatStringLiteral::parsePlaceholders(
             m_variableFormat += segment.text;
             continue;
         }
+        if (context->getCompiler()->isFieldInitializer(function) &&
+            (segment.text == "this" || segment.text.starts_with("this."))) {
+            reportError(context, function, "Field initializers cannot use or capture 'this'");
+            return false;
+        }
 
         auto identifier = !segment.text.empty();
         auto needsFirstCharacter = true;
@@ -1555,6 +1560,11 @@ const NomadString& IdentifierExpression::getIdentifier() const {
 }
 
 void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBase* function) {
+    if (context->getCompiler()->isFieldInitializer(function) &&
+        (m_identifier == "this" || m_identifier.starts_with("this."))) {
+        reportError(context, function, "Field initializers cannot use or capture 'this'");
+        return;
+    }
     if (context->getCompiler()->getReceiverType(function) != nullptr && m_identifier.starts_with("this.")) {
         const auto* owner = context->getCompiler()->getReceiverType(function)->asObjectType();
         const auto* property = owner->getProperty(m_identifier.substr(5));

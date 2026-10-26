@@ -47,8 +47,10 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_push_this, op_push_this, "Save the borrowed receiver on the stack", {});
     registerInstruction(OpCodes::op_pop_this, op_pop_this, "Restore the receiver from the stack", {});
     registerInstruction(OpCodes::op_move_this_to_r, op_move_this_to_r, "Transfer the constructed instance into result and clear this", {});
-    registerInstruction(OpCodes::op_this_load_r, op_this_load_r, "Copy the receiver into result, retaining its reference", {});
+    registerInstruction(OpCodes::op_copy_this_to_r, op_copy_this_to_r, "Copy the receiver into result, retaining its reference", {});
+    registerInstruction(OpCodes::op_copy_this_to_i, op_copy_this_to_i, "Copy the receiver into intermediate, retaining its reference", {});
     registerInstruction(OpCodes::op_stack_reserve, op_stack_reserve, "Reserve zeroed raw local storage", {Operand::Index});
+    registerInstruction(OpCodes::op_code_load_default_r, op_code_load_default_r, "Load an owned type default into result", {Operand::Id});
 
     // Function and nativeFunction calls
     registerInstruction(
@@ -63,6 +65,7 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_native_index_get, op_native_index_get, "Read an indexer", {Operand::Id});
     registerInstruction(OpCodes::op_native_index_set, op_native_index_set, "Write an indexer", {Operand::Id});
     registerInstruction(OpCodes::op_native_method_call, op_native_method_call, "Call an native method with a saved stack receiver", {Operand::Id, Operand::Index});
+    // Parameter operations
     registerInstruction(OpCodes::op_parameter_load_r, op_parameter_load_r, "Load the `n`th parameter into result", {Operand::Id});
     registerInstruction(OpCodes::op_parameter_load_i, op_parameter_load_i, "Load the `n`th parameter into intermediate", {Operand::Id});
     registerInstruction(OpCodes::op_parameter_push, op_parameter_push, "Push the `n`th parameter onto the stack", {Operand::Id});
@@ -269,9 +272,6 @@ void Runtime::registerDefaultInstructions() {
 
     registerInstruction(OpCodes::op_object_init_r, op_object_init_r, "Clear the object result register", {});
     registerInstruction(OpCodes::op_object_new, op_object_new, "Allocate script instance storage and bind this", {Operand::Id});
-    registerInstruction(OpCodes::op_object_field_init, op_object_field_init, "Initialize one fresh field by transferring result", {Operand::Id});
-    registerInstruction(OpCodes::op_object_field_default, op_object_field_default, "Initialize one fresh field with its type default", {Operand::Id});
-    registerInstruction(OpCodes::op_object_fields_ready, op_object_fields_ready, "Complete the field-default phase before ordinary property access", {});
     registerInstruction(OpCodes::op_object_init_i, op_object_init_i, "Clear the object intermediate register", {});
 
     // String operators

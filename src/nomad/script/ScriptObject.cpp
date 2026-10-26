@@ -19,11 +19,12 @@ ScriptObject::ScriptObject(const ObjectType* objectType):
         }
     }
     m_values.resize(m_fieldTypes.size());
+    m_initializedFields.resize(m_fieldTypes.size());
 }
 
 ScriptObject::~ScriptObject() {
-    for (auto index = NomadIndex{0}; index < m_initializedFieldCount; ++index) {
-        if (m_fieldTypes[index]->needsFree()) {
+    for (auto index = NomadIndex{0}; index < m_values.size(); ++index) {
+        if (m_initializedFields[index] && m_fieldTypes[index]->needsFree()) {
             m_fieldTypes[index]->freeValue(m_values[index]);
         }
     }
@@ -37,15 +38,25 @@ NomadIndex ScriptObject::getFieldCount() const {
     return m_values.size();
 }
 
-void ScriptObject::initializeFields() {
+void ScriptObject::beginInitialization() {
     if (m_initializationState != InitializationState::Allocated) {
         throw NomadException("Script object fields can only be initialized once");
     }
-    m_initializationState = InitializationState::Initializing;
-    for (auto index = NomadIndex{0}; index < m_values.size(); ++index) {
-        // Include the current slot in cleanup if its initializer stores a value before throwing.
-        ++m_initializedFieldCount;
-        m_fieldTypes[index]->initValue(m_values[index]);
+    m_initializationState = m_values.empty() ? InitializationState::Initialized : InitializationState::Initializing;
+}
+
+void ScriptObject::initializeFields() {
+    beginInitialization();
+    try {
+        for (auto index = NomadIndex{0}; index < m_values.size(); ++index) {
+            // Include the current slot in cleanup if its initializer stores a value before throwing.
+            ++m_initializedFieldCount;
+            m_initializedFields[index] = true;
+            m_fieldTypes[index]->initValue(m_values[index]);
+        }
+    } catch (...) {
+        m_initializationState = InitializationState::Failed;
+        throw;
     }
     m_initializationState = InitializationState::Initialized;
 }
@@ -55,37 +66,22 @@ const RuntimeValue& ScriptObject::getField(const NomadIndex index) const {
     return m_values[index];
 }
 
-void ScriptObject::prepareFieldInitialization(const NomadIndex index) {
-    if (m_initializationState == InitializationState::Initialized ||
-        index != m_initializedFieldCount || index >= m_values.size()) {
-        throw NomadException("Script object fields must be initialized once in slot order");
-    }
-    m_initializationState = InitializationState::Initializing;
-    ++m_initializedFieldCount;
-}
-
-void ScriptObject::initializeField(const NomadIndex index, RuntimeValue& value) {
-    prepareFieldInitialization(index);
-    m_values[index] = value;
-    value = RuntimeValue{};
-}
-
-void ScriptObject::initializeFieldDefault(const NomadIndex index) {
-    prepareFieldInitialization(index);
-    m_fieldTypes[index]->initValue(m_values[index]);
-}
-
-void ScriptObject::completeFieldInitialization() {
-    if (m_initializationState == InitializationState::Initialized ||
-        m_initializedFieldCount != m_values.size()) {
-        throw NomadException("Script object defaults must be initialized once before field access");
-    }
-    m_initializationState = InitializationState::Initialized;
-}
-
 void ScriptObject::setField(const NomadIndex index, const RuntimeValue& value) {
-    validateFieldAccess(index);
+    if (m_initializationState == InitializationState::Allocated ||
+        m_initializationState == InitializationState::Failed) {
+        throw NomadException("Script object fields are not initialized");
+    }
+    if (index >= m_values.size()) {
+        throw NomadException("Script object field index is out of bounds");
+    }
     m_fieldTypes[index]->assignValue(value, m_values[index]);
+    if (!m_initializedFields[index]) {
+        m_initializedFields[index] = true;
+        ++m_initializedFieldCount;
+        if (m_initializedFieldCount == m_values.size()) {
+            m_initializationState = InitializationState::Initialized;
+        }
+    }
 }
 
 void ScriptObject::validateFieldAccess(const NomadIndex index) const {
