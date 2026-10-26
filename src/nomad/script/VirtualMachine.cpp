@@ -45,40 +45,6 @@ void VirtualMachine::run(const ScriptFunction* function, const std::vector<Runti
     runCallable(function, args, closures, nullptr);
 }
 
-void VirtualMachine::initializeObject(ScriptObject& object) {
-    const auto* type = object.getObjectType();
-    if (type->getRuntime() != m_runtime) {
-        fault("Cannot initialize an object from another runtime");
-    }
-    const ScriptCallableBase* initializer = nullptr;
-    for (const auto* method : type->getMethods()) {
-        if (method->getName() == type->getInitializerName()) {
-            initializer = method->asScriptCallable();
-            break;
-        }
-    }
-    if (initializer == nullptr || initializer->getFunctionStart() == NOMAD_INVALID_INDEX ||
-        initializer->getFunctionStart() >= initializer->getFunctionEnd()) {
-        fault("Class initializer has not been compiled");
-    }
-    object.beginInitialization();
-    RuntimeValue receiver;
-    receiver.setObjectValue(&object);
-    const auto savedResult = m_result;
-    const auto savedIntermediate = m_intermediate;
-    m_result = RuntimeValue{};
-    m_intermediate = RuntimeValue{};
-    try {
-        runCallable(initializer, {}, {}, &receiver);
-    } catch (...) {
-        m_result = savedResult;
-        m_intermediate = savedIntermediate;
-        throw;
-    }
-    m_result = savedResult;
-    m_intermediate = savedIntermediate;
-}
-
 NomadObject* VirtualMachine::constructObject(
     const CallableId constructorId,
     const std::vector<RuntimeValue>& arguments
@@ -115,7 +81,6 @@ NomadObject* VirtualMachine::constructObject(
     std::unique_ptr<NomadObject, decltype(release)> object(
         new ScriptObject(constructor->getObjectType()->asObjectType()), release
     );
-    static_cast<ScriptObject*>(object.get())->beginInitialization();
     RuntimeValue receiver;
     receiver.setObjectValue(object.get());
     try {
@@ -263,7 +228,6 @@ void VirtualMachine::createScriptObject(const TypeId typeId) {
         fault("Cannot allocate script object: invalid object type");
     }
     auto* object = new ScriptObject(objectType);
-    object->beginInitialization();
     m_this.setObjectValue(object);
 }
 

@@ -303,6 +303,8 @@ public:
     [[nodiscard]] const Property* getProperty(PropertyId id) const;
     [[nodiscard]] std::vector<const Property*> getProperties() const;
     [[nodiscard]] NomadIndex getFieldIndex(PropertyId id) const;
+    void setFieldInitializers(std::vector<PropertyId> fields);
+    [[nodiscard]] const std::vector<PropertyId>& getFieldInitializers() const;
     [[nodiscard]] virtual NomadIndex getPropertyCount() const;
     [[nodiscard]] IndexerId registerNativeIndexer(
         Runtime& runtime,
@@ -323,6 +325,7 @@ private:
     ObjectTypeMode m_mode;
     std::vector<const Type*> m_typeArguments;
     std::vector<std::unique_ptr<Property>> m_properties;
+    std::vector<PropertyId> m_fieldInitializers;
     std::vector<std::unique_ptr<Constructor>> m_constructors;
     std::vector<std::unique_ptr<Method>> m_methods;
     std::vector<std::unique_ptr<NativeIndexerInfo>> m_nativeIndexers;

@@ -20,27 +20,15 @@ public:
     [[nodiscard]] const ObjectType* getObjectType() const;
     [[nodiscard]] NomadIndex getFieldCount() const;
 
-    void initializeFields();
-    void beginInitialization();
     [[nodiscard]] const RuntimeValue& getField(NomadIndex index) const;
     void setField(NomadIndex index, const RuntimeValue& value);
 
 private:
-    enum class InitializationState {
-        Allocated = 1,
-        Initializing,
-        Initialized,
-        Failed
-    };
-
     void validateFieldAccess(NomadIndex index) const;
 
     const ObjectType* m_objectType;
     std::vector<const Type*> m_fieldTypes;
     std::vector<RuntimeValue> m_values;
-    std::vector<bool> m_initializedFields;
-    NomadIndex m_initializedFieldCount = 0;
-    InitializationState m_initializationState = InitializationState::Allocated;
 };
 
 } // namespace nomad

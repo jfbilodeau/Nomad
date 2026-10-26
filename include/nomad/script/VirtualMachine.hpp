@@ -23,7 +23,6 @@ class VirtualMachine;
 class Runtime;
 class ScriptFunction;
 class ScriptCallableBase;
-class ScriptObject;
 class Closure;
 class TypedValue;
 
@@ -44,7 +43,6 @@ public:
     [[nodiscard]] const RuntimeValue& getFunctionVariableValue(VariableId variableId) const;
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
-    void initializeObject(ScriptObject& object);
     [[nodiscard]] NomadObject* constructObject(
         CallableId constructorId,
         const std::vector<RuntimeValue>& arguments

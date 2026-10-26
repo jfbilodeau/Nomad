@@ -553,6 +553,19 @@ NomadIndex ObjectType::getFieldIndex(const PropertyId id) const {
     return NOMAD_INVALID_INDEX;
 }
 
+void ObjectType::setFieldInitializers(std::vector<PropertyId> fields) {
+    for (const auto id : fields) {
+        if (getFieldIndex(id) == NOMAD_INVALID_INDEX) {
+            throw NomadBug("Field initializer requires a stored property of its class");
+        }
+    }
+    m_fieldInitializers = std::move(fields);
+}
+
+const std::vector<PropertyId>& ObjectType::getFieldInitializers() const {
+    return m_fieldInitializers;
+}
+
 IndexerId ObjectType::registerNativeIndexer(
     Runtime& runtime,
     NativeIndexerInfo info

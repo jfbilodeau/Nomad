@@ -23,7 +23,6 @@ void ClassFieldInitializerStatement::onCompile(Compiler* compiler, ScriptCallabl
     compiler->addId(m_member->getPropertyId().id);
     compiler->addFreeValue(initializer->getType()->getTypeOpCodes()->freeResult);
     compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
-    compiler->recordFieldInitializer(m_member->getPropertyId());
 }
 
 } // namespace nomad

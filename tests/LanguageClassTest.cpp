@@ -555,6 +555,11 @@ BOOST_AUTO_TEST_CASE(field_inference_resolves_initializer_calls_and_constructor_
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto* type = fixture.getRuntime().getTypeByName("Chain")->asObjectType();
     BOOST_REQUIRE(type->getProperties().size() == 7u);
+    BOOST_REQUIRE(type->getFieldInitializers().size() == 6u);
+    auto initializerIndex = NomadIndex{0};
+    for (const auto* name : {"first", "second", "third", "fourth", "fifth", "sixth"}) {
+        BOOST_TEST(type->getFieldInitializers()[initializerIndex++] == type->getProperty(name)->getId());
+    }
     for (const auto* property : type->getProperties()) {
         BOOST_TEST(property->getValueType() == fixture.getRuntime().getIntegerType());
     }

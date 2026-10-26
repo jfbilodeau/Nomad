@@ -194,11 +194,14 @@ public:
     );
     [[nodiscard]] NomadId getScriptId(CallableId functionId) const;
     [[nodiscard]] const ScriptSource& getScript(NomadId scriptId) const;
-    void setFunctionNode(CallableId functionId, std::unique_ptr<FunctionNode> ast);
+    void setFunctionNode(
+        CallableId functionId,
+        std::unique_ptr<FunctionNode> ast,
+        bool objectInitializer = false
+    );
     void registerMemberCompilation(CallableId memberId, CallableId sourceFunctionId);
     [[nodiscard]] const Type* getReceiverType(const ScriptCallableBase* function) const;
     [[nodiscard]] bool isFieldInitializer(const ScriptCallableBase* function) const;
-    void recordFieldInitializer(PropertyId id);
     void registerScriptInitializer(
         CompilerContext* context,
         NomadId scriptId,
@@ -239,6 +242,7 @@ private:
         std::unique_ptr<FunctionNode> ast;
         ScriptCallableBase* function;
         bool hubInitializer = false;
+        bool objectInitializer = false;
     };
 
     struct ScriptCompilation {
@@ -269,6 +273,7 @@ private:
     void reportFieldDiagnostics(CompilerContext* context) const;
     [[nodiscard]] std::vector<const Type*> collectInferredTypes() const;
     void compileFunction(const FunctionCompilation& function);
+    void compileObjectInitializer(const FunctionCompilation& initializer);
     void compileConstructor(const FunctionCompilation& constructor);
 
     Runtime* m_runtime;
@@ -297,7 +302,6 @@ private:
     std::vector<ScriptCompilation> m_scripts;
     std::vector<FunctionCompilation> m_functions;
     std::vector<PendingFormatString> m_pendingFormatStrings;
-    std::unordered_set<PropertyId, IdHash> m_emittedFieldInitializers;
     struct ExternalFieldDeclaration {
         PropertyId id;
         NomadString sourceName;

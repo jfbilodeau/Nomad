@@ -307,8 +307,8 @@ cannot use or capture `this`, including in callbacks or format expressions.
 Bare names in initializers resolve normally outside the class fields, not to
 other fields. Object-valued initializer expressions are evaluated separately for
 each instance. Explicitly initialized fields do not receive a separate default
-initialization. Initialization runs once per instance;
-failure stops subsequent initializers and cannot be retried on that instance.
+initialization. Each construction runs field initialization once;
+failure stops subsequent initializers and the constructor body.
 `new ClassName arguments` selects a constructor overload, allocates an instance,
 initializes its fields, then runs the selected constructor body. If no `init`
 is declared, the class has an implicit parameterless constructor. Declaring any

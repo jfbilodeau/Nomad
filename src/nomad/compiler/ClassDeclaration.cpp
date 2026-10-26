@@ -370,7 +370,7 @@ bool parseMemberBodies(
             context->getCompiler()->setFunctionNode(id, std::move(body));
         }
     }
-    context->getCompiler()->setFunctionNode(initializerId, std::move(initializerBody));
+    context->getCompiler()->setFunctionNode(initializerId, std::move(initializerBody), true);
     return true;
 }
 
@@ -400,20 +400,28 @@ NomadBoolean ClassDeclaration::isDeclaration() const {
 }
 
 void ClassDeclaration::onResolve(CompilerContext* context, ScriptCallableBase* function) {
+    std::vector<PropertyId> fieldInitializers;
     for (const auto& member : m_members) {
         if (auto* initializer = member->getInitializer()) {
             auto* callable = context->getRuntime()->getScriptCallable(member->getCallableId());
             if (initializer->resolve(context, callable)) {
                 const auto* property = context->getCompiler()->resolveClassField(
-                    context, callable, member->getName(), initializer->getType(), true,
-                    member->getLine(), member->getColumn()
+                    context, 
+                    callable, 
+                    member->getName(), 
+                    initializer->getType(), 
+                    true,
+                    member->getLine(), 
+                    member->getColumn()
                 );
                 if (property != nullptr) {
                     member->setPropertyId(property->getId());
+                    fieldInitializers.push_back(property->getId());
                 }
             }
         }
     }
+    context->getRuntime()->setFieldInitializers(m_type, std::move(fieldInitializers));
     const auto unsupported = std::ranges::find_if(m_members, [](const auto& member) {
         return member->getKind() == ClassMemberKind::Method;
     });

@@ -1810,6 +1810,17 @@ PropertyId Runtime::registerProperty(
     return owner->registerProperty(*this, std::make_unique<Property>(objectType, name, valueType));
 }
 
+void Runtime::setFieldInitializers(
+    const ObjectType* objectType,
+    std::vector<PropertyId> fields
+) {
+    auto* owner = getMutableObjectType(objectType);
+    if (owner == nullptr) {
+        throw NomadBug("Field initializer requires a class from this runtime");
+    }
+    owner->setFieldInitializers(std::move(fields));
+}
+
 PropertyId Runtime::catalogProperty(Property* property) {
     if (property == nullptr || property->getId().isValid() || !ownsType(property->getObjectType()) ||
         property->getObjectType()->getProperty(property->getName()) != property ||
@@ -3096,14 +3107,6 @@ std::unique_ptr<VirtualMachine> Runtime::createVirtualMachine() {
 
 void Runtime::executeFunction(const CallableId functionId) {
     executeFunction(functionId, {});
-}
-
-void Runtime::initializeObject(ScriptObject& object) {
-    validateScriptExecution();
-    if (m_virtualMachine == nullptr) {
-        m_virtualMachine = std::make_unique<VirtualMachine>(this);
-    }
-    m_virtualMachine->initializeObject(object);
 }
 
 const ScriptFunction* Runtime::runClosure(const Closure* closure, const std::vector<RuntimeValue>& args) {

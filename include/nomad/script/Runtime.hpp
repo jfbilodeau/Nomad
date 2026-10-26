@@ -35,7 +35,6 @@
 
 namespace nomad {
 
-class ScriptObject;
 
 // Forward declarations
 class Compiler;
@@ -167,7 +166,6 @@ public:
     [[nodiscard]] bool isHubVariable(const NomadString& name) const;
     void setScriptInitializer(CallableId functionId);
     void initializeScripts();
-    void initializeObject(ScriptObject& object);
 
     // Types
     using ParameterizedTypeFactory =
@@ -290,6 +288,7 @@ public:
         NomadString source
     );
     PropertyId registerProperty(const ObjectType* objectType, const NomadString& name, const Type* valueType);
+    void setFieldInitializers(const ObjectType* objectType, std::vector<PropertyId> fields);
     [[nodiscard]] PropertyId catalogProperty(Property* property);
     [[nodiscard]] const Property* getProperty(PropertyId id) const;
     [[nodiscard]] const NativeProperty* getNativeProperty(PropertyId id) const;

@@ -315,11 +315,13 @@ instance storage for stored properties. Construct it with a `const ObjectType*`
 whose field layout has been resolved. The runtime and its type descriptors must
 outlive the object. Native properties do not occupy storage slots.
 
-Allocation captures the field layout without running type defaults or field
-initializer expressions. For a compiled script class, call
-`Runtime::initializeObject(object)` once. It evaluates explicit field initializers
-in source order, then initializes the remaining fields with their declared type's
-default value. Explicitly initialized fields do not receive an additional default
+Direct allocation captures the field layout and zeroes storage without running
+type defaults or field initializer expressions. To create a ready-to-use script
+instance from the host, use `VirtualMachine::constructObject()` with a compiled
+constructor. Every generated constructor calls the class's `$init` before its
+source body. `$init` evaluates explicit field initializers in source order, then
+initializes the remaining fields with their declared type's default value.
+Explicitly initialized fields do not receive an additional default
 initialization. Field initializer expressions cannot use or capture `this`;
 bare names resolve normally outside the class fields. Object-valued initializer
 expressions run separately for each instance.
@@ -328,11 +330,11 @@ The type stores its fully qualified initializer name, available through
 
 Compile the class and complete field discovery before allocating the object.
 Initialize script-level hub variables with `initializeScripts()` first when
-required. Initialization rejects foreign-runtime objects, uncompiled class
-initializers, and already initialized instances. It does not run source `init`
-constructor bodies. If a field initializer fails, later initializers do not
-run and initialization cannot be retried; release the failed instance.
-Destruction releases its owned field values.
+required. Host construction rejects invalid constructor IDs, argument counts,
+and uncompiled constructors. If a field initializer fails, later initializers
+and the source constructor body do not run, and no instance is returned.
+Destruction releases owned field values, including values stored in a partially
+populated object.
 
 `VirtualMachine::getThis()` exposes the active script or native member receiver
 as a borrowed pointer. Members use the receiver register, without an implicit
@@ -381,17 +383,17 @@ of nested frames, temporary arguments, or instances after a fault. Class
 initialization and constructor bodies cannot yield. Compile and initialize
 required script-level hub variables before using this lower-level VM API.
 
-`ScriptObject::initializeFields()` is the lower-level, defaults-only operation
-for host-defined layouts. Do not call it before `Runtime::initializeObject()`:
-the latter owns the complete class field initialization sequence.
+Native constructors that allocate `ScriptObject` storage must explicitly supply
+any required field values. Direct allocation does not run a defaults-only pass.
 
 `getObjectType()` and `getFieldCount()` describe the instance. `getField(index)`
 returns a borrowed const value; `setField(index, value)` copies a value of the
 field's declared type, retaining object references and releasing the previous
 value. Callers must supply the correct value type. Both use owner-local
-`NomadIndex` slots, not `PropertyId` values. Access before successful
-initialization, out-of-range slots, and repeated initialization throw
-`NomadException`.
+`NomadIndex` slots, not `PropertyId` values. Out-of-range slots throw
+`NomadException`. Raw storage is accessible immediately; the compiler ensures
+that script construction populates every field before the source constructor
+body runs. A raw null string slot is not an initialized empty string.
 
 Each instance owns its values; aliases to the same object share those values.
 Instances never resize when type metadata changes. Finish field discovery
@@ -401,7 +403,7 @@ Reference cycles are not collected.
 `VirtualMachine::getProperty(id, receiver, result)` and
 `setProperty(id, receiver, value)` dispatch native properties to their registered
 callbacks and stored properties to instance storage. A stored-property receiver
-must be an initialized `ScriptObject` of the property's owning type. Null
+must be a `ScriptObject` of the property's owning type. Null
 receivers, missing storage, mismatched owners, and invalid property IDs raise
 errors. Getters copy an owned result; callers must release object-valued results
 using the property's value type. Setters retain their own copy without consuming
