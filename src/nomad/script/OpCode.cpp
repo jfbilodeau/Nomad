@@ -76,10 +76,22 @@ void op_return(VirtualMachine* interpreter) {
     interpreter->returnFunction(0);
 }
 
-void op_return_n(VirtualMachine* interpreter) {
-    const auto variable_count = interpreter->nextIndex();
+void op_return_1(VirtualMachine* interpreter) {
+    interpreter->returnFunction(1);
+}
 
-    interpreter->returnFunction(variable_count);
+void op_return_2(VirtualMachine* interpreter) {
+    interpreter->returnFunction(2);
+}
+
+void op_return_3(VirtualMachine* interpreter) {
+    interpreter->returnFunction(3);
+}
+
+void op_return_n(VirtualMachine* interpreter) {
+    const auto variableCount = interpreter->nextIndex();
+
+    interpreter->returnFunction(variableCount);
 }
 
 void op_jump(VirtualMachine* interpreter) {

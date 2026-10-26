@@ -1199,8 +1199,20 @@ void Compiler::addFunctionReturn(const ScriptCallableBase* function) {
         addFreeValue(function->getVariableType(VariableId{toNomadId(i)})->getTypeOpCodes()->freeFunctionVariable, i);
     }
 
-    addOpCode(OpCodes::op_return_n);
-    addIndex(variableCount);
+    switch (variableCount) {
+    case 1:
+        addOpCode(OpCodes::op_return_1);
+        break;
+    case 2:
+        addOpCode(OpCodes::op_return_2);
+        break;
+    case 3:
+        addOpCode(OpCodes::op_return_3);
+        break;
+    default:
+        addOpCode(OpCodes::op_return_n);
+        addIndex(variableCount);
+    }
 }
 
 void Compiler::registerScript(CompilerContext* context, const ScriptSource& script) {

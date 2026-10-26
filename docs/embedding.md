@@ -343,7 +343,19 @@ Closures and format expressions retain their existing explicit capture of `this`
 When emitting bytecode directly, start every script callable with
 `op_function_enter <CallableId>` to initialize its locals. `op_call_function`
 and `op_call_method` take linked instruction addresses; the latter preserves the
-current receiver. Both use ordinary return instructions and local cleanup.
+current receiver. Both save the return address after the address operand, the
+caller's parameter and local-frame indices, and the borrowed receiver on the VM
+stack before establishing the callee's frame and jumping. Free-function calls
+clear the receiver; method and constructor calls retain the bound receiver.
+All script calls use the same frame header and ordinary return instructions.
+
+Release owned local values before returning. `op_return` discards no local
+slots; `op_return_1`, `op_return_2`, and `op_return_3` discard their respective
+local-slot counts without an operand. `op_return_n <count>` handles larger
+counts. These instructions discard storage, not owned values, then restore the
+saved receiver, frame indices, and return address. Argument slots remain for
+the caller to clean up after the call.
+
 Script construction saves `this`, evaluates arguments with the caller's receiver,
 allocates storage with `op_object_new <TypeId>`, and calls the constructor with
 `op_call_method`. After argument cleanup, `op_move_this_to_r` transfers the new

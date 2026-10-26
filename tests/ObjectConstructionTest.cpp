@@ -64,9 +64,9 @@ BOOST_AUTO_TEST_CASE(script_construction_bytecode_uses_linked_calls_and_ordinary
     BOOST_TEST(initializer->getName() == type->getInitializerName());
     BOOST_TEST(initializer->getObjectType() == type);
     BOOST_TEST(instructions[start + 3].value.getIndexValue() == initializer->getFunctionStart());
-    BOOST_TEST(instructions[constructor->getFunctionEnd() - 2].fn ==
-        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_return_n)));
-    BOOST_TEST(instructions[constructor->getFunctionEnd() - 1].value.getIndexValue() == constructor->getVariableCount());
+    BOOST_TEST(constructor->getVariableCount() == 2u);
+    BOOST_TEST(instructions[constructor->getFunctionEnd() - 1].fn ==
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_return_2)));
     const auto* main = runtime.getScriptFunction(id);
     auto foundConstructorCall = false;
     const auto newInstruction = runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_object_new));
@@ -93,6 +93,85 @@ BOOST_AUTO_TEST_CASE(script_construction_bytecode_uses_linked_calls_and_ordinary
     BOOST_TEST(object->getField(0).getIntegerValue() == 42);
     BOOST_TEST(object->getReferenceCount() == 1u);
     result.freeObjectValue();
+}
+
+BOOST_AUTO_TEST_CASE(script_returns_select_compact_opcodes_and_release_owned_locals_once) {
+    const auto returnNames = std::vector<NomadString>{
+        OpCodes::op_return, OpCodes::op_return_1, OpCodes::op_return_2,
+        OpCodes::op_return_3, OpCodes::op_return_n
+    };
+    for (auto localCount = NomadIndex{0}; localCount < returnNames.size(); ++localCount) {
+        BOOST_TEST_CONTEXT("Local count: " << localCount) {
+            Runtime runtime;
+            const auto* type = registerObjectType(runtime, "LocalObject");
+            RuntimeValue owner;
+            owner.setObjectValue(new ConstructedObject());
+            BOOST_REQUIRE(runtime.registerNativeFunction(
+                "makeLocal", [&owner](VirtualMachine* machine) {
+                    owner.getObjectValue()->addRef();
+                    machine->setResult(owner);
+                }, {}, type, ""
+            ).isValid());
+            auto source = NomadString{"fun target\n"};
+            for (auto index = NomadIndex{0}; index < localCount; ++index) {
+                source += "local" + std::to_string(index) + " = makeLocal\n";
+            }
+            source += "return 23\nend\nreturn target";
+            const auto id = compileConstruction(runtime, source);
+            const auto* target = runtime.getScriptFunction(runtime.getFunctionId("target"));
+            BOOST_REQUIRE(target != nullptr);
+            BOOST_TEST(target->getVariableCount() == localCount);
+            const auto instructionId = runtime.getInstructionId(returnNames[localCount]);
+            const auto returnIndex = target->getFunctionEnd() - (localCount < 4 ? 1 : 2);
+            BOOST_TEST(runtime.getInstructions()[returnIndex].fn == runtime.getInstructionFn(instructionId));
+            BOOST_TEST(runtime.getInstructionOperands(instructionId).size() == (localCount < 4 ? 0u : 1u));
+            if (localCount == 4) {
+                BOOST_TEST(runtime.getInstructions()[returnIndex + 1].value.getIndexValue() == localCount);
+            }
+            const auto before = NomadObject::getLiveObjectCount();
+            RuntimeValue result;
+            for (auto attempt = 0; attempt < 2; ++attempt) {
+                runtime.executeFunction(id, {}, result);
+                BOOST_TEST(result.getIntegerValue() == 23);
+                BOOST_TEST(owner.getObjectValue()->getReferenceCount() == 1u);
+                BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+            }
+            owner.freeObjectValue();
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(nested_script_calls_restore_parameter_local_and_receiver_frames) {
+    Runtime runtime;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "checkParameter", [](VirtualMachine* machine) {
+            BOOST_TEST(machine->getIntegerEnclosingParameter(0) == machine->getIntegerParameter(0));
+        }, {defParameter("expected", runtime.getIntegerType(), "")}, runtime.getVoidType(), ""
+    ).isValid());
+    const auto id = compileConstruction(runtime,
+        "fun leaf value:int\n"
+        "name = \"leaf\"\nassert name == \"leaf\"\ncheckParameter value\nreturn value + 1\nend\n"
+        "fun middle value:int\n"
+        "saved = value + 10\nreturned = leaf (value + 1)\n"
+        "checkParameter value\nassert saved == value + 10\nreturn returned + saved\nend\n"
+        "class Child\ninit value:int\n"
+        "this.value = middle value\ncheckParameter value\nthis.after = value\nend\nend\n"
+        "class Owner\ninit value:int\n"
+        "this.before = value\nsaved = middle value\nchild = new Child (value + 1)\n"
+        "this.child = child\nthis.value = saved + middle value\n"
+        "checkParameter value\nthis.after = value\nend\nend\n"
+        "owner = new Owner 20\n"
+        "assert owner.before == 20\nassert owner.after == 20\n"
+        "assert owner.child.after == 21\nreturn owner.value + owner.child.value"
+    );
+    const auto before = NomadObject::getLiveObjectCount();
+    auto machine = runtime.createVirtualMachine();
+    for (auto attempt = 0; attempt < 2; ++attempt) {
+        machine->run(runtime.getScriptFunction(id), {});
+        BOOST_TEST(machine->getIntegerResult() == 158);
+        BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(nested_script_constructor_failure_unwinds_call_frames_and_temporary_arguments) {

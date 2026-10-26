@@ -243,7 +243,7 @@ private:
     );
     void initializeFunctionVariables(const ScriptCallableBase* function, const RuntimeValue* receiver = nullptr);
     void callScriptCallable(const ScriptCallableBase* function, const RuntimeValue* receiver);
-    void callScriptAddress(NomadIndex address, const RuntimeValue* receiver);
+    void callScriptByAddress(NomadIndex address, const RuntimeValue* receiver);
     void runCallable(
         const ScriptCallableBase* function,
         const std::vector<RuntimeValue>& args,

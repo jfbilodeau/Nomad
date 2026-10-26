@@ -71,6 +71,9 @@ DECLARE_OP_CODE(op_nop)
 DECLARE_OP_CODE(op_stop)
 DECLARE_OP_CODE(op_yield)
 DECLARE_OP_CODE(op_return)
+DECLARE_OP_CODE(op_return_1)
+DECLARE_OP_CODE(op_return_2)
+DECLARE_OP_CODE(op_return_3)
 DECLARE_OP_CODE(op_return_n)
 
 // Flow control

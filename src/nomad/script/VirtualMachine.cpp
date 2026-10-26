@@ -277,13 +277,13 @@ ScriptFunction* VirtualMachine::getCurrentFunction() const {
 }
 
 void VirtualMachine::callFunction(const NomadIndex address) {
-    callScriptAddress(address, nullptr);
+    callScriptByAddress(address, nullptr);
 }
 
 void VirtualMachine::callMethod(const NomadIndex address) {
     const auto receiver = m_this;
     (void)getThis();
-    callScriptAddress(address, &receiver);
+    callScriptByAddress(address, &receiver);
 }
 
 void VirtualMachine::createScriptObject(const TypeId typeId) {
@@ -312,26 +312,30 @@ void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, cons
         fault("Invalid function");
         return;
     }
-    callScriptAddress(function->getFunctionStart(), receiver);
+    callScriptByAddress(function->getFunctionStart(), receiver);
 }
 
-void VirtualMachine::callScriptAddress(const NomadIndex address, const RuntimeValue* receiver) {
+void VirtualMachine::callScriptByAddress(const NomadIndex address, const RuntimeValue* receiver) {
     if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex - 1 < 4) {
         fault("Stack overflow");
     }
 
     const auto nextThis = receiver != nullptr ? *receiver : RuntimeValue{};
-    auto previousParameterIndex = m_parameterIndex;
-    m_parameterIndex = m_stackIndex;
+    const auto argumentStackIndex = m_stackIndex;
+    const auto returnAddress = m_instructionIndex;
+    const auto previousParameterIndex = m_parameterIndex;
+    const auto previousVariableIndex = m_variableIndex;
+    const auto previousThis = m_this;
 
-    pushIndex(m_instructionIndex);
+    pushIndex(returnAddress);
     pushIndex(previousParameterIndex);
-    pushIndex(m_variableIndex);
-    pushValue(m_this);
-    m_this = nextThis;
+    pushIndex(previousVariableIndex);
+    pushValue(previousThis);
 
     // Variables start after the saved call frame slots.
+    m_parameterIndex = argumentStackIndex;
     m_variableIndex = m_stackIndex + 1;
+    m_this = nextThis;
     jump(address);
 }
 

@@ -10,8 +10,11 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_stop, op_stop, "Stop the execution of the interpreter", {});
     registerInstruction(OpCodes::op_yield, op_yield, "Yield the execution of the interpreter", {});
     registerInstruction(OpCodes::op_return, op_return, "Return from the current function. Does not free variables from the stack", {});
+    registerInstruction(OpCodes::op_return_1, op_return_1, "Return from the current function, discarding 1 local slot without releasing its value", {});
+    registerInstruction(OpCodes::op_return_2, op_return_2, "Return from the current function, discarding 2 local slots without releasing their values", {});
+    registerInstruction(OpCodes::op_return_3, op_return_3, "Return from the current function, discarding 3 local slots without releasing their values", {});
     registerInstruction(
-        OpCodes::op_return_n, op_return_n, "Return from the current function. Frees `n` entry from the stack",
+        OpCodes::op_return_n, op_return_n, "Return from the current function, discarding `n` local slots without releasing their values",
         {Operand::Index}
     );
 
