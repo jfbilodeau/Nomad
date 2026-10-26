@@ -7,6 +7,7 @@
 
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
@@ -38,6 +39,160 @@ CallableId compileConstruction(Runtime& runtime, const NomadString& source, cons
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(object_construction)
+
+BOOST_AUTO_TEST_CASE(script_construction_orders_defaults_initializers_and_overloaded_bodies) {
+    Runtime runtime;
+    auto calls = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "nextValue", [&](VirtualMachine* machine) { machine->setIntegerResult(++calls); },
+        {}, runtime.getIntegerType(), ""
+    ).isValid());
+    const auto id = compileConstruction(runtime,
+        "class Child\nvalue = 1\nend\n"
+        "class Point\n"
+        "forward = this.value\nvalue = nextValue\nchild = new Child\n"
+        "init\nthis.value = this.value + 10\nend\n"
+        "init value:int\nthis.value = value\nvalue = 99\nthis.child.value = 7\nend\n"
+        "init enabled:bool\nif enabled\nthis.conditional = 42\nend\nreturn\nend\n"
+        "end\n"
+        "first = new Point\nsecond = new Point 25\nthird = new Point false\n"
+        "assert first.forward == 0\nassert first.value == 11\nassert second.value == 25\n"
+        "assert third.value == 3\nassert third.conditional == 0\n"
+        "assert first.child.value == 1\nassert second.child.value == 7\n"
+        "alias = second\nalias.value = 50\nassert second.value == 50\n"
+        "return first.child.value + second.child.value"
+    );
+    BOOST_TEST(calls == 0);
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(id, {}, result);
+    BOOST_TEST(result.getIntegerValue() == 8);
+    BOOST_TEST(calls == 3);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(script_construction_returns_the_instance_after_early_return_and_retains_arguments) {
+    Runtime runtime;
+    const auto id = compileConstruction(runtime,
+        "class Label\n"
+        "name = \"default\"\n"
+        "init name:string\nthis.name = name\nif name == \"supplied\"\nreturn\nend\nthis.name = \"other\"\nend\n"
+        "end\nreturn new Label \"supplied\""
+    );
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(id, {}, result);
+    auto* object = dynamic_cast<ScriptObject*>(result.getObjectValue());
+    BOOST_REQUIRE(object != nullptr);
+    BOOST_TEST(object->getReferenceCount() == 1u);
+    BOOST_TEST(NomadString(object->getField(0).getStringValue()) == "supplied");
+    result.freeObjectValue();
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(interpreter_constructs_compiled_classes_and_uses_shared_overload_resolution) {
+    Runtime runtime;
+    static_cast<void>(compileConstruction(runtime,
+        "class Point\nvalue = 1\n"
+        "init value:int\nthis.value = value\nend\n"
+        "init value:float\nthis.value = 20\nend\nend\n"
+        "class Empty\nend"
+    ));
+    const auto before = NomadObject::getLiveObjectCount();
+    {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext context(*machine);
+        Interpreter interpreter;
+        BOOST_REQUIRE(interpreter.execute("point = new Point 7", context));
+        BOOST_REQUIRE(interpreter.execute("point.value", context));
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 7);
+        BOOST_REQUIRE(interpreter.execute("point = new Point 1.0", context));
+        BOOST_REQUIRE(interpreter.execute("point.value", context));
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 20);
+        BOOST_TEST(!interpreter.execute("new Point", context));
+        BOOST_TEST(!interpreter.execute("new Point true", context));
+        BOOST_REQUIRE(interpreter.execute("new Empty", context));
+        BOOST_REQUIRE(context.getResult() != nullptr);
+        BOOST_TEST(context.getResult()->getType() == runtime.getTypeByName("Empty"));
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(script_constructor_failure_releases_instance_fields_and_arguments_and_recovers) {
+    Runtime runtime;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "fail", [](VirtualMachine*) { throw NomadException("Constructor failed"); },
+        {}, runtime.getVoidType(), ""
+    ).isValid());
+    const auto id = compileConstruction(runtime,
+        "class Child\nend\n"
+        "class Owner\nchild = new Child\n"
+        "init name:string enabled:bool\nthis.name = name\nif enabled\nfail\nend\nend\n"
+        "end\nreturn new Owner \"owned\" true"
+    );
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    BOOST_CHECK_THROW(runtime.executeFunction(id, {}, result), NomadException);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext context(*machine);
+        BOOST_TEST(!Interpreter{}.execute("new Owner \"failed\" true", context));
+        BOOST_REQUIRE(Interpreter{}.execute("new Owner \"success\" false", context));
+        const auto* object = dynamic_cast<ScriptObject*>(context.getResult()->getValue().getObjectValue());
+        BOOST_REQUIRE(object != nullptr);
+        BOOST_TEST(object->getReferenceCount() == 1u);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(script_constructor_defaults_are_synthesized_only_without_source_init) {
+    for (const auto* source : {
+        "class Point\ninit value:int\nend\nend\nreturn new Point",
+        "class Point\ninit value:int\nend\nend\nreturn new Point true"
+    }) {
+        Runtime runtime;
+        auto compiler = runtime.createCompiler();
+        CompilerContext context(compiler.get());
+        compiler->registerSources(&context, {{{"main", {"main.nomad", source}}}, {}});
+        BOOST_TEST(!compiler->compileFunctions(&context));
+        BOOST_TEST(context.hasError());
+        const auto* type = runtime.getTypeByName("Point")->asObjectType();
+        BOOST_REQUIRE(type != nullptr);
+        BOOST_REQUIRE(type->getConstructors().size() == 1u);
+        BOOST_TEST(type->getConstructors()[0]->getParameters().size() == 1u);
+    }
+    Runtime runtime;
+    const auto id = compileConstruction(runtime, "class Empty\nend\nreturn new Empty");
+    RuntimeValue result;
+    runtime.executeFunction(id, {}, result);
+    BOOST_REQUIRE(result.getObjectValue() != nullptr);
+    BOOST_TEST(result.getObjectValue()->getReferenceCount() == 1u);
+    result.freeObjectValue();
+}
+
+BOOST_AUTO_TEST_CASE(script_construction_resolves_hub_types_across_files_in_either_order) {
+    for (const auto reversed : {false, true}) {
+        Runtime runtime;
+        auto compiler = runtime.createCompiler();
+        CompilerContext context(compiler.get());
+        compiler->registerSources(&context, {{
+            {reversed ? "a" : "z", {"types.nomad",
+                "hub model\nclass Value\nvalue = 42\nend\n"
+                "class Box\ninit value:model.Value\nthis.value = value\nend\nend\nend"}},
+            {reversed ? "z" : "a", {"use.nomad",
+                "box = new model.Box (new model.Value)\nreturn box.value.value"}}
+        }, {}});
+        const auto compiled = compiler->compileFunctions(&context);
+        BOOST_REQUIRE_MESSAGE(compiled,
+            (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
+        const auto before = NomadObject::getLiveObjectCount();
+        RuntimeValue result;
+        runtime.executeFunction(runtime.getFunctionId(reversed ? "z" : "a"), {}, result);
+        BOOST_TEST(result.getIntegerValue() == 42);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    }
+}
 
 BOOST_AUTO_TEST_CASE(add_constructor_resolves_ids_and_owns_metadata_and_factory) {
     Runtime runtime;

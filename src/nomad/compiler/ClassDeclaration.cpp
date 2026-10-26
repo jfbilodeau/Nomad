@@ -275,6 +275,18 @@ bool registerMemberSignatures(
         context->getCompiler()->registerMemberCompilation(id, function->getId());
         context->getCompiler()->setFunctionNode(id, std::make_unique<FunctionNode>(0, 0));
     }
+    if (type->asObjectType()->getConstructors().empty()) {
+        const auto id = runtime->registerScriptConstructor(
+            type->getId(), {}, tokens->getSourceName(), tokens->getSource()
+        );
+        if (id.isInvalid()) {
+            context->reportError("Cannot register default class constructor", tokens);
+            return false;
+        }
+        runtime->getScriptCallable(id)->setHub(context->getHub());
+        context->getCompiler()->registerMemberCompilation(id, function->getId());
+        context->getCompiler()->setFunctionNode(id, std::make_unique<FunctionNode>(0, 0));
+    }
     return true;
 }
 
@@ -402,12 +414,12 @@ void ClassDeclaration::onResolve(CompilerContext* context, ScriptCallableBase* f
         }
     }
     const auto unsupported = std::ranges::find_if(m_members, [](const auto& member) {
-        return member->getKind() != ClassMemberKind::Field;
+        return member->getKind() == ClassMemberKind::Method;
     });
     if (unsupported != m_members.end()) {
         const auto& member = *unsupported;
         context->reportError(
-            "Class member execution is not supported yet; only field declarations can be compiled",
+            "Class member execution is not supported yet for ordinary methods",
             function->getPath(), member->getLine(), member->getColumn()
         );
     }

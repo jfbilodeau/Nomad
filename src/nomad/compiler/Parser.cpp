@@ -906,11 +906,13 @@ std::unique_ptr<Expression> parseNewExpression(
             return nullptr;
         }
     }
-    const NativeConstructor* shape = nullptr;
+    const Constructor* shape = nullptr;
     const auto* objectType = runtime->getTypeByName(constructorName);
-    for (const auto* constructor : runtime->getConstructors(objectType)) {
-        if (shape == nullptr || constructor->getParameterCount() > shape->getParameterCount()) {
-            shape = constructor;
+    if (objectType != nullptr && objectType->asObjectType() != nullptr) {
+        for (const auto* constructor : objectType->asObjectType()->getConstructors()) {
+            if (shape == nullptr || constructor->getParameterCount() > shape->getParameterCount()) {
+                shape = constructor;
+            }
         }
     }
     if (shape == nullptr) {

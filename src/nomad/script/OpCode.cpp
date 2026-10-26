@@ -187,7 +187,9 @@ void op_call_native_function(VirtualMachine* interpreter) {
 
 void op_native_property_get(VirtualMachine* interpreter) {
     const auto memberId = PropertyId{interpreter->nextId()};
-    interpreter->getProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
+    RuntimeValue result;
+    interpreter->getProperty(memberId, interpreter->getIntermediate(), result);
+    interpreter->setResult(result);
 }
 
 void op_native_property_set(VirtualMachine* interpreter) {
@@ -884,7 +886,7 @@ void op_object_init_r(VirtualMachine* interpreter) {
 }
 
 void op_object_new(VirtualMachine* interpreter) {
-    const auto* constructor = interpreter->getRuntime()->getNativeConstructor(CallableId{interpreter->nextId()});
+    const auto* constructor = interpreter->getRuntime()->getConstructor(CallableId{interpreter->nextId()});
     if (constructor == nullptr) {
         interpreter->fault("Cannot construct object: invalid constructor");
     }
@@ -897,10 +899,7 @@ void op_object_new(VirtualMachine* interpreter) {
     }
     NomadObject* object = nullptr;
     try {
-        object = constructor->getFactory()(arguments);
-        if (object == nullptr) {
-            interpreter->fault("Object factory for '" + constructor->getName() + "' returned null");
-        }
+        object = interpreter->constructObject(constructor->getId(), arguments);
     } catch (...) {
         // The compiler-emitted cleanup is skipped on failure, so release the arguments here.
         for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {

@@ -79,6 +79,49 @@ void VirtualMachine::initializeObject(ScriptObject& object) {
     m_intermediate = savedIntermediate;
 }
 
+NomadObject* VirtualMachine::constructObject(
+    const CallableId constructorId,
+    const std::vector<RuntimeValue>& arguments
+) {
+    const auto* constructor = m_runtime->getConstructor(constructorId);
+    if (constructor == nullptr || constructor->getParameters().size() != arguments.size()) {
+        fault("Cannot construct object: invalid constructor or argument count");
+    }
+    if (const auto* native = constructor->asNativeConstructor()) {
+        auto* object = native->getFactory()(arguments);
+        if (object == nullptr) {
+            fault("Object factory for '" + constructor->getName() + "' returned null");
+        }
+        return object;
+    }
+    const auto* script = constructor->asScriptCallable();
+    if (script == nullptr || script->getFunctionStart() == NOMAD_INVALID_INDEX ||
+        script->getFunctionStart() >= script->getFunctionEnd()) {
+        fault("Class constructor has not been compiled");
+    }
+    const auto release = [](ScriptObject* object) { object->releaseRef(); };
+    auto object = std::unique_ptr<ScriptObject, decltype(release)>(
+        new ScriptObject(constructor->getObjectType()->asObjectType()), release
+    );
+    initializeObject(*object);
+    RuntimeValue receiver;
+    receiver.setObjectValue(object.get());
+    const auto savedResult = m_result;
+    const auto savedIntermediate = m_intermediate;
+    m_result = RuntimeValue{};
+    m_intermediate = RuntimeValue{};
+    try {
+        runCallable(script, arguments, {}, &receiver);
+    } catch (...) {
+        m_result = savedResult;
+        m_intermediate = savedIntermediate;
+        throw;
+    }
+    m_result = savedResult;
+    m_intermediate = savedIntermediate;
+    return object.release();
+}
+
 void VirtualMachine::runCallable(
     const ScriptCallableBase* function,
     const std::vector<RuntimeValue>& args,
@@ -146,7 +189,7 @@ void VirtualMachine::runCallable(
             instruction.fn(this);
         } while (m_running);
         if (receiver != nullptr && m_yielded) {
-            fault("Class initialization cannot yield");
+            fault("Class initialization or construction cannot yield");
         }
     } catch (...) {
         if (entryVariableIndex != NOMAD_INVALID_INDEX) {

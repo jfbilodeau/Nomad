@@ -73,7 +73,8 @@ BOOST_AUTO_TEST_CASE(empty_declarations_publish_closed_and_open_object_types)
     BOOST_TEST(!closed->isOpen());
     BOOST_TEST(opened->isOpen());
     BOOST_TEST(closed->getId() == runtime.getTypeId("Closed"));
-    BOOST_TEST(closed->getConstructors().empty());
+    BOOST_REQUIRE(closed->getConstructors().size() == 1u);
+    BOOST_TEST(closed->getConstructors()[0]->getParameters().empty());
     BOOST_REQUIRE(opened->getMethods().size() == 1u);
     BOOST_TEST(opened->getMethods()[0]->getName() == "$init");
     BOOST_TEST(closed->getProperties().empty());
@@ -154,13 +155,12 @@ BOOST_AUTO_TEST_CASE(invalid_class_definitions_report_source_errors)
     for (const auto* source : {
         "class", "class Point", "class 123\nend", "class Point trailing\nend",
         "class open\nend", "class int\nend", "class Point\nend trailing",
-        "class Point\ninit\nend\nend",
         "class Point\nfun move\nend\nend", "class Point\nclass Nested\nend\nend",
         "fun inner\nclass Point\nend\nend", "if true\nopen class Point\nend\nend",
         "hub Point\nend\nclass Point\nend", "class Point\nend\nhub Point\nend",
         "const Point = 1\nclass Point\nend", "class Point\nend\nconst Point = 1",
         "fun Point\nend\nclass Point\nend", "class Point\nend\nfun Point\nend",
-        "closed class Point\nend", "class Point\nend\nvalue = new Point"
+        "closed class Point\nend"
     }) {
         BOOST_TEST_CONTEXT(source) {
             BOOST_TEST(!compileErrors(source).empty());
@@ -179,9 +179,10 @@ BOOST_AUTO_TEST_CASE(invalid_class_definitions_report_source_errors)
 BOOST_AUTO_TEST_CASE(member_declarations_retain_typed_headers_initializers_and_bodies)
 {
     LanguageTestFixture fixture;
-    fixture.addFunction("main", "class Point\nend");
+    fixture.addFunction("main", "return");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
+    BOOST_REQUIRE(runtime.createObjectType("Point", ObjectTypeMode::Closed).isValid());
     auto* compiler = &fixture.getCompiler();
     CompilerContext context(compiler);
     std::unique_ptr<Statement> statement;
@@ -300,9 +301,10 @@ BOOST_AUTO_TEST_CASE(member_source_scanning_balances_blocks_callbacks_and_loop_c
 BOOST_AUTO_TEST_CASE(member_overloads_register_distinct_parameter_types_on_the_class)
 {
     LanguageTestFixture fixture;
-    fixture.addFunction("main", "class Point\nend");
+    fixture.addFunction("main", "return");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
+    BOOST_REQUIRE(runtime.createObjectType("Point", ObjectTypeMode::Closed).isValid());
     auto* compiler = &fixture.getCompiler();
     CompilerContext context(compiler);
     Tokenizer tokens(&context, "overloads.nomad",
@@ -543,9 +545,7 @@ BOOST_AUTO_TEST_CASE(field_inference_retries_forward_dependencies_until_stable)
         "init\nthis.seventh = this.first\nend\n"
         "end"
     );
-    BOOST_TEST(!fixture.compile());
-    BOOST_TEST(fixture.getErrorCount() == 1u);
-    BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto* type = fixture.getRuntime().getTypeByName("Chain")->asObjectType();
     BOOST_REQUIRE(type->getProperties().size() == 7u);
     for (const auto* property : type->getProperties()) {

@@ -432,6 +432,20 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
 void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     m_expression->compile(compiler, function, ExpressionTarget::Result);
 
+    if (const auto* receiverType = compiler->getReceiverType(function);
+        receiverType != nullptr && m_identifier.starts_with("this.")) {
+        const auto* property = receiverType->asObjectType()->getProperty(m_identifier.substr(5));
+        if (property == nullptr) {
+            compiler->reportInternalError("Unresolved class field: " + m_identifier);
+        }
+        compiler->addLoadFunctionVariable(function->getVariableId("this"), receiverType, ExpressionTarget::Intermediate);
+        compiler->addOpCode(op_native_property_set);
+        compiler->addId(property->getId().id);
+        compiler->addFreeValue(m_expression->getType()->getTypeOpCodes()->freeResult);
+        compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
+        return;
+    }
+
     IdentifierDefinition identifier;
 
     compiler->getIdentifierDefinition(m_identifier, function, identifier);

@@ -304,8 +304,9 @@ property IDs return `NOMAD_INVALID_INDEX`. Slot order follows successful
 registration order, not necessarily source declaration order.
 
 Compiled code and the interpreter can read and assign stored properties on
-host-provided, initialized `ScriptObject` instances. Script class construction
-with `new` and source-declared constructors are not executable yet.
+host-provided, initialized `ScriptObject` instances, as well as instances created
+with `new`. Script construction runs field initialization before the selected
+source `init` body. Classes without a source `init` have a parameterless constructor.
 
 ### Script object storage
 
@@ -329,6 +330,14 @@ initializers, and already initialized instances. It does not run source `init`
 constructor bodies. If a field initializer fails, later initializers do not
 run and initialization cannot be retried; release the failed instance.
 Destruction releases its owned field values.
+
+`VirtualMachine::constructObject(constructorId, arguments)` invokes a registered
+native or compiled script constructor. Arguments are borrowed and must match the
+selected constructor's parameter types and count. The returned object owns one
+reference, which the caller must release. Script construction releases the failed
+instance if field initialization or the constructor body throws. Class
+initialization and constructor bodies cannot yield. Compile and initialize
+required script-level hub variables before using this lower-level VM API.
 
 `ScriptObject::initializeFields()` is the lower-level, defaults-only operation
 for host-defined layouts. Do not call it before `Runtime::initializeObject()`:

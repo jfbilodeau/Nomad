@@ -244,9 +244,9 @@ Each class has one declaration block, even when open. Duplicate declarations and
 conflicts with existing identifiers are errors. Classes cannot be declared inside
 functions or control-flow blocks, or through the interpreter.
 
-Classes containing only fields can be compiled and initialized by an embedding
-host. Classes declaring constructors or ordinary methods are still rejected for
-execution, and script class construction with `new` is not yet available.
+Classes containing fields and constructors can be compiled and instantiated with
+`new` in compiled code and the interpreter. Classes declaring ordinary methods
+are still rejected for execution.
 The following illustrates the accepted declaration forms, not a runnable program:
 
 ```nomad
@@ -307,7 +307,11 @@ field's type default until its initializer runs. Object-valued initializer
 expressions are evaluated separately for each instance. Fields without explicit
 initializers keep their type defaults. Initialization runs once per instance;
 failure stops subsequent initializers and cannot be retried on that instance.
-Script class construction and script member calls are not executable yet.
+`new ClassName arguments` selects a constructor overload, allocates an instance,
+initializes its fields, then runs the selected constructor body. If no `init`
+is declared, the class has an implicit parameterless constructor. Declaring any
+`init` suppresses that implicit constructor. A constructor always produces the
+new instance. Script member calls are not executable yet.
 Script constructors may use a bare `return` but cannot return an expression.
 Member parameters are declared in the header, not with a later `params` statement.
 
@@ -348,8 +352,8 @@ Stored fields can be read and assigned in compiled code and the interpreter
 when the host supplies an initialized instance with field storage. Field
 discovery must finish before the host creates these instances. Native objects
 without stored-field storage cannot execute these accesses.
-The embedding host can initialize class fields; automatic construction with
-`new` and script member calls remain unavailable.
+The embedding host can also initialize class fields without running a constructor.
+Script member calls remain unavailable.
 
 ## Data types and numeric ranges
 
@@ -459,9 +463,9 @@ back if a property setter or method fails.
 
 Assigning a new reference to the parameter itself remains invalid.
 
-Script classes cannot yet construct their own instances or execute methods.
-Hosts can supply initialized instances whose stored properties are readable and
-writable. See [Class declarations](#class-declarations).
+Script classes support construction with `new`, but cannot yet execute ordinary
+methods. Their stored properties are readable and writable in compiled code and
+the interpreter. See [Class declarations](#class-declarations).
 
 The available members for each object type are listed in the [engine API](engine-api.md#object-members).
 

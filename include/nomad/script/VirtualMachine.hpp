@@ -45,6 +45,10 @@ public:
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
     void initializeObject(ScriptObject& object);
+    [[nodiscard]] NomadObject* constructObject(
+        CallableId constructorId,
+        const std::vector<RuntimeValue>& arguments
+    );
     void yield(const RuntimeValue& result);
     void stop(const RuntimeValue& result);
     void fault(const NomadString& faultMessage) const;

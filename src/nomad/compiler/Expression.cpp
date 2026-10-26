@@ -1231,10 +1231,6 @@ void ConstructorExpression::onResolve(CompilerContext* context, ScriptCallableBa
         reportError(context, function, "Invalid constructor for '" + m_constructorName + "'");
         return;
     }
-    if (selected->asScriptConstructor() != nullptr) {
-        reportError(context, function, "Script class construction is not supported yet: '" + m_constructorName + "'");
-        return;
-    }
     for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
         arguments[index]->setType(selected->getParameters()[index].type);
     }
@@ -1252,21 +1248,13 @@ void ConstructorExpression::onCompile(Compiler* compiler, ScriptCallableBase* fu
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
     }
-    const auto* native = m_constructor->asNativeConstructor();
-    if (native == nullptr) {
-        raiseException("Unsupported implementation of constructor '" + m_constructorName + "'");
-    }
-    compiler->addConstructorCall(native->getId(), function, &m_arguments);
+    compiler->addConstructorCall(m_constructor->getId(), function, &m_arguments);
     compiler->addMoveResult(getType(), target);
 }
 
 void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
-    }
-    const auto* constructor = m_constructor->asNativeConstructor();
-    if (constructor == nullptr) {
-        raiseException("Unsupported implementation of constructor '" + m_constructorName + "'");
     }
     std::vector<TypedValue> evaluatedArguments;
     std::vector<RuntimeValue> values;
@@ -1275,10 +1263,9 @@ void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
     const auto release = [](NomadObject* object) { object->releaseRef(); };
-    const std::unique_ptr<NomadObject, decltype(release)> object(constructor->getFactory()(values), release);
-    if (!object) {
-        raiseException("Object factory for '" + m_constructorName + "' returned null");
-    }
+    const std::unique_ptr<NomadObject, decltype(release)> object(
+        context.getVirtualMachine()->constructObject(m_constructor->getId(), values), release
+    );
     RuntimeValue value;
     value.setObjectValue(object.get());
     context.setResult(getType(), value);
