@@ -422,7 +422,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
     case IdentifierType::NativeFunction:
         reportError(context, function, "Cannot assign value to native function '" + m_identifier + "'");
         break;
-    case IdentifierType::Function:
+    case IdentifierType::ScriptFunction:
         reportError(context, function, "Cannot assign value to function '" + m_identifier + "'");
         break;
     case IdentifierType::Event:

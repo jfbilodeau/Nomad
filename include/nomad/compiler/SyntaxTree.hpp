@@ -5,10 +5,6 @@
 #include <nomad/Nomad.hpp>
 
 #include <nomad/compiler/Identifier.hpp>
-#include <nomad/compiler/Operators.hpp>
-
-#include <nomad/script/FormatString.hpp>
-#include <nomad/script/NativeFunction.hpp>
 
 #include <memory>
 #include <vector>

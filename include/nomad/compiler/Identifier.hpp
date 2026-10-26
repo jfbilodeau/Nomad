@@ -16,7 +16,7 @@ enum class IdentifierType {
     Keyword,
     Statement,
     NativeFunction,
-    Function,
+    ScriptFunction,
     Event,
     Constant,
     DynamicVariable,

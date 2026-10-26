@@ -93,7 +93,7 @@ void FormatString::addVariable(const IdentifierType variable_type, const Type* v
 void FormatString::addFunction(const Type* valueType, const CallableId functionId) {
     m_segments.push_back({
         SegmentType::Variable,
-        IdentifierType::Function,
+        IdentifierType::ScriptFunction,
         valueType,
         NOMAD_INVALID_ID,
         functionId,
@@ -104,7 +104,7 @@ void FormatString::addFunction(const Type* valueType, const CallableId functionI
 void FormatString::addExpression(const Type* valueType, const CallableId functionId) {
     m_segments.push_back({
         SegmentType::Expression,
-        IdentifierType::Function,
+        IdentifierType::ScriptFunction,
         valueType,
         NOMAD_INVALID_ID,
         functionId,
@@ -163,7 +163,7 @@ NomadString FormatString::format(VirtualMachine *interpreter) const {
                     interpreter->fault("Internal error: Invalid value type in format string segment");
                 }
 
-                if (segment.variableType == IdentifierType::Function) {
+                if (segment.variableType == IdentifierType::ScriptFunction) {
                     appendFunction(segment, false);
                     break;
                 }

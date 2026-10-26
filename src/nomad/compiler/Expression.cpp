@@ -1611,7 +1611,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBas
             }
             break;
 
-        case IdentifierType::Function:
+        case IdentifierType::ScriptFunction:
             reportError(context, function, "Cannot use function as identifier: " + m_identifier);
             return;
 

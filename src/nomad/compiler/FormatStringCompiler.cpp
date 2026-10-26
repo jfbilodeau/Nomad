@@ -191,7 +191,7 @@ std::optional<NomadString> compileFormatString(
             }
 
             switch (identifier.identifierType) {
-                case IdentifierType::Function: {
+                case IdentifierType::ScriptFunction: {
                     const auto placeholderFunction = compiler->getRuntime()->getScriptCallable(identifier.functionId);
 
                     if (placeholderFunction != nullptr && placeholderFunction->getParameterCount() != 0) {
@@ -231,7 +231,7 @@ std::optional<NomadString> compileFormatString(
             }
 
             if (formatString != nullptr) {
-                if (identifier.identifierType == IdentifierType::Function) {
+                if (identifier.identifierType == IdentifierType::ScriptFunction) {
                     formatString->addFunction(identifier.valueType, identifier.functionId);
                 } else if (identifier.identifierType == IdentifierType::Constant) {
                     formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.constantId.id);

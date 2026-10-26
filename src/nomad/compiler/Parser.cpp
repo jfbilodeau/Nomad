@@ -297,7 +297,7 @@ bool isPotentialMemberExpression(CompilerContext* context, ScriptCallableBase* f
     }
     if (tokens->getTokenTypeAt(0) == TokenType::Identifier) {
         const auto kind = context->getCompiler()->getIdentifierType(tokens->getTokenAt(0), function);
-        if (kind == IdentifierType::NativeFunction || kind == IdentifierType::Function) {
+        if (kind == IdentifierType::NativeFunction || kind == IdentifierType::ScriptFunction) {
             return false;
         }
     }
@@ -1052,7 +1052,7 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
     }
 
     if (compiler->getRuntime()->getFunctionId(name).isValid()) {
-        return IdentifierType::Function;
+        return IdentifierType::ScriptFunction;
     }
 
     if (compiler->getRuntime()->getDynamicVariableId(name).isValid()) {

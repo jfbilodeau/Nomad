@@ -206,7 +206,7 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
     }
 
     if (callable != nullptr && callable->asScriptFunction() != nullptr) {
-        return IdentifierType::Function;
+        return IdentifierType::ScriptFunction;
     }
 
     if (m_runtime->getDynamicVariableId(name).isValid()) {
@@ -273,7 +273,7 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptCall
             definition.identifierType = IdentifierType::NativeFunction;
             definition.nativeFunctionId = callable->getId();
         } else {
-            definition.identifierType = IdentifierType::Function;
+            definition.identifierType = IdentifierType::ScriptFunction;
             definition.functionId = callable->getId();
         }
 
