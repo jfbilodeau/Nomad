@@ -1147,48 +1147,44 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
 }
 
 void Compiler::compileFunction(const FunctionCompilation& source) {
-    ScriptCallableBase* function = source.function;
-
+    auto* function = source.function;
     function->setFunctionStart(m_instructions.size());
-
-    if (m_runtime->getConstructor(function->getId()) != nullptr) {
-        const auto* type = function->getObjectType();
-        addOpCode(OpCodes::op_object_instantiate);
-        addId(type->getId().id);
-        const auto* owner = type->asObjectType();
-        const auto initializerName = type->getTypeName() + "$init";
-        const auto methods = owner->getMethods();
-        const auto initializer = std::ranges::find_if(methods, [&](const auto* method) {
-            return method->getName() == initializerName;
-        });
-        if (initializer == methods.end()) {
-            reportInternalError("Missing class initializer: " + initializerName);
-        }
-        addOpCode(OpCodes::op_call_function);
-        addFunctionLink((*initializer)->getId(), m_instructions.size());
-        addIndex(NOMAD_INVALID_INDEX);
-    }
-
     source.ast->compile(this, function);
-
-    // Unreachable for valid programs: `checkReturnPaths` rejects functions returning a value that can reach their end.
-    // Kept as a safety net so a caller never takes ownership of whatever `r` last held.
+    // Safety net for the inferred string return type; valid value-returning bodies cannot fall through.
     if (const auto* returnType = function->getReturnType(); returnType != nullptr && returnType->isString()) {
         addLoadStringValue("", ExpressionTarget::Result);
     }
-
     addFunctionReturn(function);
-
     function->setFunctionEnd(m_instructions.size());
+}
+
+void Compiler::compileConstructor(const FunctionCompilation& source) {
+    auto* constructor = source.function;
+    constructor->setFunctionStart(m_instructions.size());
+    const auto* type = constructor->getObjectType()->asObjectType();
+    addOpCode(OpCodes::op_object_instantiate);
+    addId(type->getId().id);
+    const auto methods = type->getMethods();
+    const auto initializer = std::ranges::find_if(methods, [&](const auto* method) {
+        return method->getName() == type->getInitializerName();
+    });
+    if (initializer == methods.end()) {
+        reportInternalError("Missing class initializer: " + type->getInitializerName());
+    }
+    addOpCode(OpCodes::op_call_method);
+    addId((*initializer)->getId().id);
+    source.ast->compile(this, constructor);
+    addConstructorReturn(constructor);
+    constructor->setFunctionEnd(m_instructions.size());
+}
+
+void Compiler::addConstructorReturn(const ScriptCallableBase* constructor) {
+    addLoadFunctionVariable(constructor->getVariableId("this"), constructor->getObjectType(), ExpressionTarget::Result);
+    addFunctionReturn(constructor);
 }
 
 void Compiler::addFunctionReturn(const ScriptCallableBase* function) {
     const NomadIndex variableCount = function->getVariableCount();
-
-    if (m_runtime->getConstructor(function->getId()) != nullptr) {
-        addLoadFunctionVariable(function->getVariableId("this"), function->getObjectType(), ExpressionTarget::Result);
-    }
-
     if (variableCount == 0) {
         addOpCode(OpCodes::op_return);
 
@@ -1598,7 +1594,11 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         log::debug("Compiling function '" + source.function->getName() + "' (" + source.function->getPath() + ")");
 
         reportExceptions(source.function->getPath(), [&] {
-            compileFunction(source);
+            if (m_runtime->getConstructor(source.function->getId()) != nullptr) {
+                compileConstructor(source);
+            } else {
+                compileFunction(source);
+            }
         });
     }
 

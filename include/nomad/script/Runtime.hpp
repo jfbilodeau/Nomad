@@ -492,7 +492,6 @@ public:
     ) const;
     [[nodiscard]] std::optional<NomadString> getFunctionName(CallableId functionId) const;
     [[nodiscard]] ScriptFunction* getFunctionByStartAddress(NomadIndex startAddress) const;
-    [[nodiscard]] const ScriptCallableBase* getScriptCallableByStartAddress(NomadIndex startAddress) const;
     [[nodiscard]] NomadIndex getFunctionCount() const;
     void getFunctions(std::vector<ScriptFunction*>& functions) const;
     void getFunctions(TempVector<ScriptFunction*>& functions);

@@ -407,6 +407,7 @@ ObjectType::ObjectType(
 ):
     Type(runtime, id, std::move(documentation)),
     m_name(std::move(name)),
+    m_initializerName(m_name + "$init"),
     m_mode(mode),
     m_typeArguments(std::move(typeArguments))
 {
@@ -444,6 +445,10 @@ ObjectType::ObjectType(
     m_typeOpCodes.setFunctionVariable = op_function_variable_set;
     m_typeOpCodes.setDynamicVariable = op_dynamic_variable_set;
     m_typeOpCodes.setContextVariable = op_context_variable_set;
+}
+
+const NomadString& ObjectType::getInitializerName() const {
+    return m_initializerName;
 }
 
 void ObjectType::initValue(RuntimeValue& value) const {

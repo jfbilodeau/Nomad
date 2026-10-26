@@ -322,6 +322,8 @@ then evaluates explicit field initializers in source order, with `this` bound
 to the instance. Object-valued initializer expressions run separately for each
 instance. Forward field reads see the type default until that field's
 initializer runs. Fields without explicit initializers retain their defaults.
+The type stores its fully qualified initializer name, available through
+`ObjectType::getInitializerName()` (for example, `game.Point$init`).
 
 Compile the class and complete field discovery before allocating the object.
 Initialize script-level hub variables with `initializeScripts()` first when

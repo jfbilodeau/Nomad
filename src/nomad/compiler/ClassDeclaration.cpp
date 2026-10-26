@@ -222,7 +222,7 @@ bool registerMemberSignatures(
         context->reportError("Class '" + name + "' has no registered object type", tokens);
         return false;
     }
-    const auto initializerName = type->getTypeName() + "$init";
+    const auto& initializerName = type->asObjectType()->getInitializerName();
     auto initializerRegistered = std::ranges::any_of(type->asObjectType()->getMethods(), [&](const auto* method) {
         return method->getName() == initializerName;
     });
@@ -300,7 +300,7 @@ CallableId findMemberCallable(const ObjectType* type, const ClassMemberDeclarati
             }
         }
     } else {
-        const auto name = member.getKind() == ClassMemberKind::Field ? type->getTypeName() + "$init" : member.getName();
+        const auto& name = member.getKind() == ClassMemberKind::Field ? type->getInitializerName() : member.getName();
         for (const auto* method : type->getMethods()) {
             if (method->getName() == name && (member.getKind() == ClassMemberKind::Field ||
                 std::ranges::equal(method->getParameters(), member.getParameters(),
@@ -321,7 +321,7 @@ bool parseMemberBodies(
     auto initializerBody = std::make_unique<FunctionNode>(0, 0);
     auto initializerId = CallableId::INVALID;
     for (const auto* method : type->getMethods()) {
-        if (method->getName() == type->getTypeName() + "$init") {
+        if (method->getName() == type->getInitializerName()) {
             initializerId = method->getId();
             break;
         }

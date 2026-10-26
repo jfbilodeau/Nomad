@@ -269,6 +269,9 @@ public:
         NomadString documentation = {}
     );
     ~ObjectType() override;
+    // The name of the share member initializer called
+    // by each constructor.
+    [[nodiscard]] const NomadString& getInitializerName() const;
     using Type::toString;
     [[nodiscard]] NomadString getTypeName() const override;
     [[nodiscard]] TypeStorage getStorage() const override;
@@ -316,6 +319,7 @@ public:
 
 private:
     NomadString m_name;
+    NomadString m_initializerName;
     ObjectTypeMode m_mode;
     std::vector<const Type*> m_typeArguments;
     std::vector<std::unique_ptr<Property>> m_properties;

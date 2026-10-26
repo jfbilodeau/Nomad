@@ -168,16 +168,15 @@ void op_object_move_r_to_stack(VirtualMachine* interpreter) {
 void op_call_function(VirtualMachine* interpreter) {
     const auto jumpIndex = interpreter->nextIndex();
 
-    // Copilot: yuk
-    // const auto runtime = interpreter->getRuntime();
-    // const auto function = runtime->getScriptCallableByStartAddress(jumpIndex);
+    const auto* function = interpreter->getRuntime()->getFunctionByStartAddress(jumpIndex);
+    if (function == nullptr) {
+        interpreter->fault("Invalid function start address: " + toString(jumpIndex));
+    }
+    interpreter->callFunction(function);
+}
 
-    // if (function == nullptr) {
-    //     interpreter->fault("Invalid function start address: " + toString(jumpIndex));
-    //     return;
-    // }
-
-    interpreter->callCallable(function);
+void op_call_method(VirtualMachine* interpreter) {
+    interpreter->callMethod(CallableId{interpreter->nextId()});
 }
 
 void op_call_native_function(VirtualMachine* interpreter) {
@@ -898,11 +897,7 @@ void op_object_init_r(VirtualMachine* interpreter) {
 }
 
 void op_object_new(VirtualMachine* interpreter) {
-    const auto* constructor = interpreter->getRuntime()->getConstructor(CallableId{interpreter->nextId()});
-    if (constructor == nullptr || constructor->asScriptCallable() == nullptr) {
-        interpreter->fault("Cannot construct object: invalid constructor");
-    }
-    interpreter->callCallable(constructor->asScriptCallable());
+    interpreter->callConstructor(CallableId{interpreter->nextId()});
 }
 
 void op_object_instantiate(VirtualMachine* interpreter) {

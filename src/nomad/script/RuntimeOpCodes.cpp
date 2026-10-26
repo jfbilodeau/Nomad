@@ -49,6 +49,7 @@ void Runtime::registerDefaultInstructions() {
         {Operand::Function}
     );
     registerInstruction(OpCodes::op_call_native_function, op_call_native_function, "Call the given native function id", {Operand::NativeFunction});
+    registerInstruction(OpCodes::op_call_method, op_call_method, "Call a script method id with the current receiver", {Operand::Id});
     registerInstruction(OpCodes::op_native_property_get, op_native_property_get, "Read a native or stored property", {Operand::Id});
     registerInstruction(OpCodes::op_native_property_set, op_native_property_set, "Write a native or stored property", {Operand::Id});
     registerInstruction(OpCodes::op_native_index_get, op_native_index_get, "Read an indexer", {Operand::Id});

@@ -579,7 +579,7 @@ BOOST_AUTO_TEST_CASE(script_receiver_restores_after_nested_initialization_and_fa
     }, "", {});
     for (const auto* name : {"OuterReceiver", "InnerReceiver", "BrokenReceiver"}) {
         const auto* type = createTestType(runtime, name);
-        const auto id = runtime.registerScriptMethod(type->getId(), type->getTypeName() + "$init", {}, "", "");
+        const auto id = runtime.registerScriptMethod(type->getId(), type->getInitializerName(), {}, "", "");
         BOOST_REQUIRE(id.isValid());
         auto* initializer = runtime.getScriptCallable(id);
         initializer->setFunctionStart(runtime.getInstructions().size());

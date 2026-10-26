@@ -3023,16 +3023,6 @@ ScriptFunction * Runtime::getFunctionByStartAddress(NomadIndex startAddress) con
     return nullptr;
 }
 
-const ScriptCallableBase* Runtime::getScriptCallableByStartAddress(const NomadIndex startAddress) const {
-    for (const auto* callable : m_callables) {
-        const auto* script = callable->asScriptCallable();
-        if (script != nullptr && script->getFunctionStart() == startAddress) {
-            return script;
-        }
-    }
-    return nullptr;
-}
-
 NomadIndex Runtime::getFunctionCount() const {
     return static_cast<NomadIndex>(std::count_if(m_callables.begin(), m_callables.end(), [](const auto* callable) {
         return callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script;
@@ -3321,7 +3311,7 @@ void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function
                 case Operand::Function: {
                     const auto functionStart = value.getIndexValue();
 
-                    const auto calledFunction = getScriptCallableByStartAddress(functionStart);
+                    const auto calledFunction = getFunctionByStartAddress(functionStart);
 
                 textValue = calledFunction->getName() + " (" + std::to_string(calledFunction->getId().id) + ")";
                 break;

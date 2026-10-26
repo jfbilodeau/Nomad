@@ -38,6 +38,7 @@ void ReturnStatementNode::onResolve(CompilerContext* context, ScriptCallableBase
     }
 
     if (context->getRuntime()->getConstructor(function->getId()) != nullptr) {
+        m_constructorReturn = true;
         if (m_expression != nullptr) {
             reportError(context, function, "Script constructors cannot return a value");
         }
@@ -81,7 +82,11 @@ void ReturnStatementNode::onCompile(Compiler* compiler, ScriptCallableBase* func
         m_expression->compile(compiler, function, ExpressionTarget::Result);
     }
 
-    compiler->addFunctionReturn(function);
+    if (m_constructorReturn) {
+        compiler->addConstructorReturn(function);
+    } else {
+        compiler->addFunctionReturn(function);
+    }
 }
 
 std::unique_ptr<Statement> parseReturnStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {

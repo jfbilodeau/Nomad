@@ -138,6 +138,7 @@ public:
     NomadIndex addOpCode(const NomadString& opCodeName);
     NomadIndex addOpCode(InstructionFn opCode);
     void addFunctionReturn(const ScriptCallableBase* function);
+    void addConstructorReturn(const ScriptCallableBase* constructor);
     NomadIndex addId(NomadId id);
     NomadIndex addIndex(NomadIndex index);
     NomadIndex addInteger(NomadInteger value);
@@ -264,6 +265,7 @@ private:
     void reportFieldDiagnostics(CompilerContext* context) const;
     [[nodiscard]] std::vector<const Type*> collectInferredTypes() const;
     void compileFunction(const FunctionCompilation& function);
+    void compileConstructor(const FunctionCompilation& constructor);
 
     Runtime* m_runtime;
 

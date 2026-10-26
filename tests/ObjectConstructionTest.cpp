@@ -40,6 +40,74 @@ CallableId compileConstruction(Runtime& runtime, const NomadString& source, cons
 
 BOOST_AUTO_TEST_SUITE(object_construction)
 
+BOOST_AUTO_TEST_CASE(script_constructor_bytecode_allocates_then_calls_its_type_initializer) {
+    Runtime runtime;
+    const auto id = compileConstruction(runtime,
+        "hub model\nclass Point\nvalue = 10\n"
+        "init value:int\nthis.value = value\nend\nend\nend\n"
+        "return new model.Point 42"
+    );
+    const auto* type = runtime.getTypeByName("model.Point")->asObjectType();
+    BOOST_TEST(type->getInitializerName() == "model.Point$init");
+    const auto* constructor = type->getConstructors()[0]->asScriptCallable();
+    BOOST_REQUIRE(constructor != nullptr);
+    const auto start = constructor->getFunctionStart();
+    const auto& instructions = runtime.getInstructions();
+    BOOST_TEST(instructions[start].fn ==
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_object_instantiate)));
+    BOOST_TEST(instructions[start + 1].value.getIdValue() == type->getId().id);
+    BOOST_TEST(instructions[start + 2].fn ==
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_method)));
+    const auto* initializer = runtime.getScriptCallable(CallableId{instructions[start + 3].value.getIdValue()});
+    BOOST_REQUIRE(initializer != nullptr);
+    BOOST_TEST(initializer->getName() == type->getInitializerName());
+    BOOST_TEST(initializer->getObjectType() == type);
+    const auto* main = runtime.getScriptFunction(id);
+    auto foundConstructorCall = false;
+    const auto newInstruction = runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_object_new));
+    for (auto index = main->getFunctionStart(); index < main->getFunctionEnd(); ++index) {
+        if (instructions[index].fn == newInstruction) {
+            BOOST_TEST(instructions[index + 1].value.getIdValue() == constructor->getId().id);
+            foundConstructorCall = true;
+        }
+    }
+    BOOST_TEST(foundConstructorCall);
+    RuntimeValue result;
+    runtime.executeFunction(id, {}, result);
+    auto* object = dynamic_cast<ScriptObject*>(result.getObjectValue());
+    BOOST_REQUIRE(object != nullptr);
+    BOOST_TEST(object->getField(0).getIntegerValue() == 42);
+    BOOST_TEST(object->getReferenceCount() == 1u);
+    result.freeObjectValue();
+}
+
+BOOST_AUTO_TEST_CASE(nested_script_constructor_failure_unwinds_call_frames_and_temporary_arguments) {
+    Runtime runtime;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "fail", [](VirtualMachine*) { throw NomadException("Nested initializer failed"); },
+        {}, runtime.getIntegerType(), ""
+    ).isValid());
+    const auto id = compileConstruction(runtime,
+        "class Broken\nvalue = fail\ninit name:string\nthis.name = name\nend\nend\n"
+        "class Owner\nname = \"owner\"\ninit name:string\nthis.name = name\n"
+        "child = new Broken (name.toUpper)\nend\nend\n"
+        "fun construct name:string\nreturn new Owner name\nend\n"
+        "return construct (\"temporary\".toUpper)"
+    );
+    const auto before = NomadObject::getLiveObjectCount();
+    auto machine = runtime.createVirtualMachine();
+    for (auto attempt = 0; attempt < 2; ++attempt) {
+        BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(id), {}), NomadException);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+        BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+    }
+    {
+        InterpreterContext context(*machine);
+        BOOST_TEST(!Interpreter{}.execute("new Owner (\"temporary\".toUpper)", context));
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
 BOOST_AUTO_TEST_CASE(script_construction_orders_defaults_initializers_and_overloaded_bodies) {
     Runtime runtime;
     auto calls = 0;

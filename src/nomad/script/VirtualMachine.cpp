@@ -52,7 +52,7 @@ void VirtualMachine::initializeObject(ScriptObject& object) {
     }
     const ScriptCallableBase* initializer = nullptr;
     for (const auto* method : type->getMethods()) {
-        if (method->getName() == type->getTypeName() + "$init") {
+        if (method->getName() == type->getInitializerName()) {
             initializer = method->asScriptCallable();
             break;
         }
@@ -269,10 +269,24 @@ void VirtualMachine::callFunction(const ScriptFunction* function) {
     callScriptCallable(function, nullptr);
 }
 
-void VirtualMachine::callCallable(const ScriptCallableBase* function) {
+void VirtualMachine::callConstructor(const CallableId constructorId) {
+    const auto* constructor = m_runtime->getConstructor(constructorId);
+    const auto* script = constructor != nullptr ? constructor->asScriptCallable() : nullptr;
+    if (script == nullptr) {
+        fault("Invalid script constructor id: " + toString(constructorId.id));
+    }
+    callScriptCallable(script, nullptr);
+}
+
+void VirtualMachine::callMethod(const CallableId methodId) {
+    const auto* method = m_runtime->getMethod(methodId);
+    const auto* script = method != nullptr ? method->asScriptCallable() : nullptr;
+    if (script == nullptr) {
+        fault("Invalid script method id: " + toString(methodId.id));
+    }
     const auto receiver = m_this;
-    callScriptCallable(function, function != nullptr && function->getObjectType() != nullptr &&
-        m_runtime->getConstructor(function->getId()) == nullptr ? &receiver : nullptr);
+    (void)getThis();
+    callScriptCallable(script, &receiver);
 }
 
 void VirtualMachine::instantiateObject(const TypeId typeId) {
@@ -329,7 +343,7 @@ void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, cons
         initializeFunctionVariables(function, receiver);
     }
     if (function->getObjectType() != nullptr &&
-        function->getName() == function->getObjectType()->getTypeName() + "$init") {
+        function->getName() == function->getObjectType()->asObjectType()->getInitializerName()) {
         auto* object = dynamic_cast<ScriptObject*>(getThis());
         if (object == nullptr || object->getObjectType() != function->getObjectType()) {
             fault("Class initializer receiver has no matching field storage");

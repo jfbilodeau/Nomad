@@ -57,7 +57,8 @@ public:
     ScriptFunction* getCurrentFunction() const;
 
     void callFunction(const ScriptFunction* function);
-    void callCallable(const ScriptCallableBase* function);
+    void callConstructor(CallableId constructorId);
+    void callMethod(CallableId methodId);
     void instantiateObject(TypeId typeId);
     void callNativeFunction(CallableId nativeFunctionId);
     void callNativeMethod(CallableId memberId, const RuntimeValue& receiver);
