@@ -52,7 +52,7 @@ void VirtualMachine::initializeObject(ScriptObject& object) {
     }
     const ScriptCallableBase* initializer = nullptr;
     for (const auto* method : type->getMethods()) {
-        if (method->getName() == "$init") {
+        if (method->getName() == type->getTypeName() + "$init") {
             initializer = method->asScriptCallable();
             break;
         }
@@ -61,7 +61,6 @@ void VirtualMachine::initializeObject(ScriptObject& object) {
         initializer->getFunctionStart() >= initializer->getFunctionEnd()) {
         fault("Class initializer has not been compiled");
     }
-    object.initializeFields();
     RuntimeValue receiver;
     receiver.setObjectValue(&object);
     const auto savedResult = m_result;
@@ -107,27 +106,21 @@ NomadObject* VirtualMachine::constructObject(
         script->getFunctionStart() >= script->getFunctionEnd()) {
         fault("Class constructor has not been compiled");
     }
-    const auto release = [](ScriptObject* object) { object->releaseRef(); };
-    auto object = std::unique_ptr<ScriptObject, decltype(release)>(
-        new ScriptObject(constructor->getObjectType()->asObjectType()), release
-    );
-    initializeObject(*object);
-    RuntimeValue receiver;
-    receiver.setObjectValue(object.get());
     const auto savedResult = m_result;
     const auto savedIntermediate = m_intermediate;
     m_result = RuntimeValue{};
     m_intermediate = RuntimeValue{};
     try {
-        runCallable(script, arguments, {}, &receiver);
+        runCallable(script, arguments, {}, nullptr);
     } catch (...) {
         m_result = savedResult;
         m_intermediate = savedIntermediate;
         throw;
     }
+    auto* object = m_result.getObjectValue();
     m_result = savedResult;
     m_intermediate = savedIntermediate;
-    return object.release();
+    return object;
 }
 
 void VirtualMachine::runCallable(
@@ -144,6 +137,7 @@ void VirtualMachine::runCallable(
     const auto savedVariableIndex = m_variableIndex;
     const auto savedRunning = m_running;
     const auto savedThis = m_this;
+    const auto savedFrameCount = m_scriptFrames.size();
 
     const auto restoreFrame = [&]() {
         m_instructionIndex = savedInstructionIndex;
@@ -161,7 +155,6 @@ void VirtualMachine::runCallable(
     // Returning from the function jumps to instruction 0 (`op_stop`).
     m_instructionIndex = 0;
 
-    auto entryVariableIndex = NOMAD_INVALID_INDEX;
     try {
         // Push closures and parameters onto the stack (right-to-left)
         // Closures first, then parameters
@@ -175,13 +168,6 @@ void VirtualMachine::runCallable(
             pushValue(args[i]);
         }
 
-        if (receiver != nullptr) {
-            if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex - 1 < 4 ||
-                function->getVariableCount() > m_stack.size() - m_stackIndex - 5) {
-                fault("Stack overflow");
-            }
-            entryVariableIndex = m_stackIndex + 5;
-        }
         callScriptCallable(function, receiver);
 
         do {
@@ -198,17 +184,26 @@ void VirtualMachine::runCallable(
 
             instruction.fn(this);
         } while (m_running);
-        if (receiver != nullptr && m_yielded) {
+        if (m_yielded && std::ranges::any_of(m_scriptFrames.begin() + savedFrameCount, m_scriptFrames.end(),
+            [](const auto& frame) { return frame.callable->getObjectType() != nullptr; })) {
             fault("Class initialization or construction cannot yield");
         }
     } catch (...) {
-        if (entryVariableIndex != NOMAD_INVALID_INDEX) {
-            for (auto index = NomadIndex{0}; index < function->getVariableCount(); ++index) {
-                const auto* type = function->getVariableType(VariableId{toNomadId(index)});
+        while (m_scriptFrames.size() > savedFrameCount) {
+            const auto frame = m_scriptFrames.back();
+            for (auto index = NomadIndex{0}; index < frame.callable->getVariableCount(); ++index) {
+                const auto* type = frame.callable->getVariableType(VariableId{toNomadId(index)});
                 if (type != nullptr) {
-                    type->freeValue(m_stack[entryVariableIndex + index]);
+                    type->freeValue(m_stack[frame.variableIndex + index]);
                 }
             }
+            if (m_scriptFrames.size() > savedFrameCount + 1) {
+                const auto& parameters = frame.callable->getParameters();
+                for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
+                    parameters[index].type->freeValue(m_stack[frame.parameterIndex - index]);
+                }
+            }
+            m_scriptFrames.pop_back();
         }
         m_yielded = false;
         restoreFrame();
@@ -274,6 +269,30 @@ void VirtualMachine::callFunction(const ScriptFunction* function) {
     callScriptCallable(function, nullptr);
 }
 
+void VirtualMachine::callCallable(const ScriptCallableBase* function) {
+    const auto receiver = m_this;
+    callScriptCallable(function, function != nullptr && function->getObjectType() != nullptr &&
+        m_runtime->getConstructor(function->getId()) == nullptr ? &receiver : nullptr);
+}
+
+void VirtualMachine::instantiateObject(const TypeId typeId) {
+    if (m_scriptFrames.empty()) {
+        fault("Object allocation requires a constructor frame");
+    }
+    const auto* constructor = m_scriptFrames.back().callable;
+    if (m_runtime->getConstructor(constructor->getId()) == nullptr ||
+        constructor->getObjectType()->getId() != typeId) {
+        fault("Object allocation type does not match constructor");
+    }
+    const auto variableId = constructor->getVariableId("this");
+    auto& value = m_stack[m_variableIndex + variableId.id];
+    if (value.getObjectValue() != nullptr) {
+        fault("Constructor instance has already been allocated");
+    }
+    value.setObjectValue(new ScriptObject(constructor->getObjectType()->asObjectType()));
+    m_this = value;
+}
+
 void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, const RuntimeValue* receiver) {
     if (function == nullptr) {
         fault("Invalid function");
@@ -301,7 +320,21 @@ void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, cons
 
     if (variableCount > 0) {
         pushN(variableCount);
+        for (auto index = NomadIndex{0}; index < variableCount; ++index) {
+            m_stack[m_variableIndex + index] = RuntimeValue{};
+        }
+    }
+    m_scriptFrames.push_back({function, m_variableIndex, m_parameterIndex});
+    if (variableCount > 0) {
         initializeFunctionVariables(function, receiver);
+    }
+    if (function->getObjectType() != nullptr &&
+        function->getName() == function->getObjectType()->getTypeName() + "$init") {
+        auto* object = dynamic_cast<ScriptObject*>(getThis());
+        if (object == nullptr || object->getObjectType() != function->getObjectType()) {
+            fault("Class initializer receiver has no matching field storage");
+        }
+        object->initializeFields();
     }
 
     auto functionStart = function->getFunctionStart();
@@ -723,6 +756,7 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, c
 
 void VirtualMachine::returnFunction(const NomadIndex variableCount) {
     popN(variableCount);
+    m_scriptFrames.pop_back();
 
     m_this = popValue();
     m_variableIndex = popIndex();

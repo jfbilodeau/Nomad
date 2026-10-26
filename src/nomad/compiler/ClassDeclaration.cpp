@@ -222,8 +222,9 @@ bool registerMemberSignatures(
         context->reportError("Class '" + name + "' has no registered object type", tokens);
         return false;
     }
-    auto initializerRegistered = std::ranges::any_of(type->asObjectType()->getMethods(), [](const auto* method) {
-        return method->getName() == "$init";
+    const auto initializerName = type->getTypeName() + "$init";
+    auto initializerRegistered = std::ranges::any_of(type->asObjectType()->getMethods(), [&](const auto* method) {
+        return method->getName() == initializerName;
     });
     for (const auto& member : members) {
         for (const auto& parameter : member->getParameters()) {
@@ -237,7 +238,7 @@ bool registerMemberSignatures(
         if (member->getKind() == ClassMemberKind::Field) {
             if (initializerRegistered) continue;
             initializerRegistered = true;
-            id = runtime->registerScriptMethod(type->getId(), "$init", {}, tokens->getSourceName(), tokens->getSource());
+            id = runtime->registerScriptMethod(type->getId(), initializerName, {}, tokens->getSourceName(), tokens->getSource());
         } else if (member->getKind() == ClassMemberKind::Constructor) {
             id = runtime->registerScriptConstructor(
                 type->getId(), member->getParameters(), tokens->getSourceName(), tokens->getSource()
@@ -264,7 +265,7 @@ bool registerMemberSignatures(
     }
     if (!initializerRegistered) {
         const auto id = runtime->registerScriptMethod(
-            type->getId(), "$init", {}, tokens->getSourceName(), tokens->getSource()
+            type->getId(), initializerName, {}, tokens->getSourceName(), tokens->getSource()
         );
         if (id.isInvalid()) {
             context->reportError("Cannot register class initializer", tokens);
@@ -299,7 +300,7 @@ CallableId findMemberCallable(const ObjectType* type, const ClassMemberDeclarati
             }
         }
     } else {
-        const auto name = member.getKind() == ClassMemberKind::Field ? "$init" : member.getName();
+        const auto name = member.getKind() == ClassMemberKind::Field ? type->getTypeName() + "$init" : member.getName();
         for (const auto* method : type->getMethods()) {
             if (method->getName() == name && (member.getKind() == ClassMemberKind::Field ||
                 std::ranges::equal(method->getParameters(), member.getParameters(),
@@ -320,7 +321,7 @@ bool parseMemberBodies(
     auto initializerBody = std::make_unique<FunctionNode>(0, 0);
     auto initializerId = CallableId::INVALID;
     for (const auto* method : type->getMethods()) {
-        if (method->getName() == "$init") {
+        if (method->getName() == type->getTypeName() + "$init") {
             initializerId = method->getId();
             break;
         }

@@ -76,7 +76,7 @@ BOOST_AUTO_TEST_CASE(empty_declarations_publish_closed_and_open_object_types)
     BOOST_REQUIRE(closed->getConstructors().size() == 1u);
     BOOST_TEST(closed->getConstructors()[0]->getParameters().empty());
     BOOST_REQUIRE(opened->getMethods().size() == 1u);
-    BOOST_TEST(opened->getMethods()[0]->getName() == "$init");
+    BOOST_TEST(opened->getMethods()[0]->getName() == "Opened$init");
     BOOST_TEST(closed->getProperties().empty());
     BOOST_TEST(fixture.execute("main").integerValue == 42);
 

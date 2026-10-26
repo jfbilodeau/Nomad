@@ -168,15 +168,16 @@ void op_object_move_r_to_stack(VirtualMachine* interpreter) {
 void op_call_function(VirtualMachine* interpreter) {
     const auto jumpIndex = interpreter->nextIndex();
 
-    const auto runtime = interpreter->getRuntime();
-    const auto function = runtime->getFunctionByStartAddress(jumpIndex);
+    // Copilot: yuk
+    // const auto runtime = interpreter->getRuntime();
+    // const auto function = runtime->getScriptCallableByStartAddress(jumpIndex);
 
-    if (function == nullptr) {
-        interpreter->fault("Invalid function start address: " + toString(jumpIndex));
-        return;
-    }
+    // if (function == nullptr) {
+    //     interpreter->fault("Invalid function start address: " + toString(jumpIndex));
+    //     return;
+    // }
 
-    interpreter->callFunction(function);
+    interpreter->callCallable(function);
 }
 
 void op_call_native_function(VirtualMachine* interpreter) {
@@ -898,39 +899,14 @@ void op_object_init_r(VirtualMachine* interpreter) {
 
 void op_object_new(VirtualMachine* interpreter) {
     const auto* constructor = interpreter->getRuntime()->getConstructor(CallableId{interpreter->nextId()});
-    if (constructor == nullptr) {
+    if (constructor == nullptr || constructor->asScriptCallable() == nullptr) {
         interpreter->fault("Cannot construct object: invalid constructor");
     }
-    const auto& parameters = constructor->getParameters();
-    if (constructor->asNativeConstructor() != nullptr) {
-        try {
-            interpreter->callNativeFunction(constructor->getId());
-        } catch (...) {
-            for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
-                auto argument = interpreter->peekStack(index);
-                parameters[index].type->freeValue(argument);
-            }
-            throw;
-        }
-        return;
-    }
-    // Arguments are pushed right to left like any other call; the compiler frees and pops them afterwards.
-    std::vector<RuntimeValue> arguments;
-    arguments.reserve(parameters.size());
-    for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
-        arguments.push_back(interpreter->peekStack(index));
-    }
-    NomadObject* object = nullptr;
-    try {
-        object = interpreter->constructObject(constructor->getId(), arguments);
-    } catch (...) {
-        // The compiler-emitted cleanup is skipped on failure, so release the arguments here.
-        for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
-            parameters[index].type->freeValue(arguments[index]);
-        }
-        throw;
-    }
-    interpreter->getResult().setObjectValue(object);
+    interpreter->callCallable(constructor->asScriptCallable());
+}
+
+void op_object_instantiate(VirtualMachine* interpreter) {
+    interpreter->instantiateObject(TypeId{interpreter->nextId()});
 }
 
 void op_object_init_i(VirtualMachine* interpreter) {

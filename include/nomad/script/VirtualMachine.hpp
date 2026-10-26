@@ -57,6 +57,8 @@ public:
     ScriptFunction* getCurrentFunction() const;
 
     void callFunction(const ScriptFunction* function);
+    void callCallable(const ScriptCallableBase* function);
+    void instantiateObject(TypeId typeId);
     void callNativeFunction(CallableId nativeFunctionId);
     void callNativeMethod(CallableId memberId, const RuntimeValue& receiver);
     void returnFunction(NomadIndex variableCount);
@@ -259,6 +261,12 @@ private:
     void invokeNativeMember(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
     void invokeNativeMethod(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
     RuntimeValue m_this; // Borrowed from the script frame's owned `this` local or the native caller.
+    struct ScriptFrame {
+        const ScriptCallableBase* callable;
+        NomadIndex variableIndex;
+        NomadIndex parameterIndex;
+    };
+    std::vector<ScriptFrame> m_scriptFrames;
 };
 
 template<typename Object>

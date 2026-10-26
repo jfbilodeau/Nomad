@@ -1151,6 +1151,24 @@ void Compiler::compileFunction(const FunctionCompilation& source) {
 
     function->setFunctionStart(m_instructions.size());
 
+    if (m_runtime->getConstructor(function->getId()) != nullptr) {
+        const auto* type = function->getObjectType();
+        addOpCode(OpCodes::op_object_instantiate);
+        addId(type->getId().id);
+        const auto* owner = type->asObjectType();
+        const auto initializerName = type->getTypeName() + "$init";
+        const auto methods = owner->getMethods();
+        const auto initializer = std::ranges::find_if(methods, [&](const auto* method) {
+            return method->getName() == initializerName;
+        });
+        if (initializer == methods.end()) {
+            reportInternalError("Missing class initializer: " + initializerName);
+        }
+        addOpCode(OpCodes::op_call_function);
+        addFunctionLink((*initializer)->getId(), m_instructions.size());
+        addIndex(NOMAD_INVALID_INDEX);
+    }
+
     source.ast->compile(this, function);
 
     // Unreachable for valid programs: `checkReturnPaths` rejects functions returning a value that can reach their end.
@@ -1166,6 +1184,10 @@ void Compiler::compileFunction(const FunctionCompilation& source) {
 
 void Compiler::addFunctionReturn(const ScriptCallableBase* function) {
     const NomadIndex variableCount = function->getVariableCount();
+
+    if (m_runtime->getConstructor(function->getId()) != nullptr) {
+        addLoadFunctionVariable(function->getVariableId("this"), function->getObjectType(), ExpressionTarget::Result);
+    }
 
     if (variableCount == 0) {
         addOpCode(OpCodes::op_return);
