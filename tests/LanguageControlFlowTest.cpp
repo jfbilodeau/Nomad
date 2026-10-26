@@ -264,7 +264,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_supports_compiled_and_interpreted_loops)
     const auto id = runtime.createObjectType("LoopDefinition", ObjectTypeMode::Closed);
     BOOST_REQUIRE(id.isValid());
     BOOST_REQUIRE(runtime.addConstructor(id, {
-        {}, [](std::span<const RuntimeValue>) { return new NomadObject; }, ""
+        {}, [](VirtualMachine* machine) { machine->getResult().setObjectValue(new NomadObject); }, ""
     }).isValid());
     auto factoryCalls = 0;
     runtime.addIterable(id, {
@@ -498,8 +498,8 @@ BOOST_AUTO_TEST_CASE(for_uses_registered_iteration_not_collection_names)
     auto* sourceType = const_cast<ObjectType*>(runtime.getType(typeId).value()->asObjectType());
     BOOST_REQUIRE(runtime.addConstructor(sourceType->getId(), {
         .parameters = {},
-        .factory = [](std::span<const RuntimeValue>) {
-            return new SequenceObject;
+        .function = [](VirtualMachine* machine) {
+            machine->getResult().setObjectValue(new SequenceObject);
         },
         .documentation = ""
     }).isValid());

@@ -109,9 +109,9 @@ void registerArrayType(Runtime* runtime) {
             if (writable) {
                 const auto constructorId = runtime->addConstructor(arrayType->getId(), {
                     .parameters = {{runtime->getIntegerType()->getId(), "size", ""}},
-                    .factory = [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
-                        const auto size = arguments[0].getIntegerValue();
-                        return new Array1dObject(arrayType->getElementType(), size);
+                    .function = [arrayType](VirtualMachine* machine) {
+                        const auto size = machine->getIntegerParameter(0);
+                        machine->getResult().setObjectValue(new Array1dObject(arrayType->getElementType(), size));
                     },
                     .documentation = ""
                 });
@@ -171,10 +171,10 @@ void registerArrayType(Runtime* runtime) {
                         {runtime->getIntegerType()->getId(), "size1", ""},
                         {runtime->getIntegerType()->getId(), "size2", ""}
                     },
-                    .factory = [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
-                        const auto size1 = arguments[0].getIntegerValue();
-                        const auto size2 = arguments[1].getIntegerValue();
-                        return new Array2dObject(arrayType->getElementType(), size1, size2);
+                    .function = [arrayType](VirtualMachine* machine) {
+                        const auto size1 = machine->getIntegerParameter(0);
+                        const auto size2 = machine->getIntegerParameter(1);
+                        machine->getResult().setObjectValue(new Array2dObject(arrayType->getElementType(), size1, size2));
                     },
                     .documentation = ""
                 });
@@ -224,11 +224,11 @@ void registerArrayType(Runtime* runtime) {
                         {runtime->getIntegerType()->getId(), "size2", ""},
                         {runtime->getIntegerType()->getId(), "size3", ""}
                     },
-                    .factory = [arrayType](const std::span<const nomad::RuntimeValue> arguments) {
-                        const auto size1 = arguments[0].getIntegerValue();
-                        const auto size2 = arguments[1].getIntegerValue();
-                        const auto size3 = arguments[2].getIntegerValue();
-                        return new Array3dObject(arrayType->getElementType(), size1, size2, size3);
+                    .function = [arrayType](VirtualMachine* machine) {
+                        const auto size1 = machine->getIntegerParameter(0);
+                        const auto size2 = machine->getIntegerParameter(1);
+                        const auto size3 = machine->getIntegerParameter(2);
+                        machine->getResult().setObjectValue(new Array3dObject(arrayType->getElementType(), size1, size2, size3));
                     },
                     .documentation = ""
                 });
@@ -292,7 +292,7 @@ void registerArrayType(Runtime* runtime) {
                 }
                 if (runtime->addConstructor(id, constructor->getReturnType()->getId(), {
                     .parameters = std::move(parameters),
-                    .factory = constructor->getFactory(),
+                    .function = constructor->getFn(),
                     .documentation = ""
                 }).isInvalid()) {
                     throw nomad::NomadException("Failed to register Array constructor");

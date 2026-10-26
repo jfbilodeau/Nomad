@@ -98,7 +98,7 @@ struct NativeMethodDefinition {
 
 struct NativeConstructorDefinition {
     std::vector<ParameterDefinition> parameters;
-    ConstructorFactory factory;
+    NativeFunctionFn function;
     NomadString documentation;
 };
 

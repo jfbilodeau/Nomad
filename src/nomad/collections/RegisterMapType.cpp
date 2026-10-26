@@ -45,8 +45,8 @@ void registerMapFamily(
             }
             if (writable && runtime->addConstructor(id, {
                 .parameters = {},
-                .factory = [valueType](std::span<const nomad::RuntimeValue>) {
-                    return new nomad::MapObject(valueType);
+                .function = [valueType](VirtualMachine* machine) {
+                    machine->getResult().setObjectValue(new nomad::MapObject(valueType));
                 },
                 .documentation = NomadDoc("Creates an empty map with string keys.")
             }).isInvalid()) {

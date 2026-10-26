@@ -2709,14 +2709,14 @@ BOOST_AUTO_TEST_CASE(compiler_rejects_invalid_object_construction) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(object_construction_reports_factory_failures) {
+BOOST_AUTO_TEST_CASE(object_construction_reports_callback_failures) {
     Runtime runtime;
     const auto descriptorId = runtime.createObjectType<ObjectType>("Broken", ObjectTypeMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asObjectType();
     BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
         .parameters = {},
-        .factory = [](std::span<const RuntimeValue>) -> NomadObject* { return nullptr; },
+        .function = [](VirtualMachine*) {},
         .documentation = ""
     }).isValid());
     auto compiler = runtime.createCompiler();

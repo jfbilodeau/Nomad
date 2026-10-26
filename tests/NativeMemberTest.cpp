@@ -469,12 +469,12 @@ BOOST_AUTO_TEST_CASE(native_creation_definitions_own_their_inputs_without_regist
 
     NativeConstructorDefinition constructor{
         .parameters = parameters,
-        .factory = [](std::span<const RuntimeValue>) -> NomadObject* { return nullptr; },
+        .function = [](VirtualMachine*) {},
         .documentation = "Constructs an object."
     };
     BOOST_TEST(constructor.parameters[0].typeId == integerId);
     BOOST_TEST(constructor.documentation == "Constructs an object.");
-    BOOST_TEST(static_cast<bool>(constructor.factory));
+    BOOST_TEST(static_cast<bool>(constructor.function));
 
     auto propertyValue = NomadInteger{0};
     NativePropertyDefinition property{

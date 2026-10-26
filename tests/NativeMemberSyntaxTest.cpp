@@ -10,6 +10,7 @@
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VariableContext.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 using namespace nomad;
 
@@ -53,7 +54,7 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
             const auto* valueType = objectType->getTypeArguments()[0];
             BOOST_REQUIRE(runtime.addConstructor(objectType->getId(), {
                 .parameters = {{valueType->getId(), "value", ""}},
-                .factory = [](std::span<const RuntimeValue>) { return new NomadObject; },
+                .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new NomadObject); },
                 .documentation = ""
             }).isValid());
             BOOST_REQUIRE(runtime.addProperty(objectType->getId(), {

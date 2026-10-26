@@ -940,7 +940,7 @@ Implement it when defining a type descriptor, and release initialized values
 through `freeValue` when they are no longer needed.
 
 Register a constructor through `Runtime::addConstructor(typeId, definition)`.
-`NativeConstructorDefinition` supplies parameter definitions, a factory, and
+`NativeConstructorDefinition` supplies parameter definitions, a `function` callback, and
 documentation. By default, the constructor creates its declaring type.
 `ObjectType::getConstructors()`
 lists that type's registered constructors as borrowed `const Constructor*`
@@ -958,8 +958,8 @@ if (!registeredType) {
 }
 const auto constructorId = runtime.addConstructor(typeId, {
     .parameters = {{runtime.getIntegerType()->getId(), "size", ""}},
-    .factory = [](std::span<const nomad::RuntimeValue> arguments) {
-        return new ExampleObject(arguments[0].getIntegerValue());
+    .function = [](nomad::VirtualMachine* machine) {
+        machine->getResult().setObjectValue(new ExampleObject(machine->getIntegerParameter(0)));
     },
     .documentation = ""
 });
@@ -980,7 +980,7 @@ Different overloads of one class may then create different types. The created ty
 object type.
 
 All IDs are local to the receiving runtime. Invalid or non-object owner/result IDs,
-invalid parameter IDs, and missing factories are rejected before a constructor is
+invalid parameter IDs, and missing callbacks are rejected before a constructor is
 published. Definitions are owned inputs; modifying one after registration does not
 change the registered constructor. `addConstructor` returns its `CallableId`.
 
@@ -988,10 +988,15 @@ Constructor parameters follow the same conventions as native function
 parameters, including `$file`, `$function`, and `$line`.
 
 The compiler checks argument types and count and uses the selected constructor's
-created type. The factory receives borrowed arguments in parameter order
-and returns an object of that type with one owned reference. Retain any argument
-object stored in the new instance. A null result raises an error.
-Validate value restrictions inside the factory: construction runs at evaluation
+created type. The callback uses the same `VirtualMachine*` calling convention as
+native functions: read borrowed stack arguments through `getParameter(index)` or
+typed accessors such as `getIntegerParameter(index)`. Store an object of the
+created type with one owned reference in the VM result. Retain any argument
+object stored in the new instance. A missing or null object result raises an
+error. If the callback stores an object result and then throws, that result is
+released. `NativeConstructor::getFn()` exposes the registered callback.
+The former `factory`/argument-span contract is replaced by this callback API.
+Validate value restrictions inside the callback: construction runs at evaluation
 time in both compiled scripts and the interpreter.
 
 For a constructor with type arguments, use

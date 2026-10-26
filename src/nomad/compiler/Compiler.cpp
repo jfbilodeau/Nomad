@@ -875,7 +875,8 @@ void Compiler::addFreeArguments(const ArgumentList* arguments) {
 NomadIndex Compiler::addNativeFunctionCall(const CallableId nativeFunctionId, ScriptCallableBase* function, const ArgumentList* arguments) {
     arguments->compile(this, function);
 
-    if (m_runtime->getNativeFunction(nativeFunctionId) == nullptr) {
+    if (m_runtime->getNativeFunction(nativeFunctionId) == nullptr &&
+        m_runtime->getNativeConstructor(nativeFunctionId) == nullptr) {
         reportInternalError("Unknown native function: " + toString(nativeFunctionId.id));
     }
 
@@ -902,6 +903,9 @@ NomadIndex Compiler::addNativeFunctionCall(const CallableId nativeFunctionId, Sc
 }
 
 NomadIndex Compiler::addConstructorCall(const CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments) {
+    if (m_runtime->getNativeConstructor(constructorId) != nullptr) {
+        return addNativeFunctionCall(constructorId, function, arguments);
+    }
     arguments->compile(this, function);
 
     addOpCode(OpCodes::op_object_new);

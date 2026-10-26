@@ -6,7 +6,6 @@
 #include <nomad/script/RuntimeValue.hpp>
 
 #include <functional>
-#include <span>
 
 namespace nomad {
 
@@ -14,7 +13,6 @@ class NomadObject;
 class VirtualMachine;
 
 using NativeFunctionFn = std::function<void(VirtualMachine*)>;
-using ConstructorFactory = std::function<NomadObject*(std::span<const RuntimeValue>)>;
 
 class NativeFunction : public Function {
 public:
@@ -57,16 +55,16 @@ public:
         NomadString name,
         const Type* objectType,
         const Type* createdType,
-        ConstructorFactory factory,
+        NativeFunctionFn fn,
         std::vector<Parameter> parameters,
         NomadString doc
     );
 
     [[nodiscard]] const NativeConstructor* asNativeConstructor() const override { return this; }
-    [[nodiscard]] const ConstructorFactory& getFactory() const { return m_factory; }
+    [[nodiscard]] const NativeFunctionFn& getFn() const { return m_fn; }
 
 private:
-    ConstructorFactory m_factory;
+    NativeFunctionFn m_fn;
 };
 
 } // namespace nomad

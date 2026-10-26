@@ -1596,8 +1596,8 @@ CallableId Runtime::addConstructor(
         ));
     }
     auto* ownedType = getMutableObjectType(objectType);
-    if (ownedType == nullptr || !ownsType(createdType) || createdType->isInternal() || !definition.factory) {
-        log::error("Cannot register constructor: a registered class, registered public object type, and factory are required");
+    if (ownedType == nullptr || !ownsType(createdType) || createdType->isInternal() || !definition.function) {
+        log::error("Cannot register constructor: a registered class, registered public object type, and callback are required");
         return CallableId::INVALID;
     }
     const auto name = objectType->getTypeName();
@@ -1627,7 +1627,7 @@ CallableId Runtime::addConstructor(
     return ownedType->registerConstructor(
         *this,
         std::make_unique<NativeConstructor>(
-            name, objectType, createdType, std::move(definition.factory), parameters, definition.documentation
+            name, objectType, createdType, std::move(definition.function), parameters, definition.documentation
         )
     );
 }

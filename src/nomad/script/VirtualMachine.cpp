@@ -87,11 +87,19 @@ NomadObject* VirtualMachine::constructObject(
     if (constructor == nullptr || constructor->getParameters().size() != arguments.size()) {
         fault("Cannot construct object: invalid constructor or argument count");
     }
-    if (const auto* native = constructor->asNativeConstructor()) {
-        auto* object = native->getFactory()(arguments);
-        if (object == nullptr) {
-            fault("Object factory for '" + constructor->getName() + "' returned null");
+    if (constructor->asNativeConstructor() != nullptr) {
+        const auto savedResult = m_result;
+        const auto savedIntermediate = m_intermediate;
+        try {
+            runNativeCallable(constructor, arguments);
+        } catch (...) {
+            m_result = savedResult;
+            m_intermediate = savedIntermediate;
+            throw;
         }
+        auto* object = m_result.getObjectValue();
+        m_result = savedResult;
+        m_intermediate = savedIntermediate;
         return object;
     }
     const auto* script = constructor->asScriptCallable();
@@ -293,6 +301,35 @@ void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, cons
 }
 
 void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
+    if (m_runtime->getNativeConstructor(nativeFunctionId) != nullptr) {
+        callNativeConstructor(nativeFunctionId);
+        return;
+    }
+    const auto* function = m_runtime->getNativeFunction(nativeFunctionId);
+    if (function == nullptr || !function->getFn()) {
+        fault("Invalid native function id: " + toString(nativeFunctionId.id));
+    }
+    invokeNativeFunction(function->getFn());
+}
+
+void VirtualMachine::callNativeConstructor(const CallableId constructorId) {
+    const auto* constructor = m_runtime->getNativeConstructor(constructorId);
+    if (constructor == nullptr || !constructor->getFn()) {
+        fault("Invalid native constructor id: " + toString(constructorId.id));
+    }
+    m_result = RuntimeValue{};
+    try {
+        invokeNativeFunction(constructor->getFn());
+        if (m_result.getObjectValue() == nullptr) {
+            fault("Native constructor for '" + constructor->getName() + "' returned null");
+        }
+    } catch (...) {
+        constructor->getReturnType()->freeValue(m_result);
+        throw;
+    }
+}
+
+void VirtualMachine::invokeNativeFunction(const NativeFunctionFn& callback) {
     const auto previousParameterIndex = m_parameterIndex;
     const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
 
@@ -301,19 +338,8 @@ void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
     // Save the enclosing function's parameter frame for closure capture
     m_enclosingParameterIndex = previousParameterIndex;
 
-    const auto nativeFunctionFn = m_runtime->getNativeFunctionFn(nativeFunctionId);
-
-#ifdef NOMAD_DEBUG
-    if (nativeFunctionFn == nullptr) {
-        log::error("NativeFunction not found: " + toString(nativeFunctionId.id));
-        m_parameterIndex = previousParameterIndex;
-        m_enclosingParameterIndex = previousEnclosingParameterIndex;
-        return;
-    }
-#endif
-
     try {
-        nativeFunctionFn(this);
+        callback(this);
     } catch (...) {
         m_parameterIndex = previousParameterIndex;
         m_enclosingParameterIndex = previousEnclosingParameterIndex;
@@ -505,6 +531,13 @@ void VirtualMachine::runNativeFunction(const CallableId nativeFunctionId, const 
     if (function == nullptr) {
         fault("Invalid native function id: " + toString(nativeFunctionId.id));
     }
+    runNativeCallable(function, args);
+}
+
+void VirtualMachine::runNativeCallable(
+    const Callable* function,
+    const std::vector<RuntimeValue>& args
+) {
     if (function->getReturnType() == nullptr) {
         fault("NativeFunction '" + function->getName() + "' has no return type");
     }
@@ -544,7 +577,7 @@ void VirtualMachine::runNativeFunction(const CallableId nativeFunctionId, const 
             type->copyValue(args[argumentIndex], m_stack[m_stackIndex]);
         }
 
-        callNativeFunction(nativeFunctionId);
+        callNativeFunction(function->getId());
     } catch (...) {
         releaseArguments();
         throw;

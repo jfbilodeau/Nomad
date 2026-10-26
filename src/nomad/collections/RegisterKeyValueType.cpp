@@ -32,10 +32,10 @@ void registerKeyValueType(Runtime* runtime) {
                     {keyType->getId(), "key", NomadDoc("The key to store.")},
                     {valueType->getId(), "value", NomadDoc("The value to store.")}
                 },
-                .factory = [keyType, valueType](const std::span<const RuntimeValue> arguments) {
-                    const auto& key = arguments[0];
-                    const auto& value = arguments[1];
-                    return new KeyValueObject(keyType, valueType, key, value);
+                .function = [keyType, valueType](VirtualMachine* machine) {
+                    const auto& key = machine->getParameter(0);
+                    const auto& value = machine->getParameter(1);
+                    machine->getResult().setObjectValue(new KeyValueObject(keyType, valueType, key, value));
                 },
                 .documentation = NomadDoc("Creates a pair with read-only key and value properties.")
             });

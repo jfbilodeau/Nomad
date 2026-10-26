@@ -836,7 +836,7 @@ CallableId registerResolutionConstructor(
 ) {
     return runtime.addConstructor(type->getId(), {
         .parameters = parameters,
-        .factory = [](std::span<const RuntimeValue>) { return new ResolutionObject; },
+        .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new ResolutionObject); },
         .documentation = ""
     });
 }
@@ -898,7 +898,7 @@ BOOST_AUTO_TEST_CASE(constructors_belong_to_the_declaring_type)
     const auto* createdType = registerResolutionType(runtime, "ConstructorResult");
     const auto id = runtime.addConstructor(declaringType->getId(), createdType->getId(), {
         .parameters = {},
-        .factory = [](std::span<const RuntimeValue>) { return new ResolutionObject; },
+        .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new ResolutionObject); },
         .documentation = ""
     });
     BOOST_REQUIRE(id.isValid());
@@ -916,7 +916,7 @@ BOOST_AUTO_TEST_CASE(constructors_belong_to_the_declaring_type)
     const auto otherCallableCount = otherRuntime.getFunctionTableSize();
     BOOST_TEST(otherRuntime.addConstructor(otherRuntime.getTypeId(declaringType->getTypeName()), {
         .parameters = {},
-        .factory = [](std::span<const RuntimeValue>) { return new ResolutionObject; },
+        .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new ResolutionObject); },
         .documentation = ""
     }).isInvalid());
     BOOST_TEST(otherRuntime.getFunctionTableSize() == otherCallableCount);
@@ -971,7 +971,9 @@ BOOST_AUTO_TEST_CASE(type_owned_constructor_factory_is_released_once)
         });
         const auto id = runtime.addConstructor(type->getId(), {
             .parameters = {},
-            .factory = [lifetime = std::move(lifetime)](std::span<const RuntimeValue>) { return new ResolutionObject; },
+            .function = [lifetime = std::move(lifetime)](VirtualMachine* machine) {
+                machine->getResult().setObjectValue(new ResolutionObject);
+            },
             .documentation = ""
         });
         BOOST_REQUIRE(id.isValid());

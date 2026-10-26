@@ -182,7 +182,18 @@ void op_call_function(VirtualMachine* interpreter) {
 void op_call_native_function(VirtualMachine* interpreter) {
     const auto nativeFunctionId = CallableId{interpreter->nextId()};
 
-    interpreter->callNativeFunction(nativeFunctionId);
+    try {
+        interpreter->callNativeFunction(nativeFunctionId);
+    } catch (...) {
+        if (const auto* constructor = interpreter->getRuntime()->getNativeConstructor(nativeFunctionId)) {
+            const auto& parameters = constructor->getParameters();
+            for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
+                auto argument = interpreter->peekStack(index);
+                parameters[index].type->freeValue(argument);
+            }
+        }
+        throw;
+    }
 }
 
 void op_native_property_get(VirtualMachine* interpreter) {
@@ -891,6 +902,18 @@ void op_object_new(VirtualMachine* interpreter) {
         interpreter->fault("Cannot construct object: invalid constructor");
     }
     const auto& parameters = constructor->getParameters();
+    if (constructor->asNativeConstructor() != nullptr) {
+        try {
+            interpreter->callNativeFunction(constructor->getId());
+        } catch (...) {
+            for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
+                auto argument = interpreter->peekStack(index);
+                parameters[index].type->freeValue(argument);
+            }
+            throw;
+        }
+        return;
+    }
     // Arguments are pushed right to left like any other call; the compiler frees and pops them afterwards.
     std::vector<RuntimeValue> arguments;
     arguments.reserve(parameters.size());

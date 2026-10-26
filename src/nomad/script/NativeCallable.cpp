@@ -33,12 +33,12 @@ NativeConstructor::NativeConstructor(
     NomadString name,
     const Type* objectType,
     const Type* createdType,
-    ConstructorFactory factory,
+    NativeFunctionFn fn,
     std::vector<Parameter> parameters,
     NomadString doc
 ):
     Constructor(CallableSource::Native, std::move(name), objectType, std::move(parameters), createdType, std::move(doc)),
-    m_factory(std::move(factory))
+    m_fn(std::move(fn))
 {
 }
 

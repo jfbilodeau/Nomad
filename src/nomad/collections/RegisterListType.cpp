@@ -114,8 +114,8 @@ void registerListType(Runtime* runtime) {
             }
             const auto constructorId = runtime->addConstructor(id, {
                 .parameters = {},
-                .factory = [elementType](std::span<const nomad::RuntimeValue>) {
-                    return new nomad::ListObject(elementType);
+                .function = [elementType](VirtualMachine* machine) {
+                    machine->getResult().setObjectValue(new nomad::ListObject(elementType));
                 },
                 .documentation = ""
             });

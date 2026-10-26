@@ -261,10 +261,10 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
         }).isValid());
         BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
             .parameters = {},
-            .factory = [type](std::span<const RuntimeValue>) {
+            .function = [type](VirtualMachine* machine) {
                 auto object = std::make_unique<ScriptObject>(type);
                 object->initializeFields();
-                return object.release();
+                machine->getResult().setObjectValue(object.release());
             },
             .documentation = ""
         }).isValid());

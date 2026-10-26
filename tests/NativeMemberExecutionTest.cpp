@@ -27,7 +27,7 @@ const ObjectType* registerTestObject(Runtime& runtime) {
     const auto* type = runtime.getType(descriptorId).value()->asObjectType();
     BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
         .parameters = {},
-        .factory = [](std::span<const RuntimeValue>) { return new TestObject; },
+        .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new TestObject); },
         .documentation = ""
     }).isValid());
     BOOST_REQUIRE(runtime.addProperty(type->getId(), {
@@ -89,10 +89,10 @@ BOOST_AUTO_TEST_CASE(resolved_method_and_constructor_survive_catalog_growth) {
 
     BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
         .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
-        .factory = [](std::span<const RuntimeValue>) {
+        .function = [](VirtualMachine* machine) {
             auto* object = new TestObject;
             object->value = 100;
-            return object;
+            machine->getResult().setObjectValue(object);
         },
         .documentation = ""
     }).isValid());

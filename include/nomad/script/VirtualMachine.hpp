@@ -229,6 +229,12 @@ private:
     friend class Runtime;
     friend class InterpreterContext;
 
+    void invokeNativeFunction(const NativeFunctionFn& callback);
+    void callNativeConstructor(CallableId constructorId);
+    void runNativeCallable(
+        const Callable* callable,
+        const std::vector<RuntimeValue>& args
+    );
     void initializeFunctionVariables(const ScriptCallableBase* function, const RuntimeValue* receiver = nullptr);
     void callScriptCallable(const ScriptCallableBase* function, const RuntimeValue* receiver);
     void runCallable(
