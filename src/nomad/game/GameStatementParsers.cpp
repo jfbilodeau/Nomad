@@ -69,7 +69,7 @@ std::unique_ptr<Statement> parseSelectStatement(CompilerContext* context, Script
     function_node->addStatement(std::move(return_statement));
 
     // Assign statement list to function
-    context->getCompiler()->setFunctionNode(functionId, std::move(function_node));
+    context->getCompiler()->setFunctionBody(functionId, std::move(function_node));
 
     auto select_statement = std::make_unique<SelectStatement>(
         tokens->getLineIndex(),

@@ -256,11 +256,13 @@ bool registerMemberSignatures(
         auto* callable = runtime->getScriptCallable(id);
         callable->setHub(context->getHub());
         callable->setSourceLineRange(member->getLine(), member->getEndLine());
-        context->getCompiler()->registerMemberCompilation(id, function->getId());
+        const auto kind = member->getKind() == ClassMemberKind::Field ? CompilationCallableTarget::ObjectInitializer :
+            member->getKind() == ClassMemberKind::Constructor ? CompilationCallableTarget::Constructor : CompilationCallableTarget::Function;
+        context->getCompiler()->registerMemberCompilation(id, function->getId(), kind);
         if (member->getKind() == ClassMemberKind::Field) {
             auto body = std::make_unique<FunctionNode>(member->getLine(), member->getColumn());
             body->setEndSpan(member->getEndLine(), member->getEndColumn());
-            context->getCompiler()->setFunctionNode(id, std::move(body));
+            context->getCompiler()->setFunctionBody(id, std::move(body));
         }
     }
     if (!initializerRegistered) {
@@ -273,8 +275,8 @@ bool registerMemberSignatures(
         }
         auto* callable = runtime->getScriptCallable(id);
         callable->setHub(context->getHub());
-        context->getCompiler()->registerMemberCompilation(id, function->getId());
-        context->getCompiler()->setFunctionNode(id, std::make_unique<FunctionNode>(0, 0));
+        context->getCompiler()->registerMemberCompilation(id, function->getId(), CompilationCallableTarget::ObjectInitializer);
+        context->getCompiler()->setFunctionBody(id, std::make_unique<FunctionNode>(0, 0));
     }
     if (type->asObjectType()->getConstructors().empty()) {
         const auto id = runtime->registerScriptConstructor(
@@ -285,8 +287,8 @@ bool registerMemberSignatures(
             return false;
         }
         runtime->getScriptCallable(id)->setHub(context->getHub());
-        context->getCompiler()->registerMemberCompilation(id, function->getId());
-        context->getCompiler()->setFunctionNode(id, std::make_unique<FunctionNode>(0, 0));
+        context->getCompiler()->registerMemberCompilation(id, function->getId(), CompilationCallableTarget::Constructor);
+        context->getCompiler()->setFunctionBody(id, std::make_unique<FunctionNode>(0, 0));
     }
     return true;
 }
@@ -367,10 +369,10 @@ bool parseMemberBodies(
             tokens.nextLine();
             auto body = parseFunBody(context, callable, &tokens, member->getLine());
             if (!body) return false;
-            context->getCompiler()->setFunctionNode(id, std::move(body));
+            context->getCompiler()->setFunctionBody(id, std::move(body));
         }
     }
-    context->getCompiler()->setFunctionNode(initializerId, std::move(initializerBody), true);
+    context->getCompiler()->setFunctionBody(initializerId, std::move(initializerBody));
     return true;
 }
 
@@ -400,7 +402,6 @@ NomadBoolean ClassDeclaration::isDeclaration() const {
 }
 
 void ClassDeclaration::onResolve(CompilerContext* context, ScriptCallableBase* function) {
-    std::vector<PropertyId> fieldInitializers;
     for (const auto& member : m_members) {
         if (auto* initializer = member->getInitializer()) {
             auto* callable = context->getRuntime()->getScriptCallable(member->getCallableId());
@@ -416,12 +417,11 @@ void ClassDeclaration::onResolve(CompilerContext* context, ScriptCallableBase* f
                 );
                 if (property != nullptr) {
                     member->setPropertyId(property->getId());
-                    fieldInitializers.push_back(property->getId());
+                    context->getRuntime()->setPropertyHasExplicitInitializer(property->getId(), true);
                 }
             }
         }
     }
-    context->getRuntime()->setFieldInitializers(m_type, std::move(fieldInitializers));
     const auto unsupported = std::ranges::find_if(m_members, [](const auto& member) {
         return member->getKind() == ClassMemberKind::Method;
     });

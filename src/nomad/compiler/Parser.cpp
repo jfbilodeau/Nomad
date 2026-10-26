@@ -581,7 +581,7 @@ CallableId parseCallbackParameter(
             return CallableId::INVALID;
         }
 
-        context->getCompiler()->setFunctionNode(functionId, std::move(callbackBody));
+        context->getCompiler()->setFunctionBody(functionId, std::move(callbackBody));
 
         return functionId;
     }
@@ -1664,7 +1664,7 @@ std::unique_ptr<Argument> parsePredicateArgument(
     functionNode->addStatement(std::move(returnStatement));
 
     // Assign statement list to function
-    context->getCompiler()->setFunctionNode(predicateFunctionId, std::move(functionNode));
+    context->getCompiler()->setFunctionBody(predicateFunctionId, std::move(functionNode));
 
     auto predicateArgument = createPredicateArgument(
         tokens->getLineIndex(),

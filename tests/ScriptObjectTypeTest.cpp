@@ -69,12 +69,12 @@ BOOST_AUTO_TEST_CASE(open_type_registers_and_reuses_property_ids) {
     Runtime runtime;
     const auto* type = createTestType(runtime, "Point", ObjectTypeMode::Opened);
     BOOST_TEST(type->isOpen());
-    const auto xId = runtime.registerProperty(type, "x", runtime.getFloatType());
-    const auto yId = runtime.registerProperty(type, "y", runtime.getFloatType());
+    const auto xId = runtime.registerProperty(type->getId(), "x", runtime.getFloatType());
+    const auto yId = runtime.registerProperty(type->getId(), "y", runtime.getFloatType());
     BOOST_REQUIRE(xId.isValid());
     BOOST_REQUIRE(yId.isValid());
     BOOST_TEST(xId != yId);
-    BOOST_TEST(runtime.registerProperty(type, "x", runtime.getFloatType()) == xId);
+    BOOST_TEST(runtime.registerProperty(type->getId(), "x", runtime.getFloatType()) == xId);
     BOOST_TEST(type->getPropertyCount() == 2u);
 
     const auto* xProperty = type->getProperty("x");
@@ -90,15 +90,47 @@ BOOST_AUTO_TEST_CASE(closed_type_can_register_declared_properties) {
     Runtime runtime;
     const auto* type = createTestType(runtime, "ClosedPoint", ObjectTypeMode::Closed);
     BOOST_TEST(!type->isOpen());
-    BOOST_TEST(runtime.registerProperty(type, "x", runtime.getFloatType()).isValid());
+    BOOST_TEST(runtime.registerProperty(type->getId(), "x", runtime.getFloatType()).isValid());
     BOOST_TEST(type->getPropertyCount() == 1u);
+}
+
+BOOST_AUTO_TEST_CASE(explicit_initializer_metadata_is_owned_by_each_stored_property) {
+    Runtime runtime;
+    const auto* type = createTestType(runtime, "Fields", ObjectTypeMode::Opened);
+    const auto firstId = runtime.registerProperty(type->getId(), "first", runtime.getIntegerType());
+    const auto secondId = runtime.registerProperty(type->getId(), "second", runtime.getStringType());
+    BOOST_REQUIRE(firstId.isValid());
+    BOOST_REQUIRE(secondId.isValid());
+    const auto* first = runtime.getProperty(firstId);
+    const auto* second = runtime.getProperty(secondId);
+    BOOST_TEST(!first->hasExplicitInitializer());
+    BOOST_TEST(!second->hasExplicitInitializer());
+    runtime.setPropertyHasExplicitInitializer(firstId, true);
+    BOOST_TEST(first->hasExplicitInitializer());
+    BOOST_TEST(!second->hasExplicitInitializer());
+    BOOST_TEST(runtime.registerProperty(type->getId(), "first", runtime.getIntegerType()) == firstId);
+    BOOST_TEST(first->hasExplicitInitializer());
+    runtime.setPropertyHasExplicitInitializer(firstId, false);
+    BOOST_TEST(!first->hasExplicitInitializer());
+
+    const auto nativeId = runtime.addProperty(type->getId(), {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .name = "native",
+        .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); }
+    });
+    BOOST_REQUIRE(nativeId.isValid());
+    BOOST_CHECK_THROW(runtime.setPropertyHasExplicitInitializer(nativeId, true), NomadBug);
+    BOOST_TEST(!runtime.getProperty(nativeId)->hasExplicitInitializer());
+    for (const auto id : {PropertyId::INVALID, PropertyId{-2}, PropertyId{NOMAD_ID_MAX}}) {
+        BOOST_CHECK_THROW(runtime.setPropertyHasExplicitInitializer(id, true), NomadBug);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(property_type_cannot_be_redefined) {
     Runtime runtime;
     const auto* type = createTestType(runtime, "Point", ObjectTypeMode::Opened);
-    BOOST_REQUIRE(runtime.registerProperty(type, "x", runtime.getFloatType()).isValid());
-    BOOST_TEST(runtime.registerProperty(type, "x", runtime.getIntegerType()).isInvalid());
+    BOOST_REQUIRE(runtime.registerProperty(type->getId(), "x", runtime.getFloatType()).isValid());
+    BOOST_TEST(runtime.registerProperty(type->getId(), "x", runtime.getIntegerType()).isInvalid());
     BOOST_TEST(type->getPropertyCount() == 1u);
     BOOST_TEST(type->getProperty("x")->getValueType() == runtime.getFloatType());
 }
@@ -106,7 +138,7 @@ BOOST_AUTO_TEST_CASE(property_type_cannot_be_redefined) {
 BOOST_AUTO_TEST_CASE(null_property_type_is_rejected) {
     Runtime runtime;
     const auto* type = createTestType(runtime, "Point", ObjectTypeMode::Opened);
-    BOOST_TEST(runtime.registerProperty(type, "x", nullptr).isInvalid());
+    BOOST_TEST(runtime.registerProperty(type->getId(), "x", nullptr).isInvalid());
     BOOST_TEST(type->getPropertyCount() == 0u);
     BOOST_TEST(type->getProperty("x") == nullptr);
 }
@@ -115,7 +147,7 @@ BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_cata
     Runtime runtime;
     const auto* first = createTestType(runtime, "First", ObjectTypeMode::Opened);
     const auto* second = createTestType(runtime, "Second", ObjectTypeMode::Opened);
-    const auto scriptId = runtime.registerProperty(first, "value", runtime.getFloatType());
+    const auto scriptId = runtime.registerProperty(first->getId(), "value", runtime.getFloatType());
     const auto nativeId = runtime.addProperty(second->getId(), {
         .valueTypeId = runtime.getTypeId("int"),
         .name = "value",
@@ -145,7 +177,7 @@ BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_cata
     BOOST_TEST(!runtime.getNativePropertyInfo(scriptId).has_value());
 
     for (auto index = 0; index < 64; ++index) {
-        BOOST_REQUIRE(runtime.registerProperty(first, "extra" + std::to_string(index), runtime.getFloatType()).isValid());
+        BOOST_REQUIRE(runtime.registerProperty(first->getId(), "extra" + std::to_string(index), runtime.getFloatType()).isValid());
     }
     BOOST_TEST(runtime.getProperty(scriptId) == scriptProperty);
     BOOST_TEST(runtime.getNativeProperty(nativeId) == nativeProperty);
@@ -160,15 +192,13 @@ BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_cata
 BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_member_collisions) {
     Runtime runtime;
     Runtime other;
-    ObjectType unregistered(&runtime, TypeId::INVALID, "Unregistered", ObjectTypeMode::Opened);
     const auto* type = createTestType(runtime, "Point", ObjectTypeMode::Opened);
-    const auto* foreign = createTestType(other, "Point", ObjectTypeMode::Opened);
-    BOOST_TEST(runtime.registerProperty(nullptr, "value", runtime.getIntegerType()).isInvalid());
-    BOOST_TEST(runtime.registerProperty(&unregistered, "value", runtime.getIntegerType()).isInvalid());
-    BOOST_TEST(runtime.registerProperty(foreign, "value", runtime.getIntegerType()).isInvalid());
-    BOOST_TEST(runtime.registerProperty(type, "value", other.getIntegerType()).isInvalid());
-    BOOST_TEST(runtime.registerProperty(type, "value", runtime.getVoidType()).isInvalid());
-    BOOST_TEST(runtime.registerProperty(type, "invalid.name", runtime.getIntegerType()).isInvalid());
+    for (const auto id : {TypeId::INVALID, TypeId{-2}, TypeId{NOMAD_ID_MAX}, runtime.getIntegerType()->getId()}) {
+        BOOST_TEST(runtime.registerProperty(id, "value", runtime.getIntegerType()).isInvalid());
+    }
+    BOOST_TEST(runtime.registerProperty(type->getId(), "value", other.getIntegerType()).isInvalid());
+    BOOST_TEST(runtime.registerProperty(type->getId(), "value", runtime.getVoidType()).isInvalid());
+    BOOST_TEST(runtime.registerProperty(type->getId(), "invalid.name", runtime.getIntegerType()).isInvalid());
     const auto method = runtime.addMethod(type->getId(), {
         .name = "move",
         .parameters = {},
@@ -177,8 +207,8 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
         .documentation = ""
     });
     BOOST_REQUIRE(method.isValid());
-    BOOST_TEST(runtime.registerProperty(type, "move", runtime.getFloatType()).isInvalid());
-    BOOST_REQUIRE(runtime.registerProperty(type, "x", runtime.getFloatType()).isValid());
+    BOOST_TEST(runtime.registerProperty(type->getId(), "move", runtime.getFloatType()).isInvalid());
+    BOOST_REQUIRE(runtime.registerProperty(type->getId(), "x", runtime.getFloatType()).isValid());
     BOOST_TEST(runtime.addMethod(type->getId(), {
         .name = "x",
         .parameters = {},
@@ -202,7 +232,7 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
         .documentation = ""
     });
     BOOST_REQUIRE(nativeId.isValid());
-    BOOST_TEST(runtime.registerProperty(type, "native", runtime.getIntegerType()).isInvalid());
+    BOOST_TEST(runtime.registerProperty(type->getId(), "native", runtime.getIntegerType()).isInvalid());
     BOOST_TEST(type->getPropertyCount() == 2u);
     Property standalone(type, "standalone", runtime.getIntegerType());
     BOOST_TEST(standalone.registerWithRuntime(runtime).isInvalid());

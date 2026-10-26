@@ -287,8 +287,8 @@ public:
         NomadString path,
         NomadString source
     );
-    PropertyId registerProperty(const ObjectType* objectType, const NomadString& name, const Type* valueType);
-    void setFieldInitializers(const ObjectType* objectType, std::vector<PropertyId> fields);
+    PropertyId registerProperty(TypeId ownerId, const NomadString& name, const Type* valueType);
+    void setPropertyHasExplicitInitializer(PropertyId id, bool hasExplicitInitializer);
     [[nodiscard]] PropertyId catalogProperty(Property* property);
     [[nodiscard]] const Property* getProperty(PropertyId id) const;
     [[nodiscard]] const NativeProperty* getNativeProperty(PropertyId id) const;

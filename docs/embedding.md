@@ -278,8 +278,9 @@ whether external script declarations may extend it. Closed types are not immutab
 for object types and their subclasses, including strings, or `nullptr` for other types.
 
 Register the owner type with the runtime before declaring its properties.
-`Runtime::registerProperty(objectType, name, valueType)` declares a stored/script
+`Runtime::registerProperty(ownerTypeId, name, valueType)` declares a stored/script
 property and returns a `PropertyId`, or `PropertyId::INVALID` on failure.
+The owner ID is resolved within that runtime and must identify an object type.
 The value type must also be registered with the same runtime and must be public
 and non-void. Repeating a declaration with the same name and type returns its
 existing ID. Conflicting declarations are logged and rejected without changing
@@ -291,7 +292,10 @@ types; openness controls whether scripts may add external declarations.
 IDs return `nullptr`. Include `<nomad/script/Property.hpp>` for `PropertyId`
 and common metadata, and `<nomad/script/NativeProperty.hpp>` for native metadata.
 Use `getId()`, `getObjectType()`, `getName()`, `getValueType()`, and `getDoc()`
-to inspect a property.
+to inspect a property. `hasExplicitInitializer()` reports whether a stored field
+has a declaration initializer; assignments inside constructor bodies do not set
+this flag. `Runtime::setPropertyHasExplicitInitializer(propertyId, value)` updates
+that metadata for a stored property and rejects invalid IDs and native properties.
 `ObjectType::getProperty(name)`, `getProperty(id)`, and `getProperties()` expose
 the owner's properties as borrowed const pointers. IDs and pointers remain
 stable as more properties are registered and are valid for the owning runtime's

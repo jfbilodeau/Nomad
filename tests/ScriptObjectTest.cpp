@@ -103,7 +103,7 @@ BOOST_AUTO_TEST_SUITE(language_script_object)
 BOOST_AUTO_TEST_CASE(fields_use_owner_local_slots_and_zeroed_raw_storage) {
     Runtime runtime;
     const auto* unrelated = createTestType(runtime, "Unrelated");
-    BOOST_REQUIRE(runtime.registerProperty(unrelated, "other", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(unrelated->getId(), "other", runtime.getIntegerType()).isValid());
     const auto* type = createTestType(runtime, "Fields");
     const auto nativeId = runtime.addProperty(type->getId(), {
         .valueTypeId = runtime.getTypeId("int"),
@@ -111,11 +111,11 @@ BOOST_AUTO_TEST_CASE(fields_use_owner_local_slots_and_zeroed_raw_storage) {
         .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); }
     });
     BOOST_REQUIRE(nativeId.isValid());
-    const auto integerId = runtime.registerProperty(type, "integer", runtime.getIntegerType());
-    const auto floatId = runtime.registerProperty(type, "number", runtime.getFloatType());
-    const auto booleanId = runtime.registerProperty(type, "flag", runtime.getBooleanType());
-    const auto stringId = runtime.registerProperty(type, "text", runtime.getStringType());
-    const auto referenceId = runtime.registerProperty(type, "reference", type);
+    const auto integerId = runtime.registerProperty(type->getId(), "integer", runtime.getIntegerType());
+    const auto floatId = runtime.registerProperty(type->getId(), "number", runtime.getFloatType());
+    const auto booleanId = runtime.registerProperty(type->getId(), "flag", runtime.getBooleanType());
+    const auto stringId = runtime.registerProperty(type->getId(), "text", runtime.getStringType());
+    const auto referenceId = runtime.registerProperty(type->getId(), "reference", type);
     for (const auto id : {integerId, floatId, booleanId, stringId, referenceId}) {
         BOOST_REQUIRE(id.isValid());
     }
@@ -141,7 +141,7 @@ BOOST_AUTO_TEST_CASE(allocation_and_stores_do_not_run_type_initializers) {
     );
     BOOST_REQUIRE(valueId.isValid());
     const auto* type = createTestType(runtime, "Owner");
-    BOOST_REQUIRE(runtime.registerProperty(type, "value", runtime.getType(valueId).value()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(type->getId(), "value", runtime.getType(valueId).value()).isValid());
     {
         ScriptObject uninitialized(type);
         BOOST_TEST(initialized == 0u);
@@ -168,7 +168,7 @@ BOOST_AUTO_TEST_CASE(allocation_and_stores_do_not_run_type_initializers) {
 BOOST_AUTO_TEST_CASE(instances_have_independent_values_and_aliases_share_the_same_instance) {
     Runtime runtime;
     const auto* type = createTestType(runtime, "Point");
-    BOOST_REQUIRE(runtime.registerProperty(type, "value", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(type->getId(), "value", runtime.getIntegerType()).isValid());
     RuntimeValue owner;
     owner.setObjectValue(new ScriptObject(type));
     auto* first = owner.asObject<ScriptObject>();
@@ -187,8 +187,8 @@ BOOST_AUTO_TEST_CASE(instances_have_independent_values_and_aliases_share_the_sam
 BOOST_AUTO_TEST_CASE(field_replacement_retains_references_and_handles_self_assignment) {
     Runtime runtime;
     const auto* type = createTestType(runtime, "Owner");
-    BOOST_REQUIRE(runtime.registerProperty(type, "first", type).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(type, "second", type).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(type->getId(), "first", type).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(type->getId(), "second", type).isValid());
     auto destroyed = NomadIndex{0};
     {
         ScriptObject object(type);
@@ -222,7 +222,7 @@ BOOST_AUTO_TEST_CASE(partial_out_of_order_stores_release_values_without_initiali
     BOOST_REQUIRE(countedId.isValid());
     const auto* type = createTestType(runtime, "Partial");
     for (auto index = NomadIndex{0}; index < 3; ++index) {
-        BOOST_REQUIRE(runtime.registerProperty(type, "field" + std::to_string(index),
+        BOOST_REQUIRE(runtime.registerProperty(type->getId(), "field" + std::to_string(index),
             runtime.getType(countedId).value()).isValid());
     }
     {
@@ -245,10 +245,10 @@ BOOST_AUTO_TEST_CASE(layout_does_not_resize_and_invalid_access_is_rejected) {
     Runtime runtime;
     BOOST_CHECK_THROW(ScriptObject(nullptr), NomadException);
     const auto* type = createTestType(runtime, "Layout");
-    const auto firstId = runtime.registerProperty(type, "first", runtime.getIntegerType());
+    const auto firstId = runtime.registerProperty(type->getId(), "first", runtime.getIntegerType());
     BOOST_REQUIRE(firstId.isValid());
     ScriptObject object(type);
-    const auto laterId = runtime.registerProperty(type, "later", runtime.getFloatType());
+    const auto laterId = runtime.registerProperty(type->getId(), "later", runtime.getFloatType());
     BOOST_REQUIRE(laterId.isValid());
     BOOST_TEST(object.getFieldCount() == 1u);
     BOOST_TEST(object.getField(0).getIntegerValue() == 0);
@@ -265,8 +265,8 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
     for (const auto interpreted : {false, true}) {
         Runtime runtime;
         const auto* type = createTestType(runtime, "Stored");
-        BOOST_REQUIRE(runtime.registerProperty(type, "text", runtime.getStringType()).isValid());
-        BOOST_REQUIRE(runtime.registerProperty(type, "next", type).isValid());
+        BOOST_REQUIRE(runtime.registerProperty(type->getId(), "text", runtime.getStringType()).isValid());
+        BOOST_REQUIRE(runtime.registerProperty(type->getId(), "next", type).isValid());
         BOOST_REQUIRE(runtime.addProperty(type->getId(), {
             .valueTypeId = runtime.getIntegerType()->getId(),
             .name = "nativeLength",
@@ -347,7 +347,7 @@ BOOST_AUTO_TEST_CASE(property_dispatch_rejects_missing_storage_wrong_owners_and_
     Runtime runtime;
     const auto* type = createTestType(runtime, "Owner");
     const auto* other = createTestType(runtime, "Other");
-    const auto id = runtime.registerProperty(type, "value", runtime.getStringType());
+    const auto id = runtime.registerProperty(type->getId(), "value", runtime.getStringType());
     BOOST_REQUIRE(id.isValid());
     auto machine = runtime.createVirtualMachine();
     ScriptObject object(type);
@@ -396,11 +396,10 @@ BOOST_AUTO_TEST_CASE(generated_initializer_runs_explicit_expressions_in_source_o
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
     const auto* type = runtime.getTypeByName("Point")->asObjectType();
-    BOOST_REQUIRE(type->getFieldInitializers().size() == 4u);
-    auto initializerIndex = NomadIndex{0};
     for (const auto* name : {"first", "second", "third", "description"}) {
-        BOOST_TEST(type->getFieldInitializers()[initializerIndex++] == type->getProperty(name)->getId());
+        BOOST_TEST(type->getProperty(name)->hasExplicitInitializer());
     }
+    BOOST_TEST(!type->getProperty("conditional")->hasExplicitInitializer());
     const auto before = NomadObject::getLiveObjectCount();
     {
         auto machine = runtime.createVirtualMachine();
@@ -443,6 +442,38 @@ BOOST_AUTO_TEST_CASE(generated_initializers_run_per_instance_and_preserve_fresh_
         BOOST_TEST(second->getField(0).getObjectValue()->getReferenceCount() == 1u);
     }
     BOOST_TEST(destroyed == 2u);
+}
+
+BOOST_AUTO_TEST_CASE(initializer_source_order_is_independent_of_property_registration_order) {
+    test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto calls = NomadInteger{0};
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "nextValue", [&](VirtualMachine* machine) { machine->setIntegerResult(++calls); },
+        {}, runtime.getIntegerType(), ""
+    ).isValid());
+    fixture.addFunction("main",
+        "class Fields\nfirst = forwardValue\nsecond = nextValue\n"
+        "init enabled:bool\nthis.first = 7\nif enabled\nthis.late = \"late\"\nend\nend\nend\n"
+        "fun forwardValue\nreturn nextValue\nend\nreturn new Fields false"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto* type = runtime.getTypeByName("Fields")->asObjectType();
+    BOOST_REQUIRE(type->getProperties().size() == 3u);
+    BOOST_TEST(type->getProperties()[0]->getName() == "second");
+    BOOST_TEST(type->getProperty("first")->hasExplicitInitializer());
+    BOOST_TEST(type->getProperty("second")->hasExplicitInitializer());
+    BOOST_TEST(!type->getProperty("late")->hasExplicitInitializer());
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    const auto* object = result.asObject<ScriptObject>();
+    BOOST_TEST(calls == 2);
+    BOOST_TEST(object->getField(type->getFieldIndex(type->getProperty("first")->getId())).getIntegerValue() == 7);
+    BOOST_TEST(object->getField(type->getFieldIndex(type->getProperty("second")->getId())).getIntegerValue() == 2);
+    const auto& late = object->getField(type->getFieldIndex(type->getProperty("late")->getId()));
+    BOOST_REQUIRE(late.getObjectValue() != nullptr);
+    BOOST_TEST(NomadString(late.getStringValue()).empty());
+    result.freeObjectValue();
 }
 
 BOOST_AUTO_TEST_CASE(generated_defaults_honor_type_initialization_only_for_fields_without_initializers) {
@@ -559,7 +590,7 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
     fixture.addFunction("failingHelper", "failFree\nreturn");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto* type = createTestType(runtime, "Receiver");
-    BOOST_REQUIRE(runtime.registerProperty(type, "visits", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(type->getId(), "visits", runtime.getIntegerType()).isValid());
     const auto initializerId = runtime.registerScriptMethod(type->getId(), "Receiver$init", {}, "", "");
     BOOST_REQUIRE(initializerId.isValid());
     auto* initializer = runtime.getScriptCallable(initializerId);

@@ -1426,7 +1426,8 @@ bool FormatStringLiteral::parsePlaceholders(
         auto* compiler = context->getCompiler();
         const auto name = compiler->generateFunctionName("formatExpression", function, getLine());
         const auto functionId = compiler->createFunction(
-            context, compiler->getScriptId(function->getId()), name, context->isHubInitializer()
+            context, compiler->getScriptId(function->getId()), name,
+            context->isHubInitializer() ? CompilationCallableTarget::HubInitializer : CompilationCallableTarget::Function
         );
         if (functionId.isInvalid()) {
             return false;
@@ -1458,7 +1459,7 @@ bool FormatStringLiteral::parsePlaceholders(
         auto node = std::make_unique<FunctionNode>(getLine(), column);
         node->addStatement(std::make_unique<ReturnStatementNode>(getLine(), column, std::move(expression)));
         node->setEndSpan(getLine(), column + segment.text.size());
-        compiler->setFunctionNode(functionId, std::move(node));
+        compiler->setFunctionBody(functionId, std::move(node));
         m_expressionPlaceholders.push_back({functionId, column, segmentIndex});
     }
 

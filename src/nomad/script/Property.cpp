@@ -44,6 +44,14 @@ const NomadString& Property::getDoc() const {
     return m_doc;
 }
 
+bool Property::hasExplicitInitializer() const {
+    return m_hasExplicitInitializer;
+}
+
+void Property::setHasExplicitInitializer(const bool hasExplicitInitializer) {
+    m_hasExplicitInitializer = hasExplicitInitializer;
+}
+
 const NativeProperty* Property::asNativeProperty() const {
     return nullptr;
 }

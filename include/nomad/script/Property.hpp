@@ -30,6 +30,8 @@ public:
     [[nodiscard]] const NomadString& getName() const;
     [[nodiscard]] const Type* getValueType() const;
     [[nodiscard]] const NomadString& getDoc() const;
+    [[nodiscard]] bool hasExplicitInitializer() const;
+    void setHasExplicitInitializer(bool hasExplicitInitializer);
     [[nodiscard]] virtual const NativeProperty* asNativeProperty() const;
     [[nodiscard]] PropertyId registerWithRuntime(Runtime& runtime);
 
@@ -39,6 +41,7 @@ private:
     NomadString m_name;
     const Type* m_valueType;
     NomadString m_doc;
+    bool m_hasExplicitInitializer = false;
 };
 
 } // namespace nomad

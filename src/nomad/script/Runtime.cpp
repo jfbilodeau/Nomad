@@ -1786,10 +1786,12 @@ const std::vector<const NativeIndexerInfo*>& Runtime::getNativeIndexers() const 
 }
 
 PropertyId Runtime::registerProperty(
-    const ObjectType* objectType,
+    const TypeId ownerId,
     const NomadString& name,
     const Type* valueType
 ) {
+    const auto type = getType(ownerId);
+    const auto* objectType = type ? (*type)->asObjectType() : nullptr;
     auto* owner = getMutableObjectType(objectType);
     if (owner == nullptr || !isNativeMemberName(name) || !ownsType(valueType) ||
         valueType->isVoid() || valueType->isInternal()) {
@@ -1810,15 +1812,15 @@ PropertyId Runtime::registerProperty(
     return owner->registerProperty(*this, std::make_unique<Property>(objectType, name, valueType));
 }
 
-void Runtime::setFieldInitializers(
-    const ObjectType* objectType,
-    std::vector<PropertyId> fields
+void Runtime::setPropertyHasExplicitInitializer(
+    const PropertyId id,
+    const bool hasExplicitInitializer
 ) {
-    auto* owner = getMutableObjectType(objectType);
-    if (owner == nullptr) {
-        throw NomadBug("Field initializer requires a class from this runtime");
+    const auto* property = getProperty(id);
+    if (property == nullptr || property->asNativeProperty() != nullptr) {
+        throw NomadBug("Explicit initializer metadata requires a stored property");
     }
-    owner->setFieldInitializers(std::move(fields));
+    m_properties[toNomadIndex(id.id)]->setHasExplicitInitializer(hasExplicitInitializer);
 }
 
 PropertyId Runtime::catalogProperty(Property* property) {

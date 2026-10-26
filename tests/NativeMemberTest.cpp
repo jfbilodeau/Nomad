@@ -208,7 +208,7 @@ BOOST_AUTO_TEST_CASE(add_method_rejects_conflicts_and_preserves_compatible_recei
     BOOST_REQUIRE(secondMethodId.isValid());
     BOOST_TEST(runtime.addMethod(secondId, definition).isInvalid());
     definition.name = "stored";
-    BOOST_REQUIRE(runtime.registerProperty(first, "stored", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(first->getId(), "stored", runtime.getIntegerType()).isValid());
     BOOST_TEST(runtime.addMethod(firstId, definition).isInvalid());
     definition.name = "native";
     BOOST_REQUIRE(runtime.addProperty(firstId, {
@@ -400,7 +400,7 @@ BOOST_AUTO_TEST_CASE(add_property_rejects_duplicate_and_conflicting_members) {
     readOnlyDefinition.name = "readOnly";
     readOnlyDefinition.setter = {};
     BOOST_REQUIRE(runtime.addProperty(typeId, std::move(readOnlyDefinition)).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(type, "stored", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(type->getId(), "stored", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.addMethod(type->getId(), {
         .name = "method",
         .parameters = {},

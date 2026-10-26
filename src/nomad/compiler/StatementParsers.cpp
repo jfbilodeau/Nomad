@@ -408,7 +408,7 @@ std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptCal
         return nullptr;
     }
 
-    context->getCompiler()->setFunctionNode(funId, std::move(funBody));
+    context->getCompiler()->setFunctionBody(funId, std::move(funBody));
 
     // Create a FunctionDeclaration node for the AST so the declaration is visible in the parsed tree.
     auto functionDecl = std::make_unique<FunctionDeclaration>(
@@ -1067,7 +1067,7 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptCall
             return nullptr;
         }
 
-        context->getCompiler()->setFunctionNode(handlerFunctionId, std::move(handlerBody));
+        context->getCompiler()->setFunctionBody(handlerFunctionId, std::move(handlerBody));
 
         // Create FunctionDecl for handler
         auto handlerDecl = std::make_unique<FunctionDeclaration>(tokens->getLineIndex(), tokens->getColumnIndex(), handlerFunctionName);

@@ -7,6 +7,7 @@
 #include "nomad/game/Scene.hpp"
 #include "nomad/script/Documentation.hpp"
 #include <nomad/script/Hub.hpp>
+#include <nomad/script/Property.hpp>
 #include "nomad/script/Runtime.hpp"
 #include "nomad/script/Type.hpp"
 #include "nomad/script/Variable.hpp"
@@ -175,8 +176,9 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_descriptors_with_forged_registered_ids) {
     const auto* actual = runtime.getType(id).value()->asObjectType();
     ObjectType impostor(&runtime, id, "ActualOwner", ObjectTypeMode::Closed);
     ObjectType foreign(&other, id, "ActualOwner", ObjectTypeMode::Closed);
-    for (const auto* candidate : {&impostor, &foreign}) {
-        BOOST_TEST(runtime.registerProperty(candidate, "value", runtime.getIntegerType()).isInvalid());
+    for (auto* candidate : {&impostor, &foreign}) {
+        BOOST_TEST(candidate->registerProperty(runtime,
+            std::make_unique<Property>(candidate, "value", runtime.getIntegerType())).isInvalid());
         BOOST_TEST(candidate->getProperties().empty());
     }
     BOOST_TEST(runtime.getType(id).value() == actual);
@@ -267,8 +269,7 @@ BOOST_AUTO_TEST_CASE(runtime_parameterized_callbacks_receive_the_owner_and_regis
             BOOST_REQUIRE(type.has_value());
             BOOST_TEST((*type)->getRuntime() == owningRuntime);
             BOOST_TEST(owningRuntime->getTypeByName("AssociatedBox<int>") == *type);
-            const auto* objectType = static_cast<const ObjectType*>(*type);
-            BOOST_REQUIRE(owningRuntime->registerProperty(objectType, "value", runtime.getIntegerType()).isValid());
+            BOOST_REQUIRE(owningRuntime->registerProperty(id, "value", runtime.getIntegerType()).isValid());
         }
     ));
 

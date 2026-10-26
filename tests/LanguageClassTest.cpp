@@ -555,11 +555,10 @@ BOOST_AUTO_TEST_CASE(field_inference_resolves_initializer_calls_and_constructor_
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto* type = fixture.getRuntime().getTypeByName("Chain")->asObjectType();
     BOOST_REQUIRE(type->getProperties().size() == 7u);
-    BOOST_REQUIRE(type->getFieldInitializers().size() == 6u);
-    auto initializerIndex = NomadIndex{0};
     for (const auto* name : {"first", "second", "third", "fourth", "fifth", "sixth"}) {
-        BOOST_TEST(type->getFieldInitializers()[initializerIndex++] == type->getProperty(name)->getId());
+        BOOST_TEST(type->getProperty(name)->hasExplicitInitializer());
     }
+    BOOST_TEST(!type->getProperty("seventh")->hasExplicitInitializer());
     for (const auto* property : type->getProperties()) {
         BOOST_TEST(property->getValueType() == fixture.getRuntime().getIntegerType());
     }
@@ -650,8 +649,8 @@ BOOST_AUTO_TEST_CASE(field_slots_are_owner_local_stable_and_distinct_from_catalo
     BOOST_TEST(first->getFieldIndex(first->getProperty("y")->getId()) == 1u);
     BOOST_TEST(first->getFieldIndex(secondId) == NOMAD_INVALID_INDEX);
     BOOST_TEST(first->getFieldIndex(PropertyId{}) == NOMAD_INVALID_INDEX);
-    BOOST_TEST(runtime.registerProperty(first, "x", runtime.getIntegerType()) == firstId);
-    BOOST_REQUIRE(runtime.registerProperty(first, "later", runtime.getBooleanType()).isValid());
+    BOOST_TEST(runtime.registerProperty(first->getId(), "x", runtime.getIntegerType()) == firstId);
+    BOOST_REQUIRE(runtime.registerProperty(first->getId(), "later", runtime.getBooleanType()).isValid());
     BOOST_TEST(first->getFieldIndex(firstId) == 0u);
     BOOST_TEST(first->getFieldIndex(first->getProperty("later")->getId()) == 2u);
     const auto nativeId = runtime.addProperty(first->getId(), {
@@ -663,7 +662,7 @@ BOOST_AUTO_TEST_CASE(field_slots_are_owner_local_stable_and_distinct_from_catalo
     });
     BOOST_REQUIRE(nativeId.isValid());
     BOOST_TEST(first->getFieldIndex(nativeId) == NOMAD_INVALID_INDEX);
-    const auto lastId = runtime.registerProperty(first, "last", runtime.getBooleanType());
+    const auto lastId = runtime.registerProperty(first->getId(), "last", runtime.getBooleanType());
     BOOST_REQUIRE(lastId.isValid());
     BOOST_TEST(first->getFieldIndex(lastId) == 3u);
 }
@@ -943,7 +942,7 @@ BOOST_AUTO_TEST_CASE(external_fields_resolve_nested_receivers_and_captured_alias
         if (phase != CompilationPhase::Parse) return;
         auto& runtime = fixture.getRuntime();
         BOOST_REQUIRE(runtime.registerProperty(
-            runtime.getTypeByName("Outer")->asObjectType(), "inner", runtime.getTypeByName("Inner")
+            runtime.getTypeByName("Outer")->getId(), "inner", runtime.getTypeByName("Inner")
         ).isValid());
     });
     CompilerContext context(&fixture.getCompiler());

@@ -431,7 +431,7 @@ const Property* Compiler::resolveObjectField(
         }
         return property;
     }
-    const auto id = m_runtime->registerProperty(owner, name, valueType);
+    const auto id = m_runtime->registerProperty(owner->getId(), name, valueType);
     if (id.isInvalid()) {
         report("Cannot register class field '" + name + "'");
         return nullptr;
@@ -1053,11 +1053,11 @@ void Compiler::parseFunction(CompilerContext* context, ScriptCompilation& file) 
 
     ast->setEndSpan(tokens.getLineCount(), 0);
 
-    setFunctionNode(file.functionId, std::move(ast));
+    setFunctionBody(file.functionId, std::move(ast));
 }
 
 bool Compiler::resolveFunction(CompilerContext* context, const FunctionCompilation& source) {
-    if (source.hubInitializer) {
+    if (source.kind == CompilationCallableTarget::HubInitializer) {
         CompilerContext initializerContext(this, context->getMode(), nullptr, true);
         initializerContext.setHub(source.function->getHub());
         const auto resolved = source.ast->resolve(&initializerContext, source.function);
@@ -1068,7 +1068,7 @@ bool Compiler::resolveFunction(CompilerContext* context, const FunctionCompilati
 }
 
 void Compiler::checkReturnPaths(CompilerContext* context, const FunctionCompilation& source) const {
-    if (m_runtime->getConstructor(source.function->getId()) != nullptr) return;
+    if (source.kind == CompilationCallableTarget::Constructor) return;
     const auto* returnType = source.function->getReturnType();
 
     if (returnType == nullptr || returnType->isVoid() || source.ast->alwaysReturns()) {
@@ -1173,8 +1173,7 @@ void Compiler::compileObjectInitializer(const FunctionCompilation& source) {
     addFunctionEntry(function);
     source.ast->compile(this, function);
     for (const auto* property : owner->getProperties()) {
-        if (property->asNativeProperty() != nullptr ||
-            std::ranges::find(owner->getFieldInitializers(), property->getId()) != owner->getFieldInitializers().end()) {
+        if (property->asNativeProperty() != nullptr || property->hasExplicitInitializer()) {
             continue;
         }
         addOpCode(OpCodes::op_code_load_default_r);
@@ -1299,7 +1298,7 @@ CallableId Compiler::createFunction(
     CompilerContext* context,
     const NomadId scriptId,
     const NomadString& functionName,
-    const bool hubInitializer
+    const CompilationCallableTarget kind
 ) {
     if (context == nullptr || context->getCompiler() != this) {
         throw NomadBug("Function creation requires this compiler's context");
@@ -1328,7 +1327,7 @@ CallableId Compiler::createFunction(
         scriptId,
         {},
         function,
-        hubInitializer
+        kind
     });
 
     return functionId;
@@ -1343,13 +1342,17 @@ NomadId Compiler::getScriptId(const CallableId functionId) const {
     throw NomadBug("Function does not belong to a registered script: " + toString(functionId.id));
 }
 
-void Compiler::registerMemberCompilation(const CallableId memberId, const CallableId sourceFunctionId) {
+void Compiler::registerMemberCompilation(
+    const CallableId memberId,
+    const CallableId sourceFunctionId,
+    const CompilationCallableTarget kind
+) {
     auto* member = m_runtime->getScriptCallable(memberId);
     if (member == nullptr || member->getObjectType() == nullptr) {
         reportInternalError("Invalid script member compilation");
     }
     const auto scriptId = getScriptId(sourceFunctionId);
-    m_functions.push_back({scriptId, {}, member, false});
+    m_functions.push_back({scriptId, {}, member, kind});
 }
 
 const Type* Compiler::getReceiverType(const ScriptCallableBase* function) const {
@@ -1363,7 +1366,7 @@ const Type* Compiler::getReceiverType(const ScriptCallableBase* function) const 
 bool Compiler::isFieldInitializer(const ScriptCallableBase* function) const {
     while (function != nullptr) {
         if (std::ranges::any_of(m_functions, [&](const auto& source) {
-            return source.function == function && source.objectInitializer;
+            return source.function == function && source.kind == CompilationCallableTarget::ObjectInitializer;
         })) {
             return true;
         }
@@ -1379,10 +1382,9 @@ const ScriptSource& Compiler::getScript(const NomadId scriptId) const {
     return m_scripts[toNomadIndex(scriptId)].script;
 }
 
-void Compiler::setFunctionNode(
+void Compiler::setFunctionBody(
     CallableId functionId,
-    std::unique_ptr<FunctionNode> ast,
-    const bool objectInitializer
+    std::unique_ptr<FunctionNode> ast
 ) {
     for (auto& source: m_functions) {
         if (source.function->getId() == functionId) {
@@ -1391,7 +1393,6 @@ void Compiler::setFunctionNode(
                 ast ? ast->getEndLine() : NOMAD_INVALID_INDEX
             );
             source.ast = std::move(ast);
-            source.objectInitializer = objectInitializer;
 
             return;
         }
@@ -1435,12 +1436,12 @@ void Compiler::registerScriptInitializer(
     std::unique_ptr<HubInitializerStatement> initializer
 ) {
     if (m_scriptInitializerId.isInvalid()) {
-        m_scriptInitializerId = createFunction(context, scriptId, "$init");
+        m_scriptInitializerId = createFunction(context, scriptId, "$init", CompilationCallableTarget::HubInitializer);
         if (m_scriptInitializerId.isInvalid()) {
             return;
         }
         m_runtime->getScriptCallable(m_scriptInitializerId)->setHub({});
-        setFunctionNode(m_scriptInitializerId, std::make_unique<FunctionNode>(0, 0));
+        setFunctionBody(m_scriptInitializerId, std::make_unique<FunctionNode>(0, 0));
     }
     for (auto& source : m_functions) {
         if (source.function->getId() == m_scriptInitializerId) {
@@ -1690,12 +1691,17 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         log::debug("Compiling function '" + source.function->getName() + "' (" + source.function->getPath() + ")");
 
         reportExceptions(source.function->getPath(), [&] {
-            if (source.objectInitializer) {
-                compileObjectInitializer(source);
-            } else if (m_runtime->getConstructor(source.function->getId()) != nullptr) {
-                compileConstructor(source);
-            } else {
-                compileFunction(source);
+            switch (source.kind) {
+                case CompilationCallableTarget::ObjectInitializer:
+                    compileObjectInitializer(source);
+                    break;
+                case CompilationCallableTarget::Constructor:
+                    compileConstructor(source);
+                    break;
+                case CompilationCallableTarget::Function:
+                case CompilationCallableTarget::HubInitializer:
+                    compileFunction(source);
+                    break;
             }
         });
     }

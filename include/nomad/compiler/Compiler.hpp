@@ -13,7 +13,6 @@
 #include <nomad/compiler/StatementParsers.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
-#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/Type.hpp>
 
@@ -33,6 +32,13 @@ class FunctionBuilder;
 enum class BuildPhase {
     Init = 1,  // Pre-compile
     Compile,
+};
+
+enum class CompilationCallableTarget {
+    Function = 1,
+    Constructor,
+    HubInitializer,
+    ObjectInitializer
 };
 
 class FunctionVariableDefinition {
@@ -190,16 +196,19 @@ public:
         CompilerContext* context,
         NomadId scriptId,
         const NomadString& functionName,
-        bool hubInitializer = false
+        CompilationCallableTarget kind = CompilationCallableTarget::Function
     );
     [[nodiscard]] NomadId getScriptId(CallableId functionId) const;
     [[nodiscard]] const ScriptSource& getScript(NomadId scriptId) const;
-    void setFunctionNode(
+    void setFunctionBody(
         CallableId functionId,
-        std::unique_ptr<FunctionNode> ast,
-        bool objectInitializer = false
+        std::unique_ptr<FunctionNode> ast
     );
-    void registerMemberCompilation(CallableId memberId, CallableId sourceFunctionId);
+    void registerMemberCompilation(
+        CallableId memberId,
+        CallableId sourceFunctionId,
+        CompilationCallableTarget kind
+    );
     [[nodiscard]] const Type* getReceiverType(const ScriptCallableBase* function) const;
     [[nodiscard]] bool isFieldInitializer(const ScriptCallableBase* function) const;
     void registerScriptInitializer(
@@ -241,8 +250,7 @@ private:
         NomadId scriptId = NOMAD_INVALID_ID;
         std::unique_ptr<FunctionNode> ast;
         ScriptCallableBase* function;
-        bool hubInitializer = false;
-        bool objectInitializer = false;
+        CompilationCallableTarget kind = CompilationCallableTarget::Function;
     };
 
     struct ScriptCompilation {
