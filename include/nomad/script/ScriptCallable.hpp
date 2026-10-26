@@ -67,4 +67,31 @@ public:
     [[nodiscard]] const ScriptFunction* asScriptFunction() const override { return this; }
 };
 
+class ScriptMethod final : public ScriptCallable<Method> {
+public:
+    ScriptMethod(
+        NomadString name,
+        const Type* objectType,
+        std::vector<Parameter> parameters,
+        const Type* returnType,
+        NomadString path,
+        NomadString source
+    );
+
+    [[nodiscard]] const ScriptMethod* asScriptMethod() const override;
+};
+
+class ScriptConstructor final : public ScriptCallable<Constructor> {
+public:
+    ScriptConstructor(
+        const Type* objectType,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
+
+    [[nodiscard]] const ScriptConstructor* asScriptConstructor() const override;
+    [[nodiscard]] const Type* getConstructedType() const override;
+};
+
 } // namespace nomad

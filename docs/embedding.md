@@ -562,19 +562,18 @@ by their declaring object type; they are not returned by `getFunction(id)` or
 
 Include `<nomad/script/Callable.hpp>` for common callable metadata,
 `<nomad/script/NativeCallable.hpp>` for native implementations, and
-`<nomad/script/ScriptCallable.hpp>` for script functions and the shared implementation
-template. The common compilation interface is in `<nomad/script/ScriptCallableBase.hpp>`;
-concrete member descriptors are in `<nomad/script/ScriptMethod.hpp>` and
-`<nomad/script/ScriptConstructor.hpp>`. These descriptors do not yet enable script
-class member registration or execution. No receiver parameter is synthesized by
-their constructors.
+`<nomad/script/ScriptCallable.hpp>` for script functions, methods, constructors, and
+the shared implementation template. The common compilation interface is in
+`<nomad/script/ScriptCallableBase.hpp>`. No receiver parameter is synthesized by
+the callable constructors.
 
 `Runtime::registerScriptMethod(typeId, name, parameters, path, source)` and
 `registerScriptConstructor(typeId, parameters, path, source)` publish script
 signatures on a runtime-owned object type. They return an invalid ID and log an
 error for an invalid owner, unsupported parameter types, or duplicate signatures.
-These registration APIs bind a class-typed local `this` without adding a receiver
-to the explicit parameter list. A parameter named `this` is invalid. The supplied
+These registration APIs associate members with their receiver type without adding
+an implicit local or a receiver to the explicit parameter list. A parameter named
+`this` is invalid. The supplied
 source is retained for compiler diagnostics; registration alone does not parse,
 compile, or enable invocation of the member.
 

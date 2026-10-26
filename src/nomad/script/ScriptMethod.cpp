@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/script/ScriptMethod.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 
 #include <utility>
 

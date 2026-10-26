@@ -10,8 +10,7 @@
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/ScriptConstructor.hpp>
-#include <nomad/script/ScriptMethod.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/NativeFunctions.hpp>

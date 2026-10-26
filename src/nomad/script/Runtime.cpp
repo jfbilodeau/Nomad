@@ -11,8 +11,7 @@
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/RegisterRangeType.hpp>
-#include <nomad/script/ScriptConstructor.hpp>
-#include <nomad/script/ScriptMethod.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 

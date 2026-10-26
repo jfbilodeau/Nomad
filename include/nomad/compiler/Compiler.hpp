@@ -41,16 +41,6 @@ enum class CompilationCallableTarget {
     ObjectInitializer
 };
 
-class FunctionVariableDefinition {
-public:
-
-
-private:
-    NomadString m_name;
-    const Type* m_type;
-    AssignmentStatement* m_assignmentNode;
-};
-
 class Compiler {
 public:
     explicit Compiler(Runtime* runtime, std::vector<Instruction>& instructions);
