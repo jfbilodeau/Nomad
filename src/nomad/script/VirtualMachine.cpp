@@ -143,6 +143,7 @@ void VirtualMachine::runCallable(
     const auto savedEnclosingParameterIndex = m_enclosingParameterIndex;
     const auto savedVariableIndex = m_variableIndex;
     const auto savedRunning = m_running;
+    const auto savedThis = m_this;
 
     const auto restoreFrame = [&]() {
         m_instructionIndex = savedInstructionIndex;
@@ -151,6 +152,7 @@ void VirtualMachine::runCallable(
         m_enclosingParameterIndex = savedEnclosingParameterIndex;
         m_variableIndex = savedVariableIndex;
         m_running = savedRunning;
+        m_this = savedThis;
     };
 
     m_running = true;
@@ -174,11 +176,11 @@ void VirtualMachine::runCallable(
         }
 
         if (receiver != nullptr) {
-            if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex - 1 < 3 ||
-                function->getVariableCount() > m_stack.size() - m_stackIndex - 4) {
+            if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex - 1 < 4 ||
+                function->getVariableCount() > m_stack.size() - m_stackIndex - 5) {
                 fault("Stack overflow");
             }
-            entryVariableIndex = m_stackIndex + 4;
+            entryVariableIndex = m_stackIndex + 5;
         }
         callScriptCallable(function, receiver);
 
@@ -277,13 +279,20 @@ void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, cons
         fault("Invalid function");
         return;
     }
+    if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex - 1 < 4 ||
+        function->getVariableCount() > m_stack.size() - m_stackIndex - 5) {
+        fault("Stack overflow");
+    }
 
+    const auto nextThis = receiver != nullptr ? *receiver : RuntimeValue{};
     auto previousParameterIndex = m_parameterIndex;
     m_parameterIndex = m_stackIndex;
 
     pushIndex(m_instructionIndex);
     pushIndex(previousParameterIndex);
     pushIndex(m_variableIndex);
+    pushValue(m_this);
+    m_this = nextThis;
 
     // Variables start after the saved call frame slots.
     m_variableIndex = m_stackIndex + 1;
@@ -332,6 +341,8 @@ void VirtualMachine::callNativeConstructor(const CallableId constructorId) {
 void VirtualMachine::invokeNativeFunction(const NativeFunctionFn& callback) {
     const auto previousParameterIndex = m_parameterIndex;
     const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
+    const auto previousThis = m_this;
+    m_this = RuntimeValue{};
 
     m_parameterIndex = m_stackIndex;
 
@@ -343,11 +354,13 @@ void VirtualMachine::invokeNativeFunction(const NativeFunctionFn& callback) {
     } catch (...) {
         m_parameterIndex = previousParameterIndex;
         m_enclosingParameterIndex = previousEnclosingParameterIndex;
+        m_this = previousThis;
         throw;
     }
 
     m_parameterIndex = previousParameterIndex;
     m_enclosingParameterIndex = previousEnclosingParameterIndex;
+    m_this = previousThis;
 }
 
 void VirtualMachine::callNativeMethod(const CallableId memberId, const RuntimeValue& receiver) {
@@ -711,6 +724,7 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, c
 void VirtualMachine::returnFunction(const NomadIndex variableCount) {
     popN(variableCount);
 
+    m_this = popValue();
     m_variableIndex = popIndex();
     m_parameterIndex = popIndex();
     m_instructionIndex = popIndex();

@@ -476,4 +476,134 @@ BOOST_AUTO_TEST_CASE(empty_initializers_and_invalid_host_initialization_requests
     BOOST_TEST(native.getFieldCount() == 0u);
 }
 
+BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_calls) {
+    test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "checkFree", [](VirtualMachine* machine) {
+            BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+        }, {}, runtime.getVoidType(), ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "failFree", [](VirtualMachine* machine) {
+            BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+            throw NomadException("Free call failed");
+        }, {}, runtime.getVoidType(), ""
+    ).isValid());
+    fixture.addFunction("helper", "checkFree\nreturn");
+    fixture.addFunction("failingHelper", "failFree\nreturn");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto* type = createTestType(runtime, "Receiver");
+    BOOST_REQUIRE(runtime.registerProperty(type, "visits", runtime.getIntegerType()).isValid());
+    const auto initializerId = runtime.registerScriptMethod(type->getId(), "$init", {}, "", "");
+    BOOST_REQUIRE(initializerId.isValid());
+    auto* initializer = runtime.getScriptCallable(initializerId);
+    const auto propertyId = runtime.addProperty(type->getId(), {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .name = "native",
+        .getter = [](VirtualMachine* machine, RuntimeValue& result) {
+            auto* receiver = machine->getThis();
+            machine->run(machine->getRuntime()->getScriptFunction(
+                machine->getRuntime()->getFunctionId("helper")), {});
+            BOOST_TEST(machine->getThis() == receiver);
+            BOOST_CHECK_THROW(machine->run(machine->getRuntime()->getScriptFunction(
+                machine->getRuntime()->getFunctionId("failingHelper")), {}), NomadException);
+            BOOST_TEST(machine->getThis() == receiver);
+            BOOST_CHECK_THROW(
+                machine->callNativeFunction(CallableId::INVALID), VirtualMachineException
+            );
+            BOOST_TEST(machine->getThis() == receiver);
+            result.setIntegerValue(42);
+        },
+        .setter = {},
+        .documentation = ""
+    });
+    BOOST_REQUIRE(propertyId.isValid());
+    const auto probe = runtime.registerInstruction("test.receiver", [](VirtualMachine* machine) {
+        auto* object = machine->getThisAs<ScriptObject>();
+        BOOST_TEST(object->getObjectType()->getTypeName() == "Receiver");
+        BOOST_TEST(object->getReferenceCount() == 2u);
+        const auto* initializer = object->getObjectType()->getMethods()[0]->asScriptCallable();
+        BOOST_TEST(machine->getFunctionVariableValue(initializer->getVariableId("this")).getObjectValue() == object);
+        RuntimeValue receiver;
+        receiver.setObjectValue(object);
+        RuntimeValue result;
+        machine->getProperty(object->getObjectType()->getProperty("native")->getId(), receiver, result);
+        BOOST_TEST(result.getIntegerValue() == 42);
+        BOOST_TEST(machine->getThis() == object);
+        object->setField(0, RuntimeValue{object->getField(0).getIntegerValue() + 1});
+    }, "", {});
+    auto compiler = runtime.createCompiler();
+    initializer->setFunctionStart(runtime.getInstructions().size());
+    compiler->addOpCode(probe);
+    compiler->addOpCode(OpCodes::op_call_function);
+    compiler->addIndex(runtime.getScriptFunction(runtime.getFunctionId("helper"))->getFunctionStart());
+    compiler->addOpCode(probe);
+    compiler->addFunctionReturn(initializer);
+    initializer->setFunctionEnd(runtime.getInstructions().size());
+    const auto before = NomadObject::getLiveObjectCount();
+    {
+        ScriptObject object(type);
+        auto machine = runtime.createVirtualMachine();
+        BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+        machine->initializeObject(object);
+        BOOST_TEST(object.getField(0).getIntegerValue() == 2);
+        BOOST_TEST(object.getReferenceCount() == 1u);
+        BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(script_receiver_restores_after_nested_initialization_and_failure) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto probe = runtime.registerInstruction("test.nestedReceiver", [](VirtualMachine* machine) {
+        auto* object = machine->getThisAs<ScriptObject>();
+        BOOST_TEST(object->getReferenceCount() == 2u);
+        const auto& name = object->getObjectType()->getTypeName();
+        if (name == "BrokenReceiver") {
+            throw NomadException("Receiver frame failed");
+        }
+        if (name == "OuterReceiver") {
+            for (const auto* nestedName : {"InnerReceiver", "BrokenReceiver"}) {
+                ScriptObject nested(machine->getRuntime()->getTypeByName(nestedName)->asObjectType());
+                if (NomadString(nestedName) == "BrokenReceiver") {
+                    BOOST_CHECK_THROW(machine->initializeObject(nested), NomadException);
+                } else {
+                    machine->initializeObject(nested);
+                }
+                BOOST_TEST(nested.getReferenceCount() == 1u);
+                BOOST_TEST(machine->getThis() == object);
+            }
+        }
+    }, "", {});
+    for (const auto* name : {"OuterReceiver", "InnerReceiver", "BrokenReceiver"}) {
+        const auto* type = createTestType(runtime, name);
+        const auto id = runtime.registerScriptMethod(type->getId(), "$init", {}, "", "");
+        BOOST_REQUIRE(id.isValid());
+        auto* initializer = runtime.getScriptCallable(id);
+        initializer->setFunctionStart(runtime.getInstructions().size());
+        compiler->addOpCode(probe);
+        compiler->addFunctionReturn(initializer);
+        initializer->setFunctionEnd(runtime.getInstructions().size());
+    }
+    const auto before = NomadObject::getLiveObjectCount();
+    {
+        auto machine = runtime.createVirtualMachine();
+        ScriptObject outer(runtime.getTypeByName("OuterReceiver")->asObjectType());
+        machine->initializeObject(outer);
+        BOOST_TEST(outer.getReferenceCount() == 1u);
+        BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+        ScriptObject broken(runtime.getTypeByName("BrokenReceiver")->asObjectType());
+        BOOST_CHECK_THROW(machine->initializeObject(broken), NomadException);
+        BOOST_TEST(broken.getReferenceCount() == 1u);
+        BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+        ScriptObject recovered(runtime.getTypeByName("InnerReceiver")->asObjectType());
+        machine->initializeObject(recovered);
+        BOOST_TEST(recovered.getReferenceCount() == 1u);
+        BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

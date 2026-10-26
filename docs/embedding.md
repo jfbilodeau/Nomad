@@ -331,6 +331,13 @@ constructor bodies. If a field initializer fails, later initializers do not
 run and initialization cannot be retried; release the failed instance.
 Destruction releases its owned field values.
 
+`VirtualMachine::getThis()` exposes the active script or native member receiver
+as a borrowed pointer. Script member frames retain their instance through their
+owned `this` local. Nested calls restore the previous receiver on return or
+failure. Free script functions and native function/constructor callbacks do not
+inherit a caller's receiver; `getThis()` raises an error in those calls.
+Closures and format expressions retain their existing explicit capture of `this`.
+
 `VirtualMachine::constructObject(constructorId, arguments)` invokes a registered
 native or compiled script constructor. Arguments are borrowed and must match the
 selected constructor's parameter types and count. The returned object owns one

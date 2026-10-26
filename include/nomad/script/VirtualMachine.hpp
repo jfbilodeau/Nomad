@@ -258,7 +258,7 @@ private:
     NomadIndex m_variableIndex = 0;
     void invokeNativeMember(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
     void invokeNativeMethod(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
-    RuntimeValue m_this; // Receiver of the current member call; borrowed, not retained.
+    RuntimeValue m_this; // Borrowed from the script frame's owned `this` local or the native caller.
 };
 
 template<typename Object>
