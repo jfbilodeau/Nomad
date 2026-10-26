@@ -18,7 +18,7 @@ void ClassFieldInitializerStatement::onCompile(Compiler* compiler, ScriptCallabl
     auto* initializer = m_member->getInitializer();
     const auto* receiverType = function->getObjectType();
     initializer->compile(compiler, function, ExpressionTarget::Result);
-    compiler->addLoadFunctionVariable(function->getVariableId("this"), receiverType, ExpressionTarget::Intermediate);
+    compiler->addLoadReceiver(function, ExpressionTarget::Intermediate);
     compiler->addOpCode(op_native_property_set);
     compiler->addId(m_member->getPropertyId().id);
     compiler->addFreeValue(initializer->getType()->getTypeOpCodes()->freeResult);

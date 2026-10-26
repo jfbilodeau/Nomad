@@ -522,9 +522,9 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
     const auto probe = runtime.registerInstruction("test.receiver", [](VirtualMachine* machine) {
         auto* object = machine->getThisAs<ScriptObject>();
         BOOST_TEST(object->getObjectType()->getTypeName() == "Receiver");
-        BOOST_TEST(object->getReferenceCount() == 2u);
+        BOOST_TEST(object->getReferenceCount() == 1u);
         const auto* initializer = object->getObjectType()->getMethods()[0]->asScriptCallable();
-        BOOST_TEST(machine->getFunctionVariableValue(initializer->getVariableId("this")).getObjectValue() == object);
+        BOOST_TEST(initializer->getVariableId("this").isInvalid());
         RuntimeValue receiver;
         receiver.setObjectValue(object);
         RuntimeValue result;
@@ -535,8 +535,10 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
     }, "", {});
     auto compiler = runtime.createCompiler();
     initializer->setFunctionStart(runtime.getInstructions().size());
-    compiler->addOpCode(OpCodes::op_function_enter);
-    compiler->addId(initializer->getId().id);
+    compiler->addFunctionEntry(initializer);
+    compiler->addOpCode(OpCodes::op_object_field_default);
+    compiler->addId(type->getProperty("visits")->getId().id);
+    compiler->addOpCode(OpCodes::op_object_fields_ready);
     compiler->addOpCode(probe);
     compiler->addOpCode(OpCodes::op_call_function);
     compiler->addIndex(runtime.getScriptFunction(runtime.getFunctionId("helper"))->getFunctionStart());
@@ -561,7 +563,7 @@ BOOST_AUTO_TEST_CASE(script_receiver_restores_after_nested_initialization_and_fa
     auto compiler = runtime.createCompiler();
     const auto probe = runtime.registerInstruction("test.nestedReceiver", [](VirtualMachine* machine) {
         auto* object = machine->getThisAs<ScriptObject>();
-        BOOST_TEST(object->getReferenceCount() == 2u);
+        BOOST_TEST(object->getReferenceCount() == 1u);
         const auto& name = object->getObjectType()->getTypeName();
         if (name == "BrokenReceiver") {
             throw NomadException("Receiver frame failed");
@@ -585,8 +587,8 @@ BOOST_AUTO_TEST_CASE(script_receiver_restores_after_nested_initialization_and_fa
         BOOST_REQUIRE(id.isValid());
         auto* initializer = runtime.getScriptCallable(id);
         initializer->setFunctionStart(runtime.getInstructions().size());
-        compiler->addOpCode(OpCodes::op_function_enter);
-        compiler->addId(initializer->getId().id);
+        compiler->addFunctionEntry(initializer);
+        compiler->addOpCode(OpCodes::op_object_fields_ready);
         compiler->addOpCode(probe);
         compiler->addFunctionReturn(initializer);
         initializer->setFunctionEnd(runtime.getInstructions().size());

@@ -103,6 +103,14 @@ void InterpreterContext::setVariable(
     if (type == nullptr || type->isVoid()) {
         throw std::invalid_argument("Interpreter variables must have a non-void type");
     }
+    const auto parameterId = m_function->getParameterId(name);
+    if (parameterId != NOMAD_INVALID_ID) {
+        if (m_function->getParameterType(parameterId) != type) {
+            throw std::invalid_argument("Frame parameters cannot change type");
+        }
+        setParameter(parameterId, value);
+        return;
+    }
     const auto frameId = m_function->getVariableId(name);
     if (isFrameVariable(frameId)) {
         validateFrame();
@@ -148,6 +156,10 @@ void InterpreterContext::clearVariableValue(const NomadString& name) {
 }
 
 const Type* InterpreterContext::getVariableType(const NomadString& name) const {
+    const auto parameterId = m_function->getParameterId(name);
+    if (parameterId != NOMAD_INVALID_ID) {
+        return m_function->getParameterType(parameterId);
+    }
     return getVariableTypeById(getFunction()->getVariableId(name));
 }
 
@@ -169,6 +181,11 @@ const Type* InterpreterContext::getVariableTypeById(const VariableId variableId)
 }
 
 const RuntimeValue* InterpreterContext::getVariableValue(const NomadString& name) const {
+    const auto parameterId = m_function->getParameterId(name);
+    if (parameterId != NOMAD_INVALID_ID) {
+        validateFrame();
+        return &m_virtualMachine.m_stack[m_parameterIndex - parameterId];
+    }
     return getVariableValueById(getFunction()->getVariableId(name));
 }
 
@@ -341,6 +358,16 @@ void InterpreterContext::setParameterResult(const NomadId parameterId) {
     }
     validateFrame();
     setResult(m_function->getParameterType(parameterId), m_virtualMachine.m_stack[m_parameterIndex - parameterId]);
+}
+
+void InterpreterContext::setParameter(const NomadId parameterId, const RuntimeValue& value) {
+    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameFunction->getParameterCount())) {
+        throw NomadBug("Invalid frame-backed parameter assignment");
+    }
+    validateFrame();
+    m_function->getParameterType(parameterId)->assignValue(
+        value, m_virtualMachine.m_stack[m_parameterIndex - parameterId]
+    );
 }
 
 void InterpreterContext::evaluateFunctionCall(const CallableId functionId, const std::vector<RuntimeValue>& arguments) {

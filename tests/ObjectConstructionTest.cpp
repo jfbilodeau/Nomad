@@ -54,19 +54,19 @@ BOOST_AUTO_TEST_CASE(script_construction_bytecode_uses_linked_calls_and_ordinary
     BOOST_TEST(constructor->getReturnType() == runtime.getVoidType());
     const auto start = constructor->getFunctionStart();
     const auto& instructions = runtime.getInstructions();
+    BOOST_TEST(runtime.getInstructionId("op_function_enter").isInvalid());
+    BOOST_TEST(constructor->getVariableId("this").isInvalid());
+    BOOST_TEST(constructor->getVariableId("value").isInvalid());
     BOOST_TEST(instructions[start].fn ==
-        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_function_enter)));
-    BOOST_TEST(instructions[start + 1].value.getIdValue() == constructor->getId().id);
-    BOOST_TEST(instructions[start + 2].fn ==
         runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_method)));
     const auto* initializer = type->getMethods()[0]->asScriptCallable();
     BOOST_REQUIRE(initializer != nullptr);
     BOOST_TEST(initializer->getName() == type->getInitializerName());
     BOOST_TEST(initializer->getObjectType() == type);
-    BOOST_TEST(instructions[start + 3].value.getIndexValue() == initializer->getFunctionStart());
-    BOOST_TEST(constructor->getVariableCount() == 2u);
+    BOOST_TEST(instructions[start + 1].value.getIndexValue() == initializer->getFunctionStart());
+    BOOST_TEST(constructor->getVariableCount() == 0u);
     BOOST_TEST(instructions[constructor->getFunctionEnd() - 1].fn ==
-        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_return_2)));
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_return)));
     const auto* main = runtime.getScriptFunction(id);
     auto foundConstructorCall = false;
     const auto newInstruction = runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_object_new));
@@ -1280,8 +1280,6 @@ BOOST_AUTO_TEST_CASE(parameterless_constructors_are_explicitly_registered) {
     const auto id = compileConstruction(runtime, "return new Plain");
     const auto start = runtime.getScriptFunction(id)->getFunctionStart();
     BOOST_TEST(runtime.getInstructions()[start].fn ==
-        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_function_enter)));
-    BOOST_TEST(runtime.getInstructions()[start + 2].fn ==
         runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_native_function)));
     RuntimeValue result;
     runtime.executeFunction(id, {}, result);

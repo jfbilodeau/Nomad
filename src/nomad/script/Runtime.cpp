@@ -1895,7 +1895,6 @@ CallableId Runtime::registerScriptMethod(
     auto method = std::make_unique<ScriptMethod>(
         std::move(name), owner, std::move(parameters), nullptr, std::move(path), std::move(source)
     );
-    method->registerVariable("this", owner);
     return owner->registerMethod(*this, std::move(method));
 }
 
@@ -1925,7 +1924,6 @@ CallableId Runtime::registerScriptConstructor(
     auto constructor = std::make_unique<ScriptConstructor>(
         owner, std::move(parameters), std::move(path), std::move(source)
     );
-    constructor->registerVariable("this", owner);
     return owner->registerConstructor(*this, std::move(constructor));
 }
 

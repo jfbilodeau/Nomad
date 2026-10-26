@@ -134,7 +134,7 @@ void VirtualMachine::runCallable(
     const std::vector<RuntimeValue>& closures,
     const RuntimeValue* receiver
 ) {
-    // Save the frame so `run` can be re-entered (e.g. from a nativeFunction) and so a fault leaves the VM usable.
+    // Save the execution boundary so native callbacks can re-enter the VM.
     const auto savedInstructionIndex = m_instructionIndex;
     const auto savedStackIndex = m_stackIndex;
     const auto savedParameterIndex = m_parameterIndex;
@@ -142,7 +142,13 @@ void VirtualMachine::runCallable(
     const auto savedVariableIndex = m_variableIndex;
     const auto savedRunning = m_running;
     const auto savedThis = m_this;
-    const auto savedFrameCount = m_scriptFrames.size();
+    const auto savedEnclosingThis = m_enclosingThis;
+    std::vector<const Type*> argumentTypes;
+    const auto releaseArguments = [&]() {
+        for (auto index = NomadIndex{0}; index < argumentTypes.size(); ++index) {
+            argumentTypes[index]->freeValue(m_stack[savedStackIndex + index + 1]);
+        }
+    };
 
     const auto restoreFrame = [&]() {
         m_instructionIndex = savedInstructionIndex;
@@ -152,6 +158,7 @@ void VirtualMachine::runCallable(
         m_variableIndex = savedVariableIndex;
         m_running = savedRunning;
         m_this = savedThis;
+        m_enclosingThis = savedEnclosingThis;
     };
 
     m_running = true;
@@ -161,16 +168,25 @@ void VirtualMachine::runCallable(
     m_instructionIndex = 0;
 
     try {
-        // Push closures and parameters onto the stack (right-to-left)
-        // Closures first, then parameters
-        auto closureCount = closures.size();
-        for (auto i = closureCount - 1; i < closureCount; i--) {
-            pushValue(closures[i]);
+        if (function == nullptr || args.size() + closures.size() != function->getParameterCount() ||
+            closures.size() != function->getCaptureCount()) {
+            fault("Incorrect script argument or capture count");
         }
-
-        auto parameterCount = args.size();
-        for (auto i = parameterCount - 1; i < parameterCount; i--) {
-            pushValue(args[i]);
+        if (m_stackIndex >= m_stack.size() ||
+            function->getParameterCount() > m_stack.size() - m_stackIndex - 1) {
+            fault("Stack overflow");
+        }
+        argumentTypes.reserve(function->getParameterCount());
+        const auto pushArgument = [&](const Type* type, const RuntimeValue& value) {
+            pushValue(RuntimeValue{});
+            argumentTypes.push_back(type);
+            type->copyValue(value, m_stack[m_stackIndex]);
+        };
+        for (auto index = closures.size(); index > 0; --index) {
+            pushArgument(function->getParameterType(toNomadId(args.size() + index - 1)), closures[index - 1]);
+        }
+        for (auto index = args.size(); index > 0; --index) {
+            pushArgument(function->getParameterType(toNomadId(index - 1)), args[index - 1]);
         }
 
         callScriptCallable(function, receiver);
@@ -189,33 +205,11 @@ void VirtualMachine::runCallable(
 
             instruction.fn(this);
         } while (m_running);
-        if (m_yielded && std::ranges::any_of(m_scriptFrames.begin() + savedFrameCount, m_scriptFrames.end(),
-            [](const auto& frame) { return frame.callable->getObjectType() != nullptr; })) {
+        if (m_yielded && (function->getObjectType() != nullptr || m_this.getObjectValue() != nullptr)) {
             fault("Class initialization or construction cannot yield");
         }
     } catch (...) {
-        while (m_scriptFrames.size() > savedFrameCount) {
-            const auto frame = m_scriptFrames.back();
-            const auto nested = m_scriptFrames.size() > savedFrameCount + 1;
-            auto* constructedObject = nested && m_runtime->getConstructor(frame.callable->getId()) != nullptr ?
-                m_stack[frame.variableIndex + frame.callable->getVariableId("this").id].getObjectValue() : nullptr;
-            for (auto index = NomadIndex{0}; index < frame.callable->getVariableCount(); ++index) {
-                const auto* type = frame.callable->getVariableType(VariableId{toNomadId(index)});
-                if (type != nullptr) {
-                    type->freeValue(m_stack[frame.variableIndex + index]);
-                }
-            }
-            if (constructedObject != nullptr) {
-                constructedObject->releaseRef();
-            }
-            if (nested) {
-                const auto& parameters = frame.callable->getParameters();
-                for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
-                    parameters[index].type->freeValue(m_stack[frame.parameterIndex - index]);
-                }
-            }
-            m_scriptFrames.pop_back();
-        }
+        releaseArguments();
         m_yielded = false;
         restoreFrame();
 
@@ -223,34 +217,10 @@ void VirtualMachine::runCallable(
     }
 
     if (!m_yielded) {
+        releaseArguments();
         restoreFrame();
     } else {
         m_running = false;
-    }
-}
-
-void VirtualMachine::initializeFunctionVariables(const ScriptCallableBase* function, const RuntimeValue* receiver) {
-    if (function == nullptr) {
-        return;
-    }
-
-    const auto variableCount = function->getVariableCount();
-
-    for (auto variableIndex = NomadIndex{0}; variableIndex < variableCount; ++variableIndex) {
-        m_stack[m_variableIndex + variableIndex] = RuntimeValue{};
-    }
-    for (NomadIndex variableIndex = 0; variableIndex < variableCount; ++variableIndex) {
-        const auto type = function->getVariableType(VariableId{toNomadId(variableIndex)});
-
-        const auto parameterId = function->getParameterId(function->getVariableName(VariableId{toNomadId(variableIndex)}));
-        if (receiver != nullptr && function->getVariableName(VariableId{toNomadId(variableIndex)}) == "this") {
-            type->copyValue(*receiver, m_stack[m_variableIndex + variableIndex]);
-        } else if (type != nullptr && parameterId != NOMAD_INVALID_ID) {
-            // Mutable bindings own copies; argument storage remains owned by the caller.
-            type->copyValue(getParameter(toNomadIndex(parameterId)), m_stack[m_variableIndex + variableIndex]);
-        } else if (type != nullptr && type->isString()) {
-            initStringVariable(VariableId{toNomadId(variableIndex)});
-        }
     }
 }
 
@@ -295,18 +265,6 @@ void VirtualMachine::createScriptObject(const TypeId typeId) {
     m_this.setObjectValue(new ScriptObject(objectType));
 }
 
-void VirtualMachine::pushThis() {
-    pushValue(m_this);
-}
-
-void VirtualMachine::popThis() {
-    m_this = popValue();
-}
-
-void VirtualMachine::moveThisToResult() {
-    m_result.moveObjectValue(m_this);
-}
-
 void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, const RuntimeValue* receiver) {
     if (function == nullptr) {
         fault("Invalid function");
@@ -337,35 +295,6 @@ void VirtualMachine::callScriptByAddress(const NomadIndex address, const Runtime
     m_variableIndex = m_stackIndex + 1;
     m_this = nextThis;
     jump(address);
-}
-
-void VirtualMachine::enterFunction(const CallableId callableId) {
-    const auto* function = m_runtime->getScriptCallable(callableId);
-    if (function == nullptr) {
-        fault("Invalid script callable id: " + toString(callableId.id));
-    }
-    const auto variableCount = function->getVariableCount();
-    if (variableCount > m_stack.size() - m_stackIndex - 1) {
-        fault("Stack overflow");
-    }
-    if (variableCount > 0) {
-        pushN(variableCount);
-        for (auto index = NomadIndex{0}; index < variableCount; ++index) {
-            m_stack[m_variableIndex + index] = RuntimeValue{};
-        }
-    }
-    m_scriptFrames.push_back({function, m_variableIndex, m_parameterIndex});
-    if (variableCount > 0) {
-        initializeFunctionVariables(function, function->getObjectType() != nullptr ? &m_this : nullptr);
-    }
-    if (function->getObjectType() != nullptr &&
-        function->getName() == function->getObjectType()->asObjectType()->getInitializerName()) {
-        auto* object = dynamic_cast<ScriptObject*>(getThis());
-        if (object == nullptr || object->getObjectType() != function->getObjectType()) {
-            fault("Class initializer receiver has no matching field storage");
-        }
-        object->initializeFields();
-    }
 }
 
 void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
@@ -401,6 +330,8 @@ void VirtualMachine::invokeNativeFunction(const NativeFunctionFn& callback) {
     const auto previousParameterIndex = m_parameterIndex;
     const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
     const auto previousThis = m_this;
+    const auto previousEnclosingThis = m_enclosingThis;
+    m_enclosingThis = m_this;
     m_this = RuntimeValue{};
 
     m_parameterIndex = m_stackIndex;
@@ -414,12 +345,14 @@ void VirtualMachine::invokeNativeFunction(const NativeFunctionFn& callback) {
         m_parameterIndex = previousParameterIndex;
         m_enclosingParameterIndex = previousEnclosingParameterIndex;
         m_this = previousThis;
+        m_enclosingThis = previousEnclosingThis;
         throw;
     }
 
     m_parameterIndex = previousParameterIndex;
     m_enclosingParameterIndex = previousEnclosingParameterIndex;
     m_this = previousThis;
+    m_enclosingThis = previousEnclosingThis;
 }
 
 void VirtualMachine::callNativeMethod(const CallableId memberId, const RuntimeValue& receiver) {
@@ -434,6 +367,8 @@ void VirtualMachine::invokeNativeMethod(const NativeFunctionFn& callback, const 
     const auto previousParameterIndex = m_parameterIndex;
     const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
     const auto previousThis = m_this;
+    const auto previousEnclosingThis = m_enclosingThis;
+    m_enclosingThis = m_this;
     m_this = receiver;
     m_parameterIndex = m_stackIndex;
     m_enclosingParameterIndex = previousParameterIndex;
@@ -445,12 +380,14 @@ void VirtualMachine::invokeNativeMethod(const NativeFunctionFn& callback, const 
         m_parameterIndex = previousParameterIndex;
         m_enclosingParameterIndex = previousEnclosingParameterIndex;
         m_this = previousThis;
+        m_enclosingThis = previousEnclosingThis;
         throw;
     }
 
     m_parameterIndex = previousParameterIndex;
     m_enclosingParameterIndex = previousEnclosingParameterIndex;
     m_this = previousThis;
+    m_enclosingThis = previousEnclosingThis;
 }
 
 NomadObject* VirtualMachine::getThis() const {
@@ -737,6 +674,9 @@ std::vector<TypedValue> VirtualMachine::captureCurrentFrame(const ScriptFunction
                 fault("Invalid variable for current-frame capture");
             }
             values.emplace_back(capture.type, getFunctionVariableValue(capture.variableId));
+        } else if (capture.source == CaptureSource::Receiver) {
+            (void)getThis();
+            values.emplace_back(capture.type, m_this);
         } else {
             fault("Invalid source for current-frame capture");
         }
@@ -770,6 +710,11 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, c
             const auto& value = getFunctionVariableValue(capture.variableId);
 
             captureType->copyValue(value, captureValue);
+        } else if (captureSource == CaptureSource::Receiver) {
+            if (m_enclosingThis.getObjectValue() == nullptr) {
+                fault("Cannot capture a missing enclosing receiver");
+            }
+            captureType->copyValue(m_enclosingThis, captureValue);
         } else {
             fault("Invalid capture type");
         }
@@ -782,12 +727,45 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, c
 
 void VirtualMachine::returnFunction(const NomadIndex variableCount) {
     popN(variableCount);
-    m_scriptFrames.pop_back();
 
     m_this = popValue();
     m_variableIndex = popIndex();
     m_parameterIndex = popIndex();
     m_instructionIndex = popIndex();
+}
+
+void VirtualMachine::setParameter(const NomadIndex parameterIndex, const RuntimeValue& value) {
+    m_stack[m_parameterIndex - parameterIndex] = value;
+}
+
+void VirtualMachine::freeObjectParameter(const NomadIndex parameterIndex) {
+    m_stack[m_parameterIndex - parameterIndex].freeObjectValue();
+}
+
+void VirtualMachine::reserveLocals(const NomadIndex count) {
+    if (m_stackIndex >= m_stack.size() || count > m_stack.size() - m_stackIndex - 1) {
+        fault("Stack overflow");
+    }
+    for (auto index = NomadIndex{0}; index < count; ++index) {
+        pushValue(RuntimeValue{});
+    }
+}
+
+void VirtualMachine::pushThis() {
+    pushValue(m_this);
+}
+
+void VirtualMachine::popThis() {
+    m_this = popValue();
+}
+
+void VirtualMachine::moveThisToResult() {
+    m_result.moveObjectValue(m_this);
+}
+
+void VirtualMachine::copyThisToResult() {
+    (void)getThis();
+    m_result.copyObjectValue(m_this);
 }
 
 void VirtualMachine::pushResult() {
@@ -1015,6 +993,10 @@ void VirtualMachine::jump(NomadIndex index) {
 
 bool VirtualMachine::getVariableValue(IdentifierType identifierType, NomadId variableId, RuntimeValue& value) {
     switch (identifierType) {
+    case IdentifierType::Receiver:
+        (void)getThis();
+        value = m_this;
+        return true;
     case IdentifierType::Constant:
         m_runtime->getConstantValue(ConstantId{variableId}, value);
         return true;

@@ -15,6 +15,7 @@ namespace nomad {
 enum class CaptureSource {
     Variable = 1,
     Parameter,
+    Receiver,
 };
 
 struct Capture {
@@ -77,7 +78,6 @@ public:
             }
         }
 
-        registerVariable(parameterName, type);
         return parameterId;
     }
 
@@ -130,6 +130,14 @@ public:
         const Type* parameterType
     ) {
         return createCapture(parameterId, parameterName, parameterType);
+    }
+
+    NomadId createReceiverCapture(const Type* type) {
+        Capture capture;
+        capture.name = "this";
+        capture.type = type;
+        capture.source = CaptureSource::Receiver;
+        return registerCapture(capture);
     }
 
     NomadId flagVariableAsCaptured(
@@ -247,8 +255,9 @@ private:
             if (existing.source != capture.source) {
                 throw NomadBug("Internal error: Capture '" + name + "' has a different source than expected");
             }
-            const auto sameId = capture.source == CaptureSource::Variable ?
-                existing.variableId == capture.variableId : existing.parameterId == capture.parameterId;
+            const auto sameId = capture.source == CaptureSource::Receiver ||
+                (capture.source == CaptureSource::Variable ?
+                    existing.variableId == capture.variableId : existing.parameterId == capture.parameterId);
             if (!sameId) {
                 throw NomadBug("Internal error: Capture '" + name + "' has a different id than expected");
             }

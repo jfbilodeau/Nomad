@@ -11,6 +11,7 @@
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <cassert>
@@ -18,6 +19,23 @@
 namespace nomad {
 
 namespace {
+
+ScriptObject* getScriptReceiver(VirtualMachine* machine) {
+    auto* object = dynamic_cast<ScriptObject*>(machine->getThis());
+    if (object == nullptr) {
+        machine->fault("Receiver has no script field storage");
+    }
+    return object;
+}
+
+NomadIndex getReceiverFieldIndex(VirtualMachine* machine, const ScriptObject* object) {
+    const auto id = PropertyId{machine->nextId()};
+    const auto index = object->getObjectType()->getFieldIndex(id);
+    if (index == NOMAD_INVALID_INDEX) {
+        machine->fault("Invalid script field initializer");
+    }
+    return index;
+}
 
 void callNativeIndexer(VirtualMachine* machine, const bool write) {
     const auto indexerId = IndexerId{machine->nextId()};
@@ -185,8 +203,12 @@ void op_call_method(VirtualMachine* interpreter) {
     interpreter->callMethod(interpreter->nextIndex());
 }
 
-void op_function_enter(VirtualMachine* interpreter) {
-    interpreter->enterFunction(CallableId{interpreter->nextId()});
+void op_stack_reserve(VirtualMachine* interpreter) {
+    interpreter->reserveLocals(interpreter->nextIndex());
+}
+
+void op_this_load_r(VirtualMachine* interpreter) {
+    interpreter->copyThisToResult();
 }
 
 void op_push_this(VirtualMachine* interpreter) {
@@ -285,6 +307,14 @@ void op_object_parameter_push(VirtualMachine* interpreter) {
     const auto parameterId = interpreter->nextId();
 
     interpreter->pushObjectValue(interpreter->getParameter(parameterId));
+}
+
+void op_parameter_set(VirtualMachine* interpreter) {
+    interpreter->setParameter(interpreter->nextId(), interpreter->getResult());
+}
+
+void op_object_free_parameter(VirtualMachine* interpreter) {
+    interpreter->freeObjectParameter(interpreter->nextId());
 }
 
 void op_function_variable_set(VirtualMachine* interpreter) {
@@ -920,6 +950,20 @@ void op_object_init_r(VirtualMachine* interpreter) {
 
 void op_object_new(VirtualMachine* interpreter) {
     interpreter->createScriptObject(TypeId{interpreter->nextId()});
+}
+
+void op_object_field_init(VirtualMachine* interpreter) {
+    auto* object = getScriptReceiver(interpreter);
+    object->initializeField(getReceiverFieldIndex(interpreter, object), interpreter->getResult());
+}
+
+void op_object_field_default(VirtualMachine* interpreter) {
+    auto* object = getScriptReceiver(interpreter);
+    object->initializeFieldDefault(getReceiverFieldIndex(interpreter, object));
+}
+
+void op_object_fields_ready(VirtualMachine* interpreter) {
+    getScriptReceiver(interpreter)->completeFieldInitialization();
 }
 
 void op_object_init_i(VirtualMachine* interpreter) {

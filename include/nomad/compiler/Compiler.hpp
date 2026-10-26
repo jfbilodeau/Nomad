@@ -138,6 +138,9 @@ public:
     NomadIndex addOpCode(const NomadString& opCodeName);
     NomadIndex addOpCode(InstructionFn opCode);
     void addFunctionReturn(const ScriptCallableBase* function);
+    void addFunctionEntry(const ScriptCallableBase* function);
+    void addLoadReceiver(ScriptCallableBase* function, ExpressionTarget target);
+    void addStoreParameter(NomadId parameterId, const Type* type);
     NomadIndex addId(NomadId id);
     NomadIndex addIndex(NomadIndex index);
     NomadIndex addInteger(NomadInteger value);

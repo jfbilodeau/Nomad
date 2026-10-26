@@ -21,6 +21,9 @@ public:
     [[nodiscard]] NomadIndex getFieldCount() const;
 
     void initializeFields();
+    void initializeField(NomadIndex index, RuntimeValue& value);
+    void initializeFieldDefault(NomadIndex index);
+    void completeFieldInitialization();
     [[nodiscard]] const RuntimeValue& getField(NomadIndex index) const;
     void setField(NomadIndex index, const RuntimeValue& value);
 
@@ -32,6 +35,7 @@ private:
     };
 
     void validateFieldAccess(NomadIndex index) const;
+    void prepareFieldInitialization(NomadIndex index);
 
     const ObjectType* m_objectType;
     std::vector<const Type*> m_fieldTypes;

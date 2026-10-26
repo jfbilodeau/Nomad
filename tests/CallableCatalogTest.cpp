@@ -110,7 +110,8 @@ BOOST_AUTO_TEST_CASE(script_registration_binds_receiver_without_exposing_a_free_
         BOOST_REQUIRE(callable != nullptr);
         BOOST_TEST(callable->getParameterCount() == 1u);
         BOOST_TEST(callable->getParameterId("this") == NOMAD_INVALID_ID);
-        BOOST_TEST(callable->getVariableType(callable->getVariableId("this")) == owner);
+        BOOST_TEST(callable->getVariableId("this").isInvalid());
+        BOOST_TEST(callable->getObjectType() == owner);
         BOOST_TEST(runtime.getFunction(id) == nullptr);
     }
     BOOST_TEST(runtime.getFunctionId("move").isInvalid());
@@ -201,7 +202,7 @@ BOOST_AUTO_TEST_CASE(script_member_descriptors_are_type_owned_with_shared_compil
         BOOST_TEST(!script->getSourceCode().empty());
         BOOST_TEST(script->getParameterCount() == 1u);
         BOOST_TEST(script->getParameterType(0) == runtime.getIntegerType());
-        BOOST_TEST(script->getVariableType(script->getVariableId("value")) == runtime.getIntegerType());
+        BOOST_TEST(script->getVariableId("value").isInvalid());
         BOOST_TEST(script->getParameterId("this") == NOMAD_INVALID_ID);
         BOOST_TEST(script->getVariableId("this").isInvalid());
         script->setHub("model");
@@ -427,9 +428,10 @@ BOOST_AUTO_TEST_CASE(script_function_views_and_state_survive_table_growth)
     BOOST_TEST(function->getReturnType() == runtime.getIntegerType());
     BOOST_TEST(script->getPath() == "source.nomad");
     BOOST_TEST(script->getSourceCode() == "return value");
-    BOOST_TEST(script->getVariableCount() == 2U);
+    BOOST_TEST(script->getVariableCount() == 1U);
     BOOST_TEST(script->getVariableType(script->getVariableId("local")) == runtime.getFloatType());
-    BOOST_TEST(script->getVariableType(script->getVariableId("value")) == runtime.getIntegerType());
+    BOOST_TEST(script->getVariableId("value").isInvalid());
+    BOOST_TEST(script->getParameterType(script->getParameterId("value")) == runtime.getIntegerType());
     BOOST_TEST(runtime.getFunctionCount() == 1U);
     BOOST_TEST(runtime.getFunctionSize() == 10U);
     BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 3) == script);

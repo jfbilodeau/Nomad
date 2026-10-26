@@ -74,6 +74,7 @@ public:
     void evaluateFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
     void evaluateNativeFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
     void setParameterResult(NomadId parameterId);
+    void setParameter(NomadId parameterId, const RuntimeValue& value);
 
     void setResult(const Type* type, const RuntimeValue& value);
     void setResult(const TypedValue& value);

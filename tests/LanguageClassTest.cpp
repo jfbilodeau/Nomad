@@ -429,7 +429,8 @@ BOOST_AUTO_TEST_CASE(member_signatures_precede_body_parsing_and_receiver_types_a
     for (const auto* method : type->getMethods()) {
         const auto* callable = runtime.getScriptCallable(method->getId());
         BOOST_REQUIRE(callable != nullptr);
-        BOOST_TEST(callable->getVariableType(callable->getVariableId("this")) == type);
+        BOOST_TEST(callable->getVariableId("this").isInvalid());
+        BOOST_TEST(callable->getObjectType() == type);
         BOOST_TEST(callable->getParameterId("this") == NOMAD_INVALID_ID);
         BOOST_TEST(runtime.getScriptFunction(method->getId()) == nullptr);
         if (method->getName() == "identity") BOOST_TEST(method->getReturnType() == type);

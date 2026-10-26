@@ -23,6 +23,7 @@ enum class IdentifierType {
     ContextVariable,
     FunctionVariable,
     Parameter,
+    Receiver,
 };
 
 struct IdentifierDefinition {

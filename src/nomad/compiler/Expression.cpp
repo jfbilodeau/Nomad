@@ -1587,7 +1587,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBas
             // Reload the identifier definition.
             compiler->getIdentifierDefinition(m_identifier, function, m_identifierDefinition);
 
-            if (m_identifierDefinition.identifierType != IdentifierType::FunctionVariable) {
+            if (m_identifierDefinition.identifierType != IdentifierType::Parameter) {
                 compiler->reportInternalError("Capture definition should exist.");
             }
             break;
@@ -1622,6 +1622,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBas
         m_identifierDefinition.identifierType != IdentifierType::Constant &&
         m_identifierDefinition.identifierType != IdentifierType::DynamicVariable &&
         m_identifierDefinition.identifierType != IdentifierType::ContextVariable &&
+        m_identifierDefinition.identifierType != IdentifierType::Receiver &&
         m_identifierDefinition.identifierType != IdentifierType::Parameter) {
         reportError(context, function, "Identifier '" + m_identifier + "' is not supported by the interpreter");
         return;
@@ -1666,6 +1667,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBas
 
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::FunctionVariable:
+    case IdentifierType::Parameter:
         m_writable = true;
         break;
     case IdentifierType::ContextVariable:
@@ -1684,8 +1686,11 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBas
     setType(m_identifierDefinition.valueType);
 }
 
-void IdentifierExpression::onCompile(Compiler* compiler, ScriptCallableBase* /*function*/, const ExpressionTarget target) {
+void IdentifierExpression::onCompile(Compiler* compiler, ScriptCallableBase* function, const ExpressionTarget target) {
     switch (m_identifierDefinition.identifierType) {
+        case IdentifierType::Receiver:
+            compiler->addLoadReceiver(function, target);
+            break;
         case IdentifierType::Constant:
             compiler->addLoadConstant(m_identifierDefinition.constantId, target);
             break;
@@ -1741,6 +1746,9 @@ void IdentifierExpression::compileStore(Compiler* compiler) const {
     const auto* typeOpCodes = m_identifierDefinition.valueType->getTypeOpCodes();
 
     switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::Parameter:
+        compiler->addStoreParameter(m_identifierDefinition.parameterId, m_identifierDefinition.valueType);
+        break;
     case IdentifierType::FunctionVariable:
         compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(m_identifierDefinition.variableId.id));
         compiler->addOpCode(typeOpCodes->setFunctionVariable);
@@ -1770,6 +1778,9 @@ void IdentifierExpression::evaluateStore(InterpreterContext& context, const Runt
     const auto* type = m_identifierDefinition.valueType;
 
     switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::Parameter:
+        context.setParameter(m_identifierDefinition.parameterId, value);
+        break;
     case IdentifierType::FunctionVariable:
         context.setVariable(m_identifier, type, value);
         break;
@@ -1790,6 +1801,12 @@ void IdentifierExpression::evaluateStore(InterpreterContext& context, const Runt
 
 void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
     switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::Receiver: {
+        RuntimeValue receiver;
+        receiver.setObjectValue(context.getVirtualMachine()->getThis());
+        context.setResult(getType(), receiver);
+        break;
+    }
     case IdentifierType::Constant: {
         RuntimeValue value;
         context.getRuntime()->getConstantValue(m_identifierDefinition.constantId, value);
@@ -1875,6 +1892,11 @@ bool IdentifierExpression::parseCapture(const Compiler* compiler, ScriptCallable
 }
 
 bool getCapture(const NomadString& identifier, const ScriptCallableBase* function, Capture& capture) {
+    if (identifier == "this" && function->getObjectType() != nullptr) {
+        capture.source = CaptureSource::Receiver;
+        capture.type = function->getObjectType();
+        return true;
+    }
     const auto variableId = function->getVariableId(identifier);
     if (variableId.isValid()) {
         capture.variableId = variableId;
@@ -1959,6 +1981,8 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
         if (getCapture(identifier, parentFunction, capture)) {
             if (capture.source == CaptureSource::Variable) {
                 intermediateFunction->createCapture(capture.variableId, identifier, captureType);
+            } else if (capture.source == CaptureSource::Receiver) {
+                intermediateFunction->createReceiverCapture(captureType);
             } else {
                 intermediateFunction->createCapture(capture.parameterId, identifier, captureType);
             }

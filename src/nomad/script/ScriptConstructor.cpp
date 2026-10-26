@@ -26,9 +26,6 @@ ScriptConstructor::ScriptConstructor(
         NomadString{}
     )
 {
-    for (const auto& parameter : getParameters()) {
-        registerVariable(parameter.name, parameter.type);
-    }
 }
 
 const ScriptConstructor* ScriptConstructor::asScriptConstructor() const {

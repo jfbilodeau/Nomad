@@ -183,8 +183,8 @@ bool Compiler::foldBinary(
 
 IdentifierType Compiler::getIdentifierType(const NomadString& name, const ScriptCallableBase* function) const {
     if (getReceiverType(function) != nullptr) {
-        if (name == "this") return function->getVariableId(name).isValid() ?
-            IdentifierType::FunctionVariable : IdentifierType::Unknown;
+        if (name == "this") return function->getObjectType() != nullptr ? IdentifierType::Receiver :
+            (function->getParameterId(name) != NOMAD_INVALID_ID ? IdentifierType::Parameter : IdentifierType::Unknown);
         if (name.starts_with("this.")) return IdentifierType::Unknown;
     }
     if (m_runtime->getKeywordId(name).isValid()) {
@@ -234,9 +234,11 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
 void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptCallableBase* function, IdentifierDefinition& definition) const {
     if (const auto* receiverType = getReceiverType(function)) {
         if (name == "this") {
-            definition.variableId = function->getVariableId("this");
-            definition.identifierType = definition.variableId.isValid() ?
-                IdentifierType::FunctionVariable : IdentifierType::Unknown;
+            definition.identifierType = function->getObjectType() != nullptr ? IdentifierType::Receiver :
+                (function->getParameterId(name) != NOMAD_INVALID_ID ? IdentifierType::Parameter : IdentifierType::Unknown);
+            if (definition.identifierType == IdentifierType::Parameter) {
+                definition.parameterId = function->getParameterId(name);
+            }
             definition.valueType = receiverType;
             return;
         }
@@ -1154,8 +1156,23 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
 void Compiler::compileFunction(const FunctionCompilation& source) {
     auto* function = source.function;
     function->setFunctionStart(m_instructions.size());
-    addOpCode(OpCodes::op_function_enter);
-    addId(function->getId().id);
+    addFunctionEntry(function);
+    const auto* owner = function->getObjectType() != nullptr ? function->getObjectType()->asObjectType() : nullptr;
+    if (owner != nullptr && function->getName() == owner->getInitializerName()) {
+        for (const auto* property : owner->getProperties()) {
+            if (property->asNativeProperty() != nullptr) {
+                continue;
+            }
+            if (property->getValueType()->isString()) {
+                addLoadStringValue("", ExpressionTarget::Result);
+                addOpCode(OpCodes::op_object_field_init);
+            } else {
+                addOpCode(OpCodes::op_object_field_default);
+            }
+            addId(property->getId().id);
+        }
+        addOpCode(OpCodes::op_object_fields_ready);
+    }
     source.ast->compile(this, function);
     // Safety net for the inferred string return type; valid value-returning bodies cannot fall through.
     if (const auto* returnType = function->getReturnType(); returnType != nullptr && returnType->isString()) {
@@ -1168,8 +1185,7 @@ void Compiler::compileFunction(const FunctionCompilation& source) {
 void Compiler::compileConstructor(const FunctionCompilation& source) {
     auto* constructor = source.function;
     constructor->setFunctionStart(m_instructions.size());
-    addOpCode(OpCodes::op_function_enter);
-    addId(constructor->getId().id);
+    addFunctionEntry(constructor);
     const auto* type = constructor->getObjectType()->asObjectType();
     const auto methods = type->getMethods();
     const auto initializer = std::ranges::find_if(methods, [&](const auto* method) {
@@ -1184,6 +1200,43 @@ void Compiler::compileConstructor(const FunctionCompilation& source) {
     source.ast->compile(this, constructor);
     addFunctionReturn(constructor);
     constructor->setFunctionEnd(m_instructions.size());
+}
+
+void Compiler::addFunctionEntry(const ScriptCallableBase* function) {
+    const auto count = function->getVariableCount();
+    if (count > 0) {
+        addOpCode(OpCodes::op_stack_reserve);
+        addIndex(count);
+    }
+    for (auto index = NomadIndex{0}; index < count; ++index) {
+        if (function->getVariableType(VariableId{toNomadId(index)})->isString()) {
+            addLoadStringValue("", ExpressionTarget::Result);
+            addOpCode(OpCodes::op_function_variable_set);
+            addId(toNomadId(index));
+        }
+    }
+}
+
+void Compiler::addStoreParameter(const NomadId parameterId, const Type* type) {
+    if (type->needsFree()) {
+        addOpCode(OpCodes::op_object_free_parameter);
+        addId(parameterId);
+    }
+    addOpCode(OpCodes::op_parameter_set);
+    addId(parameterId);
+}
+
+void Compiler::addLoadReceiver(ScriptCallableBase* function, const ExpressionTarget target) {
+    if (function->getObjectType() != nullptr) {
+        addOpCode(OpCodes::op_this_load_r);
+        addMoveResult(function->getObjectType(), target);
+    } else {
+        const auto parameterId = function->getParameterId("this");
+        if (parameterId == NOMAD_INVALID_ID) {
+            reportInternalError("Missing receiver capture");
+        }
+        addLoadParameter(parameterId, function->getParameterType(parameterId), target);
+    }
 }
 
 void Compiler::addFunctionReturn(const ScriptCallableBase* function) {

@@ -58,11 +58,7 @@ public:
 
     void callFunction(NomadIndex address);
     void callMethod(NomadIndex address);
-    void enterFunction(CallableId callableId);
     void createScriptObject(TypeId typeId);
-    void pushThis();
-    void popThis();
-    void moveThisToResult();
     void callNativeFunction(CallableId nativeFunctionId);
     void callNativeMethod(CallableId memberId, const RuntimeValue& receiver);
     void returnFunction(NomadIndex variableCount);
@@ -128,6 +124,8 @@ public:
     [[nodiscard]] NomadStringObject* getStringIntermediate() const { return m_intermediate.getStringObject(); }
 
     [[nodiscard]] const RuntimeValue& getParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex]; }
+    void setParameter(NomadIndex parameterIndex, const RuntimeValue& value);
+    void freeObjectParameter(NomadIndex parameterIndex);
     [[nodiscard]] NomadBoolean getBooleanParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getBooleanValue(); }
     [[nodiscard]] NomadInteger getIntegerParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getIntegerValue(); }
     [[nodiscard]] NomadFloat getFloatParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getFloatValue(); }
@@ -177,6 +175,11 @@ public:
 
     void pushResult();
     void pushIntermediate();
+    void reserveLocals(NomadIndex count);
+    void pushThis();
+    void popThis();
+    void moveThisToResult();
+    void copyThisToResult();
     // Adds a reference to the `r` object and pushes it onto the stack.
     void pushObjectResult();
     // Moves the `i` object onto the stack. popObjectIntermediate() moves it back.
@@ -241,7 +244,6 @@ private:
         const Callable* callable,
         const std::vector<RuntimeValue>& args
     );
-    void initializeFunctionVariables(const ScriptCallableBase* function, const RuntimeValue* receiver = nullptr);
     void callScriptCallable(const ScriptCallableBase* function, const RuntimeValue* receiver);
     void callScriptByAddress(NomadIndex address, const RuntimeValue* receiver);
     void runCallable(
@@ -266,12 +268,7 @@ private:
     void invokeNativeMember(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
     void invokeNativeMethod(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
     RuntimeValue m_this; // Borrowed receiver, except between op_object_new and op_move_this_to_r.
-    struct ScriptFrame {
-        const ScriptCallableBase* callable;
-        NomadIndex variableIndex;
-        NomadIndex parameterIndex;
-    };
-    std::vector<ScriptFrame> m_scriptFrames;
+    RuntimeValue m_enclosingThis;
 };
 
 template<typename Object>

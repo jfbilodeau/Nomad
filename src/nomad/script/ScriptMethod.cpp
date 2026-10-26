@@ -19,9 +19,6 @@ ScriptMethod::ScriptMethod(
         std::move(parameters), returnType, NomadString{}
     )
 {
-    for (const auto& parameter : getParameters()) {
-        registerVariable(parameter.name, parameter.type);
-    }
 }
 
 const ScriptMethod* ScriptMethod::asScriptMethod() const {

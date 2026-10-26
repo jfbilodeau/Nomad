@@ -55,6 +55,34 @@ const RuntimeValue& ScriptObject::getField(const NomadIndex index) const {
     return m_values[index];
 }
 
+void ScriptObject::prepareFieldInitialization(const NomadIndex index) {
+    if (m_initializationState == InitializationState::Initialized ||
+        index != m_initializedFieldCount || index >= m_values.size()) {
+        throw NomadException("Script object fields must be initialized once in slot order");
+    }
+    m_initializationState = InitializationState::Initializing;
+    ++m_initializedFieldCount;
+}
+
+void ScriptObject::initializeField(const NomadIndex index, RuntimeValue& value) {
+    prepareFieldInitialization(index);
+    m_values[index] = value;
+    value = RuntimeValue{};
+}
+
+void ScriptObject::initializeFieldDefault(const NomadIndex index) {
+    prepareFieldInitialization(index);
+    m_fieldTypes[index]->initValue(m_values[index]);
+}
+
+void ScriptObject::completeFieldInitialization() {
+    if (m_initializationState == InitializationState::Initialized ||
+        m_initializedFieldCount != m_values.size()) {
+        throw NomadException("Script object defaults must be initialized once before field access");
+    }
+    m_initializationState = InitializationState::Initialized;
+}
+
 void ScriptObject::setField(const NomadIndex index, const RuntimeValue& value) {
     validateFieldAccess(index);
     m_fieldTypes[index]->assignValue(value, m_values[index]);

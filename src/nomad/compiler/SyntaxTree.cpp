@@ -267,8 +267,11 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
 
         switch (identifier.identifierType) {
         case IdentifierType::Parameter:
-            compiler->reportInternalError("Missing mutable parameter binding: " + m_identifier);
-            return;
+            if (identifier.valueType != expressionType) {
+                reportError(context, function, "Cannot change type of parameter '" + m_identifier + "'");
+                return;
+            }
+            break;
         case IdentifierType::FunctionVariable: {
             const auto* interpreterContext = context->getInterpreterContext();
             if (interpreterContext != nullptr && interpreterContext->isFrameVariable(identifier.variableId) &&
@@ -421,7 +424,9 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
         reportError(context, function, "Cannot assign value to event type '" + m_identifier + "'");
         break;
     case IdentifierType::Parameter:
-        compiler->reportInternalError("Missing mutable parameter binding: " + m_identifier);
+        if (identifier.valueType != expressionType) {
+            reportError(context, function, "Cannot change type of parameter '" + m_identifier + "'");
+        }
         break;
     default:
         reportError(context, function, "Cannot assign value to unknown identifier '" + m_identifier + "'");
@@ -438,7 +443,7 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
         if (property == nullptr) {
             compiler->reportInternalError("Unresolved class field: " + m_identifier);
         }
-        compiler->addLoadFunctionVariable(function->getVariableId("this"), receiverType, ExpressionTarget::Intermediate);
+        compiler->addLoadReceiver(function, ExpressionTarget::Intermediate);
         compiler->addOpCode(op_native_property_set);
         compiler->addId(property->getId().id);
         compiler->addFreeValue(m_expression->getType()->getTypeOpCodes()->freeResult);
@@ -454,6 +459,9 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
     const auto* typeOpCodes = m_expression->getType()->getTypeOpCodes();
 
     switch (identifier.identifierType) {
+    case IdentifierType::Parameter:
+        compiler->addStoreParameter(identifier.parameterId, m_expression->getType());
+        break;
     case IdentifierType::FunctionVariable:
         // `r` is moved into the variable, so its previous value is released first.
         compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(identifier.variableId.id));
@@ -497,6 +505,9 @@ void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
     const auto* type = assignedValue.getType();
 
     switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::Parameter:
+        context.setParameter(m_identifierDefinition.parameterId, assignedValue.getValue());
+        break;
     case IdentifierType::DynamicVariable: {
         auto* runtime = context.getRuntime();
         runtime->setDynamicVariable(

@@ -206,6 +206,7 @@ std::optional<NomadString> compileFormatString(
                 case IdentifierType::ContextVariable:
                 case IdentifierType::FunctionVariable:
                 case IdentifierType::Parameter:
+                case IdentifierType::Receiver:
                     // All the above are OK. Continue
                     break;
 
@@ -236,6 +237,8 @@ std::optional<NomadString> compileFormatString(
                     formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.contextVariableId.id);
                 } else if (identifier.identifierType == IdentifierType::FunctionVariable) {
                     formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.variableId.id);
+                } else if (identifier.identifierType == IdentifierType::Receiver) {
+                    formatString->addVariable(identifier.identifierType, identifier.valueType, NOMAD_INVALID_ID);
                 } else {
                     formatString->addVariable(
                         identifier.identifierType,

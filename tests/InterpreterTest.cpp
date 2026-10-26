@@ -75,7 +75,7 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
     BOOST_REQUIRE(Interpreter{}.execute("value = 1", context));
     BOOST_REQUIRE(Interpreter{}.execute("text = \"changed\"", context));
     BOOST_TEST(context.getVariableValue("value")->getIntegerValue() == 1);
-    BOOST_TEST(machine->getParameter(0).getIntegerValue() == 40);
+    BOOST_TEST(machine->getParameter(0).getIntegerValue() == 1);
     BOOST_REQUIRE(Interpreter{}.execute("created = local + value", context));
     BOOST_REQUIRE(Interpreter{}.evaluateExpression("created", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 8);
@@ -221,8 +221,7 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
     function->registerVariable("localText", runtime.getStringType());
     function->setReturnType(runtime.getVoidType());
     function->setFunctionStart(runtime.getInstructions().size());
-    compiler->addOpCode(OpCodes::op_function_enter);
-    compiler->addId(function->getId().id);
+    compiler->addFunctionEntry(function);
     const auto initializeFrame = runtime.registerInstruction("test.initializeFrame", [](VirtualMachine* machine) {
         machine->setFunctionVariableValue(
             machine->getCurrentFunction()->getVariableId("local"), RuntimeValue{NomadInteger{2}});
