@@ -13,6 +13,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <utility>
+
 using namespace nomad;
 
 namespace {
@@ -37,9 +39,74 @@ CallableId compileConstruction(Runtime& runtime, const NomadString& source, cons
     return runtime.getFunctionId(name);
 }
 
+std::vector<NomadString> callSequence(const Runtime& runtime, const ScriptCallableBase* function) {
+    std::vector<NomadString> sequence;
+    for (auto index = function->getFunctionStart(); index < function->getFunctionEnd();) {
+        const auto id = runtime.getInstructionId(runtime.getInstructions()[index].fn);
+        BOOST_REQUIRE(id.isValid());
+        const auto& name = runtime.getInstructionName(id);
+        if (name == OpCodes::op_call_native_function) {
+            sequence.push_back(OpCodes::op_call_script_function);
+        } else if (name == OpCodes::op_call_native_method) {
+            sequence.push_back(OpCodes::op_call_script_method);
+        } else {
+            sequence.push_back(name);
+        }
+        index += 1 + runtime.getInstructionOperands(id).size();
+        BOOST_REQUIRE(index <= function->getFunctionEnd());
+    }
+    return sequence;
+}
+
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(object_construction)
+
+BOOST_AUTO_TEST_CASE(native_and_script_calls_share_argument_and_construction_bytecode) {
+    Runtime runtime;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "nativeEcho", [](VirtualMachine* machine) {
+            BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+            BOOST_TEST(machine->peekStack(0).getObjectValue() == machine->getStringParameter(0));
+            machine->getResult().copyObjectValue(machine->getParameter(0));
+        }, {defParameter("text", runtime.getStringType(), "")}, runtime.getStringType(), ""
+    ).isValid());
+    const auto* nativeType = registerObjectType(runtime, "NativeOwner");
+    BOOST_REQUIRE(runtime.addConstructor(nativeType->getId(), {
+        .parameters = {{runtime.getStringType()->getId(), "text", ""}},
+        .function = [](VirtualMachine* machine) {
+            BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+            BOOST_TEST(NomadString(machine->peekStack(0).getStringValue()) == "value");
+            machine->getResult().setObjectValue(new ConstructedObject);
+        }
+    }).isValid());
+    compileConstruction(runtime,
+        "class ScriptOwner\ninit text:string\nthis.text = text\nend\nend\n"
+        "fun scriptEcho text:string\nreturn text\nend\n"
+        "fun callScript\nreturn scriptEcho \"value\"\nend\n"
+        "fun callNative\nreturn nativeEcho \"value\"\nend\n"
+        "fun newScript\nreturn new ScriptOwner \"value\"\nend\n"
+        "fun newNative\nreturn new NativeOwner \"value\"\nend"
+    );
+    for (const auto& names : {
+        std::pair{"callScript", "callNative"}, std::pair{"newScript", "newNative"}
+    }) {
+        const auto* script = runtime.getScriptFunction(runtime.getFunctionId(names.first));
+        const auto* native = runtime.getScriptFunction(runtime.getFunctionId(names.second));
+        BOOST_TEST(callSequence(runtime, script) == callSequence(runtime, native), boost::test_tools::per_element());
+    }
+    const auto before = NomadObject::getLiveObjectCount();
+    for (const auto* name : {"callScript", "callNative", "newScript", "newNative"}) {
+        RuntimeValue result;
+        runtime.executeFunction(runtime.getFunctionId(name), {}, result);
+        BOOST_REQUIRE(result.getObjectValue() != nullptr);
+        result.freeObjectValue();
+        BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    }
+    for (const auto* name : {"op_call_function", "op_call_method", "op_native_method_call"}) {
+        BOOST_TEST(runtime.getInstructionId(name).isInvalid());
+    }
+}
 
 BOOST_AUTO_TEST_CASE(script_construction_bytecode_uses_linked_calls_and_ordinary_returns) {
     Runtime runtime;
@@ -59,24 +126,25 @@ BOOST_AUTO_TEST_CASE(script_construction_bytecode_uses_linked_calls_and_ordinary
     BOOST_TEST(constructor->getVariableId("this").isInvalid());
     BOOST_TEST(constructor->getVariableId("value").isInvalid());
     BOOST_TEST(instructions[start].fn ==
-        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_method)));
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_push_this)));
+    BOOST_TEST(instructions[start + 1].fn ==
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_script_method)));
     const auto* initializer = type->getMethods()[0]->asScriptCallable();
     BOOST_REQUIRE(initializer != nullptr);
     BOOST_TEST(initializer->getName() == type->getInitializerName());
     BOOST_TEST(initializer->getObjectType() == type);
-    BOOST_TEST(instructions[start + 1].value.getIndexValue() == initializer->getFunctionStart());
+    BOOST_TEST(instructions[start + 2].value.getIndexValue() == initializer->getFunctionStart());
     BOOST_TEST(constructor->getVariableCount() == 0u);
     BOOST_TEST(instructions[constructor->getFunctionEnd() - 1].fn ==
         runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_return)));
     const auto* main = runtime.getScriptFunction(id);
     auto foundConstructorCall = false;
-    const auto newInstruction = runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_object_new));
+    const auto callInstruction = runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_script_method));
     for (auto index = main->getFunctionStart(); index < main->getFunctionEnd(); ++index) {
-        if (instructions[index].fn == newInstruction) {
-            BOOST_TEST(instructions[index + 1].value.getIdValue() == type->getId().id);
-            BOOST_TEST(instructions[index + 2].fn ==
-                runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_method)));
-            BOOST_TEST(instructions[index + 3].value.getIndexValue() == constructor->getFunctionStart());
+        if (instructions[index].fn == callInstruction) {
+            BOOST_TEST(instructions[index + 1].value.getIndexValue() == constructor->getFunctionStart());
+            BOOST_TEST(instructions[index + 2].value.getIndexValue() == 1u);
+            BOOST_TEST(instructions[index + 3].value.getIdValue() == type->getId().id);
             BOOST_TEST(instructions[index + 4].fn ==
                 runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_pop_1)));
             BOOST_TEST(instructions[index + 5].fn ==
@@ -257,6 +325,46 @@ BOOST_AUTO_TEST_CASE(receiver_captures_survive_native_reentry_and_outlive_the_co
     BOOST_TEST(closure->getCaptureValue(0).getObjectValue()->getReferenceCount() == 1u);
     runtime.executeFunction(closure.get(), {}, result);
     BOOST_TEST(result.getIntegerValue() == 17);
+    closure.reset();
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(native_methods_capture_the_enclosing_receiver_not_the_bound_native_receiver) {
+    Runtime runtime;
+    std::unique_ptr<Closure> closure;
+    const auto* callbackType = runtime.getCallbackType({}, runtime.getIntegerType());
+    const auto* sinkType = registerObjectType(runtime, "Sink");
+    BOOST_REQUIRE(runtime.addConstructor(sinkType->getId(), {
+        .parameters = {},
+        .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new ConstructedObject); }
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(sinkType->getId(), {
+        .name = "save",
+        .parameters = {{callbackType->getId(), "callback", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine* machine) {
+            auto* nativeReceiver = machine->getThisAs<ConstructedObject>();
+            BOOST_REQUIRE(nativeReceiver != nullptr);
+            const auto callbackId = machine->getCallableIdParameter(0);
+            BOOST_TEST(machine->peekStack(0).getIdValue() == callbackId.id);
+            machine->run(runtime.getScriptFunction(runtime.getFunctionId("helper")), {});
+            BOOST_TEST(machine->getThis() == nativeReceiver);
+            closure = machine->createClosure(&runtime, callbackId);
+        }
+    }).isValid());
+    const auto id = compileConstruction(runtime,
+        "class Owner\nvalue = 29\ninit\nsink = new Sink\n"
+        "sink.save fun\nreturn this.value\nend\nend\nend\n"
+        "fun helper\nreturn 5\nend\nowner = new Owner\nreturn 0"
+    );
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(id, {}, result);
+    BOOST_REQUIRE(closure != nullptr);
+    BOOST_TEST(closure->getCaptureValue(0).asObject<ScriptObject>()->getObjectType()->getTypeName() == "Owner");
+    BOOST_TEST(closure->getCaptureValue(0).getObjectValue()->getReferenceCount() == 1u);
+    runtime.executeFunction(closure.get(), {}, result);
+    BOOST_TEST(result.getIntegerValue() == 29);
     closure.reset();
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
@@ -1339,7 +1447,9 @@ BOOST_AUTO_TEST_CASE(parameterless_constructors_are_explicitly_registered) {
     const auto id = compileConstruction(runtime, "return new Plain");
     const auto start = runtime.getScriptFunction(id)->getFunctionStart();
     BOOST_TEST(runtime.getInstructions()[start].fn ==
-        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_native_function)));
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_push_this)));
+    BOOST_TEST(runtime.getInstructions()[start + 1].fn ==
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_native_method)));
     RuntimeValue result;
     runtime.executeFunction(id, {}, result);
     BOOST_REQUIRE(result.getObjectValue() != nullptr);

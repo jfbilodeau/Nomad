@@ -139,7 +139,7 @@ void decompile_expression(DecompileState& state, const NomadString& prefix) {
         auto& nativeFunction = state.opcodes[nativeFunction_id];
 
         decompile_nativeFunction_parameters(state, prefix + DEFAULT_PREFIX, nativeFunction);
-    } else if (opcode.name == "op_call_function") {
+    } else if (opcode.name == "op_call_script_function") {
         auto function_id = state.function->get_op_code(state.index);
         state.index++;
         auto function = state.runtime->get_function(function_id);

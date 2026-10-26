@@ -101,18 +101,19 @@ DECLARE_OP_CODE(op_pop_this)
 DECLARE_OP_CODE(op_move_this_to_r)
 DECLARE_OP_CODE(op_copy_this_to_r)
 DECLARE_OP_CODE(op_copy_this_to_i)
+DECLARE_OP_CODE(op_bind_this_from_stack)
 DECLARE_OP_CODE(op_stack_reserve)
 DECLARE_OP_CODE(op_code_load_default_r)
 
-// Function and nativeFunction calls
-DECLARE_OP_CODE(op_call_function)
-DECLARE_OP_CODE(op_call_method)
+// Callable operations
+DECLARE_OP_CODE(op_call_script_function)
+DECLARE_OP_CODE(op_call_script_method)
 DECLARE_OP_CODE(op_call_native_function)
+DECLARE_OP_CODE(op_call_native_method)
 DECLARE_OP_CODE(op_native_property_get)
 DECLARE_OP_CODE(op_native_property_set)
 DECLARE_OP_CODE(op_native_index_get)
 DECLARE_OP_CODE(op_native_index_set)
-DECLARE_OP_CODE(op_native_method_call)
 
 // Parameter operations
 DECLARE_OP_CODE(op_parameter_load_r)

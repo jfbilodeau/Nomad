@@ -54,11 +54,11 @@ public:
     [[nodiscard]]
     ScriptFunction* getCurrentFunction() const;
 
-    void callFunction(NomadIndex address);
-    void callMethod(NomadIndex address);
+    void callFunction(NomadIndex address, NomadIndex stackCount);
+    void callMethod(NomadIndex address, NomadIndex stackCount, TypeId allocationType);
     void createScriptObject(TypeId typeId);
-    void callNativeFunction(CallableId nativeFunctionId);
-    void callNativeMethod(CallableId memberId, const RuntimeValue& receiver);
+    void callNativeFunction(CallableId nativeFunctionId, NomadIndex stackCount = 0);
+    void callNativeMethod(CallableId memberId, NomadIndex stackCount, TypeId allocationType);
     void returnFunction(NomadIndex variableCount);
     void runNativeMethod(CallableId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
     void runNativeFunction(CallableId nativeFunctionId, const std::vector<RuntimeValue>& args);
@@ -179,6 +179,7 @@ public:
     void moveThisToResult();
     void copyThisToResult();
     void copyThisToIntermediate();
+    void bindThisFromStack(NomadIndex offset);
     // Adds a reference to the `r` object and pushes it onto the stack.
     void pushObjectResult();
     // Moves the `i` object onto the stack. popObjectIntermediate() moves it back.
@@ -237,8 +238,8 @@ private:
     friend class Runtime;
     friend class InterpreterContext;
 
-    void invokeNativeFunction(const NativeFunctionFn& callback);
-    void callNativeConstructor(CallableId constructorId);
+    void invokeNativeCall(const NativeFunctionFn& callback, NomadIndex stackCount, const RuntimeValue* receiver);
+    void callNativeConstructor(CallableId constructorId, NomadIndex stackCount);
     void runNativeCallable(
         const Callable* callable,
         const std::vector<RuntimeValue>& args
@@ -263,10 +264,10 @@ private:
     std::vector<RuntimeValue> m_stack;
     NomadIndex m_parameterIndex = 0;
     NomadIndex m_enclosingParameterIndex = 0;  // Enclosing function's parameter frame for closure capture
+    NomadIndex m_receiverSaveIndex = 0;
     NomadIndex m_variableIndex = 0;
     void invokeNativeMember(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
-    void invokeNativeMethod(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
-    RuntimeValue m_this; // Borrowed receiver, except between op_object_new and op_move_this_to_r.
+    RuntimeValue m_this; // Borrowed receiver, except during construction until op_move_this_to_r.
 };
 
 template<typename Object>

@@ -172,7 +172,7 @@ BOOST_AUTO_TEST_CASE(typed_method_supports_a_host_defined_object) {
         .returnTypeId = runtime.getTypeId("int"),
         .function = [](VirtualMachine* virtualMachine) {
             auto* receiver = virtualMachine->getThisAs<TestObject>();
-            BOOST_TEST(receiver->getReferenceCount() == 1);
+            BOOST_TEST(receiver->getReferenceCount() == 2);
             virtualMachine->setIntegerResult(42);
         },
         .documentation = NomadDoc("Test a host-defined receiver")
@@ -183,6 +183,7 @@ BOOST_AUTO_TEST_CASE(typed_method_supports_a_host_defined_object) {
     receiver.setObjectValue(new TestObject);
     virtualMachine->runNativeMethod(memberId, {}, receiver);
     BOOST_TEST(virtualMachine->getResult().getIntegerValue() == 42);
+    BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1);
     receiver.freeObjectValue();
 }
 

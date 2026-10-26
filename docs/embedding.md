@@ -353,8 +353,23 @@ Parameters are owned argument-stack slots, not additional local-variable copies.
 Reassigning a parameter replaces only that slot; object values retain normal
 reference semantics. Host arguments are borrowed and copied into invocation
 slots, whose final values are released on ordinary completion.
-`op_call_function` and `op_call_method` take linked instruction addresses; the latter preserves the
-current receiver. Both save the return address after the address operand, the
+All callers save the enclosing borrowed receiver with `op_push_this` before
+evaluating receivers or arguments. Arguments are pushed right-to-left.
+`op_call_script_function <address, stackCount>` and
+`op_call_native_function <id, stackCount>` share this caller sequence.
+Method calls use `op_call_script_method <address, stackCount, allocationTypeId>`
+or `op_call_native_method <id, stackCount, allocationTypeId>`.
+The count includes expanded argument slots and, for an ordinary method, the
+owned evaluated receiver slot below the arguments.
+`op_bind_this_from_stack <argumentCount>` binds that receiver after argument evaluation, without copying
+or taking ownership. An invalid allocation type denotes an ordinary method.
+The enclosing receiver is below all counted slots. Native callbacks see
+parameter zero at the stack top; receiver preservation does not shift their
+`peekStack()` view. Callers release final argument values and any owned receiver
+slot, remove those slots, and restore the enclosing receiver with `op_pop_this`.
+
+Script calls take linked addresses and save the return address after all
+call operands, the
 caller's parameter and local-frame indices, and the borrowed receiver on the VM
 stack before establishing the callee's frame and jumping. Free-function calls
 clear the receiver; method and constructor calls retain the bound receiver.
@@ -369,10 +384,15 @@ counts. These instructions discard storage, not owned values, then restore the
 saved receiver, frame indices, and return address. Argument slots remain for
 the caller to clean up after the call.
 
-Script construction saves `this`, evaluates arguments with the caller's receiver,
-allocates storage with `op_object_new <TypeId>`, and calls the constructor with
-`op_call_method`. After argument cleanup, `op_move_this_to_r` transfers the new
-instance into the result register and `op_pop_this` restores the saved receiver.
+Native and script construction use the same caller sequence: save `this`,
+evaluate and push arguments with the caller's receiver, call the method opcode
+with the constructor's owner type as its allocation operand, clean up arguments,
+move `this` to result, and restore the enclosing receiver. The script call opcode
+allocates fixed storage and binds it before entering the constructor, which
+calls `$init`. The native call opcode invokes the factory without a receiver and
+transfers its owned result into `this`; the produced type may differ from the
+owner type. `op_move_this_to_r` transfers the new instance into result for either
+kind of construction.
 
 `VirtualMachine::constructObject(constructorId, arguments)` invokes a registered
 native or compiled script constructor. Arguments are borrowed and must match the

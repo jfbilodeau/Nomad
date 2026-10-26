@@ -106,13 +106,14 @@ void VirtualMachine::runCallable(
     const auto savedStackIndex = m_stackIndex;
     const auto savedParameterIndex = m_parameterIndex;
     const auto savedEnclosingParameterIndex = m_enclosingParameterIndex;
+    const auto savedReceiverSaveIndex = m_receiverSaveIndex;
     const auto savedVariableIndex = m_variableIndex;
     const auto savedRunning = m_running;
     const auto savedThis = m_this;
     std::vector<const Type*> argumentTypes;
     const auto releaseArguments = [&]() {
         for (auto index = NomadIndex{0}; index < argumentTypes.size(); ++index) {
-            argumentTypes[index]->freeValue(m_stack[savedStackIndex + index + 1]);
+            argumentTypes[index]->freeValue(m_stack[savedStackIndex + index + 2]);
         }
     };
 
@@ -121,6 +122,7 @@ void VirtualMachine::runCallable(
         m_stackIndex = savedStackIndex;
         m_parameterIndex = savedParameterIndex;
         m_enclosingParameterIndex = savedEnclosingParameterIndex;
+        m_receiverSaveIndex = savedReceiverSaveIndex;
         m_variableIndex = savedVariableIndex;
         m_running = savedRunning;
         m_this = savedThis;
@@ -137,10 +139,11 @@ void VirtualMachine::runCallable(
             closures.size() != function->getCaptureCount()) {
             fault("Incorrect script argument or capture count");
         }
-        if (m_stackIndex >= m_stack.size() ||
-            function->getParameterCount() > m_stack.size() - m_stackIndex - 1) {
+        if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex < 2 ||
+            function->getParameterCount() > m_stack.size() - m_stackIndex - 2) {
             fault("Stack overflow");
         }
+        pushThis();
         argumentTypes.reserve(function->getParameterCount());
         const auto pushArgument = [&](const Type* type, const RuntimeValue& value) {
             pushValue(RuntimeValue{});
@@ -211,11 +214,24 @@ ScriptFunction* VirtualMachine::getCurrentFunction() const {
     return m_runtime->getFunctionAtInstructionIndex(m_instructionIndex);
 }
 
-void VirtualMachine::callFunction(const NomadIndex address) {
+void VirtualMachine::callFunction(const NomadIndex address, const NomadIndex stackCount) {
+    if (stackCount >= m_stackIndex) {
+        fault("Invalid script call stack-slot count");
+    }
     callScriptByAddress(address, nullptr);
 }
 
-void VirtualMachine::callMethod(const NomadIndex address) {
+void VirtualMachine::callMethod(
+    const NomadIndex address,
+    const NomadIndex stackCount,
+    const TypeId allocationType
+) {
+    if (stackCount >= m_stackIndex) {
+        fault("Invalid script call stack-slot count");
+    }
+    if (allocationType.isValid()) {
+        createScriptObject(allocationType);
+    }
     const auto receiver = m_this;
     (void)getThis();
     callScriptByAddress(address, &receiver);
@@ -263,26 +279,26 @@ void VirtualMachine::callScriptByAddress(const NomadIndex address, const Runtime
     jump(address);
 }
 
-void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
+void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId, const NomadIndex stackCount) {
     if (m_runtime->getNativeConstructor(nativeFunctionId) != nullptr) {
-        callNativeConstructor(nativeFunctionId);
+        callNativeConstructor(nativeFunctionId, stackCount);
         return;
     }
     const auto* function = m_runtime->getNativeFunction(nativeFunctionId);
     if (function == nullptr || !function->getFn()) {
         fault("Invalid native function id: " + toString(nativeFunctionId.id));
     }
-    invokeNativeFunction(function->getFn());
+    invokeNativeCall(function->getFn(), stackCount, nullptr);
 }
 
-void VirtualMachine::callNativeConstructor(const CallableId constructorId) {
+void VirtualMachine::callNativeConstructor(const CallableId constructorId, const NomadIndex stackCount) {
     const auto* constructor = m_runtime->getNativeConstructor(constructorId);
     if (constructor == nullptr || !constructor->getFn()) {
         fault("Invalid native constructor id: " + toString(constructorId.id));
     }
     m_result = RuntimeValue{};
     try {
-        invokeNativeFunction(constructor->getFn());
+        invokeNativeCall(constructor->getFn(), stackCount, nullptr);
         if (m_result.getObjectValue() == nullptr) {
             fault("Native constructor for '" + constructor->getName() + "' returned null");
         }
@@ -292,12 +308,22 @@ void VirtualMachine::callNativeConstructor(const CallableId constructorId) {
     }
 }
 
-void VirtualMachine::invokeNativeFunction(const NativeFunctionFn& callback) {
+void VirtualMachine::invokeNativeCall(
+    const NativeFunctionFn& callback,
+    const NomadIndex stackCount,
+    const RuntimeValue* receiver
+) {
+    if (stackCount >= m_stackIndex) {
+        fault("Invalid native call stack-slot count");
+    }
+    const auto nextThis = receiver != nullptr ? *receiver : RuntimeValue{};
     const auto previousParameterIndex = m_parameterIndex;
     const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
+    const auto previousReceiverSaveIndex = m_receiverSaveIndex;
     m_parameterIndex = m_stackIndex;
-    pushThis();
-    m_this = RuntimeValue{};
+    m_receiverSaveIndex = m_parameterIndex - stackCount;
+    const auto receiverSaveIndex = m_receiverSaveIndex;
+    m_this = nextThis;
 
     // Save the enclosing function's parameter frame for closure capture
     m_enclosingParameterIndex = previousParameterIndex;
@@ -307,44 +333,39 @@ void VirtualMachine::invokeNativeFunction(const NativeFunctionFn& callback) {
     } catch (...) {
         m_parameterIndex = previousParameterIndex;
         m_enclosingParameterIndex = previousEnclosingParameterIndex;
-        popThis();
+        m_receiverSaveIndex = previousReceiverSaveIndex;
+        m_this = m_stack[receiverSaveIndex];
         throw;
     }
 
     m_parameterIndex = previousParameterIndex;
     m_enclosingParameterIndex = previousEnclosingParameterIndex;
-    popThis();
+    m_receiverSaveIndex = previousReceiverSaveIndex;
+    m_this = m_stack[receiverSaveIndex];
 }
 
-void VirtualMachine::callNativeMethod(const CallableId memberId, const RuntimeValue& receiver) {
+void VirtualMachine::callNativeMethod(
+    const CallableId memberId,
+    const NomadIndex stackCount,
+    const TypeId allocationType
+) {
+    if (allocationType.isValid()) {
+        const auto* constructor = m_runtime->getNativeConstructor(memberId);
+        if (constructor == nullptr || constructor->getObjectType()->getId() != allocationType) {
+            fault("Invalid native constructor allocation type");
+        }
+        callNativeConstructor(memberId, stackCount);
+        m_this.moveObjectValue(m_result);
+        return;
+    }
     const auto* method = m_runtime->getNativeMemberMethod(memberId);
     if (method == nullptr || !method->getFn()) {
         fault("Invalid native method id: " + toString(memberId.id));
     }
-    invokeNativeMethod(method->getFn(), receiver);
-}
-
-void VirtualMachine::invokeNativeMethod(const NativeFunctionFn& callback, const RuntimeValue& receiver) {
-    const auto previousParameterIndex = m_parameterIndex;
-    const auto previousEnclosingParameterIndex = m_enclosingParameterIndex;
-    m_parameterIndex = m_stackIndex;
-    pushThis();
+    (void)getThis();
+    const auto receiver = m_this;
+    invokeNativeCall(method->getFn(), stackCount, &receiver);
     m_this = receiver;
-    m_enclosingParameterIndex = previousParameterIndex;
-
-    try {
-        (void)getThis();
-        callback(this);
-    } catch (...) {
-        m_parameterIndex = previousParameterIndex;
-        m_enclosingParameterIndex = previousEnclosingParameterIndex;
-        popThis();
-        throw;
-    }
-
-    m_parameterIndex = previousParameterIndex;
-    m_enclosingParameterIndex = previousEnclosingParameterIndex;
-    popThis();
 }
 
 NomadObject* VirtualMachine::getThis() const {
@@ -447,7 +468,7 @@ void VirtualMachine::callNativeIndexer(
         fault(write ? "Invalid native indexer setter" : "Invalid native indexer getter");
     }
     m_result = RuntimeValue{};
-    invokeNativeMethod(callback, receiver);
+    invokeNativeCall(callback, info->indexTypes.size() + (write ? 1 : 0) + 1, &receiver);
 }
 
 void VirtualMachine::runNativeIndexer(
@@ -463,22 +484,31 @@ void VirtualMachine::runNativeIndexer(
     if (args.size() != info->indexTypes.size() + (write ? 1 : 0)) {
         fault("Incorrect argument count when calling native indexer");
     }
-    if (m_stackIndex >= m_stack.size() || args.size() > m_stack.size() - m_stackIndex - 1) {
+    if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex < 3 ||
+        args.size() > m_stack.size() - m_stackIndex - 3) {
         fault("Stack overflow");
     }
     const auto initialStackIndex = m_stackIndex;
+    const auto savedThis = m_this;
     const auto parameterType = [&](const NomadIndex index) {
         return index < info->indexTypes.size() ? info->indexTypes[index] : info->valueType;
     };
     const auto releaseArguments = [&]() {
-        while (m_stackIndex > initialStackIndex) {
-            const auto index = args.size() - (m_stackIndex - initialStackIndex);
+        while (m_stackIndex > initialStackIndex + 2) {
+            const auto index = args.size() - (m_stackIndex - initialStackIndex - 2);
             parameterType(index)->freeValue(m_stack[m_stackIndex]);
             --m_stackIndex;
         }
+        if (m_stackIndex > initialStackIndex + 1) {
+            info->objectType->freeValue(m_stack[initialStackIndex + 2]);
+        }
+        m_stackIndex = initialStackIndex;
+        m_this = savedThis;
     };
     m_result = RuntimeValue{};
     try {
+        pushThis();
+        pushObjectValue(receiver);
         for (auto index = args.size(); index > 0; --index) {
             ++m_stackIndex;
             m_stack[m_stackIndex] = RuntimeValue{};
@@ -513,24 +543,27 @@ void VirtualMachine::runNativeCallable(
     if (args.size() != function->getParameterCount()) {
         fault("Incorrect argument count when calling native function '" + function->getName() + "'");
     }
-    if (m_stackIndex >= m_stack.size() ||
-        args.size() > m_stack.size() - m_stackIndex - 1) {
+    if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex < 2 ||
+        args.size() > m_stack.size() - m_stackIndex - 2) {
         fault("Stack overflow");
     }
 
     const auto initialStackIndex = m_stackIndex;
+    const auto savedThis = m_this;
     std::vector<const Type*> argumentTypes;
     argumentTypes.reserve(args.size());
 
     const auto releaseArguments = [&]() {
         for (NomadIndex index = 0; index < argumentTypes.size(); ++index) {
-            const auto stackIndex = initialStackIndex + index + 1;
+            const auto stackIndex = initialStackIndex + index + 2;
             argumentTypes[index]->freeValue(m_stack[stackIndex]);
         }
         m_stackIndex = initialStackIndex;
+        m_this = savedThis;
     };
 
     try {
+        pushThis();
         for (NomadIndex index = args.size(); index > 0; --index) {
             const auto argumentIndex = index - 1;
             const auto* type = function->getParameters()[argumentIndex].type;
@@ -543,7 +576,12 @@ void VirtualMachine::runNativeCallable(
             type->copyValue(args[argumentIndex], m_stack[m_stackIndex]);
         }
 
-        callNativeFunction(function->getId());
+        if (const auto* constructor = m_runtime->getNativeConstructor(function->getId())) {
+            callNativeMethod(function->getId(), args.size(), constructor->getObjectType()->getId());
+            moveThisToResult();
+        } else {
+            callNativeFunction(function->getId(), args.size());
+        }
     } catch (...) {
         releaseArguments();
         throw;
@@ -567,22 +605,30 @@ void VirtualMachine::runNativeMethod(const CallableId memberId, const std::vecto
     if (args.size() != method->getParameterCount()) {
         fault("Incorrect argument count when calling native method '" + method->getName() + "'");
     }
-    if (m_stackIndex >= m_stack.size() || args.size() > m_stack.size() - m_stackIndex - 1) {
+    if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex < 3 ||
+        args.size() > m_stack.size() - m_stackIndex - 3) {
         fault("Stack overflow");
     }
 
     const auto initialStackIndex = m_stackIndex;
+    const auto savedThis = m_this;
     std::vector<const Type*> argumentTypes;
     argumentTypes.reserve(args.size());
 
     const auto releaseArguments = [&]() {
         for (NomadIndex index = 0; index < argumentTypes.size(); ++index) {
-            argumentTypes[index]->freeValue(m_stack[initialStackIndex + index + 1]);
+            argumentTypes[index]->freeValue(m_stack[initialStackIndex + index + 3]);
+        }
+        if (m_stackIndex > initialStackIndex + 1) {
+            method->getObjectType()->freeValue(m_stack[initialStackIndex + 2]);
         }
         m_stackIndex = initialStackIndex;
+        m_this = savedThis;
     };
 
     try {
+        pushThis();
+        pushObjectValue(receiver);
         for (NomadIndex index = args.size(); index > 0; --index) {
             const auto argumentIndex = index - 1;
             const auto* type = method->getParameters()[argumentIndex].type;
@@ -596,7 +642,8 @@ void VirtualMachine::runNativeMethod(const CallableId memberId, const std::vecto
             type->copyValue(args[argumentIndex], m_stack[m_stackIndex]);
         }
 
-        callNativeMethod(memberId, receiver);
+        bindThisFromStack(args.size());
+        callNativeMethod(memberId, args.size() + 1, TypeId::INVALID);
     } catch (...) {
         releaseArguments();
         throw;
@@ -668,7 +715,7 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, c
 
             captureType->copyValue(value, captureValue);
         } else if (captureSource == CaptureSource::Receiver) {
-            const auto& receiver = m_stack[m_parameterIndex + 1];
+            const auto& receiver = m_stack[m_receiverSaveIndex];
             if (receiver.getObjectValue() == nullptr) {
                 fault("Cannot capture a missing enclosing receiver");
             }
@@ -729,6 +776,11 @@ void VirtualMachine::copyThisToResult() {
 void VirtualMachine::copyThisToIntermediate() {
     (void)getThis();
     m_intermediate.copyObjectValue(m_this);
+}
+
+void VirtualMachine::bindThisFromStack(const NomadIndex offset) {
+    m_this = peekStack(offset);
+    (void)getThis();
 }
 
 void VirtualMachine::pushResult() {

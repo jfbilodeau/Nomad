@@ -807,6 +807,9 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
     }
     const auto* receiverType = m_receiver->getType();
 
+    if (m_memberType != MemberType::Property) {
+        compiler->addOpCode(OpCodes::op_push_this);
+    }
     m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
 
     if (m_memberType == MemberType::Property) {
@@ -824,8 +827,6 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
 
     m_arguments.setReceiverType(receiverType);
     compiler->addNativeMethodCall(std::get<CallableId>(m_memberId), function, &m_arguments);
-
-    compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
 
     if (!method->getReturnType()->isVoid()) {
         compiler->addMoveResult(method->getReturnType(), target);
@@ -1033,6 +1034,7 @@ void IndexerExpression::onResolve(CompilerContext* context, ScriptCallableBase* 
 }
 
 void IndexerExpression::compileOperands(Compiler* compiler, ScriptCallableBase* function, Expression* assigned) {
+    compiler->addOpCode(OpCodes::op_push_this);
     m_receiver->compile(compiler, function, ExpressionTarget::Stack);
     if (assigned != nullptr) {
         assigned->compile(compiler, function, ExpressionTarget::Stack);

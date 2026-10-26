@@ -39,6 +39,7 @@ void callNativeIndexer(VirtualMachine* machine, const bool write) {
         }
         auto savedReceiver = machine->popValue();
         info->objectType->freeValue(savedReceiver);
+        machine->popThis();
     };
 
     try {
@@ -197,6 +198,10 @@ void op_copy_this_to_i(VirtualMachine* interpreter) {
     interpreter->copyThisToIntermediate();
 }
 
+void op_bind_this_from_stack(VirtualMachine* interpreter) {
+    interpreter->bindThisFromStack(interpreter->nextIndex());
+}
+
 void op_stack_reserve(VirtualMachine* interpreter) {
     interpreter->reserveLocals(interpreter->nextIndex());
 }
@@ -209,19 +214,23 @@ void op_code_load_default_r(VirtualMachine* interpreter) {
     (*type)->initValue(interpreter->getResult());
 }
 
-void op_call_function(VirtualMachine* interpreter) {
-    interpreter->callFunction(interpreter->nextIndex());
+void op_call_script_function(VirtualMachine* interpreter) {
+    const auto address = interpreter->nextIndex();
+    interpreter->callFunction(address, interpreter->nextIndex());
 }
 
-void op_call_method(VirtualMachine* interpreter) {
-    interpreter->callMethod(interpreter->nextIndex());
+void op_call_script_method(VirtualMachine* interpreter) {
+    const auto address = interpreter->nextIndex();
+    const auto stackCount = interpreter->nextIndex();
+    interpreter->callMethod(address, stackCount, TypeId{interpreter->nextId()});
 }
 
 void op_call_native_function(VirtualMachine* interpreter) {
     const auto nativeFunctionId = CallableId{interpreter->nextId()};
+    const auto stackCount = interpreter->nextIndex();
 
     try {
-        interpreter->callNativeFunction(nativeFunctionId);
+        interpreter->callNativeFunction(nativeFunctionId, stackCount);
     } catch (...) {
         if (const auto* constructor = interpreter->getRuntime()->getNativeConstructor(nativeFunctionId)) {
             const auto& parameters = constructor->getParameters();
@@ -254,11 +263,24 @@ void op_native_index_set(VirtualMachine* interpreter) {
     callNativeIndexer(interpreter, true);
 }
 
-void op_native_method_call(VirtualMachine* interpreter) {
+void op_call_native_method(VirtualMachine* interpreter) {
     const auto memberId = CallableId{interpreter->nextId()};
-    const auto receiverOffset = interpreter->nextIndex();
-    interpreter->setIntermediate(interpreter->peekStack(receiverOffset));
-    interpreter->callNativeMethod(memberId, interpreter->getIntermediate());
+    const auto stackCount = interpreter->nextIndex();
+    const auto allocationType = TypeId{interpreter->nextId()};
+    try {
+        interpreter->callNativeMethod(memberId, stackCount, allocationType);
+    } catch (...) {
+        if (allocationType.isValid()) {
+            if (const auto* constructor = interpreter->getRuntime()->getNativeConstructor(memberId)) {
+                const auto& parameters = constructor->getParameters();
+                for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
+                    auto argument = interpreter->peekStack(index);
+                    parameters[index].type->freeValue(argument);
+                }
+            }
+        }
+        throw;
+    }
 }
 
 // Parameter operations

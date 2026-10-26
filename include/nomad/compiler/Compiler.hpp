@@ -273,6 +273,12 @@ private:
     void compileFunction(const FunctionCompilation& function);
     void compileObjectInitializer(const FunctionCompilation& initializer);
     void compileConstructor(const FunctionCompilation& constructor);
+    void addCallableInvocation(
+        CallableId targetId,
+        NomadIndex stackCount,
+        bool method,
+        TypeId allocationType = TypeId::INVALID
+    );
 
     Runtime* m_runtime;
 

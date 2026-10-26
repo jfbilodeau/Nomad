@@ -49,22 +49,23 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_move_this_to_r, op_move_this_to_r, "Transfer the constructed instance into result and clear this", {});
     registerInstruction(OpCodes::op_copy_this_to_r, op_copy_this_to_r, "Copy the receiver into result, retaining its reference", {});
     registerInstruction(OpCodes::op_copy_this_to_i, op_copy_this_to_i, "Copy the receiver into intermediate, retaining its reference", {});
+    registerInstruction(OpCodes::op_bind_this_from_stack, op_bind_this_from_stack, "Bind the borrowed receiver from a stack offset", {Operand::Index});
     registerInstruction(OpCodes::op_stack_reserve, op_stack_reserve, "Reserve zeroed raw local storage", {Operand::Index});
     registerInstruction(OpCodes::op_code_load_default_r, op_code_load_default_r, "Load an owned type default into result", {Operand::Id});
 
-    // Function and nativeFunction calls
+    // Callable operations
     registerInstruction(
-        OpCodes::op_call_function, op_call_function,
+        OpCodes::op_call_script_function, op_call_script_function,
         "Call the script function at the given address without a receiver",
-        {Operand::Function}
+        {Operand::Function, Operand::Index}
     );
-    registerInstruction(OpCodes::op_call_native_function, op_call_native_function, "Call the given native function id", {Operand::NativeFunction});
-    registerInstruction(OpCodes::op_call_method, op_call_method, "Call script code at the given address with the current receiver", {Operand::Index});
+    registerInstruction(OpCodes::op_call_native_function, op_call_native_function, "Call the given native function id", {Operand::NativeFunction, Operand::Index});
+    registerInstruction(OpCodes::op_call_script_method, op_call_script_method, "Call script method with stack-slot count and optional allocation type", {Operand::Index, Operand::Index, Operand::Id});
+    registerInstruction(OpCodes::op_call_native_method, op_call_native_method, "Call native method with stack-slot count and optional allocation type", {Operand::Id, Operand::Index, Operand::Id});
     registerInstruction(OpCodes::op_native_property_get, op_native_property_get, "Read a native or stored property", {Operand::Id});
     registerInstruction(OpCodes::op_native_property_set, op_native_property_set, "Write a native or stored property", {Operand::Id});
     registerInstruction(OpCodes::op_native_index_get, op_native_index_get, "Read an indexer", {Operand::Id});
     registerInstruction(OpCodes::op_native_index_set, op_native_index_set, "Write an indexer", {Operand::Id});
-    registerInstruction(OpCodes::op_native_method_call, op_native_method_call, "Call an native method with a saved stack receiver", {Operand::Id, Operand::Index});
     // Parameter operations
     registerInstruction(OpCodes::op_parameter_load_r, op_parameter_load_r, "Load the `n`th parameter into result", {Operand::Id});
     registerInstruction(OpCodes::op_parameter_load_i, op_parameter_load_i, "Load the `n`th parameter into intermediate", {Operand::Id});

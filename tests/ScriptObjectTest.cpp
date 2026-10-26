@@ -90,8 +90,12 @@ void compileTestConstructor(
     auto* constructor = runtime.getScriptCallable(id);
     constructor->setFunctionStart(runtime.getInstructions().size());
     compiler.addFunctionEntry(constructor);
-    compiler.addOpCode(OpCodes::op_call_method);
+    compiler.addOpCode(OpCodes::op_push_this);
+    compiler.addOpCode(OpCodes::op_call_script_method);
     compiler.addIndex(runtime.getScriptCallable(initializerId)->getFunctionStart());
+    compiler.addIndex(0);
+    compiler.addId(TypeId::INVALID.id);
+    compiler.addOpCode(OpCodes::op_pop_this);
     compiler.addFunctionReturn(constructor);
     constructor->setFunctionEnd(runtime.getInstructions().size());
 }
@@ -639,8 +643,11 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
     compiler->addId(type->getProperty("visits")->getId().id);
     compiler->addOpCode(OpCodes::op_object_free_i);
     compiler->addOpCode(probe);
-    compiler->addOpCode(OpCodes::op_call_function);
+    compiler->addOpCode(OpCodes::op_push_this);
+    compiler->addOpCode(OpCodes::op_call_script_function);
     compiler->addIndex(runtime.getScriptFunction(runtime.getFunctionId("helper"))->getFunctionStart());
+    compiler->addIndex(0);
+    compiler->addOpCode(OpCodes::op_pop_this);
     compiler->addOpCode(probe);
     compiler->addFunctionReturn(initializer);
     initializer->setFunctionEnd(runtime.getInstructions().size());
