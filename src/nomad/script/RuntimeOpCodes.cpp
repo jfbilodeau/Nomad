@@ -41,15 +41,19 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_object_move_r_to_i, op_object_move_r_to_i, "Move the object in the `result` register into the `intermediate` register", {});
     registerInstruction(OpCodes::op_object_move_i_to_r, op_object_move_i_to_r, "Move the object in the `intermediate` register into the `result` register", {});
     registerInstruction(OpCodes::op_object_move_r_to_stack, op_object_move_r_to_stack, "Move the object in the `result` register onto the stack", {});
+    registerInstruction(OpCodes::op_push_this, op_push_this, "Save the borrowed receiver on the stack", {});
+    registerInstruction(OpCodes::op_pop_this, op_pop_this, "Restore the receiver from the stack", {});
+    registerInstruction(OpCodes::op_move_this_to_r, op_move_this_to_r, "Transfer the constructed instance into result and clear this", {});
 
     // Function and nativeFunction calls
     registerInstruction(
         OpCodes::op_call_function, op_call_function,
-        "Allocate `n` variables on the stack and call the function at the given index (address)",
+        "Call the script function at the given address without a receiver",
         {Operand::Function}
     );
     registerInstruction(OpCodes::op_call_native_function, op_call_native_function, "Call the given native function id", {Operand::NativeFunction});
-    registerInstruction(OpCodes::op_call_method, op_call_method, "Call a script method id with the current receiver", {Operand::Id});
+    registerInstruction(OpCodes::op_call_method, op_call_method, "Call script code at the given address with the current receiver", {Operand::Index});
+    registerInstruction(OpCodes::op_function_enter, op_function_enter, "Initialize the current script frame's locals", {Operand::Id});
     registerInstruction(OpCodes::op_native_property_get, op_native_property_get, "Read a native or stored property", {Operand::Id});
     registerInstruction(OpCodes::op_native_property_set, op_native_property_set, "Write a native or stored property", {Operand::Id});
     registerInstruction(OpCodes::op_native_index_get, op_native_index_get, "Read an indexer", {Operand::Id});
@@ -258,9 +262,7 @@ void Runtime::registerDefaultInstructions() {
     );
 
     registerInstruction(OpCodes::op_object_init_r, op_object_init_r, "Clear the object result register", {});
-    registerInstruction(OpCodes::op_object_new, op_object_new, "Invoke a registered object constructor", {Operand::Id});
-    registerInstruction(OpCodes::op_object_return, op_object_return, "Complete construction, moving the instance into result and releasing the constructor frame", {});
-    registerInstruction(OpCodes::op_object_instantiate, op_object_instantiate, "Allocate a script instance and bind this", {Operand::Id});
+    registerInstruction(OpCodes::op_object_new, op_object_new, "Allocate script instance storage and bind this", {Operand::Id});
     registerInstruction(OpCodes::op_object_init_i, op_object_init_i, "Clear the object intermediate register", {});
 
     // String operators

@@ -906,12 +906,17 @@ NomadIndex Compiler::addConstructorCall(const CallableId constructorId, ScriptCa
     if (m_runtime->getNativeConstructor(constructorId) != nullptr) {
         return addNativeFunctionCall(constructorId, function, arguments);
     }
+    const auto* constructor = m_runtime->getConstructor(constructorId);
+    addOpCode(OpCodes::op_push_this);
     arguments->compile(this, function);
-
     addOpCode(OpCodes::op_object_new);
-    addId(constructorId.id);
-
+    addId(constructor->getObjectType()->getId().id);
+    addOpCode(OpCodes::op_call_method);
+    addFunctionLink(constructorId, m_instructions.size());
+    addIndex(NOMAD_INVALID_INDEX);
     addFreeArguments(arguments);
+    addOpCode(OpCodes::op_move_this_to_r);
+    addOpCode(OpCodes::op_pop_this);
 
     return m_instructions.size() - 1;
 }
@@ -1149,6 +1154,8 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
 void Compiler::compileFunction(const FunctionCompilation& source) {
     auto* function = source.function;
     function->setFunctionStart(m_instructions.size());
+    addOpCode(OpCodes::op_function_enter);
+    addId(function->getId().id);
     source.ast->compile(this, function);
     // Safety net for the inferred string return type; valid value-returning bodies cannot fall through.
     if (const auto* returnType = function->getReturnType(); returnType != nullptr && returnType->isString()) {
@@ -1161,9 +1168,9 @@ void Compiler::compileFunction(const FunctionCompilation& source) {
 void Compiler::compileConstructor(const FunctionCompilation& source) {
     auto* constructor = source.function;
     constructor->setFunctionStart(m_instructions.size());
+    addOpCode(OpCodes::op_function_enter);
+    addId(constructor->getId().id);
     const auto* type = constructor->getObjectType()->asObjectType();
-    addOpCode(OpCodes::op_object_instantiate);
-    addId(type->getId().id);
     const auto methods = type->getMethods();
     const auto initializer = std::ranges::find_if(methods, [&](const auto* method) {
         return method->getName() == type->getInitializerName();
@@ -1172,14 +1179,11 @@ void Compiler::compileConstructor(const FunctionCompilation& source) {
         reportInternalError("Missing class initializer: " + type->getInitializerName());
     }
     addOpCode(OpCodes::op_call_method);
-    addId((*initializer)->getId().id);
+    addFunctionLink((*initializer)->getId(), m_instructions.size());
+    addIndex(NOMAD_INVALID_INDEX);
     source.ast->compile(this, constructor);
-    addConstructorReturn();
+    addFunctionReturn(constructor);
     constructor->setFunctionEnd(m_instructions.size());
-}
-
-void Compiler::addConstructorReturn() {
-    addOpCode(OpCodes::op_object_return);
 }
 
 void Compiler::addFunctionReturn(const ScriptCallableBase* function) {

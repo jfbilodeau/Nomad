@@ -16,6 +16,7 @@ public:
     );
 
     [[nodiscard]] const ScriptConstructor* asScriptConstructor() const override;
+    [[nodiscard]] const Type* getConstructedType() const override;
 };
 
 } // namespace nomad

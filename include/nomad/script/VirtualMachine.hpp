@@ -56,14 +56,16 @@ public:
     [[nodiscard]]
     ScriptFunction* getCurrentFunction() const;
 
-    void callFunction(const ScriptFunction* function);
-    void callConstructor(CallableId constructorId);
-    void callMethod(CallableId methodId);
-    void instantiateObject(TypeId typeId);
+    void callFunction(NomadIndex address);
+    void callMethod(NomadIndex address);
+    void enterFunction(CallableId callableId);
+    void createScriptObject(TypeId typeId);
+    void pushThis();
+    void popThis();
+    void moveThisToResult();
     void callNativeFunction(CallableId nativeFunctionId);
     void callNativeMethod(CallableId memberId, const RuntimeValue& receiver);
     void returnFunction(NomadIndex variableCount);
-    void returnConstructor();
     void runNativeMethod(CallableId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
     void runNativeFunction(CallableId nativeFunctionId, const std::vector<RuntimeValue>& args);
 
@@ -241,6 +243,7 @@ private:
     );
     void initializeFunctionVariables(const ScriptCallableBase* function, const RuntimeValue* receiver = nullptr);
     void callScriptCallable(const ScriptCallableBase* function, const RuntimeValue* receiver);
+    void callScriptAddress(NomadIndex address, const RuntimeValue* receiver);
     void runCallable(
         const ScriptCallableBase* function,
         const std::vector<RuntimeValue>& args,
@@ -262,7 +265,7 @@ private:
     NomadIndex m_variableIndex = 0;
     void invokeNativeMember(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
     void invokeNativeMethod(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
-    RuntimeValue m_this; // Borrowed from the script frame's owned `this` local or the native caller.
+    RuntimeValue m_this; // Borrowed receiver, except between op_object_new and op_move_this_to_r.
     struct ScriptFrame {
         const ScriptCallableBase* callable;
         NomadIndex variableIndex;

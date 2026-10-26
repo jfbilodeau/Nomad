@@ -30,7 +30,6 @@ protected:
 
 private:
     std::unique_ptr<Expression> m_expression;
-    bool m_constructorReturn = false;
 };
 
 std::unique_ptr<Statement> parseReturnStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens);

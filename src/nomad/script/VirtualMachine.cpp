@@ -110,17 +110,22 @@ NomadObject* VirtualMachine::constructObject(
     const auto savedIntermediate = m_intermediate;
     m_result = RuntimeValue{};
     m_intermediate = RuntimeValue{};
+    const auto release = [](NomadObject* object) { object->releaseRef(); };
+    std::unique_ptr<NomadObject, decltype(release)> object(
+        new ScriptObject(constructor->getObjectType()->asObjectType()), release
+    );
+    RuntimeValue receiver;
+    receiver.setObjectValue(object.get());
     try {
-        runCallable(script, arguments, {}, nullptr);
+        runCallable(script, arguments, {}, &receiver);
     } catch (...) {
         m_result = savedResult;
         m_intermediate = savedIntermediate;
         throw;
     }
-    auto* object = m_result.getObjectValue();
     m_result = savedResult;
     m_intermediate = savedIntermediate;
-    return object;
+    return object.release();
 }
 
 void VirtualMachine::runCallable(
@@ -191,13 +196,19 @@ void VirtualMachine::runCallable(
     } catch (...) {
         while (m_scriptFrames.size() > savedFrameCount) {
             const auto frame = m_scriptFrames.back();
+            const auto nested = m_scriptFrames.size() > savedFrameCount + 1;
+            auto* constructedObject = nested && m_runtime->getConstructor(frame.callable->getId()) != nullptr ?
+                m_stack[frame.variableIndex + frame.callable->getVariableId("this").id].getObjectValue() : nullptr;
             for (auto index = NomadIndex{0}; index < frame.callable->getVariableCount(); ++index) {
                 const auto* type = frame.callable->getVariableType(VariableId{toNomadId(index)});
                 if (type != nullptr) {
                     type->freeValue(m_stack[frame.variableIndex + index]);
                 }
             }
-            if (m_scriptFrames.size() > savedFrameCount + 1) {
+            if (constructedObject != nullptr) {
+                constructedObject->releaseRef();
+            }
+            if (nested) {
                 const auto& parameters = frame.callable->getParameters();
                 for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
                     parameters[index].type->freeValue(m_stack[frame.parameterIndex - index]);
@@ -265,46 +276,35 @@ ScriptFunction* VirtualMachine::getCurrentFunction() const {
     return m_runtime->getFunctionAtInstructionIndex(m_instructionIndex);
 }
 
-void VirtualMachine::callFunction(const ScriptFunction* function) {
-    callScriptCallable(function, nullptr);
+void VirtualMachine::callFunction(const NomadIndex address) {
+    callScriptAddress(address, nullptr);
 }
 
-void VirtualMachine::callConstructor(const CallableId constructorId) {
-    const auto* constructor = m_runtime->getConstructor(constructorId);
-    const auto* script = constructor != nullptr ? constructor->asScriptCallable() : nullptr;
-    if (script == nullptr) {
-        fault("Invalid script constructor id: " + toString(constructorId.id));
-    }
-    callScriptCallable(script, nullptr);
-}
-
-void VirtualMachine::callMethod(const CallableId methodId) {
-    const auto* method = m_runtime->getMethod(methodId);
-    const auto* script = method != nullptr ? method->asScriptCallable() : nullptr;
-    if (script == nullptr) {
-        fault("Invalid script method id: " + toString(methodId.id));
-    }
+void VirtualMachine::callMethod(const NomadIndex address) {
     const auto receiver = m_this;
     (void)getThis();
-    callScriptCallable(script, &receiver);
+    callScriptAddress(address, &receiver);
 }
 
-void VirtualMachine::instantiateObject(const TypeId typeId) {
-    if (m_scriptFrames.empty()) {
-        fault("Object allocation requires a constructor frame");
+void VirtualMachine::createScriptObject(const TypeId typeId) {
+    const auto type = m_runtime->getType(typeId);
+    const auto* objectType = type ? (*type)->asObjectType() : nullptr;
+    if (objectType == nullptr) {
+        fault("Cannot allocate script object: invalid object type");
     }
-    const auto* constructor = m_scriptFrames.back().callable;
-    if (m_runtime->getConstructor(constructor->getId()) == nullptr ||
-        constructor->getObjectType()->getId() != typeId) {
-        fault("Object allocation type does not match constructor");
-    }
-    const auto variableId = constructor->getVariableId("this");
-    auto& value = m_stack[m_variableIndex + variableId.id];
-    if (value.getObjectValue() != nullptr) {
-        fault("Constructor instance has already been allocated");
-    }
-    value.setObjectValue(new ScriptObject(constructor->getObjectType()->asObjectType()));
-    m_this = value;
+    m_this.setObjectValue(new ScriptObject(objectType));
+}
+
+void VirtualMachine::pushThis() {
+    pushValue(m_this);
+}
+
+void VirtualMachine::popThis() {
+    m_this = popValue();
+}
+
+void VirtualMachine::moveThisToResult() {
+    m_result.moveObjectValue(m_this);
 }
 
 void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, const RuntimeValue* receiver) {
@@ -312,8 +312,11 @@ void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, cons
         fault("Invalid function");
         return;
     }
-    if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex - 1 < 4 ||
-        function->getVariableCount() > m_stack.size() - m_stackIndex - 5) {
+    callScriptAddress(function->getFunctionStart(), receiver);
+}
+
+void VirtualMachine::callScriptAddress(const NomadIndex address, const RuntimeValue* receiver) {
+    if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex - 1 < 4) {
         fault("Stack overflow");
     }
 
@@ -329,9 +332,18 @@ void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, cons
 
     // Variables start after the saved call frame slots.
     m_variableIndex = m_stackIndex + 1;
+    jump(address);
+}
 
+void VirtualMachine::enterFunction(const CallableId callableId) {
+    const auto* function = m_runtime->getScriptCallable(callableId);
+    if (function == nullptr) {
+        fault("Invalid script callable id: " + toString(callableId.id));
+    }
     const auto variableCount = function->getVariableCount();
-
+    if (variableCount > m_stack.size() - m_stackIndex - 1) {
+        fault("Stack overflow");
+    }
     if (variableCount > 0) {
         pushN(variableCount);
         for (auto index = NomadIndex{0}; index < variableCount; ++index) {
@@ -340,7 +352,7 @@ void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, cons
     }
     m_scriptFrames.push_back({function, m_variableIndex, m_parameterIndex});
     if (variableCount > 0) {
-        initializeFunctionVariables(function, receiver);
+        initializeFunctionVariables(function, function->getObjectType() != nullptr ? &m_this : nullptr);
     }
     if (function->getObjectType() != nullptr &&
         function->getName() == function->getObjectType()->asObjectType()->getInitializerName()) {
@@ -350,10 +362,6 @@ void VirtualMachine::callScriptCallable(const ScriptCallableBase* function, cons
         }
         object->initializeFields();
     }
-
-    auto functionStart = function->getFunctionStart();
-
-    jump(functionStart);
 }
 
 void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
@@ -766,23 +774,6 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, c
     }
 
     return std::make_unique<Closure>(function, captureValues);
-}
-
-void VirtualMachine::returnConstructor() {
-    if (m_scriptFrames.empty() ||
-        m_runtime->getConstructor(m_scriptFrames.back().callable->getId()) == nullptr) {
-        fault("Object return requires a constructor frame");
-    }
-    const auto* constructor = m_scriptFrames.back().callable;
-    auto& instance = m_stack[m_variableIndex + constructor->getVariableId("this").id];
-    if (instance.getObjectValue() == nullptr || instance.getObjectValue() != m_this.getObjectValue()) {
-        fault("Constructor has no matching instance");
-    }
-    m_result.moveObjectValue(instance);
-    for (auto index = NomadIndex{0}; index < constructor->getVariableCount(); ++index) {
-        constructor->getVariableType(VariableId{toNomadId(index)})->freeValue(m_stack[m_variableIndex + index]);
-    }
-    returnFunction(constructor->getVariableCount());
 }
 
 void VirtualMachine::returnFunction(const NomadIndex variableCount) {

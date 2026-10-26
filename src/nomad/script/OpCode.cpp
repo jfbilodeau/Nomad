@@ -166,17 +166,27 @@ void op_object_move_r_to_stack(VirtualMachine* interpreter) {
 }
 
 void op_call_function(VirtualMachine* interpreter) {
-    const auto jumpIndex = interpreter->nextIndex();
-
-    const auto* function = interpreter->getRuntime()->getFunctionByStartAddress(jumpIndex);
-    if (function == nullptr) {
-        interpreter->fault("Invalid function start address: " + toString(jumpIndex));
-    }
-    interpreter->callFunction(function);
+    interpreter->callFunction(interpreter->nextIndex());
 }
 
 void op_call_method(VirtualMachine* interpreter) {
-    interpreter->callMethod(CallableId{interpreter->nextId()});
+    interpreter->callMethod(interpreter->nextIndex());
+}
+
+void op_function_enter(VirtualMachine* interpreter) {
+    interpreter->enterFunction(CallableId{interpreter->nextId()});
+}
+
+void op_push_this(VirtualMachine* interpreter) {
+    interpreter->pushThis();
+}
+
+void op_pop_this(VirtualMachine* interpreter) {
+    interpreter->popThis();
+}
+
+void op_move_this_to_r(VirtualMachine* interpreter) {
+    interpreter->moveThisToResult();
 }
 
 void op_call_native_function(VirtualMachine* interpreter) {
@@ -897,15 +907,7 @@ void op_object_init_r(VirtualMachine* interpreter) {
 }
 
 void op_object_new(VirtualMachine* interpreter) {
-    interpreter->callConstructor(CallableId{interpreter->nextId()});
-}
-
-void op_object_return(VirtualMachine* interpreter) {
-    interpreter->returnConstructor();
-}
-
-void op_object_instantiate(VirtualMachine* interpreter) {
-    interpreter->instantiateObject(TypeId{interpreter->nextId()});
+    interpreter->createScriptObject(TypeId{interpreter->nextId()});
 }
 
 void op_object_init_i(VirtualMachine* interpreter) {

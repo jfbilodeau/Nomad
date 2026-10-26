@@ -340,6 +340,15 @@ failure. Free script functions and native function/constructor callbacks do not
 inherit a caller's receiver; `getThis()` raises an error in those calls.
 Closures and format expressions retain their existing explicit capture of `this`.
 
+When emitting bytecode directly, start every script callable with
+`op_function_enter <CallableId>` to initialize its locals. `op_call_function`
+and `op_call_method` take linked instruction addresses; the latter preserves the
+current receiver. Both use ordinary return instructions and local cleanup.
+Script construction saves `this`, evaluates arguments with the caller's receiver,
+allocates storage with `op_object_new <TypeId>`, and calls the constructor with
+`op_call_method`. After argument cleanup, `op_move_this_to_r` transfers the new
+instance into the result register and `op_pop_this` restores the saved receiver.
+
 `VirtualMachine::constructObject(constructorId, arguments)` invokes a registered
 native or compiled script constructor. Arguments are borrowed and must match the
 selected constructor's parameter types and count. The returned object owns one

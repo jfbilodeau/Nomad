@@ -40,7 +40,7 @@ CallableId compileConstruction(Runtime& runtime, const NomadString& source, cons
 
 BOOST_AUTO_TEST_SUITE(object_construction)
 
-BOOST_AUTO_TEST_CASE(script_constructor_bytecode_allocates_then_calls_its_type_initializer) {
+BOOST_AUTO_TEST_CASE(script_construction_bytecode_uses_linked_calls_and_ordinary_returns) {
     Runtime runtime;
     const auto id = compileConstruction(runtime,
         "hub model\nclass Point\nvalue = 10\n"
@@ -55,22 +55,33 @@ BOOST_AUTO_TEST_CASE(script_constructor_bytecode_allocates_then_calls_its_type_i
     const auto start = constructor->getFunctionStart();
     const auto& instructions = runtime.getInstructions();
     BOOST_TEST(instructions[start].fn ==
-        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_object_instantiate)));
-    BOOST_TEST(instructions[start + 1].value.getIdValue() == type->getId().id);
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_function_enter)));
+    BOOST_TEST(instructions[start + 1].value.getIdValue() == constructor->getId().id);
     BOOST_TEST(instructions[start + 2].fn ==
         runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_method)));
-    const auto* initializer = runtime.getScriptCallable(CallableId{instructions[start + 3].value.getIdValue()});
+    const auto* initializer = type->getMethods()[0]->asScriptCallable();
     BOOST_REQUIRE(initializer != nullptr);
     BOOST_TEST(initializer->getName() == type->getInitializerName());
     BOOST_TEST(initializer->getObjectType() == type);
-    BOOST_TEST(instructions[constructor->getFunctionEnd() - 1].fn ==
-        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_object_return)));
+    BOOST_TEST(instructions[start + 3].value.getIndexValue() == initializer->getFunctionStart());
+    BOOST_TEST(instructions[constructor->getFunctionEnd() - 2].fn ==
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_return_n)));
+    BOOST_TEST(instructions[constructor->getFunctionEnd() - 1].value.getIndexValue() == constructor->getVariableCount());
     const auto* main = runtime.getScriptFunction(id);
     auto foundConstructorCall = false;
     const auto newInstruction = runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_object_new));
     for (auto index = main->getFunctionStart(); index < main->getFunctionEnd(); ++index) {
         if (instructions[index].fn == newInstruction) {
-            BOOST_TEST(instructions[index + 1].value.getIdValue() == constructor->getId().id);
+            BOOST_TEST(instructions[index + 1].value.getIdValue() == type->getId().id);
+            BOOST_TEST(instructions[index + 2].fn ==
+                runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_method)));
+            BOOST_TEST(instructions[index + 3].value.getIndexValue() == constructor->getFunctionStart());
+            BOOST_TEST(instructions[index + 4].fn ==
+                runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_pop_1)));
+            BOOST_TEST(instructions[index + 5].fn ==
+                runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_move_this_to_r)));
+            BOOST_TEST(instructions[index + 6].fn ==
+                runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_pop_this)));
             foundConstructorCall = true;
         }
     }
@@ -228,6 +239,33 @@ BOOST_AUTO_TEST_CASE(void_constructor_exit_transfers_instance_and_releases_neste
         object->releaseRef();
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     }
+}
+
+BOOST_AUTO_TEST_CASE(constructor_arguments_use_the_outer_receiver_before_allocating_nested_instances) {
+    Runtime runtime;
+    const auto id = compileConstruction(runtime,
+        "class Child\ninit value:int\nthis.value = value\nend\nend\n"
+        "class Owner\nvalue = 42\n"
+        "child = new Child this.value\n"
+        "init\n"
+        "other = new Child this.child.value\n"
+        "this.value = this.value + other.value\n"
+        "end\nend\n"
+        "owner = new Owner\nreturn owner.value + owner.child.value"
+    );
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(id, {}, result);
+    BOOST_TEST(result.getIntegerValue() == 126);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext context(*machine);
+        BOOST_REQUIRE(Interpreter{}.execute("owner = new Owner", context));
+        BOOST_REQUIRE(Interpreter{}.execute("owner.value + owner.child.value", context));
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 126);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
 BOOST_AUTO_TEST_CASE(script_constructor_failure_releases_instance_fields_and_arguments_and_recovers) {
@@ -1163,6 +1201,8 @@ BOOST_AUTO_TEST_CASE(parameterless_constructors_are_explicitly_registered) {
     const auto id = compileConstruction(runtime, "return new Plain");
     const auto start = runtime.getScriptFunction(id)->getFunctionStart();
     BOOST_TEST(runtime.getInstructions()[start].fn ==
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_function_enter)));
+    BOOST_TEST(runtime.getInstructions()[start + 2].fn ==
         runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_native_function)));
     RuntimeValue result;
     runtime.executeFunction(id, {}, result);

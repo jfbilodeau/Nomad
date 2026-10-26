@@ -221,6 +221,8 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
     function->registerVariable("localText", runtime.getStringType());
     function->setReturnType(runtime.getVoidType());
     function->setFunctionStart(runtime.getInstructions().size());
+    compiler->addOpCode(OpCodes::op_function_enter);
+    compiler->addId(function->getId().id);
     const auto initializeFrame = runtime.registerInstruction("test.initializeFrame", [](VirtualMachine* machine) {
         machine->setFunctionVariableValue(
             machine->getCurrentFunction()->getVariableId("local"), RuntimeValue{NomadInteger{2}});

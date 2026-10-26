@@ -35,4 +35,8 @@ const ScriptConstructor* ScriptConstructor::asScriptConstructor() const {
     return this;
 }
 
+const Type* ScriptConstructor::getConstructedType() const {
+    return getObjectType();
+}
+
 } // namespace nomad

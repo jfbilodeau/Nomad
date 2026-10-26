@@ -535,6 +535,8 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
     }, "", {});
     auto compiler = runtime.createCompiler();
     initializer->setFunctionStart(runtime.getInstructions().size());
+    compiler->addOpCode(OpCodes::op_function_enter);
+    compiler->addId(initializer->getId().id);
     compiler->addOpCode(probe);
     compiler->addOpCode(OpCodes::op_call_function);
     compiler->addIndex(runtime.getScriptFunction(runtime.getFunctionId("helper"))->getFunctionStart());
@@ -583,6 +585,8 @@ BOOST_AUTO_TEST_CASE(script_receiver_restores_after_nested_initialization_and_fa
         BOOST_REQUIRE(id.isValid());
         auto* initializer = runtime.getScriptCallable(id);
         initializer->setFunctionStart(runtime.getInstructions().size());
+        compiler->addOpCode(OpCodes::op_function_enter);
+        compiler->addId(initializer->getId().id);
         compiler->addOpCode(probe);
         compiler->addFunctionReturn(initializer);
         initializer->setFunctionEnd(runtime.getInstructions().size());

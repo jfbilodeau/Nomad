@@ -61,6 +61,7 @@ public:
     );
 
     [[nodiscard]] const NativeConstructor* asNativeConstructor() const override { return this; }
+    [[nodiscard]] const Type* getConstructedType() const override;
     [[nodiscard]] const NativeFunctionFn& getFn() const { return m_fn; }
 
 private:

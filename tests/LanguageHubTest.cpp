@@ -638,7 +638,13 @@ BOOST_AUTO_TEST_CASE(static_values_are_installed_without_executable_assignments)
     auto& runtime = fixture.getRuntime();
     const auto* initializer = runtime.getScriptFunction(runtime.getFunctionId("$init"));
     BOOST_REQUIRE(initializer != nullptr);
-    BOOST_TEST(initializer->getFunctionEnd() - initializer->getFunctionStart() == 1U);
+    BOOST_TEST(initializer->getFunctionEnd() - initializer->getFunctionStart() == 3U);
+    const auto start = initializer->getFunctionStart();
+    BOOST_TEST(runtime.getInstructions()[start].fn ==
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_function_enter)));
+    BOOST_TEST(runtime.getInstructions()[start + 1].value.getIdValue() == initializer->getId().id);
+    BOOST_TEST(runtime.getInstructions()[start + 2].fn ==
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_return)));
     BOOST_TEST(runtime.getFunctionCount() == 2U);
     RuntimeValue value;
     runtime.getContextVariableValue(runtime.getContextVariableId("example.y"), value);

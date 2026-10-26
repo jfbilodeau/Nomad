@@ -42,4 +42,8 @@ NativeConstructor::NativeConstructor(
 {
 }
 
+const Type* NativeConstructor::getConstructedType() const {
+    return getReturnType();
+}
+
 } // namespace nomad

@@ -146,7 +146,7 @@ protected:
 class Constructor : public Callable {
 public:
     // The type of a `new` expression; script constructor callables themselves return void.
-    [[nodiscard]] const Type* getConstructedType() const;
+    [[nodiscard]] virtual const Type* getConstructedType() const = 0;
     [[nodiscard]] virtual const NativeConstructor* asNativeConstructor() const;
     [[nodiscard]] virtual const ScriptConstructor* asScriptConstructor() const;
 
