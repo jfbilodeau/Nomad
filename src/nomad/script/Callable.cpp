@@ -165,6 +165,10 @@ Constructor::Constructor(
 {
 }
 
+const Type* Constructor::getConstructedType() const {
+    return getSource() == CallableSource::Script ? getObjectType() : getReturnType();
+}
+
 const NativeConstructor* Constructor::asNativeConstructor() const {
     return nullptr;
 }

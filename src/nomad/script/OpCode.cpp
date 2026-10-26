@@ -900,6 +900,10 @@ void op_object_new(VirtualMachine* interpreter) {
     interpreter->callConstructor(CallableId{interpreter->nextId()});
 }
 
+void op_object_return(VirtualMachine* interpreter) {
+    interpreter->returnConstructor();
+}
+
 void op_object_instantiate(VirtualMachine* interpreter) {
     interpreter->instantiateObject(TypeId{interpreter->nextId()});
 }

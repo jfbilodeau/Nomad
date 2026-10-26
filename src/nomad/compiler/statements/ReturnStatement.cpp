@@ -83,7 +83,7 @@ void ReturnStatementNode::onCompile(Compiler* compiler, ScriptCallableBase* func
     }
 
     if (m_constructorReturn) {
-        compiler->addConstructorReturn(function);
+        compiler->addConstructorReturn();
     } else {
         compiler->addFunctionReturn(function);
     }

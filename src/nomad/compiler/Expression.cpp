@@ -1236,7 +1236,7 @@ void ConstructorExpression::onResolve(CompilerContext* context, ScriptCallableBa
     }
     if (m_arguments.resolve(context, function)) {
         m_constructor = selected;
-        setType(selected->getReturnType());
+        setType(selected->getConstructedType());
     }
 }
 

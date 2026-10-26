@@ -138,7 +138,7 @@ public:
     NomadIndex addOpCode(const NomadString& opCodeName);
     NomadIndex addOpCode(InstructionFn opCode);
     void addFunctionReturn(const ScriptCallableBase* function);
-    void addConstructorReturn(const ScriptCallableBase* constructor);
+    void addConstructorReturn();
     NomadIndex addId(NomadId id);
     NomadIndex addIndex(NomadIndex index);
     NomadIndex addInteger(NomadInteger value);

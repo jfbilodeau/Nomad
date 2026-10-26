@@ -259,6 +259,7 @@ void Runtime::registerDefaultInstructions() {
 
     registerInstruction(OpCodes::op_object_init_r, op_object_init_r, "Clear the object result register", {});
     registerInstruction(OpCodes::op_object_new, op_object_new, "Invoke a registered object constructor", {Operand::Id});
+    registerInstruction(OpCodes::op_object_return, op_object_return, "Complete construction, moving the instance into result and releasing the constructor frame", {});
     registerInstruction(OpCodes::op_object_instantiate, op_object_instantiate, "Allocate a script instance and bind this", {Operand::Id});
     registerInstruction(OpCodes::op_object_init_i, op_object_init_i, "Clear the object intermediate register", {});
 

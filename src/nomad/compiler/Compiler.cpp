@@ -1174,13 +1174,12 @@ void Compiler::compileConstructor(const FunctionCompilation& source) {
     addOpCode(OpCodes::op_call_method);
     addId((*initializer)->getId().id);
     source.ast->compile(this, constructor);
-    addConstructorReturn(constructor);
+    addConstructorReturn();
     constructor->setFunctionEnd(m_instructions.size());
 }
 
-void Compiler::addConstructorReturn(const ScriptCallableBase* constructor) {
-    addLoadFunctionVariable(constructor->getVariableId("this"), constructor->getObjectType(), ExpressionTarget::Result);
-    addFunctionReturn(constructor);
+void Compiler::addConstructorReturn() {
+    addOpCode(OpCodes::op_object_return);
 }
 
 void Compiler::addFunctionReturn(const ScriptCallableBase* function) {

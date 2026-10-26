@@ -343,7 +343,10 @@ Closures and format expressions retain their existing explicit capture of `this`
 `VirtualMachine::constructObject(constructorId, arguments)` invokes a registered
 native or compiled script constructor. Arguments are borrowed and must match the
 selected constructor's parameter types and count. The returned object owns one
-reference, which the caller must release. Script construction releases the failed
+reference, which the caller must release. Script constructor callables have a
+`void` return type; `Constructor::getConstructedType()` reports the type produced
+by construction, including native factories whose produced type differs from
+their owner. Script construction releases the failed
 instance if field initialization or the constructor body throws. Class
 initialization and constructor bodies cannot yield. Compile and initialize
 required script-level hub variables before using this lower-level VM API.

@@ -310,9 +310,10 @@ failure stops subsequent initializers and cannot be retried on that instance.
 `new ClassName arguments` selects a constructor overload, allocates an instance,
 initializes its fields, then runs the selected constructor body. If no `init`
 is declared, the class has an implicit parameterless constructor. Declaring any
-`init` suppresses that implicit constructor. A constructor always produces the
+`init` suppresses that implicit constructor. The `new` expression produces the
 new instance. Script member calls are not executable yet.
-Script constructors may use a bare `return` but cannot return an expression.
+Script constructors return `void`: they may use a bare `return` but cannot return
+an expression. An early return still completes `new` with the allocated instance.
 Member parameters are declared in the header, not with a later `params` statement.
 
 An assignment through an object reference may introduce a field on an open

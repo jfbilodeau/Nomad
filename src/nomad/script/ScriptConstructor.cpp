@@ -2,6 +2,7 @@
 
 #include <nomad/script/ScriptConstructor.hpp>
 
+#include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <utility>
@@ -15,8 +16,14 @@ ScriptConstructor::ScriptConstructor(
     NomadString source
 ):
     ScriptCallable(
-        CallableId{}, std::move(path), std::move(source), objectType->getTypeName(), objectType,
-        std::move(parameters), objectType, NomadString{}
+        CallableId{}, 
+        std::move(path), 
+        std::move(source), 
+        objectType->getTypeName(), 
+        objectType,
+        std::move(parameters), 
+        objectType->getRuntime()->getVoidType(), 
+        NomadString{}
     )
 {
     for (const auto& parameter : getParameters()) {

@@ -63,6 +63,7 @@ public:
     void callNativeFunction(CallableId nativeFunctionId);
     void callNativeMethod(CallableId memberId, const RuntimeValue& receiver);
     void returnFunction(NomadIndex variableCount);
+    void returnConstructor();
     void runNativeMethod(CallableId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
     void runNativeFunction(CallableId nativeFunctionId, const std::vector<RuntimeValue>& args);
 

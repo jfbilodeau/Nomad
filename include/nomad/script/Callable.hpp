@@ -74,8 +74,8 @@ public:
     [[nodiscard]] NomadIndex getParameterCount() const;
     // The type of the value the callable yields; void when it yields nothing.
     [[nodiscard]] const Type* getReturnType() const;
-    // Method: the receiver's type. Constructor: the class being constructed (e.g. `Array`), which may differ from
-    // the return type (e.g. `Array1<int>`). Null for functions.
+    // Method: the receiver's type. Constructor: the declaring class, which may differ from the constructed type
+    // for native factories (e.g. `Array` creating `Array1<int>`). Null for functions.
     [[nodiscard]] const Type* getObjectType() const;
     [[nodiscard]] const NomadString& getDoc() const;
     [[nodiscard]] CallableId registerWithRuntime(Runtime& runtime);
@@ -145,6 +145,8 @@ protected:
 // Creates an object. The name is the one of the class being constructed.
 class Constructor : public Callable {
 public:
+    // The type of a `new` expression; script constructor callables themselves return void.
+    [[nodiscard]] const Type* getConstructedType() const;
     [[nodiscard]] virtual const NativeConstructor* asNativeConstructor() const;
     [[nodiscard]] virtual const ScriptConstructor* asScriptConstructor() const;
 

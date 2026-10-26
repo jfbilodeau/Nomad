@@ -171,7 +171,8 @@ BOOST_AUTO_TEST_CASE(script_member_descriptors_are_type_owned_with_shared_compil
     BOOST_TEST((constructor->getSource() == CallableSource::Script));
     BOOST_TEST(method->getObjectType() == type);
     BOOST_TEST(constructor->getObjectType() == type);
-    BOOST_TEST(constructor->getReturnType() == type);
+    BOOST_TEST(constructor->getReturnType() == runtime.getVoidType());
+    BOOST_TEST(constructor->getConstructedType() == type);
     BOOST_TEST(method->asNativeMethod() == nullptr);
     BOOST_TEST(constructor->asNativeConstructor() == nullptr);
     BOOST_REQUIRE(method->asScriptMethod() != nullptr);

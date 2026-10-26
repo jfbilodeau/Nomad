@@ -51,6 +51,7 @@ BOOST_AUTO_TEST_CASE(script_constructor_bytecode_allocates_then_calls_its_type_i
     BOOST_TEST(type->getInitializerName() == "model.Point$init");
     const auto* constructor = type->getConstructors()[0]->asScriptCallable();
     BOOST_REQUIRE(constructor != nullptr);
+    BOOST_TEST(constructor->getReturnType() == runtime.getVoidType());
     const auto start = constructor->getFunctionStart();
     const auto& instructions = runtime.getInstructions();
     BOOST_TEST(instructions[start].fn ==
@@ -62,6 +63,8 @@ BOOST_AUTO_TEST_CASE(script_constructor_bytecode_allocates_then_calls_its_type_i
     BOOST_REQUIRE(initializer != nullptr);
     BOOST_TEST(initializer->getName() == type->getInitializerName());
     BOOST_TEST(initializer->getObjectType() == type);
+    BOOST_TEST(instructions[constructor->getFunctionEnd() - 1].fn ==
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_object_return)));
     const auto* main = runtime.getScriptFunction(id);
     auto foundConstructorCall = false;
     const auto newInstruction = runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_object_new));
@@ -184,6 +187,47 @@ BOOST_AUTO_TEST_CASE(interpreter_constructs_compiled_classes_and_uses_shared_ove
         BOOST_TEST(context.getResult()->getType() == runtime.getTypeByName("Empty"));
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(void_constructor_exit_transfers_instance_and_releases_nested_locals) {
+    Runtime runtime;
+    const auto id = compileConstruction(runtime,
+        "class Child\nvalue = 5\nend\n"
+        "class Owner\nvalue = 1\ninit early:bool\n"
+        "child = new Child\nthis.child = child\n"
+        "if early\nreturn\nend\nthis.value = 77\nend\nend\n"
+        "first = new Owner true\nsecond = new Owner false\n"
+        "assert first.value == 1\nassert second.value == 77\n"
+        "assert first.child.value == 5\nassert second.child.value == 5\n"
+        "return second"
+    );
+    const auto* type = runtime.getTypeByName("Owner")->asObjectType();
+    const auto* constructor = type->getConstructors()[0];
+    BOOST_TEST(constructor->getReturnType() == runtime.getVoidType());
+    BOOST_TEST(constructor->getConstructedType() == type);
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(id, {}, result);
+    BOOST_REQUIRE(result.getObjectValue() != nullptr);
+    BOOST_TEST(result.getObjectValue()->getReferenceCount() == 1u);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before + 2);
+    result.freeObjectValue();
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+
+    auto machine = runtime.createVirtualMachine();
+    for (const auto early : {true, false}) {
+        machine->setIntegerResult(41);
+        machine->setIntegerIntermediate(42);
+        auto* object = machine->constructObject(constructor->getId(), {RuntimeValue{early}});
+        BOOST_REQUIRE(object != nullptr);
+        BOOST_TEST(object->getReferenceCount() == 1u);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == before + 2);
+        BOOST_TEST(machine->getResult().getIntegerValue() == 41);
+        BOOST_TEST(machine->getIntermediate().getIntegerValue() == 42);
+        BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+        object->releaseRef();
+        BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(script_constructor_failure_releases_instance_fields_and_arguments_and_recovers) {
@@ -325,6 +369,7 @@ BOOST_AUTO_TEST_CASE(add_constructor_preserves_distinct_created_types_and_shared
     BOOST_REQUIRE(constructor != nullptr);
     BOOST_TEST(constructor->getObjectType() == owner);
     BOOST_TEST(constructor->getReturnType() == createdType);
+    BOOST_TEST(constructor->getConstructedType() == createdType);
     BOOST_REQUIRE(owner->getConstructors().size() == 1u);
     BOOST_TEST(owner->getConstructors()[0] == constructor);
     BOOST_TEST(createdType->getConstructors().empty());

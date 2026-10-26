@@ -455,7 +455,7 @@ void generateTypeDocumentation(const Runtime* runtime, std::ostream& out) {
         out << type->getDocumentation() << std::endl;
         for (const auto* candidate : runtime->getConstructors()) {
             const auto& constructor = *candidate;
-            if (constructor.getReturnType() != type) {
+            if (constructor.getConstructedType() != type) {
                 continue;
             }
             out << std::endl << "Constructor: `new " << constructor.getName();

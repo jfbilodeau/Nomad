@@ -768,6 +768,23 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, c
     return std::make_unique<Closure>(function, captureValues);
 }
 
+void VirtualMachine::returnConstructor() {
+    if (m_scriptFrames.empty() ||
+        m_runtime->getConstructor(m_scriptFrames.back().callable->getId()) == nullptr) {
+        fault("Object return requires a constructor frame");
+    }
+    const auto* constructor = m_scriptFrames.back().callable;
+    auto& instance = m_stack[m_variableIndex + constructor->getVariableId("this").id];
+    if (instance.getObjectValue() == nullptr || instance.getObjectValue() != m_this.getObjectValue()) {
+        fault("Constructor has no matching instance");
+    }
+    m_result.moveObjectValue(instance);
+    for (auto index = NomadIndex{0}; index < constructor->getVariableCount(); ++index) {
+        constructor->getVariableType(VariableId{toNomadId(index)})->freeValue(m_stack[m_variableIndex + index]);
+    }
+    returnFunction(constructor->getVariableCount());
+}
+
 void VirtualMachine::returnFunction(const NomadIndex variableCount) {
     popN(variableCount);
     m_scriptFrames.pop_back();
