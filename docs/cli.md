@@ -60,6 +60,12 @@ locations; compilation errors return a nonzero exit code.
 Instruction dumps include script functions, methods, constructors, and generated
 class initializers. `--function` limits the dump to a named free function.
 
+Generated API Markdown includes script classes, their constructor overloads,
+read/write fields (including fields inferred from constructor assignments), and
+ordinary method overloads with parameter and return types. Qualified class names
+are preserved. Nested callbacks and generated initializers are omitted.
+Documentation generation does not execute the scripts.
+
 When `nomadc check` discovers a project, it also discovers and CPU-packs the
 configured sprite directories without uploading textures to the GPU. The
 report lists each physical texture page, its dimensions, logical and unique

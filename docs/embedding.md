@@ -551,8 +551,8 @@ parameters added with `addParameter(name, type, doc)` require a documentation
 string; pass an empty string when no description is available. Descriptions are
 available through each parameter's `doc` field.
 Script source text is available through `getSourceCode()`; `getSource()` identifies whether
-the callable is native or script-backed. Script enumeration and source/bytecode
-lookups continue to include only script functions.
+the callable is native or script-backed. Function-only enumeration and
+source/bytecode lookups continue to exclude methods and constructors.
 
 `getScriptCallable(id)` returns the shared script compilation interface for a
 script function, method, or constructor, and `nullptr` for native or invalid IDs.
@@ -577,6 +577,26 @@ an implicit local or a receiver to the explicit parameter list. A parameter name
 `this` is invalid. The supplied
 source is retained for compiler diagnostics; registration alone does not parse,
 compile, or enable invocation of the member.
+
+## API reference generation
+
+Include `<nomad/script/Documentation.hpp>` to generate Markdown from a runtime's
+registered APIs. `generateDocumentation(runtime, output)` writes the complete
+reference, including script classes, fields, constructor overloads, and ordinary
+method overloads. Nested callbacks and generated initializers are omitted.
+
+`generateTypeDocumentation(runtime, output)` writes type descriptions and
+constructors. Script classes are included even without a description. A
+constructor is listed under the type it creates, which may differ from its
+declaring type for native factories.
+
+`generateMemberDocumentation(runtime, output)` writes native properties and
+methods together with script fields and methods, grouped by receiver type.
+Fields are read/write, and each method overload shows its parameter and return
+types. `generateNativeMemberDocumentation(runtime, output)` remains native-only.
+
+These generators do not invoke scripts or native callbacks. The compiler tooling
+compiles source inputs before generating their reference.
 
 ## Module configuration
 

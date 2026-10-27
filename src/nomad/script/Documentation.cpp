@@ -5,7 +5,9 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/Parser.hpp>
 
+#include <nomad/script/Property.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <boost/json.hpp>
@@ -17,18 +19,31 @@ namespace nomad {
 
 namespace {
 
-struct NativeMemberDocumentationInfo {
+NomadString getDocumentedTypeName(const Runtime*, const Type* type) {
+    return type ? type->getTypeName() : "unknown";
+}
+
+NomadString getCallableSignature(const Runtime* runtime, const Callable& callable) {
+    auto signature = callable.getName();
+    for (const auto& parameter : callable.getParameters()) {
+        signature += " " + parameter.name + ":" + getDocumentedTypeName(runtime, parameter.type);
+    }
+    return signature;
+}
+
+struct MemberDocumentationInfo {
     MemberReference id;
     MemberType memberType;
     const Type* objectType;
     NomadString name;
+    NomadString signature = {};
 };
 
-std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Runtime* runtime) {
+std::vector<MemberDocumentationInfo> getMemberDocumentation(const Runtime* runtime, const bool includeScript) {
     std::vector<MemberReference> memberIds;
     runtime->getNativeMembers(memberIds);
 
-    std::vector<NativeMemberDocumentationInfo> members;
+    std::vector<MemberDocumentationInfo> members;
     members.reserve(memberIds.size());
 
     for (const auto memberId : memberIds) {
@@ -43,7 +58,8 @@ std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Ru
         case MemberType::Method: {
             const auto* method = runtime->getNativeMemberMethod(memberId);
             if (method != nullptr) {
-                members.emplace_back(memberId, MemberType::Method, method->getObjectType(), method->getName());
+                members.emplace_back(memberId, MemberType::Method, method->getObjectType(), method->getName(),
+                    getCallableSignature(runtime, *method));
             }
             break;
         }
@@ -53,10 +69,29 @@ std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Ru
         }
     }
 
+    if (includeScript) {
+        std::vector<const Type*> types;
+        runtime->getTypes(types);
+        for (const auto* type : types) {
+            const auto* object = type->asObjectType();
+            if (object == nullptr || type->isInternal()) continue;
+            for (const auto* property : object->getProperties()) {
+                if (property->asNativeProperty() != nullptr) continue;
+                members.emplace_back(property->getId(), MemberType::Property, type, property->getName());
+            }
+            for (const auto* method : object->getMethods()) {
+                if (method->asScriptMethod() == nullptr || method->getName() == object->getInitializerName()) continue;
+                members.emplace_back(method->getId(), MemberType::Method, type, method->getName(),
+                    getCallableSignature(runtime, *method));
+            }
+        }
+    }
+
     std::ranges::sort(members, [](const auto& left, const auto& right) {
         const auto leftType = left.objectType->getTypeName();
         const auto rightType = right.objectType->getTypeName();
-        return leftType == rightType ? left.name < right.name : leftType < rightType;
+        if (leftType != rightType) return leftType < rightType;
+        return left.name == right.name ? left.signature < right.signature : left.name < right.name;
     });
 
     return members;
@@ -65,7 +100,7 @@ std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Ru
 std::vector<NomadString> getNativeMemberNames(const Runtime* runtime) {
     std::vector<NomadString> names;
 
-    for (const auto& member : getNativeMemberDocumentation(runtime)) {
+    for (const auto& member : getMemberDocumentation(runtime, false)) {
         if (std::ranges::find(names, member.name) == names.end()) {
             names.push_back(member.name);
         }
@@ -73,10 +108,6 @@ std::vector<NomadString> getNativeMemberNames(const Runtime* runtime) {
 
     std::ranges::sort(names);
     return names;
-}
-
-NomadString getDocumentedTypeName(const Runtime*, const Type* type) {
-    return type->getTypeName();
 }
 
 NomadString escapeRegularExpression(const NomadString& text) {
@@ -306,7 +337,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     generateTypeDocumentation(runtime, out);
 
-    generateNativeMemberDocumentation(runtime, out);
+    generateMemberDocumentation(runtime, out);
 
     out << "## Functions" << std::endl;
 
@@ -347,6 +378,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     runtime->getFunctions(scriptFunctions);
 
     for (auto function: scriptFunctions) {
+        if (function->isNested() || function->getName().starts_with("$")) continue;
         std::vector<Parameter> parameters;
 
         for (NomadIndex i = 0; i < function->getParameterCount(); i++) {
@@ -437,8 +469,26 @@ void generateTypeDocumentation(const Runtime* runtime, std::ostream& out) {
     std::vector<const Type*> types;
     runtime->getTypes(types);
 
-    std::erase_if(types, [](const Type* type) {
-        return type->isInternal() || type->getDocumentation().empty();
+    std::vector<const Constructor*> constructors;
+    for (const auto* constructor : runtime->getConstructors()) {
+        constructors.push_back(constructor);
+    }
+    std::set<const Type*> scriptTypes;
+    std::vector<const ScriptCallableBase*> scriptCallables;
+    runtime->getScriptCallables(scriptCallables);
+    for (const auto* callable : scriptCallables) {
+        if (callable->getObjectType() != nullptr) {
+            scriptTypes.insert(callable->getObjectType());
+        }
+        if (const auto* constructor = runtime->getConstructor(callable->getId())) {
+            constructors.push_back(constructor);
+        }
+    }
+    std::ranges::sort(constructors, [runtime](const auto* left, const auto* right) {
+        return getCallableSignature(runtime, *left) < getCallableSignature(runtime, *right);
+    });
+    std::erase_if(types, [&](const Type* type) {
+        return type->isInternal() || (type->getDocumentation().empty() && !scriptTypes.contains(type));
     });
     std::ranges::sort(types, {}, &Type::getTypeName);
 
@@ -452,17 +502,13 @@ void generateTypeDocumentation(const Runtime* runtime, std::ostream& out) {
         out << std::endl;
         out << "### `" << type->getTypeName() << "`" << std::endl;
         out << std::endl;
-        out << type->getDocumentation() << std::endl;
-        for (const auto* candidate : runtime->getConstructors()) {
+        if (!type->getDocumentation().empty()) out << type->getDocumentation() << std::endl;
+        for (const auto* candidate : constructors) {
             const auto& constructor = *candidate;
             if (constructor.getConstructedType() != type) {
                 continue;
             }
-            out << std::endl << "Constructor: `new " << constructor.getName();
-            for (auto index = NomadIndex{0}; index < constructor.getParameters().size(); ++index) {
-                out << " " << constructor.getParameters()[index].name << ":"
-                    << getDocumentedTypeName(runtime, constructor.getParameters()[index].type);
-            }
+            out << std::endl << "Constructor: `new " << getCallableSignature(runtime, constructor);
             out << "` -> `" << type->getTypeName() << "`" << std::endl;
         }
     }
@@ -470,14 +516,17 @@ void generateTypeDocumentation(const Runtime* runtime, std::ostream& out) {
     out << std::endl;
 }
 
-void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out) {
+namespace {
+
+void writeMemberDocumentation(const Runtime* runtime, const bool includeScript, std::ostream& out) {
     out << "## Object Members" << std::endl;
     out << std::endl;
-    out << "Properties and methods are available on instances of each object type." << std::endl;
+    out << (includeScript ? "Fields, properties, and methods are available on instances of each object type." :
+        "Properties and methods are available on instances of each object type.") << std::endl;
 
     const Type* currentType = nullptr;
 
-    for (const auto& member : getNativeMemberDocumentation(runtime)) {
+    for (const auto& member : getMemberDocumentation(runtime, includeScript)) {
         if (member.objectType != currentType) {
             currentType = member.objectType;
             out << std::endl;
@@ -488,37 +537,43 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
         out << "#### `" << member.name << "`";
 
         if (member.memberType == MemberType::Property) {
-            const auto info = runtime->getNativePropertyInfo(member.id);
-            if (!info) {
-                throw NomadException("Registered native property is unavailable");
+            const auto* property = runtime->getProperty(std::get<PropertyId>(member.id));
+            if (property == nullptr) {
+                throw NomadException("Registered property is unavailable");
             }
 
-            NomadString access;
-            if (info->getFn && info->setFn) {
-                access = "read/write";
-            } else if (info->getFn) {
-                access = "read-only";
-            } else {
-                access = "write-only";
+            const auto native = property->asNativeProperty() != nullptr;
+            NomadString access = "read/write";
+            if (native) {
+                const auto info = runtime->getNativePropertyInfo(member.id);
+                if (!info) {
+                    throw NomadException("Registered native property is unavailable");
+                }
+                access = info->getFn ? (info->setFn ? "read/write" : "read-only") : "write-only";
             }
 
-            out << " (*" << access << " property*)" << std::endl;
+            out << " (*" << access << (native ? " property*)" : " field*)") << std::endl;
             out << std::endl;
-            out << "`" << member.name << ":" << getDocumentedTypeName(runtime, info->valueType) << "`"
+            out << "`" << member.name << ":" << getDocumentedTypeName(runtime, property->getValueType()) << "`"
                 << std::endl;
             out << std::endl;
-            if (!info->doc.empty()) {
-                out << info->doc << std::endl;
+            if (!property->getDoc().empty()) {
+                out << property->getDoc() << std::endl;
                 out << std::endl;
             }
         } else {
-            const auto* method = runtime->getNativeMemberMethod(member.id);
+            const auto* method = runtime->getMethod(std::get<CallableId>(member.id));
             if (method == nullptr) {
-                continue;
+                throw NomadException("Registered method is unavailable");
             }
 
             out << " (*method*)" << std::endl;
             out << std::endl;
+            if (method->asScriptMethod() != nullptr) {
+                out << "`" << getCallableSignature(runtime, *method) << " -> "
+                    << getDocumentedTypeName(runtime, method->getReturnType()) << "`" << std::endl;
+                out << std::endl;
+            }
 
             if (method->getParameters().empty()) {
                 out << "No parameters." << std::endl;
@@ -577,6 +632,16 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
         }
     }
     out << std::endl;
+}
+
+} // namespace
+
+void generateMemberDocumentation(const Runtime* runtime, std::ostream& out) {
+    writeMemberDocumentation(runtime, true, out);
+}
+
+void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out) {
+    writeMemberDocumentation(runtime, false, out);
 }
 
 void generateKeywords(Runtime* runtime, std::ostream& out) {

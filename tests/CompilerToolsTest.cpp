@@ -7,6 +7,8 @@
 #include <nomad/game/BodyType.hpp>
 #include <nomad/game/Cardinal.hpp>
 #include <nomad/game/Game.hpp>
+
+#include <nomad/script/Documentation.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
@@ -16,6 +18,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <filesystem>
+#include <sstream>
 #include <utility>
 
 using namespace nomad;
@@ -485,6 +488,107 @@ BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
     BOOST_TEST(result.documentation.find("State.idle:State") == NomadString::npos);
     BOOST_TEST(result.documentation.find("ANSWER:int = 42") != NomadString::npos);
     BOOST_TEST(result.documentation.find("[Instructions](#instructions)") == NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overloads_without_execution)
+{
+    TestDirectory directory("nomad_compilation_test_class_reference");
+    const auto source = directory.write("classes.nomad",
+        "class Counter\nlabel = \"counter\"\n"
+        "init value:int\nprobe\nthis.value = value\nend\n"
+        "init text:string\nprobe\nthis.value = text.length\nend\n"
+        "fun read\nreturn this.value\nend\n"
+        "fun read delta:int\nreturn this.value + delta\nend\n"
+        "fun read delta:float\nreturn delta + 0.5\nend\n"
+        "fun clear\nthis.value = 0\nreturn\nend\n"
+        "fun formatted\nreturn $\"value {this.value}\"\nend\nend\n"
+        "class Empty\nend\n"
+        "hub model\ncounter = new Counter 3\nclass Point\nx = 0\nend\nend\n"
+        "probe\nreturn 0"
+    );
+    Runtime runtime;
+    auto callbackCalls = 0;
+    runtime.registerNativeFunction("probe", [&](VirtualMachine*) { ++callbackCalls; },
+        {}, runtime.getVoidType(), "");
+    const auto result = generateDocumentationForPath(source, &runtime);
+    BOOST_REQUIRE_MESSAGE(result.compilation.succeeded(),
+        (result.compilation.diagnostics.empty() ? "" : result.compilation.diagnostics.front().message));
+    BOOST_TEST(callbackCalls == 0);
+    const auto typesStart = result.documentation.find("## Types\n");
+    const auto membersStart = result.documentation.find("## Object Members\n");
+    const auto functionsStart = result.documentation.find("## Functions\n");
+    BOOST_REQUIRE(typesStart != NomadString::npos);
+    BOOST_REQUIRE(membersStart != NomadString::npos);
+    BOOST_REQUIRE(functionsStart != NomadString::npos);
+    const auto types = result.documentation.substr(typesStart, membersStart - typesStart);
+    BOOST_TEST(types.find("### `Counter`") != NomadString::npos);
+    BOOST_TEST(types.find("### `Empty`") != NomadString::npos);
+    BOOST_TEST(types.find("### `model.Point`") != NomadString::npos);
+    BOOST_TEST(types.find("Constructor: `new Counter value:int` -> `Counter`") != NomadString::npos);
+    BOOST_TEST(types.find("Constructor: `new Counter text:string` -> `Counter`") != NomadString::npos);
+    BOOST_TEST(types.find("Constructor: `new Counter`") == NomadString::npos);
+    BOOST_TEST(types.find("Constructor: `new Empty` -> `Empty`") != NomadString::npos);
+    BOOST_TEST(types.find("Constructor: `new model.Point` -> `model.Point`") != NomadString::npos);
+    const auto members = result.documentation.substr(membersStart, functionsStart - membersStart);
+    const auto counterStart = members.find("### `Counter`");
+    BOOST_REQUIRE(counterStart != NomadString::npos);
+    const auto counterEnd = members.find("\n### `", counterStart + 1);
+    BOOST_REQUIRE(counterEnd != NomadString::npos);
+    const auto counter = members.substr(counterStart, counterEnd - counterStart);
+    BOOST_TEST(counter.find("#### `label` (*read/write field*)\n\n`label:string`") != NomadString::npos);
+    BOOST_TEST(counter.find("#### `value` (*read/write field*)\n\n`value:int`") != NomadString::npos);
+    BOOST_TEST(counter.find("`read -> int`") != NomadString::npos);
+    BOOST_TEST(counter.find("`read delta:int -> int`") != NomadString::npos);
+    BOOST_TEST(counter.find("`read delta:float -> float`") != NomadString::npos);
+    BOOST_TEST(counter.find("`clear -> void`") != NomadString::npos);
+    BOOST_TEST(counter.find("`formatted -> string`") != NomadString::npos);
+    BOOST_TEST(counter.find("`read -> int`") < counter.find("`read delta:float -> float`"));
+    BOOST_TEST(counter.find("`read delta:float -> float`") < counter.find("`read delta:int -> int`"));
+    BOOST_TEST(counter.find("- `this:") == NomadString::npos);
+    BOOST_TEST(result.documentation.find("$init") == NomadString::npos);
+    std::vector<ScriptFunction*> functions;
+    runtime.getFunctions(functions);
+    auto nestedFunctions = 0;
+    for (const auto* function : functions) {
+        if (!function->isNested()) continue;
+        ++nestedFunctions;
+        BOOST_TEST(result.documentation.find("### `" + function->getName() + "`") == NomadString::npos);
+    }
+    BOOST_TEST(nestedFunctions > 0);
+    BOOST_TEST(members.find("#### `length` (*read-only property*)") != NomadString::npos);
+    BOOST_TEST(members.find("#### `toUpper` (*method*)") != NomadString::npos);
+    std::ostringstream genericMembers;
+    generateMemberDocumentation(&runtime, genericMembers);
+    BOOST_TEST(genericMembers.str() == members);
+    std::ostringstream nativeMembers;
+    generateNativeMemberDocumentation(&runtime, nativeMembers);
+    BOOST_TEST(nativeMembers.str().find("### `Counter`") == NomadString::npos);
+    BOOST_TEST(nativeMembers.str().find("### `model.Point`") == NomadString::npos);
+    BOOST_TEST(nativeMembers.str().find("#### `length` (*read-only property*)") != NomadString::npos);
+    BOOST_TEST(callbackCalls == 0);
+}
+
+BOOST_AUTO_TEST_CASE(class_reference_overloads_have_deterministic_order)
+{
+    TestDirectory directory("nomad_compilation_test_class_reference_order");
+    const NomadString integer =
+        "init amount:int\nthis.value = amount\nend\n"
+        "fun read amount:int\nreturn this.value + amount\nend\n";
+    const NomadString other =
+        "init text:string\nthis.value = text.length\nend\n"
+        "fun read amount:float\nreturn amount + 0.5\nend\n";
+    NomadString expected;
+    for (const auto reversed : {false, true}) {
+        const auto source = directory.write("classes.nomad",
+            "class Counter\nvalue = 1\n" + (reversed ? other + integer : integer + other) + "end");
+        const auto result = generateDocumentationForPath(source);
+        BOOST_REQUIRE(result.compilation.succeeded());
+        if (reversed) {
+            BOOST_TEST(result.documentation == expected);
+        } else {
+            expected = result.documentation;
+        }
+    }
 }
 
 BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)

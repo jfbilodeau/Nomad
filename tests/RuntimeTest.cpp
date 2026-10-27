@@ -730,6 +730,31 @@ BOOST_AUTO_TEST_CASE(documentation_includes_registered_type_descriptions)
     BOOST_TEST(documentation.find("undocumented") == NomadString::npos);
 }
 
+BOOST_AUTO_TEST_CASE(documentation_lists_native_factories_under_the_constructed_type)
+{
+    Runtime runtime;
+    const auto ownerId = runtime.createObjectType("Factory", ObjectTypeMode::Closed, "A factory.");
+    const auto resultId = runtime.createObjectType("Result", ObjectTypeMode::Closed, "A factory result.");
+    BOOST_REQUIRE(ownerId.isValid());
+    BOOST_REQUIRE(resultId.isValid());
+    auto callbackCalls = 0;
+    BOOST_REQUIRE(runtime.addConstructor(ownerId, resultId, {
+        .parameters = {},
+        .function = [&](VirtualMachine*) { ++callbackCalls; },
+        .documentation = "Creates a result."
+    }).isValid());
+    std::ostringstream output;
+    generateTypeDocumentation(&runtime, output);
+    const auto documentation = output.str();
+    const auto ownerStart = documentation.find("### `Factory`");
+    const auto resultStart = documentation.find("### `Result`");
+    BOOST_REQUIRE(ownerStart != NomadString::npos);
+    BOOST_REQUIRE(resultStart != NomadString::npos);
+    BOOST_TEST(documentation.substr(ownerStart, resultStart - ownerStart).find("Constructor:") == NomadString::npos);
+    BOOST_TEST(documentation.substr(resultStart).find("Constructor: `new Factory` -> `Result`") != NomadString::npos);
+    BOOST_TEST(callbackCalls == 0);
+}
+
 BOOST_AUTO_TEST_CASE(documentation_renders_function_parameters_as_a_markdown_list)
 {
     Runtime runtime;
