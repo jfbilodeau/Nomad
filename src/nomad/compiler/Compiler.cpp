@@ -3,6 +3,7 @@
 #include <nomad/compiler/Compiler.hpp>
 
 #include <nomad/compiler/CallNode.hpp>
+#include <nomad/compiler/ClassDeclaration.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/CompilerException.hpp>
 #include <nomad/compiler/LoopStatement.hpp>
@@ -17,6 +18,8 @@
 
 #include <nomad/system/String.hpp>
 
+#include <algorithm>
+
 namespace nomad {
 
 Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
@@ -28,21 +31,23 @@ Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
         addOpCode(OpCodes::op_stop);
     }
 
-    registerParseStatementFn("const", parseConstStatement, preParseConstStatement);
-    registerParseStatementFn("enum", parseEnumStatement, preParseEnumStatement);
-    registerParseStatementFn("event", parseEventStatement, preParseEventStatement);
-    registerParseStatementFn("fun", parseFunStatement, preParseFunStatement);
-    registerParseStatementFn("hub", parseHubStatement);
-    registerParseStatementFn("assert", parseAssertStatement);
-    registerParseStatementFn("if", parseIfStatement);
-    registerParseStatementFn("params", nullptr, preParseParamsStatement);
-    registerParseStatementFn("return", parseReturnStatement);
-    registerParseStatementFn("while", parseWhileStatement);
-    registerParseStatementFn("until", parseUntilStatement);
-    registerParseStatementFn("do", parseDoStatement);
-    registerParseStatementFn("break", parseBreakStatement);
-    registerParseStatementFn("continue", parseContinueStatement);
-    registerParseStatementFn("for", parseForStatement);
+    registerParseStatementFn("const", StatementAvailability::Compiler, parseConstStatement, preParseConstStatement);
+    registerParseStatementFn("enum", StatementAvailability::Compiler, parseEnumStatement, preParseEnumStatement);
+    registerParseStatementFn("event", StatementAvailability::Compiler, parseEventStatement, preParseEventStatement);
+    registerParseStatementFn("fun", StatementAvailability::Compiler, parseFunStatement, preParseFunStatement);
+    registerParseStatementFn("hub", StatementAvailability::Compiler, parseHubStatement, preParseHubStatement);
+    registerParseStatementFn("class", StatementAvailability::Compiler, parseClassStatement, preParseClassStatement);
+    registerParseStatementFn("open", StatementAvailability::Compiler, parseOpenStatement, preParseOpenStatement);
+    registerParseStatementFn("assert", StatementAvailability::Compiler, parseAssertStatement);
+    registerParseStatementFn("if", StatementAvailability::Both, parseIfStatement);
+    registerParseStatementFn("params", StatementAvailability::Compiler, nullptr, preParseParamsStatement);
+    registerParseStatementFn("return", StatementAvailability::Compiler, parseReturnStatement);
+    registerParseStatementFn("while", StatementAvailability::Both, parseWhileStatement);
+    registerParseStatementFn("until", StatementAvailability::Both, parseUntilStatement);
+    registerParseStatementFn("do", StatementAvailability::Both, parseDoStatement);
+    registerParseStatementFn("break", StatementAvailability::Both, parseBreakStatement);
+    registerParseStatementFn("continue", StatementAvailability::Both, parseContinueStatement);
+    registerParseStatementFn("for", StatementAvailability::Both, parseForStatement);
 
 }
 
@@ -56,7 +61,7 @@ void Compiler::reportError(const NomadString& message) const {
     throw CompilerException(message);
 }
 
-void Compiler::reportError(const NomadString& message, const ScriptFunction* function, const Tokenizer* tokenizer) const {
+void Compiler::reportError(const NomadString& message, const ScriptCallableBase* function, const Tokenizer* tokenizer) const {
     reportError(message, function->getName(), tokenizer->getLineIndex(), tokenizer->getColumnIndex());
 }
 
@@ -72,21 +77,27 @@ void Compiler::reportInternalError(const NomadString& message) const {
 
 void Compiler::registerParseStatementFn(
     const NomadString& name,
-    ParseStatementFn fn,
-    PreParseStatementFn preFn
-) {
-    m_statements.emplace(name, ParseStatementFnRegistration{ preFn, fn });
+    const StatementAvailability availability,
+    const ParseStatementFn fn,
+    const PreParseStatementFn preFn)
+{
+    m_statements.emplace(name, ParseStatementFnRegistration{ preFn, fn, availability });
 }
 
 bool Compiler::isStatement(const NomadString& name) const {
     return m_statements.find(name) != m_statements.end();
 }
 
-bool Compiler::getParseStatementFn(const NomadString& name, ParseStatementFn& fn) const {
+bool Compiler::getParseStatementFn(
+    const NomadString& name,
+    ParseStatementFn& fn,
+    StatementAvailability& availability
+) const {
     const auto it = m_statements.find(name);
 
     if (it != m_statements.end()) {
         fn = it->second.fn;
+        availability = it->second.availability;
 
         return true;
     }
@@ -94,7 +105,10 @@ bool Compiler::getParseStatementFn(const NomadString& name, ParseStatementFn& fn
     return false;
 }
 
-bool Compiler::getGetPreParseStatementFn(const NomadString& name, PreParseStatementFn& fn) const {
+bool Compiler::getPreParseStatementFn(
+    const NomadString& name,
+    PreParseStatementFn& fn
+) const {
     const auto it = m_statements.find(name);
 
     if (it != m_statements.end()) {
@@ -141,11 +155,11 @@ const Type* Compiler::getBinaryOperatorResultType(BinaryOperator op, const Type*
     return m_runtime->getBinaryOperatorResultType(op, lhsType, rhsType);
 }
 
-NomadId Compiler::getUnaryOperatorOpCodeId(UnaryOperator op, const Type* operand) const {
+OpCodeId Compiler::getUnaryOperatorOpCodeId(UnaryOperator op, const Type* operand) const {
     return m_runtime->getUnaryOperatorOpCodeId(op, operand);
 }
 
-NomadId Compiler::getBinaryOperatorOpCodeId(const BinaryOperator op, const Type* lhs, const Type* rhs) const {
+OpCodeId Compiler::getBinaryOperatorOpCodeId(const BinaryOperator op, const Type* lhs, const Type* rhs) const {
     return m_runtime->getBinaryOperatorOpCodeId(op, lhs, rhs);
 }
 
@@ -169,64 +183,13 @@ bool Compiler::foldBinary(
     return m_runtime->foldBinary(op, lhsType, lhs, rhsType, rhs, result);
 }
 
-NomadString Compiler::resolveName(
-    const NomadString& name,
-    const ScriptFunction* function,
-    NomadString hub
-) const {
-    const auto exists = [this](const NomadString& candidate) {
-        if (m_runtime->isHubVariable(candidate)) {
-            return false;
-        }
-        return getIdentifierType(candidate, nullptr) != IdentifierType::Unknown ||
-            m_runtime->getTypeByName(candidate) != nullptr ||
-            m_runtime->getEventId(candidate) != NOMAD_INVALID_ID ||
-            m_runtime->isHub(candidate) ||
-            m_runtime->getParameterizedTypeArgumentCount(candidate).has_value() ||
-            m_runtime->getParameterizedConstructorArgumentCount(candidate).has_value();
-    };
-    auto receiver = name;
-    while (!receiver.empty()) {
-        for (auto* scope = function; scope != nullptr;
-             scope = m_runtime->getScriptFunction(scope->getParentId())) {
-            if (scope->getVariableId(receiver) != NOMAD_INVALID_ID ||
-                scope->getParameterId(receiver) != NOMAD_INVALID_ID) {
-                return name;
-            }
-        }
-        const auto separator = receiver.rfind('.');
-        if (separator == NomadString::npos) {
-            break;
-        }
-        receiver.resize(separator);
+IdentifierType Compiler::getIdentifierType(const NomadString& name, const ScriptCallableBase* function) const {
+    if (getReceiverType(function) != nullptr) {
+        if (name == "this") return function->getObjectType() != nullptr ? IdentifierType::Receiver :
+            (function->getParameterId(name) != NOMAD_INVALID_ID ? IdentifierType::Parameter : IdentifierType::Unknown);
+        if (name.starts_with("this.")) return IdentifierType::Unknown;
     }
-    if (hub.empty() && function != nullptr) {
-        hub = function->getHub();
-    }
-    while (!hub.empty()) {
-        const auto candidate = hub + "." + name;
-        auto prefix = candidate;
-        while (prefix.size() > hub.size() + 1) {
-            if (exists(prefix)) {
-                return candidate;
-            }
-            const auto separator = prefix.rfind('.');
-            if (separator == NomadString::npos) {
-                break;
-            }
-            prefix.resize(separator);
-        }
-        const auto separator = hub.rfind('.');
-        if (separator == NomadString::npos) {
-            break;
-        }
-        hub.resize(separator);
-    }
-    return name;
-}
-
-IdentifierType Compiler::getIdentifierType(const NomadString& name, const ScriptFunction* function) const {
-    if (m_runtime->getKeywordId(name) != NOMAD_INVALID_ID) {
+    if (m_runtime->getKeywordId(name).isValid()) {
         return IdentifierType::Keyword;
     }
 
@@ -240,19 +203,19 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
         return IdentifierType::NativeFunction;
     }
 
-    if (m_runtime->getConstantId(name) != NOMAD_INVALID_ID) {
+    if (m_runtime->getConstantId(name).isValid()) {
         return IdentifierType::Constant;
     }
 
     if (callable != nullptr && callable->asScriptFunction() != nullptr) {
-        return IdentifierType::Function;
+        return IdentifierType::ScriptFunction;
     }
 
-    if (m_runtime->getDynamicVariableId(name) != NOMAD_INVALID_ID) {
+    if (m_runtime->getDynamicVariableId(name).isValid()) {
         return IdentifierType::DynamicVariable;
     }
 
-    if (m_runtime->getVariableContextIdByPrefix(name) != NOMAD_INVALID_ID) {
+    if (m_runtime->getVariableContextIdByPrefix(name).isValid()) {
         return IdentifierType::ContextVariable;
     }
 
@@ -260,7 +223,7 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
         return IdentifierType::Unknown;
     }
 
-    if (function->getVariableId(name) != NOMAD_INVALID_ID) {
+    if (function->getVariableId(name).isValid()) {
         return IdentifierType::FunctionVariable;
     }
 
@@ -270,7 +233,22 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
     return IdentifierType::Unknown;
 }
 
-void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunction* function, IdentifierDefinition& definition) const {
+void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptCallableBase* function, IdentifierDefinition& definition) const {
+    if (const auto* receiverType = getReceiverType(function)) {
+        if (name == "this") {
+            definition.identifierType = function->getObjectType() != nullptr ? IdentifierType::Receiver :
+                (function->getParameterId(name) != NOMAD_INVALID_ID ? IdentifierType::Parameter : IdentifierType::Unknown);
+            if (definition.identifierType == IdentifierType::Parameter) {
+                definition.parameterId = function->getParameterId(name);
+            }
+            definition.valueType = receiverType;
+            return;
+        }
+        if (name.starts_with("this.")) {
+            definition.identifierType = IdentifierType::Unknown;
+            return;
+        }
+    }
     if (name.empty()) {
         definition.identifierType = IdentifierType::Unknown;
 
@@ -297,7 +275,7 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
             definition.identifierType = IdentifierType::NativeFunction;
             definition.nativeFunctionId = callable->getId();
         } else {
-            definition.identifierType = IdentifierType::Function;
+            definition.identifierType = IdentifierType::ScriptFunction;
             definition.functionId = callable->getId();
         }
 
@@ -306,47 +284,47 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
         return;
     }
 
-    const NomadId eventId = m_runtime->getEventId(name);
+    const auto eventId = m_runtime->getEventId(name);
 
-    if (eventId != NOMAD_INVALID_ID) {
+    if (eventId.isValid()) {
         definition.identifierType = IdentifierType::Event;
         definition.eventId = eventId;
 
         return;
     }
 
-    const NomadId constantId = m_runtime->getConstantId(name);
+    const auto constantId = m_runtime->getConstantId(name);
 
-    if (constantId != NOMAD_INVALID_ID) {
+    if (constantId.isValid()) {
         definition.identifierType = IdentifierType::Constant;
-        definition.variableId = constantId;
+        definition.constantId = constantId;
         definition.valueType = m_runtime->getConstantType(constantId);
 
         return;
     }
 
-    const NomadId dynamicVariableId = m_runtime->getDynamicVariableId(name);
+    const auto dynamicVariableId = m_runtime->getDynamicVariableId(name);
 
-    if (dynamicVariableId != NOMAD_INVALID_ID) {
+    if (dynamicVariableId.isValid()) {
         definition.identifierType = IdentifierType::DynamicVariable;
-        definition.variableId = dynamicVariableId;
+        definition.dynamicVariableId = dynamicVariableId;
         definition.valueType = m_runtime->getDynamicVariableType(dynamicVariableId);
 
         return;
     }
 
-    const NomadId contextId = m_runtime->getVariableContextIdByPrefix(name);
+    const auto contextId = m_runtime->getVariableContextIdByPrefix(name);
 
-    if (contextId != NOMAD_INVALID_ID) {
+    if (contextId.isValid()) {
         const auto variableId = m_runtime->getContextVariableId(name);
 
-        if (variableId == NOMAD_INVALID_ID) {
+        if (variableId.isInvalid()) {
             definition.identifierType = IdentifierType::Unknown;
 
             return;
         }
 
-        definition.variableId = variableId;
+        definition.contextVariableId = variableId;
         definition.valueType = m_runtime->getContextVariableType(variableId);
 
         return;
@@ -359,9 +337,9 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
     }
 
     // Check if this is a local variable
-    const NomadId variableId = function->getVariableId(name);
+    const VariableId variableId = function->getVariableId(name);
 
-    if (variableId != NOMAD_INVALID_ID) {
+    if (variableId.isValid()) {
         definition.identifierType = IdentifierType::FunctionVariable;
         definition.variableId = variableId;
         definition.valueType = function->getVariableType(variableId);
@@ -372,7 +350,7 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
     const auto parameterId = function->getParameterId(name);
     if (parameterId != NOMAD_INVALID_ID) {
         definition.identifierType = IdentifierType::Parameter;
-        definition.variableId = parameterId;
+        definition.parameterId = parameterId;
         definition.valueType = function->getParameterType(parameterId);
         return;
     }
@@ -380,13 +358,115 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptFunc
     definition.identifierType = IdentifierType::Unknown;
 }
 
-bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type* type, const ScriptFunction* function,
+const Property* Compiler::resolveClassField(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    const NomadString& name,
+    const Type* valueType,
+    const bool allowDeclaration,
+    const NomadIndex line,
+    const NomadIndex column
+) {
+    const auto* receiver = getReceiverType(function);
+    const auto* owner = receiver != nullptr ? receiver->asObjectType() : nullptr;
+    if (owner == nullptr) {
+        reportInternalError("Class field resolution requires an object receiver");
+    }
+    const auto report = [&](const NomadString& message) {
+        context->reportError(message, function != nullptr ? function->getPath() : NomadString{}, line, column);
+    };
+    IdentifierDefinition receiverDefinition;
+    if (!resolveIdentifier("this", this, function, receiverDefinition)) {
+        report("Cannot capture the class receiver 'this'");
+        return nullptr;
+    }
+    const auto* property = resolveObjectField(
+        context, function, owner, name, valueType, allowDeclaration, line, column
+    );
+    if (property != nullptr && allowDeclaration) {
+        m_internalFields.insert(property->getId());
+    }
+    return property;
+}
+
+const Property* Compiler::resolveObjectField(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    const ObjectType* owner,
+    const NomadString& name,
+    const Type* valueType,
+    const bool allowDeclaration,
+    const NomadIndex line,
+    const NomadIndex column
+) {
+    const auto report = [&](const NomadString& message) {
+        context->reportError(message, function != nullptr ? function->getPath() : NomadString{}, line, column);
+    };
+    if (name.empty() || name.find('.') != NomadString::npos) {
+        report("Expected an unqualified class field name: '" + name + "'");
+        return nullptr;
+    }
+    for (const auto* method : owner->getMethods()) {
+        if (method->getName() == name) {
+            report("Class field '" + name + "' conflicts with a method");
+            return nullptr;
+        }
+    }
+    const auto* property = owner->getProperty(name);
+    if (property == nullptr && !allowDeclaration) {
+        report("Unknown class field '" + name + "'");
+        return nullptr;
+    }
+    if (valueType == nullptr) {
+        report("Cannot determine type of class field '" + name + "'");
+        return nullptr;
+    }
+    if (valueType->isVoid() || valueType->isInternal()) {
+        report("Invalid type for class field '" + name + "'");
+        return nullptr;
+    }
+    if (property != nullptr) {
+        if (property->getValueType() != valueType) {
+            report("Cannot assign type '" + valueType->getTypeName() + "' to class field '" + name +
+                "' of type '" + property->getValueType()->getTypeName() + "'");
+            return nullptr;
+        }
+        return property;
+    }
+    const auto id = m_runtime->registerProperty(owner->getId(), name, valueType);
+    if (id.isInvalid()) {
+        report("Cannot register class field '" + name + "'");
+        return nullptr;
+    }
+    m_externalFields.push_back({id, function != nullptr ? function->getPath() : NomadString{}, line, column});
+    return m_runtime->getProperty(id);
+}
+
+void Compiler::recordFieldRead(const PropertyId id) {
+    m_readFields.insert(id);
+}
+
+void Compiler::reportFieldDiagnostics(CompilerContext* context) const {
+    for (const auto& field : m_externalFields) {
+        if (m_internalFields.contains(field.id) || m_readFields.contains(field.id)) {
+            continue;
+        }
+        const auto* property = m_runtime->getProperty(field.id);
+        context->reportWarning(
+            "Externally introduced field '" + property->getObjectType()->getTypeName() + "." +
+                property->getName() + "' is assigned but never read",
+            field.sourceName, field.line, field.column
+        );
+    }
+}
+
+bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type* type, const ScriptCallableBase* function,
                                           NomadString& conflictingIdentifier) const {
     if (identifier.empty() || type == nullptr) {
         return false;
     }
 
-    std::vector<NomadId> members;
+    std::vector<MemberReference> members;
     m_runtime->getNativeMembers(type, members);
 
     for (const auto memberId : members) {
@@ -394,25 +474,26 @@ bool Compiler::getNativeMemberConflict(const NomadString& identifier, const Type
 
         switch (m_runtime->getMemberType(memberId)) {
         case MemberType::Property: {
-            NativePropertyDefinition definition;
-            if (!m_runtime->getNativePropertyDefinition(memberId, definition)) {
-                reportInternalError("Invalid native property id: " + toString(memberId));
+            const auto info = m_runtime->getNativePropertyInfo(memberId);
+            if (!info) {
+                reportInternalError("Invalid native property id: " + toString(std::get<PropertyId>(memberId).id));
             }
-            memberName = definition.name;
+            memberName = info->name;
             break;
         }
 
         case MemberType::Method: {
             const auto* method = m_runtime->getNativeMemberMethod(memberId);
             if (method == nullptr) {
-                reportInternalError("Invalid native method id: " + toString(memberId));
+                reportInternalError("Invalid native method id: " + toString(std::get<CallableId>(memberId).id));
             }
             memberName = method->getName();
             break;
         }
 
         case MemberType::Unknown:
-            reportInternalError("Invalid native member id: " + toString(memberId));
+            reportInternalError("Invalid native member id: " +
+                std::visit([](const auto id) { return toString(id.id); }, memberId));
         }
 
         const auto candidate = identifier + "." + memberName;
@@ -433,11 +514,11 @@ NomadIndex Compiler::getOpCodeSize() const {
     return m_instructions.size();
 }
 
-NomadIndex Compiler::addOpCode(NomadId opCode) {
+NomadIndex Compiler::addOpCode(OpCodeId opCode) {
     auto fn = m_runtime->getInstructionFn(opCode);
 
     if (fn == nullptr) {
-        reportInternalError("Unknown op code: " + toString(opCode));
+        reportInternalError("Unknown op code: " + toString(opCode.id));
     }
 
     m_instructions.emplace_back(fn);
@@ -448,7 +529,7 @@ NomadIndex Compiler::addOpCode(NomadId opCode) {
 NomadIndex Compiler::addOpCode(const NomadString& opCodeName) {
     const auto opCodeId = m_runtime->getInstructionId(opCodeName);
 
-    if (opCodeId == NOMAD_INVALID_ID) {
+    if (opCodeId.isInvalid()) {
         reportError("Unknown instruction: " + opCodeName);
     }
 
@@ -456,7 +537,7 @@ NomadIndex Compiler::addOpCode(const NomadString& opCodeName) {
 }
 
 NomadIndex Compiler::addOpCode(const InstructionFn opCode) {
-    if (opCode == nullptr || m_runtime->getInstructionId(opCode) == NOMAD_INVALID_ID) {
+    if (opCode == nullptr || m_runtime->getInstructionId(opCode).isInvalid()) {
         reportInternalError("BUG: Unregistered op code function");
     }
 
@@ -499,8 +580,8 @@ NomadIndex Compiler::addFloat(NomadFloat value) {
     return instruction;
 }
 
-NomadIndex Compiler::addLoadConstant(const NomadId constantId, const ExpressionTarget target) {
-    return addLoadTarget({op_constant_get_r, op_constant_get_i, op_constant_push}, constantId, target);
+NomadIndex Compiler::addLoadConstant(const ConstantId constantId, const ExpressionTarget target) {
+    return addLoadTarget({op_constant_get_r, op_constant_get_i, op_constant_push}, constantId.id, target);
 }
 
 NomadIndex Compiler::addLoadValue(const Type* type, const RuntimeValue& value, ExpressionTarget target) {
@@ -627,15 +708,15 @@ NomadIndex Compiler::addLoadStringValue(const NomadString& value, const Expressi
     switch (target) {
     case ExpressionTarget::Result:
         addOpCode(OpCodes::op_string_load_r);
-        return addId(stringId);
+        return addId(stringId.id);
 
     case ExpressionTarget::Intermediate:
         addOpCode(OpCodes::op_string_load_i);
-        return addId(stringId);
+        return addId(stringId.id);
 
     case ExpressionTarget::Stack:
         addOpCode(OpCodes::op_string_push_n);
-        return addId(stringId);
+        return addId(stringId.id);
     }
 
     this->reportInternalError("BUG: Invalid expression target for string value");
@@ -659,16 +740,20 @@ NomadIndex Compiler::addLoadTarget(const TargetOpCodes& opCodes, const NomadId o
     reportInternalError("BUG: Invalid expression target");
 }
 
-NomadIndex Compiler::addLoadFunctionVariable(const NomadId variableId, const Type* type, const ExpressionTarget target) {
-    return addLoadTarget(type->getTypeOpCodes()->loadFunctionVariable, variableId, target);
+NomadIndex Compiler::addLoadFunctionVariable(const VariableId variableId, const Type* type, const ExpressionTarget target) {
+    return addLoadTarget(type->getTypeOpCodes()->loadFunctionVariable, variableId.id, target);
 }
 
-NomadIndex Compiler::addLoadDynamicVariable(const NomadId variableId, const Type* type, const ExpressionTarget target) {
-    return addLoadTarget(type->getTypeOpCodes()->loadDynamicVariable, variableId, target);
+NomadIndex Compiler::addLoadDynamicVariable(const DynamicVariableId variableId, const Type* type, const ExpressionTarget target) {
+    return addLoadTarget(type->getTypeOpCodes()->loadDynamicVariable, variableId.id, target);
 }
 
-NomadIndex Compiler::addLoadContextVariable(const NomadId contextVariableId, const Type* type, const ExpressionTarget target) {
-    return addLoadTarget(type->getTypeOpCodes()->loadContextVariable, contextVariableId, target);
+NomadIndex Compiler::addLoadContextVariable(
+    const ContextVariableId contextVariableId,
+    const Type* type,
+    const ExpressionTarget target
+) {
+    return addLoadTarget(type->getTypeOpCodes()->loadContextVariable, contextVariableId.id, target);
 }
 
 NomadIndex Compiler::addLoadParameter(const NomadIndex parameterId, const Type* type, const ExpressionTarget target) {
@@ -723,32 +808,14 @@ void Compiler::addFreeValue(const InstructionFn freeOpCode, const NomadIndex ope
     }
 }
 
-NomadIndex Compiler::addFunctionCall(const NomadId targetFunctionId, ScriptFunction* function, const ArgumentList* arguments) {
-    const auto targetFunction = getRuntime()->getScriptFunction(targetFunctionId);
-
-    if (targetFunction == nullptr) {
-        reportInternalError("Unknown function id: " + toString(targetFunctionId));
-    }
-
-    const auto argumentCount = arguments->getArgumentCount();
-
-    if (argumentCount != targetFunction->getParameterCount()) {
-        reportInternalError("BUG: Argument count does not match parameters of function '" + targetFunction->getName() + "'");
-    }
-
+NomadIndex Compiler::addScriptFunctionCall(const CallableId targetFunctionId, ScriptCallableBase* function, const ArgumentList* arguments) {
+    addOpCode(OpCodes::op_push_this);
     arguments->compile(this, function);
-
-    addOpCode(OpCodes::op_call_function);
-
-    if (targetFunction->getFunctionStart() == NOMAD_INVALID_INDEX) {
-        addFunctionLink(targetFunctionId, m_instructions.size());
-
-        addIndex(NOMAD_INVALID_INDEX); // Placeholder for function jump index
-    } else {
-        addIndex(targetFunction->getFunctionStart());
-    }
-
+    addOpCode(OpCodes::op_call_script_function);
+    addFunctionLink(targetFunctionId, m_instructions.size());
+    addIndex(0);
     addFreeArguments(arguments);
+    addOpCode(OpCodes::op_pop_this);
 
     return m_instructions.size() - 1;
 }
@@ -761,7 +828,7 @@ void Compiler::addFreeArguments(const ArgumentList* arguments) {
     }
 
     // Arguments are pushed right-to-left, so the first argument is at the top of the stack. Offsets account for
-    // arguments occupying more than one slot. The optional `this` is below the arguments and is popped, not freed.
+    // arguments occupying more than one slot. An owned evaluated receiver follows the arguments.
     NomadIndex stackOffset = 0;
 
     for (const auto& argument : arguments->getArguments()) {
@@ -772,6 +839,9 @@ void Compiler::addFreeArguments(const ArgumentList* arguments) {
         stackOffset += argument->getStackValueCount();
     }
 
+    if (const auto* receiverType = arguments->getReceiverType()) {
+        addFreeValue(receiverType->getTypeOpCodes()->freeStack, stackOffset);
+    }
     switch (stackCount) {
     case 1:
         addOpCode(OpCodes::op_pop_1);
@@ -791,75 +861,98 @@ void Compiler::addFreeArguments(const ArgumentList* arguments) {
     }
 }
 
-NomadIndex Compiler::addNativeFunctionCall(const NomadId nativeFunctionId, ScriptFunction* function, const ArgumentList* arguments) {
+NomadIndex Compiler::addNativeFunctionCall(const CallableId nativeFunctionId, ScriptCallableBase* function, const ArgumentList* arguments) {
+    addOpCode(OpCodes::op_push_this);
     arguments->compile(this, function);
-
-    if (m_runtime->getNativeFunction(nativeFunctionId) == nullptr) {
-        reportInternalError("Unknown native function: " + toString(nativeFunctionId));
-    }
-
     addOpCode(OpCodes::op_call_native_function);
-    addIndex(nativeFunctionId);
-
+    addId(nativeFunctionId.id);
     addFreeArguments(arguments);
-
-    // if (!nativeFunction.parameters.empty()) {
-    //     for (auto i = 0; i < nativeFunction.parameters.size(); i++) {
-    //         const auto& parameter = nativeFunction.parameters[i];
-    //
-    //         if (parameter.type == getRuntime()->getStringType()) {
-    //             addOpCode(OpCodes::op_string_free_stack);
-    //             addIndex(i);
-    //         }
-    //     }
-    //
-    //     addOpCode(OpCodes::op_pop_n);
-    //     addIndex(arguments->getArgumentCount());
-    // }
+    addOpCode(OpCodes::op_pop_this);
 
     return m_instructions.size() - 1;
 }
 
-NomadIndex Compiler::addConstructorCall(const NomadId constructorId, ScriptFunction* function, const ArgumentList* arguments) {
+NomadIndex Compiler::addScriptConstructorCall(
+    const CallableId constructorId,
+    const TypeId typeId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments
+) {
+    addOpCode(OpCodes::op_push_this);
     arguments->compile(this, function);
-
-    addOpCode(OpCodes::op_object_new);
-    addId(constructorId);
-
+    addOpCode(OpCodes::op_call_script_constructor);
+    addFunctionLink(constructorId, m_instructions.size());
+    addIndex(0);
+    addId(typeId.id);
     addFreeArguments(arguments);
+    addOpCode(OpCodes::op_move_this_to_r);
+    addOpCode(OpCodes::op_pop_this);
 
     return m_instructions.size() - 1;
 }
 
-NomadIndex Compiler::addNativeMethodCall(const NomadId memberId, ScriptFunction* function,
-                                            const ArgumentList* arguments) {
+NomadIndex Compiler::addNativeConstructorCall(const CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments) {
+    addOpCode(OpCodes::op_push_this);
     arguments->compile(this, function);
+    addOpCode(OpCodes::op_call_native_constructor);
+    addId(constructorId.id);
+    addFreeArguments(arguments);
+    addOpCode(OpCodes::op_move_this_to_r);
+    addOpCode(OpCodes::op_pop_this);
 
-    const auto argumentCount = arguments->getArgumentCount();
-    addOpCode(op_native_method_call);
-    addId(memberId);
-    addIndex(argumentCount);
+    return m_instructions.size() - 1;
+}
+
+NomadIndex Compiler::addScriptMethodCall(
+    const CallableId memberId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments
+) {
+    arguments->compile(this, function);
+    addOpCode(OpCodes::op_bind_this_from_stack);
+    addIndex(arguments->getArgumentCount());
+    addOpCode(OpCodes::op_call_script_method);
+    addFunctionLink(memberId, m_instructions.size());
+    addIndex(0);
 
     addFreeArguments(arguments);
+    addOpCode(OpCodes::op_pop_this);
+
+    return m_instructions.size() - 1;
+}
+
+NomadIndex Compiler::addNativeMethodCall(
+    const CallableId memberId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments
+) {
+    arguments->compile(this, function);
+    addOpCode(OpCodes::op_bind_this_from_stack);
+    addIndex(arguments->getArgumentCount());
+    addOpCode(OpCodes::op_call_native_method);
+    addId(memberId.id);
+
+    addFreeArguments(arguments);
+    addOpCode(OpCodes::op_pop_this);
 
     return m_instructions.size() - 1;
 }
 
 void Compiler::setOpCode(const NomadIndex index, const NomadString& opCodeName) {
-    NomadId opCodeId = m_runtime->getInstructionId(opCodeName);
+    const auto opCodeId = m_runtime->getInstructionId(opCodeName);
 
-    if (opCodeId == NOMAD_INVALID_ID) {
+    if (opCodeId.isInvalid()) {
         reportInternalError("Unknown op code: " + opCodeName);
     }
 
     setOpCode(index, opCodeId);
 }
 
-void Compiler::setOpCode(NomadIndex index, NomadId opCodeId) {
+void Compiler::setOpCode(NomadIndex index, OpCodeId opCodeId) {
     auto fn = m_runtime->getInstructionFn(opCodeId);
 
     if (fn == nullptr) {
-        reportInternalError("Unknown op code: " + toString(opCodeId));
+        reportInternalError("Unknown op code: " + toString(opCodeId.id));
     }
 
     m_instructions[index].fn = fn;
@@ -876,7 +969,7 @@ void Compiler::setIndex(NomadIndex index, NomadIndex value) {
 
 void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scriptFile, const bool hubsOnly) {
     const CompilerHubScope scriptScope(*context, {});
-    auto function = m_runtime->getScriptFunction(scriptFile.functionId);
+    auto function = m_runtime->getScriptCallable(scriptFile.functionId);
     auto& tokens = *scriptFile.tokens;
 
     tokens.reset();
@@ -895,26 +988,24 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
             }
             continue;
         }
-        if (statement == "hub") {
-            NomadString name;
-            if (!tokens.nextIdentifier(name) || !tokens.endOfLine()) {
-                context->reportError("Expected a hub name followed by end of line", &tokens);
-                continue;
-            }
-            if (blocks.size() >= 64) {
-                context->reportError("Hub nesting exceeds the maximum depth of 64", &tokens);
-                continue;
-            }
-            const auto qualifiedName = context->qualifyDeclaration(name);
-            blocks.push_back({context->getHub(), true});
-            if (!m_runtime->registerHub(qualifiedName)) {
-                context->reportError("Cannot declare hub '" + qualifiedName + "': invalid or conflicting name", &tokens);
-            }
-            context->setHub(qualifiedName);
+        PreParseStatementFn preParseStatementFn;
+        ParseStatementFn parseStatementFn;
+        StatementAvailability availability;
+        if (getParseStatementFn(statement, parseStatementFn, availability) &&
+            availability == StatementAvailability::Interpreter) {
             continue;
         }
-
-        PreParseStatementFn preParseStatementFn;
+        const auto previousHub = context->getHub();
+        if (getPreParseStatementFn(statement, preParseStatementFn) && preParseStatementFn) {
+            (void)preParseStatementFn(
+                context, function, &tokens,
+                hubsOnly ? PreParsePhase::Declarations : PreParsePhase::Signatures
+            );
+        }
+        if (context->getHub() != previousHub) {
+            blocks.push_back({previousHub, true});
+            continue;
+        }
 
         if (hubsOnly && statement == "enum") {
             while (tokens.nextLine() && !tokens.is("end")) {}
@@ -928,29 +1019,14 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
                 context->reportError("Hub variable declarations require an unqualified member name", &tokens);
             } else if (!m_hubVariableDeclarations.insert(name).second) {
                 context->reportError("Hub variable '" + name + "' has more than one initializer", &tokens);
-            } else if (m_runtime->registerHubVariable(name) == NOMAD_INVALID_ID) {
+            } else if (m_runtime->registerHubVariable(name).isInvalid()) {
                 context->reportError("Hub member '" + name + "' is already declared or conflicts with an identifier", &tokens);
             }
-        }
-        if (!hubsOnly && getGetPreParseStatementFn(statement, preParseStatementFn) && preParseStatementFn) {
-            // Errors are reported to the context; keep going to collect errors from the following lines.
-            (void)preParseStatementFn(context, function, &tokens);
         }
         if (statement == "enum") {
             continue; // Enum pre-parsing consumes its own closing end.
         }
-        auto opensBlock = statement == "fun" || statement == "while" || statement == "until" ||
-            statement == "do" || statement == "for" || statement == "if";
-        for (NomadIndex index = 1; index < tokens.getTokenCount(); ++index) {
-            const auto& token = tokens.getTokenAt(index);
-            if (token == "fun") {
-                opensBlock = true;
-            }
-            if (statement == "if" && (token == "break" || token == "continue")) {
-                opensBlock = false;
-            }
-        }
-        if (opensBlock) {
+        for (auto count = parser::countBlockOpenings(&tokens); count > 0; --count) {
             blocks.push_back({context->getHub(), false});
         }
     }
@@ -967,7 +1043,7 @@ void Compiler::parseFunction(CompilerContext* context, ScriptCompilation& file) 
 
     // Statements with errors are skipped so the following lines are still parsed.
     while (tokens.nextLine()) {
-        const auto function = m_runtime->getScriptFunction(file.functionId);
+        const auto function = m_runtime->getScriptCallable(file.functionId);
 
         auto statement = parser::parseLine(context, function, &tokens);
 
@@ -978,11 +1054,11 @@ void Compiler::parseFunction(CompilerContext* context, ScriptCompilation& file) 
 
     ast->setEndSpan(tokens.getLineCount(), 0);
 
-    setFunctionNode(file.functionId, std::move(ast));
+    setFunctionBody(file.functionId, std::move(ast));
 }
 
 bool Compiler::resolveFunction(CompilerContext* context, const FunctionCompilation& source) {
-    if (source.hubInitializer) {
+    if (source.kind == CompilationCallableTarget::HubInitializer) {
         CompilerContext initializerContext(this, context->getMode(), nullptr, true);
         initializerContext.setHub(source.function->getHub());
         const auto resolved = source.ast->resolve(&initializerContext, source.function);
@@ -993,6 +1069,7 @@ bool Compiler::resolveFunction(CompilerContext* context, const FunctionCompilati
 }
 
 void Compiler::checkReturnPaths(CompilerContext* context, const FunctionCompilation& source) const {
+    if (source.kind == CompilationCallableTarget::Constructor) return;
     const auto* returnType = source.function->getReturnType();
 
     if (returnType == nullptr || returnType->isVoid() || source.ast->alwaysReturns()) {
@@ -1014,7 +1091,7 @@ void Compiler::inferTypes(CompilerContext* context) {
     // resolve pass reports errors once, when every type that can be inferred is known.
     auto inferredTypes = collectInferredTypes();
 
-    for (NomadIndex pass = 0; pass <= m_functions.size(); ++pass) {
+    while (true) {
         CompilerContext inferenceContext(this, context->getMode());
 
         for (const auto& source: m_functions) {
@@ -1049,19 +1126,28 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
 
     for (const auto& source: m_functions) {
         types.push_back(source.function->getReturnType());
+        if (const auto* receiver = source.function->getObjectType()) {
+            for (const auto* property : receiver->asObjectType()->getProperties()) {
+                types.push_back(property->getValueType());
+            }
+        }
 
         for (NomadIndex variableIndex = 0; variableIndex < source.function->getVariableCount(); ++variableIndex) {
-            types.push_back(source.function->getVariableType(toNomadId(variableIndex)));
+            types.push_back(source.function->getVariableType(VariableId{toNomadId(variableIndex)}));
         }
     }
 
-    for (auto contextId = m_runtime->getFirstVariableContextId(); contextId != NOMAD_INVALID_ID;
+    for (auto contextId = m_runtime->getFirstVariableContextId(); contextId.isValid();
          contextId = m_runtime->getNextVariableContextId(contextId)) {
         const auto* variableContext = m_runtime->getVariableContext(contextId);
 
-        for (auto variableId = variableContext->getFirstVariableId(); variableId != NOMAD_INVALID_ID;
+        for (auto variableId = variableContext->getFirstVariableId(); variableId.isValid();
              variableId = variableContext->getNextVariableId(variableId)) {
             types.push_back(variableContext->getVariableType(variableId));
+        }
+
+        for (const auto& field : m_externalFields) {
+            types.push_back(m_runtime->getProperty(field.id)->getValueType());
         }
     }
 
@@ -1069,26 +1155,105 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
 }
 
 void Compiler::compileFunction(const FunctionCompilation& source) {
-    ScriptFunction* function = source.function;
-
+    auto* function = source.function;
     function->setFunctionStart(m_instructions.size());
-
+    addFunctionEntry(function);
     source.ast->compile(this, function);
-
-    // Unreachable for valid programs: `checkReturnPaths` rejects functions returning a value that can reach their end.
-    // Kept as a safety net so a caller never takes ownership of whatever `r` last held.
+    // Safety net for the inferred string return type; valid value-returning bodies cannot fall through.
     if (const auto* returnType = function->getReturnType(); returnType != nullptr && returnType->isString()) {
         addLoadStringValue("", ExpressionTarget::Result);
     }
-
     addFunctionReturn(function);
-
     function->setFunctionEnd(m_instructions.size());
 }
 
-void Compiler::addFunctionReturn(const ScriptFunction* function) {
-    const NomadIndex variableCount = function->getVariableCount();
+void Compiler::compileObjectInitializer(const FunctionCompilation& source) {
+    auto* function = source.function;
+    const auto* owner = function->getObjectType()->asObjectType();
+    function->setFunctionStart(m_instructions.size());
+    addFunctionEntry(function);
+    source.ast->compile(this, function);
+    for (const auto* property : owner->getProperties()) {
+        if (property->asNativeProperty() != nullptr || property->hasExplicitInitializer()) {
+            continue;
+        }
+        addOpCode(OpCodes::op_code_load_default_r);
+        addId(property->getValueType()->getId().id);
+        addLoadReceiver(function, ExpressionTarget::Intermediate);
+        addOpCode(OpCodes::op_native_property_set);
+        addId(property->getId().id);
+        addFreeValue(property->getValueType()->getTypeOpCodes()->freeResult);
+        addFreeValue(owner->getTypeOpCodes()->freeIntermediate);
+    }
+    addFunctionReturn(function);
+    function->setFunctionEnd(m_instructions.size());
+}
 
+void Compiler::compileConstructor(const FunctionCompilation& source) {
+    auto* constructor = source.function;
+    constructor->setFunctionStart(m_instructions.size());
+    addFunctionEntry(constructor);
+    const auto* type = constructor->getObjectType()->asObjectType();
+    const auto methods = type->getMethods();
+    const auto initializer = std::ranges::find_if(methods, [&](const auto* method) {
+        return method->getName() == type->getInitializerName();
+    });
+    if (initializer == methods.end()) {
+        reportInternalError("Missing class initializer: " + type->getInitializerName());
+    }
+    addOpCode(OpCodes::op_push_this);
+    addOpCode(OpCodes::op_call_script_method);
+    addFunctionLink((*initializer)->getId(), m_instructions.size());
+    addIndex(0);
+    addOpCode(OpCodes::op_pop_this);
+    source.ast->compile(this, constructor);
+    addFunctionReturn(constructor);
+    constructor->setFunctionEnd(m_instructions.size());
+}
+
+void Compiler::addFunctionEntry(const ScriptCallableBase* function) {
+    const auto count = function->getVariableCount();
+    if (count > 0) {
+        addOpCode(OpCodes::op_stack_reserve);
+        addIndex(count);
+    }
+    for (auto index = NomadIndex{0}; index < count; ++index) {
+        if (function->getVariableType(VariableId{toNomadId(index)})->isString()) {
+            addLoadStringValue("", ExpressionTarget::Result);
+            addOpCode(OpCodes::op_function_variable_set);
+            addId(toNomadId(index));
+        }
+    }
+}
+
+void Compiler::addStoreParameter(const NomadId parameterId, const Type* type) {
+    if (type->needsFree()) {
+        addOpCode(OpCodes::op_object_free_parameter);
+        addId(parameterId);
+    }
+    addOpCode(OpCodes::op_parameter_set);
+    addId(parameterId);
+}
+
+void Compiler::addLoadReceiver(ScriptCallableBase* function, const ExpressionTarget target) {
+    if (function->getObjectType() != nullptr) {
+        if (target == ExpressionTarget::Intermediate) {
+            addOpCode(OpCodes::op_copy_this_to_i);
+        } else {
+            addOpCode(OpCodes::op_copy_this_to_r);
+            addMoveResult(function->getObjectType(), target);
+        }
+    } else {
+        const auto parameterId = function->getParameterId("this");
+        if (parameterId == NOMAD_INVALID_ID) {
+            reportInternalError("Missing receiver capture");
+        }
+        addLoadParameter(parameterId, function->getParameterType(parameterId), target);
+    }
+}
+
+void Compiler::addFunctionReturn(const ScriptCallableBase* function) {
+    const NomadIndex variableCount = function->getVariableCount();
     if (variableCount == 0) {
         addOpCode(OpCodes::op_return);
 
@@ -1097,11 +1262,23 @@ void Compiler::addFunctionReturn(const ScriptFunction* function) {
 
     // Free owned variables before releasing the function's variable slots.
     for (auto i = NomadIndex{0}; i < variableCount; ++i) {
-        addFreeValue(function->getVariableType(toNomadId(i))->getTypeOpCodes()->freeFunctionVariable, i);
+        addFreeValue(function->getVariableType(VariableId{toNomadId(i)})->getTypeOpCodes()->freeFunctionVariable, i);
     }
 
-    addOpCode(OpCodes::op_return_n);
-    addIndex(variableCount);
+    switch (variableCount) {
+    case 1:
+        addOpCode(OpCodes::op_return_1);
+        break;
+    case 2:
+        addOpCode(OpCodes::op_return_2);
+        break;
+    case 3:
+        addOpCode(OpCodes::op_return_3);
+        break;
+    default:
+        addOpCode(OpCodes::op_return_n);
+        addIndex(variableCount);
+    }
 }
 
 void Compiler::registerScript(CompilerContext* context, const ScriptSource& script) {
@@ -1113,59 +1290,92 @@ void Compiler::registerScript(CompilerContext* context, const ScriptSource& scri
     const auto scriptId = toNomadId(m_scripts.size());
     m_scripts.push_back({script, nullptr, NOMAD_INVALID_ID});
     const auto functionId = createFunction(context, scriptId, script.scriptName);
-    if (functionId == NOMAD_INVALID_ID) {
+    if (functionId.isInvalid()) {
         m_scripts.pop_back();
         return;
     }
     m_scripts.back().functionId = functionId;
 }
 
-NomadId Compiler::createFunction(
+CallableId Compiler::createFunction(
     CompilerContext* context,
     const NomadId scriptId,
     const NomadString& functionName,
-    const bool hubInitializer
+    const CompilationCallableTarget kind
 ) {
     if (context == nullptr || context->getCompiler() != this) {
         throw NomadBug("Function creation requires this compiler's context");
     }
     const auto& source = getScript(scriptId).source;
     const auto existingFunctionId = m_runtime->getFunctionId(functionName);
-    if (existingFunctionId != NOMAD_INVALID_ID) {
-        const auto* existingFunction = m_runtime->getScriptFunction(existingFunctionId);
+    if (existingFunctionId != CallableId{}) {
+        const auto* existingFunction = m_runtime->getScriptCallable(existingFunctionId);
         context->reportError(
             "Function name '" + functionName + "' is already used by '" + existingFunction->getPath() + "'",
             source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
 
     const auto functionId = m_runtime->registerScriptFunction(functionName, source.sourceName, source.text);
-    if (functionId == NOMAD_INVALID_ID) {
+    if (functionId == CallableId{}) {
         context->reportError("Could not register function '" + functionName + "'",
             source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
 
-    auto function = m_runtime->getScriptFunction(functionId);
+    auto function = m_runtime->getScriptCallable(functionId);
     function->setHub(context->getHub());
 
     m_functions.emplace_back(FunctionCompilation {
         scriptId,
         {},
         function,
-        hubInitializer
+        kind
     });
 
     return functionId;
 }
 
-NomadId Compiler::getScriptId(const NomadId functionId) const {
+NomadId Compiler::getScriptId(const CallableId functionId) const {
     for (const auto& function : m_functions) {
         if (function.function->getId() == functionId) {
             return function.scriptId;
         }
     }
-    throw NomadBug("Function does not belong to a registered script: " + toString(functionId));
+    throw NomadBug("Function does not belong to a registered script: " + toString(functionId.id));
+}
+
+void Compiler::registerMemberCompilation(
+    const CallableId memberId,
+    const CallableId sourceFunctionId,
+    const CompilationCallableTarget kind
+) {
+    auto* member = m_runtime->getScriptCallable(memberId);
+    if (member == nullptr || member->getObjectType() == nullptr) {
+        reportInternalError("Invalid script member compilation");
+    }
+    const auto scriptId = getScriptId(sourceFunctionId);
+    m_functions.push_back({scriptId, {}, member, kind});
+}
+
+const Type* Compiler::getReceiverType(const ScriptCallableBase* function) const {
+    while (function != nullptr) {
+        if (function->getObjectType() != nullptr) return function->getObjectType();
+        function = m_runtime->getScriptCallable(function->getParentId());
+    }
+    return nullptr;
+}
+
+bool Compiler::isFieldInitializer(const ScriptCallableBase* function) const {
+    while (function != nullptr) {
+        if (std::ranges::any_of(m_functions, [&](const auto& source) {
+            return source.function == function && source.kind == CompilationCallableTarget::ObjectInitializer;
+        })) {
+            return true;
+        }
+        function = m_runtime->getScriptCallable(function->getParentId());
+    }
+    return false;
 }
 
 const ScriptSource& Compiler::getScript(const NomadId scriptId) const {
@@ -1175,7 +1385,10 @@ const ScriptSource& Compiler::getScript(const NomadId scriptId) const {
     return m_scripts[toNomadIndex(scriptId)].script;
 }
 
-void Compiler::setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode> ast) {
+void Compiler::setFunctionBody(
+    CallableId functionId,
+    std::unique_ptr<FunctionNode> ast
+) {
     for (auto& source: m_functions) {
         if (source.function->getId() == functionId) {
             source.function->setSourceLineRange(
@@ -1188,7 +1401,7 @@ void Compiler::setFunctionNode(NomadId functionId, std::unique_ptr<FunctionNode>
         }
     }
 
-    reportInternalError("Unknown function id: " + toString(functionId));
+    reportInternalError("Unknown function id: " + toString(functionId.id));
 }
 
 void Compiler::registerSources(CompilerContext* context, const SourceBatch& batch) {
@@ -1204,7 +1417,7 @@ void Compiler::registerSources(CompilerContext* context, const SourceBatch& batc
 
 void Compiler::deferFormatString(
     FormatStringLiteral* literal,
-    const NomadId functionId,
+    const CallableId functionId,
     NomadString sourceContent,
     NomadString hub,
     const bool hubInitializer
@@ -1225,13 +1438,13 @@ void Compiler::registerScriptInitializer(
     const NomadId scriptId,
     std::unique_ptr<HubInitializerStatement> initializer
 ) {
-    if (m_scriptInitializerId == NOMAD_INVALID_ID) {
-        m_scriptInitializerId = createFunction(context, scriptId, "$init");
-        if (m_scriptInitializerId == NOMAD_INVALID_ID) {
+    if (m_scriptInitializerId.isInvalid()) {
+        m_scriptInitializerId = createFunction(context, scriptId, "$init", CompilationCallableTarget::HubInitializer);
+        if (m_scriptInitializerId.isInvalid()) {
             return;
         }
-        m_runtime->getScriptFunction(m_scriptInitializerId)->setHub({});
-        setFunctionNode(m_scriptInitializerId, std::make_unique<FunctionNode>(0, 0));
+        m_runtime->getScriptCallable(m_scriptInitializerId)->setHub({});
+        setFunctionBody(m_scriptInitializerId, std::make_unique<FunctionNode>(0, 0));
     }
     for (auto& source : m_functions) {
         if (source.function->getId() == m_scriptInitializerId) {
@@ -1423,7 +1636,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     // Parsing a placeholder can append nested format literals to the queue.
     for (auto index = NomadIndex{0}; index < m_pendingFormatStrings.size(); ++index) {
         const auto pending = std::move(m_pendingFormatStrings[index]);
-        auto* function = m_runtime->getScriptFunction(pending.functionId);
+        auto* function = m_runtime->getScriptCallable(pending.functionId);
         reportExceptions(function->getPath(), [&] {
             CompilerContext placeholderContext(this, context->getMode(), nullptr, pending.hubInitializer);
             placeholderContext.setHub(pending.hub);
@@ -1445,6 +1658,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         inferTypes(context);
     });
 
+    m_readFields.clear();
     for (const auto& source: m_functions) {
         log::debug("Syntax checking function '" + source.function->getName() + "' (" + source.function->getPath() + ")");
 
@@ -1455,6 +1669,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         });
     }
 
+    reportFieldDiagnostics(context);
     if (hasNewErrors()) {
         return false;
     }
@@ -1479,7 +1694,18 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         log::debug("Compiling function '" + source.function->getName() + "' (" + source.function->getPath() + ")");
 
         reportExceptions(source.function->getPath(), [&] {
-            compileFunction(source);
+            switch (source.kind) {
+                case CompilationCallableTarget::ObjectInitializer:
+                    compileObjectInitializer(source);
+                    break;
+                case CompilationCallableTarget::Constructor:
+                    compileConstructor(source);
+                    break;
+                case CompilationCallableTarget::Function:
+                case CompilationCallableTarget::HubInitializer:
+                    compileFunction(source);
+                    break;
+            }
         });
     }
 
@@ -1508,7 +1734,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     if (!beginPhase(CompilationPhase::Completed)) {
         return false;
     }
-    if (m_scriptInitializerId != NOMAD_INVALID_ID) {
+    if (m_scriptInitializerId.isValid()) {
         reportExceptions({}, [&] {
             installScriptInitialValues();
             m_runtime->setScriptInitializer(m_scriptInitializerId);
@@ -1521,17 +1747,17 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
 
     return true;
 }
-void Compiler::addFunctionLink(NomadId functionId, NomadIndex callIndex) {
+void Compiler::addFunctionLink(CallableId functionId, NomadIndex callIndex) {
     m_functionLinks.emplace_back(FunctionLink{functionId, callIndex});
 }
 
-void Compiler::addFunctionCallDependency(const NomadId callerFunctionId, const NomadId calleeFunctionId) {
+void Compiler::addFunctionCallDependency(const CallableId callerFunctionId, const CallableId calleeFunctionId) {
     m_functionCallDependencies[callerFunctionId].insert(calleeFunctionId);
 }
 
-bool Compiler::isRecursiveFunctionCall(const NomadId callerFunctionId, const NomadId calleeFunctionId) const {
-    std::unordered_set<NomadId> visited;
-    std::vector<NomadId> pending = { calleeFunctionId };
+bool Compiler::isRecursiveFunctionCall(const CallableId callerFunctionId, const CallableId calleeFunctionId) const {
+    std::unordered_set<CallableId, IdHash> visited;
+    std::vector<CallableId> pending = { calleeFunctionId };
 
     while (!pending.empty()) {
         const auto functionId = pending.back();
@@ -1557,16 +1783,16 @@ bool Compiler::isRecursiveFunctionCall(const NomadId callerFunctionId, const Nom
     return callerFunctionId == calleeFunctionId;
 }
 
-void Compiler::addReturningFunction(const NomadId functionId) {
+void Compiler::addReturningFunction(const CallableId functionId) {
     m_returningFunctions.insert(functionId);
 }
 
 void Compiler::linkFunctions() {
     for (auto& link: m_functionLinks) {
-        auto function = m_runtime->getScriptFunction(link.functionId);
+        auto function = m_runtime->getScriptCallable(link.functionId);
 
         if (function == nullptr) {
-            reportInternalError("Failed to link function '" + toString(link.functionId) + "'");
+            reportInternalError("Failed to link function '" + toString(link.functionId.id) + "'");
         }
         if (function->getFunctionStart() == NOMAD_INVALID_INDEX) {
             reportInternalError("Function '" + function->getName() + "' has not been compiled");
@@ -1580,12 +1806,12 @@ void Compiler::postCompile(CompilerContext* compilerContext) {
     // verify that all variables have been initialized and are used
     auto contextId = m_runtime->getFirstVariableContextId();
 
-    while (contextId != NOMAD_INVALID_ID) {
+    while (contextId.isValid()) {
         const auto context = m_runtime->getVariableContext(contextId);
 
         auto variableId = context->getFirstVariableId();
 
-        while (variableId != NOMAD_INVALID_ID) {
+        while (variableId.isValid()) {
             const auto variableName = context->getVariableName(variableId);
 
             if (!context->isWritten(variableId)) {
@@ -1610,12 +1836,12 @@ NomadString Compiler::generateFunctionName(const NomadString& generatedName, con
     do {
         generatedFunctionName = FUNCTION_INTERNAL_NAME_PREFIX + generatedName + "_" + hostFunctionName + "_" + std::to_string(line) + "_" + std::to_string(index);
         ++index;
-    } while (m_runtime->getFunctionId(generatedFunctionName) != NOMAD_INVALID_ID);
+    } while (m_runtime->getFunctionId(generatedFunctionName).isValid());
 
     return generatedFunctionName;
 }
 
-NomadString Compiler::generateFunctionName(const NomadString& name, const ScriptFunction* function, NomadIndex line) {
+NomadString Compiler::generateFunctionName(const NomadString& name, const ScriptCallableBase* function, NomadIndex line) {
     return generateFunctionName(name, function->getName(), line);
 }
 

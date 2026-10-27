@@ -2,11 +2,17 @@
 
 #include <nomad/lsp/LanguageServer.hpp>
 
+#include <nomad/lsp/SignatureHelp.hpp>
+
+#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
+#include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/project/ProjectConfiguration.hpp>
 
+#include <nomad/script/Property.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
@@ -51,6 +57,7 @@ struct ApiSymbol {
     NomadString documentation;
     NomadString valueType = {};
     NomadString receiverType = {};
+    NomadString overloadKey = {};
 };
 
 struct ApiCatalogKey {
@@ -71,10 +78,31 @@ struct ApiAnalysis {
     std::vector<ApiSymbol> symbols;
     std::set<NomadString> localNames;
     bool recover;
+    json::value signatureHelp;
 };
 
 std::map<NomadPath, AnalysisGroup> collectAnalysisGroups(const LanguageDocuments& documents);
 NomadPath documentPath(const NomadString& uri);
+NomadString symbolValueType(const std::vector<ApiSymbol>& symbols, const NomadString& name);
+
+ApiSymbol createMethodSymbol(const Method& method) {
+    const auto receiver = method.getObjectType()->getTypeName();
+    auto signature = receiver + "." + method.getName();
+    auto documentation = method.getDoc();
+    if (const auto* script = method.asScriptCallable()) {
+        documentation = "Defined in `" + script->getPath() + "`.";
+    }
+    for (const auto& parameter : method.getParameters()) {
+        const auto typeName = parameter.type ? parameter.type->getTypeName() : "unknown";
+        signature += " " + parameter.name + ":" + typeName;
+        if (!parameter.doc.empty()) documentation += "\n\n- `" + parameter.name + "`: " + parameter.doc;
+    }
+    auto overloadKey = signature;
+    const auto* returnType = method.getReturnType();
+    signature += " -> " + (returnType ? returnType->getTypeName() : "unknown");
+    return {method.getName(), CompletionItemKind::Method, std::move(signature),
+        std::move(documentation), "", receiver, std::move(overloadKey)};
+}
 
 std::unique_ptr<ModuleHost> createAnalysisSession(const AnalysisGroup& group, const NomadPath& path) {
     if (group.project) {
@@ -95,12 +123,41 @@ ApiAnalysis analyzeApiSymbols(
     const NomadString& uri,
     const NomadIndex line,
     const bool completion,
-    const bool omitCurrentLine
+    const bool omitCurrentLine,
+    const NomadString* signaturePrefix
 ) {
     // Destroy callback metadata before unloading modules, and the complete session before recovery.
     const auto session = createAnalysisSession(group, path);
     auto* runtime = session->getRuntime();
     auto batch = loadSourcePaths(group.roots, group.overrides);
+    auto classMemberPosition = false;
+    for (const auto& script : batch.sources) {
+        if (script.source.sourceName != uri) continue;
+        auto compiler = runtime->createCompiler();
+        CompilerContext context(compiler.get());
+        Tokenizer tokens(&context, uri, script.source.text);
+        std::vector<bool> classBlocks;
+        while (tokens.nextLine() && tokens.getLineIndex() < line) {
+            if (tokens.is(TokenType::Identifier) && tokens.is("end")) {
+                if (!classBlocks.empty()) classBlocks.pop_back();
+                continue;
+            }
+            const auto classHeader = tokens.is("class") ||
+                (tokens.is("open") && tokens.getTokenCount() > 1 && tokens.getTokenAt(1) == "class");
+            const auto constructorHeader = !classBlocks.empty() && classBlocks.back() && tokens.is("init");
+            auto openings = parser::countBlockOpenings(&tokens);
+            if (constructorHeader) ++openings;
+            for (auto index = NomadIndex{0}; index < openings; ++index) {
+                classBlocks.push_back(classHeader && index == 0);
+            }
+        }
+        classMemberPosition = !classBlocks.empty() && classBlocks.back();
+        // Only the declaration's first word is a constructor-keyword position.
+        if (tokens.getLineIndex() == line && tokens.getTokenCount() > 1 && !tokens.is("init")) {
+            classMemberPosition = false;
+        }
+        break;
+    }
     if (omitCurrentLine) {
         for (auto& script : batch.sources) {
             if (script.source.sourceName != uri) continue;
@@ -123,6 +180,10 @@ ApiAnalysis analyzeApiSymbols(
             diagnostic.severity == DiagnosticSeverity::Error;
     });
     std::vector<ApiSymbol> symbols;
+    if (classMemberPosition) {
+        symbols.push_back({"init", CompletionItemKind::Keyword, "init [name:Type ...]",
+            "Declares a constructor in a class body. Use explicit this.member references for instance members."});
+    }
     std::vector<KeywordDefinition> keywords;
     runtime->getKeywords(keywords);
     for (const auto& keyword : keywords) {
@@ -134,6 +195,20 @@ ApiAnalysis analyzeApiSymbols(
         if (!type->isInternal()) {
             symbols.push_back({type->getTypeName(), CompletionItemKind::Class,
                 type->getTypeName(), type->getDocumentation()});
+        }
+        const auto* object = type->asObjectType();
+        if (object == nullptr || type->isInternal()) continue;
+        for (const auto* property : object->getProperties()) {
+            if (property->asNativeProperty() != nullptr) continue;
+            const auto* valueType = property->getValueType();
+            const auto value = valueType ? valueType->getTypeName() : "unknown";
+            symbols.push_back({property->getName(), CompletionItemKind::Property,
+                type->getTypeName() + "." + property->getName() + ":" + value,
+                property->getDoc(), valueType ? value : NomadString{}, type->getTypeName()});
+        }
+        for (const auto* method : object->getMethods()) {
+            if (method->asScriptMethod() == nullptr || method->getName() == object->getInitializerName()) continue;
+            symbols.push_back(createMethodSymbol(*method));
         }
     }
     const auto functions = runtime->getNativeFunctions();
@@ -154,23 +229,23 @@ ApiAnalysis analyzeApiSymbols(
         symbols.push_back({function->getName(), CompletionItemKind::Function,
             std::move(signature), std::move(documentation)});
     }
-    for (auto id = runtime->getFirstConstantId(); id != NOMAD_INVALID_ID;
+    for (auto id = runtime->getFirstConstantId(); id.isValid();
         id = runtime->getNextConstantId(id)) {
         const auto& name = runtime->getConstantName(id);
         symbols.push_back({name, CompletionItemKind::Constant,
             name + ":" + runtime->getConstantType(id)->getTypeName(), ""});
     }
-    for (auto id = runtime->getFirstDynamicVariableId(); id != NOMAD_INVALID_ID;
+    for (auto id = runtime->getFirstDynamicVariableId(); id.isValid();
         id = runtime->getNextDynamicVariableId(id)) {
         const auto name = runtime->getDynamicVariableName(id);
         const auto typeName = runtime->getDynamicVariableType(id)->getTypeName();
         symbols.push_back({name, CompletionItemKind::Variable, name + ":" + typeName,
             "Registered engine variable.", typeName});
     }
-    for (auto contextId = runtime->getFirstVariableContextId(); contextId != NOMAD_INVALID_ID;
+    for (auto contextId = runtime->getFirstVariableContextId(); contextId.isValid();
         contextId = runtime->getNextVariableContextId(contextId)) {
         const auto* context = runtime->getVariableContext(contextId);
-        for (auto id = context->getFirstVariableId(); id != NOMAD_INVALID_ID;
+        for (auto id = context->getFirstVariableId(); id.isValid();
             id = context->getNextVariableId(id)) {
             const auto name = context->getVariableName(id);
             const auto* type = context->getVariableType(id);
@@ -179,34 +254,24 @@ ApiAnalysis analyzeApiSymbols(
                 "Script context variable.", typeName});
         }
     }
-    std::vector<NomadId> members;
+    std::vector<MemberReference> members;
     runtime->getNativeMembers(members);
     for (const auto id : members) {
         if (runtime->getMemberType(id) == MemberType::Property) {
-            NativePropertyDefinition definition;
-            if (!runtime->getNativePropertyDefinition(id, definition)) {
+            const auto info = runtime->getNativePropertyInfo(id);
+            if (!info) {
                 throw std::runtime_error("Registered native property is unavailable");
             }
-            const auto receiver = definition.objectType->getTypeName();
-            const auto value = definition.valueType->getTypeName();
-            symbols.push_back({definition.name, CompletionItemKind::Property,
-                receiver + "." + definition.name + ":" + value, definition.doc, value, receiver});
+            const auto receiver = info->objectType->getTypeName();
+            const auto value = info->valueType->getTypeName();
+            symbols.push_back({info->name, CompletionItemKind::Property,
+                receiver + "." + info->name + ":" + value, info->doc, value, receiver});
         } else if (runtime->getMemberType(id) == MemberType::Method) {
             const auto* method = runtime->getNativeMemberMethod(id);
             if (method == nullptr) {
                 throw std::runtime_error("Registered native method is unavailable");
             }
-            const auto receiver = method->getObjectType()->getTypeName();
-            auto signature = receiver + "." + method->getName();
-            auto documentation = method->getDoc();
-            for (const auto& parameter : method->getParameters()) {
-                const auto typeName = parameter.type->getTypeName();
-                signature += " " + parameter.name + ":" + typeName;
-                if (!parameter.doc.empty()) documentation += "\n\n- `" + parameter.name + "`: " + parameter.doc;
-            }
-            signature += " -> " + method->getReturnType()->getTypeName();
-            symbols.push_back({method->getName(), CompletionItemKind::Method,
-                std::move(signature), std::move(documentation), "", receiver});
+            symbols.push_back(createMethodSymbol(*method));
         }
     }
     std::vector<ScriptFunction*> scriptFunctions;
@@ -225,8 +290,8 @@ ApiAnalysis analyzeApiSymbols(
             std::move(signature), "Defined in `" + function->getPath() + "`."});
     }
     std::set<NomadString> localNames;
-    for (auto* function = runtime->getFunctionAtLine(uri, line); function;
-        function = runtime->getScriptFunction(function->getParentId())) {
+    for (const auto* function = runtime->getScriptCallableAtLine(uri, line); function;
+        function = runtime->getScriptCallable(function->getParentId())) {
         const auto addLocal = [&](const NomadString& name, const Type* type) {
             if (name.empty() || name.find('@') != NomadString::npos) return;
             if (!localNames.insert(name).second) return;
@@ -238,10 +303,16 @@ ApiAnalysis analyzeApiSymbols(
                 "Local to `" + function->getName() + "`.", type ? typeName : NomadString{}});
         };
         for (auto index = NomadIndex{0}; index < function->getVariableCount(); ++index) {
-            addLocal(function->getVisibleVariableName(toNomadId(index)), function->getVariableType(toNomadId(index)));
+            addLocal(
+                function->getVisibleVariableName(VariableId{toNomadId(index)}),
+                function->getVariableType(VariableId{toNomadId(index)})
+            );
         }
         for (auto index = NomadIndex{0}; index < function->getParameterCount(); ++index) {
             addLocal(function->getParameterName(toNomadId(index)), function->getParameterType(toNomadId(index)));
+        }
+        if (function->getObjectType() != nullptr) {
+            addLocal("this", function->getObjectType());
         }
     }
     std::set<NomadString> namespaces;
@@ -253,8 +324,14 @@ ApiAnalysis analyzeApiSymbols(
     for (const auto& name : namespaces) {
         symbols.push_back({name, CompletionItemKind::Module, name, "Symbol namespace."});
     }
+    json::value signatureHelp;
+    if (signaturePrefix != nullptr) {
+        signatureHelp = createSignatureHelp(*runtime, uri, line, *signaturePrefix, [&](const auto& name) {
+            return runtime->getTypeByName(symbolValueType(symbols, name));
+        });
+    }
     return {std::move(symbols), std::move(localNames),
-        !compilation.succeeded() && currentLineError && completion && !omitCurrentLine};
+        !compilation.succeeded() && currentLineError && completion && !omitCurrentLine, std::move(signatureHelp)};
 }
 
 std::vector<ApiSymbol> createApiSymbols(
@@ -263,7 +340,9 @@ std::vector<ApiSymbol> createApiSymbols(
     const NomadString& uri,
     const NomadIndex line,
     const bool completion,
-    const bool omitCurrentLine = false
+    const bool omitCurrentLine = false,
+    const NomadString* signaturePrefix = nullptr,
+    json::value* signatureHelp = nullptr
 ) {
     const auto root = findProjectRoot(path.parent_path());
     LanguageDocuments relatedDocuments;
@@ -275,14 +354,16 @@ std::vector<ApiSymbol> createApiSymbols(
     }
     const auto groups = collectAnalysisGroups(relatedDocuments);
     const auto& group = groups.at(root.value_or(path));
-    auto analysis = analyzeApiSymbols(group, path, uri, line, completion, omitCurrentLine);
+    auto analysis = analyzeApiSymbols(group, path, uri, line, completion, omitCurrentLine, signaturePrefix);
+    if (signatureHelp != nullptr) *signatureHelp = std::move(analysis.signatureHelp);
     auto& symbols = analysis.symbols;
     if (analysis.recover) {
-        auto recovered = createApiSymbols(path, documents, uri, line, completion, true);
+        auto recovered = createApiSymbols(path, documents, uri, line, completion, true, signaturePrefix, signatureHelp);
         for (auto& symbol : symbols) {
-            if (analysis.localNames.contains(symbol.name)) continue;
+            if (symbol.receiverType.empty() && analysis.localNames.contains(symbol.name)) continue;
             const auto present = std::ranges::any_of(recovered, [&](const auto& candidate) {
-                return candidate.name == symbol.name && candidate.receiverType == symbol.receiverType;
+                return candidate.name == symbol.name && candidate.receiverType == symbol.receiverType &&
+                    candidate.kind == symbol.kind && candidate.overloadKey == symbol.overloadKey;
             });
             if (!present) recovered.push_back(std::move(symbol));
         }
@@ -325,6 +406,8 @@ struct DocumentWord {
     NomadString name;
     json::object range;
     bool suppressed;
+    bool firstWord;
+    NomadString linePrefix;
 };
 
 DocumentWord documentWord(const NomadString& text, const json::object& position) {
@@ -369,7 +452,11 @@ DocumentWord documentWord(const NomadString& text, const json::object& position)
     return {text.substr(start, offset - start), text.substr(start, end - start),
         {{"start", {{"line", requestedLine}, {"character", startCharacter}}},
             {"end", {{"line", requestedLine}, {"character", endCharacter}}}},
-        quoted || comment};
+        quoted || comment,
+        std::all_of(text.begin() + static_cast<std::ptrdiff_t>(lineStart),
+            text.begin() + static_cast<std::ptrdiff_t>(start),
+            [](const auto character) { return character == ' ' || character == '\t'; }),
+        text.substr(lineStart, offset - lineStart)};
 }
 
 json::object symbolDocumentation(const ApiSymbol& symbol) {
@@ -656,6 +743,8 @@ int runLanguageServer(
                             {"positionEncoding", "utf-16"},
                             {"completionProvider", {{"triggerCharacters", json::array{"."}}}},
                             {"hoverProvider", true},
+                            {"signatureHelpProvider", {{"triggerCharacters", json::array{" ", "\t"}},
+                                {"retriggerCharacters", json::array{" ", "\t", ")"}}}},
                             {"textDocumentSync", {{"openClose", true}, {"change", 1}, {"save", true}}}
                         }}, {"serverInfo", {{"name", "Nomad"}}}}}});
                 } else if (!initialized) {
@@ -669,6 +758,18 @@ int runLanguageServer(
                     ready = true;
                 } else if (!ready) {
                     fail(-32002, "Waiting for initialized notification");
+                } else if (method == "textDocument/signatureHelp" && request) {
+                    const auto& params = object.at("params").as_object();
+                    const auto uri = stringField(params.at("textDocument").as_object(), "uri");
+                    const auto& position = params.at("position").as_object();
+                    const auto word = documentWord(documents.at(uri).text, position);
+                    json::value result;
+                    if (!word.suppressed) {
+                        const auto line = static_cast<NomadIndex>(position.at("line").as_int64()) + 1;
+                        (void)createApiSymbols(documentPath(uri), documents, uri, line, true, false,
+                            &word.linePrefix, &result);
+                    }
+                    sendMessage(output, {{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}});
                 } else if ((method == "textDocument/completion" || method == "textDocument/hover") && request) {
                     const auto& params = object.at("params").as_object();
                     const auto uri = stringField(params.at("textDocument").as_object(), "uri");
@@ -696,6 +797,8 @@ int runLanguageServer(
                                     symbol.name.starts_with(receiver + ".")) namespacePrefix = true;
                             }
                             for (const auto& symbol : found->second) {
+                                if (symbol.name == "init" && symbol.kind == CompletionItemKind::Keyword &&
+                                    !word.firstWord) continue;
                                 auto replacement = symbol.name;
                                 if (!symbol.receiverType.empty()) {
                                     if (separator == NomadString::npos || namespacePrefix) continue;
@@ -724,6 +827,8 @@ int runLanguageServer(
                         const auto receiverType = separator == NomadString::npos ? NomadString{}
                             : symbolValueType(found->second, word.name.substr(0, separator));
                         for (const auto& symbol : found->second) {
+                            if (symbol.name == "init" && symbol.kind == CompletionItemKind::Keyword &&
+                                !word.firstWord) continue;
                             if (!symbol.receiverType.empty()) {
                                 if (receiverType != symbol.receiverType ||
                                     symbol.name != word.name.substr(separator + 1)) continue;

@@ -11,7 +11,7 @@ SceneVariableContext::SceneVariableContext(Game* game):
 {
 }
 
-void SceneVariableContext::setValue(NomadId variable_id, const RuntimeValue& value) {
+void SceneVariableContext::setValue(VariableId variable_id, const RuntimeValue& value) {
     auto scene = m_game->getCurrentContext()->getScene();
 
     if (scene) {
@@ -21,7 +21,7 @@ void SceneVariableContext::setValue(NomadId variable_id, const RuntimeValue& val
     }
 }
 
-void SceneVariableContext::getValue(NomadId variable_id, RuntimeValue& value) {
+void SceneVariableContext::getValue(VariableId variable_id, RuntimeValue& value) {
     const auto scene = m_game->getCurrentContext()->getScene();
 
     if (scene) {

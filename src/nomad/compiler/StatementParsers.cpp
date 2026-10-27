@@ -4,6 +4,7 @@
 
 #include <nomad/Nomad.hpp>
 
+#include <nomad/compiler/ClassDeclaration.hpp>
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/LoopStatement.hpp>
@@ -21,11 +22,11 @@
 
 namespace nomad {
 
-NomadString generateFunFunctionName(CompilerContext* context, ScriptFunction* function, NomadIndex line) {
+NomadString generateFunFunctionName(CompilerContext* context, ScriptCallableBase* function, NomadIndex line) {
     // Generate function name
     NomadString testFunctionName;
     auto count = 0;
-    auto testId = NOMAD_INVALID_ID;
+    auto testId = CallableId{};
 
     do {
         testFunctionName = function->getName() + "@" + toString(line) + "[" + toString(count) + "]";
@@ -36,17 +37,17 @@ NomadString generateFunFunctionName(CompilerContext* context, ScriptFunction* fu
             // Hopefully this will never happen...
             context->getCompiler()->reportInternalError("could not generate `fun` function name");
         }
-    } while (testId != NOMAD_INVALID_ID);
+    } while (testId.isValid());
 
     return testFunctionName;
 }
 
-FunStatementNode::FunStatementNode(NomadIndex line, NomadIndex column, ScriptFunction* function, std::unique_ptr<Expression> /*ptr*/):
+FunStatementNode::FunStatementNode(NomadIndex line, NomadIndex column, ScriptCallableBase* function, std::unique_ptr<Expression> /*ptr*/):
     Statement(line, column),
     m_function(function)
 {}
 
-void FunStatementNode::onCompile(Compiler* /*compiler*/, ScriptFunction* /*function*/) {
+void FunStatementNode::onCompile(Compiler* /*compiler*/, ScriptCallableBase* /*function*/) {
     // `fun` will be build along other functions
 }
 
@@ -58,7 +59,7 @@ NomadIndex FunStatementNode::getParameterCount() const {
     return m_parameters.size();
 }
 
-ScriptFunction* FunStatementNode::getFunction() const {
+ScriptCallableBase* FunStatementNode::getFunction() const {
     return m_function;
 }
 
@@ -77,7 +78,7 @@ public:
     StatementList& getBody() { return m_body; }
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override {
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override {
         (void)m_body.resolve(context, function);
     }
 
@@ -85,18 +86,93 @@ private:
     StatementList m_body;
 };
 
-std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
-    NomadString name;
+namespace {
+
+bool parseHubHeader(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, NomadString& name) {
     if (!tokens->nextIdentifier(name) || !parser::expectEndOfLine(context, function, tokens)) {
+        return false;
+    }
+    name = context->qualifyDeclaration(name);
+    if (std::ranges::count(name, '.') >= 64) {
+        context->reportError("Hub nesting exceeds the maximum depth of 64", tokens);
+        return false;
+    }
+    return true;
+}
+
+bool preParseHub(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    const HubMode mode,
+    const bool declare
+) {
+    NomadString name;
+    if (!parseHubHeader(context, function, tokens, name)) {
+        return false;
+    }
+    if (declare && context->getRuntime()->registerHub(name, mode).isInvalid()) {
+        context->reportError("Cannot declare hub '" + name + "': invalid or conflicting name", tokens);
+        return false;
+    }
+    context->setHub(std::move(name));
+    return true;
+}
+
+bool expectOpenStatement(CompilerContext* context, Tokenizer* tokens, NomadString& statement) {
+    if (!tokens->is("hub") && !tokens->is("class")) {
+        context->reportError("Expected 'hub' or 'class' after 'open'", tokens);
+        return false;
+    }
+    statement = tokens->next().textValue;
+    return true;
+}
+
+} // namespace
+
+bool preParseHubStatement(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    return preParseHub(context, function, tokens, HubMode::Closed, phase == PreParsePhase::Declarations);
+}
+
+bool preParseOpenStatement(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    NomadString statement;
+    if (!expectOpenStatement(context, tokens, statement)) {
+        return false;
+    }
+    if (statement == "class") {
+        return preParseOpenClassStatement(context, function, tokens, phase);
+    }
+    return preParseHub(context, function, tokens, HubMode::Opened, phase == PreParsePhase::Declarations);
+}
+
+std::unique_ptr<Statement> parseOpenStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
+    NomadString statement;
+    if (!expectOpenStatement(context, tokens, statement)) {
+        return nullptr;
+    }
+    if (statement == "class") {
+        return parseClassStatement(context, function, tokens);
+    }
+    return parseHubStatement(context, function, tokens);
+}
+
+std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
+    NomadString qualifiedName;
+    if (!parseHubHeader(context, function, tokens, qualifiedName)) {
         return nullptr;
     }
     if (context->currentBodyEndsAtEnd() || !context->isFunctionRoot(function)) {
         context->reportError("Hubs may only be declared at script level or inside another hub", tokens);
-        return nullptr;
-    }
-    const auto qualifiedName = context->qualifyDeclaration(name);
-    if (std::ranges::count(qualifiedName, '.') >= 64) {
-        context->reportError("Hub nesting exceeds the maximum depth of 64", tokens);
         return nullptr;
     }
     const CompilerHubScope hubScope(*context, qualifiedName);
@@ -139,9 +215,11 @@ std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptFun
             );
             continue;
         }
-        if (!tokens->is("hub") && !tokens->is("fun") && !tokens->is("const") &&
+        const auto openDeclaration = tokens->is("open") && tokens->getTokenCount() >= 2 &&
+            (tokens->getTokenAt(1) == "hub" || tokens->getTokenAt(1) == "class");
+        if (!openDeclaration && !tokens->is("class") && !tokens->is("hub") && !tokens->is("fun") && !tokens->is("const") &&
             !tokens->is("enum") && !tokens->is("event")) {
-            context->reportError("A hub may contain only variable, hub, function, constant, enum, or event declarations", tokens);
+            context->reportError("A hub may contain only variable, hub, class, function, constant, enum, or event declarations", tokens);
             continue;
         }
         auto statement = parser::parseLine(context, function, tokens);
@@ -153,7 +231,15 @@ std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptFun
     return nullptr;
 }
 
-bool preParseFunStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+bool preParseFunStatement(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    if (phase == PreParsePhase::Declarations) {
+        return true;
+    }
     NomadString funName;
 
     if (!tokens->nextIdentifier(funName)) {
@@ -172,13 +258,13 @@ bool preParseFunStatement(CompilerContext* context, ScriptFunction* function, To
         // See if the name of the context variable is used.
         const auto contextId = context->getRuntime()->getVariableContextIdByPrefix(funName);
 
-        if (contextId == NOMAD_INVALID_ID) {
+        if (contextId.isInvalid()) {
             context->getCompiler()->reportInternalError("Unknown variable context for '" + funName + "'");
         }
 
         const auto variableId = context->getRuntime()->getContextVariableId(funName);
 
-        if (variableId != NOMAD_INVALID_ID) {
+        if (variableId.isValid()) {
             log::warning("Function name '" + funName + "' is already used as a context variable name");
         }
     } else if (identifierType != IdentifierType::Unknown) {
@@ -190,21 +276,25 @@ bool preParseFunStatement(CompilerContext* context, ScriptFunction* function, To
     // Generate `fun`
     auto* compiler = context->getCompiler();
     const auto funId = compiler->createFunction(context, compiler->getScriptId(function->getId()), funName);
-    if (funId == NOMAD_INVALID_ID) {
+    if (funId.isInvalid()) {
         return false;
     }
 
-    auto fun = context->getRuntime()->getScriptFunction(funId);
+    auto fun = context->getRuntime()->getScriptCallable(funId);
 
     // Parse parameters.
-    return preParseParamsStatement(context, fun, tokens);
+    return preParseParamsStatement(context, fun, tokens, PreParsePhase::Signatures);
 }
 
-bool parseCallbackFunParameters(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const FunctionType* callbackType) {
+bool parseCallbackFunParameters(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const FunctionType* callbackType) {
     for (auto i = NomadIndex{0}; i < callbackType->getParameterCount(); ++i) {
         NomadString parameterName;
 
         if (!tokens->nextIdentifier(parameterName)) {
+            return false;
+        }
+        if (context->getRuntime()->getKeywordId(parameterName).isValid()) {
+            context->reportError("Parameter name '" + parameterName + "' is a reserved keyword", tokens);
             return false;
         }
 
@@ -228,7 +318,7 @@ bool parseCallbackFunParameters(CompilerContext* context, ScriptFunction* functi
 
 std::unique_ptr<FunctionNode> parseFunBody(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const NomadIndex startLine
 ) {
@@ -255,7 +345,7 @@ std::unique_ptr<FunctionNode> parseFunBody(
 
 std::unique_ptr<FunctionNode> parseThenBody(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const NomadIndex startLine
 ) {
@@ -286,7 +376,7 @@ std::unique_ptr<FunctionNode> parseThenBody(
     return thenBody;
 }
 
-std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptFunction* /*function*/, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptCallableBase* /*function*/, Tokenizer* tokens) {
     NomadString funName;
 
     if (!tokens->is(TokenType::Identifier)) {
@@ -303,7 +393,7 @@ std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptFun
     tokens->nextLine();
 
     auto funId =  context->getRuntime()->getFunctionId(funName);
-    auto funFunction = context->getRuntime()->getScriptFunction(funId);
+    auto funFunction = context->getRuntime()->getScriptCallable(funId);
 
     if (funFunction == nullptr) {
         // Pre-parsing failed to register the function and already reported why.
@@ -318,7 +408,7 @@ std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptFun
         return nullptr;
     }
 
-    context->getCompiler()->setFunctionNode(funId, std::move(funBody));
+    context->getCompiler()->setFunctionBody(funId, std::move(funBody));
 
     // Create a FunctionDeclaration node for the AST so the declaration is visible in the parsed tree.
     auto functionDecl = std::make_unique<FunctionDeclaration>(
@@ -342,7 +432,7 @@ public:
     {}
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override {
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override {
         if (!m_expression->resolve(context, function)) {
             return;
         }
@@ -352,7 +442,7 @@ protected:
         }
     }
 
-    void onCompile(Compiler* compiler, ScriptFunction* function) override {
+    void onCompile(Compiler* compiler, ScriptCallableBase* function) override {
         auto assert_message =
             "Assertion failed: " +
             function->getName() +
@@ -366,7 +456,7 @@ protected:
         m_expression->compile(compiler, function, ExpressionTarget::Result);
 
         compiler->addOpCode(OpCodes::op_id_load_i);
-        compiler->addId(assertMessageId);
+        compiler->addId(assertMessageId.id);
 
         compiler->addOpCode(OpCodes::op_assert);
     }
@@ -376,7 +466,7 @@ private:
     std::unique_ptr<Expression> m_expression;
 };
 
-std::unique_ptr<Statement> parseAssertStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseAssertStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     auto line = stringTrimCopy(tokens->getLine());
 
     auto expression = parser::parseExpression(context, function, tokens);
@@ -403,7 +493,7 @@ public:
     {}
 
 protected:
-    void onCompile(Compiler* /*compiler*/, ScriptFunction* /*function*/) override {
+    void onCompile(Compiler* /*compiler*/, ScriptCallableBase* /*function*/) override {
         // Nothing to do...
     }
 
@@ -466,9 +556,9 @@ bool parseConstantPrimary(CompilerContext* context, Tokenizer* tokens, ConstantV
 
     // Constant reference?
     if (token.type == TokenType::Identifier) {
-        auto constantId = context->getRuntime()->getConstantId(context->resolveName(token.textValue));
+        auto constantId = context->getRuntime()->getConstantId(token.textValue);
 
-        if (constantId == NOMAD_INVALID_ID) {
+        if (constantId.isInvalid()) {
             context->reportError("Unknown constant '" + token.textValue + "'", tokens);
 
             return false;
@@ -702,12 +792,24 @@ bool parseConstantName(CompilerContext* context, Tokenizer* tokens, NomadString&
     }
 
     constantName = constantToken.textValue;
+    if (context->getRuntime()->getKeywordId(constantName).isValid()) {
+        context->reportError("Constant name '" + constantName + "' is a reserved keyword", tokens);
+        return false;
+    }
     constantName = context->qualifyDeclaration(constantName);
 
     return tokens->expect(TokenType::Operator) && tokens->expect("=");
 }
 
-bool preParseConstStatement(CompilerContext* context, ScriptFunction* /*function*/, Tokenizer* tokens) {
+bool preParseConstStatement(
+    CompilerContext* context,
+    ScriptCallableBase* /*function*/,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    if (phase == PreParsePhase::Declarations) {
+        return true;
+    }
     NomadString constantName;
 
     if (!parseConstantName(context, tokens, constantName)) {
@@ -718,7 +820,7 @@ bool preParseConstStatement(CompilerContext* context, ScriptFunction* /*function
         context->reportError("Constant name '" + constantName + "' is reserved by a hub", tokens);
         return false;
     }
-    if (context->getRuntime()->getConstantId(constantName) != NOMAD_INVALID_ID) {
+    if (context->getRuntime()->getConstantId(constantName).isValid()) {
         context->reportError("Constant '" + constantName + "' is already defined", tokens);
 
         return false;
@@ -730,14 +832,14 @@ bool preParseConstStatement(CompilerContext* context, ScriptFunction* /*function
         return false;
     }
 
-    if (context->getRuntime()->registerConstant(constantName, constant.value, constant.type) == NOMAD_INVALID_ID) {
+    if (context->getRuntime()->registerConstant(constantName, constant.value, constant.type).isInvalid()) {
         context->reportError("Failed to register constant '" + constantName + "'", tokens);
         return false;
     }
     return true;
 }
 
-std::unique_ptr<Statement> parseConstStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseConstStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     NomadString constantName;
 
     if (!parseConstantName(context, tokens, constantName)) {
@@ -822,7 +924,15 @@ bool parseEnumDefinition(
     return false;
 }
 
-bool preParseEnumStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+bool preParseEnumStatement(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    if (phase == PreParsePhase::Declarations) {
+        return true;
+    }
     NomadString enumName;
     std::vector<EnumValueDefinition> values;
 
@@ -856,7 +966,7 @@ bool preParseEnumStatement(CompilerContext* context, ScriptFunction* function, T
         }
     }
 
-    if (runtime->registerEnum(enumName, values) == nullptr) {
+    if (runtime->createEnum(enumName, values).isInvalid()) {
         context->reportError("Failed to register enum '" + enumName + "'", tokens);
         return false;
     }
@@ -866,7 +976,7 @@ bool preParseEnumStatement(CompilerContext* context, ScriptFunction* function, T
 
 std::unique_ptr<Statement> parseEnumStatement(
     CompilerContext* context,
-    ScriptFunction* /*function*/,
+    ScriptCallableBase* /*function*/,
     Tokenizer* tokens
 ) {
     NomadString enumName;
@@ -891,7 +1001,7 @@ std::unique_ptr<Statement> parseEnumStatement(
     );
 }
 
-std::unique_ptr<Statement> parseEventStatement(CompilerContext* context, ScriptFunction* /*function*/, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseEventStatement(CompilerContext* context, ScriptCallableBase* /*function*/, Tokenizer* tokens) {
     // Event declarations were registered during pre-parse; create AST node for tooling/analysis.
     if (!tokens->is(TokenType::Identifier)) {
         context->reportError("Event name expected", tokens);
@@ -923,7 +1033,7 @@ std::unique_ptr<Statement> parseEventStatement(CompilerContext* context, ScriptF
     return eventDecl;
 }
 
-std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     // Syntax: on <eventName> fun <params> <body> end  OR on <eventName> <functionName>
     if (!tokens->is(TokenType::Identifier)) {
         context->reportError("Event name expected", tokens);
@@ -931,7 +1041,7 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
         return nullptr;
     }
 
-    const auto eventName = context->resolveName(tokens->next().textValue, function);
+    const auto eventName = tokens->next().textValue;
 
     // Expect 'fun' keyword or identifier for function name
     if (tokens->is("fun")) {
@@ -942,14 +1052,14 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
         auto* compiler = context->getCompiler();
         const auto handlerFunctionId = compiler->createFunction(
             context, compiler->getScriptId(function->getId()), handlerFunctionName);
-        if (handlerFunctionId == NOMAD_INVALID_ID) {
+        if (handlerFunctionId.isInvalid()) {
             return nullptr;
         }
-        auto handlerFunction = context->getRuntime()->getScriptFunction(handlerFunctionId);
+        auto handlerFunction = context->getRuntime()->getScriptCallable(handlerFunctionId);
 
         // Parse parameters (names only for now)
         const auto declarationLine = tokens->getLineIndex();
-        const auto parametersParsed = preParseParamsStatement(context, handlerFunction, tokens);
+        const auto parametersParsed = preParseParamsStatement(context, handlerFunction, tokens, PreParsePhase::Signatures);
 
         auto handlerBody = parseFunBody(context, handlerFunction, tokens, declarationLine);
 
@@ -957,7 +1067,7 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
             return nullptr;
         }
 
-        context->getCompiler()->setFunctionNode(handlerFunctionId, std::move(handlerBody));
+        context->getCompiler()->setFunctionBody(handlerFunctionId, std::move(handlerBody));
 
         // Create FunctionDecl for handler
         auto handlerDecl = std::make_unique<FunctionDeclaration>(tokens->getLineIndex(), tokens->getColumnIndex(), handlerFunctionName);
@@ -971,11 +1081,10 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptFunc
     if (!tokens->nextIdentifier(handlerName)) {
         return nullptr;
     }
-    handlerName = context->resolveName(handlerName, function);
 
     const auto handlerFunctionId = context->getRuntime()->getFunctionId(handlerName);
 
-    if (handlerFunctionId == NOMAD_INVALID_ID) {
+    if (handlerFunctionId.isInvalid()) {
         context->reportError("Unknown handler function '" + handlerName + "'", tokens);
 
         return nullptr;
@@ -1006,7 +1115,7 @@ public:
 
     StatementList* getBody() { return &m_body; }
 
-    static void resolveCondition(CompilerContext* context, ScriptFunction* function, Expression* condition) {
+    static void resolveCondition(CompilerContext* context, ScriptCallableBase* function, Expression* condition) {
         if (!condition->resolve(context, function)) {
             return;
         }
@@ -1045,7 +1154,7 @@ public:
         });
     }
 
-    void checkReachability(CompilerContext* context, const ScriptFunction* function) const override {
+    void checkReachability(CompilerContext* context, const ScriptCallableBase* function) const override {
         m_body.checkReachability(context, function);
 
         for (const auto& branch : m_branches) {
@@ -1056,7 +1165,7 @@ public:
     }
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override {
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override {
         resolveCondition(context, function, m_expression.get());
         (void)m_body.resolve(context, function);
 
@@ -1068,7 +1177,7 @@ protected:
         (void)m_elseStatements.resolve(context, function);
     }
 
-    void onCompile(Compiler* compiler, ScriptFunction* function) override {
+    void onCompile(Compiler* compiler, ScriptCallableBase* function) override {
         std::vector<size_t> jumpEndIndices;
 
         m_expression->compile(compiler, function, ExpressionTarget::Result);
@@ -1147,7 +1256,7 @@ private:
     StatementList m_elseStatements;
 };
 
-std::unique_ptr<Statement> parseIfStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseIfStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     auto ifStatement = std::make_unique<IfStatementNode>(tokens->getLineIndex(), tokens->getColumnIndex());
 
     // Keep parsing after a condition error so the blocks and `end` are consumed by this statement.
@@ -1233,38 +1342,31 @@ std::unique_ptr<Statement> parseIfStatement(CompilerContext* context, ScriptFunc
     return ifStatement;
 }
 
-bool preParseParamsStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+bool preParseParamsStatement(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    if (phase == PreParsePhase::Declarations) {
+        return true;
+    }
+    if (function->getObjectType() != nullptr) {
+        context->reportError("Class member parameters must be declared in the member header", tokens);
+        return false;
+    }
     if (function->getParameterCount() > 0) {
         context->reportError("Function '" + function->getName() + "' already has parameters", tokens);
 
         return false;
     }
 
-    while (!tokens->endOfLine()) {
-        NomadString parameterName;
-
-        if (!tokens->nextIdentifier(parameterName) ||
-            !tokens->expect(":")) {
-            return false;
-        }
-
-        if (function->getParameterId(parameterName) != NOMAD_INVALID_ID) {
-            context->reportError("Parameter '" + parameterName + "' is already defined", tokens);
-
-            return false;
-        }
-        if (context->getRuntime()->isHub(parameterName)) {
-            context->reportError("Parameter name '" + parameterName + "' is reserved by a hub", tokens);
-            return false;
-        }
-
-        const auto* parameterType = parser::parseType(context, tokens);
-
-        if (parameterType == nullptr) {
-            return false;
-        }
-
-        function->addParameter(parameterName, parameterType, "");
+    std::vector<Parameter> parameters;
+    if (!parser::parseParameters(context, tokens, parameters)) {
+        return false;
+    }
+    for (const auto& parameter : parameters) {
+        function->addParameter(parameter.name, parameter.type, "");
     }
 
     return true;

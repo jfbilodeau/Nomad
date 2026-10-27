@@ -16,42 +16,42 @@ namespace nomad {
 
 class SelectStatement : public Statement {
 public:
-    SelectStatement(NomadIndex line, NomadIndex column, NomadId predicateFunctionId);
+    SelectStatement(NomadIndex line, NomadIndex column, CallableId predicateFunctionId);
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
 
 private:
-    NomadId m_predicateFunctionId;
+    CallableId m_predicateFunctionId;
 
 };
 
 SelectStatement::SelectStatement(
     const NomadIndex line,
     const NomadIndex column,
-    const NomadId predicateFunctionId
+    const CallableId predicateFunctionId
 ):
     Statement(line, column),
     m_predicateFunctionId(predicateFunctionId)
 {
 }
 
-void SelectStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
+void SelectStatement::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     // The predicate is resolved with its own function, which infers the function return type.
-    const auto* predicateFunction = context->getRuntime()->getScriptFunction(m_predicateFunctionId);
+    const auto* predicateFunction = context->getRuntime()->getScriptCallable(m_predicateFunctionId);
 
     if (predicateFunction->getReturnType() != context->getRuntime()->getBooleanType()) {
         reportError(context, function, "`select` expression must be of type boolean");
     }
 }
 
-std::unique_ptr<Statement> parseSelectStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseSelectStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     const auto functionName = context->getCompiler()->generateFunctionName("select", function, tokens->getLineIndex());
 
     auto* compiler = context->getCompiler();
     const auto functionId = compiler->createFunction(
         context, compiler->getScriptId(function->getId()), functionName);
-    if (functionId == NOMAD_INVALID_ID) {
+    if (functionId.isInvalid()) {
         return nullptr;
     }
 
@@ -69,7 +69,7 @@ std::unique_ptr<Statement> parseSelectStatement(CompilerContext* context, Script
     function_node->addStatement(std::move(return_statement));
 
     // Assign statement list to function
-    context->getCompiler()->setFunctionNode(functionId, std::move(function_node));
+    context->getCompiler()->setFunctionBody(functionId, std::move(function_node));
 
     auto select_statement = std::make_unique<SelectStatement>(
         tokens->getLineIndex(),

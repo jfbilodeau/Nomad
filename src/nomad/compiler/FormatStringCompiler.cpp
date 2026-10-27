@@ -5,6 +5,8 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/Expression.hpp>
 
+#include <nomad/script/FormatString.hpp>
+
 #include <cctype>
 
 namespace nomad {
@@ -166,7 +168,7 @@ std::optional<NomadIndex> findFormatStringLiteralEnd(const NomadStringView sourc
 
 std::optional<NomadString> compileFormatString(
     const Compiler* compiler,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     const NomadString& format,
     FormatString* formatString
 ) {
@@ -179,7 +181,11 @@ std::optional<NomadString> compileFormatString(
                 formatString->addLiteral(segment.text);
             }
         } else {
-            const auto variableName = compiler->resolveName(segment.text, function);
+            const auto variableName = segment.text;
+            if (compiler->isFieldInitializer(function) &&
+                (variableName == "this" || variableName.starts_with("this."))) {
+                return "Field initializers cannot use or capture 'this'";
+            }
             IdentifierDefinition identifier{};
 
             if (resolveIdentifier(variableName, compiler, function, identifier) == false) {
@@ -187,8 +193,8 @@ std::optional<NomadString> compileFormatString(
             }
 
             switch (identifier.identifierType) {
-                case IdentifierType::Function: {
-                    const auto placeholderFunction = compiler->getRuntime()->getScriptFunction(identifier.variableId);
+                case IdentifierType::ScriptFunction: {
+                    const auto placeholderFunction = compiler->getRuntime()->getScriptCallable(identifier.functionId);
 
                     if (placeholderFunction != nullptr && placeholderFunction->getParameterCount() != 0) {
                         return "Cannot use function with parameters in format string: " + variableName;
@@ -206,6 +212,7 @@ std::optional<NomadString> compileFormatString(
                 case IdentifierType::ContextVariable:
                 case IdentifierType::FunctionVariable:
                 case IdentifierType::Parameter:
+                case IdentifierType::Receiver:
                     // All the above are OK. Continue
                     break;
 
@@ -226,11 +233,25 @@ std::optional<NomadString> compileFormatString(
             }
 
             if (formatString != nullptr) {
-                formatString->addVariable(
-                    identifier.identifierType,
-                    identifier.valueType,
-                    identifier.variableId
-                );
+                if (identifier.identifierType == IdentifierType::ScriptFunction) {
+                    formatString->addFunction(identifier.valueType, identifier.functionId);
+                } else if (identifier.identifierType == IdentifierType::Constant) {
+                    formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.constantId.id);
+                } else if (identifier.identifierType == IdentifierType::DynamicVariable) {
+                    formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.dynamicVariableId.id);
+                } else if (identifier.identifierType == IdentifierType::ContextVariable) {
+                    formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.contextVariableId.id);
+                } else if (identifier.identifierType == IdentifierType::FunctionVariable) {
+                    formatString->addVariable(identifier.identifierType, identifier.valueType, identifier.variableId.id);
+                } else if (identifier.identifierType == IdentifierType::Receiver) {
+                    formatString->addVariable(identifier.identifierType, identifier.valueType, NOMAD_INVALID_ID);
+                } else {
+                    formatString->addVariable(
+                        identifier.identifierType,
+                        identifier.valueType,
+                        identifier.parameterId
+                    );
+                }
             }
         }
     }

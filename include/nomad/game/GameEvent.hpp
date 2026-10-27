@@ -20,7 +20,7 @@ class RuntimeValue;
 struct GameEventCreateScene {
     NomadId sceneId;
     NomadString sceneName;
-    NomadId initFunctionId;
+    CallableId initFunctionId;
     std::unique_ptr<Closure> postCreateClosure;
 };
 
@@ -31,7 +31,7 @@ struct GameEventRemoveScene {
 struct GameEventCreateEntity {
     NomadId entityId;
     NomadId sceneId;
-    NomadId initFunctionId;
+    CallableId initFunctionId;
     NomadFloat x, y;
     NomadFloat width, height;
     NomadInteger layer;
@@ -78,7 +78,7 @@ struct GameEventTriggerEntityCallback {
     NomadInteger frameCount;
     NomadInteger triggerAtFrame;
     NomadBoolean repeat;
-    NomadId functionId;
+    CallableId functionId;
 };
 
 using GameEvent = std::variant<

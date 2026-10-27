@@ -33,7 +33,7 @@ public:
         Statement(line, column), m_loop(loop), m_isBreak(isBreak) {}
 
 protected:
-    void onCompile(Compiler* compiler, ScriptFunction*) override {
+    void onCompile(Compiler* compiler, ScriptCallableBase*) override {
         m_loop->compileControl(compiler, m_isBreak);
     }
     void onEvaluate(InterpreterContext& context) const override {
@@ -61,13 +61,13 @@ public:
     {}
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override {
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override {
         auto* runtime = context->getRuntime();
         if (m_factory == nullptr) {
             if (!m_source->resolve(context, function)) {
                 return;
             }
-            const auto iterable = runtime->getIterableDefinition(m_source->getType());
+            const auto iterable = runtime->getIterableInfo(m_source->getType());
             if (!iterable) {
                 reportError(context, function, "For source must be an iterable object");
                 return;
@@ -82,12 +82,17 @@ protected:
         }
         IdentifierDefinition definition;
         context->getCompiler()->getIdentifierDefinition(m_binding, function, definition);
-        if (definition.identifierType != IdentifierType::FunctionVariable ||
+        if ((definition.identifierType != IdentifierType::FunctionVariable &&
+             definition.identifierType != IdentifierType::Parameter) ||
             (definition.valueType != nullptr && definition.valueType != m_valueType)) {
             reportError(context, function, "For loop variable must be a local or parameter of the element type");
             return;
         }
-        m_valueId = function->registerVariable(m_binding, m_valueType);
+        m_parameterId = definition.identifierType == IdentifierType::Parameter ?
+            definition.parameterId : NOMAD_INVALID_ID;
+        if (m_parameterId == NOMAD_INVALID_ID) {
+            m_valueId = function->registerVariable(m_binding, m_valueType);
+        }
         m_iteratorId = function->registerVariable(m_iterator, m_iteratorType);
         if (m_advance == nullptr) {
             m_advance = member("moveNext", iteratorVariable());
@@ -98,27 +103,32 @@ protected:
         (void)m_body.resolve(context, function);
     }
 
-    void onCompile(Compiler* compiler, ScriptFunction* function) override {
+    void onCompile(Compiler* compiler, ScriptCallableBase* function) override {
         resetControls();
-        const auto store = [&](Expression* expression, const Type* type, NomadId id) {
+        const auto store = [&](Expression* expression, const Type* type, VariableId id) {
             expression->compile(compiler, function, ExpressionTarget::Result);
-            compiler->addFreeValue(type->getTypeOpCodes()->freeFunctionVariable, toNomadIndex(id));
+            compiler->addFreeValue(type->getTypeOpCodes()->freeFunctionVariable, toNomadIndex(id.id));
             compiler->addOpCode(type->getTypeOpCodes()->setFunctionVariable);
-            compiler->addId(id);
+            compiler->addId(id.id);
         };
         store(m_factory.get(), m_iteratorType, m_iteratorId);
         const auto continuation = compiler->getOpCodeSize();
         m_advance->compile(compiler, function, ExpressionTarget::Result);
         compiler->addOpCode(OpCodes::op_jump_if_false);
         const auto exit = compiler->addIndex(NOMAD_INVALID_INDEX);
-        store(m_current.get(), m_valueType, m_valueId);
+        if (m_parameterId != NOMAD_INVALID_ID) {
+            m_current->compile(compiler, function, ExpressionTarget::Result);
+            compiler->addStoreParameter(m_parameterId, m_valueType);
+        } else {
+            store(m_current.get(), m_valueType, m_valueId);
+        }
         m_body.compile(compiler, function);
         compiler->addOpCode(OpCodes::op_jump);
         compiler->addIndex(continuation);
         const auto cleanup = compiler->getOpCodeSize();
         compiler->setIndex(exit, cleanup);
         patchControls(compiler, continuation, cleanup);
-        compiler->addFreeValue(m_iteratorType->getTypeOpCodes()->freeFunctionVariable, toNomadIndex(m_iteratorId));
+        compiler->addFreeValue(m_iteratorType->getTypeOpCodes()->freeFunctionVariable, toNomadIndex(m_iteratorId.id));
     }
 
     void onEvaluate(InterpreterContext& context) const override {
@@ -179,13 +189,14 @@ private:
     std::unique_ptr<Expression> m_current;
     const Type* m_valueType = nullptr;
     const Type* m_iteratorType = nullptr;
-    NomadId m_valueId = NOMAD_INVALID_ID;
-    NomadId m_iteratorId = NOMAD_INVALID_ID;
+    VariableId m_valueId = VariableId::INVALID;
+    NomadId m_parameterId = NOMAD_INVALID_ID;
+    VariableId m_iteratorId = VariableId::INVALID;
 };
 
 std::unique_ptr<Statement> createControl(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     bool isBreak
 ) {
@@ -199,7 +210,7 @@ std::unique_ptr<Statement> createControl(
 
 std::unique_ptr<Statement> parseLoop(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     bool postTest,
     bool until
@@ -250,11 +261,11 @@ StatementList& LoopStatement::getBody() { return m_body; }
 void LoopStatement::setCondition(std::unique_ptr<Expression> condition) { m_condition = std::move(condition); }
 void LoopStatement::setUntil(bool until) { m_until = until; }
 
-void LoopStatement::checkReachability(CompilerContext* context, const ScriptFunction* function) const {
+void LoopStatement::checkReachability(CompilerContext* context, const ScriptCallableBase* function) const {
     m_body.checkReachability(context, function);
 }
 
-void LoopStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
+void LoopStatement::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     if (m_condition->resolve(context, function) && m_condition->getType() != context->getRuntime()->getBooleanType()) {
         reportError(context, function, "Loop condition must be a boolean expression");
     }
@@ -267,7 +278,7 @@ void LoopStatement::compileControl(Compiler* compiler, bool isBreak) {
     jumps.push_back(compiler->addIndex(NOMAD_INVALID_INDEX));
 }
 
-void LoopStatement::onCompile(Compiler* compiler, ScriptFunction* function) {
+void LoopStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     resetControls();
     const auto start = compiler->getOpCodeSize();
     auto exit = NOMAD_INVALID_INDEX;
@@ -308,7 +319,7 @@ void LoopStatement::patchControls(Compiler* compiler, NomadIndex continuation, N
 
 std::unique_ptr<Statement> parseForStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     const auto line = tokens->getLineIndex();
@@ -324,7 +335,8 @@ std::unique_ptr<Statement> parseForStatement(
     }
     auto* compiler = context->getCompiler();
     const auto identifierType = compiler->getIdentifierType(name, function);
-    if (identifierType != IdentifierType::Unknown && identifierType != IdentifierType::FunctionVariable) {
+    if (identifierType != IdentifierType::Unknown && identifierType != IdentifierType::FunctionVariable &&
+        identifierType != IdentifierType::Parameter) {
         context->reportError("For loop variable must be a local or parameter", tokens);
         return nullptr;
     }
@@ -376,42 +388,42 @@ void LoopStatement::onEvaluate(InterpreterContext& context) const {
 
 std::unique_ptr<Statement> parseWhileStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     return parseLoop(context, function, tokens, false, false);
 }
 std::unique_ptr<Statement> parseUntilStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     return parseLoop(context, function, tokens, false, true);
 }
 std::unique_ptr<Statement> parseDoStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     return parseLoop(context, function, tokens, true, false);
 }
 std::unique_ptr<Statement> parseBreakStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     return createControl(context, function, tokens, true);
 }
 std::unique_ptr<Statement> parseContinueStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     return createControl(context, function, tokens, false);
 }
 std::unique_ptr<Statement> parseLoopControlStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     const auto isBreak = tokens->is("break");

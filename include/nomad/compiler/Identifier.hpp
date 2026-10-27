@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nomad/script/Type.hpp>
+#include <nomad/script/Runtime.hpp>
 
 namespace nomad {
 
@@ -16,23 +16,28 @@ enum class IdentifierType {
     Keyword,
     Statement,
     NativeFunction,
-    Function,
+    ScriptFunction,
     Event,
     Constant,
     DynamicVariable,
     ContextVariable,
     FunctionVariable,
     Parameter,
+    Receiver,
 };
 
 struct IdentifierDefinition {
     IdentifierType identifierType = IdentifierType::Unknown;
     const Type* valueType = nullptr;
     union {
-        NomadId nativeFunctionId = NOMAD_INVALID_ID;
-        NomadId eventId;
-        NomadId variableId;
-        NomadId functionId;
+        CallableId nativeFunctionId = CallableId{};
+        EventId eventId;
+        VariableId variableId;
+        NomadId parameterId;
+        ConstantId constantId;
+        DynamicVariableId dynamicVariableId;
+        ContextVariableId contextVariableId;
+        CallableId functionId;
     };
 };
 

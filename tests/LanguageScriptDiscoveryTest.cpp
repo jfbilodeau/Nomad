@@ -29,11 +29,11 @@ BOOST_AUTO_TEST_CASE(script_names_are_derived_from_relative_paths)
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
 
     auto& runtime = fixture.getRuntime();
-    BOOST_TEST(runtime.getFunctionId("init") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getFunctionId("entities.player") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getFunctionId("scene.play.intro") != NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getFunctionId("notes") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getFunctionId("entities.readme") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getFunctionId("init").isValid());
+    BOOST_TEST(runtime.getFunctionId("entities.player").isValid());
+    BOOST_TEST(runtime.getFunctionId("scene.play.intro").isValid());
+    BOOST_TEST(runtime.getFunctionId("notes").isInvalid());
+    BOOST_TEST(runtime.getFunctionId("entities.readme").isInvalid());
 
     BOOST_TEST(fixture.execute("init").integerValue == 1);
     BOOST_TEST(fixture.execute("entities.player").integerValue == 2);
@@ -119,7 +119,7 @@ BOOST_AUTO_TEST_CASE(symbolic_linked_directories_are_not_scanned)
     LanguageTestFixture fixture;
     BOOST_CHECK_NO_THROW(fixture.addSources(loadSourcePaths(std::vector{directory.getPath()})));
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    BOOST_TEST(fixture.getRuntime().getFunctionId("init") != NOMAD_INVALID_ID);
+    BOOST_TEST(fixture.getRuntime().getFunctionId("init").isValid());
 }
 
 BOOST_AUTO_TEST_CASE(directory_depth_limit_is_preserved)

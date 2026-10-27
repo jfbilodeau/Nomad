@@ -9,6 +9,7 @@
 #include <nomad/collections/MapObject.hpp>
 
 #include <nomad/script/NomadObject.hpp>
+#include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <boost/test/unit_test.hpp>
@@ -36,15 +37,18 @@ CountingObject::~CountingObject() {
     ++m_destroyed;
 }
 
-class FailingCopyType final : public ObjectTypeBase {
+class FailingCopyType final : public ObjectType {
 public:
+    explicit FailingCopyType(Runtime* runtime, TypeId id): ObjectType(runtime, id, "FailingCopy", ObjectTypeMode::Closed) {}
+
     NomadString getTypeName() const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
     void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override;
 };
 
-class UnmanagedType final : public Type {
+class UnmanagedType final : public ValueType {
 public:
+    using ValueType::ValueType;
     void initValue(RuntimeValue& value) const override;
     NomadString getTypeName() const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
@@ -83,7 +87,7 @@ void FailingCopyType::toString(const RuntimeValue&, NomadString& string) const {
 }
 
 void FailingCopyType::copyValue(const RuntimeValue& source, RuntimeValue& destination) const {
-    ObjectTypeBase::copyValue(source, destination);
+    ObjectType::copyValue(source, destination);
     throw NomadException("Copy failed");
 }
 
@@ -92,7 +96,8 @@ void FailingCopyType::copyValue(const RuntimeValue& source, RuntimeValue& destin
 BOOST_AUTO_TEST_SUITE(NomadObjectTests)
 
 BOOST_AUTO_TEST_CASE(KeyValueRetainsBothReferencesAndReleasesThemOnDestruction) {
-    ObjectType type("Element");
+    Runtime runtime;
+    ObjectType type(&runtime, TypeId::INVALID, "Element", ObjectTypeMode::Closed);
     NomadIndex destroyed = 0;
     RuntimeValue value;
     value.setObjectValue(new CountingObject(destroyed));
@@ -109,8 +114,9 @@ BOOST_AUTO_TEST_CASE(KeyValueRetainsBothReferencesAndReleasesThemOnDestruction) 
 }
 
 BOOST_AUTO_TEST_CASE(KeyValueReleasesPartialCopiesWhenEitherArgumentFails) {
-    ObjectType type("Element");
-    FailingCopyType failingType;
+    Runtime runtime;
+    ObjectType type(&runtime, TypeId::INVALID, "Element", ObjectTypeMode::Closed);
+    FailingCopyType failingType(&runtime, TypeId::INVALID);
     NomadIndex destroyed = 0;
     RuntimeValue key;
     RuntimeValue value;
@@ -128,10 +134,11 @@ BOOST_AUTO_TEST_CASE(KeyValueReleasesPartialCopiesWhenEitherArgumentFails) {
 }
 
 BOOST_AUTO_TEST_CASE(KeyValueReleasesPartiallyInitializedDefaults) {
+    Runtime runtime;
     class InitializingType final : public ObjectType {
     public:
-        explicit InitializingType(NomadIndex& destroyed):
-            ObjectType("Initializing"),
+        InitializingType(Runtime* runtime, TypeId id, NomadIndex& destroyed):
+            ObjectType(runtime, id, "Initializing", ObjectTypeMode::Closed),
             m_destroyed(destroyed)
         {}
         void initValue(RuntimeValue& value) const override {
@@ -145,8 +152,8 @@ BOOST_AUTO_TEST_CASE(KeyValueReleasesPartiallyInitializedDefaults) {
         NomadIndex& m_destroyed;
     };
     NomadIndex destroyed = 0;
-    InitializingType type(destroyed);
-    InitializingType failingType(destroyed);
+    InitializingType type(&runtime, TypeId::INVALID, destroyed);
+    InitializingType failingType(&runtime, TypeId::INVALID, destroyed);
     failingType.failInitialization = true;
     BOOST_CHECK_THROW(KeyValueObject(&failingType, &type), NomadException);
     BOOST_TEST(destroyed == 1u);
@@ -160,8 +167,9 @@ BOOST_AUTO_TEST_CASE(KeyValueReleasesPartiallyInitializedDefaults) {
 }
 
 BOOST_AUTO_TEST_CASE(KeyValueDefaultsAndUnmanagedValuesNeedNoCleanup) {
-    UnmanagedType type;
-    KeyValueType pairType(&type, &type);
+    Runtime runtime;
+    UnmanagedType type(&runtime, TypeId::INVALID);
+    KeyValueType pairType(&runtime, TypeId::INVALID, "KeyValue<Unmanaged Unmanaged>", ObjectTypeMode::Closed, &type, &type);
     RuntimeValue first;
     RuntimeValue second;
     pairType.initValue(first);
@@ -175,12 +183,13 @@ BOOST_AUTO_TEST_CASE(KeyValueDefaultsAndUnmanagedValuesNeedNoCleanup) {
 }
 
 BOOST_AUTO_TEST_CASE(KeyValueRejectsInvalidTypes) {
-    IntegerType integerType;
-    VoidType voidType;
-    BOOST_CHECK_THROW(KeyValueType(nullptr, &integerType), NomadException);
-    BOOST_CHECK_THROW(KeyValueType(&integerType, nullptr), NomadException);
-    BOOST_CHECK_THROW(KeyValueType(&voidType, &integerType), NomadException);
-    BOOST_CHECK_THROW(KeyValueType(&integerType, &voidType), NomadException);
+    Runtime runtime;
+    IntegerType integerType(&runtime, TypeId::INVALID);
+    VoidType voidType(&runtime, TypeId::INVALID);
+    BOOST_CHECK_THROW(KeyValueType(&runtime, TypeId::INVALID, "Invalid", ObjectTypeMode::Closed, nullptr, &integerType), NomadException);
+    BOOST_CHECK_THROW(KeyValueType(&runtime, TypeId::INVALID, "Invalid", ObjectTypeMode::Closed, &integerType, nullptr), NomadException);
+    BOOST_CHECK_THROW(KeyValueType(&runtime, TypeId::INVALID, "Invalid", ObjectTypeMode::Closed, &voidType, &integerType), NomadException);
+    BOOST_CHECK_THROW(KeyValueType(&runtime, TypeId::INVALID, "Invalid", ObjectTypeMode::Closed, &integerType, &voidType), NomadException);
     BOOST_CHECK_THROW(KeyValueObject(nullptr, &integerType), NomadException);
     BOOST_CHECK_THROW(KeyValueObject(&integerType, nullptr), NomadException);
     BOOST_CHECK_THROW(KeyValueObject(&voidType, &integerType), NomadException);
@@ -191,6 +200,7 @@ BOOST_AUTO_TEST_CASE(KeyValueRejectsInvalidTypes) {
 }
 
 BOOST_AUTO_TEST_CASE(ReferenceHelpersHandleNullSelfAndReplacement) {
+    Runtime runtime;
     addRef(nullptr);
     releaseRef(nullptr);
     NomadIndex destroyed = 0;
@@ -210,6 +220,7 @@ BOOST_AUTO_TEST_CASE(ReferenceHelpersHandleNullSelfAndReplacement) {
 }
 
 BOOST_AUTO_TEST_CASE(RuntimeValueProvidesBorrowedTypedObjectAccess) {
+    Runtime runtime;
     RuntimeValue value;
     BOOST_TEST(value.asObject<CountingObject>() == nullptr);
     NomadIndex destroyed = 0;
@@ -223,7 +234,8 @@ BOOST_AUTO_TEST_CASE(RuntimeValueProvidesBorrowedTypedObjectAccess) {
 }
 
 BOOST_AUTO_TEST_CASE(ListSkipsCleanupForUnmanagedElements) {
-    UnmanagedType elementType;
+    Runtime runtime;
+    UnmanagedType elementType(&runtime, TypeId::INVALID);
     BOOST_TEST(!elementType.needsFree());
     auto* list = new ListObject(&elementType);
     for (auto index = 0; index < 100; ++index) {
@@ -241,7 +253,8 @@ BOOST_AUTO_TEST_CASE(ListSkipsCleanupForUnmanagedElements) {
 }
 
 BOOST_AUTO_TEST_CASE(ArraySkipsCleanupForUnmanagedElements) {
-    UnmanagedType elementType;
+    Runtime runtime;
+    UnmanagedType elementType(&runtime, TypeId::INVALID);
     {
         Array1dObject array(&elementType, 100);
         BOOST_TEST(array.getCount() == 100u);
@@ -250,7 +263,8 @@ BOOST_AUTO_TEST_CASE(ArraySkipsCleanupForUnmanagedElements) {
 }
 
 BOOST_AUTO_TEST_CASE(ListReleasesPartialCopyWhenAppendFails) {
-    FailingCopyType elementType;
+    Runtime runtime;
+    FailingCopyType elementType(&runtime, TypeId::INVALID);
     NomadIndex destroyed = 0;
     auto* list = new ListObject(&elementType);
     RuntimeValue value;
@@ -266,7 +280,8 @@ BOOST_AUTO_TEST_CASE(ListReleasesPartialCopyWhenAppendFails) {
 }
 
 BOOST_AUTO_TEST_CASE(ListRetainsAndReleasesStoredObjects) {
-    ObjectType elementType("Element");
+    Runtime runtime;
+    ObjectType elementType(&runtime, TypeId::INVALID, "Element", ObjectTypeMode::Closed);
     NomadIndex destroyed = 0;
     auto* list = new ListObject(&elementType);
     BOOST_TEST(list->getElementType() == &elementType);
@@ -285,7 +300,8 @@ BOOST_AUTO_TEST_CASE(ListRetainsAndReleasesStoredObjects) {
 }
 
 BOOST_AUTO_TEST_CASE(ListInsertionCopiesAliasedValuesBeforeReallocation) {
-    ObjectType elementType("Element");
+    Runtime runtime;
+    ObjectType elementType(&runtime, TypeId::INVALID, "Element", ObjectTypeMode::Closed);
     NomadIndex destroyed = 0;
     ListObject list(&elementType);
     RuntimeValue value;
@@ -321,18 +337,21 @@ BOOST_AUTO_TEST_CASE(ListInsertionCopiesAliasedValuesBeforeReallocation) {
 }
 
 BOOST_AUTO_TEST_CASE(ListFailedInsertionPreservesExistingElements) {
-    class ConditionalCopyType final : public ObjectTypeBase {
+    Runtime runtime;
+    class ConditionalCopyType final : public ObjectType {
     public:
+        explicit ConditionalCopyType(Runtime* runtime, TypeId id): ObjectType(runtime, id, "ConditionalCopy", ObjectTypeMode::Closed) {}
+
         NomadString getTypeName() const override { return "ConditionalCopy"; }
         void toString(const RuntimeValue&, NomadString& string) const override { string = getTypeName(); }
         void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override {
-            ObjectTypeBase::copyValue(source, destination);
+            ObjectType::copyValue(source, destination);
             if (failCopy) {
                 throw NomadException("Copy failed");
             }
         }
         bool failCopy = false;
-    } elementType;
+    } elementType(&runtime, TypeId::INVALID);
     NomadIndex destroyed = 0;
     ListObject list(&elementType);
     RuntimeValue value;
@@ -351,7 +370,8 @@ BOOST_AUTO_TEST_CASE(ListFailedInsertionPreservesExistingElements) {
 }
 
 BOOST_AUTO_TEST_CASE(ObjectDescriptorsInitializeNullReferences) {
-    ObjectType type("Example");
+    Runtime runtime;
+    ObjectType type(&runtime, TypeId::INVALID, "Example", ObjectTypeMode::Closed);
     RuntimeValue value;
     type.initValue(value);
     BOOST_TEST(value.getObjectValue() == nullptr);
@@ -359,8 +379,9 @@ BOOST_AUTO_TEST_CASE(ObjectDescriptorsInitializeNullReferences) {
 }
 
 BOOST_AUTO_TEST_CASE(ObjectTypeSharesAndReleasesReferences) {
-    IntegerType elementType;
-    ObjectType type("Example");
+    Runtime runtime;
+    IntegerType elementType(&runtime, TypeId::INVALID);
+    ObjectType type(&runtime, TypeId::INVALID, "Example", ObjectTypeMode::Closed);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue source;
     source.setObjectValue(new ListObject(&elementType));
@@ -379,7 +400,8 @@ BOOST_AUTO_TEST_CASE(ObjectTypeSharesAndReleasesReferences) {
 }
 
 BOOST_AUTO_TEST_CASE(CollectionObjectsUseReferenceCounting) {
-    IntegerType elementType;
+    Runtime runtime;
+    IntegerType elementType(&runtime, TypeId::INVALID);
     const auto before = NomadObject::getLiveObjectCount();
     for (auto* object : {
         static_cast<NomadObject*>(new Array1dObject(&elementType)),
@@ -398,6 +420,7 @@ BOOST_AUTO_TEST_CASE(CollectionObjectsUseReferenceCounting) {
 }
 
 BOOST_AUTO_TEST_CASE(NewObjectHasOneReference) {
+    Runtime runtime;
     NomadIndex destroyed = 0;
     auto* object = new CountingObject(destroyed);
 
@@ -407,6 +430,7 @@ BOOST_AUTO_TEST_CASE(NewObjectHasOneReference) {
 }
 
 BOOST_AUTO_TEST_CASE(ObjectDeletesItselfWhenLastReferenceIsReleased) {
+    Runtime runtime;
     NomadIndex destroyed = 0;
     auto* object = new CountingObject(destroyed);
 

@@ -2,6 +2,8 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/compiler/Compiler.hpp>
+
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -10,10 +12,18 @@
 
 #include <cmath>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 using namespace nomad;
 using namespace nomad::test;
+
+static_assert(std::is_same_v<decltype(OpCodeDefinition{}.id), OpCodeId>);
+static_assert(!std::is_convertible_v<NomadId, OpCodeId>);
+static_assert(!std::is_convertible_v<OpCodeId, NomadId>);
+static_assert(!std::is_convertible_v<OpCodeId, CallableId>);
+static_assert(!std::is_convertible_v<OpCodeId, PropertyId>);
+static_assert(!std::is_convertible_v<OpCodeId, IndexerId>);
 
 namespace {
 
@@ -95,6 +105,58 @@ bool closeTo(NomadFloat actual, NomadFloat expected) {
 
 BOOST_AUTO_TEST_SUITE(language_operators)
 
+BOOST_AUTO_TEST_CASE(opcode_ids_support_registration_lookup_and_catalog_growth)
+{
+    Runtime runtime;
+    const InstructionFn callback = [](VirtualMachine* virtualMachine) {
+        virtualMachine->setIntegerResult(17);
+    };
+    const InstructionFn unknownCallback = [](VirtualMachine* virtualMachine) {
+        virtualMachine->setIntegerResult(29);
+    };
+    VirtualMachine virtualMachine(&runtime);
+    callback(&virtualMachine);
+    BOOST_TEST(virtualMachine.getIntegerResult() == 17);
+    unknownCallback(&virtualMachine);
+    BOOST_TEST(virtualMachine.getIntegerResult() == 29);
+    const auto id = runtime.registerInstruction("test.opcode", callback, "", {Operand::Integer});
+    BOOST_REQUIRE(id.isValid());
+    BOOST_TEST(runtime.getInstructionId("test.opcode") == id);
+    BOOST_TEST(runtime.getInstructionId(callback) == id);
+    BOOST_TEST(runtime.getInstructionFn(id) == callback);
+    BOOST_TEST(runtime.getInstructionName(id) == "test.opcode");
+    BOOST_REQUIRE(runtime.getInstructionOperands(id).size() == 1u);
+    BOOST_TEST((runtime.getInstructionOperands(id).front() == Operand::Integer));
+    BOOST_TEST(runtime.getInstructionId("test.missing") == OpCodeId::INVALID);
+    BOOST_TEST(runtime.getInstructionId(unknownCallback) == OpCodeId::INVALID);
+    BOOST_TEST(runtime.registerInstruction("test.opcode", unknownCallback, "", {}) == id);
+    BOOST_TEST(runtime.getInstructionFn(id) == callback);
+
+    for (auto index = 0; index < 64; ++index) {
+        BOOST_REQUIRE(runtime.registerInstruction("test.extra" + std::to_string(index),
+            unknownCallback, "", {}).isValid());
+    }
+    BOOST_TEST(runtime.getInstructionId("test.opcode") == id);
+    BOOST_TEST(runtime.getInstructionId(callback) == id);
+    BOOST_TEST(runtime.getInstructionFn(id) == callback);
+
+    auto compiler = runtime.createCompiler();
+    const auto position = compiler->addOpCode(id);
+    BOOST_TEST(runtime.getInstructions()[position].fn == callback);
+    const auto stopId = runtime.getInstructionId(OpCodes::op_stop);
+    BOOST_REQUIRE(stopId.isValid());
+    compiler->setOpCode(position, stopId);
+    BOOST_TEST(runtime.getInstructions()[position].fn == runtime.getInstructionFn(stopId));
+    BOOST_TEST(compiler->getUnaryOperatorOpCodeId(UnaryOperator::Minus, runtime.getIntegerType()) ==
+        runtime.getInstructionId(OpCodes::op_integer_negate));
+    BOOST_TEST(compiler->getBinaryOperatorOpCodeId(BinaryOperator::Plus,
+        runtime.getIntegerType(), runtime.getIntegerType()) == runtime.getInstructionId(OpCodes::op_integer_add));
+    BOOST_TEST(runtime.getUnaryOperatorOpCodeId(UnaryOperator::Unknown, runtime.getIntegerType()).isInvalid());
+    BOOST_TEST(runtime.getBinaryOperatorOpCodeId(BinaryOperator::Plus, nullptr, runtime.getIntegerType()).isInvalid());
+    BOOST_TEST(runtime.getBinaryOperatorOpCodeId(BinaryOperator::Unknown,
+        runtime.getIntegerType(), runtime.getIntegerType()).isInvalid());
+}
+
 BOOST_AUTO_TEST_CASE(binary_operands_evaluate_left_first_in_compiled_and_interpreted_expressions)
 {
     const std::vector<std::pair<NomadString, NomadString>> cases{
@@ -168,11 +230,11 @@ BOOST_AUTO_TEST_CASE(string_operands_evaluate_left_first_and_snapshot_before_rig
                 machine->setStringResult("before");
             }, {}, runtime.getStringType(), NomadDoc("Right string"));
             runtime.registerNativeFunction("test.replaceLocal", [&](VirtualMachine* machine) {
-                auto previous = machine->getFunctionVariableValue(0);
+                auto previous = machine->getFunctionVariableValue(VariableId{0});
                 runtime.getStringType()->freeValue(previous);
                 RuntimeValue replacement;
                 replacement.setStringValue("after");
-                machine->setFunctionVariableValue(0, replacement);
+                machine->setFunctionVariableValue(VariableId{0}, replacement);
                 machine->setStringResult("before");
             }, {}, runtime.getStringType(), NomadDoc("Replace the left local"));
             const auto expression = NomadString{"(test.leftText) "} + operation + " (test.rightText)";
@@ -551,7 +613,7 @@ BOOST_AUTO_TEST_CASE(compiled_instructions_match_registered_operands)
     NomadIndex index = 0;
     while (index < instructions.size()) {
         const auto instructionId = runtime.getInstructionId(instructions[index].fn);
-        BOOST_REQUIRE_MESSAGE(instructionId != NOMAD_INVALID_ID, "No opcode at index " << index);
+        BOOST_REQUIRE_MESSAGE(instructionId.isValid(), "No opcode at index " << index);
 
         if (instructionId == copyResultId) {
             copyResultCount++;
@@ -562,7 +624,7 @@ BOOST_AUTO_TEST_CASE(compiled_instructions_match_registered_operands)
         for (NomadIndex operand = 1; operand <= operandCount; ++operand) {
             BOOST_REQUIRE(index + operand < instructions.size());
             BOOST_TEST_CONTEXT(runtime.getInstructionName(instructionId) << " at " << index) {
-                BOOST_TEST(runtime.getInstructionId(instructions[index + operand].fn) == NOMAD_INVALID_ID);
+                BOOST_TEST(runtime.getInstructionId(instructions[index + operand].fn).isInvalid());
             }
         }
 

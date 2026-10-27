@@ -752,11 +752,11 @@ Canvas* Game::getCanvas() const {
     return m_canvas.get();
 }
 
-NomadId Game::getFunctionId(const NomadString& functionName) const {
+CallableId Game::getFunctionId(const NomadString& functionName) const {
     return m_runtime->getFunctionId(functionName);
 }
 
-void Game::executeFunction(const NomadId functionId, Scene *scene, Entity *thisEntity, Entity *otherEntity) {
+void Game::executeFunction(const CallableId functionId, Scene *scene, Entity *thisEntity, Entity *otherEntity) {
     m_currentContext.reset(scene, thisEntity);
 
     if (otherEntity) {
@@ -767,7 +767,7 @@ void Game::executeFunction(const NomadId functionId, Scene *scene, Entity *thisE
 }
 
 void Game::executeFunction(
-    const NomadId functionId,
+    const CallableId functionId,
     Scene *scene,
     Entity *entity,
     const std::vector<RuntimeValue> &args,
@@ -779,7 +779,7 @@ void Game::executeFunction(
 }
 
 void Game::executeFunction(
-    const NomadId functionId,
+    const CallableId functionId,
     Scene* scene,
     Entity* entity,
     const std::vector<Entity*>& others,
@@ -792,7 +792,7 @@ void Game::executeFunction(
 }
 
 void Game::executeFunction(
-    const NomadId functionId,
+    const CallableId functionId,
     Scene* scene,
     Entity* entity,
     const std::vector<Entity*>& others,
@@ -913,7 +913,7 @@ void Game::executeFunction(
 //     executeFunctionInNewContext(function_id, scene, entity, returnValue);
 // }
 
-bool Game::executePredicate(const NomadId functionId) const {
+bool Game::executePredicate(const CallableId functionId) const {
     RuntimeValue return_value;
 
     m_runtime->executeFunction(functionId, {}, return_value);
@@ -923,7 +923,7 @@ bool Game::executePredicate(const NomadId functionId) const {
 
 NomadId Game::createScene(
     const NomadString& sceneName,
-    const NomadId functionId,
+    const CallableId functionId,
     std::unique_ptr<Closure> postCreateClosure
 ) {
     // Generate scene ID
@@ -979,7 +979,7 @@ void Game::forEachScene(const std::function<void(Scene*)>& callback) const {
 
 NomadId Game::addEntityToScene(
     const NomadId sceneId,
-    const NomadId initFunctionId,
+    const CallableId initFunctionId,
     const NomadFloat x,
     const NomadFloat y,
     const NomadFloat width,
@@ -1020,13 +1020,13 @@ void Game::removeEntityFromScene(const NomadId sceneId, const NomadId entityId) 
 }
 
 void Game::dispatchEvent(const EventDispatch& dispatch) {
-    if (dispatch.eventId == NOMAD_INVALID_ID) {
+    if (dispatch.eventId == EventId::INVALID) {
         log::error("Cannot dispatch event: invalid event id");
         return;
     }
 
     if (!m_runtime->getEventDefinition(dispatch.eventId)) {
-        log::error("Cannot dispatch event: event id " + toString(dispatch.eventId) + " not found");
+        log::error("Cannot dispatch event: event id " + toString(dispatch.eventId.id) + " not found");
         return;
     }
 
@@ -1065,11 +1065,16 @@ void Game::triggerEntityEvent(const NomadId sceneId, const NomadId entityId, con
     });
 }
 
-void Game::triggerEntityEvent(const NomadId eventId, const NomadId sceneId, const NomadId entityId, std::vector<RuntimeValue> args) {
+void Game::triggerEntityEvent(
+    const EventId eventId,
+    const NomadId sceneId,
+    const NomadId entityId,
+    std::vector<RuntimeValue> args
+) {
     if (const auto event = m_runtime->getEventDefinition(eventId)) {
        triggerEntityEvent(sceneId, entityId, event->name, std::move(args));
     } else {
-        log::warning("Event ID " + toString(eventId) + " not found");
+        log::warning("Event ID " + toString(eventId.id) + " not found");
     }
 }
 
@@ -1098,7 +1103,7 @@ void Game::scheduleEntityCallback(
     const NomadId entityId,
     const NomadInteger frameCount,
     const NomadBoolean repeat,
-    const NomadId callback)
+    const CallableId callback)
 {
     m_eventQueue.push(GameEventTriggerEntityCallback {
         sceneId,
@@ -1250,7 +1255,7 @@ void Game::initRuntime() {
         "game.debug.console",
         "game.debug.draw",
     }) {
-        if (!m_runtime->registerHub(hubName)) {
+        if (m_runtime->registerHub(hubName, HubMode::Opened).isInvalid()) {
             raiseError("Failed to register game API hub '" + NomadString(hubName) + "'");
         }
     }
@@ -1261,15 +1266,19 @@ void Game::initRuntime() {
 void Game::initObjects() {
     log::info("Initializing objects");
 
-    m_runtime->registerType(std::make_unique<ObjectType>(
-        "Audio", std::vector<const Type*>{},
+    if (m_runtime->createObjectType(
+        "Audio", ObjectTypeMode::Closed,
         NomadDoc("A sound effect that can be played, paused, resumed, stopped, looped, and adjusted independently.")
-    ));
+    ).isInvalid()) {
+        raiseError("Failed to create Audio type");
+    }
 
-    m_runtime->registerType(std::make_unique<ObjectType>(
-        "Font", std::vector<const Type*>{},
+    if (m_runtime->createObjectType(
+        "Font", ObjectTypeMode::Closed,
         NomadDoc("A font at a specific point size for displaying text.")
-    ));
+    ).isInvalid()) {
+        raiseError("Failed to create Font type");
+    }
 }
 
 void Game::initEvents() const {
@@ -1308,37 +1317,24 @@ void Game::initVariableContext() {
     auto sceneVariableContext = std::make_unique<SimpleVariableContext>();
     auto thisEntityVariableContext = std::make_unique<ThisEntityVariableContext>(this);
     auto otherEntityVariableContext = std::make_unique<OtherEntityVariableContext>(thisEntityVariableContext.get());
-    // auto inventoryVariableContext = std::make_unique<SimpleVariableContext>();
-    // auto settingsVariableContext = std::make_unique<SimpleVariableContext>();
 
     m_sceneVariableMap = sceneVariableContext->getVariableMap();
     m_thisEntityVariableMap = thisEntityVariableContext->getThisVariableMap();
     m_otherEntityVariableMap = thisEntityVariableContext->getOtherVariableMap();
-    // m_inventoryVariableMap = inventoryVariableContext->getVariableMap();
-    // m_inventoryContext = inventoryVariableContext.get();
-    // m_settingsContext = settingsVariableContext.get();
 
     const auto sceneContextId = m_runtime->registerVariableContext("scene", "scene.", std::move(sceneVariableContext));
     const auto thisEntityContextId = m_runtime->registerVariableContext(THIS_ENTITY_VARIABLE_CONTEXT, THIS_ENTITY_VARIABLE_PREFIX, std::move(thisEntityVariableContext));
     const auto otherEntityContextId = m_runtime->registerVariableContext(OTHER_ENTITY_VARIABLE_CONTEXT, OTHER_ENTITY_VARIABLE_PREFIX, std::move(otherEntityVariableContext));
-    // const auto inventoryContextId = m_runtime->registerVariableContext("inventory", "inventory.", std::move(inventoryVariableContext));
-    // const auto settingsContextId = m_runtime->registerVariableContext("settings", "settings.", std::move(settingsVariableContext));
 
-    if (sceneContextId == NOMAD_INVALID_ID) {
+    if (sceneContextId.isInvalid()) {
         raiseError("Failed to register scene variable context");
     }
-    if (thisEntityContextId == NOMAD_INVALID_ID) {
+    if (thisEntityContextId.isInvalid()) {
         raiseError("Failed to register `this` entity variable context");
     }
-    if (otherEntityContextId == NOMAD_INVALID_ID) {
+    if (otherEntityContextId.isInvalid()) {
         raiseError("Failed to register `other` entity variable context");
     }
-    // if (inventoryContextId == NOMAD_INVALID_ID) {
-    //     raiseError("Failed to register inventory variable context");
-    // }
-    // if (settingsContextId == NOMAD_INVALID_ID) {
-    //     raiseError("Failed to register settings variable context");
-    // }
 }
 
 void Game::initResourceManager() {
@@ -1350,16 +1346,16 @@ void Game::initResourceManager() {
 void Game::initEnums() {
     log::info("Initializing enums");
 
-    const auto registerEnum = [this](
+    const auto createEnum = [this](
         const NomadString& name,
         const std::vector<EnumValueDefinition>& values
     ) {
-        if (m_runtime->registerEnum(name, values) == nullptr) {
+        if (m_runtime->createEnum(name, values).isInvalid()) {
             raiseError("Failed to register enum '" + name + "'");
         }
     };
 
-    registerEnum("alignment", {
+    createEnum("alignment", {
         {"topLeft", static_cast<NomadInteger>(Alignment::TopLeft)},
         {"topMiddle", static_cast<NomadInteger>(Alignment::TopMiddle)},
         {"topRight", static_cast<NomadInteger>(Alignment::TopRight)},
@@ -1370,22 +1366,22 @@ void Game::initEnums() {
         {"bottomMiddle", static_cast<NomadInteger>(Alignment::BottomMiddle)},
         {"bottomRight", static_cast<NomadInteger>(Alignment::BottomRight)},
     });
-    registerEnum("horizontalAlignment", {
+    createEnum("horizontalAlignment", {
         {"left", static_cast<NomadInteger>(HorizontalAlignment::Left)},
         {"middle", static_cast<NomadInteger>(HorizontalAlignment::Middle)},
         {"right", static_cast<NomadInteger>(HorizontalAlignment::Right)},
     });
-    registerEnum("verticalAlignment", {
+    createEnum("verticalAlignment", {
         {"top", static_cast<NomadInteger>(VerticalAlignment::Top)},
         {"center", static_cast<NomadInteger>(VerticalAlignment::Center)},
         {"bottom", static_cast<NomadInteger>(VerticalAlignment::Bottom)},
     });
-    registerEnum("body", {
+    createEnum("body", {
         {"static", static_cast<NomadInteger>(BodyType::Static)},
         {"dynamic", static_cast<NomadInteger>(BodyType::Dynamic)},
         {"kinematic", static_cast<NomadInteger>(BodyType::Kinematic)},
     });
-    registerEnum("cardinal", {
+    createEnum("cardinal", {
         {"north", static_cast<NomadInteger>(Cardinal::North)},
         {"east", static_cast<NomadInteger>(Cardinal::East)},
         {"south", static_cast<NomadInteger>(Cardinal::South)},
@@ -1584,9 +1580,9 @@ NomadString& Game::getText(const NomadString& key, NomadString& text) const {
 void Game::executeEntry() {
     log::info("Executing `" + m_options.entryFunction + "` entry function");
 
-    const NomadId initFunctionId = m_runtime->getFunctionId(m_options.entryFunction);
+    const auto initFunctionId = m_runtime->getFunctionId(m_options.entryFunction);
 
-    if (initFunctionId == NOMAD_INVALID_ID) {
+    if (initFunctionId.isInvalid()) {
         raiseError("Configured entry function '" + m_options.entryFunction + "' was not found");
     }
 
@@ -1659,7 +1655,7 @@ bool Game::processGameEventCreateScene(const GameEventCreateScene &event) {
 
     m_scenes.push_back(std::move(scene));
 
-    if (event.initFunctionId != NOMAD_INVALID_ID) {
+    if (!event.initFunctionId.isInvalid()) {
         executeFunction(event.initFunctionId, scenePtr, nullptr);
     } else {
         log::error("No init function for scene " + toString(event.sceneId));
@@ -1722,7 +1718,7 @@ bool Game::processGameEventCreateEntity(const GameEventCreateEntity &event) {
             return true;
         }
 
-        if (event.initFunctionId != NOMAD_INVALID_ID) {
+        if (!event.initFunctionId.isInvalid()) {
             // Set entity name to be the name of its init function.
             auto function = m_runtime->getScriptFunction(event.initFunctionId);
             

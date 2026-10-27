@@ -30,10 +30,17 @@ protected:
 
 std::unique_ptr<Statement> parseExecutableTestStatement(
     CompilerContext* /*context*/,
-    ScriptFunction* /*function*/,
+    ScriptCallableBase* /*function*/,
     Tokenizer* /*tokens*/
 ) {
     return std::make_unique<ExecutableTestStatement>();
+}
+
+std::vector<PreParsePhase> preParsePhases;
+
+bool preParseTestStatement(CompilerContext*, ScriptCallableBase*, Tokenizer*, const PreParsePhase phase) {
+    preParsePhases.push_back(phase);
+    return true;
 }
 
 template<typename Node>
@@ -108,9 +115,9 @@ BOOST_AUTO_TEST_CASE(statement_evaluation_defaults_to_unsupported)
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     compiler->registerParseStatementFn(
-        "supported",
-        parseExecutableTestStatement,
-        nullptr
+        "supported", 
+        StatementAvailability::Both, 
+        parseExecutableTestStatement
     );
 
     auto machine = runtime.createVirtualMachine();
@@ -124,6 +131,57 @@ BOOST_AUTO_TEST_CASE(statement_evaluation_defaults_to_unsupported)
     Statement unsupported(0, 0);
     BOOST_CHECK_THROW(unsupported.evaluate(context), AstException);
     BOOST_TEST(context.getResult() == nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(statement_availability_is_enforced_from_registration)
+{
+    for (const auto availability : {
+        StatementAvailability::Compiler, StatementAvailability::Interpreter, StatementAvailability::Both
+    }) {
+        for (const auto mode : {CompilerMode::Script, CompilerMode::Interpreter}) {
+            Runtime runtime;
+            auto compiler = runtime.createCompiler();
+            compiler->registerParseStatementFn("custom", availability, parseExecutableTestStatement);
+            CompilerContext context(compiler.get(), mode);
+            Tokenizer tokens(&context, "availability.nomad", "custom");
+            const auto statement = parser::parseStatement(&context, nullptr, &tokens);
+            const auto allowed = availability == StatementAvailability::Both ||
+                (mode == CompilerMode::Script && availability == StatementAvailability::Compiler) ||
+                (mode == CompilerMode::Interpreter && availability == StatementAvailability::Interpreter);
+            BOOST_TEST((statement != nullptr) == allowed);
+            BOOST_TEST(context.hasError() == !allowed);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(statement_pre_parser_receives_both_phases_without_separate_callbacks)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    preParsePhases.clear();
+    compiler->registerParseStatementFn("custom", StatementAvailability::Both, parseExecutableTestStatement,
+                                       preParseTestStatement);
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"main", {"phases.nomad", "custom"}}}, {}});
+    BOOST_REQUIRE(compiler->compileFunctions(&context));
+    BOOST_REQUIRE(preParsePhases.size() == 2u);
+    BOOST_TEST((preParsePhases[0] == PreParsePhase::Declarations));
+    BOOST_TEST((preParsePhases[1] == PreParsePhase::Signatures));
+    preParsePhases.clear();
+}
+
+BOOST_AUTO_TEST_CASE(interpreter_only_statements_do_not_run_compiler_pre_parsers)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    preParsePhases.clear();
+    compiler->registerParseStatementFn("custom", StatementAvailability::Interpreter, parseExecutableTestStatement,
+                                       preParseTestStatement);
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"main", {"phases.nomad", "custom"}}}, {}});
+    BOOST_TEST(!compiler->compileFunctions(&context));
+    BOOST_TEST(context.hasError());
+    BOOST_TEST(preParsePhases.empty());
 }
 
 BOOST_AUTO_TEST_CASE(statement_execution_calls_compiled_functions_with_interpreter_arguments)
@@ -279,11 +337,11 @@ BOOST_AUTO_TEST_CASE(nativeFunction_execution_accepts_named_compiled_callback_fu
         {runtime.getIntegerType()},
         runtime.getIntegerType()
     );
-    NomadId receivedCallbackId = NOMAD_INVALID_ID;
+    CallableId receivedCallbackId = CallableId::INVALID;
     runtime.registerNativeFunction(
         "acceptCallback",
         [&receivedCallbackId](VirtualMachine* interpreter) {
-            receivedCallbackId = interpreter->getIdParameter(0);
+            receivedCallbackId = CallableId{interpreter->getIdParameter(0)};
         },
         {
             defParameter("callback", callbackType, NomadParamDoc("Callback to accept"))
@@ -295,7 +353,7 @@ BOOST_AUTO_TEST_CASE(nativeFunction_execution_accepts_named_compiled_callback_fu
     InterpreterContext context(*machine);
 
     BOOST_TEST(Interpreter{}.execute("acceptCallback callbackFunction", context));
-    BOOST_TEST(receivedCallbackId == callbackFunctionId);
+    BOOST_TEST((receivedCallbackId == callbackFunctionId));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getType()->isVoid());
     BOOST_TEST(!context.hasError());
@@ -303,12 +361,12 @@ BOOST_AUTO_TEST_CASE(nativeFunction_execution_accepts_named_compiled_callback_fu
     BOOST_TEST(!Interpreter{}.execute("acceptCallback fun", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(*context.getError() == "Inline `fun` callbacks are not supported by the interpreter");
-    BOOST_TEST(receivedCallbackId == callbackFunctionId);
+    BOOST_TEST((receivedCallbackId == callbackFunctionId));
 
     BOOST_TEST(!Interpreter{}.execute("acceptCallback then", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(*context.getError() == "Inline `then` callbacks are not supported by the interpreter");
-    BOOST_TEST(receivedCallbackId == callbackFunctionId);
+    BOOST_TEST((receivedCallbackId == callbackFunctionId));
 }
 
 BOOST_AUTO_TEST_CASE(callback_argument_rejects_uncompiled_inline_callback_functions)
@@ -319,7 +377,7 @@ BOOST_AUTO_TEST_CASE(callback_argument_rejects_uncompiled_inline_callback_functi
     compiler->registerSources(&compilation, {{{"uncompiledCallback", {"uncompiledCallback.nomad",
         "params value:int\nreturn value"}}}, {}});
     const auto callbackFunctionId = runtime.getFunctionId("uncompiledCallback");
-    BOOST_REQUIRE(callbackFunctionId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(callbackFunctionId.isValid());
     const auto* callbackType = runtime.getCallbackType(
         {runtime.getIntegerType()},
         runtime.getIntegerType()

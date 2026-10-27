@@ -21,7 +21,7 @@ using namespace nomad::test;
 
 namespace {
 
-NomadId registerValue(SimpleVariableContext& context, const NomadString& name, const Type* type, RuntimeValue value) {
+VariableId registerValue(SimpleVariableContext& context, const NomadString& name, const Type* type, RuntimeValue value) {
     const auto variableId = context.registerVariable(name, type);
     context.setValue(variableId, value);
     type->freeValue(value);
@@ -110,7 +110,9 @@ BOOST_AUTO_TEST_CASE(variable_persistence_round_trips_all_supported_types)
 BOOST_AUTO_TEST_CASE(variable_persistence_round_trips_enums_by_member_name)
 {
     Runtime runtime;
-    const auto* stateType = runtime.registerEnum("State", {{"idle", 10}, {"walking", 20}});
+    const auto stateId = runtime.createEnum("State", {{"idle", 10}, {"walking", 20}});
+    BOOST_REQUIRE(stateId.isValid());
+    const auto* stateType = runtime.getType(stateId).value();
     BOOST_REQUIRE(stateType != nullptr);
 
     SimpleVariableContext source;
@@ -133,7 +135,9 @@ BOOST_AUTO_TEST_CASE(variable_persistence_round_trips_enums_by_member_name)
 BOOST_AUTO_TEST_CASE(variable_persistence_round_trips_uninitialized_enums_as_blank_strings)
 {
     Runtime runtime;
-    const auto* stateType = runtime.registerEnum("State", {{"idle", 1}, {"walking", 2}});
+    const auto stateId = runtime.createEnum("State", {{"idle", 1}, {"walking", 2}});
+    BOOST_REQUIRE(stateId.isValid());
+    const auto* stateType = runtime.getType(stateId).value();
     BOOST_REQUIRE(stateType != nullptr);
 
     SimpleVariableContext source;
@@ -156,8 +160,12 @@ BOOST_AUTO_TEST_CASE(variable_persistence_round_trips_uninitialized_enums_as_bla
 BOOST_AUTO_TEST_CASE(variable_persistence_resolves_enum_names_against_the_destination_type)
 {
     Runtime runtime;
-    const auto* stateType = runtime.registerEnum("State", {{"idle", 1}, {"walking", 2}});
-    const auto* directionType = runtime.registerEnum("Direction", {{"idle", 10}, {"right", 20}});
+    const auto stateId = runtime.createEnum("State", {{"idle", 1}, {"walking", 2}});
+    const auto directionId = runtime.createEnum("Direction", {{"idle", 10}, {"right", 20}});
+    BOOST_REQUIRE(stateId.isValid());
+    BOOST_REQUIRE(directionId.isValid());
+    const auto* stateType = runtime.getType(stateId).value();
+    const auto* directionType = runtime.getType(directionId).value();
     BOOST_REQUIRE(stateType != nullptr);
     BOOST_REQUIRE(directionType != nullptr);
 
@@ -179,7 +187,9 @@ BOOST_AUTO_TEST_CASE(variable_persistence_resolves_enum_names_against_the_destin
 BOOST_AUTO_TEST_CASE(variable_persistence_rejects_invalid_enum_names_and_numeric_values)
 {
     Runtime runtime;
-    const auto* stateType = runtime.registerEnum("State", {{"idle", 1}, {"walking", 2}});
+    const auto stateId = runtime.createEnum("State", {{"idle", 1}, {"walking", 2}});
+    BOOST_REQUIRE(stateId.isValid());
+    const auto* stateType = runtime.getType(stateId).value();
     BOOST_REQUIRE(stateType != nullptr);
 
     SimpleVariableContext context;
@@ -252,7 +262,7 @@ BOOST_AUTO_TEST_CASE(variable_persistence_skips_mismatched_missing_and_unknown_v
     BOOST_TEST(getValue(context, "settings.volume").getFloatValue() == 0.5f);
     BOOST_TEST(NomadString(getValue(context, "settings.keys.jump").getStringValue()) == "space");
     BOOST_TEST(getValue(context, "settings.missing").getIntegerValue() == 7);
-    BOOST_TEST(context.getVariableId("settings.unknown.value") == NOMAD_INVALID_ID);
+    BOOST_TEST(context.getVariableId("settings.unknown.value") == VariableId::INVALID);
 }
 
 BOOST_AUTO_TEST_CASE(variable_persistence_allows_parent_and_child_variable_names)
@@ -281,7 +291,9 @@ BOOST_AUTO_TEST_CASE(variable_persistence_rejects_unsupported_and_non_finite_val
 {
     Runtime runtime;
     boost::json::object root;
-    const auto* stateType = runtime.registerEnum("State", {{"idle", 1}});
+    const auto stateId = runtime.createEnum("State", {{"idle", 1}});
+    BOOST_REQUIRE(stateId.isValid());
+    const auto* stateType = runtime.getType(stateId).value();
     BOOST_REQUIRE(stateType != nullptr);
 
     BOOST_TEST(!writeJsonVariable(&runtime, root, "inventory.id", runtime.getVoidType(), RuntimeValue{}));

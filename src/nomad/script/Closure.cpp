@@ -29,9 +29,7 @@ Closure::~Closure() {
 
 	// Clean up captured parameter values
 	for (NomadIndex i = 0; i < m_capturedParameters.size(); ++i) {
-		const auto parameterIndex = toNomadId(m_function->getParameterCount() - m_capturedParameters.size() + i);
-
-		if (const auto type = m_function->getCaptureType(parameterIndex)) {
+		if (const auto type = m_function->getCaptureType(toNomadId(i))) {
 			type->freeValue(m_capturedParameters[i]);
 		}
 	}

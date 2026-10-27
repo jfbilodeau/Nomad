@@ -6,7 +6,9 @@
 
 #include <nomad/compiler/CompilerContext.hpp>
 
+#include <nomad/script/Callable.hpp>
 #include <nomad/script/RuntimeValue.hpp>
+#include <nomad/script/Variable.hpp>
 
 #include <memory>
 #include <optional>
@@ -17,6 +19,7 @@ namespace nomad {
 
 class Type;
 class Runtime;
+class ScriptCallableBase;
 class ScriptFunction;
 class VirtualMachine;
 
@@ -58,20 +61,23 @@ public:
     // The caller owns the VM. Interpreter variables persist for this context's lifetime.
     explicit InterpreterContext(VirtualMachine& virtualMachine);
     // Additionally borrows the active script frame, which must outlive this context.
-    InterpreterContext(VirtualMachine& virtualMachine, ScriptFunction& function);
+    InterpreterContext(VirtualMachine& virtualMachine, const ScriptCallableBase& callable);
     InterpreterContext(const InterpreterContext&) = delete;
     InterpreterContext& operator=(const InterpreterContext&) = delete;
     ~InterpreterContext();
 
     [[nodiscard]] Runtime* getRuntime() const;
     [[nodiscard]] VirtualMachine* getVirtualMachine() const;
-    // Context-owned resolution metadata, never registered with the Runtime.
+    // Function-only access to context-owned metadata; nullptr for method or constructor frames.
     [[nodiscard]] const ScriptFunction* getFunction() const;
+    // Context-owned resolution metadata, never registered with the Runtime.
+    [[nodiscard]] const ScriptCallableBase* getCallable() const;
     [[nodiscard]] bool isFrameBacked() const;
-    [[nodiscard]] bool isFrameVariable(NomadId variableId) const;
-    void evaluateFunctionCall(NomadId functionId, const std::vector<RuntimeValue>& arguments);
-    void evaluateNativeFunctionCall(NomadId functionId, const std::vector<RuntimeValue>& arguments);
+    [[nodiscard]] bool isFrameVariable(VariableId variableId) const;
+    void evaluateFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
+    void evaluateNativeFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
     void setParameterResult(NomadId parameterId);
+    void setParameter(NomadId parameterId, const RuntimeValue& value);
 
     void setResult(const Type* type, const RuntimeValue& value);
     void setResult(const TypedValue& value);
@@ -93,9 +99,9 @@ public:
     void clearVariableValue(const NomadString& name);
 
     [[nodiscard]] const Type* getVariableType(const NomadString& name) const;
-    [[nodiscard]] const Type* getVariableTypeById(NomadId variableId) const;
+    [[nodiscard]] const Type* getVariableTypeById(VariableId variableId) const;
     [[nodiscard]] const RuntimeValue* getVariableValue(const NomadString& name) const;
-    [[nodiscard]] const RuntimeValue* getVariableValueById(NomadId variableId) const;
+    [[nodiscard]] const RuntimeValue* getVariableValueById(VariableId variableId) const;
     [[nodiscard]] std::vector<InterpreterVariableInfo> listVariables() const;
 
 private:
@@ -104,9 +110,9 @@ private:
     void validateFrame() const;
 
     Runtime* m_runtime;
-    std::unique_ptr<ScriptFunction> m_function;
+    std::unique_ptr<ScriptCallableBase> m_function;
     VirtualMachine& m_virtualMachine;
-    ScriptFunction* m_frameFunction = nullptr;
+    const ScriptCallableBase* m_frameCallable = nullptr;
     NomadIndex m_parameterIndex = 0;
     NomadIndex m_variableIndex = 0;
     NomadIndex m_frameVariableCount = 0;

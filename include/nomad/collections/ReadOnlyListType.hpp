@@ -6,7 +6,13 @@ namespace nomad {
 
 class ReadOnlyListType final : public ObjectType {
 public:
-    explicit ReadOnlyListType(const Type* elementType);
+    ReadOnlyListType(
+        Runtime* runtime,
+        TypeId id,
+        NomadString name,
+        ObjectTypeMode mode,
+        const Type* elementType
+    );
 
     void initValue(RuntimeValue& value) const override;
 };

@@ -15,8 +15,8 @@ public:
     SceneVariableContext(const SceneVariableContext&) = delete;
     ~SceneVariableContext() override = default;
 
-    void setValue(NomadId variable_id, const RuntimeValue& value) override;
-    void getValue(NomadId variable_id, RuntimeValue& value) override;
+    void setValue(VariableId variable_id, const RuntimeValue& value) override;
+    void getValue(VariableId variable_id, RuntimeValue& value) override;
 
 private:
     Game* m_game;

@@ -10,10 +10,12 @@
 
 namespace nomad {
 
+enum class PreParsePhase;
+
 // Forward declaration
 class Compiler;
 class Expression;
-class ScriptFunction;
+class ScriptCallableBase;
 class Statement;
 class SyntaxTree;
 class Tokenizer;
@@ -29,6 +31,11 @@ private:
     std::vector<NomadString> m_parameters;
 };
 
-bool preParseEventStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens);
+bool preParseEventStatement(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    PreParsePhase phase
+);
 
 } // namespace nomad

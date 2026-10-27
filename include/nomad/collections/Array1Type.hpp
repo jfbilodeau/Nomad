@@ -10,7 +10,13 @@ class Array1dObject;
 
 class Array1Type final : public ArrayType {
 public:
-    explicit Array1Type(const Type* elementType);
+    Array1Type(
+        Runtime* runtime,
+        TypeId id,
+        NomadString name,
+        ObjectTypeMode mode,
+        const Type* elementType
+    );
 
     [[nodiscard]] Array1dObject* createObject(NomadInteger size) const;
 

@@ -1,6 +1,6 @@
 # Nomad language support for Visual Studio Code
 
-This extension provides TextMate syntax highlighting, API completion, hover documentation, and compiler diagnostics for
+This extension provides TextMate syntax highlighting, API completion, hover documentation, signature help, and compiler diagnostics for
 Nomad (`.nomad`) scripts. Requires VS Code 1.82 or newer.
 
 ## Installation
@@ -56,10 +56,35 @@ are scoped to the current function and enclosing callbacks, and hover shows thei
 types. Member hover shows the member signature and documentation. Named
 receivers can include chains of object properties, such as `this.name.length`.
 For unknown receiver types, candidates list their receiver type in the details.
+Script class fields and ordinary methods are included, including fields inferred
+from constructor assignments. Each method overload has a separate completion
+entry with its parameter and return types; hover lists all overloads for the
+receiver's class. Constructor and method bodies also support `this.` member
+suggestions. Class constructors and generated initializers are not instance
+member suggestions.
 Completion also works on unfinished member expressions such as `name.`.
 Other errors can still prevent local type inference.
 Member completion after string literals or arbitrary expressions is not yet supported.
-It does not provide signature-help popups or inlay hints.
+Inlay hints are not yet supported.
+
+## Signature help
+
+Typing a space after a callable or an argument shows its signatures. You can also
+request signature help with Ctrl+Shift+Space. Functions, methods on named receivers
+(including `this` and stored-field chains), and `new` expressions show native and
+script overloads, parameter descriptions, and return types. Constructors show the
+type they produce. Hidden source-location parameters are omitted.
+
+The active parameter follows argument expressions rather than individual words:
+spaces in strings or arithmetic do not advance it. Nested calls and parenthesized
+expressions are supported. Available argument types help select an overload.
+Signatures reflect unsaved project buffers and remain available for incomplete
+calls when their declarations and receiver types can be resolved.
+
+Signature help is not shown inside comments or strings. Calls taking callbacks,
+predicates, or event arguments are not yet supported, including when nested in
+another call. Generic constructors currently need explicit type arguments.
+Methods on unknown receivers, literals, or arbitrary expressions are not yet supported.
 
 ## Diagnostics
 

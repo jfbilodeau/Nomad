@@ -7,7 +7,6 @@
 #include <nomad/game/VariablePersistence.hpp>
 
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/VariableContext.hpp>
 
 #include <boost/json.hpp>
 
@@ -15,108 +14,6 @@
 #include <cmath>
 
 namespace nomad {
-
-bool Game::saveGame(const NomadString& saveName) {
-    const auto path = makeSavePath(saveName);
-
-    if (path.empty()) {
-        return false;
-    }
-
-    boost::json::object root;
-
-    if (!saveVariableContext(m_runtime, *m_inventoryContext, root)) {
-        log::error("Game not saved to '" + path + "'");
-        return false;
-    }
-
-    if (!writeJsonFile(path, root)) {
-        return false;
-    }
-
-    log::info("Game saved to '" + path + "'");
-
-    return true;
-}
-
-bool Game::loadGame(const NomadString& saveName) {
-    const auto path = makeSavePath(saveName);
-
-    if (path.empty()) {
-        return false;
-    }
-
-    if (!pathExists(path)) {
-        log::error("Save '" + saveName + "' not found at '" + path + "'");
-        return false;
-    }
-
-    const auto root = readJsonFile(path);
-
-    if (!root) {
-        return false;
-    }
-
-    loadVariableContext(m_runtime, *m_inventoryContext, *root);
-
-    log::info("Game loaded from '" + path + "'");
-
-    return true;
-}
-
-bool Game::saveExists(const NomadString& saveName) const {
-    const auto path = makeSavePath(saveName);
-
-    return !path.empty() && pathExists(path);
-}
-
-bool Game::saveSettings() {
-    const auto path = getSettingsFilePath();
-
-    if (path.empty()) {
-        return false;
-    }
-
-    boost::json::object root;
-
-    if (!saveVariableContext(m_runtime, *m_settingsContext, root)) {
-        log::error("Settings not saved to '" + path + "'");
-        return false;
-    }
-
-    if (!writeJsonFile(path, root)) {
-        return false;
-    }
-
-    log::info("Settings saved to '" + path + "'");
-
-    return true;
-}
-
-bool Game::loadSettings() {
-    const auto path = getSettingsFilePath();
-
-    if (path.empty()) {
-        return false;
-    }
-
-    if (!pathExists(path)) {
-        log::info("No settings found at '" + path + "'. Using defaults");
-        return false;
-    }
-
-    const auto root = readJsonFile(path);
-
-    if (!root) {
-        return false;
-    }
-
-    loadVariableContext(m_runtime, *m_settingsContext, *root);
-
-    log::info("Settings loaded from '" + path + "'");
-
-    return true;
-}
 
 void Game::setDebugConsoleVisible(const bool visible) {
     ensureDebugSettingsLoaded();
@@ -170,16 +67,6 @@ void Game::setDebugDrawVisible(const bool visible) {
 
 bool Game::isDebugDrawVisible() const {
     return m_debugDrawVisible;
-}
-
-NomadString Game::getSettingsFilePath() const {
-    const auto statePath = getStatePath();
-
-    if (statePath.empty()) {
-        return NOMAD_EMPTY_STRING;
-    }
-
-    return statePath + "settings.json";
 }
 
 NomadString Game::getDebugSettingsFilePath() const {

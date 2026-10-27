@@ -8,7 +8,13 @@ namespace nomad {
 
 class ListType final : public ObjectType {
 public:
-    explicit ListType(const Type* elementType);
+    ListType(
+        Runtime* runtime,
+        TypeId id,
+        NomadString name,
+        ObjectTypeMode mode,
+        const Type* elementType
+    );
 
     void initValue(RuntimeValue& value) const override;
 };

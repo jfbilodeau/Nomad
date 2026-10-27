@@ -15,13 +15,13 @@ public:
     void setCondition(std::unique_ptr<Expression> condition);
     void setUntil(bool until);
     void compileControl(Compiler* compiler, bool isBreak);
-    void checkReachability(CompilerContext* context, const ScriptFunction* function) const override;
+    void checkReachability(CompilerContext* context, const ScriptCallableBase* function) const override;
 
 protected:
     void patchControls(Compiler* compiler, NomadIndex continuation, NomadIndex end);
     void resetControls();
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
     void onEvaluate(InterpreterContext& context) const override;
 
     StatementList m_body;
@@ -36,37 +36,37 @@ private:
 
 std::unique_ptr<Statement> parseWhileStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 );
 std::unique_ptr<Statement> parseForStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 );
 std::unique_ptr<Statement> parseUntilStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 );
 std::unique_ptr<Statement> parseDoStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 );
 std::unique_ptr<Statement> parseBreakStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 );
 std::unique_ptr<Statement> parseContinueStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 );
 std::unique_ptr<Statement> parseLoopControlStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 );
 

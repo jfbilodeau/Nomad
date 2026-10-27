@@ -7,6 +7,8 @@
 #include <nomad/game/BodyType.hpp>
 #include <nomad/game/Cardinal.hpp>
 #include <nomad/game/Game.hpp>
+
+#include <nomad/script/Documentation.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
@@ -16,6 +18,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <filesystem>
+#include <sstream>
 #include <utility>
 
 using namespace nomad;
@@ -33,7 +36,7 @@ BOOST_AUTO_TEST_CASE(checks_named_in_memory_sources_without_reading_files)
     const auto result = checkSources(batch, &runtime);
 
     BOOST_REQUIRE(result.succeeded());
-    BOOST_TEST(runtime.getFunctionId("helpers.answer") != NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getFunctionId("helpers.answer").isValid());
     BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("init"))->getPath() == "untitled:init");
 }
 
@@ -95,6 +98,94 @@ BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_compilation)
     BOOST_TEST(runtime.getFunctionAtLine("editor:missing", 1) == nullptr);
     BOOST_TEST(runtime.getFunctionAtLine("editor:other", 1) ==
         runtime.getScriptFunction(runtime.getFunctionId("other")));
+}
+
+BOOST_AUTO_TEST_CASE(runtime_looks_up_script_members_and_nested_callbacks_by_source_and_bytecode)
+{
+    Runtime runtime;
+    runtime.registerNativeFunction("accept", [](VirtualMachine*) {},
+        {defParameter("callback", runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()), "")},
+        runtime.getVoidType(), "");
+    const SourceBatch batch{{{"main", {"editor:members",
+        "class Counter\n"
+        "value = 0\n"
+        "init amount:int\n"
+        "local = amount + 1\n"
+        "this.value = local\n"
+        "end\n"
+        "fun read delta:int\n"
+        "local = this.value + delta\n"
+        "accept fun value\n"
+        "return value + local\n"
+        "end\n"
+        "return local\n"
+        "end\n"
+        "fun read delta:float\n"
+        "return delta + 0.5\n"
+        "end\n"
+        "end\n"
+        "counter = new Counter 4\n"
+        "return counter.read 1"}}}, {}};
+    BOOST_REQUIRE(checkSources(batch, &runtime).succeeded());
+    const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+    const auto* constructor = runtime.getScriptCallableAtLine("editor:members", 4);
+    const auto* method = runtime.getScriptCallableAtLine("editor:members", 8);
+    const auto* callback = runtime.getScriptCallableAtLine("editor:members", 10);
+    const auto* overload = runtime.getScriptCallableAtLine("editor:members", 15);
+    BOOST_REQUIRE(constructor != nullptr);
+    BOOST_REQUIRE(method != nullptr);
+    BOOST_REQUIRE(callback != nullptr);
+    BOOST_REQUIRE(overload != nullptr);
+    BOOST_TEST(runtime.getConstructor(constructor->getId()) != nullptr);
+    BOOST_TEST(runtime.getMethod(method->getId()) != nullptr);
+    BOOST_TEST(runtime.getMethod(overload->getId()) != nullptr);
+    BOOST_TEST(method != overload);
+    BOOST_TEST(callback->getParentId() == method->getId());
+    BOOST_TEST(constructor->getSourceStartLine() == 3U);
+    BOOST_TEST(constructor->getSourceEndLine() == 6U);
+    BOOST_TEST(method->getSourceStartLine() == 7U);
+    BOOST_TEST(method->getSourceEndLine() == 13U);
+    BOOST_TEST(runtime.getScriptCallableAtLine("editor:members", 19) == main);
+    BOOST_TEST(runtime.getScriptCallableAtLine("editor:members", 0) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtLine("editor:members", NOMAD_INVALID_INDEX) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtLine("editor:missing", 8) == nullptr);
+    BOOST_TEST(runtime.getFunctionAtLine("editor:members", 8) == main);
+    BOOST_TEST(runtime.getFunctionByStartAddress(method->getFunctionStart()) == nullptr);
+    std::vector<const ScriptCallableBase*> callables{nullptr};
+    runtime.getScriptCallables(callables);
+    BOOST_TEST(callables.size() == 6U);
+    for (const auto* callable : callables) {
+        BOOST_REQUIRE(callable != nullptr);
+        const auto start = callable->getFunctionStart();
+        const auto end = callable->getFunctionEnd();
+        BOOST_TEST(runtime.getScriptCallableByStartAddress(start) == callable);
+        BOOST_TEST(runtime.getScriptCallableAtInstructionIndex(start) == callable);
+        BOOST_TEST(runtime.getScriptCallableAtInstructionIndex(end - 1) == callable);
+        BOOST_TEST(runtime.getScriptCallableAtInstructionIndex(end) != callable);
+        if (end - start > 1) {
+            BOOST_TEST(runtime.getScriptCallableByStartAddress(start + 1) == nullptr);
+        }
+    }
+    BOOST_TEST(runtime.getScriptCallableAtInstructionIndex(NOMAD_INVALID_INDEX) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableByStartAddress(NOMAD_INVALID_INDEX) == nullptr);
+    runtime.getScriptCallables(callables);
+    BOOST_TEST(callables.size() == 6U);
+}
+
+BOOST_AUTO_TEST_CASE(runtime_retains_member_source_ranges_without_compiled_bytecode)
+{
+    Runtime runtime;
+    const SourceBatch batch{{{"main", {"editor:members",
+        "class Counter\nfun broken amount:int\nreturn missing\nend\nend"}}}, {}};
+    BOOST_TEST(!checkSources(batch, &runtime).succeeded());
+    const auto* method = runtime.getScriptCallableAtLine("editor:members", 3);
+    BOOST_REQUIRE(method != nullptr);
+    BOOST_TEST(runtime.getMethod(method->getId()) != nullptr);
+    BOOST_TEST(method->getSourceStartLine() == 2U);
+    BOOST_TEST(method->getSourceEndLine() == 4U);
+    BOOST_TEST(method->getFunctionStart() == NOMAD_INVALID_INDEX);
+    BOOST_TEST(runtime.getScriptCallableByStartAddress(NOMAD_INVALID_INDEX) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtInstructionIndex(0) == nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_type_errors)
@@ -319,6 +410,26 @@ BOOST_AUTO_TEST_CASE(dumps_generated_instructions_without_executing_source)
     BOOST_TEST(result.instructions.find("return") != NomadString::npos);
 }
 
+BOOST_AUTO_TEST_CASE(dumps_script_constructors_methods_and_their_call_targets)
+{
+    TestDirectory directory("nomad_compilation_test_dump_members");
+    const auto source = directory.write("members.nomad",
+        "class Counter\nvalue = 0\n"
+        "init amount:int\nthis.value = amount\nend\n"
+        "fun read\nreturn this.value\nend\nend\n"
+        "counter = new Counter 4\nreturn counter.read"
+    );
+    const auto result = dumpInstructions(source);
+    BOOST_REQUIRE(result.compilation.succeeded());
+    BOOST_TEST(result.instructions.find("constructor Counter amount:int") != NomadString::npos);
+    BOOST_TEST(result.instructions.find("method Counter.read") != NomadString::npos);
+    BOOST_TEST(result.instructions.find("method Counter$init") != NomadString::npos);
+    BOOST_TEST(result.instructions.find("call_script_constructor") != NomadString::npos);
+    BOOST_TEST(result.instructions.find("call_script_method") != NomadString::npos);
+    BOOST_TEST(result.instructions.find("Counter.read (") != NomadString::npos);
+    BOOST_TEST(result.instructions.find("Unknown") == NomadString::npos);
+}
+
 BOOST_AUTO_TEST_CASE(dumps_only_the_selected_function)
 {
     TestDirectory directory("nomad_compilation_test_dump_selected");
@@ -377,6 +488,107 @@ BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
     BOOST_TEST(result.documentation.find("State.idle:State") == NomadString::npos);
     BOOST_TEST(result.documentation.find("ANSWER:int = 42") != NomadString::npos);
     BOOST_TEST(result.documentation.find("[Instructions](#instructions)") == NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overloads_without_execution)
+{
+    TestDirectory directory("nomad_compilation_test_class_reference");
+    const auto source = directory.write("classes.nomad",
+        "class Counter\nlabel = \"counter\"\n"
+        "init value:int\nprobe\nthis.value = value\nend\n"
+        "init text:string\nprobe\nthis.value = text.length\nend\n"
+        "fun read\nreturn this.value\nend\n"
+        "fun read delta:int\nreturn this.value + delta\nend\n"
+        "fun read delta:float\nreturn delta + 0.5\nend\n"
+        "fun clear\nthis.value = 0\nreturn\nend\n"
+        "fun formatted\nreturn $\"value {this.value}\"\nend\nend\n"
+        "class Empty\nend\n"
+        "hub model\ncounter = new Counter 3\nclass Point\nx = 0\nend\nend\n"
+        "probe\nreturn 0"
+    );
+    Runtime runtime;
+    auto callbackCalls = 0;
+    runtime.registerNativeFunction("probe", [&](VirtualMachine*) { ++callbackCalls; },
+        {}, runtime.getVoidType(), "");
+    const auto result = generateDocumentationForPath(source, &runtime);
+    BOOST_REQUIRE_MESSAGE(result.compilation.succeeded(),
+        (result.compilation.diagnostics.empty() ? "" : result.compilation.diagnostics.front().message));
+    BOOST_TEST(callbackCalls == 0);
+    const auto typesStart = result.documentation.find("## Types\n");
+    const auto membersStart = result.documentation.find("## Object Members\n");
+    const auto functionsStart = result.documentation.find("## Functions\n");
+    BOOST_REQUIRE(typesStart != NomadString::npos);
+    BOOST_REQUIRE(membersStart != NomadString::npos);
+    BOOST_REQUIRE(functionsStart != NomadString::npos);
+    const auto types = result.documentation.substr(typesStart, membersStart - typesStart);
+    BOOST_TEST(types.find("### `Counter`") != NomadString::npos);
+    BOOST_TEST(types.find("### `Empty`") != NomadString::npos);
+    BOOST_TEST(types.find("### `model.Point`") != NomadString::npos);
+    BOOST_TEST(types.find("Constructor: `new Counter value:int` -> `Counter`") != NomadString::npos);
+    BOOST_TEST(types.find("Constructor: `new Counter text:string` -> `Counter`") != NomadString::npos);
+    BOOST_TEST(types.find("Constructor: `new Counter`") == NomadString::npos);
+    BOOST_TEST(types.find("Constructor: `new Empty` -> `Empty`") != NomadString::npos);
+    BOOST_TEST(types.find("Constructor: `new model.Point` -> `model.Point`") != NomadString::npos);
+    const auto members = result.documentation.substr(membersStart, functionsStart - membersStart);
+    const auto counterStart = members.find("### `Counter`");
+    BOOST_REQUIRE(counterStart != NomadString::npos);
+    const auto counterEnd = members.find("\n### `", counterStart + 1);
+    BOOST_REQUIRE(counterEnd != NomadString::npos);
+    const auto counter = members.substr(counterStart, counterEnd - counterStart);
+    BOOST_TEST(counter.find("#### `label` (*read/write field*)\n\n`label:string`") != NomadString::npos);
+    BOOST_TEST(counter.find("#### `value` (*read/write field*)\n\n`value:int`") != NomadString::npos);
+    BOOST_TEST(counter.find("`read -> int`") != NomadString::npos);
+    BOOST_TEST(counter.find("`read delta:int -> int`") != NomadString::npos);
+    BOOST_TEST(counter.find("`read delta:float -> float`") != NomadString::npos);
+    BOOST_TEST(counter.find("`clear -> void`") != NomadString::npos);
+    BOOST_TEST(counter.find("`formatted -> string`") != NomadString::npos);
+    BOOST_TEST(counter.find("`read -> int`") < counter.find("`read delta:float -> float`"));
+    BOOST_TEST(counter.find("`read delta:float -> float`") < counter.find("`read delta:int -> int`"));
+    BOOST_TEST(counter.find("- `this:") == NomadString::npos);
+    BOOST_TEST(result.documentation.find("$init") == NomadString::npos);
+    std::vector<ScriptFunction*> functions;
+    runtime.getFunctions(functions);
+    auto nestedFunctions = 0;
+    for (const auto* function : functions) {
+        if (!function->isNested()) continue;
+        ++nestedFunctions;
+        BOOST_TEST(result.documentation.find("### `" + function->getName() + "`") == NomadString::npos);
+    }
+    BOOST_TEST(nestedFunctions > 0);
+    BOOST_TEST(members.find("#### `length` (*read-only property*)") != NomadString::npos);
+    BOOST_TEST(members.find("#### `toUpper` (*method*)") != NomadString::npos);
+    std::ostringstream genericMembers;
+    generateMemberDocumentation(&runtime, genericMembers);
+    BOOST_TEST(genericMembers.str() == members);
+    std::ostringstream nativeMembers;
+    generateNativeMemberDocumentation(&runtime, nativeMembers);
+    BOOST_TEST(nativeMembers.str().find("### `Counter`") == NomadString::npos);
+    BOOST_TEST(nativeMembers.str().find("### `model.Point`") == NomadString::npos);
+    BOOST_TEST(nativeMembers.str().find("#### `length` (*read-only property*)") != NomadString::npos);
+    BOOST_TEST(callbackCalls == 0);
+}
+
+BOOST_AUTO_TEST_CASE(class_reference_overloads_have_deterministic_order)
+{
+    TestDirectory directory("nomad_compilation_test_class_reference_order");
+    const NomadString integer =
+        "init amount:int\nthis.value = amount\nend\n"
+        "fun read amount:int\nreturn this.value + amount\nend\n";
+    const NomadString other =
+        "init text:string\nthis.value = text.length\nend\n"
+        "fun read amount:float\nreturn amount + 0.5\nend\n";
+    NomadString expected;
+    for (const auto reversed : {false, true}) {
+        const auto source = directory.write("classes.nomad",
+            "class Counter\nvalue = 1\n" + (reversed ? other + integer : integer + other) + "end");
+        const auto result = generateDocumentationForPath(source);
+        BOOST_REQUIRE(result.compilation.succeeded());
+        if (reversed) {
+            BOOST_TEST(result.documentation == expected);
+        } else {
+            expected = result.documentation;
+        }
+    }
 }
 
 BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
@@ -461,11 +673,11 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     const auto thisFontId = runtime->getDynamicVariableId("this.text.font");
     const auto otherFontId = runtime->getDynamicVariableId("other.text.font");
     const auto debugDrawVisibleId = runtime->getDynamicVariableId(DEBUG_DRAW_VISIBLE_VARIABLE);
-    BOOST_REQUIRE(thisAlignmentId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(otherAlignmentId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(thisFontId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(otherFontId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(debugDrawVisibleId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(thisAlignmentId.isValid());
+    BOOST_REQUIRE(otherAlignmentId.isValid());
+    BOOST_REQUIRE(thisFontId.isValid());
+    BOOST_REQUIRE(otherFontId.isValid());
+    BOOST_REQUIRE(debugDrawVisibleId.isValid());
     BOOST_TEST(runtime->getDynamicVariableType(thisAlignmentId) == alignmentType);
     BOOST_TEST(runtime->getDynamicVariableType(otherAlignmentId) == alignmentType);
     BOOST_TEST(runtime->getDynamicVariableType(thisFontId) == fontType);

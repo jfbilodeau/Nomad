@@ -8,7 +8,7 @@ namespace nomad {
 
 class RangeType final : public ObjectType {
 public:
-    RangeType();
+    RangeType(Runtime* runtime, TypeId id, NomadString name, ObjectTypeMode mode);
     void initValue(RuntimeValue& value) const override;
 };
 

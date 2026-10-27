@@ -15,23 +15,23 @@ NomadIndex ThisEntityVariableContext::getVariableCount() const {
     return m_thisEntityVariableMap.getVariableCount();
 }
 
-NomadId ThisEntityVariableContext::getFirstVariableId() const {
+VariableId ThisEntityVariableContext::getFirstVariableId() const {
     if (m_thisEntityVariableMap.getVariableCount() > 0) {
-        return 0;
+        return VariableId{0};
     }
 
-    return NOMAD_INVALID_ID;
+    return VariableId::INVALID;
 }
 
-NomadId ThisEntityVariableContext::getNextVariableId(const NomadId variableId) const {
-    if (variableId + 1 < static_cast<NomadId>(getVariableCount())) {
-        return variableId + 1;
+VariableId ThisEntityVariableContext::getNextVariableId(const VariableId variableId) const {
+    if (variableId.id + 1 < static_cast<NomadId>(getVariableCount())) {
+        return VariableId{variableId.id + 1};
     }
 
-    return NOMAD_INVALID_ID;
+    return VariableId::INVALID;
 }
 
-NomadId ThisEntityVariableContext::registerVariable(const NomadString &name, const Type *type) {
+VariableId ThisEntityVariableContext::registerVariable(const NomadString &name, const Type *type) {
     NomadString this_name, other_name;
 
     if (name.starts_with(THIS_ENTITY_VARIABLE_PREFIX)) {
@@ -42,7 +42,7 @@ NomadId ThisEntityVariableContext::registerVariable(const NomadString &name, con
         other_name = name;
     } else {
         log::error("Unexpected variable name '" + name + "'");
-        return NOMAD_INVALID_ID;
+        return VariableId::INVALID;
     }
 
     auto this_id = m_thisEntityVariableMap.registerVariable(this_name, type);
@@ -56,31 +56,31 @@ NomadId ThisEntityVariableContext::registerVariable(const NomadString &name, con
     return this_id;
 }
 
-const NomadString & ThisEntityVariableContext::getVariableName(const NomadId variableId) const {
+const NomadString & ThisEntityVariableContext::getVariableName(const VariableId variableId) const {
     return m_thisEntityVariableMap.getVariableName(variableId);
 }
 
-NomadId ThisEntityVariableContext::getVariableId(const NomadString &name) const {
+VariableId ThisEntityVariableContext::getVariableId(const NomadString &name) const {
     if (name.starts_with(THIS_ENTITY_VARIABLE_PREFIX)) {
         return m_thisEntityVariableMap.getVariableId(name);
     } else if (name.starts_with(OTHER_ENTITY_VARIABLE_PREFIX)) {
         return m_otherEntityVariableMap.getVariableId(name);
     } else {
         log::error("Unexpected variable name '" + name + "'");
-        return NOMAD_INVALID_ID;
+        return VariableId::INVALID;
     }
 }
 
-void ThisEntityVariableContext::setVariableType(NomadId variableId, const Type *type) {
+void ThisEntityVariableContext::setVariableType(VariableId variableId, const Type *type) {
     m_thisEntityVariableMap.setVariableType(variableId, type);
     m_otherEntityVariableMap.setVariableType(variableId, type);
 }
 
-const Type* ThisEntityVariableContext::getVariableType(const NomadId variableId) const {
+const Type* ThisEntityVariableContext::getVariableType(const VariableId variableId) const {
     return m_thisEntityVariableMap.getVariableType(variableId);
 }
 
-void ThisEntityVariableContext::setValue(const NomadId variableId, const RuntimeValue& value) {
+void ThisEntityVariableContext::setValue(const VariableId variableId, const RuntimeValue& value) {
     const auto entity = m_game->getCurrentContext()->getThisEntity();
 
     if (entity) {
@@ -90,7 +90,7 @@ void ThisEntityVariableContext::setValue(const NomadId variableId, const Runtime
     }
 }
 
-void ThisEntityVariableContext::getValue(const NomadId variableId, RuntimeValue& value) {
+void ThisEntityVariableContext::getValue(const VariableId variableId, RuntimeValue& value) {
     const auto entity = m_game->getCurrentContext()->getThisEntity();
 
     if (entity) {
@@ -100,20 +100,20 @@ void ThisEntityVariableContext::getValue(const NomadId variableId, RuntimeValue&
     }
 }
 
-bool ThisEntityVariableContext::isWritten(const NomadId variableId) const {
+bool ThisEntityVariableContext::isWritten(const VariableId variableId) const {
     return m_thisEntityVariableMap.isWritten(variableId);
 }
 
-void ThisEntityVariableContext::setWritten(const NomadId variableId, const bool written) {
+void ThisEntityVariableContext::setWritten(const VariableId variableId, const bool written) {
     m_thisEntityVariableMap.setWritten(variableId, written);
     m_otherEntityVariableMap.setWritten(variableId, written);
 }
 
-bool ThisEntityVariableContext::isRead(const NomadId variableId) const {
+bool ThisEntityVariableContext::isRead(const VariableId variableId) const {
     return m_thisEntityVariableMap.isRead(variableId);
 }
 
-void ThisEntityVariableContext::setRead(const NomadId variableId, const bool read) {
+void ThisEntityVariableContext::setRead(const VariableId variableId, const bool read) {
     m_thisEntityVariableMap.setRead(variableId, read);
     m_otherEntityVariableMap.setRead(variableId, read);
 }
@@ -139,41 +139,41 @@ NomadIndex OtherEntityVariableContext::getVariableCount() const {
     return m_thisEntityVariableContext->getVariableCount();
 }
 
-NomadId OtherEntityVariableContext::getFirstVariableId() const {
+VariableId OtherEntityVariableContext::getFirstVariableId() const {
     return m_thisEntityVariableContext->getFirstVariableId();
 }
 
-NomadId OtherEntityVariableContext::getNextVariableId(const NomadId variableId) const {
+VariableId OtherEntityVariableContext::getNextVariableId(const VariableId variableId) const {
     return m_thisEntityVariableContext->getNextVariableId(variableId);
 }
 
-NomadId OtherEntityVariableContext::registerVariable(const NomadString &name, const Type *type) {
+VariableId OtherEntityVariableContext::registerVariable(const NomadString &name, const Type *type) {
     return m_thisEntityVariableContext->registerVariable(name, type);
 }
 
-const NomadString & OtherEntityVariableContext::getVariableName(NomadId variableId) const {
+const NomadString & OtherEntityVariableContext::getVariableName(VariableId variableId) const {
     return m_thisEntityVariableContext->getOtherVariableMap()->getVariableName(variableId);
 }
 
-NomadId OtherEntityVariableContext::getVariableId(const NomadString &name) const {
+VariableId OtherEntityVariableContext::getVariableId(const NomadString &name) const {
     return m_thisEntityVariableContext->getOtherVariableMap()->getVariableId(name);
 }
 
-void OtherEntityVariableContext::setVariableType(NomadId variableId, const Type *type) {
+void OtherEntityVariableContext::setVariableType(VariableId variableId, const Type *type) {
     return m_thisEntityVariableContext->setVariableType(variableId, type);
 }
 
-const Type* OtherEntityVariableContext::getVariableType(NomadId variableId) const {
+const Type* OtherEntityVariableContext::getVariableType(VariableId variableId) const {
     return m_thisEntityVariableContext->getVariableType(variableId);
 }
 
-void OtherEntityVariableContext::setValue(NomadId variableId, const RuntimeValue &value) {
+void OtherEntityVariableContext::setValue(VariableId variableId, const RuntimeValue &value) {
     m_thisEntityVariableContext->getGame()->getCurrentContext()->forEachOtherEntities([&](Entity* entity) {
         entity->setVariableValue(variableId, value);
     });
 }
 
-void OtherEntityVariableContext::getValue(const NomadId variableId, RuntimeValue &value) {
+void OtherEntityVariableContext::getValue(const VariableId variableId, RuntimeValue &value) {
     const auto entity = m_thisEntityVariableContext->getGame()->getCurrentContext()->getFirstOtherEntity();
 
     if (entity) {
@@ -181,19 +181,19 @@ void OtherEntityVariableContext::getValue(const NomadId variableId, RuntimeValue
     }
 }
 
-bool OtherEntityVariableContext::isWritten(const NomadId variableId) const {
+bool OtherEntityVariableContext::isWritten(const VariableId variableId) const {
     return m_thisEntityVariableContext->isWritten(variableId);
 }
 
-void OtherEntityVariableContext::setWritten(const NomadId variableId, const bool written) {
+void OtherEntityVariableContext::setWritten(const VariableId variableId, const bool written) {
     m_thisEntityVariableContext->setWritten(variableId, written);
 }
 
-bool OtherEntityVariableContext::isRead(const NomadId variableId) const {
+bool OtherEntityVariableContext::isRead(const VariableId variableId) const {
     return m_thisEntityVariableContext->isRead(variableId);
 }
 
-void OtherEntityVariableContext::setRead(const NomadId variableId, const bool read) {
+void OtherEntityVariableContext::setRead(const VariableId variableId, const bool read) {
     m_thisEntityVariableContext->setRead(variableId, read);
 }
 

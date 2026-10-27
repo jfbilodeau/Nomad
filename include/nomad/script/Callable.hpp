@@ -11,12 +11,16 @@
 
 namespace nomad {
 
+DeclareId(CallableId);
+
 class NativeConstructor;
 class NativeFunction;
 class NativeMethod;
 class ScriptConstructor;
+class ScriptCallableBase;
 class ScriptFunction;
 class ScriptMethod;
+class Runtime;
 class Type;
 
 struct Parameter {
@@ -54,15 +58,15 @@ enum class CallableSource {
     Native,     // Implemented in C++ and registered by the host.
 };
 
-// Root of everything that can be called, whatever its kind or source. All callables share one id space and are owned
-// by `Runtime`, which hands them out as const pointers through typed getters.
+// Root of everything that can be called, whatever its kind or source. All callables share one ID space in `Runtime`'s
+// catalog; ownership belongs to Runtime for free functions and to the object type for constructors and methods.
 class Callable {
 public:
     Callable(const Callable&) = delete;
     Callable& operator=(const Callable&) = delete;
     virtual ~Callable();
 
-    [[nodiscard]] NomadId getId() const;
+    [[nodiscard]] CallableId getId() const;
     [[nodiscard]] const NomadString& getName() const;
     [[nodiscard]] CallableType getType() const;
     [[nodiscard]] CallableSource getSource() const;
@@ -70,10 +74,13 @@ public:
     [[nodiscard]] NomadIndex getParameterCount() const;
     // The type of the value the callable yields; void when it yields nothing.
     [[nodiscard]] const Type* getReturnType() const;
-    // Method: the receiver's type. Constructor: the class being constructed (e.g. `Array`), which may differ from
-    // the return type (e.g. `Array1<int>`). Null for functions.
+    // Method: the receiver's type. Constructor: the declaring class, which may differ from the constructed type
+    // for native factories (e.g. `Array` creating `Array1<int>`). Null for functions.
     [[nodiscard]] const Type* getObjectType() const;
     [[nodiscard]] const NomadString& getDoc() const;
+    [[nodiscard]] CallableId registerWithRuntime(Runtime& runtime);
+    [[nodiscard]] virtual ScriptCallableBase* asScriptCallable();
+    [[nodiscard]] virtual const ScriptCallableBase* asScriptCallable() const;
 
 protected:
     Callable(
@@ -86,14 +93,12 @@ protected:
         NomadString doc
     );
 
-    void setId(NomadId id);
+    void setId(CallableId id);
     void setReturnType(const Type* returnType);
     [[nodiscard]] std::vector<Parameter>& getEditableParameters();
 
 private:
-    friend class Runtime; // Assigns the id when the callable joins the function table.
-
-    NomadId m_id = NOMAD_INVALID_ID;
+    CallableId m_id = CallableId{};
     NomadString m_name;
     CallableType m_type;
     CallableSource m_source;
@@ -140,6 +145,8 @@ protected:
 // Creates an object. The name is the one of the class being constructed.
 class Constructor : public Callable {
 public:
+    // The type of a `new` expression; script constructor callables themselves return void.
+    [[nodiscard]] virtual const Type* getConstructedType() const = 0;
     [[nodiscard]] virtual const NativeConstructor* asNativeConstructor() const;
     [[nodiscard]] virtual const ScriptConstructor* asScriptConstructor() const;
 

@@ -15,7 +15,7 @@ class CompilerContext;
 
 class Runtime;
 
-class ScriptFunction;
+class ScriptCallableBase;
 
 class TokenizerException : public NomadException {
 public:

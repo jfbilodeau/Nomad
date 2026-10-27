@@ -8,6 +8,7 @@
 #include <nomad/compiler/CompilerContext.hpp>
 
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -59,7 +60,34 @@ void reject(const NomadString& setup, const NomadString& expression) {
 
 BOOST_AUTO_TEST_SUITE(read_only_collections)
 
+BOOST_AUTO_TEST_CASE(collection_iterable_factories_belong_to_their_specialized_types) {
+    Runtime runtime;
+    registerCollections(runtime);
+    const auto* integerType = runtime.getIntegerType();
+    for (const auto* name : {"Array1", "ReadOnlyArray1", "List", "ReadOnlyList"}) {
+        BOOST_TEST_CONTEXT(name) {
+            const auto* type = runtime.getParameterizedType(name, {integerType});
+            BOOST_REQUIRE(type != nullptr);
+            const auto* objectType = type->asObjectType();
+            BOOST_REQUIRE(objectType != nullptr);
+            const auto owned = objectType->getIterableInfo();
+            const auto forwarded = runtime.getIterableInfo(type);
+            BOOST_REQUIRE(owned.has_value());
+            BOOST_REQUIRE(forwarded.has_value());
+            BOOST_TEST(owned->valueType == integerType);
+            BOOST_TEST(owned->iteratorType == runtime.getIteratorType(integerType));
+            BOOST_TEST(forwarded->factoryId == owned->factoryId);
+            const auto* factory = runtime.getMethod(owned->factoryId);
+            BOOST_REQUIRE(factory != nullptr);
+            BOOST_TEST(factory->getObjectType() == objectType);
+            BOOST_TEST(factory->getName() == "iterator");
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(list_snapshots_copy_containers_share_nested_values_and_release_ownership) {
+    // Include the process-wide empty string in the lifetime baseline.
+    NomadStringObject::createEmpty()->releaseRef();
     const auto before = NomadObject::getLiveObjectCount();
     {
         Runtime runtime;
@@ -110,12 +138,14 @@ BOOST_AUTO_TEST_CASE(native_lists_can_be_exposed_directly_as_read_only) {
     (void)list->append(RuntimeValue(NomadInteger{42}));
     RuntimeValue value;
     value.setObjectValue(list.get());
-    BOOST_REQUIRE(runtime.registerConstant("snapshot", value, type) != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(runtime.registerConstant("snapshot", value, type).isValid());
     list.release()->releaseRef();
     execute(runtime, "assert snapshot.count == 1\nassert snapshot[0] == 42");
 }
 
 BOOST_AUTO_TEST_CASE(map_snapshots_preserve_readers_and_shallow_copy_entries) {
+    // Include the process-wide empty string in the lifetime baseline.
+    NomadStringObject::createEmpty()->releaseRef();
     const auto before = NomadObject::getLiveObjectCount();
     {
         Runtime runtime;
@@ -152,6 +182,8 @@ BOOST_AUTO_TEST_CASE(map_mutators_and_constructors_are_unavailable_in_both_execu
 }
 
 BOOST_AUTO_TEST_CASE(array_snapshots_preserve_rank_dimensions_and_shallow_values) {
+    // Include the process-wide empty string in the lifetime baseline.
+    NomadStringObject::createEmpty()->releaseRef();
     const auto before = NomadObject::getLiveObjectCount();
     {
         Runtime runtime;

@@ -4,15 +4,17 @@
 
 #include <nomad/compiler/CallNode.hpp>
 #include <nomad/compiler/FormatStringCompiler.hpp>
+#include <nomad/compiler/Identifier.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 
 #include <nomad/script/Member.hpp>
+#include <nomad/script/NativeMember.hpp>
 
 #include <nomad/Nomad.hpp>
 
 namespace nomad {
 
-class ObjectTypeBase;
+class ObjectType;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Unary expressions
@@ -29,8 +31,8 @@ public:
     [[nodiscard]] std::unique_ptr<TypedValue> getInitialValue(Compiler* compiler) const override;
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
     void onEvaluate(InterpreterContext& context) const override;
 
     UnaryOperator m_unaryOperator;
@@ -45,8 +47,8 @@ public:
     [[nodiscard]] bool isTerminal() const override;
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
@@ -65,8 +67,8 @@ public:
     [[nodiscard]] std::unique_ptr<TypedValue> getInitialValue(Compiler* compiler) const override;
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
     void onEvaluate(InterpreterContext& context) const override;
 
     BinaryOperator m_binaryOperator;
@@ -91,8 +93,8 @@ public:
     [[nodiscard]] NomadIndex getArgumentCount() const;
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
@@ -103,32 +105,45 @@ private:
 
 class NativeMemberExpression final : public Expression {
 public:
-    NativeMemberExpression(const Expression* parent, NomadIndex line, NomadIndex column, NomadString qualifiedName,
-                              NomadString memberName, std::unique_ptr<Expression> receiver, ArgumentList arguments);
+    NativeMemberExpression(
+        const Expression* parent,
+        NomadIndex line, 
+        NomadIndex column, 
+        NomadString qualifiedName,
+        NomadString memberName, 
+        std::unique_ptr<Expression> receiver, 
+        ArgumentList arguments,
+        bool hasExplicitArguments = true
+    );
 
     [[nodiscard]] bool isTerminal() const override;
     [[nodiscard]] bool isWritable() const override;
     [[nodiscard]] NativeMemberExpression* asNativeExpression() override;
     [[nodiscard]] const NativeMemberExpression* asNativeExpression() const override;
 
-    [[nodiscard]] bool resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function) override;
+    [[nodiscard]] bool resolveAssignmentTarget(
+        CompilerContext* context, ScriptCallableBase* function, const Type* valueType = nullptr
+    ) override;
     void setAllowVoid(bool allowVoid);
-    void compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression) override;
+    void compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression) override;
     void evaluateAssignment(InterpreterContext& context, const Expression* expression) const override;
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
-    [[nodiscard]] bool resolveMember(CompilerContext* context, ScriptFunction* function);
+    [[nodiscard]] bool resolveMember(
+        CompilerContext* context, ScriptCallableBase* function, const Type* valueType = nullptr, bool assignment = false
+    );
 
     NomadString m_qualifiedName;
     NomadString m_memberName;
     std::unique_ptr<Expression> m_receiver;
     ArgumentList m_arguments;
-    NomadId m_memberId = NOMAD_INVALID_ID;
+    bool m_hasExplicitArguments;
+    MemberReference m_memberId;
     MemberType m_memberType = MemberType::Unknown;
     const Method* m_method = nullptr;
     bool m_allowVoid = false;
@@ -144,23 +159,25 @@ public:
         std::vector<std::unique_ptr<Expression>> indexes
     );
     [[nodiscard]] bool isTerminal() const override;
-    [[nodiscard]] bool resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function) override;
-    void compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression) override;
+    [[nodiscard]] bool resolveAssignmentTarget(
+        CompilerContext* context, ScriptCallableBase* function, const Type* valueType = nullptr
+    ) override;
+    void compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression) override;
     void evaluateAssignment(InterpreterContext& context, const Expression* expression) const override;
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
-    [[nodiscard]] bool resolveIndexer(CompilerContext* context, ScriptFunction* function);
-    void compileOperands(Compiler* compiler, ScriptFunction* function, Expression* assigned = nullptr);
+    [[nodiscard]] bool resolveIndexer(CompilerContext* context, ScriptCallableBase* function);
+    void compileOperands(Compiler* compiler, ScriptCallableBase* function, Expression* assigned = nullptr);
     void evaluateIndexer(InterpreterContext& context, const Expression* assigned = nullptr) const;
 
     std::unique_ptr<Expression> m_receiver;
     std::vector<std::unique_ptr<Expression>> m_indexes;
-    NomadId m_indexerId = NOMAD_INVALID_ID;
+    IndexerId m_indexerId;
     bool m_canRead = false;
     bool m_canWrite = false;
 };
@@ -184,8 +201,8 @@ public:
     );
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
 
 private:
     NomadBoolean m_value;
@@ -196,8 +213,8 @@ public:
     IntegerLiteral(const Expression* parent, NomadIndex line, NomadIndex column, NomadInteger value);
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
 
 private:
     NomadInteger m_value;
@@ -208,8 +225,8 @@ public:
     FloatLiteral(const Expression* parent, NomadIndex line, NomadIndex column, NomadFloat value);
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
 
 private:
     NomadFloat m_value;
@@ -228,8 +245,8 @@ public:
     [[nodiscard]] bool isTerminal() const override;
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
@@ -245,8 +262,8 @@ public:
     StringLiteral(const Expression* parent, NomadIndex line, NomadIndex column, const NomadString& value);
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
 
 private:
     NomadString m_value;
@@ -256,16 +273,16 @@ class FormatStringLiteral : public Expression {
 public:
     FormatStringLiteral(const Expression* parent, NomadIndex line, NomadIndex column, const NomadString& formatString);
 
-    [[nodiscard]] bool parsePlaceholders(CompilerContext* context, ScriptFunction* function, NomadStringView sourceContent);
+    [[nodiscard]] bool parsePlaceholders(CompilerContext* context, ScriptCallableBase* function, NomadStringView sourceContent);
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
     struct ExpressionPlaceholder {
-        NomadId functionId;
+        CallableId functionId;
         NomadIndex column;
         NomadIndex segmentIndex;
     };
@@ -281,13 +298,13 @@ public:
     explicit ConstantValueExpression(const Expression* parent, NomadIndex line, NomadIndex column, const NomadString& identifier);
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_constantName;
-    NomadId m_constantId = NOMAD_INVALID_ID;
+    ConstantId m_constantId = ConstantId::INVALID;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -297,6 +314,7 @@ class IdentifierExpression final : public PrimaryExpression {
 public:
     explicit IdentifierExpression(const Expression* parent, NomadIndex line, NomadIndex column, const NomadString& identifier);
 
+    [[nodiscard]] const NomadString& getIdentifier() const;
     [[nodiscard]] bool isWritable() const override;
     [[nodiscard]] IdentifierExpression* asIdentifierExpression() override;
     [[nodiscard]] const IdentifierExpression* asIdentifierExpression() const override;
@@ -305,12 +323,12 @@ public:
     void evaluateStore(InterpreterContext& context, const RuntimeValue& value) const;
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
-    bool parseCapture(const Compiler* compiler, ScriptFunction* function);
+    bool parseCapture(const Compiler* compiler, ScriptCallableBase* function);
 
     NomadString m_identifier;
     IdentifierDefinition m_identifierDefinition = {};
@@ -318,7 +336,7 @@ private:
 };
 
 // Parse an identifier and handle capture.
-bool resolveIdentifier(const NomadString& identifier, const Compiler* compiler, ScriptFunction* function, IdentifierDefinition& definition);
+bool resolveIdentifier(const NomadString& identifier, const Compiler* compiler, ScriptCallableBase* function, IdentifierDefinition& definition);
 
 ///////////////////////////////////////////////////////////////////////////////
 // FIle name expressions
@@ -328,8 +346,8 @@ public:
     explicit FileNameExpression(const Expression* parent, NomadIndex line, NomadIndex column, NomadString fileName);
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
 
 private:
     NomadString m_fileName;
@@ -343,8 +361,8 @@ public:
     explicit FunctionNameExpression(const Expression* parent, NomadIndex line, NomadIndex column, NomadString  functionName);
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
 
 private:
     NomadString m_functionName;
@@ -358,8 +376,8 @@ class LineNumberExpression final : public PrimaryExpression {
     explicit LineNumberExpression(const Expression* parent, NomadIndex line, NomadIndex column);
 
   protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
 
   private:
 };

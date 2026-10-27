@@ -3,6 +3,9 @@ add_library(nomad-language SHARED
 
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Argument.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CallNode.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/ClassDeclaration.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/ClassFieldInitializerStatement.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/ClassMemberDeclaration.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Compiler.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerContext.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerTools.cpp
@@ -36,9 +39,11 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/IteratorObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeCallable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeMembers.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/NativeProperty.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NomadObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NomadStringObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/OpCode.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/Property.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RangeIterator.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RangeObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RangeType.cpp
@@ -46,6 +51,10 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/Runtime.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeOpCodes.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeValue.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/ScriptCallableBase.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/ScriptConstructor.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/ScriptMethod.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/ScriptObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Type.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Variable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/VariableContext.cpp
@@ -115,6 +124,7 @@ endif()
         ${NOMAD_SOURCE_DIR}/nomad/geometry/RectangleF.cpp
 
         ${NOMAD_SOURCE_DIR}/nomad/lsp/LanguageServer.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/lsp/SignatureHelp.cpp
 
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectConfiguration.cpp
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectInitializer.cpp
@@ -145,6 +155,7 @@ endif()
         # Boost.JSON templates instantiate conversion warnings outside Nomad source.
         set_source_files_properties(
             ${NOMAD_SOURCE_DIR}/nomad/lsp/LanguageServer.cpp
+            ${NOMAD_SOURCE_DIR}/nomad/lsp/SignatureHelp.cpp
             ${NOMAD_SOURCE_DIR}/nomad/project/ProjectPackager.cpp
             PROPERTIES COMPILE_OPTIONS "-Wno-error=conversion"
         )

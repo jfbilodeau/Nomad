@@ -127,7 +127,8 @@ struct LineGrammar : boost::spirit::qi::grammar<Iterator, std::vector<Token>()> 
         ],
 //        keyword = qi::string("true") | qi::string("false") | qi::string("fun"),
         identifier = (qi::alpha | qi::char_("_")) >>
-            *(qi::alnum | qi::char_("_") | (qi::char_('.') >> &(qi::alnum | qi::char_('_'))));
+            *(qi::alnum | qi::char_("_") | (qi::char_('.') >> &(qi::alpha | qi::char_('_')))) >>
+            !(qi::lit('.') >> qi::digit);
 
     qi::rule<Iterator, Token()> basic_token = (
 //        boolean_value[qi::_val = phoenix::construct<Token>(phoenix::val(TokenType::Boolean), phoenix::val(""), qi::_1)] |

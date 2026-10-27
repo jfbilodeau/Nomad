@@ -75,7 +75,7 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
     BOOST_REQUIRE(Interpreter{}.execute("value = 1", context));
     BOOST_REQUIRE(Interpreter{}.execute("text = \"changed\"", context));
     BOOST_TEST(context.getVariableValue("value")->getIntegerValue() == 1);
-    BOOST_TEST(machine->getParameter(0).getIntegerValue() == 40);
+    BOOST_TEST(machine->getParameter(0).getIntegerValue() == 1);
     BOOST_REQUIRE(Interpreter{}.execute("created = local + value", context));
     BOOST_REQUIRE(Interpreter{}.evaluateExpression("created", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 8);
@@ -151,7 +151,7 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_requires_an_active_script_function)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    ScriptFunction function(NOMAD_INVALID_ID, "inactive", "inactive.nomad", "");
+    ScriptFunction function(CallableId::INVALID, "inactive", "inactive.nomad", "");
     BOOST_CHECK_THROW((InterpreterContext{*machine, function}), NomadBug);
 }
 
@@ -216,11 +216,12 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
     function->setParentId(parentId);
     function->addParameter("value", runtime.getIntegerType(), "");
     function->addParameter("text", runtime.getStringType(), "");
-    function->createCapture(0, "captured", CaptureSource::Variable, runtime.getIntegerType());
+    function->createCapture(VariableId{0}, "captured", runtime.getIntegerType());
     function->registerVariable("local", runtime.getIntegerType());
     function->registerVariable("localText", runtime.getStringType());
     function->setReturnType(runtime.getVoidType());
     function->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(function);
     const auto initializeFrame = runtime.registerInstruction("test.initializeFrame", [](VirtualMachine* machine) {
         machine->setFunctionVariableValue(
             machine->getCurrentFunction()->getVariableId("local"), RuntimeValue{NomadInteger{2}});
@@ -493,11 +494,11 @@ BOOST_AUTO_TEST_CASE(interpreter_reads_and_writes_context_variables)
 
     // The value must land in the runtime's global context, not in a console variable.
     const auto contextId = runtime.getContextId("global");
-    BOOST_REQUIRE(contextId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(contextId.isValid());
     auto* variableContext = runtime.getVariableContext(contextId);
     BOOST_REQUIRE(variableContext != nullptr);
     const auto variableId = variableContext->getVariableId("global.score");
-    BOOST_REQUIRE(variableId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(variableId.isValid());
 
     RuntimeValue stored;
     variableContext->getValue(variableId, stored);
@@ -653,7 +654,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_compiled_value_returning_funct
     compiler->registerSources(&compileContext, {{{"increment", {"increment.nomad",
         "params value:int\nreturn value + 1"}}}, {}});
     const auto functionId = runtime.getFunctionId("increment");
-    BOOST_REQUIRE(functionId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(functionId.isValid());
     BOOST_REQUIRE(compiler->compileFunctions(&compileContext));
 
     auto machine = runtime.createVirtualMachine();
@@ -791,7 +792,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_variables_may_change_type)
 
     const auto* function = context.getFunction();
     const auto variableId = function->getVariableId("value");
-    BOOST_REQUIRE(variableId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(variableId.isValid());
     BOOST_TEST(function->getVariableType(variableId) == runtime.getFloatType());
     BOOST_TEST(function->getVariableCount() == 1U);
 }
@@ -822,12 +823,12 @@ BOOST_AUTO_TEST_CASE(interpreter_context_defines_variables_in_console_function)
 
     const auto* function = context.getFunction();
     BOOST_REQUIRE(function != nullptr);
-    BOOST_TEST(function->getId() == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getFunctionId(function->getName()) == NOMAD_INVALID_ID);
+    BOOST_TEST(function->getId().isInvalid());
+    BOOST_TEST(runtime.getFunctionId(function->getName()).isInvalid());
     BOOST_TEST(function->getVariableCount() == 2U);
-    BOOST_TEST(function->getVariableId("first") == NomadId{0});
-    BOOST_TEST(function->getVariableId("second") == NomadId{1});
-    BOOST_TEST(function->getVariableType(1) == runtime.getBooleanType());
+    BOOST_TEST(function->getVariableId("first") == VariableId{0});
+    BOOST_TEST(function->getVariableId("second") == VariableId{1});
+    BOOST_TEST(function->getVariableType(VariableId{1}) == runtime.getBooleanType());
 }
 
 BOOST_AUTO_TEST_CASE(interpreter_context_failed_line_does_not_assign_variables)

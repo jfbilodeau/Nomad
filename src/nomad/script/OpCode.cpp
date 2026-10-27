@@ -20,25 +20,26 @@ namespace nomad {
 namespace {
 
 void callNativeIndexer(VirtualMachine* machine, const bool write) {
-    const auto indexerId = machine->nextId();
-    NativeIndexerDefinition definition;
-    if (!machine->getRuntime()->getNativeIndexerDefinition(indexerId, definition)) {
+    const auto indexerId = IndexerId{machine->nextId()};
+    const auto info = machine->getRuntime()->getNativeIndexerInfo(indexerId);
+    if (!info) {
         machine->fault("Invalid native indexer");
     }
 
-    const auto argumentCount = definition.indexTypes.size() + (write ? 1 : 0);
+    const auto argumentCount = info->indexTypes.size() + (write ? 1 : 0);
     const auto receiver = machine->peekStack(argumentCount);
     const auto releaseArguments = [&]() {
-        for (const auto* type : definition.indexTypes) {
+        for (const auto* type : info->indexTypes) {
             auto value = machine->popValue();
             type->freeValue(value);
         }
         if (write) {
             auto value = machine->popValue();
-            definition.valueType->freeValue(value);
+            info->valueType->freeValue(value);
         }
         auto savedReceiver = machine->popValue();
-        definition.objectType->freeValue(savedReceiver);
+        info->objectType->freeValue(savedReceiver);
+        machine->popThis();
     };
 
     try {
@@ -46,7 +47,7 @@ void callNativeIndexer(VirtualMachine* machine, const bool write) {
     } catch (...) {
         releaseArguments();
         if (!write) {
-            definition.valueType->freeValue(machine->getResult());
+            info->valueType->freeValue(machine->getResult());
         }
         throw;
     }
@@ -76,10 +77,22 @@ void op_return(VirtualMachine* interpreter) {
     interpreter->returnFunction(0);
 }
 
-void op_return_n(VirtualMachine* interpreter) {
-    const auto variable_count = interpreter->nextIndex();
+void op_return_1(VirtualMachine* interpreter) {
+    interpreter->returnFunction(1);
+}
 
-    interpreter->returnFunction(variable_count);
+void op_return_2(VirtualMachine* interpreter) {
+    interpreter->returnFunction(2);
+}
+
+void op_return_3(VirtualMachine* interpreter) {
+    interpreter->returnFunction(3);
+}
+
+void op_return_n(VirtualMachine* interpreter) {
+    const auto variableCount = interpreter->nextIndex();
+
+    interpreter->returnFunction(variableCount);
 }
 
 void op_jump(VirtualMachine* interpreter) {
@@ -165,34 +178,89 @@ void op_object_move_r_to_stack(VirtualMachine* interpreter) {
     interpreter->moveObjectResultToStack();
 }
 
-void op_call_function(VirtualMachine* interpreter) {
-    const auto jumpIndex = interpreter->nextIndex();
+void op_push_this(VirtualMachine* interpreter) {
+    interpreter->pushThis();
+}
 
-    const auto runtime = interpreter->getRuntime();
-    const auto function = runtime->getFunctionByStartAddress(jumpIndex);
+void op_pop_this(VirtualMachine* interpreter) {
+    interpreter->popThis();
+}
 
-    if (function == nullptr) {
-        interpreter->fault("Invalid function start address: " + toString(jumpIndex));
-        return;
+void op_move_this_to_r(VirtualMachine* interpreter) {
+    interpreter->moveThisToResult();
+}
+
+void op_copy_this_to_r(VirtualMachine* interpreter) {
+    interpreter->copyThisToResult();
+}
+
+void op_copy_this_to_i(VirtualMachine* interpreter) {
+    interpreter->copyThisToIntermediate();
+}
+
+void op_bind_this_from_stack(VirtualMachine* interpreter) {
+    interpreter->bindThisFromStack(interpreter->nextIndex());
+}
+
+void op_stack_reserve(VirtualMachine* interpreter) {
+    interpreter->reserveLocals(interpreter->nextIndex());
+}
+
+void op_code_load_default_r(VirtualMachine* interpreter) {
+    const auto type = interpreter->getRuntime()->getType(TypeId{interpreter->nextId()});
+    if (!type || (*type)->isVoid()) {
+        interpreter->fault("Invalid type for default value");
     }
+    (*type)->initValue(interpreter->getResult());
+}
 
-    interpreter->callFunction(function);
+void op_call_script_function(VirtualMachine* interpreter) {
+    interpreter->callScriptFunction(interpreter->nextIndex());
+}
+
+void op_call_script_method(VirtualMachine* interpreter) {
+    interpreter->callScriptMethod(interpreter->nextIndex());
+}
+
+void op_call_script_constructor(VirtualMachine* interpreter) {
+    const auto address = interpreter->nextIndex();
+    const auto typeId = TypeId{interpreter->nextId()};
+    interpreter->callScriptConstructor(address, typeId);
 }
 
 void op_call_native_function(VirtualMachine* interpreter) {
-    const auto nativeFunctionId = interpreter->nextId();
+    interpreter->callNativeFunction(CallableId{interpreter->nextId()});
+}
 
-    interpreter->callNativeFunction(nativeFunctionId);
+void op_call_native_method(VirtualMachine* interpreter) {
+    interpreter->callNativeMethod(CallableId{interpreter->nextId()});
+}
+
+void op_call_native_constructor(VirtualMachine* interpreter) {
+    const auto constructorId = CallableId{interpreter->nextId()};
+    try {
+        interpreter->callNativeConstructor(constructorId);
+    } catch (...) {
+        const auto* constructor = interpreter->getRuntime()->getNativeConstructor(constructorId);
+        const auto& parameters = constructor->getParameters();
+        for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
+            auto argument = interpreter->peekStack(index);
+            parameters[index].type->freeValue(argument);
+        }
+        throw;
+    }
 }
 
 void op_native_property_get(VirtualMachine* interpreter) {
-    const auto memberId = interpreter->nextId();
-    interpreter->getNativeProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
+    const auto memberId = PropertyId{interpreter->nextId()};
+    RuntimeValue result;
+    interpreter->getProperty(memberId, interpreter->getIntermediate(), result);
+    interpreter->setResult(result);
 }
 
 void op_native_property_set(VirtualMachine* interpreter) {
-    const auto memberId = interpreter->nextId();
-    interpreter->setNativeProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
+    const auto memberId = PropertyId{interpreter->nextId()};
+    interpreter->setProperty(memberId, interpreter->getIntermediate(), interpreter->getResult());
 }
 
 void op_native_index_get(VirtualMachine* interpreter) {
@@ -203,13 +271,7 @@ void op_native_index_set(VirtualMachine* interpreter) {
     callNativeIndexer(interpreter, true);
 }
 
-void op_native_method_call(VirtualMachine* interpreter) {
-    const auto memberId = interpreter->nextId();
-    const auto receiverOffset = interpreter->nextIndex();
-    interpreter->setIntermediate(interpreter->peekStack(receiverOffset));
-    interpreter->callNativeMethod(memberId, interpreter->getIntermediate());
-}
-
+// Parameter operations
 void op_parameter_load_r(VirtualMachine* interpreter) {
     const auto parameterId = interpreter->nextId();
 
@@ -252,15 +314,23 @@ void op_object_parameter_push(VirtualMachine* interpreter) {
     interpreter->pushObjectValue(interpreter->getParameter(parameterId));
 }
 
+void op_parameter_set(VirtualMachine* interpreter) {
+    interpreter->setParameter(interpreter->nextId(), interpreter->getResult());
+}
+
+void op_object_free_parameter(VirtualMachine* interpreter) {
+    interpreter->freeObjectParameter(interpreter->nextId());
+}
+
 void op_function_variable_set(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = VariableId{interpreter->nextId()};
 
     interpreter->setFunctionVariableValue(variableId, interpreter->getResult());
 }
 
 
 void op_function_variable_get_r(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = VariableId{interpreter->nextId()};
 
     RuntimeValue value;
     interpreter->getFunctionVariableValue(variableId, value);
@@ -269,7 +339,7 @@ void op_function_variable_get_r(VirtualMachine* interpreter) {
 }
 
 void op_function_variable_object_get_r(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = VariableId{interpreter->nextId()};
 
     RuntimeValue value;
     interpreter->getFunctionVariableValue(variableId, value);
@@ -278,7 +348,7 @@ void op_function_variable_object_get_r(VirtualMachine* interpreter) {
 }
 
 void op_function_variable_get_i(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = VariableId{interpreter->nextId()};
 
     RuntimeValue value;
     interpreter->getFunctionVariableValue(variableId, value);
@@ -287,7 +357,7 @@ void op_function_variable_get_i(VirtualMachine* interpreter) {
 }
 
 void op_function_variable_object_get_i(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = VariableId{interpreter->nextId()};
 
     RuntimeValue value;
     interpreter->getFunctionVariableValue(variableId, value);
@@ -296,7 +366,7 @@ void op_function_variable_object_get_i(VirtualMachine* interpreter) {
 }
 
 void op_function_variable_push(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = VariableId{interpreter->nextId()};
 
     RuntimeValue value;
     interpreter->getFunctionVariableValue(variableId, value);
@@ -305,7 +375,7 @@ void op_function_variable_push(VirtualMachine* interpreter) {
 }
 
 void op_function_variable_object_push(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = VariableId{interpreter->nextId()};
 
     RuntimeValue value;
     interpreter->getFunctionVariableValue(variableId, value);
@@ -314,7 +384,7 @@ void op_function_variable_object_push(VirtualMachine* interpreter) {
 }
 
 void op_constant_get_r(VirtualMachine* machine) {
-    const auto id = machine->nextId();
+    const auto id = ConstantId{machine->nextId()};
     RuntimeValue value;
     machine->getRuntime()->getConstantValue(id, value);
     RuntimeValue copy;
@@ -323,7 +393,7 @@ void op_constant_get_r(VirtualMachine* machine) {
 }
 
 void op_constant_get_i(VirtualMachine* machine) {
-    const auto id = machine->nextId();
+    const auto id = ConstantId{machine->nextId()};
     RuntimeValue value;
     machine->getRuntime()->getConstantValue(id, value);
     RuntimeValue copy;
@@ -332,7 +402,7 @@ void op_constant_get_i(VirtualMachine* machine) {
 }
 
 void op_constant_push(VirtualMachine* machine) {
-    const auto id = machine->nextId();
+    const auto id = ConstantId{machine->nextId()};
     RuntimeValue value;
     machine->getRuntime()->getConstantValue(id, value);
     RuntimeValue copy;
@@ -341,13 +411,13 @@ void op_constant_push(VirtualMachine* machine) {
 }
 
 void op_dynamic_variable_set(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = DynamicVariableId{interpreter->nextId()};
 
     interpreter->getRuntime()->setDynamicVariable(interpreter, variableId, interpreter->getResult());
 }
 
 void op_dynamic_variable_get_r(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = DynamicVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -357,7 +427,7 @@ void op_dynamic_variable_get_r(VirtualMachine* interpreter) {
 }
 
 void op_dynamic_variable_get_i(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = DynamicVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -367,7 +437,7 @@ void op_dynamic_variable_get_i(VirtualMachine* interpreter) {
 }
 
 void op_dynamic_variable_push(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = DynamicVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -377,13 +447,13 @@ void op_dynamic_variable_push(VirtualMachine* interpreter) {
 }
 
 void op_context_variable_set(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = ContextVariableId{interpreter->nextId()};
 
     interpreter->getRuntime()->setContextVariableValue(variableId, interpreter->getResult());
 }
 
 void op_context_variable_get_r(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = ContextVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -393,7 +463,7 @@ void op_context_variable_get_r(VirtualMachine* interpreter) {
 }
 
 void op_context_variable_object_get_r(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = ContextVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -403,7 +473,7 @@ void op_context_variable_object_get_r(VirtualMachine* interpreter) {
 }
 
 void op_context_variable_get_i(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = ContextVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -413,7 +483,7 @@ void op_context_variable_get_i(VirtualMachine* interpreter) {
 }
 
 void op_context_variable_object_get_i(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = ContextVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -423,7 +493,7 @@ void op_context_variable_object_get_i(VirtualMachine* interpreter) {
 }
 
 void op_context_variable_push(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = ContextVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -433,7 +503,7 @@ void op_context_variable_push(VirtualMachine* interpreter) {
 }
 
 void op_context_variable_object_push(VirtualMachine* interpreter) {
-    const auto variableId = interpreter->nextId();
+    const auto variableId = ContextVariableId{interpreter->nextId()};
 
     RuntimeValue value;
 
@@ -884,31 +954,7 @@ void op_object_init_r(VirtualMachine* interpreter) {
 }
 
 void op_object_new(VirtualMachine* interpreter) {
-    const auto* constructor = interpreter->getRuntime()->getNativeConstructor(interpreter->nextId());
-    if (constructor == nullptr) {
-        interpreter->fault("Cannot construct object: invalid constructor");
-    }
-    const auto& parameters = constructor->getParameters();
-    // Arguments are pushed right to left like any other call; the compiler frees and pops them afterwards.
-    std::vector<RuntimeValue> arguments;
-    arguments.reserve(parameters.size());
-    for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
-        arguments.push_back(interpreter->peekStack(index));
-    }
-    NomadObject* object = nullptr;
-    try {
-        object = constructor->getFactory()(arguments);
-        if (object == nullptr) {
-            interpreter->fault("Object factory for '" + constructor->getName() + "' returned null");
-        }
-    } catch (...) {
-        // The compiler-emitted cleanup is skipped on failure, so release the arguments here.
-        for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
-            parameters[index].type->freeValue(arguments[index]);
-        }
-        throw;
-    }
-    interpreter->getResult().setObjectValue(object);
+    interpreter->createScriptObject(TypeId{interpreter->nextId()});
 }
 
 void op_object_init_i(VirtualMachine* interpreter) {
@@ -928,9 +974,9 @@ void op_object_free_i(VirtualMachine* interpreter) {
 }
 
 void op_object_free_variable(VirtualMachine* interpreter) {
-    auto variableIndex = interpreter->nextIndex();
+    const auto variableId = VariableId{toNomadId(interpreter->nextIndex())};
 
-    interpreter->freeObjectVariable(variableIndex);
+    interpreter->freeObjectVariable(variableId);
 }
 
 void op_object_free_stack(VirtualMachine* interpreter) {
@@ -948,7 +994,7 @@ void op_object_push_i(VirtualMachine* interpreter) {
 }
 
 void op_string_push_n(VirtualMachine* interpreter) {
-    const auto stringId = interpreter->nextId();
+    const auto stringId = StringId{interpreter->nextId()};
 
     auto* string = interpreter->getRuntime()->getString(stringId);
     string->addRef();
@@ -965,7 +1011,7 @@ void op_object_pop_i(VirtualMachine* interpreter) {
 }
 
 void op_string_load_r(VirtualMachine* interpreter) {
-    const auto stringId = interpreter->nextId();
+    const auto stringId = StringId{interpreter->nextId()};
 
     auto* string = interpreter->getRuntime()->getString(stringId);
     string->addRef();
@@ -974,7 +1020,7 @@ void op_string_load_r(VirtualMachine* interpreter) {
 }
 
 void op_string_load_i(VirtualMachine* interpreter) {
-    const auto stringId = interpreter->nextId();
+    const auto stringId = StringId{interpreter->nextId()};
 
     auto* string = interpreter->getRuntime()->getString(stringId);
     string->addRef();
@@ -1000,7 +1046,7 @@ void op_string_not_equal(VirtualMachine* interpreter) {
 }
 
 void op_format_string_execute(VirtualMachine* interpreter) {
-    const auto formatStringId = interpreter->nextId();
+    const auto formatStringId = FormatStringId{interpreter->nextId()};
 
     const auto formatString = interpreter->getRuntime()->getFormatString(formatStringId);
 
@@ -1012,10 +1058,10 @@ void op_format_string_execute(VirtualMachine* interpreter) {
 void op_dynamic_format_execute(VirtualMachine* machine) {
     const auto line = machine->nextIndex();
     const auto column = machine->nextIndex();
-    auto* function = machine->getCurrentFunction();
+    const auto* function = machine->getCurrentCallable();
 
     if (function == nullptr) {
-        machine->fault("Dynamic formatting requires an active script function");
+        machine->fault("Dynamic formatting requires an active script callable");
     }
 
     auto* formatText = machine->getStringResult();
@@ -1053,7 +1099,7 @@ void op_id_load_i(VirtualMachine* interpreter) {
 
 void op_assert(VirtualMachine* interpreter) {
     const auto assertResult = interpreter->getBooleanResult();
-    const auto assertMessageId = interpreter->getIdIntermediate();
+    const auto assertMessageId = StringId{interpreter->getIdIntermediate()};
 
     // Bitwise comparison
     if (!assertResult) {

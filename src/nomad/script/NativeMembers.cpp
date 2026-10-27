@@ -31,12 +31,11 @@ void validateSearchOperands(VirtualMachine* virtualMachine, const NomadString& r
 } // namespace
 
 void registerBuiltInNativeMembers(Runtime* runtime) {
-    const auto* stringType = runtime->getStringType();
-    runtime->registerNativeIndexer(
-        stringType,
-        {runtime->getIntegerType()},
-        stringType,
-        [](VirtualMachine* machine) {
+    const auto stringTypeId = runtime->getTypeId("string");
+    const auto indexerId = runtime->addIndexer(stringTypeId, {
+        .valueTypeId = stringTypeId,
+        .indexTypes = {runtime->getIntegerType()->getId()},
+        .getter = [](VirtualMachine* machine) {
             const auto& text = machine->getThisAs<NomadStringObject>()->getString();
             faultOnInvalidUtf8(machine, text, "indexer");
             const auto codePoints = boost::locale::conv::utf_to_utf<char32_t>(text, boost::locale::conv::stop);
@@ -48,14 +47,16 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
                 codePoints.substr(static_cast<NomadIndex>(index), 1), boost::locale::conv::stop
             ));
         },
-        {},
-        NomadDoc("Returns one Unicode code point as a string at a zero-based index. Read-only; out-of-range indices fault.")
-    );
-    runtime->registerNativeProperty(
-        stringType,
-        "length",
-        runtime->getIntegerType(),
-        [](VirtualMachine* virtualMachine, RuntimeValue& result) {
+        .setter = {},
+        .documentation = NomadDoc("Returns one Unicode code point as a string at a zero-based index. Read-only; out-of-range indices fault.")
+    });
+    if (indexerId.isInvalid()) {
+        throw NomadException("Failed to register string indexer");
+    }
+    const auto lengthId = runtime->addProperty(stringTypeId, {
+        .valueTypeId = runtime->getTypeId("int"),
+        .name = "length",
+        .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
             const auto& text = virtualMachine->getThisAs<NomadStringObject>()->getString();
 
             try {
@@ -66,150 +67,148 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
                 virtualMachine->fault("Native string member 'length' requires valid UTF-8");
             }
         },
-        {},
-        NomadDoc("The number of characters (Unicode code points) in the string.")
-    );
+        .setter = {},
+        .documentation = NomadDoc("The number of characters (Unicode code points) in the string.")
+    });
 
-    runtime->registerNativeProperty(
-        stringType,
-        "byteLength",
-        runtime->getIntegerType(),
-        [](VirtualMachine* machine, RuntimeValue& result) {
+    const auto byteLengthId = runtime->addProperty(stringTypeId, {
+        .valueTypeId = runtime->getTypeId("int"),
+        .name = "byteLength",
+        .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             result.setIntegerValue(static_cast<NomadInteger>(machine->getThisAs<NomadStringObject>()->getLength()));
         },
-        {},
-        NomadDoc("The number of bytes in the UTF-8 encoding of the string.")
-    );
+        .setter = {},
+        .documentation = NomadDoc("The number of bytes in the UTF-8 encoding of the string.")
+    });
 
-    runtime->registerNativeProperty(
-        stringType,
-        "isEmpty",
-        runtime->getBooleanType(),
-        [](VirtualMachine* machine, RuntimeValue& result) {
+    const auto isEmptyId = runtime->addProperty(stringTypeId, {
+        .valueTypeId = runtime->getTypeId("bool"),
+        .name = "isEmpty",
+        .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             result.setBooleanValue(machine->getThisAs<NomadStringObject>()->getString().empty());
         },
-        {},
-        NomadDoc("True when the string is empty.")
-    );
+        .setter = {},
+        .documentation = NomadDoc("True when the string is empty.")
+    });
+    if (lengthId.isInvalid() || byteLengthId.isInvalid() || isEmptyId.isInvalid()) {
+        throw NomadException("Failed to register string properties");
+    }
 
-    runtime->registerNativeMethod(
-        stringType,
-        "toUpper",
-        [](VirtualMachine* virtualMachine) {
+    const auto toUpperId = runtime->addMethod(stringTypeId, {
+        .name = "toUpper",
+        .parameters = {},
+        .returnTypeId = stringTypeId,
+        .function = [](VirtualMachine* virtualMachine) {
             const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
             const auto& text = instance->getString();
             faultOnInvalidUtf8(virtualMachine, text, "toUpper");
             virtualMachine->setStringResult(stringToUpper(text));
         },
-        {},
-        runtime->getStringType(),
-        NomadDoc("Return an uppercase copy of the string.")
-    );
+        .documentation = NomadDoc("Return an uppercase copy of the string.")
+    });
 
-    runtime->registerNativeMethod(
-        stringType,
-        "toLower",
-        [](VirtualMachine* virtualMachine) {
+    const auto toLowerId = runtime->addMethod(stringTypeId, {
+        .name = "toLower",
+        .parameters = {},
+        .returnTypeId = stringTypeId,
+        .function = [](VirtualMachine* virtualMachine) {
             const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
             const auto& text = instance->getString();
             faultOnInvalidUtf8(virtualMachine, text, "toLower");
             virtualMachine->setStringResult(stringToLower(text));
         },
-        {},
-        runtime->getStringType(),
-        NomadDoc("Return a lowercase copy of the string.")
-    );
+        .documentation = NomadDoc("Return a lowercase copy of the string.")
+    });
 
-    runtime->registerNativeMethod(
-        stringType,
-        "trim",
-        [](VirtualMachine* virtualMachine) {
+    const auto trimId = runtime->addMethod(stringTypeId, {
+        .name = "trim",
+        .parameters = {},
+        .returnTypeId = stringTypeId,
+        .function = [](VirtualMachine* virtualMachine) {
             const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
             const auto& text = instance->getString();
             faultOnInvalidUtf8(virtualMachine, text, "trim");
             virtualMachine->setStringResult(stringTrimCopy(text));
         },
-        {},
-        runtime->getStringType(),
-        NomadDoc("Return a copy with whitespace removed from both ends.")
-    );
+        .documentation = NomadDoc("Return a copy with whitespace removed from both ends.")
+    });
 
-    runtime->registerNativeMethod(
-        stringType,
-        "trimStart",
-        [](VirtualMachine* virtualMachine) {
+    const auto trimStartId = runtime->addMethod(stringTypeId, {
+        .name = "trimStart",
+        .parameters = {},
+        .returnTypeId = stringTypeId,
+        .function = [](VirtualMachine* virtualMachine) {
             const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
             const auto& text = instance->getString();
             faultOnInvalidUtf8(virtualMachine, text, "trimStart");
             virtualMachine->setStringResult(stringLeftTrimCopy(text));
         },
-        {},
-        runtime->getStringType(),
-        NomadDoc("Return a copy with whitespace removed from the beginning.")
-    );
+        .documentation = NomadDoc("Return a copy with whitespace removed from the beginning.")
+    });
 
-    runtime->registerNativeMethod(
-        stringType,
-        "trimEnd",
-        [](VirtualMachine* virtualMachine) {
+    const auto trimEndId = runtime->addMethod(stringTypeId, {
+        .name = "trimEnd",
+        .parameters = {},
+        .returnTypeId = stringTypeId,
+        .function = [](VirtualMachine* virtualMachine) {
             const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
             const auto& text = instance->getString();
             faultOnInvalidUtf8(virtualMachine, text, "trimEnd");
             virtualMachine->setStringResult(stringRightTrimCopy(text));
         },
-        {},
-        runtime->getStringType(),
-        NomadDoc("Return a copy with whitespace removed from the end.")
-    );
+        .documentation = NomadDoc("Return a copy with whitespace removed from the end.")
+    });
 
-    const auto stringSearchParameters = std::vector{
-        defParameter("text", runtime->getStringType(), NomadParamDoc("The text to find")),
+    const auto stringSearchParameters = std::vector<ParameterDefinition>{
+        {stringTypeId, "text", NomadParamDoc("The text to find")},
     };
 
-    runtime->registerNativeMethod(
-        stringType,
-        "startsWith",
-        [](VirtualMachine* virtualMachine) {
+    const auto startsWithId = runtime->addMethod(stringTypeId, {
+        .name = "startsWith",
+        .parameters = stringSearchParameters,
+        .returnTypeId = runtime->getTypeId("bool"),
+        .function = [](VirtualMachine* virtualMachine) {
             const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
             const auto& text = instance->getString();
             const auto& search = virtualMachine->getStringParameter(0)->getString();
             validateSearchOperands(virtualMachine, text, search, "startsWith");
             virtualMachine->setBooleanResult(text.starts_with(search));
         },
-        stringSearchParameters,
-        runtime->getBooleanType(),
-        NomadDoc("Return true when the string starts with the given text.")
-    );
+        .documentation = NomadDoc("Return true when the string starts with the given text.")
+    });
 
-    runtime->registerNativeMethod(
-        stringType,
-        "endsWith",
-        [](VirtualMachine* virtualMachine) {
+    const auto endsWithId = runtime->addMethod(stringTypeId, {
+        .name = "endsWith",
+        .parameters = stringSearchParameters,
+        .returnTypeId = runtime->getTypeId("bool"),
+        .function = [](VirtualMachine* virtualMachine) {
             const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
             const auto& text = instance->getString();
             const auto& search = virtualMachine->getStringParameter(0)->getString();
             validateSearchOperands(virtualMachine, text, search, "endsWith");
             virtualMachine->setBooleanResult(text.ends_with(search));
         },
-        stringSearchParameters,
-        runtime->getBooleanType(),
-        NomadDoc("Return true when the string ends with the given text.")
-    );
+        .documentation = NomadDoc("Return true when the string ends with the given text.")
+    });
 
-    runtime->registerNativeMethod(
-        stringType,
-        "contains",
-        [](VirtualMachine* virtualMachine) {
+    const auto containsId = runtime->addMethod(stringTypeId, {
+        .name = "contains",
+        .parameters = stringSearchParameters,
+        .returnTypeId = runtime->getTypeId("bool"),
+        .function = [](VirtualMachine* virtualMachine) {
             const auto* instance = virtualMachine->getThisAs<NomadStringObject>();
             const auto& text = instance->getString();
             const auto& search = virtualMachine->getStringParameter(0)->getString();
             validateSearchOperands(virtualMachine, text, search, "contains");
             virtualMachine->setBooleanResult(text.find(search) != NomadString::npos);
         },
-        stringSearchParameters,
-        runtime->getBooleanType(),
-        NomadDoc("Return true when the string contains the given text.")
-    );
+        .documentation = NomadDoc("Return true when the string contains the given text.")
+    });
+    if (toUpperId.isInvalid() || toLowerId.isInvalid() || trimId.isInvalid() ||
+        trimStartId.isInvalid() || trimEndId.isInvalid() || startsWithId.isInvalid() ||
+        endsWithId.isInvalid() || containsId.isInvalid()) {
+        throw NomadException("Failed to register string methods");
+    }
 }
 
 } // namespace nomad

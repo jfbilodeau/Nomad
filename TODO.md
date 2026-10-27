@@ -6,6 +6,10 @@ Things the author wants to do.
 [ ] `$init` shows up in LSP
 
 ## Open
+[ ] Finish converting `NomadId` to strong types.
+[ ] Script fault handling
+[ ] `struct` (Embedded types, pass by copy)
+[ ] Nomad scripts in modules
 [ ] Object serialization
 [ ] File IO module.
 [ ] Replace ref counting with garbage collector.

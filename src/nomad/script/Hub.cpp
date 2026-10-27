@@ -2,13 +2,15 @@
 
 #include <nomad/script/Hub.hpp>
 
+#include <nomad/script/VariableContext.hpp>
+
 #include <utility>
 
 namespace nomad {
 
-Hub::Hub(NomadString name, const NomadId parentId):
+Hub::Hub(NomadString name, const HubMode mode):
     m_name(std::move(name)),
-    m_parentId(parentId),
+    m_mode(mode),
     m_variables(std::make_shared<SimpleVariableContext>())
 {}
 
@@ -16,8 +18,8 @@ const NomadString& Hub::getName() const {
     return m_name;
 }
 
-NomadId Hub::getParentId() const {
-    return m_parentId;
+HubMode Hub::getMode() const {
+    return m_mode;
 }
 
 const HubMember* Hub::getMember(const NomadString& name) const {

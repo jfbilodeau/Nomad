@@ -17,7 +17,7 @@ namespace nomad {
 
 namespace {
 
-NomadString getSourceName(const ScriptFunction* function) {
+NomadString getSourceName(const ScriptCallableBase* function) {
     return function != nullptr ? function->getPath() : NomadString{};
 }
 
@@ -59,11 +59,11 @@ void AstNode::raiseException(const NomadString& message) const {
     throw AstException(message, m_span.startLine, m_span.startColumn, m_span.endLine, m_span.endColumn);
 }
 
-void AstNode::reportError(CompilerContext* context, const ScriptFunction* function, const NomadString& message) const {
+void AstNode::reportError(CompilerContext* context, const ScriptCallableBase* function, const NomadString& message) const {
     context->reportError(message, getSourceName(function), m_span.startLine, m_span.startColumn);
 }
 
-void AstNode::reportWarning(CompilerContext* context, const ScriptFunction* function, const NomadString& message) const {
+void AstNode::reportWarning(CompilerContext* context, const ScriptCallableBase* function, const NomadString& message) const {
     context->reportWarning(message, getSourceName(function), m_span.startLine, m_span.startColumn);
 }
 
@@ -94,7 +94,7 @@ Statement::Statement(const NomadIndex line, const NomadIndex column):
     AstNode(line, column) {
 }
 
-NomadBoolean Statement::resolve(CompilerContext* context, ScriptFunction* function) {
+NomadBoolean Statement::resolve(CompilerContext* context, ScriptCallableBase* function) {
     const auto errorCount = context->getErrorCount();
 
     onResolve(context, function);
@@ -102,7 +102,7 @@ NomadBoolean Statement::resolve(CompilerContext* context, ScriptFunction* functi
     return context->getErrorCount() == errorCount;
 }
 
-void Statement::compile(Compiler* compiler, ScriptFunction* function) {
+void Statement::compile(Compiler* compiler, ScriptCallableBase* function) {
     onCompile(compiler, function);
 }
 
@@ -114,7 +114,7 @@ NomadBoolean Statement::isDeclaration() const {
     return false;
 }
 
-void Statement::checkReachability(CompilerContext* /*context*/, const ScriptFunction* /*function*/) const {
+void Statement::checkReachability(CompilerContext* /*context*/, const ScriptCallableBase* /*function*/) const {
 }
 
 void Statement::evaluate(InterpreterContext& context) const {
@@ -131,11 +131,11 @@ void Statement::evaluate(InterpreterContext& context) const {
     }
 }
 
-void Statement::onResolve(CompilerContext* /*context*/, ScriptFunction* /*function*/) {
+void Statement::onResolve(CompilerContext* /*context*/, ScriptCallableBase* /*function*/) {
     // Default implementation does nothing
 }
 
-void Statement::onCompile(Compiler* /*compiler*/, ScriptFunction* /*function*/) {
+void Statement::onCompile(Compiler* /*compiler*/, ScriptCallableBase* /*function*/) {
     // Default implementation does nothing
 }
 
@@ -150,7 +150,7 @@ NullStatement::NullStatement(NomadIndex line, NomadIndex column):
 
 }
 
-void NullStatement::onCompile(nomad::Compiler* /*compiler*/, ScriptFunction* /*function*/) {
+void NullStatement::onCompile(nomad::Compiler* /*compiler*/, ScriptCallableBase* /*function*/) {
     // Nothing to do...
 }
 
@@ -185,7 +185,7 @@ HubInitializerStatement::HubInitializerStatement(
     const NomadIndex column,
     NomadString identifier,
     std::unique_ptr<Expression> expression,
-    ScriptFunction* sourceFunction,
+    ScriptCallableBase* sourceFunction,
     NomadString hub
 ):
     AssignmentStatement(line, column, std::move(identifier), std::move(expression)),
@@ -207,7 +207,7 @@ void HubInitializerStatement::setInitialValue(std::unique_ptr<TypedValue> value)
     m_initialValue = std::move(value);
 }
 
-void HubInitializerStatement::onResolve(CompilerContext* context, ScriptFunction* /*function*/) {
+void HubInitializerStatement::onResolve(CompilerContext* context, ScriptCallableBase* /*function*/) {
     CompilerContext initializerContext(context->getCompiler(), context->getMode(), nullptr, true);
     initializerContext.setHub(m_hub);
     try {
@@ -219,7 +219,7 @@ void HubInitializerStatement::onResolve(CompilerContext* context, ScriptFunction
     context->reportDiagnostics(initializerContext.getDiagnostics());
 }
 
-void HubInitializerStatement::onCompile(Compiler* compiler, ScriptFunction* function) {
+void HubInitializerStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     if (m_initialValue == nullptr) {
         AssignmentStatement::onCompile(compiler, function);
     } else {
@@ -229,13 +229,26 @@ void HubInitializerStatement::onCompile(Compiler* compiler, ScriptFunction* func
     }
 }
 
-void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
+void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase* function) {
+    if (context->getCompiler()->isFieldInitializer(function) &&
+        (m_identifier == "this" || m_identifier.starts_with("this."))) {
+        reportError(context, function, "Field initializers cannot use or capture 'this'");
+        return;
+    }
     if (!m_expression->resolve(context, function)) {
         return;
     }
 
     auto* compiler = context->getCompiler();
     const auto expressionType = m_expression->getType();
+
+    if (compiler->getReceiverType(function) != nullptr && m_identifier.starts_with("this.")) {
+        (void)compiler->resolveClassField(
+            context, function, m_identifier.substr(5), expressionType,
+            context->getRuntime()->getConstructor(function->getId()) != nullptr, getLine(), getColumn()
+        );
+        return;
+    }
 
     IdentifierDefinition identifier;
     compiler->getIdentifierDefinition(m_identifier, function, identifier);
@@ -259,8 +272,11 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
 
         switch (identifier.identifierType) {
         case IdentifierType::Parameter:
-            compiler->reportInternalError("Missing mutable parameter binding: " + m_identifier);
-            return;
+            if (identifier.valueType != expressionType) {
+                reportError(context, function, "Cannot change type of parameter '" + m_identifier + "'");
+                return;
+            }
+            break;
         case IdentifierType::FunctionVariable: {
             const auto* interpreterContext = context->getInterpreterContext();
             if (interpreterContext != nullptr && interpreterContext->isFrameVariable(identifier.variableId) &&
@@ -272,12 +288,12 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
             break;
         }
         case IdentifierType::DynamicVariable: {
-            if (!interpreterRuntime->canSetDynamicVariable(identifier.variableId)) {
+            if (!interpreterRuntime->canSetDynamicVariable(identifier.dynamicVariableId)) {
                 reportError(context, function, "Dynamic variable '" + m_identifier + "' is read-only");
                 return;
             }
 
-            const auto variableType = interpreterRuntime->getDynamicVariableType(identifier.variableId);
+            const auto variableType = interpreterRuntime->getDynamicVariableType(identifier.dynamicVariableId);
             if (expressionType != nullptr && variableType != nullptr && variableType != expressionType) {
                 reportError(
                     context,
@@ -291,7 +307,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
         }
 
         case IdentifierType::ContextVariable: {
-            const auto variableType = interpreterRuntime->getContextVariableType(identifier.variableId);
+            const auto variableType = interpreterRuntime->getContextVariableType(identifier.contextVariableId);
 
             if (variableType != nullptr && expressionType != nullptr && variableType != expressionType) {
                 reportError(
@@ -314,7 +330,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
             // New unqualified names belong to the interpreter context, not the script frame.
             const auto isNewConsoleVariable = identifier.identifierType == IdentifierType::Unknown &&
                 m_identifier.find('.') == NomadString::npos &&
-                interpreterRuntime->getVariableContextIdByPrefix(m_identifier) == NOMAD_INVALID_ID;
+                interpreterRuntime->getVariableContextIdByPrefix(m_identifier).isInvalid();
 
             if (identifier.identifierType != IdentifierType::FunctionVariable && !isNewConsoleVariable) {
                 reportError(context, function, "Cannot assign value to '" + m_identifier + "' in the interpreter");
@@ -363,7 +379,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
         break;
     }
     case IdentifierType::DynamicVariable: {
-        const auto variableType = runtime->getDynamicVariableType(identifier.variableId);
+        const auto variableType = runtime->getDynamicVariableType(identifier.dynamicVariableId);
 
         if (variableType != expressionType) {
             reportError(
@@ -377,7 +393,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
     }
     case IdentifierType::ContextVariable: {
         // Make sure type is unknown or the same as the expression.
-        const auto variableType = runtime->getContextVariableType(identifier.variableId);
+        const auto variableType = runtime->getContextVariableType(identifier.contextVariableId);
 
         if (variableType != nullptr && variableType != expressionType) {
             reportError(
@@ -406,14 +422,16 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
     case IdentifierType::NativeFunction:
         reportError(context, function, "Cannot assign value to native function '" + m_identifier + "'");
         break;
-    case IdentifierType::Function:
+    case IdentifierType::ScriptFunction:
         reportError(context, function, "Cannot assign value to function '" + m_identifier + "'");
         break;
     case IdentifierType::Event:
         reportError(context, function, "Cannot assign value to event type '" + m_identifier + "'");
         break;
     case IdentifierType::Parameter:
-        compiler->reportInternalError("Missing mutable parameter binding: " + m_identifier);
+        if (identifier.valueType != expressionType) {
+            reportError(context, function, "Cannot change type of parameter '" + m_identifier + "'");
+        }
         break;
     default:
         reportError(context, function, "Cannot assign value to unknown identifier '" + m_identifier + "'");
@@ -421,8 +439,22 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* fu
     }
 }
 
-void AssignmentStatement::onCompile(Compiler* compiler, ScriptFunction* function) {
+void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     m_expression->compile(compiler, function, ExpressionTarget::Result);
+
+    if (const auto* receiverType = compiler->getReceiverType(function);
+        receiverType != nullptr && m_identifier.starts_with("this.")) {
+        const auto* property = receiverType->asObjectType()->getProperty(m_identifier.substr(5));
+        if (property == nullptr) {
+            compiler->reportInternalError("Unresolved class field: " + m_identifier);
+        }
+        compiler->addLoadReceiver(function, ExpressionTarget::Intermediate);
+        compiler->addOpCode(op_native_property_set);
+        compiler->addId(property->getId().id);
+        compiler->addFreeValue(m_expression->getType()->getTypeOpCodes()->freeResult);
+        compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
+        return;
+    }
 
     IdentifierDefinition identifier;
 
@@ -432,27 +464,30 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptFunction* function
     const auto* typeOpCodes = m_expression->getType()->getTypeOpCodes();
 
     switch (identifier.identifierType) {
+    case IdentifierType::Parameter:
+        compiler->addStoreParameter(identifier.parameterId, m_expression->getType());
+        break;
     case IdentifierType::FunctionVariable:
         // `r` is moved into the variable, so its previous value is released first.
-        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(identifier.variableId));
+        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(identifier.variableId.id));
         compiler->addOpCode(typeOpCodes->setFunctionVariable);
-        compiler->addId(identifier.variableId);
+        compiler->addId(identifier.variableId.id);
         break;
 
     case IdentifierType::DynamicVariable:
         // The setter copies what it keeps.
         compiler->addOpCode(typeOpCodes->setDynamicVariable);
-        compiler->addId(identifier.variableId);
+        compiler->addId(identifier.dynamicVariableId.id);
         compiler->addFreeValue(typeOpCodes->freeResult);
         break;
 
     case IdentifierType::ContextVariable: {
         // The variable context copies what it keeps.
         compiler->addOpCode(typeOpCodes->setContextVariable);
-        compiler->addId(identifier.variableId);
+        compiler->addId(identifier.contextVariableId.id);
         compiler->addFreeValue(typeOpCodes->freeResult);
 
-        compiler->getRuntime()->setContextVariableWritten(identifier.variableId, true);
+        compiler->getRuntime()->setContextVariableWritten(identifier.contextVariableId, true);
         break;
     }
     default:
@@ -475,11 +510,14 @@ void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
     const auto* type = assignedValue.getType();
 
     switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::Parameter:
+        context.setParameter(m_identifierDefinition.parameterId, assignedValue.getValue());
+        break;
     case IdentifierType::DynamicVariable: {
         auto* runtime = context.getRuntime();
         runtime->setDynamicVariable(
             context.getVirtualMachine(),
-            m_identifierDefinition.variableId,
+            m_identifierDefinition.dynamicVariableId,
             assignedValue.getValue()
         );
         break;
@@ -489,8 +527,8 @@ void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
         auto* runtime = context.getRuntime();
 
         // The variable context copies what it keeps.
-        runtime->setContextVariableValue(m_identifierDefinition.variableId, assignedValue.getValue());
-        runtime->setContextVariableWritten(m_identifierDefinition.variableId, true);
+        runtime->setContextVariableValue(m_identifierDefinition.contextVariableId, assignedValue.getValue());
+        runtime->setContextVariableWritten(m_identifierDefinition.contextVariableId, true);
         break;
     }
 
@@ -510,9 +548,10 @@ MemberAssignmentStatement::MemberAssignmentStatement(const NomadIndex line, cons
     : Statement(line, column), m_target(std::move(target)), m_expression(std::move(expression)) {
 }
 
-void MemberAssignmentStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
+void MemberAssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     auto* target = m_target.get();
-    if (!target->resolveAssignmentTarget(context, function) || !m_expression->resolve(context, function)) {
+    if (!m_expression->resolve(context, function) ||
+        !target->resolveAssignmentTarget(context, function, m_expression->getType())) {
         return;
     }
 
@@ -531,7 +570,7 @@ void MemberAssignmentStatement::onResolve(CompilerContext* context, ScriptFuncti
     }
 }
 
-void MemberAssignmentStatement::onCompile(Compiler* compiler, ScriptFunction* function) {
+void MemberAssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     m_target->compileAssignment(compiler, function, m_expression.get());
 }
 
@@ -546,11 +585,11 @@ ExpressionStatement::ExpressionStatement(const NomadIndex line, const NomadIndex
     : Statement(line, column), m_expression(std::move(expression)) {
 }
 
-void ExpressionStatement::onResolve(CompilerContext* context, ScriptFunction* function) {
+void ExpressionStatement::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     (void)m_expression->resolve(context, function);
 }
 
-void ExpressionStatement::onCompile(Compiler* compiler, ScriptFunction* function) {
+void ExpressionStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     m_expression->compile(compiler, function, ExpressionTarget::Result);
     if (!m_expression->getType()->isVoid()) {
         compiler->addFreeValue(m_expression->getType()->getTypeOpCodes()->freeResult);
@@ -563,7 +602,7 @@ void ExpressionStatement::onEvaluate(InterpreterContext& context) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // StatementList
-NomadBoolean StatementList::resolve(CompilerContext* context, ScriptFunction* function) const {
+NomadBoolean StatementList::resolve(CompilerContext* context, ScriptCallableBase* function) const {
     NomadBoolean resolved = true;
 
     for (auto& statement: m_statements) {
@@ -575,7 +614,7 @@ NomadBoolean StatementList::resolve(CompilerContext* context, ScriptFunction* fu
     return resolved;
 }
 
-void StatementList::compile(Compiler* compiler, ScriptFunction* function) const {
+void StatementList::compile(Compiler* compiler, ScriptCallableBase* function) const {
     for (auto& statement: m_statements) {
         statement->compile(compiler, function);
     }
@@ -621,7 +660,7 @@ NomadBoolean StatementList::alwaysReturns() const {
     });
 }
 
-void StatementList::checkReachability(CompilerContext* context, const ScriptFunction* function) const {
+void StatementList::checkReachability(CompilerContext* context, const ScriptCallableBase* function) const {
     auto returned = false;
 
     for (const auto& statement: m_statements) {
@@ -649,11 +688,11 @@ FunctionNode::FunctionNode(const NomadIndex line, const NomadIndex row):
     AstNode(line, row)
 {}
 
-NomadBoolean FunctionNode::resolve(CompilerContext* context, ScriptFunction* function) const {
+NomadBoolean FunctionNode::resolve(CompilerContext* context, ScriptCallableBase* function) const {
     return m_statements.resolve(context, function);
 }
 
-void FunctionNode::compile(Compiler* compiler, ScriptFunction* function) const {
+void FunctionNode::compile(Compiler* compiler, ScriptCallableBase* function) const {
     m_statements.compile(compiler, function);
 }
 
@@ -661,7 +700,7 @@ NomadBoolean FunctionNode::alwaysReturns() const {
     return m_statements.alwaysReturns();
 }
 
-void FunctionNode::checkReachability(CompilerContext* context, const ScriptFunction* function) const {
+void FunctionNode::checkReachability(CompilerContext* context, const ScriptCallableBase* function) const {
     m_statements.checkReachability(context, function);
 }
 
@@ -700,11 +739,11 @@ void FunctionDeclaration::addParam(std::unique_ptr<ParameterDeclaration> param) 
     m_params.push_back(std::move(param));
 }
 
-void FunctionDeclaration::setFunctionId(NomadId id) {
+void FunctionDeclaration::setFunctionId(CallableId id) {
     m_functionId = id;
 }
 
-NomadId FunctionDeclaration::getFunctionId() const {
+CallableId FunctionDeclaration::getFunctionId() const {
     return m_functionId;
 }
 
@@ -728,14 +767,14 @@ NomadBoolean FunctionDeclaration::isDeclaration() const {
     return true;
 }
 
-void FunctionDeclaration::onResolve(CompilerContext* context, ScriptFunction* function) {
+void FunctionDeclaration::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     // Default: resolve body if present
     if (m_body) {
         (void)m_body->resolve(context, function);
     }
 }
 
-void FunctionDeclaration::onCompile(Compiler* /*compiler*/, ScriptFunction* /*function*/) {
+void FunctionDeclaration::onCompile(Compiler* /*compiler*/, ScriptCallableBase* /*function*/) {
     // Functions compile as functions; by default do nothing here. Runtime registration handled elsewhere.
 }
 
@@ -762,7 +801,7 @@ NomadBoolean EventDeclaration::isDeclaration() const {
     return true;
 }
 
-void EventDeclaration::onResolve(CompilerContext* /*context*/, ScriptFunction* /*function*/) {
+void EventDeclaration::onResolve(CompilerContext* /*context*/, ScriptCallableBase* /*function*/) {
     // Nothing by default; runtime registration happens in pre-parse stage.
 }
 
@@ -786,7 +825,7 @@ NomadBoolean ConstDeclaration::isDeclaration() const {
     return true;
 }
 
-void ConstDeclaration::onResolve(CompilerContext* context, ScriptFunction* function) {
+void ConstDeclaration::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     if (m_initializer && m_initializer->resolve(context, function)) {
         m_type = m_initializer->getType();
     }
@@ -838,13 +877,13 @@ NomadBoolean EventHandlerDeclaration::isDeclaration() const {
     return true;
 }
 
-void EventHandlerDeclaration::onResolve(CompilerContext* context, ScriptFunction* function) {
+void EventHandlerDeclaration::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     if (m_handler) {
         (void)m_handler->resolve(context, function);
     }
 }
 
-void EventHandlerDeclaration::onCompile(Compiler* /*compiler*/, ScriptFunction* /*function*/) {
+void EventHandlerDeclaration::onCompile(Compiler* /*compiler*/, ScriptCallableBase* /*function*/) {
     // Handler registration and compilation are handled by the compiler's event system.
 }
 

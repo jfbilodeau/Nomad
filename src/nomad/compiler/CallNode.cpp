@@ -29,7 +29,7 @@ void Argument::setType(const Type* type) {
     m_type = type;
 }
 
-const Type* Argument::resolveOverloadType(CompilerContext* /*context*/, ScriptFunction* /*function*/) {
+const Type* Argument::resolveOverloadType(CompilerContext* /*context*/, ScriptCallableBase* /*function*/) {
     // Most arguments are built by the parser with a fixed type and cannot tell overloads apart.
     return nullptr;
 }
@@ -42,7 +42,7 @@ TypedValue Argument::onEvaluate(InterpreterContext& /*context*/) const {
     throw AstException("Argument kind is not supported by the interpreter", getLine(), getColumn());
 }
 
-NomadBoolean Argument::resolve(CompilerContext* context, ScriptFunction* function) {
+NomadBoolean Argument::resolve(CompilerContext* context, ScriptCallableBase* function) {
     const auto errorCount = context->getErrorCount();
 
     onResolve(context, function);
@@ -50,11 +50,11 @@ NomadBoolean Argument::resolve(CompilerContext* context, ScriptFunction* functio
     return context->getErrorCount() == errorCount;
 }
 
-void Argument::onResolve(CompilerContext* /*context*/, ScriptFunction* /*function*/) {
+void Argument::onResolve(CompilerContext* /*context*/, ScriptCallableBase* /*function*/) {
     // Most arguments have nothing to resolve.
 }
 
-void Argument::generateCode(Compiler* compiler, ScriptFunction* function) {
+void Argument::generateCode(Compiler* compiler, ScriptCallableBase* function) {
     onCompile(compiler, function);
 }
 
@@ -74,11 +74,11 @@ void ArgumentList::addExpressionArgument(
     m_arguments.push_back(std::move(argument));
 }
 
-void ArgumentList::addPredicateArgument(NomadIndex line, NomadIndex column, NomadId predicateFunctionId) {
+void ArgumentList::addPredicateArgument(NomadIndex line, NomadIndex column, CallableId predicateFunctionId) {
     m_arguments.emplace_back(createPredicateArgument(line, column, predicateFunctionId));
 }
 
-void ArgumentList::addCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, NomadId functionId) {
+void ArgumentList::addCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, CallableId functionId) {
     m_arguments.emplace_back(createCallbackArgument(line, column, type, functionId));
 }
 
@@ -86,8 +86,8 @@ void ArgumentList::addEventCallbackArgument(
     NomadIndex line,
     NomadIndex column,
     const Type* type,
-    NomadId eventId,
-    NomadId functionId
+    EventId eventId,
+    CallableId functionId
 ) {
     m_arguments.emplace_back(createEventCallbackArgument(line, column, type, eventId, functionId));
 }
@@ -128,7 +128,7 @@ void ArgumentList::addAll(std::vector<std::unique_ptr<Argument>>&& arguments) {
     }
 }
 
-NomadBoolean ArgumentList::resolve(CompilerContext* context, ScriptFunction* function) const {
+NomadBoolean ArgumentList::resolve(CompilerContext* context, ScriptCallableBase* function) const {
     NomadBoolean resolved = true;
 
     for (const auto& argument : m_arguments) {
@@ -140,7 +140,7 @@ NomadBoolean ArgumentList::resolve(CompilerContext* context, ScriptFunction* fun
     return resolved;
 }
 
-void ArgumentList::compile(Compiler* compiler, ScriptFunction* function) const {
+void ArgumentList::compile(Compiler* compiler, ScriptCallableBase* function) const {
     if (m_receiverType != nullptr) {
         compiler->addPushIntermediate(m_receiverType);
     }
@@ -219,13 +219,13 @@ const ArgumentList* CallStatementNode::getArguments() const {
     return &m_arguments;
 }
 
-void CallStatementNode::onResolve(CompilerContext* context, ScriptFunction* function) {
+void CallStatementNode::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     (void)m_arguments.resolve(context, function);
 }
 
 const Function* resolveFunctionCallArguments(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     const NomadString& name,
     ArgumentList* arguments,
     NomadString& error
@@ -272,7 +272,7 @@ FunctionCallStatementNode::FunctionCallStatementNode(const NomadIndex line, cons
     m_name(std::move(name)) {
 }
 
-void FunctionCallStatementNode::onResolve(CompilerContext* context, ScriptFunction* function) {
+void FunctionCallStatementNode::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     NomadString error;
     m_function = resolveFunctionCallArguments(context, function, m_name, getArguments(), error);
     if (m_function == nullptr) {
@@ -290,14 +290,14 @@ void FunctionCallStatementNode::onResolve(CompilerContext* context, ScriptFuncti
     CallStatementNode::onResolve(context, function);
 }
 
-void FunctionCallStatementNode::onCompile(Compiler* compiler, ScriptFunction* function) {
+void FunctionCallStatementNode::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
     if (const auto* native = m_function->asNativeFunction()) {
         compiler->addNativeFunctionCall(native->getId(), function, getArguments());
     } else if (const auto* script = m_function->asScriptFunction()) {
-        compiler->addFunctionCall(script->getId(), function, getArguments());
+        compiler->addScriptFunctionCall(script->getId(), function, getArguments());
     } else {
         raiseException("Unsupported implementation of function '" + m_name + "'");
     }

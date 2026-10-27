@@ -15,7 +15,7 @@ BOOST_AUTO_TEST_CASE(script_registration_reports_collisions_immediately)
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"answer", {"first.nomad", "return 1"}}}, {}});
-    BOOST_REQUIRE(runtime.getFunctionId("answer") != NOMAD_INVALID_ID);
+    BOOST_REQUIRE(runtime.getFunctionId("answer").isValid());
     compiler->registerSources(&context, {{{"answer", {"second.nomad", "return 2"}}}, {}});
 
     BOOST_REQUIRE(context.getErrorCount() == 1U);
@@ -75,7 +75,7 @@ BOOST_AUTO_TEST_CASE(script_registration_and_compilation_require_matching_contex
     CompilerContext context(compiler.get());
     BOOST_CHECK_THROW((void)compiler->createFunction(&context, NOMAD_INVALID_ID, "test"), NomadBug);
     BOOST_CHECK_THROW((void)compiler->getScript(NOMAD_INVALID_ID), NomadBug);
-    BOOST_CHECK_THROW((void)compiler->getScriptId(NOMAD_INVALID_ID), NomadBug);
+    BOOST_CHECK_THROW((void)compiler->getScriptId(CallableId::INVALID), NomadBug);
     BOOST_CHECK_THROW(compiler->compileFunctions(nullptr), NomadBug);
     BOOST_CHECK_THROW(compiler->compileFunctions(&otherContext), NomadBug);
 }
@@ -85,11 +85,7 @@ BOOST_AUTO_TEST_CASE(statement_parsers_register_without_interpreter_metadata)
     Runtime runtime;
     auto compiler = runtime.createCompiler();
 
-    compiler->registerParseStatementFn(
-        "console.test",
-        nullptr,
-        nullptr
-    );
+    compiler->registerParseStatementFn("console.test", StatementAvailability::Compiler, nullptr);
 
     BOOST_TEST(compiler->isStatement("console.test"));
 }
@@ -207,7 +203,7 @@ BOOST_AUTO_TEST_CASE(script_lookup_rejects_invalid_and_out_of_range_ids)
         BOOST_CHECK_THROW((void)compiler->getScript(invalidId), NomadBug);
         BOOST_CHECK_THROW((void)compiler->createFunction(&context, invalidId, "invalid"), NomadBug);
     }
-    BOOST_TEST(runtime.getFunctionId("invalid") == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.getFunctionId("invalid").isInvalid());
     BOOST_TEST(!context.hasError());
 }
 
@@ -223,7 +219,7 @@ BOOST_AUTO_TEST_CASE(function_creation_reports_collisions_against_its_own_script
     const auto scriptId = compiler->getScriptId(runtime.getFunctionId("second"));
     const auto functionId = compiler->createFunction(&context, scriptId, "first");
 
-    BOOST_TEST(functionId == NOMAD_INVALID_ID);
+    BOOST_TEST(functionId.isInvalid());
     BOOST_REQUIRE(context.getErrorCount() == 1U);
     BOOST_TEST(context.getFirstError()->sourceName == "untitled:second");
     BOOST_TEST(context.getFirstError()->message.find("untitled:first") != NomadString::npos);

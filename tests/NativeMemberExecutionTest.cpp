@@ -21,35 +21,41 @@ public:
     NomadInteger value = 4;
 };
 
-const ObjectTypeBase* registerTestObject(Runtime& runtime) {
-    auto descriptor = std::make_unique<ObjectType>("TestObject");
-    const auto* type = descriptor.get();
-    runtime.registerType(std::move(descriptor));
-    runtime.registerNativeConstructor(
-        type, {}, [](std::span<const RuntimeValue>) { return new TestObject; }, ""
-    );
-    runtime.registerNativeProperty(
-        type, "value", runtime.getIntegerType(),
-        [](VirtualMachine* machine, RuntimeValue& result) {
+const ObjectType* registerTestObject(Runtime& runtime) {
+    const auto descriptorId = runtime.createObjectType<ObjectType>("TestObject", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(descriptorId.isValid());
+    const auto* type = runtime.getType(descriptorId).value()->asObjectType();
+    BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+        .parameters = {},
+        .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new TestObject); },
+        .documentation = ""
+    }).isValid());
+    BOOST_REQUIRE(runtime.addProperty(type->getId(), {
+        .valueTypeId = runtime.getTypeId("int"),
+        .name = "value",
+        .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             result.setIntegerValue(machine->getThisAs<TestObject>()->value);
         },
-        [](VirtualMachine* machine, const RuntimeValue& value) {
+        .setter = [](VirtualMachine* machine, const RuntimeValue& value) {
             machine->getThisAs<TestObject>()->value = value.getIntegerValue();
-        }, ""
-    );
-    runtime.registerNativeMethod(
-        type, "increment",
-        [](VirtualMachine* machine) {
+        },
+        .documentation = ""
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(type->getId(), {
+        .name = "increment",
+        .parameters = {{runtime.getTypeId("int"), "amount", ""}},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = [](VirtualMachine* machine) {
             auto* instance = machine->getThisAs<TestObject>();
             instance->value += machine->getIntegerParameter(0);
             machine->setIntegerResult(instance->value);
         },
-        {defParameter("amount", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
-    );
+        .documentation = ""
+    }).isValid());
     return type;
 }
 
-NomadId compileFunction(Runtime& runtime, const NomadString& source) {
+CallableId compileFunction(Runtime& runtime, const NomadString& source) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"test", {"test.nomad", source}}}, {}});
@@ -81,23 +87,26 @@ BOOST_AUTO_TEST_CASE(resolved_method_and_constructor_survive_catalog_growth) {
         std::move(receiver), std::move(arguments));
     BOOST_REQUIRE(expression.resolve(&compilation, nullptr));
 
-    BOOST_REQUIRE(runtime.registerNativeConstructor(
-        type, {defParameter("value", runtime.getIntegerType(), "")},
-        [](std::span<const RuntimeValue>) {
+    BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+        .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
+        .function = [](VirtualMachine* machine) {
             auto* object = new TestObject;
             object->value = 100;
-            return object;
-        }, ""
-    ) != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(runtime.registerNativeMethod(
-        runtime.getStringType(), "increment",
-        [](VirtualMachine* machine) { machine->setIntegerResult(200); },
-        {defParameter("amount", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
-    ) != NOMAD_INVALID_ID);
+            machine->getResult().setObjectValue(object);
+        },
+        .documentation = ""
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId("string"), {
+        .name = "increment",
+        .parameters = {{runtime.getTypeId("int"), "amount", ""}},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = [](VirtualMachine* machine) { machine->setIntegerResult(200); },
+        .documentation = ""
+    }).isValid());
     for (auto index = NomadInteger{0}; index < 64; ++index) {
         BOOST_REQUIRE(runtime.registerNativeFunction(
             "growth" + toString(index), [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
-        ) != NOMAD_INVALID_ID);
+        ).isValid());
     }
 
     const auto liveObjects = NomadObject::getLiveObjectCount();
@@ -133,19 +142,18 @@ BOOST_AUTO_TEST_CASE(unresolved_method_and_constructor_evaluation_reports_an_err
 BOOST_AUTO_TEST_CASE(typed_method_borrows_the_string_receiver) {
     Runtime runtime;
     bool called = false;
-    runtime.registerNativeMethod(
-        runtime.getStringType(),
-        "typedLength",
-        [&called](VirtualMachine* virtualMachine) {
+    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId("string"), {
+        .name = "typedLength",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = [&called](VirtualMachine* virtualMachine) {
             const auto* receiver = virtualMachine->getThisAs<const NomadStringObject>();
             called = true;
             BOOST_TEST(receiver == virtualMachine->getThis());
             virtualMachine->setIntegerResult(static_cast<NomadInteger>(receiver->getLength()));
         },
-        {},
-        runtime.getIntegerType(),
-        NomadDoc("Read the string length")
-    );
+        .documentation = NomadDoc("Read the string length")
+    }).isValid());
 
     const auto functionId = compileFunction(runtime, "return \"Nomad\".typedLength");
     RuntimeValue result;
@@ -158,24 +166,24 @@ BOOST_AUTO_TEST_CASE(typed_method_borrows_the_string_receiver) {
 BOOST_AUTO_TEST_CASE(typed_method_supports_a_host_defined_object) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    const auto memberId = runtime.registerNativeMethod(
-        type,
-        "hostObject",
-        [](VirtualMachine* virtualMachine) {
+    const auto memberId = runtime.addMethod(type->getId(), {
+        .name = "hostObject",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = [](VirtualMachine* virtualMachine) {
             auto* receiver = virtualMachine->getThisAs<TestObject>();
-            BOOST_TEST(receiver->getReferenceCount() == 1);
+            BOOST_TEST(receiver->getReferenceCount() == 2);
             virtualMachine->setIntegerResult(42);
         },
-        {},
-        runtime.getIntegerType(),
-        NomadDoc("Test a host-defined receiver")
-    );
-    BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
+        .documentation = NomadDoc("Test a host-defined receiver")
+    });
+    BOOST_REQUIRE(memberId.isValid());
     auto virtualMachine = runtime.createVirtualMachine();
     RuntimeValue receiver;
     receiver.setObjectValue(new TestObject);
     virtualMachine->runNativeMethod(memberId, {}, receiver);
     BOOST_TEST(virtualMachine->getResult().getIntegerValue() == 42);
+    BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1);
     receiver.freeObjectValue();
 }
 
@@ -191,23 +199,22 @@ BOOST_AUTO_TEST_CASE(typed_receiver_requires_an_active_method) {
 
 BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) {
     Runtime runtime;
-    auto descriptor = std::make_unique<ObjectType>("TestObject");
-    const auto* type = descriptor.get();
-    runtime.registerType(std::move(descriptor));
+    const auto descriptorId = runtime.createObjectType<ObjectType>("TestObject", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(descriptorId.isValid());
+    const auto* type = runtime.getType(descriptorId).value()->asObjectType();
     auto* instance = new TestObject;
-    const auto memberId = runtime.registerNativeMethod(
-        type,
-        "checkInstance",
-        [instance](VirtualMachine* machine) {
+    const auto memberId = runtime.addMethod(type->getId(), {
+        .name = "checkInstance",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("int"),
+        .function = [instance](VirtualMachine* machine) {
             BOOST_TEST(machine->getThis() == instance);
             BOOST_TEST(machine->getThisAs<TestObject>() == instance);
             machine->setIntegerResult(42);
         },
-        {},
-        runtime.getIntegerType(),
-        ""
-    );
-    BOOST_REQUIRE(memberId != NOMAD_INVALID_ID);
+        .documentation = ""
+    });
+    BOOST_REQUIRE(memberId.isValid());
     BOOST_REQUIRE(runtime.getNativeMemberMethod(memberId) != nullptr);
     auto machine = runtime.createVirtualMachine();
     RuntimeValue receiver;
@@ -220,29 +227,33 @@ BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) 
 
 BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_catalog) {
     Runtime runtime;
-    auto descriptor = std::make_unique<ObjectType>("CatalogObject");
-    const auto* type = descriptor.get();
-    runtime.registerType(std::move(descriptor));
+    const auto descriptorId = runtime.createObjectType<ObjectType>("CatalogObject", ObjectTypeMode::Closed);
+    BOOST_REQUIRE(descriptorId.isValid());
+    const auto* type = runtime.getType(descriptorId).value()->asObjectType();
     const auto first = runtime.registerNativeFunction(
         "catalog.first", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     );
-    const auto method = runtime.registerNativeMethod(
-        type, "catalogMethod", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
-    );
+    const auto method = runtime.addMethod(type->getId(), {
+        .name = "catalogMethod",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = [](VirtualMachine*) {},
+        .documentation = ""
+    });
     const auto last = runtime.registerNativeFunction(
         "catalog.last", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     );
-    BOOST_REQUIRE(method != NOMAD_INVALID_ID);
-    BOOST_TEST(last > first + 1);
-    BOOST_TEST(runtime.getNextNativeFunctionId(first) == last);
-    BOOST_TEST(runtime.getNativeFunctionId("catalogMethod") == NOMAD_INVALID_ID);
-    BOOST_TEST(runtime.getNativeMemberId(type, "catalogMethod") == method);
+    BOOST_REQUIRE(method.isValid());
+    BOOST_TEST(last.id > first.id + 1);
+    BOOST_TEST((runtime.getNextNativeFunctionId(first) == last));
+    BOOST_TEST(runtime.getNativeFunctionId("catalogMethod").isInvalid());
+    BOOST_TEST(std::get<CallableId>(runtime.getNativeMemberId(type, "catalogMethod")) == method);
     const auto* methodCallable = runtime.getNativeMemberMethod(method);
     BOOST_REQUIRE(methodCallable != nullptr);
     BOOST_TEST(methodCallable->getObjectType() == type);
     const auto functions = runtime.getNativeFunctions();
     NomadIndex enumerated = 0;
-    for (auto id = runtime.getFirstNativeFunctionId(); id != NOMAD_INVALID_ID;
+    for (auto id = runtime.getFirstNativeFunctionId(); id.isValid();
          id = runtime.getNextNativeFunctionId(id)) {
         const auto* function = runtime.getNativeFunction(id);
         BOOST_REQUIRE(function != nullptr);
@@ -255,9 +266,13 @@ BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_ca
         BOOST_TEST(function->getObjectType() == nullptr);
         BOOST_TEST(function->getName() != "catalogMethod");
     }
-    BOOST_TEST(runtime.registerNativeMethod(
-        nullptr, "invalid", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
-    ) == NOMAD_INVALID_ID);
+    BOOST_TEST(runtime.addMethod(TypeId::INVALID, {
+        .name = "invalid",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = [](VirtualMachine*) {},
+        .documentation = ""
+    }).isInvalid());
 }
 
 BOOST_AUTO_TEST_CASE(compiled_property_getter_reads_temporary_receiver) {
@@ -331,17 +346,16 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_properties_and_methods) {
 BOOST_AUTO_TEST_CASE(failed_method_preserves_object_mutations_and_restores_this) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    runtime.registerNativeMethod(
-        type,
-        "fail",
-        [](VirtualMachine* virtualMachine) {
+    BOOST_REQUIRE(runtime.addMethod(type->getId(), {
+        .name = "fail",
+        .parameters = {},
+        .returnTypeId = runtime.getTypeId("void"),
+        .function = [](VirtualMachine* virtualMachine) {
             virtualMachine->getThisAs<TestObject>()->value = 99;
             virtualMachine->fault("Expected failure");
         },
-        {},
-        runtime.getVoidType(),
-        NomadDoc("Fail")
-    );
+        .documentation = NomadDoc("Fail")
+    }).isValid());
 
     auto machine = runtime.createVirtualMachine();
     InterpreterContext interpreter(*machine);
@@ -401,15 +415,59 @@ BOOST_AUTO_TEST_CASE(string_indexer_faults_and_interpreter_recovers) {
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 1);
 }
 
+BOOST_AUTO_TEST_CASE(compiled_and_interpreted_indexers_keep_owner_identity_after_catalog_growth) {
+    Runtime runtime;
+    const auto* type = registerTestObject(runtime);
+    const auto indexerId = runtime.addIndexer(type->getId(), {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .indexTypes = {runtime.getIntegerType()->getId()},
+        .getter = [](VirtualMachine* machine) {
+            machine->setIntegerResult(machine->getThisAs<TestObject>()->value + machine->getIntegerParameter(0));
+        },
+        .setter = [](VirtualMachine* machine) {
+            machine->getThisAs<TestObject>()->value = machine->getIntegerParameter(0) + machine->getIntegerParameter(1);
+        },
+        .documentation = ""
+    });
+    BOOST_REQUIRE(indexerId.isValid());
+    const auto* original = type->getNativeIndexer(1);
+    BOOST_REQUIRE(original != nullptr);
+    const auto functionId = compileFunction(runtime,
+        "value = new TestObject\nvalue[2] = 40\nreturn value[3]");
+    for (auto count = NomadIndex{2}; count <= 32; ++count) {
+        BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+            .valueTypeId = runtime.getIntegerType()->getId(),
+            .indexTypes = std::vector<TypeId>(count, runtime.getIntegerType()->getId()),
+            .getter = [](VirtualMachine* machine) { machine->setIntegerResult(-1); },
+            .setter = {},
+            .documentation = ""
+        }).isValid());
+    }
+    BOOST_TEST(type->getNativeIndexer(1) == original);
+    BOOST_TEST(runtime.getNativeIndexers()[toNomadIndex(indexerId.id)] == original);
+    RuntimeValue result;
+    runtime.executeFunction(functionId, {}, result);
+    BOOST_TEST(result.getIntegerValue() == 45);
+    auto machine = runtime.createVirtualMachine();
+    InterpreterContext context(*machine);
+    BOOST_REQUIRE(Interpreter{}.execute("value = new TestObject", context));
+    BOOST_REQUIRE(Interpreter{}.execute("value[5] = 7", context));
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression("value[6]", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 18);
+}
+
 BOOST_AUTO_TEST_CASE(write_only_indexer_supports_assignment_but_not_reads) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    runtime.registerNativeIndexer(
-        type, {runtime.getIntegerType()}, runtime.getIntegerType(), {},
-        [](VirtualMachine* vm) {
+    BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .indexTypes = {runtime.getIntegerType()->getId()},
+        .getter = {},
+        .setter = [](VirtualMachine* vm) {
             vm->getThisAs<TestObject>()->value = vm->getIntegerParameter(0) + vm->getIntegerParameter(1);
-        }, ""
-    );
+        },
+        .documentation = ""
+    }).isValid());
     const auto id = compileFunction(runtime, "value = new TestObject\nvalue[2] = 5\nreturn value.value");
     RuntimeValue result;
     runtime.executeFunction(id, {}, result);
@@ -429,16 +487,18 @@ BOOST_AUTO_TEST_CASE(indexer_callbacks_release_operands_and_partial_results_on_f
     for (const auto* source : {"return (new TestObject)[0]", "(new TestObject)[0] = \"assigned\""}) {
         Runtime runtime;
         const auto* type = registerTestObject(runtime);
-        runtime.registerNativeIndexer(
-            type, {runtime.getIntegerType()}, runtime.getStringType(),
-            [](VirtualMachine* vm) {
+        BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+            .valueTypeId = runtime.getStringType()->getId(),
+            .indexTypes = {runtime.getIntegerType()->getId()},
+            .getter = [](VirtualMachine* vm) {
                 vm->setStringResult("partial");
                 vm->fault("Indexer getter failed");
             },
-            [](VirtualMachine* vm) {
+            .setter = [](VirtualMachine* vm) {
                 vm->fault("Indexer setter failed");
-            }, ""
-        );
+            },
+            .documentation = ""
+        }).isValid());
         const auto id = compileFunction(runtime, source);
         auto machine = runtime.createVirtualMachine();
         const auto before = NomadObject::getLiveObjectCount();
@@ -453,17 +513,19 @@ BOOST_AUTO_TEST_CASE(indexer_callbacks_release_operands_and_partial_results_on_f
 BOOST_AUTO_TEST_CASE(indexers_support_object_valued_keys_and_literal_delimiters) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    runtime.registerNativeIndexer(
-        type, {runtime.getStringType()}, runtime.getIntegerType(),
-        [](VirtualMachine* vm) {
+    BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .indexTypes = {runtime.getStringType()->getId()},
+        .getter = [](VirtualMachine* vm) {
             BOOST_TEST(vm->getStringParameter(0)->getLength() == 1);
             vm->setIntegerResult(vm->getThisAs<TestObject>()->value);
         },
-        [](VirtualMachine* vm) {
+        .setter = [](VirtualMachine* vm) {
             BOOST_TEST(vm->getStringParameter(0)->getString() == "]");
             vm->getThisAs<TestObject>()->value = vm->getIntegerParameter(1);
-        }, ""
-    );
+        },
+        .documentation = ""
+    }).isValid());
     const auto id = compileFunction(runtime, "value = new TestObject\nvalue[\"]\"] = 9\nreturn value[\"[\"]");
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
@@ -485,19 +547,21 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_evaluate_once_in_order_with_distin
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
     NomadString calls;
-    runtime.registerNativeIndexer(
-        type, {runtime.getStringType(), runtime.getIntegerType()}, runtime.getIntegerType(),
-        [&calls](VirtualMachine* machine) {
+    BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .indexTypes = {runtime.getStringType()->getId(), runtime.getIntegerType()->getId()},
+        .getter = [&calls](VirtualMachine* machine) {
             calls += "get";
             machine->setIntegerResult(machine->getThisAs<TestObject>()->value +
                 static_cast<NomadInteger>(machine->getStringParameter(0)->getLength()) + machine->getIntegerParameter(1));
         },
-        [&calls](VirtualMachine* machine) {
+        .setter = [&calls](VirtualMachine* machine) {
             calls += "set";
             machine->getThisAs<TestObject>()->value = machine->getIntegerParameter(2) +
                 static_cast<NomadInteger>(machine->getStringParameter(0)->getLength()) + machine->getIntegerParameter(1);
-        }, ""
-    );
+        },
+        .documentation = ""
+    }).isValid());
     runtime.registerNativeFunction("receiver", [&calls](VirtualMachine* machine) {
         calls += "receiver";
         machine->getResult().setObjectValue(new TestObject);
@@ -554,8 +618,13 @@ BOOST_AUTO_TEST_CASE(two_dimensional_access_permissions_are_checked_in_both_exec
             machine->getThisAs<TestObject>()->value =
                 machine->getIntegerParameter(0) + machine->getIntegerParameter(1) + machine->getIntegerParameter(2);
         };
-        runtime.registerNativeIndexer(type, {runtime.getIntegerType(), runtime.getIntegerType()}, runtime.getIntegerType(),
-            readOnly ? getter : NativeFunctionFn{}, readOnly ? NativeFunctionFn{} : setter, "");
+        BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+            .valueTypeId = runtime.getIntegerType()->getId(),
+            .indexTypes = {runtime.getIntegerType()->getId(), runtime.getIntegerType()->getId()},
+            .getter = readOnly ? getter : NativeFunctionFn{},
+            .setter = readOnly ? NativeFunctionFn{} : setter,
+            .documentation = ""
+        }).isValid());
         const auto id = compileFunction(runtime, readOnly
             ? "object = new TestObject\nreturn object[1 2]"
             : "object = new TestObject\nobject[1 2] = 7\nreturn object.value");
@@ -585,14 +654,18 @@ BOOST_AUTO_TEST_CASE(two_dimensional_interpreter_stops_after_a_failed_index_with
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
     NomadString calls;
-    runtime.registerNativeIndexer(type, {runtime.getStringType(), runtime.getStringType()}, runtime.getIntegerType(),
-        [&calls](VirtualMachine* machine) {
+    BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .indexTypes = {runtime.getStringType()->getId(), runtime.getStringType()->getId()},
+        .getter = [&calls](VirtualMachine* machine) {
             calls += "get";
             machine->setIntegerResult(1);
         },
-        [&calls](VirtualMachine*) {
+        .setter = [&calls](VirtualMachine*) {
             calls += "set";
-        }, "");
+        },
+        .documentation = ""
+    }).isValid());
     runtime.registerNativeFunction("first", [&calls](VirtualMachine* machine) {
         calls += "first";
         machine->fault("First index failed");
@@ -633,14 +706,18 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexer_faults_release_object_keys_receiver
     }) {
         Runtime runtime;
         const auto* type = registerTestObject(runtime);
-        runtime.registerNativeIndexer(type, {runtime.getStringType(), runtime.getStringType()}, runtime.getStringType(),
-            [](VirtualMachine* machine) {
+        BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+            .valueTypeId = runtime.getStringType()->getId(),
+            .indexTypes = {runtime.getStringType()->getId(), runtime.getStringType()->getId()},
+            .getter = [](VirtualMachine* machine) {
                 machine->setStringResult("partial");
                 machine->fault("Getter failed");
             },
-            [](VirtualMachine* machine) {
+            .setter = [](VirtualMachine* machine) {
                 machine->fault("Setter failed");
-            }, "");
+            },
+            .documentation = ""
+        }).isValid());
         const auto id = compileFunction(runtime, source);
         auto machine = runtime.createVirtualMachine();
         const auto before = NomadObject::getLiveObjectCount();
@@ -666,16 +743,17 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexer_faults_release_object_keys_receiver
 BOOST_AUTO_TEST_CASE(indexers_support_arbitrary_arity_and_restore_native_parameter_frames) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    const auto increment = runtime.getNativeMemberId(type, "increment");
+    const auto increment = std::get<CallableId>(runtime.getNativeMemberId(type, "increment"));
     auto* nested = new TestObject;
     RuntimeValue nestedReceiver;
     nestedReceiver.setObjectValue(nested);
     for (const auto count : {NomadIndex{1}, NomadIndex{2}, NomadIndex{3}, NomadIndex{5}, NomadIndex{8}}) {
-        std::vector<const Type*> types(count, runtime.getIntegerType());
-        types.back() = runtime.getStringType();
-        BOOST_REQUIRE(runtime.registerNativeIndexer(
-            type, types, runtime.getIntegerType(),
-            [count, increment, &nestedReceiver](VirtualMachine* machine) {
+        std::vector<TypeId> types(count, runtime.getIntegerType()->getId());
+        types.back() = runtime.getStringType()->getId();
+        BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+            .valueTypeId = runtime.getIntegerType()->getId(),
+            .indexTypes = types,
+            .getter = [count, increment, &nestedReceiver](VirtualMachine* machine) {
                 const auto* receiver = machine->getThisAs<TestObject>();
                 const auto first = machine->getParameter(0);
                 machine->runNativeMethod(increment, {RuntimeValue(NomadInteger{1})}, nestedReceiver);
@@ -690,11 +768,12 @@ BOOST_AUTO_TEST_CASE(indexers_support_arbitrary_arity_and_restore_native_paramet
                 total += static_cast<NomadInteger>(machine->getStringParameter(count - 1)->getLength());
                 machine->setIntegerResult(total);
             },
-            [count](VirtualMachine* machine) {
+            .setter = [count](VirtualMachine* machine) {
                 BOOST_TEST(machine->getStringParameter(count - 1)->getString() == "key");
                 machine->getThisAs<TestObject>()->value = machine->getIntegerParameter(count);
-            }, "Arbitrary arity"
-        ) != NOMAD_INVALID_ID);
+            },
+            .documentation = "Arbitrary arity"
+        }).isValid());
     }
     RuntimeValue empty;
     runtime.getStringType()->initValue(empty);

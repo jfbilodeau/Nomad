@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <nomad/script/Callable.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/RuntimeValue.hpp>
 #include <nomad/script/Type.hpp>
@@ -24,12 +25,6 @@ private:
     RuntimeValue m_current;
     bool m_valid = false;
     bool m_completed = false;
-};
-
-struct IterableDefinition {
-    const Type* valueType;
-    const ObjectTypeBase* iteratorType;
-    NomadId factoryId;
 };
 
 } // namespace nomad

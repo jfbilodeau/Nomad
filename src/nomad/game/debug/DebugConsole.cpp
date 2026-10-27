@@ -15,6 +15,7 @@
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/String.hpp>
 
@@ -1109,7 +1110,7 @@ void DebugConsole::collectContextVariableRows(std::vector<VariableRow>& rows) co
 
     for (
         auto contextId = runtime->getFirstVariableContextId();
-        contextId != NOMAD_INVALID_ID;
+        contextId.isValid();
         contextId = runtime->getNextVariableContextId(contextId)
     ) {
         const auto contextName = runtime->getContextName(contextId);
@@ -1137,7 +1138,7 @@ void DebugConsole::collectContextVariableRows(std::vector<VariableRow>& rows) co
         auto* context = runtime->getVariableContext(contextId);
         for (
             auto variableId = context->getFirstVariableId();
-            variableId != NOMAD_INVALID_ID;
+            variableId.isValid();
             variableId = context->getNextVariableId(variableId)
         ) {
             const auto* type = context->getVariableType(variableId);
@@ -1183,7 +1184,7 @@ void DebugConsole::collectDynamicVariableRows(std::vector<VariableRow>& rows) co
 
     for (
         auto variableId = runtime->getFirstDynamicVariableId();
-        variableId != NOMAD_INVALID_ID;
+        variableId.isValid();
         variableId = runtime->getNextDynamicVariableId(variableId)
     ) {
         if (!runtime->canGetDynamicVariable(variableId)) {
@@ -1230,9 +1231,10 @@ void DebugConsole::collectDynamicVariableRows(std::vector<VariableRow>& rows) co
             type,
             valueToDisplayString(type, value),
             VariableRow::Source::Dynamic,
-            NOMAD_INVALID_ID,
-            variableId,
+            VariableContextId::INVALID,
+            VariableId::INVALID,
             runtime->canSetDynamicVariable(variableId) && isEditableType(type),
+            variableId,
         });
 
         if (type != nullptr && type->isString()) {
@@ -1257,8 +1259,8 @@ void DebugConsole::collectConsoleVariableRows(std::vector<VariableRow>& rows) co
             variable.type,
             variable.value,
             VariableRow::Source::Console,
-            NOMAD_INVALID_ID,
-            NOMAD_INVALID_ID,
+            VariableContextId::INVALID,
+            VariableId::INVALID,
             isEditableType(variable.type),
         });
     }
@@ -1274,7 +1276,7 @@ bool DebugConsole::applyVariableEdit(const VariableRow& row, const NomadString& 
     // Dynamic string variables have a dedicated setter that owns the copy, so
     // no temporary allocation is needed for them.
     if (row.source == VariableRow::Source::Dynamic && row.type->isString()) {
-        runtime->setStringDynamicVariable(m_inspectionVirtualMachine.get(), row.variableId, text);
+        runtime->setStringDynamicVariable(m_inspectionVirtualMachine.get(), row.dynamicVariableId, text);
         return true;
     }
 
@@ -1309,7 +1311,7 @@ bool DebugConsole::applyVariableEdit(const VariableRow& row, const NomadString& 
         return applied;
     }
     case VariableRow::Source::Dynamic:
-        runtime->setDynamicVariable(m_inspectionVirtualMachine.get(), row.variableId, value);
+        runtime->setDynamicVariable(m_inspectionVirtualMachine.get(), row.dynamicVariableId, value);
         return true;
     case VariableRow::Source::Console: {
         // `Interpreter` copies the value, so the temporary is released here.
@@ -1352,7 +1354,7 @@ void DebugConsole::renderFunctionInspector() {
             m_game->getRuntime()->getFunctions(functions);
             std::ranges::sort(functions, {}, &ScriptFunction::getName);
 
-            const auto* selectedFunction = m_selectedFunctionId == NOMAD_INVALID_ID
+            const auto* selectedFunction = m_selectedFunctionId.isInvalid()
                 ? nullptr
                 : m_game->getRuntime()->getScriptFunction(m_selectedFunctionId);
             if (ImGui::BeginCombo(
@@ -1409,7 +1411,7 @@ void DebugConsole::renderFunctionInspector() {
             std::vector<ConstantRow> constants;
             const auto* runtime = m_game->getRuntime();
             auto constantId = runtime->getFirstConstantId();
-            while (constantId != NOMAD_INVALID_ID) {
+            while (constantId.isValid()) {
                 const auto* type = runtime->getConstantType(constantId);
                 const auto& name = runtime->getConstantName(constantId);
                 if (type->asEnum() == nullptr && containsText(name, m_constantFilter.data())) {
@@ -1460,7 +1462,7 @@ void DebugConsole::renderFunctionInspector() {
             std::vector<const EnumType*> enumTypes;
             const auto* runtime = m_game->getRuntime();
             auto constantId = runtime->getFirstConstantId();
-            while (constantId != NOMAD_INVALID_ID) {
+            while (constantId.isValid()) {
                 const auto* enumType = runtime->getConstantType(constantId)->asEnum();
                 if (enumType != nullptr &&
                     containsText(enumType->getTypeName(), m_enumFilter.data()) &&

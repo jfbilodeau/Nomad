@@ -14,6 +14,7 @@ Nomad is case‑sensitive.
 - [Comments](#comments)
 - [Identifiers and naming rules](#identifiers-and-naming-rules)
 - [Hubs](#hubs)
+- [Class declarations](#class-declarations)
 - [Data types and numeric ranges](#data-types-and-numeric-ranges)
 - [Object types and members](#object-types-and-members)
 - [Variables and variable kinds](#variables-and-variable-kinds)
@@ -28,7 +29,7 @@ Nomad is case‑sensitive.
 - [Scripts: file layout and compilation model](#scripts-file-layout-and-compilation-model)
 - [Native functions](#native-functions)
   - [Overloading](#overloading)
-- [Saving and loading](#saving-and-loading)
+- [Debug settings persistence](#debug-settings-persistence)
 - [Callbacks and Events](#callbacks-and-events)
 - [Error handling](#error-handling)
 - [Language rules and reserved words](#language-rules-and-reserved-words)
@@ -90,6 +91,7 @@ Function names (whether compiled from a script or declared with `fun`), native f
 
 - Allowed characters: letters (A–Z, a–z), numbers (0–9), underscore (`_`) and dot (`.`).
 - Must begin with a letter or underscore.
+- Each segment after a dot must also begin with a letter or underscore, not a digit.
 - Must end with a letter, number, or underscore (i.e. may not end with a dot).
 
 Examples:
@@ -111,12 +113,15 @@ Notes:
 
 ## Hubs
 
-A hub groups variables, functions, constants, enums, and events under a shared
-name prefix. Hubs are optional, are not types, and cannot be instantiated.
-Declare a hub with `hub name ... end`:
+A hub groups variables, functions, constants, enums, and events in a namespace.
+Hubs are optional, are not types, and cannot be instantiated. Hubs are closed by
+default: `hub name ... end` permits one declaration block. Use
+`open hub name ... end` when multiple blocks should contribute members.
+Closed hubs still allow assignment to their existing writable variables.
+`open` is a reserved keyword. Use it before `hub` to allow additional declaration blocks.
 
 ```nomad
-hub example
+open hub example
     x = 10
     name = "test"
 
@@ -149,7 +154,7 @@ fun changeA
     return example.a
 end
 
-hub example
+open hub example
     a = 10
     b = changeA
     c = example.a # Reads 11 during $init, not the original 10.
@@ -170,37 +175,44 @@ can update existing variables, but cannot introduce new members:
 example.x = 20 # Updates the existing variable.
 # example.y = 30 # Invalid: y has not been declared in a hub block.
 
-hub example
+open hub example
     y = 30 # Extends the same hub.
 end
 ```
 
-The same hub may be declared repeatedly, including in different scripts or
-after native registration. Reopening preserves its members. Declaring the same
-variable twice is an error, not reassignment. Hubs may appear at script level
-or inside other hubs, but not inside functions or control-flow blocks.
+Every declaration of the same namespace must be explicitly open to allow
+multiple blocks, including across scripts or after native registration.
+Mixing open and closed declarations is an error in either source order;
+repeating a closed declaration is also an error. Declaring the same variable
+twice remains an error, not reassignment. Hubs may appear at script level or
+inside other hubs, but not inside functions or control-flow blocks.
 
-Nested blocks and dotted names both declare nested hubs:
+Namespaces are independent, even when their names contain dots. Declaring
+`hub game.audio` does not require or create `game`, and does not extend `game`
+if it exists. Nested syntax only prefixes declaration names:
 
 ```nomad
 hub game
-    hub audio
+    open hub audio
         volume = 1.0
     end
 end
 
-hub game.audio
+open hub game.audio
     muted = false
 end
 ```
 
-Hub variable reads and writes always require their qualified name, such as
-`game.audio.volume`, including inside the declaring hub. Unqualified references
-to other declarations, including constants and functions, search the current hub,
-its parent hubs, and then global names; local variables and parameters retain
-their local meaning. Hub initializers cannot read script locals or parameters:
-use constants or qualified hub variables instead. Enum types and values have
-qualified names too:
+The example declares `game` and `game.audio`, each with its own mode. Closing
+`game` does not restrict declarations of `game.audio`. A hub has no parent or
+child namespace members.
+
+Only declaration names receive the hub prefix. All hub-member references require
+their fully qualified names, including inside hub initializers, function
+signatures, function bodies, and format strings. There is no implicit current-
+or parent-namespace lookup. Globals, built-ins, local variables, and parameters
+retain ordinary unqualified names. Hub initializers cannot read script locals
+or parameters. Enum types and values have qualified names too:
 an enum `State` inside `hub game` is named `game.State`, with values such as
 `game.State.Ready`.
 
@@ -209,6 +221,155 @@ Existing dotted identifiers remain supported; they do not implicitly declare
 hubs.
 
 ---
+
+## Class declarations
+
+Empty script class declarations introduce object types. Classes are closed by
+default; `open class` marks a type as open for compile-time extension:
+
+```nomad
+class Point
+end
+
+open class SharedState
+end
+```
+
+Classes may be declared at script level or inside a hub, where their declaration
+names receive the hub prefix. References to these types must use their fully
+qualified names. Class symbols are available to function signatures across files,
+regardless of whether the class appears before or after the function declaration.
+
+Each class has one declaration block, even when open. Duplicate declarations and
+conflicts with existing identifiers are errors. Classes cannot be declared inside
+functions or control-flow blocks, or through the interpreter.
+
+Classes containing fields, constructors, and methods can be compiled and
+instantiated with `new` in compiled code and the interpreter:
+
+```nomad
+class Point
+    name = ""
+
+    init
+        this.x = 0.0
+        this.y = 0.0
+    end
+
+    point = new Point
+    point.moveTo 3.0 4.0
+
+    init x:float y:float
+        this.x = x
+        this.y = y
+    end
+
+    fun moveTo x:float y:float
+        this.x = x
+        this.y = y
+    end
+end
+```
+
+Explicit fields use `name = initializer`. Constructors use `init`, optionally
+followed by typed parameters. Methods use `fun name` and the same typed parameter
+syntax as functions. Member names are unqualified. Parameter types must be fully
+qualified, including inside a hub; class types declared in other files are
+available to member signatures regardless of source order.
+
+Call a method through its receiver, such as `point.moveTo 3.0 4.0` or
+`this.moveTo x y`. Methods may be overloaded by parameter count and types;
+selection uses the receiver's type and prefers exact argument types over
+compatible conversions. Method return types are inferred as for functions.
+A call returning a value may be used in an expression or discarded as a statement;
+a method returning no value can only be used as a statement.
+Arguments are copied, so reassigning a method parameter does not reassign the
+caller's variable. Object values retain reference semantics. Nested calls restore
+the enclosing receiver, and arguments are evaluated before binding the called
+method's receiver. The interpreter can call methods of already compiled classes,
+but cannot declare new classes.
+
+`init` is contextual: at class-member declaration position it introduces a
+constructor, and cannot name a field or an ordinary method (`fun init`).
+Elsewhere it remains an ordinary identifier, including function names, variables,
+and qualified members such as `example.init`. Editors highlight constructor
+headers and offer `init` completion in class bodies, not inside callable bodies.
+
+Duplicate fields, field/method name conflicts, and duplicate callable signatures
+are errors. Parameter names do not distinguish signatures.
+Member signatures are registered before bodies are parsed. Initializers and
+callable bodies use the ordinary expression and statement parser, with source
+diagnostics for malformed syntax and unresolved names/types. Supported bodies can
+use locals, typed parameters, control flow, free/native functions, callbacks, and
+format strings.
+
+Inside a member body, explicit `this` refers to the declaring class instance.
+It is not a declared parameter and cannot be reassigned or used as a parameter
+name. Bare names do not implicitly resolve to fields: `value = 2` creates or
+updates a local, while `this.value = 2` denotes an instance field assignment.
+Field types are inferred from explicit initializers and `this.field = value`
+assignments in constructors, including conditional branches and constructor
+overloads. Each field has one type shared by all instances; conflicting
+assignments and field/method name collisions are errors. Methods may read and
+assign existing fields but cannot introduce new fields. Reads of unknown fields
+are errors. These names never fall back to the game's `this.*` context.
+Field metadata is available during compilation. Class initialization evaluates
+explicit field initializers in source order, then gives the remaining fields
+their type defaults before the constructor body runs. Explicit initializers
+cannot use or capture `this`, including in callbacks or format expressions.
+Bare names in initializers resolve normally outside the class fields, not to
+other fields. Object-valued initializer expressions are evaluated separately for
+each instance. Explicitly initialized fields do not receive a separate default
+initialization. Each construction runs field initialization once;
+failure stops subsequent initializers and the constructor body.
+`new ClassName arguments` selects a constructor overload, allocates an instance,
+initializes its fields, then runs the selected constructor body. If no `init`
+is declared, the class has an implicit parameterless constructor. Declaring any
+`init` suppresses that implicit constructor. The `new` expression produces the
+new instance. Script member calls are not executable yet.
+Script constructors return `void`: they may use a bare `return` but cannot return
+an expression. An early return still completes `new` with the allocated instance.
+Member parameters are declared in the header, not with a later `params` statement.
+
+An assignment through an object reference may introduce a field on an open
+type. The field belongs to the type, so all instances and aliases share its
+name and type. Closed types permit updates to existing fields, not additions.
+For example:
+
+```nomad
+open class Point
+end
+
+fun extend point:Point
+    point.extra = 42
+end
+
+fun read point:Point
+    return point.extra
+end
+```
+
+The compiler checks all compiled files and callable bodies before diagnosing
+unknown fields; the read may appear before the assignment that introduces the
+field. A read without any declaration or valid introducing assignment is an
+error. Conflicting field types and field/method name collisions are errors.
+An externally introduced field that is assigned but never read produces a
+warning at its introducing assignment. Reads through another instance, an
+alias, `this`, a callback, or a format placeholder count as uses. These checks
+do not prove that an assignment executes before a read.
+
+The same extension rules apply to native object types marked open by the host.
+Native properties retain their getter/setter contracts and do not need a script
+assignment before a read. Host-declared fields are not subject to the
+external-introduction warning.
+Hub members must still be introduced inside a hub block, even for open hubs.
+
+Stored fields can be read and assigned in compiled code and the interpreter
+when the host supplies an initialized instance with field storage. Field
+discovery must finish before the host creates these instances. Native objects
+without stored-field storage cannot execute these accesses.
+The embedding host can also initialize class fields without running a constructor.
+Script member calls remain unavailable.
 
 ## Data types and numeric ranges
 
@@ -318,7 +479,9 @@ back if a property setter or method fails.
 
 Assigning a new reference to the parameter itself remains invalid.
 
-Nomad does not currently support defining object types, properties, or methods in scripts.
+Script classes support construction with `new`, but cannot yet execute ordinary
+methods. Their stored properties are readable and writable in compiled code and
+the interpreter. See [Class declarations](#class-declarations).
 
 The available members for each object type are listed in the [engine API](engine-api.md#object-members).
 
@@ -402,7 +565,7 @@ state = state.idle   # state enum
 Nomad supports three variable kinds:
 
 - Function variables: scoped to the function where they are defined. Type is inferred from first assignment and cannot change. For example, `a = 10` defines `a` as an integer variable and `b = 1.0` defines `b` as a float variable.
-- Context variables: bound to a named context; identified by a prefix and a dot (for example `global.score`). Contexts are provided by the embedding engine and have engine‑specific semantics for storage and persistence. The `global.` context is pre-defined by the default Nomad runtime. The game engine provides `inventory.*` for saved game state and `settings.*` for user preferences. The `global.*`, `scene.*`, `this.*`, and `other.*` contexts are not persisted by the save and settings native functions.
+- Context variables: bound to a named context; identified by a prefix and a dot (for example `global.score`). Contexts are provided by the embedding engine and have engine‑specific semantics for storage and persistence. The `global.` context is pre-defined by the default Nomad runtime. The game engine additionally provides `scene.*`, `this.*`, and `other.*` contexts, but no built-in `inventory.*` or `settings.*` contexts.
 - Dynamic variables: engine‑defined identifiers (for example `this.x`) managed directly by engine code; the engine decides read/write permissions and behavior.
 
 The interactive interpreter is an exception to compiled-code typing rules. Interpreter variables may be created by assignment and reassigned with a value of a different type. Frame variables and parameters retain their compiled types but may be reassigned. Runtime context variables and engine-defined dynamic variables continue to follow the type rules of their contexts and definitions.
@@ -1000,75 +1163,21 @@ empty, not null. Host integration details are covered in the [embedding guide](e
 
 ---
 
-## Saving and loading
+## Debug settings persistence
 
-Set `game.organization` and `game.name` before using persistence. The engine passes both values to SDL's preference-path API and stores JSON files under the resulting `<pref>` directory:
+The game engine does not provide built-in game save/load or user settings save/load APIs.
+The `game.inventory` and `game.settings` hubs are available for scripts to declare
+and populate with their own functions.
+
+Engine-owned debug settings are persisted automatically. Set `game.organization`
+and `game.name` to select their storage location. The engine passes both values
+to SDL's preference-path API and stores JSON files under the resulting `<pref>` directory:
 
 | API | Behavior | File |
 | --- | --- | --- |
-| `game.inventory.save saveName:string` | Save all defined `inventory.*` variables. | `<pref>/save/<saveName>.json` |
-| `game.inventory.load saveName:string` | Load matching `inventory.*` variables. | `<pref>/save/<saveName>.json` |
-| `game.inventory.saveExists saveName:string` | Return whether the save file exists. | `<pref>/save/<saveName>.json` |
-| `game.settings.save` | Save all defined `settings.*` variables. | `<pref>/settings.json` |
-| `game.settings.load` | Load matching `settings.*` variables. | `<pref>/settings.json` |
 | `game.debug.console.visible:bool` | Show or hide the console in debug mode. Saved automatically when changed. | `<pref>/debug.json` |
 | `game.debug.console.scale:float` | Set the console scale from `0.8` to `2.0`. Saved automatically when changed. | `<pref>/debug.json` |
 | `game.debug.draw.visible:bool` | Show or hide Box2D physics debug drawing in debug mode. Saved automatically when changed. | `<pref>/debug.json` |
-
-Context variables are defined by assignment in Nomad code; loading never creates variables. Full dotted names are written as flat keys in a pretty-printed JSON object. This allows both a variable and its child, such as `inventory.weapon` and `inventory.weapon.attack`, to be saved without ambiguity. For example:
-
-```nomad
-enum state
-    idle
-    walking
-end
-
-inventory.gold = 25
-inventory.playerName = "Nomad"
-inventory.weapon.attack = 10
-inventory.weapon.speed = 0.5
-inventory.state = state.walking
-game.inventory.save "slot1"
-```
-
-produces:
-
-```json
-{
-    "inventory.gold": 25,
-    "inventory.playerName": "Nomad",
-    "inventory.state": "walking",
-    "inventory.weapon.attack": 10,
-    "inventory.weapon.speed": 0.5
-}
-```
-
-The declared Nomad variable type controls conversion during loading, not how the number is written in JSON:
-
-- An `int` accepts a JSON integer or a whole, in-range JSON number such as `10.0`, but not `10.5`.
-- A `float` accepts either a JSON integer or floating-point number.
-- A `bool` or `string` accepts only the corresponding JSON type.
-- An enum accepts only a JSON string naming a member of that variable's enum type. Unknown names and numeric values are rejected.
-- Missing keys keep their current values, and unknown JSON keys are ignored.
-- Invalid values for individual variables are reported and ignored.
-- Malformed JSON or a non-object root changes nothing.
-- Loading never changes a variable's type.
-
-Only `int`, `float`, `bool`, `string`, and enum variables are persisted. Enum member names are saved instead of their internal integer values. Save names may optionally end in `.json`, but cannot be empty, `.` or `..`, contain control characters or `< > : " / \ | ? *`, or end in a dot or space.
-
-```nomad
-game.organization = "Example Studio"
-game.name = "Example Game"
-
-settings.fullscreen = true
-game.settings.load
-
-if game.inventory.saveExists "slot1"
-    game.inventory.load "slot1"
-end
-
-game.settings.save
-```
 
 Debug settings are loaded lazily after both `game.organization` and `game.name` are set. Assigning a debug setting before those values are available does not save it.
 
@@ -1134,6 +1243,7 @@ Nomad does not support exceptions inside functions. Errors detectable at compile
 
 Reserved words (cannot use as identifiers):
 
+- `class`
 - `const`
 - `else`
 - `end`
@@ -1142,6 +1252,7 @@ Reserved words (cannot use as identifiers):
 - `fun`
 - `hub`
 - `if`
+- `open`
 - `params`
 - `return`
 - `then`

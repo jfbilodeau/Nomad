@@ -8,7 +8,6 @@
 #include <nomad/game/resource/ResourceManager.hpp>
 
 #include <fstream>
-#include <sstream>
 
 namespace nomad {
 
@@ -50,11 +49,11 @@ void Scene::loadTileMap(const NomadString& fileName, const NomadString& tileSetT
             texture,
             tileMapData.tileWidth,
             tileMapData.tileHeight,
-            tileMapData.firstTileIndex,
+            static_cast<NomadInteger>(tileMapData.firstTileIndex),
             tileMapData.masks
         );
 
-        for (auto tileIndex = NomadIndex{0}; tileIndex < tileMapData.tileNames.size() && tileIndex < m_tiles.size(); ++tileIndex) {
+        for (NomadIndex tileIndex = 0; tileIndex < tileMapData.tileNames.size() && tileIndex < m_tiles.size(); ++tileIndex) {
             m_tiles[tileIndex].name = tileMapData.tileNames[tileIndex];
         }
 
@@ -68,7 +67,7 @@ void Scene::loadTileMap(const NomadString& fileName, const NomadString& tileSetT
             removeEntity(m_entities.back().get());
         }
 
-        for (auto i = 0; i < SCENE_LAYER_COUNT; ++i) {
+        for (NomadIndex i = 0; i < SCENE_LAYER_COUNT; ++i) {
             auto& tileMapLayer = tileMapData.layers[i];
             m_layers[i].hasTileMap = tileMapLayer.hasTileMap;
 
@@ -80,7 +79,7 @@ void Scene::loadTileMap(const NomadString& fileName, const NomadString& tileSetT
             for (auto& entity: tileMapLayer.entities) {
                 auto functionId = m_game->getFunctionId(entity.functionName);
 
-                if (functionId == NOMAD_INVALID_ID) {
+                if (functionId.isInvalid()) {
                     log::error("Function '" + entity.functionName + "' for entity '" + std::to_string(entity.id) + "' not found");
                     continue;
                 }
@@ -99,7 +98,7 @@ void Scene::loadTileMap(const NomadString& fileName, const NomadString& tileSetT
                     entity.y,
                     entity.width,
                     entity.height,
-                    i,
+                    static_cast<NomadInteger>(i),
                     text
                 );
             }

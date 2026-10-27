@@ -28,7 +28,8 @@ void registerMapFamily(
         name,
         2,
         std::move(factory),
-        [runtime, writable](const nomad::Type* type) {
+        [writable](Runtime* runtime, const TypeId id) {
+            const auto* type = runtime->getType(id).value();
             const auto* objectType = static_cast<const nomad::ObjectType*>(type);
             const auto* valueType = objectType->getTypeArguments()[1];
             const auto* keyType = objectType->getTypeArguments()[0];
@@ -42,63 +43,59 @@ void registerMapFamily(
             if (keysType == nullptr || valuesType == nullptr || entriesType == nullptr) {
                 throw nomad::NomadException("Failed to resolve Map snapshot types");
             }
-            if (writable && runtime->registerNativeConstructor(
-                objectType, {},
-                [valueType](std::span<const nomad::RuntimeValue>) {
-                    return new nomad::MapObject(valueType);
+            if (writable && runtime->addConstructor(id, {
+                .parameters = {},
+                .function = [valueType](VirtualMachine* machine) {
+                    machine->getResult().setObjectValue(new nomad::MapObject(valueType));
                 },
-                NomadDoc("Creates an empty map with string keys.")
-            ) == NOMAD_INVALID_ID) {
+                .documentation = NomadDoc("Creates an empty map with string keys.")
+            }).isInvalid()) {
                 throw NomadException("Failed to register Map constructor");
             }
-            const auto countId = runtime->registerNativeProperty(
-                objectType,
-                "count",
-                runtime->getIntegerType(),
-                [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
+            const auto countId = runtime->addProperty(id, {
+                .valueTypeId = runtime->getTypeId("int"),
+                .name = "count",
+                .getter = [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
                     const auto count = static_cast<nomad::NomadInteger>(map->getCount());
                     result.setIntegerValue(count);
                 },
-                {},
-                NomadDoc("The number of entries in the map.")
-            );
-            const auto keysId = runtime->registerNativeMethod(
-                objectType,
-                "keys",
-                [keyType](nomad::VirtualMachine* machine) {
+                .setter = {},
+                .documentation = NomadDoc("The number of entries in the map.")
+            });
+            const auto keysId = runtime->addMethod(id, {
+                .name = "keys",
+                .parameters = {},
+                .returnTypeId = keysType->getId(),
+                .function = [keyType](nomad::VirtualMachine* machine) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
                     auto keys = map->getKeys(keyType);
                     machine->getResult().setObjectValue(keys.release());
                 },
-                {},
-                keysType,
-                NomadDoc("A fixed-size snapshot of all keys in unspecified order. Changes to the array and map are independent.")
-            );
-            const auto valuesId = runtime->registerNativeMethod(
-                objectType,
-                "values",
-                [](nomad::VirtualMachine* machine) {
+                .documentation = NomadDoc("A fixed-size snapshot of all keys in unspecified order. Changes to the array and map are independent.")
+            });
+            const auto valuesId = runtime->addMethod(id, {
+                .name = "values",
+                .parameters = {},
+                .returnTypeId = valuesType->getId(),
+                .function = [](nomad::VirtualMachine* machine) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
                     auto values = map->getValues();
                     machine->getResult().setObjectValue(values.release());
                 },
-                {},
-                valuesType,
-                NomadDoc("A fixed-size snapshot of all values in unspecified order. Object values share references.")
-            );
-            const auto entriesId = runtime->registerNativeMethod(
-                objectType,
-                "entries",
-                [entryType](nomad::VirtualMachine* machine) {
+                .documentation = NomadDoc("A fixed-size snapshot of all values in unspecified order. Object values share references.")
+            });
+            const auto entriesId = runtime->addMethod(id, {
+                .name = "entries",
+                .parameters = {},
+                .returnTypeId = entriesType->getId(),
+                .function = [entryType](nomad::VirtualMachine* machine) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
                     auto entries = map->getEntries(entryType);
                     machine->getResult().setObjectValue(entries.release());
                 },
-                {},
-                entriesType,
-                NomadDoc("A fixed-size snapshot of fresh read-only key/value pairs in unspecified order. Object values share references.")
-            );
+                .documentation = NomadDoc("A fixed-size snapshot of fresh read-only key/value pairs in unspecified order. Object values share references.")
+            });
             NativeFunctionFn setter;
             if (writable) {
                 setter = [](VirtualMachine* machine) {
@@ -107,78 +104,75 @@ void registerMapFamily(
                     map->setValue(key, machine->getParameter(1));
                 };
             }
-            const auto indexerId = runtime->registerNativeIndexer(
-                objectType,
-                {runtime->getStringType()},
-                valueType,
-                [](nomad::VirtualMachine* machine) {
+            const auto indexerId = runtime->addIndexer(id, {
+                .valueTypeId = valueType->getId(),
+                .indexTypes = {runtime->getStringType()->getId()},
+                .getter = [](nomad::VirtualMachine* machine) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
                     const auto& key = machine->getStringParameter(0)->getString();
                     auto& result = machine->getResult();
                     map->getValue(key, result);
                 },
-                std::move(setter),
-                writable
+                .setter = std::move(setter),
+                .documentation = writable
                     ? NomadDoc("Reads, inserts, or replaces an entry by string key. Missing keys log an error and return a default without inserting.")
                     : NomadDoc("Reads an entry by string key. Missing keys log an error and return a default without inserting.")
-            );
-            const auto containsId = runtime->registerNativeMethod(
-                objectType,
-                "contains",
-                [](nomad::VirtualMachine* machine) {
+            });
+            const auto containsId = runtime->addMethod(id, {
+                .name = "contains",
+                .parameters = {{runtime->getTypeId("string"), "key", NomadDoc("The case-sensitive key to check.")}},
+                .returnTypeId = runtime->getTypeId("bool"),
+                .function = [](nomad::VirtualMachine* machine) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
                     const auto& key = machine->getStringParameter(0)->getString();
                     const auto contains = map->contains(key);
                     machine->setBooleanResult(contains);
                 },
-                {nomad::defParameter("key", runtime->getStringType(), NomadDoc("The case-sensitive key to check."))},
-                runtime->getBooleanType(),
-                NomadDoc("Returns whether the key exists, without logging or changing the map.")
-            );
-            if (countId == NOMAD_INVALID_ID || indexerId == NOMAD_INVALID_ID || containsId == NOMAD_INVALID_ID ||
-                keysId == NOMAD_INVALID_ID || valuesId == NOMAD_INVALID_ID || entriesId == NOMAD_INVALID_ID) {
+                .documentation = NomadDoc("Returns whether the key exists, without logging or changing the map.")
+            });
+            if (countId.isInvalid() || indexerId.isInvalid() || containsId.isInvalid() ||
+                keysId.isInvalid() || valuesId.isInvalid() || entriesId.isInvalid()) {
                 throw NomadException("Failed to register Map readers");
             }
             if (!writable) {
                 return;
             }
             const auto* readOnlyType = runtime->getParameterizedType("ReadOnlyMap", {keyType, valueType});
-            if (readOnlyType == nullptr || runtime->registerNativeMethod(
-                objectType, "toReadOnly",
-                [](VirtualMachine* machine) {
+            if (readOnlyType == nullptr || runtime->addMethod(id, {
+                .name = "toReadOnly",
+                .parameters = {},
+                .returnTypeId = readOnlyType->getId(),
+                .function = [](VirtualMachine* machine) {
                     auto snapshot = machine->getThisAs<MapObject>()->createCopy();
                     machine->getResult().setObjectValue(snapshot.release());
                 },
-                {}, readOnlyType,
-                NomadDoc("Creates an independent read-only snapshot. Object values share references.")
-            ) == NOMAD_INVALID_ID) {
+                .documentation = NomadDoc("Creates an independent read-only snapshot. Object values share references.")
+            }).isInvalid()) {
                 throw NomadException("Failed to register Map.toReadOnly");
             }
-            const auto removeId = runtime->registerNativeMethod(
-                objectType,
-                "remove",
-                [](nomad::VirtualMachine* machine) {
+            const auto removeId = runtime->addMethod(id, {
+                .name = "remove",
+                .parameters = {{runtime->getTypeId("string"), "key", NomadDoc("The case-sensitive key to remove.")}},
+                .returnTypeId = runtime->getTypeId("bool"),
+                .function = [](nomad::VirtualMachine* machine) {
                     auto* map = machine->getThisAs<nomad::MapObject>();
                     const auto& key = machine->getStringParameter(0)->getString();
                     const auto removed = map->remove(key);
                     machine->setBooleanResult(removed);
                 },
-                {nomad::defParameter("key", runtime->getStringType(), NomadDoc("The case-sensitive key to remove."))},
-                runtime->getBooleanType(),
-                NomadDoc("Removes an entry and returns true if it existed. Missing keys return false without logging.")
-            );
-            const auto clearId = runtime->registerNativeMethod(
-                objectType,
-                "clear",
-                [](nomad::VirtualMachine* machine) {
+                .documentation = NomadDoc("Removes an entry and returns true if it existed. Missing keys return false without logging.")
+            });
+            const auto clearId = runtime->addMethod(id, {
+                .name = "clear",
+                .parameters = {},
+                .returnTypeId = runtime->getTypeId("void"),
+                .function = [](nomad::VirtualMachine* machine) {
                     auto* map = machine->getThisAs<nomad::MapObject>();
                     map->clear();
                 },
-                {},
-                runtime->getVoidType(),
-                NomadDoc("Removes all entries. Clearing an empty map does nothing and does not log.")
-            );
-            if (removeId == nomad::NOMAD_INVALID_ID || clearId == nomad::NOMAD_INVALID_ID) {
+                .documentation = NomadDoc("Removes all entries. Clearing an empty map does nothing and does not log.")
+            });
+            if (removeId.isInvalid() || clearId.isInvalid()) {
                 throw nomad::NomadException("Failed to register Map members");
             }
         }
@@ -190,11 +184,17 @@ void registerMapFamily(
 } // namespace
 
 void registerMapType(Runtime* runtime) {
-    registerMapFamily(runtime, "ReadOnlyMap", [](const std::vector<const Type*>& arguments) {
-        return std::make_unique<ReadOnlyMapType>(arguments[0], arguments[1]);
+    registerMapFamily(runtime, "ReadOnlyMap", [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
+        return std::make_unique<ReadOnlyMapType>(
+            owningRuntime, id, "ReadOnlyMap<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
+            ObjectTypeMode::Closed, arguments[0], arguments[1]
+        );
     }, false);
-    registerMapFamily(runtime, "Map", [](const std::vector<const Type*>& arguments) {
-        return std::make_unique<MapType>(arguments[0], arguments[1]);
+    registerMapFamily(runtime, "Map", [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
+        return std::make_unique<MapType>(
+            owningRuntime, id, "Map<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
+            ObjectTypeMode::Closed, arguments[0], arguments[1]
+        );
     }, true);
 }
 

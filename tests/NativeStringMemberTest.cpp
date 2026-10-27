@@ -18,9 +18,34 @@
 
 using namespace nomad;
 
+BOOST_AUTO_TEST_CASE(textmate_init_is_scoped_to_constructor_headers_not_global_keywords)
+{
+    Runtime runtime;
+    std::ostringstream output;
+    generateTextMateGrammar(&runtime, output);
+    const auto grammar = boost::json::parse(output.str()).as_object();
+    const auto& repository = grammar.at("repository").as_object();
+    const auto& constructor = repository.at("constructors").as_object().at("patterns").as_array()[0].as_object();
+    const auto header = std::regex(constructor.at("begin").as_string().c_str());
+    BOOST_TEST(std::regex_search(std::string("    init value:float"), header));
+    BOOST_TEST(!std::regex_search(std::string("fun init"), header));
+    BOOST_TEST(!std::regex_search(std::string("system.init"), header));
+    const auto& keywords = repository.at("keywords").as_object().at("patterns").as_array()[0].as_object();
+    BOOST_TEST(!std::regex_search(std::string("init"), std::regex(keywords.at("match").as_string().c_str())));
+    const auto& classPatterns = repository.at("classes").as_object().at("patterns").as_array()[0]
+        .as_object().at("patterns").as_array();
+    BOOST_TEST(classPatterns[0].as_object().at("include").as_string() == "#constructors");
+    for (const auto& pattern : grammar.at("patterns").as_array()) {
+        BOOST_TEST(pattern.as_object().at("include").as_string() != "#constructors");
+    }
+    for (const auto& pattern : constructor.at("patterns").as_array()) {
+        BOOST_TEST(pattern.as_object().at("include").as_string() != "#constructors");
+    }
+}
+
 namespace {
 
-NomadId compileFunction(Runtime& runtime, const NomadString& source) {
+CallableId compileFunction(Runtime& runtime, const NomadString& source) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"test", {"test.nomad", source}}}, {}});
@@ -43,14 +68,14 @@ BOOST_AUTO_TEST_CASE(registers_immutable_string_members) {
     const auto lengthId = runtime.getNativeMemberId(runtime.getStringType(), "length");
     const auto toUpperId = runtime.getNativeMemberId(runtime.getStringType(), "toUpper");
 
-    BOOST_REQUIRE(lengthId != NOMAD_INVALID_ID);
-    BOOST_REQUIRE(toUpperId != NOMAD_INVALID_ID);
+    BOOST_REQUIRE((runtime.getMemberType(lengthId) == MemberType::Property));
+    BOOST_REQUIRE((runtime.getMemberType(toUpperId) == MemberType::Method));
 
-    NativePropertyDefinition length;
-    BOOST_REQUIRE(runtime.getNativePropertyDefinition(lengthId, length));
-    BOOST_TEST(static_cast<bool>(length.getFn));
-    BOOST_TEST(!length.setFn);
-    BOOST_TEST(length.valueType == runtime.getIntegerType());
+    const auto lengthInfo = runtime.getNativePropertyInfo(lengthId);
+    BOOST_REQUIRE(lengthInfo.has_value());
+    BOOST_TEST(static_cast<bool>(lengthInfo->getFn));
+    BOOST_TEST(!lengthInfo->setFn);
+    BOOST_TEST(lengthInfo->valueType == runtime.getIntegerType());
 
     const auto* toUpper = runtime.getNativeMemberMethod(toUpperId);
     BOOST_REQUIRE(toUpper != nullptr);

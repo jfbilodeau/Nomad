@@ -5,10 +5,12 @@
 #include <nomad/compiler/SyntaxTree.hpp>
 
 #include <nomad/script/Callable.hpp>
+#include <nomad/script/Event.hpp>
 
 namespace nomad {
 
 class TypedValue;
+struct EventDefinition;
 
 ///////////////////////////////////////////////////////////////////////////////
 /// ArgumentList
@@ -18,9 +20,9 @@ public:
     explicit ArgumentList();
 
     void addExpressionArgument(NomadIndex line, NomadIndex column, const Type* type, std::unique_ptr<Expression> expression);
-    void addPredicateArgument(NomadIndex line, NomadIndex column, NomadId predicateFunctionId);
-    void addCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, NomadId functionId);
-    void addEventCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, NomadId eventId, NomadId functionId);
+    void addPredicateArgument(NomadIndex line, NomadIndex column, CallableId predicateFunctionId);
+    void addCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, CallableId functionId);
+    void addEventCallbackArgument(NomadIndex line, NomadIndex column, const Type* type, EventId eventId, CallableId functionId);
     void addEventDispatchArgument(NomadIndex line, NomadIndex column, const Type* type, const EventDefinition& eventDefinition);
     void addFileNameArgument(NomadIndex line, NomadIndex column, const Type* type, NomadString fileName);
     void addLineNumberArgument(NomadIndex line, NomadIndex column, const Type* type);
@@ -28,8 +30,8 @@ public:
     void add(std::unique_ptr<Argument>&& argument);
     void addAll(std::vector<std::unique_ptr<Argument>>&& arguments);
 
-    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptFunction* function) const;
-    void compile(Compiler* compiler, ScriptFunction* function) const;
+    [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptCallableBase* function) const;
+    void compile(Compiler* compiler, ScriptCallableBase* function) const;
     // Evaluates arguments in order. The entries of values share the storage owned by evaluatedArguments.
     // Stops at the first argument that reports an error through the context->
     void evaluate(
@@ -68,7 +70,7 @@ private:
 // Non-overloaded signatures retain specialized argument validation, including expanded event arguments.
 [[nodiscard]] const Function* resolveFunctionCallArguments(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     const NomadString& name,
     ArgumentList* arguments,
     NomadString& error
@@ -88,7 +90,7 @@ public:
     [[nodiscard]] const ArgumentList* getArguments() const;
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
 
 private:
     ArgumentList m_arguments;
@@ -102,8 +104,8 @@ public:
     FunctionCallStatementNode(NomadIndex line, NomadIndex column, NomadString name);
 
 protected:
-    void onResolve(CompilerContext* context, ScriptFunction* function) override;
-    void onCompile(Compiler* compiler, ScriptFunction* function) override;
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
+    void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:

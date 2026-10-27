@@ -57,6 +57,15 @@ The compiler initializes a headless engine with dummy video/audio drivers.
 Engine functions and constants remain available. Diagnostics include source
 locations; compilation errors return a nonzero exit code.
 
+Instruction dumps include script functions, methods, constructors, and generated
+class initializers. `--function` limits the dump to a named free function.
+
+Generated API Markdown includes script classes, their constructor overloads,
+read/write fields (including fields inferred from constructor assignments), and
+ordinary method overloads with parameter and return types. Qualified class names
+are preserved. Nested callbacks and generated initializers are omitted.
+Documentation generation does not execute the scripts.
+
 When `nomadc check` discovers a project, it also discovers and CPU-packs the
 configured sprite directories without uploading textures to the GPU. The
 report lists each physical texture page, its dimensions, logical and unique
@@ -73,11 +82,20 @@ standard error. `--help`/`-h` prints usage and `--version`/`-v` prints the versi
 unknown arguments are rejected.
 
 The server supports compiler diagnostics, API and project-function completion,
-local variable and parameter suggestions, object member completion, and hover
-documentation. Suggestions and diagnostics reflect unsaved editor changes and
+local variable and parameter suggestions, object member completion, hover
+documentation, and signature help for function, method, and constructor calls.
+Signature help lists overloads and parameter descriptions and tracks the active
+argument in space-separated calls, including nested and parenthesized expressions.
+Hidden source-location parameters are omitted. Suggestions and diagnostics reflect unsaved editor changes and
 use the nearest project configuration. Scripts are never executed. See the
 [VS Code extension guide](https://github.com/jfbilodeau/Nomad/blob/main/editor/README.md)
 for setup and current limitations.
+
+Local and parameter suggestions and hover information also cover script methods
+and constructors. Their receiver is available as `this`.
+Member suggestions and hover include script fields and method overloads, filtered
+by the receiver's type. Stored-field chains such as `owner.child.name` retain
+their member types, and unsaved class changes update suggestions across the project.
 
 ## Runtime
 

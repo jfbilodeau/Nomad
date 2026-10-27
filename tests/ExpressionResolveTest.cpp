@@ -41,7 +41,7 @@ BOOST_AUTO_TEST_CASE(function_call_nodes_retain_the_resolved_target_across_catal
 
     BOOST_REQUIRE(runtime.registerNativeFunction("pick", [](VirtualMachine* machine) {
         machine->setIntegerResult(33);
-    }, {defParameter("value", runtime.getFloatType(), "")}, runtime.getIntegerType(), "") != NOMAD_INVALID_ID);
+    }, {defParameter("value", runtime.getFloatType(), "")}, runtime.getIntegerType(), "").isValid());
 
     auto machine = runtime.createVirtualMachine();
     InterpreterContext evaluation(*machine);
@@ -58,7 +58,7 @@ BOOST_AUTO_TEST_CASE(expression_resolve_reports_unknown_identifier_without_throw
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    ScriptFunction function(NOMAD_INVALID_ID, "test", "", "");
+    ScriptFunction function(CallableId::INVALID, "test", "", "");
     CompilerContext context(compiler.get());
 
     IdentifierExpression expression(nullptr, 3, 7, "missing");
@@ -79,7 +79,7 @@ BOOST_AUTO_TEST_CASE(statement_resolve_reports_errors_in_call_arguments)
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    ScriptFunction function(NOMAD_INVALID_ID, "test", "", "");
+    ScriptFunction function(CallableId::INVALID, "test", "", "");
     CompilerContext context(compiler.get());
 
     const auto nativeId = runtime.registerNativeFunction(
@@ -112,7 +112,7 @@ BOOST_AUTO_TEST_CASE(statement_list_resolve_reports_every_failing_statement)
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    ScriptFunction function(NOMAD_INVALID_ID, "test", "", "");
+    ScriptFunction function(CallableId::INVALID, "test", "", "");
     CompilerContext context(compiler.get());
 
     StatementList statements;
@@ -133,7 +133,7 @@ BOOST_AUTO_TEST_CASE(assignment_resolve_reports_function_variable_type_mismatch)
 {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    ScriptFunction function(NOMAD_INVALID_ID, "test", "", "");
+    ScriptFunction function(CallableId::INVALID, "test", "", "");
     function.registerVariable("score", runtime.getIntegerType());
     CompilerContext context(compiler.get());
 

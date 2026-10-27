@@ -8,6 +8,7 @@
 #include <limits>
 #include <memory>
 #include <numbers>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -75,6 +76,28 @@ using NomadId = std::int32_t;
 constexpr NomadId NOMAD_INVALID_ID = -1;
 constexpr NomadId NOMAD_ID_MIN = 0;
 constexpr NomadId NOMAD_ID_MAX = 1000000;  // std::numeric_limits<NomadId>::max() - 1;
+
+#define DeclareId(name) \
+    struct name { \
+        ::nomad::NomadId id = ::nomad::NOMAD_INVALID_ID; \
+        static const name INVALID; \
+        constexpr bool operator==(const name&) const noexcept = default; \
+        [[nodiscard]] constexpr bool isValid() const noexcept { \
+            return id >= ::nomad::NOMAD_ID_MIN && id < ::nomad::NOMAD_ID_MAX; \
+        } \
+        [[nodiscard]] constexpr bool isInvalid() const noexcept { return !isValid(); } \
+        friend std::ostream& operator<<(std::ostream& output, const name value) { \
+            return output << #name << '{' << value.id << '}'; \
+        } \
+    }; \
+    inline constexpr name name::INVALID{}
+
+struct IdHash {
+    template<typename T>
+    [[nodiscard]] std::size_t operator()(const T value) const noexcept {
+        return std::hash<NomadId>{}(value.id);
+    }
+};
 
 // Returns true when an ID is within the Nomad ID domain.
 [[nodiscard]] constexpr bool isValidId(const NomadId id) noexcept {

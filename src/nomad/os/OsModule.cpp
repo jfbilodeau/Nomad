@@ -61,7 +61,7 @@ NomadInteger getArchitecture() {
 // registerConstant retains object values; release the original reference even if registration fails.
 void registerSnapshot(Runtime* runtime, const NomadString& name, RuntimeValue value, const Type* type) {
     try {
-        if (runtime->registerConstant(name, value, type) == NOMAD_INVALID_ID) {
+        if (runtime->registerConstant(name, value, type).isInvalid()) {
             throw NomadException("Failed to register " + name);
         }
     } catch (...) {
@@ -153,19 +153,21 @@ std::unique_ptr<Array1dObject> captureArguments(const ModuleContext& context, co
 
 void registerOs(ModuleContext* context) {
     auto* runtime = context->runtime;
-    if (!runtime->registerHub("os")) {
+    if (runtime->registerHub("os", HubMode::Closed).isInvalid()) {
         throw NomadException("Failed to register os hub");
     }
-    const auto* platformType = runtime->registerEnum("os.Platform", {
+    const auto platformTypeId = runtime->createEnum("os.Platform", {
         {"Windows", 1}, {"Linux", 2}, {"MacOS", 3}
     });
-    const auto* architectureType = runtime->registerEnum("os.Architecture", {
+    const auto architectureTypeId = runtime->createEnum("os.Architecture", {
         {"X86", 1}, {"X64", 2}, {"Arm32", 3}, {"Arm64", 4}
     });
+    const auto platformType = runtime->getType(platformTypeId);
+    const auto architectureType = runtime->getType(architectureTypeId);
     const auto* stringType = runtime->getStringType();
     const auto* argumentsType = runtime->getParameterizedType("ReadOnlyArray1", {stringType});
     const auto* environmentType = runtime->getParameterizedType("ReadOnlyMap", {stringType, stringType});
-    if (platformType == nullptr || architectureType == nullptr ||
+    if (!platformType || !architectureType ||
         argumentsType == nullptr || environmentType == nullptr) {
         throw NomadException("Failed to resolve nomad-os types; nomad-collections is required");
     }
@@ -183,8 +185,8 @@ void registerOs(ModuleContext* context) {
     RuntimeValue environmentValue;
     environmentValue.setObjectValue(environment.release());
     registerSnapshot(runtime, "os.env", environmentValue, environmentType);
-    registerSnapshot(runtime, "os.platform", RuntimeValue(getPlatform()), platformType);
-    registerSnapshot(runtime, "os.architecture", RuntimeValue(getArchitecture()), architectureType);
+    registerSnapshot(runtime, "os.platform", RuntimeValue(getPlatform()), *platformType);
+    registerSnapshot(runtime, "os.architecture", RuntimeValue(getArchitecture()), *architectureType);
     registerSnapshot(runtime, "os.currentDirectory",
         RuntimeValue(analysis ? NomadString{} : pathToUtf8(std::filesystem::current_path())), stringType);
     registerSnapshot(runtime, "os.executablePath",

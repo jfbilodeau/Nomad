@@ -7,7 +7,10 @@
 #include <nomad/game/Game.hpp>
 
 #include <nomad/log/MemorySink.hpp>
+
+#include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/VariableContext.hpp>
 
 #include <SDL3/SDL.h>
 
@@ -90,9 +93,10 @@ private:
         const Type* type = nullptr;
         NomadString value;
         Source source = Source::Context;
-        NomadId contextId = NOMAD_INVALID_ID;
-        NomadId variableId = NOMAD_INVALID_ID;
+        VariableContextId contextId = VariableContextId::INVALID;
+        VariableId variableId = VariableId::INVALID;
         bool editable = false;
+        DynamicVariableId dynamicVariableId = DynamicVariableId::INVALID;
     };
 
     void ensureGameTexture();
@@ -150,7 +154,7 @@ private:
 
     NomadId m_selectedSceneId = NOMAD_INVALID_ID;
     NomadId m_selectedEntityId = NOMAD_INVALID_ID;
-    NomadId m_selectedFunctionId = NOMAD_INVALID_ID;
+    CallableId m_selectedFunctionId = CallableId::INVALID;
     SelectionKind m_selectionKind = SelectionKind::Game;
 
     NomadString m_editingVariableName;

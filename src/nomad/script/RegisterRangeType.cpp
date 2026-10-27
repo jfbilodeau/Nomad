@@ -12,21 +12,26 @@
 namespace nomad {
 
 void registerRangeType(Runtime* runtime) {
-    auto type = std::make_unique<RangeType>();
-    const auto* rangeType = type.get();
-    runtime->registerType(std::move(type));
+    const auto id = runtime->createObjectType<RangeType>("Range", ObjectTypeMode::Closed);
+    if (id.isInvalid()) {
+        throw NomadException("Failed to create Range type");
+    }
+    const auto* rangeType = static_cast<const RangeType*>(runtime->getType(id).value());
     const auto* integerType = runtime->getIntegerType();
-    const auto iteratorId = runtime->registerNativeMethod(
-        rangeType, "iterator",
-        [integerType](VirtualMachine* machine) {
-            machine->getResult().setObjectValue(
-                new RangeIterator(integerType, *machine->getThisAs<RangeObject>())
-            );
-        },
-        {}, runtime->getIteratorType(integerType),
-        NomadDoc("Creates an independent iterator over the range.")
-    );
-    runtime->registerIterableType(rangeType, integerType, runtime->getNativeMemberMethod(iteratorId));
+    runtime->addIterable(id, {
+        .valueTypeId = integerType->getId(),
+        .factory = {
+            .name = "iterator",
+            .parameters = {},
+            .returnTypeId = runtime->getIteratorType(integerType)->getId(),
+            .function = [integerType](VirtualMachine* machine) {
+                machine->getResult().setObjectValue(
+                    new RangeIterator(integerType, *machine->getThisAs<RangeObject>())
+                );
+            },
+            .documentation = NomadDoc("Creates an independent iterator over the range.")
+        }
+    });
 
     const auto stop = defParameter("stop", integerType, NomadParamDoc("Exclusive end of the range."));
     const auto start = defParameter("start", integerType, NomadParamDoc("Inclusive start of the range."));
@@ -59,7 +64,7 @@ void registerRangeType(Runtime* runtime) {
         {start, stop, step}, rangeType,
         NomadDoc("Creates a range with an exclusive stop. A zero step raises a runtime error.")
     );
-    if (stopId == NOMAD_INVALID_ID || boundsId == NOMAD_INVALID_ID || stepId == NOMAD_INVALID_ID) {
+    if (stopId.isInvalid() || boundsId.isInvalid() || stepId.isInvalid()) {
         throw NomadException("Failed to register range functions");
     }
 }

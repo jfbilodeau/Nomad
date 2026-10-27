@@ -27,6 +27,8 @@ class Runtime;
 // Generates the registered script API reference.
 void generateDocumentation(const Runtime* runtime, std::ostream& out);
 void generateTypeDocumentation(const Runtime* runtime, std::ostream& out);
+// Includes native members and script fields and methods.
+void generateMemberDocumentation(const Runtime* runtime, std::ostream& out);
 void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out);
 void generateKeywords(Runtime* runtime, std::ostream& out);
 // Includes expression interpolation, nested format literals, and the format string operator.

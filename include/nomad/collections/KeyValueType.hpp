@@ -8,7 +8,14 @@ namespace nomad {
 
 class KeyValueType final : public ObjectType {
 public:
-    KeyValueType(const Type* keyType, const Type* valueType);
+    KeyValueType(
+        Runtime* runtime,
+        TypeId id,
+        NomadString name,
+        ObjectTypeMode mode,
+        const Type* keyType,
+        const Type* valueType
+    );
 
     void initValue(RuntimeValue& value) const override;
 };

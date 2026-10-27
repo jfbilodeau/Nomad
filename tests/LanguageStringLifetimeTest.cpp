@@ -227,7 +227,7 @@ BOOST_AUTO_TEST_CASE(discarded_closure_string_result_is_freed)
     runtime.registerNativeFunction(
         "test.storeText",
         [&runtime, &closure](VirtualMachine* virtualMachine) {
-            closure = virtualMachine->createClosure(&runtime, virtualMachine->getIdParameter(0));
+            closure = virtualMachine->createClosure(&runtime, CallableId{virtualMachine->getIdParameter(0)});
         },
         {
             defParameter("callback", runtime.getCallbackType({}, runtime.getStringType()), NomadParamDoc("Callback to store")),
@@ -343,7 +343,7 @@ BOOST_AUTO_TEST_CASE(closures_keep_captured_parameters_alive)
     runtime.registerNativeFunction(
         "test.storeText",
         [&runtime, &closure](VirtualMachine* virtualMachine) {
-            closure = virtualMachine->createClosure(&runtime, virtualMachine->getIdParameter(0));
+            closure = virtualMachine->createClosure(&runtime, CallableId{virtualMachine->getIdParameter(0)});
         },
         {
             defParameter("callback", runtime.getCallbackType({}, runtime.getStringType()), NomadParamDoc("Callback to store")),

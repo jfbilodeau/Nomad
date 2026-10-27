@@ -4,11 +4,57 @@
 
 #include <nomad/Nomad.hpp>
 
+#include <nomad/script/Documentation.hpp>
+#include <nomad/script/RuntimeValue.hpp>
+
+#include <type_traits>
+#include <vector>
+
 namespace nomad {
 
 class VirtualMachine;
 
 using InstructionFn = void (*)(VirtualMachine*);
+
+struct Instruction {
+    explicit Instruction(const InstructionFn fn) : fn(fn) {}
+    explicit Instruction(const RuntimeValue& value) : value(value) {}
+    Instruction(const Instruction& other) = default;
+
+    ~Instruction() = default;
+
+    union {
+        InstructionFn fn = nullptr;
+        RuntimeValue value;
+    };
+};
+
+static_assert(std::is_trivially_copyable_v<Instruction>, "Instruction must preserve its active union member when copied");
+
+enum class Operand {
+    Boolean,
+    Integer,
+    Float,
+    String,
+    Id,
+    Function,
+    NativeFunction,
+    FunctionVariable,
+    DynamicVariable,
+    ContextVariableId,
+    FormatString,
+    Index,
+};
+
+DeclareId(OpCodeId);
+
+struct OpCodeDefinition {
+    OpCodeId id;
+    NomadString name;
+    InstructionFn fn;
+    std::vector<Operand> operands;
+    NomadDocField;
+};
 
 namespace OpCodes {
     // OpCode definition below
@@ -25,6 +71,9 @@ DECLARE_OP_CODE(op_nop)
 DECLARE_OP_CODE(op_stop)
 DECLARE_OP_CODE(op_yield)
 DECLARE_OP_CODE(op_return)
+DECLARE_OP_CODE(op_return_1)
+DECLARE_OP_CODE(op_return_2)
+DECLARE_OP_CODE(op_return_3)
 DECLARE_OP_CODE(op_return_n)
 
 // Flow control
@@ -47,21 +96,36 @@ DECLARE_OP_CODE(op_object_copy_r_to_i)
 DECLARE_OP_CODE(op_object_move_r_to_i)
 DECLARE_OP_CODE(op_object_move_i_to_r)
 DECLARE_OP_CODE(op_object_move_r_to_stack)
+DECLARE_OP_CODE(op_push_this)
+DECLARE_OP_CODE(op_pop_this)
+DECLARE_OP_CODE(op_move_this_to_r)
+DECLARE_OP_CODE(op_copy_this_to_r)
+DECLARE_OP_CODE(op_copy_this_to_i)
+DECLARE_OP_CODE(op_bind_this_from_stack)
+DECLARE_OP_CODE(op_stack_reserve)
+DECLARE_OP_CODE(op_code_load_default_r)
 
-// Function and nativeFunction calls
-DECLARE_OP_CODE(op_call_function)
+// Callable operations
+DECLARE_OP_CODE(op_call_script_function)
+DECLARE_OP_CODE(op_call_script_method)
+DECLARE_OP_CODE(op_call_script_constructor)
 DECLARE_OP_CODE(op_call_native_function)
+DECLARE_OP_CODE(op_call_native_method)
+DECLARE_OP_CODE(op_call_native_constructor)
 DECLARE_OP_CODE(op_native_property_get)
 DECLARE_OP_CODE(op_native_property_set)
 DECLARE_OP_CODE(op_native_index_get)
 DECLARE_OP_CODE(op_native_index_set)
-DECLARE_OP_CODE(op_native_method_call)
+
+// Parameter operations
 DECLARE_OP_CODE(op_parameter_load_r)
 DECLARE_OP_CODE(op_parameter_load_i)
 DECLARE_OP_CODE(op_parameter_push)
 DECLARE_OP_CODE(op_object_parameter_load_r)
 DECLARE_OP_CODE(op_object_parameter_load_i)
 DECLARE_OP_CODE(op_object_parameter_push)
+DECLARE_OP_CODE(op_parameter_set)
+DECLARE_OP_CODE(op_object_free_parameter)
 
 // Variable operations
 DECLARE_OP_CODE(op_constant_get_r)
@@ -156,9 +220,6 @@ DECLARE_OP_CODE(op_float_greater_than_or_equal)
 // String operators
 DECLARE_OP_CODE(op_string_init_r)
 DECLARE_OP_CODE(op_string_init_i)
-DECLARE_OP_CODE(op_object_init_r)
-DECLARE_OP_CODE(op_object_new)
-DECLARE_OP_CODE(op_object_init_i)
 DECLARE_OP_CODE(op_string_push_n)
 DECLARE_OP_CODE(op_string_load_r)
 DECLARE_OP_CODE(op_string_load_i)
@@ -166,6 +227,9 @@ DECLARE_OP_CODE(op_string_equal)
 DECLARE_OP_CODE(op_string_not_equal)
 
 // Object operators (reference counted)
+DECLARE_OP_CODE(op_object_init_r)
+DECLARE_OP_CODE(op_object_init_i)
+DECLARE_OP_CODE(op_object_new)
 DECLARE_OP_CODE(op_object_free_r)
 DECLARE_OP_CODE(op_object_free_i)
 DECLARE_OP_CODE(op_object_free_variable)

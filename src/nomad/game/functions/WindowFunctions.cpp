@@ -7,9 +7,10 @@
 
 #include <nomad/game/resource/ResourceManager.hpp>
 
-#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 namespace nomad {
 
@@ -43,7 +44,7 @@ void Game::initWindowFunctions() {
     m_runtime->registerNativeFunction(
         "window.setFps",
         [this](const VirtualMachine* interpreter) {
-            const auto fps = static_cast<int>(interpreter->getIntegerParameter(0));
+            const auto fps = interpreter->getIntegerParameter(0);
 
             m_fps = fps;
         }, {
@@ -138,9 +139,9 @@ void Game::initWindowCallbacks() {
     ) {
         m_runtime->registerNativeFunction(
             name,
-            [this, callback](VirtualMachine* interpreter) {
-                const auto functionId = interpreter->getIdParameter(0);
-                this->*callback = interpreter->createClosure(m_runtime, functionId);
+            [this, callback](const VirtualMachine* interpreter) {
+                const auto callableId = interpreter->getCallableIdParameter(0);
+                this->*callback = interpreter->createClosure(m_runtime, callableId);
             }, {
                 defParameter(
                     "callback",
@@ -154,7 +155,7 @@ void Game::initWindowCallbacks() {
 
         m_runtime->registerNativeFunction(
             clearName,
-            [this, callback](VirtualMachine* /*interpreter*/) {
+            [this, callback](const VirtualMachine* /*interpreter*/) {
                 (this->*callback).reset();
             },
             {},

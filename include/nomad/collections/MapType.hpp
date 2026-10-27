@@ -8,7 +8,14 @@ namespace nomad {
 
 class MapType final : public ObjectType {
 public:
-    MapType(const Type* keyType, const Type* valueType);
+    MapType(
+        Runtime* runtime,
+        TypeId id,
+        NomadString name,
+        ObjectTypeMode mode,
+        const Type* keyType,
+        const Type* valueType
+    );
 
     void initValue(RuntimeValue& value) const override;
 };

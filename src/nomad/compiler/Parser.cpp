@@ -37,7 +37,6 @@ const Type* parseTypeName(
     if (name.empty() && !tokens->nextIdentifier(name)) {
         return nullptr;
     }
-    name = context->resolveName(name);
     auto* runtime = context->getRuntime();
     const auto argumentCount = runtime->getParameterizedTypeArgumentCount(name);
     if (tokens->is("<")) {
@@ -96,9 +95,77 @@ const Type* parseType(CompilerContext* context, Tokenizer* tokens) {
     return parseTypeName(context, tokens, 0);
 }
 
+bool parseParameters(
+    CompilerContext* context,
+    Tokenizer* tokens,
+    std::vector<Parameter>& parameters
+) {
+    while (!tokens->endOfLine()) {
+        NomadString name;
+        if (!tokens->nextIdentifier(name) || !tokens->expect(":")) {
+            return false;
+        }
+        if (context->getRuntime()->getKeywordId(name).isValid()) {
+            context->reportError("Parameter name '" + name + "' is a reserved keyword", tokens);
+            return false;
+        }
+        if (std::ranges::any_of(parameters, [&name](const auto& parameter) { return parameter.name == name; })) {
+            context->reportError("Parameter '" + name + "' is already defined", tokens);
+            return false;
+        }
+        if (context->getRuntime()->isHub(name)) {
+            context->reportError("Parameter name '" + name + "' is reserved by a hub", tokens);
+            return false;
+        }
+        const auto* type = parseType(context, tokens);
+        if (type == nullptr) {
+            return false;
+        }
+        parameters.push_back(defParameter(name, type, ""));
+    }
+    return true;
+}
+
+NomadIndex countBlockOpenings(const Tokenizer* tokens) {
+    if (tokens->getTokenCount() == 0) {
+        return 0;
+    }
+    const auto statement = tokens->getTokenTypeAt(0) == TokenType::Identifier ?
+        tokens->getTokenAt(0) : NomadString{};
+    if (statement == "end") {
+        return 0;
+    }
+    auto count = NomadIndex{0};
+    if (statement == "while" || statement == "until" || statement == "do" ||
+        statement == "for" || statement == "hub" || statement == "class" || statement == "enum") {
+        ++count;
+    }
+    if (statement == "open" && tokens->getTokenCount() > 1 &&
+        (tokens->getTokenAt(1) == "hub" || tokens->getTokenAt(1) == "class")) {
+        ++count;
+    }
+    auto inlineLoopControl = false;
+    for (auto index = NomadIndex{0}; index < tokens->getTokenCount(); ++index) {
+        if (tokens->getTokenTypeAt(index) != TokenType::Identifier) {
+            continue;
+        }
+        const auto& token = tokens->getTokenAt(index);
+        if (token == "fun") {
+            ++count;
+        }
+        if (statement == "if" && (token == "break" || token == "continue")) {
+            inlineLoopControl = true;
+        }
+    }
+    if (statement == "if" && !inlineLoopControl) {
+        ++count;
+    }
+    return count;
+}
+
 using ParseExpressionFunction = std::unique_ptr<Expression> (*)(
     CompilerContext*, 
-    ScriptFunction*, 
+    ScriptCallableBase*, 
     Tokenizer*,
     const Expression*
 );
@@ -110,72 +177,102 @@ struct MemberNameParts {
     NomadString member;
 };
 
-std::optional<MemberNameParts> splitNativeMemberName(const Runtime* runtime, const NomadString& name) {
+std::optional<MemberNameParts> splitMemberName(const NomadString& name) {
     const auto separator = name.rfind('.');
     if (separator == NomadString::npos || separator == 0 || separator + 1 >= name.size()) {
         return std::nullopt;
     }
 
     auto member = name.substr(separator + 1);
-    if (!runtime->getMemberSignature(member)) {
-        return std::nullopt;
-    }
-
     return MemberNameParts{name.substr(0, separator), std::move(member)};
 }
 
-std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptFunction* function,
+std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptCallableBase* function,
                                                               const Expression* parent, const NomadString& name,
                                                               NomadIndex line, NomadIndex column);
 
-bool parseNativeMemberArguments(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
-                                   const NomadString& memberName, ArgumentList& arguments) {
+bool parseNativeMemberArguments(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    const NomadString& memberName,
+    const Type* receiverType,
+    ArgumentList& arguments
+) {
+    auto* runtime = context->getRuntime();
+    const Method* shape = nullptr;
+    for (auto index = NomadIndex{0}; index < runtime->getFunctionTableSize(); ++index) {
+        const auto* method = runtime->getMethod(CallableId{toNomadId(index)});
+        if (method != nullptr && method->getName() == memberName &&
+            (receiverType == nullptr || method->getObjectType() == receiverType) &&
+            (shape == nullptr || method->getParameterCount() > shape->getParameterCount())) {
+            shape = method;
+        }
+    }
+    if (shape != nullptr) {
+        return parseCallableArguments(context, function, tokens, *shape, &arguments, true);
+    }
     const auto signature = context->getRuntime()->getMemberSignature(memberName);
     if (!signature) {
-        context->reportError("Unknown native member '" + memberName + "'", tokens);
-        return false;
+        return true;
     }
 
     if (signature->type == MemberType::Property) {
         return true;
     }
 
+    if (tokens->endOfLine() && std::ranges::any_of(signature->parameters, [](const auto& parameter) {
+        return parameter.type == nullptr || !parameter.type->isInternal();
+    })) {
+        // The receiver may resolve to a stored field rather than this native method.
+        return true;
+    }
     return parseCallableArguments(context, function, tokens, signature->parameters, &arguments);
 }
 
 std::unique_ptr<Expression> createNativeMemberExpression(
-    CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent,
+    CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent,
     NomadString qualifiedName, NomadString memberName, std::unique_ptr<Expression> receiver,
     const bool parseArguments, const NomadIndex line, const NomadIndex column) {
     ArgumentList arguments;
 
-    if (parseArguments) {
-        if (!parseNativeMemberArguments(context, function, tokens, memberName, arguments)) {
+    auto storedField = false;
+    const Type* receiverType = nullptr;
+    if (const auto* identifier = receiver->asIdentifierExpression()) {
+        IdentifierDefinition definition;
+        context->getCompiler()->getIdentifierDefinition(identifier->getIdentifier(), function, definition);
+        receiverType = definition.valueType;
+        if (definition.valueType != nullptr && definition.valueType->asObjectType() != nullptr) {
+            storedField = context->getRuntime()->getMemberType(
+                context->getRuntime()->getNativeMemberId(definition.valueType, memberName)
+            ) == MemberType::Unknown && !std::ranges::any_of(
+                definition.valueType->asObjectType()->getMethods(),
+                [&](const auto* method) { return method->getName() == memberName; }
+            );
+        }
+    }
+    auto hasExplicitArguments = false;
+    if (parseArguments && !storedField) {
+        const auto argumentLine = tokens->getLineIndex();
+        const auto argumentColumn = tokens->getColumnIndex();
+        if (!parseNativeMemberArguments(context, function, tokens, memberName, receiverType, arguments)) {
             return nullptr;
         }
-    } else {
-        const auto signature = context->getRuntime()->getMemberSignature(memberName);
-        if (!signature) {
-            context->reportError("Unknown native member '" + memberName + "'");
-            return nullptr;
-        }
-
-        if (signature->type == MemberType::Method && !signature->parameters.empty()) {
-            context->reportError("Native method '" + memberName +
-                                 "' requires arguments before another member can be accessed");
-            return nullptr;
-        }
+        hasExplicitArguments = tokens->getLineIndex() != argumentLine || tokens->getColumnIndex() != argumentColumn;
     }
 
     return std::make_unique<NativeMemberExpression>(parent, line, column, std::move(qualifiedName),
-                                                       std::move(memberName), std::move(receiver), std::move(arguments));
+        std::move(memberName), std::move(receiver), std::move(arguments), hasExplicitArguments);
 }
 
-std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptFunction* function,
+std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptCallableBase* function,
                                                               const Expression* parent, const NomadString& name,
                                                               const NomadIndex line, const NomadIndex column) {
+    if (context->getCompiler()->getReceiverType(function) != nullptr && name == "this") {
+        return std::make_unique<IdentifierExpression>(parent, line, column, name);
+    }
     const auto functionId = context->getRuntime()->getCallableId(name);
-    if (functionId != NOMAD_INVALID_ID) {
+    if (functionId.isValid()) {
         const auto* targetFunction = context->getRuntime()->getFunction(functionId);
         if (targetFunction->getParameterCount() != 0) {
             context->reportError("Function receiver '" + name + "' requires arguments");
@@ -185,11 +282,20 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
         return std::make_unique<FunctionCallExpression>(parent, line, column, name);
     }
 
-    if (context->getRuntime()->getConstantId(name) != NOMAD_INVALID_ID) {
+    if (context->getRuntime()->getConstantId(name).isValid()) {
         return std::make_unique<ConstantValueExpression>(parent, line, column, name);
     }
 
-    const auto parts = splitNativeMemberName(context->getRuntime(), name);
+    for (auto* scope = function; scope != nullptr;
+        scope = context->getRuntime()->getScriptCallable(scope->getParentId())) {
+        if (context->getCompiler()->getIdentifierType(name, scope) != IdentifierType::Unknown) {
+            return std::make_unique<IdentifierExpression>(parent, line, column, name);
+        }
+    }
+    if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown) {
+        return std::make_unique<IdentifierExpression>(parent, line, column, name);
+    }
+    const auto parts = splitMemberName(name);
     if (!parts) {
         return std::make_unique<IdentifierExpression>(
             parent, line, column, name
@@ -205,7 +311,7 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
                                            false, line, column);
 }
 
-bool isPotentialMemberExpression(CompilerContext* context, ScriptFunction* function, const Tokenizer* tokens) {
+bool isPotentialMemberExpression(CompilerContext* context, ScriptCallableBase* function, const Tokenizer* tokens) {
     if (tokens->getTokenCount() == 0) {
         return false;
     }
@@ -215,7 +321,7 @@ bool isPotentialMemberExpression(CompilerContext* context, ScriptFunction* funct
     }
     if (tokens->getTokenTypeAt(0) == TokenType::Identifier) {
         const auto kind = context->getCompiler()->getIdentifierType(tokens->getTokenAt(0), function);
-        if (kind == IdentifierType::NativeFunction || kind == IdentifierType::Function) {
+        if (kind == IdentifierType::NativeFunction || kind == IdentifierType::ScriptFunction) {
             return false;
         }
     }
@@ -227,12 +333,12 @@ bool isPotentialMemberExpression(CompilerContext* context, ScriptFunction* funct
     }
 
     if (tokens->getTokenTypeAt(0) == TokenType::Identifier) {
-        const auto name = context->resolveName(tokens->getTokenAt(0), function);
+        const auto name = tokens->getTokenAt(0);
         if (context->getCompiler()->getIdentifierType(name, function) != IdentifierType::Unknown) {
             return false;
         }
 
-        return splitNativeMemberName(context->getRuntime(), name).has_value();
+        return splitMemberName(name).has_value();
     }
 
     for (NomadIndex index = 0; index < tokens->getTokenCount(); ++index) {
@@ -255,8 +361,8 @@ bool hasAssignmentOperator(const Tokenizer* tokens) {
     return false;
 }
 
-bool isNativeMemberCandidate(const Compiler* compiler, const ScriptFunction* function, const NomadString& name) {
-    if (!splitNativeMemberName(compiler->getRuntime(), name)) {
+bool isNativeMemberCandidate(const Compiler* compiler, const ScriptCallableBase* function, const NomadString& name) {
+    if (!splitMemberName(name)) {
         return false;
     }
 
@@ -265,12 +371,12 @@ bool isNativeMemberCandidate(const Compiler* compiler, const ScriptFunction* fun
         if (compiler->getIdentifierType(name, scope) != IdentifierType::Unknown) {
             return false;
         }
-        scope = compiler->getRuntime()->getScriptFunction(scope->getParentId());
+        scope = compiler->getRuntime()->getScriptCallable(scope->getParentId());
     }
     return compiler->getIdentifierType(name, nullptr) == IdentifierType::Unknown;
 }
 
-std::unique_ptr<Expression> parseBinaryOperatorExpression(CompilerContext* context, ScriptFunction* function,
+std::unique_ptr<Expression> parseBinaryOperatorExpression(CompilerContext* context, ScriptCallableBase* function,
                                                           Tokenizer* tokens, const Expression* parent,
                                                           std::vector<BinaryOperator> operators,
                                                           const ParseExpressionFunction nextParseFn) {
@@ -314,7 +420,7 @@ std::unique_ptr<Expression> parseBinaryOperatorExpression(CompilerContext* conte
     }
 }
 
-std::unique_ptr<Statement> parseLine(CompilerContext* context, ScriptFunction* function, Tokenizer* tokenizer) {
+std::unique_ptr<Statement> parseLine(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokenizer) {
     if (!tokenizer->isReportingTo(context)) {
         context->getCompiler()->reportInternalError("Parser and tokenizer must share the same compiler context");
     }
@@ -348,7 +454,7 @@ std::unique_ptr<Statement> parseLine(CompilerContext* context, ScriptFunction* f
 
 bool parseBlock(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const std::vector<NomadString>& endTokens,
     StatementList* statements
@@ -385,20 +491,19 @@ bool parseBlock(
 
 std::unique_ptr<Statement> parseStatement(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
-    auto& statementToken = tokens->next();
-    const auto statementName = statementToken.textValue;
-
+    const auto statementName = tokens->next().textValue;
     ParseStatementFn statementFn;
+    StatementAvailability availability;
 
-    if (context->getCompiler()->getParseStatementFn(statementName, statementFn)) {
-        if (context->getMode() == CompilerMode::Interpreter &&
-            (statementName == "const" || statementName == "enum" || statementName == "fun" ||
-                statementName == "event" || statementName == "params" || statementName == "return" ||
-                statementName == "assert" || statementName == "hub")) {
-            context->reportError("Statement '" + statementName + "' is not supported by the interpreter", tokens);
+    if (context->getCompiler()->getParseStatementFn(statementName, statementFn, availability)) {
+        const auto interpreter = context->getMode() == CompilerMode::Interpreter;
+        if ((interpreter && availability == StatementAvailability::Compiler) ||
+            (!interpreter && availability == StatementAvailability::Interpreter)) {
+            context->reportError("Statement '" + statementName + "' is not supported by the " +
+                (interpreter ? "interpreter" : "compiler"), tokens);
             return nullptr;
         }
         if (statementFn == nullptr) {
@@ -420,10 +525,10 @@ std::unique_ptr<Statement> parseStatement(
         return statement;
     }
 
-    const auto qualifiedName = context->resolveName(statementName, function);
+    const auto qualifiedName = statementName;
     const auto functionId = context->getRuntime()->getCallableId(qualifiedName);
 
-    if (functionId != NOMAD_INVALID_ID) {
+    if (functionId.isValid()) {
         const auto callLine = tokens->getLineIndex();
         auto statement = parseFunctionCall(context, function, tokens, qualifiedName);
 
@@ -439,9 +544,9 @@ std::unique_ptr<Statement> parseStatement(
     return nullptr;
 }
 
-NomadId parseCallbackParameter(
+CallableId parseCallbackParameter(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const FunctionType* callbackType)
 {
@@ -453,14 +558,14 @@ NomadId parseCallbackParameter(
                 "`then` is only allowed at the root of a script or function body. "
                 "Use an explicit `fun ... end` callback inside control-flow blocks.", tokens
             );
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
         if (context->getMode() != CompilerMode::Script) {
             context->reportError(
                 NomadString("Inline `") + (isFun ? "fun" : "then") + "` callbacks are not supported by the interpreter"
             , tokens);
 
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
 
         tokens->next();
@@ -468,11 +573,11 @@ NomadId parseCallbackParameter(
         const auto functionName = generateFunFunctionName(context, function, tokens->getLineIndex());
         auto* compiler = context->getCompiler();
         const auto functionId = compiler->createFunction(context, compiler->getScriptId(function->getId()), functionName);
-        if (functionId == NOMAD_INVALID_ID) {
-            return NOMAD_INVALID_ID;
+        if (functionId.isInvalid()) {
+            return CallableId::INVALID;
         }
 
-        const auto callbackFunction = context->getRuntime()->getScriptFunction(functionId);
+        const auto callbackFunction = context->getRuntime()->getScriptCallable(functionId);
 
         // Wire the nested function's parent reference.
         callbackFunction->setParentId(function->getId());
@@ -492,10 +597,10 @@ NomadId parseCallbackParameter(
             : parseThenBody(context, callbackFunction, tokens, declarationLine);
 
         if (!parametersParsed || callbackBody == nullptr) {
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
 
-        context->getCompiler()->setFunctionNode(functionId, std::move(callbackBody));
+        context->getCompiler()->setFunctionBody(functionId, std::move(callbackBody));
 
         return functionId;
     }
@@ -503,32 +608,31 @@ NomadId parseCallbackParameter(
     NomadString funName;
 
     if (!tokens->nextIdentifier(funName)) {
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
-    funName = context->resolveName(funName, function);
 
     const auto funId = context->getRuntime()->getFunctionId(funName);
 
-    if (funId == NOMAD_INVALID_ID) {
+    if (funId.isInvalid()) {
         context->reportError("Unknown callback function name '" + funName + "'", tokens);
 
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
 
-    if (context->getRuntime()->getScriptFunction(funId)->getParameterCount() != callbackType->getParameterCount()) {
+    if (context->getRuntime()->getScriptCallable(funId)->getParameterCount() != callbackType->getParameterCount()) {
         context->reportError("Callback function '" + funName + "' has incorrect number of parameters", tokens);
 
-        return NOMAD_INVALID_ID;
+        return CallableId::INVALID;
     }
 
     for (auto i = NomadIndex{0}; i < callbackType->getParameterCount(); ++i) {
         const auto parameterId = toNomadId(i);
         const auto expectedType = callbackType->getParameterType(parameterId);
-        const auto actualType = context->getRuntime()->getScriptFunction(funId)->getParameterType(parameterId);
+        const auto actualType = context->getRuntime()->getScriptCallable(funId)->getParameterType(parameterId);
         if (expectedType != actualType) {
             context->reportError("Callback function '" + funName + "' parameter type mismatch at index " + toString(i), tokens);
 
-            return NOMAD_INVALID_ID;
+            return CallableId::INVALID;
         }
     }
 
@@ -537,7 +641,7 @@ NomadId parseCallbackParameter(
 
 std::unique_ptr<Statement> parseFunctionCall(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const NomadString& functionName
 ) {
@@ -549,7 +653,7 @@ std::unique_ptr<Statement> parseFunctionCall(
 
     const auto functionId = context->getRuntime()->getCallableId(functionName);
 
-    if (functionId == NOMAD_INVALID_ID) {
+    if (functionId.isInvalid()) {
         context->reportError("Unknown function name: '" + functionName + "'", tokens);
 
         return nullptr;
@@ -564,7 +668,7 @@ std::unique_ptr<Statement> parseFunctionCall(
     return functionCallStatement;
 }
 
-std::unique_ptr<Statement> parseReturnStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseReturnStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     auto expression = parseExpression(context, function, tokens);
 
     if (expression == nullptr) {
@@ -574,11 +678,11 @@ std::unique_ptr<Statement> parseReturnStatement(CompilerContext* context, Script
     return std::make_unique<ReturnStatementNode>(tokens->getLineIndex(), tokens->getColumnIndex(), std::move(expression));
 }
 
-std::unique_ptr<Expression> parseExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+std::unique_ptr<Expression> parseExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     return parseLogicalAndExpression(context, function, tokens, nullptr);
 }
 
-std::unique_ptr<Expression> parseLogicalAndExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseLogicalAndExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     return parseBinaryOperatorExpression(
         context,
         function,
@@ -590,7 +694,7 @@ std::unique_ptr<Expression> parseLogicalAndExpression(CompilerContext* context, 
 }
 
 
-std::unique_ptr<Expression> parseLogicalOrExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseLogicalOrExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     return parseBinaryOperatorExpression(
         context,
         function,
@@ -601,7 +705,7 @@ std::unique_ptr<Expression> parseLogicalOrExpression(CompilerContext* context, S
     );
 }
 
-std::unique_ptr<Expression> parseRelationalExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseRelationalExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     return parseBinaryOperatorExpression(
         context,
         function,
@@ -619,7 +723,7 @@ std::unique_ptr<Expression> parseRelationalExpression(CompilerContext* context, 
     );
 }
 
-std::unique_ptr<Expression> parseBitwiseAndExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseBitwiseAndExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     return parseBinaryOperatorExpression(
         context,
         function,
@@ -632,7 +736,7 @@ std::unique_ptr<Expression> parseBitwiseAndExpression(CompilerContext* context, 
     );
 }
 
-std::unique_ptr<Expression> parseBitwiseXorExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseBitwiseXorExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     return parseBinaryOperatorExpression(
         context,
         function,
@@ -645,7 +749,7 @@ std::unique_ptr<Expression> parseBitwiseXorExpression(CompilerContext* context, 
     );
 }
 
-std::unique_ptr<Expression> parseBitwiseOrExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseBitwiseOrExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     return parseBinaryOperatorExpression(
         context,
         function,
@@ -658,7 +762,7 @@ std::unique_ptr<Expression> parseBitwiseOrExpression(CompilerContext* context, S
     );
 }
 
-std::unique_ptr<Expression> parseTermExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseTermExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     return parseBinaryOperatorExpression(
         context,
         function,
@@ -672,7 +776,7 @@ std::unique_ptr<Expression> parseTermExpression(CompilerContext* context, Script
     );
 }
 
-std::unique_ptr<Expression> parseProductExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
+std::unique_ptr<Expression> parseProductExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens,
                                                    const Expression* parent) {
     return parseBinaryOperatorExpression(context, function, tokens, parent,
                                          {
@@ -683,12 +787,12 @@ std::unique_ptr<Expression> parseProductExpression(CompilerContext* context, Scr
                                          &parseUnaryOperatorExpression);
 }
 
-std::unique_ptr<Expression> parseParenthesesExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
+std::unique_ptr<Expression> parseParenthesesExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens,
                                                        const Expression* parent) {
     return parsePostfixExpression(context, function, tokens, parent);
 }
 
-std::unique_ptr<Expression> parseUnaryOperatorExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parseUnaryOperatorExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     if (tokens->endOfLine()) {
         context->reportError("Unexpected end of line", tokens);
 
@@ -745,7 +849,7 @@ bool isArgumentStart(const Tokenizer* tokens) {
 
 std::unique_ptr<Expression> parseNewExpression(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const Expression* parent
 ) {
@@ -760,7 +864,6 @@ std::unique_ptr<Expression> parseNewExpression(
     }
     auto* runtime = context->getRuntime();
     NomadString constructorName = tokens->currentToken().textValue;
-    constructorName = context->resolveName(constructorName, function);
     if (const auto count = runtime->getParameterizedConstructorArgumentCount(constructorName)) {
         tokens->next();
         if (!tokens->expect("<")) {
@@ -822,11 +925,13 @@ std::unique_ptr<Expression> parseNewExpression(
             return nullptr;
         }
     }
-    const NativeConstructor* shape = nullptr;
+    const Constructor* shape = nullptr;
     const auto* objectType = runtime->getTypeByName(constructorName);
-    for (const auto* constructor : runtime->getConstructors(objectType)) {
-        if (shape == nullptr || constructor->getParameterCount() > shape->getParameterCount()) {
-            shape = constructor;
+    if (objectType != nullptr && objectType->asObjectType() != nullptr) {
+        for (const auto* constructor : objectType->asObjectType()->getConstructors()) {
+            if (shape == nullptr || constructor->getParameterCount() > shape->getParameterCount()) {
+                shape = constructor;
+            }
         }
     }
     if (shape == nullptr) {
@@ -844,7 +949,7 @@ std::unique_ptr<Expression> parseNewExpression(
     );
 }
 
-std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens,
+std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens,
                                                    const Expression* parent) {
     std::unique_ptr<Expression> expression;
 
@@ -927,7 +1032,7 @@ std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, Scr
 
 bool expectEndOfLine(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     NomadIndex statementLine
 ) {
@@ -945,8 +1050,11 @@ bool expectEndOfLine(
     return true;
 }
 
-IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& name, const ScriptFunction* function) {
-    if (compiler->getRuntime()->getKeywordId(name) != NOMAD_INVALID_ID) {
+IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& name, const ScriptCallableBase* function) {
+    if (compiler->getReceiverType(function) != nullptr && (name == "this" || name.starts_with("this."))) {
+        return compiler->getIdentifierType(name, function);
+    }
+    if (compiler->getRuntime()->getKeywordId(name).isValid()) {
         return IdentifierType::Keyword;
     }
 
@@ -958,32 +1066,50 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
         return IdentifierType::NativeFunction;
     }
 
-    if (compiler->getRuntime()->getConstantId(name) != NOMAD_INVALID_ID) {
+    if (compiler->getRuntime()->getConstantId(name).isValid()) {
         return IdentifierType::Constant;
     }
 
-    if (compiler->getRuntime()->getFunctionId(name) != NOMAD_INVALID_ID) {
-        return IdentifierType::Function;
+    if (compiler->getRuntime()->getFunctionId(name).isValid()) {
+        return IdentifierType::ScriptFunction;
     }
 
-    if (compiler->getRuntime()->getDynamicVariableId(name) != NOMAD_INVALID_ID) {
+    if (compiler->getRuntime()->getDynamicVariableId(name).isValid()) {
         return IdentifierType::DynamicVariable;
     }
 
-    if (compiler->getRuntime()->getVariableContextIdByPrefix(name) != NOMAD_INVALID_ID) {
+    if (compiler->getRuntime()->getVariableContextIdByPrefix(name).isValid()) {
         return IdentifierType::ContextVariable;
     }
 
-    if (function && function->getVariableId(name) != NOMAD_INVALID_ID) {
+    if (function && function->getVariableId(name).isValid()) {
         return IdentifierType::FunctionVariable;
     }
 
     return IdentifierType::Unknown;
 }
 
-std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     const auto line = tokens->getLineIndex();
     const auto column = tokens->getColumnIndex();
+    if (context->getCompiler()->getReceiverType(function) != nullptr && tokens->is(TokenType::Identifier)) {
+        const auto& target = tokens->currentToken().textValue;
+        if (target == "this") {
+            context->reportError("Cannot reassign the class receiver 'this'", tokens);
+            return nullptr;
+        }
+        if (context->getMode() != CompilerMode::Interpreter &&
+            target.starts_with("this.") && target.find('.', 5) == NomadString::npos &&
+            tokens->getTokenCount() >= 3 && tokens->getTokenAt(1) == "=") {
+            auto name = tokens->next().textValue;
+            tokens->next();
+            auto expression = parseExpression(context, function, tokens);
+            if (expression == nullptr || !expectEndOfLine(context, function, tokens, line)) {
+                return nullptr;
+            }
+            return std::make_unique<AssignmentStatement>(line, column, std::move(name), std::move(expression));
+        }
+    }
 
     const auto isDirectIdentifier = tokens->getTokenCount() >= 3 &&
                                     tokens->getTokenTypeAt(0) == TokenType::Identifier && tokens->getTokenAt(1) == "=";
@@ -1012,19 +1138,19 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
         context->reportError("Cannot assign a value to hub '" + variableName + "'", tokens);
         return nullptr;
     }
-    const auto resolvedName = context->resolveName(variableName, function);
-    if (resolvedName != variableName && runtime->isHubVariable(resolvedName)) {
-        context->reportError("Writes to hub variables require a qualified name: '" + resolvedName + "'", tokens);
-        return nullptr;
-    }
     auto hasValueReceiver = false;
-    if (const auto parts = splitNativeMemberName(runtime, variableName)) {
+    if (const auto parts = splitMemberName(variableName)) {
         auto receiver = parts->receiver;
         while (!receiver.empty()) {
-            if (context->getCompiler()->getIdentifierType(receiver, function) != IdentifierType::Unknown) {
-                hasValueReceiver = true;
-                break;
+            hasValueReceiver = context->getCompiler()->getIdentifierType(receiver, nullptr) != IdentifierType::Unknown;
+            for (auto* scope = function; scope != nullptr;
+                scope = runtime->getScriptCallable(scope->getParentId())) {
+                if (context->getCompiler()->getIdentifierType(receiver, scope) != IdentifierType::Unknown) {
+                    hasValueReceiver = true;
+                    break;
+                }
             }
+            if (hasValueReceiver) break;
             const auto separator = receiver.rfind('.');
             if (separator == NomadString::npos) {
                 break;
@@ -1034,9 +1160,9 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     }
     if (!runtime->getContainingHub(variableName).empty() &&
         !runtime->isHubVariable(variableName) &&
-        runtime->getConstantId(variableName) == NOMAD_INVALID_ID &&
-        runtime->getCallableId(variableName) == NOMAD_INVALID_ID &&
-        runtime->getDynamicVariableId(variableName) == NOMAD_INVALID_ID &&
+        runtime->getConstantId(variableName).isInvalid() &&
+        runtime->getCallableId(variableName).isInvalid() &&
+        runtime->getDynamicVariableId(variableName).isInvalid() &&
         runtime->getTypeByName(variableName) == nullptr &&
         !hasValueReceiver) {
         context->reportError("Hub members must be declared inside a hub block: '" + variableName + "'", tokens);
@@ -1046,11 +1172,8 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     IdentifierDefinition identifierDefinition;
     context->getCompiler()->getIdentifierDefinition(variableName, function, identifierDefinition);
 
-    const auto memberParts = splitNativeMemberName(context->getRuntime(), variableName);
-    if (memberParts && isNativeMemberCandidate(context->getCompiler(), function, variableName) &&
-        context->getCompiler()->getIdentifierType(
-            memberParts->receiver, function
-        ) != IdentifierType::Unknown) {
+    const auto memberParts = splitMemberName(variableName);
+    if (memberParts && isNativeMemberCandidate(context->getCompiler(), function, variableName) && hasValueReceiver) {
         tokens->next();
         if (!tokens->expect("=")) {
             return nullptr;
@@ -1079,11 +1202,11 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
         // Runtime context variables keep their normal registration path.
         const auto contextId = context->getRuntime()->getVariableContextIdByPrefix(variableName);
 
-        if (contextId != NOMAD_INVALID_ID) {
+        if (contextId.isValid()) {
             // Register new context variable
             const auto variableId = context->getRuntime()->registerOrUpdateContextVariable(variableName, nullptr);
 
-            if (variableId == NOMAD_INVALID_ID) {
+            if (variableId.isInvalid()) {
                 context->getCompiler()->reportInternalError("Failed to register context variable: " + variableName);
             }
         } else if (context->getMode() == CompilerMode::Script) {
@@ -1106,7 +1229,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     return std::make_unique<AssignmentStatement>(line, column, variableName, std::move(expression));
 }
 
-std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, const Expression* parent) {
+std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     if (tokens->endOfLine()) {
         context->reportError("Unexpected end of line", tokens);
 
@@ -1114,9 +1237,6 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
     }
 
     auto token = tokens->next();
-    if (token.type == TokenType::Identifier) {
-        token.textValue = context->resolveName(token.textValue, function);
-    }
 
     if (token.type == TokenType::FormatString) {
         auto expression = std::make_unique<FormatStringLiteral>(
@@ -1168,22 +1288,27 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
     // auto& identifier = token.textValue;
 
     if (token.type == TokenType::Identifier) {
+        if (context->getCompiler()->getReceiverType(function) != nullptr && token.textValue == "this") {
+            return std::make_unique<IdentifierExpression>(
+                parent, tokens->getLineIndex(), token.column, token.textValue
+            );
+        }
         const auto functionId = context->getRuntime()->getCallableId(token.textValue);
 
-        if (functionId != NOMAD_INVALID_ID) {
+        if (functionId.isValid()) {
             return parseFunctionCallExpression(context, function, tokens, parent, token.textValue);
         }
 
         // Constant?
         const auto constantId = context->getRuntime()->getConstantId(token.textValue);
 
-        if (constantId != NOMAD_INVALID_ID) {
+        if (constantId.isValid()) {
             return std::make_unique<ConstantValueExpression>(parent, tokens->getLineIndex(), tokens->getColumnIndex(),
                                                              token.textValue);
         }
 
         if (isNativeMemberCandidate(context->getCompiler(), function, token.textValue)) {
-            const auto memberParts = splitNativeMemberName(context->getRuntime(), token.textValue);
+            const auto memberParts = splitMemberName(token.textValue);
 
             if (memberParts) {
                 auto receiver = createQualifiedReceiverExpression(context, function, parent, memberParts->receiver,
@@ -1230,7 +1355,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
 
 std::unique_ptr<Expression> parseFunctionCallExpression(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const Expression* parent,
     const NomadString& functionName
@@ -1258,17 +1383,16 @@ std::unique_ptr<Expression> parseFunctionCallExpression(
 }
 
 // Returns false on error.
-bool parseEventDispatch(CompilerContext* context, ScriptFunction* function, Tokenizer* tokens, std::vector<std::unique_ptr<Argument>>& arguments) {
+bool parseEventDispatch(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, std::vector<std::unique_ptr<Argument>>& arguments) {
     NomadString eventName;
 
     if (!tokens->nextIdentifier(eventName)) {
         return false;
     }
-    eventName = context->resolveName(eventName, function);
 
     const auto eventId = context->getRuntime()->getEventId(eventName);
 
-    if (eventId == NOMAD_INVALID_ID) {
+    if (eventId.isInvalid()) {
         context->reportError("Unknown event name '" + eventName + "'", tokens);
 
         return false;
@@ -1293,7 +1417,7 @@ bool parseEventDispatch(CompilerContext* context, ScriptFunction* function, Toke
         const auto eventParameterType = context->getRuntime()->getType(eventParameter.typeId);
 
         if (!eventParameterType) {
-            context->getCompiler()->reportInternalError("Invalid type id in event: " + toString(eventParameter.typeId) + " (" + eventParameter.typeName + ")");
+            context->getCompiler()->reportInternalError("Invalid type id in event: " + toString(eventParameter.typeId.id) + " (" + eventParameter.typeName + ")");
         }
 
         auto expression = parseExpression(context, function, tokens);
@@ -1317,7 +1441,7 @@ bool parseEventDispatch(CompilerContext* context, ScriptFunction* function, Toke
 
 bool parseCallableArguments(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const Callable& callable,
     ArgumentList* arguments,
@@ -1327,7 +1451,7 @@ bool parseCallableArguments(
     auto allowOmitted = allowOmittedArguments;
     auto* runtime = context->getRuntime();
     if (runtime->getFunction(callable.getId()) == &callable) {
-        std::vector<NomadId> overloads;
+        std::vector<CallableId> overloads;
         runtime->getCallableOverloads(callable.getName(), overloads);
         for (const auto id : overloads) {
             const auto* candidate = runtime->getFunction(id);
@@ -1346,7 +1470,7 @@ bool parseCallableArguments(
 
 bool parseCallableArguments(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens,
     const std::vector<Parameter>& parameters,
     ArgumentList* arguments,
@@ -1418,11 +1542,10 @@ bool parseCallableArguments(
             if (!tokens->nextIdentifier(eventName)) {
                 return false;
             }
-            eventName = context->resolveName(eventName, function);
 
             const auto eventId = context->getRuntime()->getEventId(eventName);
 
-            if (eventId == NOMAD_INVALID_ID) {
+            if (eventId.isInvalid()) {
                 context->reportError("Unknown event name '" + eventName + "'", tokens);
 
                 return false;
@@ -1443,7 +1566,7 @@ bool parseCallableArguments(
                     return *type;
                 }
 
-                context->getCompiler()->reportInternalError("Invalid type id in event: " + toString(p.typeId) + " (" +
+                context->getCompiler()->reportInternalError("Invalid type id in event: " + toString(p.typeId.id) + " (" +
                                                             p.typeName + ")");
             });
 
@@ -1456,7 +1579,7 @@ bool parseCallableArguments(
 
             const auto functionId = parseCallbackParameter(context, function, tokens, callbackType->asCallback());
 
-            if (functionId == NOMAD_INVALID_ID) {
+            if (functionId.isInvalid()) {
                 return false;
             }
 
@@ -1479,7 +1602,7 @@ bool parseCallableArguments(
 
             auto functionId = parseCallbackParameter(context, function, tokens, callbackType);
 
-            if (functionId == NOMAD_INVALID_ID) {
+            if (functionId.isInvalid()) {
                 return false;
             }
 
@@ -1516,7 +1639,7 @@ bool parseCallableArguments(
 std::unique_ptr<Argument> parseExpressionArgument(
     CompilerContext* context,
     const Type* argumentType,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     auto expression = parseExpression(context, function, tokens);
@@ -1535,7 +1658,7 @@ std::unique_ptr<Argument> parseExpressionArgument(
 
 std::unique_ptr<Argument> parsePredicateArgument(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     Tokenizer* tokens
 ) {
     const auto predicateFunctionName = context->getCompiler()->generateFunctionName("predicate", function, tokens->getLineIndex());
@@ -1543,7 +1666,7 @@ std::unique_ptr<Argument> parsePredicateArgument(
     auto* compiler = context->getCompiler();
     const auto predicateFunctionId = compiler->createFunction(
         context, compiler->getScriptId(function->getId()), predicateFunctionName);
-    if (predicateFunctionId == NOMAD_INVALID_ID) {
+    if (predicateFunctionId.isInvalid()) {
         return nullptr;
     }
 
@@ -1561,7 +1684,7 @@ std::unique_ptr<Argument> parsePredicateArgument(
     functionNode->addStatement(std::move(returnStatement));
 
     // Assign statement list to function
-    context->getCompiler()->setFunctionNode(predicateFunctionId, std::move(functionNode));
+    context->getCompiler()->setFunctionBody(predicateFunctionId, std::move(functionNode));
 
     auto predicateArgument = createPredicateArgument(
         tokens->getLineIndex(),

@@ -11,7 +11,7 @@ SimpleVariableContext::SimpleVariableContext() = default;
 
 SimpleVariableContext::~SimpleVariableContext() {
     for (NomadIndex index = 0; index < m_values.size(); ++index) {
-        if (const auto type = m_variables.getVariableType(toNomadId(index))) {
+        if (const auto type = m_variables.getVariableType(VariableId{toNomadId(index)})) {
             type->freeValue(m_values[index]);
         }
     }
@@ -21,26 +21,26 @@ NomadIndex SimpleVariableContext::getVariableCount() const {
     return m_variables.getVariableCount();
 }
 
-NomadId SimpleVariableContext::getFirstVariableId() const {
+VariableId SimpleVariableContext::getFirstVariableId() const {
     if (m_variables.getVariableCount() == 0) {
-        return NOMAD_INVALID_ID;
+        return VariableId::INVALID;
     }
 
-    return 0;
+    return VariableId{0};
 }
 
-NomadId SimpleVariableContext::getNextVariableId(const NomadId variableId) const {
-    if (variableId + 1 < toNomadId(getVariableCount())) {
-        return variableId + 1;
+VariableId SimpleVariableContext::getNextVariableId(const VariableId variableId) const {
+    if (variableId.id + 1 < toNomadId(getVariableCount())) {
+        return VariableId{variableId.id + 1};
     }
 
-    return NOMAD_INVALID_ID;
+    return VariableId::INVALID;
 }
 
-NomadId SimpleVariableContext::registerVariable(const NomadString& name, const Type* type) {
+VariableId SimpleVariableContext::registerVariable(const NomadString& name, const Type* type) {
     auto variable_id = getVariableId(name);
 
-    if (variable_id == NOMAD_INVALID_ID) {
+    if (variable_id.isInvalid()) {
         variable_id = m_variables.registerVariable(name, type);
         m_values.resize(m_variables.getVariableCount());
     } else if (m_variables.getVariableType(variable_id) == nullptr) {
@@ -52,50 +52,50 @@ NomadId SimpleVariableContext::registerVariable(const NomadString& name, const T
     return variable_id;
 }
 
-const NomadString& SimpleVariableContext::getVariableName(NomadId variableId) const {
+const NomadString& SimpleVariableContext::getVariableName(VariableId variableId) const {
     return m_variables.getVariableName(variableId);
 }
 
-NomadId SimpleVariableContext::getVariableId(const NomadString& name) const {
+VariableId SimpleVariableContext::getVariableId(const NomadString& name) const {
     return m_variables.getVariableId(name);
 }
 
-void SimpleVariableContext::setVariableType(const NomadId variableId, const Type* type) {
+void SimpleVariableContext::setVariableType(const VariableId variableId, const Type* type) {
     m_variables.setVariableType(variableId, type);
 }
 
-const Type* SimpleVariableContext::getVariableType(const NomadId variableId) const {
+const Type* SimpleVariableContext::getVariableType(const VariableId variableId) const {
     return m_variables.getVariableType(variableId);
 }
 
-void SimpleVariableContext::setValue(const NomadId variableId, const RuntimeValue& value) {
+void SimpleVariableContext::setValue(const VariableId variableId, const RuntimeValue& value) {
     const auto* type = m_variables.getVariableType(variableId);
 
     if (type == nullptr) {
-        m_values[variableId] = value;
+        m_values[toNomadIndex(variableId.id)] = value;
         return;
     }
 
-    type->assignValue(value, m_values[variableId]);
+    type->assignValue(value, m_values[toNomadIndex(variableId.id)]);
 }
 
-void SimpleVariableContext::getValue(const NomadId variableId, RuntimeValue& value) {
-    value = m_values[variableId];
+void SimpleVariableContext::getValue(const VariableId variableId, RuntimeValue& value) {
+    value = m_values[toNomadIndex(variableId.id)];
 }
 
-bool SimpleVariableContext::isWritten(const NomadId variableId) const {
+bool SimpleVariableContext::isWritten(const VariableId variableId) const {
     return m_variables.isWritten(variableId);
 }
 
-void SimpleVariableContext::setWritten(const NomadId variableId, const bool written) {
+void SimpleVariableContext::setWritten(const VariableId variableId, const bool written) {
     m_variables.setWritten(variableId, written);
 }
 
-bool SimpleVariableContext::isRead(const NomadId variableId) const {
+bool SimpleVariableContext::isRead(const VariableId variableId) const {
     return m_variables.isRead(variableId);
 }
 
-void SimpleVariableContext::setRead(NomadId variableId, bool read) {
+void SimpleVariableContext::setRead(VariableId variableId, bool read) {
     m_variables.setRead(variableId, read);
 }
 

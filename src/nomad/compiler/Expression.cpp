@@ -42,7 +42,7 @@ Expression::~Expression() {
     }
 }
 
-NomadBoolean Expression::resolve(CompilerContext* context, ScriptFunction* function) {
+NomadBoolean Expression::resolve(CompilerContext* context, ScriptCallableBase* function) {
     if (isParsed()) {
         return true;
     }
@@ -54,7 +54,7 @@ NomadBoolean Expression::resolve(CompilerContext* context, ScriptFunction* funct
     return context->getErrorCount() == errorCount;
 }
 
-void Expression::compile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+void Expression::compile(Compiler* compiler, ScriptCallableBase* function, const ExpressionTarget target) {
     if (isParsed()) {
         compiler->addLoadValue(m_type, m_value, target);
     } else {
@@ -82,12 +82,12 @@ const NativeMemberExpression* Expression::asNativeExpression() const {
     return nullptr;
 }
 
-bool Expression::resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function) {
+bool Expression::resolveAssignmentTarget(CompilerContext* context, ScriptCallableBase* function, const Type*) {
     reportError(context, function, "Assignment target must be an identifier, native property, or indexer");
     return false;
 }
 
-void Expression::compileAssignment(Compiler* compiler, ScriptFunction*, Expression*) {
+void Expression::compileAssignment(Compiler* compiler, ScriptCallableBase*, Expression*) {
     compiler->reportInternalError("Invalid assignment target");
 }
 
@@ -200,7 +200,7 @@ UnaryExpression::UnaryExpression(
     m_expression(std::move(expression)) {
 }
 
-void UnaryExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+void UnaryExpression::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     if (!m_expression->resolve(context, function)) {
         return;
     }
@@ -238,7 +238,7 @@ void UnaryExpression::onResolve(CompilerContext* context, ScriptFunction* functi
     }
 }
 
-void UnaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) {
+void UnaryExpression::onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) {
     m_expression->compile(compiler, function, target);
 
     auto opcode = compiler->getUnaryOperatorOpCodeId(m_unaryOperator, m_expression->getType());
@@ -287,7 +287,7 @@ bool DynamicFormatExpression::isTerminal() const {
     return false;
 }
 
-void DynamicFormatExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+void DynamicFormatExpression::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     if (!m_expression->resolve(context, function) || m_expression->getType() == nullptr) {
         return;
     }
@@ -298,7 +298,7 @@ void DynamicFormatExpression::onResolve(CompilerContext* context, ScriptFunction
     setType(context->getRuntime()->getStringType());
 }
 
-void DynamicFormatExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+void DynamicFormatExpression::onCompile(Compiler* compiler, ScriptCallableBase* function, const ExpressionTarget target) {
     m_expression->compile(compiler, function, ExpressionTarget::Result);
     compiler->addOpCode(op_dynamic_format_execute);
     compiler->addIndex(getLine());
@@ -313,7 +313,7 @@ void DynamicFormatExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
     const auto format = value->getType()->toString(value->getValue());
-    const auto result = formatDynamicString(format, context, context.getFunction()->getPath(), getLine(), getColumn());
+    const auto result = formatDynamicString(format, context, context.getCallable()->getPath(), getLine(), getColumn());
     RuntimeValue formatted;
     formatted.setStringValue(result.text);
     try {
@@ -364,7 +364,7 @@ std::unique_ptr<TypedValue> BinaryExpression::getInitialValue(Compiler* compiler
     return result;
 }
 
-void BinaryExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+void BinaryExpression::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     const auto leftResolved = m_left->resolve(context, function);
     const auto rightResolved = m_right->resolve(context, function);
 
@@ -407,7 +407,7 @@ void BinaryExpression::onResolve(CompilerContext* context, ScriptFunction* funct
     }
 }
 
-void BinaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+void BinaryExpression::onCompile(Compiler* compiler, ScriptCallableBase* function, const ExpressionTarget target) {
     if (isParsed()) {
         compiler->addLoadValue(getType(), getValue(), target);
         return;
@@ -448,7 +448,7 @@ void BinaryExpression::onCompile(Compiler* compiler, ScriptFunction* function, c
         rightType
     );
 
-    if (opCodeId == NOMAD_INVALID_ID) {
+    if (opCodeId.isInvalid()) {
         raiseException("Invalid binary operator for " + leftType->getTypeName() + " and " + rightType->getTypeName());
     }
 
@@ -515,7 +515,7 @@ bool FunctionCallExpression::isTerminal() const {
     return false;
 }
 
-void FunctionCallExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+void FunctionCallExpression::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     NomadString error;
     m_function = resolveFunctionCallArguments(context, function, m_name, &m_arguments, error);
     if (m_function == nullptr) {
@@ -563,14 +563,14 @@ void FunctionCallExpression::onResolve(CompilerContext* context, ScriptFunction*
     (void)m_arguments.resolve(context, function);
 }
 
-void FunctionCallExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+void FunctionCallExpression::onCompile(Compiler* compiler, ScriptCallableBase* function, const ExpressionTarget target) {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
     if (const auto* native = m_function->asNativeFunction()) {
         compiler->addNativeFunctionCall(native->getId(), function, &m_arguments);
     } else if (const auto* script = m_function->asScriptFunction()) {
-        compiler->addFunctionCall(script->getId(), function, &m_arguments);
+        compiler->addScriptFunctionCall(script->getId(), function, &m_arguments);
     } else {
         raiseException("Unsupported implementation of function '" + m_name + "'");
     }
@@ -625,9 +625,9 @@ PrimaryExpression::PrimaryExpression(const Expression* parent, const NomadIndex 
 NativeMemberExpression::NativeMemberExpression(const Expression* parent, const NomadIndex line,
                                                      const NomadIndex column, NomadString qualifiedName,
                                                      NomadString memberName, std::unique_ptr<Expression> receiver,
-                                                     ArgumentList arguments)
+                                                     ArgumentList arguments, const bool hasExplicitArguments)
     : Expression(parent, line, column), m_qualifiedName(std::move(qualifiedName)), m_memberName(std::move(memberName)),
-      m_receiver(std::move(receiver)), m_arguments(std::move(arguments)) {
+      m_receiver(std::move(receiver)), m_arguments(std::move(arguments)), m_hasExplicitArguments(hasExplicitArguments) {
 }
 
 bool NativeMemberExpression::isTerminal() const {
@@ -650,8 +650,13 @@ void NativeMemberExpression::setAllowVoid(const bool allowVoid) {
     m_allowVoid = allowVoid;
 }
 
-bool NativeMemberExpression::resolveMember(CompilerContext* context, ScriptFunction* function) {
-    m_memberId = NOMAD_INVALID_ID;
+bool NativeMemberExpression::resolveMember(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    const Type* valueType,
+    const bool assignment
+) {
+    m_memberId = PropertyId::INVALID;
     m_memberType = MemberType::Unknown;
     m_method = nullptr;
     if (!m_receiver->resolve(context, function)) {
@@ -661,7 +666,37 @@ bool NativeMemberExpression::resolveMember(CompilerContext* context, ScriptFunct
     auto* runtime = context->getRuntime();
     m_memberId = runtime->getNativeMemberId(m_receiver->getType(), m_memberName);
 
-    if (m_memberId == NOMAD_INVALID_ID) {
+    const auto* owner = m_receiver->getType()->asObjectType();
+    if (runtime->getMemberType(m_memberId) == MemberType::Method ||
+        (owner != nullptr && std::ranges::any_of(owner->getMethods(),
+            [&](const auto* method) { return method->getName() == m_memberName; }))) {
+        m_memberType = MemberType::Method;
+        return true;
+    }
+
+    if (runtime->getMemberType(m_memberId) == MemberType::Unknown) {
+        if (owner != nullptr) {
+            const auto* property = owner->getProperty(m_memberName);
+            if (assignment && context->getMode() == CompilerMode::Script) {
+                property = context->getCompiler()->resolveObjectField(
+                    context, function, owner, m_memberName, valueType, owner->isOpen(), getLine(), getColumn()
+                );
+            }
+            if (property != nullptr) {
+                if (m_hasExplicitArguments && m_arguments.getArgumentCount() != 0) {
+                    reportError(context, function, "Class field '" + m_qualifiedName + "' does not take arguments");
+                    return false;
+                }
+                m_memberId = property->getId();
+                m_memberType = MemberType::Property;
+                return true;
+            }
+            if (!assignment || context->getMode() != CompilerMode::Script) {
+                reportError(context, function, "Unknown class field '" + m_memberName +
+                    "' on type '" + owner->getTypeName() + "'");
+            }
+            return false;
+        }
         reportError(context, function,
                     "Type '" + getTypeDisplayName(m_receiver->getType()) + "' has no native member '" +
                         m_memberName + "'");
@@ -669,39 +704,42 @@ bool NativeMemberExpression::resolveMember(CompilerContext* context, ScriptFunct
     }
 
     m_memberType = runtime->getMemberType(m_memberId);
-    if (m_memberType == MemberType::Method) {
-        m_method = runtime->getNativeMemberMethod(m_memberId);
-        if (m_method == nullptr) {
-            context->getCompiler()->reportInternalError("Invalid native method: " + m_qualifiedName);
-        }
-    }
     return true;
 }
 
-bool NativeMemberExpression::resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function) {
-    if (!resolveMember(context, function)) {
+bool NativeMemberExpression::resolveAssignmentTarget(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    const Type* valueType
+) {
+    if (!resolveMember(context, function, valueType, true)) {
         return false;
     }
 
     auto* runtime = context->getRuntime();
     if (m_memberType == MemberType::Method) {
-        reportError(context, function, "Cannot assign to native method '" + m_qualifiedName + "'");
+        reportError(context, function, "Cannot assign to method '" + m_qualifiedName + "'");
         return false;
     }
 
-    NativePropertyDefinition definition;
-    if (!runtime->getNativePropertyDefinition(m_memberId, definition)) {
-        context->getCompiler()->reportInternalError("Invalid native property: " + m_qualifiedName);
+    const auto info = runtime->getNativePropertyInfo(m_memberId);
+    if (!info) {
+        const auto* property = runtime->getProperty(std::get<PropertyId>(m_memberId));
+        if (property == nullptr) {
+            context->getCompiler()->reportInternalError("Invalid property: " + m_qualifiedName);
+        }
+        setType(property->getValueType());
+        return true;
     }
-    if (!definition.setFn) {
+    if (!info->setFn) {
         reportError(context, function, "Native property '" + m_qualifiedName + "' is read-only");
         return false;
     }
-    setType(definition.valueType);
+    setType(info->valueType);
     return true;
 }
 
-void NativeMemberExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     if (!resolveMember(context, function)) {
         return;
     }
@@ -709,44 +747,77 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptFunction*
     auto* runtime = context->getRuntime();
     switch (m_memberType) {
     case MemberType::Property: {
-        NativePropertyDefinition definition;
-        if (!runtime->getNativePropertyDefinition(m_memberId, definition)) {
-            context->getCompiler()->reportInternalError("Invalid native property: " + m_qualifiedName);
+        const auto info = runtime->getNativePropertyInfo(m_memberId);
+        if (!info) {
+            const auto id = std::get<PropertyId>(m_memberId);
+            const auto* property = runtime->getProperty(id);
+            if (property == nullptr) {
+                context->getCompiler()->reportInternalError("Invalid property: " + m_qualifiedName);
+            }
+            setType(property->getValueType());
+            context->getCompiler()->recordFieldRead(id);
+            return;
         }
 
-        if (!definition.getFn) {
+        if (!info->getFn) {
             reportError(context, function, "Native property '" + m_qualifiedName + "' is write-only");
             return;
         }
 
-        setType(definition.valueType);
+        setType(info->valueType);
         return;
     }
 
     case MemberType::Method: {
-        const auto* method = m_method;
-
         auto& arguments = m_arguments.getArguments();
-        if (arguments.size() != method->getParameterCount()) {
-            context->getCompiler()->reportInternalError("Native method argument shape changed after parsing");
+        std::vector<const Type*> argumentTypes;
+        argumentTypes.reserve(arguments.size());
+        for (const auto& argument : arguments) {
+            argumentTypes.push_back(argument->resolveOverloadType(context, function));
         }
-
+        const auto resolution = runtime->resolveMethod(m_receiver->getType(), m_memberName, argumentTypes);
+        if (resolution.status != ResolveStatus::Resolved) {
+            reportError(context, function, runtime->describeResolveFailure(m_qualifiedName, resolution));
+            return;
+        }
+        m_method = runtime->getMethod(resolution.id);
+        m_memberId = resolution.id;
+        const auto* script = m_method->asScriptCallable();
+        const auto* returnType = m_method->getReturnType();
+        auto* compiler = context->getCompiler();
+        if (script != nullptr && context->getMode() == CompilerMode::Script && function != nullptr) {
+            compiler->addFunctionCallDependency(function->getId(), script->getId());
+        }
+        if (returnType == nullptr) {
+            const auto recursive = script != nullptr && function != nullptr &&
+                compiler->isRecursiveFunctionCall(function->getId(), script->getId());
+            reportError(context, function, recursive
+                ? "Cannot infer return type of recursive method '" + m_qualifiedName +
+                    "': it needs a `return` whose type does not depend on a recursive call"
+                : "Cannot determine return type of method '" + m_qualifiedName + "'");
+            return;
+        }
+        if (script != nullptr && context->getMode() != CompilerMode::Script &&
+            script->getFunctionStart() == NOMAD_INVALID_INDEX) {
+            reportError(context, function, "Method '" + m_qualifiedName + "' has not been compiled");
+            return;
+        }
         for (NomadIndex index = 0; index < arguments.size(); ++index) {
-            arguments[index]->setType(method->getParameters()[index].type);
+            arguments[index]->setType(m_method->getParameters()[index].type);
         }
 
         if (!m_arguments.resolve(context, function)) {
             return;
         }
 
-        if (method->getReturnType()->isVoid() && !m_allowVoid) {
+        if (returnType->isVoid() && !m_allowVoid) {
             reportError(context, function,
-                        "Cannot use native method '" + m_qualifiedName +
+                        "Cannot use method '" + m_qualifiedName +
                             "' in an expression because it does not return a value");
             return;
         }
 
-        setType(method->getReturnType());
+        setType(returnType);
         return;
     }
 
@@ -755,34 +826,34 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptFunction*
     }
 }
 
-void NativeMemberExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* function, const ExpressionTarget target) {
     if (m_memberType == MemberType::Unknown) {
         compiler->reportInternalError("Native member has not been resolved: " + m_qualifiedName);
     }
     const auto* receiverType = m_receiver->getType();
 
+    if (m_memberType != MemberType::Property) {
+        compiler->addOpCode(OpCodes::op_push_this);
+    }
     m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
 
     if (m_memberType == MemberType::Property) {
         compiler->addOpCode(op_native_property_get);
-        compiler->addId(m_memberId);
+        compiler->addId(std::get<PropertyId>(m_memberId).id);
         compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
         compiler->addMoveResult(getType(), target);
         return;
     }
 
-    const auto* method = m_method != nullptr ? m_method->asNativeMethod() : nullptr;
-    if (method == nullptr) {
-        compiler->reportInternalError("Invalid native member: " + m_qualifiedName);
+    m_arguments.setReceiverType(receiverType);
+    if (m_method->asScriptMethod() != nullptr) {
+        compiler->addScriptMethodCall(std::get<CallableId>(m_memberId), function, &m_arguments);
+    } else {
+        compiler->addNativeMethodCall(std::get<CallableId>(m_memberId), function, &m_arguments);
     }
 
-    m_arguments.setReceiverType(receiverType);
-    compiler->addNativeMethodCall(m_memberId, function, &m_arguments);
-
-    compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
-
-    if (!method->getReturnType()->isVoid()) {
-        compiler->addMoveResult(method->getReturnType(), target);
+    if (!m_method->getReturnType()->isVoid()) {
+        compiler->addMoveResult(m_method->getReturnType(), target);
     }
 }
 
@@ -805,34 +876,28 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
 
     auto* runtime = context.getRuntime();
     if (m_memberType == MemberType::Property) {
-        NativePropertyDefinition definition;
+        const auto* property = runtime->getProperty(std::get<PropertyId>(m_memberId));
+        if (property == nullptr) {
+            receiverType->freeValue(receiver);
+            raiseException("Invalid property getter: " + m_qualifiedName);
+        }
+        const auto* valueType = property->getValueType();
         RuntimeValue result;
-        definition.valueType = nullptr;
 
         try {
-            if (!runtime->getNativePropertyDefinition(m_memberId, definition) || !definition.getFn) {
-                raiseException("Invalid native property getter: " + m_qualifiedName);
-            }
-
-            context.getVirtualMachine()->getNativeProperty(m_memberId, receiver, result);
-            context.setResult(definition.valueType, result);
-            definition.valueType->freeValue(result);
-            receiverType->freeValue(receiver);
+            context.getVirtualMachine()->getProperty(std::get<PropertyId>(m_memberId), receiver, result);
+            context.setResult(valueType, result);
         } catch (...) {
-            if (definition.valueType != nullptr) {
-                definition.valueType->freeValue(result);
-            }
+            valueType->freeValue(result);
             receiverType->freeValue(receiver);
             throw;
         }
+        valueType->freeValue(result);
+        receiverType->freeValue(receiver);
         return;
     }
 
-    const auto* method = m_method != nullptr ? m_method->asNativeMethod() : nullptr;
-    if (method == nullptr) {
-        receiverType->freeValue(receiver);
-        raiseException("Invalid native method: " + m_qualifiedName);
-    }
+    const auto* method = m_method;
     const auto* returnType = method->getReturnType();
 
     std::vector<TypedValue> evaluatedArguments;
@@ -845,7 +910,11 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
 
     auto* virtualMachine = context.getVirtualMachine();
     try {
-        virtualMachine->runNativeMethod(m_memberId, values, receiver);
+        if (method->asScriptMethod() != nullptr) {
+            virtualMachine->runScriptMethod(std::get<CallableId>(m_memberId), values, receiver);
+        } else {
+            virtualMachine->runNativeMethod(std::get<CallableId>(m_memberId), values, receiver);
+        }
 
 
         if (returnType->isVoid()) {
@@ -865,7 +934,7 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
     receiverType->freeValue(receiver);
 }
 
-void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression) {
+void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression) {
     const auto* receiverType = m_receiver->getType();
     const auto* propertyType = getType();
     m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
@@ -873,7 +942,7 @@ void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptFunctio
     expression->compile(compiler, function, ExpressionTarget::Result);
     compiler->addPopIntermediate(receiverType);
     compiler->addOpCode(op_native_property_set);
-    compiler->addId(m_memberId);
+    compiler->addId(std::get<PropertyId>(m_memberId).id);
     compiler->addFreeValue(propertyType->getTypeOpCodes()->freeResult);
     compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
 }
@@ -902,15 +971,15 @@ void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, con
         return;
     }
 
-    NativePropertyDefinition definition;
-    if (!context.getRuntime()->getNativePropertyDefinition(m_memberId, definition) || !definition.setFn) {
+    const auto* property = context.getRuntime()->getProperty(std::get<PropertyId>(m_memberId));
+    if (property == nullptr) {
         receiverType->freeValue(receiver);
-        raiseException("Invalid native property setter: " + m_qualifiedName);
+        raiseException("Invalid property setter: " + m_qualifiedName);
     }
 
     try {
-        context.getVirtualMachine()->setNativeProperty(m_memberId, receiver, assignedValue->getValue());
-        context.setResult(definition.valueType, assignedValue->getValue());
+        context.getVirtualMachine()->setProperty(std::get<PropertyId>(m_memberId), receiver, assignedValue->getValue());
+        context.setResult(property->getValueType(), assignedValue->getValue());
     } catch (...) {
         receiverType->freeValue(receiver);
         throw;
@@ -937,7 +1006,7 @@ bool IndexerExpression::isTerminal() const {
     return false;
 }
 
-bool IndexerExpression::resolveIndexer(CompilerContext* context, ScriptFunction* function) {
+bool IndexerExpression::resolveIndexer(CompilerContext* context, ScriptCallableBase* function) {
     if (!m_receiver->resolve(context, function)) {
         return false;
     }
@@ -948,27 +1017,27 @@ bool IndexerExpression::resolveIndexer(CompilerContext* context, ScriptFunction*
     }
     auto* runtime = context->getRuntime();
     m_indexerId = runtime->getNativeIndexerId(m_receiver->getType(), m_indexes.size());
-    NativeIndexerDefinition definition;
-    if (!runtime->getNativeIndexerDefinition(m_indexerId, definition)) {
+    const auto info = runtime->getNativeIndexerInfo(m_indexerId);
+    if (!info) {
         reportError(context, function, "Type '" + getTypeDisplayName(m_receiver->getType()) +
             "' has no indexer with " + toString(m_indexes.size()) + " indices");
         return false;
     }
     for (auto index = NomadIndex{0}; index < m_indexes.size(); ++index) {
-        if (!definition.indexTypes[index]->acceptsArgument(m_indexes[index]->getType())) {
+        if (!info->indexTypes[index]->acceptsArgument(m_indexes[index]->getType())) {
             reportError(context, function, "Indexer parameter " + toString(index + 1) + " requires type '" +
-                getTypeDisplayName(definition.indexTypes[index]) + "', not '" +
+                getTypeDisplayName(info->indexTypes[index]) + "', not '" +
                 getTypeDisplayName(m_indexes[index]->getType()) + "'");
             return false;
         }
     }
-    setType(definition.valueType);
-    m_canRead = static_cast<bool>(definition.getFn);
-    m_canWrite = static_cast<bool>(definition.setFn);
+    setType(info->valueType);
+    m_canRead = static_cast<bool>(info->getFn);
+    m_canWrite = static_cast<bool>(info->setFn);
     return true;
 }
 
-bool IndexerExpression::resolveAssignmentTarget(CompilerContext* context, ScriptFunction* function) {
+bool IndexerExpression::resolveAssignmentTarget(CompilerContext* context, ScriptCallableBase* function, const Type*) {
     if (!resolveIndexer(context, function)) {
         return false;
     }
@@ -979,7 +1048,7 @@ bool IndexerExpression::resolveAssignmentTarget(CompilerContext* context, Script
     return true;
 }
 
-void IndexerExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+void IndexerExpression::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     if (!resolveIndexer(context, function)) {
         return;
     }
@@ -988,7 +1057,8 @@ void IndexerExpression::onResolve(CompilerContext* context, ScriptFunction* func
     }
 }
 
-void IndexerExpression::compileOperands(Compiler* compiler, ScriptFunction* function, Expression* assigned) {
+void IndexerExpression::compileOperands(Compiler* compiler, ScriptCallableBase* function, Expression* assigned) {
+    compiler->addOpCode(OpCodes::op_push_this);
     m_receiver->compile(compiler, function, ExpressionTarget::Stack);
     if (assigned != nullptr) {
         assigned->compile(compiler, function, ExpressionTarget::Stack);
@@ -998,17 +1068,17 @@ void IndexerExpression::compileOperands(Compiler* compiler, ScriptFunction* func
     }
 }
 
-void IndexerExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+void IndexerExpression::onCompile(Compiler* compiler, ScriptCallableBase* function, const ExpressionTarget target) {
     compileOperands(compiler, function);
     compiler->addOpCode(op_native_index_get);
-    compiler->addId(m_indexerId);
+    compiler->addId(m_indexerId.id);
     compiler->addMoveResult(getType(), target);
 }
 
-void IndexerExpression::compileAssignment(Compiler* compiler, ScriptFunction* function, Expression* expression) {
+void IndexerExpression::compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression) {
     compileOperands(compiler, function, expression);
     compiler->addOpCode(op_native_index_set);
-    compiler->addId(m_indexerId);
+    compiler->addId(m_indexerId.id);
 }
 
 void IndexerExpression::onEvaluate(InterpreterContext& context) const {
@@ -1077,11 +1147,11 @@ BooleanLiteral::BooleanLiteral(
     m_value(m_value) {
 }
 
-void BooleanLiteral::onResolve(CompilerContext* context, ScriptFunction* /*function*/) {
+void BooleanLiteral::onResolve(CompilerContext* context, ScriptCallableBase* /*function*/) {
     setResolved(RuntimeValue{m_value}, context->getRuntime()->getBooleanType());
 }
 
-void BooleanLiteral::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget target) {
+void BooleanLiteral::onCompile(Compiler* compiler, ScriptCallableBase* /*function*/, ExpressionTarget target) {
     compiler->addLoadBooleanValue(m_value, target);
 }
 
@@ -1098,13 +1168,13 @@ IntegerLiteral::IntegerLiteral(
     m_value(value) {
 }
 
-void IntegerLiteral::onResolve(CompilerContext* context, ScriptFunction* /*function*/) {
+void IntegerLiteral::onResolve(CompilerContext* context, ScriptCallableBase* /*function*/) {
     RuntimeValue value{m_value};
 
     setResolved(value, context->getRuntime()->getIntegerType());
 }
 
-void IntegerLiteral::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget target) {
+void IntegerLiteral::onCompile(Compiler* compiler, ScriptCallableBase* /*function*/, ExpressionTarget target) {
     compiler->addLoadIntegerValue(m_value, target);
 }
 
@@ -1120,13 +1190,13 @@ FloatLiteral::FloatLiteral(
     m_value(value) {
 }
 
-void FloatLiteral::onResolve(CompilerContext* context, ScriptFunction* /*function*/) {
+void FloatLiteral::onResolve(CompilerContext* context, ScriptCallableBase* /*function*/) {
     RuntimeValue value{m_value};
 
     setResolved(value, context->getRuntime()->getFloatType());
 }
 
-void FloatLiteral::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget target) {
+void FloatLiteral::onCompile(Compiler* compiler, ScriptCallableBase* /*function*/, ExpressionTarget target) {
     compiler->addLoadFloatValue(m_value, target);
 }
 
@@ -1148,7 +1218,7 @@ ConstructorExpression::ConstructorExpression(
 {
 }
 
-void ConstructorExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+void ConstructorExpression::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     m_constructor = nullptr;
     auto* runtime = context->getRuntime();
     auto& arguments = m_arguments.getArguments();
@@ -1192,7 +1262,7 @@ void ConstructorExpression::onResolve(CompilerContext* context, ScriptFunction* 
     }
     if (m_arguments.resolve(context, function)) {
         m_constructor = selected;
-        setType(selected->getReturnType());
+        setType(selected->getConstructedType());
     }
 }
 
@@ -1200,25 +1270,23 @@ bool ConstructorExpression::isTerminal() const {
     return false;
 }
 
-void ConstructorExpression::onCompile(Compiler* compiler, ScriptFunction* function, const ExpressionTarget target) {
+void ConstructorExpression::onCompile(Compiler* compiler, ScriptCallableBase* function, const ExpressionTarget target) {
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
     }
-    const auto* native = m_constructor->asNativeConstructor();
-    if (native == nullptr) {
-        raiseException("Unsupported implementation of constructor '" + m_constructorName + "'");
+    if (m_constructor->asNativeConstructor() != nullptr) {
+        compiler->addNativeConstructorCall(m_constructor->getId(), function, &m_arguments);
+    } else {
+        compiler->addScriptConstructorCall(
+            m_constructor->getId(), m_constructor->getObjectType()->getId(), function, &m_arguments
+        );
     }
-    compiler->addConstructorCall(native->getId(), function, &m_arguments);
     compiler->addMoveResult(getType(), target);
 }
 
 void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
-    }
-    const auto* constructor = m_constructor->asNativeConstructor();
-    if (constructor == nullptr) {
-        raiseException("Unsupported implementation of constructor '" + m_constructorName + "'");
     }
     std::vector<TypedValue> evaluatedArguments;
     std::vector<RuntimeValue> values;
@@ -1227,10 +1295,9 @@ void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
     const auto release = [](NomadObject* object) { object->releaseRef(); };
-    const std::unique_ptr<NomadObject, decltype(release)> object(constructor->getFactory()(values), release);
-    if (!object) {
-        raiseException("Object factory for '" + m_constructorName + "' returned null");
-    }
+    const std::unique_ptr<NomadObject, decltype(release)> object(
+        context.getVirtualMachine()->constructObject(m_constructor->getId(), values), release
+    );
     RuntimeValue value;
     value.setObjectValue(object.get());
     context.setResult(getType(), value);
@@ -1249,7 +1316,7 @@ StringLiteral::StringLiteral(
     m_value(std::move(value)) {
 }
 
-void StringLiteral::onResolve(CompilerContext* context, ScriptFunction* /*function*/) {
+void StringLiteral::onResolve(CompilerContext* context, ScriptCallableBase* /*function*/) {
     const auto* stringType = context->getRuntime()->getStringType();
     RuntimeValue value{m_value};
 
@@ -1257,13 +1324,13 @@ void StringLiteral::onResolve(CompilerContext* context, ScriptFunction* /*functi
     stringType->freeValue(value);
 }
 
-void StringLiteral::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget /*target*/) {
+void StringLiteral::onCompile(Compiler* compiler, ScriptCallableBase* /*function*/, ExpressionTarget /*target*/) {
     const auto stringValue = getValue().getStringValue();
 
     const auto stringId = compiler->getRuntime()->registerString(stringValue);
 
     compiler->addOpCode(OpCodes::op_string_load_r);
-    compiler->addId(stringId);
+    compiler->addId(stringId.id);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1278,11 +1345,11 @@ ConstantValueExpression::ConstantValueExpression(
     m_constantName(constantName) {
 }
 
-void ConstantValueExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+void ConstantValueExpression::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     auto* runtime = context->getRuntime();
     m_constantId = runtime->getConstantId(m_constantName);
 
-    if (m_constantId == NOMAD_INVALID_ID) {
+    if (m_constantId.isInvalid()) {
         reportError(context, function, "Unknown constant: " + m_constantName);
         return;
     }
@@ -1298,8 +1365,8 @@ void ConstantValueExpression::onResolve(CompilerContext* context, ScriptFunction
     }
 }
 
-void ConstantValueExpression::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget target) {
-    if (m_constantId == NOMAD_INVALID_ID) {
+void ConstantValueExpression::onCompile(Compiler* compiler, ScriptCallableBase* /*function*/, ExpressionTarget target) {
+    if (m_constantId.isInvalid()) {
         raiseException("Unknown constant: " + m_constantName);
     }
 
@@ -1327,7 +1394,7 @@ FormatStringLiteral::FormatStringLiteral(
 
 bool FormatStringLiteral::parsePlaceholders(
     CompilerContext* context,
-    ScriptFunction* function,
+    ScriptCallableBase* function,
     const NomadStringView sourceContent
 ) {
     if (context->getMode() != CompilerMode::Script || function == nullptr) {
@@ -1351,6 +1418,11 @@ bool FormatStringLiteral::parsePlaceholders(
             m_variableFormat += segment.text;
             continue;
         }
+        if (context->getCompiler()->isFieldInitializer(function) &&
+            (segment.text == "this" || segment.text.starts_with("this."))) {
+            reportError(context, function, "Field initializers cannot use or capture 'this'");
+            return false;
+        }
 
         auto identifier = !segment.text.empty();
         auto needsFirstCharacter = true;
@@ -1371,7 +1443,6 @@ bool FormatStringLiteral::parsePlaceholders(
         }
         if (identifier && !needsFirstCharacter &&
             !parser::isNativeMemberCandidate(context->getCompiler(), function, segment.text)) {
-            segment.text = context->resolveName(segment.text, function);
             IdentifierDefinition definition;
             context->getCompiler()->getIdentifierDefinition(segment.text, function, definition);
             if (context->isHubInitializer() &&
@@ -1387,14 +1458,15 @@ bool FormatStringLiteral::parsePlaceholders(
         auto* compiler = context->getCompiler();
         const auto name = compiler->generateFunctionName("formatExpression", function, getLine());
         const auto functionId = compiler->createFunction(
-            context, compiler->getScriptId(function->getId()), name, context->isHubInitializer()
+            context, compiler->getScriptId(function->getId()), name,
+            context->isHubInitializer() ? CompilationCallableTarget::HubInitializer : CompilationCallableTarget::Function
         );
-        if (functionId == NOMAD_INVALID_ID) {
+        if (functionId.isInvalid()) {
             return false;
         }
-        auto* expressionFunction = context->getRuntime()->getScriptFunction(functionId);
+        auto* expressionFunction = context->getRuntime()->getScriptCallable(functionId);
         expressionFunction->setParentId(
-            context->isHubInitializer() && function->getParentId() == NOMAD_INVALID_ID
+            context->isHubInitializer() && function->getParentId().isInvalid()
                 ? context->getRuntime()->getFunctionId("$init")
                 : function->getId()
         );
@@ -1419,14 +1491,14 @@ bool FormatStringLiteral::parsePlaceholders(
         auto node = std::make_unique<FunctionNode>(getLine(), column);
         node->addStatement(std::make_unique<ReturnStatementNode>(getLine(), column, std::move(expression)));
         node->setEndSpan(getLine(), column + segment.text.size());
-        compiler->setFunctionNode(functionId, std::move(node));
+        compiler->setFunctionBody(functionId, std::move(node));
         m_expressionPlaceholders.push_back({functionId, column, segmentIndex});
     }
 
     return true;
 }
 
-void FormatStringLiteral::onResolve(CompilerContext* context, ScriptFunction* function) {
+void FormatStringLiteral::onResolve(CompilerContext* context, ScriptCallableBase* function) {
     if (context->getMode() != CompilerMode::Script) {
         setType(context->getRuntime()->getStringType());
         return;
@@ -1438,7 +1510,7 @@ void FormatStringLiteral::onResolve(CompilerContext* context, ScriptFunction* fu
     }
 
     for (const auto& placeholder : m_expressionPlaceholders) {
-        const auto* expressionFunction = context->getRuntime()->getScriptFunction(placeholder.functionId);
+        const auto* expressionFunction = context->getRuntime()->getScriptCallable(placeholder.functionId);
         const auto* returnType = expressionFunction->getReturnType();
         if (returnType != nullptr && returnType->isVoid()) {
             context->reportError("Format string expression must return a value", function->getPath(),
@@ -1449,16 +1521,16 @@ void FormatStringLiteral::onResolve(CompilerContext* context, ScriptFunction* fu
     setType(context->getRuntime()->getStringType());
 }
 
-void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function, ExpressionTarget target) {
-    const NomadId functionId = function->getId();
+void FormatStringLiteral::onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) {
+    const auto functionId = function->getId();
 
     auto formatKey = m_variableFormat;
     for (const auto& placeholder : m_expressionPlaceholders) {
-        formatKey += "@" + std::to_string(placeholder.functionId);
+        formatKey += "@" + std::to_string(placeholder.functionId.id);
     }
     auto formatStringId = compiler->getRuntime()->getFormatStringId(formatKey, functionId);
 
-    if (formatStringId == NOMAD_INVALID_ID) {
+    if (formatStringId.isInvalid()) {
         formatStringId = compiler->getRuntime()->registerFormatString(formatKey, functionId);
 
         const auto format_string = compiler->getRuntime()->getFormatString(formatStringId);
@@ -1471,7 +1543,7 @@ void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function
             } else if (expressionIndex < m_expressionPlaceholders.size() &&
                        m_expressionPlaceholders[expressionIndex].segmentIndex == segmentIndex) {
                 const auto id = m_expressionPlaceholders[expressionIndex++].functionId;
-                const auto* expressionFunction = compiler->getRuntime()->getScriptFunction(id);
+                const auto* expressionFunction = compiler->getRuntime()->getScriptCallable(id);
                 const auto* returnType = expressionFunction->getReturnType();
                 if (returnType == nullptr || returnType->isVoid()) {
                     compiler->reportInternalError("Format string expression has no resolved value type");
@@ -1484,13 +1556,13 @@ void FormatStringLiteral::onCompile(Compiler* compiler, ScriptFunction* function
     }
 
     compiler->addOpCode(OpCodes::op_format_string_execute);
-    compiler->addId(formatStringId);
+    compiler->addId(formatStringId.id);
 
     compiler->addMoveResult(getType(), target);
 }
 
 void FormatStringLiteral::onEvaluate(InterpreterContext& context) const {
-    const auto result = formatDynamicString(m_formatString, context, context.getFunction()->getPath(),
+    const auto result = formatDynamicString(m_formatString, context, context.getCallable()->getPath(),
         getLine(), getColumn());
     RuntimeValue value;
     value.setStringValue(result.text);
@@ -1516,7 +1588,32 @@ IdentifierExpression::IdentifierExpression(
 {
 }
 
-void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* function) {
+const NomadString& IdentifierExpression::getIdentifier() const {
+    return m_identifier;
+}
+
+void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBase* function) {
+    if (context->getCompiler()->isFieldInitializer(function) &&
+        (m_identifier == "this" || m_identifier.starts_with("this."))) {
+        reportError(context, function, "Field initializers cannot use or capture 'this'");
+        return;
+    }
+    if (context->getCompiler()->getReceiverType(function) != nullptr && m_identifier.starts_with("this.")) {
+        const auto* owner = context->getCompiler()->getReceiverType(function)->asObjectType();
+        const auto* property = owner->getProperty(m_identifier.substr(5));
+        if (property == nullptr) {
+            reportError(context, function, "Unknown class field '" + m_identifier.substr(5) + "'");
+            return;
+        }
+        IdentifierDefinition receiver;
+        if (!resolveIdentifier("this", context->getCompiler(), function, receiver)) {
+            reportError(context, function, "Cannot capture the class receiver 'this'");
+            return;
+        }
+        setType(property->getValueType());
+        context->getCompiler()->recordFieldRead(property->getId());
+        return;
+    }
     auto* compiler = context->getCompiler();
 
     compiler->getIdentifierDefinition(m_identifier, function, m_identifierDefinition);
@@ -1533,12 +1630,12 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
             // Reload the identifier definition.
             compiler->getIdentifierDefinition(m_identifier, function, m_identifierDefinition);
 
-            if (m_identifierDefinition.identifierType != IdentifierType::FunctionVariable) {
+            if (m_identifierDefinition.identifierType != IdentifierType::Parameter) {
                 compiler->reportInternalError("Capture definition should exist.");
             }
             break;
 
-        case IdentifierType::Function:
+        case IdentifierType::ScriptFunction:
             reportError(context, function, "Cannot use function as identifier: " + m_identifier);
             return;
 
@@ -1568,6 +1665,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
         m_identifierDefinition.identifierType != IdentifierType::Constant &&
         m_identifierDefinition.identifierType != IdentifierType::DynamicVariable &&
         m_identifierDefinition.identifierType != IdentifierType::ContextVariable &&
+        m_identifierDefinition.identifierType != IdentifierType::Receiver &&
         m_identifierDefinition.identifierType != IdentifierType::Parameter) {
         reportError(context, function, "Identifier '" + m_identifier + "' is not supported by the interpreter");
         return;
@@ -1575,7 +1673,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
 
     if (context->getMode() != CompilerMode::Script &&
         m_identifierDefinition.identifierType == IdentifierType::DynamicVariable &&
-        !context->getRuntime()->canGetDynamicVariable(m_identifierDefinition.variableId)) {
+        !context->getRuntime()->canGetDynamicVariable(m_identifierDefinition.dynamicVariableId)) {
         reportError(context, function, "Dynamic variable '" + m_identifier + "' cannot be read");
         return;
     }
@@ -1589,7 +1687,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
 
     if (m_identifierDefinition.identifierType == IdentifierType::Constant) {
         RuntimeValue constantValue;
-        context->getRuntime()->getConstantValue(m_identifierDefinition.variableId, constantValue);
+        context->getRuntime()->getConstantValue(m_identifierDefinition.constantId, constantValue);
         const auto* type = m_identifierDefinition.valueType;
         if (type->needsFree() && !type->isString()) {
             setType(type);
@@ -1612,6 +1710,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
 
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::FunctionVariable:
+    case IdentifierType::Parameter:
         m_writable = true;
         break;
     case IdentifierType::ContextVariable:
@@ -1619,7 +1718,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
         break;
 
     case IdentifierType::DynamicVariable:
-        m_writable = context->getRuntime()->canSetDynamicVariable(m_identifierDefinition.variableId);
+        m_writable = context->getRuntime()->canSetDynamicVariable(m_identifierDefinition.dynamicVariableId);
         break;
 
     default:
@@ -1630,10 +1729,13 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptFunction* f
     setType(m_identifierDefinition.valueType);
 }
 
-void IdentifierExpression::onCompile(Compiler* compiler, ScriptFunction* /*function*/, const ExpressionTarget target) {
+void IdentifierExpression::onCompile(Compiler* compiler, ScriptCallableBase* function, const ExpressionTarget target) {
     switch (m_identifierDefinition.identifierType) {
+        case IdentifierType::Receiver:
+            compiler->addLoadReceiver(function, target);
+            break;
         case IdentifierType::Constant:
-            compiler->addLoadConstant(m_identifierDefinition.variableId, target);
+            compiler->addLoadConstant(m_identifierDefinition.constantId, target);
             break;
 
         case IdentifierType::FunctionVariable:
@@ -1641,21 +1743,21 @@ void IdentifierExpression::onCompile(Compiler* compiler, ScriptFunction* /*funct
             break;
 
         case IdentifierType::DynamicVariable:
-            compiler->addLoadDynamicVariable(m_identifierDefinition.variableId, m_identifierDefinition.valueType, target);
+            compiler->addLoadDynamicVariable(m_identifierDefinition.dynamicVariableId, m_identifierDefinition.valueType, target);
         break;
 
         case IdentifierType::ContextVariable:
             compiler->addLoadContextVariable(
-                m_identifierDefinition.variableId,
+                m_identifierDefinition.contextVariableId,
                 m_identifierDefinition.valueType,
                 target
             );
 
-            compiler->getRuntime()->setContextVariableRead(m_identifierDefinition.variableId, true);
+            compiler->getRuntime()->setContextVariableRead(m_identifierDefinition.contextVariableId, true);
             break;
 
         case IdentifierType::Parameter:
-            compiler->addLoadParameter(m_identifierDefinition.variableId, m_identifierDefinition.valueType, target);
+            compiler->addLoadParameter(m_identifierDefinition.parameterId, m_identifierDefinition.valueType, target);
             break;
 
         default:
@@ -1687,23 +1789,26 @@ void IdentifierExpression::compileStore(Compiler* compiler) const {
     const auto* typeOpCodes = m_identifierDefinition.valueType->getTypeOpCodes();
 
     switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::Parameter:
+        compiler->addStoreParameter(m_identifierDefinition.parameterId, m_identifierDefinition.valueType);
+        break;
     case IdentifierType::FunctionVariable:
-        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(m_identifierDefinition.variableId));
+        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(m_identifierDefinition.variableId.id));
         compiler->addOpCode(typeOpCodes->setFunctionVariable);
-        compiler->addId(m_identifierDefinition.variableId);
+        compiler->addId(m_identifierDefinition.variableId.id);
         break;
 
     case IdentifierType::DynamicVariable:
         compiler->addOpCode(typeOpCodes->setDynamicVariable);
-        compiler->addId(m_identifierDefinition.variableId);
+        compiler->addId(m_identifierDefinition.dynamicVariableId.id);
         compiler->addFreeValue(typeOpCodes->freeResult);
         break;
 
     case IdentifierType::ContextVariable:
         compiler->addOpCode(typeOpCodes->setContextVariable);
-        compiler->addId(m_identifierDefinition.variableId);
+        compiler->addId(m_identifierDefinition.contextVariableId.id);
         compiler->addFreeValue(typeOpCodes->freeResult);
-        compiler->getRuntime()->setContextVariableWritten(m_identifierDefinition.variableId, true);
+        compiler->getRuntime()->setContextVariableWritten(m_identifierDefinition.contextVariableId, true);
         break;
 
     default:
@@ -1716,17 +1821,20 @@ void IdentifierExpression::evaluateStore(InterpreterContext& context, const Runt
     const auto* type = m_identifierDefinition.valueType;
 
     switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::Parameter:
+        context.setParameter(m_identifierDefinition.parameterId, value);
+        break;
     case IdentifierType::FunctionVariable:
         context.setVariable(m_identifier, type, value);
         break;
 
     case IdentifierType::DynamicVariable:
-        runtime->setDynamicVariable(context.getVirtualMachine(), m_identifierDefinition.variableId, value);
+        runtime->setDynamicVariable(context.getVirtualMachine(), m_identifierDefinition.dynamicVariableId, value);
         break;
 
     case IdentifierType::ContextVariable:
-        runtime->setContextVariableValue(m_identifierDefinition.variableId, value);
-        runtime->setContextVariableWritten(m_identifierDefinition.variableId, true);
+        runtime->setContextVariableValue(m_identifierDefinition.contextVariableId, value);
+        runtime->setContextVariableWritten(m_identifierDefinition.contextVariableId, true);
         break;
 
     default:
@@ -1736,14 +1844,20 @@ void IdentifierExpression::evaluateStore(InterpreterContext& context, const Runt
 
 void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
     switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::Receiver: {
+        RuntimeValue receiver;
+        receiver.setObjectValue(context.getVirtualMachine()->getThis());
+        context.setResult(getType(), receiver);
+        break;
+    }
     case IdentifierType::Constant: {
         RuntimeValue value;
-        context.getRuntime()->getConstantValue(m_identifierDefinition.variableId, value);
+        context.getRuntime()->getConstantValue(m_identifierDefinition.constantId, value);
         context.setResult(getType(), value);
         break;
     }
     case IdentifierType::Parameter:
-        context.setParameterResult(m_identifierDefinition.variableId);
+        context.setParameterResult(m_identifierDefinition.parameterId);
         break;
     case IdentifierType::FunctionVariable: {
         const auto* value = context.getVariableValueById(m_identifierDefinition.variableId);
@@ -1760,7 +1874,7 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
 
     case IdentifierType::DynamicVariable: {
         auto* runtime = context.getRuntime();
-        const auto* type = runtime->getDynamicVariableType(m_identifierDefinition.variableId);
+        const auto* type = runtime->getDynamicVariableType(m_identifierDefinition.dynamicVariableId);
         if (type == nullptr) {
             raiseException("Dynamic variable '" + m_identifier + "' has no type");
         }
@@ -1768,7 +1882,7 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
         RuntimeValue value;
         runtime->getDynamicVariableValue(
             context.getVirtualMachine(),
-            m_identifierDefinition.variableId,
+            m_identifierDefinition.dynamicVariableId,
             value
         );
 
@@ -1786,7 +1900,7 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
     case IdentifierType::ContextVariable: {
         auto* runtime = context.getRuntime();
         const auto contextId = runtime->getVariableContextIdByPrefix(m_identifier);
-        if (contextId == NOMAD_INVALID_ID) {
+        if (contextId.isInvalid()) {
             raiseException("Unknown context for variable '" + m_identifier + "'");
         }
 
@@ -1797,11 +1911,7 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
 
         // The context owns the value, so it is read without taking ownership.
         RuntimeValue value;
-        if (context.isFrameBacked()) {
-            runtime->getContextVariableValue(m_identifierDefinition.variableId, value);
-        } else {
-            runtime->getVariableContext(contextId)->getValue(m_identifierDefinition.variableId, value);
-        }
+        runtime->getContextVariableValue(m_identifierDefinition.contextVariableId, value);
 
         if (type->isString() && value.getObjectValue() == nullptr) {
             RuntimeValue emptyValue;
@@ -1820,22 +1930,29 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
     }
 }
 
-bool IdentifierExpression::parseCapture(const Compiler* compiler, ScriptFunction* function) {
+bool IdentifierExpression::parseCapture(const Compiler* compiler, ScriptCallableBase* function) {
     return resolveIdentifier(m_identifier, compiler, function, m_identifierDefinition);
 }
 
-bool getCapture(const NomadString& identifier, const ScriptFunction* function, NomadId& id, CaptureSource& captureSource) {
-    const NomadId variableId = function->getVariableId(identifier);
-    if (variableId != NOMAD_INVALID_ID) {
-        id = variableId;
-        captureSource = CaptureSource::Variable;
+bool getCapture(const NomadString& identifier, const ScriptCallableBase* function, Capture& capture) {
+    if (identifier == "this" && function->getObjectType() != nullptr) {
+        capture.source = CaptureSource::Receiver;
+        capture.type = function->getObjectType();
+        return true;
+    }
+    const auto variableId = function->getVariableId(identifier);
+    if (variableId.isValid()) {
+        capture.variableId = variableId;
+        capture.source = CaptureSource::Variable;
+        capture.type = function->getVariableType(variableId);
         return true;
     }
 
     const auto parameterId = function->getParameterId(identifier);
     if (parameterId != NOMAD_INVALID_ID) {
-        id = parameterId;
-        captureSource = CaptureSource::Parameter;
+        capture.parameterId = parameterId;
+        capture.source = CaptureSource::Parameter;
+        capture.type = function->getParameterType(parameterId);
         return true;
     }
 
@@ -1844,43 +1961,35 @@ bool getCapture(const NomadString& identifier, const ScriptFunction* function, N
 
 // Resolve captures in nested functions.
 // This function assumes the identifier is not already a variable or identifier of the function.
-bool parseCapture(const NomadString& identifier, const Compiler* compiler, ScriptFunction* function) {
+bool parseCapture(const NomadString& identifier, const Compiler* compiler, ScriptCallableBase* function) {
     if (function->isNested() == false) {
         return false;
     }
 
-    ScriptFunction* currentFunction = function;
+    ScriptCallableBase* currentFunction = function;
     const Type* captureType;
-    std::vector<ScriptFunction*> intermediateFunctions = { function };
+    std::vector<ScriptCallableBase*> intermediateFunctions = { function };
 
     // Walk up the nested functions until the identifier is found.
     for (;;) {
         const auto parentId = currentFunction->getParentId();
 
-        if (parentId == NOMAD_INVALID_ID) {
+        if (parentId.isInvalid()) {
             // We've gone past the root function and haven't found the identifier.
             return false;
         }
 
-        auto parentFunction = compiler->getRuntime()->getScriptFunction(parentId);
+        auto parentFunction = compiler->getRuntime()->getScriptCallable(parentId);
 
         if (parentFunction == nullptr) {
             compiler->reportInternalError("Failed to retrieve parent function during capture resolution");
         }
 
-        NomadId id;
-        CaptureSource source;
+        Capture capture;
 
-        if (getCapture(identifier, parentFunction, id, source)) {
+        if (getCapture(identifier, parentFunction, capture)) {
             // Found a capturable parameter or variable.
-            // Need to determine the type.
-            if (source == CaptureSource::Variable) {
-                captureType = parentFunction->getVariableType(id);
-            } else if (source == CaptureSource::Parameter) {
-                captureType = parentFunction->getParameterType(id);
-            } else {
-                compiler->reportInternalError("Unexpected capture source type");
-            }
+            captureType = capture.type;
 
             break;
         }
@@ -1900,21 +2009,26 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
     for (const auto intermediateFunction : std::ranges::reverse_view(intermediateFunctions)) {
         const auto parentId = intermediateFunction->getParentId();
 
-        if (parentId == NOMAD_INVALID_ID) {
+        if (parentId.isInvalid()) {
             throw NomadBug("Failed to retrieve parent function during capture propagation");
         }
 
-        const auto parentFunction = compiler->getRuntime()->getScriptFunction(parentId);
+        const auto parentFunction = compiler->getRuntime()->getScriptCallable(parentId);
 
         if (parentFunction == nullptr) {
             throw NomadBug("Failed to retrieve parent function during capture propagation");
         }
 
-        NomadId id;
-        CaptureSource source;
+        Capture capture;
 
-        if (getCapture(identifier, parentFunction, id, source)) {
-            intermediateFunction->createCapture(id, identifier, source, captureType);
+        if (getCapture(identifier, parentFunction, capture)) {
+            if (capture.source == CaptureSource::Variable) {
+                intermediateFunction->createCapture(capture.variableId, identifier, captureType);
+            } else if (capture.source == CaptureSource::Receiver) {
+                intermediateFunction->createReceiverCapture(captureType);
+            } else {
+                intermediateFunction->createCapture(capture.parameterId, identifier, captureType);
+            }
         } else {
             compiler->reportInternalError("Failed to retrieve capture propagation");
         }
@@ -1923,7 +2037,7 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
     return true;
 }
 
-bool resolveIdentifier(const NomadString& identifier, const Compiler* compiler, ScriptFunction* function, IdentifierDefinition& definition) {
+bool resolveIdentifier(const NomadString& identifier, const Compiler* compiler, ScriptCallableBase* function, IdentifierDefinition& definition) {
     compiler->getIdentifierDefinition(identifier, function, definition);
 
     // Check for invalid identifier type.
@@ -1953,11 +2067,11 @@ FileNameExpression::FileNameExpression(
 {
 }
 
-void FileNameExpression::onResolve(CompilerContext* /*context*/, ScriptFunction* /*function*/) {
+void FileNameExpression::onResolve(CompilerContext* /*context*/, ScriptCallableBase* /*function*/) {
     // Nothing to do...
 }
 
-void FileNameExpression::onCompile(Compiler* compiler, ScriptFunction* /*function*/, const ExpressionTarget target) {
+void FileNameExpression::onCompile(Compiler* compiler, ScriptCallableBase* /*function*/, const ExpressionTarget target) {
     compiler->addLoadStringValue(m_fileName, target);
 }
 
@@ -1974,11 +2088,11 @@ FunctionNameExpression::FunctionNameExpression(
 {
 }
 
-void FunctionNameExpression::onResolve(CompilerContext* /*context*/, ScriptFunction* /*function*/) {
+void FunctionNameExpression::onResolve(CompilerContext* /*context*/, ScriptCallableBase* /*function*/) {
     // Nothing to do...
 }
 
-void FunctionNameExpression::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget target) {
+void FunctionNameExpression::onCompile(Compiler* compiler, ScriptCallableBase* /*function*/, ExpressionTarget target) {
     compiler->addLoadStringValue(m_functionName, target);
 }
 
@@ -1993,11 +2107,11 @@ LineNumberExpression::LineNumberExpression(
 {
 }
 
-void LineNumberExpression::onResolve(CompilerContext* /*context*/, ScriptFunction* /*function*/) {
+void LineNumberExpression::onResolve(CompilerContext* /*context*/, ScriptCallableBase* /*function*/) {
     // Nothing to do...
 }
 
-void LineNumberExpression::onCompile(Compiler* compiler, ScriptFunction* /*function*/, ExpressionTarget target) {
+void LineNumberExpression::onCompile(Compiler* compiler, ScriptCallableBase* /*function*/, ExpressionTarget target) {
     const auto lineNumber = static_cast<NomadInteger>(getLine());
 
     compiler->addLoadIntegerValue(lineNumber, target);

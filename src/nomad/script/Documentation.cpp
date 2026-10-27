@@ -5,7 +5,9 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/Parser.hpp>
 
+#include <nomad/script/Property.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <boost/json.hpp>
@@ -17,26 +19,38 @@ namespace nomad {
 
 namespace {
 
-struct NativeMemberDocumentationInfo {
-    NomadId id;
+NomadString getDocumentedTypeName(const Runtime*, const Type* type) {
+    return type ? type->getTypeName() : "unknown";
+}
+
+NomadString getCallableSignature(const Runtime* runtime, const Callable& callable) {
+    auto signature = callable.getName();
+    for (const auto& parameter : callable.getParameters()) {
+        signature += " " + parameter.name + ":" + getDocumentedTypeName(runtime, parameter.type);
+    }
+    return signature;
+}
+
+struct MemberDocumentationInfo {
+    MemberReference id;
     MemberType memberType;
     const Type* objectType;
     NomadString name;
+    NomadString signature = {};
 };
 
-std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Runtime* runtime) {
-    std::vector<NomadId> memberIds;
+std::vector<MemberDocumentationInfo> getMemberDocumentation(const Runtime* runtime, const bool includeScript) {
+    std::vector<MemberReference> memberIds;
     runtime->getNativeMembers(memberIds);
 
-    std::vector<NativeMemberDocumentationInfo> members;
+    std::vector<MemberDocumentationInfo> members;
     members.reserve(memberIds.size());
 
     for (const auto memberId : memberIds) {
         switch (runtime->getMemberType(memberId)) {
         case MemberType::Property: {
-            NativePropertyDefinition definition;
-            if (runtime->getNativePropertyDefinition(memberId, definition)) {
-                members.emplace_back(memberId, MemberType::Property, definition.objectType, definition.name);
+            if (const auto info = runtime->getNativePropertyInfo(memberId)) {
+                members.emplace_back(memberId, MemberType::Property, info->objectType, info->name);
             }
             break;
         }
@@ -44,7 +58,8 @@ std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Ru
         case MemberType::Method: {
             const auto* method = runtime->getNativeMemberMethod(memberId);
             if (method != nullptr) {
-                members.emplace_back(memberId, MemberType::Method, method->getObjectType(), method->getName());
+                members.emplace_back(memberId, MemberType::Method, method->getObjectType(), method->getName(),
+                    getCallableSignature(runtime, *method));
             }
             break;
         }
@@ -54,10 +69,29 @@ std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Ru
         }
     }
 
+    if (includeScript) {
+        std::vector<const Type*> types;
+        runtime->getTypes(types);
+        for (const auto* type : types) {
+            const auto* object = type->asObjectType();
+            if (object == nullptr || type->isInternal()) continue;
+            for (const auto* property : object->getProperties()) {
+                if (property->asNativeProperty() != nullptr) continue;
+                members.emplace_back(property->getId(), MemberType::Property, type, property->getName());
+            }
+            for (const auto* method : object->getMethods()) {
+                if (method->asScriptMethod() == nullptr || method->getName() == object->getInitializerName()) continue;
+                members.emplace_back(method->getId(), MemberType::Method, type, method->getName(),
+                    getCallableSignature(runtime, *method));
+            }
+        }
+    }
+
     std::ranges::sort(members, [](const auto& left, const auto& right) {
         const auto leftType = left.objectType->getTypeName();
         const auto rightType = right.objectType->getTypeName();
-        return leftType == rightType ? left.name < right.name : leftType < rightType;
+        if (leftType != rightType) return leftType < rightType;
+        return left.name == right.name ? left.signature < right.signature : left.name < right.name;
     });
 
     return members;
@@ -66,7 +100,7 @@ std::vector<NativeMemberDocumentationInfo> getNativeMemberDocumentation(const Ru
 std::vector<NomadString> getNativeMemberNames(const Runtime* runtime) {
     std::vector<NomadString> names;
 
-    for (const auto& member : getNativeMemberDocumentation(runtime)) {
+    for (const auto& member : getMemberDocumentation(runtime, false)) {
         if (std::ranges::find(names, member.name) == names.end()) {
             names.push_back(member.name);
         }
@@ -74,10 +108,6 @@ std::vector<NomadString> getNativeMemberNames(const Runtime* runtime) {
 
     std::ranges::sort(names);
     return names;
-}
-
-NomadString getDocumentedTypeName(const Runtime*, const Type* type) {
-    return type->getTypeName();
 }
 
 NomadString escapeRegularExpression(const NomadString& text) {
@@ -152,9 +182,9 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     std::vector<constantInfo> constants;
     std::vector<const EnumType*> enums;
 
-    NomadId constantId = runtime->getFirstConstantId();
+    auto constantId = runtime->getFirstConstantId();
 
-    while (constantId != NOMAD_INVALID_ID) {
+    while (constantId.isValid()) {
         auto name = runtime->getConstantName(constantId);
         auto type = runtime->getConstantType(constantId);
         RuntimeValue value;
@@ -212,7 +242,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
             }
             constantTextValue = std::format("\"{}\"", escaped);
         } else if (constant.type == runtime->getFunctionType()) {
-            constantTextValue = runtime->getScriptFunction(constant.value.getIdValue())->getName();
+            constantTextValue = runtime->getScriptFunction(CallableId{constant.value.getIdValue()})->getName();
         } else {
             constantTextValue = "<unknown_type>";
         }
@@ -263,12 +293,12 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     auto variableContextId = runtime->getFirstVariableContextId();
 
-    while (variableContextId != NOMAD_INVALID_ID) {
+    while (variableContextId.isValid()) {
         auto context = runtime->getVariableContext(variableContextId);
 
         auto variableId = context->getFirstVariableId();
 
-        while (variableId != NOMAD_INVALID_ID) {
+        while (variableId.isValid()) {
             auto name = context->getVariableName(variableId);
             auto type = context->getVariableType(variableId);
 
@@ -282,7 +312,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     auto dynamicVariableId = runtime->getFirstDynamicVariableId();
 
-    while (dynamicVariableId != NOMAD_INVALID_ID) {
+    while (dynamicVariableId.isValid()) {
         auto name = runtime->getDynamicVariableName(dynamicVariableId);
         auto type = runtime->getDynamicVariableType(dynamicVariableId);
 
@@ -307,7 +337,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     generateTypeDocumentation(runtime, out);
 
-    generateNativeMemberDocumentation(runtime, out);
+    generateMemberDocumentation(runtime, out);
 
     out << "## Functions" << std::endl;
 
@@ -328,7 +358,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     auto nativeFunctionId = runtime->getFirstNativeFunctionId();
 
-    while (nativeFunctionId != NOMAD_INVALID_ID) {
+    while (nativeFunctionId.isValid()) {
         const auto* nativeFunction = runtime->getNativeFunction(nativeFunctionId);
         if (nativeFunction != nullptr) {
             functions.emplace_back(
@@ -348,6 +378,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
     runtime->getFunctions(scriptFunctions);
 
     for (auto function: scriptFunctions) {
+        if (function->isNested() || function->getName().starts_with("$")) continue;
         std::vector<Parameter> parameters;
 
         for (NomadIndex i = 0; i < function->getParameterCount(); i++) {
@@ -438,8 +469,26 @@ void generateTypeDocumentation(const Runtime* runtime, std::ostream& out) {
     std::vector<const Type*> types;
     runtime->getTypes(types);
 
-    std::erase_if(types, [](const Type* type) {
-        return type->isInternal() || type->getDocumentation().empty();
+    std::vector<const Constructor*> constructors;
+    for (const auto* constructor : runtime->getConstructors()) {
+        constructors.push_back(constructor);
+    }
+    std::set<const Type*> scriptTypes;
+    std::vector<const ScriptCallableBase*> scriptCallables;
+    runtime->getScriptCallables(scriptCallables);
+    for (const auto* callable : scriptCallables) {
+        if (callable->getObjectType() != nullptr) {
+            scriptTypes.insert(callable->getObjectType());
+        }
+        if (const auto* constructor = runtime->getConstructor(callable->getId())) {
+            constructors.push_back(constructor);
+        }
+    }
+    std::ranges::sort(constructors, [runtime](const auto* left, const auto* right) {
+        return getCallableSignature(runtime, *left) < getCallableSignature(runtime, *right);
+    });
+    std::erase_if(types, [&](const Type* type) {
+        return type->isInternal() || (type->getDocumentation().empty() && !scriptTypes.contains(type));
     });
     std::ranges::sort(types, {}, &Type::getTypeName);
 
@@ -453,17 +502,13 @@ void generateTypeDocumentation(const Runtime* runtime, std::ostream& out) {
         out << std::endl;
         out << "### `" << type->getTypeName() << "`" << std::endl;
         out << std::endl;
-        out << type->getDocumentation() << std::endl;
-        for (const auto* candidate : runtime->getConstructors()) {
+        if (!type->getDocumentation().empty()) out << type->getDocumentation() << std::endl;
+        for (const auto* candidate : constructors) {
             const auto& constructor = *candidate;
-            if (constructor.getReturnType() != type) {
+            if (constructor.getConstructedType() != type) {
                 continue;
             }
-            out << std::endl << "Constructor: `new " << constructor.getName();
-            for (auto index = NomadIndex{0}; index < constructor.getParameters().size(); ++index) {
-                out << " " << constructor.getParameters()[index].name << ":"
-                    << getDocumentedTypeName(runtime, constructor.getParameters()[index].type);
-            }
+            out << std::endl << "Constructor: `new " << getCallableSignature(runtime, constructor);
             out << "` -> `" << type->getTypeName() << "`" << std::endl;
         }
     }
@@ -471,14 +516,17 @@ void generateTypeDocumentation(const Runtime* runtime, std::ostream& out) {
     out << std::endl;
 }
 
-void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out) {
+namespace {
+
+void writeMemberDocumentation(const Runtime* runtime, const bool includeScript, std::ostream& out) {
     out << "## Object Members" << std::endl;
     out << std::endl;
-    out << "Properties and methods are available on instances of each object type." << std::endl;
+    out << (includeScript ? "Fields, properties, and methods are available on instances of each object type." :
+        "Properties and methods are available on instances of each object type.") << std::endl;
 
     const Type* currentType = nullptr;
 
-    for (const auto& member : getNativeMemberDocumentation(runtime)) {
+    for (const auto& member : getMemberDocumentation(runtime, includeScript)) {
         if (member.objectType != currentType) {
             currentType = member.objectType;
             out << std::endl;
@@ -489,35 +537,43 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
         out << "#### `" << member.name << "`";
 
         if (member.memberType == MemberType::Property) {
-            NativePropertyDefinition definition;
-            (void)runtime->getNativePropertyDefinition(member.id, definition);
-
-            NomadString access;
-            if (definition.getFn && definition.setFn) {
-                access = "read/write";
-            } else if (definition.getFn) {
-                access = "read-only";
-            } else {
-                access = "write-only";
+            const auto* property = runtime->getProperty(std::get<PropertyId>(member.id));
+            if (property == nullptr) {
+                throw NomadException("Registered property is unavailable");
             }
 
-            out << " (*" << access << " property*)" << std::endl;
+            const auto native = property->asNativeProperty() != nullptr;
+            NomadString access = "read/write";
+            if (native) {
+                const auto info = runtime->getNativePropertyInfo(member.id);
+                if (!info) {
+                    throw NomadException("Registered native property is unavailable");
+                }
+                access = info->getFn ? (info->setFn ? "read/write" : "read-only") : "write-only";
+            }
+
+            out << " (*" << access << (native ? " property*)" : " field*)") << std::endl;
             out << std::endl;
-            out << "`" << member.name << ":" << getDocumentedTypeName(runtime, definition.valueType) << "`"
+            out << "`" << member.name << ":" << getDocumentedTypeName(runtime, property->getValueType()) << "`"
                 << std::endl;
             out << std::endl;
-            if (!definition.doc.empty()) {
-                out << definition.doc << std::endl;
+            if (!property->getDoc().empty()) {
+                out << property->getDoc() << std::endl;
                 out << std::endl;
             }
         } else {
-            const auto* method = runtime->getNativeMemberMethod(member.id);
+            const auto* method = runtime->getMethod(std::get<CallableId>(member.id));
             if (method == nullptr) {
-                continue;
+                throw NomadException("Registered method is unavailable");
             }
 
             out << " (*method*)" << std::endl;
             out << std::endl;
+            if (method->asScriptMethod() != nullptr) {
+                out << "`" << getCallableSignature(runtime, *method) << " -> "
+                    << getDocumentedTypeName(runtime, method->getReturnType()) << "`" << std::endl;
+                out << std::endl;
+            }
 
             if (method->getParameters().empty()) {
                 out << "No parameters." << std::endl;
@@ -546,7 +602,8 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
         out << "---" << std::endl;
     }
 
-    for (const auto& indexer : runtime->getNativeIndexers()) {
+    for (const auto* info : runtime->getNativeIndexers()) {
+        const auto& indexer = *info;
         out << std::endl;
         out << "### `" << indexer.objectType->getTypeName() << "[";
         for (auto index = NomadIndex{0}; index < indexer.indexTypes.size(); ++index) {
@@ -575,6 +632,16 @@ void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out
         }
     }
     out << std::endl;
+}
+
+} // namespace
+
+void generateMemberDocumentation(const Runtime* runtime, std::ostream& out) {
+    writeMemberDocumentation(runtime, true, out);
+}
+
+void generateNativeMemberDocumentation(const Runtime* runtime, std::ostream& out) {
+    writeMemberDocumentation(runtime, false, out);
 }
 
 void generateKeywords(Runtime* runtime, std::ostream& out) {
@@ -629,6 +696,8 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
         "formatStrings",
         "strings",
         "numbers",
+        "classes",
+        "blocks",
         "keywords",
         "literals",
         "functions",
@@ -711,6 +780,39 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
         createMatchPattern("keyword.control.nomad", createWordPattern(controlWords))
     );
 
+    const auto ordinaryPatterns = array({
+        createInclude("comments"), createInclude("formatStrings"), createInclude("strings"),
+        createInclude("numbers"), createInclude("blocks"), createInclude("keywords"),
+        createInclude("literals"), createInclude("functions"), createInclude("nativeMembers"),
+        createInclude("types"), createInclude("operators")
+    });
+    object block;
+    block["begin"] = "^\\s*(?:if\\b(?![^#\\n]*\\b(?:break|continue)\\b)|while\\b|until\\b|do\\b|for\\b)|\\bfun\\b";
+    block["beginCaptures"] = object({{"0", object({{"name", "keyword.control.nomad"}})}});
+    block["end"] = "^\\s*end\\b";
+    block["patterns"] = ordinaryPatterns;
+    repository["blocks"] = createPatternRepositoryEntry(std::move(block));
+
+    object constructor;
+    constructor["begin"] = "^\\s*(init)\\b";
+    constructor["beginCaptures"] = object({{"1", object({{"name", "keyword.control.nomad"}})}});
+    constructor["end"] = "^\\s*end\\b";
+    constructor["patterns"] = ordinaryPatterns;
+    repository["constructors"] = createPatternRepositoryEntry(std::move(constructor));
+
+    object classDeclaration;
+    classDeclaration["begin"] = "^\\s*(?:(open)\\s+)?(class)\\s+([A-Za-z_][A-Za-z0-9_.]*)\\s*(?:#.*)?$";
+    classDeclaration["beginCaptures"] = object({
+        {"1", object({{"name", "keyword.control.nomad"}})},
+        {"2", object({{"name", "keyword.control.nomad"}})},
+        {"3", object({{"name", "entity.name.type.nomad"}})}
+    });
+    classDeclaration["end"] = "^\\s*end\\b";
+    auto classPatterns = array({createInclude("constructors")});
+    for (const auto& pattern : ordinaryPatterns) classPatterns.push_back(pattern);
+    classDeclaration["patterns"] = std::move(classPatterns);
+    repository["classes"] = createPatternRepositoryEntry(std::move(classDeclaration));
+
     repository["literals"] = createPatternRepositoryEntry(
         createMatchPattern("constant.language.boolean.nomad", createWordPattern({"true", "false"}))
     );
@@ -748,7 +850,7 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
     );
 
     root["repository"] = std::move(repository);
-    root["foldingStartMarker"] = "\\b(fun|hub|if|else|enum)\\b";
+    root["foldingStartMarker"] = "\\b(class|fun|hub|if|else|enum)\\b|^\\s*init\\b";
     root["foldingStopMarker"] = "\\bend\\b";
     out << boost::json::serialize(root) << std::endl;
 }

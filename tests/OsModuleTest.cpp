@@ -10,6 +10,7 @@
 #include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/ModuleHost.hpp>
 #include <nomad/system/Path.hpp>
@@ -54,7 +55,7 @@ private:
 
 RuntimeValue constant(Runtime& runtime, const NomadString& name) {
     const auto id = runtime.getConstantId(name);
-    BOOST_REQUIRE_MESSAGE(id != NOMAD_INVALID_ID, name);
+    BOOST_REQUIRE_MESSAGE(id.isValid(), name);
     RuntimeValue value;
     runtime.getConstantValue(id, value);
     return value;
