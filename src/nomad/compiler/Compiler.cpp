@@ -18,6 +18,8 @@
 
 #include <nomad/system/String.hpp>
 
+#include <algorithm>
+
 namespace nomad {
 
 Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
