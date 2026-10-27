@@ -16,6 +16,7 @@ add_executable(
     ./EventRegistrationTest.cpp
     ./ExpressionEvaluationTest.cpp
     ./ExpressionResolveTest.cpp
+    ./FileSinkTest.cpp
     ./FormatStringCompilerTest.cpp
     ./GameConfigurationTest.cpp
     ./GameEventQueueTest.cpp

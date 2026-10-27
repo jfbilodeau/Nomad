@@ -56,6 +56,7 @@ public:
     [[noreturn]] void fatal(NomadStringView message, const Location& location = Location());
 
     [[nodiscard]] LogSinkId createConsoleSink(const ConsoleSinkConfiguration& configuration = {});
+    [[nodiscard]] LogSinkId createFileSink(const FileSinkConfiguration& configuration);
     [[nodiscard]] LogSinkId createMemorySink(const MemorySinkConfiguration& configuration = {});
     [[nodiscard]] LogSinkId createSink(std::unique_ptr<LogSink> sink);
     [[nodiscard]] LogSink* getSink(LogSinkId sinkId);
@@ -102,6 +103,7 @@ void critical(NomadStringView message, const Location& location = Location());
 [[noreturn]] void fatal(NomadStringView message, const Location& location = Location());
 
 [[nodiscard]] LogSinkId createConsoleSink(const ConsoleSinkConfiguration& configuration = {});
+[[nodiscard]] LogSinkId createFileSink(const FileSinkConfiguration& configuration);
 [[nodiscard]] LogSinkId createMemorySink(const MemorySinkConfiguration& configuration = {});
 [[nodiscard]] LogSinkId createSink(std::unique_ptr<LogSink> sink);
 [[nodiscard]] LogSink* getSink(LogSinkId sinkId);

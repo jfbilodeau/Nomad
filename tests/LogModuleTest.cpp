@@ -29,7 +29,9 @@ class RegisteredMemorySink final {
 public:
     RegisteredMemorySink() : m_previousLevel(log::getLogLevel()) {
         log::flush();
-        m_sinkId = log::createMemorySink();
+        MemorySinkConfiguration configuration;
+        configuration.level = LogLevel::Debug;
+        m_sinkId = log::createMemorySink(configuration);
     }
 
     ~RegisteredMemorySink() {

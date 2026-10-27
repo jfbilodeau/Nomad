@@ -3,6 +3,7 @@
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/log/ConsoleSink.hpp>
+#include <nomad/log/FileSink.hpp>
 #include <nomad/log/MemorySink.hpp>
 
 #include <algorithm>
@@ -90,6 +91,10 @@ LogSinkId Logger::createConsoleSink(const ConsoleSinkConfiguration& configuratio
 
 LogSinkId Logger::createMemorySink(const MemorySinkConfiguration& configuration) {
     return createSink(std::make_unique<MemorySink>(configuration));
+}
+
+LogSinkId Logger::createFileSink(const FileSinkConfiguration& configuration) {
+    return createSink(std::make_unique<FileSink>(configuration));
 }
 
 LogSinkId Logger::createSink(std::unique_ptr<LogSink> sink) {
@@ -314,6 +319,10 @@ LogSinkId createConsoleSink(const ConsoleSinkConfiguration& configuration) {
 
 LogSinkId createMemorySink(const MemorySinkConfiguration& configuration) {
     return getLogger().createMemorySink(configuration);
+}
+
+LogSinkId createFileSink(const FileSinkConfiguration& configuration) {
+    return getLogger().createFileSink(configuration);
 }
 
 LogSinkId createSink(std::unique_ptr<LogSink> sink) {

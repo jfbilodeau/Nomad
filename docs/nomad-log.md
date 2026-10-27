@@ -30,8 +30,9 @@ log.warning $"Unexpected score: {score}"
 ```
 
 Messages include a timestamp, severity, and script file, function, and line.
-The default minimum level is `info`, so debug messages are omitted unless the
-host enables debug logging. The default sink writes to the console; error and
+The default minimum level is `info` for both the logger and its sinks. Debug
+messages require the host to lower both thresholds to `debug`.
+The default sink writes to the console; error and
 critical messages use standard error.
 
 By default, debug, info, and warning messages are buffered until the host flushes them.
@@ -40,11 +41,17 @@ Fatal logging is available to C++ hosts only; there is no `log.fatal` script API
 
 ## C++ sink configuration
 
-C++ hosts can create logger-owned console and memory sinks, configure their
+C++ hosts can create logger-owned console, file, and memory sinks, configure their
 activation and minimum levels, flush and replace all sinks, and select buffered
 or synchronous delivery. Factories return strong `LogSinkId` handles; removed
 handles cannot refer to a newly created sink. See
 [C++ logging](embedding.md#c-logging) for the public API and ownership contracts.
+
+File sinks default to size-based rotation at 10 MiB and retain ten archives.
+The configurable base name defaults to `application`, producing
+`application.log`, `application.1.log` (newest archive), and so on.
+`Startup` rotation and `None` (unlimited append) are also available. See
+[File sinks](embedding.md#file-sinks) for configuration and failure behavior.
 
 These configuration operations are not yet exposed to Nomad scripts or
 `nomad.toml`. Loading `nomad-log` currently uses the host's existing sinks.

@@ -3,7 +3,7 @@
 #include <nomad/log/MemorySink.hpp>
 
 namespace nomad {
-
+ 
 MemorySink::MemorySink(const MemorySinkConfiguration& configuration) : LogSink(configuration) {}
 
 void MemorySink::log(const LogEntry* entry) {

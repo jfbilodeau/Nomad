@@ -127,6 +127,20 @@ BOOST_AUTO_TEST_CASE(LogLevelFiltering)
     BOOST_TEST(foundWarning);
 }
 
+BOOST_AUTO_TEST_CASE(DefaultSinkLevelFiltersDebugUntilExplicitlyLowered)
+{
+    BOOST_TEST((sink.getLogLevel() == LogLevel::Info));
+    logger.setLogLevel(LogLevel::Debug);
+    logger.debug("sink-filtered");
+    logger.flush();
+    BOOST_TEST(sink.getEntries().empty());
+    sink.setLogLevel(LogLevel::Debug);
+    logger.debug("included-debug");
+    logger.flush();
+    BOOST_REQUIRE_EQUAL(sink.getEntries().size(), 1U);
+    BOOST_TEST(sink.getEntries().front().message.find("included-debug") != NomadString::npos);
+}
+
 BOOST_AUTO_TEST_CASE(LoggingStringViewDoesNotRequireNullTermination)
 {
     const NomadString backing = "xxview messageyy";
@@ -380,7 +394,7 @@ BOOST_AUTO_TEST_CASE(InvalidConfigurationPreservesExistingSinksAndPendingMessage
     BOOST_TEST(sink.getEntries().empty());
     BOOST_TEST((logger.getLogLevel() == LogLevel::Info));
     BOOST_TEST((logger.getDeliveryMode() == LogDeliveryMode::Buffered));
-    BOOST_TEST((sink.getLogLevel() == LogLevel::Debug));
+    BOOST_TEST((sink.getLogLevel() == LogLevel::Info));
     logger.flush();
     BOOST_REQUIRE_EQUAL(sink.getEntries().size(), 1U);
 }

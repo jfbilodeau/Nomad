@@ -28,11 +28,14 @@ Include `<nomad/log/Logger.hpp>` to use a standalone `Logger` or the engine's
 global minimum level `Info`, and buffers ordinary messages until `flush()`.
 Error, critical, and fatal messages flush immediately; fatal then throws.
 
-The logger owns all its sinks. `createConsoleSink(ConsoleSinkConfiguration)`
-and `createMemorySink(MemorySinkConfiguration)` return a strong `LogSinkId`.
-Both configuration structs inherit `active` and `level` from
-`SinkConfiguration`. Sinks default to active with a minimum level of `Debug`;
+The logger owns all its sinks. `createConsoleSink(ConsoleSinkConfiguration)`,
+`createFileSink(FileSinkConfiguration)`, and
+`createMemorySink(MemorySinkConfiguration)` return a strong `LogSinkId`.
+All configuration structs inherit `active` and `level` from
+`SinkConfiguration`. Sinks default to active with a minimum level of `Info`;
 the global logger level still filters messages first.
+To deliver debug messages, lower both the global level and the receiving sink's
+level to `Debug`.
 
 ```cpp
 nomad::Logger logger;
@@ -55,7 +58,7 @@ not commit the replacement.
 
 `getSink(id)` returns a borrowed `LogSink*`, or null for an unknown or removed
 ID. The const logger overload returns `const LogSink*`. Include the concrete
-sink header when casting to `ConsoleSink` or `MemorySink`. The base exposes
+sink header when casting to `ConsoleSink`, `FileSink`, or `MemorySink`. The base exposes
 `getActive`/`setActive` and `getLogLevel`/`setLogLevel` for later adjustment.
 The pointer remains valid until that sink is removed, discarded by replacement,
 or destroyed with its logger.
@@ -81,8 +84,8 @@ pointer-based removal APIs are no longer supported.
 For custom sinks, derive from `LogSink`, pass a `SinkConfiguration` to its
 constructor, and transfer ownership with `createSink(std::unique_ptr<LogSink>)`.
 Do not delete a pointer obtained from `getSink`. A module providing custom sink
-code must remove its sinks before its native library unloads. Core console and
-memory sink code does not depend on the game or log module remaining loaded.
+code must remove its sinks before its native library unloads. Core console,
+file, and memory sink code does not depend on the game or log module remaining loaded.
 
 Submission, delivery, factories, replacement, and removal are serialized.
 Borrowed pointers and concrete sink data still require coordination with any
@@ -99,6 +102,65 @@ Delivery stops at the first exception; custom sinks must use RAII for cleanup
 rather than relying on `end()` being called after a failed callback.
 The logger destructor reports standard exception failures to standard error and
 releases owned sinks without allowing those exceptions to escape.
+
+#### File sinks
+
+Include `<nomad/log/FileSink.hpp>` to inspect a file sink or adjust its rotation
+settings. C++ callers supply an explicit `directory`; relative directories are
+resolved when the sink is created. Project-relative defaults will be provided by
+project configuration integration, which is not yet available.
+
+```cpp
+nomad::FileSinkConfiguration file;
+file.directory = projectDirectory / "logs";
+file.name = "application";
+file.active = false;
+const auto fileId = logger.createFileSink(file);
+logger.replaceSinks({fileId});
+logger.info("File logging configured");
+logger.flush();
+```
+
+`name` is a base filename, not a path or extension. It defaults to `application`,
+producing `application.log`. Archives are `application.1.log`,
+`application.2.log`, etc.; `.1` is newest.
+
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| `rotationMode` | `FileRotationMode::Size` | Select `None`, `Startup`, or `Size`. |
+| `maxSizeBytes` | 10 MiB (10,485,760 bytes) | Positive byte limit, used by `Size`. |
+| `maxFiles` | 10 | Number of archives, excluding the active file. Zero discards old active contents when rotating. |
+
+- `None` appends indefinitely and does not prune archives.
+- `Startup` archives a nonempty existing file once when the sink starts; it does
+  not rotate again when disabled/re-enabled, nor enforce a size limit.
+- `Size` appends existing content and rotates before a complete new record would
+  exceed the byte limit. A record includes its final newline. One oversized
+  record is allowed in an empty file; the next record rotates it.
+- Output preserves message bytes and uses a single LF newline on every platform.
+  The full formatted log entry, including timestamp and source location, counts
+  toward the limit.
+- Rotation prunes matching numbered archives outside retention. Other files are
+  left alone. Lowering retention takes effect at the next rotation.
+
+An active factory creates directories and opens the file immediately, including
+startup rotation if selected. An inactive factory validates options without
+filesystem writes. Such a sink starts on its first active delivery callback
+(including an empty logger flush), or an explicit `begin()` call.
+
+`getPath()` returns the resolved active file path. `getRotationMode()`,
+`getMaxSizeBytes()`, and `getMaxFiles()` inspect rotation settings;
+`setRotationMode()` and `setRotationLimits(bytes, archives)` adjust them.
+Changes affect subsequent writes, not an already completed startup. Coordinate
+these operations with delivery; unlike base activation/level changes, they are
+not independently synchronized. To change the directory or base name, create
+a replacement sink.
+
+Use only one sink/process per output path; external writers and external
+rotation are not supported. Open, write, flush, close, rename, and retention
+failures propagate to the caller. Rotation is not a filesystem transaction:
+an error can leave archives partially shifted. Do not retry an entire failed
+delivery batch, because some records may already have been written.
 
 ### Creation inputs and metadata
 
