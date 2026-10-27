@@ -249,17 +249,33 @@ private:
 
     [[nodiscard]] NativeCallFrame beginNativeCall();
     void endNativeCall(const NativeCallFrame& frame);
-    void runNativeCallable(
-        const Callable* callable,
+    struct ScriptRunState {
+        NomadIndex instructionIndex;
+        NomadIndex stackIndex;
+        NomadIndex parameterIndex;
+        NomadIndex variableIndex;
+        bool running;
+        RuntimeValue receiver;
+    };
+
+    [[nodiscard]] ScriptRunState beginScriptRun();
+    void restoreScriptRun(const ScriptRunState& state);
+    void executeScript();
+    void pushHostArgument(
+        const Type* type,
+        const RuntimeValue& value,
+        std::vector<const Type*>& argumentTypes
+    );
+    void freeHostArguments(NomadIndex firstIndex, const std::vector<const Type*>& argumentTypes);
+    [[nodiscard]] NomadObject* runNativeConstructor(
+        const NativeConstructor* constructor,
+        const std::vector<RuntimeValue>& args
+    );
+    [[nodiscard]] NomadObject* runScriptConstructor(
+        const ScriptConstructor* constructor,
         const std::vector<RuntimeValue>& args
     );
     void pushScriptFrame();
-    void runCallable(
-        const ScriptCallableBase* function,
-        const std::vector<RuntimeValue>& args,
-        const std::vector<RuntimeValue>& closures,
-        const RuntimeValue* receiver
-    );
 
     static constexpr NomadIndex s_scriptFrameSlotCount = 4;
 

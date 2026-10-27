@@ -1567,6 +1567,80 @@ BOOST_AUTO_TEST_CASE(native_constructor_host_calls_preserve_registers_and_borrow
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
+BOOST_AUTO_TEST_CASE(host_script_construction_preserves_native_method_context_and_borrowed_arguments) {
+    Runtime runtime;
+    const auto* childType = registerObjectType(runtime, "NativeChild");
+    BOOST_REQUIRE(runtime.addConstructor(childType->getId(), {
+        .parameters = {{runtime.getStringType()->getId(), "text", ""}},
+        .function = [](VirtualMachine* machine) {
+            BOOST_TEST(machine->getStringParameter(0)->getString() == "BORROWED");
+            BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+            machine->getResult().setObjectValue(new ConstructedObject);
+        }
+    }).isValid());
+    const auto* receiverType = registerObjectType(runtime, "HostReceiver");
+    BOOST_REQUIRE(runtime.addConstructor(receiverType->getId(), {
+        .parameters = {},
+        .function = [](VirtualMachine* machine) {
+            machine->getResult().setObjectValue(new ConstructedObject);
+        }
+    }).isValid());
+    CallableId constructorId;
+    auto calls = 0;
+    BOOST_REQUIRE(runtime.addMethod(receiverType->getId(), {
+        .name = "construct",
+        .parameters = {{runtime.getStringType()->getId(), "text", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine* machine) {
+            auto* receiver = machine->getThis();
+            auto* text = machine->getStringParameter(0);
+            const auto references = text->getReferenceCount();
+            const auto before = NomadObject::getLiveObjectCount();
+            machine->setIntegerResult(41);
+            machine->setIntegerIntermediate(42);
+            auto* object = static_cast<ScriptObject*>(machine->constructObject(
+                constructorId, {machine->getParameter(0)}
+            ));
+            BOOST_REQUIRE(object != nullptr);
+            BOOST_TEST(object->getReferenceCount() == 1u);
+            for (const auto* name : {"text", "after"}) {
+                const auto* type = object->getObjectType();
+                const auto slot = type->getFieldIndex(type->getProperty(name)->getId());
+                BOOST_TEST(object->getField(slot).getStringObject()->getString() == "BORROWED");
+            }
+            BOOST_TEST(machine->getThis() == receiver);
+            BOOST_TEST(machine->getStringParameter(0) == text);
+            BOOST_TEST(text->getString() == "borrowed");
+            BOOST_TEST(text->getReferenceCount() == references);
+            BOOST_TEST(machine->getIntegerResult() == 41);
+            BOOST_TEST(machine->getIntegerIntermediate() == 42);
+            object->releaseRef();
+            BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+            ++calls;
+        }
+    }).isValid());
+    const auto id = compileConstruction(runtime,
+        "class ScriptOwned\ninit text:string\n"
+        "text = text.toUpper\nthis.text = text\n"
+        "this.child = new NativeChild text\nthis.after = text\nend\nend\n"
+        "receiver = new HostReceiver\nreceiver.construct \"borrowed\"\nreturn 0"
+    );
+    constructorId = runtime.getTypeByName("ScriptOwned")->asObjectType()->getConstructors()[0]->getId();
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(id, {}, result);
+    BOOST_TEST(calls == 1);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    {
+        auto machine = runtime.createVirtualMachine();
+        InterpreterContext context(*machine);
+        BOOST_REQUIRE(Interpreter{}.execute("receiver = new HostReceiver", context));
+        BOOST_REQUIRE(Interpreter{}.execute("receiver.construct \"borrowed\"", context));
+        BOOST_TEST(calls == 2);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
 BOOST_AUTO_TEST_CASE(native_constructor_failure_releases_published_result_and_recovers) {
     Runtime runtime;
     const auto* type = registerObjectType(runtime, "Fallible");

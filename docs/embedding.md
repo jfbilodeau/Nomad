@@ -359,7 +359,9 @@ A native factory returning null raises `VirtualMachineException`.
 `VirtualMachine::constructObject(constructorId, arguments)` invokes a registered
 native or compiled script constructor. Arguments are borrowed and must match the
 selected constructor's parameter types and count. The returned object owns one
-reference, which the caller must release. Script constructor callables have a
+reference, which the caller must release. Host construction leaves existing
+result and intermediate values unchanged and restores the active receiver,
+including when called from a native callback. Script constructor callables have a
 `void` return type; `Constructor::getConstructedType()` reports the type produced
 by construction, including native factories whose produced type differs from
 their owner. Script construction releases the failed
