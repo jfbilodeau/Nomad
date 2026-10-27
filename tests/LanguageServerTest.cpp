@@ -87,7 +87,12 @@ NomadString symbolRequest(
     BOOST_REQUIRE(index <= source.size());
     const auto line = std::count(source.begin(), source.begin() + static_cast<std::ptrdiff_t>(index), '\n');
     const auto newline = index == 0 ? NomadString::npos : source.rfind('\n', index - 1);
-    const auto character = newline == NomadString::npos ? index : index - newline - 1;
+    auto character = std::size_t{0};
+    for (auto byte = newline == NomadString::npos ? std::size_t{0} : newline + 1; byte < index; ++byte) {
+        const auto value = static_cast<unsigned char>(source[byte]);
+        if (value >= 0xF0) character += 2;
+        else if (value < 0x80 || value >= 0xC0) ++character;
+    }
     return frame({{"jsonrpc", "2.0"}, {"id", id}, {"method", method},
         {"params", {{"textDocument", {{"uri", uri}}},
             {"position", {{"line", line}, {"character", character}}}}}});
@@ -159,9 +164,281 @@ BOOST_AUTO_TEST_CASE(initializes_full_sync_utf16_and_shutdown)
     BOOST_REQUIRE(messages.size() == 2U);
     const auto& capabilities = messages[0].at("result").as_object().at("capabilities").as_object();
     BOOST_TEST(capabilities.at("positionEncoding").as_string() == "utf-16");
+    const auto& signatureHelp = capabilities.at("signatureHelpProvider").as_object();
+    BOOST_TEST(signatureHelp.at("triggerCharacters").as_array().front().as_string() == " ");
     BOOST_TEST(capabilities.at("textDocumentSync").as_object().at("change").as_int64() == 1);
     BOOST_TEST(messages[1].at("result").is_null());
     BOOST_TEST(errors.str().empty());
+}
+
+BOOST_AUTO_TEST_CASE(signature_help_tracks_expression_arguments_and_nested_calls)
+{
+    TestDirectory directory("nomad_lsp_signature_expressions");
+    const auto uri = uriFor(directory.getPath() / "calls.nomad");
+    const NomadString source =
+        "fun combine first:int second:int third:int\nreturn first + second + third\nend\n"
+        "fun increment value:int\nreturn value + 1\nend\n"
+        "fun join first:string second:string\nreturn $\"{first}{second}\"\nend\n"
+        "total = combine 1 + 2 (increment 3) 4\n"
+        "nested = combine increment 5 6 7\n"
+        "words = join \"one two\" \"three\"\n"
+        "unicode = join \"\xF0\x9F\x8C\x8D\" \"world\"\n"
+        "unfinished = combine (1 + 2) 3 4\n"
+        "# combine 1 \n"
+        "text = \"combine 1 \"\n"
+        "# unknown.read 1\n"
+        "closed = (increment 1)\n";
+    const auto diagnostics = analyzeLanguageDocuments({{uri, {source, 1}}});
+    BOOST_REQUIRE_MESSAGE(diagnostics.empty(), (diagnostics.empty() ? "" : json::serialize(diagnostics.begin()->second)));
+    const auto inlineSource = source + "inline = combine 1 fun\n";
+    const auto change = json::object{{"jsonrpc", "2.0"}, {"method", "textDocument/didChange"},
+        {"params", {{"textDocument", {{"uri", uri}, {"version", 2}}},
+            {"contentChanges", json::array{json::object{{"text", inlineSource}}}}}}};
+    const auto query = [&](const int id, const NomadString& word, const std::size_t offset) {
+        return symbolRequest(id, "textDocument/signatureHelp", uri, source, word, offset);
+    };
+    std::istringstream input(start() + frame(openDocument(uri, source)) +
+        query(10, "combine 1 + 2", 8) +
+        query(11, "combine 1 + 2", 12) +
+        query(12, "combine 1 + 2 ", 14) +
+        query(13, "combine 1 + 2 (increment ", 25) +
+        query(14, "combine 1 + 2 (increment 3) ", 28) +
+        query(15, "increment 5 6", 12) +
+        query(16, "increment 5 6", 11) +
+        query(17, "join \"one two\" ", 15) +
+        query(18, "join \"\xF0\x9F\x8C\x8D\" ", 12) +
+        query(19, "unfinished = combine (1 +", 25) +
+        query(20, "# combine 1 ", 12) +
+        query(21, "\"combine 1 \"", 10) +
+        query(22, "unknown.read 1", 14) +
+        query(23, "fun combine", 11) +
+        query(24, "closed = (increment 1)", 22) +
+        frame(change) + symbolRequest(25, "textDocument/signatureHelp", uri, inlineSource, "inline = combine 1 fun", 22) +
+        frame({{"jsonrpc", "2.0"}, {"id", 26}, {"method", "textDocument/signatureHelp"},
+            {"params", {{"textDocument", {{"uri", uri}}},
+                {"position", {{"line", 12}, {"character", 17}}}}}}) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    std::map<std::int64_t, json::object> replies;
+    for (const auto& message : responses(output.str())) {
+        if (message.contains("id")) replies.emplace(message.at("id").as_int64(), message);
+    }
+    for (const auto id : {10, 11, 12, 14, 15, 19}) {
+        const auto& result = replies.at(id).at("result").as_object();
+        const auto& signatures = result.at("signatures").as_array();
+        BOOST_REQUIRE(signatures.size() == 1u);
+        BOOST_TEST(signatures.front().as_object().at("label").as_string() ==
+            "combine first:int second:int third:int -> int");
+        const auto expected = id == 12 || id == 15 ? 1 : id == 14 ? 2 : 0;
+        BOOST_TEST(result.at("activeParameter").as_int64() == expected);
+    }
+    for (const auto id : {13, 16}) {
+        const auto& result = replies.at(id).at("result").as_object();
+        BOOST_TEST(result.at("signatures").as_array().front().as_object().at("label").as_string() ==
+            "increment value:int -> int");
+        BOOST_TEST(result.at("activeParameter").as_int64() == 0);
+    }
+    for (const auto id : {17, 18}) {
+        BOOST_TEST(replies.at(id).at("result").as_object().at("activeParameter").as_int64() == 1);
+    }
+    for (const auto id : {20, 21, 22, 23, 24, 25}) BOOST_TEST(replies.at(id).at("result").is_null());
+    BOOST_TEST(replies.at(26).at("error").as_object().at("code").as_int64() == -32602);
+    BOOST_TEST(errors.str().find("Position splits a UTF-16 character") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(signature_help_lists_overloads_and_filters_member_receivers)
+{
+    TestDirectory directory("nomad_lsp_signature_overloads");
+    const auto uri = uriFor(directory.getPath() / "members.nomad");
+    const NomadString source =
+        "fun chooseTyped value:string\nreturn value\nend\n"
+        "hub model\nclass Widget\n"
+        "init number:int label:string\nthis.value = number\nthis.label = label\nend\n"
+        "init label:string\nthis.label = label\nend\n"
+        "fun read amount:int suffix:string\nreturn this.value + amount\nend\n"
+        "fun read amount:string suffix:string\nreturn $\"{amount}{suffix}\"\nend\n"
+        "fun inspect\nreturn this.read 1 \"x\"\nend\nend\nend\n"
+        "class Other\nfun read amount:float\nreturn amount\nend\nend\n"
+        "class Owner\nchild = new model.Widget 1 \"first\"\nend\n"
+        "widget = new model.Widget 2 \"second\"\nowner = new Owner\n"
+        "readValue = owner.child.read 3 \"third\"\n"
+        "text = \" hello \"\ntrimmed = text.trim\n"
+        "converted = toFloat \"2\"\n"
+        "sequence = range 1 4 2\n"
+        "log.info \"message\"\n"
+        "selected = chooseTyped \"text\"\n";
+    const auto diagnostics = analyzeLanguageDocuments({{uri, {source, 1}}});
+    BOOST_REQUIRE_MESSAGE(diagnostics.empty(), (diagnostics.empty() ? "" : json::serialize(diagnostics.begin()->second)));
+    const auto unknownSource = source + "unknown.read 1\n";
+    const auto change = json::object{{"jsonrpc", "2.0"}, {"method", "textDocument/didChange"},
+        {"params", {{"textDocument", {{"uri", uri}, {"version", 2}}},
+            {"contentChanges", json::array{json::object{{"text", unknownSource}}}}}}};
+    const auto query = [&](const int id, const NomadString& word, const std::size_t offset) {
+        return symbolRequest(id, "textDocument/signatureHelp", uri, source, word, offset);
+    };
+    std::istringstream input(start() + frame(openDocument(uri, source)) +
+        query(10, "owner.child.read 3 ", 19) +
+        query(11, "this.read 1 ", 12) +
+        query(12, "widget = new model.Widget 2 ", 28) +
+        query(13, "text.trim", 9) +
+        query(14, "toFloat \"2\"", 11) +
+        query(15, "range 1 4 ", 10) +
+        query(16, "log.info \"message\"", 18) +
+        query(18, "chooseTyped \"text\"", 18) + frame(change) +
+        symbolRequest(17, "textDocument/signatureHelp", uri, unknownSource, "unknown.read 1", 14) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    std::map<std::int64_t, json::object> replies;
+    for (const auto& message : responses(output.str())) {
+        if (message.contains("id")) replies.emplace(message.at("id").as_int64(), message);
+    }
+    for (const auto id : {10, 11, 12, 13, 14, 15, 16, 18}) {
+        BOOST_REQUIRE_MESSAGE(replies.at(id).at("result").is_object(), json::serialize(replies.at(id)));
+    }
+    for (const auto id : {10, 11}) {
+        const auto& result = replies.at(id).at("result").as_object();
+        const auto& signatures = result.at("signatures").as_array();
+        BOOST_REQUIRE(signatures.size() == 2u);
+        BOOST_TEST(result.at("activeParameter").as_int64() == 1);
+        for (const auto& signature : signatures) {
+            const auto label = NomadString(signature.as_object().at("label").as_string());
+            BOOST_TEST(label.starts_with("model.Widget.read "));
+            BOOST_TEST(label.find("$init") == NomadString::npos);
+            BOOST_TEST(label.find("Other") == NomadString::npos);
+        }
+        const auto selected = result.at("activeSignature").as_int64();
+        BOOST_TEST(NomadString(signatures[static_cast<std::size_t>(selected)].as_object().at("label").as_string())
+            .find("amount:int") != NomadString::npos);
+    }
+    const auto& constructors = replies.at(12).at("result").as_object();
+    BOOST_REQUIRE(constructors.at("signatures").as_array().size() == 2u);
+    BOOST_TEST(constructors.at("activeParameter").as_int64() == 1);
+    for (const auto& signature : constructors.at("signatures").as_array()) {
+        const auto label = NomadString(signature.as_object().at("label").as_string());
+        BOOST_TEST(label.starts_with("new model.Widget "));
+        BOOST_TEST(label.ends_with(" -> model.Widget"));
+    }
+    const auto& trim = replies.at(13).at("result").as_object();
+    BOOST_TEST(trim.at("signatures").as_array().front().as_object().at("label").as_string() == "string.trim -> string");
+    BOOST_TEST(!trim.contains("activeParameter"));
+    const auto& convert = replies.at(14).at("result").as_object();
+    BOOST_REQUIRE(convert.at("signatures").as_array().size() == 2u);
+    BOOST_TEST(NomadString(convert.at("signatures").as_array()[
+        static_cast<std::size_t>(convert.at("activeSignature").as_int64())].as_object().at("label").as_string())
+        .find("value:string") != NomadString::npos);
+    const auto& range = replies.at(15).at("result").as_object();
+    BOOST_REQUIRE(range.at("signatures").as_array().size() == 3u);
+    BOOST_TEST(range.at("activeParameter").as_int64() == 2);
+    const auto log = json::serialize(replies.at(16).at("result"));
+    BOOST_TEST(log.find("message:string") != NomadString::npos);
+    BOOST_TEST(log.find("$file") == NomadString::npos);
+    BOOST_TEST(log.find("$line") == NomadString::npos);
+    BOOST_TEST(log.find("$function") == NomadString::npos);
+    const auto& message = replies.at(16).at("result").as_object().at("signatures").as_array().front().as_object()
+        .at("parameters").as_array().front().as_object();
+    BOOST_TEST(!message.at("documentation").as_object().at("value").as_string().empty());
+    BOOST_TEST(replies.at(17).at("result").is_null());
+    const auto& scriptOverloads = replies.at(18).at("result").as_object();
+    BOOST_REQUIRE(scriptOverloads.at("signatures").as_array().size() == 1u);
+    BOOST_TEST(NomadString(scriptOverloads.at("signatures").as_array()[
+        static_cast<std::size_t>(scriptOverloads.at("activeSignature").as_int64())].as_object().at("label").as_string())
+        .find("value:string") != NomadString::npos);
+    BOOST_TEST(errors.str().empty());
+}
+
+BOOST_AUTO_TEST_CASE(signature_help_refreshes_project_buffers_and_supports_native_constructors)
+{
+    TestDirectory directory("nomad_lsp_signature_project");
+    directory.write("nomad.toml", R"(schema = 1
+[project]
+name = "LSP signature help"
+identifier = "org.nomad.signatures"
+version = "0.1.0"
+executable = "signatures"
+[game]
+entry = "main"
+[nomad]
+version = "0.1.0"
+modules = ["nomad-system", "nomad-collections"]
+[scripts]
+directories = ["scripts"]
+[resources]
+directory = "res"
+)");
+    const auto libraryUri = uriFor(directory.write("scripts/library.nomad",
+        "fun choose first:int second:int\nreturn first + second\nend"));
+    const auto uri = uriFor(directory.write("scripts/main.nomad", ""));
+    const NomadString source =
+        "array = new Array<int> 3\n"
+        "list = new List<string>\n"
+        "choice = choose \n"
+        "# unknown.member 1\n";
+    const auto request = [&](const int id, const NomadString& word, const std::size_t offset) {
+        return symbolRequest(id, "textDocument/signatureHelp", uri, source, word, offset);
+    };
+    const auto change = json::object{{"jsonrpc", "2.0"}, {"method", "textDocument/didChange"},
+        {"params", {{"textDocument", {{"uri", libraryUri}, {"version", 2}}},
+            {"contentChanges", json::array{json::object{
+                {"text", "fun choose title:string\nreturn title\nend"}}}}}}};
+    auto updatedSource = source;
+    updatedSource.replace(updatedSource.find("choice = choose "), 16, "choice = choose 1 ");
+    const auto changeMain = json::object{{"jsonrpc", "2.0"}, {"method", "textDocument/didChange"},
+        {"params", {{"textDocument", {{"uri", uri}, {"version", 2}}},
+            {"contentChanges", json::array{json::object{{"text", updatedSource}}}}}}};
+    const auto position = [&](const int id, const int line, const int character) {
+        return frame({{"jsonrpc", "2.0"}, {"id", id}, {"method", "textDocument/signatureHelp"},
+            {"params", {{"textDocument", {{"uri", uri}}},
+                {"position", {{"line", line}, {"character", character}}}}}});
+    };
+    std::istringstream input(start() + frame(openDocument(uri, source)) +
+        frame(openDocument(libraryUri, "fun choose first:int second:int\nreturn first + second\nend")) +
+        request(10, "new Array<int> ", 15) +
+        request(11, "new List<string>", 16) +
+        request(12, "choose ", 7) + frame(change) +
+        request(13, "choose ", 7) +
+        frame({{"jsonrpc", "2.0"}, {"method", "textDocument/didClose"},
+            {"params", {{"textDocument", {{"uri", libraryUri}}}}}}) +
+        request(14, "choose ", 7) + frame(changeMain) +
+        symbolRequest(19, "textDocument/signatureHelp", uri, updatedSource, "choose 1 ", 9) +
+        request(15, "unknown.member 1", 16) +
+        position(16, 20, 0) + position(17, 0, 100) + position(18, 0, -1) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    std::map<std::int64_t, json::object> replies;
+    for (const auto& message : responses(output.str())) {
+        if (message.contains("id")) replies.emplace(message.at("id").as_int64(), message);
+    }
+    const auto& array = replies.at(10).at("result").as_object().at("signatures").as_array();
+    BOOST_REQUIRE(array.size() == 3u);
+    for (const auto& signature : array) {
+        const auto label = NomadString(signature.as_object().at("label").as_string());
+        BOOST_TEST(label.starts_with("new Array<int> "));
+        const auto rank = signature.as_object().at("parameters").as_array().size();
+        BOOST_TEST(label.ends_with(" -> Array" + std::to_string(rank) + "<int>"));
+    }
+    const auto& list = replies.at(11).at("result").as_object();
+    BOOST_REQUIRE(list.at("signatures").as_array().size() == 1u);
+    BOOST_TEST(list.at("signatures").as_array().front().as_object().at("label").as_string() ==
+        "new List<string> -> List<string>");
+    BOOST_TEST(!list.contains("activeParameter"));
+    for (const auto id : {12, 14}) {
+        BOOST_TEST(replies.at(id).at("result").as_object().at("signatures").as_array().front().as_object()
+            .at("parameters").as_array().size() == 2u);
+    }
+    BOOST_TEST(replies.at(13).at("result").as_object().at("signatures").as_array().front().as_object()
+        .at("parameters").as_array().size() == 1u);
+    BOOST_TEST(json::serialize(replies.at(13).at("result")).find("title:string") != NomadString::npos);
+    BOOST_TEST(replies.at(15).at("result").is_null());
+    BOOST_TEST(replies.at(19).at("result").as_object().at("activeParameter").as_int64() == 1);
+    for (const auto id : {16, 17, 18}) {
+        BOOST_TEST(replies.at(id).at("error").as_object().at("code").as_int64() == -32602);
+    }
+    BOOST_TEST(errors.str().find("Line is outside document") != NomadString::npos);
+    BOOST_TEST(errors.str().find("Character is outside document") != NomadString::npos);
+    BOOST_TEST(errors.str().find("Negative document position") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(synchronizes_unsaved_changes_and_clears_closed_documents)

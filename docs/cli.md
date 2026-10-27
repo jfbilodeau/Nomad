@@ -82,8 +82,11 @@ standard error. `--help`/`-h` prints usage and `--version`/`-v` prints the versi
 unknown arguments are rejected.
 
 The server supports compiler diagnostics, API and project-function completion,
-local variable and parameter suggestions, object member completion, and hover
-documentation. Suggestions and diagnostics reflect unsaved editor changes and
+local variable and parameter suggestions, object member completion, hover
+documentation, and signature help for function, method, and constructor calls.
+Signature help lists overloads and parameter descriptions and tracks the active
+argument in space-separated calls, including nested and parenthesized expressions.
+Hidden source-location parameters are omitted. Suggestions and diagnostics reflect unsaved editor changes and
 use the nearest project configuration. Scripts are never executed. See the
 [VS Code extension guide](https://github.com/jfbilodeau/Nomad/blob/main/editor/README.md)
 for setup and current limitations.

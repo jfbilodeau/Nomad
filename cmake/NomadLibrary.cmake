@@ -124,6 +124,7 @@ endif()
         ${NOMAD_SOURCE_DIR}/nomad/geometry/RectangleF.cpp
 
         ${NOMAD_SOURCE_DIR}/nomad/lsp/LanguageServer.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/lsp/SignatureHelp.cpp
 
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectConfiguration.cpp
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectInitializer.cpp
@@ -154,6 +155,7 @@ endif()
         # Boost.JSON templates instantiate conversion warnings outside Nomad source.
         set_source_files_properties(
             ${NOMAD_SOURCE_DIR}/nomad/lsp/LanguageServer.cpp
+            ${NOMAD_SOURCE_DIR}/nomad/lsp/SignatureHelp.cpp
             ${NOMAD_SOURCE_DIR}/nomad/project/ProjectPackager.cpp
             PROPERTIES COMPILE_OPTIONS "-Wno-error=conversion"
         )

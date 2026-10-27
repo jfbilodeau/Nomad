@@ -29,7 +29,7 @@ Nomad is case‑sensitive.
 - [Scripts: file layout and compilation model](#scripts-file-layout-and-compilation-model)
 - [Native functions](#native-functions)
   - [Overloading](#overloading)
-- [Saving and loading](#saving-and-loading)
+- [Debug settings persistence](#debug-settings-persistence)
 - [Callbacks and Events](#callbacks-and-events)
 - [Error handling](#error-handling)
 - [Language rules and reserved words](#language-rules-and-reserved-words)

@@ -2,6 +2,8 @@
 
 #include <nomad/lsp/LanguageServer.hpp>
 
+#include <nomad/lsp/SignatureHelp.hpp>
+
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/Parser.hpp>
@@ -76,10 +78,12 @@ struct ApiAnalysis {
     std::vector<ApiSymbol> symbols;
     std::set<NomadString> localNames;
     bool recover;
+    json::value signatureHelp;
 };
 
 std::map<NomadPath, AnalysisGroup> collectAnalysisGroups(const LanguageDocuments& documents);
 NomadPath documentPath(const NomadString& uri);
+NomadString symbolValueType(const std::vector<ApiSymbol>& symbols, const NomadString& name);
 
 ApiSymbol createMethodSymbol(const Method& method) {
     const auto receiver = method.getObjectType()->getTypeName();
@@ -119,7 +123,8 @@ ApiAnalysis analyzeApiSymbols(
     const NomadString& uri,
     const NomadIndex line,
     const bool completion,
-    const bool omitCurrentLine
+    const bool omitCurrentLine,
+    const NomadString* signaturePrefix
 ) {
     // Destroy callback metadata before unloading modules, and the complete session before recovery.
     const auto session = createAnalysisSession(group, path);
@@ -319,8 +324,14 @@ ApiAnalysis analyzeApiSymbols(
     for (const auto& name : namespaces) {
         symbols.push_back({name, CompletionItemKind::Module, name, "Symbol namespace."});
     }
+    json::value signatureHelp;
+    if (signaturePrefix != nullptr) {
+        signatureHelp = createSignatureHelp(*runtime, uri, line, *signaturePrefix, [&](const auto& name) {
+            return runtime->getTypeByName(symbolValueType(symbols, name));
+        });
+    }
     return {std::move(symbols), std::move(localNames),
-        !compilation.succeeded() && currentLineError && completion && !omitCurrentLine};
+        !compilation.succeeded() && currentLineError && completion && !omitCurrentLine, std::move(signatureHelp)};
 }
 
 std::vector<ApiSymbol> createApiSymbols(
@@ -329,7 +340,9 @@ std::vector<ApiSymbol> createApiSymbols(
     const NomadString& uri,
     const NomadIndex line,
     const bool completion,
-    const bool omitCurrentLine = false
+    const bool omitCurrentLine = false,
+    const NomadString* signaturePrefix = nullptr,
+    json::value* signatureHelp = nullptr
 ) {
     const auto root = findProjectRoot(path.parent_path());
     LanguageDocuments relatedDocuments;
@@ -341,10 +354,11 @@ std::vector<ApiSymbol> createApiSymbols(
     }
     const auto groups = collectAnalysisGroups(relatedDocuments);
     const auto& group = groups.at(root.value_or(path));
-    auto analysis = analyzeApiSymbols(group, path, uri, line, completion, omitCurrentLine);
+    auto analysis = analyzeApiSymbols(group, path, uri, line, completion, omitCurrentLine, signaturePrefix);
+    if (signatureHelp != nullptr) *signatureHelp = std::move(analysis.signatureHelp);
     auto& symbols = analysis.symbols;
     if (analysis.recover) {
-        auto recovered = createApiSymbols(path, documents, uri, line, completion, true);
+        auto recovered = createApiSymbols(path, documents, uri, line, completion, true, signaturePrefix, signatureHelp);
         for (auto& symbol : symbols) {
             if (symbol.receiverType.empty() && analysis.localNames.contains(symbol.name)) continue;
             const auto present = std::ranges::any_of(recovered, [&](const auto& candidate) {
@@ -393,6 +407,7 @@ struct DocumentWord {
     json::object range;
     bool suppressed;
     bool firstWord;
+    NomadString linePrefix;
 };
 
 DocumentWord documentWord(const NomadString& text, const json::object& position) {
@@ -440,7 +455,8 @@ DocumentWord documentWord(const NomadString& text, const json::object& position)
         quoted || comment,
         std::all_of(text.begin() + static_cast<std::ptrdiff_t>(lineStart),
             text.begin() + static_cast<std::ptrdiff_t>(start),
-            [](const auto character) { return character == ' ' || character == '\t'; })};
+            [](const auto character) { return character == ' ' || character == '\t'; }),
+        text.substr(lineStart, offset - lineStart)};
 }
 
 json::object symbolDocumentation(const ApiSymbol& symbol) {
@@ -727,6 +743,8 @@ int runLanguageServer(
                             {"positionEncoding", "utf-16"},
                             {"completionProvider", {{"triggerCharacters", json::array{"."}}}},
                             {"hoverProvider", true},
+                            {"signatureHelpProvider", {{"triggerCharacters", json::array{" ", "\t"}},
+                                {"retriggerCharacters", json::array{" ", "\t", ")"}}}},
                             {"textDocumentSync", {{"openClose", true}, {"change", 1}, {"save", true}}}
                         }}, {"serverInfo", {{"name", "Nomad"}}}}}});
                 } else if (!initialized) {
@@ -740,6 +758,18 @@ int runLanguageServer(
                     ready = true;
                 } else if (!ready) {
                     fail(-32002, "Waiting for initialized notification");
+                } else if (method == "textDocument/signatureHelp" && request) {
+                    const auto& params = object.at("params").as_object();
+                    const auto uri = stringField(params.at("textDocument").as_object(), "uri");
+                    const auto& position = params.at("position").as_object();
+                    const auto word = documentWord(documents.at(uri).text, position);
+                    json::value result;
+                    if (!word.suppressed) {
+                        const auto line = static_cast<NomadIndex>(position.at("line").as_int64()) + 1;
+                        (void)createApiSymbols(documentPath(uri), documents, uri, line, true, false,
+                            &word.linePrefix, &result);
+                    }
+                    sendMessage(output, {{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}});
                 } else if ((method == "textDocument/completion" || method == "textDocument/hover") && request) {
                     const auto& params = object.at("params").as_object();
                     const auto uri = stringField(params.at("textDocument").as_object(), "uri");
