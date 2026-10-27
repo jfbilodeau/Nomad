@@ -58,9 +58,9 @@ public:
     void callScriptMethod(NomadIndex address);
     void callScriptConstructor(NomadIndex address, TypeId typeId);
     void createScriptObject(TypeId typeId);
-    void callNativeFunction(CallableId nativeFunctionId, NomadIndex stackCount);
-    void callNativeMethod(CallableId memberId, NomadIndex stackCount);
-    void callNativeConstructor(CallableId constructorId, NomadIndex stackCount);
+    void callNativeFunction(CallableId nativeFunctionId);
+    void callNativeMethod(CallableId memberId);
+    void callNativeConstructor(CallableId constructorId);
     void returnFunction(NomadIndex variableCount);
     void runNativeMethod(CallableId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
     void runNativeFunction(CallableId nativeFunctionId, const std::vector<RuntimeValue>& args);
@@ -133,13 +133,15 @@ public:
     [[nodiscard]] CallableId getCallableIdParameter(const NomadIndex parameterIndex) const { return CallableId{m_stack[m_parameterIndex - parameterIndex].getIdValue() }; }
     [[nodiscard]] NomadStringObject* getStringParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getStringObject(); }
 
-    // Closure capture: read from enclosing function's parameter frame (not the nativeFunction's frame)
-    [[nodiscard]] const RuntimeValue& getEnclosingParameter(const NomadIndex parameterIndex) const { return m_stack[m_enclosingParameterIndex - parameterIndex]; }
-    [[nodiscard]] NomadBoolean getBooleanEnclosingParameter(const NomadIndex parameterIndex) const { return m_stack[m_enclosingParameterIndex - parameterIndex].getBooleanValue(); }
-    [[nodiscard]] NomadInteger getIntegerEnclosingParameter(const NomadIndex parameterIndex) const { return m_stack[m_enclosingParameterIndex - parameterIndex].getIntegerValue(); }
-    [[nodiscard]] NomadFloat getFloatEnclosingParameter(const NomadIndex parameterIndex) const { return m_stack[m_enclosingParameterIndex - parameterIndex].getFloatValue(); }
-    [[nodiscard]] NomadId getIdEnclosingParameter(const NomadIndex parameterIndex) const { return m_stack[m_enclosingParameterIndex - parameterIndex].getIdValue(); }
-    [[nodiscard]] NomadStringObject* getStringEnclosingParameter(const NomadIndex parameterIndex) const { return m_stack[m_enclosingParameterIndex - parameterIndex].getStringObject(); }
+    // Read the active script frame, independently of any intervening native calls.
+    [[nodiscard]] const RuntimeValue& getEnclosingParameter(const NomadIndex parameterIndex) const {
+        return m_stack[m_variableIndex - s_scriptFrameSlotCount - 1 - parameterIndex];
+    }
+    [[nodiscard]] NomadBoolean getBooleanEnclosingParameter(const NomadIndex parameterIndex) const { return getEnclosingParameter(parameterIndex).getBooleanValue(); }
+    [[nodiscard]] NomadInteger getIntegerEnclosingParameter(const NomadIndex parameterIndex) const { return getEnclosingParameter(parameterIndex).getIntegerValue(); }
+    [[nodiscard]] NomadFloat getFloatEnclosingParameter(const NomadIndex parameterIndex) const { return getEnclosingParameter(parameterIndex).getFloatValue(); }
+    [[nodiscard]] NomadId getIdEnclosingParameter(const NomadIndex parameterIndex) const { return getEnclosingParameter(parameterIndex).getIdValue(); }
+    [[nodiscard]] NomadStringObject* getStringEnclosingParameter(const NomadIndex parameterIndex) const { return getEnclosingParameter(parameterIndex).getStringObject(); }
 
     void setVariableValue(const VariableId variableId, const RuntimeValue& value) { m_stack[m_variableIndex + variableId.id] = value; }
     void setBooleanVariableValue(const VariableId variableId, const NomadBoolean value) { m_stack[m_variableIndex + variableId.id].setBooleanValue(value); }
@@ -242,11 +244,10 @@ private:
 
     struct NativeCallFrame {
         NomadIndex parameterIndex;
-        NomadIndex enclosingParameterIndex;
-        NomadIndex receiverSaveIndex;
+        RuntimeValue receiver;
     };
 
-    [[nodiscard]] NativeCallFrame beginNativeCall(NomadIndex stackCount);
+    [[nodiscard]] NativeCallFrame beginNativeCall();
     void endNativeCall(const NativeCallFrame& frame);
     void runNativeCallable(
         const Callable* callable,
@@ -260,6 +261,8 @@ private:
         const RuntimeValue* receiver
     );
 
+    static constexpr NomadIndex s_scriptFrameSlotCount = 4;
+
     Runtime* m_runtime;
     NomadIndex m_instructionIndex = 0;
     const std::vector<Instruction>& m_instructions;
@@ -270,8 +273,6 @@ private:
     NomadIndex m_stackIndex = 0;
     std::vector<RuntimeValue> m_stack;
     NomadIndex m_parameterIndex = 0;
-    NomadIndex m_enclosingParameterIndex = 0;  // Enclosing function's parameter frame for closure capture
-    NomadIndex m_receiverSaveIndex = 0;
     NomadIndex m_variableIndex = 0;
     void invokeNativeMember(const std::function<void(VirtualMachine*)>& callback, const RuntimeValue& receiver);
     RuntimeValue m_this; // Borrowed receiver, except during construction until op_move_this_to_r.

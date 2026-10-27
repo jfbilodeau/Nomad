@@ -864,7 +864,6 @@ NomadIndex Compiler::addNativeFunctionCall(const CallableId nativeFunctionId, Sc
     arguments->compile(this, function);
     addOpCode(OpCodes::op_call_native_function);
     addId(nativeFunctionId.id);
-    addIndex(arguments->getStackCount());
     addFreeArguments(arguments);
     addOpCode(OpCodes::op_pop_this);
 
@@ -895,7 +894,6 @@ NomadIndex Compiler::addNativeConstructorCall(const CallableId constructorId, Sc
     arguments->compile(this, function);
     addOpCode(OpCodes::op_call_native_constructor);
     addId(constructorId.id);
-    addIndex(arguments->getStackCount());
     addFreeArguments(arguments);
     addOpCode(OpCodes::op_move_this_to_r);
     addOpCode(OpCodes::op_pop_this);
@@ -931,7 +929,6 @@ NomadIndex Compiler::addNativeMethodCall(
     addIndex(arguments->getArgumentCount());
     addOpCode(OpCodes::op_call_native_method);
     addId(memberId.id);
-    addIndex(arguments->getStackCount());
 
     addFreeArguments(arguments);
     addOpCode(OpCodes::op_pop_this);

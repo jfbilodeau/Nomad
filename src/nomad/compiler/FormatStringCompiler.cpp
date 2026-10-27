@@ -5,6 +5,8 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/Expression.hpp>
 
+#include <nomad/script/FormatString.hpp>
+
 #include <cctype>
 
 namespace nomad {

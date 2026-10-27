@@ -59,11 +59,11 @@ void Runtime::registerDefaultInstructions() {
         "Call the script function at the given address without a receiver",
         {Operand::Function}
     );
-    registerInstruction(OpCodes::op_call_native_function, op_call_native_function, "Call the given native function id", {Operand::NativeFunction, Operand::Index});
+    registerInstruction(OpCodes::op_call_native_function, op_call_native_function, "Call the given native function id", {Operand::NativeFunction});
     registerInstruction(OpCodes::op_call_script_method, op_call_script_method, "Call a script method with the bound receiver", {Operand::Function});
     registerInstruction(OpCodes::op_call_script_constructor, op_call_script_constructor, "Allocate an instance and call its script constructor", {Operand::Function, Operand::Id});
-    registerInstruction(OpCodes::op_call_native_method, op_call_native_method, "Call a native method with the bound receiver", {Operand::Id, Operand::Index});
-    registerInstruction(OpCodes::op_call_native_constructor, op_call_native_constructor, "Call a native factory and bind its result", {Operand::Id, Operand::Index});
+    registerInstruction(OpCodes::op_call_native_method, op_call_native_method, "Call a native method with the bound receiver", {Operand::Id});
+    registerInstruction(OpCodes::op_call_native_constructor, op_call_native_constructor, "Call a native factory and bind its result", {Operand::Id});
     registerInstruction(OpCodes::op_native_property_get, op_native_property_get, "Read a native or stored property", {Operand::Id});
     registerInstruction(OpCodes::op_native_property_set, op_native_property_set, "Write a native or stored property", {Operand::Id});
     registerInstruction(OpCodes::op_native_index_get, op_native_index_get, "Read an indexer", {Operand::Id});

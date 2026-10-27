@@ -105,8 +105,6 @@ void VirtualMachine::runCallable(
     const auto savedInstructionIndex = m_instructionIndex;
     const auto savedStackIndex = m_stackIndex;
     const auto savedParameterIndex = m_parameterIndex;
-    const auto savedEnclosingParameterIndex = m_enclosingParameterIndex;
-    const auto savedReceiverSaveIndex = m_receiverSaveIndex;
     const auto savedVariableIndex = m_variableIndex;
     const auto savedRunning = m_running;
     const auto savedThis = m_this;
@@ -121,8 +119,6 @@ void VirtualMachine::runCallable(
         m_instructionIndex = savedInstructionIndex;
         m_stackIndex = savedStackIndex;
         m_parameterIndex = savedParameterIndex;
-        m_enclosingParameterIndex = savedEnclosingParameterIndex;
-        m_receiverSaveIndex = savedReceiverSaveIndex;
         m_variableIndex = savedVariableIndex;
         m_running = savedRunning;
         m_this = savedThis;
@@ -242,7 +238,8 @@ void VirtualMachine::createScriptObject(const TypeId typeId) {
 }
 
 void VirtualMachine::pushScriptFrame() {
-    if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex - 1 < 4) {
+    if (m_stackIndex >= m_stack.size() ||
+        m_stack.size() - m_stackIndex - 1 < s_scriptFrameSlotCount) {
         fault("Stack overflow");
     }
 
@@ -262,9 +259,9 @@ void VirtualMachine::pushScriptFrame() {
     m_variableIndex = m_stackIndex + 1;
 }
 
-void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId, const NomadIndex stackCount) {
+void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
     const auto* function = m_runtime->getNativeFunction(nativeFunctionId);
-    const auto frame = beginNativeCall(stackCount);
+    const auto frame = beginNativeCall();
     m_this = RuntimeValue{};
     try {
         function->getFn()(this);
@@ -275,9 +272,9 @@ void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId, const
     endNativeCall(frame);
 }
 
-void VirtualMachine::callNativeConstructor(const CallableId constructorId, const NomadIndex stackCount) {
+void VirtualMachine::callNativeConstructor(const CallableId constructorId) {
     const auto* constructor = m_runtime->getNativeConstructor(constructorId);
-    const auto frame = beginNativeCall(stackCount);
+    const auto frame = beginNativeCall();
     m_this = RuntimeValue{};
     m_result = RuntimeValue{};
     try {
@@ -294,28 +291,20 @@ void VirtualMachine::callNativeConstructor(const CallableId constructorId, const
     m_this.moveObjectValue(m_result);
 }
 
-VirtualMachine::NativeCallFrame VirtualMachine::beginNativeCall(const NomadIndex stackCount) {
-    const NativeCallFrame frame{m_parameterIndex, m_enclosingParameterIndex, m_receiverSaveIndex};
+VirtualMachine::NativeCallFrame VirtualMachine::beginNativeCall() {
+    const NativeCallFrame frame{m_parameterIndex, m_this};
     m_parameterIndex = m_stackIndex;
-    m_receiverSaveIndex = m_parameterIndex - stackCount;
-    m_enclosingParameterIndex = frame.parameterIndex;
     return frame;
 }
 
 void VirtualMachine::endNativeCall(const NativeCallFrame& frame) {
-    m_this = m_stack[m_receiverSaveIndex];
+    m_this = frame.receiver;
     m_parameterIndex = frame.parameterIndex;
-    m_enclosingParameterIndex = frame.enclosingParameterIndex;
-    m_receiverSaveIndex = frame.receiverSaveIndex;
 }
 
-void VirtualMachine::callNativeMethod(
-    const CallableId memberId,
-    const NomadIndex stackCount
-) {
+void VirtualMachine::callNativeMethod(const CallableId memberId) {
     const auto* method = m_runtime->getNativeMemberMethod(memberId);
-    const auto receiver = m_this;
-    const auto frame = beginNativeCall(stackCount);
+    const auto frame = beginNativeCall();
     try {
         method->getFn()(this);
     } catch (...) {
@@ -323,7 +312,6 @@ void VirtualMachine::callNativeMethod(
         throw;
     }
     endNativeCall(frame);
-    m_this = receiver;
 }
 
 NomadObject* VirtualMachine::getThis() const {
@@ -426,7 +414,7 @@ void VirtualMachine::callNativeIndexer(
         fault(write ? "Invalid native indexer setter" : "Invalid native indexer getter");
     }
     m_result = RuntimeValue{};
-    const auto frame = beginNativeCall(info->indexTypes.size() + (write ? 1 : 0) + 1);
+    const auto frame = beginNativeCall();
     m_this = receiver;
     try {
         callback(this);
@@ -543,10 +531,10 @@ void VirtualMachine::runNativeCallable(
         }
 
         if (const auto* constructor = m_runtime->getNativeConstructor(function->getId())) {
-            callNativeConstructor(constructor->getId(), args.size());
+            callNativeConstructor(constructor->getId());
             moveThisToResult();
         } else {
-            callNativeFunction(function->getId(), args.size());
+            callNativeFunction(function->getId());
         }
     } catch (...) {
         releaseArguments();
@@ -609,7 +597,7 @@ void VirtualMachine::runNativeMethod(const CallableId memberId, const std::vecto
         }
 
         bindThisFromStack(args.size());
-        callNativeMethod(memberId, args.size() + 1);
+        callNativeMethod(memberId);
     } catch (...) {
         releaseArguments();
         throw;
@@ -661,6 +649,10 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, c
         return nullptr;
     }
 
+    if (function->getCaptureCount() != 0 && m_variableIndex <= s_scriptFrameSlotCount) {
+        fault("Cannot capture without an active script frame");
+    }
+
     const auto& captures = function->getCaptures();
     std::vector<RuntimeValue> captureValues;
 
@@ -681,7 +673,8 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, c
 
             captureType->copyValue(value, captureValue);
         } else if (captureSource == CaptureSource::Receiver) {
-            const auto& receiver = m_stack[m_receiverSaveIndex];
+            // Receiver captures originate in a method or constructor's script frame.
+            const auto& receiver = m_stack[m_variableIndex - 1];
             if (receiver.getObjectValue() == nullptr) {
                 fault("Cannot capture a missing enclosing receiver");
             }

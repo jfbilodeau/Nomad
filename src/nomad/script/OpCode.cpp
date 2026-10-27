@@ -229,20 +229,17 @@ void op_call_script_constructor(VirtualMachine* interpreter) {
 }
 
 void op_call_native_function(VirtualMachine* interpreter) {
-    const auto nativeFunctionId = CallableId{interpreter->nextId()};
-    interpreter->callNativeFunction(nativeFunctionId, interpreter->nextIndex());
+    interpreter->callNativeFunction(CallableId{interpreter->nextId()});
 }
 
 void op_call_native_method(VirtualMachine* interpreter) {
-    const auto memberId = CallableId{interpreter->nextId()};
-    interpreter->callNativeMethod(memberId, interpreter->nextIndex());
+    interpreter->callNativeMethod(CallableId{interpreter->nextId()});
 }
 
 void op_call_native_constructor(VirtualMachine* interpreter) {
     const auto constructorId = CallableId{interpreter->nextId()};
-    const auto stackCount = interpreter->nextIndex();
     try {
-        interpreter->callNativeConstructor(constructorId, stackCount);
+        interpreter->callNativeConstructor(constructorId);
     } catch (...) {
         const auto* constructor = interpreter->getRuntime()->getNativeConstructor(constructorId);
         const auto& parameters = constructor->getParameters();

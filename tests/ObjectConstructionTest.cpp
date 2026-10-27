@@ -85,8 +85,9 @@ BOOST_AUTO_TEST_CASE(call_opcodes_have_specialized_operands) {
         const auto id = runtime.getInstructionId(name);
         BOOST_REQUIRE(id.isValid());
         const auto nativeOperands = runtime.getInstructionOperands(id);
-        BOOST_REQUIRE(nativeOperands.size() == 2u);
-        BOOST_CHECK(nativeOperands[1] == Operand::Index);
+        BOOST_REQUIRE(nativeOperands.size() == 1u);
+        BOOST_CHECK(nativeOperands[0] ==
+            (name == OpCodes::op_call_native_function ? Operand::NativeFunction : Operand::Id));
     }
 }
 
@@ -424,6 +425,47 @@ BOOST_AUTO_TEST_CASE(host_arguments_remain_borrowed_while_script_parameter_slots
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     text.freeObjectValue();
     item.freeObjectValue();
+}
+
+BOOST_AUTO_TEST_CASE(script_callback_capture_survives_nested_native_calls_and_reentry) {
+    Runtime runtime;
+    std::unique_ptr<Closure> closure;
+    const auto* callbackType = runtime.getCallbackType({}, runtime.getIntegerType());
+    const auto relayId = runtime.registerNativeFunction(
+        "relay", [&](VirtualMachine* machine) {
+            const auto callbackId = machine->getCallableIdParameter(0);
+            BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+            machine->run(runtime.getScriptFunction(runtime.getFunctionId("helper")), {});
+            BOOST_TEST(machine->getIntegerEnclosingParameter(0) == 24);
+            closure = machine->createClosure(&runtime, callbackId);
+        }, {defParameter("callback", callbackType, "")}, runtime.getVoidType(), ""
+    );
+    BOOST_REQUIRE(relayId.isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "save", [&](VirtualMachine* machine) {
+            RuntimeValue callback;
+            callback.setIdValue(machine->getCallableIdParameter(0).id);
+            machine->runNativeFunction(relayId, {callback});
+            BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+        }, {defParameter("callback", callbackType, "")}, runtime.getVoidType(), ""
+    ).isValid());
+    const auto id = compileConstruction(runtime,
+        "class Owner\nvalue = 7\ninit value:int\n"
+        "value = value + 1\noffset = 10\nsave fun\n"
+        "return this.value + value + offset\nend\nend\nend\n"
+        "fun helper\nreturn 5\nend\nowner = new Owner 23\nreturn 0"
+    );
+    const auto before = NomadObject::getLiveObjectCount();
+    for (auto attempt = 0; attempt < 2; ++attempt) {
+        RuntimeValue result;
+        runtime.executeFunction(id, {}, result);
+        BOOST_REQUIRE(closure != nullptr);
+        BOOST_TEST(closure->getCaptureCount() == 3u);
+        runtime.executeFunction(closure.get(), {}, result);
+        BOOST_TEST(result.getIntegerValue() == 41);
+        closure.reset();
+        BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(script_construction_returns_the_instance_after_early_return_and_retains_arguments) {
