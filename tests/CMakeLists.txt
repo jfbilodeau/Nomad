@@ -63,6 +63,7 @@ add_executable(
     ./ReadOnlyCollectionTest.cpp
     ./RectanglePackerTest.cpp
     ./RuntimeTest.cpp
+    ./ScriptMethodTest.cpp
     ./ScriptObjectTest.cpp
     ./ScriptObjectTypeTest.cpp
     ./SourceLoaderTest.cpp

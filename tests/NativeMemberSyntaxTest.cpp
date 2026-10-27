@@ -248,7 +248,7 @@ BOOST_AUTO_TEST_CASE(rejects_assignment_to_method) {
     BOOST_REQUIRE(statement != nullptr);
     BOOST_TEST(!statement->resolve(&context, &function));
     BOOST_REQUIRE(context.getFirstError() != nullptr);
-    BOOST_TEST(context.getFirstError()->message.find("Cannot assign to native method") != NomadString::npos);
+    BOOST_TEST(context.getFirstError()->message.find("Cannot assign to method") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(allows_object_method_on_temporary) {

@@ -484,7 +484,7 @@ Each category offers conversions to its implementation: `asNativeFunction()` /
 `asScriptFunction()`, `asNativeMethod()` / `asScriptMethod()`, and
 `asNativeConstructor()` / `asScriptConstructor()`. They return the same object
 with its specialized type, or `nullptr` when the implementation does not match.
-Script methods and script constructors are not yet supported.
+Script methods and script constructors are available on compiled classes.
 
 Use `resolveFunction(name, argumentTypes)`, `resolveMethod(objectType, name,
 argumentTypes)`, or `resolveConstructor(objectType, argumentTypes)` to select an
@@ -1065,7 +1065,13 @@ instance must outlive the call.
 
 Object methods may mutate the instance through parameter and temporary references.
 They do not replace the receiver binding or roll back changes to object contents.
-Script-defined methods are not supported yet.
+Script-defined methods use the same receiver and argument ownership contracts.
+To invoke an already compiled script method from the host, use
+`VirtualMachine::runScriptMethod(methodId, arguments, receiver)`. Arguments and
+the receiver are borrowed; the method's return value is available through
+`getResult()`. Release an owned object result after use. The prior active receiver
+is restored after the call. Invalid IDs, uncompiled methods, and incorrect
+argument counts raise `VirtualMachineException`.
 
 ## Native indexers
 

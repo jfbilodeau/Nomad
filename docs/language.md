@@ -244,10 +244,8 @@ Each class has one declaration block, even when open. Duplicate declarations and
 conflicts with existing identifiers are errors. Classes cannot be declared inside
 functions or control-flow blocks, or through the interpreter.
 
-Classes containing fields and constructors can be compiled and instantiated with
-`new` in compiled code and the interpreter. Classes declaring ordinary methods
-are still rejected for execution.
-The following illustrates the accepted declaration forms, not a runnable program:
+Classes containing fields, constructors, and methods can be compiled and
+instantiated with `new` in compiled code and the interpreter:
 
 ```nomad
 class Point
@@ -257,6 +255,9 @@ class Point
         this.x = 0.0
         this.y = 0.0
     end
+
+    point = new Point
+    point.moveTo 3.0 4.0
 
     init x:float y:float
         this.x = x
@@ -275,6 +276,18 @@ followed by typed parameters. Methods use `fun name` and the same typed paramete
 syntax as functions. Member names are unqualified. Parameter types must be fully
 qualified, including inside a hub; class types declared in other files are
 available to member signatures regardless of source order.
+
+Call a method through its receiver, such as `point.moveTo 3.0 4.0` or
+`this.moveTo x y`. Methods may be overloaded by parameter count and types;
+selection uses the receiver's type and prefers exact argument types over
+compatible conversions. Method return types are inferred as for functions.
+A call returning a value may be used in an expression or discarded as a statement;
+a method returning no value can only be used as a statement.
+Arguments are copied, so reassigning a method parameter does not reassign the
+caller's variable. Object values retain reference semantics. Nested calls restore
+the enclosing receiver, and arguments are evaluated before binding the called
+method's receiver. The interpreter can call methods of already compiled classes,
+but cannot declare new classes.
 
 `init` is contextual: at class-member declaration position it introduces a
 constructor, and cannot name a field or an ordinary method (`fun init`).

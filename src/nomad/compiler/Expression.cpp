@@ -666,9 +666,15 @@ bool NativeMemberExpression::resolveMember(
     auto* runtime = context->getRuntime();
     m_memberId = runtime->getNativeMemberId(m_receiver->getType(), m_memberName);
 
+    const auto* owner = m_receiver->getType()->asObjectType();
+    if (runtime->getMemberType(m_memberId) == MemberType::Method ||
+        (owner != nullptr && std::ranges::any_of(owner->getMethods(),
+            [&](const auto* method) { return method->getName() == m_memberName; }))) {
+        m_memberType = MemberType::Method;
+        return true;
+    }
+
     if (runtime->getMemberType(m_memberId) == MemberType::Unknown) {
-        const auto* receiverType = m_receiver->getType();
-        const auto* owner = receiverType != nullptr ? receiverType->asObjectType() : nullptr;
         if (owner != nullptr) {
             const auto* property = owner->getProperty(m_memberName);
             if (assignment && context->getMode() == CompilerMode::Script) {
@@ -698,12 +704,6 @@ bool NativeMemberExpression::resolveMember(
     }
 
     m_memberType = runtime->getMemberType(m_memberId);
-    if (m_memberType == MemberType::Method) {
-        m_method = runtime->getNativeMemberMethod(m_memberId);
-        if (m_method == nullptr) {
-            context->getCompiler()->reportInternalError("Invalid native method: " + m_qualifiedName);
-        }
-    }
     return true;
 }
 
@@ -718,7 +718,7 @@ bool NativeMemberExpression::resolveAssignmentTarget(
 
     auto* runtime = context->getRuntime();
     if (m_memberType == MemberType::Method) {
-        reportError(context, function, "Cannot assign to native method '" + m_qualifiedName + "'");
+        reportError(context, function, "Cannot assign to method '" + m_qualifiedName + "'");
         return false;
     }
 
@@ -769,30 +769,55 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
     }
 
     case MemberType::Method: {
-        const auto* method = m_method;
-
         auto& arguments = m_arguments.getArguments();
-        if (arguments.size() != method->getParameterCount()) {
-            reportError(context, function, "Incorrect argument count for native method '" + m_qualifiedName + "'");
+        std::vector<const Type*> argumentTypes;
+        argumentTypes.reserve(arguments.size());
+        for (const auto& argument : arguments) {
+            argumentTypes.push_back(argument->resolveOverloadType(context, function));
+        }
+        const auto resolution = runtime->resolveMethod(m_receiver->getType(), m_memberName, argumentTypes);
+        if (resolution.status != ResolveStatus::Resolved) {
+            reportError(context, function, runtime->describeResolveFailure(m_qualifiedName, resolution));
             return;
         }
-
+        m_method = runtime->getMethod(resolution.id);
+        m_memberId = resolution.id;
+        const auto* script = m_method->asScriptCallable();
+        const auto* returnType = m_method->getReturnType();
+        auto* compiler = context->getCompiler();
+        if (script != nullptr && context->getMode() == CompilerMode::Script && function != nullptr) {
+            compiler->addFunctionCallDependency(function->getId(), script->getId());
+        }
+        if (returnType == nullptr) {
+            const auto recursive = script != nullptr && function != nullptr &&
+                compiler->isRecursiveFunctionCall(function->getId(), script->getId());
+            reportError(context, function, recursive
+                ? "Cannot infer return type of recursive method '" + m_qualifiedName +
+                    "': it needs a `return` whose type does not depend on a recursive call"
+                : "Cannot determine return type of method '" + m_qualifiedName + "'");
+            return;
+        }
+        if (script != nullptr && context->getMode() != CompilerMode::Script &&
+            script->getFunctionStart() == NOMAD_INVALID_INDEX) {
+            reportError(context, function, "Method '" + m_qualifiedName + "' has not been compiled");
+            return;
+        }
         for (NomadIndex index = 0; index < arguments.size(); ++index) {
-            arguments[index]->setType(method->getParameters()[index].type);
+            arguments[index]->setType(m_method->getParameters()[index].type);
         }
 
         if (!m_arguments.resolve(context, function)) {
             return;
         }
 
-        if (method->getReturnType()->isVoid() && !m_allowVoid) {
+        if (returnType->isVoid() && !m_allowVoid) {
             reportError(context, function,
-                        "Cannot use native method '" + m_qualifiedName +
+                        "Cannot use method '" + m_qualifiedName +
                             "' in an expression because it does not return a value");
             return;
         }
 
-        setType(method->getReturnType());
+        setType(returnType);
         return;
     }
 
@@ -820,16 +845,15 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
         return;
     }
 
-    const auto* method = m_method != nullptr ? m_method->asNativeMethod() : nullptr;
-    if (method == nullptr) {
-        compiler->reportInternalError("Invalid native member: " + m_qualifiedName);
+    m_arguments.setReceiverType(receiverType);
+    if (m_method->asScriptMethod() != nullptr) {
+        compiler->addScriptMethodCall(std::get<CallableId>(m_memberId), function, &m_arguments);
+    } else {
+        compiler->addNativeMethodCall(std::get<CallableId>(m_memberId), function, &m_arguments);
     }
 
-    m_arguments.setReceiverType(receiverType);
-    compiler->addNativeMethodCall(std::get<CallableId>(m_memberId), function, &m_arguments);
-
-    if (!method->getReturnType()->isVoid()) {
-        compiler->addMoveResult(method->getReturnType(), target);
+    if (!m_method->getReturnType()->isVoid()) {
+        compiler->addMoveResult(m_method->getReturnType(), target);
     }
 }
 
@@ -873,11 +897,7 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
 
-    const auto* method = m_method != nullptr ? m_method->asNativeMethod() : nullptr;
-    if (method == nullptr) {
-        receiverType->freeValue(receiver);
-        raiseException("Invalid native method: " + m_qualifiedName);
-    }
+    const auto* method = m_method;
     const auto* returnType = method->getReturnType();
 
     std::vector<TypedValue> evaluatedArguments;
@@ -890,7 +910,11 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
 
     auto* virtualMachine = context.getVirtualMachine();
     try {
-        virtualMachine->runNativeMethod(std::get<CallableId>(m_memberId), values, receiver);
+        if (method->asScriptMethod() != nullptr) {
+            virtualMachine->runScriptMethod(std::get<CallableId>(m_memberId), values, receiver);
+        } else {
+            virtualMachine->runNativeMethod(std::get<CallableId>(m_memberId), values, receiver);
+        }
 
 
         if (returnType->isVoid()) {

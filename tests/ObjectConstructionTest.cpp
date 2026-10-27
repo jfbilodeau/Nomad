@@ -109,23 +109,35 @@ BOOST_AUTO_TEST_CASE(native_and_script_calls_share_argument_and_construction_byt
             machine->getResult().setObjectValue(new ConstructedObject);
         }
     }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(nativeType->getId(), {
+        .name = "echo",
+        .parameters = {{runtime.getStringType()->getId(), "text", ""}},
+        .returnTypeId = runtime.getStringType()->getId(),
+        .function = [](VirtualMachine* machine) {
+            machine->getResult().copyObjectValue(machine->getParameter(0));
+        }
+    }).isValid());
     compileConstruction(runtime,
-        "class ScriptOwner\ninit text:string\nthis.text = text\nend\nend\n"
+        "class ScriptOwner\ninit text:string\nthis.text = text\nend\n"
+        "fun echo text:string\nreturn text\nend\nend\n"
         "fun scriptEcho text:string\nreturn text\nend\n"
         "fun callScript\nreturn scriptEcho \"value\"\nend\n"
         "fun callNative\nreturn nativeEcho \"value\"\nend\n"
         "fun newScript\nreturn new ScriptOwner \"value\"\nend\n"
-        "fun newNative\nreturn new NativeOwner \"value\"\nend"
+        "fun newNative\nreturn new NativeOwner \"value\"\nend\n"
+        "fun methodScript\nowner = new ScriptOwner \"value\"\nreturn owner.echo \"text\"\nend\n"
+        "fun methodNative\nowner = new NativeOwner \"value\"\nreturn owner.echo \"text\"\nend"
     );
     for (const auto& names : {
-        std::pair{"callScript", "callNative"}, std::pair{"newScript", "newNative"}
+        std::pair{"callScript", "callNative"}, std::pair{"newScript", "newNative"},
+        std::pair{"methodScript", "methodNative"}
     }) {
         const auto* script = runtime.getScriptFunction(runtime.getFunctionId(names.first));
         const auto* native = runtime.getScriptFunction(runtime.getFunctionId(names.second));
         BOOST_TEST(callSequence(runtime, script) == callSequence(runtime, native), boost::test_tools::per_element());
     }
     const auto before = NomadObject::getLiveObjectCount();
-    for (const auto* name : {"callScript", "callNative", "newScript", "newNative"}) {
+    for (const auto* name : {"callScript", "callNative", "newScript", "newNative", "methodScript", "methodNative"}) {
         RuntimeValue result;
         runtime.executeFunction(runtime.getFunctionId(name), {}, result);
         BOOST_REQUIRE(result.getObjectValue() != nullptr);

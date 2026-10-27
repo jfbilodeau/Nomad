@@ -401,7 +401,7 @@ NomadBoolean ClassDeclaration::isDeclaration() const {
     return true;
 }
 
-void ClassDeclaration::onResolve(CompilerContext* context, ScriptCallableBase* function) {
+void ClassDeclaration::onResolve(CompilerContext* context, ScriptCallableBase* /*function*/) {
     for (const auto& member : m_members) {
         if (auto* initializer = member->getInitializer()) {
             auto* callable = context->getRuntime()->getScriptCallable(member->getCallableId());
@@ -421,16 +421,6 @@ void ClassDeclaration::onResolve(CompilerContext* context, ScriptCallableBase* f
                 }
             }
         }
-    }
-    const auto unsupported = std::ranges::find_if(m_members, [](const auto& member) {
-        return member->getKind() == ClassMemberKind::Method;
-    });
-    if (unsupported != m_members.end()) {
-        const auto& member = *unsupported;
-        context->reportError(
-            "Class member execution is not supported yet for ordinary methods",
-            function->getPath(), member->getLine(), member->getColumn()
-        );
     }
 }
 

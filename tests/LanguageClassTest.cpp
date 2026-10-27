@@ -156,7 +156,7 @@ BOOST_AUTO_TEST_CASE(invalid_class_definitions_report_source_errors)
     for (const auto* source : {
         "class", "class Point", "class 123\nend", "class Point trailing\nend",
         "class open\nend", "class int\nend", "class Point\nend trailing",
-        "class Point\nfun move\nend\nend", "class Point\nclass Nested\nend\nend",
+        "class Point\nclass Nested\nend\nend",
         "fun inner\nclass Point\nend\nend", "if true\nopen class Point\nend\nend",
         "hub Point\nend\nclass Point\nend", "class Point\nend\nhub Point\nend",
         "const Point = 1\nclass Point\nend", "class Point\nend\nconst Point = 1",
@@ -168,9 +168,9 @@ BOOST_AUTO_TEST_CASE(invalid_class_definitions_report_source_errors)
         }
     }
     LanguageTestFixture fixture;
-    fixture.addFunction("main", "class Point\nfun move\nend\nend");
+    fixture.addFunction("main", "class Point\nfun move this:int\nend\nend");
     BOOST_TEST(!fixture.compile());
-    const auto* diagnostic = fixture.findError("Class member execution is not supported yet");
+    const auto* diagnostic = fixture.findError("'this' names the class receiver");
     BOOST_REQUIRE(diagnostic != nullptr);
     BOOST_TEST(diagnostic->sourceName == "main.nomad");
     BOOST_TEST(diagnostic->line == 2u);
@@ -350,8 +350,7 @@ BOOST_AUTO_TEST_CASE(class_parameter_types_are_resolved_after_all_class_symbols_
             "fun accept value:model.Second\nend\nend\nend"
         );
         validTypes.addFunction(reversed ? "a" : "z", "open hub model\nclass Second\nend\nend");
-        BOOST_TEST(!validTypes.compile());
-        BOOST_TEST(validTypes.hasError("Class member execution is not supported yet"));
+        BOOST_REQUIRE_MESSAGE(validTypes.compile(), validTypes.getDiagnostics());
         BOOST_TEST(!validTypes.hasError("Unknown type"));
         BOOST_TEST(validTypes.getRuntime().getFunctionId("model.accept").isInvalid());
     }
@@ -420,9 +419,8 @@ BOOST_AUTO_TEST_CASE(member_signatures_precede_body_parsing_and_receiver_types_a
         BOOST_TEST(type->getMethods().size() == 3u);
         sawSignatures = true;
     });
-    BOOST_TEST(!fixture.compile());
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     BOOST_TEST(sawSignatures);
-    BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
     BOOST_TEST(!fixture.hasError("Missing `return`"));
     BOOST_TEST(!fixture.hasError("Unknown identifier"));
     auto& runtime = fixture.getRuntime();
@@ -454,7 +452,6 @@ BOOST_AUTO_TEST_CASE(member_bodies_and_initializers_report_ordinary_source_error
         "class Point\nfun move\nthis = 1\nend\nend",
         "class Point\nfun move\nthis.value = 1\nend\nend",
         "class Point\nfun move\nreturn this.value\nend\nend",
-        "class Point\nfun move\nthis.move\nend\nend",
         "class Point\nfun move\nreturn this.move()\nend\nend"
     }) {
         BOOST_TEST_CONTEXT(source) {
@@ -480,8 +477,7 @@ BOOST_AUTO_TEST_CASE(bare_member_names_remain_locals_and_initializers_resolve_no
     fixture.addFunction("main",
         "class Point\nvalue = 1.0\nfun move\nvalue = 2\nreturn value\nend\nend"
     );
-    BOOST_TEST(!fixture.compile());
-    BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto* type = fixture.getRuntime().getTypeByName("Point")->asObjectType();
     for (const auto* method : type->getMethods()) {
         if (method->getName() == "move") {
@@ -511,9 +507,7 @@ BOOST_AUTO_TEST_CASE(class_fields_are_discovered_across_branches_and_constructor
         "fun update value:float\nthis.x = value\nx = 42\nreturn x\nend\n"
         "end"
     );
-    BOOST_TEST(!fixture.compile());
-    BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
-    BOOST_TEST(fixture.getErrorCount() == 1u);
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
     const auto* type = runtime.getTypeByName("Point")->asObjectType();
     BOOST_REQUIRE(type != nullptr);
@@ -706,9 +700,7 @@ BOOST_AUTO_TEST_CASE(field_reads_and_writes_capture_this_without_native_member_n
         "fun callback\nresult = factory fun item\nthis.value = item\nreturn this.value\nend\nreturn result\nend\n"
         "fun describe\nreturn $\"value {this.value}\"\nend\nend"
     );
-    BOOST_TEST(!fixture.compile());
-    BOOST_TEST(fixture.getErrorCount() == 1u);
-    BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto* type = runtime.getTypeByName("Point")->asObjectType();
     BOOST_REQUIRE(type->getProperty("value") != nullptr);
     BOOST_TEST(type->getProperty("value")->getValueType() == runtime.getIntegerType());
@@ -743,8 +735,7 @@ BOOST_AUTO_TEST_CASE(member_callbacks_capture_this_and_format_placeholders_use_m
             "receiverFactory", [](VirtualMachine*) {}, {defParameter("callback", callback, "")}, type, ""
         ).isValid());
     });
-    BOOST_TEST(!fixture.compile());
-    BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     BOOST_TEST(!fixture.hasError("Unknown identifier"));
     BOOST_TEST(!fixture.hasError("Callback return type"));
     auto& runtime = fixture.getRuntime();
@@ -776,8 +767,7 @@ BOOST_AUTO_TEST_CASE(member_bodies_use_registered_declaration_pre_parsers)
     fixture.addFunction("main",
         "class Point\nfun calculate\nconst answer = 42\nreturn answer\nend\nend"
     );
-    BOOST_TEST(!fixture.compile());
-    BOOST_TEST(fixture.hasError("Class member execution is not supported yet"));
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     BOOST_TEST(!fixture.hasError("Unknown identifier"));
     const auto* type = fixture.getRuntime().getTypeByName("Point")->asObjectType();
     BOOST_REQUIRE(type->getMethods().size() == 2u);
@@ -877,24 +867,24 @@ BOOST_AUTO_TEST_CASE(external_class_fields_reject_closed_types_conflicting_types
         fixture.addFunction("main", source);
         BOOST_TEST(!fixture.compile());
         BOOST_TEST((fixture.hasError("Unknown class field") || fixture.hasError("Cannot assign type") ||
-            fixture.hasError("conflicts with a method")));
+            fixture.hasError("Cannot assign to method")));
     }
 }
 
 BOOST_AUTO_TEST_CASE(internal_declarations_and_reads_do_not_produce_external_unused_warnings)
 {
-    for (const auto& [source, executable] : std::vector<std::pair<NomadString, bool>>{
-        {"class Point\nvalue = 1\nend\nfun write point:Point\npoint.value = 2\nend", true},
-        {"open class Point\nfun read\nreturn this.extra\nend\nend\n"
-            "fun write point:Point\npoint.extra = 1\nend", false},
-        {"open class Point\nend\nfun read point:Point\nreturn $\"value {point.extra}\"\nend\n"
-            "fun write point:Point\npoint.extra = 1\nend", true}
+    for (const auto& source : std::vector<NomadString>{
+        "class Point\nvalue = 1\nend\nfun write point:Point\npoint.value = 2\nend",
+        "open class Point\nfun read\nreturn this.extra\nend\nend\n"
+            "fun write point:Point\npoint.extra = 1\nend",
+        "open class Point\nend\nfun read point:Point\nreturn $\"value {point.extra}\"\nend\n"
+            "fun write point:Point\npoint.extra = 1\nend"
     }) {
         LanguageTestFixture fixture;
         fixture.addFunction("main", source);
         CompilerContext context(&fixture.getCompiler());
         const auto compiled = fixture.getCompiler().compileScripts(&context);
-        BOOST_TEST(compiled == executable);
+        BOOST_TEST(compiled);
         BOOST_TEST(context.getWarningCount() == 0u);
         for (const auto& diagnostic : context.getDiagnostics()) {
             BOOST_TEST(diagnostic.message.find("Unknown class field") == NomadString::npos);
@@ -996,7 +986,7 @@ BOOST_AUTO_TEST_CASE(missing_native_method_arguments_still_report_source_errors)
     LanguageTestFixture fixture;
     fixture.addFunction("main", "value = \"text\"\nreturn value.contains");
     BOOST_TEST(!fixture.compile());
-    BOOST_TEST(fixture.hasError("Incorrect argument count"));
+    BOOST_REQUIRE(fixture.hasError("No overload of 'value.contains' accepts 0 argument(s)"));
     BOOST_TEST(!fixture.hasError("Internal error"));
 }
 

@@ -577,6 +577,59 @@ NomadObject* VirtualMachine::runNativeConstructor(
     return object;
 }
 
+void VirtualMachine::runScriptMethod(
+    const CallableId memberId,
+    const std::vector<RuntimeValue>& args,
+    const RuntimeValue& receiver
+) {
+    const auto* method = m_runtime->getMethod(memberId);
+    const auto* script = method != nullptr ? method->asScriptMethod() : nullptr;
+    if (script == nullptr || method->getReturnType() == nullptr || script->getFunctionStart() == NOMAD_INVALID_INDEX ||
+        script->getFunctionStart() >= script->getFunctionEnd()) {
+        fault("Cannot call script method: invalid or uncompiled method");
+    }
+    if (args.size() != method->getParameterCount()) {
+        fault("Incorrect argument count when calling script method '" + method->getName() + "'");
+    }
+    if (!method->getReturnType()->isVoid()) {
+        m_result = RuntimeValue{};
+    }
+    const auto state = beginScriptRun();
+    std::vector<const Type*> argumentTypes;
+    const auto releaseArguments = [&]() {
+        freeHostArguments(state.stackIndex + 3, argumentTypes);
+        if (m_stackIndex > state.stackIndex + 1) {
+            method->getObjectType()->freeValue(m_stack[state.stackIndex + 2]);
+        }
+    };
+    try {
+        if (m_stackIndex >= m_stack.size() ||
+            m_stack.size() - m_stackIndex < s_scriptFrameSlotCount + 3 ||
+            args.size() > m_stack.size() - m_stackIndex - s_scriptFrameSlotCount - 3) {
+            fault("Stack overflow");
+        }
+        argumentTypes.reserve(args.size());
+        pushThis();
+        pushObjectValue(receiver);
+        for (auto index = args.size(); index > 0; --index) {
+            pushHostArgument(method->getParameters()[index - 1].type, args[index - 1], argumentTypes);
+        }
+        bindThisFromStack(args.size());
+        callScriptMethod(script->getFunctionStart());
+        executeScript();
+        if (m_yielded) {
+            fault("Script methods cannot yield");
+        }
+    } catch (...) {
+        releaseArguments();
+        m_yielded = false;
+        restoreScriptRun(state);
+        throw;
+    }
+    releaseArguments();
+    restoreScriptRun(state);
+}
+
 void VirtualMachine::runNativeMethod(const CallableId memberId, const std::vector<RuntimeValue>& args,
                                         RuntimeValue& receiver) {
     const auto* method = m_runtime->getNativeMemberMethod(memberId);

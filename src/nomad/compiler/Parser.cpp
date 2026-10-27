@@ -191,8 +191,27 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
                                                               const Expression* parent, const NomadString& name,
                                                               NomadIndex line, NomadIndex column);
 
-bool parseNativeMemberArguments(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens,
-                                   const NomadString& memberName, ArgumentList& arguments) {
+bool parseNativeMemberArguments(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    const NomadString& memberName,
+    const Type* receiverType,
+    ArgumentList& arguments
+) {
+    auto* runtime = context->getRuntime();
+    const Method* shape = nullptr;
+    for (auto index = NomadIndex{0}; index < runtime->getFunctionTableSize(); ++index) {
+        const auto* method = runtime->getMethod(CallableId{toNomadId(index)});
+        if (method != nullptr && method->getName() == memberName &&
+            (receiverType == nullptr || method->getObjectType() == receiverType) &&
+            (shape == nullptr || method->getParameterCount() > shape->getParameterCount())) {
+            shape = method;
+        }
+    }
+    if (shape != nullptr) {
+        return parseCallableArguments(context, function, tokens, *shape, &arguments, true);
+    }
     const auto signature = context->getRuntime()->getMemberSignature(memberName);
     if (!signature) {
         return true;
@@ -218,20 +237,25 @@ std::unique_ptr<Expression> createNativeMemberExpression(
     ArgumentList arguments;
 
     auto storedField = false;
+    const Type* receiverType = nullptr;
     if (const auto* identifier = receiver->asIdentifierExpression()) {
         IdentifierDefinition definition;
         context->getCompiler()->getIdentifierDefinition(identifier->getIdentifier(), function, definition);
+        receiverType = definition.valueType;
         if (definition.valueType != nullptr && definition.valueType->asObjectType() != nullptr) {
             storedField = context->getRuntime()->getMemberType(
                 context->getRuntime()->getNativeMemberId(definition.valueType, memberName)
-            ) == MemberType::Unknown;
+            ) == MemberType::Unknown && !std::ranges::any_of(
+                definition.valueType->asObjectType()->getMethods(),
+                [&](const auto* method) { return method->getName() == memberName; }
+            );
         }
     }
     auto hasExplicitArguments = false;
     if (parseArguments && !storedField) {
         const auto argumentLine = tokens->getLineIndex();
         const auto argumentColumn = tokens->getColumnIndex();
-        if (!parseNativeMemberArguments(context, function, tokens, memberName, arguments)) {
+        if (!parseNativeMemberArguments(context, function, tokens, memberName, receiverType, arguments)) {
             return nullptr;
         }
         hasExplicitArguments = tokens->getLineIndex() != argumentLine || tokens->getColumnIndex() != argumentColumn;
@@ -471,11 +495,6 @@ std::unique_ptr<Statement> parseStatement(
     Tokenizer* tokens
 ) {
     const auto statementName = tokens->next().textValue;
-    if (context->getCompiler()->getReceiverType(function) != nullptr && statementName.starts_with("this.")) {
-        context->reportError("Script member invocation is not supported yet: '" + statementName + "'", tokens);
-        return nullptr;
-    }
-
     ParseStatementFn statementFn;
     StatementAvailability availability;
 
