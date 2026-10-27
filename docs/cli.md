@@ -57,6 +57,9 @@ The compiler initializes a headless engine with dummy video/audio drivers.
 Engine functions and constants remain available. Diagnostics include source
 locations; compilation errors return a nonzero exit code.
 
+Instruction dumps include script functions, methods, constructors, and generated
+class initializers. `--function` limits the dump to a named free function.
+
 When `nomadc check` discovers a project, it also discovers and CPU-packs the
 configured sprite directories without uploading textures to the GPU. The
 report lists each physical texture page, its dimensions, logical and unique
@@ -78,6 +81,9 @@ documentation. Suggestions and diagnostics reflect unsaved editor changes and
 use the nearest project configuration. Scripts are never executed. See the
 [VS Code extension guide](https://github.com/jfbilodeau/Nomad/blob/main/editor/README.md)
 for setup and current limitations.
+
+Local and parameter suggestions and hover information also cover script methods
+and constructors. Their receiver is available as `this`.
 
 ## Runtime
 

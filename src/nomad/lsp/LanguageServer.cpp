@@ -260,8 +260,8 @@ ApiAnalysis analyzeApiSymbols(
             std::move(signature), "Defined in `" + function->getPath() + "`."});
     }
     std::set<NomadString> localNames;
-    for (auto* function = runtime->getFunctionAtLine(uri, line); function;
-        function = runtime->getScriptFunction(function->getParentId())) {
+    for (const auto* function = runtime->getScriptCallableAtLine(uri, line); function;
+        function = runtime->getScriptCallable(function->getParentId())) {
         const auto addLocal = [&](const NomadString& name, const Type* type) {
             if (name.empty() || name.find('@') != NomadString::npos) return;
             if (!localNames.insert(name).second) return;
@@ -280,6 +280,9 @@ ApiAnalysis analyzeApiSymbols(
         }
         for (auto index = NomadIndex{0}; index < function->getParameterCount(); ++index) {
             addLocal(function->getParameterName(toNomadId(index)), function->getParameterType(toNomadId(index)));
+        }
+        if (function->getObjectType() != nullptr) {
+            addLocal("this", function->getObjectType());
         }
     }
     std::set<NomadString> namespaces;

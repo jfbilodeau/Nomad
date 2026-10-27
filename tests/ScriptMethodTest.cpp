@@ -234,6 +234,92 @@ BOOST_AUTO_TEST_CASE(method_callbacks_and_format_expressions_capture_the_method_
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
+BOOST_AUTO_TEST_CASE(dynamic_formatting_reads_constructor_method_and_captured_receiver_frames) {
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    std::unique_ptr<Closure> closure;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "save", [&](VirtualMachine* machine) {
+            closure = machine->createClosure(&runtime, machine->getCallableIdParameter(0));
+        }, {defParameter("callback", runtime.getCallbackType({}, runtime.getStringType()), "")},
+        runtime.getVoidType(), ""
+    ).isValid());
+    fixture.addFunction("main",
+        "class Counter\nvalue = 0\n"
+        "init amount:int\nlocal = amount + 1\nthis.value = local\n"
+        "this.text = $(\"ctor {amount} {local} {this.value}\")\nend\n"
+        "fun read amount:int\nlocal = this.value + amount\n"
+        "save fun\nretained = this.value + amount\n"
+        "return $(\"captured {this.value} {amount} {retained}\")\nend\n"
+        "return $(\"method {amount} {local} {this.value}\")\nend\nend\n"
+        "counter = new Counter 4\nassert counter.text == \"ctor 4 5 5\"\nreturn counter.read 3"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto before = NomadObject::getLiveObjectCount();
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    BOOST_TEST(result.getStringObject()->getString() == "method 3 8 5");
+    result.freeObjectValue();
+    BOOST_REQUIRE(closure != nullptr);
+    runtime.executeFunction(closure.get(), {}, result);
+    BOOST_TEST(result.getStringObject()->getString() == "captured 5 3 8");
+    result.freeObjectValue();
+    closure.reset();
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(frame_interpretation_reads_and_writes_constructor_and_method_bindings) {
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto constructorsSeen = 0;
+    auto methodsSeen = 0;
+    runtime.registerDynamicVariable("test.frame", [](VirtualMachine*, const RuntimeValue&) {},
+        [&](VirtualMachine* machine, RuntimeValue& value) {
+            const auto* callable = machine->getCurrentCallable();
+            BOOST_REQUIRE(callable != nullptr);
+            BOOST_TEST(machine->getCurrentFunction() == nullptr);
+            if (runtime.getConstructor(callable->getId()) != nullptr) {
+                ++constructorsSeen;
+            } else {
+                BOOST_REQUIRE(runtime.getMethod(callable->getId()) != nullptr);
+                ++methodsSeen;
+            }
+            InterpreterContext context(*machine, *callable);
+            BOOST_TEST(context.getCallable()->getObjectType() == callable->getObjectType());
+            BOOST_TEST(context.getCallable() != callable);
+            BOOST_TEST(context.getFunction() == nullptr);
+            const auto variablesBefore = callable->getVariableCount();
+            const auto parametersBefore = callable->getParameterCount();
+            BOOST_REQUIRE(Interpreter{}.evaluateExpression("this.value + amount + local", context));
+            const auto total = context.getResult()->getValue().getIntegerValue();
+            BOOST_REQUIRE(Interpreter{}.execute("local = local + 1", context));
+            BOOST_REQUIRE(Interpreter{}.execute("amount = amount + 2", context));
+            const auto assigned = Interpreter{}.execute("this.value = this.value + 3", context);
+            BOOST_REQUIRE_MESSAGE(assigned, (context.getError() ? *context.getError() : "Field assignment failed"));
+            BOOST_TEST(callable->getVariableCount() == variablesBefore);
+            BOOST_TEST(callable->getParameterCount() == parametersBefore);
+            BOOST_TEST(machine->getCurrentCallable() == callable);
+            value.setStringValue(std::to_string(total));
+        }, runtime.getStringType(), ""
+    );
+    fixture.addFunction("main",
+        "class Counter\nvalue = 0\n"
+        "init amount:int\nlocal = amount + 1\nthis.value = local\nthis.report = test.frame\n"
+        "assert local == 6\nassert amount == 6\nend\n"
+        "fun read amount:int\nlocal = this.value + amount\ntext = test.frame\n"
+        "assert local == 12\nassert amount == 5\nreturn text\nend\nend\n"
+        "counter = new Counter 4\nassert counter.report == \"14\"\n"
+        "text = counter.read 3\nassert counter.value == 11\nreturn text"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto outcome = fixture.execute("main");
+    BOOST_REQUIRE(!outcome.fault.has_value());
+    BOOST_TEST(outcome.text == "22");
+    BOOST_TEST(outcome.leakedStrings == 0);
+    BOOST_TEST(constructorsSeen == 1);
+    BOOST_TEST(methodsSeen == 1);
+}
+
 BOOST_AUTO_TEST_CASE(invalid_method_calls_report_source_diagnostics) {
     for (const auto* body : {
         "return owner.read true", "return owner.read", "return owner.missing",

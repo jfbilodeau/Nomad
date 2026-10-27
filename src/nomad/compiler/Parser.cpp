@@ -1098,7 +1098,8 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
             context->reportError("Cannot reassign the class receiver 'this'", tokens);
             return nullptr;
         }
-        if (target.starts_with("this.") && target.find('.', 5) == NomadString::npos &&
+        if (context->getMode() != CompilerMode::Interpreter &&
+            target.starts_with("this.") && target.find('.', 5) == NomadString::npos &&
             tokens->getTokenCount() >= 3 && tokens->getTokenAt(1) == "=") {
             auto name = tokens->next().textValue;
             tokens->next();

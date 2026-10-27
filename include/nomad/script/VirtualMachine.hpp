@@ -53,6 +53,7 @@ public:
 
     [[nodiscard]]
     ScriptFunction* getCurrentFunction() const;
+    [[nodiscard]] const ScriptCallableBase* getCurrentCallable() const;
 
     void callScriptFunction(NomadIndex address);
     void callScriptMethod(NomadIndex address);

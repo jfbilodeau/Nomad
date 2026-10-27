@@ -160,7 +160,7 @@ const Type* InterpreterContext::getVariableType(const NomadString& name) const {
     if (parameterId != NOMAD_INVALID_ID) {
         return m_function->getParameterType(parameterId);
     }
-    return getVariableTypeById(getFunction()->getVariableId(name));
+    return getVariableTypeById(getCallable()->getVariableId(name));
 }
 
 const Type* InterpreterContext::getVariableTypeById(const VariableId variableId) const {
@@ -186,7 +186,7 @@ const RuntimeValue* InterpreterContext::getVariableValue(const NomadString& name
         validateFrame();
         return &m_virtualMachine.m_stack[m_parameterIndex - parameterId];
     }
-    return getVariableValueById(getFunction()->getVariableId(name));
+    return getVariableValueById(getCallable()->getVariableId(name));
 }
 
 const RuntimeValue* InterpreterContext::getVariableValueById(const VariableId variableId) const {
@@ -241,17 +241,30 @@ InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine):
 
 InterpreterContext::~InterpreterContext() = default;
 
-InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine, ScriptFunction& function):
+InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine, const ScriptCallableBase& function):
     InterpreterContext(virtualMachine)
 {
-    if (virtualMachine.getCurrentFunction() != &function || function.getFunctionStart() == NOMAD_INVALID_INDEX) {
-        throw NomadBug("Frame interpretation requires an active compiled script function");
+    if (virtualMachine.getCurrentCallable() != &function || function.getFunctionStart() == NOMAD_INVALID_INDEX) {
+        throw NomadBug("Frame interpretation requires an active compiled script callable");
     }
-    m_frameFunction = &function;
+    m_frameCallable = &function;
     m_parameterIndex = virtualMachine.m_parameterIndex;
     m_variableIndex = virtualMachine.m_variableIndex;
     m_frameVariableCount = function.getVariableCount();
-    m_function = std::make_unique<ScriptFunction>(function.getId(), function.getName(), function.getPath(), "");
+    if (m_runtime->getConstructor(function.getId()) != nullptr) {
+        m_function = std::make_unique<ScriptConstructor>(
+            function.getObjectType(), std::vector<Parameter>{}, function.getPath(), ""
+        );
+    } else if (function.getObjectType() != nullptr) {
+        m_function = std::make_unique<ScriptMethod>(
+            function.getName(), function.getObjectType(), std::vector<Parameter>{},
+            function.getReturnType(), function.getPath(), ""
+        );
+    } else {
+        m_function = std::make_unique<ScriptFunction>(function.getId(), function.getName(), function.getPath(), "");
+    }
+    m_function->setHub(function.getHub());
+    m_function->setParentId(function.getParentId());
     for (NomadIndex index = 0; index < m_frameVariableCount; ++index) {
         const auto id = VariableId{toNomadId(index)};
         m_function->registerVariable(function.getVariableName(id), function.getVariableType(id));
@@ -268,7 +281,7 @@ InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine, ScriptFun
 }
 
 bool InterpreterContext::isFrameBacked() const {
-    return m_frameFunction != nullptr;
+    return m_frameCallable != nullptr;
 }
 
 bool InterpreterContext::isFrameVariable(const VariableId variableId) const {
@@ -277,7 +290,7 @@ bool InterpreterContext::isFrameVariable(const VariableId variableId) const {
 
 void InterpreterContext::validateFrame() const {
     if (isFrameBacked() &&
-        (m_virtualMachine.getCurrentFunction() != m_frameFunction ||
+        (m_virtualMachine.getCurrentCallable() != m_frameCallable ||
          m_virtualMachine.m_parameterIndex != m_parameterIndex ||
          m_virtualMachine.m_variableIndex != m_variableIndex)) {
         throw NomadBug("Interpreter context is not bound to the active script frame");
@@ -285,6 +298,10 @@ void InterpreterContext::validateFrame() const {
 }
 
 const ScriptFunction* InterpreterContext::getFunction() const {
+    return dynamic_cast<const ScriptFunction*>(m_function.get());
+}
+
+const ScriptCallableBase* InterpreterContext::getCallable() const {
     return m_function.get();
 }
 
@@ -353,7 +370,7 @@ const NomadString* InterpreterContext::getError() const {
 }
 
 void InterpreterContext::setParameterResult(const NomadId parameterId) {
-    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameFunction->getParameterCount())) {
+    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameCallable->getParameterCount())) {
         throw NomadBug("Invalid frame-backed parameter access");
     }
     validateFrame();
@@ -361,7 +378,7 @@ void InterpreterContext::setParameterResult(const NomadId parameterId) {
 }
 
 void InterpreterContext::setParameter(const NomadId parameterId, const RuntimeValue& value) {
-    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameFunction->getParameterCount())) {
+    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameCallable->getParameterCount())) {
         throw NomadBug("Invalid frame-backed parameter assignment");
     }
     validateFrame();

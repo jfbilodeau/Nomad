@@ -3076,6 +3076,57 @@ ScriptFunction * Runtime::getFunctionAtInstructionIndex(const NomadIndex instruc
     return nullptr;
 }
 
+const ScriptCallableBase* Runtime::getScriptCallableAtLine(
+    const NomadString& sourceName,
+    const NomadIndex line
+) const {
+    if (line == 0 || line == NOMAD_INVALID_INDEX) {
+        return nullptr;
+    }
+    const ScriptCallableBase* selected = nullptr;
+    auto selectedSpan = NOMAD_INVALID_INDEX;
+    for (const auto* callable : m_callables) {
+        const auto* script = callable->asScriptCallable();
+        if (script == nullptr || script->getPath() != sourceName) continue;
+        const auto start = script->getSourceStartLine();
+        const auto end = script->getSourceEndLine();
+        if (start == NOMAD_INVALID_INDEX || end == NOMAD_INVALID_INDEX || line < start || line > end) continue;
+        if (end - start <= selectedSpan) {
+            selected = script;
+            selectedSpan = end - start;
+        }
+    }
+    return selected;
+}
+
+const ScriptCallableBase* Runtime::getScriptCallableByStartAddress(const NomadIndex startAddress) const {
+    const auto* callable = getScriptCallableAtInstructionIndex(startAddress);
+    return callable != nullptr && callable->getFunctionStart() == startAddress ? callable : nullptr;
+}
+
+const ScriptCallableBase* Runtime::getScriptCallableAtInstructionIndex(const NomadIndex instructionIndex) const {
+    for (const auto* callable : m_callables) {
+        const auto* script = callable->asScriptCallable();
+        if (script == nullptr) continue;
+        const auto start = script->getFunctionStart();
+        const auto end = script->getFunctionEnd();
+        if (start != NOMAD_INVALID_INDEX && end != NOMAD_INVALID_INDEX &&
+            instructionIndex >= start && instructionIndex < end) {
+            return script;
+        }
+    }
+    return nullptr;
+}
+
+void Runtime::getScriptCallables(std::vector<const ScriptCallableBase*>& callables) const {
+    callables.clear();
+    for (const auto* callable : m_callables) {
+        if (const auto* script = callable->asScriptCallable()) {
+            callables.push_back(script);
+        }
+    }
+}
+
 NomadIndex Runtime::getFunctionSize() const {
     NomadIndex size = 0;
 
@@ -3249,29 +3300,44 @@ void Runtime::executeNativeFunction(
     }
 }
 
-void dumpFunctionDeclaration(const ScriptFunction* function, std::ostream& out) {
-    out << "function " << function->getName();
+namespace {
 
-    for (NomadIndex i = 0; i < function->getParameterCount(); ++i) {
-        const auto parameterId = toNomadId(i);
+NomadString getQualifiedCallableName(const Callable* callable) {
+    const auto& name = callable->getName();
+    if (callable->getType() != CallableType::Method) {
+        return name;
+    }
+    const auto* owner = callable->getObjectType();
+    if (name.starts_with(owner->getTypeName() + ".") || name.starts_with(owner->getTypeName() + "$")) return name;
+    return owner->getTypeName() + "." + name;
+}
 
-        out << " " << function->getParameterName(parameterId) << ":" << function->getParameterType(parameterId)->getTypeName();
+void dumpCallableDeclaration(const Callable* callable, std::ostream& out) {
+    const auto type = callable->getType();
+    out << (type == CallableType::Function ? "function " :
+        type == CallableType::Method ? "method " : "constructor ") << getQualifiedCallableName(callable);
+    for (const auto& parameter : callable->getParameters()) {
+        out << " " << parameter.name << ":" << parameter.type->getTypeName();
     }
 
     out << std::endl;
 }
 
+} // namespace
+
 void Runtime::dumpInstructions(std::ostream& out) const {
-    std::vector<ScriptFunction*> functions;
-    getFunctions(functions);
+    std::vector<const ScriptCallableBase*> functions;
+    getScriptCallables(functions);
 
     for (const auto* function : functions) {
-        dumpInstructions(out, function);
+        if (function->getFunctionStart() != NOMAD_INVALID_INDEX && function->getFunctionEnd() != NOMAD_INVALID_INDEX) {
+            dumpInstructions(out, function);
+        }
     }
 }
 
-void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function) const {
-    dumpFunctionDeclaration(function, out);
+void Runtime::dumpInstructions(std::ostream& out, const ScriptCallableBase* function) const {
+    dumpCallableDeclaration(getCallable(function->getId()), out);
 
     for (auto i = function->getFunctionStart(); i < function->getFunctionEnd(); ++i) {
         auto fn = m_instructions[i].fn;
@@ -3314,9 +3380,14 @@ void Runtime::dumpInstructions(std::ostream& out, const ScriptFunction* function
                 case Operand::Function: {
                     const auto functionStart = value.getIndexValue();
 
-                    const auto calledFunction = getFunctionByStartAddress(functionStart);
+                    const auto calledFunction = getScriptCallableByStartAddress(functionStart);
+                    if (calledFunction == nullptr) {
+                        throw NomadException("Cannot dump instructions: unresolved script target at " +
+                            std::to_string(functionStart));
+                    }
 
-                textValue = calledFunction->getName() + " (" + std::to_string(calledFunction->getId().id) + ")";
+                textValue = getQualifiedCallableName(getCallable(calledFunction->getId())) + " (" +
+                    std::to_string(calledFunction->getId().id) + ")";
                 break;
             }
             case Operand::NativeFunction: {

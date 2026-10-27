@@ -546,6 +546,57 @@ directory = "res"
     BOOST_TEST(labels(15).contains("helpers.library"));
 }
 
+BOOST_AUTO_TEST_CASE(class_member_scopes_expose_parameters_locals_and_receiver)
+{
+    TestDirectory directory("nomad_lsp_member_scopes");
+    const auto uri = uriFor(directory.getPath() / "counter.nomad");
+    const auto text =
+        "class Counter\nvalue = 0\n"
+        "init amount:int\nlocal = amount + 1\nthis.value = local\nreceiver = this\nend\n"
+        "fun read delta:int\nresult = this.value + delta\nreturn result\nend\nend\n"
+        "counter = new Counter 4\nreturn counter.read 3";
+    const auto query = [&](const int id, const char* method, const int line, const int character) {
+        return frame({{"jsonrpc", "2.0"}, {"id", id}, {"method", method},
+            {"params", {{"textDocument", {{"uri", uri}}},
+                {"position", {{"line", line}, {"character", character}}}}}});
+    };
+    std::istringstream input(start() + frame(openDocument(uri, text)) +
+        query(10, "textDocument/completion", 4, 0) +
+        query(11, "textDocument/completion", 9, 0) +
+        query(12, "textDocument/hover", 3, 10) +
+        query(13, "textDocument/hover", 8, 24) +
+        query(14, "textDocument/hover", 5, 12) +
+        query(15, "textDocument/completion", 13, 0) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    BOOST_REQUIRE_MESSAGE(errors.str().empty(), errors.str());
+    std::map<std::int64_t, json::object> replies;
+    for (const auto& message : responses(output.str())) {
+        if (message.contains("id")) replies.emplace(message.at("id").as_int64(), message);
+    }
+    const auto labels = [&](const int id) {
+        std::set<NomadString> names;
+        for (const auto& item : replies.at(id).at("result").as_object().at("items").as_array()) {
+            names.emplace(item.as_object().at("label").as_string());
+        }
+        return names;
+    };
+    BOOST_TEST(labels(10).contains("amount"));
+    BOOST_TEST(labels(10).contains("local"));
+    BOOST_TEST(labels(10).contains("this"));
+    BOOST_TEST(!labels(10).contains("delta"));
+    BOOST_TEST(labels(11).contains("delta"));
+    BOOST_TEST(labels(11).contains("result"));
+    BOOST_TEST(labels(11).contains("this"));
+    BOOST_TEST(!labels(11).contains("amount"));
+    BOOST_TEST(!labels(15).contains("this"));
+    BOOST_TEST(!labels(15).contains("delta"));
+    BOOST_TEST(json::serialize(replies.at(12).at("result")).find("amount:int") != NomadString::npos);
+    BOOST_TEST(json::serialize(replies.at(13).at("result")).find("delta:int") != NomadString::npos);
+    BOOST_TEST(json::serialize(replies.at(14).at("result")).find("this:Counter") != NomadString::npos);
+}
+
 BOOST_AUTO_TEST_CASE(standalone_symbols_remain_isolated_between_documents)
 {
     TestDirectory directory("nomad_lsp_standalone_symbols");

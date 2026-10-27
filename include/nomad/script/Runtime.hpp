@@ -495,6 +495,13 @@ public:
     void getFunctions(std::vector<ScriptFunction*>& functions) const;
     void getFunctions(TempVector<ScriptFunction*>& functions);
     [[nodiscard]] ScriptFunction* getFunctionAtInstructionIndex(NomadIndex instructionIndex) const;
+    [[nodiscard]] const ScriptCallableBase* getScriptCallableAtLine(
+        const NomadString& sourceName,
+        NomadIndex line
+    ) const;
+    [[nodiscard]] const ScriptCallableBase* getScriptCallableByStartAddress(NomadIndex startAddress) const;
+    [[nodiscard]] const ScriptCallableBase* getScriptCallableAtInstructionIndex(NomadIndex instructionIndex) const;
+    void getScriptCallables(std::vector<const ScriptCallableBase*>& callables) const;
 
     [[nodiscard]] NomadIndex getFunctionSize() const;
 
@@ -513,7 +520,7 @@ public:
 
     // Debug
     void dumpInstructions(std::ostream& out) const;
-    void dumpInstructions(std::ostream& out, const ScriptFunction* function) const;
+    void dumpInstructions(std::ostream& out, const ScriptCallableBase* callable) const;
     void dumpDocumentation(std::ostream& out) const;
 
 private:

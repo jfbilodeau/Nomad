@@ -1058,10 +1058,10 @@ void op_format_string_execute(VirtualMachine* interpreter) {
 void op_dynamic_format_execute(VirtualMachine* machine) {
     const auto line = machine->nextIndex();
     const auto column = machine->nextIndex();
-    auto* function = machine->getCurrentFunction();
+    const auto* function = machine->getCurrentCallable();
 
     if (function == nullptr) {
-        machine->fault("Dynamic formatting requires an active script function");
+        machine->fault("Dynamic formatting requires an active script callable");
     }
 
     auto* formatText = machine->getStringResult();

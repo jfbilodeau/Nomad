@@ -486,6 +486,23 @@ Each category offers conversions to its implementation: `asNativeFunction()` /
 with its specialized type, or `nullptr` when the implementation does not match.
 Script methods and script constructors are available on compiled classes.
 
+`getScriptCallables(callables)` lists all script functions, methods, and
+constructors, including nested callbacks and generated class initializers.
+`getScriptCallableAtLine(sourceName, line)` finds the innermost matching script
+callable using one-based, inclusive source ranges. It works after parsing even
+when compilation reports an error. Unknown source ranges do not match.
+`getScriptCallableAtInstructionIndex(index)` finds the compiled callable containing
+an instruction or operand; its end address is excluded.
+`getScriptCallableByStartAddress(address)` requires an exact compiled start
+address. These lookups return `nullptr` when no callable matches.
+The existing function-only lookup and enumeration APIs still exclude methods
+and constructors.
+
+`dumpInstructions(output)` includes every compiled script callable.
+The overload taking a script-callable pointer dumps just that callable.
+Methods are qualified by their declaring type, and constructor and method call
+targets are identified by name and callable ID.
+
 Use `resolveFunction(name, argumentTypes)`, `resolveMethod(objectType, name,
 argumentTypes)`, or `resolveConstructor(objectType, argumentTypes)` to select an
 overload. Inspect the `ResolveResult` before retrieving the selected callable.
@@ -1361,19 +1378,23 @@ access and type rules.
 During execution of a script instruction, construct a frame-bound context:
 
 ```cpp
-auto* function = machine.getCurrentFunction();
-if (function == nullptr) {
-    throw nomad::NomadBug("An active script function is required");
+const auto* callable = machine.getCurrentCallable();
+if (callable == nullptr) {
+    throw nomad::NomadBug("An active script callable is required");
 }
-nomad::InterpreterContext context(machine, *function);
+nomad::InterpreterContext context(machine, *callable);
 const nomad::Interpreter interpreter;
 const auto succeeded = interpreter.evaluateExpression("value + local", context);
 ```
 
 The context borrows live local and parameter values, not copies. Writes to frame
-variables update the originating frame. New interpreter variables stay in the
-context and never change the compiled function's locals, parameters, or captures.
-Resolution uses context-owned metadata representing both sets of variables.
+variables update the originating frame. Functions, methods, and constructors
+are supported; member frames also expose their receiver as `this`.
+New interpreter variables stay in the context and never change the compiled
+callable's locals, parameters, or captures. `context.getCallable()` exposes
+context-owned resolution metadata representing both sets of variables.
+`context.getFunction()` remains function-only and returns `nullptr` for member
+frames. `machine.getCurrentFunction()` likewise remains function-only.
 
 Construct this context while the script's parameter frame is active, not inside
 a native call that has replaced it with native arguments. The context must not

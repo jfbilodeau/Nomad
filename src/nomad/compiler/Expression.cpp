@@ -313,7 +313,7 @@ void DynamicFormatExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
     const auto format = value->getType()->toString(value->getValue());
-    const auto result = formatDynamicString(format, context, context.getFunction()->getPath(), getLine(), getColumn());
+    const auto result = formatDynamicString(format, context, context.getCallable()->getPath(), getLine(), getColumn());
     RuntimeValue formatted;
     formatted.setStringValue(result.text);
     try {
@@ -1562,7 +1562,7 @@ void FormatStringLiteral::onCompile(Compiler* compiler, ScriptCallableBase* func
 }
 
 void FormatStringLiteral::onEvaluate(InterpreterContext& context) const {
-    const auto result = formatDynamicString(m_formatString, context, context.getFunction()->getPath(),
+    const auto result = formatDynamicString(m_formatString, context, context.getCallable()->getPath(),
         getLine(), getColumn());
     RuntimeValue value;
     value.setStringValue(result.text);
