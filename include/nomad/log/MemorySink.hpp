@@ -8,6 +8,8 @@
 
 namespace nomad {
 
+struct MemorySinkConfiguration : SinkConfiguration {};
+
 class MemorySink : public LogSink {
 public:
     explicit MemorySink(const MemorySinkConfiguration& configuration = {});

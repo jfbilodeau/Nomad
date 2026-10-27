@@ -37,6 +37,12 @@ the global logger level still filters messages first.
 To deliver debug messages, lower both the global level and the receiving sink's
 level to `Debug`.
 
+The base configuration, level, and sink ID are declared in
+`<nomad/log/LogSink.hpp>`. Each concrete configuration is declared in its sink's
+header: `<nomad/log/ConsoleSink.hpp>`, `<nomad/log/FileSink.hpp>`, or
+`<nomad/log/MemorySink.hpp>`. `<nomad/log/Logger.hpp>` includes these headers and
+declares `LogDeliveryMode`.
+
 ```cpp
 nomad::Logger logger;
 nomad::ConsoleSinkConfiguration console;
@@ -127,16 +133,21 @@ producing `application.log`. Archives are `application.1.log`,
 
 | Setting | Default | Behavior |
 | --- | --- | --- |
-| `rotationMode` | `FileRotationMode::Size` | Select `None`, `Startup`, or `Size`. |
+| `rotationMode` | `FileRotationMode::Size` | Select `None` or `Size` for ongoing rotation. |
+| `rotateAtStartup` | `true` | Rotate a nonempty existing log once when the sink starts, independently of `rotationMode`. |
 | `maxSizeBytes` | 10 MiB (10,485,760 bytes) | Positive byte limit, used by `Size`. |
 | `maxFiles` | 10 | Number of archives, excluding the active file. Zero discards old active contents when rotating. |
 
-- `None` appends indefinitely and does not prune archives.
-- `Startup` archives a nonempty existing file once when the sink starts; it does
-  not rotate again when disabled/re-enabled, nor enforce a size limit.
-- `Size` appends existing content and rotates before a complete new record would
+- `None` disables ongoing rotation, allowing unlimited growth after startup.
+  To append across runs without rotating or pruning archives, also set
+  `rotateAtStartup = false`.
+- Startup rotation does not repeat when disabled/re-enabled, but creating a new
+  sink starts a new lifetime. Empty files are not archived.
+- `Size` rotates before a complete new record would
   exceed the byte limit. A record includes its final newline. One oversized
   record is allowed in an empty file; the next record rotates it.
+  With startup rotation disabled, existing content is appended and counted
+  toward the limit.
 - Output preserves message bytes and uses a single LF newline on every platform.
   The full formatted log entry, including timestamp and source location, counts
   toward the limit.
@@ -144,14 +155,17 @@ producing `application.log`. Archives are `application.1.log`,
   left alone. Lowering retention takes effect at the next rotation.
 
 An active factory creates directories and opens the file immediately, including
-startup rotation if selected. An inactive factory validates options without
+startup rotation unless disabled. An inactive factory validates options without
 filesystem writes. Such a sink starts on its first active delivery callback
 (including an empty logger flush), or an explicit `begin()` call.
 
-`getPath()` returns the resolved active file path. `getRotationMode()`,
+`getPath()` returns the resolved active file path. `getRotationMode()`, `getRotateAtStartup()`,
 `getMaxSizeBytes()`, and `getMaxFiles()` inspect rotation settings;
-`setRotationMode()` and `setRotationLimits(bytes, archives)` adjust them.
-Changes affect subsequent writes, not an already completed startup. Coordinate
+`setRotationMode()`, `setRotateAtStartup()`, and
+`setRotationLimits(bytes, archives)` adjust them.
+The startup flag can be changed before a staged sink starts; changing it after
+startup does not trigger or undo rotation. Other changes affect subsequent writes.
+Coordinate
 these operations with delivery; unlike base activation/level changes, they are
 not independently synchronized. To change the directory or base name, create
 a replacement sink.

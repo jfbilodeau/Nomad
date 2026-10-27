@@ -4,9 +4,25 @@
 
 #include <nomad/log/LogSink.hpp>
 
+#include <cstdint>
+#include <filesystem>
 #include <fstream>
 
 namespace nomad {
+
+enum class FileRotationMode {
+    None = 1,
+    Size,
+};
+
+struct FileSinkConfiguration : SinkConfiguration {
+    NomadPath directory;
+    NomadString name = "application";
+    FileRotationMode rotationMode = FileRotationMode::Size;
+    NomadBoolean rotateAtStartup = true;
+    NomadIndex maxSizeBytes = 10 * 1024 * 1024;
+    NomadIndex maxFiles = 10;
+};
 
 class FileSink : public LogSink {
 public:
@@ -14,12 +30,14 @@ public:
     FileSink(const FileSink&) = delete;
     ~FileSink() override = default;
 
-    [[nodiscard]] const std::filesystem::path& getPath() const;
+    [[nodiscard]] const NomadPath& getPath() const;
     [[nodiscard]] FileRotationMode getRotationMode() const;
     void setRotationMode(FileRotationMode mode);
-    [[nodiscard]] std::uintmax_t getMaxSizeBytes() const;
-    [[nodiscard]] std::uintmax_t getMaxFiles() const;
-    void setRotationLimits(std::uintmax_t maxSizeBytes, std::uintmax_t maxFiles);
+    [[nodiscard]] bool getRotateAtStartup() const;
+    void setRotateAtStartup(bool rotateAtStartup);
+    [[nodiscard]] NomadIndex getMaxSizeBytes() const;
+    [[nodiscard]] NomadIndex getMaxFiles() const;
+    void setRotationLimits(NomadIndex maxSizeBytes, NomadIndex  maxFiles);
 
     void begin() override;
     void log(const LogEntry* entry) override;
@@ -30,12 +48,13 @@ private:
     void rotate();
     [[nodiscard]] std::filesystem::path getArchivePath(std::uintmax_t index) const;
 
-    std::filesystem::path m_path;
+    NomadPath m_path;
     NomadString m_name;
     FileRotationMode m_rotationMode;
-    std::uintmax_t m_maxSizeBytes;
-    std::uintmax_t m_maxFiles;
-    std::uintmax_t m_sizeBytes = 0;
+    bool m_rotateAtStartup;
+    NomadIndex m_maxSizeBytes;
+    NomadIndex m_maxFiles;
+    NomadIndex m_sizeBytes = 0;
     bool m_started = false;
     std::ofstream m_output;
 };

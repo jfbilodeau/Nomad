@@ -47,10 +47,13 @@ or synchronous delivery. Factories return strong `LogSinkId` handles; removed
 handles cannot refer to a newly created sink. See
 [C++ logging](embedding.md#c-logging) for the public API and ownership contracts.
 
-File sinks default to size-based rotation at 10 MiB and retain ten archives.
+File sinks default to size-based rotation at 10 MiB, rotation at startup, and
+retention of ten archives.
 The configurable base name defaults to `application`, producing
 `application.log`, `application.1.log` (newest archive), and so on.
-`Startup` rotation and `None` (unlimited append) are also available. See
+`rotateAtStartup` is independent of the rotation mode and defaults to `true`.
+`None` disables ongoing size-based rotation; also disable `rotateAtStartup` for
+unlimited append across runs. See
 [File sinks](embedding.md#file-sinks) for configuration and failure behavior.
 
 These configuration operations are not yet exposed to Nomad scripts or

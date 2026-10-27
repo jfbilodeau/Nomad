@@ -53,14 +53,19 @@ BOOST_AUTO_TEST_CASE(defaults_and_factory_lookup) {
     BOOST_TEST((configuration.level == LogLevel::Info));
     BOOST_TEST(configuration.name == "application");
     BOOST_TEST((configuration.rotationMode == FileRotationMode::Size));
+    BOOST_TEST(configuration.rotateAtStartup);
     BOOST_TEST(configuration.maxSizeBytes == 10U * 1024U * 1024U);
     BOOST_TEST(configuration.maxFiles == 10U);
 
+    directory.write("application.log", "previous run\n");
     Logger logger;
     logger.clear();
     const auto id = logger.createFileSink(configuration);
     auto* sink = dynamic_cast<FileSink*>(logger.getSink(id));
     BOOST_REQUIRE(sink != nullptr);
+    BOOST_TEST(sink->getRotateAtStartup());
+    BOOST_TEST(read().empty());
+    BOOST_TEST(read("application.1.log") == "previous run\n");
     BOOST_TEST((sink->getPath() == directory.getPath() / "application.log"));
     logger.replaceSinks({id});
     logger.info("factory record");
@@ -106,6 +111,7 @@ BOOST_AUTO_TEST_CASE(default_size_limit_rotates_after_exactly_ten_mebibytes) {
 
 BOOST_AUTO_TEST_CASE(appends_existing_bytes_without_newline_translation) {
     directory.write("application.log", "previous\n");
+    configuration.rotateAtStartup = false;
     FileSink sink(configuration);
     writeRecord(sink, "next");
     writeRecord(sink, "");
@@ -204,6 +210,7 @@ BOOST_AUTO_TEST_CASE(oversized_record_is_kept_whole_in_an_empty_file) {
 
 BOOST_AUTO_TEST_CASE(existing_file_size_is_used_on_first_write) {
     directory.write("application.log", "old\n");
+    configuration.rotateAtStartup = false;
     configuration.maxSizeBytes = 5;
     FileSink sink(configuration);
     BOOST_TEST(!exists("application.1.log"));
@@ -261,6 +268,7 @@ BOOST_AUTO_TEST_CASE(zero_archives_discards_previous_active_contents) {
 
 BOOST_AUTO_TEST_CASE(none_appends_without_rotation_or_retention_cleanup) {
     configuration.rotationMode = FileRotationMode::None;
+    configuration.rotateAtStartup = false;
     configuration.maxSizeBytes = 1;
     configuration.maxFiles = 0;
     directory.write("application.log", "old\n");
@@ -274,7 +282,7 @@ BOOST_AUTO_TEST_CASE(none_appends_without_rotation_or_retention_cleanup) {
 BOOST_AUTO_TEST_CASE(startup_rotates_once_per_sink_lifetime) {
     directory.write("application.log", "previous\n");
     directory.write("application.1.log", "older\n");
-    configuration.rotationMode = FileRotationMode::Startup;
+    configuration.rotationMode = FileRotationMode::None;
     configuration.maxSizeBytes = 1;
     FileSink sink(configuration);
     BOOST_TEST(read("application.1.log") == "previous\n");
@@ -282,6 +290,8 @@ BOOST_AUTO_TEST_CASE(startup_rotates_once_per_sink_lifetime) {
     writeRecord(sink, "first");
     sink.setActive(false);
     sink.setActive(true);
+    sink.setRotateAtStartup(false);
+    sink.setRotateAtStartup(true);
     sink.begin();
     writeRecord(sink, "second");
     BOOST_TEST(read() == "first\nsecond\n");
@@ -289,7 +299,6 @@ BOOST_AUTO_TEST_CASE(startup_rotates_once_per_sink_lifetime) {
 }
 
 BOOST_AUTO_TEST_CASE(startup_does_not_archive_empty_or_missing_active_file) {
-    configuration.rotationMode = FileRotationMode::Startup;
     {
         FileSink sink(configuration);
         BOOST_TEST(!exists("application.1.log"));
@@ -302,7 +311,6 @@ BOOST_AUTO_TEST_CASE(startup_does_not_archive_empty_or_missing_active_file) {
 
 BOOST_AUTO_TEST_CASE(inactive_staging_defers_filesystem_effects_and_startup_rotation) {
     directory.write("application.log", "old\n");
-    configuration.rotationMode = FileRotationMode::Startup;
     configuration.active = false;
     Logger logger;
     logger.clear();
@@ -317,6 +325,89 @@ BOOST_AUTO_TEST_CASE(inactive_staging_defers_filesystem_effects_and_startup_rota
     BOOST_TEST(read("application.1.log") == "old\n");
     BOOST_TEST(read().find("new") != NomadString::npos);
     logger.clearAllSinks();
+}
+
+BOOST_AUTO_TEST_CASE(startup_and_size_rotation_both_apply) {
+    directory.write("application.log", "previous run\n");
+    directory.write("application.1.log", "older run\n");
+    configuration.maxSizeBytes = 2;
+    FileSink sink(configuration);
+    BOOST_TEST(read().empty());
+    BOOST_TEST(read("application.1.log") == "previous run\n");
+    BOOST_TEST(read("application.2.log") == "older run\n");
+    writeRecord(sink, "a");
+    BOOST_TEST(read() == "a\n");
+    writeRecord(sink, "b");
+    BOOST_TEST(read() == "b\n");
+    BOOST_TEST(read("application.1.log") == "a\n");
+    BOOST_TEST(read("application.2.log") == "previous run\n");
+    BOOST_TEST(read("application.3.log") == "older run\n");
+}
+
+BOOST_AUTO_TEST_CASE(startup_with_zero_archives_discards_only_the_previous_run) {
+    directory.write("application.log", "previous run\n");
+    directory.write("application.1.log", "older run\n");
+    configuration.rotationMode = FileRotationMode::None;
+    configuration.maxFiles = 0;
+    configuration.maxSizeBytes = 1;
+    FileSink sink(configuration);
+    BOOST_TEST(read().empty());
+    BOOST_TEST(!exists("application.1.log"));
+    writeRecord(sink, "first");
+    writeRecord(sink, "second");
+    BOOST_TEST(read() == "first\nsecond\n");
+}
+
+BOOST_AUTO_TEST_CASE(startup_rotation_occurs_again_for_a_new_sink_lifetime) {
+    {
+        FileSink sink(configuration);
+        writeRecord(sink, "first run");
+    }
+    {
+        FileSink sink(configuration);
+        writeRecord(sink, "second run");
+    }
+    BOOST_TEST(read() == "second run\n");
+    BOOST_TEST(read("application.1.log") == "first run\n");
+    BOOST_TEST(!exists("application.2.log"));
+}
+
+BOOST_AUTO_TEST_CASE(startup_setting_can_be_changed_before_starting_a_staged_sink) {
+    directory.write("application.log", "previous run\n");
+    configuration.active = false;
+    configuration.rotateAtStartup = false;
+    FileSink enabled(configuration);
+    BOOST_TEST(!enabled.getRotateAtStartup());
+    enabled.setRotateAtStartup(true);
+    enabled.begin();
+    BOOST_TEST(read().empty());
+    BOOST_TEST(read("application.1.log") == "previous run\n");
+
+    configuration.name = "disabled";
+    configuration.rotateAtStartup = true;
+    directory.write("disabled.log", "previous run\n");
+    FileSink disabled(configuration);
+    disabled.setRotateAtStartup(false);
+    BOOST_TEST(!disabled.getRotateAtStartup());
+    writeRecord(disabled, "next");
+    BOOST_TEST(read("disabled.log") == "previous run\nnext\n");
+    BOOST_TEST(!exists("disabled.1.log"));
+}
+
+BOOST_AUTO_TEST_CASE(startup_failure_preserves_active_contents_and_can_be_retried) {
+    directory.write("application.log", "previous run\n");
+    const auto blocker = directory.getPath() / "application.1.log";
+    std::filesystem::create_directory(blocker);
+    configuration.active = false;
+    FileSink sink(configuration);
+    BOOST_CHECK_THROW(sink.begin(), NomadException);
+    BOOST_TEST(read() == "previous run\n");
+    std::filesystem::remove(blocker);
+    sink.begin();
+    BOOST_TEST(read().empty());
+    BOOST_TEST(read("application.1.log") == "previous run\n");
+    sink.begin();
+    BOOST_TEST(!exists("application.2.log"));
 }
 
 BOOST_AUTO_TEST_CASE(inactive_creation_does_not_create_directories) {

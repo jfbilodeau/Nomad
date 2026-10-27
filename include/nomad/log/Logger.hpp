@@ -2,7 +2,10 @@
 
 #pragma once
 
+#include <nomad/log/ConsoleSink.hpp>
+#include <nomad/log/FileSink.hpp>
 #include <nomad/log/LogSink.hpp>
+#include <nomad/log/MemorySink.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -13,6 +16,11 @@
 #include <vector>
 
 namespace nomad {
+
+enum class LogDeliveryMode {
+    Buffered = 1,
+    Synchronous,
+};
 
 struct Location {
     explicit Location(const std::source_location& location = std::source_location::current()) {

@@ -16,6 +16,7 @@ FileSink::FileSink(const FileSinkConfiguration& configuration) :
     LogSink(configuration),
     m_name(configuration.name),
     m_rotationMode(configuration.rotationMode),
+    m_rotateAtStartup(configuration.rotateAtStartup),
     m_maxSizeBytes(configuration.maxSizeBytes),
     m_maxFiles(configuration.maxFiles)
 {
@@ -44,21 +45,29 @@ FileRotationMode FileSink::getRotationMode() const {
 }
 
 void FileSink::setRotationMode(const FileRotationMode mode) {
-    if (mode != FileRotationMode::None && mode != FileRotationMode::Startup && mode != FileRotationMode::Size) {
+    if (mode != FileRotationMode::None && mode != FileRotationMode::Size) {
         throw NomadException("Invalid file log rotation mode");
     }
     m_rotationMode = mode;
 }
 
-std::uintmax_t FileSink::getMaxSizeBytes() const {
+bool FileSink::getRotateAtStartup() const {
+    return m_rotateAtStartup;
+}
+
+void FileSink::setRotateAtStartup(const bool rotateAtStartup) {
+    m_rotateAtStartup = rotateAtStartup;
+}
+
+NomadIndex FileSink::getMaxSizeBytes() const {
     return m_maxSizeBytes;
 }
 
-std::uintmax_t FileSink::getMaxFiles() const {
+NomadIndex FileSink::getMaxFiles() const {
     return m_maxFiles;
 }
 
-void FileSink::setRotationLimits(const std::uintmax_t maxSizeBytes, const std::uintmax_t maxFiles) {
+void FileSink::setRotationLimits(const NomadIndex maxSizeBytes, const NomadIndex maxFiles) {
     if (maxSizeBytes == 0) {
         throw NomadException("The log file size limit must be positive; use None to disable rotation");
     }
@@ -81,7 +90,7 @@ void FileSink::begin() {
         open();
     }
     if (!m_started) {
-        if (m_rotationMode == FileRotationMode::Startup && m_sizeBytes != 0) {
+        if (m_rotateAtStartup && m_sizeBytes != 0) {
             rotate();
         }
         m_started = true;
@@ -91,10 +100,10 @@ void FileSink::begin() {
 void FileSink::log(const LogEntry* entry) {
     begin();
     const auto messageSize = entry->message.size();
-    if (messageSize >= static_cast<std::uintmax_t>(std::numeric_limits<std::streamsize>::max())) {
+    if (messageSize >= static_cast<NomadIndex>(std::numeric_limits<std::streamsize>::max())) {
         throw NomadException("Log record is too large to write");
     }
-    const auto recordSize = static_cast<std::uintmax_t>(messageSize) + 1;
+    const auto recordSize = static_cast<NomadIndex>(messageSize) + 1;
     if (m_rotationMode == FileRotationMode::Size && m_sizeBytes != 0
         && (m_sizeBytes >= m_maxSizeBytes || recordSize > m_maxSizeBytes - m_sizeBytes)) {
         rotate();
@@ -116,14 +125,14 @@ void FileSink::end() {
     }
 }
 
-std::filesystem::path FileSink::getArchivePath(const std::uintmax_t index) const {
+std::filesystem::path FileSink::getArchivePath(const NomadIndex index) const {
     return m_path.parent_path() / (m_name + "." + std::to_string(index) + ".log");
 }
 
 void FileSink::rotate() {
     end();
     struct Archive {
-        std::uintmax_t index;
+        NomadIndex index;
         std::filesystem::path path;
     };
     std::vector<Archive> archives;
@@ -134,7 +143,7 @@ void FileSink::rotate() {
             continue;
         }
         const auto digits = std::string_view(filename).substr(prefix.size(), filename.size() - prefix.size() - 4);
-        auto index = std::uintmax_t{0};
+        auto index = NomadIndex{0};
         const auto result = std::from_chars(digits.data(), digits.data() + digits.size(), index);
         if (result.ec != std::errc{} || result.ptr != digits.data() + digits.size()
             || index == 0 || digits != std::to_string(index)) {

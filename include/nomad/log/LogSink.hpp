@@ -2,12 +2,32 @@
 
 #pragma once
 
-#include <nomad/log/SinkConfiguration.hpp>
+#include <nomad/Nomad.hpp>
 
 #include <atomic>
 #include <chrono>
 
 namespace nomad {
+
+DeclareId(LogSinkId);
+
+enum class LogLevel {
+    Debug = 1,
+    Info,
+    Warning,
+    Error,
+    Critical,
+    Fatal,
+};
+
+struct SinkConfiguration {
+    NomadBoolean active = true;
+    LogLevel level = LogLevel::Info;
+};
+
+[[nodiscard]] constexpr bool isValidLogLevel(const LogLevel level) noexcept {
+    return level >= LogLevel::Debug && level <= LogLevel::Fatal;
+}
 
 struct LogEntry {
     std::chrono::system_clock::time_point time;
@@ -21,8 +41,8 @@ public:
     LogSink(const LogSink&) = delete;
     virtual ~LogSink() = default;
 
-    [[nodiscard]] bool getActive() const;
-    void setActive(bool active);
+    [[nodiscard]] NomadBoolean getActive() const;
+    void setActive(NomadBoolean active);
     [[nodiscard]] LogLevel getLogLevel() const;
     void setLogLevel(LogLevel level);
 
@@ -31,7 +51,7 @@ public:
     virtual void end() {}
 
 private:
-    std::atomic<bool> m_active;
+    std::atomic<NomadBoolean> m_active;
     std::atomic<LogLevel> m_logLevel;
 };
 

@@ -6,6 +6,8 @@
 
 namespace nomad {
 
+    struct ConsoleSinkConfiguration : SinkConfiguration {};
+
     class ConsoleSink final : public LogSink {
     public:
         explicit ConsoleSink(const ConsoleSinkConfiguration& configuration = {});
