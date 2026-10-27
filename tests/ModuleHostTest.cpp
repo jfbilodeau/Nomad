@@ -18,6 +18,7 @@
 
 #include <nomad/game/Game.hpp>
 
+#include <nomad/log/Logger.hpp>
 #include <nomad/log/MemorySink.hpp>
 
 #include <nomad/script/Interpreter.hpp>
@@ -1385,12 +1386,13 @@ BOOST_AUTO_TEST_CASE(collections_map_indexers_insert_replace_and_preserve_owned_
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     struct LogCapture {
-        MemorySink sink;
+        LogSinkId sinkId = log::createMemorySink();
+        MemorySink& sink = *static_cast<MemorySink*>(log::getSink(sinkId));
         LogCapture() {
             log::flush();
-            log::addSink(&sink);
+            sink.clear();
         }
-        ~LogCapture() { log::removeSink(&sink); }
+        ~LogCapture() { log::removeSink(sinkId); }
     } capture;
     MapObject map(runtime.getIntegerType());
     map.getValue("absent", result);
@@ -1545,12 +1547,13 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
     runtime.getStringType()->freeValue(empty);
     const auto before = NomadObject::getLiveObjectCount();
     struct LogCapture {
-        MemorySink sink;
+        LogSinkId sinkId = log::createMemorySink();
+        MemorySink& sink = *static_cast<MemorySink*>(log::getSink(sinkId));
         LogCapture() {
             log::flush();
-            log::addSink(&sink);
+            sink.clear();
         }
-        ~LogCapture() { log::removeSink(&sink); }
+        ~LogCapture() { log::removeSink(sinkId); }
     } capture;
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
@@ -1678,12 +1681,13 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_prese
     runtime.getStringType()->freeValue(empty);
     const auto before = NomadObject::getLiveObjectCount();
     struct LogCapture {
-        MemorySink sink;
+        LogSinkId sinkId = log::createMemorySink();
+        MemorySink& sink = *static_cast<MemorySink*>(log::getSink(sinkId));
         LogCapture() {
             log::flush();
-            log::addSink(&sink);
+            sink.clear();
         }
-        ~LogCapture() { log::removeSink(&sink); }
+        ~LogCapture() { log::removeSink(sinkId); }
     } capture;
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
@@ -2138,12 +2142,13 @@ BOOST_AUTO_TEST_CASE(collections_lists_mutate_order_return_indices_and_release_v
     runtime.getStringType()->freeValue(empty);
     const auto before = NomadObject::getLiveObjectCount();
     struct LogCapture {
-        MemorySink sink;
+        LogSinkId sinkId = log::createMemorySink();
+        MemorySink& sink = *static_cast<MemorySink*>(log::getSink(sinkId));
         LogCapture() {
             log::flush();
-            log::addSink(&sink);
+            sink.clear();
         }
-        ~LogCapture() { log::removeSink(&sink); }
+        ~LogCapture() { log::removeSink(sinkId); }
     } capture;
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);

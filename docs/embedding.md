@@ -21,6 +21,85 @@ Types and callables used by a context must remain valid.
 
 Neither the interpreter nor its context creates or owns a VM.
 
+### C++ logging
+
+Include `<nomad/log/Logger.hpp>` to use a standalone `Logger` or the engine's
+`nomad::log::getLogger()`. A new logger owns a default console sink, uses the
+global minimum level `Info`, and buffers ordinary messages until `flush()`.
+Error, critical, and fatal messages flush immediately; fatal then throws.
+
+The logger owns all its sinks. `createConsoleSink(ConsoleSinkConfiguration)`
+and `createMemorySink(MemorySinkConfiguration)` return a strong `LogSinkId`.
+Both configuration structs inherit `active` and `level` from
+`SinkConfiguration`. Sinks default to active with a minimum level of `Debug`;
+the global logger level still filters messages first.
+
+```cpp
+nomad::Logger logger;
+nomad::ConsoleSinkConfiguration console;
+console.active = false;
+console.level = nomad::LogLevel::Warning;
+const auto consoleId = logger.createConsoleSink(console);
+
+logger.replaceSinks({consoleId});
+logger.setDeliveryMode(nomad::LogDeliveryMode::Synchronous);
+logger.warning("Configuration applied");
+```
+
+An inactive sink remains owned and addressable but receives no delivery
+callbacks. Use inactive factories to prepare a replacement:
+`replaceSinks(ids)` validates the IDs, flushes pending entries to the currently
+active sinks, retains and activates the specified sinks, and destroys every
+other sink. Requested IDs remain unchanged. Failed validation or delivery does
+not commit the replacement.
+
+`getSink(id)` returns a borrowed `LogSink*`, or null for an unknown or removed
+ID. The const logger overload returns `const LogSink*`. Include the concrete
+sink header when casting to `ConsoleSink` or `MemorySink`. The base exposes
+`getActive`/`setActive` and `getLogLevel`/`setLogLevel` for later adjustment.
+The pointer remains valid until that sink is removed, discarded by replacement,
+or destroyed with its logger.
+The global level is checked when submitting a message; sink activation and
+levels are checked when delivering it.
+
+- `removeSink(id)` flushes before destroying the specified sink; an unknown ID
+  throws.
+- `clearAllSinks()` flushes before destroying all sinks, without installing a
+  replacement console sink. It also destroys inactive staged sinks.
+- `clear()` discards pending entries without changing sinks.
+- Removed IDs are never reassigned by that logger. IDs belong to the logger
+  that created them; `isValid()` checks the numeric range, not registry membership.
+- `setDeliveryMode(Synchronous)` flushes the buffered backlog before changing
+  mode. Subsequent accepted messages are delivered before the call returns.
+  `Buffered` preserves the usual host-controlled flushing behavior.
+
+The `nomad::log` namespace offers the same factory, lookup, removal, replacement,
+level, delivery-mode, and flushing operations for the engine logger.
+The former borrowed-pointer `Logger(LogSink*)`, `addSink(LogSink*)`, and
+pointer-based removal APIs are no longer supported.
+
+For custom sinks, derive from `LogSink`, pass a `SinkConfiguration` to its
+constructor, and transfer ownership with `createSink(std::unique_ptr<LogSink>)`.
+Do not delete a pointer obtained from `getSink`. A module providing custom sink
+code must remove its sinks before its native library unloads. Core console and
+memory sink code does not depend on the game or log module remaining loaded.
+
+Submission, delivery, factories, replacement, and removal are serialized.
+Borrowed pointers and concrete sink data still require coordination with any
+thread that may remove a sink or deliver entries. In particular, do not inspect
+or clear a memory sink's entries while another thread writes to it.
+Sink callbacks may change activation/levels, but must not recursively log,
+flush, remove, or replace sinks through the same logger; those operations throw
+instead of recursing or destroying a sink while its callback is running.
+
+Sink exceptions propagate to the caller. A failed delivery batch is consumed,
+not replayed: earlier sinks or entries may already have received it. Explicitly
+handle `flush()` or configuration errors if delivery is required for shutdown.
+Delivery stops at the first exception; custom sinks must use RAII for cleanup
+rather than relying on `end()` being called after a failed callback.
+The logger destructor reports standard exception failures to standard error and
+releases owned sinks without allowing those exceptions to escape.
+
 ### Creation inputs and metadata
 
 API structures use these naming conventions:

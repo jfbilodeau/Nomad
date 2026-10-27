@@ -34,9 +34,22 @@ The default minimum level is `info`, so debug messages are omitted unless the
 host enables debug logging. The default sink writes to the console; error and
 critical messages use standard error.
 
-Debug, info, and warning messages are buffered until the host flushes them.
+By default, debug, info, and warning messages are buffered until the host flushes them.
 The game runtime flushes during its loop; C++ hosts can call `nomad::log::flush`.
 Fatal logging is available to C++ hosts only; there is no `log.fatal` script API.
+
+## C++ sink configuration
+
+C++ hosts can create logger-owned console and memory sinks, configure their
+activation and minimum levels, flush and replace all sinks, and select buffered
+or synchronous delivery. Factories return strong `LogSinkId` handles; removed
+handles cannot refer to a newly created sink. See
+[C++ logging](embedding.md#c-logging) for the public API and ownership contracts.
+
+These configuration operations are not yet exposed to Nomad scripts or
+`nomad.toml`. Loading `nomad-log` currently uses the host's existing sinks.
+
+## Extending the hub
 
 The hub is open, so scripts may add their own logging functions:
 

@@ -2,13 +2,15 @@
 
 #pragma once
 
-#include <nomad/log/Logger.hpp>
+#include <nomad/log/LogSink.hpp>
+
+#include <vector>
 
 namespace nomad {
 
 class MemorySink : public LogSink {
 public:
-    MemorySink() = default;
+    explicit MemorySink(const MemorySinkConfiguration& configuration = {});
     MemorySink(const MemorySink&) = delete;
     ~MemorySink() override = default;
 

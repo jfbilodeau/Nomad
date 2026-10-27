@@ -3,33 +3,58 @@
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/log/ConsoleSink.hpp>
+#include <nomad/log/MemorySink.hpp>
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
+#include <exception>
 #include <format>
-#include <memory_resource>
-#include <ctime>
+#include <utility>
 
 namespace nomad {
 
-Logger::Logger(LogSink* sink) {
-    addSink(sink);
-
+Logger::Logger() {
+    (void)createConsoleSink();
     info("Logger initialized.");
 }
 
 Logger::~Logger() {
-    info("Logger shutting down.");
-
-    flush();
+    try {
+        info("Logger shutting down.");
+        flush();
+    } catch (const std::exception& error) {
+        std::fprintf(stderr, "Logger shutdown failed: %s\n", error.what());
+    }
 }
 
 void Logger::setLogLevel(const LogLevel level) {
-    m_logLevel = level;
+    if (!isValidLogLevel(level)) {
+        throw NomadException("Invalid logger level");
+    }
+    const auto lock = std::lock_guard(m_mutex);
+    m_logLevel.store(level);
 }
 
 LogLevel Logger::getLogLevel() const {
     return m_logLevel.load();
+}
+
+void Logger::setDeliveryMode(const LogDeliveryMode mode) {
+    if (mode != LogDeliveryMode::Buffered && mode != LogDeliveryMode::Synchronous) {
+        throw NomadException("Invalid log delivery mode");
+    }
+    const auto lock = std::lock_guard(m_mutex);
+    requireIdleDelivery();
+    if (mode == LogDeliveryMode::Synchronous && m_deliveryMode != mode) {
+        flush();
+    }
+    m_deliveryMode = mode;
+}
+
+LogDeliveryMode Logger::getDeliveryMode() const {
+    const auto lock = std::lock_guard(m_mutex);
+    return m_deliveryMode;
 }
 
 void Logger::debug(const NomadStringView message, const Location& location) {
@@ -47,71 +72,141 @@ void Logger::warning(const NomadStringView message, const Location& location) {
 
 void Logger::error(const NomadStringView message, const Location& location) {
     log(LogLevel::Error, message, location);
-
-    // Make sure the error is logged immediately.
-    flush();
 }
 
 void Logger::fatal(const NomadStringView message, const Location& location) {
     log(LogLevel::Fatal, message, location);
-
-    // Make sure the error is logged immediately.
-    flush();
 
     throw NomadException(NomadString(message));
 }
 
 void Logger::critical(const NomadStringView message, const Location& location) {
     log(LogLevel::Critical, message, location);
-    flush();
 }
 
-void Logger::addSink(LogSink* sink) {
-    const auto lock = std::lock_guard(m_deliveryMutex);
-    if (sink == nullptr) {
-        throw NomadBug("Cannot register a null log sink");
+LogSinkId Logger::createConsoleSink(const ConsoleSinkConfiguration& configuration) {
+    return createSink(std::make_unique<ConsoleSink>(configuration));
+}
+
+LogSinkId Logger::createMemorySink(const MemorySinkConfiguration& configuration) {
+    return createSink(std::make_unique<MemorySink>(configuration));
+}
+
+LogSinkId Logger::createSink(std::unique_ptr<LogSink> sink) {
+    if (!sink) {
+        throw NomadException("Cannot create a null log sink");
     }
-    m_sinks.push_back(sink);
+    const auto lock = std::lock_guard(m_mutex);
+    if (!isValidId(m_nextSinkId)) {
+        throw NomadException("Log sink ID limit reached");
+    }
+    const LogSinkId id{m_nextSinkId};
+    m_sinks.push_back({id, std::move(sink)});
+    ++m_nextSinkId;
+    return id;
 }
 
-void Logger::removeSink(LogSink* sink) {
-    const auto lock = std::lock_guard(m_deliveryMutex);
-    m_sinks.erase(std::ranges::remove(m_sinks, sink).begin(), m_sinks.end());
+LogSink* Logger::getSink(const LogSinkId sinkId) {
+    const auto lock = std::lock_guard(m_mutex);
+    const auto found = std::ranges::find(m_sinks, sinkId, &SinkRegistration::id);
+    return found == m_sinks.end() ? nullptr : found->sink.get();
+}
+
+const LogSink* Logger::getSink(const LogSinkId sinkId) const {
+    const auto lock = std::lock_guard(m_mutex);
+    const auto found = std::ranges::find(m_sinks, sinkId, &SinkRegistration::id);
+    return found == m_sinks.end() ? nullptr : found->sink.get();
+}
+
+void Logger::removeSink(const LogSinkId sinkId) {
+    const auto lock = std::lock_guard(m_mutex);
+    requireIdleDelivery();
+    const auto found = std::ranges::find(m_sinks, sinkId, &SinkRegistration::id);
+    if (found == m_sinks.end()) {
+        throw NomadException("Unknown log sink ID: " + std::to_string(sinkId.id));
+    }
+    const auto index = static_cast<NomadIndex>(found - m_sinks.begin());
+    flush();
+    m_sinks.erase(m_sinks.begin() + static_cast<std::ptrdiff_t>(index));
+}
+
+void Logger::clearAllSinks() {
+    replaceSinks({});
+}
+
+void Logger::replaceSinks(const std::vector<LogSinkId>& sinkIds) {
+    const auto lock = std::lock_guard(m_mutex);
+    requireIdleDelivery();
+    std::vector<NomadIndex> indices;
+    std::vector<SinkRegistration> replacement;
+    indices.reserve(sinkIds.size());
+    replacement.reserve(sinkIds.size());
+    for (const auto sinkId : sinkIds) {
+        const auto found = std::ranges::find(m_sinks, sinkId, &SinkRegistration::id);
+        if (found == m_sinks.end()) {
+            throw NomadException("Unknown replacement log sink ID: " + std::to_string(sinkId.id));
+        }
+        if (std::ranges::count(sinkIds, sinkId) != 1) {
+            throw NomadException("Duplicate replacement log sink ID: " + std::to_string(sinkId.id));
+        }
+        indices.push_back(static_cast<NomadIndex>(found - m_sinks.begin()));
+    }
+    flush();
+    for (const auto index : indices) {
+        replacement.push_back(std::move(m_sinks[index]));
+        replacement.back().sink->setActive(true);
+    }
+    m_sinks.swap(replacement);
 }
 
 void Logger::clear() {
-    const auto lock = std::lock_guard(m_entriesMutex);
+    const auto lock = std::lock_guard(m_mutex);
     m_entries.clear();
 }
 
 void Logger::flush() {
-    const auto deliveryLock = std::lock_guard(m_deliveryMutex);
+    const auto lock = std::lock_guard(m_mutex);
+    requireIdleDelivery();
     std::vector<LogEntry> entries;
-    {
-        const auto entriesLock = std::lock_guard(m_entriesMutex);
-        entries.swap(m_entries);
-    }
-    const auto sinks = m_sinks;
-    for (auto* sink: sinks) {
-        if (std::ranges::find(m_sinks, sink) == m_sinks.end()) {
-            continue;
+    entries.swap(m_entries);
+    const auto sinkCount = m_sinks.size();
+    m_delivering = true;
+    try {
+        for (auto index = NomadIndex{0}; index < sinkCount; ++index) {
+            auto* sink = m_sinks[index].sink.get();
+            if (!sink->getActive()) {
+                continue;
+            }
+            sink->begin();
+            for (const auto& entry : entries) {
+                if (sink->getActive() && entry.level >= sink->getLogLevel()) {
+                    sink->log(&entry);
+                }
+            }
+            sink->end();
         }
-        sink->begin();
-
-        for (const auto& entry: entries) {
-            sink->log(&entry);
-        }
-
-        sink->end();
+    } catch (...) {
+        m_delivering = false;
+        throw;
     }
+    m_delivering = false;
+}
 
+void Logger::requireIdleDelivery() const {
+    if (m_delivering) {
+        throw NomadException("Cannot recursively log, flush, remove, or replace sinks during log delivery");
+    }
 }
 
 void Logger::log(const LogLevel level, const NomadStringView message, const Location& location) {
+    const auto lock = std::lock_guard(m_mutex);
     if (level < m_logLevel.load()) {
-        // Skip!
+        if (level >= LogLevel::Error) {
+            flush();
+        }
         return;
     }
+    requireIdleDelivery();
 
     NomadString logLevelName;
 
@@ -152,19 +247,20 @@ void Logger::log(const LogLevel level, const NomadStringView message, const Loca
         message
     );
 
-    const auto lock = std::lock_guard(m_entriesMutex);
     m_entries.emplace_back(LogEntry{
         time,
         level,
         line
     });
+    if (m_deliveryMode == LogDeliveryMode::Synchronous || level >= LogLevel::Error) {
+        flush();
+    }
 }
 
 namespace log {
 
 Logger& getLogger() {
-    static ConsoleSink consoleSink;
-    static Logger logger(&consoleSink);
+    static Logger logger;
     return logger;
 }
 
@@ -174,6 +270,14 @@ void setLogLevel(const LogLevel level) {
 
 LogLevel getLogLevel() {
     return getLogger().getLogLevel();
+}
+
+void setDeliveryMode(const LogDeliveryMode mode) {
+    getLogger().setDeliveryMode(mode);
+}
+
+LogDeliveryMode getDeliveryMode() {
+    return getLogger().getDeliveryMode();
 }
 
 void debug(const NomadStringView message, const Location& location) {
@@ -204,12 +308,32 @@ void critical(const NomadStringView message, const Location& location) {
     getLogger().critical(message, location);
 }
 
-void addSink(LogSink* sink) {
-    getLogger().addSink(sink);
+LogSinkId createConsoleSink(const ConsoleSinkConfiguration& configuration) {
+    return getLogger().createConsoleSink(configuration);
 }
 
-void removeSink(LogSink* sink) {
-    getLogger().removeSink(sink);
+LogSinkId createMemorySink(const MemorySinkConfiguration& configuration) {
+    return getLogger().createMemorySink(configuration);
+}
+
+LogSinkId createSink(std::unique_ptr<LogSink> sink) {
+    return getLogger().createSink(std::move(sink));
+}
+
+LogSink* getSink(const LogSinkId sinkId) {
+    return getLogger().getSink(sinkId);
+}
+
+void removeSink(const LogSinkId sinkId) {
+    getLogger().removeSink(sinkId);
+}
+
+void clearAllSinks() {
+    getLogger().clearAllSinks();
+}
+
+void replaceSinks(const std::vector<LogSinkId>& sinkIds) {
+    getLogger().replaceSinks(sinkIds);
 }
 
 void clear() {

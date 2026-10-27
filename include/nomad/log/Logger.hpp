@@ -2,25 +2,17 @@
 
 #pragma once
 
-#include <nomad/Nomad.hpp>
+#include <nomad/log/LogSink.hpp>
 
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <mutex>
 #include <source_location>
 #include <string>
 #include <vector>
 
 namespace nomad {
-
-enum class LogLevel {
-    Debug = 1,
-    Info = 2,
-    Warning = 3,
-    Error = 4,
-    Critical = 5,
-    Fatal = 6,
-};
 
 struct Location {
     explicit Location(const std::source_location& location = std::source_location::current()) {
@@ -43,30 +35,9 @@ struct Location {
     NomadInteger column = 0;
 };
 
-struct LogEntry {
-    std::chrono::system_clock::time_point time;
-    LogLevel level;
-    NomadString message;
-};
-
-class LogSink {
-public:
-    LogSink() = default;
-    LogSink(const LogSink&) = delete;
-    virtual ~LogSink() = default;
-
-    // Allow sink to initialize itself before logs are flushed
-    virtual void begin() { /* Override as necessary */ }
-
-    virtual void log(const LogEntry* entry) = 0;
-
-    // Signals the end of the log flush
-    virtual void end() { /* Override as necessary */ }
-};
-
 class Logger {
 public:
-    explicit Logger(LogSink* sink);
+    Logger();
 
     Logger(const Logger& other) = delete;
 
@@ -74,6 +45,8 @@ public:
 
     void setLogLevel(LogLevel level);
     [[nodiscard]] LogLevel getLogLevel() const;
+    void setDeliveryMode(LogDeliveryMode mode);
+    [[nodiscard]] LogDeliveryMode getDeliveryMode() const;
 
     void debug(NomadStringView message, const Location& location = Location());
     void info(NomadStringView message, const Location& location = Location());
@@ -82,19 +55,33 @@ public:
     void critical(NomadStringView message, const Location& location = Location());
     [[noreturn]] void fatal(NomadStringView message, const Location& location = Location());
 
-    void addSink(LogSink* sink);
-    void removeSink(LogSink* sink);
+    [[nodiscard]] LogSinkId createConsoleSink(const ConsoleSinkConfiguration& configuration = {});
+    [[nodiscard]] LogSinkId createMemorySink(const MemorySinkConfiguration& configuration = {});
+    [[nodiscard]] LogSinkId createSink(std::unique_ptr<LogSink> sink);
+    [[nodiscard]] LogSink* getSink(LogSinkId sinkId);
+    [[nodiscard]] const LogSink* getSink(LogSinkId sinkId) const;
+    void removeSink(LogSinkId sinkId);
+    void clearAllSinks();
+    void replaceSinks(const std::vector<LogSinkId>& sinkIds);
 
     void clear();
     void flush();
 
 private:
+    struct SinkRegistration {
+        LogSinkId id;
+        std::unique_ptr<LogSink> sink;
+    };
+
     void log(LogLevel level, NomadStringView message, const Location& location);
+    void requireIdleDelivery() const;
 
     std::atomic<LogLevel> m_logLevel = LogLevel::Info;
-    std::mutex m_entriesMutex;
-    std::recursive_mutex m_deliveryMutex;
-    std::vector<LogSink*> m_sinks;
+    mutable std::recursive_mutex m_mutex;
+    LogDeliveryMode m_deliveryMode = LogDeliveryMode::Buffered;
+    bool m_delivering = false;
+    NomadId m_nextSinkId = 0;
+    std::vector<SinkRegistration> m_sinks;
     std::vector<LogEntry> m_entries;
 };
 
@@ -103,6 +90,8 @@ namespace log {
 [[nodiscard]] Logger& getLogger();
 void setLogLevel(LogLevel level);
 [[nodiscard]] LogLevel getLogLevel();
+void setDeliveryMode(LogDeliveryMode mode);
+[[nodiscard]] LogDeliveryMode getDeliveryMode();
 
 void debug(NomadStringView message, const Location& location = Location());
 void info(NomadStringView message, const Location& location = Location());
@@ -112,8 +101,13 @@ void error(NomadStringView message, const Location& location = Location());
 void critical(NomadStringView message, const Location& location = Location());
 [[noreturn]] void fatal(NomadStringView message, const Location& location = Location());
 
-void addSink(LogSink* sink);
-void removeSink(LogSink* sink);
+[[nodiscard]] LogSinkId createConsoleSink(const ConsoleSinkConfiguration& configuration = {});
+[[nodiscard]] LogSinkId createMemorySink(const MemorySinkConfiguration& configuration = {});
+[[nodiscard]] LogSinkId createSink(std::unique_ptr<LogSink> sink);
+[[nodiscard]] LogSink* getSink(LogSinkId sinkId);
+void removeSink(LogSinkId sinkId);
+void clearAllSinks();
+void replaceSinks(const std::vector<LogSinkId>& sinkIds);
 
 void clear();
 void flush();

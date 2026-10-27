@@ -47,6 +47,10 @@ the runtime is a GUI application and does not have terminal output, so use the
 console's **Logs** panel. Linux runtime messages also remain available in the
 launching terminal.
 
+The log capture sink belongs to the engine logger. If C++ code removes it or
+clears all sinks, the Logs panel reports that its sink has been removed instead
+of retaining stale log data.
+
 ## Physics debug drawing
 
 Physics debug drawing is hidden by default. Select **Physics debug draw** in

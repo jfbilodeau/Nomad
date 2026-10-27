@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
 #include <nomad/log/ConsoleSink.hpp>
+#include <nomad/log/Logger.hpp>
 #include <nomad/log/MemorySink.hpp>
 
 #include <nomad/script/Runtime.hpp>
@@ -24,20 +25,31 @@ using namespace nomad::test;
 
 namespace {
 
-class RegisteredMemorySink final : public MemorySink {
+class RegisteredMemorySink final {
 public:
     RegisteredMemorySink() : m_previousLevel(log::getLogLevel()) {
         log::flush();
-        log::addSink(this);
+        m_sinkId = log::createMemorySink();
     }
 
-    ~RegisteredMemorySink() override {
-        log::removeSink(this);
+    ~RegisteredMemorySink() {
+        if (log::getSink(m_sinkId) != nullptr) {
+            log::removeSink(m_sinkId);
+        }
         log::setLogLevel(m_previousLevel);
+    }
+
+    [[nodiscard]] const std::vector<LogEntry>& getEntries() const {
+        const auto* sink = dynamic_cast<MemorySink*>(log::getSink(m_sinkId));
+        if (sink == nullptr) {
+            throw NomadException("Captured log sink is no longer available");
+        }
+        return sink->getEntries();
     }
 
 private:
     LogLevel m_previousLevel;
+    LogSinkId m_sinkId;
 };
 
 } // namespace

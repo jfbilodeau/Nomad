@@ -133,7 +133,7 @@ private:
     SDL_Window* m_window;
     SDL_Renderer* m_renderer;
     SDL_Texture* m_gameTexture = nullptr;
-    MemorySink m_memorySink;
+    LogSinkId m_memorySinkId;
     std::unique_ptr<VirtualMachine> m_interpreterVirtualMachine;
     InterpreterContext m_interpreterContext;
     std::unique_ptr<VirtualMachine> m_inspectionVirtualMachine;

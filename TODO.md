@@ -6,6 +6,8 @@ Things the author wants to do.
 [ ] `$init` shows up in LSP
 
 ## Open
+[ ] Improve animations declaration (avoid duplicate files...)
+[ ] Refactor module names. `<module_name>` -> `<module_name>.nomad.dll`. Drop the `nomad-*` prefix. Replace with `nomad.*`?
 [ ] Finish converting `NomadId` to strong types.
 [ ] Script fault handling
 [ ] `struct` (Embedded types, pass by copy)

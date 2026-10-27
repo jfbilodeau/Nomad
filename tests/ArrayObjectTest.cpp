@@ -10,6 +10,7 @@
 #include <nomad/collections/ListObject.hpp>
 #include <nomad/collections/ListType.hpp>
 
+#include <nomad/log/Logger.hpp>
 #include <nomad/log/MemorySink.hpp>
 
 #include <nomad/script/Runtime.hpp>
@@ -123,12 +124,13 @@ BOOST_AUTO_TEST_SUITE(array_objects)
 BOOST_AUTO_TEST_CASE(invalid_indices_log_errors_and_return_fresh_owned_defaults) {
     Runtime runtime;
     struct LogCapture {
-        MemorySink sink;
+        LogSinkId sinkId = log::createMemorySink();
+        MemorySink& sink = *static_cast<MemorySink*>(log::getSink(sinkId));
         LogCapture() {
             log::flush();
-            log::addSink(&sink);
+            sink.clear();
         }
-        ~LogCapture() { log::removeSink(&sink); }
+        ~LogCapture() { log::removeSink(sinkId); }
     } capture;
     IntegerType integers(&runtime, TypeId::INVALID);
     ListType lists(&runtime, TypeId::INVALID, "List<int>", ObjectTypeMode::Closed, &integers);

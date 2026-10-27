@@ -8,6 +8,7 @@
 #include <nomad/game/resource/AudioObject.hpp>
 #include <nomad/game/resource/ResourceManager.hpp>
 
+#include <nomad/log/Logger.hpp>
 #include <nomad/log/MemorySink.hpp>
 
 #include <nomad/script/Runtime.hpp>
@@ -105,22 +106,22 @@ bool waitForAudioCallback(AudioManager* audio, Predicate&& predicate) {
 class ScopedLogCapture final {
 public:
     ScopedLogCapture() {
-        log::addSink(&m_sink);
+        m_sinkId = log::createMemorySink();
     }
 
     ScopedLogCapture(const ScopedLogCapture&) = delete;
     ScopedLogCapture& operator=(const ScopedLogCapture&) = delete;
 
     ~ScopedLogCapture() {
-        log::removeSink(&m_sink);
+        log::removeSink(m_sinkId);
     }
 
     [[nodiscard]] const std::vector<LogEntry>& getEntries() const {
-        return m_sink.getEntries();
+        return static_cast<MemorySink*>(log::getSink(m_sinkId))->getEntries();
     }
 
 private:
-    MemorySink m_sink;
+    LogSinkId m_sinkId;
 };
 
 class AudioDriverHintReset final {
