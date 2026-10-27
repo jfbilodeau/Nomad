@@ -10,6 +10,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <set>
 #include <sstream>
 
@@ -70,6 +71,26 @@ json::object openDocument(
         {"params", {{"textDocument", {
             {"uri", uri}, {"languageId", "nomad"}, {"version", version}, {"text", text}
         }}}}};
+}
+
+NomadString symbolRequest(
+    const int id,
+    const char* method,
+    const NomadString& uri,
+    const NomadString& source,
+    const NomadString& word,
+    const std::size_t offset
+) {
+    auto index = source.find(word);
+    BOOST_REQUIRE(index != NomadString::npos);
+    index += offset;
+    BOOST_REQUIRE(index <= source.size());
+    const auto line = std::count(source.begin(), source.begin() + static_cast<std::ptrdiff_t>(index), '\n');
+    const auto newline = index == 0 ? NomadString::npos : source.rfind('\n', index - 1);
+    const auto character = newline == NomadString::npos ? index : index - newline - 1;
+    return frame({{"jsonrpc", "2.0"}, {"id", id}, {"method", method},
+        {"params", {{"textDocument", {{"uri", uri}}},
+            {"position", {{"line", line}, {"character", character}}}}}});
 }
 
 } // namespace
@@ -595,6 +616,227 @@ BOOST_AUTO_TEST_CASE(class_member_scopes_expose_parameters_locals_and_receiver)
     BOOST_TEST(json::serialize(replies.at(12).at("result")).find("amount:int") != NomadString::npos);
     BOOST_TEST(json::serialize(replies.at(13).at("result")).find("delta:int") != NomadString::npos);
     BOOST_TEST(json::serialize(replies.at(14).at("result")).find("this:Counter") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(script_member_completion_filters_owners_and_hover_lists_all_overloads)
+{
+    TestDirectory directory("nomad_lsp_script_members");
+    const auto uri = uriFor(directory.getPath() / "members.nomad");
+    const NomadString source =
+        "class Counter\nlabel = \"counter\"\n"
+        "init number:int\nthis.value = number\nend\n"
+        "fun read\nreturn this.value\nend\n"
+        "fun read delta:int\nreturn this.value + delta\nend\n"
+        "fun read suffix:string\nreturn $\"{this.label}{suffix}\"\nend\nend\n"
+        "class Other\notherOnly = true\n"
+        "fun read factor:float\nreturn factor + 0.5\nend\nend\n"
+        "class Owner\nchild = new Counter 2\nend\n"
+        "counter = new Counter 4\nother = new Other\nowner = new Owner\n"
+        "text = counter.label\ntrimmed = counter.label.trim\n"
+        "nested = owner.child.read\nreadValue = counter.read\notherValue = other.read 1.0\n"
+        "return counter.value";
+    const auto diagnostics = analyzeLanguageDocuments({{uri, {source, 1}}});
+    BOOST_REQUIRE_MESSAGE(diagnostics.empty(), (diagnostics.empty() ? "" : json::serialize(diagnostics.begin()->second)));
+    const auto query = [&](const int id, const char* method, const NomadString& word, const std::size_t offset) {
+        return symbolRequest(id, method, uri, source, word, offset);
+    };
+    std::istringstream input(start() + frame(openDocument(uri, source)) +
+        query(10, "textDocument/completion", "counter.read", 8) +
+        query(11, "textDocument/hover", "counter.read", 10) +
+        query(12, "textDocument/hover", "counter.label\n", 10) +
+        query(13, "textDocument/completion", "owner.child.read", 12) +
+        query(14, "textDocument/completion", "counter.label.trim", 14) +
+        query(15, "textDocument/completion", "this.value = number", 5) +
+        query(16, "textDocument/hover", "this.value = number", 7) +
+        query(17, "textDocument/completion", "counter = new Counter", 0) +
+        query(18, "textDocument/hover", "other.read 1.0", 8) +
+        query(19, "textDocument/completion", "other.read 1.0", 6) +
+        query(20, "textDocument/hover", "counter.value", 10) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    BOOST_REQUIRE_MESSAGE(errors.str().empty(), errors.str());
+    std::map<std::int64_t, json::object> replies;
+    for (const auto& message : responses(output.str())) {
+        if (message.contains("id")) replies.emplace(message.at("id").as_int64(), message);
+    }
+    const std::set<NomadString> signatures{
+        "Counter.read -> int", "Counter.read delta:int -> int", "Counter.read suffix:string -> string"
+    };
+    for (const auto id : {10, 13, 15}) {
+        std::set<NomadString> methodDetails;
+        std::set<NomadString> names;
+        const auto receiver = id == 10 ? NomadString{"counter"} : id == 13 ? NomadString{"owner.child"} : NomadString{"this"};
+        for (const auto& item : replies.at(id).at("result").as_object().at("items").as_array()) {
+            const auto& candidate = item.as_object();
+            const NomadString name{candidate.at("label").as_string()};
+            names.insert(name);
+            BOOST_TEST(name.find('$') == NomadString::npos);
+            BOOST_TEST(candidate.at("textEdit").as_object().at("newText").as_string() == receiver + "." + name);
+            BOOST_TEST(candidate.at("filterText").as_string() == receiver + "." + name);
+            if (name == "read") {
+                BOOST_TEST(candidate.at("kind").as_int64() == 2);
+                methodDetails.emplace(candidate.at("detail").as_string());
+            }
+            if (name == "value") {
+                BOOST_TEST(candidate.at("kind").as_int64() == 10);
+                BOOST_TEST(candidate.at("detail").as_string() == "Counter.value:int");
+            }
+        }
+        BOOST_TEST(methodDetails == signatures, boost::test_tools::per_element());
+        BOOST_TEST(names.contains("value"));
+        BOOST_TEST(names.contains("label"));
+        BOOST_TEST(!names.contains("otherOnly"));
+        BOOST_TEST(!names.contains("trim"));
+        BOOST_TEST(!names.contains("init"));
+    }
+    const auto hover = json::serialize(replies.at(11).at("result"));
+    for (const auto& signature : signatures) BOOST_TEST(hover.find(signature) != NomadString::npos);
+    BOOST_TEST(hover.find("Other.read") == NomadString::npos);
+    BOOST_TEST(hover.find("Defined in") != NomadString::npos);
+    BOOST_TEST(json::serialize(replies.at(12).at("result")).find("Counter.label:string") != NomadString::npos);
+    for (const auto id : {16, 20}) {
+        BOOST_TEST(json::serialize(replies.at(id).at("result")).find("Counter.value:int") != NomadString::npos);
+    }
+    auto trimFound = false;
+    for (const auto& item : replies.at(14).at("result").as_object().at("items").as_array()) {
+        const auto& candidate = item.as_object();
+        BOOST_TEST(NomadString(candidate.at("detail").as_string()).starts_with("string."));
+        if (candidate.at("label").as_string() == "trim") trimFound = true;
+    }
+    BOOST_TEST(trimFound);
+    for (const auto& item : replies.at(17).at("result").as_object().at("items").as_array()) {
+        const auto& name = item.as_object().at("label").as_string();
+        BOOST_TEST(name != "value");
+        BOOST_TEST(name != "label");
+        BOOST_TEST(name != "read");
+    }
+    const auto otherHover = json::serialize(replies.at(18).at("result"));
+    BOOST_TEST(otherHover.find("Other.read factor:float -> float") != NomadString::npos);
+    BOOST_TEST(otherHover.find("Counter.read") == NomadString::npos);
+    for (const auto& item : replies.at(19).at("result").as_object().at("items").as_array()) {
+        BOOST_TEST(NomadString(item.as_object().at("detail").as_string()).starts_with("Other."));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(script_member_recovery_keeps_overloads_and_refreshes_unsaved_definitions)
+{
+    TestDirectory directory("nomad_lsp_script_member_recovery");
+    const auto uri = uriFor(directory.getPath() / "members.nomad");
+    const NomadString original =
+        "class Counter\nvalue = 2\n"
+        "fun read\nreturn this.value\nend\n"
+        "fun read amount:int\nreturn this.value + amount\nend\nend\n"
+        "counter = new Counter\ncounter.";
+    const NomadString edited =
+        "class Counter\nlabel = \"updated\"\n"
+        "fun read text:string\nreturn $\"{this.label}{text}\"\nend\n"
+        "fun read first:string second:string\nreturn $\"{this.label}{first}{second}\"\nend\nend\n"
+        "counter = new Counter\ncounter.";
+    const auto change = [&](const NomadString& source, const int version) {
+        return frame({{"jsonrpc", "2.0"}, {"method", "textDocument/didChange"},
+            {"params", {{"textDocument", {{"uri", uri}, {"version", version}}},
+                {"contentChanges", json::array{json::object{{"text", source}}}}}}});
+    };
+    const auto valid = edited.substr(0, edited.size() - 8) + "result = counter.read \"x\"";
+    const NomadString unresolved = "class Broken\nfun read amount:int\nreturn this.read amount\nend\nend";
+    const auto unknown = original.substr(0, original.size() - 8) + "missing.read 1";
+    std::istringstream input(start() + frame(openDocument(uri, original)) +
+        symbolRequest(10, "textDocument/completion", uri, original, "counter.", 8) +
+        change(edited, 2) + symbolRequest(11, "textDocument/completion", uri, edited, "counter.", 8) +
+        change(valid, 3) + symbolRequest(12, "textDocument/hover", uri, valid, "counter.read", 10) +
+        change(unresolved, 4) + symbolRequest(13, "textDocument/hover", uri, unresolved, "this.read", 7) +
+        change(unknown, 5) + symbolRequest(14, "textDocument/completion", uri, unknown, "missing.read", 8) +
+        symbolRequest(15, "textDocument/hover", uri, unknown, "missing.read", 10) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    BOOST_REQUIRE_MESSAGE(errors.str().empty(), errors.str());
+    std::map<std::int64_t, json::object> replies;
+    for (const auto& message : responses(output.str())) {
+        if (message.contains("id")) replies.emplace(message.at("id").as_int64(), message);
+    }
+    for (const auto id : {10, 11}) {
+        auto methods = 0;
+        auto fieldFound = false;
+        for (const auto& item : replies.at(id).at("result").as_object().at("items").as_array()) {
+            const auto& candidate = item.as_object();
+            const NomadString name{candidate.at("label").as_string()};
+            const NomadString detail{candidate.at("detail").as_string()};
+            BOOST_TEST(name.find('$') == NomadString::npos);
+            if (name == "read") {
+                ++methods;
+                BOOST_TEST(detail.ends_with(id == 10 ? " -> int" : " -> string"));
+            } else {
+                BOOST_TEST(name == (id == 10 ? "value" : "label"));
+                BOOST_TEST(detail == (id == 10 ? "Counter.value:int" : "Counter.label:string"));
+                fieldFound = true;
+            }
+        }
+        BOOST_TEST(methods == 2);
+        BOOST_TEST(fieldFound);
+    }
+    const auto hover = json::serialize(replies.at(12).at("result"));
+    BOOST_TEST(hover.find("Counter.read text:string -> string") != NomadString::npos);
+    BOOST_TEST(hover.find("Counter.read first:string second:string -> string") != NomadString::npos);
+    BOOST_TEST(hover.find("amount:int") == NomadString::npos);
+    BOOST_TEST(json::serialize(replies.at(13).at("result")).find("Broken.read amount:int -> unknown") != NomadString::npos);
+    auto unknownMethods = 0;
+    for (const auto& item : replies.at(14).at("result").as_object().at("items").as_array()) {
+        if (NomadString(item.as_object().at("detail").as_string()).starts_with("Counter.read")) ++unknownMethods;
+    }
+    BOOST_TEST(unknownMethods == 2);
+    BOOST_TEST(replies.at(15).at("result").is_null());
+}
+
+BOOST_AUTO_TEST_CASE(project_script_member_catalog_tracks_qualified_types_and_other_open_buffers)
+{
+    TestDirectory directory("nomad_lsp_project_class_members");
+    directory.write("nomad.toml", R"(schema = 1
+[project]
+name = "Class members"
+identifier = "org.nomad.class-members"
+version = "0.1.0"
+executable = "members"
+[nomad]
+version = "0.1.0"
+modules = ["nomad-system"]
+[scripts]
+directories = ["res/scripts"]
+[resources]
+directory = "res"
+)");
+    const auto libraryUri = uriFor(directory.write("res/scripts/types.nomad",
+        "hub model\nclass Record\nname = \"disk\"\nfun describe\nreturn this.name\nend\nend\nend"));
+    const NomadString source = "record = new model.Record\nrecord.";
+    const auto uri = uriFor(directory.write("res/scripts/main.nomad", source));
+    const NomadString edited =
+        "hub model\nclass Record\nscore = 5\nfun describe amount:int\nreturn this.score + amount\nend\nend\nend";
+    const auto query = [&](const int id) {
+        return symbolRequest(id, "textDocument/completion", uri, source, "record.", 7);
+    };
+    std::istringstream input(start() + frame(openDocument(uri, source)) + query(10) +
+        frame(openDocument(libraryUri, edited)) + query(11) +
+        frame({{"jsonrpc", "2.0"}, {"method", "textDocument/didClose"},
+            {"params", {{"textDocument", {{"uri", libraryUri}}}}}}) + query(12) + finish());
+    std::ostringstream output;
+    std::ostringstream errors;
+    BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    BOOST_REQUIRE_MESSAGE(errors.str().empty(), errors.str());
+    auto replies = 0;
+    for (const auto& message : responses(output.str())) {
+        if (!message.contains("id") || message.at("id").as_int64() < 10) continue;
+        const auto editedBuffer = message.at("id").as_int64() == 11;
+        std::set<NomadString> details;
+        for (const auto& item : message.at("result").as_object().at("items").as_array()) {
+            details.emplace(item.as_object().at("detail").as_string());
+        }
+        BOOST_TEST(details.size() == 2U);
+        BOOST_TEST(details.contains(editedBuffer ? "model.Record.score:int" : "model.Record.name:string"));
+        BOOST_TEST(details.contains(editedBuffer ? "model.Record.describe amount:int -> int" : "model.Record.describe -> string"));
+        ++replies;
+    }
+    BOOST_TEST(replies == 3);
 }
 
 BOOST_AUTO_TEST_CASE(standalone_symbols_remain_isolated_between_documents)

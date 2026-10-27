@@ -10,6 +10,7 @@
 
 #include <nomad/project/ProjectConfiguration.hpp>
 
+#include <nomad/script/Property.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
@@ -54,6 +55,7 @@ struct ApiSymbol {
     NomadString documentation;
     NomadString valueType = {};
     NomadString receiverType = {};
+    NomadString overloadKey = {};
 };
 
 struct ApiCatalogKey {
@@ -78,6 +80,25 @@ struct ApiAnalysis {
 
 std::map<NomadPath, AnalysisGroup> collectAnalysisGroups(const LanguageDocuments& documents);
 NomadPath documentPath(const NomadString& uri);
+
+ApiSymbol createMethodSymbol(const Method& method) {
+    const auto receiver = method.getObjectType()->getTypeName();
+    auto signature = receiver + "." + method.getName();
+    auto documentation = method.getDoc();
+    if (const auto* script = method.asScriptCallable()) {
+        documentation = "Defined in `" + script->getPath() + "`.";
+    }
+    for (const auto& parameter : method.getParameters()) {
+        const auto typeName = parameter.type ? parameter.type->getTypeName() : "unknown";
+        signature += " " + parameter.name + ":" + typeName;
+        if (!parameter.doc.empty()) documentation += "\n\n- `" + parameter.name + "`: " + parameter.doc;
+    }
+    auto overloadKey = signature;
+    const auto* returnType = method.getReturnType();
+    signature += " -> " + (returnType ? returnType->getTypeName() : "unknown");
+    return {method.getName(), CompletionItemKind::Method, std::move(signature),
+        std::move(documentation), "", receiver, std::move(overloadKey)};
+}
 
 std::unique_ptr<ModuleHost> createAnalysisSession(const AnalysisGroup& group, const NomadPath& path) {
     if (group.project) {
@@ -170,6 +191,20 @@ ApiAnalysis analyzeApiSymbols(
             symbols.push_back({type->getTypeName(), CompletionItemKind::Class,
                 type->getTypeName(), type->getDocumentation()});
         }
+        const auto* object = type->asObjectType();
+        if (object == nullptr || type->isInternal()) continue;
+        for (const auto* property : object->getProperties()) {
+            if (property->asNativeProperty() != nullptr) continue;
+            const auto* valueType = property->getValueType();
+            const auto value = valueType ? valueType->getTypeName() : "unknown";
+            symbols.push_back({property->getName(), CompletionItemKind::Property,
+                type->getTypeName() + "." + property->getName() + ":" + value,
+                property->getDoc(), valueType ? value : NomadString{}, type->getTypeName()});
+        }
+        for (const auto* method : object->getMethods()) {
+            if (method->asScriptMethod() == nullptr || method->getName() == object->getInitializerName()) continue;
+            symbols.push_back(createMethodSymbol(*method));
+        }
     }
     const auto functions = runtime->getNativeFunctions();
     for (const auto* function : functions) {
@@ -231,17 +266,7 @@ ApiAnalysis analyzeApiSymbols(
             if (method == nullptr) {
                 throw std::runtime_error("Registered native method is unavailable");
             }
-            const auto receiver = method->getObjectType()->getTypeName();
-            auto signature = receiver + "." + method->getName();
-            auto documentation = method->getDoc();
-            for (const auto& parameter : method->getParameters()) {
-                const auto typeName = parameter.type->getTypeName();
-                signature += " " + parameter.name + ":" + typeName;
-                if (!parameter.doc.empty()) documentation += "\n\n- `" + parameter.name + "`: " + parameter.doc;
-            }
-            signature += " -> " + method->getReturnType()->getTypeName();
-            symbols.push_back({method->getName(), CompletionItemKind::Method,
-                std::move(signature), std::move(documentation), "", receiver});
+            symbols.push_back(createMethodSymbol(*method));
         }
     }
     std::vector<ScriptFunction*> scriptFunctions;
@@ -321,9 +346,10 @@ std::vector<ApiSymbol> createApiSymbols(
     if (analysis.recover) {
         auto recovered = createApiSymbols(path, documents, uri, line, completion, true);
         for (auto& symbol : symbols) {
-            if (analysis.localNames.contains(symbol.name)) continue;
+            if (symbol.receiverType.empty() && analysis.localNames.contains(symbol.name)) continue;
             const auto present = std::ranges::any_of(recovered, [&](const auto& candidate) {
-                return candidate.name == symbol.name && candidate.receiverType == symbol.receiverType;
+                return candidate.name == symbol.name && candidate.receiverType == symbol.receiverType &&
+                    candidate.kind == symbol.kind && candidate.overloadKey == symbol.overloadKey;
             });
             if (!present) recovered.push_back(std::move(symbol));
         }

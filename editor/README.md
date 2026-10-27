@@ -56,6 +56,12 @@ are scoped to the current function and enclosing callbacks, and hover shows thei
 types. Member hover shows the member signature and documentation. Named
 receivers can include chains of object properties, such as `this.name.length`.
 For unknown receiver types, candidates list their receiver type in the details.
+Script class fields and ordinary methods are included, including fields inferred
+from constructor assignments. Each method overload has a separate completion
+entry with its parameter and return types; hover lists all overloads for the
+receiver's class. Constructor and method bodies also support `this.` member
+suggestions. Class constructors and generated initializers are not instance
+member suggestions.
 Completion also works on unfinished member expressions such as `name.`.
 Other errors can still prevent local type inference.
 Member completion after string literals or arbitrary expressions is not yet supported.

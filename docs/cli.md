@@ -84,6 +84,9 @@ for setup and current limitations.
 
 Local and parameter suggestions and hover information also cover script methods
 and constructors. Their receiver is available as `this`.
+Member suggestions and hover include script fields and method overloads, filtered
+by the receiver's type. Stored-field chains such as `owner.child.name` retain
+their member types, and unsaved class changes update suggestions across the project.
 
 ## Runtime
 
