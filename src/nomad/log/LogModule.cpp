@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/log/LogFunctions.hpp>
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/script/Runtime.hpp>
@@ -19,6 +20,7 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     if (runtime->registerHub("log", HubMode::Opened).isInvalid()) {
         throw NomadException("Failed to register log hub");
     }
+    registerLogConfigurationFunctions(context);
     const std::array functions{
         std::pair{"log.debug", &Logger::debug},
         std::pair{"log.info", &Logger::info},

@@ -37,6 +37,12 @@ the global logger level still filters messages first.
 To deliver debug messages, lower both the global level and the receiving sink's
 level to `Debug`.
 
+The `nomad-log` module also exposes typed script logging configuration,
+including ordinary `ScriptObject` settings and opaque sink handles. See
+[Programmatic configuration](nomad-log.md#programmatic-configuration).
+Script factories use the module context's logger and copy the supplied settings;
+discarding the configuration or script handle does not remove a sink.
+
 The base configuration, level, and sink ID are declared in
 `<nomad/log/LogSink.hpp>`. Each concrete configuration is declared in its sink's
 header: `<nomad/log/ConsoleSink.hpp>`, `<nomad/log/FileSink.hpp>`, or

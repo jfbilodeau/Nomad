@@ -31,13 +31,112 @@ log.warning $"Unexpected score: {score}"
 
 Messages include a timestamp, severity, and script file, function, and line.
 The default minimum level is `info` for both the logger and its sinks. Debug
-messages require the host to lower both thresholds to `debug`.
+messages require both thresholds to be lowered to `debug`.
 The default sink writes to the console; error and
 critical messages use standard error.
 
 By default, debug, info, and warning messages are buffered until the host flushes them.
 The game runtime flushes during its loop; C++ hosts can call `nomad::log::flush`.
 Fatal logging is available to C++ hosts only; there is no `log.fatal` script API.
+
+## Programmatic configuration
+
+The module exposes these ordinary typed values:
+
+- `log.Level`: `Debug`, `Info`, `Warning`, `Error`, `Critical`.
+- `log.DeliveryMode`: `Buffered`, `Synchronous`.
+- `log.FileRotationMode`: `None`, `Size`.
+- `log.SinkId`: an opaque handle returned by a sink factory, not an integer.
+
+Use `log.getLogLevel` / `log.setLogLevel level` and
+`log.getDeliveryMode` / `log.setDeliveryMode mode` to inspect or change the logger.
+`log.flush` delivers pending messages and flushes active sinks.
+
+```nomad
+log.setLogLevel log.Level.Debug
+log.setDeliveryMode log.DeliveryMode.Synchronous
+
+options = new log.SinkConfiguration
+options.level = log.Level.Debug
+console = log.createConsoleSink options
+log.debug "Debug logging enabled for this console sink"
+log.removeSink console
+```
+
+Factories add sinks without removing existing host or script sinks. Use
+`log.clearAllSinks` to flush and remove everything without installing a replacement.
+Neither operation affects plain `print` output.
+
+### Creation settings
+
+`new log.SinkConfiguration` creates an ordinary reference-semantic script object
+with `active:bool = true` and `level:log.Level = log.Level.Info`.
+Pass it to `log.createConsoleSink`.
+
+`new log.FileSinkConfiguration` creates a separate script object with those same
+two fields plus:
+
+| Field | Type | Default |
+| --- | --- | --- |
+| `directory` | `string` | `"logs"` |
+| `name` | `string` | `"application"` |
+| `rotationMode` | `log.FileRotationMode` | `Size` |
+| `rotateAtStartup` | `bool` | `true` |
+| `maxSizeBytes` | `int` | `10485760` (10 MiB) |
+| `maxFiles` | `int` | `10` archives, excluding the active file |
+
+```nomad
+options = new log.FileSinkConfiguration
+options.name = "session"
+options.maxFiles = 3
+file = log.createFileSink options
+log.info "Saved to logs/session.log"
+log.flush
+log.removeSink file
+```
+
+Relative directories resolve from the project directory, not the current working
+directory. Absolute directories are also supported. Names are extensionless base
+filenames; archives are `session.1.log` (newest), `session.2.log`, etc.
+Limits must be positive for bytes and nonnegative for archives.
+Startup rotation is independent of size rotation. Set `rotateAtStartup = false`
+and `rotationMode = log.FileRotationMode.None` to append indefinitely across runs.
+
+Each constructor creates independent settings. Assignment aliases the same
+configuration object, as with other script objects. Factories copy its values:
+changing the configuration afterward does not alter an existing sink.
+An inactive sink (`active = false`) is owned but receives no entries and creates
+no files until started. Enable it with `log.setSinkActive sink true`; an active
+flush, including an empty one, starts it.
+
+### Live sink settings
+
+All functions below take a `sink:log.SinkId` first:
+
+| Getter | Setter |
+| --- | --- |
+| `log.getSinkLevel sink` | `log.setSinkLevel sink level` |
+| `log.getSinkActive sink` | `log.setSinkActive sink active` |
+| `log.getFileRotationMode sink` | `log.setFileRotationMode sink mode` |
+| `log.getFileRotateAtStartup sink` | `log.setFileRotateAtStartup sink enabled` |
+| `log.getFileMaxSizeBytes sink` | `log.setFileRotationLimits sink maxSizeBytes maxFiles` |
+| `log.getFileMaxFiles sink` | Use the same rotation-limits setter. |
+| `log.getFilePath sink` | Create a replacement to change the path or name. |
+
+File-specific functions fail for console or other sink kinds. Changing the startup
+flag after startup does not rotate again or undo rotation. Other rotation changes
+apply to subsequent writes.
+
+The logger owns sinks, not configuration objects or script handles. Discarding a
+handle does not remove its sink. Removed/cleared handles are never reused by the
+same logger; accessing one or removing it again fails explicitly. Directory,
+file, rotation, and delivery errors also propagate as script execution errors.
+Memory sinks and custom script sink callbacks are not exposed.
+
+Analysis mode exposes types and signatures without configuring the host logger
+or creating files. Configuration mutations, factory calls, and flushing require
+application mode. Constructing configuration objects alone has no logging or
+filesystem effects.
 
 ## C++ sink configuration
 
@@ -56,8 +155,9 @@ The configurable base name defaults to `application`, producing
 unlimited append across runs. See
 [File sinks](embedding.md#file-sinks) for configuration and failure behavior.
 
-These configuration operations are not yet exposed to Nomad scripts or
-`nomad.toml`. Loading `nomad-log` currently uses the host's existing sinks.
+Project logging settings in `nomad.toml` are not yet supported. Loading
+`nomad-log` currently preserves the host's existing sinks and settings until
+explicitly changed programmatically.
 
 ## Extending the hub
 
