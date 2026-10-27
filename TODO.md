@@ -7,6 +7,7 @@ Things the author wants to do.
 
 ## Open
 [ ] Finish converting `NomadId` to strong types.
+[ ] Script fault handling
 [ ] `struct` (Embedded types, pass by copy)
 [ ] Nomad scripts in modules
 [ ] Object serialization

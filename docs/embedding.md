@@ -366,8 +366,9 @@ including when called from a native callback. Script constructor callables have 
 by construction, including native factories whose produced type differs from
 their owner. Script construction releases the failed
 instance at a host construction boundary if initialization or the body throws.
-Nested script-call fault cleanup is deferred; do not rely on complete release
-of nested frames, temporary arguments, or instances after a fault. Class
+VM faults are fatal to execution: stop execution and do not resume or reuse the
+faulted VM. Fault recovery and complete release of nested frames, temporary
+arguments, or instances are not supported yet. Class
 initialization and constructor bodies cannot yield. Compile and initialize
 required script-level hub variables before using this lower-level VM API.
 
@@ -1431,6 +1432,10 @@ Assignment validation happens before evaluating its right-hand side.
 `execute` also reports execution exceptions through the context.
 `evaluateExpression` propagates execution faults from called code; it does not
 turn arbitrary function failures into malformed-template diagnostics.
+
+An execution fault is fatal even when `execute` reports it through the context
+rather than throwing. Do not continue evaluating code on the faulted VM.
+Syntax and resolution errors do not have this restriction.
 
 Native and script calls use the caller-supplied VM. The host must initialize the
 runtime and any engine execution context required by its registered APIs.

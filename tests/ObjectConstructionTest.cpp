@@ -283,31 +283,35 @@ BOOST_AUTO_TEST_CASE(nested_script_calls_restore_parameter_local_and_receiver_fr
     }
 }
 
-BOOST_AUTO_TEST_CASE(nested_script_constructor_failure_unwinds_call_frames_and_temporary_arguments) {
+BOOST_AUTO_TEST_CASE(nested_script_constructor_fault_is_fatal_and_preserves_the_original_exception) {
     Runtime runtime;
+    auto failureCalls = 0;
+    auto continuedCalls = 0;
     BOOST_REQUIRE(runtime.registerNativeFunction(
-        "fail", [](VirtualMachine*) { throw NomadException("Nested initializer failed"); },
+        "fail", [&](VirtualMachine*) {
+            ++failureCalls;
+            throw NomadException("Nested initializer failed");
+        },
         {}, runtime.getIntegerType(), ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "continued", [&](VirtualMachine*) { ++continuedCalls; },
+        {}, runtime.getVoidType(), ""
     ).isValid());
     const auto id = compileConstruction(runtime,
         "class Broken\nvalue = fail\ninit name:string\nthis.name = name\nend\nend\n"
         "class Owner\nname = \"owner\"\ninit name:string\nthis.name = name\n"
         "child = new Broken (name.toUpper)\nend\nend\n"
         "fun construct name:string\nreturn new Owner name\nend\n"
-        "return construct (\"temporary\".toUpper)"
+        "result = construct (\"temporary\".toUpper)\ncontinued\nreturn result"
     );
-    const auto before = NomadObject::getLiveObjectCount();
     auto machine = runtime.createVirtualMachine();
-    for (auto attempt = 0; attempt < 2; ++attempt) {
-        BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(id), {}), NomadException);
-        BOOST_TEST(NomadObject::getLiveObjectCount() == before);
-        BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
-    }
-    {
-        InterpreterContext context(*machine);
-        BOOST_TEST(!Interpreter{}.execute("new Owner (\"temporary\".toUpper)", context));
-    }
-    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    BOOST_CHECK_EXCEPTION(machine->run(runtime.getScriptFunction(id), {}), NomadException,
+        [](const NomadException& exception) {
+            return NomadString(exception.what()) == "Nested initializer failed";
+        });
+    BOOST_TEST(failureCalls == 1);
+    BOOST_TEST(continuedCalls == 0);
 }
 
 BOOST_AUTO_TEST_CASE(script_construction_orders_defaults_initializers_and_overloaded_bodies) {
@@ -595,32 +599,60 @@ BOOST_AUTO_TEST_CASE(constructor_arguments_use_the_outer_receiver_before_allocat
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
-BOOST_AUTO_TEST_CASE(script_constructor_failure_releases_instance_fields_and_arguments_and_recovers) {
-    Runtime runtime;
-    BOOST_REQUIRE(runtime.registerNativeFunction(
-        "fail", [](VirtualMachine*) { throw NomadException("Constructor failed"); },
-        {}, runtime.getVoidType(), ""
-    ).isValid());
-    const auto id = compileConstruction(runtime,
-        "class Child\nend\n"
-        "class Owner\nchild = new Child\n"
-        "init name:string enabled:bool\nthis.name = name\nif enabled\nfail\nend\nend\n"
-        "end\nreturn new Owner \"owned\" true"
-    );
-    const auto before = NomadObject::getLiveObjectCount();
-    RuntimeValue result;
-    BOOST_CHECK_THROW(runtime.executeFunction(id, {}, result), NomadException);
-    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
-    {
-        auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
-        BOOST_TEST(!Interpreter{}.execute("new Owner \"failed\" true", context));
-        BOOST_REQUIRE(Interpreter{}.execute("new Owner \"success\" false", context));
-        const auto* object = dynamic_cast<ScriptObject*>(context.getResult()->getValue().getObjectValue());
-        BOOST_REQUIRE(object != nullptr);
-        BOOST_TEST(object->getReferenceCount() == 1u);
+BOOST_AUTO_TEST_CASE(script_constructor_fault_terminates_compiled_host_and_interpreter_execution) {
+    for (auto entry = 0; entry < 3; ++entry) {
+        BOOST_TEST_CONTEXT("Entry point " << entry) {
+            Runtime runtime;
+            auto failureCalls = 0;
+            auto continuedCalls = 0;
+            BOOST_REQUIRE(runtime.registerNativeFunction(
+                "fail", [&](VirtualMachine* machine) {
+                    ++failureCalls;
+                    machine->fault("Constructor failed");
+                }, {}, runtime.getVoidType(), ""
+            ).isValid());
+            BOOST_REQUIRE(runtime.registerNativeFunction(
+                "continued", [&](VirtualMachine*) { ++continuedCalls; },
+                {}, runtime.getVoidType(), ""
+            ).isValid());
+            const auto id = compileConstruction(runtime,
+                "class Child\nend\n"
+                "class Owner\nchild = new Child\n"
+                "init name:string enabled:bool\nthis.name = name\nif enabled\nfail\nend\ncontinued\nend\n"
+                "end\nreturn new Owner \"owned\" true"
+            );
+            if (entry == 0) {
+                RuntimeValue result;
+                BOOST_CHECK_EXCEPTION(runtime.executeFunction(id, {}, result), VirtualMachineException,
+                    [](const VirtualMachineException& exception) {
+                        return NomadString(exception.what()) == "Constructor failed";
+                    });
+            } else {
+                auto machine = runtime.createVirtualMachine();
+                if (entry == 1) {
+                    const auto resolved = runtime.resolveConstructor(runtime.getTypeByName("Owner"),
+                        {runtime.getStringType(), runtime.getBooleanType()});
+                    BOOST_REQUIRE(resolved.isResolved());
+                    RuntimeValue name;
+                    name.setStringValue("host");
+                    BOOST_CHECK_EXCEPTION(
+                        static_cast<void>(machine->constructObject(resolved.id, {name, RuntimeValue{true}})),
+                        VirtualMachineException, [](const VirtualMachineException& exception) {
+                            return NomadString(exception.what()) == "Constructor failed";
+                        });
+                    name.freeObjectValue();
+                } else {
+                    InterpreterContext context(*machine);
+                    BOOST_TEST(!Interpreter{}.execute("new Owner \"failed\" true", context));
+                    BOOST_REQUIRE(context.getError() != nullptr);
+                    BOOST_TEST(*context.getError() == "Constructor failed");
+                    BOOST_TEST(context.getResult() == nullptr);
+                }
+            }
+            BOOST_TEST(failureCalls == 1);
+            BOOST_TEST(continuedCalls == 0);
+        }
     }
-    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
 BOOST_AUTO_TEST_CASE(script_constructor_defaults_are_synthesized_only_without_source_init) {
