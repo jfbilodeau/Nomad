@@ -13,9 +13,9 @@
 #include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/ModuleHost.hpp>
-#include <nomad/system/NativeFunctions.hpp>
 #include <nomad/system/Path.hpp>
 #include <nomad/system/ProjectSession.hpp>
+#include <nomad/system/SystemFunctions.hpp>
 
 #include <TestDirectory.hpp>
 
@@ -82,7 +82,7 @@ std::unique_ptr<Game> createPreparedGame(
     Runtime& runtime,
     const GameOptions& options
 ) {
-    registerBuildInNativeFunctions(&runtime);
+    registerSystemFunctions(&runtime);
     auto game = Game::createForRuntime(&runtime, options, false);
     const std::vector<NomadPath> paths{pathFromUtf8(options.resourcePath) / "scripts"};
     game->prepareScripts([&] {
@@ -201,7 +201,7 @@ BOOST_AUTO_TEST_CASE(reports_sprite_failure_after_successful_script_compilation)
     TestDirectory directory("nomad_game_startup_sprite_failure");
     writeTextCatalogue(directory);
     directory.write("sprites/player.png", "not a PNG");
-    directory.write("scripts/main.nomad", "log.info \"compiled\"\n");
+    directory.write("scripts/main.nomad", "print \"compiled\"\n");
     selectDummyDrivers();
 
     const auto host = createGameHost(directory);

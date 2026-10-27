@@ -38,6 +38,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterContext.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/IteratorObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeCallable.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunctions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeMembers.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeProperty.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NomadObject.cpp

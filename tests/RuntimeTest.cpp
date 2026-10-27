@@ -315,6 +315,7 @@ BOOST_AUTO_TEST_CASE(bare_runtime_has_core_string_natives_without_standard_nativ
 {
     Runtime runtime;
 
+    BOOST_TEST(runtime.getNativeFunctionId("print").isValid());
     for (const auto* name : {"toFloat", "toInt", "log.info", "math.floor"}) {
         BOOST_TEST_CONTEXT(name) {
             BOOST_TEST(runtime.getNativeFunctionId(name).isInvalid());

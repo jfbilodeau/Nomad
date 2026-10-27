@@ -25,6 +25,10 @@ is present, Nomad uses `game.debug`, which defaults to `false`.
 
 ## Debug console
 
+Select [nomad-log](nomad-log.md) explicitly to write structured messages from
+scripts using the `log` hub. Engine diagnostics remain available without that
+module. Built-in `print` writes directly to standard output, not the log console.
+
 While debug mode is enabled, press the grave/tilde key (`~`) to open or close
 the debug console. Nomad uses the key's physical scancode, so it is the key
 normally located to the left of `1` even when the active keyboard layout shows

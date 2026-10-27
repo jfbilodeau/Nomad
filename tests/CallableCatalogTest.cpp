@@ -13,7 +13,7 @@
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
-#include <nomad/system/NativeFunctions.hpp>
+#include <nomad/system/SystemFunctions.hpp>
 
 #include <memory>
 #include <span>
@@ -472,13 +472,13 @@ BOOST_AUTO_TEST_CASE(duplicate_function_name_is_rejected)
 BOOST_AUTO_TEST_CASE(function_cannot_shadow_native_function)
 {
     Runtime runtime;
-    registerBuildInNativeFunctions(&runtime);
+    registerSystemFunctions(&runtime);
 
-    BOOST_REQUIRE(runtime.getNativeFunctionId("log.info").isValid());
+    BOOST_REQUIRE(runtime.getNativeFunctionId("print").isValid());
 
-    BOOST_TEST(runtime.registerScriptFunction("log.info", "log/info.nomad", "return 1").isInvalid());
+    BOOST_TEST(runtime.registerScriptFunction("print", "print.nomad", "return 1").isInvalid());
 
-    const auto callable = runtime.getCallableId("log.info");
+    const auto callable = runtime.getCallableId("print");
 
     BOOST_REQUIRE(callable.isValid());
     BOOST_TEST((runtime.getFunction(callable)->asNativeFunction() != nullptr));

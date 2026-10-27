@@ -61,6 +61,11 @@ void Logger::fatal(const NomadStringView message, const Location& location) {
     throw NomadException(NomadString(message));
 }
 
+void Logger::critical(const NomadStringView message, const Location& location) {
+    log(LogLevel::Critical, message, location);
+    flush();
+}
+
 void Logger::addSink(LogSink* sink) {
     const auto lock = std::lock_guard(m_deliveryMutex);
     if (sink == nullptr) {
@@ -126,6 +131,9 @@ void Logger::log(const LogLevel level, const NomadStringView message, const Loca
         case LogLevel::Fatal:
             logLevelName = "FATAL";
             break;
+        case LogLevel::Critical:
+            logLevelName = "CRITICAL";
+            break;
         default:
             logLevelName = "UNKNOWN";
             break;
@@ -190,6 +198,10 @@ void error(const NomadStringView message, const Location& location) {
 
 void fatal(const NomadStringView message, const Location& location) {
     getLogger().fatal(message, location);
+}
+
+void critical(const NomadStringView message, const Location& location) {
+    getLogger().critical(message, location);
 }
 
 void addSink(LogSink* sink) {

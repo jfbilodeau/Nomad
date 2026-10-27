@@ -18,7 +18,8 @@ enum class LogLevel {
     Info = 2,
     Warning = 3,
     Error = 4,
-    Fatal = 5,
+    Critical = 5,
+    Fatal = 6,
 };
 
 struct Location {
@@ -78,6 +79,7 @@ public:
     void info(NomadStringView message, const Location& location = Location());
     void warning(NomadStringView message, const Location& location = Location());
     void error(NomadStringView message, const Location& location = Location());
+    void critical(NomadStringView message, const Location& location = Location());
     [[noreturn]] void fatal(NomadStringView message, const Location& location = Location());
 
     void addSink(LogSink* sink);
@@ -107,6 +109,7 @@ void info(NomadStringView message, const Location& location = Location());
 // void warn(NomadStringView message, const Location& location = Location());
 void warning(NomadStringView message, const Location& location = Location());
 void error(NomadStringView message, const Location& location = Location());
+void critical(NomadStringView message, const Location& location = Location());
 [[noreturn]] void fatal(NomadStringView message, const Location& location = Location());
 
 void addSink(LogSink* sink);

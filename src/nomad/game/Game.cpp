@@ -13,11 +13,11 @@
 #include <nomad/game/resource/ResourceManager.hpp>
 
 #include <nomad/script/Closure.hpp>
-#include <nomad/system/NativeFunctions.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <nomad/system/Path.hpp>
+#include <nomad/system/SystemFunctions.hpp>
 
 #include <nomad/system/TempHeap.hpp>
 
@@ -1244,7 +1244,7 @@ void Game::initRuntime() {
     if (m_runtime == nullptr) {
         m_ownedRuntime = std::make_unique<Runtime>();
         m_runtime = m_ownedRuntime.get();
-        registerBuildInNativeFunctions(m_runtime);
+        registerSystemFunctions(m_runtime);
     }
 
     for (const auto* hubName : {

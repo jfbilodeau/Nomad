@@ -4,7 +4,7 @@ configure_file(
     @ONLY
 )
 
-foreach(MODULE IN ITEMS nomad-collections nomad-system nomad-game nomad-os)
+foreach(MODULE IN ITEMS nomad-collections nomad-log nomad-system nomad-game nomad-os)
     set(MODULE_DESTINATION "$<TARGET_FILE_DIR:nomad-runtime>/modules/${MODULE}")
     set(MODULE_DEPENDENCIES)
     if(WIN32)
@@ -56,7 +56,7 @@ if(TARGET nomad_test)
     endif()
     add_dependencies(nomad_test nomad-test-modules)
 endif()
-add_custom_target(nomad-modules DEPENDS nomad-collections-bundle nomad-system-bundle nomad-game-bundle nomad-os-bundle)
+add_custom_target(nomad-modules DEPENDS nomad-collections-bundle nomad-log-bundle nomad-system-bundle nomad-game-bundle nomad-os-bundle)
 foreach(PROGRAM IN ITEMS nomad-runtime nomad-cli nomadc nomad-lsp nomad_test)
     if(TARGET ${PROGRAM})
         add_dependencies(${PROGRAM} nomad-modules)

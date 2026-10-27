@@ -832,9 +832,9 @@ BOOST_AUTO_TEST_CASE(predefined_nativeFunctions_are_available)
     BOOST_REQUIRE_MESSAGE(floor.compiled, floor.diagnostics);
     BOOST_TEST(floor.floatValue == 2.0f);
 
-    const auto log = runSource("log.info \"language test\"");
-    BOOST_REQUIRE_MESSAGE(log.compiled, log.diagnostics);
-    BOOST_TEST(!log.fault.has_value());
+    const auto printed = runSource("print \"language test\"");
+    BOOST_REQUIRE_MESSAGE(printed.compiled, printed.diagnostics);
+    BOOST_TEST(!printed.fault.has_value());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

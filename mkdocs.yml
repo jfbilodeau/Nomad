@@ -29,6 +29,7 @@ nav:
   - Runtime modules:
       - Overview: modules.md
       - Collections: nomad-collections.md
+      - Logging: nomad-log.md
       - Operating system: nomad-os.md
       - System: nomad-system.md
       - Game: nomad-game.md

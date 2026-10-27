@@ -8,6 +8,7 @@
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/NativeFunctions.hpp>
 #include <nomad/script/NativeMembers.hpp>
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/NomadStringObject.hpp>
@@ -202,6 +203,8 @@ Runtime::Runtime() {
 
     // Register build-in nativeFunctions
     registerBuiltInNativeMembers(this);
+
+    registerCoreNativeFunctions(this);
 
 //    register_keyword("stringId" NomadDoc("Load the string id of the given string"));
     registerKeyword("fun", NomadDoc("Function declaration"));

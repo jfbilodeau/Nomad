@@ -1,4 +1,4 @@
-foreach(REQUIRED IN ITEMS NOMAD_CLI NOMAD_RUNTIME_SUFFIX NOMAD_SYSTEM_LIBRARY NOMAD_COLLECTIONS_LIBRARY NOMAD_GAME_LIBRARY NOMAD_OS_LIBRARY NOMAD_TEST_ROOT)
+foreach(REQUIRED IN ITEMS NOMAD_CLI NOMAD_RUNTIME_SUFFIX NOMAD_SYSTEM_LIBRARY NOMAD_COLLECTIONS_LIBRARY NOMAD_GAME_LIBRARY NOMAD_OS_LIBRARY NOMAD_LOG_LIBRARY NOMAD_TEST_ROOT)
     if(NOT DEFINED ${REQUIRED})
         message(FATAL_ERROR "${REQUIRED} is required")
     endif()
@@ -18,7 +18,7 @@ set(EXECUTABLE_NAME "${CMAKE_MATCH_1}")
 string(REPLACE "modules = [\"nomad-game\"]" "modules = [\"nomad-system\"]" CONFIGURATION "${CONFIGURATION}")
 string(REPLACE "entry = \"main\"\n" "" CONFIGURATION "${CONFIGURATION}")
 file(WRITE "${PROJECT}/nomad.toml" "${CONFIGURATION}")
-file(WRITE "${PROJECT}/res/scripts/main.nomad" "log.info \"SYSTEM_MODULE_COMPLETE\"\nsystem.exit\n")
+file(WRITE "${PROJECT}/res/scripts/main.nomad" "print \"SYSTEM_MODULE_COMPLETE\"\nsystem.exit\n")
 nomadRunTestCommand("Check system-only application" COMMAND "${NOMAD_CLI}" check "${PROJECT}")
 nomadRunTestCommand("Reject running an API-only application" EXPECT_FAILURE
     COMMAND "${NOMAD_CLI}" run "${PROJECT}")
@@ -45,7 +45,8 @@ endif()
 list(GET ARCHIVES 0 ARCHIVE)
 set(EXTRACTED "${NOMAD_TEST_ROOT}/extracted")
 file(ARCHIVE_EXTRACT INPUT "${ARCHIVE}" DESTINATION "${EXTRACTED}")
-if(NOT EXISTS "${EXTRACTED}/${NOMAD_SYSTEM_LIBRARY}" OR EXISTS "${EXTRACTED}/${NOMAD_GAME_LIBRARY}")
+if(NOT EXISTS "${EXTRACTED}/${NOMAD_SYSTEM_LIBRARY}" OR EXISTS "${EXTRACTED}/${NOMAD_GAME_LIBRARY}"
+    OR EXISTS "${EXTRACTED}/${NOMAD_LOG_LIBRARY}")
     message(FATAL_ERROR "System application did not include exactly the required Nomad modules")
 endif()
 file(GLOB GRAPHICAL_LIBRARIES "${EXTRACTED}/*SDL*" "${EXTRACTED}/*box2d*")
@@ -91,7 +92,7 @@ set(ENV{SDL_VIDEODRIVER} "dummy")
 set(ENV{SDL_AUDIODRIVER} "dummy")
 file(WRITE "${PROJECT}/nomad.toml" "${CONFIGURATION}")
 file(WRITE "${PROJECT}/res/scripts/main.nomad"
-    "assert os.argv.count == 0\nlog.info \"OS_EMPTY_ARGUMENTS_COMPLETE\"\nsystem.exit\n")
+    "assert os.argv.count == 0\nprint \"OS_EMPTY_ARGUMENTS_COMPLETE\"\nsystem.exit\n")
 nomadRunTestCommand("Run OS application without separator"
     COMMAND "${NOMAD_CLI}" run "${PROJECT}" OUTPUT_MATCH "OS_EMPTY_ARGUMENTS_COMPLETE")
 nomadRunTestCommand("Run OS application with empty argument list"
@@ -109,7 +110,7 @@ assert os.executablePath.length > 0
 assert os.tempDirectory.length > 0
 assert os.env.contains "NOMAD_OS_LOCAL"
 assert os.env["NOMAD_OS_LOCAL"] == "snapshot"
-log.info "OS_MODULE_COMPLETE"
+print "OS_MODULE_COMPLETE"
 system.exit
 ]=])
 set(APPLICATION_ARGUMENTS "Player 日本語" --help --project-path --debug --no-debug --)
@@ -148,4 +149,37 @@ foreach(ASSIGNMENT IN ITEMS "os.argv[0] = \"updated\"" "os.env[\"key\"] = \"upda
         message(FATAL_ERROR "Expected read-only diagnostic for ${ASSIGNMENT}: ${DIAGNOSTIC}")
     endif()
 endforeach()
+
+set(LOG_PROJECT "${NOMAD_TEST_ROOT}/log application")
+nomadRunTestCommand("Create log application" COMMAND "${NOMAD_CLI}" init "${LOG_PROJECT}")
+file(READ "${LOG_PROJECT}/nomad.toml" LOG_CONFIGURATION)
+string(REPLACE "modules = [\"nomad-game\"]" "modules = [\"nomad-log\"]"
+    LOG_CONFIGURATION "${LOG_CONFIGURATION}")
+file(WRITE "${LOG_PROJECT}/nomad.toml" "${LOG_CONFIGURATION}")
+file(WRITE "${LOG_PROJECT}/res/scripts/main.nomad"
+    "log.debug \"debug\"\nlog.info \"info\"\nlog.warning \"warning\"\n"
+    "log.error \"error\"\nlog.critical \"critical\"\n")
+nomadRunTestCommand("Check independent log module" COMMAND "${NOMAD_CLI}" check "${LOG_PROJECT}")
+nomadRunTestCommand("Package independent log module" COMMAND "${NOMAD_CLI}" package "${LOG_PROJECT}")
+file(GLOB LOG_ARCHIVES "${LOG_PROJECT}/dist/*.zip")
+list(LENGTH LOG_ARCHIVES LOG_ARCHIVE_COUNT)
+if(NOT LOG_ARCHIVE_COUNT EQUAL 1)
+    message(FATAL_ERROR "Expected one log application package: ${LOG_ARCHIVES}")
+endif()
+list(GET LOG_ARCHIVES 0 LOG_ARCHIVE)
+set(LOG_EXTRACTED "${NOMAD_TEST_ROOT}/log-extracted")
+file(ARCHIVE_EXTRACT INPUT "${LOG_ARCHIVE}" DESTINATION "${LOG_EXTRACTED}")
+if(NOT EXISTS "${LOG_EXTRACTED}/${NOMAD_LOG_LIBRARY}"
+    OR EXISTS "${LOG_EXTRACTED}/${NOMAD_SYSTEM_LIBRARY}"
+    OR EXISTS "${LOG_EXTRACTED}/${NOMAD_GAME_LIBRARY}"
+    OR EXISTS "${LOG_EXTRACTED}/${NOMAD_OS_LIBRARY}"
+    OR EXISTS "${LOG_EXTRACTED}/${NOMAD_COLLECTIONS_LIBRARY}")
+    message(FATAL_ERROR "Log-only package did not include exactly its required Nomad modules")
+endif()
+string(REPLACE "modules = [\"nomad-log\"]" "modules = [\"nomad-game\", \"nomad-log\"]"
+    LOG_CONFIGURATION "${LOG_CONFIGURATION}")
+file(WRITE "${LOG_PROJECT}/nomad.toml" "${LOG_CONFIGURATION}")
+file(APPEND "${LOG_PROJECT}/res/scripts/main.nomad" "print \"LOG_MODULE_COMPLETE\"\nsystem.exit\n")
+nomadRunTestCommand("Run game with explicit log module"
+    COMMAND "${NOMAD_CLI}" run "${LOG_PROJECT}" OUTPUT_MATCH "LOG_MODULE_COMPLETE")
 file(REMOVE_RECURSE "${NOMAD_TEST_ROOT}")

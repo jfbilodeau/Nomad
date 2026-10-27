@@ -11,4 +11,4 @@ global.font = game.loadFont "fonts/ProggyClean.ttf" 26
 
 game.createScene scenes.smokeScene
 
-log.info "Nomad Packaging Smoke Test initialized."
+print "Nomad Packaging Smoke Test initialized."

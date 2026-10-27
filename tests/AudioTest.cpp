@@ -13,8 +13,8 @@
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
-#include <nomad/system/NativeFunctions.hpp>
 #include <nomad/system/Path.hpp>
+#include <nomad/system/SystemFunctions.hpp>
 
 #include <TestDirectory.hpp>
 
@@ -66,7 +66,7 @@ std::unique_ptr<Game> createHeadlessGame(const TestDirectory& directory) {
 }
 
 std::unique_ptr<Game> createAudioGame(Runtime& runtime, GameOptions options) {
-    registerBuildInNativeFunctions(&runtime);
+    registerSystemFunctions(&runtime);
     auto game = Game::createForRuntime(&runtime, options, false);
     const std::vector<NomadPath> paths{pathFromUtf8(options.resourcePath) / "scripts"};
     game->prepareScripts([&] {

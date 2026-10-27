@@ -1629,6 +1629,7 @@ void DebugConsole::renderLogs() {
             color = {1.0f, 0.80f, 0.20f, 1.0f};
             break;
         case LogLevel::Error:
+        case LogLevel::Critical:
         case LogLevel::Fatal:
             color = {1.0f, 0.30f, 0.30f, 1.0f};
             break;

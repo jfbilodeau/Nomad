@@ -39,6 +39,7 @@ add_executable(
     ./LanguageTestFixture.cpp
     ./LanguageTypeTest.cpp
     ./LanguageVariableIdTest.cpp
+    ./LogModuleTest.cpp
     ./LogTest.cpp
     ./ModuleGameTest.cpp
     ./ModuleHostTest.cpp

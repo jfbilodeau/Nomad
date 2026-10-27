@@ -169,4 +169,21 @@ BOOST_AUTO_TEST_CASE(FatalReportsFailureWithoutTerminatingTheProcess)
     BOOST_TEST(sink.getEntries().front().message.find("fatal-message") != NomadString::npos);
 }
 
+BOOST_AUTO_TEST_CASE(CriticalFiltersLowerLevelsFlushesAndContinues)
+{
+    MemorySink sink;
+    Logger logger(&sink);
+    logger.clear();
+    logger.setLogLevel(LogLevel::Critical);
+    logger.error("filtered-error");
+    BOOST_TEST(sink.getEntries().empty());
+    logger.critical("critical-message");
+    BOOST_REQUIRE_EQUAL(sink.getEntries().size(), 1U);
+    BOOST_TEST((sink.getEntries().front().level == LogLevel::Critical));
+    BOOST_TEST(sink.getEntries().front().message.find("[CRITICAL] critical-message") != NomadString::npos);
+    BOOST_CHECK_THROW(logger.fatal("fatal-after-critical"), NomadException);
+    BOOST_REQUIRE_EQUAL(sink.getEntries().size(), 2U);
+    BOOST_TEST((sink.getEntries().back().level == LogLevel::Fatal));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

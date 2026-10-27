@@ -17,14 +17,19 @@ The SDK provides:
 | Module | Features |
 | --- | --- |
 | [nomad-collections](nomad-collections.md) | Typed lists, fixed-size 1D/2D/3D arrays, and string-keyed maps with indexed access. |
-| [nomad-system](nomad-system.md) | Logging, math functions, conversions, and orderly shutdown. |
+| [nomad-log](nomad-log.md) | Structured logging through the open `log` hub. |
+| [nomad-system](nomad-system.md) | Math functions, conversions, and orderly shutdown. |
 | [nomad-game](nomad-game.md) | Windows, input, graphics, audio, scenes, entities, and game resources. Requires `nomad-system`. |
 | [nomad-os](nomad-os.md) | Startup arguments, environment, platform and architecture enums, and paths through the `os` hub. Requires `nomad-collections`. |
 
 Dependencies are selected automatically. Listing only `nomad-game` also
 loads `nomad-system`. A system-only project can select `["nomad-system"]`
 without opening a game window. An empty list selects only the fundamental
-language runtime, including built-in strings.
+language runtime, including built-in strings and `print`.
+
+`nomad-log` is independent of the other modules. Select it explicitly to use
+`log.debug`, `log.info`, `log.warning`, `log.error`, and `log.critical`; selecting
+`nomad-system` or `nomad-game` alone no longer provides `log.info`.
 
 Selecting `nomad-os` automatically loads `nomad-collections`. It does not require
 the game or system modules and does not open a window.
@@ -39,6 +44,9 @@ Development commands use the modules in the selected SDK:
 ```text
 modules/
   nomad-collections/
+    module.toml
+    ...
+  nomad-log/
     module.toml
     ...
   nomad-system/
