@@ -83,6 +83,23 @@ BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(log_module)
 
+BOOST_AUTO_TEST_CASE(module_registers_sink_type_and_active_property) {
+    const TestDirectory directory("log-module-sink-type");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});
+    for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis}) {
+        const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
+        const auto* type = host->getRuntime()->getTypeByName("log.Sink");
+        BOOST_REQUIRE(type != nullptr);
+        const auto* objectType = type->asObjectType();
+        BOOST_REQUIRE(objectType != nullptr);
+        BOOST_TEST(objectType->getConstructors().empty());
+        BOOST_TEST(objectType->getPropertyCount() == 1U);
+        const auto* active = objectType->getProperty("active");
+        BOOST_REQUIRE(active != nullptr);
+        BOOST_TEST(active->getValueType() == host->getRuntime()->getBooleanType());
+    }
+}
+
 BOOST_AUTO_TEST_CASE(module_is_independent_and_script_functions_preserve_locations) {
     const TestDirectory directory("log-module");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});

@@ -50,8 +50,15 @@ call and throws for an unknown or removed sink. Construction also rejects
 unknown or removed IDs. The wrapper does not own or cache the concrete sink;
 destroying it does not remove or deactivate that sink.
 The logger must outlive the wrapper. Coordinate lookup and use with concurrent
-sink removal, just as for `Logger::getSink()`. This wrapper is not yet registered
-as a script type.
+sink removal, just as for `Logger::getSink()`.
+
+`nomad-log` registers the wrapper as the closed object type `log.Sink` with a
+read/write boolean `active` property. Native property access resolves the sink
+ID on every read and write; removed sinks throw rather than accessing stale
+storage. There is no script constructor, and the existing script factories
+still return opaque IDs until their migration to this object type.
+Type registration is internal to the logging module; C++ hosts obtain the
+registered descriptor from the module's runtime.
 
 The base configuration, level, and sink ID are declared in
 `<nomad/log/LogSink.hpp>`. Each concrete configuration is declared in its sink's

@@ -3,15 +3,39 @@
 #include <nomad/log/Logger.hpp>
 #include <nomad/log/LogSinkObject.hpp>
 
+#include <nomad/script/Hub.hpp>
+#include <nomad/script/Runtime.hpp>
 #include <nomad/script/RuntimeValue.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
+#include <nomad/system/ModuleHost.hpp>
+#include <nomad/system/ProjectSession.hpp>
+
+#include <boost/dll/shared_library.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include <memory>
 #include <type_traits>
 
 using namespace nomad;
 
 namespace {
+
+void loadLogModule(boost::dll::shared_library& library, Runtime& runtime, Logger& logger) {
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});
+    BOOST_REQUIRE_EQUAL(modules.size(), 1U);
+    const auto path = modules.front().directory / getModuleLibraryName("nomad-log");
+    library.load(path.native(), boost::dll::load_mode::load_with_altered_search_path);
+    ModuleContext context{
+        &runtime, nullptr, &logger, ModuleMode::Application, {}, modules.front().directory,
+        {}, {}, {}, {}, nullptr
+    };
+    ModuleCallbacks callbacks;
+    library.get<RegisterModuleFn>("registerModule")(&context, &callbacks);
+    const auto* type = runtime.getTypeByName("log.Sink");
+    BOOST_REQUIRE(type != nullptr);
+    BOOST_REQUIRE(type->asObjectType() != nullptr);
+}
 
 struct LogSinkObjectFixture {
     Logger logger;
@@ -106,6 +130,100 @@ BOOST_AUTO_TEST_CASE(logger_local_ids_resolve_against_the_stored_owner) {
     logger.removeSink(sinkId);
     BOOST_CHECK_THROW((void)object.getSink(), NomadException);
     BOOST_TEST(otherLogger.getSink(otherId) != nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(registers_closed_sink_type_with_only_boolean_active_property) {
+    boost::dll::shared_library library;
+    Runtime runtime;
+    loadLogModule(library, runtime, logger);
+    const auto hubId = runtime.getHubId("log");
+    BOOST_REQUIRE(hubId.isValid());
+    const auto* type = runtime.getTypeByName("log.Sink")->asObjectType();
+    BOOST_REQUIRE(type != nullptr);
+    BOOST_TEST(type->getTypeName() == "log.Sink");
+    BOOST_TEST(!type->isOpen());
+    BOOST_TEST(type->getPropertyCount() == 1U);
+    BOOST_TEST(type->getConstructors().empty());
+    BOOST_TEST(type->getMethods().empty());
+    const auto* active = type->getProperty("active");
+    BOOST_REQUIRE(active != nullptr);
+    BOOST_TEST(active->getValueType() == runtime.getBooleanType());
+    const auto info = runtime.getNativePropertyInfo(active->getId());
+    BOOST_REQUIRE(info.has_value());
+    BOOST_TEST(static_cast<bool>(info->getFn));
+    BOOST_TEST(static_cast<bool>(info->setFn));
+    const auto* member = runtime.getHub(hubId)->getMember("Sink");
+    BOOST_REQUIRE(member != nullptr);
+    BOOST_REQUIRE(std::holds_alternative<const Type*>(*member));
+    BOOST_TEST(std::get<const Type*>(*member) == type);
+}
+
+BOOST_AUTO_TEST_CASE(native_active_property_reads_current_state_and_controls_delivery) {
+    boost::dll::shared_library library;
+    Runtime runtime;
+    loadLogModule(library, runtime, logger);
+    const auto* type = runtime.getTypeByName("log.Sink")->asObjectType();
+    const auto activeId = type->getProperty("active")->getId();
+    auto machine = runtime.createVirtualMachine();
+    auto object = std::make_unique<LogSinkObject>(logger, sinkId);
+    RuntimeValue receiver;
+    receiver.setObjectValue(object.get());
+    RuntimeValue result;
+    machine->getProperty(activeId, receiver, result);
+    BOOST_TEST(result.getBooleanValue());
+    machine->setProperty(activeId, receiver, RuntimeValue(false));
+    BOOST_TEST(!logger.getSink(sinkId)->getActive());
+    logger.info("disabled record");
+    logger.flush();
+    BOOST_TEST(static_cast<MemorySink*>(logger.getSink(sinkId))->getEntries().empty());
+    machine->getProperty(activeId, receiver, result);
+    BOOST_TEST(!result.getBooleanValue());
+    logger.getSink(sinkId)->setActive(true);
+    machine->getProperty(activeId, receiver, result);
+    BOOST_TEST(result.getBooleanValue());
+    machine->setProperty(activeId, receiver, RuntimeValue(true));
+    logger.info("enabled record");
+    logger.flush();
+    const auto& entries = static_cast<MemorySink*>(logger.getSink(sinkId))->getEntries();
+    BOOST_REQUIRE_EQUAL(entries.size(), 1U);
+    BOOST_TEST(entries.front().message.find("enabled record") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(native_active_property_rejects_removed_sink_without_touching_replacement) {
+    boost::dll::shared_library library;
+    Runtime runtime;
+    loadLogModule(library, runtime, logger);
+    const auto* type = runtime.getTypeByName("log.Sink")->asObjectType();
+    const auto activeId = type->getProperty("active")->getId();
+    auto machine = runtime.createVirtualMachine();
+    auto object = std::make_unique<LogSinkObject>(logger, sinkId);
+    RuntimeValue receiver;
+    receiver.setObjectValue(object.get());
+    logger.removeSink(sinkId);
+    const auto replacementId = logger.createMemorySink();
+    RuntimeValue result;
+    BOOST_CHECK_EXCEPTION(machine->getProperty(activeId, receiver, result), NomadException,
+        [](const NomadException& error) {
+            return NomadString(error.what()).find("Unknown or removed log sink ID:") != NomadString::npos;
+        });
+    BOOST_CHECK_THROW(machine->setProperty(activeId, receiver, RuntimeValue(false)), NomadException);
+    BOOST_TEST(logger.getSink(replacementId)->getActive());
+}
+
+BOOST_AUTO_TEST_CASE(native_active_property_rejects_cleared_sink) {
+    boost::dll::shared_library library;
+    Runtime runtime;
+    loadLogModule(library, runtime, logger);
+    const auto* type = runtime.getTypeByName("log.Sink")->asObjectType();
+    const auto activeId = type->getProperty("active")->getId();
+    auto machine = runtime.createVirtualMachine();
+    auto object = std::make_unique<LogSinkObject>(logger, sinkId);
+    RuntimeValue receiver;
+    receiver.setObjectValue(object.get());
+    logger.clearAllSinks();
+    RuntimeValue result;
+    BOOST_CHECK_THROW(machine->getProperty(activeId, receiver, result), NomadException);
+    BOOST_CHECK_THROW(machine->setProperty(activeId, receiver, RuntimeValue(true)), NomadException);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
