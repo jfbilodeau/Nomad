@@ -28,6 +28,10 @@ public:
     void requestExit(int status = 0) override;
     [[nodiscard]] int run() override;
     [[nodiscard]] CompilationResult compileProject() override;
+    [[nodiscard]] SourceBatch loadSources(
+        std::span<const NomadPath> paths,
+        std::span<const ScriptSource> overrides = {}
+    ) const override;
     [[nodiscard]] CompilationResult compileSources(
         const SourceBatch& sources,
         CompilationTarget target
@@ -50,6 +54,7 @@ private:
     NomadPath m_projectDirectory;
     std::vector<NomadString> m_arguments;
     std::vector<std::unique_ptr<LoadedModule>> m_modules;
+    std::vector<SourceRoot> m_moduleScriptRoots;
     std::unique_ptr<Runtime> m_runtime;
     std::atomic<bool> m_exitRequested = false;
     std::atomic<int> m_exitStatus = 0;

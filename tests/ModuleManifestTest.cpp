@@ -98,4 +98,49 @@ BOOST_AUTO_TEST_CASE(empty_requests_resolve_to_no_modules) {
     BOOST_TEST(resolveModules(directory.getPath(), {}).empty());
 }
 
+BOOST_AUTO_TEST_CASE(module_script_directory_defaults_and_explicit_paths_are_retained) {
+    TestDirectory directory("nomad_module_script_directory");
+    directory.write("module.toml", "schema = 1\n[module]\nname = 'example'\n");
+    const auto defaults = loadModuleManifest(directory.getPath());
+    BOOST_REQUIRE(defaults.scriptsDirectory.has_value());
+    BOOST_TEST(*defaults.scriptsDirectory == NomadPath("scripts"));
+    BOOST_TEST(!defaults.scriptsDirectoryRequired);
+    directory.write("module.toml",
+        "schema = 1\n[module]\nname = 'example'\n[scripts]\ndirectory = 'source\\nested\\..'\n");
+    const auto configured = loadModuleManifest(directory.getPath());
+    BOOST_REQUIRE(configured.scriptsDirectory.has_value());
+    BOOST_TEST(*configured.scriptsDirectory == NomadPath("source"));
+    BOOST_TEST(configured.scriptsDirectoryRequired);
+}
+
+BOOST_AUTO_TEST_CASE(invalid_module_script_directories_are_manifest_errors) {
+    TestDirectory directory("nomad_module_script_directory_invalid");
+    for (const auto* setting : {
+        "scripts = false\n",
+        "[scripts]\ndirectory = false\n",
+        "[scripts]\ndirectory = ['source']\n",
+        "[scripts]\ndirectory = ''\n",
+        "[scripts]\ndirectory = '.'\n",
+        "[scripts]\ndirectory = '../outside'\n",
+        "[scripts]\ndirectory = '/outside'\n"
+    }) {
+        directory.write("module.toml", NomadString("schema = 1\n") + setting + "[module]\nname = 'example'\n");
+        BOOST_CHECK_EXCEPTION((void)loadModuleManifest(directory.getPath()), ModuleException, [](const auto& error) {
+            return NomadStringView(error.what()).find("scripts") != NomadStringView::npos;
+        });
+    }
+}
+
+#if !BOOST_OS_WINDOWS
+BOOST_AUTO_TEST_CASE(module_script_directories_cannot_escape_through_directory_links) {
+    TestDirectory directory("nomad_module_script_directory_link");
+    directory.write("module/module.toml", "schema = 1\n[module]\nname = 'example'\n");
+    directory.write("outside/main.nomad", "return 42");
+    std::filesystem::create_directory_symlink(
+        directory.getPath() / "outside", directory.getPath() / "module" / "scripts"
+    );
+    BOOST_CHECK_THROW((void)loadModuleManifest(directory.getPath() / "module"), ModuleException);
+}
+#endif
+
 BOOST_AUTO_TEST_SUITE_END()

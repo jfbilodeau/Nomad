@@ -11,6 +11,7 @@
 #include <nomad/system/NomadConfiguration.hpp>
 
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace nomad {
@@ -34,6 +35,10 @@ public:
     virtual void requestExit(int status = 0) = 0;
     [[nodiscard]] virtual int run() = 0;
     [[nodiscard]] virtual CompilationResult compileProject() = 0;
+    [[nodiscard]] virtual SourceBatch loadSources(
+        std::span<const NomadPath> paths,
+        std::span<const ScriptSource> overrides = {}
+    ) const = 0;
     [[nodiscard]] virtual CompilationResult compileSources(
         const SourceBatch& sources,
         CompilationTarget target = CompilationTarget::Executable

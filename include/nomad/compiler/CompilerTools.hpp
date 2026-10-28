@@ -38,7 +38,8 @@ struct DocumentationResult {
     const std::vector<std::filesystem::path>& paths,
     Runtime* runtime = nullptr
 );
-// Uses the same compilation pipeline without accessing the filesystem or executing scripts.
+// Uses supplied snapshots without executing scripts. Additional roots configured on the runtime's compiler
+// are also discovered; supplied snapshots override their backing files in those roots.
 [[nodiscard]] CompilationResult checkSources(const SourceBatch& batch, Runtime* runtime = nullptr);
 [[nodiscard]] CompilationResult analyzeSources(const SourceBatch& batch, Runtime* runtime = nullptr);
 

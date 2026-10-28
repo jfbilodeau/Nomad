@@ -17,6 +17,7 @@
 #include <nomad/script/Type.hpp>
 
 #include <functional>
+#include <span>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -185,7 +186,9 @@ public:
     void setId(NomadIndex index, NomadId id);
     void setIndex(NomadIndex index, NomadIndex value);
 
-    // The only script-input API. Copies snapshots and immediately reports loading and registration diagnostics.
+    // Configure additional roots before registering snapshots. Snapshots override their backing files.
+    void registerSourceRoots(std::span<const SourceRoot> roots);
+    // Copies snapshots and immediately reports loading and registration diagnostics.
     void registerSources(CompilerContext* context, const SourceBatch& batch);
     // Parser interface: creates a function belonging to an already registered script.
     // Returns NOMAD_INVALID_ID and reports to context if the function name is already used.
@@ -304,6 +307,8 @@ private:
     std::unordered_map<NomadString, ParseStatementFnRegistration> m_statements;
     std::vector<OpCodeRegistration> m_opCodeRegistrations;
     std::vector<std::function<void(CompilerContext*, CompilationPhase)>> m_phaseHooks;
+    std::vector<SourceRoot> m_sourceRoots;
+    bool m_sourceRootsLoaded = false;
     std::vector<ScriptCompilation> m_scripts;
     std::vector<FunctionCompilation> m_functions;
     std::vector<PendingFormatString> m_pendingFormatStrings;

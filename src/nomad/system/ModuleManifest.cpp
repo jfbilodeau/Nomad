@@ -50,6 +50,24 @@ ModuleManifest loadModuleManifest(const NomadPath& directory) {
             throw ModuleException("Module manifest '" + pathToUtf8(path) + "' requires a valid module.name");
         }
         ModuleManifest result{name, directory, {}};
+        document.validateSection("scripts");
+        const auto scriptsDirectory = document.getString("scripts.directory");
+        result.scriptsDirectory = "scripts";
+        if (scriptsDirectory) {
+            try {
+                result.scriptsDirectory = normalizeRelativeDirectories(std::vector{*scriptsDirectory}).front();
+            } catch (const NomadException& error) {
+                throw ModuleException("Module manifest '" + pathToUtf8(path) +
+                    "' field 'scripts.directory' " + error.what());
+            }
+            result.scriptsDirectoryRequired = true;
+        }
+        const auto relativeScripts = std::filesystem::weakly_canonical(directory / *result.scriptsDirectory)
+            .lexically_relative(std::filesystem::weakly_canonical(directory));
+        if (relativeScripts.empty() || relativeScripts == "." || *relativeScripts.begin() == "..") {
+            throw ModuleException("Module manifest '" + pathToUtf8(path) +
+                "' field 'scripts.directory' must stay below the module directory");
+        }
         const auto dependencies = document.getStringArray("nomad.modules");
         if (dependencies) {
             for (const auto& dependency : *dependencies) {
@@ -66,6 +84,9 @@ ModuleManifest loadModuleManifest(const NomadPath& directory) {
     } catch (const NomadConfigurationException& error) {
         throw ModuleException("Invalid module manifest '" + pathToUtf8(path) + "': " +
             NomadString(error.what()));
+    } catch (const std::filesystem::filesystem_error& error) {
+        throw ModuleException("Failed to resolve module script directory in '" +
+            pathToUtf8(path) + "': " + error.what());
     }
 }
 

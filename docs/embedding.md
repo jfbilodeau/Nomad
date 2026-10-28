@@ -958,7 +958,7 @@ execution.
 
 ## Source input and compilation
 
-The compiler consumes source text, not filesystem paths. `SourceText` owns a
+The compiler registers source snapshots. `SourceText` owns a
 `sourceName` (used in diagnostics), `text`, and an optional `filePath`. The name
 does not need to exist on disk and is never interpreted as a path. `filePath`
 identifies a backing file, not a request to read it: the supplied text is always
@@ -966,6 +966,9 @@ authoritative, including unsaved editor changes and files not yet created.
 Untitled documents and interpreter input can leave it unset.
 `ScriptSource` pairs that text with an explicit `scriptName`. This is the
 source-level name used to register the script's compiled runtime function.
+It also retains an `owner` (empty for application sources) and `relativePath`
+when loaded from a root. Module sources use `$owner.relative.file` script names;
+their diagnostic source names remain paths or editor document names.
 `SourceBatch` holds script sources and any diagnostics from loading them.
 
 ```cpp
@@ -996,6 +999,13 @@ functions. Duplicate script names are reported immediately to the supplied
 compilation refuses to proceed if it already contains errors. Use a fresh runtime
 for independent analysis snapshots, or provide a runtime containing the host APIs
 needed by the scripts. Compilation does not execute scripts.
+
+`registerSourceRoots(roots)` configures additional `SourceRoot` entries before
+the first `registerSources` call. Each entry supplies a path, optional owner
+name, and a `required` flag. The compiler discovers these roots with the first
+batch (or when compilation starts without a batch); supplied snapshots override
+matching backing files. Module hosts configure their resolved module roots
+automatically, including for compiler tools using the host's runtime.
 
 Custom statements register with
 `registerParseStatementFn(name, availability, parser, preParser)`.
@@ -1032,11 +1042,12 @@ disk snapshots **before their contents are read**, so a locked disk file does
 not block analysis. An explicit missing `.nomad` file also uses its matching
 buffer without a missing-path error. Other loading failures are still reported.
 
-File-backed overrides match by absolute, lexically normalized `filePath`, not by
-`scriptName` or `sourceName`. Relative paths use the current working directory.
-Matching is case-insensitive on Windows and case-sensitive elsewhere. This is a
-lexical policy: it does not resolve symbolic links, hard links, or filesystem
-case-sensitivity settings (including case-sensitive Windows directories).
+File-backed overrides match by absolute `filePath` with canonical parent
+directories, not by `scriptName` or `sourceName`. Relative paths use the current
+working directory. Matching is case-insensitive on Windows and case-sensitive
+elsewhere. Directory aliases are resolved; hard links and filesystem
+case-sensitivity settings (including case-sensitive Windows directories) do not
+change this identity policy.
 The caller decodes document URIs into filesystem paths.
 
 A discovered file keeps its disk-derived script name and takes the override's
@@ -1047,6 +1058,19 @@ naming those scripts; overrides are not restricted to the supplied disk roots.
 Duplicate file identities or duplicate untitled `sourceName` values produce
 loading errors, not last-write-wins behavior. Different documents with the same
 script name remain ordinary compiler collisions.
+
+Use `loadSourceRoots(roots, overrides)` for owner-aware loading or
+`ModuleHost::loadSources(paths, overrides)` to combine application paths and
+configured module roots. Module ownership takes precedence over overlapping
+application roots. A discovered or unsaved module file receives its
+owner-qualified identity regardless of the override's supplied script name.
+Repeated disk paths are deduplicated; conflicting module ownership and module
+dotted-name collisions are loading errors.
+
+`loadModuleManifest` fills the relative `scriptsDirectory` and its
+`scriptsDirectoryRequired` flag. Programmatic `ModuleManifest` descriptors with
+an unset `scriptsDirectory` contribute no scripts; the host does not assume a
+manifest exists for those descriptors.
 
 ```cpp
 const std::vector<nomad::ScriptSource> buffers{

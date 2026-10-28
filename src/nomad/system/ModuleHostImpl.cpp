@@ -103,6 +103,7 @@ ModuleHostImpl::ModuleHostImpl(
 }
 
 void ModuleHostImpl::loadModules(const std::vector<ModuleManifest>& modules) {
+    m_moduleScriptRoots = getModuleScriptRoots(modules);
     for (const auto& manifest : modules) {
         auto loaded = std::make_unique<LoadedModule>();
         loaded->name = manifest.name;
@@ -146,6 +147,7 @@ void ModuleHostImpl::loadModules(const std::vector<ModuleManifest>& modules) {
     }
     if (m_runtime != nullptr) {
         m_runtime->registerCompilerSetup([this](Compiler* compiler) {
+            compiler->registerSourceRoots(m_moduleScriptRoots);
             compiler->registerPhaseHook([this](CompilerContext*, const CompilationPhase phase) {
                 if (phase == CompilationPhase::Configure) {
                     m_compilationFailed = true;
@@ -225,8 +227,19 @@ CompilationResult ModuleHostImpl::compileProject() {
     }
     m_compilationFailed = true;
     const auto paths = resolveScriptPaths(m_configuration, m_projectDirectory);
-    return compileSources(loadSourcePaths(paths),
+    return compileSources(loadSources(paths),
         m_mode == ModuleMode::Analysis ? CompilationTarget::Analysis : CompilationTarget::Executable);
+}
+
+SourceBatch ModuleHostImpl::loadSources(
+    const std::span<const NomadPath> paths,
+    const std::span<const ScriptSource> overrides
+) const {
+    auto roots = m_moduleScriptRoots;
+    for (const auto& path : paths) {
+        roots.push_back({path});
+    }
+    return loadSourceRoots(roots, overrides);
 }
 
 CompilationResult ModuleHostImpl::compileSources(const SourceBatch& sources, const CompilationTarget target) {

@@ -90,6 +90,50 @@ Modules must be built for the same Nomad SDK, platform, architecture, and
 compatible compiler/runtime settings. Native modules execute trusted native
 code; only use SDKs and modules you trust.
 
+## Module scripts
+
+A native module can also supply `.nomad` files. Its manifest may select one
+directory, relative to the module directory:
+
+```toml
+[scripts]
+directory = "scripts"
+```
+
+The default is `scripts`. An absent default directory means the module has no
+scripts; an explicitly configured directory must exist and be a directory.
+The directory must remain below the module directory. This is separate from
+the application's `scripts.directories` list.
+
+Selected modules and their transitive dependencies contribute their scripts
+automatically to compilation, checking, instruction dumps, documentation, and
+editor analysis. Discovery is recursive and deterministic, using the same
+source-loading rules as application scripts. Repeated paths are deduplicated.
+If an application root also includes a module's files, they retain module
+ownership rather than being loaded again as application scripts.
+
+Module file-body identities use `$<owner>.<relative-file-stem>`. For example,
+`os/scripts/main.nomad` becomes `$os.main`, and
+`os/scripts/utilities/paths.nomad` becomes `$os.utilities.paths`. These identities
+remain stable when the module directory moves. Application file-call names are
+unchanged. Dotted-name collisions such as `utilities.paths.nomad` and
+`utilities/paths.nomad`, or a file claimed by two modules, are errors.
+
+Source ownership does not add a language namespace. Public functions, hubs,
+classes, and enums keep their authored names and normal conflict rules.
+Qualifying public APIs with a hub is recommended, not required. Module file
+bodies are internal; declare a public function for callable helpers. Merely
+loading or compiling a module does not execute its file bodies.
+
+Diagnostics retain the actual source path. Open editor buffers replace matching
+module files without changing their owner or relative identity. Opening a
+module file alongside a consuming project includes that buffer in the project's
+analysis.
+
+Module-owned scripts are not yet included in application packages or copied
+from module source directories into SDK bundles. Those packaging changes are
+the next increment; for now, script discovery uses the installed module directory.
+
 ## Ordering and startup
 
 Nomad visits the requested modules in listed order, visits their dependencies

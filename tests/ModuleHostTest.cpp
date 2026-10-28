@@ -15,6 +15,7 @@
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/game/Game.hpp>
 
@@ -36,6 +37,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <sstream>
@@ -48,6 +50,22 @@ namespace {
 std::vector<ModuleManifest> fixtureModules() {
     auto modules = resolveModules(getSdkDirectory() / "modules", {"system"});
     modules.push_back({"fixture", NOMAD_TEST_MODULE_DIRECTORY, {"system"}});
+    return modules;
+}
+
+std::vector<ModuleManifest> scriptFixtureModules(
+    const TestDirectory& directory,
+    const NomadString& scriptSettings = {}
+) {
+    const auto moduleDirectory = directory.getPath() / "modules" / "fixture";
+    directory.write("modules/fixture/module.toml",
+        "schema = 1\n[module]\nname = 'fixture'\n[nomad]\nmodules = ['system']\n" + scriptSettings);
+    std::filesystem::copy_file(
+        NomadPath(NOMAD_TEST_MODULE_DIRECTORY) / getModuleLibraryName("fixture"),
+        moduleDirectory / getModuleLibraryName("fixture")
+    );
+    auto modules = resolveModules(getSdkDirectory() / "modules", {"system"});
+    modules.push_back(loadModuleManifest(moduleDirectory));
     return modules;
 }
 
@@ -68,6 +86,115 @@ bool compileFixture(
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(module_host)
+
+BOOST_AUTO_TEST_CASE(module_script_declarations_are_available_without_running_the_file_body) {
+    TestDirectory directory("host-module-script-declarations");
+    const auto modules = scriptFixtureModules(directory);
+    directory.write("modules/fixture/scripts/init.nomad",
+        "open hub sample\n"
+        "enum Level\nReady\nend\n"
+        "class Configuration\nactive = true\nlevel = sample.Level.Ready\nend\n"
+        "end\n"
+        "fun moduleAnswer\nreturn 42\nend\n"
+        "assert false\n");
+    directory.write("scripts/init.nomad",
+        "settings = new sample.Configuration\n"
+        "assert settings.active\n"
+        "assert settings.level == sample.Level.Ready\n"
+        "value = moduleAnswer\nassert value == 42\nfixture.exit\n");
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Application);
+    const auto result = host->compileProject();
+    NomadString diagnostics;
+    for (const auto& diagnostic : result.diagnostics) {
+        diagnostics += formatDiagnostic(diagnostic) + "\n";
+    }
+    BOOST_REQUIRE_MESSAGE(result.succeeded(), diagnostics);
+    BOOST_TEST(host->getRuntime()->getFunctionId("init").isValid());
+    BOOST_TEST(host->getRuntime()->getFunctionId("$fixture.init").isValid());
+    BOOST_TEST(host->getRuntime()->getFunctionId("moduleAnswer").isValid());
+    BOOST_TEST(host->run() == 7);
+}
+
+BOOST_AUTO_TEST_CASE(module_sources_join_explicit_snapshots_and_preserve_compiler_metadata) {
+    TestDirectory directory("host-module-script-snapshots");
+    const auto modules = scriptFixtureModules(directory, "[scripts]\ndirectory = 'source'\n");
+    const auto path = directory.write("modules/fixture/source/nested/main.nomad", "return missing");
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    const std::vector<ScriptSource> overrides{
+        {"ignored", {"editor:module", "fun moduleAnswer\nreturn 42\nend", path}}
+    };
+    const auto batch = host->loadSources(std::vector{path.parent_path(), path}, overrides);
+    BOOST_REQUIRE(batch.diagnostics.empty());
+    BOOST_REQUIRE(batch.sources.size() == 1U);
+    BOOST_TEST(batch.sources[0].scriptName == "$fixture.nested.main");
+    auto compiler = host->getRuntime()->createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, batch);
+    const auto id = host->getRuntime()->getFunctionId("$fixture.nested.main");
+    BOOST_REQUIRE(id.isValid());
+    const auto& script = compiler->getScript(compiler->getScriptId(id));
+    BOOST_TEST(script.owner == "fixture");
+    BOOST_TEST(script.relativePath == NomadPath("nested/main.nomad"));
+    BOOST_TEST(script.source.sourceName == "editor:module");
+    BOOST_TEST(compiler->compileScripts(&context, CompilationTarget::Analysis));
+}
+
+BOOST_AUTO_TEST_CASE(module_discovery_is_shared_by_explicit_compilation_instruction_dumps_and_documentation) {
+    TestDirectory directory("host-module-script-tools");
+    const auto modules = scriptFixtureModules(directory);
+    directory.write("modules/fixture/scripts/declarations.nomad",
+        "fun moduleAnswer\nreturn 42\nend\n");
+    const auto application = directory.write("scripts/main.nomad", "return moduleAnswer");
+    {
+        auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+        const auto result = host->compileSources(SourceBatch{{
+            {"main", {"editor:main", "return moduleAnswer"}}
+        }, {}}, CompilationTarget::Analysis);
+        BOOST_TEST(result.succeeded());
+        BOOST_TEST(host->getRuntime()->getFunctionId("$fixture.declarations").isValid());
+    }
+    {
+        auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+        const auto dump = dumpInstructions(application, std::nullopt, host->getRuntime());
+        BOOST_TEST(dump.compilation.succeeded());
+        BOOST_TEST(dump.instructions.find("moduleAnswer") != NomadString::npos);
+    }
+    {
+        auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+        const auto documentation = generateDocumentationForPath(application, host->getRuntime());
+        BOOST_TEST(documentation.compilation.succeeded());
+        BOOST_TEST(documentation.documentation.find("moduleAnswer") != NomadString::npos);
+        BOOST_TEST(documentation.documentation.find("$fixture.declarations") == NomadString::npos);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(module_source_errors_keep_paths_and_public_symbol_conflicts_are_not_hidden) {
+    TestDirectory directory("host-module-script-conflicts");
+    const auto modules = scriptFixtureModules(directory);
+    const auto path = directory.write("modules/fixture/scripts/declarations.nomad",
+        "fun sharedAnswer\nreturn 42\nend\n");
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    const auto result = host->compileSources(SourceBatch{{
+        {"main", {"editor:main", "fun sharedAnswer\nreturn 7\nend"}}
+    }, {}}, CompilationTarget::Analysis);
+    BOOST_TEST(!result.succeeded());
+    BOOST_TEST(std::ranges::any_of(result.diagnostics, [&](const auto& diagnostic) {
+        return diagnostic.message.find("sharedAnswer") != NomadString::npos &&
+            (diagnostic.sourceName == pathToGenericUtf8(path) || diagnostic.sourceName == "editor:main");
+    }));
+}
+
+BOOST_AUTO_TEST_CASE(explicit_missing_module_script_directory_is_a_compilation_error) {
+    TestDirectory directory("host-module-script-missing");
+    const auto modules = scriptFixtureModules(directory, "[scripts]\ndirectory = 'missing'\n");
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    const auto result = host->compileSources({}, CompilationTarget::Analysis);
+    BOOST_TEST(!result.succeeded());
+    BOOST_REQUIRE(result.diagnostics.size() == 1U);
+    BOOST_TEST(result.diagnostics[0].sourceName ==
+        pathToGenericUtf8(directory.getPath() / "modules" / "fixture" / "missing"));
+    BOOST_TEST(result.diagnostics[0].message.find("fixture") != NomadString::npos);
+}
 
 BOOST_AUTO_TEST_CASE(project_metadata_is_host_owned_and_defaults_to_blank)
 {

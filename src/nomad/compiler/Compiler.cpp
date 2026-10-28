@@ -7,6 +7,7 @@
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/CompilerException.hpp>
 #include <nomad/compiler/LoopStatement.hpp>
+#include <nomad/compiler/SourceLoader.hpp>
 #include <nomad/compiler/StatementParsers.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
@@ -1404,11 +1405,36 @@ void Compiler::setFunctionBody(
     reportInternalError("Unknown function id: " + toString(functionId.id));
 }
 
+void Compiler::registerSourceRoots(const std::span<const SourceRoot> roots) {
+    if (m_sourceRootsLoaded) {
+        throw NomadBug("Source roots must be configured before registering source snapshots");
+    }
+    m_sourceRoots.insert(m_sourceRoots.end(), roots.begin(), roots.end());
+}
+
 void Compiler::registerSources(CompilerContext* context, const SourceBatch& batch) {
     if (context == nullptr || context->getCompiler() != this) {
         throw NomadBug("Source registration requires this compiler's context");
     }
 
+    if (!m_sourceRootsLoaded) {
+        m_sourceRootsLoaded = true;
+        if (!m_sourceRoots.empty()) {
+            auto resolved = loadSourceRoots(m_sourceRoots, batch.sources);
+            for (const auto& diagnostic : batch.diagnostics) {
+                const auto duplicate = std::ranges::any_of(resolved.diagnostics, [&](const auto& existing) {
+                    return existing.severity == diagnostic.severity && existing.message == diagnostic.message &&
+                        existing.sourceName == diagnostic.sourceName && existing.line == diagnostic.line &&
+                        existing.column == diagnostic.column;
+                });
+                if (!duplicate) {
+                    resolved.diagnostics.push_back(diagnostic);
+                }
+            }
+            registerSources(context, resolved);
+            return;
+        }
+    }
     context->reportDiagnostics(batch.diagnostics);
     for (const auto& script : batch.sources) {
         registerScript(context, script);
@@ -1519,6 +1545,9 @@ bool Compiler::compileFunctions(CompilerContext* context) {
 bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget target) {
     if (context == nullptr || context->getCompiler() != this) {
         throw NomadBug("Compilation requires this compiler's context");
+    }
+    if (!m_sourceRootsLoaded) {
+        registerSources(context, {});
     }
     if (context->hasError()) {
         return false;
