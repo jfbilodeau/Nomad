@@ -161,22 +161,37 @@ BOOST_AUTO_TEST_CASE(logger_aliases_expose_live_native_settings_without_leaking_
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
-BOOST_AUTO_TEST_CASE(logger_properties_reject_null_and_foreign_receivers) {
+BOOST_AUTO_TEST_CASE(logger_properties_use_the_receiver_and_reject_missing_instances) {
     const auto* type = runtime.getTypeByName("log.Logger")->asClassType();
     const auto levelId = type->getProperty("level")->getId();
+    const auto deliveryId = type->getProperty("deliveryMode")->getId();
     auto machine = runtime.createVirtualMachine();
     RuntimeValue receiver;
     RuntimeValue result;
     BOOST_CHECK_THROW(machine->getProperty(levelId, receiver, result), VirtualMachineException);
     BOOST_CHECK_THROW(machine->setProperty(levelId, receiver,
         RuntimeValue(static_cast<NomadInteger>(LogLevel::Debug))), VirtualMachineException);
+    BOOST_CHECK_THROW(machine->getProperty(deliveryId, receiver, result), VirtualMachineException);
+    BOOST_CHECK_THROW(machine->setProperty(deliveryId, receiver,
+        RuntimeValue(static_cast<NomadInteger>(LogDeliveryMode::Synchronous))), VirtualMachineException);
     Logger otherLogger;
+    otherLogger.setLogLevel(LogLevel::Warning);
     receiver.setObjectValue(new LoggerObject(otherLogger));
-    BOOST_CHECK_THROW(machine->getProperty(levelId, receiver, result), VirtualMachineException);
-    BOOST_CHECK_THROW(machine->setProperty(levelId, receiver,
-        RuntimeValue(static_cast<NomadInteger>(LogLevel::Debug))), VirtualMachineException);
+    machine->getProperty(levelId, receiver, result);
+    BOOST_TEST(result.getIntegerValue() == static_cast<NomadInteger>(LogLevel::Warning));
+    machine->setProperty(levelId, receiver, RuntimeValue(static_cast<NomadInteger>(LogLevel::Debug)));
+    machine->getProperty(levelId, receiver, result);
+    BOOST_TEST(result.getIntegerValue() == static_cast<NomadInteger>(LogLevel::Debug));
+    machine->getProperty(deliveryId, receiver, result);
+    BOOST_TEST(result.getIntegerValue() == static_cast<NomadInteger>(LogDeliveryMode::Buffered));
+    machine->setProperty(deliveryId, receiver,
+        RuntimeValue(static_cast<NomadInteger>(LogDeliveryMode::Synchronous)));
+    machine->getProperty(deliveryId, receiver, result);
+    BOOST_TEST(result.getIntegerValue() == static_cast<NomadInteger>(LogDeliveryMode::Synchronous));
     BOOST_TEST((logger.getLogLevel() == LogLevel::Info));
-    BOOST_TEST((otherLogger.getLogLevel() == LogLevel::Info));
+    BOOST_TEST((logger.getDeliveryMode() == LogDeliveryMode::Buffered));
+    BOOST_TEST((otherLogger.getLogLevel() == LogLevel::Debug));
+    BOOST_TEST((otherLogger.getDeliveryMode() == LogDeliveryMode::Synchronous));
     receiver.freeObjectValue();
 }
 

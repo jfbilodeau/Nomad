@@ -92,13 +92,6 @@ void setStringField(ScriptObject& object, const NomadString& name, const NomadSt
     value.freeObjectValue();
 }
 
-Logger& getLogger(Logger* logger, const LoggerObject* object) {
-    if (&object->getLogger() != logger) {
-        throw NomadException("Logger belongs to a different host");
-    }
-    return object->getLogger();
-}
-
 LogSinkObject& getSinkObject(Logger* logger, LogSinkObject* object) {
     if (object == nullptr) {
         throw NomadException("Log sink must not be null");
@@ -270,7 +263,6 @@ void registerFileSinkConfigurationClass(Runtime& runtime, const HubId hubId) {
 
 void registerLoggerClass(ModuleContext* context, const HubId hubId) {
     auto* runtime = context->runtime;
-    auto* logger = context->logger;
     const auto typeId = runtime->registerHubClass(hubId, "Logger", ClassMode::Closed,
         NomadDoc("A reference to the host logger. The host must outlive all references."));
     if (typeId.isInvalid()) {
@@ -280,17 +272,17 @@ void registerLoggerClass(ModuleContext* context, const HubId hubId) {
     const auto levelId = runtime->addProperty(typeId, {
         .valueTypeId = runtime->getTypeByName("log.Level")->getId(),
         .name = "level",
-        .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
+        .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result = writeSetting(getLogger(logger, machine->getThisAs<LoggerObject>()).getLogLevel());
+                result = writeSetting(machine->getThisAs<LoggerObject>()->getLogger().getLogLevel());
             });
         },
-        .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
+        .setter = [mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
             if (mode != ModuleMode::Application) {
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                getLogger(logger, machine->getThisAs<LoggerObject>()).setLogLevel(readSetting<LogLevel>(value));
+                machine->getThisAs<LoggerObject>()->getLogger().setLogLevel(readSetting<LogLevel>(value));
             });
         },
         .documentation = NomadDoc("The current level setting.")
@@ -302,17 +294,17 @@ void registerLoggerClass(ModuleContext* context, const HubId hubId) {
     const auto deliveryId = runtime->addProperty(typeId, {
         .valueTypeId = runtime->getTypeByName("log.DeliveryMode")->getId(),
         .name = "deliveryMode",
-        .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
+        .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result = writeSetting(getLogger(logger, machine->getThisAs<LoggerObject>()).getDeliveryMode());
+                result = writeSetting(machine->getThisAs<LoggerObject>()->getLogger().getDeliveryMode());
             });
         },
-        .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
+        .setter = [mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
             if (mode != ModuleMode::Application) {
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                getLogger(logger, machine->getThisAs<LoggerObject>()).setDeliveryMode(readSetting<LogDeliveryMode>(value));
+                machine->getThisAs<LoggerObject>()->getLogger().setDeliveryMode(readSetting<LogDeliveryMode>(value));
             });
         },
         .documentation = NomadDoc("The current deliveryMode setting.")

@@ -51,6 +51,7 @@ The module exposes these ordinary typed values:
 
 Use `log.logger.level` and `log.logger.deliveryMode` to inspect or change the logger.
 Both are native-backed read/write properties; assigning `log.logger` itself is not allowed.
+Logger properties read and update the logger referenced by their receiver.
 `log.flush` delivers pending messages and flushes active sinks.
 
 ```nomad
