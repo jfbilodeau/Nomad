@@ -1,15 +1,15 @@
 # Logging module
 
-Select `nomad-log` in `nomad.toml` for structured logging:
+Select `log` in `nomad.toml` for structured logging:
 
 ```toml
 [nomad]
-modules = ["nomad-log"]
+modules = ["log"]
 ```
 
 Keep the project's existing `nomad.version`. The module is independent of
-`nomad-system`, `nomad-game`, and `nomad-os`; none loads it automatically.
-For a game using logging, select `["nomad-game", "nomad-log"]`.
+`system`, `game`, and `os`; none loads it automatically.
+For a game using logging, select `["game", "log"]`.
 
 ## Logging messages
 
@@ -165,7 +165,7 @@ unlimited append across runs. See
 [File sinks](embedding.md#file-sinks) for configuration and failure behavior.
 
 Project logging settings in `nomad.toml` are not yet supported. Loading
-`nomad-log` currently preserves the host's existing sinks and settings until
+`log` currently preserves the host's existing sinks and settings until
 explicitly changed programmatically.
 
 ## Extending the hub
@@ -195,5 +195,5 @@ print "Hello"
 print $"Score: {score}"
 ```
 
-Existing projects using `log.info` through `nomad-system` must either select
-`nomad-log` explicitly or use `print` when plain output is sufficient.
+Existing projects using `log.info` through `system` must either select
+`log` explicitly or use `print` when plain output is sufficient.

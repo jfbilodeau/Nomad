@@ -10,7 +10,7 @@ executable = "nomad-package-smoke"
 entry = "init"
 
 [nomad]
-modules = ["nomad-game"]
+modules = ["game"]
 version = "0.0.1"
 
 [scripts]

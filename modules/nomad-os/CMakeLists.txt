@@ -3,6 +3,7 @@ add_library(nomad-os SHARED
 )
 
 nomad_configure_library_target(nomad-os)
+set_target_properties(nomad-os PROPERTIES OUTPUT_NAME "os.nomad")
 target_link_libraries(nomad-os PRIVATE Nomad::Language nomad-collections Boost::dll Boost::nowide)
 
 if(MSVC)

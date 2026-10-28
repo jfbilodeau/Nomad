@@ -80,9 +80,9 @@ BOOST_AUTO_TEST_CASE(application_snapshots_are_owned_utf8_and_isolated_from_the_
     EnvironmentRestore restore;
     BOOST_REQUIRE(boost::nowide::setenv(ENVIRONMENT_NAME, "value 日本語=with equals", 1) == 0);
     TestDirectory directory("nomad_os_snapshot");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-os"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"os"});
     BOOST_REQUIRE_EQUAL(modules.size(), 2U);
-    BOOST_TEST(modules.front().name == "nomad-collections");
+    BOOST_TEST(modules.front().name == "collections");
     auto host = ModuleHost::create({}, directory.getPath(), modules,
         {"--project-path", "ignored", "--debug", "--", "", "Player 日本語", "--help", "--"},
         ModuleMode::Application);
@@ -123,7 +123,7 @@ BOOST_AUTO_TEST_CASE(application_snapshots_are_owned_utf8_and_isolated_from_the_
 
 BOOST_AUTO_TEST_CASE(analysis_exposes_exact_enum_types_without_host_data) {
     TestDirectory directory("nomad_os_analysis");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-os"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"os"});
     auto host = ModuleHost::create({}, directory.getPath(), modules,
         {"--", "must not be captured"}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
@@ -181,7 +181,7 @@ BOOST_AUTO_TEST_CASE(analysis_exposes_exact_enum_types_without_host_data) {
 
 BOOST_AUTO_TEST_CASE(bindings_and_collection_contents_are_read_only_in_both_execution_modes) {
     TestDirectory directory("nomad_os_read_only");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-os"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"os"});
     const std::vector<NomadString> assignments{
         "os.argv = new Array<string> 1",
         "os.env = new Map<string string>",
@@ -217,7 +217,7 @@ BOOST_AUTO_TEST_CASE(bindings_and_collection_contents_are_read_only_in_both_exec
 
 BOOST_AUTO_TEST_CASE(no_separator_means_no_application_arguments_and_packaging_has_no_runtime) {
     TestDirectory directory("nomad_os_modes");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-os"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"os"});
     {
         auto host = ModuleHost::create({}, directory.getPath(), modules,
             {"--debug", "runtime data"}, ModuleMode::Application);
@@ -231,7 +231,7 @@ BOOST_AUTO_TEST_CASE(empty_environment_values_are_preserved_and_snapshots_are_in
     EnvironmentRestore restore;
     BOOST_REQUIRE(boost::nowide::setenv(ENVIRONMENT_NAME, "", 1) == 0);
     TestDirectory directory("nomad_os_empty_environment");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-os"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"os"});
     auto first = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Application);
     auto* firstEnvironment = constant(*first->getRuntime(), "os.env").asObject<MapObject>();
 #if !defined(_WIN32)
@@ -253,7 +253,7 @@ BOOST_AUTO_TEST_CASE(empty_environment_values_are_preserved_and_snapshots_are_in
 
 BOOST_AUTO_TEST_CASE(snapshot_objects_are_released_with_the_runtime) {
     TestDirectory directory("nomad_os_lifetime");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-os"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"os"});
     {
         auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     }
@@ -270,7 +270,7 @@ BOOST_AUTO_TEST_CASE(snapshot_objects_are_released_with_the_runtime) {
 
 BOOST_AUTO_TEST_CASE(collection_constants_survive_compiler_destruction_and_interpreter_reads) {
     TestDirectory directory("nomad_os_collection_constants");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-os"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"os"});
     auto host = ModuleHost::create({}, directory.getPath(), modules,
         {"--", "original"}, ModuleMode::Application);
     auto& runtime = *host->getRuntime();

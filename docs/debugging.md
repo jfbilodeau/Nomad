@@ -25,7 +25,7 @@ is present, Nomad uses `game.debug`, which defaults to `false`.
 
 ## Debug console
 
-Select [nomad-log](nomad-log.md) explicitly to write structured messages from
+Select [log](nomad-log.md) explicitly to write structured messages from
 scripts using the `log` hub. Engine diagnostics remain available without that
 module. Built-in `print` writes directly to standard output, not the log console.
 

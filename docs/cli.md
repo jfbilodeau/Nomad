@@ -21,7 +21,7 @@ Packaging additionally requires an exact match between the runtime bundle
 version and `nomad.version`.
 
 For `run`, the first `--` ends launcher options. Everything after it, including
-option-looking strings, belongs to the application. With `nomad-os` selected,
+option-looking strings, belongs to the application. With `os` selected,
 scripts read these strings through `os.argv`; the executable, project directory,
 launcher options, and separator are excluded. For example,
 `nomad run --debug -- "Player One" --help` supplies two application arguments.
@@ -111,7 +111,7 @@ Direct launches accept application arguments after `--` as well:
 Packaged executables use the same convention: `MyGame -- "Player One" --help`.
 After the separator, `--help`, `--project-path`, `--debug`, and `--no-debug` are
 application data, not runtime options. Without `--`, `os.argv` is empty.
-See [nomad-os](nomad-os.md) for startup environment and path snapshots.
+See [os](nomad-os.md) for startup environment and path snapshots.
 
 Run `nomad run --debug` and press the grave/tilde key (`~`) in the game window
 to open the debug console. Runtime log messages appear in its **Logs** panel.

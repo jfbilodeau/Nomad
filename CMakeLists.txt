@@ -109,6 +109,7 @@ set(NOMAD_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
 
 include(cmake/NomadTarget.cmake)
 include(cmake/NomadLibrary.cmake)
+set(NOMAD_MODULE_NAMES collections game log os system)
 add_subdirectory(modules/nomad-collections)
 add_subdirectory(modules/nomad-log)
 add_subdirectory(modules/nomad-os)

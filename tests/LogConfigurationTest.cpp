@@ -39,9 +39,9 @@ struct LogConfigurationFixture {
     NomadIndex sourceIndex = 0;
 
     explicit LogConfigurationFixture(const ModuleMode mode = ModuleMode::Application) {
-        const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});
+        const auto modules = resolveModules(getSdkDirectory() / "modules", {"log"});
         BOOST_REQUIRE_EQUAL(modules.size(), 1U);
-        const auto path = modules.front().directory / getModuleLibraryName("nomad-log");
+        const auto path = modules.front().directory / getModuleLibraryName("log");
         library.load(path.native(), boost::dll::load_mode::load_with_altered_search_path);
         ModuleContext context{
             &runtime, nullptr, &logger, mode, directory.getPath(), modules.front().directory,

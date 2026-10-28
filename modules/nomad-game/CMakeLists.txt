@@ -76,6 +76,7 @@ add_library(nomad-game SHARED
     ${NOMAD_SOURCE_DIR}/nomad/game/variables/WindowDynamicVariables.cpp
 )
 nomad_configure_library_target(nomad-game)
+set_target_properties(nomad-game PROPERTIES OUTPUT_NAME "game.nomad")
 target_link_libraries(nomad-game PUBLIC
     Nomad::Engine
     nomad-system

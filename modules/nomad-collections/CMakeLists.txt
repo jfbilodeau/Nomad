@@ -50,4 +50,5 @@ add_library(nomad-collections SHARED
 )
 
 nomad_configure_library_target(nomad-collections)
+set_target_properties(nomad-collections PROPERTIES OUTPUT_NAME "collections.nomad")
 target_link_libraries(nomad-collections PRIVATE Nomad::Language)

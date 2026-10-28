@@ -9,33 +9,39 @@ Nomad projects select native modules in `nomad.toml`:
 ```toml
 [nomad]
 version = "0.1.8"
-modules = ["nomad-game"]
+modules = ["game"]
 ```
 
 The SDK provides:
 
 | Module | Features |
 | --- | --- |
-| [nomad-collections](nomad-collections.md) | Typed lists, fixed-size 1D/2D/3D arrays, and string-keyed maps with indexed access. |
-| [nomad-log](nomad-log.md) | Structured logging through the open `log` hub. |
-| [nomad-system](nomad-system.md) | Math functions, conversions, and orderly shutdown. |
-| [nomad-game](nomad-game.md) | Windows, input, graphics, audio, scenes, entities, and game resources. Requires `nomad-system`. |
-| [nomad-os](nomad-os.md) | Startup arguments, environment, platform and architecture enums, and paths through the `os` hub. Requires `nomad-collections`. |
+| [collections](nomad-collections.md) | Typed lists, fixed-size 1D/2D/3D arrays, and string-keyed maps with indexed access. |
+| [log](nomad-log.md) | Structured logging through the open `log` hub. |
+| [system](nomad-system.md) | Math functions, conversions, and orderly shutdown. |
+| [game](nomad-game.md) | Windows, input, graphics, audio, scenes, entities, and game resources. Requires `system`. |
+| [os](nomad-os.md) | Startup arguments, environment, platform and architecture enums, and paths through the `os` hub. Requires `collections`. |
 
-Dependencies are selected automatically. Listing only `nomad-game` also
-loads `nomad-system`. A system-only project can select `["nomad-system"]`
+Dependencies are selected automatically. Listing only `game` also
+loads `system`. A system-only project can select `["system"]`
 without opening a game window. An empty list selects only the fundamental
 language runtime, including built-in strings and `print`.
 
-`nomad-log` is independent of the other modules. Select it explicitly to use
+`log` is independent of the other modules. Select it explicitly to use
 `log.debug`, `log.info`, `log.warning`, `log.error`, and `log.critical`; selecting
-`nomad-system` or `nomad-game` alone no longer provides `log.info`.
+`system` or `game` alone no longer provides `log.info`.
 
-Selecting `nomad-os` automatically loads `nomad-collections`. It does not require
+Selecting `os` automatically loads `collections`. It does not require
 the game or system modules and does not open a window.
 
 `nomad.modules` is required in development and packaged configurations.
 There is no implicit module.
+
+Projects using the previous `nomad-collections`, `nomad-game`, `nomad-log`,
+`nomad-os`, or `nomad-system` identities must update their module lists to
+`collections`, `game`, `log`, `os`, or `system`, respectively. Update module
+manifest dependencies too, and rebuild native modules with the new filenames.
+The SDK does not provide compatibility aliases for the old identities.
 
 ## SDK modules
 
@@ -43,19 +49,19 @@ Development commands use the modules in the selected SDK:
 
 ```text
 modules/
-  nomad-collections/
+  collections/
     module.toml
     ...
-  nomad-log/
+  log/
     module.toml
     ...
-  nomad-system/
+  system/
     module.toml
     ...
-  nomad-game/
+  game/
     module.toml
     ...
-  nomad-os/
+  os/
     module.toml
     ...
 ```
@@ -67,16 +73,18 @@ packaging inventory, licenses, and a `module.toml` manifest. For example:
 schema = 1
 
 [module]
-name = "nomad-game"
+name = "game"
 
 [nomad]
-modules = ["nomad-system"]
+modules = ["system"]
 ```
 
 Module names start with a lowercase ASCII letter and contain only lowercase
 ASCII letters, digits, and hyphens. Names do not contain paths or extensions.
-Native filenames follow the platform convention: `nomad-game.dll` on Windows,
-`libnomad-game.so` on Linux, and `libnomad-game.dylib` on macOS.
+Native filenames include a `.nomad` marker before the platform extension:
+`game.nomad.dll` on Windows, `libgame.nomad.so` on Linux, and
+`libgame.nomad.dylib` on macOS. Engine libraries and launcher executable names
+are unchanged.
 
 Modules must be built for the same Nomad SDK, platform, architecture, and
 compatible compiler/runtime settings. Native modules execute trusted native
@@ -97,7 +105,7 @@ shutdown request during initialization prevents the run callback.
 Exactly one configured module must provide a run callback to run an application.
 Each runnable module owns its entry convention. The game module executes
 `game.entry` (default `main`), which must take no arguments and return `void`,
-then runs its main-thread event loop. API-only modules such as `nomad-system`
+then runs its main-thread event loop. API-only modules such as `system`
 do not provide a runnable entry.
 
 `system.exit` requests orderly shutdown after the current script invocation.

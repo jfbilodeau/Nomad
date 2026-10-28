@@ -14,7 +14,7 @@ executable = "example-game"
 
 [nomad]
 version = "0.1.0"
-modules = ["nomad-game"]
+modules = ["game"]
 
 [game]
 entry = "main"
@@ -101,9 +101,9 @@ Other projects preserve those settings without interpreting them.
 
 See [runtime modules](modules.md) for module selection, dependency ordering,
 SDK layout, and packaged applications. Set `nomad.modules` to
-`["nomad-system"]` for non-graphical script APIs or `[]` for the fundamental
+`["system"]` for non-graphical script APIs or `[]` for the fundamental
 language runtime only. Running an application requires a module with a run
-callback; `nomad-system` alone only supplies script APIs, not an application
+callback; `system` alone only supplies script APIs, not an application
 entry point. The former `project.entry` field is rejected; move it to `game.entry`.
 
 `window.resolution` and `window.size` must each contain exactly two positive

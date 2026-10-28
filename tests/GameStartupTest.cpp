@@ -73,7 +73,7 @@ std::unique_ptr<ModuleHost> createGameHost(
     configuration.setString("resources.directory", ".");
     return ModuleHost::create(
         std::move(configuration), directory.getPath(),
-        resolveModules(getSdkDirectory() / "modules", {"nomad-game"}),
+        resolveModules(getSdkDirectory() / "modules", {"game"}),
         {}, ModuleMode::Application
     );
 }

@@ -25,11 +25,11 @@ NomadPath getModuleLibraryName(const NomadStringView name) {
         throw ModuleException("Invalid module name: '" + NomadString(name) + "'");
     }
 #if defined(_WIN32)
-    return pathFromUtf8(NomadString(name) + ".dll");
+    return pathFromUtf8(NomadString(name) + ".nomad.dll");
 #elif defined(__APPLE__)
-    return pathFromUtf8("lib" + NomadString(name) + ".dylib");
+    return pathFromUtf8("lib" + NomadString(name) + ".nomad.dylib");
 #else
-    return pathFromUtf8("lib" + NomadString(name) + ".so");
+    return pathFromUtf8("lib" + NomadString(name) + ".nomad.so");
 #endif
 }
 

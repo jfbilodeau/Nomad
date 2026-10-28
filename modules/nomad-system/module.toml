@@ -1,4 +1,4 @@
 schema = 1
 
 [module]
-name = "nomad-system"
+name = "system"

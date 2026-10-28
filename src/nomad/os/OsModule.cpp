@@ -40,7 +40,7 @@ NomadInteger getPlatform() {
 #elif defined(__APPLE__)
     return 3;
 #else
-    throw NomadException("nomad-os does not support this platform");
+    throw NomadException("os does not support this platform");
 #endif
 }
 
@@ -54,7 +54,7 @@ NomadInteger getArchitecture() {
 #elif defined(_M_IX86) || defined(__i386__)
     return 1;
 #else
-    throw NomadException("nomad-os does not support this architecture");
+    throw NomadException("os does not support this architecture");
 #endif
 }
 
@@ -169,7 +169,7 @@ void registerOs(ModuleContext* context) {
     const auto* environmentType = runtime->getParameterizedType("ReadOnlyMap", {stringType, stringType});
     if (!platformType || !architectureType ||
         argumentsType == nullptr || environmentType == nullptr) {
-        throw NomadException("Failed to resolve nomad-os types; nomad-collections is required");
+        throw NomadException("Failed to resolve os types; collections is required");
     }
 
     const auto analysis = context->mode == ModuleMode::Analysis;

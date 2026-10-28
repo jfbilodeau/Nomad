@@ -110,7 +110,7 @@ std::unique_ptr<ModuleHost> createAnalysisSession(const AnalysisGroup& group, co
     }
     NomadProject project;
     project.root = path.parent_path();
-    project.configuration.sdk.modules = {"nomad-system"};
+    project.configuration.sdk.modules = {"system"};
     return ModuleHost::create(
         project.document, project.root, resolveProjectModules(project, getSdkDirectory()),
         std::vector<NomadString>{}, ModuleMode::Analysis

@@ -1,15 +1,15 @@
 # System module
 
-Select `nomad-system` in `nomad.toml` for math functions, conversions,
+Select `system` in `nomad.toml` for math functions, conversions,
 and orderly application shutdown:
 
 ```toml
 [nomad]
-modules = ["nomad-system"]
+modules = ["system"]
 ```
 
 Keep the project's existing `nomad.version`. This module does not open a game
-window. It is also loaded automatically when a project selects `nomad-game`.
+window. It is also loaded automatically when a project selects `game`.
 See [Runtime modules](modules.md) for module setup and startup behavior.
 
 ## Plain output and logging
@@ -21,8 +21,8 @@ print "Application started"
 ```
 
 For structured logging with script locations, select the independent
-[nomad-log](nomad-log.md) module explicitly. `nomad-system` no longer supplies
-`log.info` and does not load `nomad-log` automatically.
+[log](nomad-log.md) module explicitly. `system` no longer supplies
+`log.info` and does not load `log` automatically.
 
 ## Math and conversions
 

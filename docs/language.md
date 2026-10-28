@@ -63,11 +63,11 @@ The SDK includes:
 
 | Module | Purpose |
 | --- | --- |
-| `nomad-collections` | Typed collections. |
-| `nomad-os` | Arguments, environment snapshots, platform, architecture, and OS paths. |
-| `nomad-log` | Structured logging through the open `log` hub. |
-| `nomad-system` | Math, conversions, and application exit. |
-| `nomad-game` | Graphics, input, audio, scenes, entities, and game resources. |
+| `collections` | Typed collections. |
+| `os` | Arguments, environment snapshots, platform, architecture, and OS paths. |
+| `log` | Structured logging through the open `log` hub. |
+| `system` | Math, conversions, and application exit. |
+| `game` | Graphics, input, audio, scenes, entities, and game resources. |
 
 Core language features, including strings and `print`, do not require a module. See
 [Runtime modules](modules.md) for module selection, dependencies, and usage.
@@ -1094,7 +1094,7 @@ to standard output, independently of logging levels and sinks. It is available
 without any modules. Use format strings to print non-string values.
 
 The [logging module](nomad-log.md) supplies `log.debug`, `log.info`,
-`log.warning`, `log.error`, and `log.critical`. Select `nomad-log` explicitly;
+`log.warning`, `log.error`, and `log.critical`. Select `log` explicitly;
 `log.fatal` is not available to scripts.
 
 The system module supplies these native functions:

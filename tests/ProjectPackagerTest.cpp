@@ -108,21 +108,21 @@ void writeRuntimeManifest(TestDirectory& directory, const NomadString& executabl
 }
 
 void stageSystemModule(TestDirectory& directory, const NomadStringView nativeContents) {
-    const auto library = getModuleLibraryName("nomad-system");
-    const auto source = getSdkDirectory() / "modules" / "nomad-system" / library;
-    BOOST_REQUIRE_MESSAGE(std::filesystem::is_regular_file(source), "SDK must stage the nomad-system module for packaging tests");
-    const auto destination = directory.getPath() / "modules" / "nomad-system";
+    const auto library = getModuleLibraryName("system");
+    const auto source = getSdkDirectory() / "modules" / "system" / library;
+    BOOST_REQUIRE_MESSAGE(std::filesystem::is_regular_file(source), "SDK must stage the system module for packaging tests");
+    const auto destination = directory.getPath() / "modules" / "system";
     std::filesystem::create_directories(destination);
     std::filesystem::copy_file(source, destination / library);
-    directory.write("modules/nomad-system/module.toml", "schema = 1\n[module]\nname = \"nomad-system\"\n");
-    directory.write("modules/nomad-system/shared.dll", NomadString(nativeContents));
-    directory.write("modules/nomad-system/runtime.json",
+    directory.write("modules/system/module.toml", "schema = 1\n[module]\nname = \"system\"\n");
+    directory.write("modules/system/shared.dll", NomadString(nativeContents));
+    directory.write("modules/system/runtime.json",
         R"({"schema":1,"files":[{"path":"shared.dll","role":"library"}]})");
 }
 
 NomadString configurationWithSystemModule() {
     auto text = NomadString(CONFIGURATION);
-    text.replace(text.find("modules = []"), NomadStringView("modules = []").size(), "modules = [\"nomad-system\"]");
+    text.replace(text.find("modules = []"), NomadStringView("modules = []").size(), "modules = [\"system\"]");
     return text;
 }
 
@@ -381,7 +381,7 @@ BOOST_AUTO_TEST_CASE(packages_only_selected_modules_and_deduplicates_identical_n
     stageSystemModule(directory, "shared native dependency");
     directory.write("modules/unselected/module.toml", "must not ship");
     directory.write(
-        NomadPath("modules") / "nomad-game" / getModuleLibraryName("nomad-game"),
+        NomadPath("modules") / "game" / getModuleLibraryName("game"),
         "unselected game module must not ship"
     );
     const auto project = loadNomadProject(projectFile);
@@ -393,8 +393,8 @@ BOOST_AUTO_TEST_CASE(packages_only_selected_modules_and_deduplicates_identical_n
     BOOST_TEST(std::ranges::count(result.files, NomadPath("shared.dll")) == 1);
     const auto output = directory.getPath() / "extracted";
     extractArchive(result.output, output);
-    BOOST_TEST(std::filesystem::is_regular_file(output / getModuleLibraryName("nomad-system")));
-    BOOST_TEST(!std::filesystem::exists(output / getModuleLibraryName("nomad-game")));
+    BOOST_TEST(std::filesystem::is_regular_file(output / getModuleLibraryName("system")));
+    BOOST_TEST(!std::filesystem::exists(output / getModuleLibraryName("game")));
     BOOST_TEST(!std::filesystem::exists(output / "modules"));
     BOOST_TEST(!std::filesystem::exists(output / "module.toml"));
     BOOST_TEST(!std::filesystem::exists(output / "runtime.json"));
@@ -402,10 +402,10 @@ BOOST_AUTO_TEST_CASE(packages_only_selected_modules_and_deduplicates_identical_n
     BOOST_TEST(release.requireString("custom-module.setting") == "preserved");
     const auto modules = release.requireStringArray("nomad.modules");
     BOOST_REQUIRE_EQUAL(modules.size(), 1U);
-    BOOST_TEST(modules.front() == "nomad-system");
+    BOOST_TEST(modules.front() == "system");
 
     const auto previousArchive = readFile(result.output);
-    directory.write("modules/nomad-system/shared.dll", "different native dependency");
+    directory.write("modules/system/shared.dll", "different native dependency");
     BOOST_CHECK_THROW((void)packageProject(project, runtime, true, true), ProjectPackagingException);
     BOOST_CHECK_THROW((void)packageProject(project, runtime, true), ProjectPackagingException);
     BOOST_TEST(readFile(result.output) == previousArchive);
@@ -470,7 +470,7 @@ BOOST_AUTO_TEST_CASE(failed_game_generation_preserves_previous_archive_and_clean
 {
     TestDirectory directory("nomad_package_failed_game_generation");
     auto text = NomadString(CONFIGURATION);
-    text.replace(text.find("modules = []"), NomadStringView("modules = []").size(), "modules = [\"nomad-game\"]");
+    text.replace(text.find("modules = []"), NomadStringView("modules = []").size(), "modules = [\"game\"]");
     text.replace(text.find("directories = [\"assets\"]"), NomadStringView("directories = [\"assets\"]").size(),
         "directories = [\"assets/scripts\", \"scripts\"]");
     const auto sdkVersion = getNomadVersion().toString();
@@ -487,7 +487,7 @@ BOOST_AUTO_TEST_CASE(failed_game_generation_preserves_previous_archive_and_clean
         NomadString(getPackagePlatform()) + "\",\"files\":["
         "{\"path\":\"engine\",\"role\":\"runtime\"},"
         "{\"path\":\"licenses/Nomad.txt\",\"role\":\"license\"}]}");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-game"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"game"});
     for (const auto& module : modules) {
         const auto destination = directory.getPath() / "modules" / pathFromUtf8(module.name);
         std::filesystem::create_directories(destination);

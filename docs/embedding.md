@@ -37,7 +37,7 @@ the global logger level still filters messages first.
 To deliver debug messages, lower both the global level and the receiving sink's
 level to `Debug`.
 
-The `nomad-log` module also exposes typed script logging configuration,
+The `log` module also exposes typed script logging configuration,
 including ordinary `ScriptObject` settings and `log.Sink` objects. See
 [Programmatic configuration](nomad-log.md#programmatic-configuration).
 Script factories use the module context's logger and copy the supplied settings;
@@ -53,7 +53,7 @@ destroying it does not remove or deactivate that sink.
 The logger must outlive the wrapper. Coordinate lookup and use with concurrent
 sink removal, just as for `Logger::getSink()`.
 
-`nomad-log` registers the wrapper as the closed class type `log.Sink` with a
+`log` registers the wrapper as the closed class type `log.Sink` with a
 read/write boolean `active` property. Native property access resolves the sink
 ID on every read and write; removed sinks throw rather than accessing stale
 storage. There is no script constructor; both script sink factories return

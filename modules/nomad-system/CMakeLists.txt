@@ -4,4 +4,5 @@ add_library(nomad-system SHARED
 )
 
 nomad_configure_library_target(nomad-system)
+set_target_properties(nomad-system PROPERTIES OUTPUT_NAME "system.nomad")
 target_link_libraries(nomad-system PUBLIC Nomad::Language)

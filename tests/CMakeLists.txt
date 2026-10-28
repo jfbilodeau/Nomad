@@ -95,11 +95,11 @@ target_compile_definitions(
     NOMAD_TEST_PROJECT_TEMPLATE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../templates/projects/default"
     NOMAD_TEST_FONT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/projects/package-smoke/res/fonts/ProggyClean.ttf"
     NOMAD_TEST_MODULE_DIRECTORY="$<TARGET_FILE_DIR:nomad-module-fixture>"
-    NOMAD_TEST_CORE_DIRECTORY="$<TARGET_FILE_DIR:nomad-language>"
+    NOMAD_TEST_CORE_LIBRARY="$<TARGET_FILE:nomad-language>"
 )
 
 add_library(nomad-module-fixture SHARED ModuleFixture.cpp)
-set_target_properties(nomad-module-fixture PROPERTIES OUTPUT_NAME fixture)
+set_target_properties(nomad-module-fixture PROPERTIES OUTPUT_NAME "fixture.nomad")
 if(WIN32)
     set_target_properties(nomad-module-fixture PROPERTIES PREFIX "")
 endif()

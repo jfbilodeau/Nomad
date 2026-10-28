@@ -4,24 +4,25 @@ configure_file(
     @ONLY
 )
 
-foreach(MODULE IN ITEMS nomad-collections nomad-log nomad-system nomad-game nomad-os)
+foreach(MODULE IN LISTS NOMAD_MODULE_NAMES)
+    set(MODULE_TARGET "nomad-${MODULE}")
     set(MODULE_DESTINATION "$<TARGET_FILE_DIR:nomad-runtime>/modules/${MODULE}")
     set(MODULE_DEPENDENCIES)
     if(WIN32)
         list(APPEND MODULE_DEPENDENCIES
             -DNOMAD_RUNTIME_DEPENDENCIES_FROM_ARGUMENTS=ON
         )
-        set(MODULE_ARGUMENTS -- $<TARGET_RUNTIME_DLLS:${MODULE}> ${NOMAD_TOOLCHAIN_RUNTIME_DLLS})
+        set(MODULE_ARGUMENTS -- $<TARGET_RUNTIME_DLLS:${MODULE_TARGET}> ${NOMAD_TOOLCHAIN_RUNTIME_DLLS})
     else()
         set(MODULE_ARGUMENTS)
     endif()
-    add_custom_target(${MODULE}-bundle
+    add_custom_target(${MODULE_TARGET}-bundle
         COMMAND ${CMAKE_COMMAND} -E make_directory "${MODULE_DESTINATION}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_SOURCE_DIR}/modules/${MODULE}/module.toml"
+            "${CMAKE_SOURCE_DIR}/modules/${MODULE_TARGET}/module.toml"
             "${MODULE_DESTINATION}/module.toml"
         COMMAND ${CMAKE_COMMAND}
-            "-DNOMAD_RUNTIME=$<TARGET_FILE:${MODULE}>"
+            "-DNOMAD_RUNTIME=$<TARGET_FILE:${MODULE_TARGET}>"
             "-DNOMAD_RUNTIME_DESTINATION=${MODULE_DESTINATION}"
             "-DNOMAD_RUNTIME_VERSION=${PROJECT_VERSION}"
             "-DNOMAD_RUNTIME_TARGET=${NOMAD_PACKAGE_PLATFORM}"
@@ -31,7 +32,7 @@ foreach(MODULE IN ITEMS nomad-collections nomad-log nomad-system nomad-game noma
             ${MODULE_DEPENDENCIES}
             -P "${CMAKE_CURRENT_LIST_DIR}/BundleRuntimeDependencies.cmake"
             ${MODULE_ARGUMENTS}
-        DEPENDS ${MODULE}
+        DEPENDS ${MODULE_TARGET}
         COMMAND_EXPAND_LISTS
         VERBATIM
     )
@@ -56,7 +57,10 @@ if(TARGET nomad_test)
     endif()
     add_dependencies(nomad_test nomad-test-modules)
 endif()
-add_custom_target(nomad-modules DEPENDS nomad-collections-bundle nomad-log-bundle nomad-system-bundle nomad-game-bundle nomad-os-bundle)
+add_custom_target(nomad-modules)
+foreach(MODULE IN LISTS NOMAD_MODULE_NAMES)
+    add_dependencies(nomad-modules nomad-${MODULE}-bundle)
+endforeach()
 foreach(PROGRAM IN ITEMS nomad-runtime nomad-cli nomadc nomad-lsp nomad_test)
     if(TARGET ${PROGRAM})
         add_dependencies(${PROGRAM} nomad-modules)

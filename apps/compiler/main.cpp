@@ -147,7 +147,7 @@ std::unique_ptr<ModuleHost> createCompilerSession(
     NomadProject project;
     project.root = paths.resources;
     project.document.setString("resources.directory", ".");
-    project.configuration.sdk.modules = {"nomad-game"};
+    project.configuration.sdk.modules = {"game"};
     return ModuleHost::create(
         project.document, project.root, resolveProjectModules(project, getSdkDirectory()),
         arguments, ModuleMode::Analysis

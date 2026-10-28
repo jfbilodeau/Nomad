@@ -87,7 +87,7 @@ BOOST_AUTO_TEST_SUITE(log_module)
 
 BOOST_AUTO_TEST_CASE(all_logging_functions_are_registered_as_local_hub_members) {
     const TestDirectory directory("log-module-functions");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"log"});
     for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis}) {
         const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
         const auto& runtime = *host->getRuntime();
@@ -124,7 +124,7 @@ BOOST_AUTO_TEST_CASE(all_logging_functions_are_registered_as_local_hub_members) 
 
 BOOST_AUTO_TEST_CASE(module_registers_sink_type_and_active_property) {
     const TestDirectory directory("log-module-sink-type");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"log"});
     for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis}) {
         const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
         const auto& runtime = *host->getRuntime();
@@ -162,7 +162,7 @@ BOOST_AUTO_TEST_CASE(module_registers_sink_type_and_active_property) {
 
 BOOST_AUTO_TEST_CASE(module_registers_logging_enums_and_values_in_the_log_hub) {
     const TestDirectory directory("log-module-enums");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"log"});
     for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis}) {
         const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
         const auto& runtime = *host->getRuntime();
@@ -191,9 +191,9 @@ BOOST_AUTO_TEST_CASE(module_registers_logging_enums_and_values_in_the_log_hub) {
 
 BOOST_AUTO_TEST_CASE(module_is_independent_and_script_functions_preserve_locations) {
     const TestDirectory directory("log-module");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"log"});
     BOOST_REQUIRE_EQUAL(modules.size(), 1U);
-    BOOST_TEST(modules.front().name == "nomad-log");
+    BOOST_TEST(modules.front().name == "log");
     const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Application);
     auto& runtime = *host->getRuntime();
     BOOST_TEST(runtime.isHub("log"));
@@ -233,7 +233,7 @@ BOOST_AUTO_TEST_CASE(module_is_independent_and_script_functions_preserve_locatio
 
 BOOST_AUTO_TEST_CASE(open_hub_can_be_extended_and_fatal_is_not_callable) {
     const TestDirectory directory("log-module-open-hub");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"log"});
     const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Application);
     const auto compiled = host->compileSources({{{"main", {"extension.nomad",
         "open hub log\nfun answer\nreturn 42\nend\nend\nreturn log.answer"
@@ -248,7 +248,7 @@ BOOST_AUTO_TEST_CASE(open_hub_can_be_extended_and_fatal_is_not_callable) {
 
 BOOST_AUTO_TEST_CASE(system_module_does_not_supply_logging) {
     const TestDirectory directory("system-without-log");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-system"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"system"});
     BOOST_REQUIRE_EQUAL(modules.size(), 1U);
     const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     BOOST_TEST(!host->getRuntime()->isHub("log"));
@@ -260,7 +260,7 @@ BOOST_AUTO_TEST_CASE(system_module_does_not_supply_logging) {
 
 BOOST_AUTO_TEST_CASE(analysis_exposes_logging_and_packaging_requires_no_runtime) {
     const TestDirectory directory("log-module-modes");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"log"});
     const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     for (const auto* name : {"log.debug", "log.info", "log.warning", "log.error", "log.critical"}) {
         BOOST_TEST_CONTEXT(name) {

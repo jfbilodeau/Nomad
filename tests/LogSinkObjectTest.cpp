@@ -22,9 +22,9 @@ using namespace nomad;
 namespace {
 
 void loadLogModule(boost::dll::shared_library& library, Runtime& runtime, Logger& logger) {
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"log"});
     BOOST_REQUIRE_EQUAL(modules.size(), 1U);
-    const auto path = modules.front().directory / getModuleLibraryName("nomad-log");
+    const auto path = modules.front().directory / getModuleLibraryName("log");
     library.load(path.native(), boost::dll::load_mode::load_with_altered_search_path);
     ModuleContext context{
         &runtime, nullptr, &logger, ModuleMode::Application, {}, modules.front().directory,

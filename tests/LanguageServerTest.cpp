@@ -361,7 +361,7 @@ executable = "signatures"
 entry = "main"
 [nomad]
 version = "0.1.0"
-modules = ["nomad-system", "nomad-collections"]
+modules = ["system", "collections"]
 [scripts]
 directories = ["scripts"]
 [resources]
@@ -587,7 +587,7 @@ executable = "lsp-test"
 entry = "init"
 [nomad]
 version = "0.1.0"
-modules = ["nomad-game"]
+modules = ["game"]
 [resources]
 directory = "res"
 [scripts]
@@ -691,7 +691,7 @@ executable = "completion"
 entry = "init"
 [nomad]
 version = "0.1.0"
-modules = ["nomad-game"]
+modules = ["game"]
 [scripts]
 directories = ["res/scripts"]
 [resources]
@@ -734,7 +734,7 @@ version = "0.1.0"
 executable = "system-project"
 [nomad]
 version = "0.1.0"
-modules = ["nomad-system"]
+modules = ["system"]
 [scripts]
 directories = ["res/scripts"]
 [resources]
@@ -786,7 +786,7 @@ executable = "symbols"
 entry = "init"
 [nomad]
 version = "0.1.0"
-modules = ["nomad-game"]
+modules = ["game"]
 [scripts]
 directories = ["res/scripts"]
 [resources]
@@ -1077,7 +1077,7 @@ version = "0.1.0"
 executable = "members"
 [nomad]
 version = "0.1.0"
-modules = ["nomad-system"]
+modules = ["system"]
 [scripts]
 directories = ["res/scripts"]
 [resources]
@@ -1156,7 +1156,7 @@ executable = "members"
 entry = "init"
 [nomad]
 version = "0.1.0"
-modules = ["nomad-game"]
+modules = ["game"]
 [scripts]
 directories = ["res/scripts"]
 [resources]

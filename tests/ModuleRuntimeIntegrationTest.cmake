@@ -15,7 +15,7 @@ if(NOT EXECUTABLE_FIELD)
     message(FATAL_ERROR "Generated project has no executable name")
 endif()
 set(EXECUTABLE_NAME "${CMAKE_MATCH_1}")
-string(REPLACE "modules = [\"nomad-game\"]" "modules = [\"nomad-system\"]" CONFIGURATION "${CONFIGURATION}")
+string(REPLACE "modules = [\"game\"]" "modules = [\"system\"]" CONFIGURATION "${CONFIGURATION}")
 string(REPLACE "entry = \"main\"\n" "" CONFIGURATION "${CONFIGURATION}")
 file(WRITE "${PROJECT}/nomad.toml" "${CONFIGURATION}")
 file(WRITE "${PROJECT}/res/scripts/main.nomad" "print \"SYSTEM_MODULE_COMPLETE\"\nsystem.exit\n")
@@ -54,7 +54,7 @@ if(GRAPHICAL_LIBRARIES)
     message(FATAL_ERROR "System-only package contains graphical dependencies: ${GRAPHICAL_LIBRARIES}")
 endif()
 file(READ "${EXTRACTED}/nomad.toml" RELEASE)
-if(RELEASE MATCHES "nomad-game" OR NOT RELEASE MATCHES "nomad-system")
+if(RELEASE MATCHES "[\"']game[\"']" OR NOT RELEASE MATCHES "[\"']system[\"']")
     message(FATAL_ERROR "Release module list does not match the resolved system-only modules")
 endif()
 set(PROGRAM "${EXTRACTED}/${EXECUTABLE_NAME}${NOMAD_RUNTIME_SUFFIX}")
@@ -64,7 +64,7 @@ file(RENAME "${EXTRACTED}/${NOMAD_SYSTEM_LIBRARY}" "${EXTRACTED}/${NOMAD_SYSTEM_
 nomadRunTestCommand("Reject missing packaged module without SDK fallback"
     EXPECT_FAILURE COMMAND "${PROGRAM}" WORKING_DIRECTORY "${EXTRACTED}")
 
-string(REPLACE "modules = [\"nomad-system\"]" "modules = [\"nomad-system\", \"nomad-collections\"]"
+string(REPLACE "modules = [\"system\"]" "modules = [\"system\", \"collections\"]"
     CONFIGURATION "${CONFIGURATION}")
 file(WRITE "${PROJECT}/nomad.toml" "${CONFIGURATION}")
 nomadRunTestCommand("Check application with collections module" COMMAND "${NOMAD_CLI}" check "${PROJECT}")
@@ -86,8 +86,8 @@ nomadRunTestCommand("Reject running packaged API-only collections modules"
     COMMAND "${COLLECTIONS_EXTRACTED}/${EXECUTABLE_NAME}${NOMAD_RUNTIME_SUFFIX}"
     WORKING_DIRECTORY "${COLLECTIONS_EXTRACTED}" EXPECT_FAILURE)
 
-string(REPLACE "modules = [\"nomad-system\", \"nomad-collections\"]"
-    "modules = [\"nomad-game\", \"nomad-os\"]" CONFIGURATION "${CONFIGURATION}")
+string(REPLACE "modules = [\"system\", \"collections\"]"
+    "modules = [\"game\", \"os\"]" CONFIGURATION "${CONFIGURATION}")
 set(ENV{SDL_VIDEODRIVER} "dummy")
 set(ENV{SDL_AUDIODRIVER} "dummy")
 file(WRITE "${PROJECT}/nomad.toml" "${CONFIGURATION}")
@@ -135,7 +135,7 @@ if(NOT EXISTS "${OS_EXTRACTED}/${NOMAD_OS_LIBRARY}" OR
     message(FATAL_ERROR "OS package did not include exactly its required Nomad modules")
 endif()
 file(READ "${OS_EXTRACTED}/nomad.toml" RELEASE)
-if(NOT RELEASE MATCHES "nomad-os" OR NOT RELEASE MATCHES "nomad-collections")
+if(NOT RELEASE MATCHES "[\"']os[\"']" OR NOT RELEASE MATCHES "[\"']collections[\"']")
     message(FATAL_ERROR "OS package configuration does not include resolved module dependencies")
 endif()
 nomadRunTestCommand("Packaged OS application receives application arguments"
@@ -153,7 +153,7 @@ endforeach()
 set(LOG_PROJECT "${NOMAD_TEST_ROOT}/log application")
 nomadRunTestCommand("Create log application" COMMAND "${NOMAD_CLI}" init "${LOG_PROJECT}")
 file(READ "${LOG_PROJECT}/nomad.toml" LOG_CONFIGURATION)
-string(REPLACE "modules = [\"nomad-game\"]" "modules = [\"nomad-log\"]"
+string(REPLACE "modules = [\"game\"]" "modules = [\"log\"]"
     LOG_CONFIGURATION "${LOG_CONFIGURATION}")
 file(WRITE "${LOG_PROJECT}/nomad.toml" "${LOG_CONFIGURATION}")
 file(WRITE "${LOG_PROJECT}/res/scripts/main.nomad"
@@ -176,7 +176,7 @@ if(NOT EXISTS "${LOG_EXTRACTED}/${NOMAD_LOG_LIBRARY}"
     OR EXISTS "${LOG_EXTRACTED}/${NOMAD_COLLECTIONS_LIBRARY}")
     message(FATAL_ERROR "Log-only package did not include exactly its required Nomad modules")
 endif()
-string(REPLACE "modules = [\"nomad-log\"]" "modules = [\"nomad-game\", \"nomad-log\"]"
+string(REPLACE "modules = [\"log\"]" "modules = [\"game\", \"log\"]"
     LOG_CONFIGURATION "${LOG_CONFIGURATION}")
 file(WRITE "${LOG_PROJECT}/nomad.toml" "${LOG_CONFIGURATION}")
 file(APPEND "${LOG_PROJECT}/res/scripts/main.nomad" "print \"LOG_MODULE_COMPLETE\"\nsystem.exit\n")
