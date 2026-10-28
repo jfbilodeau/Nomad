@@ -17,6 +17,7 @@ public:
     LogSinkObject& operator=(const LogSinkObject&) = delete;
     ~LogSinkObject() override = default;
 
+    [[nodiscard]] Logger& getLogger() const;
     [[nodiscard]] LogSinkId getSinkId() const;
     [[nodiscard]] LogSink& getSink() const;
 

@@ -38,14 +38,15 @@ To deliver debug messages, lower both the global level and the receiving sink's
 level to `Debug`.
 
 The `nomad-log` module also exposes typed script logging configuration,
-including ordinary `ScriptObject` settings and opaque sink handles. See
+including ordinary `ScriptObject` settings and `log.Sink` objects. See
 [Programmatic configuration](nomad-log.md#programmatic-configuration).
 Script factories use the module context's logger and copy the supplied settings;
 discarding the configuration or script handle does not remove a sink.
 
 `<nomad/log/LogSinkObject.hpp>` provides the C++ `LogSinkObject` wrapper.
 Construct it with the owning `Logger&` and a registered `LogSinkId`.
-`getSinkId()` retains the ID even after removal; `getSink()` resolves it on each
+`getLogger()` returns the owning logger. `getSinkId()` retains the ID even after removal;
+`getSink()` resolves it on each
 call and throws for an unknown or removed sink. Construction also rejects
 unknown or removed IDs. The wrapper does not own or cache the concrete sink;
 destroying it does not remove or deactivate that sink.
@@ -55,8 +56,8 @@ sink removal, just as for `Logger::getSink()`.
 `nomad-log` registers the wrapper as the closed object type `log.Sink` with a
 read/write boolean `active` property. Native property access resolves the sink
 ID on every read and write; removed sinks throw rather than accessing stale
-storage. There is no script constructor, and the existing script factories
-still return opaque IDs until their migration to this object type.
+storage. There is no script constructor; both script sink factories return
+this object type. Sink functions reject objects belonging to a different logger.
 Type registration is internal to the logging module; C++ hosts obtain the
 registered descriptor from the module's runtime.
 

@@ -46,7 +46,7 @@ The module exposes these ordinary typed values:
 - `log.Level`: `Debug`, `Info`, `Warning`, `Error`, `Critical`.
 - `log.DeliveryMode`: `Buffered`, `Synchronous`.
 - `log.FileRotationMode`: `None`, `Size`.
-- `log.SinkId`: an opaque handle returned by a sink factory, not an integer.
+- `log.Sink`: a reference-semantic object returned by a sink factory, not an integer.
 
 Use `log.getLogLevel` / `log.setLogLevel level` and
 `log.getDeliveryMode` / `log.setDeliveryMode mode` to inspect or change the logger.
@@ -60,6 +60,7 @@ options = new log.SinkConfiguration
 options.level = log.Level.Debug
 console = log.createConsoleSink options
 log.debug "Debug logging enabled for this console sink"
+console.active = false
 log.removeSink console
 ```
 
@@ -111,7 +112,9 @@ flush, including an empty one, starts it.
 
 ### Live sink settings
 
-All functions below take a `sink:log.SinkId` first:
+Factories return `log.Sink` objects with a read/write `active:bool` property.
+Assigning a sink object aliases the same reference; there is no script constructor.
+All functions below take a `sink:log.Sink` first:
 
 | Getter | Setter |
 | --- | --- |
@@ -128,8 +131,9 @@ flag after startup does not rotate again or undo rotation. Other rotation change
 apply to subsequent writes.
 
 The logger owns sinks, not configuration objects or script handles. Discarding a
-handle does not remove its sink. Removed/cleared handles are never reused by the
-same logger; accessing one or removing it again fails explicitly. Directory,
+handle does not remove its sink. Accessing a removed/cleared sink or removing it
+again fails explicitly. Null references and references belonging to a different
+logger are rejected by sink functions. Directory,
 file, rotation, and delivery errors also propagate as script execution errors.
 Memory sinks and custom script sink callbacks are not exposed.
 

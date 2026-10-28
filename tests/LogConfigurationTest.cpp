@@ -4,6 +4,7 @@
 #include <nomad/compiler/CompilerContext.hpp>
 
 #include <nomad/log/Logger.hpp>
+#include <nomad/log/LogSinkObject.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
@@ -33,6 +34,7 @@ struct LogConfigurationFixture {
     Logger logger;
     Runtime runtime;
     LogSinkId memoryId;
+    RuntimeValue savedSink;
     NomadIndex sourceIndex = 0;
 
     explicit LogConfigurationFixture(const ModuleMode mode = ModuleMode::Application) {
@@ -57,11 +59,16 @@ struct LogConfigurationFixture {
         return *static_cast<MemorySink*>(logger.getSink(memoryId));
     }
 
+    ~LogConfigurationFixture() {
+        savedSink.freeObjectValue();
+    }
+
     [[nodiscard]] CallableId compile(const NomadString& source) {
         const auto name = "logging" + std::to_string(sourceIndex++);
         auto compiler = runtime.createCompiler();
         CompilerContext context(compiler.get());
-        compiler->registerSources(&context, {{{name, {name + ".nomad", source}}}, {}});
+        const auto text = "fun " + name + " savedSink:log.Sink\n" + source + "\nend\n";
+        compiler->registerSources(&context, {{{name + "Source", {name + ".nomad", text}}}, {}});
         const auto success = compiler->compileFunctions(&context);
         const auto* error = context.getFirstError();
         const auto message = error == nullptr ? NomadString("Unknown compilation error") : error->message;
@@ -71,7 +78,7 @@ struct LogConfigurationFixture {
 
     RuntimeValue execute(const NomadString& source) {
         RuntimeValue result;
-        runtime.executeFunction(compile(source), {}, result);
+        runtime.executeFunction(compile(source), {savedSink}, result);
         return result;
     }
 
@@ -84,8 +91,18 @@ struct LogConfigurationFixture {
     }
 
     void saveHandle(const LogSinkId id) {
-        BOOST_REQUIRE(runtime.registerConstant("savedSink", RuntimeValue(id.id),
-            runtime.getTypeByName("log.SinkId")).isValid());
+        savedSink.freeObjectValue();
+        savedSink.setObjectValue(new LogSinkObject(logger, id));
+    }
+
+    LogSinkId saveHandle(RuntimeValue& value) {
+        const auto* object = dynamic_cast<LogSinkObject*>(value.getObjectValue());
+        BOOST_REQUIRE(object != nullptr);
+        const auto id = object->getSinkId();
+        savedSink.freeObjectValue();
+        savedSink.copyObjectValue(value);
+        value.freeObjectValue();
+        return id;
     }
 };
 
@@ -123,11 +140,12 @@ BOOST_AUTO_TEST_CASE(configuration_objects_are_script_objects_with_matching_defa
     BOOST_TEST(!std::filesystem::exists(directory.getPath() / "logs"));
     BOOST_TEST(runtime.getTypeByName("log.ConsoleSinkConfiguration") == nullptr);
     BOOST_TEST(runtime.getNativeFunctionId("log.createMemorySink").isInvalid());
+    BOOST_TEST(runtime.getTypeByName("log.SinkId") == nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(script_file_creation_uses_project_directory_and_rotates_whole_records) {
     directory.write(NomadPath("logs") / "application.log", "previous run\n");
-    const auto result = execute(
+    auto result = execute(
         "options = new log.FileSinkConfiguration\n"
         "options.maxSizeBytes = 1\n"
         "sink = log.createFileSink options\n"
@@ -137,7 +155,7 @@ BOOST_AUTO_TEST_CASE(script_file_creation_uses_project_directory_and_rotates_who
         "log.info \"second-record\"\n"
         "return sink\n"
     );
-    const LogSinkId id{result.getIdValue()};
+    const auto id = saveHandle(result);
     const auto* file = dynamic_cast<FileSink*>(logger.getSink(id));
     BOOST_REQUIRE(file != nullptr);
     BOOST_TEST((file->getPath() == directory.getPath() / "logs" / "application.log"));
@@ -155,7 +173,7 @@ BOOST_AUTO_TEST_CASE(console_settings_control_output_without_replacing_cpp_sinks
     const boost::io::ios_rdbuf_saver restoreErrors(std::cerr);
     std::cout.rdbuf(output.rdbuf());
     std::cerr.rdbuf(errors.rdbuf());
-    const auto result = execute(
+    auto result = execute(
         "log.setLogLevel log.Level.Debug\n"
         "options = new log.SinkConfiguration\n"
         "options.active = false\n"
@@ -176,8 +194,7 @@ BOOST_AUTO_TEST_CASE(console_settings_control_output_without_replacing_cpp_sinks
     BOOST_TEST(output.str().find("debug-record") != NomadString::npos);
     BOOST_TEST(errors.str().find("error-record") != NomadString::npos);
     BOOST_REQUIRE_EQUAL(getMemory().getEntries().size(), 5U);
-    const LogSinkId id{result.getIdValue()};
-    saveHandle(id);
+    const auto id = saveHandle(result);
     BOOST_TEST(execute("return log.getSinkActive savedSink").getBooleanValue());
     BOOST_TEST(execute("return log.getSinkLevel savedSink").getIntegerValue() == static_cast<NomadInteger>(LogLevel::Debug));
     BOOST_TEST(execute("return log.getLogLevel").getIntegerValue() == static_cast<NomadInteger>(LogLevel::Debug));
@@ -187,12 +204,11 @@ BOOST_AUTO_TEST_CASE(console_settings_control_output_without_replacing_cpp_sinks
 
 BOOST_AUTO_TEST_CASE(staged_file_settings_remain_adjustable_before_activation) {
     directory.write(NomadPath("logs") / "application.log", "previous run\n");
-    const auto result = execute(
+    auto result = execute(
         "options = new log.FileSinkConfiguration\noptions.active = false\n"
         "return log.createFileSink options\n"
     );
-    const LogSinkId id{result.getIdValue()};
-    saveHandle(id);
+    (void)saveHandle(result);
     BOOST_TEST(read(NomadPath("logs") / "application.log") == "previous run\n");
     BOOST_TEST(!std::filesystem::exists(directory.getPath() / "logs" / "application.1.log"));
     (void)execute(
@@ -217,7 +233,7 @@ BOOST_AUTO_TEST_CASE(staged_file_settings_remain_adjustable_before_activation) {
 
 BOOST_AUTO_TEST_CASE(absolute_directories_are_supported_and_configuration_is_copied) {
     const auto absolute = pathToGenericUtf8(directory.getPath() / "absolute");
-    const auto result = execute(
+    auto result = execute(
         "options = new log.FileSinkConfiguration\n"
         "options.directory = \"" + absolute + "\"\n"
         "options.name = \"session\"\noptions.rotateAtStartup = false\n"
@@ -225,7 +241,8 @@ BOOST_AUTO_TEST_CASE(absolute_directories_are_supported_and_configuration_is_cop
         "options.active = false\noptions.level = log.Level.Critical\n"
         "log.info \"absolute-record\"\nlog.flush\nreturn sink\n"
     );
-    const auto* file = dynamic_cast<FileSink*>(logger.getSink(LogSinkId{result.getIdValue()}));
+    const auto id = saveHandle(result);
+    const auto* file = dynamic_cast<FileSink*>(logger.getSink(id));
     BOOST_REQUIRE(file != nullptr);
     BOOST_TEST(file->getActive());
     BOOST_TEST((file->getLogLevel() == LogLevel::Info));
@@ -233,12 +250,11 @@ BOOST_AUTO_TEST_CASE(absolute_directories_are_supported_and_configuration_is_cop
 }
 
 BOOST_AUTO_TEST_CASE(removed_handles_cannot_reach_replacements) {
-    const auto result = execute(
+    auto result = execute(
         "options = new log.SinkConfiguration\noptions.active = false\n"
         "return log.createConsoleSink options\n"
     );
-    const LogSinkId oldId{result.getIdValue()};
-    saveHandle(oldId);
+    const auto oldId = saveHandle(result);
     (void)execute("log.removeSink savedSink");
     const auto replacement = logger.createMemorySink();
     BOOST_TEST(replacement != oldId);
@@ -246,6 +262,47 @@ BOOST_AUTO_TEST_CASE(removed_handles_cannot_reach_replacements) {
     BOOST_CHECK_THROW((void)execute("return log.getSinkLevel savedSink"), VirtualMachineException);
     BOOST_CHECK_THROW((void)execute("log.setSinkActive savedSink true"), VirtualMachineException);
     BOOST_TEST(logger.getSink(replacement) != nullptr);
+    BOOST_CHECK_THROW((void)execute("return savedSink.active"), NomadException);
+    BOOST_CHECK_THROW((void)execute("savedSink.active = true"), NomadException);
+}
+
+BOOST_AUTO_TEST_CASE(sink_objects_alias_and_release_without_removing_the_sink) {
+    const auto before = NomadObject::getLiveObjectCount();
+    auto result = execute(
+        "options = new log.SinkConfiguration\noptions.active = false\n"
+        "sink = log.createConsoleSink options\n"
+        "alias = sink\nalias.active = true\n"
+        "return sink\n"
+    );
+    const auto id = saveHandle(result);
+    BOOST_TEST(execute("return savedSink.active").getBooleanValue());
+    BOOST_TEST(execute("return log.getSinkActive savedSink").getBooleanValue());
+    (void)execute("savedSink.active = false");
+    BOOST_TEST(!logger.getSink(id)->getActive());
+    savedSink.freeObjectValue();
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    BOOST_REQUIRE(logger.getSink(id) != nullptr);
+    BOOST_TEST(!logger.getSink(id)->getActive());
+    logger.removeSink(id);
+}
+
+BOOST_AUTO_TEST_CASE(sink_functions_reject_objects_from_another_logger) {
+    Logger otherLogger;
+    const auto otherId = otherLogger.createMemorySink();
+    BOOST_REQUIRE(otherId == memoryId);
+    savedSink.setObjectValue(new LogSinkObject(otherLogger, otherId));
+    for (const auto& source : {
+        "return log.getSinkActive savedSink",
+        "log.setSinkActive savedSink false",
+        "log.removeSink savedSink"
+    }) {
+        BOOST_CHECK_THROW((void)execute(source), VirtualMachineException);
+    }
+    BOOST_REQUIRE(logger.getSink(memoryId) != nullptr);
+    BOOST_REQUIRE(otherLogger.getSink(otherId) != nullptr);
+    BOOST_TEST(logger.getSink(memoryId)->getActive());
+    BOOST_TEST(otherLogger.getSink(otherId)->getActive());
+    savedSink.freeObjectValue();
 }
 
 BOOST_AUTO_TEST_CASE(print_and_stale_handle_checks_survive_clearing_all_sinks) {
@@ -261,6 +318,7 @@ BOOST_AUTO_TEST_CASE(print_and_stale_handle_checks_survive_clearing_all_sinks) {
     BOOST_TEST(output.str() == "plain output\n");
     BOOST_TEST(logger.getSink(memoryId) == nullptr);
     BOOST_CHECK_THROW((void)execute("log.setSinkLevel savedSink log.Level.Info"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)execute("return savedSink.active"), NomadException);
 }
 
 BOOST_AUTO_TEST_CASE(invalid_configuration_and_wrong_sink_kinds_fail_explicitly) {
@@ -291,9 +349,8 @@ BOOST_AUTO_TEST_CASE(invalid_enum_values_are_rejected_without_narrowing_them) {
 }
 
 BOOST_AUTO_TEST_CASE(invalid_handles_and_null_configuration_fail_explicitly) {
-    BOOST_REQUIRE(runtime.registerConstant("invalidSink", RuntimeValue(NOMAD_INVALID_ID),
-        runtime.getTypeByName("log.SinkId")).isValid());
-    BOOST_CHECK_THROW((void)execute("log.removeSink invalidSink"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)execute("log.removeSink savedSink"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)execute("return log.getSinkActive savedSink"), VirtualMachineException);
     auto machine = runtime.createVirtualMachine();
     BOOST_CHECK_THROW(machine->runNativeFunction(
         runtime.getNativeFunctionId("log.createConsoleSink"), {RuntimeValue()}
@@ -325,7 +382,7 @@ BOOST_AUTO_TEST_CASE(configuration_lifetimes_do_not_retain_objects_after_executi
     const auto before = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 20; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(id, {}, result);
+        runtime.executeFunction(id, {savedSink}, result);
         BOOST_TEST(result.getIntegerValue() == 10);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -333,7 +390,10 @@ BOOST_AUTO_TEST_CASE(configuration_lifetimes_do_not_retain_objects_after_executi
 
 BOOST_AUTO_TEST_CASE(analysis_exposes_types_without_applying_logging_configuration) {
     LogConfigurationFixture analysis(ModuleMode::Analysis);
-    BOOST_REQUIRE(analysis.runtime.getTypeByName("log.SinkId") != nullptr);
+    BOOST_REQUIRE(analysis.runtime.getTypeByName("log.Sink") != nullptr);
+    analysis.saveHandle(analysis.memoryId);
+    BOOST_TEST(analysis.execute("return savedSink.active").getBooleanValue());
+    BOOST_CHECK_THROW((void)analysis.execute("savedSink.active = false"), VirtualMachineException);
     (void)analysis.execute("options = new log.FileSinkConfiguration\nreturn options.active");
     BOOST_CHECK_THROW((void)analysis.execute("log.setLogLevel log.Level.Debug"), VirtualMachineException);
     BOOST_CHECK_THROW((void)analysis.execute(

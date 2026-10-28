@@ -13,6 +13,10 @@ LogSinkObject::LogSinkObject(Logger& logger, const LogSinkId sinkId) :
     (void)getSink();
 }
 
+Logger& LogSinkObject::getLogger() const {
+    return m_logger;
+}
+
 LogSinkId LogSinkObject::getSinkId() const {
     return m_sinkId;
 }

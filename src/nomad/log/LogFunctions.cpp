@@ -3,6 +3,7 @@
 #include <nomad/log/LogFunctions.hpp>
 
 #include <nomad/log/Logger.hpp>
+#include <nomad/log/LogSinkObject.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
@@ -176,14 +177,20 @@ const ScriptObject& getConfiguration(const VirtualMachine* machine) {
     return *object;
 }
 
+LogSinkObject& getSinkObject(Logger* logger, const VirtualMachine* machine) {
+    auto* object = dynamic_cast<LogSinkObject*>(machine->getParameter(0).getObjectValue());
+    if (object == nullptr) {
+        throw NomadException("Log sink must not be null");
+    }
+    if (&object->getLogger() != logger) {
+        throw NomadException("Log sink belongs to a different logger");
+    }
+    return *object;
+}
+
 template<typename Sink = LogSink>
 Sink& getSink(Logger* logger, const VirtualMachine* machine) {
-    const LogSinkId id{machine->getIdParameter(0)};
-    auto* sink = logger->getSink(id);
-    if (sink == nullptr) {
-        throw NomadException("Unknown or removed log sink ID: " + std::to_string(id.id));
-    }
-    auto* concrete = dynamic_cast<Sink*>(sink);
+    auto* concrete = dynamic_cast<Sink*>(&getSinkObject(logger, machine).getSink());
     if (concrete == nullptr) {
         throw NomadException("Log sink is not a file sink");
     }
@@ -236,8 +243,7 @@ void registerLogConfigurationFunctions(ModuleContext* context) {
         {"Buffered", static_cast<NomadInteger>(LogDeliveryMode::Buffered)},
         {"Synchronous", static_cast<NomadInteger>(LogDeliveryMode::Synchronous)}
     }, NomadDoc("Buffered host delivery or delivery before each logging call returns."));
-    const auto* sinkType = runtime->registerOpaqueIdType("log.SinkId",
-        NomadDoc("A logger-owned sink handle; removed handles are never reused by the same logger."));
+    const auto* sinkType = runtime->getTypeByName("log.Sink");
     if (levelId.isInvalid() || rotationId.isInvalid() || deliveryId.isInvalid() || sinkType == nullptr) {
         throw NomadException("Failed to register log configuration types");
     }
@@ -247,7 +253,7 @@ void registerLogConfigurationFunctions(ModuleContext* context) {
     const auto* configurationType = registerConfiguration(runtime, levelType, rotationType, false);
     const auto* fileConfigurationType = registerConfiguration(runtime, levelType, rotationType, true);
     const std::vector<Parameter> sinkParameters{
-        defParameter("sink", sinkType, NomadParamDoc("The logger-owned sink handle."))
+        defParameter("sink", sinkType, NomadParamDoc("A reference to a logger-owned sink."))
     };
     const auto resolveLogger = [logger](VirtualMachine*) -> Logger& { return *logger; };
     const auto resolveSink = [logger](VirtualMachine* machine) -> LogSink& { return getSink(logger, machine); };
@@ -273,7 +279,7 @@ void registerLogConfigurationFunctions(ModuleContext* context) {
             ConsoleSinkConfiguration configuration;
             configuration.active = getField(object, "active").getBooleanValue();
             configuration.level = readSetting<LogLevel>(getField(object, "level"));
-            machine->setIdResult(logger->createConsoleSink(configuration).id);
+            machine->getResult().setObjectValue(new LogSinkObject(*logger, logger->createConsoleSink(configuration)));
         },
         {defParameter("configuration", configurationType, NomadParamDoc("The console sink creation settings."))},
         sinkType, NomadDoc("Creates a logger-owned console sink without removing existing sinks."));
@@ -297,12 +303,12 @@ void registerLogConfigurationFunctions(ModuleContext* context) {
             configuration.rotateAtStartup = getField(object, "rotateAtStartup").getBooleanValue();
             configuration.maxSizeBytes = readSetting<NomadIndex>(getField(object, "maxSizeBytes"));
             configuration.maxFiles = readSetting<NomadIndex>(getField(object, "maxFiles"));
-            machine->setIdResult(logger->createFileSink(configuration).id);
+            machine->getResult().setObjectValue(new LogSinkObject(*logger, logger->createFileSink(configuration)));
         },
         {defParameter("configuration", fileConfigurationType, NomadParamDoc("The file sink creation settings."))},
         sinkType, NomadDoc("Creates a logger-owned file sink; relative directories use the project directory."));
     registerFunction(context, "log.removeSink",
-        [logger](VirtualMachine* machine) { logger->removeSink(LogSinkId{machine->getIdParameter(0)}); },
+        [logger](VirtualMachine* machine) { logger->removeSink(getSinkObject(logger, machine).getSinkId()); },
         sinkParameters, runtime->getVoidType(), NomadDoc("Flushes and removes a sink; unknown or removed handles fail."));
     registerFunction(context, "log.clearAllSinks",
         [logger](VirtualMachine*) { logger->clearAllSinks(); },
