@@ -20,6 +20,7 @@
 #include <array>
 #include <iostream>
 #include <sstream>
+#include <tuple>
 
 using namespace nomad;
 using namespace nomad::test;
@@ -98,6 +99,35 @@ BOOST_AUTO_TEST_CASE(module_registers_sink_type_and_active_property) {
         const auto* active = classType->getProperty("active");
         BOOST_REQUIRE(active != nullptr);
         BOOST_TEST(active->getValueType() == host->getRuntime()->getBooleanType());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(module_registers_logging_enums_and_values_in_the_log_hub) {
+    const TestDirectory directory("log-module-enums");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});
+    for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis}) {
+        const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
+        const auto& runtime = *host->getRuntime();
+        const auto* hub = runtime.getHub(runtime.getHubId("log"));
+        BOOST_REQUIRE(hub != nullptr);
+        for (const auto& [name, valueName, value] : {
+            std::tuple{"Level", "Info", static_cast<NomadInteger>(LogLevel::Info)},
+            std::tuple{"FileRotationMode", "Size", static_cast<NomadInteger>(FileRotationMode::Size)},
+            std::tuple{"DeliveryMode", "Buffered", static_cast<NomadInteger>(LogDeliveryMode::Buffered)}
+        }) {
+            const auto* member = hub->getMember(name);
+            BOOST_REQUIRE(member != nullptr);
+            const auto* type = std::get<const Type*>(*member);
+            BOOST_TEST(type == runtime.getTypeByName("log." + NomadString(name)));
+            BOOST_TEST(runtime.getTypeByName(name) == nullptr);
+            const auto* constant = hub->getMember(NomadString(name) + "." + valueName);
+            BOOST_REQUIRE(constant != nullptr);
+            const auto constantId = std::get<ConstantId>(*constant);
+            BOOST_TEST(runtime.getConstantType(constantId) == type);
+            RuntimeValue registeredValue;
+            runtime.getConstantValue(constantId, registeredValue);
+            BOOST_TEST(registeredValue.getIntegerValue() == value);
+        }
     }
 }
 

@@ -4,8 +4,9 @@
 
 namespace nomad {
 
+struct HubId;
 struct ModuleContext;
 
-void registerLogConfigurationFunctions(ModuleContext* context);
+void registerLogConfigurationFunctions(ModuleContext* context, HubId hubId);
 
 } // namespace nomad

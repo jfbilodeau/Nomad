@@ -28,6 +28,131 @@ static_assert(std::is_same_v<std::variant_alternative_t<6, HubMember>, HubTypeFa
 
 BOOST_AUTO_TEST_SUITE(language_hubs)
 
+BOOST_AUTO_TEST_CASE(hub_enums_and_constants_use_local_names_and_typed_script_values)
+{
+    for (const auto mode : {HubMode::Opened, HubMode::Closed}) {
+        LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        const auto hubId = runtime.registerHub("example.child", mode);
+        BOOST_REQUIRE(hubId.isValid());
+        const auto enumId = runtime.registerHubEnum(hubId, "State", {{"Ready", 1}, {"Done", 2}}, "Task state.");
+        BOOST_REQUIRE(enumId.isValid());
+        const auto* type = runtime.getType(enumId).value();
+        BOOST_TEST(type->getTypeName() == "example.child.State");
+        BOOST_TEST(type->getDocumentation() == "Task state.");
+        const auto constantId = runtime.registerHubConstant(hubId, "state", RuntimeValue(NomadInteger{2}), type);
+        BOOST_REQUIRE(constantId.isValid());
+        BOOST_TEST(runtime.getConstantId("example.child.state") == constantId);
+        BOOST_TEST(runtime.getConstantType(constantId) == type);
+        BOOST_TEST(runtime.getConstantId("state").isInvalid());
+        BOOST_TEST(runtime.getTypeByName("State") == nullptr);
+        const auto* hub = runtime.getHub(hubId);
+        BOOST_REQUIRE(hub->getMember("State") != nullptr);
+        BOOST_TEST(std::get<const Type*>(*hub->getMember("State")) == type);
+        BOOST_REQUIRE(hub->getMember("State.Ready") != nullptr);
+        const auto readyId = std::get<ConstantId>(*hub->getMember("State.Ready"));
+        BOOST_TEST(runtime.getConstantType(readyId) == type);
+        RuntimeValue ready;
+        runtime.getConstantValue(readyId, ready);
+        BOOST_TEST(ready.getIntegerValue() == 1);
+        BOOST_REQUIRE(hub->getMember("state") != nullptr);
+        BOOST_TEST(std::get<ConstantId>(*hub->getMember("state")) == constantId);
+        fixture.addFunction("main", "return example.child.state == example.child.State.Done");
+        BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+        BOOST_TEST(fixture.execute("main").booleanValue);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(hub_enum_and_constant_validation_preserves_existing_members)
+{
+    Runtime runtime;
+    Runtime otherRuntime;
+    const auto hubId = runtime.registerHub("example", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    const auto value = RuntimeValue(NomadInteger{42});
+    for (const auto invalidId : {HubId::INVALID, HubId{-2}, HubId{NOMAD_ID_MAX}}) {
+        BOOST_TEST(runtime.registerHubConstant(invalidId, "value", value, runtime.getIntegerType()).isInvalid());
+        BOOST_TEST(runtime.registerHubEnum(invalidId, "State", {{"Ready", 1}}).isInvalid());
+    }
+    for (const auto* name : {"", "example.value", "child.value", "value@hidden", "1value", "bad name"}) {
+        BOOST_TEST(runtime.registerHubConstant(hubId, name, value, runtime.getIntegerType()).isInvalid());
+        BOOST_TEST(runtime.registerHubEnum(hubId, name, {{"Ready", 1}}).isInvalid());
+    }
+    for (const auto* type : {
+        static_cast<const Type*>(nullptr), otherRuntime.getIntegerType(), runtime.getVoidType(), runtime.getFileNameType()
+    }) {
+        BOOST_TEST(runtime.registerHubConstant(hubId, "value", value, type).isInvalid());
+    }
+    BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
+    BOOST_TEST(runtime.getConstantId("example.value").isInvalid());
+    BOOST_TEST(runtime.getTypeByName("example.State") == nullptr);
+
+    const auto constantId = runtime.registerHubConstant(hubId, "constant", value, runtime.getIntegerType());
+    BOOST_REQUIRE(constantId.isValid());
+    BOOST_REQUIRE(runtime.registerHubEnum(hubId, "State", {{"Ready", 1}}).isValid());
+    BOOST_REQUIRE(runtime.registerHubVariable("example.variable").isValid());
+    BOOST_REQUIRE(runtime.registerClass("example.Class", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.registerHubNativeFunction(
+        hubId, "function", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerHub("example.child", HubMode::Opened).isValid());
+    const auto memberCount = runtime.getHub(hubId)->getMembers().size();
+    for (const auto* name : {"constant", "State", "variable", "Class", "function", "child"}) {
+        BOOST_TEST(runtime.registerHubConstant(hubId, name, value, runtime.getIntegerType()).isInvalid());
+        BOOST_TEST(runtime.registerHubEnum(hubId, name, {{"First", 1}}).isInvalid());
+    }
+    BOOST_TEST(runtime.getHub(hubId)->getMembers().size() == memberCount);
+    RuntimeValue retained;
+    runtime.getConstantValue(constantId, retained);
+    BOOST_TEST(retained.getIntegerValue() == 42);
+}
+
+BOOST_AUTO_TEST_CASE(hub_enums_reject_invalid_values_without_publishing_a_type_or_constants)
+{
+    Runtime runtime;
+    const auto hubId = runtime.registerHub("example", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    for (const auto& values : std::vector<std::vector<EnumValueDefinition>>{
+        {}, {{"", 1}}, {{"bad.name", 1}}, {{"bad@name", 1}}, {{"1name", 1}},
+        {{"First", 1}, {"First", 2}}, {{"First", 1}, {"Second", 1}}
+    }) {
+        BOOST_TEST(runtime.registerHubEnum(hubId, "State", values).isInvalid());
+        BOOST_TEST(runtime.getTypeByName("example.State") == nullptr);
+        BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
+        BOOST_TEST(runtime.getConstantId("example.State.First").isInvalid());
+    }
+    const auto reservedId = runtime.registerConstant(
+        "example.State.Reserved", RuntimeValue(NomadInteger{42}), runtime.getIntegerType()
+    );
+    BOOST_REQUIRE(reservedId.isValid());
+    BOOST_TEST(runtime.registerHubEnum(hubId, "State", {{"First", 1}, {"Reserved", 2}}).isInvalid());
+    BOOST_TEST(runtime.getTypeByName("example.State") == nullptr);
+    BOOST_TEST(runtime.getConstantId("example.State.First").isInvalid());
+    BOOST_TEST(runtime.getConstantId("example.State.Reserved") == reservedId);
+}
+
+BOOST_AUTO_TEST_CASE(hub_constants_retain_object_values_without_taking_the_callers_reference)
+{
+    const auto before = NomadObject::getLiveObjectCount();
+    {
+        Runtime runtime;
+        const auto hubId = runtime.registerHub("example", HubMode::Opened);
+        BOOST_REQUIRE(hubId.isValid());
+        RuntimeValue value(NomadString{"retained text"});
+        const auto constantId = runtime.registerHubConstant(hubId, "text", value, runtime.getStringType());
+        BOOST_REQUIRE(constantId.isValid());
+        BOOST_TEST(value.getObjectValue()->getReferenceCount() == 2U);
+        BOOST_TEST(runtime.registerHubConstant(hubId, "text", value, runtime.getStringType()).isInvalid());
+        BOOST_TEST(value.getObjectValue()->getReferenceCount() == 2U);
+        value.freeObjectValue();
+        RuntimeValue retained;
+        runtime.getConstantValue(constantId, retained);
+        BOOST_TEST(retained.getStringObject()->getString() == "retained text");
+        BOOST_TEST(retained.getObjectValue()->getReferenceCount() == 1U);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
 BOOST_AUTO_TEST_CASE(hub_native_functions_use_local_names_and_shared_overload_resolution)
 {
     for (const auto mode : {HubMode::Opened, HubMode::Closed}) {

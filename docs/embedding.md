@@ -853,9 +853,26 @@ callbacks, type references, and conflicting declarations are logged and return
 `CallableId::INVALID` without adding a function. Referenced types must belong to
 the receiving runtime; hidden source parameter types are supported.
 
+Use `registerHubEnum(hubId, name, values, documentation = {})` to register an enum
+with a local name, such as `"Platform"` in hub `"os"`. Enum value names must also
+be simple identifiers. It returns a `TypeId`; the enum and its typed constants
+are available as `os.Platform` and `os.Platform.ValueName`. Empty value lists,
+duplicate names or numeric values, and conflicting declarations fail without
+publishing the enum or any of its values.
+
+Use `registerHubConstant(hubId, name, value, type)` to register a locally named
+constant, such as `"platform"` in hub `"os"`. It returns a `ConstantId` and
+copies the value using the supplied runtime-owned, public, non-void type.
+Object values are retained; the caller remains responsible for releasing its
+original reference. The value must match the supplied type, just as with
+`registerConstant`.
+
+Both APIs accept open and closed hubs. Invalid hub IDs, nonlocal names, invalid
+types, and conflicts are logged and return the corresponding invalid ID.
+Existing qualified-name registration APIs remain available.
+
 Other native APIs still use qualified names with their existing runtime
-registration functions. For example, register hub `"os"`, enum `"os.Platform"`,
-and constant `"os.platform"`. Scripts may add distinct members only to native
+registration functions. Scripts may add distinct members only to native
 hubs registered as open, using matching `open hub` blocks. Existing writable
 members remain assignable regardless of hub mode. Hub references must be fully
 qualified, including in initializers and signatures; nesting only prefixes

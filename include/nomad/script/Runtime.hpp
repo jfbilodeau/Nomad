@@ -158,6 +158,18 @@ public:
     [[nodiscard]] const std::vector<Instruction>& getInstructions() const;
 
     [[nodiscard]] HubId registerHub(const NomadString& name, HubMode mode);
+    [[nodiscard]] ConstantId registerHubConstant(
+        HubId hubId,
+        const NomadString& name,
+        const RuntimeValue& value,
+        const Type* type
+    );
+    [[nodiscard]] TypeId registerHubEnum(
+        HubId hubId,
+        NomadString name,
+        std::vector<EnumValueDefinition> values,
+        NomadString documentation = {}
+    );
     [[nodiscard]] CallableId registerHubNativeFunction(
         HubId hubId,
         const NomadString& name,

@@ -56,7 +56,7 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         throw NomadException("Failed to register log hub");
     }
     registerLogSinkType(*runtime, context->mode);
-    registerLogConfigurationFunctions(context);
+    registerLogConfigurationFunctions(context, hubId);
     const std::array functions{
         std::pair{"log.debug", &Logger::debug},
         std::pair{"log.info", &Logger::info},

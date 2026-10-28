@@ -225,21 +225,21 @@ void registerSetting(
 
 } // namespace
 
-void registerLogConfigurationFunctions(ModuleContext* context) {
+void registerLogConfigurationFunctions(ModuleContext* context, const HubId hubId) {
     auto* runtime = context->runtime;
     auto* logger = context->logger;
-    const auto levelId = runtime->createEnum("log.Level", {
+    const auto levelId = runtime->registerHubEnum(hubId, "Level", {
         {"Debug", static_cast<NomadInteger>(LogLevel::Debug)},
         {"Info", static_cast<NomadInteger>(LogLevel::Info)},
         {"Warning", static_cast<NomadInteger>(LogLevel::Warning)},
         {"Error", static_cast<NomadInteger>(LogLevel::Error)},
         {"Critical", static_cast<NomadInteger>(LogLevel::Critical)}
     }, NomadDoc("Minimum severity accepted by a logger or sink."));
-    const auto rotationId = runtime->createEnum("log.FileRotationMode", {
+    const auto rotationId = runtime->registerHubEnum(hubId, "FileRotationMode", {
         {"None", static_cast<NomadInteger>(FileRotationMode::None)},
         {"Size", static_cast<NomadInteger>(FileRotationMode::Size)}
     }, NomadDoc("Ongoing file rotation; startup rotation is configured independently."));
-    const auto deliveryId = runtime->createEnum("log.DeliveryMode", {
+    const auto deliveryId = runtime->registerHubEnum(hubId, "DeliveryMode", {
         {"Buffered", static_cast<NomadInteger>(LogDeliveryMode::Buffered)},
         {"Synchronous", static_cast<NomadInteger>(LogDeliveryMode::Synchronous)}
     }, NomadDoc("Buffered host delivery or delivery before each logging call returns."));
