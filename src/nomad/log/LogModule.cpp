@@ -92,19 +92,14 @@ void setStringField(ScriptObject& object, const NomadString& name, const NomadSt
     value.freeObjectValue();
 }
 
-Logger& getLogger(Logger* logger, NomadObject* value) {
-    const auto* object = dynamic_cast<LoggerObject*>(value);
-    if (object == nullptr) {
-        throw NomadException("Logger must not be null");
-    }
+Logger& getLogger(Logger* logger, const LoggerObject* object) {
     if (&object->getLogger() != logger) {
         throw NomadException("Logger belongs to a different host");
     }
     return object->getLogger();
 }
 
-LogSinkObject& getSinkObject(Logger* logger, NomadObject* value) {
-    auto* object = dynamic_cast<LogSinkObject*>(value);
+LogSinkObject& getSinkObject(Logger* logger, LogSinkObject* object) {
     if (object == nullptr) {
         throw NomadException("Log sink must not be null");
     }
@@ -114,8 +109,8 @@ LogSinkObject& getSinkObject(Logger* logger, NomadObject* value) {
     return *object;
 }
 
-FileSink& getFileSink(Logger* logger, NomadObject* value) {
-    auto* sink = dynamic_cast<FileSink*>(&getSinkObject(logger, value).getSink());
+FileSink& getFileSink(Logger* logger, LogSinkObject* object) {
+    auto* sink = dynamic_cast<FileSink*>(&getSinkObject(logger, object).getSink());
     if (sink == nullptr) {
         throw NomadException("Log sink is not a file sink");
     }
@@ -287,7 +282,7 @@ void registerLoggerClass(ModuleContext* context, const HubId hubId) {
         .name = "level",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result = writeSetting(getLogger(logger, machine->getThis()).getLogLevel());
+                result = writeSetting(getLogger(logger, machine->getThisAs<LoggerObject>()).getLogLevel());
             });
         },
         .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
@@ -295,7 +290,7 @@ void registerLoggerClass(ModuleContext* context, const HubId hubId) {
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                getLogger(logger, machine->getThis()).setLogLevel(readSetting<LogLevel>(value));
+                getLogger(logger, machine->getThisAs<LoggerObject>()).setLogLevel(readSetting<LogLevel>(value));
             });
         },
         .documentation = NomadDoc("The current level setting.")
@@ -309,7 +304,7 @@ void registerLoggerClass(ModuleContext* context, const HubId hubId) {
         .name = "deliveryMode",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result = writeSetting(getLogger(logger, machine->getThis()).getDeliveryMode());
+                result = writeSetting(getLogger(logger, machine->getThisAs<LoggerObject>()).getDeliveryMode());
             });
         },
         .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
@@ -317,7 +312,7 @@ void registerLoggerClass(ModuleContext* context, const HubId hubId) {
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                getLogger(logger, machine->getThis()).setDeliveryMode(readSetting<LogDeliveryMode>(value));
+                getLogger(logger, machine->getThisAs<LoggerObject>()).setDeliveryMode(readSetting<LogDeliveryMode>(value));
             });
         },
         .documentation = NomadDoc("The current deliveryMode setting.")
@@ -341,7 +336,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
         .name = "level",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result = writeSetting(getSinkObject(logger, machine->getThis()).getSink().getLogLevel());
+                result = writeSetting(getSinkObject(logger, machine->getThisAs<LogSinkObject>()).getSink().getLogLevel());
             });
         },
         .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
@@ -349,7 +344,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                getSinkObject(logger, machine->getThis()).getSink().setLogLevel(readSetting<LogLevel>(value));
+                getSinkObject(logger, machine->getThisAs<LogSinkObject>()).getSink().setLogLevel(readSetting<LogLevel>(value));
             });
         },
         .documentation = NomadDoc("The current level setting.")
@@ -363,7 +358,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
         .name = "active",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result.setBooleanValue(getSinkObject(logger, machine->getThis()).getSink().getActive());
+                result.setBooleanValue(getSinkObject(logger, machine->getThisAs<LogSinkObject>()).getSink().getActive());
             });
         },
         .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
@@ -371,7 +366,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                getSinkObject(logger, machine->getThis()).getSink().setActive(value.getBooleanValue());
+                getSinkObject(logger, machine->getThisAs<LogSinkObject>()).getSink().setActive(value.getBooleanValue());
             });
         },
         .documentation = NomadDoc("The current active setting.")
@@ -385,7 +380,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
         .name = "rotationMode",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result = writeSetting(getFileSink(logger, machine->getThis()).getRotationMode());
+                result = writeSetting(getFileSink(logger, machine->getThisAs<LogSinkObject>()).getRotationMode());
             });
         },
         .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
@@ -393,7 +388,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                getFileSink(logger, machine->getThis()).setRotationMode(readSetting<FileRotationMode>(value));
+                getFileSink(logger, machine->getThisAs<LogSinkObject>()).setRotationMode(readSetting<FileRotationMode>(value));
             });
         },
         .documentation = NomadDoc("The current rotationMode setting.")
@@ -407,7 +402,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
         .name = "rotateAtStartup",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result.setBooleanValue(getFileSink(logger, machine->getThis()).getRotateAtStartup());
+                result.setBooleanValue(getFileSink(logger, machine->getThisAs<LogSinkObject>()).getRotateAtStartup());
             });
         },
         .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
@@ -415,7 +410,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                getFileSink(logger, machine->getThis()).setRotateAtStartup(value.getBooleanValue());
+                getFileSink(logger, machine->getThisAs<LogSinkObject>()).setRotateAtStartup(value.getBooleanValue());
             });
         },
         .documentation = NomadDoc("The current rotateAtStartup setting.")
@@ -429,7 +424,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
         .name = "maxSizeBytes",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result = writeSetting(getFileSink(logger, machine->getThis()).getMaxSizeBytes());
+                result = writeSetting(getFileSink(logger, machine->getThisAs<LogSinkObject>()).getMaxSizeBytes());
             });
         },
         .setter = {},
@@ -444,7 +439,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
         .name = "maxFiles",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result = writeSetting(getFileSink(logger, machine->getThis()).getMaxFiles());
+                result = writeSetting(getFileSink(logger, machine->getThisAs<LogSinkObject>()).getMaxFiles());
             });
         },
         .setter = {},
@@ -596,7 +591,7 @@ void registerLogFunctions(ModuleContext* context, const HubId hubId) {
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                const auto* object = dynamic_cast<ScriptObject*>(machine->getParameter(0).getObjectValue());
+                const auto* object = machine->getParameter(0).asObject<ScriptObject>();
                 if (object == nullptr) {
                     throw NomadException("Log sink configuration must not be null");
                 }
@@ -619,7 +614,7 @@ void registerLogFunctions(ModuleContext* context, const HubId hubId) {
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                const auto* object = dynamic_cast<ScriptObject*>(machine->getParameter(0).getObjectValue());
+                const auto* object = machine->getParameter(0).asObject<ScriptObject>();
                 if (object == nullptr) {
                     throw NomadException("Log sink configuration must not be null");
                 }
@@ -656,7 +651,7 @@ void registerLogFunctions(ModuleContext* context, const HubId hubId) {
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                logger->removeSink(getSinkObject(logger, machine->getParameter(0).getObjectValue()).getSinkId());
+                logger->removeSink(getSinkObject(logger, machine->getParameter(0).asObject<LogSinkObject>()).getSinkId());
             });
         },
         {defParameter("sink", sinkType, NomadParamDoc("A reference to a logger-owned sink."))},
@@ -696,7 +691,7 @@ void registerLogFunctions(ModuleContext* context, const HubId hubId) {
     const auto pathId = runtime->registerHubNativeFunction(hubId, "getFilePath",
         [logger](VirtualMachine* machine) {
             executeLoggingOperation(machine, [&] {
-                machine->setStringResult(pathToUtf8(getFileSink(logger, machine->getParameter(0).getObjectValue()).getPath()));
+                machine->setStringResult(pathToUtf8(getFileSink(logger, machine->getParameter(0).asObject<LogSinkObject>()).getPath()));
             });
         },
         {defParameter("sink", sinkType, NomadParamDoc("A reference to a logger-owned sink."))},
@@ -713,7 +708,7 @@ void registerLogFunctions(ModuleContext* context, const HubId hubId) {
             executeLoggingOperation(machine, [&] {
                 const auto size = readSetting<NomadIndex>(machine->getParameter(1));
                 const auto files = readSetting<NomadIndex>(machine->getParameter(2));
-                getFileSink(logger, machine->getParameter(0).getObjectValue()).setRotationLimits(size, files);
+                getFileSink(logger, machine->getParameter(0).asObject<LogSinkObject>()).setRotationLimits(size, files);
             });
         },
         {
