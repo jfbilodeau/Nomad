@@ -19,14 +19,14 @@ void registerKeyValueType(Runtime* runtime) {
             const auto* valueType = arguments[1];
             return std::make_unique<KeyValueType>(
                 owningRuntime, id, "KeyValue<" + keyType->getTypeName() + " " + valueType->getTypeName() + ">",
-                ObjectTypeMode::Closed, keyType, valueType
+                ClassMode::Closed, keyType, valueType
             );
         },
         [](Runtime* runtime, const TypeId id) {
             const auto* type = runtime->getType(id).value();
-            const auto* objectType = static_cast<const KeyValueType*>(type);
-            const auto* keyType = objectType->getTypeArguments()[0];
-            const auto* valueType = objectType->getTypeArguments()[1];
+            const auto* classType = static_cast<const KeyValueType*>(type);
+            const auto* keyType = classType->getTypeArguments()[0];
+            const auto* valueType = classType->getTypeArguments()[1];
             const auto constructorId = runtime->addConstructor(id, {
                 .parameters = {
                     {keyType->getId(), "key", NomadDoc("The key to store.")},

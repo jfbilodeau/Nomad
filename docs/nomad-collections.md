@@ -168,7 +168,7 @@ Removal and clearing release the list's references to stored objects; other
 references remain valid. The list can be reused after clearing. `append`
 replaces the former `push` name; `push` and `pop` are not available.
 
-See [Object types and members](language.md#object-types-and-members) for
+See [Class types and members](language.md#class-types-and-members) for
 construction, reference semantics, and indexer syntax.
 
 ## Maps

@@ -47,7 +47,7 @@ NomadString callableLabel(const Runtime& runtime, const Callable& callable) {
     if (callable.getType() == CallableType::Constructor) {
         label = "new " + label;
     } else if (callable.getType() == CallableType::Method) {
-        label = callable.getObjectType()->getTypeName() + "." + label;
+        label = callable.getClassType()->getTypeName() + "." + label;
     }
     for (const auto* parameter : visibleParameters(runtime, callable)) {
         label += " " + parameter->name + ":" + typeName(parameter->type);
@@ -82,7 +82,7 @@ std::vector<const Callable*> findCallables(
         } else {
             type = parser::parseType(&context, &tokens);
         }
-        const auto* object = type ? type->asObjectType() : nullptr;
+        const auto* object = type ? type->asClassType() : nullptr;
         if (object == nullptr) return {};
         for (const auto* constructor : object->getConstructors()) callables.push_back(constructor);
     } else {
@@ -96,8 +96,8 @@ std::vector<const Callable*> findCallables(
             const auto member = name.substr(separator + 1);
             for (auto index = NomadIndex{0}; index < runtime.getFunctionTableSize(); ++index) {
                 const auto* method = runtime.getMethod(CallableId{toNomadId(index)});
-                if (method == nullptr || method->getObjectType() != receiver || method->getName() != member) continue;
-                const auto* object = receiver->asObjectType();
+                if (method == nullptr || method->getClassType() != receiver || method->getName() != member) continue;
+                const auto* object = receiver->asClassType();
                 if (object != nullptr && member == object->getInitializerName()) continue;
                 callables.push_back(method);
             }

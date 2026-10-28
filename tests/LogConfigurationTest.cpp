@@ -107,7 +107,7 @@ struct LogConfigurationFixture {
 };
 
 const RuntimeValue& field(const ScriptObject& object, const NomadString& name) {
-    const auto* type = object.getObjectType();
+    const auto* type = object.getClassType();
     return object.getField(type->getFieldIndex(type->getProperty(name)->getId()));
 }
 

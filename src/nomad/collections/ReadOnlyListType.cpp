@@ -9,10 +9,10 @@ ReadOnlyListType::ReadOnlyListType(
     Runtime* runtime,
     TypeId id,
     NomadString name,
-    const ObjectTypeMode mode,
+    const ClassMode mode,
     const Type* elementType
 ):
-    ObjectType(runtime, id, std::move(name), mode, {elementType})
+    ClassType(runtime, id, std::move(name), mode, {elementType})
 {
     if (elementType == nullptr || elementType->isVoid() || elementType->isInternal()) {
         throw NomadException("List element type must be a public, non-void type");

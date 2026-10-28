@@ -14,7 +14,7 @@ public:
         Runtime* runtime,
         TypeId id,
         NomadString name,
-        ObjectTypeMode mode,
+        ClassMode mode,
         const Type* elementType
     );
 

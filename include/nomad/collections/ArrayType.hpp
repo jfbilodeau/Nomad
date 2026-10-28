@@ -8,7 +8,7 @@ namespace nomad {
 
 class ArrayObject;
 
-class ArrayType : public ObjectType {
+class ArrayType : public ClassType {
 public:
     ArrayType(const ArrayType&) = delete;
     ArrayType& operator=(const ArrayType&) = delete;
@@ -23,7 +23,7 @@ protected:
         Runtime* runtime,
         TypeId id,
         NomadString name,
-        ObjectTypeMode mode,
+        ClassMode mode,
         const Type* elementType,
         NomadIndex dimensionCount,
         bool readOnly = false

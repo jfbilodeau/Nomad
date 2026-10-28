@@ -6,13 +6,13 @@
 
 namespace nomad {
 
-class MapType final : public ObjectType {
+class MapType final : public ClassType {
 public:
     MapType(
         Runtime* runtime,
         TypeId id,
         NomadString name,
-        ObjectTypeMode mode,
+        ClassMode mode,
         const Type* keyType,
         const Type* valueType
     );

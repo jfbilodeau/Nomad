@@ -78,7 +78,7 @@ BOOST_AUTO_TEST_CASE(compiled_interpreter_and_host_methods_preserve_parameter_co
     const auto outcome = fixture.execute("main");
     BOOST_REQUIRE(!outcome.fault.has_value());
     BOOST_TEST(outcome.integerValue == 5);
-    const auto* type = runtime.getTypeByName("Counter")->asObjectType();
+    const auto* type = runtime.getTypeByName("Counter")->asClassType();
     const auto resolution = runtime.resolveMethod(type, "add", {runtime.getIntegerType()});
     BOOST_REQUIRE(resolution.isResolved());
     const auto before = NomadObject::getLiveObjectCount();
@@ -123,14 +123,14 @@ BOOST_AUTO_TEST_CASE(returning_a_temporary_receiver_retains_it_and_releases_fina
         auto* object = result.asObject<ScriptObject>();
         BOOST_REQUIRE(object != nullptr);
         BOOST_TEST(object->getReferenceCount() == 1u);
-        const auto* type = object->getObjectType();
+        const auto* type = object->getClassType();
         const auto slot = type->getFieldIndex(type->getProperty("label")->getId());
         BOOST_TEST(object->getField(slot).getStringObject()->getString() == "VALUE");
         result.freeObjectValue();
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     }
     {
-        const auto* type = runtime.getTypeByName("Box")->asObjectType();
+        const auto* type = runtime.getTypeByName("Box")->asClassType();
         const auto method = runtime.resolveMethod(type, "echo", {runtime.getStringType()});
         BOOST_REQUIRE(method.isResolved());
         auto machine = runtime.createVirtualMachine();
@@ -285,7 +285,7 @@ BOOST_AUTO_TEST_CASE(frame_interpretation_reads_and_writes_constructor_and_metho
                 ++methodsSeen;
             }
             InterpreterContext context(*machine, *callable);
-            BOOST_TEST(context.getCallable()->getObjectType() == callable->getObjectType());
+            BOOST_TEST(context.getCallable()->getClassType() == callable->getClassType());
             BOOST_TEST(context.getCallable() != callable);
             BOOST_TEST(context.getFunction() == nullptr);
             const auto variablesBefore = callable->getVariableCount();

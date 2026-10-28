@@ -28,7 +28,7 @@ class FunctionType;
 class EnumType;
 class Constructor;
 class Method;
-class ObjectType;
+class ClassType;
 
 enum class TypeStorage {
     None = 1,  // for `void`
@@ -37,7 +37,7 @@ enum class TypeStorage {
     Struct,
 };
 
-enum class ObjectTypeMode {
+enum class ClassMode {
     Opened = 1,
     Closed,
 };
@@ -127,7 +127,7 @@ public:
     [[nodiscard]] virtual const FunctionType* asCallback() const;
     [[nodiscard]] virtual const EventType* asEvent() const;
     [[nodiscard]] virtual const EnumType* asEnum() const;
-    [[nodiscard]] virtual const ObjectType* asObjectType() const;
+    [[nodiscard]] virtual const ClassType* asClassType() const;
 
 protected:
     // Types owning heap memory replace the defaults in their constructor.
@@ -254,21 +254,21 @@ public:
 
 struct IterableInfo {
     const Type* valueType;
-    const ObjectType* iteratorType;
+    const ClassType* iteratorType;
     CallableId factoryId;
 };
 
-class ObjectType : public Type {
+class ClassType : public Type {
 public:
-    explicit ObjectType(
+    explicit ClassType(
         Runtime* runtime,
         TypeId id,
         NomadString name,
-        ObjectTypeMode mode,
+        ClassMode mode,
         std::vector<const Type*> typeArguments = {},
         NomadString documentation = {}
     );
-    ~ObjectType() override;
+    ~ClassType() override;
     // The name of the share member initializer called
     // by each constructor.
     [[nodiscard]] const NomadString& getInitializerName() const;
@@ -276,7 +276,7 @@ public:
     [[nodiscard]] NomadString getTypeName() const override;
     [[nodiscard]] TypeStorage getStorage() const override;
     [[nodiscard]] const std::vector<const Type*>& getTypeArguments() const;
-    [[nodiscard]] const ObjectType* asObjectType() const override;
+    [[nodiscard]] const ClassType* asClassType() const override;
     [[nodiscard]] CallableId registerConstructor(
         Runtime& runtime,
         std::unique_ptr<Constructor> constructor
@@ -320,7 +320,7 @@ public:
 private:
     NomadString m_name;
     NomadString m_initializerName;
-    ObjectTypeMode m_mode;
+    ClassMode m_mode;
     std::vector<const Type*> m_typeArguments;
     std::vector<std::unique_ptr<Property>> m_properties;
     std::vector<std::unique_ptr<Constructor>> m_constructors;
@@ -329,7 +329,7 @@ private:
     std::optional<IterableInfo> m_iterableInfo;
 };
 
-class BaseStringType : public ObjectType {
+class BaseStringType : public ClassType {
 public:
     explicit BaseStringType(Runtime* runtime, TypeId id);
 

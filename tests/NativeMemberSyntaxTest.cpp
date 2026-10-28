@@ -46,25 +46,25 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
         "Box", 1,
         [&](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             ++specializations;
-            return std::make_unique<ObjectType>(owningRuntime, id, "Box<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments);
+            return std::make_unique<ClassType>(owningRuntime, id, "Box<" + arguments[0]->getTypeName() + ">", ClassMode::Closed, arguments);
         },
         [&](Runtime* owningRuntime, const TypeId id) {
             const auto* type = owningRuntime->getType(id).value();
-            const auto* objectType = static_cast<const ObjectType*>(type);
-            const auto* valueType = objectType->getTypeArguments()[0];
-            BOOST_REQUIRE(runtime.addConstructor(objectType->getId(), {
+            const auto* classType = static_cast<const ClassType*>(type);
+            const auto* valueType = classType->getTypeArguments()[0];
+            BOOST_REQUIRE(runtime.addConstructor(classType->getId(), {
                 .parameters = {{valueType->getId(), "value", ""}},
                 .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new NomadObject); },
                 .documentation = ""
             }).isValid());
-            BOOST_REQUIRE(runtime.addProperty(objectType->getId(), {
+            BOOST_REQUIRE(runtime.addProperty(classType->getId(), {
                 .valueTypeId = valueType->getId(),
                 .name = "declaredProperty",
                 .getter = [](VirtualMachine*, RuntimeValue&) {},
                 .setter = {},
                 .documentation = ""
             }).isValid());
-            BOOST_REQUIRE(runtime.addMethod(objectType->getId(), {
+            BOOST_REQUIRE(runtime.addMethod(classType->getId(), {
                 .name = "declaredMethod",
                 .parameters = {
                     {valueType->getId(), "value", ""},

@@ -19,7 +19,7 @@ public:
     [[nodiscard]] const std::vector<Parameter>& getParameters() const override { return Base::getParameters(); }
     [[nodiscard]] NomadIndex getParameterCount() const override { return Base::getParameterCount(); }
     [[nodiscard]] const Type* getReturnType() const override { return Base::getReturnType(); }
-    [[nodiscard]] const Type* getObjectType() const override { return Base::getObjectType(); }
+    [[nodiscard]] const Type* getClassType() const override { return Base::getClassType(); }
     void setReturnType(const Type* returnType) override { Base::setReturnType(returnType); }
     [[nodiscard]] ScriptCallableBase* asScriptCallable() override { return this; }
     [[nodiscard]] const ScriptCallableBase* asScriptCallable() const override { return this; }
@@ -71,7 +71,7 @@ class ScriptMethod final : public ScriptCallable<Method> {
 public:
     ScriptMethod(
         NomadString name,
-        const Type* objectType,
+        const Type* classType,
         std::vector<Parameter> parameters,
         const Type* returnType,
         NomadString path,
@@ -84,7 +84,7 @@ public:
 class ScriptConstructor final : public ScriptCallable<Constructor> {
 public:
     ScriptConstructor(
-        const Type* objectType,
+        const Type* classType,
         std::vector<Parameter> parameters,
         NomadString path,
         NomadString source

@@ -11,12 +11,12 @@
 namespace nomad {
 
 Property::Property(
-    const ObjectType* objectType,
+    const ClassType* classType,
     NomadString name,
     const Type* valueType,
     NomadString doc
 ):
-    m_objectType(objectType),
+    m_classType(classType),
     m_name(std::move(name)),
     m_valueType(valueType),
     m_doc(std::move(doc))
@@ -28,8 +28,8 @@ PropertyId Property::getId() const {
     return m_id;
 }
 
-const ObjectType* Property::getObjectType() const {
-    return m_objectType;
+const ClassType* Property::getClassType() const {
+    return m_classType;
 }
 
 const NomadString& Property::getName() const {

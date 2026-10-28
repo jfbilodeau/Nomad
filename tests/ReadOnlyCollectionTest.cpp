@@ -68,9 +68,9 @@ BOOST_AUTO_TEST_CASE(collection_iterable_factories_belong_to_their_specialized_t
         BOOST_TEST_CONTEXT(name) {
             const auto* type = runtime.getParameterizedType(name, {integerType});
             BOOST_REQUIRE(type != nullptr);
-            const auto* objectType = type->asObjectType();
-            BOOST_REQUIRE(objectType != nullptr);
-            const auto owned = objectType->getIterableInfo();
+            const auto* classType = type->asClassType();
+            BOOST_REQUIRE(classType != nullptr);
+            const auto owned = classType->getIterableInfo();
             const auto forwarded = runtime.getIterableInfo(type);
             BOOST_REQUIRE(owned.has_value());
             BOOST_REQUIRE(forwarded.has_value());
@@ -79,7 +79,7 @@ BOOST_AUTO_TEST_CASE(collection_iterable_factories_belong_to_their_specialized_t
             BOOST_TEST(forwarded->factoryId == owned->factoryId);
             const auto* factory = runtime.getMethod(owned->factoryId);
             BOOST_REQUIRE(factory != nullptr);
-            BOOST_TEST(factory->getObjectType() == objectType);
+            BOOST_TEST(factory->getClassType() == classType);
             BOOST_TEST(factory->getName() == "iterator");
         }
     }

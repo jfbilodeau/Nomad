@@ -35,7 +35,7 @@ class NativeMethod : public Method {
 public:
     NativeMethod(
         NomadString name,
-        const Type* objectType,
+        const Type* classType,
         NativeFunctionFn fn,
         std::vector<Parameter> parameters,
         const Type* returnType,
@@ -53,7 +53,7 @@ class NativeConstructor : public Constructor {
 public:
     NativeConstructor(
         NomadString name,
-        const Type* objectType,
+        const Type* classType,
         const Type* createdType,
         NativeFunctionFn fn,
         std::vector<Parameter> parameters,

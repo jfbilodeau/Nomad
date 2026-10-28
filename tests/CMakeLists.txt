@@ -4,6 +4,7 @@ add_executable(
     ./AudioDiscoveryTest.cpp
     ./AudioTest.cpp
     ./CallableCatalogTest.cpp
+    ./ClassTypeTest.cpp
     ./ColorTest.cpp
     ./CompilerContextTest.cpp
     ./CompilerHooksTest.cpp
@@ -69,7 +70,6 @@ add_executable(
     ./RuntimeTest.cpp
     ./ScriptMethodTest.cpp
     ./ScriptObjectTest.cpp
-    ./ScriptObjectTypeTest.cpp
     ./SourceLoaderTest.cpp
     ./SpriteCatalogTest.cpp
     ./SpriteDiscoveryTest.cpp

@@ -34,7 +34,7 @@ void loadLogModule(boost::dll::shared_library& library, Runtime& runtime, Logger
     library.get<RegisterModuleFn>("registerModule")(&context, &callbacks);
     const auto* type = runtime.getTypeByName("log.Sink");
     BOOST_REQUIRE(type != nullptr);
-    BOOST_REQUIRE(type->asObjectType() != nullptr);
+    BOOST_REQUIRE(type->asClassType() != nullptr);
 }
 
 struct LogSinkObjectFixture {
@@ -138,7 +138,7 @@ BOOST_AUTO_TEST_CASE(registers_closed_sink_type_with_only_boolean_active_propert
     loadLogModule(library, runtime, logger);
     const auto hubId = runtime.getHubId("log");
     BOOST_REQUIRE(hubId.isValid());
-    const auto* type = runtime.getTypeByName("log.Sink")->asObjectType();
+    const auto* type = runtime.getTypeByName("log.Sink")->asClassType();
     BOOST_REQUIRE(type != nullptr);
     BOOST_TEST(type->getTypeName() == "log.Sink");
     BOOST_TEST(!type->isOpen());
@@ -162,7 +162,7 @@ BOOST_AUTO_TEST_CASE(native_active_property_reads_current_state_and_controls_del
     boost::dll::shared_library library;
     Runtime runtime;
     loadLogModule(library, runtime, logger);
-    const auto* type = runtime.getTypeByName("log.Sink")->asObjectType();
+    const auto* type = runtime.getTypeByName("log.Sink")->asClassType();
     const auto activeId = type->getProperty("active")->getId();
     auto machine = runtime.createVirtualMachine();
     auto object = std::make_unique<LogSinkObject>(logger, sinkId);
@@ -193,7 +193,7 @@ BOOST_AUTO_TEST_CASE(native_active_property_rejects_removed_sink_without_touchin
     boost::dll::shared_library library;
     Runtime runtime;
     loadLogModule(library, runtime, logger);
-    const auto* type = runtime.getTypeByName("log.Sink")->asObjectType();
+    const auto* type = runtime.getTypeByName("log.Sink")->asClassType();
     const auto activeId = type->getProperty("active")->getId();
     auto machine = runtime.createVirtualMachine();
     auto object = std::make_unique<LogSinkObject>(logger, sinkId);
@@ -214,7 +214,7 @@ BOOST_AUTO_TEST_CASE(native_active_property_rejects_cleared_sink) {
     boost::dll::shared_library library;
     Runtime runtime;
     loadLogModule(library, runtime, logger);
-    const auto* type = runtime.getTypeByName("log.Sink")->asObjectType();
+    const auto* type = runtime.getTypeByName("log.Sink")->asClassType();
     const auto activeId = type->getProperty("active")->getId();
     auto machine = runtime.createVirtualMachine();
     auto object = std::make_unique<LogSinkObject>(logger, sinkId);

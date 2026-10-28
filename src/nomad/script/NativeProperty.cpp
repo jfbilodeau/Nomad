@@ -9,14 +9,14 @@
 namespace nomad {
 
 NativeProperty::NativeProperty(
-    const ObjectType* objectType,
+    const ClassType* classType,
     NomadString name,
     const Type* valueType,
     NativePropertyGetFn getFn,
     NativePropertySetFn setFn,
     NomadString doc
 ):
-    Property(objectType, std::move(name), valueType, std::move(doc)),
+    Property(classType, std::move(name), valueType, std::move(doc)),
     m_getFn(std::move(getFn)),
     m_setFn(std::move(setFn))
 {}
@@ -26,7 +26,7 @@ const NativeProperty* NativeProperty::asNativeProperty() const {
 }
 
 NativePropertyInfo NativeProperty::getInfo() const {
-    return {getId(), getObjectType(), getName(), getValueType(), m_getFn, m_setFn, getDoc()};
+    return {getId(), getClassType(), getName(), getValueType(), m_getFn, m_setFn, getDoc()};
 }
 
 } // namespace nomad

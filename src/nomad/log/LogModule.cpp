@@ -17,7 +17,7 @@ namespace nomad {
 namespace {
 
 void registerLogSinkType(Runtime& runtime, const ModuleMode mode) {
-    const auto typeId = runtime.createObjectType("log.Sink", ObjectTypeMode::Closed,
+    const auto typeId = runtime.registerClass("log.Sink", ClassMode::Closed,
         NomadDoc("A reference to a logger-owned sink. Releasing it does not remove the sink."));
     if (typeId.isInvalid()) {
         throw NomadException("Failed to register log.Sink");

@@ -1266,15 +1266,15 @@ void Game::initRuntime() {
 void Game::initObjects() {
     log::info("Initializing objects");
 
-    if (m_runtime->createObjectType(
-        "Audio", ObjectTypeMode::Closed,
+    if (m_runtime->registerClass(
+        "Audio", ClassMode::Closed,
         NomadDoc("A sound effect that can be played, paused, resumed, stopped, looped, and adjusted independently.")
     ).isInvalid()) {
         raiseError("Failed to create Audio type");
     }
 
-    if (m_runtime->createObjectType(
-        "Font", ObjectTypeMode::Closed,
+    if (m_runtime->registerClass(
+        "Font", ClassMode::Closed,
         NomadDoc("A font at a specific point size for displaying text.")
     ).isInvalid()) {
         raiseError("Failed to create Font type");

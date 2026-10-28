@@ -90,11 +90,11 @@ BOOST_AUTO_TEST_CASE(module_registers_sink_type_and_active_property) {
         const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
         const auto* type = host->getRuntime()->getTypeByName("log.Sink");
         BOOST_REQUIRE(type != nullptr);
-        const auto* objectType = type->asObjectType();
-        BOOST_REQUIRE(objectType != nullptr);
-        BOOST_TEST(objectType->getConstructors().empty());
-        BOOST_TEST(objectType->getPropertyCount() == 1U);
-        const auto* active = objectType->getProperty("active");
+        const auto* classType = type->asClassType();
+        BOOST_REQUIRE(classType != nullptr);
+        BOOST_TEST(classType->getConstructors().empty());
+        BOOST_TEST(classType->getPropertyCount() == 1U);
+        const auto* active = classType->getProperty("active");
         BOOST_REQUIRE(active != nullptr);
         BOOST_TEST(active->getValueType() == host->getRuntime()->getBooleanType());
     }

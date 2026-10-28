@@ -10,7 +10,7 @@ ReadOnlyArrayType::ReadOnlyArrayType(
     Runtime* runtime,
     TypeId id,
     NomadString name,
-    const ObjectTypeMode mode,
+    const ClassMode mode,
     const Type* elementType,
     const NomadIndex dimensionCount
 ):

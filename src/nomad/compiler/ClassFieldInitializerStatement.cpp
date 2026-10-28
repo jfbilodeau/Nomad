@@ -16,7 +16,7 @@ ClassFieldInitializerStatement::ClassFieldInitializerStatement(ClassMemberDeclar
 
 void ClassFieldInitializerStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     auto* initializer = m_member->getInitializer();
-    const auto* receiverType = function->getObjectType();
+    const auto* receiverType = function->getClassType();
     initializer->compile(compiler, function, ExpressionTarget::Result);
     compiler->addLoadReceiver(function, ExpressionTarget::Intermediate);
     compiler->addOpCode(op_native_property_set);

@@ -21,10 +21,10 @@ public:
     NomadInteger value = 4;
 };
 
-const ObjectType* registerTestObject(Runtime& runtime) {
-    const auto descriptorId = runtime.createObjectType<ObjectType>("TestObject", ObjectTypeMode::Closed);
+const ClassType* registerTestObject(Runtime& runtime) {
+    const auto descriptorId = runtime.registerClass<ClassType>("TestObject", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
-    const auto* type = runtime.getType(descriptorId).value()->asObjectType();
+    const auto* type = runtime.getType(descriptorId).value()->asClassType();
     BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
         .parameters = {},
         .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new TestObject); },
@@ -199,9 +199,9 @@ BOOST_AUTO_TEST_CASE(typed_receiver_requires_an_active_method) {
 
 BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) {
     Runtime runtime;
-    const auto descriptorId = runtime.createObjectType<ObjectType>("TestObject", ObjectTypeMode::Closed);
+    const auto descriptorId = runtime.registerClass<ClassType>("TestObject", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
-    const auto* type = runtime.getType(descriptorId).value()->asObjectType();
+    const auto* type = runtime.getType(descriptorId).value()->asClassType();
     auto* instance = new TestObject;
     const auto memberId = runtime.addMethod(type->getId(), {
         .name = "checkInstance",
@@ -227,9 +227,9 @@ BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) 
 
 BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_catalog) {
     Runtime runtime;
-    const auto descriptorId = runtime.createObjectType<ObjectType>("CatalogObject", ObjectTypeMode::Closed);
+    const auto descriptorId = runtime.registerClass<ClassType>("CatalogObject", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
-    const auto* type = runtime.getType(descriptorId).value()->asObjectType();
+    const auto* type = runtime.getType(descriptorId).value()->asClassType();
     const auto first = runtime.registerNativeFunction(
         "catalog.first", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     );
@@ -250,20 +250,20 @@ BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_ca
     BOOST_TEST(std::get<CallableId>(runtime.getNativeMemberId(type, "catalogMethod")) == method);
     const auto* methodCallable = runtime.getNativeMemberMethod(method);
     BOOST_REQUIRE(methodCallable != nullptr);
-    BOOST_TEST(methodCallable->getObjectType() == type);
+    BOOST_TEST(methodCallable->getClassType() == type);
     const auto functions = runtime.getNativeFunctions();
     NomadIndex enumerated = 0;
     for (auto id = runtime.getFirstNativeFunctionId(); id.isValid();
          id = runtime.getNextNativeFunctionId(id)) {
         const auto* function = runtime.getNativeFunction(id);
         BOOST_REQUIRE(function != nullptr);
-        BOOST_TEST(function->getObjectType() == nullptr);
+        BOOST_TEST(function->getClassType() == nullptr);
         BOOST_TEST(function->getName() != "catalogMethod");
         ++enumerated;
     }
     BOOST_TEST(enumerated == functions.size());
     for (const auto* function : functions) {
-        BOOST_TEST(function->getObjectType() == nullptr);
+        BOOST_TEST(function->getClassType() == nullptr);
         BOOST_TEST(function->getName() != "catalogMethod");
     }
     BOOST_TEST(runtime.addMethod(TypeId::INVALID, {

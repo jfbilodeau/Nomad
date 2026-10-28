@@ -16,7 +16,7 @@ Nomad is case‑sensitive.
 - [Hubs](#hubs)
 - [Class declarations](#class-declarations)
 - [Data types and numeric ranges](#data-types-and-numeric-ranges)
-- [Object types and members](#object-types-and-members)
+- [Class types and members](#class-types-and-members)
 - [Variables and variable kinds](#variables-and-variable-kinds)
 - [Constants and predefined values](#constants-and-predefined-values)
 - [Enumerations (`enum`)](#enums)
@@ -225,7 +225,7 @@ hubs.
 
 ## Class declarations
 
-Empty script class declarations introduce object types. Classes are closed by
+Empty script class declarations introduce class types. Classes are closed by
 default; `open class` marks a type as open for compile-time extension:
 
 ```nomad
@@ -359,7 +359,7 @@ warning at its introducing assignment. Reads through another instance, an
 alias, `this`, a callback, or a format placeholder count as uses. These checks
 do not prove that an assignment executes before a read.
 
-The same extension rules apply to native object types marked open by the host.
+The same extension rules apply to native class types marked open by the host.
 Native properties retain their getter/setter contracts and do not need a script
 assignment before a read. Host-declared fields are not subject to the
 external-introduction warning.
@@ -421,7 +421,7 @@ Numeric literal notes:
 
 ---
 
-## Object types and members
+## Class types and members
 
 ### Object construction
 
@@ -463,7 +463,7 @@ upperName = name.toUpper
 containsName = name.contains "mad"
 ```
 
-Properties do not take arguments. Methods use Nomad's normal no-parentheses calling convention. Members can be chained when the preceding property or method returns an object type:
+Properties do not take arguments. Methods use Nomad's normal no-parentheses calling convention. Members can be chained when the preceding property or method returns a class type:
 
 ```nomad
 upperLength = name.toUpper.length
@@ -484,7 +484,7 @@ Script classes support construction with `new`, but cannot yet execute ordinary
 methods. Their stored properties are readable and writable in compiled code and
 the interpreter. See [Class declarations](#class-declarations).
 
-The available members for each object type are listed in the [engine API](engine-api.md#object-members).
+The available members for each class type are listed in the [engine API](engine-api.md#object-members).
 
 ### Indexers
 

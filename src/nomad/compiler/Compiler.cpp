@@ -185,7 +185,7 @@ bool Compiler::foldBinary(
 
 IdentifierType Compiler::getIdentifierType(const NomadString& name, const ScriptCallableBase* function) const {
     if (getReceiverType(function) != nullptr) {
-        if (name == "this") return function->getObjectType() != nullptr ? IdentifierType::Receiver :
+        if (name == "this") return function->getClassType() != nullptr ? IdentifierType::Receiver :
             (function->getParameterId(name) != NOMAD_INVALID_ID ? IdentifierType::Parameter : IdentifierType::Unknown);
         if (name.starts_with("this.")) return IdentifierType::Unknown;
     }
@@ -236,7 +236,7 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
 void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptCallableBase* function, IdentifierDefinition& definition) const {
     if (const auto* receiverType = getReceiverType(function)) {
         if (name == "this") {
-            definition.identifierType = function->getObjectType() != nullptr ? IdentifierType::Receiver :
+            definition.identifierType = function->getClassType() != nullptr ? IdentifierType::Receiver :
                 (function->getParameterId(name) != NOMAD_INVALID_ID ? IdentifierType::Parameter : IdentifierType::Unknown);
             if (definition.identifierType == IdentifierType::Parameter) {
                 definition.parameterId = function->getParameterId(name);
@@ -368,7 +368,7 @@ const Property* Compiler::resolveClassField(
     const NomadIndex column
 ) {
     const auto* receiver = getReceiverType(function);
-    const auto* owner = receiver != nullptr ? receiver->asObjectType() : nullptr;
+    const auto* owner = receiver != nullptr ? receiver->asClassType() : nullptr;
     if (owner == nullptr) {
         reportInternalError("Class field resolution requires an object receiver");
     }
@@ -392,7 +392,7 @@ const Property* Compiler::resolveClassField(
 const Property* Compiler::resolveObjectField(
     CompilerContext* context,
     ScriptCallableBase* function,
-    const ObjectType* owner,
+    const ClassType* owner,
     const NomadString& name,
     const Type* valueType,
     const bool allowDeclaration,
@@ -453,7 +453,7 @@ void Compiler::reportFieldDiagnostics(CompilerContext* context) const {
         }
         const auto* property = m_runtime->getProperty(field.id);
         context->reportWarning(
-            "Externally introduced field '" + property->getObjectType()->getTypeName() + "." +
+            "Externally introduced field '" + property->getClassType()->getTypeName() + "." +
                 property->getName() + "' is assigned but never read",
             field.sourceName, field.line, field.column
         );
@@ -1126,8 +1126,8 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
 
     for (const auto& source: m_functions) {
         types.push_back(source.function->getReturnType());
-        if (const auto* receiver = source.function->getObjectType()) {
-            for (const auto* property : receiver->asObjectType()->getProperties()) {
+        if (const auto* receiver = source.function->getClassType()) {
+            for (const auto* property : receiver->asClassType()->getProperties()) {
                 types.push_back(property->getValueType());
             }
         }
@@ -1169,7 +1169,7 @@ void Compiler::compileFunction(const FunctionCompilation& source) {
 
 void Compiler::compileObjectInitializer(const FunctionCompilation& source) {
     auto* function = source.function;
-    const auto* owner = function->getObjectType()->asObjectType();
+    const auto* owner = function->getClassType()->asClassType();
     function->setFunctionStart(m_instructions.size());
     addFunctionEntry(function);
     source.ast->compile(this, function);
@@ -1193,7 +1193,7 @@ void Compiler::compileConstructor(const FunctionCompilation& source) {
     auto* constructor = source.function;
     constructor->setFunctionStart(m_instructions.size());
     addFunctionEntry(constructor);
-    const auto* type = constructor->getObjectType()->asObjectType();
+    const auto* type = constructor->getClassType()->asClassType();
     const auto methods = type->getMethods();
     const auto initializer = std::ranges::find_if(methods, [&](const auto* method) {
         return method->getName() == type->getInitializerName();
@@ -1236,12 +1236,12 @@ void Compiler::addStoreParameter(const NomadId parameterId, const Type* type) {
 }
 
 void Compiler::addLoadReceiver(ScriptCallableBase* function, const ExpressionTarget target) {
-    if (function->getObjectType() != nullptr) {
+    if (function->getClassType() != nullptr) {
         if (target == ExpressionTarget::Intermediate) {
             addOpCode(OpCodes::op_copy_this_to_i);
         } else {
             addOpCode(OpCodes::op_copy_this_to_r);
-            addMoveResult(function->getObjectType(), target);
+            addMoveResult(function->getClassType(), target);
         }
     } else {
         const auto parameterId = function->getParameterId("this");
@@ -1351,7 +1351,7 @@ void Compiler::registerMemberCompilation(
     const CompilationCallableTarget kind
 ) {
     auto* member = m_runtime->getScriptCallable(memberId);
-    if (member == nullptr || member->getObjectType() == nullptr) {
+    if (member == nullptr || member->getClassType() == nullptr) {
         reportInternalError("Invalid script member compilation");
     }
     const auto scriptId = getScriptId(sourceFunctionId);
@@ -1360,7 +1360,7 @@ void Compiler::registerMemberCompilation(
 
 const Type* Compiler::getReceiverType(const ScriptCallableBase* function) const {
     while (function != nullptr) {
-        if (function->getObjectType() != nullptr) return function->getObjectType();
+        if (function->getClassType() != nullptr) return function->getClassType();
         function = m_runtime->getScriptCallable(function->getParentId());
     }
     return nullptr;

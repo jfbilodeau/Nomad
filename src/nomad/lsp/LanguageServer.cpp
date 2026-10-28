@@ -86,7 +86,7 @@ NomadPath documentPath(const NomadString& uri);
 NomadString symbolValueType(const std::vector<ApiSymbol>& symbols, const NomadString& name);
 
 ApiSymbol createMethodSymbol(const Method& method) {
-    const auto receiver = method.getObjectType()->getTypeName();
+    const auto receiver = method.getClassType()->getTypeName();
     auto signature = receiver + "." + method.getName();
     auto documentation = method.getDoc();
     if (const auto* script = method.asScriptCallable()) {
@@ -196,7 +196,7 @@ ApiAnalysis analyzeApiSymbols(
             symbols.push_back({type->getTypeName(), CompletionItemKind::Class,
                 type->getTypeName(), type->getDocumentation()});
         }
-        const auto* object = type->asObjectType();
+        const auto* object = type->asClassType();
         if (object == nullptr || type->isInternal()) continue;
         for (const auto* property : object->getProperties()) {
             if (property->asNativeProperty() != nullptr) continue;
@@ -262,7 +262,7 @@ ApiAnalysis analyzeApiSymbols(
             if (!info) {
                 throw std::runtime_error("Registered native property is unavailable");
             }
-            const auto receiver = info->objectType->getTypeName();
+            const auto receiver = info->classType->getTypeName();
             const auto value = info->valueType->getTypeName();
             symbols.push_back({info->name, CompletionItemKind::Property,
                 receiver + "." + info->name + ":" + value, info->doc, value, receiver});
@@ -311,8 +311,8 @@ ApiAnalysis analyzeApiSymbols(
         for (auto index = NomadIndex{0}; index < function->getParameterCount(); ++index) {
             addLocal(function->getParameterName(toNomadId(index)), function->getParameterType(toNomadId(index)));
         }
-        if (function->getObjectType() != nullptr) {
-            addLocal("this", function->getObjectType());
+        if (function->getClassType() != nullptr) {
+            addLocal("this", function->getClassType());
         }
     }
     std::set<NomadString> namespaces;

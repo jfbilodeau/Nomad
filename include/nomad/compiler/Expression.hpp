@@ -14,7 +14,7 @@
 
 namespace nomad {
 
-class ObjectType;
+class ClassType;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Unary expressions
@@ -239,7 +239,7 @@ public:
         NomadIndex line,
         NomadIndex column,
         NomadString constructorName,
-        const Type* objectType,
+        const Type* classType,
         ArgumentList arguments
     );
     [[nodiscard]] bool isTerminal() const override;
@@ -252,7 +252,7 @@ protected:
 private:
     NomadString m_constructorName;
     // Null when the family is parsed without explicit type arguments.
-    const Type* m_objectType;
+    const Type* m_classType;
     ArgumentList m_arguments;
     const Constructor* m_constructor = nullptr;
 };

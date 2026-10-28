@@ -115,7 +115,7 @@ public:
     [[nodiscard]] const Property* resolveObjectField(
         CompilerContext* context,
         ScriptCallableBase* function,
-        const ObjectType* owner,
+        const ClassType* owner,
         const NomadString& name,
         const Type* valueType,
         bool allowDeclaration,

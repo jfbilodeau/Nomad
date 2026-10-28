@@ -10,7 +10,7 @@
 namespace nomad {
 
 ScriptConstructor::ScriptConstructor(
-    const Type* objectType,
+    const Type* classType,
     std::vector<Parameter> parameters,
     NomadString path,
     NomadString source
@@ -19,10 +19,10 @@ ScriptConstructor::ScriptConstructor(
         CallableId{}, 
         std::move(path), 
         std::move(source), 
-        objectType->getTypeName(), 
-        objectType,
+        classType->getTypeName(),
+        classType,
         std::move(parameters), 
-        objectType->getRuntime()->getVoidType(), 
+        classType->getRuntime()->getVoidType(),
         NomadString{}
     )
 {
@@ -33,7 +33,7 @@ const ScriptConstructor* ScriptConstructor::asScriptConstructor() const {
 }
 
 const Type* ScriptConstructor::getConstructedType() const {
-    return getObjectType();
+    return getClassType();
 }
 
 } // namespace nomad

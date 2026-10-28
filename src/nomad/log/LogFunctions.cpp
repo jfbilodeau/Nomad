@@ -86,7 +86,7 @@ void registerFunction(
 }
 
 const RuntimeValue& getField(const ScriptObject& object, const NomadString& name) {
-    const auto* type = object.getObjectType();
+    const auto* type = object.getClassType();
     const auto* property = type->getProperty(name);
     if (property == nullptr) {
         throw NomadBug("Missing log configuration field: " + name);
@@ -95,7 +95,7 @@ const RuntimeValue& getField(const ScriptObject& object, const NomadString& name
 }
 
 void setField(ScriptObject& object, const NomadString& name, const RuntimeValue& value) {
-    const auto* type = object.getObjectType();
+    const auto* type = object.getClassType();
     const auto* property = type->getProperty(name);
     if (property == nullptr) {
         throw NomadBug("Missing log configuration field: " + name);
@@ -114,19 +114,19 @@ void setStringField(ScriptObject& object, const NomadString& name, const NomadSt
     value.freeObjectValue();
 }
 
-const ObjectType* registerConfiguration(
+const ClassType* registerConfiguration(
     Runtime* runtime,
     const Type* levelType,
     const Type* rotationType,
     const bool file
 ) {
     const NomadString name = file ? "log.FileSinkConfiguration" : "log.SinkConfiguration";
-    const auto id = runtime->createObjectType(name, ObjectTypeMode::Closed,
+    const auto id = runtime->registerClass(name, ClassMode::Closed,
         NomadDoc("Mutable creation settings; factories copy these values into a logger-owned sink."));
     if (id.isInvalid()) {
         throw NomadException("Failed to register " + name);
     }
-    const auto* type = runtime->getType(id).value()->asObjectType();
+    const auto* type = runtime->getType(id).value()->asClassType();
     const auto addField = [runtime, id](const NomadString& field, const Type* valueType) {
         const auto propertyId = runtime->registerProperty(id, field, valueType);
         if (propertyId.isInvalid()) {

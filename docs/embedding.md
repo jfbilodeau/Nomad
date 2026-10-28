@@ -53,11 +53,11 @@ destroying it does not remove or deactivate that sink.
 The logger must outlive the wrapper. Coordinate lookup and use with concurrent
 sink removal, just as for `Logger::getSink()`.
 
-`nomad-log` registers the wrapper as the closed object type `log.Sink` with a
+`nomad-log` registers the wrapper as the closed class type `log.Sink` with a
 read/write boolean `active` property. Native property access resolves the sink
 ID on every read and write; removed sinks throw rather than accessing stale
 storage. There is no script constructor; both script sink factories return
-this object type. Sink functions reject objects belonging to a different logger.
+this class type. Sink functions reject objects belonging to a different logger.
 Type registration is internal to the logging module; C++ hosts obtain the
 registered descriptor from the module's runtime.
 
@@ -265,14 +265,14 @@ Streaming an ID prints its type and numeric value, for example `CallableId{42}`
 or `CallableId{-1}`.
 
 
-### Object type creation
+### Class registration
 
-`Runtime::createObjectType(name, mode, documentation = {})` creates an object
+`Runtime::registerClass(name, mode, documentation = {})` registers a class
 type and returns its `TypeId`. The mode is required:
-`ObjectTypeMode::Opened` permits external script member declarations, while
-`ObjectTypeMode::Closed` prevents them. Neither mode makes existing properties
+`ClassMode::Opened` permits external script member declarations, while
+`ClassMode::Closed` prevents them. Neither mode makes existing properties
 immutable or prevents the type's own declarations. Native and script objects
-use the same `ObjectType` descriptor; `isOpen()` reports its mode.
+use the same `ClassType` descriptor; `isOpen()` reports its mode.
 
 The runtime owns the descriptor and its name and documentation. Use
 `getType(id)` to retrieve a borrowed descriptor. Empty names, invalid modes,
@@ -286,13 +286,13 @@ which must outlive the descriptor. `Type::getId()` returns the immutable,
 runtime-local ID. Use it when passing an existing descriptor to an ID-based API;
 name lookup does not distinguish callback signatures.
 
-`createObjectType<Descriptor>(name, mode, arguments...)` creates specialized
-`ObjectType` subclasses. It calls
+`registerClass<Descriptor>(name, mode, arguments...)` creates specialized
+`ClassType` subclasses. It calls
 `Descriptor(Runtime*, TypeId, name, mode, arguments...)`, forwarding additional arguments.
-Invalid creation requests are rejected before calling the descriptor constructor.
+Invalid registration requests are rejected before calling the descriptor constructor.
 The constructor initializes the descriptor without registering it; the runtime
 registers the completed descriptor and returns its `TypeId`. The descriptor's
-runtime, ID, name, and mode must match the creation request.
+runtime, ID, name, and mode must match the registration request.
 
 The ID is reserved before construction and is not resolvable through `getType()`
 until the descriptor is registered. Constructors may create other types without
@@ -449,17 +449,17 @@ variable source or a numeric `NomadId` for a parameter source, followed by the
 name and type. `flagVariableAsCaptured` and `flagParameterAsCaptured` provide
 the corresponding source-specific registration APIs.
 
-### Object type property metadata
+### Class type property metadata
 
-`ObjectType` describes both native and script-defined object types. `isOpen()` reports
+`ClassType` describes both native and script-defined class types. `isOpen()` reports
 whether external script declarations may extend it. Closed types are not immutable.
-`Type::asObjectType()` returns the same descriptor as a borrowed `const ObjectType*`
-for object types and their subclasses, including strings, or `nullptr` for other types.
+`Type::asClassType()` returns the same descriptor as a borrowed `const ClassType*`
+for class types and their subclasses, including strings, or `nullptr` for other types.
 
 Register the owner type with the runtime before declaring its properties.
 `Runtime::registerProperty(ownerTypeId, name, valueType)` declares a stored/script
 property and returns a `PropertyId`, or `PropertyId::INVALID` on failure.
-The owner ID is resolved within that runtime and must identify an object type.
+The owner ID is resolved within that runtime and must identify a class type.
 The value type must also be registered with the same runtime and must be public
 and non-void. Repeating a declaration with the same name and type returns its
 existing ID. Conflicting declarations are logged and rejected without changing
@@ -470,17 +470,17 @@ types; openness controls whether scripts may add external declarations.
 `getNativeProperty(id)` returns only native properties. Invalid or unregistered
 IDs return `nullptr`. Include `<nomad/script/Property.hpp>` for `PropertyId`
 and common metadata, and `<nomad/script/NativeProperty.hpp>` for native metadata.
-Use `getId()`, `getObjectType()`, `getName()`, `getValueType()`, and `getDoc()`
+Use `getId()`, `getClassType()`, `getName()`, `getValueType()`, and `getDoc()`
 to inspect a property. `hasExplicitInitializer()` reports whether a stored field
 has a declaration initializer; assignments inside constructor bodies do not set
 this flag. `Runtime::setPropertyHasExplicitInitializer(propertyId, value)` updates
 that metadata for a stored property and rejects invalid IDs and native properties.
-`ObjectType::getProperty(name)`, `getProperty(id)`, and `getProperties()` expose
+`ClassType::getProperty(name)`, `getProperty(id)`, and `getProperties()` expose
 the owner's properties as borrowed const pointers. IDs and pointers remain
 stable as more properties are registered and are valid for the owning runtime's
 lifetime. Property IDs are runtime-wide, not per-object field offsets.
 
-`ObjectType::getFieldIndex(id)` returns the zero-based owner-local slot for a
+`ClassType::getFieldIndex(id)` returns the zero-based owner-local slot for a
 stored/script property. Slots remain stable when properties are appended.
 Native properties do not occupy slots; native, invalid, and other owners'
 property IDs return `NOMAD_INVALID_INDEX`. Slot order follows successful
@@ -494,7 +494,7 @@ source `init` body. Classes without a source `init` have a parameterless constru
 ### Script object storage
 
 `ScriptObject` (include `<nomad/script/ScriptObject.hpp>`) provides fixed
-instance storage for stored properties. Construct it with a `const ObjectType*`
+instance storage for stored properties. Construct it with a `const ClassType*`
 whose field layout has been resolved. The runtime and its type descriptors must
 outlive the object. Native properties do not occupy storage slots.
 
@@ -509,7 +509,7 @@ initialization. Field initializer expressions cannot use or capture `this`;
 bare names resolve normally outside the class fields. Object-valued initializer
 expressions run separately for each instance.
 The type stores its fully qualified initializer name, available through
-`ObjectType::getInitializerName()` (for example, `game.Point$init`).
+`ClassType::getInitializerName()` (for example, `game.Point$init`).
 
 Compile the class and complete field discovery before allocating the object.
 Initialize script-level hub variables with `initializeScripts()` first when
@@ -554,7 +554,7 @@ required script-level hub variables before using this lower-level VM API.
 Native constructors that allocate `ScriptObject` storage must explicitly supply
 any required field values. Direct allocation does not run a defaults-only pass.
 
-`getObjectType()` and `getFieldCount()` describe the instance. `getField(index)`
+`getClassType()` and `getFieldCount()` describe the instance. `getField(index)`
 returns a borrowed const value; `setField(index, value)` copies a value of the
 field's declared type, retaining object references and releasing the previous
 value. Callers must supply the correct value type. Both use owner-local
@@ -584,7 +584,7 @@ native-only.
 
 `Runtime::addProperty(TypeId id, NativePropertyDefinition definition)` registers
 a native property and returns its `PropertyId`. The owner ID must identify an
-object type. Both it and `definition.valueTypeId` are resolved in that runtime;
+class type. Both it and `definition.valueTypeId` are resolved in that runtime;
 IDs are runtime-local, not portable between runtimes. The value type must be
 public and non-void. Host registration is permitted on both open and closed types.
 
@@ -593,7 +593,7 @@ setter-only property is write-only. The runtime owns the registered name,
 documentation, and callbacks. Captured references must remain valid whenever
 the callbacks are invoked.
 
-For an already registered object type identified by `typeId`:
+For an already registered class type identified by `typeId`:
 
 ```cpp
 const auto propertyId = runtime.addProperty(typeId, {
@@ -610,7 +610,7 @@ if (propertyId.isInvalid()) {
 }
 ```
 
-Invalid IDs, non-object owners, invalid value types or names, missing callbacks,
+Invalid IDs, non-class owners, invalid value types or names, missing callbacks,
 and conflicting members are logged and return `PropertyId::INVALID` without
 registering a property. Duplicate native properties are rejected even if their
 definitions match. Use the existing property and native member lookup APIs to
@@ -683,8 +683,8 @@ The overload taking a script-callable pointer dumps just that callable.
 Methods are qualified by their declaring type, and constructor and method call
 targets are identified by name and callable ID.
 
-Use `resolveFunction(name, argumentTypes)`, `resolveMethod(objectType, name,
-argumentTypes)`, or `resolveConstructor(objectType, argumentTypes)` to select an
+Use `resolveFunction(name, argumentTypes)`, `resolveMethod(classType, name,
+argumentTypes)`, or `resolveConstructor(classType, argumentTypes)` to select an
 overload. Inspect the `ResolveResult` before retrieving the selected callable.
 The selected ID or pointer can be retained without repeating name resolution.
 Function overloads are selected by parameter count and types, independently of
@@ -738,7 +738,7 @@ source/bytecode lookups continue to exclude methods and constructors.
 script function, method, or constructor, and `nullptr` for native or invalid IDs.
 Const runtimes return a const interface. `Callable::asScriptCallable()` provides
 the same view from a descriptor. Method and constructor descriptors remain owned
-by their declaring object type; they are not returned by `getFunction(id)` or
+by their declaring class type; they are not returned by `getFunction(id)` or
 `getScriptFunction(id)`.
 
 Include `<nomad/script/Callable.hpp>` for common callable metadata,
@@ -750,7 +750,7 @@ the callable constructors.
 
 `Runtime::registerScriptMethod(typeId, name, parameters, path, source)` and
 `registerScriptConstructor(typeId, parameters, path, source)` publish script
-signatures on a runtime-owned object type. They return an invalid ID and log an
+signatures on a runtime-owned class type. They return an invalid ID and log an
 error for an invalid owner, unsupported parameter types, or duplicate signatures.
 These registration APIs associate members with their receiver type without adding
 an implicit local or a receiver to the explicit parameter list. A parameter named
@@ -1093,7 +1093,7 @@ registers a type family. The factory has the signature
 the owning runtime, reserved specialization ID, and resolved type arguments.
 It returns a fully constructed, unregistered descriptor carrying that runtime
 and ID. It must not register the
-returned descriptor itself, including through `createObjectType`.
+returned descriptor itself, including through `registerClass`.
 
 The runtime validates and registers the descriptor, then calls the optional
 initializer with `(Runtime*, TypeId)`. The ID identifies the registered
@@ -1177,9 +1177,9 @@ constructor with `addConstructor`, usually in the type-family
 initializer. Compiled scripts and the interpreter both support inferred
 construction through the existing native constructor execution paths.
 
-### Native object types and constructors
+### Native class types and constructors
 
-`ObjectType` describes an object type and its type arguments. Its default value
+`ClassType` describes a class type and its type arguments. Its default value
 is null, and its text representation is its type name. Specialized types may
 provide other default values and formatting.
 
@@ -1190,7 +1190,7 @@ through `freeValue` when they are no longer needed.
 Register a constructor through `Runtime::addConstructor(typeId, definition)`.
 `NativeConstructorDefinition` supplies parameter definitions, a `function` callback, and
 documentation. By default, the constructor creates its declaring type.
-`ObjectType::getConstructors()`
+`ClassType::getConstructors()`
 lists that type's registered constructors as borrowed `const Constructor*`
 pointers, in registration order. These pointers remain valid until the runtime
 is destroyed. A constructor returning another type is listed under its declaring
@@ -1199,7 +1199,7 @@ type, not its result type.
 Scripts invoke constructors with `new` and the type's name:
 
 ```cpp
-const auto typeId = runtime.createObjectType("Example", nomad::ObjectTypeMode::Closed);
+const auto typeId = runtime.registerClass("Example", nomad::ClassMode::Closed);
 const auto registeredType = runtime.getType(typeId);
 if (!registeredType) {
     throw nomad::NomadException("Failed to create Example type");
@@ -1225,9 +1225,9 @@ list for a parameterless constructor.
 When a class creates a different kind of object, use
 `addConstructor(typeId, createdTypeId, definition)`.
 Different overloads of one class may then create different types. The created type must be a public
-object type.
+class type.
 
-All IDs are local to the receiving runtime. Invalid or non-object owner/result IDs,
+All IDs are local to the receiving runtime. Invalid or non-class owner/result IDs,
 invalid parameter IDs, and missing callbacks are rejected before a constructor is
 published. Definitions are owned inputs; modifying one after registration does not
 change the registered constructor. `addConstructor` returns its `CallableId`.
@@ -1257,7 +1257,7 @@ Specializations are reused on subsequent requests through
 ## Native object methods
 
 Use `Runtime::addMethod(typeId, NativeMethodDefinition{...})`
-for methods on a registered object type. Read the instance inside the callback:
+for methods on a registered class type. Read the instance inside the callback:
 
 ```cpp
 [](nomad::VirtualMachine* vm) {
@@ -1267,10 +1267,10 @@ for methods on a registered object type. Read the instance inside the callback:
 ```
 
 Use `registerNativeFunction` for a global function and `addMethod` for a
-method on an object type identified by its runtime-local `TypeId`.
+method on a class type identified by its runtime-local `TypeId`.
 Global function lookup and enumeration exclude methods.
 
-`ObjectType::getMethods()` lists the type's registered methods as borrowed
+`ClassType::getMethods()` lists the type's registered methods as borrowed
 `const Method*` pointers, in registration order.
 The pointers remain valid until the runtime is destroyed, even when additional
 methods are registered. Use a method's `getId()` with Runtime's callable accessors.
@@ -1297,11 +1297,11 @@ The definition supplies `valueTypeId`, a non-empty `std::vector<TypeId>` named
 `indexTypes`, `getter`, `setter`, and `documentation`.
 The index vector specifies the number and types of indices. All IDs are local
 to the receiving runtime, and all value/index types must belong to that runtime
-and be public, non-void types. An object type may register one indexer per index
+and be public, non-void types. An class type may register one indexer per index
 count; lookup uses the receiver type and number of indices, not index-type
 overloading.
 
-Registration and `getNativeIndexerId(objectType, indexCount)` return an
+Registration and `getNativeIndexerId(classType, indexCount)` return an
 `IndexerId`, or `IndexerId::INVALID` on failure or missing lookup. Registration
 failures are logged. Include `<nomad/script/NativeMember.hpp>` for the ID and
 `NativeIndexerInfo`. IDs are runtime-local and remain stable as more
@@ -1309,7 +1309,7 @@ indexers are registered. They do not implicitly convert to integers or other
 ID categories. `getNativeIndexerInfo(id)` returns
 `std::optional<NativeIndexerInfo>`, empty for invalid or unregistered IDs.
 
-Invalid or non-object owner IDs, invalid value/index IDs, and definitions with
+Invalid or non-class owner IDs, invalid value/index IDs, and definitions with
 neither callback are rejected without publishing an indexer. Definitions are
 owned inputs; modifying one after registration does not change the registered
 indexer.
@@ -1321,18 +1321,18 @@ if (info) {
 }
 ```
 
-The object type owns each indexer's metadata. `ObjectType::getNativeIndexer(indexCount)`
+The class type owns each indexer's metadata. `ClassType::getNativeIndexer(indexCount)`
 returns a borrowed `const NativeIndexerInfo*`, or `nullptr` when absent.
-`ObjectType::getNativeIndexers()` enumerates that type's indexers, while
+`ClassType::getNativeIndexers()` enumerates that type's indexers, while
 `Runtime::getNativeIndexers()` enumerates the runtime-wide borrowed catalog in
 registration order. Both enumerate const metadata pointers; these pointers
 remain valid as more indexers are registered, until the runtime destroys their
 owning types. `getNativeIndexerInfo` returns a metadata copy.
 
-Hosts retaining a mutable registered object type may also call
-`ObjectType::registerNativeIndexer(runtime, info)`. This existing low-level
+Hosts retaining a mutable registered class type may also call
+`ClassType::registerNativeIndexer(runtime, info)`. This existing low-level
 operation accepts `NativeIndexerInfo`; supply an invalid ID and that object
-type as `info.objectType`. The same registration rules
+type as `info.classType`. The same registration rules
 apply; foreign-runtime types, preassigned IDs, and duplicate index counts are
 rejected without changing the owner or catalog.
 
@@ -1340,7 +1340,7 @@ Omit the setter for read-only indexing, or omit
 the getter for write-only indexing. Invalid access is rejected during compilation.
 
 ```cpp
-const auto indexerId = runtime.addIndexer(objectType->getId(), {
+const auto indexerId = runtime.addIndexer(classType->getId(), {
     .valueTypeId = runtime.getStringType()->getId(),
     .indexTypes = {runtime.getIntegerType()->getId()},
     .getter = [](nomad::VirtualMachine* machine) {
@@ -1434,7 +1434,7 @@ runtime.addIterable(sourceType->getId(), {
 
 `NativeInterableDefinition` supplies the element type ID and a
 `NativeMethodDefinition` for the factory. All IDs are runtime-local. The source
-must be an object type, and the element type must be registered, public, and
+must be a class type, and the element type must be registered, public, and
 non-void. The factory must have a callback, take no arguments (including
 compiler-supplied parameters), and return the matching iterator type.
 Duplicate associations, conflicting member names, and invalid registrations throw
@@ -1445,13 +1445,13 @@ after registration does not change the registered factory.
 `getIterableInfo(sourceType)` returns an optional association containing its
 factory ID.
 
-The source `ObjectType` owns its iterable association. Include
+The source `ClassType` owns its iterable association. Include
 `<nomad/script/Type.hpp>` for `IterableInfo`.
-`ObjectType::getIterableInfo()` returns an optional snapshot containing
+`ClassType::getIterableInfo()` returns an optional snapshot containing
 the element type, iterator type, and factory `CallableId`. Runtime lookup returns
 the same snapshot, or an empty optional for a non-iterable or foreign-runtime type.
-Hosts retaining a mutable registered object type may call
-`ObjectType::registerIterableType(runtime, elementType, factory)` directly;
+Hosts retaining a mutable registered class type may call
+`ClassType::registerIterableType(runtime, elementType, factory)` directly;
 the same ownership, signature, and duplicate-registration checks apply. The
 already registered factory must belong to the source type and take no arguments,
 and its return type must match the iterator type for the element type.
@@ -1538,7 +1538,7 @@ if (propertyId.isInvalid()) {
 }
 ```
 
-Members require a registered object type. Property setters mutate that instance,
+Members require a registered class type. Property setters mutate that instance,
 not the variable holding its reference.
 
 ## Object reference helpers

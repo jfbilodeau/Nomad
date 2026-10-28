@@ -34,7 +34,7 @@ NomadString getCallableSignature(const Runtime* runtime, const Callable& callabl
 struct MemberDocumentationInfo {
     MemberReference id;
     MemberType memberType;
-    const Type* objectType;
+    const Type* classType;
     NomadString name;
     NomadString signature = {};
 };
@@ -50,7 +50,7 @@ std::vector<MemberDocumentationInfo> getMemberDocumentation(const Runtime* runti
         switch (runtime->getMemberType(memberId)) {
         case MemberType::Property: {
             if (const auto info = runtime->getNativePropertyInfo(memberId)) {
-                members.emplace_back(memberId, MemberType::Property, info->objectType, info->name);
+                members.emplace_back(memberId, MemberType::Property, info->classType, info->name);
             }
             break;
         }
@@ -58,7 +58,7 @@ std::vector<MemberDocumentationInfo> getMemberDocumentation(const Runtime* runti
         case MemberType::Method: {
             const auto* method = runtime->getNativeMemberMethod(memberId);
             if (method != nullptr) {
-                members.emplace_back(memberId, MemberType::Method, method->getObjectType(), method->getName(),
+                members.emplace_back(memberId, MemberType::Method, method->getClassType(), method->getName(),
                     getCallableSignature(runtime, *method));
             }
             break;
@@ -73,7 +73,7 @@ std::vector<MemberDocumentationInfo> getMemberDocumentation(const Runtime* runti
         std::vector<const Type*> types;
         runtime->getTypes(types);
         for (const auto* type : types) {
-            const auto* object = type->asObjectType();
+            const auto* object = type->asClassType();
             if (object == nullptr || type->isInternal()) continue;
             for (const auto* property : object->getProperties()) {
                 if (property->asNativeProperty() != nullptr) continue;
@@ -88,8 +88,8 @@ std::vector<MemberDocumentationInfo> getMemberDocumentation(const Runtime* runti
     }
 
     std::ranges::sort(members, [](const auto& left, const auto& right) {
-        const auto leftType = left.objectType->getTypeName();
-        const auto rightType = right.objectType->getTypeName();
+        const auto leftType = left.classType->getTypeName();
+        const auto rightType = right.classType->getTypeName();
         if (leftType != rightType) return leftType < rightType;
         return left.name == right.name ? left.signature < right.signature : left.name < right.name;
     });
@@ -477,8 +477,8 @@ void generateTypeDocumentation(const Runtime* runtime, std::ostream& out) {
     std::vector<const ScriptCallableBase*> scriptCallables;
     runtime->getScriptCallables(scriptCallables);
     for (const auto* callable : scriptCallables) {
-        if (callable->getObjectType() != nullptr) {
-            scriptTypes.insert(callable->getObjectType());
+        if (callable->getClassType() != nullptr) {
+            scriptTypes.insert(callable->getClassType());
         }
         if (const auto* constructor = runtime->getConstructor(callable->getId())) {
             constructors.push_back(constructor);
@@ -521,14 +521,14 @@ namespace {
 void writeMemberDocumentation(const Runtime* runtime, const bool includeScript, std::ostream& out) {
     out << "## Object Members" << std::endl;
     out << std::endl;
-    out << (includeScript ? "Fields, properties, and methods are available on instances of each object type." :
-        "Properties and methods are available on instances of each object type.") << std::endl;
+    out << (includeScript ? "Fields, properties, and methods are available on instances of each class type." :
+        "Properties and methods are available on instances of each class type.") << std::endl;
 
     const Type* currentType = nullptr;
 
     for (const auto& member : getMemberDocumentation(runtime, includeScript)) {
-        if (member.objectType != currentType) {
-            currentType = member.objectType;
+        if (member.classType != currentType) {
+            currentType = member.classType;
             out << std::endl;
             out << "### `" << currentType->getTypeName() << "`" << std::endl;
             out << std::endl;
@@ -605,7 +605,7 @@ void writeMemberDocumentation(const Runtime* runtime, const bool includeScript, 
     for (const auto* info : runtime->getNativeIndexers()) {
         const auto& indexer = *info;
         out << std::endl;
-        out << "### `" << indexer.objectType->getTypeName() << "[";
+        out << "### `" << indexer.classType->getTypeName() << "[";
         for (auto index = NomadIndex{0}; index < indexer.indexTypes.size(); ++index) {
             if (index != 0) {
                 out << " ";

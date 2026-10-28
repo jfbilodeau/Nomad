@@ -4,13 +4,13 @@
 
 namespace nomad {
 
-class ReadOnlyMapType final : public ObjectType {
+class ReadOnlyMapType final : public ClassType {
 public:
     ReadOnlyMapType(
         Runtime* runtime,
         TypeId id,
         NomadString name,
-        ObjectTypeMode mode,
+        ClassMode mode,
         const Type* keyType,
         const Type* valueType
     );

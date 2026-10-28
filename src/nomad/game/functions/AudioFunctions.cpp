@@ -85,7 +85,7 @@ void executeAudioAction(VirtualMachine* virtualMachine, Fn&& action) {
 void Game::initAudioFunctions() {
     log::debug("Initializing audio functions");
 
-    const auto* audioType = static_cast<const ObjectType*>(m_runtime->getTypeByName("Audio"));
+    const auto* audioType = static_cast<const ClassType*>(m_runtime->getTypeByName("Audio"));
     if (audioType == nullptr) {
         raiseError("Audio type is not registered");
     }

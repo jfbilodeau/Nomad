@@ -10,10 +10,10 @@ ListType::ListType(
     Runtime* runtime,
     TypeId id,
     NomadString name,
-    const ObjectTypeMode mode,
+    const ClassMode mode,
     const Type* elementType
 ):
-    ObjectType(
+    ClassType(
         runtime, id, std::move(name), mode,
         {elementType}
     )

@@ -39,7 +39,7 @@ public:
     [[nodiscard]] virtual const std::vector<Parameter>& getParameters() const = 0;
     [[nodiscard]] virtual NomadIndex getParameterCount() const = 0;
     [[nodiscard]] virtual const Type* getReturnType() const = 0;
-    [[nodiscard]] virtual const Type* getObjectType() const = 0;
+    [[nodiscard]] virtual const Type* getClassType() const = 0;
     virtual void setReturnType(const Type* returnType) = 0;
 
     [[nodiscard]] const NomadString& getPath() const { return m_path; }

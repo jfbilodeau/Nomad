@@ -10,11 +10,11 @@ MapType::MapType(
     Runtime* runtime,
     TypeId id,
     NomadString name,
-    const ObjectTypeMode mode,
+    const ClassMode mode,
     const Type* keyType,
     const Type* valueType
 ):
-    ObjectType(runtime, id, std::move(name), mode, {keyType, valueType})
+    ClassType(runtime, id, std::move(name), mode, {keyType, valueType})
 {
     if (keyType == nullptr || !keyType->isString() || keyType->isInternal()) {
         throw NomadException("Map key type must be string");

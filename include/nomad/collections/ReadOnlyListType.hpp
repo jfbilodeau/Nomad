@@ -4,13 +4,13 @@
 
 namespace nomad {
 
-class ReadOnlyListType final : public ObjectType {
+class ReadOnlyListType final : public ClassType {
 public:
     ReadOnlyListType(
         Runtime* runtime,
         TypeId id,
         NomadString name,
-        ObjectTypeMode mode,
+        ClassMode mode,
         const Type* elementType
     );
 

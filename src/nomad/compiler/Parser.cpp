@@ -204,7 +204,7 @@ bool parseNativeMemberArguments(
     for (auto index = NomadIndex{0}; index < runtime->getFunctionTableSize(); ++index) {
         const auto* method = runtime->getMethod(CallableId{toNomadId(index)});
         if (method != nullptr && method->getName() == memberName &&
-            (receiverType == nullptr || method->getObjectType() == receiverType) &&
+            (receiverType == nullptr || method->getClassType() == receiverType) &&
             (shape == nullptr || method->getParameterCount() > shape->getParameterCount())) {
             shape = method;
         }
@@ -242,11 +242,11 @@ std::unique_ptr<Expression> createNativeMemberExpression(
         IdentifierDefinition definition;
         context->getCompiler()->getIdentifierDefinition(identifier->getIdentifier(), function, definition);
         receiverType = definition.valueType;
-        if (definition.valueType != nullptr && definition.valueType->asObjectType() != nullptr) {
+        if (definition.valueType != nullptr && definition.valueType->asClassType() != nullptr) {
             storedField = context->getRuntime()->getMemberType(
                 context->getRuntime()->getNativeMemberId(definition.valueType, memberName)
             ) == MemberType::Unknown && !std::ranges::any_of(
-                definition.valueType->asObjectType()->getMethods(),
+                definition.valueType->asClassType()->getMethods(),
                 [&](const auto* method) { return method->getName() == memberName; }
             );
         }
@@ -926,9 +926,9 @@ std::unique_ptr<Expression> parseNewExpression(
         }
     }
     const Constructor* shape = nullptr;
-    const auto* objectType = runtime->getTypeByName(constructorName);
-    if (objectType != nullptr && objectType->asObjectType() != nullptr) {
-        for (const auto* constructor : objectType->asObjectType()->getConstructors()) {
+    const auto* classType = runtime->getTypeByName(constructorName);
+    if (classType != nullptr && classType->asClassType() != nullptr) {
+        for (const auto* constructor : classType->asClassType()->getConstructors()) {
             if (shape == nullptr || constructor->getParameterCount() > shape->getParameterCount()) {
                 shape = constructor;
             }
@@ -945,7 +945,7 @@ std::unique_ptr<Expression> parseNewExpression(
         return nullptr;
     }
     return std::make_unique<ConstructorExpression>(
-        parent, line, column, constructorName, objectType, std::move(arguments)
+        parent, line, column, constructorName, classType, std::move(arguments)
     );
 }
 

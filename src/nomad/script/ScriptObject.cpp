@@ -7,13 +7,13 @@
 
 namespace nomad {
 
-ScriptObject::ScriptObject(const ObjectType* objectType):
-    m_objectType(objectType)
+ScriptObject::ScriptObject(const ClassType* classType):
+    m_classType(classType)
 {
-    if (objectType == nullptr) {
-        throw NomadException("Script object requires an object type");
+    if (classType == nullptr) {
+        throw NomadException("Script object requires a class type");
     }
-    for (const auto* property : objectType->getProperties()) {
+    for (const auto* property : classType->getProperties()) {
         if (property->asNativeProperty() == nullptr) {
             m_fieldTypes.push_back(property->getValueType());
         }
@@ -29,8 +29,8 @@ ScriptObject::~ScriptObject() {
     }
 }
 
-const ObjectType* ScriptObject::getObjectType() const {
-    return m_objectType;
+const ClassType* ScriptObject::getClassType() const {
+    return m_classType;
 }
 
 NomadIndex ScriptObject::getFieldCount() const {

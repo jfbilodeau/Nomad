@@ -9,15 +9,15 @@
 
 namespace nomad {
 
-class ObjectType;
+class ClassType;
 class Type;
 
 class ScriptObject final : public NomadObject {
 public:
-    explicit ScriptObject(const ObjectType* objectType);
+    explicit ScriptObject(const ClassType* classType);
     ~ScriptObject() override;
 
-    [[nodiscard]] const ObjectType* getObjectType() const;
+    [[nodiscard]] const ClassType* getClassType() const;
     [[nodiscard]] NomadIndex getFieldCount() const;
 
     [[nodiscard]] const RuntimeValue& getField(NomadIndex index) const;
@@ -26,7 +26,7 @@ public:
 private:
     void validateFieldAccess(NomadIndex index) const;
 
-    const ObjectType* m_objectType;
+    const ClassType* m_classType;
     std::vector<const Type*> m_fieldTypes;
     std::vector<RuntimeValue> m_values;
 };
