@@ -53,6 +53,7 @@ RuntimeValue writeSetting(const Value value) {
 
 void registerFunction(
     ModuleContext* context,
+    const HubId hubId,
     const NomadString& name,
     NativeFunctionFn function,
     const std::vector<Parameter>& parameters,
@@ -60,8 +61,8 @@ void registerFunction(
     const NomadString& documentation,
     const bool applicationOnly = true
 ) {
-    const auto id = context->runtime->registerNativeFunction(
-        name,
+    const auto id = context->runtime->registerHubNativeFunction(
+        hubId, name,
         [function = std::move(function), mode = context->mode, applicationOnly](VirtualMachine* machine) {
             if (applicationOnly && mode != ModuleMode::Application) {
                 machine->fault("Logging configuration requires application mode");
@@ -201,6 +202,7 @@ Sink& getSink(Logger* logger, const VirtualMachine* machine) {
 template<typename Owner, typename Value, typename Resolve>
 void registerSetting(
     ModuleContext* context,
+    const HubId hubId,
     const NomadString& name,
     const Type* valueType,
     const std::vector<Parameter>& parameters,
@@ -208,7 +210,7 @@ void registerSetting(
     Value (Owner::*getter)() const,
     void (Owner::*setter)(Value)
 ) {
-    registerFunction(context, "log.get" + name,
+    registerFunction(context, hubId, "get" + name,
         [resolve, getter](VirtualMachine* machine) {
             machine->setResult(writeSetting((resolve(machine).*getter)()));
         },
@@ -216,7 +218,7 @@ void registerSetting(
     if (setter != nullptr) {
         auto setterParameters = parameters;
         setterParameters.push_back(defParameter("value", valueType, NomadParamDoc("The new setting value.")));
-        registerFunction(context, "log.set" + name,
+        registerFunction(context, hubId, "set" + name,
             [resolve, setter, index = parameters.size()](VirtualMachine* machine) {
                 (resolve(machine).*setter)(readSetting<Value>(machine->getParameter(index)));
             },
@@ -259,22 +261,22 @@ void registerLogConfigurationFunctions(ModuleContext* context, const HubId hubId
     const auto resolveLogger = [logger](VirtualMachine*) -> Logger& { return *logger; };
     const auto resolveSink = [logger](VirtualMachine* machine) -> LogSink& { return getSink(logger, machine); };
     const auto resolveFile = [logger](VirtualMachine* machine) -> FileSink& { return getSink<FileSink>(logger, machine); };
-    registerSetting(context, "LogLevel", levelType, {}, resolveLogger, &Logger::getLogLevel, &Logger::setLogLevel);
-    registerSetting(context, "DeliveryMode", deliveryType, {}, resolveLogger,
+    registerSetting(context, hubId, "LogLevel", levelType, {}, resolveLogger, &Logger::getLogLevel, &Logger::setLogLevel);
+    registerSetting(context, hubId, "DeliveryMode", deliveryType, {}, resolveLogger,
         &Logger::getDeliveryMode, &Logger::setDeliveryMode);
-    registerSetting(context, "SinkLevel", levelType, sinkParameters, resolveSink,
+    registerSetting(context, hubId, "SinkLevel", levelType, sinkParameters, resolveSink,
         &LogSink::getLogLevel, &LogSink::setLogLevel);
-    registerSetting(context, "SinkActive", runtime->getBooleanType(), sinkParameters, resolveSink,
+    registerSetting(context, hubId, "SinkActive", runtime->getBooleanType(), sinkParameters, resolveSink,
         &LogSink::getActive, &LogSink::setActive);
-    registerSetting(context, "FileRotationMode", rotationType, sinkParameters, resolveFile,
+    registerSetting(context, hubId, "FileRotationMode", rotationType, sinkParameters, resolveFile,
         &FileSink::getRotationMode, &FileSink::setRotationMode);
-    registerSetting(context, "FileRotateAtStartup", runtime->getBooleanType(), sinkParameters, resolveFile,
+    registerSetting(context, hubId, "FileRotateAtStartup", runtime->getBooleanType(), sinkParameters, resolveFile,
         &FileSink::getRotateAtStartup, &FileSink::setRotateAtStartup);
-    registerSetting(context, "FileMaxSizeBytes", runtime->getIntegerType(), sinkParameters, resolveFile,
+    registerSetting(context, hubId, "FileMaxSizeBytes", runtime->getIntegerType(), sinkParameters, resolveFile,
         &FileSink::getMaxSizeBytes, static_cast<void (FileSink::*)(NomadIndex)>(nullptr));
-    registerSetting(context, "FileMaxFiles", runtime->getIntegerType(), sinkParameters, resolveFile,
+    registerSetting(context, hubId, "FileMaxFiles", runtime->getIntegerType(), sinkParameters, resolveFile,
         &FileSink::getMaxFiles, static_cast<void (FileSink::*)(NomadIndex)>(nullptr));
-    registerFunction(context, "log.createConsoleSink",
+    registerFunction(context, hubId, "createConsoleSink",
         [logger](VirtualMachine* machine) {
             const auto& object = getConfiguration(machine);
             ConsoleSinkConfiguration configuration;
@@ -284,7 +286,7 @@ void registerLogConfigurationFunctions(ModuleContext* context, const HubId hubId
         },
         {defParameter("configuration", configurationType, NomadParamDoc("The console sink creation settings."))},
         sinkType, NomadDoc("Creates a logger-owned console sink without removing existing sinks."));
-    registerFunction(context, "log.createFileSink",
+    registerFunction(context, hubId, "createFileSink",
         [logger, projectDirectory = context->projectDirectory](VirtualMachine* machine) {
             const auto& object = getConfiguration(machine);
             FileSinkConfiguration configuration;
@@ -308,16 +310,16 @@ void registerLogConfigurationFunctions(ModuleContext* context, const HubId hubId
         },
         {defParameter("configuration", fileConfigurationType, NomadParamDoc("The file sink creation settings."))},
         sinkType, NomadDoc("Creates a logger-owned file sink; relative directories use the project directory."));
-    registerFunction(context, "log.removeSink",
+    registerFunction(context, hubId, "removeSink",
         [logger](VirtualMachine* machine) { logger->removeSink(getSinkObject(logger, machine).getSinkId()); },
         sinkParameters, runtime->getVoidType(), NomadDoc("Flushes and removes a sink; unknown or removed handles fail."));
-    registerFunction(context, "log.clearAllSinks",
+    registerFunction(context, hubId, "clearAllSinks",
         [logger](VirtualMachine*) { logger->clearAllSinks(); },
         {}, runtime->getVoidType(), NomadDoc("Flushes and removes all sinks without installing a replacement."));
-    registerFunction(context, "log.flush",
+    registerFunction(context, hubId, "flush",
         [logger](VirtualMachine*) { logger->flush(); },
         {}, runtime->getVoidType(), NomadDoc("Delivers pending messages and flushes active sinks."));
-    registerFunction(context, "log.getFilePath",
+    registerFunction(context, hubId, "getFilePath",
         [logger](VirtualMachine* machine) {
             machine->setStringResult(pathToUtf8(getSink<FileSink>(logger, machine).getPath()));
         },
@@ -327,7 +329,7 @@ void registerLogConfigurationFunctions(ModuleContext* context, const HubId hubId
         NomadParamDoc("The positive byte limit, including record newlines.")));
     rotationParameters.push_back(defParameter("maxFiles", runtime->getIntegerType(),
         NomadParamDoc("The nonnegative number of archives, excluding the active file.")));
-    registerFunction(context, "log.setFileRotationLimits",
+    registerFunction(context, hubId, "setFileRotationLimits",
         [logger](VirtualMachine* machine) {
             const auto size = readSetting<NomadIndex>(machine->getParameter(1));
             const auto files = readSetting<NomadIndex>(machine->getParameter(2));

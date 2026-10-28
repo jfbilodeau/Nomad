@@ -85,6 +85,37 @@ BOOST_AUTO_TEST_SUITE_END()
 
 BOOST_AUTO_TEST_SUITE(log_module)
 
+BOOST_AUTO_TEST_CASE(all_logging_functions_are_registered_as_local_hub_members) {
+    const TestDirectory directory("log-module-functions");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});
+    for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis}) {
+        const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
+        const auto& runtime = *host->getRuntime();
+        const auto* hub = runtime.getHub(runtime.getHubId("log"));
+        BOOST_REQUIRE(hub != nullptr);
+        for (const auto* name : {
+            "debug", "info", "warning", "error", "critical",
+            "getLogLevel", "setLogLevel", "getDeliveryMode", "setDeliveryMode",
+            "getSinkLevel", "setSinkLevel", "getSinkActive", "setSinkActive",
+            "getFileRotationMode", "setFileRotationMode", "getFileRotateAtStartup", "setFileRotateAtStartup",
+            "getFileMaxSizeBytes", "getFileMaxFiles", "createConsoleSink", "createFileSink",
+            "removeSink", "clearAllSinks", "flush", "getFilePath", "setFileRotationLimits"
+        }) {
+            BOOST_TEST_CONTEXT(name) {
+                const auto* member = hub->getMember(name);
+                BOOST_REQUIRE(member != nullptr);
+                const auto* functions = std::get_if<HubFunctions>(member);
+                BOOST_REQUIRE(functions != nullptr);
+                BOOST_REQUIRE_EQUAL(functions->ids.size(), 1U);
+                const auto id = runtime.getNativeFunctionId("log." + NomadString(name));
+                BOOST_REQUIRE(id.isValid());
+                BOOST_TEST(functions->ids.front() == id);
+                BOOST_TEST(runtime.getNativeFunctionId(name).isInvalid());
+            }
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(module_registers_sink_type_and_active_property) {
     const TestDirectory directory("log-module-sink-type");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});

@@ -58,11 +58,11 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     registerLogSinkType(*runtime, hubId, context->mode);
     registerLogConfigurationFunctions(context, hubId);
     const std::array functions{
-        std::pair{"log.debug", &Logger::debug},
-        std::pair{"log.info", &Logger::info},
-        std::pair{"log.warning", &Logger::warning},
-        std::pair{"log.error", &Logger::error},
-        std::pair{"log.critical", &Logger::critical}
+        std::pair{"debug", &Logger::debug},
+        std::pair{"info", &Logger::info},
+        std::pair{"warning", &Logger::warning},
+        std::pair{"error", &Logger::error},
+        std::pair{"critical", &Logger::critical}
     };
     for (const auto& [name, function] : functions) {
         auto callback = [logger = context->logger, function](const VirtualMachine* machine) {
@@ -80,12 +80,9 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
             defParameter("$line", runtime->getLineNumberType(), NomadParamDoc("(hidden) The script line number")),
             defParameter("message", runtime->getStringType(), NomadParamDoc("The text to log"))
         };
-        const auto documentation = NomadDoc("Writes a message to the log at the " + NomadString(name + 4) + " level.");
-        const auto id = NomadStringView(name) == "log.info"
-            ? runtime->registerHubNativeFunction(hubId, "info", std::move(callback),
-                parameters, runtime->getVoidType(), documentation)
-            : runtime->registerNativeFunction(name, std::move(callback),
-                parameters, runtime->getVoidType(), documentation);
+        const auto documentation = NomadDoc("Writes a message to the log at the " + NomadString(name) + " level.");
+        const auto id = runtime->registerHubNativeFunction(hubId, name, std::move(callback),
+            parameters, runtime->getVoidType(), documentation);
         if (id.isInvalid()) {
             throw NomadException("Failed to register " + NomadString(name));
         }
