@@ -4,8 +4,6 @@
 
 #include <nomad/Nomad.hpp>
 
-#include <nomad/compiler/Identifier.hpp>
-
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/NativeMember.hpp>
 #include <nomad/script/NomadStringObject.hpp>
@@ -25,6 +23,7 @@ class ScriptFunction;
 class ScriptCallableBase;
 class Closure;
 class TypedValue;
+enum class IdentifierType;
 
 class VirtualMachineException : public NomadException {
 public:

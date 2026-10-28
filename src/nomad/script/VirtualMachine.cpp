@@ -1,6 +1,8 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <ranges>
+#include <nomad/script/VirtualMachine.hpp>
+
+#include <nomad/compiler/Identifier.hpp>
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Interpreter.hpp>
@@ -10,9 +12,9 @@
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/Type.hpp>
 
-#include <nomad/script/VirtualMachine.hpp>
-
 #include <nomad/system/String.hpp>
+
+#include <ranges>
 
 #ifdef NOMAD_DEBUG
 #define TEST_STACK_OVERFLOW if (m_stackIndex >= m_stack.size()) { fault("Stack overflow"); }

@@ -1313,6 +1313,56 @@ a type with that name and its constructors with `addConstructor`.
 Specializations are reused on subsequent requests through
 `getParameterizedConstructorName(name, arguments)`.
 
+## Typed native functions (proof of concept)
+
+For primitive and string functions, `registerNativeFunction` can infer script
+parameter and return types from a C++ callable:
+
+```cpp
+nomad::NomadInteger measure(const nomad::NomadString& text, nomad::NomadFloat scale) {
+    return static_cast<nomad::NomadInteger>(text.size()) *
+        static_cast<nomad::NomadInteger>(scale);
+}
+
+const auto id = runtime.registerNativeFunction(
+    "measure",
+    measure,
+    {
+        {"text", NomadParamDoc("The text to measure.")},
+        {"scale", NomadParamDoc("The multiplier.")}
+    },
+    NomadDoc("Measures scaled text length.")
+);
+```
+
+The typed overload omits the explicit return type. It extracts stack arguments,
+calls the C++ function, and stores its result. Parameter names and documentation
+remain explicit; there must be exactly one `TypedParameterDefinition` per C++
+argument. Invalid counts, empty parameter names, and null function pointers are
+logged and return `CallableId::INVALID` without publishing a function.
+
+Use the corresponding
+`registerHubNativeFunction(hubId, localName, callable, parameters, documentation)`
+overload for a hub member. Both APIs share the existing callable catalog and
+overload resolution with VM-callback registrations.
+
+Supported C++ values are `NomadBoolean`, `NomadInteger`, `NomadFloat`, and
+`NomadString`. Arguments may be passed by value or const lvalue reference.
+Results are returned by value, or `void`. String references borrow call arguments
+only for the duration of the callback; string results are copied into owned Nomad
+strings. Free functions (including `noexcept`) and copyable non-generic lambdas,
+including captured and mutable lambdas, are supported.
+
+This proof of concept does not infer objects, enums, hidden source arguments,
+methods, or arbitrary C++ numeric conversions. Mutable-reference arguments,
+rvalue-reference arguments, reference results, generic lambdas, and move-only
+callables are not supported. Disambiguate overloaded C++ functions explicitly
+before registration. Callback exceptions follow the existing VM-callback
+contract; the typed adapter adds no exception translation.
+
+Keep the existing VM-callback overload for bindings needing direct VM access or
+explicit script types.
+
 ## Native object methods
 
 Use `Runtime::addMethod(typeId, NativeMethodDefinition{...})`

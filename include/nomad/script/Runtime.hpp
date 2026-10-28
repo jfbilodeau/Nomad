@@ -20,6 +20,7 @@
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
+#include <nomad/script/TypedNativeFunction.hpp>
 #include <nomad/script/VariableContext.hpp>
 
 #include <nomad/system/TempHeap.hpp>
@@ -197,6 +198,20 @@ public:
         const Type* returnType,
         NomadDocArg
     );
+    template<detail::TypedNativeFunction Function>
+    [[nodiscard]] CallableId registerHubNativeFunction(
+        HubId hubId,
+        const NomadString& name,
+        Function function,
+        const std::vector<TypedParameterDefinition>& parameters,
+        NomadDocArg
+    ) {
+        const auto qualifiedName = qualifyHubMemberName(hubId, name);
+        if (!qualifiedName) {
+            return CallableId::INVALID;
+        }
+        return registerNativeFunction(*qualifiedName, std::move(function), parameters, doc);
+    }
     [[nodiscard]] CallableId registerHubScriptFunction(
         HubId hubId,
         const NomadString& name,
@@ -386,6 +401,38 @@ public:
         const Type* returnType, 
         NomadDocArg
     );
+    template<detail::TypedNativeFunction Function>
+    [[nodiscard]] CallableId registerNativeFunction(
+        const NomadString& name,
+        Function function,
+        const std::vector<TypedParameterDefinition>& parameters,
+        NomadDocArg
+    ) {
+        using Binding = detail::TypedNativeFunctionTraits<Function>;
+        if (parameters.size() != Binding::parameterCount) {
+            log::error("Cannot register typed native function '" + name + "': incorrect parameter definition count");
+            return CallableId::INVALID;
+        }
+        if constexpr (std::is_pointer_v<Function>) {
+            if (function == nullptr) {
+                log::error("Cannot register typed native function '" + name + "': null function");
+                return CallableId::INVALID;
+            }
+        }
+        for (const auto& parameter : parameters) {
+            if (parameter.name.empty()) {
+                log::error("Cannot register typed native function '" + name + "': empty parameter name");
+                return CallableId::INVALID;
+            }
+        }
+        return registerNativeFunction(
+            name,
+            Binding::bind(std::move(function), typename Binding::Indices{}),
+            Binding::makeParameters(*this, parameters, typename Binding::Indices{}),
+            detail::getTypedNativeType<typename Binding::ReturnType>(*this),
+            doc
+        );
+    }
     [[nodiscard]] CallableId getNativeFunctionId(const NomadString& name) const;
     [[nodiscard]] NativeFunctionFn getNativeFunctionFn(CallableId id) const;
 

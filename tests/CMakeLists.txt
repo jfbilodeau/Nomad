@@ -80,6 +80,7 @@ add_executable(
     ./TestDirectoryTest.cpp
     ./TileMapDataTest.cpp
     ./TileMapTest.cpp
+    ./TypedNativeFunctionTest.cpp
     ./TokenizerTest.cpp
     ./VariablePersistenceTest.cpp
 )
