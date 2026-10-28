@@ -853,6 +853,16 @@ callbacks, type references, and conflicting declarations are logged and return
 `CallableId::INVALID` without adding a function. Referenced types must belong to
 the receiving runtime; hidden source parameter types are supported.
 
+Use `registerHubVariable(hubId, name)` to declare a variable using a simple local
+name. It returns a `ContextVariableId` for the same storage used by
+`registerHubVariable(qualifiedName)`. Variables start without a resolved type;
+script assignments resolve their types through the existing compilation path.
+For host-declared variables, supply a compiled parameterless `void` initialization
+function through `setScriptInitializer` when no generated script initializer exists.
+They remain writable in both open and closed hubs. Invalid owners, nonlocal
+names, duplicates, conflicts, and registration after script initialization are
+logged and return `ContextVariableId::INVALID`.
+
 Use `registerHubClass(hubId, name, mode, documentation = {})` to register a class
 with a local name, such as `"Sink"` in hub `"log"`. It returns a `TypeId` and
 exposes the class as `log.Sink`. The name must be a simple identifier.

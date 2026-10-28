@@ -30,6 +30,74 @@ static_assert(std::is_same_v<std::variant_alternative_t<6, HubMember>, HubTypeFa
 
 BOOST_AUTO_TEST_SUITE(language_hubs)
 
+BOOST_AUTO_TEST_CASE(hub_variable_ids_share_existing_storage_and_script_type_resolution)
+{
+    for (const auto mode : {HubMode::Opened, HubMode::Closed}) {
+        LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        const auto hubId = runtime.registerHub("example.child", mode);
+        BOOST_REQUIRE(hubId.isValid());
+        const auto id = runtime.registerHubVariable(hubId, "value");
+        BOOST_REQUIRE(id.isValid());
+        BOOST_TEST(runtime.getContextVariableId("example.child.value") == id);
+        BOOST_TEST(runtime.getContextVariableName(id) == "example.child.value");
+        BOOST_TEST(runtime.getContextVariableType(id) == nullptr);
+        const auto* member = runtime.getHub(hubId)->getMember("value");
+        BOOST_REQUIRE(member != nullptr);
+        BOOST_TEST(std::holds_alternative<VariableId>(*member));
+        const auto localId = std::get<VariableId>(*member);
+        BOOST_TEST(runtime.registerHubVariable("example.child.value").isInvalid());
+        BOOST_TEST(runtime.registerHubVariable(hubId, "value").isInvalid());
+        fixture.addFunction("main",
+            "fun initialize\nexample.child.value = 40\nend\n"
+            "example.child.value = example.child.value + 2\nreturn example.child.value");
+        BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+        runtime.setScriptInitializer(runtime.getFunctionId("initialize"));
+        BOOST_TEST(runtime.getContextVariableType(id) == runtime.getIntegerType());
+        BOOST_TEST(runtime.getContextVariableId("example.child.value") == id);
+        BOOST_TEST(std::get<VariableId>(*runtime.getHub(hubId)->getMember("value")) == localId);
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 42);
+        RuntimeValue value;
+        runtime.getContextVariableValue(id, value);
+        BOOST_TEST(value.getIntegerValue() == 42);
+        BOOST_TEST(runtime.registerHubVariable(hubId, "afterStartup").isInvalid());
+        BOOST_TEST(runtime.getHub(hubId)->getMember("afterStartup") == nullptr);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(hub_variable_validation_preserves_existing_members_and_contexts)
+{
+    Runtime runtime;
+    const auto hubId = runtime.registerHub("example", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    for (const auto invalidId : {HubId::INVALID, HubId{-2}, HubId{NOMAD_ID_MAX}}) {
+        BOOST_TEST(runtime.registerHubVariable(invalidId, "value").isInvalid());
+    }
+    for (const auto* name : {"", "example.value", "child.value", "value@hidden", "1value", "bad name"}) {
+        BOOST_TEST(runtime.registerHubVariable(hubId, name).isInvalid());
+    }
+    BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
+    BOOST_TEST(runtime.getVariableContextIdByPrefix("$hub.example.value").isInvalid());
+    BOOST_REQUIRE(runtime.registerHubConstant(hubId, "constant", RuntimeValue(NomadInteger{1}),
+        runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerHubClass(hubId, "Class", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.registerHubEnum(hubId, "State", {{"Ready", 1}}).isValid());
+    BOOST_REQUIRE(runtime.registerHubNativeFunction(
+        hubId, "function", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerHub("example.child", HubMode::Opened).isValid());
+    const auto count = runtime.getHub(hubId)->getMembers().size();
+    for (const auto* name : {"constant", "Class", "State", "function", "child"}) {
+        BOOST_TEST(runtime.registerHubVariable(hubId, name).isInvalid());
+    }
+    BOOST_TEST(runtime.getHub(hubId)->getMembers().size() == count);
+    const auto id = runtime.registerHubVariable(hubId, "value");
+    BOOST_REQUIRE(id.isValid());
+    BOOST_TEST(runtime.getContextVariableId("example.value") == id);
+}
+
 BOOST_AUTO_TEST_CASE(hub_classes_use_local_names_and_preserve_class_modes)
 {
     for (const auto hubMode : {HubMode::Opened, HubMode::Closed}) {

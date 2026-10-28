@@ -398,6 +398,14 @@ bool Runtime::isHubVariable(const NomadString& name) const {
     return member != nullptr && std::holds_alternative<VariableId>(*member);
 }
 
+ContextVariableId Runtime::registerHubVariable(const HubId hubId, const NomadString& name) {
+    const auto qualifiedName = qualifyHubMemberName(hubId, name);
+    if (!qualifiedName) {
+        return ContextVariableId::INVALID;
+    }
+    return registerHubVariable(*qualifiedName);
+}
+
 ContextVariableId Runtime::registerHubVariable(const NomadString& name) {
     if (m_scriptInitialization.state != ScriptInitializationState::Pending ||
         getContainingHub(name).empty() || !canRegisterHubMember(name) ||

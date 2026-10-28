@@ -202,6 +202,7 @@ public:
     [[nodiscard]] const Hub* getHub(HubId id) const;
     [[nodiscard]] NomadString getContainingHub(const NomadString& name) const;
     [[nodiscard]] ContextVariableId registerHubVariable(const NomadString& name);
+    [[nodiscard]] ContextVariableId registerHubVariable(HubId hubId, const NomadString& name);
     [[nodiscard]] bool isHubVariable(const NomadString& name) const;
     void setScriptInitializer(CallableId functionId);
     void initializeScripts();
