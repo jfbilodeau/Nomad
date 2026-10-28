@@ -77,6 +77,7 @@ std::optional<IterableInfo> Runtime::getIterableInfo(const Type* sourceType) con
 
 namespace {
 
+// TODO: Remove?
 bool isNativeMemberName(const NomadString& name) {
     if (name.empty()) {
         return false;
@@ -269,6 +270,32 @@ CallableId Runtime::registerNativeFunction(
         return CallableId::INVALID;
     }
     return registerNativeCallable(nullptr, name, std::move(nativeFunction_fn), parameters, returnType, doc);
+}
+
+CallableId Runtime::registerHubNativeFunction(
+    const HubId hubId,
+    const NomadString& name,
+    NativeFunctionFn function,
+    const std::vector<Parameter>& parameters,
+    const Type* returnType,
+    NomadDocArg
+) {
+    const auto* hub = getHub(hubId);
+    if (hub == nullptr || !isNativeMemberName(name)) {
+        log::error("Cannot register hub native function '" + name + "': invalid hub or local member name");
+        return CallableId::INVALID;
+    }
+    if (!function || !ownsType(returnType) || (returnType->isInternal() && !returnType->isVoid())) {
+        log::error("Cannot register hub native function '" + name + "': invalid callback or return type");
+        return CallableId::INVALID;
+    }
+    for (const auto& parameter : parameters) {
+        if (parameter.name.empty() || !ownsType(parameter.type) || parameter.type->isVoid()) {
+            log::error("Cannot register hub native function '" + name + "': invalid parameter definition");
+            return CallableId::INVALID;
+        }
+    }
+    return registerNativeFunction(hub->getName() + "." + name, std::move(function), parameters, returnType, doc);
 }
 
 bool Runtime::isHub(const NomadString& name) const {

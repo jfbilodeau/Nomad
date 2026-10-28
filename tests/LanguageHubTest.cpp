@@ -28,6 +28,134 @@ static_assert(std::is_same_v<std::variant_alternative_t<6, HubMember>, HubTypeFa
 
 BOOST_AUTO_TEST_SUITE(language_hubs)
 
+BOOST_AUTO_TEST_CASE(hub_native_functions_use_local_names_and_shared_overload_resolution)
+{
+    for (const auto mode : {HubMode::Opened, HubMode::Closed}) {
+        LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        const auto hubId = runtime.registerHub("example.child", mode);
+        BOOST_REQUIRE(hubId.isValid());
+        const auto first = runtime.registerHubNativeFunction(
+            hubId, "answer", [](VirtualMachine* machine) { machine->setIntegerResult(40); },
+            {}, runtime.getIntegerType(), "Returns forty."
+        );
+        BOOST_REQUIRE(first.isValid());
+        const auto second = runtime.registerNativeFunction(
+            "example.child.answer",
+            [](VirtualMachine* machine) { machine->setIntegerResult(machine->getIntegerParameter(0)); },
+            {defParameter("value", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
+        );
+        BOOST_REQUIRE(second.isValid());
+        BOOST_TEST(runtime.registerHubNativeFunction(
+            hubId, "answer", [](VirtualMachine*) {}, {}, runtime.getIntegerType(), ""
+        ).isInvalid());
+        const auto* member = runtime.getHub(hubId)->getMember("answer");
+        BOOST_REQUIRE(member != nullptr);
+        const auto* functions = std::get_if<HubFunctions>(member);
+        BOOST_REQUIRE(functions != nullptr);
+        BOOST_REQUIRE_EQUAL(functions->ids.size(), 2U);
+        BOOST_TEST(functions->ids[0] == first);
+        BOOST_TEST(functions->ids[1] == second);
+        BOOST_TEST(runtime.getNativeFunction(first)->getName() == "example.child.answer");
+        BOOST_TEST(runtime.getNativeFunction(first)->getDoc() == "Returns forty.");
+        BOOST_TEST(runtime.getNativeFunctionId("example.child.answer") == first);
+        BOOST_TEST(runtime.getNativeFunctionId("answer").isInvalid());
+        fixture.addFunction("main",
+            "first = example.child.answer\nsecond = example.child.answer 2\nreturn first + second");
+        BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+        BOOST_TEST(fixture.execute("main").integerValue == 42);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(hub_native_function_validation_does_not_publish_partial_registrations)
+{
+    Runtime runtime;
+    Runtime otherRuntime;
+    const auto nativeFunctionCount = runtime.getNativeFunctions().size();
+    const auto hubId = runtime.registerHub("example", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    const auto callback = [](VirtualMachine*) {};
+    for (const auto invalidId : {HubId::INVALID, HubId{-2}, HubId{NOMAD_ID_MAX}}) {
+        BOOST_TEST(runtime.registerHubNativeFunction(
+            invalidId, "answer", callback, {}, runtime.getVoidType(), ""
+        ).isInvalid());
+    }
+    const auto* hub = runtime.getHub(hubId);
+    for (const auto* name : {"", "example.answer", "child.answer", "answer@hidden", "1answer", "bad name"}) {
+        BOOST_TEST(runtime.registerHubNativeFunction(
+            hubId, name, callback, {}, runtime.getVoidType(), ""
+        ).isInvalid());
+    }
+    BOOST_TEST(runtime.registerHubNativeFunction(
+        hubId, "answer", {}, {}, runtime.getVoidType(), ""
+    ).isInvalid());
+    for (const auto* returnType : {static_cast<const Type*>(nullptr), otherRuntime.getIntegerType(), runtime.getFileNameType()}) {
+        BOOST_TEST(runtime.registerHubNativeFunction(
+            hubId, "answer", callback, {}, returnType, ""
+        ).isInvalid());
+    }
+    for (const auto& parameter : {
+        defParameter("", runtime.getIntegerType(), ""),
+        defParameter("value", nullptr, ""),
+        defParameter("value", runtime.getVoidType(), ""),
+        defParameter("value", otherRuntime.getIntegerType(), "")
+    }) {
+        BOOST_TEST(runtime.registerHubNativeFunction(
+            hubId, "answer", callback, {parameter}, runtime.getVoidType(), ""
+        ).isInvalid());
+    }
+    BOOST_TEST(hub->getMembers().empty());
+    BOOST_TEST(runtime.getNativeFunctionId("example.answer").isInvalid());
+    BOOST_TEST(runtime.getNativeFunctions().size() == nativeFunctionCount);
+
+    BOOST_REQUIRE(runtime.registerConstant("example.constant", RuntimeValue(NomadInteger{1}),
+        runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerHubVariable("example.variable").isValid());
+    BOOST_REQUIRE(runtime.registerClass("example.Class", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.createEnum("example.State", {{"Ready", 1}}).isValid());
+    BOOST_REQUIRE(runtime.registerHub("example.child", HubMode::Opened).isValid());
+    for (const auto* name : {"constant", "variable", "Class", "State", "child"}) {
+        BOOST_TEST(runtime.registerHubNativeFunction(
+            hubId, name, callback, {}, runtime.getVoidType(), ""
+        ).isInvalid());
+        BOOST_TEST(runtime.getNativeFunctionId("example." + NomadString(name)).isInvalid());
+    }
+    BOOST_TEST(runtime.getNativeFunctions().size() == nativeFunctionCount);
+}
+
+BOOST_AUTO_TEST_CASE(hub_native_functions_preserve_hidden_caller_source_parameters)
+{
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto hubId = runtime.registerHub("example", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    NomadString file;
+    NomadString function;
+    NomadString message;
+    NomadInteger line = 0;
+    BOOST_REQUIRE(runtime.registerHubNativeFunction(
+        hubId, "record", [&](VirtualMachine* machine) {
+            file = machine->getStringParameter(0)->getString();
+            function = machine->getStringParameter(1)->getString();
+            line = machine->getIntegerParameter(2);
+            message = machine->getStringParameter(3)->getString();
+        },
+        {
+            defParameter("$file", runtime.getFileNameType(), ""),
+            defParameter("$function", runtime.getFunctionNameType(), ""),
+            defParameter("$line", runtime.getLineNumberType(), ""),
+            defParameter("message", runtime.getStringType(), "")
+        }, runtime.getVoidType(), ""
+    ).isValid());
+    fixture.addSources({{{"main", {"caller.nomad", "\nexample.record \"recorded\"\nreturn 42"}}}, {}});
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    BOOST_TEST(fixture.execute("main").integerValue == 42);
+    BOOST_TEST(file == "caller.nomad");
+    BOOST_TEST(function == "main");
+    BOOST_TEST(line == 2);
+    BOOST_TEST(message == "recorded");
+}
+
 BOOST_AUTO_TEST_CASE(declaration_modes_are_consistent_across_files_in_either_order)
 {
     for (const auto& modes : {

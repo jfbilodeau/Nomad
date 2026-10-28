@@ -158,6 +158,14 @@ public:
     [[nodiscard]] const std::vector<Instruction>& getInstructions() const;
 
     [[nodiscard]] HubId registerHub(const NomadString& name, HubMode mode);
+    [[nodiscard]] CallableId registerHubNativeFunction(
+        HubId hubId,
+        const NomadString& name,
+        NativeFunctionFn function,
+        const std::vector<Parameter>& parameters,
+        const Type* returnType,
+        NomadDocArg
+    );
     [[nodiscard]] bool isHub(const NomadString& name) const;
     [[nodiscard]] HubId getHubId(const NomadString& name) const;
     [[nodiscard]] const Hub* getHub(HubId id) const;

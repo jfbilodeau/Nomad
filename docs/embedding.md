@@ -843,7 +843,17 @@ Use `std::get_if<ConstantId>(member)` or the corresponding alternative to
 inspect a member, then pass the ID directly to its typed API. Function overloads
 use `HubFunctions::ids`; generic families use `HubTypeFamily::argumentCount`.
 
-Register native APIs under their qualified names using the existing runtime
+Use `registerHubNativeFunction(hubId, name, function, parameters, returnType, documentation)`
+to register a native function with a local member name, such as `"info"` in hub
+`"log"`. The name must be a simple identifier, not a qualified name.
+The function is available under its qualified name and shares overload resolution,
+documentation, and compiler-supplied source parameters with `registerNativeFunction`.
+Both open and closed hubs accept host registrations. Invalid hub IDs, names,
+callbacks, type references, and conflicting declarations are logged and return
+`CallableId::INVALID` without adding a function. Referenced types must belong to
+the receiving runtime; hidden source parameter types are supported.
+
+Other native APIs still use qualified names with their existing runtime
 registration functions. For example, register hub `"os"`, enum `"os.Platform"`,
 and constant `"os.platform"`. Scripts may add distinct members only to native
 hubs registered as open, using matching `open hub` blocks. Existing writable

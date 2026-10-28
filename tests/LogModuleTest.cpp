@@ -4,6 +4,7 @@
 #include <nomad/log/Logger.hpp>
 #include <nomad/log/MemorySink.hpp>
 
+#include <nomad/script/Hub.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -108,6 +109,13 @@ BOOST_AUTO_TEST_CASE(module_is_independent_and_script_functions_preserve_locatio
     const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Application);
     auto& runtime = *host->getRuntime();
     BOOST_TEST(runtime.isHub("log"));
+    const auto* infoMember = runtime.getHub(runtime.getHubId("log"))->getMember("info");
+    BOOST_REQUIRE(infoMember != nullptr);
+    const auto* infoFunctions = std::get_if<HubFunctions>(infoMember);
+    BOOST_REQUIRE(infoFunctions != nullptr);
+    BOOST_REQUIRE_EQUAL(infoFunctions->ids.size(), 1U);
+    BOOST_TEST(infoFunctions->ids.front() == runtime.getNativeFunctionId("log.info"));
+    BOOST_TEST(runtime.getNativeFunctionId("info").isInvalid());
     BOOST_TEST(runtime.getNativeFunctionId("system.exit").isInvalid());
     BOOST_TEST(runtime.getNativeFunctionId("log.fatal").isInvalid());
     const auto compiled = host->compileSources({{{"main", {"logging-script.nomad",
