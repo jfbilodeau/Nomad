@@ -43,6 +43,16 @@ including ordinary `ScriptObject` settings and opaque sink handles. See
 Script factories use the module context's logger and copy the supplied settings;
 discarding the configuration or script handle does not remove a sink.
 
+`<nomad/log/LogSinkObject.hpp>` provides the C++ `LogSinkObject` wrapper.
+Construct it with the owning `Logger&` and a registered `LogSinkId`.
+`getSinkId()` retains the ID even after removal; `getSink()` resolves it on each
+call and throws for an unknown or removed sink. Construction also rejects
+unknown or removed IDs. The wrapper does not own or cache the concrete sink;
+destroying it does not remove or deactivate that sink.
+The logger must outlive the wrapper. Coordinate lookup and use with concurrent
+sink removal, just as for `Logger::getSink()`. This wrapper is not yet registered
+as a script type.
+
 The base configuration, level, and sink ID are declared in
 `<nomad/log/LogSink.hpp>`. Each concrete configuration is declared in its sink's
 header: `<nomad/log/ConsoleSink.hpp>`, `<nomad/log/FileSink.hpp>`, or

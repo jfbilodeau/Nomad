@@ -42,6 +42,7 @@ add_executable(
     ./LanguageVariableIdTest.cpp
     ./LogConfigurationTest.cpp
     ./LogModuleTest.cpp
+    ./LogSinkObjectTest.cpp
     ./LogTest.cpp
     ./ModuleGameTest.cpp
     ./ModuleHostTest.cpp
