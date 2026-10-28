@@ -1313,7 +1313,7 @@ a type with that name and its constructors with `addConstructor`.
 Specializations are reused on subsequent requests through
 `getParameterizedConstructorName(name, arguments)`.
 
-## Typed native functions (proof of concept)
+## Typed native functions
 
 For primitive and string functions, `registerNativeFunction` can infer script
 parameter and return types from a C++ callable:
@@ -1348,17 +1348,30 @@ overload resolution with VM-callback registrations.
 
 Supported C++ values are `NomadBoolean`, `NomadInteger`, `NomadFloat`, and
 `NomadString`. Arguments may be passed by value or const lvalue reference.
-Results are returned by value, or `void`. String references borrow call arguments
-only for the duration of the callback; string results are copied into owned Nomad
-strings. Free functions (including `noexcept`) and copyable non-generic lambdas,
-including captured and mutable lambdas, are supported.
+Results are returned by value, or `void`. The types must match exactly: for
+example, use `NomadInteger` rather than `int`, and `NomadFloat` rather than
+`double`. Integer arguments and results preserve the full `NomadInteger` range.
 
-This proof of concept does not infer objects, enums, hidden source arguments,
-methods, or arbitrary C++ numeric conversions. Mutable-reference arguments,
-rvalue-reference arguments, reference results, generic lambdas, and move-only
-callables are not supported. Disambiguate overloaded C++ functions explicitly
-before registration. Callback exceptions follow the existing VM-callback
-contract; the typed adapter adds no exception translation.
+Argument references are valid only for the duration of the callback; do not
+retain their addresses. A string passed by value is a C++ copy that the callback
+may modify without changing the script argument. String results are copied into
+owned Nomad strings, including embedded null characters.
+
+Free functions (including `noexcept`) and copyable non-generic lambdas, including
+captured and mutable lambdas, are supported. Registration stores its own callable
+by value; mutable capture state persists between calls. Reference captures remain
+the host's responsibility and must outlive the registered callable.
+
+Objects, enums, hidden source arguments, methods, and arbitrary C++ numeric
+conversions are not inferred. Mutable-reference arguments, volatile-reference
+arguments, rvalue-reference arguments, reference results, generic lambdas,
+move-only callables, and member-function pointers are rejected at compile time.
+Disambiguate overloaded C++ functions explicitly before registration.
+
+Callback exceptions follow the existing VM-callback contract; the typed adapter
+adds no exception translation or additional unwind cleanup. The existing
+compiled-call fault path can retain formatted temporary strings when a native
+callback throws.
 
 Keep the existing VM-callback overload for bindings needing direct VM access or
 explicit script types.
