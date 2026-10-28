@@ -272,6 +272,28 @@ CallableId Runtime::registerNativeFunction(
     return registerNativeCallable(nullptr, name, std::move(nativeFunction_fn), parameters, returnType, doc);
 }
 
+std::optional<NomadString> Runtime::qualifyHubMemberName(const HubId hubId, const NomadString& name) const {
+    const auto* hub = getHub(hubId);
+    if (hub == nullptr || !isValididentifier(name)) {
+        log::error("Cannot register hub member '" + name + "': invalid hub or local member name");
+        return std::nullopt;
+    }
+    return hub->getName() + "." + name;
+}
+
+TypeId Runtime::registerHubClass(
+    const HubId hubId,
+    NomadString name,
+    const ClassMode mode,
+    NomadString documentation
+) {
+    const auto qualifiedName = qualifyHubMemberName(hubId, name);
+    if (!qualifiedName) {
+        return TypeId::INVALID;
+    }
+    return registerClass(*qualifiedName, mode, std::move(documentation));
+}
+
 ConstantId Runtime::registerHubConstant(
     const HubId hubId,
     const NomadString& name,

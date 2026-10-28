@@ -158,6 +158,25 @@ public:
     [[nodiscard]] const std::vector<Instruction>& getInstructions() const;
 
     [[nodiscard]] HubId registerHub(const NomadString& name, HubMode mode);
+    [[nodiscard]] TypeId registerHubClass(
+        HubId hubId,
+        NomadString name,
+        ClassMode mode,
+        NomadString documentation = {}
+    );
+    template<std::derived_from<ClassType> Descriptor, typename... Arguments>
+    [[nodiscard]] TypeId registerHubClass(
+        HubId hubId,
+        NomadString name,
+        ClassMode mode,
+        Arguments&&... arguments
+    ) {
+        const auto qualifiedName = qualifyHubMemberName(hubId, name);
+        if (!qualifiedName) {
+            return TypeId::INVALID;
+        }
+        return registerClass<Descriptor>(*qualifiedName, mode, std::forward<Arguments>(arguments)...);
+    }
     [[nodiscard]] ConstantId registerHubConstant(
         HubId hubId,
         const NomadString& name,
@@ -649,6 +668,7 @@ private:
     ) const;
 
     // Hub registration
+    [[nodiscard]] std::optional<NomadString> qualifyHubMemberName(HubId hubId, const NomadString& name) const;
     void registerHubMember(const NomadString& name, HubMember member);
     [[nodiscard]] bool canRegisterHubMember(const NomadString& name, bool function = false) const;
     void rebuildHubMembers();

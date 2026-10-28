@@ -4,6 +4,8 @@
 
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/RangeType.hpp>
+#include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
@@ -27,6 +29,113 @@ static_assert(std::is_same_v<std::variant_alternative_t<5, HubMember>, DynamicVa
 static_assert(std::is_same_v<std::variant_alternative_t<6, HubMember>, HubTypeFamily>);
 
 BOOST_AUTO_TEST_SUITE(language_hubs)
+
+BOOST_AUTO_TEST_CASE(hub_classes_use_local_names_and_preserve_class_modes)
+{
+    for (const auto hubMode : {HubMode::Opened, HubMode::Closed}) {
+        LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        const auto hubId = runtime.registerHub("example.child", hubMode);
+        BOOST_REQUIRE(hubId.isValid());
+        const auto classId = runtime.registerHubClass(hubId, "Point", ClassMode::Closed, "A point.");
+        BOOST_REQUIRE(classId.isValid());
+        const auto* type = runtime.getType(classId).value()->asClassType();
+        BOOST_REQUIRE(type != nullptr);
+        BOOST_TEST(type->getTypeName() == "example.child.Point");
+        BOOST_TEST(type->getDocumentation() == "A point.");
+        BOOST_TEST(!type->isOpen());
+        BOOST_TEST(type->getRuntime() == &runtime);
+        BOOST_TEST(runtime.getTypeByName("Point") == nullptr);
+        const auto* member = runtime.getHub(hubId)->getMember("Point");
+        BOOST_REQUIRE(member != nullptr);
+        BOOST_TEST(std::get<const Type*>(*member) == type);
+        BOOST_REQUIRE(runtime.registerProperty(classId, "value", runtime.getIntegerType()).isValid());
+        BOOST_REQUIRE(runtime.addConstructor(classId, {
+            .parameters = {},
+            .function = [type](VirtualMachine* machine) {
+                machine->getResult().setObjectValue(new ScriptObject(type));
+            },
+            .documentation = ""
+        }).isValid());
+        fixture.addFunction("main",
+            "point = new example.child.Point\npoint.value = 42\nreturn point.value");
+        BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+        BOOST_TEST(fixture.execute("main").integerValue == 42);
+    }
+    for (const auto mode : {ClassMode::Opened, ClassMode::Closed}) {
+        LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        const auto hubId = runtime.registerHub("example", HubMode::Opened);
+        BOOST_REQUIRE(hubId.isValid());
+        const auto classId = runtime.registerHubClass(hubId, "Point", mode);
+        BOOST_REQUIRE(classId.isValid());
+        BOOST_TEST(runtime.getType(classId).value()->asClassType()->isOpen() == (mode == ClassMode::Opened));
+        fixture.addFunction("main", "fun update point:example.Point\npoint.extra = 42\nend");
+        const auto compiled = fixture.compile();
+        BOOST_TEST_CONTEXT(fixture.getDiagnostics()) {
+            BOOST_TEST(compiled == (mode == ClassMode::Opened));
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(hub_class_registration_supports_specialized_descriptors)
+{
+    Runtime runtime;
+    const auto hubId = runtime.registerHub("example", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    const auto classId = runtime.registerHubClass<RangeType>(hubId, "Range", ClassMode::Closed);
+    BOOST_REQUIRE(classId.isValid());
+    const auto* type = runtime.getType(classId).value();
+    BOOST_TEST(dynamic_cast<const RangeType*>(type) != nullptr);
+    BOOST_TEST(type->getTypeName() == "example.Range");
+    const auto genericId = runtime.registerHubClass<ClassType>(
+        hubId, "Generic", ClassMode::Opened, std::vector<const Type*>{runtime.getIntegerType()}, "Generic class."
+    );
+    BOOST_REQUIRE(genericId.isValid());
+    const auto* generic = runtime.getType(genericId).value()->asClassType();
+    BOOST_REQUIRE(generic != nullptr);
+    BOOST_TEST(generic->getDocumentation() == "Generic class.");
+    BOOST_TEST(generic->isOpen());
+    BOOST_REQUIRE_EQUAL(generic->getTypeArguments().size(), 1U);
+    BOOST_TEST(generic->getTypeArguments().front() == runtime.getIntegerType());
+}
+
+BOOST_AUTO_TEST_CASE(hub_class_validation_does_not_publish_partial_registrations)
+{
+    Runtime runtime;
+    const auto hubId = runtime.registerHub("example", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    const auto reject = [&](const HubId ownerId, const NomadString& name, const ClassMode mode) {
+        BOOST_TEST(runtime.registerHubClass(ownerId, name, mode).isInvalid());
+        BOOST_TEST(runtime.registerHubClass<RangeType>(ownerId, name, mode).isInvalid());
+    };
+    for (const auto invalidId : {HubId::INVALID, HubId{-2}, HubId{NOMAD_ID_MAX}}) {
+        reject(invalidId, "Point", ClassMode::Closed);
+    }
+    for (const auto* name : {"", "example.Point", "child.Point", "Point@hidden", "1Point", "bad name"}) {
+        reject(hubId, name, ClassMode::Closed);
+    }
+    reject(hubId, "Point", static_cast<ClassMode>(0));
+    BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
+    BOOST_TEST(runtime.getTypeByName("example.Point") == nullptr);
+    BOOST_REQUIRE(runtime.registerHubConstant(hubId, "constant", RuntimeValue(NomadInteger{1}),
+        runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerHubEnum(hubId, "State", {{"Ready", 1}}).isValid());
+    BOOST_REQUIRE(runtime.registerHubVariable("example.variable").isValid());
+    const auto classId = runtime.registerHubClass(hubId, "Point", ClassMode::Closed, "Original.");
+    BOOST_REQUIRE(classId.isValid());
+    BOOST_REQUIRE(runtime.registerHubNativeFunction(
+        hubId, "function", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerHub("example.child", HubMode::Opened).isValid());
+    const auto count = runtime.getHub(hubId)->getMembers().size();
+    for (const auto* name : {"constant", "State", "variable", "Point", "function", "child"}) {
+        reject(hubId, name, ClassMode::Opened);
+    }
+    BOOST_TEST(runtime.getHub(hubId)->getMembers().size() == count);
+    BOOST_TEST(runtime.getTypeId("example.Point") == classId);
+    BOOST_TEST(runtime.getType(classId).value()->getDocumentation() == "Original.");
+}
 
 BOOST_AUTO_TEST_CASE(hub_enums_and_constants_use_local_names_and_typed_script_values)
 {

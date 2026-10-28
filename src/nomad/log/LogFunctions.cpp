@@ -116,12 +116,13 @@ void setStringField(ScriptObject& object, const NomadString& name, const NomadSt
 
 const ClassType* registerConfiguration(
     Runtime* runtime,
+    const HubId hubId,
     const Type* levelType,
     const Type* rotationType,
     const bool file
 ) {
-    const NomadString name = file ? "log.FileSinkConfiguration" : "log.SinkConfiguration";
-    const auto id = runtime->registerClass(name, ClassMode::Closed,
+    const NomadString name = file ? "FileSinkConfiguration" : "SinkConfiguration";
+    const auto id = runtime->registerHubClass(hubId, name, ClassMode::Closed,
         NomadDoc("Mutable creation settings; factories copy these values into a logger-owned sink."));
     if (id.isInvalid()) {
         throw NomadException("Failed to register " + name);
@@ -250,8 +251,8 @@ void registerLogConfigurationFunctions(ModuleContext* context, const HubId hubId
     const auto* levelType = runtime->getType(levelId).value();
     const auto* rotationType = runtime->getType(rotationId).value();
     const auto* deliveryType = runtime->getType(deliveryId).value();
-    const auto* configurationType = registerConfiguration(runtime, levelType, rotationType, false);
-    const auto* fileConfigurationType = registerConfiguration(runtime, levelType, rotationType, true);
+    const auto* configurationType = registerConfiguration(runtime, hubId, levelType, rotationType, false);
+    const auto* fileConfigurationType = registerConfiguration(runtime, hubId, levelType, rotationType, true);
     const std::vector<Parameter> sinkParameters{
         defParameter("sink", sinkType, NomadParamDoc("A reference to a logger-owned sink."))
     };

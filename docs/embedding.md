@@ -853,6 +853,19 @@ callbacks, type references, and conflicting declarations are logged and return
 `CallableId::INVALID` without adding a function. Referenced types must belong to
 the receiving runtime; hidden source parameter types are supported.
 
+Use `registerHubClass(hubId, name, mode, documentation = {})` to register a class
+with a local name, such as `"Sink"` in hub `"log"`. It returns a `TypeId` and
+exposes the class as `log.Sink`. The name must be a simple identifier.
+The hub may be open or closed; `ClassMode` independently controls whether scripts
+may extend the class. Invalid hub IDs, local names, class modes, and conflicting
+declarations are logged and return `TypeId::INVALID`.
+
+`registerHubClass<Descriptor>(hubId, name, mode, arguments...)` also supports
+specialized `ClassType` descriptors. It forwards the qualified name, mode, and
+additional arguments through the same registration path as
+`registerClass<Descriptor>`. Properties, constructors, and methods are then
+registered using the returned class ID and the existing member APIs.
+
 Use `registerHubEnum(hubId, name, values, documentation = {})` to register an enum
 with a local name, such as `"Platform"` in hub `"os"`. Enum value names must also
 be simple identifiers. It returns a `TypeId`; the enum and its typed constants

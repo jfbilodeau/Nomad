@@ -16,8 +16,8 @@ namespace nomad {
 
 namespace {
 
-void registerLogSinkType(Runtime& runtime, const ModuleMode mode) {
-    const auto typeId = runtime.registerClass("log.Sink", ClassMode::Closed,
+void registerLogSinkType(Runtime& runtime, const HubId hubId, const ModuleMode mode) {
+    const auto typeId = runtime.registerHubClass(hubId, "Sink", ClassMode::Closed,
         NomadDoc("A reference to a logger-owned sink. Releasing it does not remove the sink."));
     if (typeId.isInvalid()) {
         throw NomadException("Failed to register log.Sink");
@@ -55,7 +55,7 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     if (hubId.isInvalid()) {
         throw NomadException("Failed to register log hub");
     }
-    registerLogSinkType(*runtime, context->mode);
+    registerLogSinkType(*runtime, hubId, context->mode);
     registerLogConfigurationFunctions(context, hubId);
     const std::array functions{
         std::pair{"log.debug", &Logger::debug},

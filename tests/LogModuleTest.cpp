@@ -90,6 +90,18 @@ BOOST_AUTO_TEST_CASE(module_registers_sink_type_and_active_property) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-log"});
     for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis}) {
         const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
+        const auto& runtime = *host->getRuntime();
+        const auto* hub = runtime.getHub(runtime.getHubId("log"));
+        BOOST_REQUIRE(hub != nullptr);
+        for (const auto* name : {"Sink", "SinkConfiguration", "FileSinkConfiguration"}) {
+            const auto* member = hub->getMember(name);
+            BOOST_REQUIRE(member != nullptr);
+            const auto* registeredType = std::get<const Type*>(*member);
+            BOOST_TEST(registeredType == runtime.getTypeByName("log." + NomadString(name)));
+            BOOST_TEST(runtime.getTypeByName(name) == nullptr);
+            BOOST_REQUIRE(registeredType->asClassType() != nullptr);
+            BOOST_TEST(!registeredType->asClassType()->isOpen());
+        }
         const auto* type = host->getRuntime()->getTypeByName("log.Sink");
         BOOST_REQUIRE(type != nullptr);
         const auto* classType = type->asClassType();
