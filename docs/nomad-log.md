@@ -47,14 +47,15 @@ The module exposes these ordinary typed values:
 - `log.DeliveryMode`: `Buffered`, `Synchronous`.
 - `log.FileRotationMode`: `None`, `Size`.
 - `log.Sink`: a reference-semantic object returned by a sink factory, not an integer.
+- `log.Logger`: the live host logger, available as the read-only reference `log.logger`.
 
-Use `log.getLogLevel` / `log.setLogLevel level` and
-`log.getDeliveryMode` / `log.setDeliveryMode mode` to inspect or change the logger.
+Use `log.logger.level` and `log.logger.deliveryMode` to inspect or change the logger.
+Both are native-backed read/write properties; assigning `log.logger` itself is not allowed.
 `log.flush` delivers pending messages and flushes active sinks.
 
 ```nomad
-log.setLogLevel log.Level.Debug
-log.setDeliveryMode log.DeliveryMode.Synchronous
+log.logger.level = log.Level.Debug
+log.logger.deliveryMode = log.DeliveryMode.Synchronous
 
 options = new log.SinkConfiguration
 options.level = log.Level.Debug
@@ -107,33 +108,36 @@ Each constructor creates independent settings. Assignment aliases the same
 configuration object, as with other script objects. Factories copy its values:
 changing the configuration afterward does not alter an existing sink.
 An inactive sink (`active = false`) is owned but receives no entries and creates
-no files until started. Enable it with `log.setSinkActive sink true`; an active
+no files until started. Enable it with `sink.active = true`; an active
 flush, including an empty one, starts it.
 
 ### Live sink settings
 
-Factories return `log.Sink` objects with a read/write `active:bool` property.
+Factories return `log.Sink` objects with native-backed properties.
 Assigning a sink object aliases the same reference; there is no script constructor.
-All functions below take a `sink:log.Sink` first:
+Creation settings remain ordinary script objects: editing them does not update a live sink.
 
-| Getter | Setter |
+| Property | Access |
 | --- | --- |
-| `log.getSinkLevel sink` | `log.setSinkLevel sink level` |
-| `log.getSinkActive sink` | `log.setSinkActive sink active` |
-| `log.getFileRotationMode sink` | `log.setFileRotationMode sink mode` |
-| `log.getFileRotateAtStartup sink` | `log.setFileRotateAtStartup sink enabled` |
-| `log.getFileMaxSizeBytes sink` | `log.setFileRotationLimits sink maxSizeBytes maxFiles` |
-| `log.getFileMaxFiles sink` | Use the same rotation-limits setter. |
-| `log.getFilePath sink` | Create a replacement to change the path or name. |
+| `sink.level:log.Level` | Read/write |
+| `sink.active:bool` | Read/write |
+| `sink.rotationMode:log.FileRotationMode` | Read/write; file sinks only |
+| `sink.rotateAtStartup:bool` | Read/write; file sinks only |
+| `sink.maxSizeBytes:int` | Read-only; file sinks only |
+| `sink.maxFiles:int` | Read-only; file sinks only |
 
-File-specific functions fail for console or other sink kinds. Changing the startup
+Use `log.setFileRotationLimits sink maxSizeBytes maxFiles` to change both limits
+atomically. `log.getFilePath sink` returns the active path; create a replacement
+to change the path or name. The former setting get/set functions are no longer available.
+
+File-specific properties and functions fail for console or other sink kinds. Changing the startup
 flag after startup does not rotate again or undo rotation. Other rotation changes
 apply to subsequent writes.
 
 The logger owns sinks, not configuration objects or script handles. Discarding a
 handle does not remove its sink. Accessing a removed/cleared sink or removing it
 again fails explicitly. Null references and references belonging to a different
-logger are rejected by sink functions. Directory,
+logger are rejected by sink properties and functions. Directory,
 file, rotation, and delivery errors also propagate as script execution errors.
 Memory sinks and custom script sink callbacks are not exposed.
 

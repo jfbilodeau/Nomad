@@ -25,6 +25,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/log/ConsoleSink.cpp
     ${NOMAD_SOURCE_DIR}/nomad/log/FileSink.cpp
     ${NOMAD_SOURCE_DIR}/nomad/log/Logger.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/log/LoggerObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/log/LogSink.cpp
     ${NOMAD_SOURCE_DIR}/nomad/log/LogSinkObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/log/MemorySink.cpp

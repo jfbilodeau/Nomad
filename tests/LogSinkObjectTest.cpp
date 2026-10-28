@@ -132,7 +132,7 @@ BOOST_AUTO_TEST_CASE(logger_local_ids_resolve_against_the_stored_owner) {
     BOOST_TEST(otherLogger.getSink(otherId) != nullptr);
 }
 
-BOOST_AUTO_TEST_CASE(registers_closed_sink_type_with_only_boolean_active_property) {
+BOOST_AUTO_TEST_CASE(registers_closed_sink_type_with_native_live_properties) {
     boost::dll::shared_library library;
     Runtime runtime;
     loadLogModule(library, runtime, logger);
@@ -142,7 +142,7 @@ BOOST_AUTO_TEST_CASE(registers_closed_sink_type_with_only_boolean_active_propert
     BOOST_REQUIRE(type != nullptr);
     BOOST_TEST(type->getTypeName() == "log.Sink");
     BOOST_TEST(!type->isOpen());
-    BOOST_TEST(type->getPropertyCount() == 1U);
+    BOOST_TEST(type->getPropertyCount() == 6U);
     BOOST_TEST(type->getConstructors().empty());
     BOOST_TEST(type->getMethods().empty());
     const auto* active = type->getProperty("active");
@@ -152,6 +152,17 @@ BOOST_AUTO_TEST_CASE(registers_closed_sink_type_with_only_boolean_active_propert
     BOOST_REQUIRE(info.has_value());
     BOOST_TEST(static_cast<bool>(info->getFn));
     BOOST_TEST(static_cast<bool>(info->setFn));
+    for (const auto* name : {"level", "rotationMode", "rotateAtStartup", "maxSizeBytes", "maxFiles"}) {
+        BOOST_TEST_CONTEXT(name) {
+            const auto* property = type->getProperty(name);
+            BOOST_REQUIRE(property != nullptr);
+            const auto native = runtime.getNativePropertyInfo(property->getId());
+            BOOST_REQUIRE(native.has_value());
+            BOOST_TEST(static_cast<bool>(native->getFn));
+            const auto readOnly = NomadStringView(name) == "maxSizeBytes" || NomadStringView(name) == "maxFiles";
+            BOOST_TEST(static_cast<bool>(native->setFn) == !readOnly);
+        }
+    }
     const auto* member = runtime.getHub(hubId)->getMember("Sink");
     BOOST_REQUIRE(member != nullptr);
     BOOST_REQUIRE(std::holds_alternative<const Type*>(*member));

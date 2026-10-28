@@ -4,6 +4,7 @@
 #include <nomad/compiler/CompilerContext.hpp>
 
 #include <nomad/log/Logger.hpp>
+#include <nomad/log/LoggerObject.hpp>
 #include <nomad/log/LogSinkObject.hpp>
 
 #include <nomad/script/Runtime.hpp>
@@ -143,6 +144,42 @@ BOOST_AUTO_TEST_CASE(configuration_objects_are_script_objects_with_matching_defa
     BOOST_TEST(runtime.getTypeByName("log.SinkId") == nullptr);
 }
 
+BOOST_AUTO_TEST_CASE(logger_aliases_expose_live_native_settings_without_leaking_references) {
+    const auto before = NomadObject::getLiveObjectCount();
+    logger.setLogLevel(LogLevel::Warning);
+    BOOST_TEST(execute("return log.logger.level").getIntegerValue() == static_cast<NomadInteger>(LogLevel::Warning));
+    (void)execute(
+        "alias = log.logger\n"
+        "alias.level = log.Level.Debug\n"
+        "alias.deliveryMode = log.DeliveryMode.Synchronous\n"
+    );
+    BOOST_TEST((logger.getLogLevel() == LogLevel::Debug));
+    BOOST_TEST((logger.getDeliveryMode() == LogDeliveryMode::Synchronous));
+    BOOST_TEST(execute("return log.logger.level").getIntegerValue() == static_cast<NomadInteger>(LogLevel::Debug));
+    BOOST_TEST(execute("return log.logger.deliveryMode").getIntegerValue() ==
+        static_cast<NomadInteger>(LogDeliveryMode::Synchronous));
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(logger_properties_reject_null_and_foreign_receivers) {
+    const auto* type = runtime.getTypeByName("log.Logger")->asClassType();
+    const auto levelId = type->getProperty("level")->getId();
+    auto machine = runtime.createVirtualMachine();
+    RuntimeValue receiver;
+    RuntimeValue result;
+    BOOST_CHECK_THROW(machine->getProperty(levelId, receiver, result), VirtualMachineException);
+    BOOST_CHECK_THROW(machine->setProperty(levelId, receiver,
+        RuntimeValue(static_cast<NomadInteger>(LogLevel::Debug))), VirtualMachineException);
+    Logger otherLogger;
+    receiver.setObjectValue(new LoggerObject(otherLogger));
+    BOOST_CHECK_THROW(machine->getProperty(levelId, receiver, result), VirtualMachineException);
+    BOOST_CHECK_THROW(machine->setProperty(levelId, receiver,
+        RuntimeValue(static_cast<NomadInteger>(LogLevel::Debug))), VirtualMachineException);
+    BOOST_TEST((logger.getLogLevel() == LogLevel::Info));
+    BOOST_TEST((otherLogger.getLogLevel() == LogLevel::Info));
+    receiver.freeObjectValue();
+}
+
 BOOST_AUTO_TEST_CASE(script_file_creation_uses_project_directory_and_rotates_whole_records) {
     directory.write(NomadPath("logs") / "application.log", "previous run\n");
     auto result = execute(
@@ -150,7 +187,7 @@ BOOST_AUTO_TEST_CASE(script_file_creation_uses_project_directory_and_rotates_who
         "options.maxSizeBytes = 1\n"
         "sink = log.createFileSink options\n"
         "options.name = \"not-the-active-file\"\n"
-        "log.setDeliveryMode log.DeliveryMode.Synchronous\n"
+        "log.logger.deliveryMode = log.DeliveryMode.Synchronous\n"
         "log.info \"first-record\"\n"
         "log.info \"second-record\"\n"
         "return sink\n"
@@ -174,16 +211,16 @@ BOOST_AUTO_TEST_CASE(console_settings_control_output_without_replacing_cpp_sinks
     std::cout.rdbuf(output.rdbuf());
     std::cerr.rdbuf(errors.rdbuf());
     auto result = execute(
-        "log.setLogLevel log.Level.Debug\n"
+        "log.logger.level = log.Level.Debug\n"
         "options = new log.SinkConfiguration\n"
         "options.active = false\n"
         "options.level = log.Level.Warning\n"
         "sink = log.createConsoleSink options\n"
         "log.info \"inactive-record\"\nlog.flush\n"
-        "log.setSinkActive sink true\n"
+        "sink.active = true\n"
         "log.info \"filtered-record\"\n"
         "log.warning \"warning-record\"\nlog.flush\n"
-        "log.setSinkLevel sink log.Level.Debug\n"
+        "sink.level = log.Level.Debug\n"
         "log.debug \"debug-record\"\nlog.flush\n"
         "log.error \"error-record\"\n"
         "return sink\n"
@@ -195,10 +232,10 @@ BOOST_AUTO_TEST_CASE(console_settings_control_output_without_replacing_cpp_sinks
     BOOST_TEST(errors.str().find("error-record") != NomadString::npos);
     BOOST_REQUIRE_EQUAL(getMemory().getEntries().size(), 5U);
     const auto id = saveHandle(result);
-    BOOST_TEST(execute("return log.getSinkActive savedSink").getBooleanValue());
-    BOOST_TEST(execute("return log.getSinkLevel savedSink").getIntegerValue() == static_cast<NomadInteger>(LogLevel::Debug));
-    BOOST_TEST(execute("return log.getLogLevel").getIntegerValue() == static_cast<NomadInteger>(LogLevel::Debug));
-    BOOST_TEST(execute("return log.getDeliveryMode").getIntegerValue() == static_cast<NomadInteger>(LogDeliveryMode::Buffered));
+    BOOST_TEST(execute("return savedSink.active").getBooleanValue());
+    BOOST_TEST(execute("return savedSink.level").getIntegerValue() == static_cast<NomadInteger>(LogLevel::Debug));
+    BOOST_TEST(execute("return log.logger.level").getIntegerValue() == static_cast<NomadInteger>(LogLevel::Debug));
+    BOOST_TEST(execute("return log.logger.deliveryMode").getIntegerValue() == static_cast<NomadInteger>(LogDeliveryMode::Buffered));
     logger.removeSink(id);
 }
 
@@ -212,20 +249,20 @@ BOOST_AUTO_TEST_CASE(staged_file_settings_remain_adjustable_before_activation) {
     BOOST_TEST(read(NomadPath("logs") / "application.log") == "previous run\n");
     BOOST_TEST(!std::filesystem::exists(directory.getPath() / "logs" / "application.1.log"));
     (void)execute(
-        "log.setFileRotateAtStartup savedSink false\n"
-        "log.setFileRotationMode savedSink log.FileRotationMode.None\n"
+        "savedSink.rotateAtStartup = false\n"
+        "savedSink.rotationMode = log.FileRotationMode.None\n"
         "log.setFileRotationLimits savedSink 64 0\n"
-        "log.setSinkActive savedSink true\n"
+        "savedSink.active = true\n"
         "log.info \"appended-record\"\nlog.flush\n"
     );
     const auto content = read(NomadPath("logs") / "application.log");
     BOOST_TEST(content.starts_with("previous run\n"));
     BOOST_TEST(content.find("appended-record") != NomadString::npos);
-    BOOST_TEST(!execute("return log.getFileRotateAtStartup savedSink").getBooleanValue());
-    BOOST_TEST(execute("return log.getFileRotationMode savedSink").getIntegerValue() ==
+    BOOST_TEST(!execute("return savedSink.rotateAtStartup").getBooleanValue());
+    BOOST_TEST(execute("return savedSink.rotationMode").getIntegerValue() ==
         static_cast<NomadInteger>(FileRotationMode::None));
-    BOOST_TEST(execute("return log.getFileMaxSizeBytes savedSink").getIntegerValue() == 64);
-    BOOST_TEST(execute("return log.getFileMaxFiles savedSink").getIntegerValue() == 0);
+    BOOST_TEST(execute("return savedSink.maxSizeBytes").getIntegerValue() == 64);
+    BOOST_TEST(execute("return savedSink.maxFiles").getIntegerValue() == 0);
     auto path = execute("return log.getFilePath savedSink");
     BOOST_TEST(path.getStringObject()->getString() == pathToUtf8(directory.getPath() / "logs" / "application.log"));
     runtime.getStringType()->freeValue(path);
@@ -259,11 +296,10 @@ BOOST_AUTO_TEST_CASE(removed_handles_cannot_reach_replacements) {
     const auto replacement = logger.createMemorySink();
     BOOST_TEST(replacement != oldId);
     BOOST_CHECK_THROW((void)execute("log.removeSink savedSink"), VirtualMachineException);
-    BOOST_CHECK_THROW((void)execute("return log.getSinkLevel savedSink"), VirtualMachineException);
-    BOOST_CHECK_THROW((void)execute("log.setSinkActive savedSink true"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)execute("return savedSink.level"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)execute("savedSink.active = true"), VirtualMachineException);
     BOOST_TEST(logger.getSink(replacement) != nullptr);
-    BOOST_CHECK_THROW((void)execute("return savedSink.active"), NomadException);
-    BOOST_CHECK_THROW((void)execute("savedSink.active = true"), NomadException);
+    BOOST_CHECK_THROW((void)execute("return savedSink.active"), VirtualMachineException);
 }
 
 BOOST_AUTO_TEST_CASE(sink_objects_alias_and_release_without_removing_the_sink) {
@@ -276,7 +312,6 @@ BOOST_AUTO_TEST_CASE(sink_objects_alias_and_release_without_removing_the_sink) {
     );
     const auto id = saveHandle(result);
     BOOST_TEST(execute("return savedSink.active").getBooleanValue());
-    BOOST_TEST(execute("return log.getSinkActive savedSink").getBooleanValue());
     (void)execute("savedSink.active = false");
     BOOST_TEST(!logger.getSink(id)->getActive());
     savedSink.freeObjectValue();
@@ -292,8 +327,10 @@ BOOST_AUTO_TEST_CASE(sink_functions_reject_objects_from_another_logger) {
     BOOST_REQUIRE(otherId == memoryId);
     savedSink.setObjectValue(new LogSinkObject(otherLogger, otherId));
     for (const auto& source : {
-        "return log.getSinkActive savedSink",
-        "log.setSinkActive savedSink false",
+        "return savedSink.active",
+        "savedSink.active = false",
+        "return savedSink.level",
+        "savedSink.level = log.Level.Debug",
         "log.removeSink savedSink"
     }) {
         BOOST_CHECK_THROW((void)execute(source), VirtualMachineException);
@@ -311,14 +348,14 @@ BOOST_AUTO_TEST_CASE(print_and_stale_handle_checks_survive_clearing_all_sinks) {
     const boost::io::ios_rdbuf_saver restoreOutput(std::cout);
     std::cout.rdbuf(output.rdbuf());
     (void)execute(
-        "log.setLogLevel log.Level.Critical\n"
+        "log.logger.level = log.Level.Critical\n"
         "log.clearAllSinks\nlog.error \"not-delivered\"\nlog.flush\n"
         "print \"plain output\"\n"
     );
     BOOST_TEST(output.str() == "plain output\n");
     BOOST_TEST(logger.getSink(memoryId) == nullptr);
-    BOOST_CHECK_THROW((void)execute("log.setSinkLevel savedSink log.Level.Info"), VirtualMachineException);
-    BOOST_CHECK_THROW((void)execute("return savedSink.active"), NomadException);
+    BOOST_CHECK_THROW((void)execute("savedSink.level = log.Level.Info"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)execute("return savedSink.active"), VirtualMachineException);
 }
 
 BOOST_AUTO_TEST_CASE(invalid_configuration_and_wrong_sink_kinds_fail_explicitly) {
@@ -333,24 +370,36 @@ BOOST_AUTO_TEST_CASE(invalid_configuration_and_wrong_sink_kinds_fail_explicitly)
     }
     BOOST_TEST(!std::filesystem::exists(directory.getPath() / "logs"));
     saveHandle(memoryId);
-    BOOST_CHECK_THROW((void)execute("return log.getFileMaxFiles savedSink"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)execute("return savedSink.maxFiles"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)execute("return savedSink.rotationMode"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)execute("savedSink.rotationMode = log.FileRotationMode.None"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)execute("return savedSink.rotateAtStartup"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)execute("savedSink.rotateAtStartup = false"), VirtualMachineException);
     BOOST_CHECK_THROW((void)execute("log.setFileRotationLimits savedSink 4 2"), VirtualMachineException);
     BOOST_TEST(logger.getSink(memoryId) != nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(invalid_enum_values_are_rejected_without_narrowing_them) {
     const auto* levelType = runtime.getTypeByName("log.Level");
+    saveHandle(memoryId);
     for (const auto value : {NomadInteger{0}, NomadInteger{100}, (NomadInteger{1} << 32) + 2}) {
         const auto name = "invalidLevel" + std::to_string(sourceIndex);
         BOOST_REQUIRE(runtime.registerConstant(name, RuntimeValue(value), levelType).isValid());
-        BOOST_CHECK_THROW((void)execute("log.setLogLevel " + name), VirtualMachineException);
+        BOOST_CHECK_THROW((void)execute("log.logger.level = " + name), VirtualMachineException);
+        BOOST_CHECK_THROW((void)execute("savedSink.level = " + name), VirtualMachineException);
         BOOST_TEST((logger.getLogLevel() == LogLevel::Info));
+        BOOST_TEST((getMemory().getLogLevel() == LogLevel::Debug));
+        const auto deliveryName = "invalidDelivery" + std::to_string(sourceIndex);
+        BOOST_REQUIRE(runtime.registerConstant(deliveryName, RuntimeValue(value),
+            runtime.getTypeByName("log.DeliveryMode")).isValid());
+        BOOST_CHECK_THROW((void)execute("log.logger.deliveryMode = " + deliveryName), VirtualMachineException);
+        BOOST_TEST((logger.getDeliveryMode() == LogDeliveryMode::Buffered));
     }
 }
 
 BOOST_AUTO_TEST_CASE(invalid_handles_and_null_configuration_fail_explicitly) {
     BOOST_CHECK_THROW((void)execute("log.removeSink savedSink"), VirtualMachineException);
-    BOOST_CHECK_THROW((void)execute("return log.getSinkActive savedSink"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)execute("return savedSink.active"), VirtualMachineException);
     auto machine = runtime.createVirtualMachine();
     BOOST_CHECK_THROW(machine->runNativeFunction(
         runtime.getNativeFunctionId("log.createConsoleSink"), {RuntimeValue()}
@@ -362,7 +411,11 @@ BOOST_AUTO_TEST_CASE(invalid_handles_and_null_configuration_fail_explicitly) {
 
 BOOST_AUTO_TEST_CASE(logging_types_are_distinct_and_fatal_and_memory_apis_are_not_exposed) {
     for (const auto& source : {
-        "log.setLogLevel 1", "log.removeSink 1", "log.setLogLevel log.FileRotationMode.Size",
+        "log.logger.level = 1", "log.removeSink 1", "log.logger.level = log.FileRotationMode.Size",
+        "sink = log.createFileSink new log.FileSinkConfiguration\nsink.maxFiles = 3",
+        "sink = log.createFileSink new log.FileSinkConfiguration\nsink.maxSizeBytes = 64",
+        "log.logger = log.logger",
+        "return new log.Logger",
         "return log.Level.Fatal", "log.fatal \"not available\"", "return log.createMemorySink",
         "options = new log.FileSinkConfiguration\nreturn log.createConsoleSink options"
     }) {
@@ -395,7 +448,20 @@ BOOST_AUTO_TEST_CASE(analysis_exposes_types_without_applying_logging_configurati
     BOOST_TEST(analysis.execute("return savedSink.active").getBooleanValue());
     BOOST_CHECK_THROW((void)analysis.execute("savedSink.active = false"), VirtualMachineException);
     (void)analysis.execute("options = new log.FileSinkConfiguration\nreturn options.active");
-    BOOST_CHECK_THROW((void)analysis.execute("log.setLogLevel log.Level.Debug"), VirtualMachineException);
+    BOOST_TEST(analysis.execute("return log.logger.level").getIntegerValue() == static_cast<NomadInteger>(LogLevel::Info));
+    BOOST_TEST(analysis.execute("return log.logger.deliveryMode").getIntegerValue() ==
+        static_cast<NomadInteger>(LogDeliveryMode::Buffered));
+    BOOST_CHECK_THROW((void)analysis.execute("log.logger.level = log.Level.Debug"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)analysis.execute("log.logger.deliveryMode = log.DeliveryMode.Synchronous"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)analysis.execute("savedSink.level = log.Level.Debug"), VirtualMachineException);
+    FileSinkConfiguration configuration;
+    configuration.directory = analysis.directory.getPath() / "logs";
+    configuration.active = false;
+    const auto fileId = analysis.logger.createFileSink(configuration);
+    analysis.saveHandle(fileId);
+    BOOST_TEST(analysis.execute("return savedSink.maxFiles").getIntegerValue() == 10);
+    BOOST_CHECK_THROW((void)analysis.execute("savedSink.rotationMode = log.FileRotationMode.None"), VirtualMachineException);
+    BOOST_CHECK_THROW((void)analysis.execute("savedSink.rotateAtStartup = false"), VirtualMachineException);
     BOOST_CHECK_THROW((void)analysis.execute(
         "options = new log.FileSinkConfiguration\nreturn log.createFileSink options\n"
     ), VirtualMachineException);

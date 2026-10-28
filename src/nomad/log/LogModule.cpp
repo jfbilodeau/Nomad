@@ -2,7 +2,6 @@
 
 #include <nomad/log/LogFunctions.hpp>
 #include <nomad/log/Logger.hpp>
-#include <nomad/log/LogSinkObject.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -16,28 +15,11 @@ namespace nomad {
 
 namespace {
 
-void registerLogSinkType(Runtime& runtime, const HubId hubId, const ModuleMode mode) {
+void registerLogSinkType(Runtime& runtime, const HubId hubId) {
     const auto typeId = runtime.registerHubClass(hubId, "Sink", ClassMode::Closed,
         NomadDoc("A reference to a logger-owned sink. Releasing it does not remove the sink."));
     if (typeId.isInvalid()) {
         throw NomadException("Failed to register log.Sink");
-    }
-    const auto activeId = runtime.addProperty(typeId, {
-        .valueTypeId = runtime.getBooleanType()->getId(),
-        .name = "active",
-        .getter = [](VirtualMachine* machine, RuntimeValue& result) {
-            result.setBooleanValue(machine->getThisAs<LogSinkObject>()->getSink().getActive());
-        },
-        .setter = [mode](VirtualMachine* machine, const RuntimeValue& value) {
-            if (mode != ModuleMode::Application) {
-                machine->fault("Logging configuration requires application mode");
-            }
-            machine->getThisAs<LogSinkObject>()->getSink().setActive(value.getBooleanValue());
-        },
-        .documentation = NomadDoc("Whether this sink receives log delivery. Removed sinks report an error.")
-    });
-    if (activeId.isInvalid()) {
-        throw NomadException("Failed to register log.Sink.active");
     }
 }
 
@@ -55,7 +37,7 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     if (hubId.isInvalid()) {
         throw NomadException("Failed to register log hub");
     }
-    registerLogSinkType(*runtime, hubId, context->mode);
+    registerLogSinkType(*runtime, hubId);
     registerLogConfigurationFunctions(context, hubId);
     const std::array functions{
         std::pair{"debug", &Logger::debug},

@@ -95,10 +95,7 @@ BOOST_AUTO_TEST_CASE(all_logging_functions_are_registered_as_local_hub_members) 
         BOOST_REQUIRE(hub != nullptr);
         for (const auto* name : {
             "debug", "info", "warning", "error", "critical",
-            "getLogLevel", "setLogLevel", "getDeliveryMode", "setDeliveryMode",
-            "getSinkLevel", "setSinkLevel", "getSinkActive", "setSinkActive",
-            "getFileRotationMode", "setFileRotationMode", "getFileRotateAtStartup", "setFileRotateAtStartup",
-            "getFileMaxSizeBytes", "getFileMaxFiles", "createConsoleSink", "createFileSink",
+            "createConsoleSink", "createFileSink",
             "removeSink", "clearAllSinks", "flush", "getFilePath", "setFileRotationLimits"
         }) {
             BOOST_TEST_CONTEXT(name) {
@@ -112,6 +109,15 @@ BOOST_AUTO_TEST_CASE(all_logging_functions_are_registered_as_local_hub_members) 
                 BOOST_TEST(functions->ids.front() == id);
                 BOOST_TEST(runtime.getNativeFunctionId(name).isInvalid());
             }
+            for (const auto* name : {
+                "getLogLevel", "setLogLevel", "getDeliveryMode", "setDeliveryMode",
+                "getSinkLevel", "setSinkLevel", "getSinkActive", "setSinkActive",
+                "getFileRotationMode", "setFileRotationMode", "getFileRotateAtStartup", "setFileRotateAtStartup",
+                "getFileMaxSizeBytes", "getFileMaxFiles"
+            }) {
+                BOOST_TEST(hub->getMember(name) == nullptr);
+                BOOST_TEST(runtime.getNativeFunctionId("log." + NomadString(name)).isInvalid());
+            }
         }
     }
 }
@@ -124,7 +130,7 @@ BOOST_AUTO_TEST_CASE(module_registers_sink_type_and_active_property) {
         const auto& runtime = *host->getRuntime();
         const auto* hub = runtime.getHub(runtime.getHubId("log"));
         BOOST_REQUIRE(hub != nullptr);
-        for (const auto* name : {"Sink", "SinkConfiguration", "FileSinkConfiguration"}) {
+        for (const auto* name : {"Logger", "Sink", "SinkConfiguration", "FileSinkConfiguration"}) {
             const auto* member = hub->getMember(name);
             BOOST_REQUIRE(member != nullptr);
             const auto* registeredType = std::get<const Type*>(*member);
@@ -138,10 +144,19 @@ BOOST_AUTO_TEST_CASE(module_registers_sink_type_and_active_property) {
         const auto* classType = type->asClassType();
         BOOST_REQUIRE(classType != nullptr);
         BOOST_TEST(classType->getConstructors().empty());
-        BOOST_TEST(classType->getPropertyCount() == 1U);
+        BOOST_TEST(classType->getPropertyCount() == 6U);
         const auto* active = classType->getProperty("active");
         BOOST_REQUIRE(active != nullptr);
         BOOST_TEST(active->getValueType() == host->getRuntime()->getBooleanType());
+        const auto* loggerType = runtime.getTypeByName("log.Logger");
+        BOOST_REQUIRE(loggerType != nullptr);
+        BOOST_TEST(loggerType->asClassType()->getConstructors().empty());
+        BOOST_TEST(loggerType->asClassType()->getPropertyCount() == 2U);
+        const auto* member = hub->getMember("logger");
+        BOOST_REQUIRE(member != nullptr);
+        const auto* loggerId = std::get_if<ConstantId>(member);
+        BOOST_REQUIRE(loggerId != nullptr);
+        BOOST_TEST(runtime.getConstantType(*loggerId) == loggerType);
     }
 }
 
