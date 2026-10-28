@@ -104,6 +104,7 @@ if(MSVC)
     set_source_files_properties(
         ${NOMAD_SOURCE_DIR}/nomad/system/ModuleHost.cpp
         ${NOMAD_SOURCE_DIR}/nomad/system/ModuleHostImpl.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/system/ModuleManifest.cpp
         PROPERTIES COMPILE_OPTIONS "/wd4456"
     )
 else()

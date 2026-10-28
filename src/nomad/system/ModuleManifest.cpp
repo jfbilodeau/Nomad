@@ -5,6 +5,9 @@
 #include <nomad/system/NomadConfiguration.hpp>
 #include <nomad/system/Path.hpp>
 
+#include <boost/dll/shared_library.hpp>
+#include <boost/predef/os.h>
+
 #include <algorithm>
 #include <functional>
 #include <unordered_map>
@@ -24,13 +27,14 @@ NomadPath getModuleLibraryName(const NomadStringView name) {
     if (!isValidModuleName(name)) {
         throw ModuleException("Invalid module name: '" + NomadString(name) + "'");
     }
-#if defined(_WIN32)
-    return pathFromUtf8(NomadString(name) + ".nomad.dll");
-#elif defined(__APPLE__)
-    return pathFromUtf8("lib" + NomadString(name) + ".nomad.dylib");
-#else
-    return pathFromUtf8("lib" + NomadString(name) + ".nomad.so");
+    auto libraryName = NomadString(name) + ".nomad";
+#if !BOOST_OS_WINDOWS
+    // Boost.DLL treats an initial "lib" as an existing prefix, not part of the module name.
+    if (name.starts_with("lib")) {
+        libraryName.insert(0, "lib");
+    }
 #endif
+    return NomadPath(boost::dll::shared_library::decorate(pathFromUtf8(libraryName).native()).native());
 }
 
 ModuleManifest loadModuleManifest(const NomadPath& directory) {

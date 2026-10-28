@@ -4,6 +4,7 @@
 
 #include <TestDirectory.hpp>
 
+#include <boost/predef/os.h>
 #include <boost/test/unit_test.hpp>
 
 using namespace nomad;
@@ -12,10 +13,10 @@ using namespace nomad::test;
 BOOST_AUTO_TEST_SUITE(module_manifest)
 
 BOOST_AUTO_TEST_CASE(native_library_names_include_the_nomad_marker_and_platform_conventions) {
-    for (const auto* name : {"collections", "game", "log", "os", "system", "custom-module"}) {
-#if defined(_WIN32)
+    for (const auto* name : {"collections", "game", "log", "os", "system", "custom-module", "lib", "library", "lib-custom"}) {
+#if BOOST_OS_WINDOWS
         const auto expected = NomadString(name) + ".nomad.dll";
-#elif defined(__APPLE__)
+#elif BOOST_OS_MACOS || BOOST_OS_IOS
         const auto expected = "lib" + NomadString(name) + ".nomad.dylib";
 #else
         const auto expected = "lib" + NomadString(name) + ".nomad.so";
