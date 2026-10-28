@@ -30,6 +30,77 @@ static_assert(std::is_same_v<std::variant_alternative_t<6, HubMember>, HubTypeFa
 
 BOOST_AUTO_TEST_SUITE(language_hubs)
 
+BOOST_AUTO_TEST_CASE(hub_script_functions_share_the_runtime_callable_catalog)
+{
+    for (const auto mode : {HubMode::Opened, HubMode::Closed}) {
+        Runtime runtime;
+        const auto hubId = runtime.registerHub("example.child", mode);
+        BOOST_REQUIRE(hubId.isValid());
+        const auto id = runtime.registerHubScriptFunction(hubId, "answer", "answer.nomad", "return 42");
+        BOOST_REQUIRE(id.isValid());
+        auto* script = runtime.getScriptFunction(id);
+        BOOST_REQUIRE(script != nullptr);
+        BOOST_TEST(script->getName() == "example.child.answer");
+        BOOST_TEST(script->getPath() == "answer.nomad");
+        BOOST_TEST(script->getSourceCode() == "return 42");
+        BOOST_TEST(script->getFunctionStart() == NOMAD_INVALID_INDEX);
+        BOOST_TEST(runtime.getFunctionId("example.child.answer") == id);
+        BOOST_TEST(runtime.getFunctionId("answer").isInvalid());
+        BOOST_TEST(runtime.getNativeFunction(id) == nullptr);
+        BOOST_TEST(runtime.getCallable(id) == script);
+        const auto* member = runtime.getHub(hubId)->getMember("answer");
+        BOOST_REQUIRE(member != nullptr);
+        const auto* functions = std::get_if<HubFunctions>(member);
+        BOOST_REQUIRE(functions != nullptr);
+        BOOST_REQUIRE_EQUAL(functions->ids.size(), 1U);
+        BOOST_TEST(functions->ids.front() == id);
+        script->addParameter("value", runtime.getIntegerType(), "");
+        script->setReturnType(runtime.getIntegerType());
+        BOOST_TEST(runtime.getFunction(id)->getParameterCount() == 1U);
+        BOOST_TEST(runtime.getCallable(id)->getReturnType() == runtime.getIntegerType());
+        BOOST_REQUIRE(runtime.registerHub("example.other", HubMode::Opened).isValid());
+        BOOST_TEST(runtime.getScriptFunction(id) == script);
+        BOOST_TEST(std::get<HubFunctions>(*runtime.getHub(hubId)->getMember("answer")).ids.front() == id);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(hub_script_function_validation_rejects_conflicts_without_publishing_callables)
+{
+    Runtime runtime;
+    const auto hubId = runtime.registerHub("example", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    const auto count = runtime.getFunctionTableSize();
+    for (const auto invalidId : {HubId::INVALID, HubId{-2}, HubId{NOMAD_ID_MAX}}) {
+        BOOST_TEST(runtime.registerHubScriptFunction(invalidId, "answer", "answer.nomad", "").isInvalid());
+    }
+    for (const auto* name : {"", "example.answer", "child.answer", "answer@hidden", "1answer", "bad name"}) {
+        BOOST_TEST(runtime.registerHubScriptFunction(hubId, name, "answer.nomad", "").isInvalid());
+    }
+    BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
+    BOOST_TEST(runtime.getFunctionTableSize() == count);
+    BOOST_REQUIRE(runtime.registerHubConstant(hubId, "constant", RuntimeValue(NomadInteger{1}),
+        runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerHubClass(hubId, "Class", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.registerHubEnum(hubId, "State", {{"Ready", 1}}).isValid());
+    BOOST_REQUIRE(runtime.registerHubVariable(hubId, "variable").isValid());
+    BOOST_REQUIRE(runtime.registerHubNativeFunction(
+        hubId, "native", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    ).isValid());
+    const auto id = runtime.registerHubScriptFunction(hubId, "answer", "answer.nomad", "return 42");
+    BOOST_REQUIRE(id.isValid());
+    BOOST_REQUIRE(runtime.registerHub("example.child", HubMode::Opened).isValid());
+    const auto functionCount = runtime.getFunctionTableSize();
+    const auto memberCount = runtime.getHub(hubId)->getMembers().size();
+    for (const auto* name : {"constant", "Class", "State", "variable", "native", "answer", "child"}) {
+        BOOST_TEST(runtime.registerHubScriptFunction(hubId, name, "replacement.nomad", "return 0").isInvalid());
+    }
+    BOOST_TEST(runtime.registerScriptFunction("example.answer", "replacement.nomad", "return 0").isInvalid());
+    BOOST_TEST(runtime.getFunctionTableSize() == functionCount);
+    BOOST_TEST(runtime.getHub(hubId)->getMembers().size() == memberCount);
+    BOOST_TEST(runtime.getScriptFunction(id)->getSourceCode() == "return 42");
+    BOOST_TEST(runtime.getScriptFunction(id)->getPath() == "answer.nomad");
+}
+
 BOOST_AUTO_TEST_CASE(hub_variable_ids_share_existing_storage_and_script_type_resolution)
 {
     for (const auto mode : {HubMode::Opened, HubMode::Closed}) {

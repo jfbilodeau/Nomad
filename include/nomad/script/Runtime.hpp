@@ -197,6 +197,12 @@ public:
         const Type* returnType,
         NomadDocArg
     );
+    [[nodiscard]] CallableId registerHubScriptFunction(
+        HubId hubId,
+        const NomadString& name,
+        const NomadString& path,
+        const NomadString& source
+    );
     [[nodiscard]] bool isHub(const NomadString& name) const;
     [[nodiscard]] HubId getHubId(const NomadString& name) const;
     [[nodiscard]] const Hub* getHub(HubId id) const;

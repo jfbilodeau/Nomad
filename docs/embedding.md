@@ -853,6 +853,15 @@ callbacks, type references, and conflicting declarations are logged and return
 `CallableId::INVALID` without adding a function. Referenced types must belong to
 the receiving runtime; hidden source parameter types are supported.
 
+Use `registerHubScriptFunction(hubId, name, path, source)` to register a script
+function descriptor with a simple local name. It returns a `CallableId` and
+preserves the path and source in the shared callable catalog, just as
+`registerScriptFunction` does. Registration alone does not compile the body or
+make it executable. Both hub modes accept host registration. Invalid owners,
+nonlocal names, conflicting members, and existing callable names are logged and
+return `CallableId::INVALID`; this API does not introduce script overloads.
+Use compiler source registration for normal source compilation.
+
 Use `registerHubVariable(hubId, name)` to declare a variable using a simple local
 name. It returns a `ContextVariableId` for the same storage used by
 `registerHubVariable(qualifiedName)`. Variables start without a resolved type;

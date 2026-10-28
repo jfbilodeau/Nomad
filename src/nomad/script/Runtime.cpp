@@ -358,6 +358,19 @@ CallableId Runtime::registerHubNativeFunction(
     return registerNativeFunction(hub->getName() + "." + name, std::move(function), parameters, returnType, doc);
 }
 
+CallableId Runtime::registerHubScriptFunction(
+    const HubId hubId,
+    const NomadString& name,
+    const NomadString& path,
+    const NomadString& source
+) {
+    const auto qualifiedName = qualifyHubMemberName(hubId, name);
+    if (!qualifiedName) {
+        return CallableId::INVALID;
+    }
+    return registerScriptFunction(*qualifiedName, path, source);
+}
+
 bool Runtime::isHub(const NomadString& name) const {
     return getHubId(name).isValid();
 }
