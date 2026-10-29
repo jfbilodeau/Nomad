@@ -3,6 +3,9 @@ add_executable(
     ./ArrayObjectTest.cpp
     ./AudioDiscoveryTest.cpp
     ./AudioTest.cpp
+    ./BindingGeneratorTest.cpp
+    ./BindingTestFixture.cpp
+    ./BindingTestFixture.hpp
     ./CallableCatalogTest.cpp
     ./ClassTypeTest.cpp
     ./ColorTest.cpp
@@ -68,6 +71,7 @@ add_executable(
     ./ReadOnlyCollectionTest.cpp
     ./RectanglePackerTest.cpp
     ./RuntimeTest.cpp
+    ./ScriptBindingTest.cpp
     ./ScriptMethodTest.cpp
     ./ScriptObjectTest.cpp
     ./SourceLoaderTest.cpp
@@ -87,6 +91,11 @@ add_executable(
 
 target_include_directories(nomad_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Compile the retained example directly; generation is always an explicit developer action.
+include("${CMAKE_CURRENT_SOURCE_DIR}/../modules/nomad-log/generated/nomad-module.cmake")
+target_sources(nomad_test PRIVATE ${NOMAD_BINDING_HEADERS} ${NOMAD_BINDING_SOURCES})
+target_include_directories(nomad_test PRIVATE "${NOMAD_BINDING_INCLUDE_DIRECTORY}")
+
 # Matches the `nomad` library so debug-only checks (e.g. the live string counter) are compiled into the tests.
 target_compile_definitions(
     nomad_test
@@ -96,6 +105,7 @@ target_compile_definitions(
     NOMAD_TEST_FONT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/projects/package-smoke/res/fonts/ProggyClean.ttf"
     NOMAD_TEST_MODULE_DIRECTORY="$<TARGET_FILE_DIR:nomad-module-fixture>"
     NOMAD_TEST_CORE_LIBRARY="$<TARGET_FILE:nomad-language>"
+    NOMAD_TEST_LOG_BINDING_MODULE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/../modules/nomad-log"
 )
 
 add_library(nomad-module-fixture SHARED ModuleFixture.cpp)

@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <GenerateBindingsCommand.hpp>
+
 #include <nomad/project/ProjectConfiguration.hpp>
 #include <nomad/project/ProjectInitializer.hpp>
 #include <nomad/project/ProjectPackager.hpp>
@@ -224,6 +226,7 @@ int main(int argc, char** argv) {
 
     try {
         ProgramOptions program("nomad", "Nomad project manager");
+        registerGenerateBindingsCommand(program);
 
         program.addGlobal("help", "h", [&program] {
             program.printHelp(std::cout);

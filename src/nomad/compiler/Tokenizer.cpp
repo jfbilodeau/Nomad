@@ -80,7 +80,7 @@ struct LineGrammar : boost::spirit::qi::grammar<Iterator, std::vector<Token>()> 
 
     // A leading `+` is never part of a literal (`5+3` is an addition); a leading `-` is.
     qi::rule<Iterator, NomadFloat()>
-        float_value = !qi::lit('+') >> float_parser;
+        float_value = !qi::lit('+') >> float_parser >> !(qi::alnum | qi::char_('_'));
 
     qi::rule<Iterator, NomadInteger()>
         hex_value = qi::lit("0x") >> qi::uint_parser<NomadInteger, 16>(),

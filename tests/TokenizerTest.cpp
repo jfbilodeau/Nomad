@@ -4,10 +4,13 @@
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
+
+#include <cmath>
 
 using namespace nomad;
 
@@ -80,6 +83,55 @@ BOOST_AUTO_TEST_CASE(tokenizer_preserves_decimal_literals)
     BOOST_TEST(tokens.getTokenTypeAt(0) == TokenType::Float);
     BOOST_TEST(tokens.getTokenTypeAt(1) == TokenType::Float);
     BOOST_TEST(tokens.getTokenTypeAt(2) == TokenType::Float);
+}
+
+BOOST_AUTO_TEST_CASE(tokenizer_does_not_consume_special_float_prefixes_in_identifiers)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    for (const auto* name : {"Info", "Information", "infiniteCount", "InfinityValue", "NaNValue", "nanoseconds"}) {
+        CompilerContext context(compiler.get());
+        Tokenizer tokens(&context, "identifier.nomad", name);
+
+        BOOST_TEST(!context.hasError());
+        BOOST_REQUIRE_EQUAL(tokens.getTokenCount(), 1);
+        BOOST_TEST(tokens.getTokenTypeAt(0) == TokenType::Identifier);
+        BOOST_TEST(tokens.getTokenAt(0) == name);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(tokenizer_preserves_special_float_literals)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    Tokenizer tokens(&context, "float.nomad", "inf -inf infinity nan");
+
+    BOOST_REQUIRE(!context.hasError());
+    BOOST_REQUIRE_EQUAL(tokens.getTokenCount(), 4);
+    for (auto index = NomadIndex{0}; index < tokens.getTokenCount(); ++index) {
+        BOOST_TEST(tokens.getTokenTypeAt(index) == TokenType::Float);
+    }
+    BOOST_TEST(std::isinf(tokens.getFloatTokenAt(0)));
+    BOOST_TEST(std::isinf(tokens.getFloatTokenAt(1)));
+    BOOST_TEST(tokens.getFloatTokenAt(1) < 0);
+    BOOST_TEST(std::isinf(tokens.getFloatTokenAt(2)));
+    BOOST_TEST(std::isnan(tokens.getFloatTokenAt(3)));
+}
+
+BOOST_AUTO_TEST_CASE(enum_members_can_use_names_with_special_float_prefixes)
+{
+    const auto result = checkSources(SourceBatch{{
+        {"configuration", {"configuration.nomad",
+            "open hub example\n"
+            "enum Level\nDebug\nInfo\nWarning\nend\n"
+            "class Configuration\nlevel = example.Level.Info\nend\n"
+            "end\n"}}
+    }, {}});
+    for (const auto& diagnostic : result.diagnostics) {
+        BOOST_TEST_MESSAGE(formatDiagnostic(diagnostic));
+    }
+    BOOST_TEST(result.succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(tokenizer_preserves_expression_strings_inside_format_tokens)

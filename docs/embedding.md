@@ -21,6 +21,71 @@ Types and callables used by a context must remain valid.
 
 Neither the interpreter nor its context creates or owns a VM.
 
+## Experimental generated script bindings
+
+`nomad generate-bindings <module-directory>` produces a C++ header, source, and
+`nomad-module.cmake` inventory. Generate explicitly and commit the outputs; use
+`--check` in a separate freshness check. See [CLI reference](cli.md#experimental-module-bindings)
+for supported declaration shapes and dependency discovery.
+
+Consume the inventory explicitly; it never invokes a generator:
+
+```cmake
+include("${MODULE_DIRECTORY}/generated/nomad-module.cmake")
+target_sources(my_host PRIVATE ${NOMAD_BINDING_HEADERS} ${NOMAD_BINDING_SOURCES})
+target_include_directories(my_host PRIVATE "${NOMAD_BINDING_INCLUDE_DIRECTORY}")
+target_link_libraries(my_host PRIVATE Nomad::Language)
+```
+
+Generated names live in `nomad::generated::<module-name>` with module hyphens
+changed to underscores. Qualified script type names use underscores in C++;
+for example `log.FileSinkConfiguration` becomes `log_FileSinkConfiguration`
+in `nomad::generated::log`. Stored fields expose `getXXX()` and `setXXX(value)`.
+Enum names and numeric mappings are preserved. Unsupported names and collisions
+are errors rather than silently renamed APIs.
+
+Compile the module scripts into the host runtime before using a wrapper. The
+retained `modules/nomad-log/generated` example is tested against that module's
+script configuration in a bare runtime, **not** together with the existing native
+log configuration registration. It does not replace or migrate that registration,
+and does not install scripts into an SDK.
+
+```cpp
+#include <nomad/generated/log/Bindings.hpp>
+#include <nomad/script/VirtualMachine.hpp>
+
+// runtime already contains the compiled module script declarations.
+nomad::VirtualMachine machine(&runtime);
+using Settings = nomad::generated::log::log_FileSinkConfiguration;
+auto settings = Settings::create(runtime, machine);
+settings.setDirectory("logs");
+auto sameObject = Settings(runtime, settings.getObject());
+```
+
+- `create(runtime, machine)` runs the ordinary script constructor and class field
+  initializers. Defaults are not copied into C++. Compiling/generating bindings,
+  wrapping an existing receiver, and copying a wrapper do not run initializers.
+- Construction and wrapping validate the runtime-local class, exact stored-field
+  names and types, ordinary zero-argument constructor, and referenced enum
+  names/numeric mappings. Native properties and unsupported shapes are rejected.
+  IDs are resolved in the supplied runtime, never generated or shared across runtimes.
+- Wrapping borrows the input pointer and retains its own intrusive reference.
+  Copies retain another reference; moves transfer it. Destruction releases it.
+  `getObject()` is borrowed; use `addRef()` if retaining it beyond the wrapper.
+  No `shared_ptr` is put in a `RuntimeValue`.
+- The runtime must outlive all wrappers and receivers. Do not unload or replace
+  registered types/bytecode while wrappers are live. Wrappers do not extend
+  runtime lifetime or make VM/receiver access thread-safe.
+- Wrong runtime, VM, class receiver, missing declarations, field-type mismatch,
+  enum mapping mismatch, and invalid enum reads/writes throw `NomadException`.
+  Moved-from handles cannot be accessed. Strings cross the interface by value
+  with their full length, including embedded nulls.
+
+`<nomad/script/ScriptBindingObject.hpp>` supplies the reusable checked handle.
+Its `BindingClass` contract must also outlive the handle (generated contracts have
+static lifetime). Its primitive accessors check access types; integer access can
+also read/write a contracted enum, validating its value.
+
 ### C++ logging
 
 Include `<nomad/log/Logger.hpp>` to use a standalone `Logger` or the engine's

@@ -13,6 +13,7 @@ command-specific help. Options belong to individual verbs.
 | `nomad check [directory]` | Validate project scripts and sprite packing through the sibling `nomadc`. |
 | `nomad run [directory] [--debug\|--no-debug] [-- application-arguments...]` | Launch the sibling runtime from the project root, forwarding application arguments unchanged. |
 | `nomad package [directory] [--force] [--dry-run]` | Create a standalone game ZIP using the included runtime bundle. |
+| `nomad generate-bindings <module-directory> [--output <directory>] [--sdk <directory>] [--check]` | Generate experimental C++ enum and stored-field configuration interfaces from module scripts. |
 | `nomad version` | Print the SDK version. |
 
 Project discovery searches the requested directory and its parents for
@@ -32,6 +33,37 @@ Resources are selected using `package.exclude`. Output is named
 Entries are sorted with normalized timestamps and permissions.
 `--force` (`-f`) replaces only the matching archive, preserving other output files.
 Cross-target runtime selection is not supported.
+
+### Experimental module bindings
+
+`generate-bindings` reads `module.toml` and the selected module's declared script
+directory, using the ordinary compiler without running scripts or loading native
+modules. It does not discover a project or load the engine API. Unresolved
+native-dependent declarations fail with compiler diagnostics. Script dependencies
+require an explicit `--sdk` root containing `modules/<name>/module.toml`; only their
+transitive script roots are read.
+
+The default output is `<module-directory>/generated`. An explicit `--output` is
+relative to the current working directory. Commit the generated files:
+
+- `include/nomad/generated/<module-name>/Bindings.hpp`
+- `src/Bindings.cpp`
+- `nomad-module.cmake`
+
+Only enums and ordinary configuration classes with primitive (`bool`, `int`,
+`float`, `string`) or enum stored fields and one zero-argument script constructor
+are supported. Methods, parameterized classes, other field types, and native
+properties are rejected. Free functions may supply initializer values but do not
+receive generated callable interfaces. Invalid scripts, unsupported shapes, C++
+keywords, and generated-name collisions fail before files are changed.
+
+Generation is deterministic and leaves unchanged files untouched. `--check`
+returns nonzero for stale or deleted inventory files and never creates or changes
+files or directories. Source/output overlap, symbolic-link output paths, and
+collisions with unrelated files are rejected. Other files in an output directory
+are not removed. There is no automatic CMake generation or SDK script staging.
+See [embedding](embedding.md#experimental-generated-script-bindings) for ownership,
+runtime checks, and explicit CMake consumption.
 
 Packaging compiles each nonempty raw sprite root into `catalog.json` and
 adjacent packed PNG pages. Individual source PNGs from that root are omitted

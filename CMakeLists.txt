@@ -125,7 +125,12 @@ target_link_libraries(nomad-cli-options INTERFACE Boost::program_options)
 
 option(NOMAD_BUILD_CLI "Build the Nomad project manager" ON)
 if(NOMAD_BUILD_CLI)
-    add_executable(nomad-cli apps/manager/main.cpp)
+    add_executable(nomad-cli
+        apps/manager/GenerateBindingsCommand.cpp
+        apps/manager/GenerateBindingsCommand.hpp
+        apps/manager/main.cpp
+    )
+    target_include_directories(nomad-cli PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/apps/manager")
     set_target_properties(nomad-cli PROPERTIES OUTPUT_NAME nomad)
 
     set(NOMAD_PROJECT_TEMPLATE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/templates")
