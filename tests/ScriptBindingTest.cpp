@@ -12,6 +12,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <type_traits>
 #include <utility>
 
 using namespace nomad;
@@ -19,6 +20,9 @@ using namespace nomad::test;
 using namespace nomad::generated::log;
 
 BOOST_AUTO_TEST_SUITE(script_bindings)
+
+static_assert(std::is_base_of_v<ScriptBindingObject, log_SinkConfiguration>);
+static_assert(std::is_base_of_v<ScriptBindingObject, log_FileSinkConfiguration>);
 
 BOOST_AUTO_TEST_CASE(actual_generated_log_cpp_constructs_and_reads_and_writes_stored_fields) {
     Runtime runtime;
@@ -111,6 +115,12 @@ BOOST_AUTO_TEST_CASE(runtime_local_ids_and_wrong_runtime_receiver_and_machine_ar
     VirtualMachine secondMachine(&second);
     auto firstObject = log_SinkConfiguration::create(first, firstMachine);
     auto secondObject = log_SinkConfiguration::create(second, secondMachine);
+    BOOST_TEST(&firstObject.getBinding() == &log_SinkConfiguration::bind(first));
+    BOOST_TEST(&secondObject.getBinding() == &log_SinkConfiguration::bind(second));
+    BOOST_TEST(&firstObject.getBinding() != &secondObject.getBinding());
+    BOOST_CHECK(firstObject.getBinding().getPropertyId(0) != secondObject.getBinding().getPropertyId(0));
+    BOOST_TEST(firstObject.getBinding().getFieldIndex(0, BindingValueKind::Boolean) !=
+        secondObject.getBinding().getFieldIndex(0, BindingValueKind::Boolean));
     BOOST_CHECK(firstObject.getLevel() == secondObject.getLevel());
     secondObject.setActive(false);
     secondObject.setLevel(log_Level::Critical);
@@ -147,6 +157,19 @@ BOOST_AUTO_TEST_CASE(contract_rejects_missing_classes_wrong_field_types_and_enum
         BOOST_REQUIRE(position != NomadString::npos);
         source.replace(position, NomadString("        Debug\n        Info").size(), "        Info\n        Debug");
         compileLogBindingSource(runtime, source);
+        VirtualMachine machine(&runtime);
+        BOOST_CHECK_THROW((void)log_SinkConfiguration::create(runtime, machine), NomadException);
+    }
+    {
+        Runtime runtime;
+        auto source = getLogBindingSource();
+        const auto declaration = NomadString("    class SinkConfiguration\n");
+        const auto position = source.find(declaration);
+        BOOST_REQUIRE(position != NomadString::npos);
+        source.insert(position + declaration.size(), "        fun bindingMethod\nreturn 1\nend\n");
+        compileLogBindingSource(runtime, source);
+        const auto* type = runtime.getTypeByName("log.SinkConfiguration")->asClassType();
+        BOOST_TEST(!isScriptBindingClass(*type));
         VirtualMachine machine(&runtime);
         BOOST_CHECK_THROW((void)log_SinkConfiguration::create(runtime, machine), NomadException);
     }
@@ -198,12 +221,60 @@ BOOST_AUTO_TEST_CASE(reusable_support_checks_access_types_and_float_storage) {
     VirtualMachine machine(&runtime);
     const BindingClass contract{"Settings", {{"ratio", "float"}, {"name", "string"}}, {}};
     auto settings = ScriptBindingObject::construct(runtime, machine, contract);
-    BOOST_TEST(settings.getFloat("ratio") == 1.5F);
-    settings.setFloat("ratio", 2.5F);
-    BOOST_TEST(settings.getFloat("ratio") == 2.5F);
-    BOOST_CHECK_THROW((void)settings.getInteger("ratio"), NomadException);
-    BOOST_CHECK_THROW(settings.setBoolean("name", true), NomadException);
-    BOOST_CHECK_THROW(settings.setFloat("missing", 3.0F), NomadException);
+    BOOST_TEST(settings.getFloat(0) == 1.5F);
+    settings.setFloat(0, 2.5F);
+    BOOST_TEST(settings.getFloat(0) == 2.5F);
+    BOOST_CHECK_THROW((void)settings.getInteger(0), NomadException);
+    BOOST_CHECK_THROW(settings.setBoolean(1, true), NomadException);
+    BOOST_CHECK_THROW(settings.setFloat(2, 3.0F), NomadException);
+}
+
+BOOST_AUTO_TEST_CASE(resolved_bindings_are_shared_and_keep_stable_slots_without_freezing_classes) {
+    Runtime runtime;
+    compileLogBindingSource(runtime);
+    VirtualMachine machine(&runtime);
+    const auto& binding = log_SinkConfiguration::bind(runtime);
+    BOOST_TEST(&log_SinkConfiguration::bind(runtime) == &binding);
+    const auto activeId = binding.getPropertyId(0);
+    const auto activeIndex = binding.getFieldIndex(0, BindingValueKind::Boolean);
+    auto first = log_SinkConfiguration::create(runtime, machine);
+    auto second = log_SinkConfiguration::create(runtime, machine);
+    auto wrapped = log_SinkConfiguration(runtime, first.getObject());
+    BOOST_TEST(&first.getBinding() == &binding);
+    BOOST_TEST(&second.getBinding() == &binding);
+    BOOST_TEST(&wrapped.getBinding() == &binding);
+
+    BOOST_REQUIRE(runtime.registerProperty(
+        binding.getClassType()->getId(), "extension", runtime.getIntegerType()
+    ).isValid());
+    BOOST_TEST(binding.getPropertyId(0) == activeId);
+    BOOST_TEST(binding.getFieldIndex(0, BindingValueKind::Boolean) == activeIndex);
+    for (auto index = 0; index < 10; ++index) {
+        first.setActive(index % 2 == 0);
+        BOOST_TEST(wrapped.getActive() == (index % 2 == 0));
+        BOOST_CHECK(second.getLevel() == log_Level::Info);
+    }
+    auto wrappedAfterExtension = log_SinkConfiguration(runtime, first.getObject());
+    BOOST_TEST(&wrappedAfterExtension.getBinding() == &binding);
+    BOOST_TEST(wrappedAfterExtension.getActive() == first.getActive());
+}
+
+BOOST_AUTO_TEST_CASE(runtime_owns_contract_snapshots_and_failed_bindings_do_not_poison_the_cache) {
+    Runtime runtime;
+    BOOST_REQUIRE(checkSources({{{"settings", {"settings.nomad",
+        "class Settings\ncount = 3\nend\n"}}}, {}}, &runtime).succeeded());
+    const auto& binding = runtime.getScriptClassBinding(BindingClass{"Settings", {{"count", "int"}}, {}});
+    const BindingClass sameContract{"Settings", {{"count", "int"}}, {}};
+    BOOST_TEST(&runtime.getScriptClassBinding(sameContract) == &binding);
+    BOOST_CHECK_THROW((void)runtime.getScriptClassBinding(
+        BindingClass{"Settings", {{"count", "bool"}}, {}}
+    ), NomadException);
+    BOOST_TEST(&runtime.getScriptClassBinding(sameContract) == &binding);
+    VirtualMachine machine(&runtime);
+    auto settings = ScriptBindingObject::construct(binding, machine);
+    BOOST_TEST(settings.getInteger(0) == 3);
+    settings.setInteger(0, 7);
+    BOOST_TEST(settings.getInteger(0) == 7);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -14,6 +14,7 @@
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/RegisterRangeType.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/ScriptClassBinding.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -28,6 +29,18 @@
 #include <iomanip>
 
 namespace nomad {
+
+const ScriptClassBinding& Runtime::getScriptClassBinding(const BindingClass& contract) {
+    for (const auto& binding : m_scriptClassBindings) {
+        if (binding->getContract() == contract) {
+            return *binding;
+        }
+    }
+    auto binding = std::unique_ptr<ScriptClassBinding>(new ScriptClassBinding(*this, contract));
+    const auto& result = *binding;
+    m_scriptClassBindings.push_back(std::move(binding));
+    return result;
+}
 
 const ClassType* Runtime::getIteratorType(const Type* valueType) {
     if (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {

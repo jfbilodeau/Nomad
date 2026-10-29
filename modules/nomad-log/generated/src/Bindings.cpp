@@ -2,6 +2,8 @@
 
 #include <nomad/generated/log/Bindings.hpp>
 
+#include <nomad/script/Runtime.hpp>
+
 #include <utility>
 
 namespace nomad::generated::log {
@@ -32,86 +34,83 @@ const nomad::BindingClass& contract0() {
 } // namespace
 
 log_FileSinkConfiguration::log_FileSinkConfiguration(nomad::Runtime& runtime, nomad::NomadObject* object) :
-    m_binding(runtime, object, contract0()) {
+    nomad::ScriptBindingObject(bind(runtime), object) {
 }
 
-log_FileSinkConfiguration::log_FileSinkConfiguration(nomad::ScriptBindingObject binding) : m_binding(std::move(binding)) {
+log_FileSinkConfiguration::log_FileSinkConfiguration(nomad::ScriptBindingObject binding) :
+    nomad::ScriptBindingObject(std::move(binding)) {
+}
+
+const nomad::ScriptClassBinding& log_FileSinkConfiguration::bind(nomad::Runtime& runtime) {
+    return runtime.getScriptClassBinding(contract0());
 }
 
 log_FileSinkConfiguration log_FileSinkConfiguration::create(nomad::Runtime& runtime, nomad::VirtualMachine& machine) {
-    return log_FileSinkConfiguration(nomad::ScriptBindingObject::construct(runtime, machine, contract0()));
-}
-
-nomad::NomadObject* log_FileSinkConfiguration::getObject() const {
-    return m_binding.getObject();
-}
-
-nomad::Runtime& log_FileSinkConfiguration::getRuntime() const {
-    return m_binding.getRuntime();
+    return log_FileSinkConfiguration(nomad::ScriptBindingObject::construct(bind(runtime), machine));
 }
 
 nomad::NomadBoolean log_FileSinkConfiguration::getActive() const {
-    return m_binding.getBoolean("active");
+    return nomad::ScriptBindingObject::getBoolean(0);
 }
 
 void log_FileSinkConfiguration::setActive(nomad::NomadBoolean value) {
-    m_binding.setBoolean("active", value);
+    nomad::ScriptBindingObject::setBoolean(0, value);
 }
 
 nomad::NomadString log_FileSinkConfiguration::getDirectory() const {
-    return m_binding.getString("directory");
+    return nomad::ScriptBindingObject::getString(1);
 }
 
 void log_FileSinkConfiguration::setDirectory(const nomad::NomadString& value) {
-    m_binding.setString("directory", value);
+    nomad::ScriptBindingObject::setString(1, value);
 }
 
 log_Level log_FileSinkConfiguration::getLevel() const {
-    return static_cast<log_Level>(m_binding.getInteger("level"));
+    return static_cast<log_Level>(nomad::ScriptBindingObject::getInteger(2));
 }
 
 void log_FileSinkConfiguration::setLevel(log_Level value) {
-    m_binding.setInteger("level", static_cast<nomad::NomadInteger>(value));
+    nomad::ScriptBindingObject::setInteger(2, static_cast<nomad::NomadInteger>(value));
 }
 
 nomad::NomadInteger log_FileSinkConfiguration::getMaxFiles() const {
-    return m_binding.getInteger("maxFiles");
+    return nomad::ScriptBindingObject::getInteger(3);
 }
 
 void log_FileSinkConfiguration::setMaxFiles(nomad::NomadInteger value) {
-    m_binding.setInteger("maxFiles", value);
+    nomad::ScriptBindingObject::setInteger(3, value);
 }
 
 nomad::NomadInteger log_FileSinkConfiguration::getMaxSizeBytes() const {
-    return m_binding.getInteger("maxSizeBytes");
+    return nomad::ScriptBindingObject::getInteger(4);
 }
 
 void log_FileSinkConfiguration::setMaxSizeBytes(nomad::NomadInteger value) {
-    m_binding.setInteger("maxSizeBytes", value);
+    nomad::ScriptBindingObject::setInteger(4, value);
 }
 
 nomad::NomadString log_FileSinkConfiguration::getName() const {
-    return m_binding.getString("name");
+    return nomad::ScriptBindingObject::getString(5);
 }
 
 void log_FileSinkConfiguration::setName(const nomad::NomadString& value) {
-    m_binding.setString("name", value);
+    nomad::ScriptBindingObject::setString(5, value);
 }
 
 nomad::NomadBoolean log_FileSinkConfiguration::getRotateAtStartup() const {
-    return m_binding.getBoolean("rotateAtStartup");
+    return nomad::ScriptBindingObject::getBoolean(6);
 }
 
 void log_FileSinkConfiguration::setRotateAtStartup(nomad::NomadBoolean value) {
-    m_binding.setBoolean("rotateAtStartup", value);
+    nomad::ScriptBindingObject::setBoolean(6, value);
 }
 
 log_FileRotationMode log_FileSinkConfiguration::getRotationMode() const {
-    return static_cast<log_FileRotationMode>(m_binding.getInteger("rotationMode"));
+    return static_cast<log_FileRotationMode>(nomad::ScriptBindingObject::getInteger(7));
 }
 
 void log_FileSinkConfiguration::setRotationMode(log_FileRotationMode value) {
-    m_binding.setInteger("rotationMode", static_cast<nomad::NomadInteger>(value));
+    nomad::ScriptBindingObject::setInteger(7, static_cast<nomad::NomadInteger>(value));
 }
 
 namespace {
@@ -133,38 +132,35 @@ const nomad::BindingClass& contract1() {
 } // namespace
 
 log_SinkConfiguration::log_SinkConfiguration(nomad::Runtime& runtime, nomad::NomadObject* object) :
-    m_binding(runtime, object, contract1()) {
+    nomad::ScriptBindingObject(bind(runtime), object) {
 }
 
-log_SinkConfiguration::log_SinkConfiguration(nomad::ScriptBindingObject binding) : m_binding(std::move(binding)) {
+log_SinkConfiguration::log_SinkConfiguration(nomad::ScriptBindingObject binding) :
+    nomad::ScriptBindingObject(std::move(binding)) {
+}
+
+const nomad::ScriptClassBinding& log_SinkConfiguration::bind(nomad::Runtime& runtime) {
+    return runtime.getScriptClassBinding(contract1());
 }
 
 log_SinkConfiguration log_SinkConfiguration::create(nomad::Runtime& runtime, nomad::VirtualMachine& machine) {
-    return log_SinkConfiguration(nomad::ScriptBindingObject::construct(runtime, machine, contract1()));
-}
-
-nomad::NomadObject* log_SinkConfiguration::getObject() const {
-    return m_binding.getObject();
-}
-
-nomad::Runtime& log_SinkConfiguration::getRuntime() const {
-    return m_binding.getRuntime();
+    return log_SinkConfiguration(nomad::ScriptBindingObject::construct(bind(runtime), machine));
 }
 
 nomad::NomadBoolean log_SinkConfiguration::getActive() const {
-    return m_binding.getBoolean("active");
+    return nomad::ScriptBindingObject::getBoolean(0);
 }
 
 void log_SinkConfiguration::setActive(nomad::NomadBoolean value) {
-    m_binding.setBoolean("active", value);
+    nomad::ScriptBindingObject::setBoolean(0, value);
 }
 
 log_Level log_SinkConfiguration::getLevel() const {
-    return static_cast<log_Level>(m_binding.getInteger("level"));
+    return static_cast<log_Level>(nomad::ScriptBindingObject::getInteger(1));
 }
 
 void log_SinkConfiguration::setLevel(log_Level value) {
-    m_binding.setInteger("level", static_cast<nomad::NomadInteger>(value));
+    nomad::ScriptBindingObject::setInteger(1, static_cast<nomad::NomadInteger>(value));
 }
 
 } // namespace nomad::generated::log

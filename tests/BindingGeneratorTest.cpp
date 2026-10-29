@@ -28,6 +28,11 @@ BOOST_AUTO_TEST_CASE(generation_is_deterministic_and_preserves_unchanged_files) 
     }
     BOOST_TEST(first[0].content.find("nomad::generated::test_module") != NomadString::npos);
     BOOST_TEST(first[0].content.find("nomad::NomadFloat getRatio") != NomadString::npos);
+    BOOST_TEST(first[0].content.find("public nomad::ScriptBindingObject") != NomadString::npos);
+    BOOST_TEST(first[0].content.find("ScriptBindingObject m_binding") == NomadString::npos);
+    BOOST_TEST(first[1].content.find("::getObject()") == NomadString::npos);
+    BOOST_TEST(first[1].content.find("nomad::ScriptBindingObject::getBoolean(0)") != NomadString::npos);
+    BOOST_TEST(first[1].content.find("getBoolean(\"") == NomadString::npos);
     const auto written = generateModuleBindings(fixture.getOptions());
     BOOST_TEST(!written.fresh);
     BOOST_TEST(written.changedFiles.size() == 3U);
@@ -90,6 +95,7 @@ BOOST_AUTO_TEST_CASE(cpp_keywords_flattened_names_and_accessor_collisions_are_re
         "enum Mode\ntemplate\nend\n",
         "class Settings\nactive = true\nActive = false\nend\n",
         "class Settings\nobject = 1\nend\n",
+        "class Settings\nbinding = 1\nend\n",
         "hub one\nclass Two\nend\nend\nclass one_Two\nend\n"
     }) {
         fixture.setScript(script);

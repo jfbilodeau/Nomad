@@ -24,12 +24,11 @@ enum class log_Level : nomad::NomadInteger {
     Critical = 5LL,
 };
 
-class log_FileSinkConfiguration final {
+class log_FileSinkConfiguration final : public nomad::ScriptBindingObject {
 public:
     log_FileSinkConfiguration(nomad::Runtime& runtime, nomad::NomadObject* object);
+    [[nodiscard]] static const nomad::ScriptClassBinding& bind(nomad::Runtime& runtime);
     [[nodiscard]] static log_FileSinkConfiguration create(nomad::Runtime& runtime, nomad::VirtualMachine& machine);
-    [[nodiscard]] nomad::NomadObject* getObject() const;
-    [[nodiscard]] nomad::Runtime& getRuntime() const;
     [[nodiscard]] nomad::NomadBoolean getActive() const;
     void setActive(nomad::NomadBoolean value);
     [[nodiscard]] nomad::NomadString getDirectory() const;
@@ -49,15 +48,13 @@ public:
 
 private:
     explicit log_FileSinkConfiguration(nomad::ScriptBindingObject binding);
-    nomad::ScriptBindingObject m_binding;
 };
 
-class log_SinkConfiguration final {
+class log_SinkConfiguration final : public nomad::ScriptBindingObject {
 public:
     log_SinkConfiguration(nomad::Runtime& runtime, nomad::NomadObject* object);
+    [[nodiscard]] static const nomad::ScriptClassBinding& bind(nomad::Runtime& runtime);
     [[nodiscard]] static log_SinkConfiguration create(nomad::Runtime& runtime, nomad::VirtualMachine& machine);
-    [[nodiscard]] nomad::NomadObject* getObject() const;
-    [[nodiscard]] nomad::Runtime& getRuntime() const;
     [[nodiscard]] nomad::NomadBoolean getActive() const;
     void setActive(nomad::NomadBoolean value);
     [[nodiscard]] log_Level getLevel() const;
@@ -65,7 +62,6 @@ public:
 
 private:
     explicit log_SinkConfiguration(nomad::ScriptBindingObject binding);
-    nomad::ScriptBindingObject m_binding;
 };
 
 } // namespace nomad::generated::log

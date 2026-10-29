@@ -2,39 +2,29 @@
 
 #pragma once
 
-#include <nomad/script/Type.hpp>
+#include <nomad/script/ScriptClassBinding.hpp>
 
 namespace nomad {
 
 class ScriptObject;
 class VirtualMachine;
 
-struct BindingField {
-    NomadString name;
-    NomadString type;
-};
-
-struct BindingEnum {
-    NomadString name;
-    std::vector<EnumValueDefinition> values;
-};
-
-struct BindingClass {
-    NomadString name;
-    std::vector<BindingField> fields;
-    std::vector<BindingEnum> enums;
-};
-
-// Retains the receiver, not its Runtime. The runtime and contract must outlive this handle.
-class ScriptBindingObject final {
+// Retains the receiver, not its Runtime. The runtime owns the resolved binding
+// and must outlive this handle and all generated wrappers derived from it.
+class ScriptBindingObject {
 public:
     ScriptBindingObject(Runtime& runtime, NomadObject* object, const BindingClass& contract);
+    ScriptBindingObject(const ScriptClassBinding& binding, NomadObject* object);
     ScriptBindingObject(const ScriptBindingObject& other);
     ScriptBindingObject(ScriptBindingObject&& other) noexcept;
     ScriptBindingObject& operator=(const ScriptBindingObject& other);
     ScriptBindingObject& operator=(ScriptBindingObject&& other) noexcept;
-    ~ScriptBindingObject();
+    virtual ~ScriptBindingObject();
 
+    [[nodiscard]] static ScriptBindingObject construct(
+        const ScriptClassBinding& binding,
+        VirtualMachine& machine
+    );
     [[nodiscard]] static ScriptBindingObject construct(
         Runtime& runtime,
         VirtualMachine& machine,
@@ -42,22 +32,21 @@ public:
     );
     [[nodiscard]] NomadObject* getObject() const;
     [[nodiscard]] Runtime& getRuntime() const;
-    [[nodiscard]] NomadBoolean getBoolean(const NomadString& name) const;
-    [[nodiscard]] NomadInteger getInteger(const NomadString& name) const;
-    [[nodiscard]] NomadFloat getFloat(const NomadString& name) const;
-    [[nodiscard]] NomadString getString(const NomadString& name) const;
-    void setBoolean(const NomadString& name, NomadBoolean value);
-    void setInteger(const NomadString& name, NomadInteger value);
-    void setFloat(const NomadString& name, NomadFloat value);
-    void setString(const NomadString& name, const NomadString& value);
+    [[nodiscard]] const ScriptClassBinding& getBinding() const;
+    [[nodiscard]] NomadBoolean getBoolean(NomadIndex slot) const;
+    [[nodiscard]] NomadInteger getInteger(NomadIndex slot) const;
+    [[nodiscard]] NomadFloat getFloat(NomadIndex slot) const;
+    [[nodiscard]] NomadString getString(NomadIndex slot) const;
+    void setBoolean(NomadIndex slot, NomadBoolean value);
+    void setInteger(NomadIndex slot, NomadInteger value);
+    void setFloat(NomadIndex slot, NomadFloat value);
+    void setString(NomadIndex slot, const NomadString& value);
 
 private:
-    [[nodiscard]] const Property* getField(const NomadString& name, const NomadString& type) const;
-    void validateInteger(const Property* field, NomadInteger value) const;
+    [[nodiscard]] NomadIndex getFieldIndex(NomadIndex slot, BindingValueKind kind) const;
 
-    Runtime* m_runtime;
     ScriptObject* m_object;
-    const BindingClass* m_contract;
+    const ScriptClassBinding* m_binding;
 };
 
 } // namespace nomad

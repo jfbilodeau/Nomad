@@ -139,9 +139,15 @@ nomad_copy_runtime_dependencies(nomad_test)
 # including newly added tests, so splitting the runner cannot silently omit coverage.
 set(NOMAD_TEST_AUDIO_FILTER "audio")
 set(NOMAD_TEST_LANGUAGE_FILTER "language_*,native_*,array_objects,object_construction,callable_*,function_resolution")
+set(NOMAD_TEST_BINDING_FILTER "binding_generator,script_bindings")
 set(NOMAD_TEST_TOOLING_FILTER "compilation,project_*,sprite_*,audio_discovery,module_host,module_manifest,source_overlays")
 set(NOMAD_TEST_REMAINING_FILTER
-    "!${NOMAD_TEST_AUDIO_FILTER}:!${NOMAD_TEST_LANGUAGE_FILTER}:!${NOMAD_TEST_TOOLING_FILTER}")
+    "!${NOMAD_TEST_AUDIO_FILTER}:!${NOMAD_TEST_LANGUAGE_FILTER}:!${NOMAD_TEST_TOOLING_FILTER}:!${NOMAD_TEST_BINDING_FILTER}")
+
+add_test(NAME nomad_test_bindings
+    COMMAND nomad_test "--run_test=${NOMAD_TEST_BINDING_FILTER}"
+        --log_level=error --log_format=XML --log_sink=bindings-test-results.xml --color_output=no)
+set_tests_properties(nomad_test_bindings PROPERTIES LABELS unit)
 
 foreach(GROUP IN ITEMS audio language tooling remaining)
     string(TOUPPER "${GROUP}" GROUP_UPPER)

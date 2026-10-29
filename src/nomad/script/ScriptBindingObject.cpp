@@ -2,95 +2,41 @@
 
 #include <nomad/script/ScriptBindingObject.hpp>
 
+#include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
-#include <nomad/script/VirtualMachine.hpp>
 
-#include <algorithm>
 #include <utility>
 
 namespace nomad {
 
-namespace {
-
-[[noreturn]] void bindingError(const NomadString& message) {
-    throw NomadException("Script binding contract: " + message);
-}
-
-const ClassType* validateContract(Runtime& runtime, const BindingClass& contract) {
-    const auto* type = runtime.getTypeByName(contract.name);
-    const auto* classType = type == nullptr ? nullptr : type->asClassType();
-    if (classType == nullptr || classType->getRuntime() != &runtime ||
-        classType->getProperties().size() != contract.fields.size() ||
-        !classType->getTypeArguments().empty() || !classType->getMethods().empty() ||
-        !classType->getNativeIndexers().empty() || classType->getIterableInfo()) {
-        bindingError("class shape mismatch for '" + contract.name + "'");
-    }
-    const auto constructors = classType->getConstructors();
-    if (constructors.size() != 1 || constructors.front()->asScriptConstructor() == nullptr ||
-        constructors.front()->getParameterCount() != 0) {
-        bindingError("expected one ordinary zero-argument script constructor for '" + contract.name + "'");
-    }
-    for (const auto& expected : contract.enums) {
-        const auto* enumType = runtime.getTypeByName(expected.name);
-        const auto* enumeration = enumType == nullptr ? nullptr : enumType->asEnum();
-        if (enumeration == nullptr || enumeration->getValueCount() != expected.values.size()) {
-            bindingError("enum mismatch for '" + expected.name + "'");
-        }
-        for (const auto& value : expected.values) {
-            NomadInteger actual{};
-            if (!enumeration->getValueByName(value.name, actual) || actual != value.value) {
-                bindingError("enum mapping mismatch for '" + expected.name + "." + value.name + "'");
-            }
-        }
-    }
-    for (const auto& expected : contract.fields) {
-        const auto* field = classType->getProperty(expected.name);
-        if (field == nullptr || field->asNativeProperty() != nullptr || field->getValueType() == nullptr ||
-            field->getValueType() != runtime.getTypeByName(expected.type) ||
-            classType->getFieldIndex(field->getId()) == NOMAD_INVALID_INDEX) {
-            bindingError("stored field mismatch for '" + contract.name + "." + expected.name + "'");
-        }
-        const auto* fieldType = field->getValueType();
-        const auto* enumeration = fieldType->asEnum();
-        if (fieldType != runtime.getBooleanType() && fieldType != runtime.getIntegerType() &&
-            fieldType != runtime.getFloatType() && fieldType != runtime.getStringType() &&
-            (enumeration == nullptr || std::ranges::none_of(contract.enums, [&](const auto& expectedEnum) {
-                return expectedEnum.name == enumeration->getTypeName();
-            }))) {
-            bindingError("unsupported field type for '" + expected.name + "'");
-        }
-    }
-    return classType;
-}
-
-} // namespace
-
 ScriptBindingObject::ScriptBindingObject(Runtime& runtime, NomadObject* object, const BindingClass& contract) :
-    m_runtime(&runtime),
+    ScriptBindingObject(runtime.getScriptClassBinding(contract), object) {
+}
+
+ScriptBindingObject::ScriptBindingObject(const ScriptClassBinding& binding, NomadObject* object) :
     m_object(dynamic_cast<ScriptObject*>(object)),
-    m_contract(&contract) {
-    const auto* expected = validateContract(runtime, contract);
-    if (m_object == nullptr || m_object->getClassType() != expected) {
-        bindingError("wrong runtime or receiver for '" + contract.name + "'");
+    m_binding(&binding) {
+    if (m_object == nullptr || m_object->getClassType() != binding.getClassType()) {
+        throw NomadException("Script binding contract: wrong runtime or receiver for '" +
+            binding.getContract().name + "'");
     }
     m_object->addRef();
 }
 
 ScriptBindingObject::ScriptBindingObject(const ScriptBindingObject& other) :
-    m_runtime(other.m_runtime), m_object(other.m_object), m_contract(other.m_contract) {
+    m_object(other.m_object), m_binding(other.m_binding) {
     addRef(m_object);
 }
 
 ScriptBindingObject::ScriptBindingObject(ScriptBindingObject&& other) noexcept :
-    m_runtime(other.m_runtime), m_object(std::exchange(other.m_object, nullptr)), m_contract(other.m_contract) {
+    m_object(std::exchange(other.m_object, nullptr)), m_binding(other.m_binding) {
 }
 
 ScriptBindingObject& ScriptBindingObject::operator=(const ScriptBindingObject& other) {
     if (this != &other) {
         m_object = replace(m_object, other.m_object);
-        m_runtime = other.m_runtime;
-        m_contract = other.m_contract;
+        m_binding = other.m_binding;
     }
     return *this;
 }
@@ -99,8 +45,7 @@ ScriptBindingObject& ScriptBindingObject::operator=(ScriptBindingObject&& other)
     if (this != &other) {
         releaseRef(m_object);
         m_object = std::exchange(other.m_object, nullptr);
-        m_runtime = other.m_runtime;
-        m_contract = other.m_contract;
+        m_binding = other.m_binding;
     }
     return *this;
 }
@@ -110,21 +55,12 @@ ScriptBindingObject::~ScriptBindingObject() {
 }
 
 ScriptBindingObject ScriptBindingObject::construct(
-    Runtime& runtime,
-    VirtualMachine& machine,
-    const BindingClass& contract
+    const ScriptClassBinding& binding,
+    VirtualMachine& machine
 ) {
-    if (machine.getRuntime() != &runtime) {
-        bindingError("virtual machine belongs to another runtime");
-    }
-    const auto* type = validateContract(runtime, contract);
-    const auto constructor = runtime.resolveConstructor(type, {});
-    if (!constructor.isResolved()) {
-        bindingError("cannot resolve constructor for '" + contract.name + "'");
-    }
-    auto* object = machine.constructObject(constructor.id, {});
+    auto* object = binding.construct(machine);
     try {
-        auto result = ScriptBindingObject(runtime, object, contract);
+        auto result = ScriptBindingObject(binding, object);
         releaseRef(object);
         return result;
     } catch (...) {
@@ -133,85 +69,82 @@ ScriptBindingObject ScriptBindingObject::construct(
     }
 }
 
+ScriptBindingObject ScriptBindingObject::construct(
+    Runtime& runtime,
+    VirtualMachine& machine,
+    const BindingClass& contract
+) {
+    return construct(runtime.getScriptClassBinding(contract), machine);
+}
+
 NomadObject* ScriptBindingObject::getObject() const {
     if (m_object == nullptr) {
-        bindingError("access to a moved-from handle");
+        throw NomadException("Script binding contract: access to a moved-from handle");
     }
     return m_object;
 }
 
 Runtime& ScriptBindingObject::getRuntime() const {
+    return getBinding().getRuntime();
+}
+
+const ScriptClassBinding& ScriptBindingObject::getBinding() const {
     (void)getObject();
-    return *m_runtime;
+    return *m_binding;
 }
 
-const Property* ScriptBindingObject::getField(const NomadString& name, const NomadString& type) const {
-    (void)getObject();
-    const auto* classType = validateContract(*m_runtime, *m_contract);
-    const auto* field = classType->getProperty(name);
-    if (field == nullptr || (field->getValueType()->getTypeName() != type &&
-        !(type == INTEGER_TYPE_NAME && field->getValueType()->asEnum() != nullptr))) {
-        bindingError("wrong field or access type for '" + name + "'");
-    }
-    return field;
+NomadIndex ScriptBindingObject::getFieldIndex(NomadIndex slot, BindingValueKind kind) const {
+    return getBinding().getFieldIndex(slot, kind);
 }
 
-void ScriptBindingObject::validateInteger(const Property* field, NomadInteger value) const {
-    const auto* enumeration = field->getValueType()->asEnum();
-    NomadString name;
-    if (enumeration != nullptr && !enumeration->getNameByValue(value, name)) {
-        bindingError("invalid enum value for '" + field->getName() + "'");
-    }
+NomadBoolean ScriptBindingObject::getBoolean(NomadIndex slot) const {
+    const auto index = getFieldIndex(slot, BindingValueKind::Boolean);
+    return m_object->getField(index).getBooleanValue();
 }
 
-NomadBoolean ScriptBindingObject::getBoolean(const NomadString& name) const {
-    const auto* field = getField(name, BOOLEAN_TYPE_NAME);
-    return m_object->getField(m_object->getClassType()->getFieldIndex(field->getId())).getBooleanValue();
-}
-
-NomadInteger ScriptBindingObject::getInteger(const NomadString& name) const {
-    const auto* field = getField(name, INTEGER_TYPE_NAME);
-    const auto value = m_object->getField(m_object->getClassType()->getFieldIndex(field->getId())).getIntegerValue();
-    validateInteger(field, value);
+NomadInteger ScriptBindingObject::getInteger(NomadIndex slot) const {
+    const auto index = getFieldIndex(slot, BindingValueKind::Integer);
+    const auto value = m_object->getField(index).getIntegerValue();
+    m_binding->validateInteger(slot, value);
     return value;
 }
 
-NomadFloat ScriptBindingObject::getFloat(const NomadString& name) const {
-    const auto* field = getField(name, FLOAT_TYPE_NAME);
-    return m_object->getField(m_object->getClassType()->getFieldIndex(field->getId())).getFloatValue();
+NomadFloat ScriptBindingObject::getFloat(NomadIndex slot) const {
+    const auto index = getFieldIndex(slot, BindingValueKind::Float);
+    return m_object->getField(index).getFloatValue();
 }
 
-NomadString ScriptBindingObject::getString(const NomadString& name) const {
-    const auto* field = getField(name, STRING_TYPE_NAME);
-    const auto& value = m_object->getField(m_object->getClassType()->getFieldIndex(field->getId()));
+NomadString ScriptBindingObject::getString(NomadIndex slot) const {
+    const auto index = getFieldIndex(slot, BindingValueKind::String);
+    const auto& value = m_object->getField(index);
     const auto* string = dynamic_cast<const NomadStringObject*>(value.getObjectValue());
     if (string == nullptr) {
-        bindingError("uninitialized or invalid string field '" + name + "'");
+        throw NomadException("Script binding contract: uninitialized or invalid string field");
     }
     return string->getString();
 }
 
-void ScriptBindingObject::setBoolean(const NomadString& name, NomadBoolean value) {
-    const auto* field = getField(name, BOOLEAN_TYPE_NAME);
-    m_object->setField(m_object->getClassType()->getFieldIndex(field->getId()), RuntimeValue(value));
+void ScriptBindingObject::setBoolean(NomadIndex slot, NomadBoolean value) {
+    const auto index = getFieldIndex(slot, BindingValueKind::Boolean);
+    m_object->setField(index, RuntimeValue(value));
 }
 
-void ScriptBindingObject::setInteger(const NomadString& name, NomadInteger value) {
-    const auto* field = getField(name, INTEGER_TYPE_NAME);
-    validateInteger(field, value);
-    m_object->setField(m_object->getClassType()->getFieldIndex(field->getId()), RuntimeValue(value));
+void ScriptBindingObject::setInteger(NomadIndex slot, NomadInteger value) {
+    const auto index = getFieldIndex(slot, BindingValueKind::Integer);
+    m_binding->validateInteger(slot, value);
+    m_object->setField(index, RuntimeValue(value));
 }
 
-void ScriptBindingObject::setFloat(const NomadString& name, NomadFloat value) {
-    const auto* field = getField(name, FLOAT_TYPE_NAME);
-    m_object->setField(m_object->getClassType()->getFieldIndex(field->getId()), RuntimeValue(value));
+void ScriptBindingObject::setFloat(NomadIndex slot, NomadFloat value) {
+    const auto index = getFieldIndex(slot, BindingValueKind::Float);
+    m_object->setField(index, RuntimeValue(value));
 }
 
-void ScriptBindingObject::setString(const NomadString& name, const NomadString& value) {
-    const auto* field = getField(name, STRING_TYPE_NAME);
+void ScriptBindingObject::setString(NomadIndex slot, const NomadString& value) {
+    const auto index = getFieldIndex(slot, BindingValueKind::String);
     auto stored = RuntimeValue(value);
     try {
-        m_object->setField(m_object->getClassType()->getFieldIndex(field->getId()), stored);
+        m_object->setField(index, stored);
     } catch (...) {
         stored.freeObjectValue();
         throw;

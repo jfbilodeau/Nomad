@@ -165,10 +165,11 @@ void validateModel(const BindingModel& model) {
         if (!names.insert(name).second) {
             generatorError("C++ type name collision: '" + name + "'");
         }
-        if (name == "create" || name == "getObject" || name == "getRuntime" || name == "m_binding") {
+        if (name == "create" || name == "bind" || name == "getObject" || name == "getRuntime" ||
+            name == "getBinding" || name == "m_binding") {
             generatorError("C++ binding member name collision: '" + name + "'");
         }
-        std::set<NomadString> members{name, "create", "getObject", "getRuntime", "m_binding"};
+        std::set<NomadString> members{name, "create", "bind", "getObject", "getRuntime", "getBinding", "m_binding"};
         for (const auto& field : classType.fields) {
             const auto suffix = accessorSuffix(field.name);
             if (typeNames.contains("get" + suffix) || typeNames.contains("set" + suffix) ||
@@ -261,11 +262,7 @@ BindingModel analyzeModuleBindings(const BindingGenerationOptions& options) {
             model.enums.push_back(describeEnum(*enumeration));
             enumNames.insert(enumeration->getTypeName());
         } else if (const auto* classType = type->asClassType()) {
-            const auto constructors = classType->getConstructors();
-            if (!classType->getTypeArguments().empty() || !classType->getMethods().empty() ||
-                !classType->getNativeIndexers().empty() || classType->getIterableInfo() ||
-                constructors.size() != 1 || constructors.front()->asScriptConstructor() == nullptr ||
-                constructors.front()->getParameterCount() != 0) {
+            if (!isScriptBindingClass(*classType)) {
                 generatorError("unsupported class shape '" + classType->getTypeName() +
                     "' (expected stored fields and one zero-argument script constructor)");
             }
@@ -289,7 +286,7 @@ BindingModel analyzeModuleBindings(const BindingGenerationOptions& options) {
             std::ranges::sort(description.fields, {}, &BindingField::name);
             std::ranges::sort(description.enums, {}, &BindingEnum::name);
             model.classes.push_back(std::move(description));
-        } else {
+        } else if (type->asCallback() == nullptr) {
             generatorError("unsupported declaration type '" + type->getTypeName() + "'");
         }
     }
@@ -320,6 +317,7 @@ std::vector<BindingOutput> renderModuleBindings(const BindingModel& model) {
     header << "// " << generatedMarker << "\n\n#pragma once\n\n"
         "#include <nomad/script/ScriptBindingObject.hpp>\n\nnamespace " << scope << " {\n\n";
     source << "// " << generatedMarker << "\n\n#include <" << includePath << ">\n\n"
+        "#include <nomad/script/Runtime.hpp>\n\n"
         "#include <utility>\n\nnamespace " << scope << " {\n\n";
     for (const auto& enumeration : model.enums) {
         header << "enum class " << typeIdentifier(enumeration.name) << " : nomad::NomadInteger {\n";
@@ -342,19 +340,20 @@ std::vector<BindingOutput> renderModuleBindings(const BindingModel& model) {
             writeEnumContract(source, enumeration);
         }
         source << "        }\n    };\n    return contract;\n}\n\n} // namespace\n\n";
-        header << "class " << name << " final {\npublic:\n"
+        header << "class " << name << " final : public nomad::ScriptBindingObject {\npublic:\n"
             "    " << name << "(nomad::Runtime& runtime, nomad::NomadObject* object);\n"
-            "    [[nodiscard]] static " << name << " create(nomad::Runtime& runtime, nomad::VirtualMachine& machine);\n"
-            "    [[nodiscard]] nomad::NomadObject* getObject() const;\n"
-            "    [[nodiscard]] nomad::Runtime& getRuntime() const;\n";
+            "    [[nodiscard]] static const nomad::ScriptClassBinding& bind(nomad::Runtime& runtime);\n"
+            "    [[nodiscard]] static " << name << " create(nomad::Runtime& runtime, nomad::VirtualMachine& machine);\n";
         source << name << "::" << name << "(nomad::Runtime& runtime, nomad::NomadObject* object) :\n"
-            "    m_binding(runtime, object, " << contractName << "()) {\n}\n\n"
-            << name << "::" << name << "(nomad::ScriptBindingObject binding) : m_binding(std::move(binding)) {\n}\n\n"
+            "    nomad::ScriptBindingObject(bind(runtime), object) {\n}\n\n"
+            << name << "::" << name << "(nomad::ScriptBindingObject binding) :\n"
+            "    nomad::ScriptBindingObject(std::move(binding)) {\n}\n\n"
+            "const nomad::ScriptClassBinding& " << name << "::bind(nomad::Runtime& runtime) {\n"
+            "    return runtime.getScriptClassBinding(" << contractName << "());\n}\n\n"
             << name << " " << name << "::create(nomad::Runtime& runtime, nomad::VirtualMachine& machine) {\n"
-            "    return " << name << "(nomad::ScriptBindingObject::construct(runtime, machine, " << contractName << "()));\n}\n\n"
-            "nomad::NomadObject* " << name << "::getObject() const {\n    return m_binding.getObject();\n}\n\n"
-            "nomad::Runtime& " << name << "::getRuntime() const {\n    return m_binding.getRuntime();\n}\n\n";
-        for (const auto& field : classType.fields) {
+            "    return " << name << "(nomad::ScriptBindingObject::construct(bind(runtime), machine));\n}\n\n";
+        for (auto slot = NomadIndex{0}; slot < classType.fields.size(); ++slot) {
+            const auto& field = classType.fields[slot];
             const auto fieldCppType = cppType(field.type);
             const auto suffix = accessorSuffix(field.name);
             const auto argument = field.type == STRING_TYPE_NAME ? "const " + fieldCppType + "&" : fieldCppType;
@@ -364,16 +363,16 @@ std::vector<BindingOutput> renderModuleBindings(const BindingModel& model) {
             if (!isPrimitive(field.type)) {
                 source << "static_cast<" << fieldCppType << ">(";
             }
-            source << "m_binding.get" << valueKind(field.type) << "(\"" << field.name << "\")";
+            source << "nomad::ScriptBindingObject::get" << valueKind(field.type) << "(" << slot << ")";
             if (!isPrimitive(field.type)) {
                 source << ")";
             }
             source << ";\n}\n\nvoid " << name << "::set" << suffix << "(" << argument << " value) {\n"
-                "    m_binding.set" << valueKind(field.type) << "(\"" << field.name << "\", ";
+                "    nomad::ScriptBindingObject::set" << valueKind(field.type) << "(" << slot << ", ";
             source << (isPrimitive(field.type) ? "value" : "static_cast<nomad::NomadInteger>(value)") << ");\n}\n\n";
         }
         header << "\nprivate:\n    explicit " << name << "(nomad::ScriptBindingObject binding);\n"
-            "    nomad::ScriptBindingObject m_binding;\n};\n\n";
+            "};\n\n";
     }
     header << "} // namespace " << scope << "\n";
     source << "} // namespace " << scope << "\n";

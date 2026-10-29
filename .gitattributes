@@ -1,2 +1,5 @@
 # For WSL Bash scripts
 *.sh text eol=lf
+
+# Retained binding artifacts are checked byte-for-byte against deterministic generator output.
+modules/nomad-log/generated/** text eol=lf

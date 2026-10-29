@@ -57,6 +57,7 @@ and does not install scripts into an SDK.
 // runtime already contains the compiled module script declarations.
 nomad::VirtualMachine machine(&runtime);
 using Settings = nomad::generated::log::log_FileSinkConfiguration;
+const auto& binding = Settings::bind(runtime); // Optional eager validation and cache initialization.
 auto settings = Settings::create(runtime, machine);
 settings.setDirectory("logs");
 auto sameObject = Settings(runtime, settings.getObject());
@@ -65,10 +66,18 @@ auto sameObject = Settings(runtime, settings.getObject());
 - `create(runtime, machine)` runs the ordinary script constructor and class field
   initializers. Defaults are not copied into C++. Compiling/generating bindings,
   wrapping an existing receiver, and copying a wrapper do not run initializers.
-- Construction and wrapping validate the runtime-local class, exact stored-field
+- The first `bind(runtime)`, construction, or wrapping validates the runtime-local class, exact stored-field
   names and types, ordinary zero-argument constructor, and referenced enum
   names/numeric mappings. Native properties and unsupported shapes are rejected.
-  IDs are resolved in the supplied runtime, never generated or shared across runtimes.
+  The runtime caches the resolved class, constructor ID, property IDs, field
+  indexes, and enum values. Equivalent contracts share one immutable binding in
+  that runtime, never global mutable IDs. Subsequent wrappers reuse it.
+- Generated classes derive from `ScriptBindingObject`, inheriting receiver
+  ownership, `getObject()`, `getRuntime()`, and `getBinding()`. Field accessors use
+  numeric contract slots mapped to cached runtime field indexes, not string
+  lookups or repeated schema validation. Contract slots are independent of script
+  declaration order. Adding class members does not freeze the class or invalidate
+  existing slots; bindings do not automatically revalidate later extensions.
 - Wrapping borrows the input pointer and retains its own intrusive reference.
   Copies retain another reference; moves transfer it. Destruction releases it.
   `getObject()` is borrowed; use `addRef()` if retaining it beyond the wrapper.
@@ -81,10 +90,12 @@ auto sameObject = Settings(runtime, settings.getObject());
   Moved-from handles cannot be accessed. Strings cross the interface by value
   with their full length, including embedded nulls.
 
-`<nomad/script/ScriptBindingObject.hpp>` supplies the reusable checked handle.
-Its `BindingClass` contract must also outlive the handle (generated contracts have
-static lifetime). Its primitive accessors check access types; integer access can
-also read/write a contracted enum, validating its value.
+`<nomad/script/ScriptBindingObject.hpp>` supplies the shared wrapper base.
+`Runtime::getScriptClassBinding(contract)` retains its own contract snapshot, so
+the input contract need not outlive the call. The returned `ScriptClassBinding`
+and all wrappers must remain within the runtime's lifetime. Its primitive slot
+accessors check bounds and access types; integer access can also read/write a
+contracted enum, validating its value against cached numeric members.
 
 ### C++ logging
 

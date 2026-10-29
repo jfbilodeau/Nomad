@@ -7,6 +7,7 @@
 
 #include <nomad/system/Path.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <fstream>
 #include <iterator>
@@ -76,7 +77,9 @@ NomadPath getLogBindingModuleDirectory() {
 }
 
 NomadString getLogBindingSource() {
-    return readBindingFile(getLogBindingModuleDirectory() / "scripts" / "configuration.nomad");
+    auto source = readBindingFile(getLogBindingModuleDirectory() / "scripts" / "configuration.nomad");
+    std::erase(source, '\r');
+    return source;
 }
 
 void compileLogBindingSource(Runtime& runtime, const NomadString& source) {
