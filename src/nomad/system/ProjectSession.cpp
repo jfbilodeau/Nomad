@@ -21,14 +21,7 @@ std::vector<ModuleManifest> resolveProjectModules(
     if (project.configuration.type == ProjectConfigurationType::Development) {
         return resolveModules(sdkDirectory / "modules", project.configuration.sdk.modules);
     }
-    std::vector<ModuleManifest> modules;
-    for (const auto& name : project.configuration.sdk.modules) {
-        if (!isValidModuleName(name)) {
-            throw ModuleException("Invalid packaged module name '" + name + "'");
-        }
-        modules.push_back({name, project.root, {}});
-    }
-    return modules;
+    return resolveModules(project.root / "modules", project.configuration.sdk.modules);
 }
 
 std::unique_ptr<ModuleHost> createProjectSession(

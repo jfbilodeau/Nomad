@@ -17,6 +17,7 @@ add_test(
         "-DNOMAD_GAME_LIBRARY=$<TARGET_FILE_NAME:nomad-game>"
         "-DNOMAD_OS_LIBRARY=$<TARGET_FILE_NAME:nomad-os>"
         "-DNOMAD_LOG_LIBRARY=$<TARGET_FILE_NAME:nomad-log>"
+        "-DNOMAD_FIXTURE_LIBRARY=$<TARGET_FILE:nomad-module-fixture>"
         "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/module-runtime/$<CONFIG>"
         -P "${CMAKE_CURRENT_LIST_DIR}/ModuleRuntimeIntegrationTest.cmake"
 )

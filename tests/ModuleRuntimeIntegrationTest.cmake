@@ -1,4 +1,4 @@
-foreach(REQUIRED IN ITEMS NOMAD_CLI NOMAD_RUNTIME_SUFFIX NOMAD_SYSTEM_LIBRARY NOMAD_COLLECTIONS_LIBRARY NOMAD_GAME_LIBRARY NOMAD_OS_LIBRARY NOMAD_LOG_LIBRARY NOMAD_TEST_ROOT)
+foreach(REQUIRED IN ITEMS NOMAD_CLI NOMAD_RUNTIME_SUFFIX NOMAD_SYSTEM_LIBRARY NOMAD_COLLECTIONS_LIBRARY NOMAD_GAME_LIBRARY NOMAD_OS_LIBRARY NOMAD_LOG_LIBRARY NOMAD_FIXTURE_LIBRARY NOMAD_TEST_ROOT)
     if(NOT DEFINED ${REQUIRED})
         message(FATAL_ERROR "${REQUIRED} is required")
     endif()
@@ -45,8 +45,8 @@ endif()
 list(GET ARCHIVES 0 ARCHIVE)
 set(EXTRACTED "${NOMAD_TEST_ROOT}/extracted")
 file(ARCHIVE_EXTRACT INPUT "${ARCHIVE}" DESTINATION "${EXTRACTED}")
-if(NOT EXISTS "${EXTRACTED}/${NOMAD_SYSTEM_LIBRARY}" OR EXISTS "${EXTRACTED}/${NOMAD_GAME_LIBRARY}"
-    OR EXISTS "${EXTRACTED}/${NOMAD_LOG_LIBRARY}")
+if(NOT EXISTS "${EXTRACTED}/modules/system/${NOMAD_SYSTEM_LIBRARY}" OR EXISTS "${EXTRACTED}/modules/game"
+    OR EXISTS "${EXTRACTED}/modules/log" OR EXISTS "${EXTRACTED}/${NOMAD_SYSTEM_LIBRARY}")
     message(FATAL_ERROR "System application did not include exactly the required Nomad modules")
 endif()
 file(GLOB GRAPHICAL_LIBRARIES "${EXTRACTED}/*SDL*" "${EXTRACTED}/*box2d*")
@@ -60,7 +60,8 @@ endif()
 set(PROGRAM "${EXTRACTED}/${EXECUTABLE_NAME}${NOMAD_RUNTIME_SUFFIX}")
 nomadRunTestCommand("Reject running a packaged API-only application" COMMAND "${PROGRAM}"
     WORKING_DIRECTORY "${EXTRACTED}" EXPECT_FAILURE)
-file(RENAME "${EXTRACTED}/${NOMAD_SYSTEM_LIBRARY}" "${EXTRACTED}/${NOMAD_SYSTEM_LIBRARY}.missing")
+file(RENAME "${EXTRACTED}/modules/system/${NOMAD_SYSTEM_LIBRARY}"
+    "${EXTRACTED}/modules/system/${NOMAD_SYSTEM_LIBRARY}.missing")
 nomadRunTestCommand("Reject missing packaged module without SDK fallback"
     EXPECT_FAILURE COMMAND "${PROGRAM}" WORKING_DIRECTORY "${EXTRACTED}")
 
@@ -79,7 +80,7 @@ endif()
 list(GET ARCHIVES 0 ARCHIVE)
 set(COLLECTIONS_EXTRACTED "${NOMAD_TEST_ROOT}/collections-extracted")
 file(ARCHIVE_EXTRACT INPUT "${ARCHIVE}" DESTINATION "${COLLECTIONS_EXTRACTED}")
-if(NOT EXISTS "${COLLECTIONS_EXTRACTED}/${NOMAD_COLLECTIONS_LIBRARY}")
+if(NOT EXISTS "${COLLECTIONS_EXTRACTED}/modules/collections/${NOMAD_COLLECTIONS_LIBRARY}")
     message(FATAL_ERROR "Collections application package is missing the collections module")
 endif()
 nomadRunTestCommand("Reject running packaged API-only collections modules"
@@ -129,9 +130,9 @@ file(GLOB ARCHIVES "${PROJECT}/dist/*.zip")
 list(GET ARCHIVES 0 ARCHIVE)
 set(OS_EXTRACTED "${NOMAD_TEST_ROOT}/os-extracted")
 file(ARCHIVE_EXTRACT INPUT "${ARCHIVE}" DESTINATION "${OS_EXTRACTED}")
-if(NOT EXISTS "${OS_EXTRACTED}/${NOMAD_OS_LIBRARY}" OR
-    NOT EXISTS "${OS_EXTRACTED}/${NOMAD_COLLECTIONS_LIBRARY}" OR
-    NOT EXISTS "${OS_EXTRACTED}/${NOMAD_GAME_LIBRARY}")
+if(NOT EXISTS "${OS_EXTRACTED}/modules/os/${NOMAD_OS_LIBRARY}" OR
+    NOT EXISTS "${OS_EXTRACTED}/modules/collections/${NOMAD_COLLECTIONS_LIBRARY}" OR
+    NOT EXISTS "${OS_EXTRACTED}/modules/game/${NOMAD_GAME_LIBRARY}")
     message(FATAL_ERROR "OS package did not include exactly its required Nomad modules")
 endif()
 file(READ "${OS_EXTRACTED}/nomad.toml" RELEASE)
@@ -169,11 +170,11 @@ endif()
 list(GET LOG_ARCHIVES 0 LOG_ARCHIVE)
 set(LOG_EXTRACTED "${NOMAD_TEST_ROOT}/log-extracted")
 file(ARCHIVE_EXTRACT INPUT "${LOG_ARCHIVE}" DESTINATION "${LOG_EXTRACTED}")
-if(NOT EXISTS "${LOG_EXTRACTED}/${NOMAD_LOG_LIBRARY}"
-    OR EXISTS "${LOG_EXTRACTED}/${NOMAD_SYSTEM_LIBRARY}"
-    OR EXISTS "${LOG_EXTRACTED}/${NOMAD_GAME_LIBRARY}"
-    OR EXISTS "${LOG_EXTRACTED}/${NOMAD_OS_LIBRARY}"
-    OR EXISTS "${LOG_EXTRACTED}/${NOMAD_COLLECTIONS_LIBRARY}")
+if(NOT EXISTS "${LOG_EXTRACTED}/modules/log/${NOMAD_LOG_LIBRARY}"
+    OR EXISTS "${LOG_EXTRACTED}/modules/system"
+    OR EXISTS "${LOG_EXTRACTED}/modules/game"
+    OR EXISTS "${LOG_EXTRACTED}/modules/os"
+    OR EXISTS "${LOG_EXTRACTED}/modules/collections")
     message(FATAL_ERROR "Log-only package did not include exactly its required Nomad modules")
 endif()
 string(REPLACE "modules = [\"log\"]" "modules = [\"game\", \"log\"]"
@@ -182,4 +183,120 @@ file(WRITE "${LOG_PROJECT}/nomad.toml" "${LOG_CONFIGURATION}")
 file(APPEND "${LOG_PROJECT}/res/scripts/main.nomad" "print \"LOG_MODULE_COMPLETE\"\nsystem.exit\n")
 nomadRunTestCommand("Run game with explicit log module"
     COMMAND "${NOMAD_CLI}" run "${LOG_PROJECT}" OUTPUT_MATCH "LOG_MODULE_COMPLETE")
+
+set(SCRIPT_SDK "${NOMAD_TEST_ROOT}/script-sdk")
+set(SCRIPT_PROJECT "${NOMAD_TEST_ROOT}/module script application")
+file(MAKE_DIRECTORY "${SCRIPT_SDK}/modules")
+file(GLOB SDK_LIBRARIES "${SDK_DIRECTORY}/*.dll" "${SDK_DIRECTORY}/*.so*" "${SDK_DIRECTORY}/*.dylib")
+file(COPY "${NOMAD_CLI}" "${RUNTIME}" "${SDK_DIRECTORY}/nomadc${NOMAD_RUNTIME_SUFFIX}" ${SDK_LIBRARIES}
+    "${SDK_DIRECTORY}/templates" "${SDK_DIRECTORY}/runtime" DESTINATION "${SCRIPT_SDK}")
+file(COPY "${SDK_DIRECTORY}/modules/system" DESTINATION "${SCRIPT_SDK}/modules")
+file(MAKE_DIRECTORY "${SCRIPT_SDK}/modules/fixture")
+file(COPY "${NOMAD_FIXTURE_LIBRARY}" DESTINATION "${SCRIPT_SDK}/modules/fixture")
+get_filename_component(FIXTURE_LIBRARY_NAME "${NOMAD_FIXTURE_LIBRARY}" NAME)
+file(WRITE "${SCRIPT_SDK}/modules/fixture/module.toml"
+    "schema = 1\n[module]\nname = 'fixture'\n[nomad]\nmodules = ['system']\n"
+    "[scripts]\ndirectory = 'source/library'\n")
+file(WRITE "${SCRIPT_SDK}/modules/fixture/runtime.json"
+    "{\"schema\":1,\"files\":[{\"path\":\"${FIXTURE_LIBRARY_NAME}\",\"role\":\"library\"}]}")
+file(MAKE_DIRECTORY "${SCRIPT_SDK}/modules/system/scripts" "${SCRIPT_SDK}/modules/fixture/source/library")
+file(WRITE "${SCRIPT_SDK}/modules/system/scripts/main.nomad"
+    "fun dependencyAnswer\nreturn 40\nend\nassert false\n")
+file(WRITE "${SCRIPT_SDK}/modules/fixture/source/library/main.nomad" [=[
+open hub packaged
+class Configuration
+answer = moduleDefault
+end
+end
+fun moduleDefault
+print "MODULE_DEFAULT_INITIALIZED"
+return dependencyAnswer
+end
+fun moduleAnswer
+return 42
+end
+print "MODULE_FILE_BODY_EXECUTED"
+assert false
+]=])
+nomadRunTestCommand("Initialize module-script application"
+    COMMAND "${SCRIPT_SDK}/nomad${NOMAD_RUNTIME_SUFFIX}" init "${SCRIPT_PROJECT}")
+file(READ "${SCRIPT_PROJECT}/nomad.toml" SCRIPT_CONFIGURATION)
+string(REGEX MATCH "executable = \"([^\"]+)\"" SCRIPT_EXECUTABLE_FIELD "${SCRIPT_CONFIGURATION}")
+if(NOT SCRIPT_EXECUTABLE_FIELD)
+    message(FATAL_ERROR "Generated module-script project has no executable name")
+endif()
+set(SCRIPT_EXECUTABLE "${CMAKE_MATCH_1}${NOMAD_RUNTIME_SUFFIX}")
+string(REPLACE "modules = [\"game\"]" "modules = [\"fixture\"]"
+    SCRIPT_CONFIGURATION "${SCRIPT_CONFIGURATION}")
+file(WRITE "${SCRIPT_PROJECT}/nomad.toml" "${SCRIPT_CONFIGURATION}\n[fixture]\nentry = 'main'\n")
+file(WRITE "${SCRIPT_PROJECT}/res/scripts/main.nomad" [=[
+settings = new packaged.Configuration
+assert settings.answer == 40
+answer = moduleAnswer
+nativeValue = toInt "2"
+assert answer == settings.answer + nativeValue
+assert fixture.argumentCount == 2
+name = fixture.projectName
+assert name.length > 0
+print "MODULE_SCRIPTS_COMPLETE"
+system.exit
+]=])
+nomadRunTestCommand("Preview module-script package"
+    COMMAND "${SCRIPT_SDK}/nomad${NOMAD_RUNTIME_SUFFIX}" package "${SCRIPT_PROJECT}" --dry-run
+    OUTPUT_VARIABLE SCRIPT_PREVIEW)
+if(EXISTS "${SCRIPT_PROJECT}/dist" OR SCRIPT_PREVIEW MATCHES "MODULE_DEFAULT_INITIALIZED|MODULE_FILE_BODY_EXECUTED")
+    message(FATAL_ERROR "Module-script dry run wrote output or executed module code")
+endif()
+nomadRunTestCommand("Package module-script application"
+    COMMAND "${SCRIPT_SDK}/nomad${NOMAD_RUNTIME_SUFFIX}" package "${SCRIPT_PROJECT}"
+    OUTPUT_VARIABLE SCRIPT_PACKAGE_OUTPUT)
+if(SCRIPT_PACKAGE_OUTPUT MATCHES "MODULE_DEFAULT_INITIALIZED|MODULE_FILE_BODY_EXECUTED")
+    message(FATAL_ERROR "Module packaging executed script code")
+endif()
+file(GLOB SCRIPT_ARCHIVES "${SCRIPT_PROJECT}/dist/*.zip")
+list(LENGTH SCRIPT_ARCHIVES SCRIPT_ARCHIVE_COUNT)
+if(NOT SCRIPT_ARCHIVE_COUNT EQUAL 1)
+    message(FATAL_ERROR "Expected one module-script package: ${SCRIPT_ARCHIVES}")
+endif()
+list(GET SCRIPT_ARCHIVES 0 SCRIPT_ARCHIVE)
+set(SCRIPT_EXTRACTED "${NOMAD_TEST_ROOT}/script-extracted")
+file(ARCHIVE_EXTRACT INPUT "${SCRIPT_ARCHIVE}" DESTINATION "${SCRIPT_EXTRACTED}")
+set(SCRIPT_RELOCATED "${NOMAD_TEST_ROOT}/relocated module application")
+file(RENAME "${SCRIPT_EXTRACTED}" "${SCRIPT_RELOCATED}")
+file(RENAME "${SCRIPT_SDK}" "${SCRIPT_SDK}.unavailable")
+file(RENAME "${SCRIPT_PROJECT}" "${SCRIPT_PROJECT}.unavailable")
+if(CMAKE_HOST_WIN32)
+    set(ENV{PATH} "$ENV{SystemRoot}/System32;$ENV{SystemRoot}")
+else()
+    set(ENV{PATH} "/usr/bin:/bin")
+endif()
+unset(ENV{LD_LIBRARY_PATH})
+unset(ENV{LD_PRELOAD})
+unset(ENV{DYLD_LIBRARY_PATH})
+unset(ENV{DYLD_FALLBACK_LIBRARY_PATH})
+nomadRunTestCommand("Run relocated module-script application without its SDK or sources"
+    COMMAND "${SCRIPT_RELOCATED}/${SCRIPT_EXECUTABLE}" --project-path "${SCRIPT_RELOCATED}"
+    WORKING_DIRECTORY "${NOMAD_TEST_ROOT}" OUTPUT_MATCH "MODULE_SCRIPTS_COMPLETE"
+    OUTPUT_VARIABLE SCRIPT_RUN_OUTPUT)
+string(REGEX MATCHALL "MODULE_DEFAULT_INITIALIZED" SCRIPT_INITIALIZATIONS "${SCRIPT_RUN_OUTPUT}")
+list(LENGTH SCRIPT_INITIALIZATIONS SCRIPT_INITIALIZATION_COUNT)
+if(NOT SCRIPT_INITIALIZATION_COUNT EQUAL 1 OR SCRIPT_RUN_OUTPUT MATCHES "MODULE_FILE_BODY_EXECUTED")
+    message(FATAL_ERROR "Relocated application did not preserve normal initialization: ${SCRIPT_RUN_OUTPUT}")
+endif()
+set(PACKAGED_FIXTURE "${SCRIPT_RELOCATED}/modules/fixture")
+file(RENAME "${PACKAGED_FIXTURE}/module.toml" "${PACKAGED_FIXTURE}/module.toml.missing")
+nomadRunTestCommand("Reject missing packaged manifest without SDK fallback" EXPECT_FAILURE
+    COMMAND "${SCRIPT_RELOCATED}/${SCRIPT_EXECUTABLE}" --project-path "${SCRIPT_RELOCATED}"
+    WORKING_DIRECTORY "${NOMAD_TEST_ROOT}" ERROR_VARIABLE SCRIPT_MISSING_MANIFEST)
+if(NOT SCRIPT_MISSING_MANIFEST MATCHES "module.toml")
+    message(FATAL_ERROR "Missing packaged manifest did not report its path: ${SCRIPT_MISSING_MANIFEST}")
+endif()
+file(RENAME "${PACKAGED_FIXTURE}/module.toml.missing" "${PACKAGED_FIXTURE}/module.toml")
+file(RENAME "${PACKAGED_FIXTURE}/${FIXTURE_LIBRARY_NAME}" "${SCRIPT_RELOCATED}/${FIXTURE_LIBRARY_NAME}")
+nomadRunTestCommand("Reject flat module library fallback" EXPECT_FAILURE
+    COMMAND "${SCRIPT_RELOCATED}/${SCRIPT_EXECUTABLE}" --project-path "${SCRIPT_RELOCATED}"
+    WORKING_DIRECTORY "${NOMAD_TEST_ROOT}" ERROR_VARIABLE SCRIPT_MISSING_LIBRARY)
+if(NOT SCRIPT_MISSING_LIBRARY MATCHES "Failed to load module 'fixture'")
+    message(FATAL_ERROR "Missing nested module library was not diagnosed: ${SCRIPT_MISSING_LIBRARY}")
+endif()
 file(REMOVE_RECURSE "${NOMAD_TEST_ROOT}")

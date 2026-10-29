@@ -204,8 +204,16 @@ game and window settings, and explicit audio, text, script, and sprite configura
 and `[package]`. The game module sets `resources.directory` to `res` and
 packages its assets there. Script roots inside the asset directory are remapped
 to the corresponding packaged paths; other script roots retain their
-project-relative locations. Projects without the game module package their
+project-relative locations, except roots inside a selected module's script
+directory, which follow that module under `modules/<name>/`. Projects without
+the game module package their
 configured script directories without interpreting game asset settings.
+
+Selected modules retain their manifests and discovered `.nomad` sources under
+`modules/<name>/`. Their script directories are loaded automatically from the
+package-local manifests; the application does not need to list them separately.
+Shared native dependencies remain at the package root. Packages do not fall back
+to development SDK modules.
 
 Packaging replaces the source PNGs in every nonempty raw sprite root with a
 versioned `catalog.json` and adjacent packed PNG pages. Empty roots remain

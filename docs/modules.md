@@ -130,9 +130,9 @@ module files without changing their owner or relative identity. Opening a
 module file alongside a consuming project includes that buffer in the project's
 analysis.
 
-Module-owned scripts are not yet included in application packages or copied
-from module source directories into SDK bundles. Those packaging changes are
-the next increment; for now, script discovery uses the installed module directory.
+Application packages include discovered module-owned `.nomad` sources from the
+installed module directories. Copying scripts from module source directories
+into SDK bundles is a separate, pending build-time staging step.
 
 ## Ordering and startup
 
@@ -183,6 +183,21 @@ Conflicting package outputs or failed module contributions fail the package
 operation rather than publishing a partial archive.
 
 The packaged `nomad.toml` contains the complete resolved module list in startup
-order. Packaged applications load those libraries beside that configuration;
-they do not need an SDK or the development module manifests. Module settings
-are preserved unless explicitly transformed for release.
+order. Each module retains its native library, `module.toml`, and configured
+script directory under `modules/<name>/`. Shared native dependencies and licenses
+remain at the application root. The module's development-only `runtime.json`
+inventory is not included.
+
+Packaged applications resolve modules and their script directories from these
+package-local manifests, without falling back to an SDK or flat module libraries
+at the application root. Older flat-layout packages must be rebuilt. Module
+source identities and public names are unchanged after extraction or relocation.
+Application script inputs that overlap module sources remain deduplicated and
+module-owned. The application's script directory list does not need to enumerate
+module sources.
+
+Module settings are preserved unless explicitly transformed for release.
+Packaging and dry runs do not execute script file bodies or class initializers.
+Explicit empty module script directories are preserved, and missing explicitly
+configured directories fail packaging, including dry runs. Application resource
+exclusions do not remove module-owned sources.

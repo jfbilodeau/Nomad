@@ -7,6 +7,13 @@ configure_file(
 foreach(MODULE IN LISTS NOMAD_MODULE_NAMES)
     set(MODULE_TARGET "nomad-${MODULE}")
     set(MODULE_DESTINATION "$<TARGET_FILE_DIR:nomad-runtime>/modules/${MODULE}")
+    if(APPLE)
+        set_property(TARGET ${MODULE_TARGET} APPEND PROPERTY BUILD_RPATH "@loader_path/../..")
+        set_property(TARGET ${MODULE_TARGET} APPEND PROPERTY INSTALL_RPATH "@loader_path/../..")
+    elseif(UNIX)
+        set_property(TARGET ${MODULE_TARGET} APPEND PROPERTY BUILD_RPATH "$ORIGIN/../..")
+        set_property(TARGET ${MODULE_TARGET} APPEND PROPERTY INSTALL_RPATH "$ORIGIN/../..")
+    endif()
     set(MODULE_DEPENDENCIES)
     if(WIN32)
         list(APPEND MODULE_DEPENDENCIES
