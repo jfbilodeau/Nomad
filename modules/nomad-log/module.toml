@@ -2,3 +2,6 @@ schema = 1
 
 [module]
 name = "log"
+
+[scripts]
+directory = "scripts"
