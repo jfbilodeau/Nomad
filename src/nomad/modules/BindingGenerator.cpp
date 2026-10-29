@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/compiler/BindingGenerator.hpp>
+#include <nomad/modules/BindingGenerator.hpp>
 
 #include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
@@ -315,9 +315,8 @@ std::vector<BindingOutput> renderModuleBindings(const BindingModel& model) {
     std::ostringstream header;
     std::ostringstream source;
     header << "// " << generatedMarker << "\n\n#pragma once\n\n"
-        "#include <nomad/script/ScriptBindingObject.hpp>\n\nnamespace " << scope << " {\n\n";
+        "#include <nomad/modules/ScriptBindingObject.hpp>\n\nnamespace " << scope << " {\n\n";
     source << "// " << generatedMarker << "\n\n#include <" << includePath << ">\n\n"
-        "#include <nomad/script/Runtime.hpp>\n\n"
         "#include <utility>\n\nnamespace " << scope << " {\n\n";
     for (const auto& enumeration : model.enums) {
         header << "enum class " << typeIdentifier(enumeration.name) << " : nomad::NomadInteger {\n";
@@ -341,17 +340,17 @@ std::vector<BindingOutput> renderModuleBindings(const BindingModel& model) {
         }
         source << "        }\n    };\n    return contract;\n}\n\n} // namespace\n\n";
         header << "class " << name << " final : public nomad::ScriptBindingObject {\npublic:\n"
-            "    " << name << "(nomad::Runtime& runtime, nomad::NomadObject* object);\n"
-            "    [[nodiscard]] static const nomad::ScriptClassBinding& bind(nomad::Runtime& runtime);\n"
-            "    [[nodiscard]] static " << name << " create(nomad::Runtime& runtime, nomad::VirtualMachine& machine);\n";
-        source << name << "::" << name << "(nomad::Runtime& runtime, nomad::NomadObject* object) :\n"
-            "    nomad::ScriptBindingObject(bind(runtime), object) {\n}\n\n"
+            "    " << name << "(nomad::ScriptBindings& bindings, nomad::NomadObject* object);\n"
+            "    [[nodiscard]] static const nomad::ScriptClassBinding& bind(nomad::ScriptBindings& bindings);\n"
+            "    [[nodiscard]] static " << name << " create(nomad::ScriptBindings& bindings, nomad::VirtualMachine& machine);\n";
+        source << name << "::" << name << "(nomad::ScriptBindings& bindings, nomad::NomadObject* object) :\n"
+            "    nomad::ScriptBindingObject(bind(bindings), object) {\n}\n\n"
             << name << "::" << name << "(nomad::ScriptBindingObject binding) :\n"
             "    nomad::ScriptBindingObject(std::move(binding)) {\n}\n\n"
-            "const nomad::ScriptClassBinding& " << name << "::bind(nomad::Runtime& runtime) {\n"
-            "    return runtime.getScriptClassBinding(" << contractName << "());\n}\n\n"
-            << name << " " << name << "::create(nomad::Runtime& runtime, nomad::VirtualMachine& machine) {\n"
-            "    return " << name << "(nomad::ScriptBindingObject::construct(bind(runtime), machine));\n}\n\n";
+            "const nomad::ScriptClassBinding& " << name << "::bind(nomad::ScriptBindings& bindings) {\n"
+            "    return bindings.getClassBinding(" << contractName << "());\n}\n\n"
+            << name << " " << name << "::create(nomad::ScriptBindings& bindings, nomad::VirtualMachine& machine) {\n"
+            "    return " << name << "(nomad::ScriptBindingObject::construct(bind(bindings), machine));\n}\n\n";
         for (auto slot = NomadIndex{0}; slot < classType.fields.size(); ++slot) {
             const auto& field = classType.fields[slot];
             const auto fieldCppType = cppType(field.type);

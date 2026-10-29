@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nomad/script/ScriptBindingObject.hpp>
+#include <nomad/modules/ScriptClassBinding.hpp>
 
 #include <optional>
 

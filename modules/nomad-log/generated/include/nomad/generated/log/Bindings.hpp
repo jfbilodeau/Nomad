@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nomad/script/ScriptBindingObject.hpp>
+#include <nomad/modules/ScriptBindingObject.hpp>
 
 namespace nomad::generated::log {
 
@@ -26,9 +26,9 @@ enum class log_Level : nomad::NomadInteger {
 
 class log_FileSinkConfiguration final : public nomad::ScriptBindingObject {
 public:
-    log_FileSinkConfiguration(nomad::Runtime& runtime, nomad::NomadObject* object);
-    [[nodiscard]] static const nomad::ScriptClassBinding& bind(nomad::Runtime& runtime);
-    [[nodiscard]] static log_FileSinkConfiguration create(nomad::Runtime& runtime, nomad::VirtualMachine& machine);
+    log_FileSinkConfiguration(nomad::ScriptBindings& bindings, nomad::NomadObject* object);
+    [[nodiscard]] static const nomad::ScriptClassBinding& bind(nomad::ScriptBindings& bindings);
+    [[nodiscard]] static log_FileSinkConfiguration create(nomad::ScriptBindings& bindings, nomad::VirtualMachine& machine);
     [[nodiscard]] nomad::NomadBoolean getActive() const;
     void setActive(nomad::NomadBoolean value);
     [[nodiscard]] nomad::NomadString getDirectory() const;
@@ -52,9 +52,9 @@ private:
 
 class log_SinkConfiguration final : public nomad::ScriptBindingObject {
 public:
-    log_SinkConfiguration(nomad::Runtime& runtime, nomad::NomadObject* object);
-    [[nodiscard]] static const nomad::ScriptClassBinding& bind(nomad::Runtime& runtime);
-    [[nodiscard]] static log_SinkConfiguration create(nomad::Runtime& runtime, nomad::VirtualMachine& machine);
+    log_SinkConfiguration(nomad::ScriptBindings& bindings, nomad::NomadObject* object);
+    [[nodiscard]] static const nomad::ScriptClassBinding& bind(nomad::ScriptBindings& bindings);
+    [[nodiscard]] static log_SinkConfiguration create(nomad::ScriptBindings& bindings, nomad::VirtualMachine& machine);
     [[nodiscard]] nomad::NomadBoolean getActive() const;
     void setActive(nomad::NomadBoolean value);
     [[nodiscard]] log_Level getLevel() const;

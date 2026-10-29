@@ -52,26 +52,29 @@ and does not install scripts into an SDK.
 
 ```cpp
 #include <nomad/generated/log/Bindings.hpp>
+#include <nomad/modules/ScriptBindings.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 // runtime already contains the compiled module script declarations.
+nomad::ScriptBindings bindings(runtime);
 nomad::VirtualMachine machine(&runtime);
 using Settings = nomad::generated::log::log_FileSinkConfiguration;
-const auto& binding = Settings::bind(runtime); // Optional eager validation and cache initialization.
-auto settings = Settings::create(runtime, machine);
+const auto& binding = Settings::bind(bindings); // Optional eager validation and cache initialization.
+auto settings = Settings::create(bindings, machine);
 settings.setDirectory("logs");
-auto sameObject = Settings(runtime, settings.getObject());
+auto sameObject = Settings(bindings, settings.getObject());
 ```
 
-- `create(runtime, machine)` runs the ordinary script constructor and class field
+- `create(bindings, machine)` runs the ordinary script constructor and class field
   initializers. Defaults are not copied into C++. Compiling/generating bindings,
   wrapping an existing receiver, and copying a wrapper do not run initializers.
-- The first `bind(runtime)`, construction, or wrapping validates the runtime-local class, exact stored-field
+- The first `bind(bindings)`, construction, or wrapping validates the runtime-local class, exact stored-field
   names and types, ordinary zero-argument constructor, and referenced enum
   names/numeric mappings. Native properties and unsupported shapes are rejected.
-  The runtime caches the resolved class, constructor ID, property IDs, field
+  The helper caches the resolved class, constructor ID, property IDs, field
   indexes, and enum values. Equivalent contracts share one immutable binding in
-  that runtime, never global mutable IDs. Subsequent wrappers reuse it.
+  that helper, never global mutable IDs. Subsequent wrappers reuse it. Separate
+  helpers have independent caches, even when associated with the same runtime.
 - Generated classes derive from `ScriptBindingObject`, inheriting receiver
   ownership, `getObject()`, `getRuntime()`, and `getBinding()`. Field accessors use
   numeric contract slots mapped to cached runtime field indexes, not string
@@ -82,20 +85,24 @@ auto sameObject = Settings(runtime, settings.getObject());
   Copies retain another reference; moves transfer it. Destruction releases it.
   `getObject()` is borrowed; use `addRef()` if retaining it beyond the wrapper.
   No `shared_ptr` is put in a `RuntimeValue`.
-- The runtime must outlive all wrappers and receivers. Do not unload or replace
-  registered types/bytecode while wrappers are live. Wrappers do not extend
-  runtime lifetime or make VM/receiver access thread-safe.
+- The runtime must outlive the helper, wrappers, and receivers. The helper must
+  outlive all returned binding references and wrappers that use them. Do not
+  unload or replace registered types/bytecode while wrappers are live. Neither
+  helpers nor wrappers extend runtime lifetime or make access thread-safe.
 - Wrong runtime, VM, class receiver, missing declarations, field-type mismatch,
   enum mapping mismatch, and invalid enum reads/writes throw `NomadException`.
   Moved-from handles cannot be accessed. Strings cross the interface by value
   with their full length, including embedded nulls.
 
-`<nomad/script/ScriptBindingObject.hpp>` supplies the shared wrapper base.
-`Runtime::getScriptClassBinding(contract)` retains its own contract snapshot, so
+`<nomad/modules/ScriptBindingObject.hpp>` supplies the shared wrapper base.
+`ScriptBindings::getClassBinding(contract)` retains its own contract snapshot, so
 the input contract need not outlive the call. The returned `ScriptClassBinding`
-and all wrappers must remain within the runtime's lifetime. Its primitive slot
+and all wrappers must remain within the helper's and runtime's lifetimes. Its primitive slot
 accessors check bounds and access types; integer access can also read/write a
 contracted enum, validating its value against cached numeric members.
+
+Host-side binding support is available under `<nomad/modules/...>`, including
+`BindingGenerator.hpp` for programmatic generation.
 
 ### C++ logging
 

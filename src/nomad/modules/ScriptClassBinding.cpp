@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/script/ScriptClassBinding.hpp>
+#include <nomad/modules/ScriptClassBinding.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>

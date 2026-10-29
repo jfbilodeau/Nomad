@@ -1,17 +1,16 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/script/ScriptBindingObject.hpp>
+#include <nomad/modules/ScriptBindingObject.hpp>
 
 #include <nomad/script/NomadStringObject.hpp>
-#include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
 
 #include <utility>
 
 namespace nomad {
 
-ScriptBindingObject::ScriptBindingObject(Runtime& runtime, NomadObject* object, const BindingClass& contract) :
-    ScriptBindingObject(runtime.getScriptClassBinding(contract), object) {
+ScriptBindingObject::ScriptBindingObject(ScriptBindings& bindings, NomadObject* object, const BindingClass& contract) :
+    ScriptBindingObject(bindings.getClassBinding(contract), object) {
 }
 
 ScriptBindingObject::ScriptBindingObject(const ScriptClassBinding& binding, NomadObject* object) :
@@ -70,11 +69,11 @@ ScriptBindingObject ScriptBindingObject::construct(
 }
 
 ScriptBindingObject ScriptBindingObject::construct(
-    Runtime& runtime,
+    ScriptBindings& bindings,
     VirtualMachine& machine,
     const BindingClass& contract
 ) {
-    return construct(runtime.getScriptClassBinding(contract), machine);
+    return construct(bindings.getClassBinding(contract), machine);
 }
 
 NomadObject* ScriptBindingObject::getObject() const {

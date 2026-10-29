@@ -2,8 +2,6 @@
 
 #include <nomad/generated/log/Bindings.hpp>
 
-#include <nomad/script/Runtime.hpp>
-
 #include <utility>
 
 namespace nomad::generated::log {
@@ -33,20 +31,20 @@ const nomad::BindingClass& contract0() {
 
 } // namespace
 
-log_FileSinkConfiguration::log_FileSinkConfiguration(nomad::Runtime& runtime, nomad::NomadObject* object) :
-    nomad::ScriptBindingObject(bind(runtime), object) {
+log_FileSinkConfiguration::log_FileSinkConfiguration(nomad::ScriptBindings& bindings, nomad::NomadObject* object) :
+    nomad::ScriptBindingObject(bind(bindings), object) {
 }
 
 log_FileSinkConfiguration::log_FileSinkConfiguration(nomad::ScriptBindingObject binding) :
     nomad::ScriptBindingObject(std::move(binding)) {
 }
 
-const nomad::ScriptClassBinding& log_FileSinkConfiguration::bind(nomad::Runtime& runtime) {
-    return runtime.getScriptClassBinding(contract0());
+const nomad::ScriptClassBinding& log_FileSinkConfiguration::bind(nomad::ScriptBindings& bindings) {
+    return bindings.getClassBinding(contract0());
 }
 
-log_FileSinkConfiguration log_FileSinkConfiguration::create(nomad::Runtime& runtime, nomad::VirtualMachine& machine) {
-    return log_FileSinkConfiguration(nomad::ScriptBindingObject::construct(bind(runtime), machine));
+log_FileSinkConfiguration log_FileSinkConfiguration::create(nomad::ScriptBindings& bindings, nomad::VirtualMachine& machine) {
+    return log_FileSinkConfiguration(nomad::ScriptBindingObject::construct(bind(bindings), machine));
 }
 
 nomad::NomadBoolean log_FileSinkConfiguration::getActive() const {
@@ -131,20 +129,20 @@ const nomad::BindingClass& contract1() {
 
 } // namespace
 
-log_SinkConfiguration::log_SinkConfiguration(nomad::Runtime& runtime, nomad::NomadObject* object) :
-    nomad::ScriptBindingObject(bind(runtime), object) {
+log_SinkConfiguration::log_SinkConfiguration(nomad::ScriptBindings& bindings, nomad::NomadObject* object) :
+    nomad::ScriptBindingObject(bind(bindings), object) {
 }
 
 log_SinkConfiguration::log_SinkConfiguration(nomad::ScriptBindingObject binding) :
     nomad::ScriptBindingObject(std::move(binding)) {
 }
 
-const nomad::ScriptClassBinding& log_SinkConfiguration::bind(nomad::Runtime& runtime) {
-    return runtime.getScriptClassBinding(contract1());
+const nomad::ScriptClassBinding& log_SinkConfiguration::bind(nomad::ScriptBindings& bindings) {
+    return bindings.getClassBinding(contract1());
 }
 
-log_SinkConfiguration log_SinkConfiguration::create(nomad::Runtime& runtime, nomad::VirtualMachine& machine) {
-    return log_SinkConfiguration(nomad::ScriptBindingObject::construct(bind(runtime), machine));
+log_SinkConfiguration log_SinkConfiguration::create(nomad::ScriptBindings& bindings, nomad::VirtualMachine& machine) {
+    return log_SinkConfiguration(nomad::ScriptBindingObject::construct(bind(bindings), machine));
 }
 
 nomad::NomadBoolean log_SinkConfiguration::getActive() const {

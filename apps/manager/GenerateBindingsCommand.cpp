@@ -2,7 +2,7 @@
 
 #include <GenerateBindingsCommand.hpp>
 
-#include <nomad/compiler/BindingGenerator.hpp>
+#include <nomad/modules/BindingGenerator.hpp>
 
 #include <nomad/system/Path.hpp>
 #include <nomad/system/ProgramOptions.hpp>

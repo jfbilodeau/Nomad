@@ -2,7 +2,6 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/Nomad.cpp
 
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Argument.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/compiler/BindingGenerator.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CallNode.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/ClassDeclaration.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/ClassFieldInitializerStatement.cpp
@@ -31,6 +30,11 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/log/LogSinkObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/log/MemorySink.cpp
 
+    ${NOMAD_SOURCE_DIR}/nomad/modules/BindingGenerator.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/modules/ScriptBindingObject.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/modules/ScriptBindings.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/modules/ScriptClassBinding.cpp
+
     ${NOMAD_SOURCE_DIR}/nomad/script/Callable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Closure.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Documentation.cpp
@@ -57,9 +61,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/Runtime.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeOpCodes.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeValue.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/ScriptBindingObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptCallableBase.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/ScriptClassBinding.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptConstructor.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptMethod.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptObject.cpp

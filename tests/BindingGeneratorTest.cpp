@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/compiler/BindingGenerator.hpp>
+#include <nomad/modules/BindingGenerator.hpp>
 
 #include <BindingTestFixture.hpp>
 
@@ -29,6 +29,10 @@ BOOST_AUTO_TEST_CASE(generation_is_deterministic_and_preserves_unchanged_files) 
     BOOST_TEST(first[0].content.find("nomad::generated::test_module") != NomadString::npos);
     BOOST_TEST(first[0].content.find("nomad::NomadFloat getRatio") != NomadString::npos);
     BOOST_TEST(first[0].content.find("public nomad::ScriptBindingObject") != NomadString::npos);
+    BOOST_TEST(first[0].content.find("#include <nomad/modules/ScriptBindingObject.hpp>") != NomadString::npos);
+    BOOST_TEST(first[0].content.find("bind(nomad::ScriptBindings& bindings)") != NomadString::npos);
+    BOOST_TEST(first[0].content.find("nomad::Runtime&") == NomadString::npos);
+    BOOST_TEST(first[1].content.find("bindings.getClassBinding(") != NomadString::npos);
     BOOST_TEST(first[0].content.find("ScriptBindingObject m_binding") == NomadString::npos);
     BOOST_TEST(first[1].content.find("::getObject()") == NomadString::npos);
     BOOST_TEST(first[1].content.find("nomad::ScriptBindingObject::getBoolean(0)") != NomadString::npos);

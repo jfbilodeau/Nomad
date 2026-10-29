@@ -52,8 +52,6 @@ class Type;
 class ClassType;
 class EnumType;
 class OpaqueIdType;
-class ScriptClassBinding;
-struct BindingClass;
 struct EnumValueDefinition;
 
 DeclareId(ConstantId);
@@ -285,7 +283,6 @@ public:
     [[nodiscard]] std::optional<const Type*> getType(TypeId id) const;
     [[nodiscard]] const Type* getTypeByName(const NomadString& name) const;
     void getTypes(std::vector<const Type*>& types) const;
-    [[nodiscard]] const ScriptClassBinding& getScriptClassBinding(const BindingClass& contract);
     [[nodiscard]] const OpaqueIdType* registerOpaqueIdType(const NomadString& name, NomadDocArg);
     [[nodiscard]] TypeId createEnum(
         NomadString name,
@@ -746,7 +743,6 @@ private:
     std::vector<Instruction> m_instructions;
     std::vector<OpCodeDefinition> m_opCodes;
     std::vector<std::unique_ptr<Type>> m_types;
-    std::vector<std::unique_ptr<ScriptClassBinding>> m_scriptClassBindings;
     std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;
     std::vector<TypeSpecialization> m_typeSpecializations;
     std::vector<ParameterizedConstructorRegistration> m_parameterizedConstructors;

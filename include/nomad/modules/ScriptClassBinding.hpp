@@ -39,7 +39,7 @@ enum class BindingValueKind {
 
 [[nodiscard]] bool isScriptBindingClass(const ClassType& type);
 
-// Runtime-owned, immutable resolution of one contract. Slots follow contract field order,
+// Helper-owned, immutable resolution of one contract. Slots follow contract field order,
 // independently of the runtime's property IDs or the script's field order.
 class ScriptClassBinding final {
 public:
@@ -55,7 +55,7 @@ public:
     [[nodiscard]] NomadObject* construct(VirtualMachine& machine) const;
 
 private:
-    friend class Runtime;
+    friend class ScriptBindings;
     ScriptClassBinding(Runtime& runtime, const BindingClass& contract);
 
     struct ResolvedField {

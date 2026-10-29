@@ -2,18 +2,18 @@
 
 #pragma once
 
-#include <nomad/script/ScriptClassBinding.hpp>
+#include <nomad/modules/ScriptBindings.hpp>
 
 namespace nomad {
 
 class ScriptObject;
 class VirtualMachine;
 
-// Retains the receiver, not its Runtime. The runtime owns the resolved binding
-// and must outlive this handle and all generated wrappers derived from it.
+// Retains the receiver, not its Runtime or ScriptBindings. Both owners must
+// outlive this handle and all generated wrappers derived from it.
 class ScriptBindingObject {
 public:
-    ScriptBindingObject(Runtime& runtime, NomadObject* object, const BindingClass& contract);
+    ScriptBindingObject(ScriptBindings& bindings, NomadObject* object, const BindingClass& contract);
     ScriptBindingObject(const ScriptClassBinding& binding, NomadObject* object);
     ScriptBindingObject(const ScriptBindingObject& other);
     ScriptBindingObject(ScriptBindingObject&& other) noexcept;
@@ -26,7 +26,7 @@ public:
         VirtualMachine& machine
     );
     [[nodiscard]] static ScriptBindingObject construct(
-        Runtime& runtime,
+        ScriptBindings& bindings,
         VirtualMachine& machine,
         const BindingClass& contract
     );

@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nomad/compiler/BindingGenerator.hpp>
+#include <nomad/modules/BindingGenerator.hpp>
 
 namespace nomad::test {
 
