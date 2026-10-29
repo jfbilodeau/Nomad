@@ -78,7 +78,7 @@ std::optional<IterableInfo> Runtime::getIterableInfo(const Type* sourceType) con
 namespace {
 
 // TODO: Remove?
-bool isValididentifier(const NomadString& name) {
+bool isValidIdentifier(const NomadString& name) {
     if (name.empty()) {
         return false;
     }
@@ -274,7 +274,7 @@ CallableId Runtime::registerNativeFunction(
 
 std::optional<NomadString> Runtime::qualifyHubMemberName(const HubId hubId, const NomadString& name) const {
     const auto* hub = getHub(hubId);
-    if (hub == nullptr || !isValididentifier(name)) {
+    if (hub == nullptr || !isValidIdentifier(name)) {
         log::error("Cannot register hub member '" + name + "': invalid hub or local member name");
         return std::nullopt;
     }
@@ -301,7 +301,7 @@ ConstantId Runtime::registerHubConstant(
     const Type* type
 ) {
     const auto* hub = getHub(hubId);
-    if (hub == nullptr || !isValididentifier(name)) {
+    if (hub == nullptr || !isValidIdentifier(name)) {
         log::error("Cannot register hub constant '" + name + "': invalid hub or local member name");
         return ConstantId::INVALID;
     }
@@ -319,12 +319,12 @@ TypeId Runtime::registerHubEnum(
     NomadString documentation
 ) {
     const auto* hub = getHub(hubId);
-    if (hub == nullptr || !isValididentifier(name)) {
+    if (hub == nullptr || !isValidIdentifier(name)) {
         log::error("Cannot register hub enum '" + name + "': invalid hub or local member name");
         return TypeId::INVALID;
     }
     for (const auto& value : values) {
-        if (!isValididentifier(value.name)) {
+        if (!isValidIdentifier(value.name)) {
             log::error("Cannot register hub enum '" + name + "': value names must be simple identifiers");
             return TypeId::INVALID;
         }
@@ -341,7 +341,7 @@ CallableId Runtime::registerHubNativeFunction(
     NomadDocArg
 ) {
     const auto* hub = getHub(hubId);
-    if (hub == nullptr || !isValididentifier(name)) {
+    if (hub == nullptr || !isValidIdentifier(name)) {
         log::error("Cannot register hub native function '" + name + "': invalid hub or local member name");
         return CallableId::INVALID;
     }
@@ -1568,7 +1568,7 @@ bool Runtime::canRegisterMemberSignature(
     const std::vector<Parameter>& parameters,
     NomadString& error
 ) const {
-    if (!isValididentifier(name)) {
+    if (!isValidIdentifier(name)) {
         error = "member name must be a simple identifier";
         return false;
     }
@@ -1904,7 +1904,7 @@ PropertyId Runtime::registerProperty(
     const auto type = getType(ownerId);
     const auto* classType = type ? (*type)->asClassType() : nullptr;
     auto* owner = getMutableClassType(classType);
-    if (owner == nullptr || !isValididentifier(name) || !ownsType(valueType) ||
+    if (owner == nullptr || !isValidIdentifier(name) || !ownsType(valueType) ||
         valueType->isVoid() || valueType->isInternal()) {
         log::error("Cannot register property '" + name + "': invalid owner, name, or value type");
         return PropertyId::INVALID;
