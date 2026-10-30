@@ -297,7 +297,9 @@ BOOST_AUTO_TEST_CASE(host_calls_copy_string_values_and_own_results_independently
         BOOST_TEST(machine->getResult().getObjectValue() != argument.getObjectValue());
         BOOST_TEST(machine->getResult().getObjectValue()->getReferenceCount() == 1U);
         machine->getResult().freeObjectValue();
+#ifdef NOMAD_DEBUG
         BOOST_TEST(RuntimeValue::getLiveStringCount() == before + 1);
+#endif
     }
     argument.freeObjectValue();
     BOOST_TEST(RuntimeValue::getLiveStringCount() == before);

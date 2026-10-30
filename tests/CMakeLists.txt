@@ -183,6 +183,7 @@ if(TARGET nomad-lsp)
     add_test(NAME nomad_lsp_process
         COMMAND "${CMAKE_COMMAND}"
             "-DNOMAD_LSP=$<TARGET_FILE:nomad-lsp>"
+            "-DNOMAD_LSP_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-lsp>,|>"
             "-DNOMAD_VERSION=${PROJECT_VERSION}"
             "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/lsp-process/$<CONFIG>"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/LanguageServerProcessTest.cmake")

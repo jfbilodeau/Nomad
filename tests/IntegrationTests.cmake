@@ -86,6 +86,8 @@ add_test(
         "${CMAKE_COMMAND}"
         "-DNOMAD_CLI=$<TARGET_FILE:nomad-cli>"
         "-DNOMAD_COMPILER=$<TARGET_FILE:nomadc>"
+        "-DNOMAD_CLI_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-cli>,|>"
+        "-DNOMAD_COMPILER_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomadc>,|>"
         "-DNOMAD_RUNTIME_SUFFIX=$<TARGET_FILE_SUFFIX:nomad-runtime>"
         "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/package-integration/$<CONFIG>"
         "-DNOMAD_PACKAGE_ARTIFACT_DIR=${CMAKE_CURRENT_BINARY_DIR}/package-artifact/$<CONFIG>"

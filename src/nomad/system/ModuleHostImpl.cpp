@@ -23,6 +23,8 @@
 #include <array>
 #include <atomic>
 #include <exception>
+#include <memory>
+#include <system_error>
 #include <utility>
 
 namespace nomad {
@@ -125,6 +127,21 @@ void ModuleHostImpl::loadModules(const std::vector<ModuleManifest>& modules) {
         loaded->name = manifest.name;
         const auto libraryPath = manifest.directory / getModuleLibraryName(manifest.name);
         try {
+#ifdef _WIN32
+            // Package dependencies live at the package root, which differs from
+            // the running executable's directory when SDK tools check an external package.
+            // Register it only for this load; the deleter removes the process-wide search entry.
+            const auto dependencyDirectory = std::filesystem::absolute(manifest.directory).parent_path().parent_path();
+            const auto dependencySearch = std::unique_ptr<void, decltype(&RemoveDllDirectory)>(
+                AddDllDirectory(dependencyDirectory.c_str()), &RemoveDllDirectory
+            );
+            if (!dependencySearch) {
+                throw std::system_error(
+                    static_cast<int>(GetLastError()), std::system_category(),
+                    "Failed to add module dependency directory '" + pathToUtf8(dependencyDirectory) + "'"
+                );
+            }
+#endif
             loaded->library.load(std::filesystem::absolute(libraryPath).native(), loadMode);
         } catch (const std::exception& error) {
             throw ModuleException("Failed to load module '" + manifest.name + "' at '" +
