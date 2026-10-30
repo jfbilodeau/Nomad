@@ -11,7 +11,7 @@ namespace nomad {
 
 DeclareId(LogSinkId);
 
-enum class LogLevel {
+enum class LogLevel : NomadInteger {
     Debug = 1,
     Info,
     Warning,

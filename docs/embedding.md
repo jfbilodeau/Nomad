@@ -295,6 +295,12 @@ producing `application.log`. Archives are `application.1.log`,
 | `maxSizeBytes` | 10 MiB (10,485,760 bytes) | Positive byte limit, used by `Size`. |
 | `maxFiles` | 10 | Number of archives, excluding the active file. Zero discards old active contents when rotating. |
 
+`maxSizeBytes`, `maxFiles`, their getters, and `setRotationLimits` use signed
+`NomadInteger` values. The sink rejects nonpositive byte limits, negative archive
+counts, and limits exceeding the platform's native size capacity. Invalid
+settings are rejected before creating files, even for inactive sinks.
+Invalid limit updates leave both previous settings unchanged.
+
 - `None` disables ongoing rotation, allowing unlimited growth after startup.
   To append across runs without rotating or pruning archives, also set
   `rotateAtStartup = false`.
@@ -320,6 +326,9 @@ filesystem writes. Such a sink starts on its first active delivery callback
 `getMaxSizeBytes()`, and `getMaxFiles()` inspect rotation settings;
 `setRotationMode()`, `setRotateAtStartup()`, and
 `setRotationLimits(bytes, archives)` adjust them.
+`LogLevel`, `LogDeliveryMode`, and `FileRotationMode` have `NomadInteger`
+underlying types. Logger and sink APIs reject unsupported enum values without
+narrowing them first. C++ consumers must be rebuilt after this representation change.
 The startup flag can be changed before a staged sink starts; changing it after
 startup does not trigger or undo rotation. Other changes affect subsequent writes.
 Coordinate

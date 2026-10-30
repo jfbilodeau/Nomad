@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
@@ -83,10 +84,29 @@ static_assert(std::is_base_of_v<SinkConfiguration, ConsoleSinkConfiguration>);
 static_assert(std::is_base_of_v<SinkConfiguration, MemorySinkConfiguration>);
 static_assert(!std::is_convertible_v<LogSinkId, NomadId>);
 static_assert(!std::is_constructible_v<Logger, LogSink*>);
+static_assert(std::is_same_v<std::underlying_type_t<LogLevel>, NomadInteger>);
+static_assert(std::is_same_v<std::underlying_type_t<LogDeliveryMode>, NomadInteger>);
 
 } // namespace
 
 BOOST_FIXTURE_TEST_SUITE(LogTests, MemoryLoggerFixture)
+
+BOOST_AUTO_TEST_CASE(FullWidthInvalidEnumsAreRejectedByLoggerAndSink)
+{
+    logger.setLogLevel(LogLevel::Error);
+    sink.setLogLevel(LogLevel::Warning);
+    for (const auto value : {
+        std::numeric_limits<NomadInteger>::min(), NomadInteger{0}, (NomadInteger{1} << 32) + 2,
+        std::numeric_limits<NomadInteger>::max()
+    }) {
+        BOOST_CHECK_THROW(logger.setLogLevel(static_cast<LogLevel>(value)), NomadException);
+        BOOST_CHECK_THROW(sink.setLogLevel(static_cast<LogLevel>(value)), NomadException);
+        BOOST_CHECK_THROW(logger.setDeliveryMode(static_cast<LogDeliveryMode>(value)), NomadException);
+        BOOST_CHECK(logger.getLogLevel() == LogLevel::Error);
+        BOOST_CHECK(sink.getLogLevel() == LogLevel::Warning);
+        BOOST_CHECK(logger.getDeliveryMode() == LogDeliveryMode::Buffered);
+    }
+}
 
 BOOST_AUTO_TEST_CASE(LoggingToMemorySink)
 {

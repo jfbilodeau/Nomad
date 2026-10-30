@@ -8,6 +8,7 @@
 #include <limits>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace nomad {
@@ -16,9 +17,7 @@ FileSink::FileSink(const FileSinkConfiguration& configuration) :
     LogSink(configuration),
     m_name(configuration.name),
     m_rotationMode(configuration.rotationMode),
-    m_rotateAtStartup(configuration.rotateAtStartup),
-    m_maxSizeBytes(configuration.maxSizeBytes),
-    m_maxFiles(configuration.maxFiles)
+    m_rotateAtStartup(configuration.rotateAtStartup)
 {
     if (configuration.directory.empty()) {
         throw NomadException("A log file directory is required");
@@ -59,20 +58,26 @@ void FileSink::setRotateAtStartup(const bool rotateAtStartup) {
     m_rotateAtStartup = rotateAtStartup;
 }
 
-NomadIndex FileSink::getMaxSizeBytes() const {
-    return m_maxSizeBytes;
+NomadInteger FileSink::getMaxSizeBytes() const {
+    return static_cast<NomadInteger>(m_maxSizeBytes);
 }
 
-NomadIndex FileSink::getMaxFiles() const {
-    return m_maxFiles;
+NomadInteger FileSink::getMaxFiles() const {
+    return static_cast<NomadInteger>(m_maxFiles);
 }
 
-void FileSink::setRotationLimits(const NomadIndex maxSizeBytes, const NomadIndex maxFiles) {
-    if (maxSizeBytes == 0) {
+void FileSink::setRotationLimits(const NomadInteger maxSizeBytes, const NomadInteger maxFiles) {
+    if (maxSizeBytes <= 0) {
         throw NomadException("The log file size limit must be positive; use None to disable rotation");
     }
-    m_maxSizeBytes = maxSizeBytes;
-    m_maxFiles = maxFiles;
+    if (maxFiles < 0) {
+        throw NomadException("The log archive count must not be negative");
+    }
+    if (!std::in_range<NomadIndex>(maxSizeBytes) || !std::in_range<NomadIndex>(maxFiles)) {
+        throw NomadException("Log rotation limits exceed this platform's capacity");
+    }
+    m_maxSizeBytes = static_cast<NomadIndex>(maxSizeBytes);
+    m_maxFiles = static_cast<NomadIndex>(maxFiles);
 }
 
 void FileSink::open() {

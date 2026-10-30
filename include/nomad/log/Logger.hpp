@@ -17,7 +17,7 @@
 
 namespace nomad {
 
-enum class LogDeliveryMode {
+enum class LogDeliveryMode : NomadInteger {
     Buffered = 1,
     Synchronous,
 };

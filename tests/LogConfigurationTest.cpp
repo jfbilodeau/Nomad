@@ -24,7 +24,9 @@
 
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <sstream>
+#include <utility>
 
 using namespace nomad;
 
@@ -421,7 +423,10 @@ BOOST_AUTO_TEST_CASE(invalid_configuration_and_wrong_sink_kinds_fail_explicitly)
 BOOST_AUTO_TEST_CASE(invalid_enum_values_are_rejected_without_narrowing_them) {
     const auto* levelType = runtime.getTypeByName("log.Level");
     saveHandle(memoryId);
-    for (const auto value : {NomadInteger{0}, NomadInteger{100}, (NomadInteger{1} << 32) + 2}) {
+    for (const auto value : {
+        std::numeric_limits<NomadInteger>::min(), NomadInteger{-1}, NomadInteger{0},
+        NomadInteger{100}, (NomadInteger{1} << 32) + 2, std::numeric_limits<NomadInteger>::max()
+    }) {
         const auto name = "invalidLevel" + std::to_string(sourceIndex);
         BOOST_REQUIRE(runtime.registerConstant(name, RuntimeValue(value), levelType).isValid());
         BOOST_CHECK_THROW((void)execute("log.logger.level = " + name), VirtualMachineException);
@@ -449,6 +454,38 @@ BOOST_AUTO_TEST_CASE(invalid_enum_values_are_rejected_without_narrowing_them) {
         BOOST_CHECK_THROW((void)execute("log.logger.deliveryMode = " + deliveryName), VirtualMachineException);
         BOOST_TEST((logger.getDeliveryMode() == LogDeliveryMode::Buffered));
     }
+}
+
+BOOST_AUTO_TEST_CASE(signed_rotation_limit_updates_fail_without_changing_the_live_sink) {
+    auto result = execute(
+        "options = new log.FileSinkConfiguration\noptions.active = false\n"
+        "options.maxSizeBytes = 64\noptions.maxFiles = 3\n"
+        "return log.createFileSink options\n"
+    );
+    const auto id = saveHandle(result);
+    const auto* file = dynamic_cast<FileSink*>(logger.getSink(id));
+    BOOST_REQUIRE(file != nullptr);
+    auto machine = runtime.createVirtualMachine();
+    for (const auto& [size, files] : {
+        std::pair{NomadInteger{-1}, NomadInteger{7}},
+        std::pair{NomadInteger{0}, NomadInteger{7}},
+        std::pair{NomadInteger{128}, NomadInteger{-1}},
+        std::pair{std::numeric_limits<NomadInteger>::min(), NomadInteger{7}},
+        std::pair{NomadInteger{128}, std::numeric_limits<NomadInteger>::min()}
+    }) {
+        BOOST_CHECK_THROW(machine->runNativeFunction(
+            runtime.getNativeFunctionId("log.setFileRotationLimits"),
+            {savedSink, RuntimeValue(size), RuntimeValue(files)}
+        ), VirtualMachineException);
+        BOOST_TEST(file->getMaxSizeBytes() == 64);
+        BOOST_TEST(file->getMaxFiles() == 3);
+    }
+    (void)execute("log.setFileRotationLimits savedSink 128 0");
+    BOOST_TEST(file->getMaxSizeBytes() == 128);
+    BOOST_TEST(file->getMaxFiles() == 0);
+    BOOST_TEST(execute("return savedSink.maxSizeBytes").getIntegerValue() == 128);
+    BOOST_TEST(execute("return savedSink.maxFiles").getIntegerValue() == 0);
+    BOOST_TEST(!std::filesystem::exists(directory.getPath() / "logs"));
 }
 
 BOOST_AUTO_TEST_CASE(invalid_handles_and_null_configuration_fail_explicitly) {

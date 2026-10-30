@@ -15,43 +15,10 @@
 #include <nomad/system/Path.hpp>
 
 #include <memory>
-#include <type_traits>
-#include <utility>
 
 namespace nomad {
 
 namespace {
-
-template<typename Value>
-Value readSetting(const NomadInteger integer) {
-    if constexpr (std::is_enum_v<Value>) {
-        if (!std::in_range<std::underlying_type_t<Value>>(integer)) {
-            throw NomadException("Log enumeration value is out of range");
-        }
-    } else if (!std::in_range<Value>(integer)) {
-        throw NomadException("Log size or archive count is out of range");
-    }
-    return static_cast<Value>(integer);
-}
-
-template<typename Value>
-Value readSetting(const RuntimeValue& value) {
-    return readSetting<Value>(value.getIntegerValue());
-}
-
-template<typename Value>
-RuntimeValue writeSetting(const Value value) {
-    if constexpr (std::is_same_v<Value, NomadBoolean>) {
-        return RuntimeValue(value);
-    } else if constexpr (std::is_enum_v<Value>) {
-        return RuntimeValue(static_cast<NomadInteger>(value));
-    } else {
-        if (!std::in_range<NomadInteger>(value)) {
-            throw NomadException("Log size or archive count cannot be represented as a Nomad integer");
-        }
-        return RuntimeValue(static_cast<NomadInteger>(value));
-    }
-}
 
 template<typename Function>
 void executeLoggingOperation(VirtualMachine* machine, Function&& function) {
@@ -108,16 +75,19 @@ void registerLoggerClass(
         .valueType = types.level,
         .name = "level",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
-            executeLoggingOperation(machine, [&] {
-                result = writeSetting(machine->getThisAs<LoggerObject>()->getLogger().getLogLevel());
-            });
+            const auto& logger = machine->getThisAs<LoggerObject>()->getLogger();
+
+            auto logLevel = static_cast<NomadInteger>(logger.getLogLevel());
+
+            result.setIntegerValue(logLevel);
         },
         .setter = [mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
             if (mode != ModuleMode::Application) {
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                machine->getThisAs<LoggerObject>()->getLogger().setLogLevel(readSetting<LogLevel>(value));
+                machine->getThisAs<LoggerObject>()->getLogger().setLogLevel(
+                    static_cast<LogLevel>(value.getIntegerValue()));
             });
         },
         .documentation = NomadDoc("The current level setting.")
@@ -131,7 +101,8 @@ void registerLoggerClass(
         .name = "deliveryMode",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result = writeSetting(machine->getThisAs<LoggerObject>()->getLogger().getDeliveryMode());
+                result.setIntegerValue(static_cast<NomadInteger>(
+                    machine->getThisAs<LoggerObject>()->getLogger().getDeliveryMode()));
             });
         },
         .setter = [mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
@@ -139,7 +110,8 @@ void registerLoggerClass(
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                machine->getThisAs<LoggerObject>()->getLogger().setDeliveryMode(readSetting<LogDeliveryMode>(value));
+                machine->getThisAs<LoggerObject>()->getLogger().setDeliveryMode(
+                    static_cast<LogDeliveryMode>(value.getIntegerValue()));
             });
         },
         .documentation = NomadDoc("The current deliveryMode setting.")
@@ -167,7 +139,8 @@ void registerSinkClass(
         .name = "level",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result = writeSetting(getSinkObject(logger, machine->getThisAs<LogSinkObject>()).getSink().getLogLevel());
+                const auto level = getSinkObject(logger, machine->getThisAs<LogSinkObject>()).getSink().getLogLevel();
+                result.setIntegerValue(static_cast<NomadInteger>(level));
             });
         },
         .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
@@ -175,7 +148,8 @@ void registerSinkClass(
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                getSinkObject(logger, machine->getThisAs<LogSinkObject>()).getSink().setLogLevel(readSetting<LogLevel>(value));
+                getSinkObject(logger, machine->getThisAs<LogSinkObject>()).getSink().setLogLevel(
+                    static_cast<LogLevel>(value.getIntegerValue()));
             });
         },
         .documentation = NomadDoc("The current level setting.")
@@ -211,7 +185,8 @@ void registerSinkClass(
         .name = "rotationMode",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result = writeSetting(getFileSink(logger, machine->getThisAs<LogSinkObject>()).getRotationMode());
+                const auto mode = getFileSink(logger, machine->getThisAs<LogSinkObject>()).getRotationMode();
+                result.setIntegerValue(static_cast<NomadInteger>(mode));
             });
         },
         .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
@@ -219,7 +194,8 @@ void registerSinkClass(
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                getFileSink(logger, machine->getThisAs<LogSinkObject>()).setRotationMode(readSetting<FileRotationMode>(value));
+                getFileSink(logger, machine->getThisAs<LogSinkObject>()).setRotationMode(
+                    static_cast<FileRotationMode>(value.getIntegerValue()));
             });
         },
         .documentation = NomadDoc("The current rotationMode setting.")
@@ -255,7 +231,7 @@ void registerSinkClass(
         .name = "maxSizeBytes",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result = writeSetting(getFileSink(logger, machine->getThisAs<LogSinkObject>()).getMaxSizeBytes());
+                result.setIntegerValue(getFileSink(logger, machine->getThisAs<LogSinkObject>()).getMaxSizeBytes());
             });
         },
         .setter = {},
@@ -270,7 +246,7 @@ void registerSinkClass(
         .name = "maxFiles",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
-                result = writeSetting(getFileSink(logger, machine->getThisAs<LogSinkObject>()).getMaxFiles());
+                result.setIntegerValue(getFileSink(logger, machine->getThisAs<LogSinkObject>()).getMaxFiles());
             });
         },
         .setter = {},
@@ -427,7 +403,7 @@ void registerLogFunctions(
                 const generated::log::log_SinkConfiguration settings(*bindings, object);
                 ConsoleSinkConfiguration configuration;
                 configuration.active = settings.getActive();
-                configuration.level = readSetting<LogLevel>(static_cast<NomadInteger>(settings.getLevel()));
+                configuration.level = static_cast<LogLevel>(settings.getLevel());
                 machine->getResult().setObjectValue(new LogSinkObject(*logger, logger->createConsoleSink(configuration)));
             });
         },
@@ -451,22 +427,16 @@ void registerLogFunctions(
                 const generated::log::log_FileSinkConfiguration settings(*bindings, object);
                 FileSinkConfiguration configuration;
                 configuration.active = settings.getActive();
-                configuration.level = readSetting<LogLevel>(static_cast<NomadInteger>(settings.getLevel()));
-                const auto directory = settings.getDirectory();
-                const auto name = settings.getName();
-                if (directory.empty() || name.empty()) {
-                    throw NomadException("Log file directory and name must not be null or empty");
-                }
-                configuration.directory = pathFromUtf8(directory);
-                if (configuration.directory.is_relative()) {
+                configuration.level = static_cast<LogLevel>(settings.getLevel());
+                configuration.directory = pathFromUtf8(settings.getDirectory());
+                if (!configuration.directory.empty() && configuration.directory.is_relative()) {
                     configuration.directory = projectDirectory / configuration.directory;
                 }
-                configuration.name = name;
-                configuration.rotationMode =
-                    readSetting<FileRotationMode>(static_cast<NomadInteger>(settings.getRotationMode()));
+                configuration.name = settings.getName();
+                configuration.rotationMode = static_cast<FileRotationMode>(settings.getRotationMode());
                 configuration.rotateAtStartup = settings.getRotateAtStartup();
-                configuration.maxSizeBytes = readSetting<NomadIndex>(settings.getMaxSizeBytes());
-                configuration.maxFiles = readSetting<NomadIndex>(settings.getMaxFiles());
+                configuration.maxSizeBytes = settings.getMaxSizeBytes();
+                configuration.maxFiles = settings.getMaxFiles();
                 machine->getResult().setObjectValue(new LogSinkObject(*logger, logger->createFileSink(configuration)));
             });
         },
@@ -538,8 +508,8 @@ void registerLogFunctions(
                 machine->fault("Logging configuration requires application mode");
             }
             executeLoggingOperation(machine, [&] {
-                const auto size = readSetting<NomadIndex>(machine->getParameter(1));
-                const auto files = readSetting<NomadIndex>(machine->getParameter(2));
+                const auto size = machine->getIntegerParameter(1);
+                const auto files = machine->getIntegerParameter(2);
                 getFileSink(logger, machine->getParameter(0).asObject<LogSinkObject>()).setRotationLimits(size, files);
             });
         },

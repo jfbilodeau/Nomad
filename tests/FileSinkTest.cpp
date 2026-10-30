@@ -10,7 +10,9 @@
 
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <type_traits>
+#include <utility>
 
 using namespace nomad;
 
@@ -44,6 +46,11 @@ void writeRecord(FileSink& sink, const NomadString& message) {
 }
 
 static_assert(std::is_base_of_v<SinkConfiguration, FileSinkConfiguration>);
+static_assert(std::is_same_v<decltype(FileSinkConfiguration::maxSizeBytes), NomadInteger>);
+static_assert(std::is_same_v<decltype(FileSinkConfiguration::maxFiles), NomadInteger>);
+static_assert(std::is_same_v<decltype(std::declval<FileSink>().getMaxSizeBytes()), NomadInteger>);
+static_assert(std::is_same_v<decltype(std::declval<FileSink>().getMaxFiles()), NomadInteger>);
+static_assert(std::is_same_v<std::underlying_type_t<FileRotationMode>, NomadInteger>);
 
 } // namespace
 
@@ -453,6 +460,71 @@ BOOST_AUTO_TEST_CASE(invalid_configuration_is_rejected_without_filesystem_effect
     BOOST_TEST(!std::filesystem::exists(configuration.directory));
     configuration.directory.clear();
     BOOST_CHECK_THROW((void)FileSink(configuration), NomadException);
+}
+
+BOOST_AUTO_TEST_CASE(negative_rotation_settings_are_rejected_before_starting_any_sink) {
+    configuration.directory /= "missing";
+    for (const auto active : {false, true}) {
+        configuration.active = active;
+        for (const auto size : {std::numeric_limits<NomadInteger>::min(), NomadInteger{-1}, NomadInteger{0}}) {
+            configuration.maxSizeBytes = size;
+            BOOST_CHECK_THROW((void)FileSink(configuration), NomadException);
+        }
+        configuration.maxSizeBytes = 64;
+        for (const auto files : {std::numeric_limits<NomadInteger>::min(), NomadInteger{-1}}) {
+            configuration.maxFiles = files;
+            BOOST_CHECK_THROW((void)FileSink(configuration), NomadException);
+        }
+        configuration.maxFiles = 10;
+        BOOST_TEST(!std::filesystem::exists(configuration.directory));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(rotation_limit_updates_validate_both_values_before_changing_either) {
+    configuration.active = false;
+    configuration.maxSizeBytes = 64;
+    configuration.maxFiles = 3;
+    FileSink sink(configuration);
+    for (const auto& [size, files] : {
+        std::pair{NomadInteger{0}, NomadInteger{7}},
+        std::pair{NomadInteger{-1}, NomadInteger{7}},
+        std::pair{NomadInteger{128}, NomadInteger{-1}},
+        std::pair{std::numeric_limits<NomadInteger>::min(), NomadInteger{7}},
+        std::pair{NomadInteger{128}, std::numeric_limits<NomadInteger>::min()}
+    }) {
+        BOOST_CHECK_THROW(sink.setRotationLimits(size, files), NomadException);
+        BOOST_TEST(sink.getMaxSizeBytes() == 64);
+        BOOST_TEST(sink.getMaxFiles() == 3);
+    }
+    auto largestLimit = std::numeric_limits<NomadInteger>::max();
+    if (!std::in_range<NomadIndex>(largestLimit)) {
+        BOOST_CHECK_THROW(sink.setRotationLimits(largestLimit, 3), NomadException);
+        BOOST_CHECK_THROW(sink.setRotationLimits(64, largestLimit), NomadException);
+        BOOST_TEST(sink.getMaxSizeBytes() == 64);
+        BOOST_TEST(sink.getMaxFiles() == 3);
+        largestLimit = static_cast<NomadInteger>(std::numeric_limits<NomadIndex>::max());
+    }
+    sink.setRotationLimits(largestLimit, largestLimit);
+    BOOST_TEST(sink.getMaxSizeBytes() == largestLimit);
+    BOOST_TEST(sink.getMaxFiles() == largestLimit);
+    configuration.maxSizeBytes = largestLimit;
+    configuration.maxFiles = largestLimit;
+    const FileSink largest(configuration);
+    BOOST_TEST(largest.getMaxSizeBytes() == largestLimit);
+    BOOST_TEST(largest.getMaxFiles() == largestLimit);
+    BOOST_TEST(!exists("application.log"));
+}
+
+BOOST_AUTO_TEST_CASE(rotation_mode_validation_preserves_full_width_enum_values) {
+    configuration.active = false;
+    FileSink sink(configuration);
+    for (const auto value : {
+        std::numeric_limits<NomadInteger>::min(), NomadInteger{0}, (NomadInteger{1} << 32) + 2,
+        std::numeric_limits<NomadInteger>::max()
+    }) {
+        BOOST_CHECK_THROW(sink.setRotationMode(static_cast<FileRotationMode>(value)), NomadException);
+        BOOST_CHECK(sink.getRotationMode() == FileRotationMode::Size);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(directory_and_open_failures_are_explicit) {
