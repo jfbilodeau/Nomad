@@ -1096,12 +1096,6 @@ compilation diagnostics and decide whether to create or replace output files.
 The compiler CLI does not emit instructions or overwrite documentation when
 compilation fails; an unknown requested dump function is an error.
 
-`<nomad/project/EntryFunction.hpp>` provides optional
-`validateEntryFunction(result, runtime, name, projectFile)` validation for a
-parameterless script entry returning `void`. It appends project-file diagnostics
-only after successful compilation. This is project policy, not a compiler rule;
-compilation does not invoke it automatically, and runtime startup is unchanged.
-
 `ModuleContext::projectMetadata` always points to immutable, host-owned
 `ProjectMetadata` and remains valid throughout the module lifetime.
 Omitted metadata defaults to blank fields, including for standalone tooling.
@@ -1252,9 +1246,11 @@ association and stale-analysis rejection belong to the editor adapter, not the
 compiler. `compileSources(batch, compiler, target)` accepts snapshots without
 reading their backing files; configured source roots can contribute additional
 scripts. Loading warnings permit compilation; loading errors stop it before
-parsing. The existing `checkPath`, `checkPaths`, `checkSources`, and `analyzeSources`
-conveniences in `<nomad/compiler/CompilerTools.hpp>` remain available during the
-staged cleanup, delegating to configured compilation.
+parsing. Create and configure the runtime and compiler explicitly, then use
+`compileSources` with `CompilationTarget::Analysis` for analysis or
+`CompilationTarget::Executable` for executable output. For module-aware
+compilation, use the module host's compilation API so its configured compiler
+and module lifecycle are preserved.
 
 ## Persistent interpretation
 

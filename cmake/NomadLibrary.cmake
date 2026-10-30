@@ -9,7 +9,6 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Compilation.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Compiler.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerContext.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerTools.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/DeferredType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Diagnostic.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Expression.cpp
@@ -143,7 +142,6 @@ endif()
         ${NOMAD_SOURCE_DIR}/nomad/lsp/LanguageServer.cpp
         ${NOMAD_SOURCE_DIR}/nomad/lsp/SignatureHelp.cpp
 
-        ${NOMAD_SOURCE_DIR}/nomad/project/EntryFunction.cpp
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectConfiguration.cpp
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectInitializer.cpp
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectPackager.cpp

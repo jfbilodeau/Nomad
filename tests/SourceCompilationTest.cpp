@@ -1,15 +1,13 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/Compiler.hpp>
-#include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/game/Alignment.hpp>
 #include <nomad/game/BodyType.hpp>
 #include <nomad/game/Cardinal.hpp>
 #include <nomad/game/Game.hpp>
-
-#include <nomad/project/EntryFunction.hpp>
 
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/InstructionDump.hpp>
@@ -37,7 +35,8 @@ BOOST_AUTO_TEST_CASE(checks_named_in_memory_sources_without_reading_files)
         {"helpers.answer", {"untitled:answer", "return 42"}}
     }, {}};
     Runtime runtime;
-    const auto result = checkSources(batch, &runtime);
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(batch, *compiler);
 
     BOOST_REQUIRE(result.succeeded());
     BOOST_TEST(runtime.getFunctionId("helpers.answer").isValid());
@@ -56,8 +55,12 @@ BOOST_AUTO_TEST_CASE(checks_editor_text_instead_of_disk_contents)
     BOOST_TEST(*batch.sources.front().source.filePath == file);
     batch.sources.front().source.text = "return 42";
 
-    BOOST_TEST(checkSources(batch).succeeded());
-    BOOST_TEST(!checkPath(file).succeeded());
+    Runtime editorRuntime;
+    auto editorCompiler = editorRuntime.createCompiler();
+    BOOST_TEST(compileSources(batch, *editorCompiler).succeeded());
+    Runtime diskRuntime;
+    auto diskCompiler = diskRuntime.createCompiler();
+    BOOST_TEST(!compileSources(loadSourcePaths(std::vector{file}), *diskCompiler).succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_compilation)
@@ -82,7 +85,8 @@ BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_compilation)
         {"other", {"editor:other", "return 42"}}
     }, {}};
 
-    BOOST_REQUIRE(checkSources(batch, &runtime).succeeded());
+    auto compiler = runtime.createCompiler();
+    BOOST_REQUIRE(compileSources(batch, *compiler).succeeded());
     const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
     const auto* outer = runtime.getScriptFunction(runtime.getFunctionId("outer"));
     const auto* callback = runtime.getFunctionAtLine("editor:main", 4);
@@ -130,7 +134,8 @@ BOOST_AUTO_TEST_CASE(runtime_looks_up_script_members_and_nested_callbacks_by_sou
         "end\n"
         "counter = new Counter 4\n"
         "return counter.read 1"}}}, {}};
-    BOOST_REQUIRE(checkSources(batch, &runtime).succeeded());
+    auto compiler = runtime.createCompiler();
+    BOOST_REQUIRE(compileSources(batch, *compiler).succeeded());
     const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
     const auto* constructor = runtime.getScriptCallableAtLine("editor:members", 4);
     const auto* method = runtime.getScriptCallableAtLine("editor:members", 8);
@@ -181,7 +186,8 @@ BOOST_AUTO_TEST_CASE(runtime_retains_member_source_ranges_without_compiled_bytec
     Runtime runtime;
     const SourceBatch batch{{{"main", {"editor:members",
         "class Counter\nfun broken amount:int\nreturn missing\nend\nend"}}}, {}};
-    BOOST_TEST(!checkSources(batch, &runtime).succeeded());
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(!compileSources(batch, *compiler).succeeded());
     const auto* method = runtime.getScriptCallableAtLine("editor:members", 3);
     BOOST_REQUIRE(method != nullptr);
     BOOST_TEST(runtime.getMethod(method->getId()) != nullptr);
@@ -198,7 +204,8 @@ BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_type_errors)
     const SourceBatch batch{{{"main", {"editor:main",
         "fun broken\nreturn missing\nend"}}}, {}};
 
-    BOOST_TEST(!checkSources(batch, &runtime).succeeded());
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(!compileSources(batch, *compiler).succeeded());
     const auto* function = runtime.getFunctionAtLine("editor:main", 2);
     BOOST_REQUIRE(function != nullptr);
     BOOST_TEST(function->getName() == "broken");
@@ -212,14 +219,18 @@ BOOST_AUTO_TEST_CASE(backing_path_is_metadata_not_a_compilation_input)
     const auto missing = directory.getPath() / "not-created.nomad";
     const SourceBatch batch{{{"answer", {"editor:answer", "return 42", missing}}}, {}};
 
-    BOOST_TEST(checkSources(batch).succeeded());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(compileSources(batch, *compiler).succeeded());
     BOOST_TEST(!std::filesystem::exists(missing));
 }
 
 BOOST_AUTO_TEST_CASE(in_memory_diagnostics_keep_source_names_and_locations)
 {
     const SourceBatch batch{{{"broken", {"untitled:broken", "value = 1\nreturn missing"}}}, {}};
-    const auto result = checkSources(batch);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(batch, *compiler);
 
     BOOST_TEST(!result.succeeded());
     BOOST_REQUIRE(!result.diagnostics.empty());
@@ -234,7 +245,9 @@ BOOST_AUTO_TEST_CASE(batch_loading_errors_prevent_compilation)
         {{"broken", {"untitled:broken", "return missing"}}},
         {{DiagnosticSeverity::Error, "Could not load dependency", "untitled:dependency", 3, 4}}
     };
-    const auto result = checkSources(batch);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(batch, *compiler);
 
     BOOST_TEST(!result.succeeded());
     BOOST_TEST(result.errorCount == 1U);
@@ -251,7 +264,9 @@ BOOST_AUTO_TEST_CASE(batch_loading_warnings_allow_compilation)
         {{"answer", {"untitled:answer", "return 42"}}},
         {{DiagnosticSeverity::Warning, "Source warning", "untitled:answer", 1, 1}}
     };
-    const auto result = checkSources(batch);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(batch, *compiler);
 
     BOOST_TEST(result.succeeded());
     BOOST_TEST(result.warningCount == 1U);
@@ -265,7 +280,9 @@ BOOST_AUTO_TEST_CASE(in_memory_function_name_collisions_are_rejected)
         {"answer", {"untitled:first", "return 1"}},
         {"answer", {"untitled:second", "return 2"}}
     }, {}};
-    const auto result = checkSources(batch);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(batch, *compiler);
 
     BOOST_TEST(!result.succeeded());
     BOOST_REQUIRE(result.diagnostics.size() == 1U);
@@ -287,7 +304,9 @@ BOOST_AUTO_TEST_CASE(filesystem_adapter_retains_loading_errors_and_valid_sources
     BOOST_REQUIRE(batch.diagnostics.size() == 2U);
     BOOST_TEST(batch.diagnostics[0].sourceName == missing.generic_string());
     BOOST_TEST(batch.diagnostics[1].sourceName == invalid.generic_string());
-    BOOST_TEST(!checkSources(batch).succeeded());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(!compileSources(batch, *compiler).succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(filesystem_adapter_returns_deterministically_ordered_snapshots)
@@ -310,7 +329,9 @@ BOOST_AUTO_TEST_CASE(checks_a_single_source_file)
     TestDirectory directory("nomad_compilation_test_single");
     const auto source = directory.write("answer.nomad", "return 42");
 
-    const auto result = checkPath(source);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{source}), *compiler);
 
     BOOST_TEST(result.succeeded());
     BOOST_TEST(result.errorCount == 0U);
@@ -323,7 +344,9 @@ BOOST_AUTO_TEST_CASE(checks_source_files_recursively)
     directory.write("init.nomad", "return functions.answer");
     directory.write("functions/answer.nomad", "return 42");
 
-    const auto result = checkPath(directory.getPath());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{directory.getPath()}), *compiler);
 
     BOOST_TEST(result.succeeded());
     BOOST_TEST(result.errorCount == 0U);
@@ -335,52 +358,12 @@ BOOST_AUTO_TEST_CASE(checks_multiple_script_roots_in_one_compilation)
     const auto scripts = directory.write("scripts/init.nomad", "return helpers.answer").parent_path();
     const auto mods = directory.write("mods/helpers/answer.nomad", "return 42").parent_path().parent_path();
 
-    const auto result = checkPaths({scripts, mods});
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{scripts, mods}), *compiler);
 
     BOOST_TEST(result.succeeded());
     BOOST_TEST(result.errorCount == 0U);
-}
-
-BOOST_AUTO_TEST_CASE(validates_project_entry_function_presence_and_signature)
-{
-    TestDirectory directory("nomad_compilation_test_entry");
-    Runtime runtime;
-    auto result = checkPath(directory.write("other.nomad", "return"), &runtime);
-
-    validateEntryFunction(result, &runtime, "init", directory.getPath() / "nomad.toml");
-
-    BOOST_TEST(!result.succeeded());
-    BOOST_REQUIRE(!result.diagnostics.empty());
-    BOOST_TEST(result.diagnostics.back().message == "Configured entry function 'init' was not found");
-    BOOST_TEST(result.diagnostics.back().sourceName == (directory.getPath() / "nomad.toml").generic_string());
-
-    Runtime parameterRuntime;
-    result = checkPath(directory.write("init.nomad", "params value:int\n"), &parameterRuntime);
-    validateEntryFunction(result, &parameterRuntime, "init", directory.getPath() / "nomad.toml");
-
-    BOOST_TEST(!result.succeeded());
-    BOOST_TEST(result.diagnostics.back().message == "Configured entry function 'init' must not have parameters");
-
-    Runtime returnRuntime;
-    result = checkPath(directory.write("init.nomad", "return 1\n"), &returnRuntime);
-    validateEntryFunction(result, &returnRuntime, "init", directory.getPath() / "nomad.toml");
-
-    BOOST_TEST(!result.succeeded());
-    BOOST_TEST(result.diagnostics.back().message == "Configured entry function 'init' must return void");
-
-    Runtime validRuntime;
-    result = checkPath(directory.write("init.nomad", "return\n"), &validRuntime);
-    validateEntryFunction(result, &validRuntime, "init", directory.getPath() / "nomad.toml");
-
-    BOOST_TEST(result.succeeded());
-
-    CompilationResult failed{
-        {{DiagnosticSeverity::Error, "Earlier compilation failure", "broken.nomad", 1, 1}}, 1, 0
-    };
-    validateEntryFunction(failed, &validRuntime, "missing", directory.getPath() / "nomad.toml");
-    BOOST_REQUIRE(failed.diagnostics.size() == 1U);
-    BOOST_TEST(failed.errorCount == 1U);
-    BOOST_TEST(failed.diagnostics.front().message == "Earlier compilation failure");
 }
 
 BOOST_AUTO_TEST_CASE(reports_compiler_diagnostics_without_executing_source)
@@ -388,7 +371,9 @@ BOOST_AUTO_TEST_CASE(reports_compiler_diagnostics_without_executing_source)
     TestDirectory directory("nomad_compilation_test_diagnostic");
     const auto source = directory.write("broken.nomad", "return missing");
 
-    const auto result = checkPath(source);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{source}), *compiler);
 
     BOOST_TEST(!result.succeeded());
     BOOST_TEST(result.errorCount == 1U);
@@ -402,7 +387,9 @@ BOOST_AUTO_TEST_CASE(reports_missing_paths)
     TestDirectory directory("nomad_compilation_test_missing");
     const auto missing = directory.getPath() / "missing.nomad";
 
-    const auto result = checkPath(missing);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{missing}), *compiler);
 
     BOOST_TEST(!result.succeeded());
     BOOST_TEST(result.errorCount == 1U);
@@ -650,7 +637,9 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     );
 
     // A bare runtime knows only the language built-ins, so the engine symbols are unresolved.
-    const auto withoutEngine = checkPath(directory.getPath());
+    Runtime bareRuntime;
+    auto bareCompiler = bareRuntime.createCompiler();
+    const auto withoutEngine = compileSources(loadSourcePaths(std::vector{directory.getPath()}), *bareCompiler);
     BOOST_TEST(!withoutEngine.succeeded());
 
     GameOptions options;
@@ -731,7 +720,8 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     game->setDebugDrawVisible(true);
     BOOST_TEST(game->isDebugDrawVisible());
 
-    const auto result = checkPath(directory.getPath(), runtime);
+    auto compiler = runtime->createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{directory.getPath()}), *compiler);
 
     for (const auto& diagnostic : result.diagnostics) {
         BOOST_TEST_MESSAGE(formatDiagnostic(diagnostic));
@@ -740,8 +730,9 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     BOOST_TEST(result.succeeded());
     BOOST_TEST(result.errorCount == 0U);
 
-    directory.write("invalid-font.nomad", "this.text.font = 1\n");
-    const auto invalidFontResult = checkPath(directory.getPath(), runtime);
+    const auto invalidFont = directory.write("invalid-font.nomad", "this.text.font = 1\n");
+    auto invalidFontCompiler = runtime->createCompiler();
+    const auto invalidFontResult = compileSources(loadSourcePaths(std::vector{invalidFont}), *invalidFontCompiler);
     BOOST_TEST(!invalidFontResult.succeeded());
     BOOST_TEST(invalidFontResult.errorCount > 0U);
 }

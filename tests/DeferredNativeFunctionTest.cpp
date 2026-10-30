@@ -2,9 +2,9 @@
 
 #include <nomad/generated/log/Bindings.hpp>
 
+#include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/FunctionParameterTypeTarget.hpp>
 #include <nomad/compiler/FunctionReturnTypeTarget.hpp>
 
@@ -297,10 +297,11 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
     BOOST_TEST(calls == 1);
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
 
-    const auto later = checkSources({{{"later", {"later.nomad",
+    auto laterCompiler = runtime.createCompiler();
+    const auto later = compileSources({{{"later", {"later.nomad",
         "configuration = new log.SinkConfiguration\n"
         "updated = updateConfiguration log.Level.Debug configuration true\n"
-        "return updated.active\n"}}}, {}}, &runtime);
+        "return updated.active\n"}}}, {}}, *laterCompiler);
     BOOST_REQUIRE(later.succeeded());
     BOOST_TEST(runtime.getCallableOverloadCount("updateConfiguration") == 1U);
     BOOST_TEST(runtime.getNativeFunctionId("updateConfiguration") == id);
@@ -411,8 +412,9 @@ BOOST_AUTO_TEST_CASE(missing_or_void_parameter_types_and_missing_return_types_ar
             diagnostic.message.find("Missing") != NomadString::npos;
     }));
     BOOST_TEST(!runtime.getNativeFunction(id)->isSignatureResolved());
-    const auto recovered = checkSources({{{"recovered", {"recovered.nomad",
-        "class Missing\nend\nreturn 2"}}}, {}}, &runtime);
+    auto recoveryCompiler = runtime.createCompiler();
+    const auto recovered = compileSources({{{"recovered", {"recovered.nomad",
+        "class Missing\nend\nreturn 2"}}}, {}}, *recoveryCompiler);
     BOOST_REQUIRE(recovered.succeeded());
     BOOST_TEST(runtime.getNativeFunctionId("missingReturn") == id);
     BOOST_TEST(runtime.getNativeFunction(id)->isSignatureResolved());

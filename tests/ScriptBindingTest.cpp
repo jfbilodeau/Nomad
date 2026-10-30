@@ -2,8 +2,8 @@
 
 #include <nomad/generated/log/Bindings.hpp>
 
+#include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/Compiler.hpp>
-#include <nomad/compiler/CompilerTools.hpp>
 
 #include <nomad/modules/ScriptBindings.hpp>
 
@@ -165,8 +165,9 @@ BOOST_AUTO_TEST_CASE(runtime_local_ids_and_wrong_runtime_receiver_and_machine_ar
     ScriptBindings firstBindings(first);
     ScriptBindings secondBindings(second);
     BOOST_REQUIRE(second.createEnum("Padding", {{"Value", 1}}).isValid());
-    BOOST_REQUIRE(checkSources({{{"padding", {"padding.nomad",
-        "class PaddingClass\nvalue = 1\nend\n"}}}, {}}, &second).succeeded());
+    auto secondCompiler = second.createCompiler();
+    BOOST_REQUIRE(compileSources({{{"padding", {"padding.nomad",
+        "class PaddingClass\nvalue = 1\nend\n"}}}, {}}, *secondCompiler).succeeded());
     compileLogBindingSource(first);
     auto reordered = getLogBindingSource();
     const auto original = NomadString("        active = true\n        level = log.Level.Info");
@@ -287,8 +288,9 @@ BOOST_AUTO_TEST_CASE(normal_class_initializers_run_once_per_construction_not_dur
 BOOST_AUTO_TEST_CASE(reusable_support_checks_access_types_and_float_storage) {
     Runtime runtime;
     ScriptBindings bindings(runtime);
-    const auto result = checkSources({{{"settings", {"settings.nomad",
-        "class Settings\nratio = 1.5\nname = \"hello\"\nend\n"}}}, {}}, &runtime);
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources({{{"settings", {"settings.nomad",
+        "class Settings\nratio = 1.5\nname = \"hello\"\nend\n"}}}, {}}, *compiler);
     BOOST_REQUIRE(result.succeeded());
     VirtualMachine machine(&runtime);
     const BindingClass contract{"Settings", {{"ratio", "float"}, {"name", "string"}}, {}};
@@ -336,8 +338,9 @@ BOOST_AUTO_TEST_CASE(helper_owns_contract_snapshots_and_failed_bindings_do_not_p
     Runtime runtime;
     ScriptBindings bindings(runtime);
     BOOST_TEST(&bindings.getRuntime() == &runtime);
-    BOOST_REQUIRE(checkSources({{{"settings", {"settings.nomad",
-        "class Settings\ncount = 3\nend\n"}}}, {}}, &runtime).succeeded());
+    auto compiler = runtime.createCompiler();
+    BOOST_REQUIRE(compileSources({{{"settings", {"settings.nomad",
+        "class Settings\ncount = 3\nend\n"}}}, {}}, *compiler).succeeded());
     const auto& binding = bindings.getClassBinding(BindingClass{"Settings", {{"count", "int"}}, {}});
     const BindingClass sameContract{"Settings", {{"count", "int"}}, {}};
     BOOST_TEST(&bindings.getClassBinding(sameContract) == &binding);

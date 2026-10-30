@@ -2,7 +2,8 @@
 
 #include <BindingTestFixture.hpp>
 
-#include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/Compilation.hpp>
+#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/system/Path.hpp>
@@ -83,8 +84,9 @@ NomadString getLogBindingSource() {
 }
 
 void compileLogBindingSource(Runtime& runtime, const NomadString& source) {
-    const auto result = checkSources({{{"log.configuration", {"configuration.nomad", source}, "log",
-        "configuration.nomad"}}, {}}, &runtime);
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources({{{"log.configuration", {"configuration.nomad", source}, "log",
+        "configuration.nomad"}}, {}}, *compiler);
     if (!result.succeeded()) {
         NomadString message;
         for (const auto& diagnostic : result.diagnostics) {

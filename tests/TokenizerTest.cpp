@@ -2,9 +2,9 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -121,13 +121,15 @@ BOOST_AUTO_TEST_CASE(tokenizer_preserves_special_float_literals)
 
 BOOST_AUTO_TEST_CASE(enum_members_can_use_names_with_special_float_prefixes)
 {
-    const auto result = checkSources(SourceBatch{{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(SourceBatch{{
         {"configuration", {"configuration.nomad",
             "open hub example\n"
             "enum Level\nDebug\nInfo\nWarning\nend\n"
             "class Configuration\nlevel = example.Level.Info\nend\n"
             "end\n"}}
-    }, {}});
+    }, {}}, *compiler);
     for (const auto& diagnostic : result.diagnostics) {
         BOOST_TEST_MESSAGE(formatDiagnostic(diagnostic));
     }

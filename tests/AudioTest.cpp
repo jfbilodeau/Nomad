@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/Compilation.hpp>
+#include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/game/Game.hpp>
 
@@ -70,8 +72,9 @@ std::unique_ptr<Game> createAudioGame(Runtime& runtime, GameOptions options) {
     registerSystemFunctions(&runtime);
     auto game = Game::createForRuntime(&runtime, options, false);
     const std::vector<NomadPath> paths{pathFromUtf8(options.resourcePath) / "scripts"};
+    auto compiler = runtime.createCompiler();
     game->prepareScripts([&] {
-        const auto result = checkPaths(paths, &runtime);
+        const auto result = compileSources(loadSourcePaths(paths), *compiler);
         if (!result.succeeded()) {
             NomadString message = "Failed to compile audio test scripts";
             for (const auto& diagnostic : result.diagnostics) {

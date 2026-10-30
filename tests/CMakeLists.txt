@@ -13,7 +13,6 @@ add_executable(
     ./CompilerContextTest.cpp
     ./CompilerHooksTest.cpp
     ./CompilerTest.cpp
-    ./CompilerToolsTest.cpp
     ./DebugDrawTest.cpp
     ./DeclareIdTest.cpp
     ./DeferredNativeFunctionTest.cpp
@@ -76,6 +75,7 @@ add_executable(
     ./ScriptBindingTest.cpp
     ./ScriptMethodTest.cpp
     ./ScriptObjectTest.cpp
+    ./SourceCompilationTest.cpp
     ./SourceLoaderTest.cpp
     ./SpriteCatalogTest.cpp
     ./SpriteDiscoveryTest.cpp

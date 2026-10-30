@@ -2,7 +2,6 @@
 
 #include <nomad/game/GamePackaging.hpp>
 
-#include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/Version.hpp>

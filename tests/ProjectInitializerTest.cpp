@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
 #include <nomad/game/GameConfiguration.hpp>
-#include <nomad/project/EntryFunction.hpp>
 #include <nomad/project/ProjectConfiguration.hpp>
 #include <nomad/project/ProjectInitializer.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -86,11 +85,11 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
     BOOST_TEST(readme.find("{{") == NomadString::npos);
 
     const auto session = createProjectSession(project, ModuleMode::Analysis);
-    auto compilation = session->compileSources(
+    const auto compilation = session->compileSources(
         session->loadSources(std::vector{destination / "res/scripts/main.nomad"})
     );
-    validateEntryFunction(compilation, session->getRuntime(), gameOptions.entryFunction, destination / "nomad.toml");
     BOOST_TEST(compilation.succeeded());
+    BOOST_TEST(session->getRuntime()->getFunctionId(gameOptions.entryFunction).isValid());
 }
 
 BOOST_AUTO_TEST_CASE(can_omit_project_wrappers)
