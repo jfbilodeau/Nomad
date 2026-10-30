@@ -80,9 +80,9 @@ void Compiler::resolveDeferredTypes() {
                 ));
             }
         }
-        if (function->m_returnTypeReference) {
+        if (const auto& reference = function->getReturnTypeReference()) {
             registerDeferredTypeTarget(std::make_unique<FunctionReturnTypeTarget>(
-                *m_runtime, function->getId(), *function->m_returnTypeReference
+                *m_runtime, function->getId(), *reference
             ));
         }
     }

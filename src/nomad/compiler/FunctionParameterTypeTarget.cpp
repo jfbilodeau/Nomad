@@ -32,13 +32,10 @@ NomadString FunctionParameterTypeTarget::getDescription() const {
 
 void FunctionParameterTypeTarget::resolve(const Type* type) {
     auto* function = m_runtime->getMutableNativeFunction(m_id);
-    if (!m_runtime->ownsType(type) || type->isVoid() || type->getTypeName() != m_type.name ||
-        function == nullptr || m_index >= function->getParameterCount() ||
-        function->isSignatureResolved() ||
-        function->getParameters()[m_index].typeReference != m_type) {
+    if (type == nullptr || type->getTypeName() != m_type.name || function == nullptr) {
         throw NomadException("Cannot resolve " + getDescription() + ": invalid type or target '" + m_type.name + "'");
     }
-    function->getEditableParameters()[m_index].type = type;
+    function->resolveParameterType(m_index, type);
 }
 
 } // namespace nomad

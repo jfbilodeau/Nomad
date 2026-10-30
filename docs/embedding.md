@@ -1495,6 +1495,18 @@ targets are applied, and native signatures and overload sets must validate befor
 callbacks become usable. Successful resolution releases the targets; compilation
 failure aborts startup.
 
+For custom native-function targets, `Runtime::getMutableNativeFunction(id)`
+returns the destination or null for a non-native/invalid ID.
+`NativeFunction::getReturnTypeReference()` exposes the pending return reference;
+`resolveParameterType(index, type)` and `resolveReturnType(type)` assign only
+matching canonical types belonging to that function's runtime. They reject
+invalid indices, non-deferred slots, and completed signatures, and leave the
+function uncallable. Use `Runtime::validateNativeFunctionSignatures()` after
+applying targets to validate all pending signatures and overload sets before
+marking them complete. `NativeFunction::completeSignatureResolution()` validates
+the individual signature and releases its reference metadata; it is the final
+step used by runtime validation, not a substitute for overload-set validation.
+
 This is the first target-based increment. `TypeReference` storage is retained
 temporarily; `DeferredType` placeholders and a compiler in `ModuleContext` are not
 implemented yet.

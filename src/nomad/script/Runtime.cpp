@@ -744,9 +744,14 @@ CallableId Runtime::registerNativeCallable(
         return id;
     }
     auto function = std::make_unique<NativeFunction>(
-        name, std::move(fn), parameters, returnType, doc, std::move(returnTypeReference)
+        name, 
+        std::move(fn), 
+        parameters, 
+        returnType, 
+        doc, 
+        std::move(returnTypeReference), 
+        pending
     );
-    function->m_signatureResolved = !pending;
     id = addCallableToTable(std::move(function));
 
     registerHubMember(name, HubFunctions{{id}});
@@ -786,11 +791,7 @@ void Runtime::validateNativeFunctionSignatures() {
         }
     }
     for (auto* function : pending) {
-        for (auto& parameter : function->getEditableParameters()) {
-            parameter.typeReference.reset();
-        }
-        function->m_returnTypeReference.reset();
-        function->m_signatureResolved = true;
+        function->completeSignatureResolution();
     }
 }
 

@@ -25,12 +25,10 @@ NomadString FunctionReturnTypeTarget::getDescription() const {
 
 void FunctionReturnTypeTarget::resolve(const Type* type) {
     auto* function = m_runtime->getMutableNativeFunction(m_id);
-    if (!m_runtime->ownsType(type) || (type->isInternal() && !type->isVoid()) ||
-        type->getTypeName() != m_type.name || function == nullptr || function->isSignatureResolved() ||
-        function->m_returnTypeReference != m_type) {
+    if (type == nullptr || type->getTypeName() != m_type.name || function == nullptr) {
         throw NomadException("Cannot resolve " + getDescription() + ": invalid type or target '" + m_type.name + "'");
     }
-    function->setReturnType(type);
+    function->resolveReturnType(type);
 }
 
 } // namespace nomad

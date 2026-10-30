@@ -149,6 +149,53 @@ BOOST_AUTO_TEST_CASE(stable_parameter_and_return_targets_survive_callable_growth
     BOOST_CHECK_THROW(compiler->registerDeferredTypeTarget(nullptr), NomadException);
 }
 
+BOOST_AUTO_TEST_CASE(public_resolution_apis_validate_slots_types_and_completion_without_friend_access) {
+    Runtime runtime;
+    Runtime foreign;
+    const auto id = runtime.registerNativeFunction("echoResolved",
+        [](VirtualMachine* machine) { machine->setIntegerResult(machine->getIntegerParameter(0)); },
+        {
+            defParameter("value", TypeReference{"int"}, ""),
+            defParameter("enabled", runtime.getBooleanType(), "")
+        },
+        TypeReference{"int"}, "");
+    BOOST_REQUIRE(id.isValid());
+    auto* function = runtime.getMutableNativeFunction(id);
+    BOOST_REQUIRE(function != nullptr);
+    BOOST_REQUIRE(function->getReturnTypeReference().has_value());
+    BOOST_TEST(function->getReturnTypeReference()->name == "int");
+    BOOST_TEST(runtime.getMutableNativeFunction(CallableId{}) == nullptr);
+    const auto scriptId = runtime.registerScriptFunction("scriptOnly", "script.nomad", "");
+    BOOST_REQUIRE(scriptId.isValid());
+    BOOST_TEST(runtime.getMutableNativeFunction(scriptId) == nullptr);
+    BOOST_CHECK_THROW(function->resolveParameterType(2, runtime.getIntegerType()), NomadException);
+    BOOST_CHECK_THROW(function->resolveParameterType(1, runtime.getBooleanType()), NomadException);
+    BOOST_CHECK_THROW(function->resolveParameterType(0, nullptr), NomadException);
+    BOOST_CHECK_THROW(function->resolveParameterType(0, foreign.getIntegerType()), NomadException);
+    BOOST_CHECK_THROW(function->resolveParameterType(0, runtime.getFloatType()), NomadException);
+    BOOST_CHECK_THROW(function->resolveReturnType(nullptr), NomadException);
+    BOOST_CHECK_THROW(function->resolveReturnType(foreign.getIntegerType()), NomadException);
+    BOOST_CHECK_THROW(function->resolveReturnType(runtime.getFloatType()), NomadException);
+    BOOST_CHECK_THROW(function->completeSignatureResolution(), NomadException);
+    BOOST_CHECK_THROW(runtime.validateNativeFunctionSignatures(), NomadException);
+    BOOST_TEST(function->getParameters()[0].type == nullptr);
+    BOOST_TEST(function->getReturnType() == nullptr);
+    function->resolveParameterType(0, runtime.getIntegerType());
+    BOOST_CHECK_THROW(function->completeSignatureResolution(), NomadException);
+    function->resolveReturnType(runtime.getIntegerType());
+    BOOST_TEST(!function->isSignatureResolved());
+    BOOST_CHECK_THROW((void)function->getFn(), NomadException);
+    runtime.validateNativeFunctionSignatures();
+    BOOST_TEST(function->isSignatureResolved());
+    BOOST_TEST(!function->getReturnTypeReference().has_value());
+    BOOST_TEST(!function->getParameters()[0].typeReference.has_value());
+    BOOST_CHECK_THROW(function->resolveParameterType(0, runtime.getIntegerType()), NomadException);
+    BOOST_CHECK_THROW(function->resolveReturnType(runtime.getIntegerType()), NomadException);
+    VirtualMachine machine(&runtime);
+    machine.runNativeFunction(id, {RuntimeValue(NomadInteger{42}), RuntimeValue(true)});
+    BOOST_TEST(machine.getResult().getIntegerValue() == 42);
+}
+
 BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_script_native_cycle) {
     Runtime runtime;
     ScriptBindings bindings(runtime);

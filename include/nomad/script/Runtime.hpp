@@ -453,8 +453,10 @@ public:
 
     // Null unless `functionId` identifies a native function.
     [[nodiscard]] const NativeFunction* getNativeFunction(CallableId functionId) const;
+    [[nodiscard]] NativeFunction* getMutableNativeFunction(CallableId functionId);
     [[nodiscard]] const NativeFunction* getNativeFunction(const NomadString& name) const;
     [[nodiscard]] std::vector<const NativeFunction*> getNativeFunctions() const;
+    void validateNativeFunctionSignatures();
 
     [[nodiscard]] CallableId getFirstNativeFunctionId() const;
     [[nodiscard]] CallableId getNextNativeFunctionId(CallableId currentId) const;
@@ -690,13 +692,7 @@ private:
         NomadString error;
     };
 
-    friend class Compiler;
-    friend class FunctionParameterTypeTarget;
-    friend class FunctionReturnTypeTarget;
-
     // Callable registration and resolution
-    [[nodiscard]] NativeFunction* getMutableNativeFunction(CallableId id);
-    void validateNativeFunctionSignatures();
     CallableId registerNativeCallable(
         const ClassType* classType,
         const NomadString& name,
