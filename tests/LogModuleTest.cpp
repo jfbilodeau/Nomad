@@ -17,6 +17,7 @@
 #include <boost/io/ios_state.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <array>
 #include <iostream>
 #include <sstream>
@@ -127,6 +128,8 @@ BOOST_AUTO_TEST_CASE(module_registers_sink_type_and_active_property) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"log"});
     for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis}) {
         const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
+        BOOST_REQUIRE(host->compileSources({}, mode == ModuleMode::Analysis ?
+            CompilationTarget::Analysis : CompilationTarget::Executable).succeeded());
         const auto& runtime = *host->getRuntime();
         const auto* hub = runtime.getHub(runtime.getHubId("log"));
         BOOST_REQUIRE(hub != nullptr);
@@ -138,6 +141,11 @@ BOOST_AUTO_TEST_CASE(module_registers_sink_type_and_active_property) {
             BOOST_TEST(runtime.getTypeByName(name) == nullptr);
             BOOST_REQUIRE(registeredType->asClassType() != nullptr);
             BOOST_TEST(!registeredType->asClassType()->isOpen());
+            if (NomadStringView(name) == "SinkConfiguration" || NomadStringView(name) == "FileSinkConfiguration") {
+                const auto constructors = registeredType->asClassType()->getConstructors();
+                BOOST_REQUIRE(constructors.size() == 1U);
+                BOOST_TEST(constructors.front()->asScriptConstructor() != nullptr);
+            }
         }
         const auto* type = host->getRuntime()->getTypeByName("log.Sink");
         BOOST_REQUIRE(type != nullptr);
@@ -165,6 +173,8 @@ BOOST_AUTO_TEST_CASE(module_registers_logging_enums_and_values_in_the_log_hub) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"log"});
     for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis}) {
         const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
+        BOOST_REQUIRE(host->compileSources({}, mode == ModuleMode::Analysis ?
+            CompilationTarget::Analysis : CompilationTarget::Executable).succeeded());
         const auto& runtime = *host->getRuntime();
         const auto* hub = runtime.getHub(runtime.getHubId("log"));
         BOOST_REQUIRE(hub != nullptr);
@@ -185,6 +195,72 @@ BOOST_AUTO_TEST_CASE(module_registers_logging_enums_and_values_in_the_log_hub) {
             RuntimeValue registeredValue;
             runtime.getConstantValue(constantId, registeredValue);
             BOOST_TEST(registeredValue.getIntegerValue() == value);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(script_declarations_resolve_native_property_and_factory_types) {
+    const TestDirectory directory("log-module-deferred-bindings");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"log"});
+    for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis}) {
+        const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
+        const auto& runtime = *host->getRuntime();
+        for (const auto* name : {
+            "log.Level", "log.DeliveryMode", "log.FileRotationMode",
+            "log.SinkConfiguration", "log.FileSinkConfiguration"
+        }) {
+            BOOST_TEST(runtime.getTypeByName(name) == nullptr);
+        }
+        const auto* loggerType = runtime.getTypeByName("log.Logger")->asClassType();
+        const auto levelId = loggerType->getProperty("level")->getId();
+        const auto compilation = host->compileSources({{{"useBindings", {"bindings.nomad",
+            "consoleOptions = new log.SinkConfiguration\n"
+            "consoleOptions.active = false\n"
+            "fileOptions = new log.FileSinkConfiguration\n"
+            "fileOptions.active = false\n"
+            "log.createConsoleSink consoleOptions\n"
+            "log.createFileSink fileOptions\n"
+        }}}, {}}, mode == ModuleMode::Analysis ? CompilationTarget::Analysis : CompilationTarget::Executable);
+        BOOST_REQUIRE(compilation.succeeded());
+        BOOST_TEST(loggerType->getProperty("level")->getId() == levelId);
+        for (const auto& [className, propertyName, typeName] : {
+            std::tuple{"log.Logger", "level", "log.Level"},
+            std::tuple{"log.Logger", "deliveryMode", "log.DeliveryMode"},
+            std::tuple{"log.Sink", "level", "log.Level"},
+            std::tuple{"log.Sink", "rotationMode", "log.FileRotationMode"}
+        }) {
+            const auto* type = runtime.getTypeByName(className)->asClassType();
+            BOOST_TEST(type->getProperty(propertyName)->getValueType() == runtime.getTypeByName(typeName));
+        }
+        BOOST_TEST(!std::filesystem::exists(directory.getPath() / "logs"));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(missing_script_definitions_and_stale_bindings_fail_compilation) {
+    const TestDirectory directory("log-module-binding-errors");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"log"});
+    for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis}) {
+        for (const auto missingDefinitions : {true, false}) {
+            const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
+            auto sources = host->loadSources({});
+            BOOST_REQUIRE(sources.sources.size() == 1U);
+            auto& text = sources.sources.front().source.text;
+            if (missingDefinitions) {
+                text.clear();
+            } else {
+                const auto declaration = text.find("maxFiles = 10");
+                BOOST_REQUIRE(declaration != NomadString::npos);
+                text.replace(declaration, NomadStringView("maxFiles = 10").size(), "maxFiles = \"invalid\"");
+            }
+            const auto compilation = host->compileSources(sources, mode == ModuleMode::Analysis ?
+                CompilationTarget::Analysis : CompilationTarget::Executable);
+            BOOST_TEST(!compilation.succeeded());
+            BOOST_TEST(std::ranges::any_of(compilation.diagnostics, [&](const auto& diagnostic) {
+                return missingDefinitions ?
+                    diagnostic.message.find("Cannot resolve") != NomadString::npos :
+                    diagnostic.message.find("Script binding contract") != NomadString::npos &&
+                        diagnostic.message.find("maxFiles") != NomadString::npos;
+            }));
         }
     }
 }

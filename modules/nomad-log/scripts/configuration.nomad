@@ -1,4 +1,4 @@
-# Script contract for future native bindings; not yet staged with the module.
+# Logging configuration types.
 
 open hub log
     enum Level

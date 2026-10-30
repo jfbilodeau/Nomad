@@ -108,6 +108,8 @@ and `rotationMode = log.FileRotationMode.None` to append indefinitely across run
 Each constructor creates independent settings. Assignment aliases the same
 configuration object, as with other script objects. Factories copy its values:
 changing the configuration afterward does not alter an existing sink.
+The module supplies these declarations in its `scripts/` directory; hosts must
+compile the module scripts before using its configuration types or factories.
 An inactive sink (`active = false`) is owned but receives no entries and creates
 no files until started. Enable it with `sink.active = true`; an active
 flush, including an empty one, starts it.

@@ -2,6 +2,7 @@
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/log/Logger.hpp>
 #include <nomad/log/LoggerObject.hpp>
@@ -43,9 +44,10 @@ struct LogConfigurationFixture {
         BOOST_REQUIRE_EQUAL(modules.size(), 1U);
         const auto path = modules.front().directory / getModuleLibraryName("log");
         library.load(path.native(), boost::dll::load_mode::load_with_altered_search_path);
+        auto compiler = runtime.createCompiler();
         ModuleContext context{
             &runtime,
-            nullptr, 
+            compiler.get(),
             {},
             &logger, 
             mode, 
@@ -59,6 +61,18 @@ struct LogConfigurationFixture {
         };
         ModuleCallbacks callbacks;
         library.get<RegisterModuleFn>("registerModule")(&context, &callbacks);
+        BOOST_REQUIRE(static_cast<bool>(callbacks.compilationCompleted));
+        compiler->registerSourceRoots(getModuleScriptRoots(modules));
+        compiler->registerPhaseHook([completed = callbacks.compilationCompleted](
+            CompilerContext* compilerContext, const CompilationPhase phase
+        ) {
+            if (phase == CompilationPhase::Completed) {
+                completed(compilerContext);
+            }
+        });
+        const auto compilation = compileSources({}, *compiler);
+        BOOST_REQUIRE_MESSAGE(compilation.succeeded(), (compilation.diagnostics.empty() ?
+            "Log module compilation failed" : compilation.diagnostics.front().message));
         MemorySinkConfiguration memory;
         memory.level = LogLevel::Debug;
         memoryId = logger.createMemorySink(memory);
@@ -414,6 +428,21 @@ BOOST_AUTO_TEST_CASE(invalid_enum_values_are_rejected_without_narrowing_them) {
         BOOST_CHECK_THROW((void)execute("savedSink.level = " + name), VirtualMachineException);
         BOOST_TEST((logger.getLogLevel() == LogLevel::Info));
         BOOST_TEST((getMemory().getLogLevel() == LogLevel::Debug));
+        BOOST_CHECK_THROW((void)execute(
+            "options = new log.SinkConfiguration\noptions.active = false\noptions.level = " + name +
+            "\nreturn log.createConsoleSink options\n"
+        ), VirtualMachineException);
+        BOOST_CHECK_THROW((void)execute(
+            "options = new log.FileSinkConfiguration\noptions.active = false\noptions.level = " + name +
+            "\nreturn log.createFileSink options\n"
+        ), VirtualMachineException);
+        const auto rotationName = "invalidRotation" + std::to_string(sourceIndex);
+        BOOST_REQUIRE(runtime.registerConstant(rotationName, RuntimeValue(value),
+            runtime.getTypeByName("log.FileRotationMode")).isValid());
+        BOOST_CHECK_THROW((void)execute(
+            "options = new log.FileSinkConfiguration\noptions.active = false\noptions.rotationMode = " +
+            rotationName + "\nreturn log.createFileSink options\n"
+        ), VirtualMachineException);
         const auto deliveryName = "invalidDelivery" + std::to_string(sourceIndex);
         BOOST_REQUIRE(runtime.registerConstant(deliveryName, RuntimeValue(value),
             runtime.getTypeByName("log.DeliveryMode")).isValid());
@@ -432,6 +461,23 @@ BOOST_AUTO_TEST_CASE(invalid_handles_and_null_configuration_fail_explicitly) {
     BOOST_CHECK_THROW(machine->runNativeFunction(
         runtime.getNativeFunctionId("log.createFileSink"), {RuntimeValue()}
     ), VirtualMachineException);
+}
+
+BOOST_AUTO_TEST_CASE(native_factories_reject_the_wrong_configuration_class_without_retaining_it) {
+    auto console = execute("return new log.SinkConfiguration");
+    auto file = execute("return new log.FileSinkConfiguration");
+    auto machine = runtime.createVirtualMachine();
+    const auto before = NomadObject::getLiveObjectCount();
+    BOOST_CHECK_THROW(machine->runNativeFunction(
+        runtime.getNativeFunctionId("log.createConsoleSink"), {file}
+    ), VirtualMachineException);
+    BOOST_CHECK_THROW(machine->runNativeFunction(
+        runtime.getNativeFunctionId("log.createFileSink"), {console}
+    ), VirtualMachineException);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    console.freeObjectValue();
+    file.freeObjectValue();
+    BOOST_TEST(!std::filesystem::exists(directory.getPath() / "logs"));
 }
 
 BOOST_AUTO_TEST_CASE(logging_types_are_distinct_and_fatal_and_memory_apis_are_not_exposed) {

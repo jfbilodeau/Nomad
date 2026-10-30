@@ -1,5 +1,9 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/SourceLoader.hpp>
+
 #include <nomad/log/Logger.hpp>
 #include <nomad/log/LogSinkObject.hpp>
 
@@ -26,9 +30,10 @@ void loadLogModule(boost::dll::shared_library& library, Runtime& runtime, Logger
     BOOST_REQUIRE_EQUAL(modules.size(), 1U);
     const auto path = modules.front().directory / getModuleLibraryName("log");
     library.load(path.native(), boost::dll::load_mode::load_with_altered_search_path);
+    auto compiler = runtime.createCompiler();
     ModuleContext context{
         &runtime, 
-        nullptr, 
+        compiler.get(),
         {},
         &logger, 
         ModuleMode::Application, 
@@ -42,6 +47,18 @@ void loadLogModule(boost::dll::shared_library& library, Runtime& runtime, Logger
     };
     ModuleCallbacks callbacks;
     library.get<RegisterModuleFn>("registerModule")(&context, &callbacks);
+    BOOST_REQUIRE(static_cast<bool>(callbacks.compilationCompleted));
+    compiler->registerSourceRoots(getModuleScriptRoots(modules));
+    compiler->registerPhaseHook([completed = callbacks.compilationCompleted](
+        CompilerContext* compilerContext, const CompilationPhase phase
+    ) {
+        if (phase == CompilationPhase::Completed) {
+            completed(compilerContext);
+        }
+    });
+    const auto compilation = compileSources({}, *compiler);
+    BOOST_REQUIRE_MESSAGE(compilation.succeeded(), (compilation.diagnostics.empty() ?
+        "Log module compilation failed" : compilation.diagnostics.front().message));
     const auto* type = runtime.getTypeByName("log.Sink");
     BOOST_REQUIRE(type != nullptr);
     BOOST_REQUIRE(type->asClassType() != nullptr);
