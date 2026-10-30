@@ -29,6 +29,10 @@ foreach(MODULE IN LISTS NOMAD_MODULE_NAMES)
             "${CMAKE_SOURCE_DIR}/modules/${MODULE_TARGET}/module.toml"
             "${MODULE_DESTINATION}/module.toml"
         COMMAND ${CMAKE_COMMAND}
+            "-DNOMAD_MODULE_SOURCE=${CMAKE_SOURCE_DIR}/modules/${MODULE_TARGET}"
+            "-DNOMAD_MODULE_DESTINATION=${MODULE_DESTINATION}"
+            -P "${CMAKE_CURRENT_LIST_DIR}/CopyModuleScripts.cmake"
+        COMMAND ${CMAKE_COMMAND}
             "-DNOMAD_RUNTIME=$<TARGET_FILE:${MODULE_TARGET}>"
             "-DNOMAD_RUNTIME_DESTINATION=${MODULE_DESTINATION}"
             "-DNOMAD_RUNTIME_VERSION=${PROJECT_VERSION}"
@@ -63,6 +67,15 @@ if(TARGET nomad_test)
         )
     endif()
     add_dependencies(nomad_test nomad-test-modules)
+    foreach(MODULE IN LISTS NOMAD_MODULE_NAMES)
+        add_custom_command(TARGET nomad-test-modules POST_BUILD
+            COMMAND ${CMAKE_COMMAND}
+                "-DNOMAD_MODULE_SOURCE=$<TARGET_FILE_DIR:nomad-runtime>/modules/${MODULE}"
+                "-DNOMAD_MODULE_DESTINATION=$<TARGET_FILE_DIR:nomad_test>/modules/${MODULE}"
+                -P "${CMAKE_CURRENT_LIST_DIR}/CopyModuleScripts.cmake"
+            VERBATIM
+        )
+    endforeach()
 endif()
 add_custom_target(nomad-modules)
 foreach(MODULE IN LISTS NOMAD_MODULE_NAMES)

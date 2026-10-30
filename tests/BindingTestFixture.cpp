@@ -33,7 +33,7 @@ BindingTestFixture::BindingTestFixture() {
         m_directory = std::filesystem::current_path() /
             ("binding-test-" + std::to_string(timestamp) + "-" + std::to_string(index));
         if (std::filesystem::create_directory(m_directory)) {
-            write("module.toml", "schema = 1\n[module]\nname = 'test-module'\n[scripts]\ndirectory = 'scripts'\n");
+            write("module.toml", "schema = 1\n[module]\nname = 'test-module'\n");
             setScript("class Settings\nactive = true\ncount = 3\nratio = 1.5\nname = \"initial\"\nend\n");
             return;
         }

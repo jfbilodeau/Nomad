@@ -1237,10 +1237,10 @@ owner-qualified identity regardless of the override's supplied script name.
 Repeated disk paths are deduplicated; conflicting module ownership and module
 dotted-name collisions are loading errors.
 
-`loadModuleManifest` fills the relative `scriptsDirectory` and its
-`scriptsDirectoryRequired` flag. Programmatic `ModuleManifest` descriptors with
-an unset `scriptsDirectory` contribute no scripts; the host does not assume a
-manifest exists for those descriptors.
+Every module contributes its fixed, optional `<module-directory>/scripts` root,
+including programmatic `ModuleManifest` descriptors. Module manifests cannot
+configure that directory. A missing directory contributes no sources; a
+non-directory path is an error. Application script roots remain configurable.
 
 ```cpp
 const std::vector<nomad::ScriptSource> buffers{

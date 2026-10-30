@@ -195,14 +195,13 @@ file(MAKE_DIRECTORY "${SCRIPT_SDK}/modules/fixture")
 file(COPY "${NOMAD_FIXTURE_LIBRARY}" DESTINATION "${SCRIPT_SDK}/modules/fixture")
 get_filename_component(FIXTURE_LIBRARY_NAME "${NOMAD_FIXTURE_LIBRARY}" NAME)
 file(WRITE "${SCRIPT_SDK}/modules/fixture/module.toml"
-    "schema = 1\n[module]\nname = 'fixture'\n[nomad]\nmodules = ['system']\n"
-    "[scripts]\ndirectory = 'source/library'\n")
+    "schema = 1\n[module]\nname = 'fixture'\n[nomad]\nmodules = ['system']\n")
 file(WRITE "${SCRIPT_SDK}/modules/fixture/runtime.json"
     "{\"schema\":1,\"files\":[{\"path\":\"${FIXTURE_LIBRARY_NAME}\",\"role\":\"library\"}]}")
-file(MAKE_DIRECTORY "${SCRIPT_SDK}/modules/system/scripts" "${SCRIPT_SDK}/modules/fixture/source/library")
+file(MAKE_DIRECTORY "${SCRIPT_SDK}/modules/system/scripts" "${SCRIPT_SDK}/modules/fixture/scripts")
 file(WRITE "${SCRIPT_SDK}/modules/system/scripts/main.nomad"
     "fun dependencyAnswer\nreturn 40\nend\nassert false\n")
-file(WRITE "${SCRIPT_SDK}/modules/fixture/source/library/main.nomad" [=[
+file(WRITE "${SCRIPT_SDK}/modules/fixture/scripts/main.nomad" [=[
 open hub packaged
 class Configuration
 answer = moduleDefault

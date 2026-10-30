@@ -708,13 +708,13 @@ ProjectPackageResult packageProject(
                 return entry.path == library;
             });
             copyNativeBundle(dependencies, module.directory);
-            if (module.scriptsDirectory && std::filesystem::is_directory(module.directory / *module.scriptsDirectory)) {
-                packageFiles.createDirectory(destination / *module.scriptsDirectory);
+            if (std::filesystem::is_directory(module.directory / "scripts")) {
+                packageFiles.createDirectory(destination / "scripts");
             }
             for (const auto& source : moduleSources.sources) {
                 if (source.owner == module.name) {
                     packageFiles.copy(
-                        *source.source.filePath, destination / *module.scriptsDirectory / source.relativePath
+                        *source.source.filePath, destination / "scripts" / source.relativePath
                     );
                 }
             }
@@ -787,14 +787,10 @@ ProjectPackageResult packageProject(
             }
             const auto source = project.root / scriptDirectories[index];
             for (const auto& module : modules) {
-                if (!module.scriptsDirectory) {
-                    continue;
-                }
-                const auto root = module.directory / *module.scriptsDirectory;
+                const auto root = module.directory / "scripts";
                 const auto relative = getSourceRelativePath(root, source);
                 if (relative && std::filesystem::is_directory(root)) {
-                    releaseScripts[index] = NomadPath("modules") / pathFromUtf8(module.name) /
-                        *module.scriptsDirectory;
+                    releaseScripts[index] = NomadPath("modules") / pathFromUtf8(module.name) / "scripts";
                     if (!std::filesystem::equivalent(root, source)) {
                         releaseScripts[index] /= *relative;
                     }

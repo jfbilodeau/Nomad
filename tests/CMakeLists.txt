@@ -159,6 +159,13 @@ foreach(GROUP IN ITEMS audio language tooling remaining)
     set_tests_properties(nomad_test_${GROUP} PROPERTIES LABELS unit)
 endforeach()
 
+add_test(NAME nomad_module_script_staging
+    COMMAND "${CMAKE_COMMAND}"
+        "-DNOMAD_MODULE_SCRIPT_STAGER=${CMAKE_SOURCE_DIR}/cmake/CopyModuleScripts.cmake"
+        "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/module-script-staging/$<CONFIG>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/ModuleScriptStagingTest.cmake")
+set_tests_properties(nomad_module_script_staging PROPERTIES TIMEOUT 60)
+
 if(TARGET nomadc)
     add_dependencies(nomad_test nomadc)
     add_test(NAME nomad_compiler_exports

@@ -98,25 +98,21 @@ BOOST_AUTO_TEST_CASE(empty_requests_resolve_to_no_modules) {
     BOOST_TEST(resolveModules(directory.getPath(), {}).empty());
 }
 
-BOOST_AUTO_TEST_CASE(module_script_directory_defaults_and_explicit_paths_are_retained) {
+BOOST_AUTO_TEST_CASE(module_manifests_do_not_require_a_scripts_directory) {
     TestDirectory directory("nomad_module_script_directory");
     directory.write("module.toml", "schema = 1\n[module]\nname = 'example'\n");
-    const auto defaults = loadModuleManifest(directory.getPath());
-    BOOST_REQUIRE(defaults.scriptsDirectory.has_value());
-    BOOST_TEST(*defaults.scriptsDirectory == NomadPath("scripts"));
-    BOOST_TEST(!defaults.scriptsDirectoryRequired);
-    directory.write("module.toml",
-        "schema = 1\n[module]\nname = 'example'\n[scripts]\ndirectory = 'source\\nested\\..'\n");
-    const auto configured = loadModuleManifest(directory.getPath());
-    BOOST_REQUIRE(configured.scriptsDirectory.has_value());
-    BOOST_TEST(*configured.scriptsDirectory == NomadPath("source"));
-    BOOST_TEST(configured.scriptsDirectoryRequired);
+    BOOST_TEST(loadModuleManifest(directory.getPath()).name == "example");
+    std::filesystem::create_directories(directory.getPath() / "scripts");
+    BOOST_TEST(loadModuleManifest(directory.getPath()).name == "example");
 }
 
-BOOST_AUTO_TEST_CASE(invalid_module_script_directories_are_manifest_errors) {
+BOOST_AUTO_TEST_CASE(legacy_module_script_settings_report_a_migration_error) {
     TestDirectory directory("nomad_module_script_directory_invalid");
     for (const auto* setting : {
         "scripts = false\n",
+        "[scripts]\n",
+        "[scripts]\ndirectory = 'scripts'\n",
+        "[scripts]\ndirectory = 'source/library'\n",
         "[scripts]\ndirectory = false\n",
         "[scripts]\ndirectory = ['source']\n",
         "[scripts]\ndirectory = ''\n",
@@ -126,7 +122,9 @@ BOOST_AUTO_TEST_CASE(invalid_module_script_directories_are_manifest_errors) {
     }) {
         directory.write("module.toml", NomadString("schema = 1\n") + setting + "[module]\nname = 'example'\n");
         BOOST_CHECK_EXCEPTION((void)loadModuleManifest(directory.getPath()), ModuleException, [](const auto& error) {
-            return NomadStringView(error.what()).find("scripts") != NomadStringView::npos;
+            const auto message = NomadStringView(error.what());
+            return message.find("no longer supports [scripts]") != NomadStringView::npos &&
+                message.find("place module scripts in 'scripts'") != NomadStringView::npos;
         });
     }
 }

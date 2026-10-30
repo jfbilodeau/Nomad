@@ -55,13 +55,10 @@ std::vector<ModuleManifest> fixtureModules() {
     return modules;
 }
 
-std::vector<ModuleManifest> scriptFixtureModules(
-    const TestDirectory& directory,
-    const NomadString& scriptSettings = {}
-) {
+std::vector<ModuleManifest> scriptFixtureModules(const TestDirectory& directory) {
     const auto moduleDirectory = directory.getPath() / "modules" / "fixture";
     directory.write("modules/fixture/module.toml",
-        "schema = 1\n[module]\nname = 'fixture'\n[nomad]\nmodules = ['system']\n" + scriptSettings);
+        "schema = 1\n[module]\nname = 'fixture'\n[nomad]\nmodules = ['system']\n");
     std::filesystem::copy_file(
         NomadPath(NOMAD_TEST_MODULE_DIRECTORY) / getModuleLibraryName("fixture"),
         moduleDirectory / getModuleLibraryName("fixture")
@@ -119,8 +116,8 @@ BOOST_AUTO_TEST_CASE(module_script_declarations_are_available_without_running_th
 
 BOOST_AUTO_TEST_CASE(module_sources_join_explicit_snapshots_and_preserve_compiler_metadata) {
     TestDirectory directory("host-module-script-snapshots");
-    const auto modules = scriptFixtureModules(directory, "[scripts]\ndirectory = 'source'\n");
-    const auto path = directory.write("modules/fixture/source/nested/main.nomad", "return missing");
+    const auto modules = scriptFixtureModules(directory);
+    const auto path = directory.write("modules/fixture/scripts/nested/main.nomad", "return missing");
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     const std::vector<ScriptSource> overrides{
         {"ignored", {"editor:module", "fun moduleAnswer\nreturn 42\nend", path}}
@@ -188,15 +185,20 @@ BOOST_AUTO_TEST_CASE(module_source_errors_keep_paths_and_public_symbol_conflicts
     }));
 }
 
-BOOST_AUTO_TEST_CASE(explicit_missing_module_script_directory_is_a_compilation_error) {
+BOOST_AUTO_TEST_CASE(missing_module_script_directories_are_optional_but_files_are_errors) {
     TestDirectory directory("host-module-script-missing");
-    const auto modules = scriptFixtureModules(directory, "[scripts]\ndirectory = 'missing'\n");
+    const auto modules = scriptFixtureModules(directory);
+    {
+        auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+        BOOST_TEST(host->compileSources({}, CompilationTarget::Analysis).succeeded());
+    }
+    directory.write("modules/fixture/scripts", "not a directory");
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     const auto result = host->compileSources({}, CompilationTarget::Analysis);
     BOOST_TEST(!result.succeeded());
     BOOST_REQUIRE(result.diagnostics.size() == 1U);
     BOOST_TEST(result.diagnostics[0].sourceName ==
-        pathToGenericUtf8(directory.getPath() / "modules" / "fixture" / "missing"));
+        pathToGenericUtf8(directory.getPath() / "modules" / "fixture" / "scripts"));
     BOOST_TEST(result.diagnostics[0].message.find("fixture") != NomadString::npos);
 }
 

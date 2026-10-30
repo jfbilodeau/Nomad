@@ -26,6 +26,24 @@ using namespace nomad::test;
 
 BOOST_AUTO_TEST_SUITE(source_overlays)
 
+BOOST_AUTO_TEST_CASE(programmatic_modules_use_fixed_optional_script_directories)
+{
+    TestDirectory directory("nomad_module_fixed_scripts");
+    const std::vector<ModuleManifest> modules{{"sample", directory.getPath(), {}}};
+    const auto roots = getModuleScriptRoots(modules);
+    BOOST_REQUIRE(roots.size() == 1U);
+    BOOST_TEST(roots[0].path == directory.getPath() / "scripts");
+    BOOST_TEST(roots[0].owner == "sample");
+    BOOST_TEST(!roots[0].required);
+    BOOST_TEST(loadSourceRoots(roots).diagnostics.empty());
+    directory.write("source/ignored.nomad", "return missing");
+    directory.write("scripts/nested/answer.nomad", "return 42");
+    const auto batch = loadSourceRoots(roots);
+    BOOST_REQUIRE(batch.diagnostics.empty());
+    BOOST_REQUIRE(batch.sources.size() == 1U);
+    BOOST_TEST(batch.sources[0].scriptName == "$sample.nested.answer");
+}
+
 BOOST_AUTO_TEST_CASE(script_roots_default_to_the_project_scripts_directory_independently_of_game_settings)
 {
     const TestDirectory directory("nomad_script_roots_default");

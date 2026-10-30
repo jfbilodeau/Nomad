@@ -180,8 +180,8 @@ BOOST_AUTO_TEST_CASE(dependencies_use_only_the_explicit_sdk_script_roots) {
     fixture.write("module.toml",
         "schema = 1\n[module]\nname = 'test-module'\n[nomad]\nmodules = ['dependency']\n");
     fixture.write(NomadPath("sdk") / "modules" / "dependency" / "module.toml",
-        "schema = 1\n[module]\nname = 'dependency'\n[scripts]\ndirectory = 'declarations'\n");
-    fixture.write(NomadPath("sdk") / "modules" / "dependency" / "declarations" / "types.nomad",
+        "schema = 1\n[module]\nname = 'dependency'\n");
+    fixture.write(NomadPath("sdk") / "modules" / "dependency" / "scripts" / "types.nomad",
         "hub dependency\nenum Mode\nFirst\nSecond\nend\nclass NotSelected\nend\nend\n");
     fixture.setScript("class Settings\nmode = dependency.Mode.Second\nend\n");
     auto options = fixture.getOptions();

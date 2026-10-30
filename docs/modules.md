@@ -92,18 +92,12 @@ code; only use SDKs and modules you trust.
 
 ## Module scripts
 
-A native module can also supply `.nomad` files. Its manifest may select one
-directory, relative to the module directory:
-
-```toml
-[scripts]
-directory = "scripts"
-```
-
-The default is `scripts`. An absent default directory means the module has no
-scripts; an explicitly configured directory must exist and be a directory.
-The directory must remain below the module directory. This is separate from
-the application's `scripts.directories` list.
+A native module can also supply `.nomad` files under its fixed `scripts/`
+directory. A missing directory means the module has no scripts; an existing
+`scripts` path must be a directory and must remain below the module directory.
+Module manifests no longer accept `[scripts]` settings. Remove those settings
+and move any custom script directory to `scripts/`.
+This does not change the application's configurable `scripts.directories` list.
 
 Selected modules and their transitive dependencies contribute their scripts
 automatically to compilation, checking, instruction dumps, documentation, and
@@ -130,9 +124,10 @@ module files without changing their owner or relative identity. Opening a
 module file alongside a consuming project includes that buffer in the project's
 analysis.
 
-Application packages include discovered module-owned `.nomad` sources from the
-installed module directories. Copying scripts from module source directories
-into SDK bundles is a separate, pending build-time staging step.
+SDK builds copy each module's `scripts/` directory when present, including nested
+directories. Rebuilding removes stale staged scripts when sources are removed.
+Application packages include discovered module-owned `.nomad` sources under
+`modules/<name>/scripts/`.
 
 ## Ordering and startup
 

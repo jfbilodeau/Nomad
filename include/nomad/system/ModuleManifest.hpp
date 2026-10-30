@@ -4,7 +4,6 @@
 
 #include <nomad/Nomad.hpp>
 
-#include <optional>
 #include <vector>
 
 namespace nomad {
@@ -13,8 +12,6 @@ struct ModuleManifest {
     NomadString name;
     NomadPath directory;
     std::vector<NomadString> dependencies;
-    std::optional<NomadPath> scriptsDirectory = std::nullopt;
-    bool scriptsDirectoryRequired = false;
 };
 
 class ModuleException final : public NomadException {

@@ -210,8 +210,8 @@ the game module package their
 configured script directories without interpreting game asset settings.
 
 Selected modules retain their manifests and discovered `.nomad` sources under
-`modules/<name>/`. Their script directories are loaded automatically from the
-package-local manifests; the application does not need to list them separately.
+`modules/<name>/`. Their fixed `scripts/` directories are loaded automatically;
+the application does not need to list them separately.
 Shared native dependencies remain at the package root. Packages do not fall back
 to development SDK modules.
 

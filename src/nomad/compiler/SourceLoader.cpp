@@ -238,9 +238,7 @@ std::vector<NomadPath> resolveScriptPaths (
 std::vector<SourceRoot> getModuleScriptRoots(const std::span<const ModuleManifest> modules) {
     std::vector<SourceRoot> roots;
     for (const auto& module : modules) {
-        if (module.scriptsDirectory) {
-            roots.push_back({module.directory / *module.scriptsDirectory, module.name, module.scriptsDirectoryRequired});
-        }
+        roots.push_back({module.directory / "scripts", module.name, false});
     }
     return roots;
 }
