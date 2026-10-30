@@ -104,10 +104,13 @@ BOOST_AUTO_TEST_CASE(all_logging_functions_are_registered_as_local_hub_members) 
                 BOOST_REQUIRE(member != nullptr);
                 const auto* functions = std::get_if<HubFunctions>(member);
                 BOOST_REQUIRE(functions != nullptr);
-                BOOST_REQUIRE_EQUAL(functions->ids.size(), 1U);
-                const auto id = runtime.getNativeFunctionId("log." + NomadString(name));
-                BOOST_REQUIRE(id.isValid());
-                BOOST_TEST(functions->ids.front() == id);
+                const auto expectedOverloads = NomadStringView(name) == "removeSink" ? 2U : 1U;
+                BOOST_REQUIRE_EQUAL(functions->ids.size(), expectedOverloads);
+                for (const auto id : functions->ids) {
+                    const auto* function = runtime.getNativeFunction(id);
+                    BOOST_REQUIRE(function != nullptr);
+                    BOOST_TEST(function->getName() == "log." + NomadString(name));
+                }
                 BOOST_TEST(runtime.getNativeFunctionId(name).isInvalid());
             }
             for (const auto* name : {
@@ -133,7 +136,7 @@ BOOST_AUTO_TEST_CASE(module_registers_sink_type_and_active_property) {
         const auto& runtime = *host->getRuntime();
         const auto* hub = runtime.getHub(runtime.getHubId("log"));
         BOOST_REQUIRE(hub != nullptr);
-        for (const auto* name : {"Logger", "Sink", "SinkConfiguration", "FileSinkConfiguration"}) {
+        for (const auto* name : {"Logger", "ConsoleSink", "FileSink", "SinkConfiguration", "FileSinkConfiguration"}) {
             const auto* member = hub->getMember(name);
             BOOST_REQUIRE(member != nullptr);
             const auto* registeredType = std::get<const Type*>(*member);
@@ -147,15 +150,18 @@ BOOST_AUTO_TEST_CASE(module_registers_sink_type_and_active_property) {
                 BOOST_TEST(constructors.front()->asScriptConstructor() != nullptr);
             }
         }
-        const auto* type = host->getRuntime()->getTypeByName("log.Sink");
-        BOOST_REQUIRE(type != nullptr);
-        const auto* classType = type->asClassType();
-        BOOST_REQUIRE(classType != nullptr);
-        BOOST_TEST(classType->getConstructors().empty());
-        BOOST_TEST(classType->getPropertyCount() == 6U);
-        const auto* active = classType->getProperty("active");
-        BOOST_REQUIRE(active != nullptr);
-        BOOST_TEST(active->getValueType() == host->getRuntime()->getBooleanType());
+        for (const auto* name : {"log.ConsoleSink", "log.FileSink"}) {
+            const auto* type = runtime.getTypeByName(name);
+            BOOST_REQUIRE(type != nullptr);
+            const auto* classType = type->asClassType();
+            BOOST_REQUIRE(classType != nullptr);
+            BOOST_TEST(classType->getConstructors().empty());
+            const auto expectedProperties = NomadStringView(name) == "log.FileSink" ? 6U : 2U;
+            BOOST_TEST(classType->getPropertyCount() == expectedProperties);
+            const auto* active = classType->getProperty("active");
+            BOOST_REQUIRE(active != nullptr);
+            BOOST_TEST(active->getValueType() == runtime.getBooleanType());
+        }
         const auto* loggerType = runtime.getTypeByName("log.Logger");
         BOOST_REQUIRE(loggerType != nullptr);
         BOOST_TEST(loggerType->asClassType()->getConstructors().empty());
@@ -226,8 +232,9 @@ BOOST_AUTO_TEST_CASE(script_declarations_resolve_native_property_and_factory_typ
         for (const auto& [className, propertyName, typeName] : {
             std::tuple{"log.Logger", "level", "log.Level"},
             std::tuple{"log.Logger", "deliveryMode", "log.DeliveryMode"},
-            std::tuple{"log.Sink", "level", "log.Level"},
-            std::tuple{"log.Sink", "rotationMode", "log.FileRotationMode"}
+            std::tuple{"log.ConsoleSink", "level", "log.Level"},
+            std::tuple{"log.FileSink", "level", "log.Level"},
+            std::tuple{"log.FileSink", "rotationMode", "log.FileRotationMode"}
         }) {
             const auto* type = runtime.getTypeByName(className)->asClassType();
             BOOST_TEST(type->getProperty(propertyName)->getValueType() == runtime.getTypeByName(typeName));

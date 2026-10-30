@@ -46,7 +46,8 @@ The module exposes these ordinary typed values:
 - `log.Level`: `Debug`, `Info`, `Warning`, `Error`, `Critical`.
 - `log.DeliveryMode`: `Buffered`, `Synchronous`.
 - `log.FileRotationMode`: `None`, `Size`.
-- `log.Sink`: a reference-semantic object returned by a sink factory, not an integer.
+- `log.ConsoleSink` and `log.FileSink`: distinct reference-semantic objects returned
+  by their respective factories, not integers.
 - `log.Logger`: the live host logger, available as the read-only reference `log.logger`.
 
 Use `log.logger.level` and `log.logger.deliveryMode` to inspect or change the logger.
@@ -116,14 +117,15 @@ flush, including an empty one, starts it.
 
 ### Live sink settings
 
-Factories return `log.Sink` objects with native-backed properties.
+`log.createConsoleSink` returns `log.ConsoleSink`; `log.createFileSink` returns
+`log.FileSink`. Both are independent types with native-backed properties.
 Assigning a sink object aliases the same reference; there is no script constructor.
 Creation settings remain ordinary script objects: editing them does not update a live sink.
 
 | Property | Access |
 | --- | --- |
-| `sink.level:log.Level` | Read/write |
-| `sink.active:bool` | Read/write |
+| `sink.level:log.Level` | Read/write; both sink types |
+| `sink.active:bool` | Read/write; both sink types |
 | `sink.rotationMode:log.FileRotationMode` | Read/write; file sinks only |
 | `sink.rotateAtStartup:bool` | Read/write; file sinks only |
 | `sink.maxSizeBytes:int` | Read-only; file sinks only |
@@ -133,16 +135,24 @@ Use `log.setFileRotationLimits sink maxSizeBytes maxFiles` to change both limits
 atomically. `log.getFilePath sink` returns the active path; create a replacement
 to change the path or name. The former setting get/set functions are no longer available.
 
-File-specific properties and functions fail for console or other sink kinds. Changing the startup
+The compiler rejects file-specific properties and functions on console sinks.
+`log.removeSink` accepts either sink type. Changing the startup
 flag after startup does not rotate again or undo rotation. Other rotation changes
 apply to subsequent writes.
 
 The logger owns sinks, not configuration objects or script handles. Discarding a
 handle does not remove its sink. Accessing a removed/cleared sink or removing it
-again fails explicitly. Null references and references belonging to a different
+again fails explicitly. References belonging to a different
 logger are rejected by sink properties and functions. Directory,
 file, rotation, and delivery errors also propagate as script execution errors.
 Memory sinks and custom script sink callbacks are not exposed.
+
+C++ hosts invoking logging functions or properties receive logger, sink, binding,
+and filesystem exceptions unchanged. The module does not wrap those failures in
+`VirtualMachineException`; application-mode restrictions still raise VM faults.
+Native callbacks assume non-null receivers and arguments of the declared types.
+C++ hosts calling them directly must supply valid values; null arguments and
+type mismatches are not supported error cases.
 
 Analysis mode exposes types and signatures without configuring the host logger
 or creating files. Configuration mutations, factory calls, and flushing require

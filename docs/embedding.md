@@ -171,7 +171,8 @@ To deliver debug messages, lower both the global level and the receiving sink's
 level to `Debug`.
 
 The `log` module also exposes typed script logging configuration,
-including ordinary `ScriptObject` settings and `log.Sink` objects. See
+including ordinary `ScriptObject` settings and distinct `log.ConsoleSink` and
+`log.FileSink` objects. See
 [Programmatic configuration](nomad-log.md#programmatic-configuration).
 Script factories use the module context's logger and copy the supplied settings;
 discarding the configuration or script handle does not remove a sink.
@@ -186,11 +187,15 @@ destroying it does not remove or deactivate that sink.
 The logger must outlive the wrapper. Coordinate lookup and use with concurrent
 sink removal, just as for `Logger::getSink()`.
 
-`log` registers the wrapper as the closed class type `log.Sink` with a
-read/write boolean `active` property. Native property access resolves the sink
+`log` registers the wrapper under the independent closed class types
+`log.ConsoleSink` and `log.FileSink`. Both expose read/write `level` and `active`
+properties; only `log.FileSink` exposes file settings. Native property access resolves the sink
 ID on every read and write; removed sinks throw rather than accessing stale
-storage. There is no script constructor; both script sink factories return
-this class type. Sink functions reject objects belonging to a different logger.
+storage. There is no script constructor; each script sink factory returns
+its corresponding class type. `log.removeSink` has an overload for each type.
+Sink functions reject objects belonging to a different logger.
+Hosts must supply non-null objects matching the declared script type when
+invoking native callbacks directly.
 Type registration is internal to the logging module; C++ hosts obtain the
 registered descriptor from the module's runtime.
 
@@ -1030,8 +1035,8 @@ names, duplicates, conflicts, and registration after script initialization are
 logged and return `ContextVariableId::INVALID`.
 
 Use `registerHubClass(hubId, name, mode, documentation = {})` to register a class
-with a local name, such as `"Sink"` in hub `"log"`. It returns a `TypeId` and
-exposes the class as `log.Sink`. The name must be a simple identifier.
+with a local name, such as `"ConsoleSink"` in hub `"log"`. It returns a `TypeId` and
+exposes the class as `log.ConsoleSink`. The name must be a simple identifier.
 The hub may be open or closed; `ClassMode` independently controls whether scripts
 may extend the class. Invalid hub IDs, local names, class modes, and conflicting
 declarations are logged and return `TypeId::INVALID`.

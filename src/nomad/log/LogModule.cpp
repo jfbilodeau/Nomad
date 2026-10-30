@@ -20,23 +20,7 @@ namespace nomad {
 
 namespace {
 
-template<typename Function>
-void executeLoggingOperation(VirtualMachine* machine, Function&& function) {
-    try {
-        function();
-    } catch (const NomadBug&) {
-        throw;
-    } catch (const NomadException& error) {
-        machine->fault(error.what());
-    } catch (const std::filesystem::filesystem_error& error) {
-        machine->fault(error.what());
-    }
-}
-
 LogSinkObject& getSinkObject(Logger* logger, LogSinkObject* object) {
-    if (object == nullptr) {
-        throw NomadException("Log sink must not be null");
-    }
     if (&object->getLogger() != logger) {
         throw NomadException("Log sink belongs to a different logger");
     }
@@ -44,19 +28,9 @@ LogSinkObject& getSinkObject(Logger* logger, LogSinkObject* object) {
 }
 
 FileSink& getFileSink(Logger* logger, LogSinkObject* object) {
-    auto* sink = dynamic_cast<FileSink*>(&getSinkObject(logger, object).getSink());
-    if (sink == nullptr) {
-        throw NomadException("Log sink is not a file sink");
-    }
-    return *sink;
-}
-
-HubId registerLogHub(Runtime& runtime) {
-    const auto hubId = runtime.registerHub("log", HubMode::Opened);
-    if (hubId.isInvalid()) {
-        throw NomadException("Failed to register log hub");
-    }
-    return hubId;
+    auto& sinkObject = getSinkObject(logger, object);
+    auto& sink = sinkObject.getSink();
+    return static_cast<FileSink&>(sink);
 }
 
 void registerLoggerClass(
@@ -85,10 +59,11 @@ void registerLoggerClass(
             if (mode != ModuleMode::Application) {
                 machine->fault("Logging configuration requires application mode");
             }
-            executeLoggingOperation(machine, [&] {
-                machine->getThisAs<LoggerObject>()->getLogger().setLogLevel(
-                    static_cast<LogLevel>(value.getIntegerValue()));
-            });
+            auto& logger = machine->getThisAs<LoggerObject>()->getLogger();
+
+            const auto logLevel = static_cast<LogLevel>(value.getIntegerValue());
+
+            logger.setLogLevel(logLevel);
         },
         .documentation = NomadDoc("The current level setting.")
     });
@@ -100,19 +75,21 @@ void registerLoggerClass(
         .valueType = types.deliveryMode,
         .name = "deliveryMode",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
-            executeLoggingOperation(machine, [&] {
-                result.setIntegerValue(static_cast<NomadInteger>(
-                    machine->getThisAs<LoggerObject>()->getLogger().getDeliveryMode()));
-            });
+            const auto& logger = machine->getThisAs<LoggerObject>()->getLogger();
+
+            const auto deliveryMode = static_cast<NomadInteger>(logger.getDeliveryMode());
+
+            result.setIntegerValue(deliveryMode);
         },
         .setter = [mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
             if (mode != ModuleMode::Application) {
                 machine->fault("Logging configuration requires application mode");
             }
-            executeLoggingOperation(machine, [&] {
-                machine->getThisAs<LoggerObject>()->getLogger().setDeliveryMode(
-                    static_cast<LogDeliveryMode>(value.getIntegerValue()));
-            });
+            auto& logger = machine->getThisAs<LoggerObject>()->getLogger();
+
+            const auto deliveryMode = static_cast<LogDeliveryMode>(value.getIntegerValue());
+
+            logger.setDeliveryMode(deliveryMode);
         },
         .documentation = NomadDoc("The current deliveryMode setting.")
     });
@@ -128,132 +105,161 @@ void registerSinkClass(
 ) {
     auto* runtime = context->runtime;
     auto* logger = context->logger;
-    const auto typeId = runtime->registerHubClass(hubId, "Sink", ClassMode::Closed,
-        NomadDoc("A reference to a logger-owned sink. Releasing it does not remove the sink."));
-    if (typeId.isInvalid()) {
-        throw NomadException("Failed to register log.Sink");
+    for (const auto* name : {"ConsoleSink", "FileSink"}) {
+        const auto typeId = runtime->registerHubClass(hubId, name, ClassMode::Closed,
+            NomadDoc("A reference to a logger-owned sink. Releasing it does not remove the sink."));
+        if (typeId.isInvalid()) {
+            throw NomadException("Failed to register log." + NomadString(name));
+        }
+
+        const auto levelId = runtime->addProperty(typeId, {
+            .valueType = types.level,
+            .name = "level",
+            .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
+                auto* object = machine->getThisAs<LogSinkObject>();
+                const auto& sink = getSinkObject(logger, object).getSink();
+
+                const auto logLevel = static_cast<NomadInteger>(sink.getLogLevel());
+
+                result.setIntegerValue(logLevel);
+            },
+            .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
+                if (mode != ModuleMode::Application) {
+                    machine->fault("Logging configuration requires application mode");
+                }
+                auto* object = machine->getThisAs<LogSinkObject>();
+                auto& sink = getSinkObject(logger, object).getSink();
+
+                const auto logLevel = static_cast<LogLevel>(value.getIntegerValue());
+
+                sink.setLogLevel(logLevel);
+            },
+            .documentation = NomadDoc("The current level setting.")
+        });
+        if (levelId.isInvalid()) {
+            throw NomadException("Failed to register log." + NomadString(name) + ".level");
+        }
+
+        const auto activeId = runtime->addProperty(typeId, {
+            .valueType = runtime->getBooleanType(),
+            .name = "active",
+            .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
+                auto* object = machine->getThisAs<LogSinkObject>();
+                const auto& sink = getSinkObject(logger, object).getSink();
+
+                const auto active = sink.getActive();
+
+                result.setBooleanValue(active);
+            },
+            .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
+                if (mode != ModuleMode::Application) {
+                    machine->fault("Logging configuration requires application mode");
+                }
+                auto* object = machine->getThisAs<LogSinkObject>();
+                auto& sink = getSinkObject(logger, object).getSink();
+
+                const auto active = value.getBooleanValue();
+
+                sink.setActive(active);
+            },
+            .documentation = NomadDoc("The current active setting.")
+        });
+        if (activeId.isInvalid()) {
+            throw NomadException("Failed to register log." + NomadString(name) + ".active");
+        }
     }
 
-    const auto levelId = runtime->addProperty(typeId, {
-        .valueType = types.level,
-        .name = "level",
-        .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
-            executeLoggingOperation(machine, [&] {
-                const auto level = getSinkObject(logger, machine->getThisAs<LogSinkObject>()).getSink().getLogLevel();
-                result.setIntegerValue(static_cast<NomadInteger>(level));
-            });
-        },
-        .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
-            if (mode != ModuleMode::Application) {
-                machine->fault("Logging configuration requires application mode");
-            }
-            executeLoggingOperation(machine, [&] {
-                getSinkObject(logger, machine->getThisAs<LogSinkObject>()).getSink().setLogLevel(
-                    static_cast<LogLevel>(value.getIntegerValue()));
-            });
-        },
-        .documentation = NomadDoc("The current level setting.")
-    });
-    if (levelId.isInvalid()) {
-        throw NomadException("Failed to register log.Sink.level");
-    }
-
-    const auto activeId = runtime->addProperty(typeId, {
-        .valueType = runtime->getBooleanType(),
-        .name = "active",
-        .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
-            executeLoggingOperation(machine, [&] {
-                result.setBooleanValue(getSinkObject(logger, machine->getThisAs<LogSinkObject>()).getSink().getActive());
-            });
-        },
-        .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
-            if (mode != ModuleMode::Application) {
-                machine->fault("Logging configuration requires application mode");
-            }
-            executeLoggingOperation(machine, [&] {
-                getSinkObject(logger, machine->getThisAs<LogSinkObject>()).getSink().setActive(value.getBooleanValue());
-            });
-        },
-        .documentation = NomadDoc("The current active setting.")
-    });
-    if (activeId.isInvalid()) {
-        throw NomadException("Failed to register log.Sink.active");
-    }
-
+    const auto typeId = runtime->getTypeByName("log.FileSink")->getId();
     const auto rotationId = runtime->addProperty(typeId, {
         .valueType = types.fileRotationMode,
         .name = "rotationMode",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
-            executeLoggingOperation(machine, [&] {
-                const auto mode = getFileSink(logger, machine->getThisAs<LogSinkObject>()).getRotationMode();
-                result.setIntegerValue(static_cast<NomadInteger>(mode));
-            });
+            auto* object = machine->getThisAs<LogSinkObject>();
+            const auto& sink = getFileSink(logger, object);
+
+            const auto rotationMode = static_cast<NomadInteger>(sink.getRotationMode());
+
+            result.setIntegerValue(rotationMode);
         },
         .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
             if (mode != ModuleMode::Application) {
                 machine->fault("Logging configuration requires application mode");
             }
-            executeLoggingOperation(machine, [&] {
-                getFileSink(logger, machine->getThisAs<LogSinkObject>()).setRotationMode(
-                    static_cast<FileRotationMode>(value.getIntegerValue()));
-            });
+            auto* object = machine->getThisAs<LogSinkObject>();
+            auto& sink = getFileSink(logger, object);
+
+            const auto rotationMode = static_cast<FileRotationMode>(value.getIntegerValue());
+
+            sink.setRotationMode(rotationMode);
         },
         .documentation = NomadDoc("The current rotationMode setting.")
     });
     if (rotationId.isInvalid()) {
-        throw NomadException("Failed to register log.Sink.rotationMode");
+        throw NomadException("Failed to register log.FileSink.rotationMode");
     }
 
     const auto startupId = runtime->addProperty(typeId, {
         .valueType = runtime->getBooleanType(),
         .name = "rotateAtStartup",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
-            executeLoggingOperation(machine, [&] {
-                result.setBooleanValue(getFileSink(logger, machine->getThisAs<LogSinkObject>()).getRotateAtStartup());
-            });
+            auto* object = machine->getThisAs<LogSinkObject>();
+            const auto& sink = getFileSink(logger, object);
+
+            const auto rotateAtStartup = sink.getRotateAtStartup();
+
+            result.setBooleanValue(rotateAtStartup);
         },
         .setter = [logger, mode = context->mode](VirtualMachine* machine, const RuntimeValue& value) {
             if (mode != ModuleMode::Application) {
                 machine->fault("Logging configuration requires application mode");
             }
-            executeLoggingOperation(machine, [&] {
-                getFileSink(logger, machine->getThisAs<LogSinkObject>()).setRotateAtStartup(value.getBooleanValue());
-            });
+            auto* object = machine->getThisAs<LogSinkObject>();
+            auto& sink = getFileSink(logger, object);
+
+            const auto rotateAtStartup = value.getBooleanValue();
+
+            sink.setRotateAtStartup(rotateAtStartup);
         },
         .documentation = NomadDoc("The current rotateAtStartup setting.")
     });
     if (startupId.isInvalid()) {
-        throw NomadException("Failed to register log.Sink.rotateAtStartup");
+        throw NomadException("Failed to register log.FileSink.rotateAtStartup");
     }
 
     const auto sizeId = runtime->addProperty(typeId, {
         .valueType = runtime->getIntegerType(),
         .name = "maxSizeBytes",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
-            executeLoggingOperation(machine, [&] {
-                result.setIntegerValue(getFileSink(logger, machine->getThisAs<LogSinkObject>()).getMaxSizeBytes());
-            });
+            auto* object = machine->getThisAs<LogSinkObject>();
+            const auto& sink = getFileSink(logger, object);
+
+            const auto maxSizeBytes = sink.getMaxSizeBytes();
+
+            result.setIntegerValue(maxSizeBytes);
         },
         .setter = {},
         .documentation = NomadDoc("The current maxSizeBytes setting.")
     });
     if (sizeId.isInvalid()) {
-        throw NomadException("Failed to register log.Sink.maxSizeBytes");
+        throw NomadException("Failed to register log.FileSink.maxSizeBytes");
     }
 
     const auto filesId = runtime->addProperty(typeId, {
         .valueType = runtime->getIntegerType(),
         .name = "maxFiles",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
-            executeLoggingOperation(machine, [&] {
-                result.setIntegerValue(getFileSink(logger, machine->getThisAs<LogSinkObject>()).getMaxFiles());
-            });
+            auto* object = machine->getThisAs<LogSinkObject>();
+            const auto& sink = getFileSink(logger, object);
+
+            const auto maxFiles = sink.getMaxFiles();
+
+            result.setIntegerValue(maxFiles);
         },
         .setter = {},
         .documentation = NomadDoc("The current maxFiles setting.")
     });
     if (filesId.isInvalid()) {
-        throw NomadException("Failed to register log.Sink.maxFiles");
+        throw NomadException("Failed to register log.FileSink.maxFiles");
     }
 }
 
@@ -283,7 +289,8 @@ void registerLogFunctions(
 ) {
     auto* runtime = context->runtime;
     auto* logger = context->logger;
-    const auto* sinkType = runtime->getTypeByName("log.Sink");
+    const auto* consoleSinkType = runtime->getTypeByName("log.ConsoleSink");
+    const auto* fileSinkType = runtime->getTypeByName("log.FileSink");
 
     const auto debugId = runtime->registerHubNativeFunction(hubId, "debug",
         [logger](const VirtualMachine* machine) {
@@ -293,7 +300,9 @@ void registerLogFunctions(
                 machine->getIntegerParameter(2),
                 0
             );
-            logger->debug(machine->getStringParameter(3)->getString(), location);
+            const auto& message = machine->getStringParameter(3)->getString();
+
+            logger->debug(message, location);
         },
         {
             defParameter("$file", runtime->getFileNameType(), NomadParamDoc("(hidden) The script file name")),
@@ -314,7 +323,9 @@ void registerLogFunctions(
                 machine->getIntegerParameter(2),
                 0
             );
-            logger->info(machine->getStringParameter(3)->getString(), location);
+            const auto& message = machine->getStringParameter(3)->getString();
+
+            logger->info(message, location);
         },
         {
             defParameter("$file", runtime->getFileNameType(), NomadParamDoc("(hidden) The script file name")),
@@ -335,7 +346,9 @@ void registerLogFunctions(
                 machine->getIntegerParameter(2),
                 0
             );
-            logger->warning(machine->getStringParameter(3)->getString(), location);
+            const auto& message = machine->getStringParameter(3)->getString();
+
+            logger->warning(message, location);
         },
         {
             defParameter("$file", runtime->getFileNameType(), NomadParamDoc("(hidden) The script file name")),
@@ -356,7 +369,9 @@ void registerLogFunctions(
                 machine->getIntegerParameter(2),
                 0
             );
-            logger->error(machine->getStringParameter(3)->getString(), location);
+            const auto& message = machine->getStringParameter(3)->getString();
+
+            logger->error(message, location);
         },
         {
             defParameter("$file", runtime->getFileNameType(), NomadParamDoc("(hidden) The script file name")),
@@ -377,7 +392,9 @@ void registerLogFunctions(
                 machine->getIntegerParameter(2),
                 0
             );
-            logger->critical(machine->getStringParameter(3)->getString(), location);
+            const auto& message = machine->getStringParameter(3)->getString();
+
+            logger->critical(message, location);
         },
         {
             defParameter("$file", runtime->getFileNameType(), NomadParamDoc("(hidden) The script file name")),
@@ -395,21 +412,21 @@ void registerLogFunctions(
             if (mode != ModuleMode::Application) {
                 machine->fault("Logging configuration requires application mode");
             }
-            executeLoggingOperation(machine, [&] {
-                auto* object = machine->getParameter(0).getObjectValue();
-                if (object == nullptr) {
-                    throw NomadException("Log sink configuration must not be null");
-                }
-                const generated::log::log_SinkConfiguration settings(*bindings, object);
-                ConsoleSinkConfiguration configuration;
-                configuration.active = settings.getActive();
-                configuration.level = static_cast<LogLevel>(settings.getLevel());
-                machine->getResult().setObjectValue(new LogSinkObject(*logger, logger->createConsoleSink(configuration)));
-            });
+            auto* object = machine->getParameter(0).getObjectValue();
+            const generated::log::log_SinkConfiguration settings(*bindings, object);
+
+            ConsoleSinkConfiguration configuration;
+            configuration.active = settings.getActive();
+            configuration.level = static_cast<LogLevel>(settings.getLevel());
+
+            const auto sinkId = logger->createConsoleSink(configuration);
+            auto* sinkObject = new LogSinkObject(*logger, sinkId);
+
+            machine->getResult().setObjectValue(sinkObject);
         },
         {defParameter("configuration", types.sinkConfiguration,
             NomadParamDoc("The console sink creation settings."))},
-        sinkType, NomadDoc("Creates a logger-owned console sink without removing existing sinks."));
+        consoleSinkType, NomadDoc("Creates a logger-owned console sink without removing existing sinks."));
     if (consoleId.isInvalid()) {
         throw NomadException("Failed to register log.createConsoleSink");
     }
@@ -419,47 +436,51 @@ void registerLogFunctions(
             if (mode != ModuleMode::Application) {
                 machine->fault("Logging configuration requires application mode");
             }
-            executeLoggingOperation(machine, [&] {
-                auto* object = machine->getParameter(0).getObjectValue();
-                if (object == nullptr) {
-                    throw NomadException("Log sink configuration must not be null");
-                }
-                const generated::log::log_FileSinkConfiguration settings(*bindings, object);
-                FileSinkConfiguration configuration;
-                configuration.active = settings.getActive();
-                configuration.level = static_cast<LogLevel>(settings.getLevel());
-                configuration.directory = pathFromUtf8(settings.getDirectory());
-                if (!configuration.directory.empty() && configuration.directory.is_relative()) {
-                    configuration.directory = projectDirectory / configuration.directory;
-                }
-                configuration.name = settings.getName();
-                configuration.rotationMode = static_cast<FileRotationMode>(settings.getRotationMode());
-                configuration.rotateAtStartup = settings.getRotateAtStartup();
-                configuration.maxSizeBytes = settings.getMaxSizeBytes();
-                configuration.maxFiles = settings.getMaxFiles();
-                machine->getResult().setObjectValue(new LogSinkObject(*logger, logger->createFileSink(configuration)));
-            });
+            auto* object = machine->getParameter(0).getObjectValue();
+            const generated::log::log_FileSinkConfiguration settings(*bindings, object);
+
+            FileSinkConfiguration configuration;
+            configuration.active = settings.getActive();
+            configuration.level = static_cast<LogLevel>(settings.getLevel());
+            configuration.directory = pathFromUtf8(settings.getDirectory());
+            if (!configuration.directory.empty() && configuration.directory.is_relative()) {
+                configuration.directory = projectDirectory / configuration.directory;
+            }
+            configuration.name = settings.getName();
+            configuration.rotationMode = static_cast<FileRotationMode>(settings.getRotationMode());
+            configuration.rotateAtStartup = settings.getRotateAtStartup();
+            configuration.maxSizeBytes = settings.getMaxSizeBytes();
+            configuration.maxFiles = settings.getMaxFiles();
+
+            const auto sinkId = logger->createFileSink(configuration);
+            auto* sinkObject = new LogSinkObject(*logger, sinkId);
+
+            machine->getResult().setObjectValue(sinkObject);
         },
         {defParameter("configuration", types.fileSinkConfiguration,
             NomadParamDoc("The file sink creation settings."))},
-        sinkType, NomadDoc("Creates a logger-owned file sink; relative directories use the project directory."));
+        fileSinkType, NomadDoc("Creates a logger-owned file sink; relative directories use the project directory."));
     if (fileId.isInvalid()) {
         throw NomadException("Failed to register log.createFileSink");
     }
 
-    const auto removeId = runtime->registerHubNativeFunction(hubId, "removeSink",
-        [logger, mode = context->mode](VirtualMachine* machine) {
-            if (mode != ModuleMode::Application) {
-                machine->fault("Logging configuration requires application mode");
-            }
-            executeLoggingOperation(machine, [&] {
-                logger->removeSink(getSinkObject(logger, machine->getParameter(0).asObject<LogSinkObject>()).getSinkId());
-            });
-        },
-        {defParameter("sink", sinkType, NomadParamDoc("A reference to a logger-owned sink."))},
-        runtime->getVoidType(), NomadDoc("Flushes and removes a sink; unknown or removed handles fail."));
-    if (removeId.isInvalid()) {
-        throw NomadException("Failed to register log.removeSink");
+    for (const auto* sinkType : {consoleSinkType, fileSinkType}) {
+        const auto removeId = runtime->registerHubNativeFunction(hubId, "removeSink",
+            [logger, mode = context->mode](VirtualMachine* machine) {
+                if (mode != ModuleMode::Application) {
+                    machine->fault("Logging configuration requires application mode");
+                }
+                auto* object = machine->getParameter(0).asObject<LogSinkObject>();
+                const auto& sinkObject = getSinkObject(logger, object);
+                const auto sinkId = sinkObject.getSinkId();
+
+                logger->removeSink(sinkId);
+            },
+            {defParameter("sink", sinkType, NomadParamDoc("A reference to a logger-owned sink."))},
+            runtime->getVoidType(), NomadDoc("Flushes and removes a sink; unknown or removed handles fail."));
+        if (removeId.isInvalid()) {
+            throw NomadException("Failed to register log.removeSink");
+        }
     }
 
     const auto clearId = runtime->registerHubNativeFunction(hubId, "clearAllSinks",
@@ -467,9 +488,7 @@ void registerLogFunctions(
             if (mode != ModuleMode::Application) {
                 machine->fault("Logging configuration requires application mode");
             }
-            executeLoggingOperation(machine, [&] {
-                logger->clearAllSinks();
-            });
+            logger->clearAllSinks();
         },
         {}, runtime->getVoidType(), NomadDoc("Flushes and removes all sinks without installing a replacement."));
     if (clearId.isInvalid()) {
@@ -481,9 +500,7 @@ void registerLogFunctions(
             if (mode != ModuleMode::Application) {
                 machine->fault("Logging configuration requires application mode");
             }
-            executeLoggingOperation(machine, [&] {
-                logger->flush();
-            });
+            logger->flush();
         },
         {}, runtime->getVoidType(), NomadDoc("Delivers pending messages and flushes active sinks."));
     if (flushId.isInvalid()) {
@@ -492,11 +509,15 @@ void registerLogFunctions(
 
     const auto pathId = runtime->registerHubNativeFunction(hubId, "getFilePath",
         [logger](VirtualMachine* machine) {
-            executeLoggingOperation(machine, [&] {
-                machine->setStringResult(pathToUtf8(getFileSink(logger, machine->getParameter(0).asObject<LogSinkObject>()).getPath()));
-            });
+            auto* object = machine->getParameter(0).asObject<LogSinkObject>();
+            const auto& sink = getFileSink(logger, object);
+
+            const auto& path = sink.getPath();
+            const auto text = pathToUtf8(path);
+
+            machine->setStringResult(text);
         },
-        {defParameter("sink", sinkType, NomadParamDoc("A reference to a logger-owned sink."))},
+        {defParameter("sink", fileSinkType, NomadParamDoc("A reference to a logger-owned file sink."))},
         runtime->getStringType(), NomadDoc("Returns the resolved active file path."));
     if (pathId.isInvalid()) {
         throw NomadException("Failed to register log.getFilePath");
@@ -507,14 +528,16 @@ void registerLogFunctions(
             if (mode != ModuleMode::Application) {
                 machine->fault("Logging configuration requires application mode");
             }
-            executeLoggingOperation(machine, [&] {
-                const auto size = machine->getIntegerParameter(1);
-                const auto files = machine->getIntegerParameter(2);
-                getFileSink(logger, machine->getParameter(0).asObject<LogSinkObject>()).setRotationLimits(size, files);
-            });
+            auto* object = machine->getParameter(0).asObject<LogSinkObject>();
+            auto& sink = getFileSink(logger, object);
+
+            const auto maxSizeBytes = machine->getIntegerParameter(1);
+            const auto maxFiles = machine->getIntegerParameter(2);
+
+            sink.setRotationLimits(maxSizeBytes, maxFiles);
         },
         {
-            defParameter("sink", sinkType, NomadParamDoc("A reference to a logger-owned sink.")),
+            defParameter("sink", fileSinkType, NomadParamDoc("A reference to a logger-owned file sink.")),
             defParameter("maxSizeBytes", runtime->getIntegerType(),
                 NomadParamDoc("The positive byte limit, including record newlines.")),
             defParameter("maxFiles", runtime->getIntegerType(),
@@ -535,7 +558,10 @@ void registerLogModule(ModuleContext* context, ModuleCallbacks* callbacks) {
     }
     const auto types = generated::log::deferTypes(*context->compiler);
     const auto bindings = std::make_shared<ScriptBindings>(*context->runtime);
-    const auto hubId = registerLogHub(*context->runtime);
+    const auto hubId = context->runtime->registerHub("log", HubMode::Opened);
+    if (hubId.isInvalid()) {
+        throw NomadException("Failed to register log hub");
+    }
     registerLoggerClass(context, hubId, types);
     registerSinkClass(context, hubId, types);
     registerLogConstants(context, hubId);

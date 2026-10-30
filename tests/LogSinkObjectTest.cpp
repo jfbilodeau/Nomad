@@ -59,7 +59,7 @@ void loadLogModule(boost::dll::shared_library& library, Runtime& runtime, Logger
     const auto compilation = compileSources({}, *compiler);
     BOOST_REQUIRE_MESSAGE(compilation.succeeded(), (compilation.diagnostics.empty() ?
         "Log module compilation failed" : compilation.diagnostics.front().message));
-    const auto* type = runtime.getTypeByName("log.Sink");
+    const auto* type = runtime.getTypeByName("log.ConsoleSink");
     BOOST_REQUIRE(type != nullptr);
     BOOST_REQUIRE(type->asClassType() != nullptr);
 }
@@ -165,9 +165,9 @@ BOOST_AUTO_TEST_CASE(registers_closed_sink_type_with_native_live_properties) {
     loadLogModule(library, runtime, logger);
     const auto hubId = runtime.getHubId("log");
     BOOST_REQUIRE(hubId.isValid());
-    const auto* type = runtime.getTypeByName("log.Sink")->asClassType();
+    const auto* type = runtime.getTypeByName("log.FileSink")->asClassType();
     BOOST_REQUIRE(type != nullptr);
-    BOOST_TEST(type->getTypeName() == "log.Sink");
+    BOOST_TEST(type->getTypeName() == "log.FileSink");
     BOOST_TEST(!type->isOpen());
     BOOST_TEST(type->getPropertyCount() == 6U);
     BOOST_TEST(type->getConstructors().empty());
@@ -190,17 +190,26 @@ BOOST_AUTO_TEST_CASE(registers_closed_sink_type_with_native_live_properties) {
             BOOST_TEST(static_cast<bool>(native->setFn) == !readOnly);
         }
     }
-    const auto* member = runtime.getHub(hubId)->getMember("Sink");
+    const auto* member = runtime.getHub(hubId)->getMember("FileSink");
     BOOST_REQUIRE(member != nullptr);
     BOOST_REQUIRE(std::holds_alternative<const Type*>(*member));
     BOOST_TEST(std::get<const Type*>(*member) == type);
+    const auto* consoleType = runtime.getTypeByName("log.ConsoleSink")->asClassType();
+    BOOST_TEST(consoleType != type);
+    BOOST_TEST(!consoleType->isOpen());
+    BOOST_TEST(consoleType->getConstructors().empty());
+    BOOST_TEST(consoleType->getPropertyCount() == 2U);
+    BOOST_TEST(consoleType->getProperty("level") != nullptr);
+    BOOST_TEST(consoleType->getProperty("active") != nullptr);
+    BOOST_TEST(consoleType->getProperty("rotationMode") == nullptr);
+    BOOST_TEST(runtime.getTypeByName("log.Sink") == nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(native_active_property_reads_current_state_and_controls_delivery) {
     boost::dll::shared_library library;
     Runtime runtime;
     loadLogModule(library, runtime, logger);
-    const auto* type = runtime.getTypeByName("log.Sink")->asClassType();
+    const auto* type = runtime.getTypeByName("log.ConsoleSink")->asClassType();
     const auto activeId = type->getProperty("active")->getId();
     auto machine = runtime.createVirtualMachine();
     auto object = std::make_unique<LogSinkObject>(logger, sinkId);
@@ -231,7 +240,7 @@ BOOST_AUTO_TEST_CASE(native_active_property_rejects_removed_sink_without_touchin
     boost::dll::shared_library library;
     Runtime runtime;
     loadLogModule(library, runtime, logger);
-    const auto* type = runtime.getTypeByName("log.Sink")->asClassType();
+    const auto* type = runtime.getTypeByName("log.ConsoleSink")->asClassType();
     const auto activeId = type->getProperty("active")->getId();
     auto machine = runtime.createVirtualMachine();
     auto object = std::make_unique<LogSinkObject>(logger, sinkId);
@@ -252,7 +261,7 @@ BOOST_AUTO_TEST_CASE(native_active_property_rejects_cleared_sink) {
     boost::dll::shared_library library;
     Runtime runtime;
     loadLogModule(library, runtime, logger);
-    const auto* type = runtime.getTypeByName("log.Sink")->asClassType();
+    const auto* type = runtime.getTypeByName("log.ConsoleSink")->asClassType();
     const auto activeId = type->getProperty("active")->getId();
     auto machine = runtime.createVirtualMachine();
     auto object = std::make_unique<LogSinkObject>(logger, sinkId);
