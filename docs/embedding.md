@@ -1475,9 +1475,29 @@ callbacks or compile-time expressions evaluated before this boundary.
 
 Resolution preserves callable IDs and does not republish declarations on later
 compilations. References resolve independently in each runtime. Hosts with already
-declared types can explicitly call `Runtime::resolveNativeFunctionSignatures()`;
+declared types can explicitly call `Compiler::resolveDeferredTypes()`;
 it throws on unresolved types or invalid overloads. Resolving a signature does not
 compile a script constructor or resolve a generated wrapper's field binding.
+
+The compiler owns `DeferredTypeTarget` objects, which expose the requested
+`TypeReference`, a diagnostic description, and `resolve(const Type*)`. Register
+additional targets with `Compiler::registerDeferredTypeTarget`; null targets and
+empty type names are errors. Targets must use the supplied canonical runtime type
+or throw if it is invalid for their destination. Their referenced destinations
+must outlive compilation.
+
+Native function parameter and return targets are collected automatically at the
+resolution boundary, including functions registered by `parse` callbacks.
+`FunctionParameterTypeTarget` identifies its destination by callable ID and
+parameter index; `FunctionReturnTypeTarget` uses the callable ID. They never
+retain addresses into a parameter vector. All requested names must resolve before
+targets are applied, and native signatures and overload sets must validate before
+callbacks become usable. Successful resolution releases the targets; compilation
+failure aborts startup.
+
+This is the first target-based increment. `TypeReference` storage is retained
+temporarily; `DeferredType` placeholders and a compiler in `ModuleContext` are not
+implemented yet.
 
 Deferred signatures currently support free native functions, including hub
 functions, through the VM-callback API. Native properties, methods, constructors,

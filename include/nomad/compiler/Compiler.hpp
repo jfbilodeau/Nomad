@@ -6,6 +6,7 @@
 
 #include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/DeferredTypeTarget.hpp>
 #include <nomad/compiler/Identifier.hpp>
 #include <nomad/compiler/Operators.hpp>
 #include <nomad/compiler/Parser.hpp>
@@ -226,6 +227,8 @@ public:
         bool hubInitializer
     );
     void registerPhaseHook(std::function<void(CompilerContext*, CompilationPhase)> hook);
+    void registerDeferredTypeTarget(std::unique_ptr<DeferredTypeTarget> target);
+    void resolveDeferredTypes();
     [[nodiscard]] bool compileScripts(
         CompilerContext* context,
         CompilationTarget target = CompilationTarget::Executable
@@ -246,6 +249,8 @@ public:
     NomadString generateFunctionName(const NomadString& name, const ScriptCallableBase* function, NomadIndex line);
 
 private:
+    std::vector<std::unique_ptr<DeferredTypeTarget>> m_deferredTypeTargets;
+
     struct FunctionCompilation {
         NomadId scriptId = NOMAD_INVALID_ID;
         std::unique_ptr<FunctionNode> ast;

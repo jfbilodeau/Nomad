@@ -11,6 +11,8 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerTools.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Expression.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/FormatStringCompiler.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/FunctionParameterTypeTarget.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/FunctionReturnTypeTarget.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/LoopStatement.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Operators.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Parser.cpp

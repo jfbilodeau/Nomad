@@ -754,12 +754,24 @@ CallableId Runtime::registerNativeCallable(
     return id;
 }
 
-void Runtime::resolveNativeFunctionSignatures() {
+NativeFunction* Runtime::getMutableNativeFunction(const CallableId id) {
+    if (getNativeFunction(id) == nullptr) {
+        return nullptr;
+    }
+    return static_cast<NativeFunction*>(m_callables[toNomadIndex(id.id)]);
+}
+
+void Runtime::validateNativeFunctionSignatures() {
     std::vector<NativeFunction*> pending;
     for (const auto& function : m_functions) {
         auto* native = dynamic_cast<NativeFunction*>(function.get());
         if (native != nullptr && !native->isSignatureResolved()) {
-            native->resolveSignatureTypes(*this);
+            if (!ownsType(native->getReturnType()) ||
+                std::ranges::any_of(native->getParameters(), [this](const auto& parameter) {
+                    return !ownsType(parameter.type);
+                })) {
+                throw NomadException("Native function '" + native->getName() + "' has an unresolved signature");
+            }
             pending.push_back(native);
         }
     }

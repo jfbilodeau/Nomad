@@ -31,8 +31,10 @@ public:
     [[nodiscard]] NomadString getReturnTypeName() const;
 
 private:
+    friend class Compiler;
+    friend class FunctionParameterTypeTarget;
+    friend class FunctionReturnTypeTarget;
     friend class Runtime;
-    void resolveSignatureTypes(Runtime& runtime);
 
     NativeFunctionFn m_fn;
     std::optional<TypeReference> m_returnTypeReference;

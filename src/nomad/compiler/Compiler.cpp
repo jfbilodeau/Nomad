@@ -6,6 +6,8 @@
 #include <nomad/compiler/ClassDeclaration.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/CompilerException.hpp>
+#include <nomad/compiler/FunctionParameterTypeTarget.hpp>
+#include <nomad/compiler/FunctionReturnTypeTarget.hpp>
 #include <nomad/compiler/LoopStatement.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 #include <nomad/compiler/StatementParsers.hpp>
@@ -56,6 +58,49 @@ Compiler::~Compiler() = default;
 
 Runtime* Compiler::getRuntime() const {
     return m_runtime;
+}
+
+void Compiler::registerDeferredTypeTarget(std::unique_ptr<DeferredTypeTarget> target) {
+    if (target == nullptr || target->getDeferredType().name.empty()) {
+        throw NomadException("Cannot register a null deferred type target or an empty type name");
+    }
+    m_deferredTypeTargets.push_back(std::move(target));
+}
+
+void Compiler::resolveDeferredTypes() {
+    for (const auto* function : m_runtime->getNativeFunctions()) {
+        if (function->isSignatureResolved()) {
+            continue;
+        }
+        for (auto index = NomadIndex{0}; index < function->getParameterCount(); ++index) {
+            const auto& parameter = function->getParameters()[index];
+            if (parameter.typeReference) {
+                registerDeferredTypeTarget(std::make_unique<FunctionParameterTypeTarget>(
+                    *m_runtime, function->getId(), index, *parameter.typeReference
+                ));
+            }
+        }
+        if (function->m_returnTypeReference) {
+            registerDeferredTypeTarget(std::make_unique<FunctionReturnTypeTarget>(
+                *m_runtime, function->getId(), *function->m_returnTypeReference
+            ));
+        }
+    }
+    std::vector<const Type*> resolvedTypes;
+    resolvedTypes.reserve(m_deferredTypeTargets.size());
+    for (const auto& target : m_deferredTypeTargets) {
+        const auto* type = m_runtime->getTypeByName(target->getDeferredType().name);
+        if (type == nullptr) {
+            throw NomadException("Cannot resolve " + target->getDescription() +
+                ": unknown type '" + target->getDeferredType().name + "'");
+        }
+        resolvedTypes.push_back(type);
+    }
+    for (auto index = NomadIndex{0}; index < m_deferredTypeTargets.size(); ++index) {
+        m_deferredTypeTargets[index]->resolve(resolvedTypes[index]);
+    }
+    m_runtime->validateNativeFunctionSignatures();
+    m_deferredTypeTargets.clear();
 }
 
 void Compiler::reportError(const NomadString& message) const {
@@ -1643,7 +1688,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         return false;
     }
     reportExceptions({}, [&] {
-        m_runtime->resolveNativeFunctionSignatures();
+        resolveDeferredTypes();
     });
     if (hasNewErrors()) {
         return false;

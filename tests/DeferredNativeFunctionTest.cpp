@@ -5,6 +5,8 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/FunctionParameterTypeTarget.hpp>
+#include <nomad/compiler/FunctionReturnTypeTarget.hpp>
 
 #include <nomad/modules/ScriptBindings.hpp>
 
@@ -18,12 +20,134 @@
 
 #include <algorithm>
 #include <sstream>
+#include <utility>
 
 using namespace nomad;
 using namespace nomad::test;
 using namespace nomad::generated::log;
 
+namespace {
+
+class RecordingDeferredTypeTarget final : public DeferredTypeTarget {
+public:
+    RecordingDeferredTypeTarget(
+        TypeReference type,
+        const Type*& destination,
+        int& resolutions,
+        int& destructions
+    ) : m_type(std::move(type)), m_destination(destination),
+        m_resolutions(resolutions), m_destructions(destructions) {
+    }
+
+    ~RecordingDeferredTypeTarget() override {
+        ++m_destructions;
+    }
+
+    [[nodiscard]] const TypeReference& getDeferredType() const override {
+        return m_type;
+    }
+
+    [[nodiscard]] NomadString getDescription() const override {
+        return "recording target";
+    }
+
+    void resolve(const Type* type) override {
+        m_destination = type;
+        ++m_resolutions;
+    }
+
+private:
+    TypeReference m_type;
+    const Type*& m_destination;
+    int& m_resolutions;
+    int& m_destructions;
+};
+
+} // namespace
+
 BOOST_AUTO_TEST_SUITE(native_deferred_functions)
+
+BOOST_AUTO_TEST_CASE(compiler_owns_targets_and_delivers_one_canonical_type_to_multiple_destinations) {
+    Runtime runtime;
+    const Type* first = nullptr;
+    const Type* second = nullptr;
+    auto resolutions = 0;
+    auto destructions = 0;
+    auto compiler = runtime.createCompiler();
+    compiler->registerDeferredTypeTarget(std::make_unique<RecordingDeferredTypeTarget>(
+        TypeReference{"Settings"}, first, resolutions, destructions
+    ));
+    compiler->registerDeferredTypeTarget(std::make_unique<RecordingDeferredTypeTarget>(
+        TypeReference{"Settings"}, second, resolutions, destructions
+    ));
+    BOOST_TEST(resolutions == 0);
+    BOOST_TEST(destructions == 0);
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"main", {"main.nomad", "class Settings\nend\nreturn 1"}}}, {}});
+    BOOST_REQUIRE(compiler->compileScripts(&context));
+    BOOST_TEST(first == runtime.getTypeByName("Settings"));
+    BOOST_TEST(second == first);
+    BOOST_TEST(resolutions == 2);
+    BOOST_TEST(destructions == 2);
+    compiler->resolveDeferredTypes();
+    BOOST_TEST(resolutions == 2);
+    BOOST_TEST(destructions == 2);
+}
+
+BOOST_AUTO_TEST_CASE(missing_target_types_fail_before_any_targets_are_applied_and_are_owned_until_teardown) {
+    Runtime runtime;
+    const Type* destination = nullptr;
+    auto resolutions = 0;
+    auto destructions = 0;
+    {
+        auto compiler = runtime.createCompiler();
+        compiler->registerDeferredTypeTarget(std::make_unique<RecordingDeferredTypeTarget>(
+            TypeReference{"int"}, destination, resolutions, destructions
+        ));
+        compiler->registerDeferredTypeTarget(std::make_unique<RecordingDeferredTypeTarget>(
+            TypeReference{"Missing"}, destination, resolutions, destructions
+        ));
+        CompilerContext context(compiler.get());
+        compiler->registerSources(&context, {{{"main", {"main.nomad", "return 1"}}}, {}});
+        BOOST_TEST(!compiler->compileScripts(&context));
+        BOOST_TEST(context.hasError());
+        BOOST_TEST(resolutions == 0);
+        BOOST_TEST(destination == nullptr);
+        BOOST_TEST(destructions == 0);
+    }
+    BOOST_TEST(destructions == 2);
+}
+
+BOOST_AUTO_TEST_CASE(stable_parameter_and_return_targets_survive_callable_growth_and_check_destination_types) {
+    Runtime runtime;
+    Runtime foreign;
+    const auto id = runtime.registerNativeFunction("echo", [](VirtualMachine*) {},
+        {defParameter("value", TypeReference{"int"}, "")}, TypeReference{"int"}, "");
+    BOOST_REQUIRE(id.isValid());
+    auto compiler = runtime.createCompiler();
+    auto parameter = std::make_unique<FunctionParameterTypeTarget>(runtime, id, 0, TypeReference{"int"});
+    auto result = std::make_unique<FunctionReturnTypeTarget>(runtime, id, TypeReference{"int"});
+    for (auto index = 0; index < 64; ++index) {
+        BOOST_REQUIRE(runtime.registerNativeFunction(
+            "additional" + std::to_string(index), [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+        ).isValid());
+    }
+    BOOST_CHECK_THROW(parameter->resolve(foreign.getIntegerType()), NomadException);
+    BOOST_CHECK_THROW(result->resolve(foreign.getIntegerType()), NomadException);
+    BOOST_CHECK_THROW(parameter->resolve(runtime.getFloatType()), NomadException);
+    BOOST_CHECK_THROW(result->resolve(runtime.getFloatType()), NomadException);
+    BOOST_CHECK_THROW((void)FunctionParameterTypeTarget(runtime, id, 1, TypeReference{"int"}), NomadException);
+    BOOST_CHECK_THROW((void)FunctionReturnTypeTarget(runtime, CallableId{}, TypeReference{"int"}), NomadException);
+    compiler->registerDeferredTypeTarget(std::move(parameter));
+    compiler->registerDeferredTypeTarget(std::move(result));
+    compiler->resolveDeferredTypes();
+    const auto* function = runtime.getNativeFunction(id);
+    BOOST_TEST(function->isSignatureResolved());
+    BOOST_TEST(function->getParameters()[0].type == runtime.getIntegerType());
+    BOOST_TEST(function->getReturnType() == runtime.getIntegerType());
+    BOOST_TEST(runtime.getNativeFunctionId("echo") == id);
+    BOOST_CHECK_THROW(compiler->registerDeferredTypeTarget(nullptr), NomadException);
+}
 
 BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_script_native_cycle) {
     Runtime runtime;

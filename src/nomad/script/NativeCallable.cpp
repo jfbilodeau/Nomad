@@ -2,7 +2,7 @@
 
 #include <nomad/script/NativeCallable.hpp>
 
-#include <nomad/script/Runtime.hpp>
+#include <nomad/script/Type.hpp>
 
 #include <algorithm>
 #include <utility>
@@ -42,29 +42,6 @@ NomadString NativeFunction::getReturnTypeName() const {
         return getReturnType()->getTypeName();
     }
     return m_returnTypeReference ? m_returnTypeReference->name : "unknown";
-}
-
-void NativeFunction::resolveSignatureTypes(Runtime& runtime) {
-    auto parameters = getParameters();
-    for (auto& parameter : parameters) {
-        if (parameter.typeReference) {
-            parameter.type = runtime.getTypeByName(parameter.typeReference->name);
-            if (parameter.type == nullptr || parameter.type->isVoid()) {
-                throw NomadException("Cannot resolve native function '" + getName() + "' parameter '" +
-                    parameter.name + "': unknown or invalid type '" + parameter.typeReference->name + "'");
-            }
-        }
-    }
-    auto* returnType = getReturnType();
-    if (m_returnTypeReference) {
-        returnType = runtime.getTypeByName(m_returnTypeReference->name);
-        if (returnType == nullptr || (returnType->isInternal() && !returnType->isVoid())) {
-            throw NomadException("Cannot resolve native function '" + getName() +
-                "' return type: unknown or invalid type '" + m_returnTypeReference->name + "'");
-        }
-    }
-    getEditableParameters() = std::move(parameters);
-    setReturnType(returnType);
 }
 
 NativeMethod::NativeMethod(

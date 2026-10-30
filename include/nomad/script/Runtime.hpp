@@ -416,7 +416,6 @@ public:
         TypeReference returnType,
         NomadDocArg
     );
-    void resolveNativeFunctionSignatures();
     template<detail::TypedNativeFunction Function>
     [[nodiscard]] CallableId registerNativeFunction(
         const NomadString& name,
@@ -691,7 +690,13 @@ private:
         NomadString error;
     };
 
+    friend class Compiler;
+    friend class FunctionParameterTypeTarget;
+    friend class FunctionReturnTypeTarget;
+
     // Callable registration and resolution
+    [[nodiscard]] NativeFunction* getMutableNativeFunction(CallableId id);
+    void validateNativeFunctionSignatures();
     CallableId registerNativeCallable(
         const ClassType* classType,
         const NomadString& name,
