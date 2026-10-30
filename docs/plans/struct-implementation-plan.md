@@ -1,8 +1,9 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Step 1A below is implemented and awaiting review. Architecture choices not
-explicitly approved remain proposals; stop for review after each slice.
+Step 1A has been reviewed; Step 1B below is implemented and awaiting review.
+Architecture choices not explicitly approved remain proposals; stop for review
+after each slice.
 
 This draft is not part of the published language guide.
 
@@ -219,9 +220,38 @@ Step 1A validation:
 - No struct execution, physical-layout changes, or gameplay validation are
   included in this slice.
 
+Approved second slice (Step 1B):
+
+- Add `VariableMap::getVariableOffset(VariableId)` and `getStorageSize()`.
+- Calculate offsets and total size from the current `Type::getSize()` values,
+  without cached layouts, invalidation state, shared helpers, or a new layout
+  abstraction.
+- Preserve logical IDs and counts. Offset queries need the preceding types'
+  resolved sizes; total-size queries need all resolved sizes.
+- Explicitly report missing/deferred sizes, arithmetic overflow, and invalid
+  offset-query IDs. These are metadata calculations, not execution-time
+  revalidation of compiled script types.
+- Leave VM access, opcodes, parameter layouts, and object storage unchanged.
+
+Step 1B validation:
+
+- The Windows Debug `nomad_test` target built successfully.
+- The `nomad_test_language` regression group passed, including mixed widths,
+  zero widths, live metadata changes, unresolved types, overflow boundaries,
+  invalid IDs, and existing scalar-variable behavior.
+- All four documentation preparation tests passed.
+- Mixed/zero/maximum-width descriptors are test-only fixtures, not executable
+  struct support. No gameplay validation is claimed.
+
+Proposed next slice: parameter offset and slot-count metadata, preserving logical
+arity and accounting for existing special argument shapes such as event
+callbacks. Discuss its representation before implementation; VM and calling
+convention changes remain out of scope for that metadata slice.
+
 Remaining Step 1 work, requiring separate design approval:
 
-- Add approved size/finalization metadata and physical offset mappings.
+- Add approved struct size/finalization metadata, parameter mappings, and
+  stored-field layout mappings.
 - Preserve current sizes and behavior for existing non-struct types.
 - Preserve logical IDs, names, catalog entries, and API signatures where possible.
 - Add focused tests for mixed widths, unresolved layouts, zero widths, offset

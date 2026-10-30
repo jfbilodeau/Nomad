@@ -1,10 +1,12 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/log/Logger.hpp>
-
 #include <nomad/script/Variable.hpp>
 
+#include <nomad/log/Logger.hpp>
+
 #include <nomad/system/String.hpp>
+
+#include <limits>
 
 namespace nomad {
 
@@ -87,6 +89,43 @@ const Type* VariableMap::getVariableType(const VariableId variableId) const {
 
 NomadIndex VariableMap::getVariableCount() const {
     return m_variables.size();
+}
+
+NomadIndex VariableMap::getVariableOffset(const VariableId variableId) const {
+    if (isIdOutOfRange(variableId.id, m_variables.size())) {
+        throw NomadException("Variable ID out of range");
+    }
+
+    auto offset = NomadIndex{0};
+    for (auto index = NomadIndex{0}; index < toNomadIndex(variableId.id); ++index) {
+        const auto& variable = m_variables[index];
+        const auto* type = variable.getType();
+        if (type == nullptr) {
+            throw NomadException("Cannot calculate variable layout: type of '" + variable.getName() + "' is unresolved");
+        }
+        const auto size = type->getSize();
+        if (size > std::numeric_limits<NomadIndex>::max() - offset) {
+            throw NomadException("Variable storage size exceeds the maximum slot count at '" + variable.getName() + "'");
+        }
+        offset += size;
+    }
+    return offset;
+}
+
+NomadIndex VariableMap::getStorageSize() const {
+    auto size = NomadIndex{0};
+    for (const auto& variable : m_variables) {
+        const auto* type = variable.getType();
+        if (type == nullptr) {
+            throw NomadException("Cannot calculate variable layout: type of '" + variable.getName() + "' is unresolved");
+        }
+        const auto variableSize = type->getSize();
+        if (variableSize > std::numeric_limits<NomadIndex>::max() - size) {
+            throw NomadException("Variable storage size exceeds the maximum slot count at '" + variable.getName() + "'");
+        }
+        size += variableSize;
+    }
+    return size;
 }
 
 bool VariableMap::isWritten(const VariableId variableId) const {

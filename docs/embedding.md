@@ -596,6 +596,19 @@ lookups and the end of context-local iteration return `VariableId::INVALID`.
 The type does not implicitly convert to integers, `ContextVariableId`, or
 other ID categories. Numeric validity does not verify ownership.
 
+`VariableMap::getVariableOffset(id)` returns the variable's physical slot offset,
+the sum of the preceding variables' `Type::getSize()` values.
+`getStorageSize()` returns the total slot count, or zero for an empty map.
+Logical IDs and `getVariableCount()` remain independent of physical slot counts.
+Queries reflect the current metadata after variable registration or type changes;
+they do not allocate storage or change existing VM access.
+
+An offset query requires resolved sizes for the preceding variables; a total-size
+query requires resolved sizes for every variable. Missing types, deferred-size
+queries, and slot-count overflow throw `NomadException`. An invalid or out-of-range
+ID passed to `getVariableOffset()` also throws `NomadException`; an in-range ID
+does not prove ownership by this map.
+
 Parameter positions, capture-list positions, and stack offsets remain numeric.
 Compiler identifier metadata separates `variableId` from `parameterId`.
 Capture metadata retains `CaptureSource`; read `variableId` only for
