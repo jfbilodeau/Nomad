@@ -25,9 +25,16 @@ struct CompilationArtifacts {
     CompilationResult result;
 };
 
+InstructionDumpResult formatInstructionDump(
+    CompilationResult compilation,
+    Runtime& runtime,
+    const std::optional<NomadString>& functionName,
+    const std::vector<std::filesystem::path>& paths
+);
+
 // When `externalRuntime` is null a bare runtime is created, exposing only the language built-ins.
 // Tools that need the engine API pass the runtime of a headless `Game`.
-CompilationArtifacts compileSources(
+CompilationArtifacts compileArtifacts(
     const SourceBatch& batch,
     Runtime* externalRuntime,
     CompilationTarget target = CompilationTarget::Executable
@@ -41,21 +48,10 @@ CompilationArtifacts compileSources(
 
     auto* runtime = externalRuntime;
     auto compiler = runtime->createCompiler();
-    CompilerContext context(compiler.get());
-
-    compiler->registerSources(&context, batch);
-    (void)compiler->compileScripts(&context, target);
-
-    const auto diagnostics = context.getDiagnostics();
-
     return CompilationArtifacts{
         std::move(ownedRuntime),
         runtime,
-        CompilationResult{
-            {diagnostics.begin(), diagnostics.end()},
-            context.getErrorCount(),
-            context.getWarningCount()
-        }
+        compileSources(batch, *compiler, target)
     };
 }
 
@@ -63,7 +59,7 @@ CompilationArtifacts compilePaths(
     const std::vector<std::filesystem::path>& paths,
     Runtime* runtime
 ) {
-    return compileSources(loadSourcePaths(paths), runtime);
+    return compileArtifacts(loadSourcePaths(paths), runtime);
 }
 
 } // namespace
@@ -81,11 +77,19 @@ CompilationResult checkPaths(const std::vector<std::filesystem::path>& paths, Ru
 }
 
 CompilationResult checkSources(const SourceBatch& batch, Runtime* runtime) {
-    return compileSources(batch, runtime).result;
+    return compileArtifacts(batch, runtime).result;
 }
 
 CompilationResult analyzeSources(const SourceBatch& batch, Runtime* runtime) {
-    return compileSources(batch, runtime, CompilationTarget::Analysis).result;
+    return compileArtifacts(batch, runtime, CompilationTarget::Analysis).result;
+}
+
+CompilationResult compileSources(const SourceBatch& batch, Compiler& compiler, const CompilationTarget target) {
+    CompilerContext context(&compiler);
+    compiler.registerSources(&context, batch);
+    (void)compiler.compileScripts(&context, target);
+    const auto diagnostics = context.getDiagnostics();
+    return {{diagnostics.begin(), diagnostics.end()}, context.getErrorCount(), context.getWarningCount()};
 }
 
 void validateEntryFunction(
@@ -136,15 +140,35 @@ InstructionDumpResult dumpInstructions(
     Runtime* runtime
 ) {
     auto artifacts = compilePaths(paths, runtime);
-    InstructionDumpResult result{std::move(artifacts.result), {}};
+    return formatInstructionDump(std::move(artifacts.result), *artifacts.runtime, functionName, paths);
+}
+
+InstructionDumpResult dumpInstructions(
+    const std::vector<std::filesystem::path>& paths,
+    const std::optional<NomadString>& functionName,
+    Compiler& compiler
+) {
+    return formatInstructionDump(compileSources(loadSourcePaths(paths), compiler),
+        *compiler.getRuntime(), functionName, paths);
+}
+
+namespace {
+
+InstructionDumpResult formatInstructionDump(
+    CompilationResult compilation,
+    Runtime& runtime,
+    const std::optional<NomadString>& functionName,
+    const std::vector<std::filesystem::path>& paths
+) {
+    InstructionDumpResult result{std::move(compilation), {}};
 
     if (!result.compilation.succeeded()) {
         return result;
     }
 
     if (functionName) {
-        const auto functionId = artifacts.runtime->getFunctionId(*functionName);
-        const auto* function = artifacts.runtime->getScriptFunction(functionId);
+        const auto functionId = runtime.getFunctionId(*functionName);
+        const auto* function = runtime.getScriptFunction(functionId);
 
         if (function == nullptr) {
             result.compilation.diagnostics.push_back(Diagnostic{
@@ -160,17 +184,19 @@ InstructionDumpResult dumpInstructions(
         }
 
         std::ostringstream output;
-        artifacts.runtime->dumpInstructions(output, function);
+        runtime.dumpInstructions(output, function);
         result.instructions = output.str();
         return result;
     }
 
     std::ostringstream output;
-    artifacts.runtime->dumpInstructions(output);
+    runtime.dumpInstructions(output);
     result.instructions = output.str();
 
     return result;
 }
+
+} // namespace
 
 DocumentationResult generateDocumentationForPath(const std::filesystem::path& path, Runtime* runtime) {
     return generateDocumentationForPaths({path}, runtime);
@@ -191,6 +217,19 @@ DocumentationResult generateDocumentationForPaths(
     generateDocumentation(artifacts.runtime, output);
     result.documentation = output.str();
 
+    return result;
+}
+
+DocumentationResult generateDocumentationForPaths(
+    const std::vector<std::filesystem::path>& paths,
+    Compiler& compiler
+) {
+    DocumentationResult result{compileSources(loadSourcePaths(paths), compiler), {}};
+    if (result.compilation.succeeded()) {
+        std::ostringstream output;
+        generateDocumentation(compiler.getRuntime(), output);
+        result.documentation = output.str();
+    }
     return result;
 }
 

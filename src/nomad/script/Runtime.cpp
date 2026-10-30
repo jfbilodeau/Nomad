@@ -268,16 +268,6 @@ CallableId Runtime::registerNativeFunction(
     return registerNativeCallable(nullptr, name, std::move(nativeFunction_fn), parameters, returnType, doc);
 }
 
-CallableId Runtime::registerNativeFunction(
-    const NomadString& name,
-    NativeFunctionFn function,
-    const std::vector<Parameter>& parameters,
-    TypeReference returnType,
-    const NomadString& doc
-) {
-    return registerNativeCallable(nullptr, name, std::move(function), parameters, nullptr, doc, std::move(returnType));
-}
-
 std::optional<NomadString> Runtime::qualifyHubMemberName(const HubId hubId, const NomadString& name) const {
     const auto* hub = getHub(hubId);
     if (hub == nullptr || !isValidIdentifier(name)) {
@@ -352,22 +342,6 @@ CallableId Runtime::registerHubNativeFunction(
         return CallableId::INVALID;
     }
     return registerNativeFunction(hub->getName() + "." + name, std::move(function), parameters, returnType, doc);
-}
-
-CallableId Runtime::registerHubNativeFunction(
-    const HubId hubId,
-    const NomadString& name,
-    NativeFunctionFn function,
-    const std::vector<Parameter>& parameters,
-    TypeReference returnType,
-    const NomadString& doc
-) {
-    const auto qualifiedName = qualifyHubMemberName(hubId, name);
-    if (!qualifiedName) {
-        log::error("Cannot register hub native function '" + name + "': invalid hub or local name");
-        return CallableId::INVALID;
-    }
-    return registerNativeFunction(*qualifiedName, std::move(function), parameters, std::move(returnType), doc);
 }
 
 CallableId Runtime::registerHubScriptFunction(
@@ -671,25 +645,26 @@ CallableId Runtime::registerNativeCallable(
     NativeFunctionFn fn,
     const std::vector<Parameter>& parameters,
     const Type* returnType,
-    const NomadString& doc,
-    std::optional<TypeReference> returnTypeReference
+    const NomadString& doc
 ) {
     if (classType == nullptr && (isHub(name) || !canRegisterHubMember(name, true))) {
         log::error("Cannot register function '" + name + "': name is reserved by a hub");
         return CallableId::INVALID;
     }
-    const auto deferred = returnTypeReference.has_value() ||
-        std::ranges::any_of(parameters, [](const auto& parameter) { return parameter.typeReference.has_value(); });
-    if (!fn || (returnTypeReference
-        ? classType != nullptr || returnType != nullptr || returnTypeReference->name.empty()
-        : !ownsType(returnType) || (returnType->isInternal() && !returnType->isVoid()))) {
+    const auto isDeferred = [this, classType](const Type* type) {
+        return classType == nullptr && type != nullptr && type->getRuntime() == this &&
+            dynamic_cast<const DeferredType*>(type) != nullptr;
+    };
+    const auto deferred = isDeferred(returnType) ||
+        std::ranges::any_of(parameters, [&](const auto& parameter) { return isDeferred(parameter.type); });
+    if (!fn || (!isDeferred(returnType) &&
+        (!ownsType(returnType) || (returnType->isInternal() && !returnType->isVoid())))) {
         log::error("Cannot register native callable '" + name + "': invalid callback or return type");
         return CallableId::INVALID;
     }
     for (const auto& parameter : parameters) {
-        if (parameter.name.empty() || (parameter.typeReference
-            ? classType != nullptr || parameter.type != nullptr || parameter.typeReference->name.empty()
-            : !ownsType(parameter.type) || parameter.type->isVoid())) {
+        if (parameter.name.empty() || (!isDeferred(parameter.type) &&
+            (!ownsType(parameter.type) || parameter.type->isVoid()))) {
             log::error("Cannot register native callable '" + name + "': invalid parameter definition");
             return CallableId::INVALID;
         }
@@ -749,7 +724,6 @@ CallableId Runtime::registerNativeCallable(
         parameters, 
         returnType, 
         doc, 
-        std::move(returnTypeReference), 
         pending
     );
     id = addCallableToTable(std::move(function));

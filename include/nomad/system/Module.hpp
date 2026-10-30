@@ -17,6 +17,7 @@
 
 namespace nomad {
 
+class Compiler;
 class CompilerContext;
 class Logger;
 class NomadConfiguration;
@@ -31,6 +32,7 @@ enum class ModuleMode {
 
 struct ModuleContext {
     Runtime* runtime;
+    Compiler* compiler;
     const NomadConfiguration* configuration;
     Logger* logger;
     ModuleMode mode;

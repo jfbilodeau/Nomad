@@ -35,6 +35,9 @@ void FunctionParameterTypeTarget::resolve(const Type* type) {
     if (type == nullptr || type->getTypeName() != m_type.name || function == nullptr) {
         throw NomadException("Cannot resolve " + getDescription() + ": invalid type or target '" + m_type.name + "'");
     }
+    if (!function->isSignatureResolved() && function->getParameters()[m_index].type == type) {
+        return;
+    }
     function->resolveParameterType(m_index, type);
 }
 

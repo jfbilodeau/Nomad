@@ -20,7 +20,7 @@ NomadString Parameter::getTypeName() const {
     if (type != nullptr) {
         return type->getTypeName();
     }
-    return typeReference ? typeReference->name : "unknown";
+    return "unknown";
 }
 
 Parameter defParameter(const NomadString& name, const Type* type, const NomadString& doc) {
@@ -29,10 +29,6 @@ Parameter defParameter(const NomadString& name, const Type* type, const NomadStr
         type,
         doc
     };
-}
-
-Parameter defParameter(const NomadString& name, TypeReference type, const NomadString& doc) {
-    return {name, nullptr, doc, std::move(type)};
 }
 
 TemplateParameter defTemplateParameter(

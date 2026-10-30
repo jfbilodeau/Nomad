@@ -2,6 +2,8 @@
 
 #include <nomad/script/NativeCallable.hpp>
 
+#include <nomad/compiler/DeferredType.hpp>
+
 #include <nomad/script/Runtime.hpp>
 
 #include <algorithm>
@@ -15,15 +17,13 @@ NativeFunction::NativeFunction(
     std::vector<Parameter> parameters,
     const Type* returnType,
     NomadString doc,
-    std::optional<TypeReference> returnTypeReference,
     const bool deferSignatureValidation
 ):
     Function(CallableSource::Native, std::move(name), std::move(parameters), returnType, std::move(doc)),
     m_fn(std::move(fn)),
-    m_returnTypeReference(std::move(returnTypeReference)),
-    m_signatureResolved(!deferSignatureValidation && !m_returnTypeReference &&
+    m_signatureResolved(!deferSignatureValidation && dynamic_cast<const DeferredType*>(returnType) == nullptr &&
         std::ranges::none_of(getParameters(), [](const auto& parameter) {
-        return parameter.typeReference.has_value();
+        return dynamic_cast<const DeferredType*>(parameter.type) != nullptr;
     }))
 {
 }
@@ -43,11 +43,7 @@ NomadString NativeFunction::getReturnTypeName() const {
     if (getReturnType() != nullptr) {
         return getReturnType()->getTypeName();
     }
-    return m_returnTypeReference ? m_returnTypeReference->name : "unknown";
-}
-
-const std::optional<TypeReference>& NativeFunction::getReturnTypeReference() const {
-    return m_returnTypeReference;
+    return "unknown";
 }
 
 bool NativeFunction::isRegisteredType(const Type* type) const {
@@ -63,8 +59,9 @@ void NativeFunction::resolveParameterType(const NomadIndex index, const Type* ty
         throw NomadException("Cannot resolve native function '" + getName() + "': invalid parameter target or state");
     }
     auto& parameter = getEditableParameters()[index];
-    if (!isRegisteredType(type) || type->isVoid() || !parameter.typeReference ||
-        parameter.typeReference->name != type->getTypeName()) {
+    const auto* placeholder = dynamic_cast<const DeferredType*>(parameter.type);
+    if (!isRegisteredType(type) || type->isVoid() || placeholder == nullptr ||
+        placeholder->getTypeName() != type->getTypeName()) {
         throw NomadException("Cannot resolve native function '" + getName() + "' parameter '" +
             parameter.name + "': invalid type or target '" + parameter.getTypeName() + "'");
     }
@@ -72,8 +69,9 @@ void NativeFunction::resolveParameterType(const NomadIndex index, const Type* ty
 }
 
 void NativeFunction::resolveReturnType(const Type* type) {
+    const auto* placeholder = dynamic_cast<const DeferredType*>(getReturnType());
     if (m_signatureResolved || !isRegisteredType(type) || (type->isInternal() && !type->isVoid()) ||
-        !m_returnTypeReference || m_returnTypeReference->name != type->getTypeName()) {
+        placeholder == nullptr || placeholder->getTypeName() != type->getTypeName()) {
         throw NomadException("Cannot resolve native function '" + getName() +
             "' return type: invalid type or target '" + getReturnTypeName() + "'");
     }
@@ -83,17 +81,11 @@ void NativeFunction::resolveReturnType(const Type* type) {
 void NativeFunction::completeSignatureResolution() {
     if (!isRegisteredType(getReturnType()) ||
         (getReturnType()->isInternal() && !getReturnType()->isVoid()) ||
-        (m_returnTypeReference && m_returnTypeReference->name != getReturnType()->getTypeName()) ||
         std::ranges::any_of(getParameters(), [this](const auto& parameter) {
-            return !isRegisteredType(parameter.type) || parameter.type->isVoid() ||
-                (parameter.typeReference && parameter.typeReference->name != parameter.type->getTypeName());
+            return !isRegisteredType(parameter.type) || parameter.type->isVoid();
         })) {
         throw NomadException("Cannot complete native function '" + getName() + "': unresolved or invalid signature");
     }
-    for (auto& parameter : getEditableParameters()) {
-        parameter.typeReference.reset();
-    }
-    m_returnTypeReference.reset();
     m_signatureResolved = true;
 }
 

@@ -1038,6 +1038,18 @@ Create a host with `ModuleHost::create(...)`, which returns a
 `std::unique_ptr<ModuleHost>`. `ModuleHost` is a pure virtual interface; callers
 do not construct or depend on its concrete implementation.
 
+`ModuleContext::compiler` is the host-owned compiler, available during native
+module registration in application and analysis sessions. `ModuleHost::getCompiler()`
+returns that same compiler. Use it for deferred types and compilation targets;
+host compilation and phase callbacks use this instance. Packaging supplies neither
+a runtime nor a compiler. Shutdown callbacks run before the compiler and runtime
+are destroyed, and both are destroyed before module libraries are unloaded.
+
+Compiler tools offer `compileSources(batch, compiler, target)`,
+`dumpInstructions(paths, functionName, compiler)`, and
+`generateDocumentationForPaths(paths, compiler)` for borrowing the session compiler.
+Use these overloads for module-aware tooling rather than creating another compiler.
+
 `ModuleContext::projectMetadata` always points to immutable, host-owned
 `ProjectMetadata` and remains valid throughout the module lifetime.
 Omitted metadata defaults to blank fields, including for standalone tooling.
@@ -1441,19 +1453,20 @@ Specializations are reused on subsequent requests through
 ## Deferred native function signatures
 
 Native functions can reference script types before those declarations have been
-compiled. Pass a generated `typeReference()` to `defParameter`, or as the return
-type of `registerNativeFunction` or `registerHubNativeFunction`. Concrete runtime
-types and references can be mixed in one signature:
+compiled. Pass a generated `typeReference()` to `Compiler::deferType`, then use
+the returned `const DeferredType*` with ordinary `defParameter` and return-type
+arguments. Concrete runtime types and placeholders can be mixed in one signature:
 
 ```cpp
 using Settings = nomad::generated::log::log_SinkConfiguration;
+const auto* settingsType = compiler.deferType(Settings::typeReference());
 const auto id = runtime.registerNativeFunction(
     "isActive",
     [&bindings](nomad::VirtualMachine* machine) {
         const auto settings = Settings(bindings, machine->getParameter(0).getObjectValue());
         machine->setBooleanResult(settings.getActive());
     },
-    {nomad::defParameter("configuration", Settings::typeReference(), "")},
+    {nomad::defParameter("configuration", settingsType, "")},
     runtime.getBooleanType(),
     ""
 );
@@ -1461,9 +1474,10 @@ const auto id = runtime.registerNativeFunction(
 
 Registration immediately returns the permanent `CallableId` and publishes the
 declaration's name and parameter names. `NativeFunction::isSignatureResolved()`
-reports readiness. Before resolution, deferred parameter `type` pointers and the
-deferred return type are null; `Parameter::getTypeName()` and
-`NativeFunction::getReturnTypeName()` expose their declared names for introspection.
+reports readiness. Before resolution, parameter and return pointers hold
+compiler-owned placeholders; `getTypeName()` exposes their declared names.
+Placeholders have invalid type IDs and are not published in the runtime's type
+catalog. They cannot initialize, copy, free, or format values or provide storage.
 Calling an unresolved native function or obtaining its callback throws.
 
 Compilation resolves native signatures after script pre-parsing and the `parse`
@@ -1497,19 +1511,21 @@ failure aborts startup.
 
 For custom native-function targets, `Runtime::getMutableNativeFunction(id)`
 returns the destination or null for a non-native/invalid ID.
-`NativeFunction::getReturnTypeReference()` exposes the pending return reference;
 `resolveParameterType(index, type)` and `resolveReturnType(type)` assign only
 matching canonical types belonging to that function's runtime. They reject
 invalid indices, non-deferred slots, and completed signatures, and leave the
 function uncallable. Use `Runtime::validateNativeFunctionSignatures()` after
 applying targets to validate all pending signatures and overload sets before
 marking them complete. `NativeFunction::completeSignatureResolution()` validates
-the individual signature and releases its reference metadata; it is the final
+the individual signature; it is the final
 step used by runtime validation, not a substitute for overload-set validation.
 
-This is the first target-based increment. `TypeReference` storage is retained
-temporarily; `DeferredType` placeholders and a compiler in `ModuleContext` are not
-implemented yet.
+`Compiler::deferType` reuses one placeholder per name in that compiler and rejects
+empty names. Resolution replaces signature pointers with canonical runtime types;
+it does not turn placeholders into forwarding types. All requested placeholder
+names must exist, even if a placeholder has no targets. The compiler must outlive
+pending declarations and custom targets; after successful resolution, native
+signatures no longer depend on its placeholders. Failed compilation aborts startup.
 
 Deferred signatures currently support free native functions, including hub
 functions, through the VM-callback API. Native properties, methods, constructors,

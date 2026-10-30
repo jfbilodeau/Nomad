@@ -4,11 +4,8 @@
 
 #include <nomad/Nomad.hpp>
 
-#include <nomad/modules/TypeReference.hpp>
-
 #include <nomad/script/Documentation.hpp>
 
-#include <optional>
 #include <variant>
 #include <vector>
 
@@ -30,13 +27,11 @@ struct Parameter {
     NomadString name;
     const Type* type;
     NomadDocField;
-    std::optional<TypeReference> typeReference = std::nullopt;
 
     [[nodiscard]] NomadString getTypeName() const;
 };
 
 Parameter defParameter(const NomadString& name, const Type* type, NomadDocArg);
-Parameter defParameter(const NomadString& name, TypeReference type, NomadDocArg);
 
 struct TypeParameterIndex {
     NomadIndex index;

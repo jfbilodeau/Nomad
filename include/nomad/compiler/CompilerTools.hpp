@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Source.hpp>
 
@@ -42,6 +43,11 @@ struct DocumentationResult {
 // are also discovered; supplied snapshots override their backing files in those roots.
 [[nodiscard]] CompilationResult checkSources(const SourceBatch& batch, Runtime* runtime = nullptr);
 [[nodiscard]] CompilationResult analyzeSources(const SourceBatch& batch, Runtime* runtime = nullptr);
+[[nodiscard]] CompilationResult compileSources(
+    const SourceBatch& batch,
+    Compiler& compiler,
+    CompilationTarget target = CompilationTarget::Executable
+);
 
 void validateEntryFunction(
     CompilationResult& result,
@@ -61,6 +67,11 @@ void validateEntryFunction(
     const std::optional<NomadString>& functionName = std::nullopt,
     Runtime* runtime = nullptr
 );
+[[nodiscard]] InstructionDumpResult dumpInstructions(
+    const std::vector<std::filesystem::path>& paths,
+    const std::optional<NomadString>& functionName,
+    Compiler& compiler
+);
 
 // Compiles without executing and generates Markdown documentation for the registered language API.
 [[nodiscard]] DocumentationResult generateDocumentationForPath(
@@ -70,6 +81,10 @@ void validateEntryFunction(
 [[nodiscard]] DocumentationResult generateDocumentationForPaths(
     const std::vector<std::filesystem::path>& paths,
     Runtime* runtime = nullptr
+);
+[[nodiscard]] DocumentationResult generateDocumentationForPaths(
+    const std::vector<std::filesystem::path>& paths,
+    Compiler& compiler
 );
 
 } // namespace nomad

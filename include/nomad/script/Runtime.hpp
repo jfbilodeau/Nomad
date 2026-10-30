@@ -198,14 +198,6 @@ public:
         const Type* returnType,
         NomadDocArg
     );
-    [[nodiscard]] CallableId registerHubNativeFunction(
-        HubId hubId,
-        const NomadString& name,
-        NativeFunctionFn function,
-        const std::vector<Parameter>& parameters,
-        TypeReference returnType,
-        NomadDocArg
-    );
     template<detail::TypedNativeFunction Function>
     [[nodiscard]] CallableId registerHubNativeFunction(
         HubId hubId,
@@ -407,13 +399,6 @@ public:
         NativeFunctionFn nativeFunction_fn, 
         const std::vector<Parameter>& parameters, 
         const Type* returnType, 
-        NomadDocArg
-    );
-    [[nodiscard]] CallableId registerNativeFunction(
-        const NomadString& name,
-        NativeFunctionFn function,
-        const std::vector<Parameter>& parameters,
-        TypeReference returnType,
         NomadDocArg
     );
     template<detail::TypedNativeFunction Function>
@@ -699,8 +684,7 @@ private:
         NativeFunctionFn fn,
         const std::vector<Parameter>& parameters,
         const Type* returnType,
-        const NomadString& doc,
-        std::optional<TypeReference> returnTypeReference = std::nullopt
+        const NomadString& doc
     );
     CallableId addCallableToTable(std::unique_ptr<Function> function);
     [[nodiscard]] bool canOverloadCallable(

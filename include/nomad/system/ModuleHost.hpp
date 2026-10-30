@@ -31,6 +31,7 @@ public:
     virtual ~ModuleHost() = default;
 
     [[nodiscard]] virtual Runtime* getRuntime() const = 0;
+    [[nodiscard]] virtual Compiler* getCompiler() const = 0;
     [[nodiscard]] virtual bool pollExit() = 0;
     virtual void requestExit(int status = 0) = 0;
     [[nodiscard]] virtual int run() = 0;

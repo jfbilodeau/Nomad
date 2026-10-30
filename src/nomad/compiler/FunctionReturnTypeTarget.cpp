@@ -28,6 +28,9 @@ void FunctionReturnTypeTarget::resolve(const Type* type) {
     if (type == nullptr || type->getTypeName() != m_type.name || function == nullptr) {
         throw NomadException("Cannot resolve " + getDescription() + ": invalid type or target '" + m_type.name + "'");
     }
+    if (!function->isSignatureResolved() && function->getReturnType() == type) {
+        return;
+    }
     function->resolveReturnType(type);
 }
 

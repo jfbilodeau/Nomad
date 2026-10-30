@@ -60,6 +60,18 @@ Runtime* Compiler::getRuntime() const {
     return m_runtime;
 }
 
+const DeferredType* Compiler::deferType(TypeReference reference) {
+    for (const auto& type : m_deferredTypes) {
+        if (type->getReference() == reference) {
+            return type.get();
+        }
+    }
+    auto type = std::make_unique<DeferredType>(m_runtime, std::move(reference));
+    const auto* result = type.get();
+    m_deferredTypes.push_back(std::move(type));
+    return result;
+}
+
 void Compiler::registerDeferredTypeTarget(std::unique_ptr<DeferredTypeTarget> target) {
     if (target == nullptr || target->getDeferredType().name.empty()) {
         throw NomadException("Cannot register a null deferred type target or an empty type name");
@@ -74,15 +86,15 @@ void Compiler::resolveDeferredTypes() {
         }
         for (auto index = NomadIndex{0}; index < function->getParameterCount(); ++index) {
             const auto& parameter = function->getParameters()[index];
-            if (parameter.typeReference) {
+            if (const auto* type = dynamic_cast<const DeferredType*>(parameter.type)) {
                 registerDeferredTypeTarget(std::make_unique<FunctionParameterTypeTarget>(
-                    *m_runtime, function->getId(), index, *parameter.typeReference
+                    *m_runtime, function->getId(), index, type->getReference()
                 ));
             }
         }
-        if (const auto& reference = function->getReturnTypeReference()) {
+        if (const auto* type = dynamic_cast<const DeferredType*>(function->getReturnType())) {
             registerDeferredTypeTarget(std::make_unique<FunctionReturnTypeTarget>(
-                *m_runtime, function->getId(), *reference
+                *m_runtime, function->getId(), type->getReference()
             ));
         }
     }
@@ -95,6 +107,11 @@ void Compiler::resolveDeferredTypes() {
                 ": unknown type '" + target->getDeferredType().name + "'");
         }
         resolvedTypes.push_back(type);
+    }
+    for (const auto& placeholder : m_deferredTypes) {
+        if (m_runtime->getTypeByName(placeholder->getTypeName()) == nullptr) {
+            throw NomadException("Cannot resolve deferred type '" + placeholder->getTypeName() + "'");
+        }
     }
     for (auto index = NomadIndex{0}; index < m_deferredTypeTargets.size(); ++index) {
         m_deferredTypeTargets[index]->resolve(resolvedTypes[index]);

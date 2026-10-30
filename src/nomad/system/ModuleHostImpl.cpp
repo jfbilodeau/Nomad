@@ -54,6 +54,7 @@ ModuleHostImpl::~ModuleHostImpl() {
             }
         }
     }
+    m_compiler.reset();
     m_runtime.reset();
     for (auto module = m_modules.rbegin(); module != m_modules.rend(); ++module) {
         (*module)->callbacks = {};
@@ -99,6 +100,7 @@ ModuleHostImpl::ModuleHostImpl(
     m_mode(mode) {
     if (mode != ModuleMode::Packaging) {
         m_runtime = std::make_unique<Runtime>();
+        m_compiler = m_runtime->createCompiler();
     }
 }
 
@@ -118,7 +120,7 @@ void ModuleHostImpl::loadModules(const std::vector<ModuleManifest>& modules) {
             throw ModuleException("Module '" + manifest.name + "' does not export registerModule");
         }
         loaded->context = {
-            m_runtime.get(), &m_configuration, &log::getLogger(), m_mode,
+            m_runtime.get(), m_compiler.get(), &m_configuration, &log::getLogger(), m_mode,
             m_projectDirectory, manifest.directory, m_arguments,
             [this](const int status) { requestExit(status); },
             [this] { return pollExit(); }, {},
@@ -146,43 +148,50 @@ void ModuleHostImpl::loadModules(const std::vector<ModuleManifest>& modules) {
         throw ModuleException("Only one configured module may provide an application run callback");
     }
     if (m_runtime != nullptr) {
-        m_runtime->registerCompilerSetup([this](Compiler* compiler) {
+        const auto configureCompiler = [this](Compiler* compiler) {
             compiler->registerSourceRoots(m_moduleScriptRoots);
             compiler->registerPhaseHook([this](CompilerContext*, const CompilationPhase phase) {
                 if (phase == CompilationPhase::Configure) {
                     m_compilationFailed = true;
                 }
             });
-            for (const auto& loaded : m_modules) {
-                auto* module = loaded.get();
-                compiler->registerPhaseHook([module](CompilerContext* context, const CompilationPhase phase) {
-                    const auto index = static_cast<NomadIndex>(phase) - 1U;
-                    if (index < PHASE_CALLBACKS.size()) {
-                        const auto& callback = module->callbacks.*PHASE_CALLBACKS[index];
-                        if (callback) {
-                            try {
-                                callback(context);
-                            } catch (const NomadBug&) {
-                                throw;
-                            } catch (const NomadException& error) {
-                                throw ModuleException("Module '" + module->name + "' compiler hook failed: " + error.what());
-                            }
+        };
+
+        configureCompiler(m_compiler.get());
+        m_runtime->registerCompilerSetup(configureCompiler);
+        for (const auto& loaded : m_modules) {
+            auto* module = loaded.get();
+            m_compiler->registerPhaseHook([module](CompilerContext* context, const CompilationPhase phase) {
+                const auto index = static_cast<NomadIndex>(phase) - 1U;
+                if (index < PHASE_CALLBACKS.size()) {
+                    const auto& callback = module->callbacks.*PHASE_CALLBACKS[index];
+                    if (callback) {
+                        try {
+                            callback(context);
+                        } catch (const NomadBug&) {
+                            throw;
+                        } catch (const NomadException& error) {
+                            throw ModuleException("Module '" + module->name + "' compiler hook failed: " + error.what());
                         }
                     }
-                });
-            }
-            compiler->registerPhaseHook([this](CompilerContext* context, const CompilationPhase phase) {
-                if (phase != CompilationPhase::Completed) {
-                    return;
                 }
-                m_compilationFailed = context->hasError();
             });
+        }
+        m_compiler->registerPhaseHook([this](CompilerContext* context, const CompilationPhase phase) {
+            if (phase != CompilationPhase::Completed) {
+                return;
+            }
+            m_compilationFailed = context->hasError();
         });
     }
 }
 
 Runtime* ModuleHostImpl::getRuntime() const {
     return m_runtime.get();
+}
+
+Compiler* ModuleHostImpl::getCompiler() const {
+    return m_compiler.get();
 }
 
 int ModuleHostImpl::run() {
@@ -249,9 +258,7 @@ CompilationResult ModuleHostImpl::compileSources(const SourceBatch& sources, con
     m_compilationFailed = true;
     CompilationResult result;
     prepareCompilation([&] {
-        result = target == CompilationTarget::Analysis
-            ? analyzeSources(sources, m_runtime.get())
-            : checkSources(sources, m_runtime.get());
+        result = nomad::compileSources(sources, *m_compiler, target);
     });
     m_compilationFailed = !result.succeeded();
     return result;

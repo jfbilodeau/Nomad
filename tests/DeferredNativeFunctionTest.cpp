@@ -67,6 +67,38 @@ private:
 
 BOOST_AUTO_TEST_SUITE(native_deferred_functions)
 
+BOOST_AUTO_TEST_CASE(placeholders_are_compiler_owned_named_types_not_runtime_types_or_usable_values) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto* type = compiler->deferType({"Settings"});
+    BOOST_TEST(type == compiler->deferType({"Settings"}));
+    BOOST_TEST(type->getRuntime() == &runtime);
+    BOOST_TEST(type->getId().isInvalid());
+    BOOST_TEST(type->getTypeName() == "Settings");
+    BOOST_TEST(runtime.getTypeByName("Settings") == nullptr);
+    RuntimeValue value;
+    NomadString text;
+    BOOST_CHECK_THROW((void)type->getStorage(), NomadException);
+    BOOST_CHECK_THROW(type->initValue(value), NomadException);
+    BOOST_CHECK_THROW(type->copyValue(value, value), NomadException);
+    BOOST_CHECK_THROW(type->freeValue(value), NomadException);
+    BOOST_CHECK_THROW(type->toString(value, text), NomadException);
+    BOOST_CHECK_THROW((void)compiler->deferType({""}), NomadException);
+}
+
+BOOST_AUTO_TEST_CASE(unused_unresolved_placeholders_fail_compilation_including_analysis) {
+    for (const auto target : {CompilationTarget::Executable, CompilationTarget::Analysis}) {
+        Runtime runtime;
+        auto compiler = runtime.createCompiler();
+        (void)compiler->deferType({"Missing"});
+        const auto result = compileSources({{{"main", {"main.nomad", "return 1"}}}, {}}, *compiler, target);
+        BOOST_TEST(!result.succeeded());
+        BOOST_TEST(std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
+            return diagnostic.message.find("Missing") != NomadString::npos;
+        }));
+    }
+}
+
 BOOST_AUTO_TEST_CASE(compiler_owns_targets_and_delivers_one_canonical_type_to_multiple_destinations) {
     Runtime runtime;
     const Type* first = nullptr;
@@ -121,10 +153,10 @@ BOOST_AUTO_TEST_CASE(missing_target_types_fail_before_any_targets_are_applied_an
 BOOST_AUTO_TEST_CASE(stable_parameter_and_return_targets_survive_callable_growth_and_check_destination_types) {
     Runtime runtime;
     Runtime foreign;
-    const auto id = runtime.registerNativeFunction("echo", [](VirtualMachine*) {},
-        {defParameter("value", TypeReference{"int"}, "")}, TypeReference{"int"}, "");
-    BOOST_REQUIRE(id.isValid());
     auto compiler = runtime.createCompiler();
+    const auto id = runtime.registerNativeFunction("echo", [](VirtualMachine*) {},
+        {defParameter("value", compiler->deferType({"int"}), "")}, compiler->deferType({"int"}), "");
+    BOOST_REQUIRE(id.isValid());
     auto parameter = std::make_unique<FunctionParameterTypeTarget>(runtime, id, 0, TypeReference{"int"});
     auto result = std::make_unique<FunctionReturnTypeTarget>(runtime, id, TypeReference{"int"});
     for (auto index = 0; index < 64; ++index) {
@@ -152,18 +184,20 @@ BOOST_AUTO_TEST_CASE(stable_parameter_and_return_targets_survive_callable_growth
 BOOST_AUTO_TEST_CASE(public_resolution_apis_validate_slots_types_and_completion_without_friend_access) {
     Runtime runtime;
     Runtime foreign;
+    auto compiler = runtime.createCompiler();
+    const auto* placeholder = compiler->deferType({"int"});
     const auto id = runtime.registerNativeFunction("echoResolved",
         [](VirtualMachine* machine) { machine->setIntegerResult(machine->getIntegerParameter(0)); },
         {
-            defParameter("value", TypeReference{"int"}, ""),
+            defParameter("value", placeholder, ""),
             defParameter("enabled", runtime.getBooleanType(), "")
         },
-        TypeReference{"int"}, "");
+        placeholder, "");
     BOOST_REQUIRE(id.isValid());
     auto* function = runtime.getMutableNativeFunction(id);
     BOOST_REQUIRE(function != nullptr);
-    BOOST_REQUIRE(function->getReturnTypeReference().has_value());
-    BOOST_TEST(function->getReturnTypeReference()->name == "int");
+    BOOST_TEST(function->getReturnType() == placeholder);
+    BOOST_TEST(function->getReturnTypeName() == "int");
     BOOST_TEST(runtime.getMutableNativeFunction(CallableId{}) == nullptr);
     const auto scriptId = runtime.registerScriptFunction("scriptOnly", "script.nomad", "");
     BOOST_REQUIRE(scriptId.isValid());
@@ -178,8 +212,8 @@ BOOST_AUTO_TEST_CASE(public_resolution_apis_validate_slots_types_and_completion_
     BOOST_CHECK_THROW(function->resolveReturnType(runtime.getFloatType()), NomadException);
     BOOST_CHECK_THROW(function->completeSignatureResolution(), NomadException);
     BOOST_CHECK_THROW(runtime.validateNativeFunctionSignatures(), NomadException);
-    BOOST_TEST(function->getParameters()[0].type == nullptr);
-    BOOST_TEST(function->getReturnType() == nullptr);
+    BOOST_TEST(function->getParameters()[0].type == placeholder);
+    BOOST_TEST(function->getReturnType() == placeholder);
     function->resolveParameterType(0, runtime.getIntegerType());
     BOOST_CHECK_THROW(function->completeSignatureResolution(), NomadException);
     function->resolveReturnType(runtime.getIntegerType());
@@ -187,8 +221,8 @@ BOOST_AUTO_TEST_CASE(public_resolution_apis_validate_slots_types_and_completion_
     BOOST_CHECK_THROW((void)function->getFn(), NomadException);
     runtime.validateNativeFunctionSignatures();
     BOOST_TEST(function->isSignatureResolved());
-    BOOST_TEST(!function->getReturnTypeReference().has_value());
-    BOOST_TEST(!function->getParameters()[0].typeReference.has_value());
+    BOOST_TEST(function->getReturnType() == runtime.getIntegerType());
+    BOOST_TEST(function->getParameters()[0].type == runtime.getIntegerType());
     BOOST_CHECK_THROW(function->resolveParameterType(0, runtime.getIntegerType()), NomadException);
     BOOST_CHECK_THROW(function->resolveReturnType(runtime.getIntegerType()), NomadException);
     VirtualMachine machine(&runtime);
@@ -198,6 +232,7 @@ BOOST_AUTO_TEST_CASE(public_resolution_apis_validate_slots_types_and_completion_
 
 BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_script_native_cycle) {
     Runtime runtime;
+    auto compiler = runtime.createCompiler();
     ScriptBindings bindings(runtime);
     auto calls = 0;
     const auto id = runtime.registerNativeFunction("updateConfiguration",
@@ -211,16 +246,17 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
             machine->getResult().setObjectValue(object);
         },
         {
-            defParameter("level", log_LevelBinding::typeReference(), "The new level."),
-            defParameter("configuration", log_SinkConfiguration::typeReference(), "The configuration."),
+            defParameter("level", compiler->deferType(log_LevelBinding::typeReference()), "The new level."),
+            defParameter("configuration", compiler->deferType(log_SinkConfiguration::typeReference()), "The configuration."),
             defParameter("active", runtime.getBooleanType(), "The active state.")
         },
-        log_SinkConfiguration::typeReference(), "Updates and returns the same script object.");
+        compiler->deferType(log_SinkConfiguration::typeReference()), "Updates and returns the same script object.");
     BOOST_REQUIRE(id.isValid());
     const auto* declaration = runtime.getNativeFunction(id);
     BOOST_REQUIRE(declaration != nullptr);
     BOOST_TEST(!declaration->isSignatureResolved());
-    BOOST_TEST(declaration->getParameters()[1].type == nullptr);
+    BOOST_TEST(declaration->getParameters()[1].type ==
+        compiler->deferType(log_SinkConfiguration::typeReference()));
     BOOST_TEST(declaration->getParameters()[1].getTypeName() == "log.SinkConfiguration");
     BOOST_TEST(declaration->getReturnTypeName() == "log.SinkConfiguration");
     BOOST_CHECK_THROW((void)declaration->getFn(), NomadException);
@@ -238,7 +274,7 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
     runtime.dumpDocumentation(documentation);
     BOOST_TEST(documentation.str().find("configuration:log.SinkConfiguration") != NomadString::npos);
 
-    compileLogBindingSource(runtime, getLogBindingSource() +
+    const auto compilation = compileSources({{{"log.configuration", {"configuration.nomad", getLogBindingSource() +
         "\nfun exerciseDeferred\n"
         "original = new log.SinkConfiguration\n"
         "updated = updateConfiguration log.Level.Warning original false\n"
@@ -247,11 +283,11 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
         "updated.active = true\n"
         "assert original.active\n"
         "return 42\n"
-        "end\n");
+        "end\n"}}}, {}}, *compiler);
+    BOOST_REQUIRE(compilation.succeeded());
     BOOST_TEST(runtime.getNativeFunctionId("updateConfiguration") == id);
     BOOST_TEST(runtime.getNativeFunction(id) == declaration);
     BOOST_TEST(declaration->isSignatureResolved());
-    BOOST_TEST(!declaration->getParameters()[1].typeReference.has_value());
     BOOST_TEST(declaration->getParameters()[1].type == runtime.getTypeByName("log.SinkConfiguration"));
     BOOST_TEST(declaration->getReturnType() == runtime.getTypeByName("log.SinkConfiguration"));
     const auto objectsBefore = NomadObject::getLiveObjectCount();
@@ -280,6 +316,7 @@ BOOST_AUTO_TEST_CASE(hub_enum_signatures_resolve_in_analysis_without_running_cal
     Runtime second;
     BOOST_REQUIRE(second.createEnum("Padding", {{"Value", 1}}).isValid());
     const auto resolve = [](Runtime& runtime, int& calls) {
+        auto compiler = runtime.createCompiler();
         const auto hubId = runtime.registerHub("native", HubMode::Opened);
         BOOST_REQUIRE(hubId.isValid());
         const auto id = runtime.registerHubNativeFunction(hubId, "echoLevel",
@@ -287,10 +324,9 @@ BOOST_AUTO_TEST_CASE(hub_enum_signatures_resolve_in_analysis_without_running_cal
                 ++calls;
                 machine->setIntegerResult(machine->getIntegerParameter(0));
             },
-            {defParameter("level", log_LevelBinding::typeReference(), "")},
-            log_LevelBinding::typeReference(), "");
+            {defParameter("level", compiler->deferType(log_LevelBinding::typeReference()), "")},
+            compiler->deferType(log_LevelBinding::typeReference()), "");
         BOOST_REQUIRE(id.isValid());
-        auto compiler = runtime.createCompiler();
         CompilerContext context(compiler.get());
         compiler->registerSources(&context, {{{"contract", {"contract.nomad", getLogBindingSource() +
             "\nfun useNativeLevel\nreturn native.echoLevel log.Level.Info\nend\n"}}}, {}});
@@ -317,7 +353,7 @@ BOOST_AUTO_TEST_CASE(script_field_initializers_can_call_deferred_natives_registe
     auto calls = 0;
     CallableId id;
     runtime.registerCompilerSetup([&](Compiler* compiler) {
-        compiler->registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
+        compiler->registerPhaseHook([&, compiler](CompilerContext*, const CompilationPhase phase) {
             if (phase != CompilationPhase::Parse || id.isValid()) {
                 return;
             }
@@ -328,7 +364,8 @@ BOOST_AUTO_TEST_CASE(script_field_initializers_can_call_deferred_natives_registe
                         machine->getIntegerParameter(0) == static_cast<NomadInteger>(log_Level::Info)
                     );
                 },
-                {defParameter("level", log_LevelBinding::typeReference(), "")}, runtime.getBooleanType(), "");
+                {defParameter("level", compiler->deferType(log_LevelBinding::typeReference()), "")},
+                runtime.getBooleanType(), "");
             BOOST_REQUIRE(id.isValid());
             BOOST_TEST(!runtime.getNativeFunction(id)->isSignatureResolved());
         });
@@ -349,10 +386,11 @@ BOOST_AUTO_TEST_CASE(script_field_initializers_can_call_deferred_natives_registe
 BOOST_AUTO_TEST_CASE(missing_or_void_parameter_types_and_missing_return_types_are_diagnostics) {
     for (const auto* name : {"Missing", "void"}) {
         Runtime runtime;
+        auto compiler = runtime.createCompiler();
         const auto id = runtime.registerNativeFunction("unresolved",
-            [](VirtualMachine*) {}, {defParameter("value", TypeReference{name}, "")}, runtime.getVoidType(), "");
+            [](VirtualMachine*) {}, {defParameter("value", compiler->deferType({name}), "")}, runtime.getVoidType(), "");
         BOOST_REQUIRE(id.isValid());
-        const auto result = checkSources({{{"main", {"main.nomad", "return 1"}}}, {}}, &runtime);
+        const auto result = compileSources({{{"main", {"main.nomad", "return 1"}}}, {}}, *compiler);
         BOOST_TEST(!result.succeeded());
         BOOST_TEST(std::ranges::any_of(result.diagnostics, [name](const auto& diagnostic) {
             return diagnostic.message.find("parameter 'value'") != NomadString::npos &&
@@ -362,10 +400,11 @@ BOOST_AUTO_TEST_CASE(missing_or_void_parameter_types_and_missing_return_types_ar
         BOOST_CHECK_THROW((void)runtime.getNativeFunctionFn(id), NomadException);
     }
     Runtime runtime;
+    auto compiler = runtime.createCompiler();
     const auto id = runtime.registerNativeFunction("missingReturn", [](VirtualMachine*) {}, {},
-        TypeReference{"Missing"}, "");
+        compiler->deferType({"Missing"}), "");
     BOOST_REQUIRE(id.isValid());
-    const auto failed = checkSources({{{"failed", {"failed.nomad", "return 1"}}}, {}}, &runtime);
+    const auto failed = compileSources({{{"failed", {"failed.nomad", "return 1"}}}, {}}, *compiler);
     BOOST_TEST(!failed.succeeded());
     BOOST_TEST(std::ranges::any_of(failed.diagnostics, [](const auto& diagnostic) {
         return diagnostic.message.find("return type") != NomadString::npos &&
@@ -381,16 +420,17 @@ BOOST_AUTO_TEST_CASE(missing_or_void_parameter_types_and_missing_return_types_ar
 
 BOOST_AUTO_TEST_CASE(concrete_and_deferred_overloads_share_ordinary_resolution) {
     Runtime runtime;
+    auto compiler = runtime.createCompiler();
     const auto objectId = runtime.registerNativeFunction("choose",
         [](VirtualMachine* machine) { machine->setIntegerResult(20); },
-        {defParameter("value", TypeReference{"Number"}, "")}, runtime.getIntegerType(), "");
+        {defParameter("value", compiler->deferType({"Number"}), "")}, runtime.getIntegerType(), "");
     const auto integerId = runtime.registerNativeFunction("choose",
         [](VirtualMachine* machine) { machine->setIntegerResult(machine->getIntegerParameter(0) + 1); },
         {defParameter("value", runtime.getIntegerType(), "")}, runtime.getIntegerType(), "");
     BOOST_REQUIRE(objectId.isValid());
     BOOST_REQUIRE(integerId.isValid());
-    const auto result = checkSources({{{"main", {"main.nomad",
-        "class Number\nend\nleft = choose 21\nright = choose new Number\nreturn left + right"}}}, {}}, &runtime);
+    const auto result = compileSources({{{"main", {"main.nomad",
+        "class Number\nend\nleft = choose 21\nright = choose new Number\nreturn left + right"}}}, {}}, *compiler);
     BOOST_REQUIRE(result.succeeded());
     BOOST_TEST(runtime.resolveFunction("choose", {runtime.getTypeByName("Number")}).id == objectId);
     BOOST_TEST(runtime.resolveFunction("choose", {runtime.getIntegerType()}).id == integerId);
@@ -402,15 +442,16 @@ BOOST_AUTO_TEST_CASE(concrete_and_deferred_overloads_share_ordinary_resolution) 
 BOOST_AUTO_TEST_CASE(overload_conflicts_are_reported_after_type_resolution) {
     for (const auto conflictingReturn : {false, true}) {
         Runtime runtime;
+        auto compiler = runtime.createCompiler();
         const auto firstId = runtime.registerNativeFunction("conflict", [](VirtualMachine*) {},
-            {defParameter("value", TypeReference{conflictingReturn ? "Number" : "int"}, "")},
+            {defParameter("value", compiler->deferType({conflictingReturn ? "Number" : "int"}), "")},
             runtime.getVoidType(), "");
         const auto secondId = runtime.registerNativeFunction("conflict", [](VirtualMachine*) {},
             {defParameter("value", runtime.getIntegerType(), "")},
             conflictingReturn ? runtime.getIntegerType() : runtime.getVoidType(), "");
         BOOST_REQUIRE(firstId.isValid());
         BOOST_REQUIRE(secondId.isValid());
-        const auto result = checkSources({{{"main", {"main.nomad", "class Number\nend\nreturn 1"}}}, {}}, &runtime);
+        const auto result = compileSources({{{"main", {"main.nomad", "class Number\nend\nreturn 1"}}}, {}}, *compiler);
         BOOST_TEST(!result.succeeded());
         const auto expected = conflictingReturn ? "all return" : "same parameter types";
         BOOST_TEST(std::ranges::any_of(result.diagnostics, [expected](const auto& diagnostic) {
@@ -425,14 +466,20 @@ BOOST_AUTO_TEST_CASE(overload_conflicts_are_reported_after_type_resolution) {
 BOOST_AUTO_TEST_CASE(invalid_declarations_are_rejected_without_publishing_a_callable) {
     Runtime runtime;
     Runtime foreign;
+    auto compiler = runtime.createCompiler();
+    auto foreignCompiler = foreign.createCompiler();
     const NativeFunctionFn callback = [](VirtualMachine*) {};
-    BOOST_TEST(runtime.registerNativeFunction("emptyParameter", callback,
-        {defParameter("value", TypeReference{""}, "")}, runtime.getVoidType(), "").isInvalid());
-    BOOST_TEST(runtime.registerNativeFunction("emptyReturn", callback, {}, TypeReference{""}, "").isInvalid());
-    BOOST_TEST(runtime.registerNativeFunction("missingCallback", {}, {}, TypeReference{"Number"}, "").isInvalid());
+    BOOST_CHECK_THROW((void)compiler->deferType({""}), NomadException);
+    BOOST_TEST(runtime.registerNativeFunction("nullParameter", callback,
+        {defParameter("value", nullptr, "")}, runtime.getVoidType(), "").isInvalid());
+    BOOST_TEST(runtime.registerNativeFunction("nullReturn", callback, {}, nullptr, "").isInvalid());
+    BOOST_TEST(runtime.registerNativeFunction("missingCallback", {}, {},
+        compiler->deferType({"Number"}), "").isInvalid());
     BOOST_TEST(runtime.registerNativeFunction("foreignParameter", callback,
-        {defParameter("value", foreign.getIntegerType(), "")}, TypeReference{"Number"}, "").isInvalid());
-    for (const auto* name : {"emptyParameter", "emptyReturn", "missingCallback", "foreignParameter"}) {
+        {defParameter("value", foreignCompiler->deferType({"Number"}), "")}, runtime.getVoidType(), "").isInvalid());
+    BOOST_TEST(runtime.registerNativeFunction("foreignReturn", callback, {},
+        foreignCompiler->deferType({"Number"}), "").isInvalid());
+    for (const auto* name : {"nullParameter", "nullReturn", "missingCallback", "foreignParameter", "foreignReturn"}) {
         BOOST_TEST(runtime.getNativeFunctionId(name).isInvalid());
     }
 }

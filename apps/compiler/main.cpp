@@ -198,7 +198,7 @@ int checkCommand(CheckParameters& parameters, const std::vector<NomadString>& ar
 int dumpCommand(DumpParameters& parameters, const std::vector<NomadString>& arguments) {
     const auto paths = resolveRequestedPaths(parameters.path);
     const auto session = createCompilerSession(paths, arguments);
-    const auto result = dumpInstructions(paths.sources, parameters.function, session->getRuntime());
+    const auto result = dumpInstructions(paths.sources, parameters.function, *session->getCompiler());
     printDiagnostics(result.compilation);
 
     if (!result.compilation.succeeded()) {
@@ -230,7 +230,7 @@ int documentationCommand(DocumentationParameters& parameters, const std::vector<
 
     const auto paths = resolveRequestedPaths(parameters.path);
     const auto session = createCompilerSession(paths, arguments);
-    const auto result = generateDocumentationForPaths(paths.sources, session->getRuntime());
+    const auto result = generateDocumentationForPaths(paths.sources, *session->getCompiler());
     printDiagnostics(result.compilation);
 
     if (!result.compilation.succeeded()) {

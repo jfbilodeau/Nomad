@@ -127,8 +127,8 @@ BOOST_AUTO_TEST_CASE(module_sources_join_explicit_snapshots_and_preserve_compile
     BOOST_REQUIRE(batch.diagnostics.empty());
     BOOST_REQUIRE(batch.sources.size() == 1U);
     BOOST_TEST(batch.sources[0].scriptName == "$fixture.nested.main");
-    auto compiler = host->getRuntime()->createCompiler();
-    CompilerContext context(compiler.get());
+    auto* compiler = host->getCompiler();
+    CompilerContext context(compiler);
     compiler->registerSources(&context, batch);
     const auto id = host->getRuntime()->getFunctionId("$fixture.nested.main");
     BOOST_REQUIRE(id.isValid());
@@ -155,13 +155,13 @@ BOOST_AUTO_TEST_CASE(module_discovery_is_shared_by_explicit_compilation_instruct
     }
     {
         auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
-        const auto dump = dumpInstructions(application, std::nullopt, host->getRuntime());
+        const auto dump = dumpInstructions(std::vector{application}, std::nullopt, *host->getCompiler());
         BOOST_TEST(dump.compilation.succeeded());
         BOOST_TEST(dump.instructions.find("moduleAnswer") != NomadString::npos);
     }
     {
         auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
-        const auto documentation = generateDocumentationForPath(application, host->getRuntime());
+        const auto documentation = generateDocumentationForPaths(std::vector{application}, *host->getCompiler());
         BOOST_TEST(documentation.compilation.succeeded());
         BOOST_TEST(documentation.documentation.find("moduleAnswer") != NomadString::npos);
         BOOST_TEST(documentation.documentation.find("$fixture.declarations") == NomadString::npos);
@@ -3098,6 +3098,7 @@ BOOST_AUTO_TEST_CASE(collections_module_loads_in_all_modes) {
     for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis, ModuleMode::Packaging}) {
         auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
         BOOST_TEST((host->getRuntime() != nullptr) == (mode != ModuleMode::Packaging));
+        BOOST_TEST((host->getCompiler() != nullptr) == (mode != ModuleMode::Packaging));
     }
 }
 
@@ -3120,6 +3121,61 @@ BOOST_AUTO_TEST_CASE(analysis_skips_emission_and_execution) {
         BOOST_REQUIRE(compileFixture(*host, CompilationTarget::Analysis));
     }
     BOOST_TEST(events(directory) == "register\npreParse\ncompleted\nshutdown\ndestroy\n");
+}
+
+BOOST_AUTO_TEST_CASE(module_registration_and_compilation_share_the_compiler_and_resolve_script_types) {
+    for (const auto mode : {ModuleMode::Application, ModuleMode::Analysis}) {
+        TestDirectory directory("nomad_host_deferred_types");
+        auto configuration = NomadConfiguration::parse("[fixture]\ndeferred = true\n");
+        {
+            auto host = ModuleHost::create(configuration, directory.getPath(), fixtureModules(), {}, mode);
+            const auto* function = host->getRuntime()->getNativeFunction("fixture.echo");
+            BOOST_REQUIRE(function != nullptr);
+            const auto id = function->getId();
+            BOOST_TEST(!function->isSignatureResolved());
+            BOOST_REQUIRE(compileFixture(*host,
+                mode == ModuleMode::Application ? CompilationTarget::Executable : CompilationTarget::Analysis,
+                "open hub fixture\nclass Settings\nanswer = 42\nend\nend\n"
+                "original = new fixture.Settings\nupdated = fixture.echo original\n"
+                "assert updated.answer == 42\nfixture.exit\n"));
+            BOOST_TEST(function->isSignatureResolved());
+            BOOST_TEST(function->getId() == id);
+            BOOST_TEST(function->getReturnType() == host->getRuntime()->getTypeByName("fixture.Settings"));
+            BOOST_TEST(function->getParameters()[0].type == function->getReturnType());
+            if (mode == ModuleMode::Application) {
+                BOOST_TEST(host->run() == 7);
+            }
+        }
+        const auto recorded = events(directory);
+        BOOST_TEST(recorded.find("deferred-resolve\ndeferred-destroy\n") != NomadString::npos);
+        BOOST_TEST(recorded.ends_with("shutdown\ndestroy\n"));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(unresolved_module_targets_are_destroyed_before_runtime_callbacks_and_library_unload) {
+    TestDirectory directory("nomad_host_failed_deferred_types");
+    auto configuration = NomadConfiguration::parse("[fixture]\ndeferred = true\n");
+    {
+        auto host = ModuleHost::create(configuration, directory.getPath(), fixtureModules(), {}, ModuleMode::Application);
+        BOOST_TEST(!compileFixture(*host, CompilationTarget::Executable));
+        BOOST_CHECK_THROW((void)host->run(), ModuleException);
+    }
+    BOOST_TEST(events(directory) ==
+        "register\npreParse\nexit\nshutdown\ndeferred-destroy\ndestroy\n");
+}
+
+BOOST_AUTO_TEST_CASE(compiler_tooling_uses_module_registration_compiler_for_deferred_targets) {
+    for (const auto documentation : {false, true}) {
+        TestDirectory directory("nomad_host_deferred_tooling");
+        auto configuration = NomadConfiguration::parse("[fixture]\ndeferred = true\n");
+        const auto path = directory.write("main.nomad", "open hub fixture\nclass Settings\nend\nend\nreturn 1\n");
+        auto host = ModuleHost::create(configuration, directory.getPath(), fixtureModules(), {}, ModuleMode::Analysis);
+        const auto result = documentation
+            ? generateDocumentationForPaths(std::vector{path}, *host->getCompiler()).compilation
+            : dumpInstructions(std::vector{path}, std::nullopt, *host->getCompiler()).compilation;
+        BOOST_TEST(result.succeeded());
+        BOOST_TEST(events(directory).find("deferred-resolve\ndeferred-destroy\n") != NomadString::npos);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(hook_failure_prevents_later_hooks) {

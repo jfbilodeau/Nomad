@@ -24,6 +24,7 @@ public:
 
     void loadModules(const std::vector<ModuleManifest>& modules);
     [[nodiscard]] Runtime* getRuntime() const override;
+    [[nodiscard]] Compiler* getCompiler() const override;
     [[nodiscard]] bool pollExit() override;
     void requestExit(int status = 0) override;
     [[nodiscard]] int run() override;
@@ -56,6 +57,7 @@ private:
     std::vector<std::unique_ptr<LoadedModule>> m_modules;
     std::vector<SourceRoot> m_moduleScriptRoots;
     std::unique_ptr<Runtime> m_runtime;
+    std::unique_ptr<Compiler> m_compiler;
     std::atomic<bool> m_exitRequested = false;
     std::atomic<int> m_exitStatus = 0;
     std::mutex m_exitMutex;

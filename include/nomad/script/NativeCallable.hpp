@@ -22,7 +22,6 @@ public:
         std::vector<Parameter> parameters,
         const Type* returnType,
         NomadString doc,
-        std::optional<TypeReference> returnTypeReference = std::nullopt,
         bool deferSignatureValidation = false
     );
 
@@ -30,7 +29,6 @@ public:
     [[nodiscard]] const NativeFunctionFn& getFn() const;
     [[nodiscard]] bool isSignatureResolved() const;
     [[nodiscard]] NomadString getReturnTypeName() const;
-    [[nodiscard]] const std::optional<TypeReference>& getReturnTypeReference() const;
     void resolveParameterType(NomadIndex index, const Type* type);
     void resolveReturnType(const Type* type);
     void completeSignatureResolution();
@@ -39,7 +37,6 @@ private:
     [[nodiscard]] bool isRegisteredType(const Type* type) const;
 
     NativeFunctionFn m_fn;
-    std::optional<TypeReference> m_returnTypeReference;
     bool m_signatureResolved;
 };
 
