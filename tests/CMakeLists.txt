@@ -50,6 +50,7 @@ add_executable(
     ./LogModuleTest.cpp
     ./LogSinkObjectTest.cpp
     ./LogTest.cpp
+    ./LogTomlConfigurationTest.cpp
     ./ModuleGameTest.cpp
     ./ModuleHostTest.cpp
     ./ModuleManifestTest.cpp
@@ -125,6 +126,7 @@ target_link_libraries(
     nomad
     nomad-collections
     nomad-game
+    nomad-log
     nomad-system
     Nomad::CliOptions
     archive

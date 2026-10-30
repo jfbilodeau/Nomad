@@ -176,9 +176,58 @@ The configurable base name defaults to `application`, producing
 unlimited append across runs. See
 [File sinks](embedding.md#file-sinks) for configuration and failure behavior.
 
-Project logging settings in `nomad.toml` are not yet supported. Loading
-`log` currently preserves the host's existing sinks and settings until
-explicitly changed programmatically.
+## Project logging schema
+
+The selected `log` module parses and validates these settings in `nomad.toml`
+in application, analysis, and packaging modes. Activation is not implemented yet:
+loading the module still preserves the host's existing sinks, level, and delivery
+mode. Validation does not create log files or directories.
+
+```toml
+[log]
+level = "debug"
+delivery-mode = "synchronous"
+
+[[log.sinks]]
+type = "console"
+level = "info"
+
+[[log.sinks]]
+type = "file"
+level = "debug"
+directory = "logs"
+name = "application"
+rotation-mode = "size"
+rotate-at-startup = true
+max-size-bytes = 10485760
+max-files = 10
+```
+
+| Field | Default / accepted values |
+| --- | --- |
+| `log.level` | `"info"`; `debug`, `info`, `warning`, `error`, `critical` |
+| `log.delivery-mode` | `"synchronous"`; `synchronous`, `buffered` |
+| Sink `type` | Required; `"console"` or `"file"` |
+| Sink `active` | `true` |
+| Sink `level` | `"info"` independently of the global level |
+| File `directory` | `"logs"`; relative paths resolve beside `nomad.toml` |
+| File `name` | `"application"`; a non-empty base name without path separators |
+| File `rotation-mode` | `"size"` or `"none"` |
+| File `rotate-at-startup` | `true`, independent of the rotation mode |
+| File `max-size-bytes` | `10485760`; positive integer |
+| File `max-files` | `10`; nonnegative integer, excluding the active file |
+
+Omitting `log.sinks` produces one console sink in the parsed settings. An explicit
+list supplies exactly those sinks without adding a console. An explicit empty
+list, `[log]` followed by `sinks = []`, produces no sinks.
+Both logger and sink level thresholds apply when logging is configured.
+Unknown keys, incorrect types, unsupported values, and file-only options on
+console sinks are rejected. Values are case-sensitive.
+Projects without the `log` module retain these settings without interpreting them.
+
+C++ hosts can call `readLogConfiguration(configuration, projectDirectory)` from
+`<nomad/log/LogConfiguration.hpp>` to obtain the validated settings without
+applying them. File constraints use the same validation as native file sinks.
 
 ## Extending the hub
 

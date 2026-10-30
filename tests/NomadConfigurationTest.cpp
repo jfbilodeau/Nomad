@@ -151,6 +151,40 @@ BOOST_AUTO_TEST_CASE(owns_deep_copies_and_mutable_nested_values)
     BOOST_CHECK_THROW((void)assigned.contains(""), NomadConfigurationException);
 }
 
+BOOST_AUTO_TEST_CASE(reads_section_keys_and_owned_arrays_of_sections) {
+    const auto configuration = NomadConfiguration::parse(
+        "scalar = 3\nempty = []\n"
+        "[module]\nenabled = true\n"
+        "[[module.entries]]\nname = 'first'\n[nested]\nvalue = 4\n"
+        "[[module.entries]]\nname = 'second'\nsettings = { count = 7 }\n"
+    );
+    BOOST_TEST(configuration.getKeys().size() == 4U);
+    BOOST_TEST(configuration.getKeys("module").size() == 2U);
+    BOOST_TEST(configuration.getKeys("missing").empty());
+    BOOST_CHECK_THROW((void)configuration.getKeys("scalar"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)configuration.getKeys("empty"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)configuration.getKeys("scalar.child"), NomadConfigurationException);
+    BOOST_TEST(!configuration.getSectionArray("missing").has_value());
+    const auto empty = configuration.getSectionArray("empty");
+    BOOST_REQUIRE(empty.has_value());
+    BOOST_TEST(empty->empty());
+    auto sections = configuration.getSectionArray("module.entries");
+    BOOST_REQUIRE(sections.has_value());
+    BOOST_REQUIRE(sections->size() == 2U);
+    BOOST_TEST((*sections)[0].requireString("name") == "first");
+    BOOST_TEST((*sections)[1].requireString("name") == "second");
+    BOOST_TEST((*sections)[1].requireInteger("settings.count") == 7);
+    (*sections)[1].setInteger("settings.count", 8);
+    BOOST_TEST(configuration.getSectionArray("module.entries")->at(1).requireInteger("settings.count") == 7);
+    BOOST_CHECK_THROW((void)configuration.getSectionArray("scalar"), NomadConfigurationException);
+    BOOST_CHECK_THROW((void)configuration.getSectionArray("module"), NomadConfigurationException);
+    const auto malformed = NomadConfiguration::parse("entries = [{name = 'valid'}, false]");
+    BOOST_CHECK_EXCEPTION((void)malformed.getSectionArray("entries"), NomadConfigurationException,
+        [](const auto& error) {
+            return NomadStringView(error.what()).find("entries[1]") != NomadStringView::npos;
+        });
+}
+
 BOOST_AUTO_TEST_CASE(preserves_unknown_tables_and_native_toml_values)
 {
     auto configuration = NomadConfiguration::parse(R"(

@@ -4,6 +4,7 @@
 
 #include <nomad/generated/log/Bindings.hpp>
 
+#include <nomad/log/LogConfiguration.hpp>
 #include <nomad/log/Logger.hpp>
 #include <nomad/log/LoggerObject.hpp>
 #include <nomad/log/LogSinkObject.hpp>
@@ -550,6 +551,9 @@ void registerLogFunctions(
 }
 
 void registerLogModule(ModuleContext* context, ModuleCallbacks* callbacks) {
+    if (context->configuration != nullptr) {
+        (void)readLogConfiguration(*context->configuration, context->projectDirectory);
+    }
     if (context->mode == ModuleMode::Packaging) {
         return;
     }

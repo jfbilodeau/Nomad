@@ -948,14 +948,19 @@ throw `NomadConfigurationException` for incorrect types. Required getters also
 reject missing fields. Integer and string arrays are checked element by element.
 `validateSection(path)` permits an absent section but rejects an existing scalar
 or array at that path.
+`getKeys(path)` lists a section's immediate keys; an omitted path lists root keys,
+and a missing section returns an empty list. `getSectionArray(path)` returns
+independently owned configuration documents for table-array entries, distinguishes
+missing arrays from empty ones, and rejects non-table elements.
 
 Modules supply their own defaults and validate constraints such as positive
 dimensions and valid resource paths. The configuration API keeps the storage
 format out of module code.
 
-Project loading, discovery, compatibility checks, and module configuration
-validation report configuration failures through `NomadConfigurationException`.
-Hosts can handle these failures with a single exception type.
+Project loading, discovery, compatibility checks, and module configuration type
+validation report failures through `NomadConfigurationException`. Native sink
+constraints checked by logging configuration propagate their original
+`NomadException` errors.
 
 The compiler source loader reads `scripts.directories` independently of game
 settings. `readScriptDirectories(configuration)` returns normalized project-relative

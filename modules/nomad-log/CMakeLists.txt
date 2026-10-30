@@ -3,6 +3,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/generated/nomad-module.cmake")
 add_library(nomad-log SHARED
     ${NOMAD_BINDING_HEADERS}
     ${NOMAD_BINDING_SOURCES}
+    ${NOMAD_SOURCE_DIR}/nomad/log/LogConfiguration.cpp
     ${NOMAD_SOURCE_DIR}/nomad/log/LogModule.cpp
 )
 
