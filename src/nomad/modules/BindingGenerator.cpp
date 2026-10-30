@@ -144,6 +144,7 @@ void validateModel(const BindingModel& model) {
     std::set<NomadString> typeNames;
     for (const auto& enumeration : model.enums) {
         typeNames.insert(typeIdentifier(enumeration.name));
+        typeNames.insert(typeIdentifier(enumeration.name) + "Binding");
     }
     for (const auto& classType : model.classes) {
         typeNames.insert(typeIdentifier(classType.name));
@@ -152,6 +153,10 @@ void validateModel(const BindingModel& model) {
         const auto name = typeIdentifier(enumeration.name);
         if (!names.insert(name).second) {
             generatorError("C++ type name collision: '" + name + "'");
+        }
+        const auto bindingName = name + "Binding";
+        if (!names.insert(bindingName).second) {
+            generatorError("C++ type name collision: '" + bindingName + "'");
         }
         std::set<NomadString> values{name};
         for (const auto& value : enumeration.values) {
@@ -165,11 +170,13 @@ void validateModel(const BindingModel& model) {
         if (!names.insert(name).second) {
             generatorError("C++ type name collision: '" + name + "'");
         }
-        if (name == "create" || name == "bind" || name == "getObject" || name == "getRuntime" ||
+        if (name == "create" || name == "bind" || name == "typeReference" || name == "getObject" || name == "getRuntime" ||
             name == "getBinding" || name == "m_binding") {
             generatorError("C++ binding member name collision: '" + name + "'");
         }
-        std::set<NomadString> members{name, "create", "bind", "getObject", "getRuntime", "getBinding", "m_binding"};
+        std::set<NomadString> members{
+            name, "create", "bind", "typeReference", "getObject", "getRuntime", "getBinding", "m_binding"
+        };
         for (const auto& field : classType.fields) {
             const auto suffix = accessorSuffix(field.name);
             if (typeNames.contains("get" + suffix) || typeNames.contains("set" + suffix) ||
@@ -315,22 +322,28 @@ std::vector<BindingOutput> renderModuleBindings(const BindingModel& model) {
     std::ostringstream header;
     std::ostringstream source;
     header << "// " << generatedMarker << "\n\n#pragma once\n\n"
-        "#include <nomad/modules/ScriptBindingObject.hpp>\n\nnamespace " << scope << " {\n\n";
+        "#include <nomad/modules/ScriptBindingObject.hpp>\n"
+        "#include <nomad/modules/TypeReference.hpp>\n\nnamespace " << scope << " {\n\n";
     source << "// " << generatedMarker << "\n\n#include <" << includePath << ">\n\n"
         "#include <utility>\n\nnamespace " << scope << " {\n\n";
     for (const auto& enumeration : model.enums) {
-        header << "enum class " << typeIdentifier(enumeration.name) << " : nomad::NomadInteger {\n";
+        const auto name = typeIdentifier(enumeration.name);
+        const auto bindingName = name + "Binding";
+        header << "enum class " << name << " : nomad::NomadInteger {\n";
         for (const auto& value : enumeration.values) {
             header << "    " << value.name << " = " << integerLiteral(value.value) << ",\n";
         }
-        header << "};\n\n";
+        header << "};\n\nclass " << bindingName << " final {\npublic:\n"
+            "    [[nodiscard]] static nomad::TypeReference typeReference();\n};\n\n";
+        source << "nomad::TypeReference " << bindingName << "::typeReference() {\n"
+            "    return {\"" << enumeration.name << "\"};\n}\n\n";
     }
     for (auto index = NomadIndex{0}; index < model.classes.size(); ++index) {
         const auto& classType = model.classes[index];
         const auto name = typeIdentifier(classType.name);
         const auto contractName = "contract" + std::to_string(index);
         source << "namespace {\n\nconst nomad::BindingClass& " << contractName << "() {\n"
-            "    static const nomad::BindingClass contract{\n        \"" << classType.name << "\",\n        {\n";
+            "    static const nomad::BindingClass contract{\n        " << name << "::typeReference().name,\n        {\n";
         for (const auto& field : classType.fields) {
             source << "            {\"" << field.name << "\", \"" << field.type << "\"},\n";
         }
@@ -341,12 +354,15 @@ std::vector<BindingOutput> renderModuleBindings(const BindingModel& model) {
         source << "        }\n    };\n    return contract;\n}\n\n} // namespace\n\n";
         header << "class " << name << " final : public nomad::ScriptBindingObject {\npublic:\n"
             "    " << name << "(nomad::ScriptBindings& bindings, nomad::NomadObject* object);\n"
+            "    [[nodiscard]] static nomad::TypeReference typeReference();\n"
             "    [[nodiscard]] static const nomad::ScriptClassBinding& bind(nomad::ScriptBindings& bindings);\n"
             "    [[nodiscard]] static " << name << " create(nomad::ScriptBindings& bindings, nomad::VirtualMachine& machine);\n";
         source << name << "::" << name << "(nomad::ScriptBindings& bindings, nomad::NomadObject* object) :\n"
             "    nomad::ScriptBindingObject(bind(bindings), object) {\n}\n\n"
             << name << "::" << name << "(nomad::ScriptBindingObject binding) :\n"
             "    nomad::ScriptBindingObject(std::move(binding)) {\n}\n\n"
+            "nomad::TypeReference " << name << "::typeReference() {\n"
+            "    return {\"" << classType.name << "\"};\n}\n\n"
             "const nomad::ScriptClassBinding& " << name << "::bind(nomad::ScriptBindings& bindings) {\n"
             "    return bindings.getClassBinding(" << contractName << "());\n}\n\n"
             << name << " " << name << "::create(nomad::ScriptBindings& bindings, nomad::VirtualMachine& machine) {\n"

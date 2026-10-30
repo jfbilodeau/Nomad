@@ -3,6 +3,7 @@
 #pragma once
 
 #include <nomad/modules/ScriptBindingObject.hpp>
+#include <nomad/modules/TypeReference.hpp>
 
 namespace nomad::generated::log {
 
@@ -11,9 +12,19 @@ enum class log_DeliveryMode : nomad::NomadInteger {
     Synchronous = 2LL,
 };
 
+class log_DeliveryModeBinding final {
+public:
+    [[nodiscard]] static nomad::TypeReference typeReference();
+};
+
 enum class log_FileRotationMode : nomad::NomadInteger {
     None = 1LL,
     Size = 2LL,
+};
+
+class log_FileRotationModeBinding final {
+public:
+    [[nodiscard]] static nomad::TypeReference typeReference();
 };
 
 enum class log_Level : nomad::NomadInteger {
@@ -24,9 +35,15 @@ enum class log_Level : nomad::NomadInteger {
     Critical = 5LL,
 };
 
+class log_LevelBinding final {
+public:
+    [[nodiscard]] static nomad::TypeReference typeReference();
+};
+
 class log_FileSinkConfiguration final : public nomad::ScriptBindingObject {
 public:
     log_FileSinkConfiguration(nomad::ScriptBindings& bindings, nomad::NomadObject* object);
+    [[nodiscard]] static nomad::TypeReference typeReference();
     [[nodiscard]] static const nomad::ScriptClassBinding& bind(nomad::ScriptBindings& bindings);
     [[nodiscard]] static log_FileSinkConfiguration create(nomad::ScriptBindings& bindings, nomad::VirtualMachine& machine);
     [[nodiscard]] nomad::NomadBoolean getActive() const;
@@ -53,6 +70,7 @@ private:
 class log_SinkConfiguration final : public nomad::ScriptBindingObject {
 public:
     log_SinkConfiguration(nomad::ScriptBindings& bindings, nomad::NomadObject* object);
+    [[nodiscard]] static nomad::TypeReference typeReference();
     [[nodiscard]] static const nomad::ScriptClassBinding& bind(nomad::ScriptBindings& bindings);
     [[nodiscard]] static log_SinkConfiguration create(nomad::ScriptBindings& bindings, nomad::VirtualMachine& machine);
     [[nodiscard]] nomad::NomadBoolean getActive() const;

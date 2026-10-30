@@ -220,13 +220,13 @@ ApiAnalysis analyzeApiSymbols(
             const auto shape = runtime->getParameterShape(parameter.type);
             if (shape == ParameterShape::SourceFile || shape == ParameterShape::SourceFunction ||
                 shape == ParameterShape::SourceLine) continue;
-            const auto typeName = parameter.type->getTypeName();
+            const auto typeName = parameter.getTypeName();
             signature += " " + parameter.name + ":" + typeName;
             if (!parameter.doc.empty()) {
                 documentation += "\n\n- `" + parameter.name + "`: " + parameter.doc;
             }
         }
-        signature += " -> " + function->getReturnType()->getTypeName();
+        signature += " -> " + function->getReturnTypeName();
         symbols.push_back({function->getName(), CompletionItemKind::Function,
             std::move(signature), std::move(documentation)});
     }

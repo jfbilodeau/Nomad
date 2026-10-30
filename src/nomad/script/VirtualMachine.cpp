@@ -508,6 +508,9 @@ void VirtualMachine::runNativeFunction(const CallableId nativeFunctionId, const 
     if (function == nullptr) {
         fault("Invalid native function id: " + toString(nativeFunctionId.id));
     }
+    if (!function->isSignatureResolved()) {
+        fault("Native function '" + function->getName() + "' has an unresolved signature");
+    }
     if (function->getReturnType() == nullptr) {
         fault("NativeFunction '" + function->getName() + "' has no return type");
     }

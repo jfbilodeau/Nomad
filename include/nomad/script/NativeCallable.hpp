@@ -21,14 +21,22 @@ public:
         NativeFunctionFn fn,
         std::vector<Parameter> parameters,
         const Type* returnType,
-        NomadString doc
+        NomadString doc,
+        std::optional<TypeReference> returnTypeReference = std::nullopt
     );
 
     [[nodiscard]] const NativeFunction* asNativeFunction() const override { return this; }
-    [[nodiscard]] const NativeFunctionFn& getFn() const { return m_fn; }
+    [[nodiscard]] const NativeFunctionFn& getFn() const;
+    [[nodiscard]] bool isSignatureResolved() const;
+    [[nodiscard]] NomadString getReturnTypeName() const;
 
 private:
+    friend class Runtime;
+    void resolveSignatureTypes(Runtime& runtime);
+
     NativeFunctionFn m_fn;
+    std::optional<TypeReference> m_returnTypeReference;
+    bool m_signatureResolved;
 };
 
 class NativeMethod : public Method {

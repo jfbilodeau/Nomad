@@ -265,11 +265,17 @@ CallableId Runtime::registerNativeFunction(
     const Type* returnType,
     NomadDocArg
 ) {
-    if (isHub(name) || !canRegisterHubMember(name, true)) {
-        log::error("Cannot register function '" + name + "': name is reserved by a hub");
-        return CallableId::INVALID;
-    }
     return registerNativeCallable(nullptr, name, std::move(nativeFunction_fn), parameters, returnType, doc);
+}
+
+CallableId Runtime::registerNativeFunction(
+    const NomadString& name,
+    NativeFunctionFn function,
+    const std::vector<Parameter>& parameters,
+    TypeReference returnType,
+    const NomadString& doc
+) {
+    return registerNativeCallable(nullptr, name, std::move(function), parameters, nullptr, doc, std::move(returnType));
 }
 
 std::optional<NomadString> Runtime::qualifyHubMemberName(const HubId hubId, const NomadString& name) const {
@@ -345,17 +351,23 @@ CallableId Runtime::registerHubNativeFunction(
         log::error("Cannot register hub native function '" + name + "': invalid hub or local member name");
         return CallableId::INVALID;
     }
-    if (!function || !ownsType(returnType) || (returnType->isInternal() && !returnType->isVoid())) {
-        log::error("Cannot register hub native function '" + name + "': invalid callback or return type");
+    return registerNativeFunction(hub->getName() + "." + name, std::move(function), parameters, returnType, doc);
+}
+
+CallableId Runtime::registerHubNativeFunction(
+    const HubId hubId,
+    const NomadString& name,
+    NativeFunctionFn function,
+    const std::vector<Parameter>& parameters,
+    TypeReference returnType,
+    const NomadString& doc
+) {
+    const auto qualifiedName = qualifyHubMemberName(hubId, name);
+    if (!qualifiedName) {
+        log::error("Cannot register hub native function '" + name + "': invalid hub or local name");
         return CallableId::INVALID;
     }
-    for (const auto& parameter : parameters) {
-        if (parameter.name.empty() || !ownsType(parameter.type) || parameter.type->isVoid()) {
-            log::error("Cannot register hub native function '" + name + "': invalid parameter definition");
-            return CallableId::INVALID;
-        }
-    }
-    return registerNativeFunction(hub->getName() + "." + name, std::move(function), parameters, returnType, doc);
+    return registerNativeFunction(*qualifiedName, std::move(function), parameters, std::move(returnType), doc);
 }
 
 CallableId Runtime::registerHubScriptFunction(
@@ -659,27 +671,50 @@ CallableId Runtime::registerNativeCallable(
     NativeFunctionFn fn,
     const std::vector<Parameter>& parameters,
     const Type* returnType,
-    const NomadString& doc
+    const NomadString& doc,
+    std::optional<TypeReference> returnTypeReference
 ) {
-    if (classType != nullptr) {
-        if (!fn || !ownsType(returnType) || (returnType->isInternal() && !returnType->isVoid())) {
-            log::error("Cannot register native method '" + name + "': invalid callback or return type");
+    if (classType == nullptr && (isHub(name) || !canRegisterHubMember(name, true))) {
+        log::error("Cannot register function '" + name + "': name is reserved by a hub");
+        return CallableId::INVALID;
+    }
+    const auto deferred = returnTypeReference.has_value() ||
+        std::ranges::any_of(parameters, [](const auto& parameter) { return parameter.typeReference.has_value(); });
+    if (!fn || (returnTypeReference
+        ? classType != nullptr || returnType != nullptr || returnTypeReference->name.empty()
+        : !ownsType(returnType) || (returnType->isInternal() && !returnType->isVoid()))) {
+        log::error("Cannot register native callable '" + name + "': invalid callback or return type");
+        return CallableId::INVALID;
+    }
+    for (const auto& parameter : parameters) {
+        if (parameter.name.empty() || (parameter.typeReference
+            ? classType != nullptr || parameter.type != nullptr || parameter.typeReference->name.empty()
+            : !ownsType(parameter.type) || parameter.type->isVoid())) {
+            log::error("Cannot register native callable '" + name + "': invalid parameter definition");
             return CallableId::INVALID;
         }
-        for (const auto& parameter : parameters) {
-            if (parameter.name.empty() || !ownsType(parameter.type) || parameter.type->isVoid()) {
-                log::error("Cannot register native method '" + name + "': invalid parameter definition");
-                return CallableId::INVALID;
-            }
-        }
+    }
+    if (classType != nullptr) {
         NomadString error;
         if (!canRegisterNativeMember(classType, name, MemberType::Method, parameters, error)) {
             log::error("Cannot register native method '" + name + "': " + error);
             return CallableId::INVALID;
         }
     }
+    auto pending = deferred;
     if (classType == nullptr) {
-        if (getCallableOverloadCount(name) != 0) {
+        for (const auto* callable : m_callables) {
+            if (callable->getName() != name || callable->getType() != CallableType::Function) {
+                continue;
+            }
+            const auto* native = static_cast<const Function*>(callable)->asNativeFunction();
+            if (native == nullptr) {
+                log::error("Cannot register native function '" + name + "': a callable of a different kind exists");
+                return CallableId::INVALID;
+            }
+            pending = pending || !native->isSignatureResolved();
+        }
+        if (!pending && getCallableOverloadCount(name) != 0) {
             if (NomadString error; !canOverloadCallable(name, parameters, returnType, error)) {
                 log::error("Cannot register native function '" + name + "': " + error);
 
@@ -708,11 +743,43 @@ CallableId Runtime::registerNativeCallable(
 
         return id;
     }
-    id = addCallableToTable(std::make_unique<NativeFunction>(name, std::move(fn), parameters, returnType, doc));
+    auto function = std::make_unique<NativeFunction>(
+        name, std::move(fn), parameters, returnType, doc, std::move(returnTypeReference)
+    );
+    function->m_signatureResolved = !pending;
+    id = addCallableToTable(std::move(function));
 
     registerHubMember(name, HubFunctions{{id}});
 
     return id;
+}
+
+void Runtime::resolveNativeFunctionSignatures() {
+    std::vector<NativeFunction*> pending;
+    for (const auto& function : m_functions) {
+        auto* native = dynamic_cast<NativeFunction*>(function.get());
+        if (native != nullptr && !native->isSignatureResolved()) {
+            native->resolveSignatureTypes(*this);
+            pending.push_back(native);
+        }
+    }
+    for (const auto* function : pending) {
+        if (getCallableOverloadCount(function->getName()) > 1) {
+            NomadString error;
+            if (!canOverloadCallable(
+                function->getName(), function->getParameters(), function->getReturnType(), error, function->getId()
+            )) {
+                throw NomadException("Cannot resolve native function '" + function->getName() + "': " + error);
+            }
+        }
+    }
+    for (auto* function : pending) {
+        for (auto& parameter : function->getEditableParameters()) {
+            parameter.typeReference.reset();
+        }
+        function->m_returnTypeReference.reset();
+        function->m_signatureResolved = true;
+    }
 }
 
 CallableId Runtime::addCallableToTable(std::unique_ptr<Function> function) {
@@ -805,6 +872,14 @@ ResolveResult Runtime::resolveAmong(
     }
 
     result.candidates = candidates;
+
+    for (const auto candidateId : candidates) {
+        const auto* native = getNativeFunction(candidateId);
+        if (native != nullptr && !native->isSignatureResolved()) {
+            result.status = ResolveStatus::UnresolvedSignature;
+            return result;
+        }
+    }
 
     std::vector<CallableId> exactMatches;
     std::vector<CallableId> compatibleMatches;
@@ -945,6 +1020,8 @@ NomadString Runtime::describeResolveFailure(const NomadString& name, const Resol
         return "No overload of '" + name + "' accepts arguments (" + argumentList + ")";
     case ResolveStatus::Ambiguous:
         return "Ambiguous call to '" + name + "' with arguments (" + argumentList + ")";
+    case ResolveStatus::UnresolvedSignature:
+        return "Native function '" + name + "' has an unresolved signature";
     }
 
     return {};
@@ -1009,7 +1086,8 @@ bool Runtime::canOverloadCallable(
     const NomadString& name,
     const std::vector<Parameter>& parameters,
     const Type* returnType,
-    NomadString& error
+    NomadString& error,
+    const CallableId excludedId
 ) const {
     const auto parameterCount = parameters.size();
 
@@ -1024,7 +1102,8 @@ bool Runtime::canOverloadCallable(
     const auto returnsValue = returnType != nullptr && !returnType->isVoid();
 
     for (const auto* callable : m_callables) {
-        if (callable->getName() != name || callable->getType() != CallableType::Function) {
+        if (callable->getId() == excludedId ||
+            callable->getName() != name || callable->getType() != CallableType::Function) {
             continue;
         }
         const auto* existingFunction = static_cast<const Function*>(callable);
@@ -3385,6 +3464,11 @@ void Runtime::executeNativeFunction(
         context.setError("Unknown native function id");
         return;
     }
+    if (!definition->isSignatureResolved()) {
+        context.clearResult();
+        context.setError("Native function '" + definition->getName() + "' has an unresolved signature");
+        return;
+    }
     if (args.size() != definition->getParameterCount()) {
         context.clearResult();
         context.setError("Incorrect argument count when calling native function '" + definition->getName() + "'");
@@ -3428,7 +3512,7 @@ void dumpCallableDeclaration(const Callable* callable, std::ostream& out) {
     out << (type == CallableType::Function ? "function " :
         type == CallableType::Method ? "method " : "constructor ") << getQualifiedCallableName(callable);
     for (const auto& parameter : callable->getParameters()) {
-        out << " " << parameter.name << ":" << parameter.type->getTypeName();
+        out << " " << parameter.name << ":" << parameter.getTypeName();
     }
 
     out << std::endl;
@@ -3633,12 +3717,12 @@ void Runtime::dumpDocumentation(std::ostream &out) const {
         out << "### `" << nativeFunction.getName() << "`" << std::endl;
 
         for (auto& parameter: nativeFunction.getParameters()) {
-            out << "- `" << parameter.name << ":" << parameter.type->getTypeName() << "`" << std::endl;
+            out << "- `" << parameter.name << ":" << parameter.getTypeName() << "`" << std::endl;
         }
 
         out << std::endl;
 
-        out << "`return " << nativeFunction.getReturnType()->getTypeName() << "`" << std::endl;
+        out << "`return " << nativeFunction.getReturnTypeName() << "`" << std::endl;
 
         out << std::endl;
 

@@ -44,6 +44,24 @@ in `nomad::generated::log`. Stored fields expose `getXXX()` and `setXXX(value)`.
 Enum names and numeric mappings are preserved. Unsupported names and collisions
 are errors rather than silently renamed APIs.
 
+Class wrappers expose `typeReference()` without requiring a runtime or compiled
+scripts:
+
+```cpp
+using Settings = nomad::generated::log::log_FileSinkConfiguration;
+auto configurationType = Settings::typeReference();
+auto levelType = nomad::generated::log::log_LevelBinding::typeReference();
+```
+
+Both return `nomad::TypeReference`, declared in
+`<nomad/modules/TypeReference.hpp>`. Its `name` owns the fully qualified script
+type name, such as `log.FileSinkConfiguration` or `log.Level`; it contains no
+runtime pointer or resolved ID. An enum retains its C++ `enum class` API and
+gets a separate `<enum-name>Binding` companion for `typeReference()`. Companion
+name collisions are generation errors. These references describe types only:
+they do not register or resolve types, validate contracts, or enable deferred
+native registration by themselves.
+
 Compile the module scripts into the host runtime before using a wrapper. The
 retained `modules/nomad-log/generated` example is tested against that module's
 script configuration in a bare runtime, **not** together with the existing native
@@ -1419,6 +1437,52 @@ initializer receives the specialized name and resolved type arguments; it regist
 a type with that name and its constructors with `addConstructor`.
 Specializations are reused on subsequent requests through
 `getParameterizedConstructorName(name, arguments)`.
+
+## Deferred native function signatures
+
+Native functions can reference script types before those declarations have been
+compiled. Pass a generated `typeReference()` to `defParameter`, or as the return
+type of `registerNativeFunction` or `registerHubNativeFunction`. Concrete runtime
+types and references can be mixed in one signature:
+
+```cpp
+using Settings = nomad::generated::log::log_SinkConfiguration;
+const auto id = runtime.registerNativeFunction(
+    "isActive",
+    [&bindings](nomad::VirtualMachine* machine) {
+        const auto settings = Settings(bindings, machine->getParameter(0).getObjectValue());
+        machine->setBooleanResult(settings.getActive());
+    },
+    {nomad::defParameter("configuration", Settings::typeReference(), "")},
+    runtime.getBooleanType(),
+    ""
+);
+```
+
+Registration immediately returns the permanent `CallableId` and publishes the
+declaration's name and parameter names. `NativeFunction::isSignatureResolved()`
+reports readiness. Before resolution, deferred parameter `type` pointers and the
+deferred return type are null; `Parameter::getTypeName()` and
+`NativeFunction::getReturnTypeName()` expose their declared names for introspection.
+Calling an unresolved native function or obtaining its callback throws.
+
+Compilation resolves native signatures after script pre-parsing and the `parse`
+callbacks, before parsing function bodies. This also happens in analysis mode,
+without running callbacks or script initializers. Missing types, invalid types,
+duplicate overload signatures, and incompatible overload sets produce compilation
+diagnostics. Script-dependent signatures are not usable in earlier compiler
+callbacks or compile-time expressions evaluated before this boundary.
+
+Resolution preserves callable IDs and does not republish declarations on later
+compilations. References resolve independently in each runtime. Hosts with already
+declared types can explicitly call `Runtime::resolveNativeFunctionSignatures()`;
+it throws on unresolved types or invalid overloads. Resolving a signature does not
+compile a script constructor or resolve a generated wrapper's field binding.
+
+Deferred signatures currently support free native functions, including hub
+functions, through the VM-callback API. Native properties, methods, constructors,
+and automatic C++ object/enum conversion in the typed callable adapter are not
+included.
 
 ## Typed native functions
 

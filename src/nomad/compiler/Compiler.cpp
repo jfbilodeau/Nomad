@@ -1642,6 +1642,12 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     if (!beginPhase(CompilationPhase::Parse)) {
         return false;
     }
+    reportExceptions({}, [&] {
+        m_runtime->resolveNativeFunctionSignatures();
+    });
+    if (hasNewErrors()) {
+        return false;
+    }
     log::info("Parsing functions");
 
     for (auto* script : orderedScripts) {

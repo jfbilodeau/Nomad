@@ -31,6 +31,8 @@ BOOST_AUTO_TEST_CASE(generation_is_deterministic_and_preserves_unchanged_files) 
     BOOST_TEST(first[0].content.find("public nomad::ScriptBindingObject") != NomadString::npos);
     BOOST_TEST(first[0].content.find("#include <nomad/modules/ScriptBindingObject.hpp>") != NomadString::npos);
     BOOST_TEST(first[0].content.find("bind(nomad::ScriptBindings& bindings)") != NomadString::npos);
+    BOOST_TEST(first[0].content.find("static nomad::TypeReference typeReference()") != NomadString::npos);
+    BOOST_TEST(first[1].content.find("Settings::typeReference().name") != NomadString::npos);
     BOOST_TEST(first[0].content.find("nomad::Runtime&") == NomadString::npos);
     BOOST_TEST(first[1].content.find("bindings.getClassBinding(") != NomadString::npos);
     BOOST_TEST(first[0].content.find("ScriptBindingObject m_binding") == NomadString::npos);
@@ -63,6 +65,25 @@ BOOST_AUTO_TEST_CASE(check_is_nonmutating_and_detects_missing_and_stale_outputs)
     BOOST_TEST(result.changedFiles.size() == 2U);
     BOOST_TEST(fixture.read(source) == "stale");
     BOOST_TEST(!std::filesystem::exists(fixture.getDirectory() / "generated" / "nomad-module.cmake"));
+}
+
+BOOST_AUTO_TEST_CASE(type_references_preserve_qualified_names_and_enum_classes) {
+    const BindingTestFixture fixture;
+    fixture.setScript(
+        "hub settings\n"
+        "enum Mode\nFirst\nSecond\nend\n"
+        "class Configuration\nmode = settings.Mode.Second\nend\n"
+        "end\n"
+    );
+    const auto outputs = renderModuleBindings(analyzeModuleBindings(fixture.getOptions()));
+    BOOST_TEST(outputs[0].content.find("enum class settings_Mode : nomad::NomadInteger") != NomadString::npos);
+    BOOST_TEST(outputs[0].content.find("class settings_ModeBinding final") != NomadString::npos);
+    BOOST_TEST(outputs[1].content.find(
+        "nomad::TypeReference settings_ModeBinding::typeReference() {\n    return {\"settings.Mode\"};"
+    ) != NomadString::npos);
+    BOOST_TEST(outputs[1].content.find(
+        "nomad::TypeReference settings_Configuration::typeReference() {\n    return {\"settings.Configuration\"};"
+    ) != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(invalid_scripts_and_unsupported_shapes_do_not_write_outputs) {
@@ -100,6 +121,10 @@ BOOST_AUTO_TEST_CASE(cpp_keywords_flattened_names_and_accessor_collisions_are_re
         "class Settings\nactive = true\nActive = false\nend\n",
         "class Settings\nobject = 1\nend\n",
         "class Settings\nbinding = 1\nend\n",
+        "class typeReference\nend\n",
+        "enum Mode\nFirst\nend\nclass ModeBinding\nend\n",
+        "enum Mode\nFirst\nend\nenum ModeBinding\nFirst\nend\n",
+        "enum getMode\nFirst\nend\nclass Settings\nmodeBinding = 1\nend\n",
         "hub one\nclass Two\nend\nend\nclass one_Two\nend\n"
     }) {
         fixture.setScript(script);

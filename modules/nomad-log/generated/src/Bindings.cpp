@@ -6,11 +6,23 @@
 
 namespace nomad::generated::log {
 
+nomad::TypeReference log_DeliveryModeBinding::typeReference() {
+    return {"log.DeliveryMode"};
+}
+
+nomad::TypeReference log_FileRotationModeBinding::typeReference() {
+    return {"log.FileRotationMode"};
+}
+
+nomad::TypeReference log_LevelBinding::typeReference() {
+    return {"log.Level"};
+}
+
 namespace {
 
 const nomad::BindingClass& contract0() {
     static const nomad::BindingClass contract{
-        "log.FileSinkConfiguration",
+        log_FileSinkConfiguration::typeReference().name,
         {
             {"active", "bool"},
             {"directory", "string"},
@@ -37,6 +49,10 @@ log_FileSinkConfiguration::log_FileSinkConfiguration(nomad::ScriptBindings& bind
 
 log_FileSinkConfiguration::log_FileSinkConfiguration(nomad::ScriptBindingObject binding) :
     nomad::ScriptBindingObject(std::move(binding)) {
+}
+
+nomad::TypeReference log_FileSinkConfiguration::typeReference() {
+    return {"log.FileSinkConfiguration"};
 }
 
 const nomad::ScriptClassBinding& log_FileSinkConfiguration::bind(nomad::ScriptBindings& bindings) {
@@ -115,7 +131,7 @@ namespace {
 
 const nomad::BindingClass& contract1() {
     static const nomad::BindingClass contract{
-        "log.SinkConfiguration",
+        log_SinkConfiguration::typeReference().name,
         {
             {"active", "bool"},
             {"level", "log.Level"},
@@ -135,6 +151,10 @@ log_SinkConfiguration::log_SinkConfiguration(nomad::ScriptBindings& bindings, no
 
 log_SinkConfiguration::log_SinkConfiguration(nomad::ScriptBindingObject binding) :
     nomad::ScriptBindingObject(std::move(binding)) {
+}
+
+nomad::TypeReference log_SinkConfiguration::typeReference() {
+    return {"log.SinkConfiguration"};
 }
 
 const nomad::ScriptClassBinding& log_SinkConfiguration::bind(nomad::ScriptBindings& bindings) {

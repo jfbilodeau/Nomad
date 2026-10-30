@@ -16,12 +16,23 @@ const ScriptCallableBase* Callable::asScriptCallable() const {
     return nullptr;
 }
 
+NomadString Parameter::getTypeName() const {
+    if (type != nullptr) {
+        return type->getTypeName();
+    }
+    return typeReference ? typeReference->name : "unknown";
+}
+
 Parameter defParameter(const NomadString& name, const Type* type, const NomadString& doc) {
     return {
         name,
         type,
         doc
     };
+}
+
+Parameter defParameter(const NomadString& name, TypeReference type, const NomadString& doc) {
+    return {name, nullptr, doc, std::move(type)};
 }
 
 TemplateParameter defTemplateParameter(

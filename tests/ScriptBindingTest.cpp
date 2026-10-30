@@ -25,6 +25,28 @@ BOOST_AUTO_TEST_SUITE(script_bindings)
 
 static_assert(std::is_base_of_v<ScriptBindingObject, log_SinkConfiguration>);
 static_assert(std::is_base_of_v<ScriptBindingObject, log_FileSinkConfiguration>);
+static_assert(std::is_enum_v<log_Level>);
+static_assert(std::is_enum_v<log_FileRotationMode>);
+static_assert(std::is_enum_v<log_DeliveryMode>);
+
+BOOST_AUTO_TEST_CASE(type_references_are_available_without_a_runtime_and_own_their_names) {
+    const auto sinkReference = log_SinkConfiguration::typeReference();
+    const auto fileReference = log_FileSinkConfiguration::typeReference();
+    const auto levelReference = log_LevelBinding::typeReference();
+    const auto rotationReference = log_FileRotationModeBinding::typeReference();
+    const auto deliveryReference = log_DeliveryModeBinding::typeReference();
+    BOOST_TEST(sinkReference.name == "log.SinkConfiguration");
+    BOOST_TEST(fileReference.name == "log.FileSinkConfiguration");
+    BOOST_TEST(levelReference.name == "log.Level");
+    BOOST_TEST(rotationReference.name == "log.FileRotationMode");
+    BOOST_TEST(deliveryReference.name == "log.DeliveryMode");
+    auto copy = fileReference;
+    BOOST_CHECK(copy == fileReference);
+    copy.name = "different.Type";
+    BOOST_TEST(fileReference.name == "log.FileSinkConfiguration");
+    BOOST_TEST(log_FileSinkConfiguration::typeReference().name == fileReference.name);
+    BOOST_CHECK(copy != fileReference);
+}
 
 BOOST_AUTO_TEST_CASE(actual_generated_log_cpp_constructs_and_reads_and_writes_stored_fields) {
     Runtime runtime;

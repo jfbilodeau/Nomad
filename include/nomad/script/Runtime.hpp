@@ -198,6 +198,14 @@ public:
         const Type* returnType,
         NomadDocArg
     );
+    [[nodiscard]] CallableId registerHubNativeFunction(
+        HubId hubId,
+        const NomadString& name,
+        NativeFunctionFn function,
+        const std::vector<Parameter>& parameters,
+        TypeReference returnType,
+        NomadDocArg
+    );
     template<detail::TypedNativeFunction Function>
     [[nodiscard]] CallableId registerHubNativeFunction(
         HubId hubId,
@@ -401,6 +409,14 @@ public:
         const Type* returnType, 
         NomadDocArg
     );
+    [[nodiscard]] CallableId registerNativeFunction(
+        const NomadString& name,
+        NativeFunctionFn function,
+        const std::vector<Parameter>& parameters,
+        TypeReference returnType,
+        NomadDocArg
+    );
+    void resolveNativeFunctionSignatures();
     template<detail::TypedNativeFunction Function>
     [[nodiscard]] CallableId registerNativeFunction(
         const NomadString& name,
@@ -682,14 +698,16 @@ private:
         NativeFunctionFn fn,
         const std::vector<Parameter>& parameters,
         const Type* returnType,
-        const NomadString& doc
+        const NomadString& doc,
+        std::optional<TypeReference> returnTypeReference = std::nullopt
     );
     CallableId addCallableToTable(std::unique_ptr<Function> function);
     [[nodiscard]] bool canOverloadCallable(
         const NomadString& name,
         const std::vector<Parameter>& parameters,
         const Type* returnType,
-        NomadString& error
+        NomadString& error,
+        CallableId excludedId = {}
     ) const;
     [[nodiscard]] ResolveResult resolveAmong(
         std::vector<CallableId> candidates,
