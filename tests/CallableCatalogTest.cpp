@@ -15,6 +15,7 @@
 
 #include <nomad/system/SystemFunctions.hpp>
 
+#include <limits>
 #include <memory>
 #include <span>
 #include <string>
@@ -52,12 +53,21 @@ public:
         const TypeId id,
         NomadString name,
         const ClassMode mode,
-        ClassType*& descriptor
+        ClassType*& descriptor,
+        const NomadIndex size = 1
     ):
-        ClassType(runtime, id, std::move(name), mode)
+        ClassType(runtime, id, std::move(name), mode),
+        m_size(size)
     {
         descriptor = this;
     }
+
+    [[nodiscard]] NomadIndex getSize() const override {
+        return m_size;
+    }
+
+private:
+    const NomadIndex m_size;
 };
 
 CallableId registerVoidNativeFunction(
@@ -92,6 +102,185 @@ CallableId registerNativeFunction(
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(callable_catalog)
+
+BOOST_AUTO_TEST_CASE(parameter_stack_widths_preserve_existing_argument_shapes)
+{
+    Runtime runtime;
+    const auto* callbackType = runtime.getCallbackType(
+        {runtime.getIntegerType()}, runtime.getVoidType()
+    );
+    BOOST_REQUIRE(callbackType != nullptr);
+    const auto singleSlotTypes = std::vector<const Type*>{
+        runtime.getIntegerType(), runtime.getFloatType(), runtime.getBooleanType(),
+        runtime.getStringType(), callbackType, runtime.getFileNameType(),
+        runtime.getFunctionNameType(), runtime.getLineNumberType(),
+        runtime.getEventDispatchType()
+    };
+    for (const auto* type : singleSlotTypes) {
+        BOOST_TEST(type->getSize() == 1U);
+        const auto parameter = defParameter("value", type, "");
+        if (type == runtime.getEventDispatchType()) {
+            BOOST_CHECK_THROW((void)parameter.getStackValueCount(), NomadException);
+        } else {
+            BOOST_TEST(parameter.getStackValueCount() == 1U);
+        }
+    }
+    const auto eventCallback = defParameter("handler", runtime.getEventCallbackType(), "");
+    BOOST_TEST(eventCallback.type->getSize() == 1U);
+    BOOST_TEST(eventCallback.getStackValueCount() == 2U);
+    const auto unresolved = defParameter("unresolved", nullptr, "");
+    BOOST_CHECK_THROW((void)unresolved.getStackValueCount(), NomadException);
+}
+
+BOOST_AUTO_TEST_CASE(parameter_layout_preserves_logical_positions_across_callable_categories)
+{
+    Runtime runtime;
+    ClassType* emptyType = nullptr;
+    ClassType* pointType = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
+        "EmptyWidth", ClassMode::Closed, emptyType, NomadIndex{0}
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
+        "PointWidth", ClassMode::Closed, pointType, NomadIndex{3}
+    ).isValid());
+    const auto parameters = std::vector<Parameter>{
+        defParameter("empty", emptyType, ""),
+        defParameter("point", pointType, ""),
+        defParameter("text", runtime.getStringType(), ""),
+        defParameter("handler", runtime.getEventCallbackType(), ""),
+        defParameter("lastEmpty", emptyType, ""),
+        defParameter("number", runtime.getIntegerType(), "")
+    };
+    const auto nativeId = registerVoidNativeFunction(runtime, "layout", parameters);
+    BOOST_REQUIRE(nativeId.isValid());
+    ScriptMethod method("layout", pointType, parameters, runtime.getVoidType(), "layout.nomad", "");
+    ScriptConstructor constructor(pointType, parameters, "layout.nomad", "");
+    const auto callables = std::vector<const Callable*>{
+        runtime.getNativeFunction(nativeId), &method, &constructor
+    };
+    for (const auto* callable : callables) {
+        BOOST_TEST_CONTEXT(callable->getName()) {
+            BOOST_TEST(callable->getParameterCount() == 6U);
+            BOOST_TEST(callable->getParameterOffset(0) == 0U);
+            BOOST_TEST(callable->getParameterOffset(1) == 0U);
+            BOOST_TEST(callable->getParameterOffset(2) == 3U);
+            BOOST_TEST(callable->getParameterOffset(3) == 4U);
+            BOOST_TEST(callable->getParameterOffset(4) == 6U);
+            BOOST_TEST(callable->getParameterOffset(5) == 6U);
+            BOOST_TEST(callable->getParameterStorageSize() == 7U);
+            if (const auto* script = callable->asScriptCallable()) {
+                for (auto index = NomadId{0}; index < 6; ++index) {
+                    BOOST_TEST(script->getParameterOffset(index) == callable->getParameterOffset(index));
+                }
+                BOOST_TEST(script->getParameterStorageSize() == 7U);
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(parameter_layout_queries_reflect_inferred_parameters_and_appended_captures)
+{
+    Runtime runtime;
+    ScriptFunction function(CallableId{}, "layout", "layout.nomad", "");
+    const Callable& callable = function;
+    const ScriptCallableBase& script = function;
+    BOOST_TEST(callable.getParameterStorageSize() == 0U);
+    BOOST_TEST(script.getParameterStorageSize() == 0U);
+    const auto inferred = function.addParameter("inferred", nullptr, "");
+    const auto following = function.addParameter("following", runtime.getIntegerType(), "");
+    BOOST_TEST(callable.getParameterOffset(inferred) == 0U);
+    BOOST_CHECK_THROW((void)callable.getParameterOffset(following), NomadException);
+    BOOST_CHECK_THROW((void)script.getParameterStorageSize(), NomadException);
+
+    BOOST_TEST(function.addParameter("inferred", runtime.getFloatType(), "") == inferred);
+    BOOST_TEST(callable.getParameterOffset(following) == 1U);
+    BOOST_TEST(script.getParameterStorageSize() == 2U);
+    const auto capture = function.createCapture(VariableId{0}, "captured", runtime.getStringType());
+    BOOST_TEST(capture == 0);
+    BOOST_TEST(function.getCaptureCount() == 1U);
+    BOOST_TEST(function.getParameterCount() == 3U);
+    BOOST_TEST(script.getParameterOffset(function.getParameterId("captured")) == 2U);
+    BOOST_TEST(callable.getParameterStorageSize() == 3U);
+    BOOST_TEST(function.getParameterId("inferred") == inferred);
+    BOOST_TEST(function.getParameterId("following") == following);
+}
+
+BOOST_AUTO_TEST_CASE(parameter_layout_reports_deferred_sizes)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    ScriptFunction function(CallableId{}, "layout", "layout.nomad", "");
+    const auto deferred = function.addParameter("deferred", compiler->deferType({"Point"}), "");
+    const auto following = function.addParameter("following", runtime.getIntegerType(), "");
+    BOOST_TEST(function.getParameterOffset(deferred) == 0U);
+    BOOST_CHECK_THROW((void)function.getParameterOffset(following), NomadException);
+    BOOST_CHECK_THROW((void)function.getParameterStorageSize(), NomadException);
+}
+
+BOOST_AUTO_TEST_CASE(event_dispatch_layout_is_indeterminate_without_changing_the_signature)
+{
+    Runtime runtime;
+    const auto id = registerVoidNativeFunction(runtime, "dispatchLayout", {
+        defParameter("value", runtime.getIntegerType(), ""),
+        defParameter("handler", runtime.getEventCallbackType(), ""),
+        defParameter("event", runtime.getEventDispatchType(), ""),
+        defParameter("following", runtime.getIntegerType(), "")
+    });
+    BOOST_REQUIRE(id.isValid());
+    const auto* callable = runtime.getCallable(id);
+    BOOST_TEST(callable->getParameterCount() == 4U);
+    BOOST_TEST(callable->getParameterOffset(0) == 0U);
+    BOOST_TEST(callable->getParameterOffset(1) == 1U);
+    BOOST_TEST(callable->getParameterOffset(2) == 3U);
+    BOOST_CHECK_THROW((void)callable->getParameterOffset(3), NomadException);
+    BOOST_CHECK_THROW((void)callable->getParameterStorageSize(), NomadException);
+    BOOST_TEST(callable->getParameterCount() == 4U);
+}
+
+BOOST_AUTO_TEST_CASE(parameter_layout_checks_overflow_and_supports_zero_width_signatures)
+{
+    Runtime runtime;
+    const auto maximumSize = std::numeric_limits<NomadIndex>::max();
+    ClassType* maximumType = nullptr;
+    ClassType* emptyType = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
+        "MaximumWidth", ClassMode::Closed, maximumType, maximumSize
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
+        "EmptyWidth", ClassMode::Closed, emptyType, NomadIndex{0}
+    ).isValid());
+    ScriptFunction function(CallableId{}, "layout", "layout.nomad", "");
+    const auto maximum = function.addParameter("maximum", maximumType, "");
+    const auto empty = function.addParameter("empty", emptyType, "");
+    BOOST_TEST(function.getParameterOffset(maximum) == 0U);
+    BOOST_TEST(function.getParameterOffset(empty) == maximumSize);
+    BOOST_TEST(function.getParameterStorageSize() == maximumSize);
+    const auto overflow = function.addParameter("overflow", runtime.getIntegerType(), "");
+    BOOST_TEST(function.getParameterOffset(overflow) == maximumSize);
+    BOOST_CHECK_THROW((void)function.getParameterStorageSize(), NomadException);
+    const auto following = function.addParameter("following", runtime.getIntegerType(), "");
+    BOOST_CHECK_THROW((void)function.getParameterOffset(following), NomadException);
+
+    ScriptMethod emptyMethod("empty", emptyType, {
+        defParameter("first", emptyType, ""), defParameter("second", emptyType, "")
+    }, runtime.getVoidType(), "layout.nomad", "");
+    BOOST_TEST(emptyMethod.getParameterCount() == 2U);
+    BOOST_TEST(emptyMethod.getParameterOffset(0) == 0U);
+    BOOST_TEST(emptyMethod.getParameterOffset(1) == 0U);
+    BOOST_TEST(emptyMethod.getParameterStorageSize() == 0U);
+}
+
+BOOST_AUTO_TEST_CASE(parameter_layout_rejects_invalid_logical_positions)
+{
+    Runtime runtime;
+    ScriptFunction function(CallableId{}, "layout", "layout.nomad", "");
+    BOOST_CHECK_THROW((void)function.getParameterOffset(0), NomadException);
+    const auto first = function.addParameter("first", runtime.getIntegerType(), "");
+    BOOST_TEST(function.getParameterOffset(first) == 0U);
+    for (const auto id : {NomadId{-1}, NomadId{-2}, NomadId{1}, NOMAD_ID_MAX}) {
+        BOOST_CHECK_THROW((void)function.getParameterOffset(id), NomadException);
+    }
+}
 
 BOOST_AUTO_TEST_CASE(script_registration_binds_receiver_without_exposing_a_free_function)
 {

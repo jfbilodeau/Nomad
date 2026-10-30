@@ -846,6 +846,29 @@ Each category offers conversions to its implementation: `asNativeFunction()` /
 with its specialized type, or `nullptr` when the implementation does not match.
 Script methods and script constructors are available on compiled classes.
 
+`Callable::getParameterOffset(parameterId)` returns the physical stack-slot
+offset of a logical parameter, measured from the first parameter.
+`getParameterStorageSize()` returns the total parameter slot count, or zero for
+an empty parameter list. Both queries are also available through
+`ScriptCallableBase`. They use current metadata, include captures already
+appended to the parameter list, and exclude receivers, saved call frames, and
+return destinations. They do not change logical positions, parameter counts,
+VM parameter access, or the calling convention.
+
+`Parameter::getStackValueCount()` reports the parameter's stack width. Ordinary
+values use `Type::getSize()`; event callbacks occupy two slots even though their
+type's value size is one. Compiler-supplied source parameters occupy their usual
+single slot. Event dispatch includes an event-specific payload, so its complete
+width is call-site-dependent: querying that width, a callable's total size
+containing it, or a later parameter's offset throws `NomadException`. The offset
+of the dispatch parameter itself remains computable if all preceding widths are
+known. This does not restrict dispatch calls; their arguments are still expanded
+at the call site.
+
+Missing/deferred parameter sizes, slot-count overflow, and invalid or out-of-range
+parameter positions also produce `NomadException`. Offset queries require only
+the preceding widths; total-size queries require every width.
+
 `getScriptCallables(callables)` lists all script functions, methods, and
 constructors, including nested callbacks and generated class initializers.
 `getScriptCallableAtLine(sourceName, line)` finds the innermost matching script

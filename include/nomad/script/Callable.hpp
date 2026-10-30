@@ -29,6 +29,7 @@ struct Parameter {
     NomadDocField;
 
     [[nodiscard]] NomadString getTypeName() const;
+    [[nodiscard]] NomadIndex getStackValueCount() const;
 };
 
 Parameter defParameter(const NomadString& name, const Type* type, NomadDocArg);
@@ -74,6 +75,8 @@ public:
     [[nodiscard]] CallableSource getSource() const;
     [[nodiscard]] const std::vector<Parameter>& getParameters() const;
     [[nodiscard]] NomadIndex getParameterCount() const;
+    [[nodiscard]] NomadIndex getParameterOffset(NomadId parameterId) const;
+    [[nodiscard]] NomadIndex getParameterStorageSize() const;
     // The type of the value the callable yields; void when it yields nothing.
     [[nodiscard]] const Type* getReturnType() const;
     // Method: the receiver's type. Constructor: the declaring class, which may differ from the constructed type

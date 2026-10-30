@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Step 1A has been reviewed; Step 1B below is implemented and awaiting review.
+Steps 1A and 1B have been reviewed; Step 1C below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -243,15 +243,45 @@ Step 1B validation:
 - Mixed/zero/maximum-width descriptors are test-only fixtures, not executable
   struct support. No gameplay validation is claimed.
 
-Proposed next slice: parameter offset and slot-count metadata, preserving logical
-arity and accounting for existing special argument shapes such as event
-callbacks. Discuss its representation before implementation; VM and calling
-convention changes remain out of scope for that metadata slice.
+Approved third slice (Step 1C):
+
+- Add the shared metadata query `Parameter::getStackValueCount()`, together with
+  `Callable::getParameterOffset(NomadId)` and `getParameterStorageSize()`.
+- Expose the callable queries through the existing `ScriptCallableBase` forwarding
+  pattern, without a new layout abstraction or cached state.
+- Ordinary parameters use `Type::getSize()`; event callbacks occupy two stack
+  slots despite their one-slot value type.
+- Event dispatch expands to an event ID and a call-site-selected payload.
+  Signature-only width queries explicitly report this indeterminate layout.
+  Offsets up to and including the dispatch parameter remain computable when
+  preceding widths are known; total size and subsequent offsets cannot be
+  calculated from the signature alone. Dispatch calls remain supported and
+  unchanged.
+- Preserve logical arity and positions. Include captures already appended to the
+  parameter list; exclude receivers, saved call frames, and return destinations.
+- Report unresolved sizes, overflow, and invalid parameter positions explicitly
+  during metadata calculation. Leave VM access, opcodes, and call emission
+  unchanged.
+
+Step 1C validation:
+
+- The Windows Debug `nomad_test` target built successfully.
+- The `nomad_test_language` regression group passed, covering parameter widths,
+  callable/script forwarding, captures, unresolved metadata, event-dispatch
+  indeterminacy, zero-width and maximum-size boundaries, and invalid positions.
+  Existing callback and event execution tests also passed.
+- All four documentation preparation tests passed.
+- Synthetic type widths remain test-only fixtures. This slice does not implement
+  executable structs or change the calling convention.
+
+Proposed next slice: stored-field physical offsets and total storage-size
+metadata, separate from logical field identity and property counts. Discuss the
+API and treatment of native properties before implementation. Object allocation
+and executable aggregate accesses remain later work.
 
 Remaining Step 1 work, requiring separate design approval:
 
-- Add approved struct size/finalization metadata, parameter mappings, and
-  stored-field layout mappings.
+- Add approved struct size/finalization metadata and stored-field layout mappings.
 - Preserve current sizes and behavior for existing non-struct types.
 - Preserve logical IDs, names, catalog entries, and API signatures where possible.
 - Add focused tests for mixed widths, unresolved layouts, zero widths, offset

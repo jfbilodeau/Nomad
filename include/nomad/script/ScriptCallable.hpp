@@ -18,6 +18,10 @@ public:
     [[nodiscard]] const NomadString& getName() const override { return Base::getName(); }
     [[nodiscard]] const std::vector<Parameter>& getParameters() const override { return Base::getParameters(); }
     [[nodiscard]] NomadIndex getParameterCount() const override { return Base::getParameterCount(); }
+    [[nodiscard]] NomadIndex getParameterOffset(const NomadId parameterId) const override {
+        return Base::getParameterOffset(parameterId);
+    }
+    [[nodiscard]] NomadIndex getParameterStorageSize() const override { return Base::getParameterStorageSize(); }
     [[nodiscard]] const Type* getReturnType() const override { return Base::getReturnType(); }
     [[nodiscard]] const Type* getClassType() const override { return Base::getClassType(); }
     void setReturnType(const Type* returnType) override { Base::setReturnType(returnType); }

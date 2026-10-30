@@ -38,6 +38,8 @@ public:
     [[nodiscard]] virtual const NomadString& getName() const = 0;
     [[nodiscard]] virtual const std::vector<Parameter>& getParameters() const = 0;
     [[nodiscard]] virtual NomadIndex getParameterCount() const = 0;
+    [[nodiscard]] virtual NomadIndex getParameterOffset(NomadId parameterId) const = 0;
+    [[nodiscard]] virtual NomadIndex getParameterStorageSize() const = 0;
     [[nodiscard]] virtual const Type* getReturnType() const = 0;
     [[nodiscard]] virtual const Type* getClassType() const = 0;
     virtual void setReturnType(const Type* returnType) = 0;
