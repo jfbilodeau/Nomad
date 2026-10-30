@@ -3,7 +3,6 @@
 #pragma once
 
 #include <nomad/compiler/Compilation.hpp>
-#include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Source.hpp>
 
 #include <filesystem>
@@ -13,14 +12,6 @@
 namespace nomad {
 
 class Runtime;
-
-struct CompilationResult {
-    std::vector<Diagnostic> diagnostics;
-    NomadIndex errorCount = 0;
-    NomadIndex warningCount = 0;
-
-    [[nodiscard]] bool succeeded() const;
-};
 
 struct InstructionDumpResult {
     CompilationResult compilation;
@@ -43,12 +34,6 @@ struct DocumentationResult {
 // are also discovered; supplied snapshots override their backing files in those roots.
 [[nodiscard]] CompilationResult checkSources(const SourceBatch& batch, Runtime* runtime = nullptr);
 [[nodiscard]] CompilationResult analyzeSources(const SourceBatch& batch, Runtime* runtime = nullptr);
-[[nodiscard]] CompilationResult compileSources(
-    const SourceBatch& batch,
-    Compiler& compiler,
-    CompilationTarget target = CompilationTarget::Executable
-);
-
 void validateEntryFunction(
     CompilationResult& result,
     const Runtime* runtime,

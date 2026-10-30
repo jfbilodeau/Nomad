@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/compiler/CompilerTools.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
@@ -249,12 +249,13 @@ BOOST_AUTO_TEST_CASE(internal_hook_bugs_propagate_and_allow_a_fresh_attempt)
 BOOST_AUTO_TEST_CASE(analysis_tool_resolves_types_without_function_instructions)
 {
     Runtime runtime;
+    auto compiler = runtime.createCompiler();
     const SourceBatch batch{{
         {"answer", {"editor:answer", "return 42"}},
         {"formatted", {"editor:formatted", "return $\"answer {answer}\""}}
     }, {}};
 
-    const auto result = analyzeSources(batch, &runtime);
+    const auto result = compileSources(batch, *compiler, CompilationTarget::Analysis);
 
     BOOST_REQUIRE(result.succeeded());
     BOOST_TEST(runtime.getInstructions().size() == 1U);
@@ -266,7 +267,6 @@ BOOST_AUTO_TEST_CASE(analysis_tool_resolves_types_without_function_instructions)
     BOOST_TEST(formatted->getReturnType() == runtime.getStringType());
     BOOST_TEST(answer->getFunctionStart() == NOMAD_INVALID_INDEX);
     BOOST_TEST(formatted->getFunctionStart() == NOMAD_INVALID_INDEX);
-    BOOST_TEST(analyzeSources(batch).succeeded());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

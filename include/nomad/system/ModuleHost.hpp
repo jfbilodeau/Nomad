@@ -2,7 +2,8 @@
 
 #pragma once
 
-#include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/Compilation.hpp>
+#include <nomad/compiler/Source.hpp>
 
 #include <nomad/project/ProjectMetadata.hpp>
 

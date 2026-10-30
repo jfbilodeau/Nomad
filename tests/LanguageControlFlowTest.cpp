@@ -4,6 +4,7 @@
 
 #include <nomad/compiler/Parser.hpp>
 
+#include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/IteratorObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -466,7 +467,7 @@ BOOST_AUTO_TEST_CASE(range_loops_lower_to_generic_calls_and_jumps)
     BOOST_TEST(runtime.getInstructionId("op_numeric_for_test").isInvalid());
     BOOST_TEST(runtime.getInstructionId("op_numeric_for_advance").isInvalid());
     std::ostringstream instructions;
-    runtime.dumpInstructions(instructions, runtime.getScriptFunction(runtime.getFunctionId("main")));
+    dumpInstructions(runtime, *runtime.getScriptFunction(runtime.getFunctionId("main")), instructions);
     const auto text = instructions.str();
     BOOST_TEST(text.find("op_jump_if_false") != NomadString::npos);
     BOOST_TEST(text.find("op_jump") != NomadString::npos);

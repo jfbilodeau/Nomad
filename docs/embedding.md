@@ -797,8 +797,12 @@ address. These lookups return `nullptr` when no callable matches.
 The existing function-only lookup and enumeration APIs still exclude methods
 and constructors.
 
-`dumpInstructions(output)` includes every compiled script callable.
-The overload taking a script-callable pointer dumps just that callable.
+Include `<nomad/script/InstructionDump.hpp>` and use
+`dumpInstructions(runtime, output)` to include every compiled script callable.
+`dumpInstructions(runtime, callable, output)` takes a script-callable reference
+and dumps just that callable. These free functions inspect existing compiled code;
+they do not compile or execute scripts. The runtime exposes the data but does
+not own instruction formatting.
 Methods are qualified by their declaring type, and constructor and method call
 targets are identified by name and callable ID.
 
@@ -1063,8 +1067,17 @@ host compilation and phase callbacks use this instance. Packaging supplies neith
 a runtime nor a compiler. Shutdown callbacks run before the compiler and runtime
 are destroyed, and both are destroyed before module libraries are unloaded.
 
-Compiler tools offer `compileSources(batch, compiler, target)`,
-`dumpInstructions(paths, functionName, compiler)`, and
+`<nomad/compiler/Compilation.hpp>` provides `CompilationResult` and
+`compileSources(batch, compiler, target)`. Compilation uses the supplied compiler
+and does not create a runtime, replace the compiler, or execute scripts.
+Results own diagnostics and error/warning counts; `succeeded()` means there are
+no errors, so warnings alone do not fail compilation.
+`<nomad/compiler/Diagnostic.hpp>` provides `DiagnosticSeverity`, `Diagnostic`,
+and `formatDiagnostic`, independently of compiler contexts.
+`formatDiagnostic(diagnostic, stream)` writes to an existing `std::ostream`
+without adding a newline. The string-returning overload produces the same text.
+
+Compiler tools still offer `dumpInstructions(paths, functionName, compiler)` and
 `generateDocumentationForPaths(paths, compiler)` for borrowing the session compiler.
 Use these overloads for module-aware tooling rather than creating another compiler.
 Documentation generation requires a configured `Compiler&`; it never creates
@@ -1212,17 +1225,19 @@ const std::vector<nomad::ScriptSource> buffers{
     {"entities.player", {"editor:player", unsavedText, playerPath}}
 };
 const auto batch = nomad::loadSourcePaths(scriptRoots, buffers);
-const auto result = nomad::checkSources(batch);
+const auto result = nomad::compileSources(batch, compiler, nomad::CompilationTarget::Analysis);
 ```
 
 The loader returns owned, sorted snapshots without changing the disk or buffers.
 Rebuild a batch with the latest buffers for each analysis; remove an override
 when its document closes to use disk text again. Document versions, project
 association and stale-analysis rejection belong to the editor adapter, not the
-compiler. `checkSources(batch, runtime)` from
-`<nomad/compiler/CompilerTools.hpp>` returns the same `CompilationResult` as
-`checkPaths`, without reading files. Loading warnings permit compilation; loading
-errors stop it before parsing.
+compiler. `compileSources(batch, compiler, target)` accepts snapshots without
+reading their backing files; configured source roots can contribute additional
+scripts. Loading warnings permit compilation; loading errors stop it before
+parsing. The existing `checkPath`, `checkPaths`, `checkSources`, and `analyzeSources`
+conveniences in `<nomad/compiler/CompilerTools.hpp>` remain available during the
+staged cleanup, delegating to configured compilation.
 
 ## Persistent interpretation
 

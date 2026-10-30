@@ -614,8 +614,6 @@ public:
     void executeNativeFunction(CallableId nativeFunctionId, const std::vector<RuntimeValue>& args, InterpreterContext& context);
 
     // Debug
-    void dumpInstructions(std::ostream& out) const;
-    void dumpInstructions(std::ostream& out, const ScriptCallableBase* callable) const;
     void dumpDocumentation(std::ostream& out) const;
 
 private:

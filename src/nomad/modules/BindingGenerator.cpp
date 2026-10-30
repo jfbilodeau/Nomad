@@ -2,7 +2,8 @@
 
 #include <nomad/modules/BindingGenerator.hpp>
 
-#include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/Compilation.hpp>
+#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/script/Runtime.hpp>
@@ -100,7 +101,8 @@ NomadString deferredTypeMemberName(const BindingModel& model, NomadString name) 
 }
 
 void requireCompilation(const SourceBatch& batch, Runtime& runtime) {
-    const auto result = checkSources(batch, &runtime);
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(batch, *compiler);
     if (!result.succeeded()) {
         NomadString message = "script compilation failed (native modules are not loaded)";
         for (const auto& diagnostic : result.diagnostics) {

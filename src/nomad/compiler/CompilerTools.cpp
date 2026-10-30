@@ -6,6 +6,7 @@
 #include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/script/Documentation.hpp>
+#include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
@@ -64,10 +65,6 @@ CompilationArtifacts compilePaths(
 
 } // namespace
 
-bool CompilationResult::succeeded() const {
-    return errorCount == 0;
-}
-
 CompilationResult checkPath(const std::filesystem::path& path, Runtime* runtime) {
     return checkPaths({path}, runtime);
 }
@@ -82,14 +79,6 @@ CompilationResult checkSources(const SourceBatch& batch, Runtime* runtime) {
 
 CompilationResult analyzeSources(const SourceBatch& batch, Runtime* runtime) {
     return compileArtifacts(batch, runtime, CompilationTarget::Analysis).result;
-}
-
-CompilationResult compileSources(const SourceBatch& batch, Compiler& compiler, const CompilationTarget target) {
-    CompilerContext context(&compiler);
-    compiler.registerSources(&context, batch);
-    (void)compiler.compileScripts(&context, target);
-    const auto diagnostics = context.getDiagnostics();
-    return {{diagnostics.begin(), diagnostics.end()}, context.getErrorCount(), context.getWarningCount()};
 }
 
 void validateEntryFunction(
@@ -184,13 +173,13 @@ InstructionDumpResult formatInstructionDump(
         }
 
         std::ostringstream output;
-        runtime.dumpInstructions(output, function);
+        dumpInstructions(runtime, *function, output);
         result.instructions = output.str();
         return result;
     }
 
     std::ostringstream output;
-    runtime.dumpInstructions(output);
+    dumpInstructions(runtime, output);
     result.instructions = output.str();
 
     return result;

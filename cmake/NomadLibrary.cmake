@@ -6,10 +6,12 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/compiler/ClassDeclaration.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/ClassFieldInitializerStatement.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/ClassMemberDeclaration.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/Compilation.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Compiler.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerContext.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerTools.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/DeferredType.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/Diagnostic.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Expression.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/FormatStringCompiler.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/FunctionParameterTypeTarget.cpp
@@ -45,6 +47,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/Event.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/FormatString.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Hub.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/InstructionDump.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterContext.cpp

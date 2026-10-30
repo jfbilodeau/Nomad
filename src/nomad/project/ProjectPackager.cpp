@@ -2,7 +2,6 @@
 
 #include <nomad/project/ProjectPackager.hpp>
 
-#include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/system/ModuleHost.hpp>

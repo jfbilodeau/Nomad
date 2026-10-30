@@ -15,6 +15,7 @@
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/game/Game.hpp>

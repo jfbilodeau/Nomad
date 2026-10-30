@@ -5,7 +5,7 @@
 #include <nomad/lsp/SignatureHelp.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
-#include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 #include <nomad/compiler/Tokenizer.hpp>

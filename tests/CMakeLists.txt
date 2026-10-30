@@ -9,6 +9,7 @@ add_executable(
     ./CallableCatalogTest.cpp
     ./ClassTypeTest.cpp
     ./ColorTest.cpp
+    ./CompilationTest.cpp
     ./CompilerContextTest.cpp
     ./CompilerHooksTest.cpp
     ./CompilerTest.cpp
