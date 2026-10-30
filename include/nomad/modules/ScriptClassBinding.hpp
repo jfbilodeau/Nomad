@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nomad/script/Type.hpp>
+#include <nomad/script/BaseTypes.hpp>
 
 namespace nomad {
 

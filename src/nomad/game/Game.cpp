@@ -12,9 +12,9 @@
 
 #include <nomad/game/resource/ResourceManager.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
 
 #include <nomad/system/Path.hpp>
 #include <nomad/system/SystemFunctions.hpp>

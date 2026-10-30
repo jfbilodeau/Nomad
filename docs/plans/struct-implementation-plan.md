@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1D have been reviewed; Step 1E below is implemented and awaiting review.
+Steps 1A through 1E have been reviewed; Step 1F below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -338,6 +338,43 @@ Step 1E validation:
 - No struct execution, layout finalization, new opcodes, calling-convention
   changes, or gameplay validation are included in this slice.
 
+Approved sixth slice (Step 1F):
+
+- Rename `RecordType` to `CompositeType` and `asRecordType()` to
+  `asCompositeType()` throughout the public APIs, implementation, and tests.
+  This supersedes the Step 1E names and header organization.
+- Use `Type.hpp/.cpp` for the base type, storage categories, and opcode metadata;
+  remove the separate `TypeBase.hpp`.
+- Place `ValueType`, `CompositeType`, and `ClassType` in their matching headers
+  and sources. Group existing concrete built-in descriptors in
+  `BaseTypes.hpp/.cpp`.
+- Keep existing dedicated descriptors in their modules. Move the existing
+  `EventType` implementation beside its declaration in `Event.cpp`.
+- Update consuming includes, CMake sources, and embedding documentation. Do not
+  retain an umbrella include in `Type.hpp` or introduce compatibility aliases
+  for the just-added record name.
+- Preserve type behavior, ownership, member catalogs, and instruction settings.
+  No struct descriptor, layout-finalization state, syntax, or execution changes.
+
+Step 1F validation:
+
+- The Windows Debug `nomad_test` and `nomad-lsp` targets built successfully.
+  Removing transitive type includes exposed missing callable-ID includes in the
+  game headers; both now include `Callable.hpp` directly. Existing
+  `[[nodiscard]]` warnings remain outside this reorganization.
+- The `nomad_test_language`, `nomad_test_remaining`, `nomad_test_bindings`, and
+  `nomad_test_tooling` regression groups passed. The `nomad_lsp_process` test
+  also passed.
+- All four documentation preparation tests and whitespace checks passed.
+- Verified all five requested header/source pairs, their corresponding first
+  source includes, removal of the superseded files, and absence of obsolete
+  record/base-header names from code and CMake sources.
+- Existing regression coverage exercises the renamed composite view, type
+  sizes/conversions, member ownership/layout, native callbacks, interpreter,
+  generated bindings, module compilation, and LSP behavior.
+- No struct execution, layout finalization, new opcodes, calling-convention
+  changes, or gameplay validation are included in this slice.
+
 Next design discussion: struct-specific layout finalization and finite-layout
 cycle handling, coordinated with real struct/member metadata. Object allocation
 and executable aggregate accesses remain later work.
@@ -516,6 +553,10 @@ scope. No commit or push without a separate request.
 
 - Type/lifecycle metadata: [Type.hpp](../../include/nomad/script/Type.hpp),
   [Type.cpp](../../src/nomad/script/Type.cpp),
+  [ValueType.hpp](../../include/nomad/script/ValueType.hpp),
+  [CompositeType.hpp](../../include/nomad/script/CompositeType.hpp),
+  [ClassType.hpp](../../include/nomad/script/ClassType.hpp),
+  [BaseTypes.hpp](../../include/nomad/script/BaseTypes.hpp),
   [RuntimeValue.hpp](../../include/nomad/script/RuntimeValue.hpp).
 - Members/declarations/inference:
   [ClassDeclaration.cpp](../../src/nomad/compiler/ClassDeclaration.cpp),

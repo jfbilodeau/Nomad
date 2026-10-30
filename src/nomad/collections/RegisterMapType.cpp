@@ -8,8 +8,8 @@
 #include <nomad/collections/MapType.hpp>
 #include <nomad/collections/ReadOnlyMapType.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <utility>

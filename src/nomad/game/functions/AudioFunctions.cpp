@@ -11,9 +11,9 @@
 #include <nomad/game/resource/AudioObject.hpp>
 #include <nomad/game/resource/ResourceManager.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/Path.hpp>

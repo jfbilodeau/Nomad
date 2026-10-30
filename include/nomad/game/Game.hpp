@@ -15,6 +15,7 @@
 #include <nomad/game/GameOptions.hpp>
 #include <nomad/game/InputManager.hpp>
 
+#include <nomad/script/Callable.hpp>
 #include <nomad/script/RuntimeValue.hpp>
 #include <nomad/script/Variable.hpp>
 

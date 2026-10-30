@@ -4,8 +4,8 @@
 
 #include <nomad/compiler/DeferredType.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
 
 #include <utility>
 

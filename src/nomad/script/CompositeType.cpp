@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/script/RecordType.hpp>
+#include <nomad/script/CompositeType.hpp>
 
 #include <nomad/log/Logger.hpp>
 
@@ -13,7 +13,7 @@
 
 namespace nomad {
 
-RecordType::RecordType(
+CompositeType::CompositeType(
     Runtime* runtime,
     TypeId id,
     NomadString name,
@@ -26,25 +26,25 @@ RecordType::RecordType(
     m_mode(mode)
 {}
 
-RecordType::~RecordType() = default;
+CompositeType::~CompositeType() = default;
 
-NomadString RecordType::getTypeName() const {
+NomadString CompositeType::getTypeName() const {
     return m_name;
 }
 
-const NomadString& RecordType::getInitializerName() const {
+const NomadString& CompositeType::getInitializerName() const {
     return m_initializerName;
 }
 
-const RecordType* RecordType::asRecordType() const {
+const CompositeType* CompositeType::asCompositeType() const {
     return this;
 }
 
-bool RecordType::isOpen() const {
+bool CompositeType::isOpen() const {
     return m_mode == ClassMode::Opened;
 }
 
-CallableId RecordType::registerConstructor(
+CallableId CompositeType::registerConstructor(
     Runtime& runtime,
     std::unique_ptr<Constructor> constructor
 ) {
@@ -63,7 +63,7 @@ CallableId RecordType::registerConstructor(
     return id;
 }
 
-std::vector<const Constructor*> RecordType::getConstructors() const {
+std::vector<const Constructor*> CompositeType::getConstructors() const {
     std::vector<const Constructor*> constructors;
     constructors.reserve(m_constructors.size());
     for (const auto& constructor : m_constructors) {
@@ -72,7 +72,7 @@ std::vector<const Constructor*> RecordType::getConstructors() const {
     return constructors;
 }
 
-CallableId RecordType::registerMethod(
+CallableId CompositeType::registerMethod(
     Runtime& runtime,
     std::unique_ptr<Method> method
 ) {
@@ -92,7 +92,7 @@ CallableId RecordType::registerMethod(
     return id;
 }
 
-std::vector<const Method*> RecordType::getMethods() const {
+std::vector<const Method*> CompositeType::getMethods() const {
     std::vector<const Method*> methods;
     methods.reserve(m_methods.size());
     for (const auto& method : m_methods) {
@@ -101,7 +101,7 @@ std::vector<const Method*> RecordType::getMethods() const {
     return methods;
 }
 
-PropertyId RecordType::registerProperty(
+PropertyId CompositeType::registerProperty(
     Runtime& runtime,
     std::unique_ptr<Property> property
 ) {
@@ -127,7 +127,7 @@ PropertyId RecordType::registerProperty(
     return id;
 }
 
-const Property* RecordType::getProperty(const NomadString& name) const {
+const Property* CompositeType::getProperty(const NomadString& name) const {
     const auto property = std::find_if(
         m_properties.begin(),
         m_properties.end(),
@@ -138,14 +138,14 @@ const Property* RecordType::getProperty(const NomadString& name) const {
     return property == m_properties.end() ? nullptr : property->get();
 }
 
-const Property* RecordType::getProperty(const PropertyId id) const {
+const Property* CompositeType::getProperty(const PropertyId id) const {
     const auto property = std::find_if(m_properties.begin(), m_properties.end(), [id](const auto& candidate) {
         return candidate->getId() == id;
     });
     return property == m_properties.end() ? nullptr : property->get();
 }
 
-std::vector<const Property*> RecordType::getProperties() const {
+std::vector<const Property*> CompositeType::getProperties() const {
     std::vector<const Property*> properties;
     properties.reserve(m_properties.size());
     for (const auto& property : m_properties) {
@@ -154,11 +154,11 @@ std::vector<const Property*> RecordType::getProperties() const {
     return properties;
 }
 
-NomadIndex RecordType::getPropertyCount() const {
+NomadIndex CompositeType::getPropertyCount() const {
     return static_cast<NomadIndex>(m_properties.size());
 }
 
-NomadIndex RecordType::getFieldIndex(const PropertyId id) const {
+NomadIndex CompositeType::getFieldIndex(const PropertyId id) const {
     auto index = NomadIndex{0};
     for (const auto& property : m_properties) {
         if (property->asNativeProperty() != nullptr) {
@@ -172,7 +172,7 @@ NomadIndex RecordType::getFieldIndex(const PropertyId id) const {
     return NOMAD_INVALID_INDEX;
 }
 
-NomadIndex RecordType::getFieldOffset(const PropertyId id) const {
+NomadIndex CompositeType::getFieldOffset(const PropertyId id) const {
     const auto* field = getProperty(id);
     if (field == nullptr || field->asNativeProperty() != nullptr) {
         throw NomadException("Cannot calculate field offset: property ID does not identify a stored field of '" +
@@ -196,7 +196,7 @@ NomadIndex RecordType::getFieldOffset(const PropertyId id) const {
     return offset;
 }
 
-NomadIndex RecordType::getFieldStorageSize() const {
+NomadIndex CompositeType::getFieldStorageSize() const {
     auto size = NomadIndex{0};
     for (const auto& property : m_properties) {
         if (property->asNativeProperty() != nullptr) {

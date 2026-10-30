@@ -8,6 +8,7 @@
 
 #include <nomad/log/Logger.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/DynamicVariable.hpp>
@@ -19,7 +20,6 @@
 #include <nomad/script/NativeMember.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/ScriptCallable.hpp>
-#include <nomad/script/Type.hpp>
 #include <nomad/script/TypedNativeFunction.hpp>
 #include <nomad/script/VariableContext.hpp>
 

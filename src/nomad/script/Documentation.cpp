@@ -5,10 +5,10 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/Parser.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Property.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
-#include <nomad/script/Type.hpp>
 
 #include <boost/json.hpp>
 

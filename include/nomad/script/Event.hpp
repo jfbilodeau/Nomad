@@ -5,7 +5,7 @@
 #include <nomad/Nomad.hpp>
 
 #include <nomad/script/RuntimeValue.hpp>
-#include <nomad/script/Type.hpp>
+#include <nomad/script/ValueType.hpp>
 
 #include <vector>
 

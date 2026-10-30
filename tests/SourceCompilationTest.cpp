@@ -9,11 +9,11 @@
 #include <nomad/game/Cardinal.hpp>
 #include <nomad/game/Game.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
-#include <nomad/script/Type.hpp>
 
 #include <TestDirectory.hpp>
 

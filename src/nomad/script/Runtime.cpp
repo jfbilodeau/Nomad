@@ -4,6 +4,7 @@
 
 #include <nomad/compiler/Compiler.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/Hub.hpp>
@@ -14,7 +15,6 @@
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/RegisterRangeType.hpp>
 #include <nomad/script/ScriptCallable.hpp>
-#include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/String.hpp>

@@ -13,8 +13,8 @@
 #include <nomad/log/Logger.hpp>
 #include <nomad/log/MemorySink.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
 
 #include <boost/test/unit_test.hpp>
 

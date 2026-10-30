@@ -398,6 +398,14 @@ snapshot directly.
 
 ### Type lookup
 
+Include `<nomad/script/Type.hpp>` for the base `Type`, storage categories, and
+opcode metadata. Concrete built-in descriptors such as `IntegerType`,
+`StringType`, `EnumType`, and the hidden source-location types are declared in
+`<nomad/script/BaseTypes.hpp>`. The category bases have dedicated headers:
+`<nomad/script/ValueType.hpp>`, `<nomad/script/CompositeType.hpp>`, and
+`<nomad/script/ClassType.hpp>`. Include the descriptor's header when deriving
+from it or accessing its category-specific APIs.
+
 `Runtime::getTypeId(name)` returns a `TypeId`, or `TypeId::INVALID`
 when the type is not registered. Pass it to `getType(id)` to retrieve an optional
 `const Type*`; invalid or unregistered IDs return an empty optional. Type IDs
@@ -625,14 +633,15 @@ whether external script declarations may extend it. Closed types are not immutab
 `Type::asClassType()` returns the same descriptor as a borrowed `const ClassType*`
 for class types and their subclasses, including strings, or `nullptr` for other types.
 
-`ClassType` inherits member metadata from the abstract `RecordType` base
-(include `<nomad/script/RecordType.hpp>`). `Type::asRecordType()` returns that
-descriptor as a borrowed `const RecordType*` for classes and their subclasses,
-or `nullptr` for types without record metadata. The record view exposes the type
+`ClassType` inherits member metadata from the abstract `CompositeType` base
+(include `<nomad/script/CompositeType.hpp>`). `Type::asCompositeType()` returns that
+descriptor as a borrowed `const CompositeType*` for classes and their subclasses,
+or `nullptr` for types without composite metadata. The composite view exposes the type
 name, openness, initializer name, properties, constructors, methods, and field
 layout queries. It refers to the same member catalog and IDs as the class view.
-Existing `ClassType` member APIs and the `<nomad/script/Type.hpp>` include remain
-available. Class values retain their one-slot reference and ownership behavior.
+Existing `ClassType` member APIs remain available through
+`<nomad/script/ClassType.hpp>`. Class values retain their one-slot reference and
+ownership behavior.
 
 Register the owner type with the runtime before declaring its properties.
 `Runtime::registerProperty(ownerTypeId, name, valueType)` declares a stored/script
@@ -650,7 +659,7 @@ IDs return `nullptr`. Include `<nomad/script/Property.hpp>` for `PropertyId`
 and common metadata, and `<nomad/script/NativeProperty.hpp>` for native metadata.
 Use `getId()`, `getClassType()`, `getName()`, `getValueType()`, and `getDoc()`
 to inspect a class property. `getOwnerType()` returns its borrowed
-`const RecordType*` owner; `getClassType()` retains the class-specific view.
+`const CompositeType*` owner; `getClassType()` retains the class-specific view.
 `hasExplicitInitializer()` reports whether a stored field
 has a declaration initializer; assignments inside constructor bodies do not set
 this flag. `Runtime::setPropertyHasExplicitInitializer(propertyId, value)` updates
@@ -1954,7 +1963,7 @@ after registration does not change the registered factory.
 factory ID.
 
 The source `ClassType` owns its iterable association. Include
-`<nomad/script/Type.hpp>` for `IterableInfo`.
+`<nomad/script/ClassType.hpp>` for `IterableInfo`.
 `ClassType::getIterableInfo()` returns an optional snapshot containing
 the element type, iterator type, and factory `CallableId`. Runtime lookup returns
 the same snapshot, or an empty optional for a non-iterable or foreign-runtime type.

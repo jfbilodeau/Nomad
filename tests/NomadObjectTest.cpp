@@ -8,9 +8,9 @@
 #include <nomad/collections/ListObject.hpp>
 #include <nomad/collections/MapObject.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
 
 #include <boost/test/unit_test.hpp>
 

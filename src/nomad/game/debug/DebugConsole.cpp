@@ -10,10 +10,10 @@
 
 #include <nomad/log/Logger.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
-#include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 

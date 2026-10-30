@@ -7,9 +7,9 @@
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
-#include <nomad/script/Type.hpp>
 
 #include <boost/json.hpp>
 

@@ -13,8 +13,8 @@
 #include <nomad/collections/ArrayType.hpp>
 #include <nomad/collections/ReadOnlyArrayType.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <utility>

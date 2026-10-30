@@ -12,9 +12,9 @@
 
 #include <nomad/project/ProjectConfiguration.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/Property.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
 
 #include <nomad/system/Path.hpp>
 #include <nomad/system/ProjectSession.hpp>

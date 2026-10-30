@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/script/BaseTypes.hpp>
+#include <nomad/script/CompositeType.hpp>
 #include <nomad/script/NativeProperty.hpp>
-#include <nomad/script/RecordType.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
 
 #include <boost/test/unit_test.hpp>
 
@@ -21,9 +21,9 @@ static_assert(!std::is_convertible_v<NomadId, PropertyId>);
 static_assert(!std::is_convertible_v<PropertyId, NomadId>);
 static_assert(!std::is_convertible_v<PropertyId, CallableId>);
 static_assert(!std::is_copy_constructible_v<Property>);
-static_assert(std::is_abstract_v<RecordType>);
-static_assert(std::is_base_of_v<Type, RecordType>);
-static_assert(std::is_base_of_v<RecordType, ClassType>);
+static_assert(std::is_abstract_v<CompositeType>);
+static_assert(std::is_base_of_v<Type, CompositeType>);
+static_assert(std::is_base_of_v<CompositeType, ClassType>);
 static_assert(!std::is_default_constructible_v<IntegerType>);
 static_assert(!std::is_constructible_v<ClassType, NomadString, ClassMode>);
 static_assert(!std::is_constructible_v<ClassType, Runtime*, NomadString>);
@@ -78,34 +78,34 @@ const ClassType* createTestType(Runtime& runtime, const NomadString& name, const
 
 BOOST_AUTO_TEST_SUITE(class_type)
 
-BOOST_AUTO_TEST_CASE(record_and_class_views_share_member_ownership_and_layout) {
+BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout) {
     Runtime runtime;
     FieldLayoutTestType* owner = nullptr;
     BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
         "Fields", ClassMode::Closed, owner, NomadIndex{1}
     ).isValid());
-    RecordType* record = owner;
-    BOOST_TEST(record->asRecordType() == record);
-    BOOST_TEST(record->asClassType() == owner);
-    BOOST_TEST(record->getRuntime() == &runtime);
-    BOOST_TEST(record->getId() == owner->getId());
-    BOOST_TEST(record->getTypeName() == "Fields");
-    BOOST_TEST(record->getInitializerName() == "Fields$init");
-    BOOST_TEST(!record->isOpen());
-    BOOST_TEST(record->getPropertyCount() == 0U);
-    BOOST_TEST(record->getFieldStorageSize() == 0U);
-    BOOST_TEST(record->getMethods().empty());
-    BOOST_TEST(record->getConstructors().empty());
-    BOOST_TEST((record->getStorage() == TypeStorage::Object));
-    BOOST_TEST(record->getSize() == 1U);
-    BOOST_TEST(record->needsFree());
-    BOOST_TEST(runtime.getInstructionId(record->getTypeOpCodes()->initResult) ==
+    CompositeType* composite = owner;
+    BOOST_TEST(composite->asCompositeType() == composite);
+    BOOST_TEST(composite->asClassType() == owner);
+    BOOST_TEST(composite->getRuntime() == &runtime);
+    BOOST_TEST(composite->getId() == owner->getId());
+    BOOST_TEST(composite->getTypeName() == "Fields");
+    BOOST_TEST(composite->getInitializerName() == "Fields$init");
+    BOOST_TEST(!composite->isOpen());
+    BOOST_TEST(composite->getPropertyCount() == 0U);
+    BOOST_TEST(composite->getFieldStorageSize() == 0U);
+    BOOST_TEST(composite->getMethods().empty());
+    BOOST_TEST(composite->getConstructors().empty());
+    BOOST_TEST((composite->getStorage() == TypeStorage::Object));
+    BOOST_TEST(composite->getSize() == 1U);
+    BOOST_TEST(composite->needsFree());
+    BOOST_TEST(runtime.getInstructionId(composite->getTypeOpCodes()->initResult) ==
         runtime.getInstructionId(OpCodes::op_object_init_r));
-    BOOST_TEST(runtime.getInstructionId(record->getTypeOpCodes()->freeResult) ==
+    BOOST_TEST(runtime.getInstructionId(composite->getTypeOpCodes()->freeResult) ==
         runtime.getInstructionId(OpCodes::op_object_free_r));
 
-    const auto stored = record->registerProperty(runtime,
-        std::make_unique<Property>(record, "stored", runtime.getStringType()));
+    const auto stored = composite->registerProperty(runtime,
+        std::make_unique<Property>(composite, "stored", runtime.getStringType()));
     BOOST_REQUIRE(stored.isValid());
     auto callbackCalls = 0;
     const auto native = runtime.addProperty(owner->getId(), {
@@ -128,26 +128,26 @@ BOOST_AUTO_TEST_CASE(record_and_class_views_share_member_ownership_and_layout) {
     BOOST_REQUIRE(native.isValid());
     BOOST_REQUIRE(method.isValid());
     BOOST_REQUIRE(constructor.isValid());
-    BOOST_TEST(record->getProperties() == owner->getProperties());
-    BOOST_TEST(record->getMethods() == owner->getMethods());
-    BOOST_TEST(record->getConstructors() == owner->getConstructors());
-    BOOST_REQUIRE(record->getMethods().size() == 1U);
-    BOOST_REQUIRE(record->getConstructors().size() == 1U);
-    BOOST_TEST(record->getMethods().front() == runtime.getMethod(method));
-    BOOST_TEST(record->getConstructors().front() == runtime.getConstructor(constructor));
+    BOOST_TEST(composite->getProperties() == owner->getProperties());
+    BOOST_TEST(composite->getMethods() == owner->getMethods());
+    BOOST_TEST(composite->getConstructors() == owner->getConstructors());
+    BOOST_REQUIRE(composite->getMethods().size() == 1U);
+    BOOST_REQUIRE(composite->getConstructors().size() == 1U);
+    BOOST_TEST(composite->getMethods().front() == runtime.getMethod(method));
+    BOOST_TEST(composite->getConstructors().front() == runtime.getConstructor(constructor));
     for (const auto id : {stored, native}) {
-        const auto* property = record->getProperty(id);
+        const auto* property = composite->getProperty(id);
         BOOST_REQUIRE(property != nullptr);
         BOOST_TEST(property == runtime.getProperty(id));
-        BOOST_TEST(property->getOwnerType() == record);
+        BOOST_TEST(property->getOwnerType() == composite);
         BOOST_TEST(property->getClassType() == owner);
     }
-    BOOST_TEST(record->getPropertyCount() == 2U);
-    BOOST_TEST(record->getFieldIndex(stored) == 0U);
-    BOOST_TEST(record->getFieldOffset(stored) == 0U);
-    BOOST_TEST(record->getFieldStorageSize() == 1U);
-    BOOST_TEST(record->getFieldIndex(native) == NOMAD_INVALID_INDEX);
-    BOOST_CHECK_THROW((void)record->getFieldOffset(native), NomadException);
+    BOOST_TEST(composite->getPropertyCount() == 2U);
+    BOOST_TEST(composite->getFieldIndex(stored) == 0U);
+    BOOST_TEST(composite->getFieldOffset(stored) == 0U);
+    BOOST_TEST(composite->getFieldStorageSize() == 1U);
+    BOOST_TEST(composite->getFieldIndex(native) == NOMAD_INVALID_INDEX);
+    BOOST_CHECK_THROW((void)composite->getFieldOffset(native), NomadException);
     BOOST_TEST(callbackCalls == 0);
 
     Property unowned(nullptr, "unowned", runtime.getIntegerType());
@@ -332,16 +332,16 @@ BOOST_AUTO_TEST_CASE(class_conversion_returns_the_original_descriptor_for_classe
     const Type* closed = createTestType(runtime, "Closed", ClassMode::Closed);
     BOOST_TEST(opened->asClassType() == opened);
     BOOST_TEST(closed->asClassType() == closed);
-    BOOST_TEST(opened->asRecordType() == opened);
-    BOOST_TEST(closed->asRecordType() == closed);
-    BOOST_TEST(opened->asRecordType()->isOpen());
-    BOOST_TEST(!closed->asRecordType()->isOpen());
+    BOOST_TEST(opened->asCompositeType() == opened);
+    BOOST_TEST(closed->asCompositeType() == closed);
+    BOOST_TEST(opened->asCompositeType()->isOpen());
+    BOOST_TEST(!closed->asCompositeType()->isOpen());
     const Type* stringType = runtime.getStringType();
     BOOST_TEST(stringType->asClassType() == runtime.getStringType());
-    BOOST_TEST(stringType->asRecordType() == runtime.getStringType());
+    BOOST_TEST(stringType->asCompositeType() == runtime.getStringType());
     const auto* fileNameType = runtime.getFileNameType();
     BOOST_TEST(fileNameType->asClassType() == fileNameType);
-    BOOST_TEST(fileNameType->asRecordType() == fileNameType);
+    BOOST_TEST(fileNameType->asCompositeType() == fileNameType);
 }
 
 BOOST_AUTO_TEST_CASE(class_conversion_returns_null_for_non_class_descriptors) {
@@ -356,7 +356,7 @@ BOOST_AUTO_TEST_CASE(class_conversion_returns_null_for_non_class_descriptors) {
         BOOST_REQUIRE(type != nullptr);
         BOOST_TEST_CONTEXT(type->getTypeName()) {
             BOOST_TEST(type->asClassType() == nullptr);
-            BOOST_TEST(type->asRecordType() == nullptr);
+            BOOST_TEST(type->asCompositeType() == nullptr);
         }
     }
 }

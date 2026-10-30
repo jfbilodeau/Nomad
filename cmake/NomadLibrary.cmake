@@ -40,8 +40,11 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/modules/ScriptBindings.cpp
     ${NOMAD_SOURCE_DIR}/nomad/modules/ScriptClassBinding.cpp
 
+    ${NOMAD_SOURCE_DIR}/nomad/script/BaseTypes.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Callable.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/ClassType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Closure.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/CompositeType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Documentation.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/DynamicVariable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Event.cpp
@@ -63,7 +66,6 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/RangeIterator.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RangeObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RangeType.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/RecordType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RegisterRangeType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Runtime.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeOpCodes.cpp
@@ -73,6 +75,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptMethod.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Type.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/ValueType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Variable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/VariableContext.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/VirtualMachine.cpp

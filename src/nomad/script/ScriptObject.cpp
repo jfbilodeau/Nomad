@@ -2,8 +2,8 @@
 
 #include <nomad/script/ScriptObject.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/Property.hpp>
-#include <nomad/script/Type.hpp>
 
 namespace nomad {
 

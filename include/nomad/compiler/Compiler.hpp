@@ -15,8 +15,8 @@
 #include <nomad/compiler/StatementParsers.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/OpCode.hpp>
-#include <nomad/script/Type.hpp>
 
 #include <functional>
 #include <span>

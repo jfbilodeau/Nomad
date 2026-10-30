@@ -4,10 +4,10 @@
 
 #include <nomad/game/EntityVariableContext.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/ScriptCallable.hpp>
-#include <nomad/script/Type.hpp>
 #include <nomad/script/Variable.hpp>
 #include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>

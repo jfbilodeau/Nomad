@@ -4,7 +4,7 @@
 
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/Property.hpp>
-#include <nomad/script/TypeBase.hpp>
+#include <nomad/script/Type.hpp>
 
 #include <memory>
 #include <vector>
@@ -16,14 +16,14 @@ enum class ClassMode {
     Closed,
 };
 
-class RecordType : public Type {
+class CompositeType : public Type {
 public:
-    ~RecordType() override;
+    ~CompositeType() override;
 
     using Type::toString;
     [[nodiscard]] NomadString getTypeName() const override;
     [[nodiscard]] const NomadString& getInitializerName() const;
-    [[nodiscard]] const RecordType* asRecordType() const override;
+    [[nodiscard]] const CompositeType* asCompositeType() const override;
     [[nodiscard]] bool isOpen() const;
     [[nodiscard]] CallableId registerConstructor(
         Runtime& runtime,
@@ -48,7 +48,7 @@ public:
     [[nodiscard]] virtual NomadIndex getPropertyCount() const;
 
 protected:
-    RecordType(
+    CompositeType(
         Runtime* runtime,
         TypeId id,
         NomadString name,

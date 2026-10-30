@@ -11,7 +11,7 @@
 namespace nomad {
 
 Property::Property(
-    const RecordType* ownerType,
+    const CompositeType* ownerType,
     NomadString name,
     const Type* valueType,
     NomadString doc
@@ -32,7 +32,7 @@ const ClassType* Property::getClassType() const {
     return m_ownerType == nullptr ? nullptr : m_ownerType->asClassType();
 }
 
-const RecordType* Property::getOwnerType() const {
+const CompositeType* Property::getOwnerType() const {
     return m_ownerType;
 }
 
