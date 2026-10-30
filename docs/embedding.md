@@ -275,8 +275,9 @@ releases owned sinks without allowing those exceptions to escape.
 
 Include `<nomad/log/FileSink.hpp>` to inspect a file sink or adjust its rotation
 settings. C++ callers supply an explicit `directory`; relative directories are
-resolved when the sink is created. Project-relative defaults will be provided by
-project configuration integration, which is not yet available.
+resolved when the sink is created. The selected `log` module supplies
+project-relative defaults through its
+[project logging settings](nomad-log.md#project-logging-schema).
 
 ```cpp
 nomad::FileSinkConfiguration file;

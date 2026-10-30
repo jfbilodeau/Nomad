@@ -35,8 +35,10 @@ messages require both thresholds to be lowered to `debug`.
 The default sink writes to the console; error and
 critical messages use standard error.
 
-By default, debug, info, and warning messages are buffered until the host flushes them.
-The game runtime flushes during its loop; C++ hosts can call `nomad::log::flush`.
+Loading the module defaults to synchronous delivery: accepted messages are
+delivered before the logging call returns. With buffered delivery, debug, info,
+and warning messages wait until the host flushes them. The game runtime flushes
+during its loop; C++ hosts can call `nomad::log::flush`.
 Fatal logging is available to C++ hosts only; there is no `log.fatal` script API.
 
 ## Programmatic configuration
