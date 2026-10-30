@@ -1077,13 +1077,30 @@ and `formatDiagnostic`, independently of compiler contexts.
 `formatDiagnostic(diagnostic, stream)` writes to an existing `std::ostream`
 without adding a newline. The string-returning overload produces the same text.
 
-Compiler tools still offer `dumpInstructions(paths, functionName, compiler)` and
-`generateDocumentationForPaths(paths, compiler)` for borrowing the session compiler.
-Use these overloads for module-aware tooling rather than creating another compiler.
-Documentation generation requires a configured `Compiler&`; it never creates
-a runtime or compiler. `generateDocumentationForPath(path, compiler)` is the
-single-path convenience form. Both compile without executing scripts and return
-diagnostics with empty documentation on compilation failure.
+Exports use explicit steps: load sources, compile with the configured compiler,
+check the result, then format the compiled runtime API. Neither instruction
+dumping nor documentation generation loads sources, creates a compiler, or
+compiles scripts.
+
+```cpp
+const auto result = session->compileSources(session->loadSources(scriptRoots));
+if (result.succeeded()) {
+    nomad::dumpInstructions(*session->getRuntime(), instructionOutput);
+    nomad::generateDocumentation(session->getRuntime(), documentationOutput);
+}
+```
+
+Include `<nomad/script/InstructionDump.hpp>` and
+`<nomad/script/Documentation.hpp>` for these output functions. Callers handle
+compilation diagnostics and decide whether to create or replace output files.
+The compiler CLI does not emit instructions or overwrite documentation when
+compilation fails; an unknown requested dump function is an error.
+
+`<nomad/project/EntryFunction.hpp>` provides optional
+`validateEntryFunction(result, runtime, name, projectFile)` validation for a
+parameterless script entry returning `void`. It appends project-file diagnostics
+only after successful compilation. This is project policy, not a compiler rule;
+compilation does not invoke it automatically, and runtime startup is unchanged.
 
 `ModuleContext::projectMetadata` always points to immutable, host-owned
 `ProjectMetadata` and remains valid throughout the module lifetime.

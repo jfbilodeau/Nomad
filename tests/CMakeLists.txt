@@ -158,6 +158,17 @@ foreach(GROUP IN ITEMS audio language tooling remaining)
     set_tests_properties(nomad_test_${GROUP} PROPERTIES LABELS unit)
 endforeach()
 
+if(TARGET nomadc)
+    add_dependencies(nomad_test nomadc)
+    add_test(NAME nomad_compiler_exports
+        COMMAND "${CMAKE_COMMAND}"
+            "-DNOMADC=$<TARGET_FILE:nomadc>"
+            "-DNOMAD_VERSION=${PROJECT_VERSION}"
+            "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/compiler-exports/$<CONFIG>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/CompilerExportProcessTest.cmake")
+    set_tests_properties(nomad_compiler_exports PROPERTIES TIMEOUT 60)
+endif()
+
 if(TARGET nomad-lsp)
     add_test(NAME nomad_lsp_process
         COMMAND "${CMAKE_COMMAND}"

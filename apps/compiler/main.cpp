@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/log/Logger.hpp>
@@ -9,6 +8,8 @@
 #include <nomad/project/ProjectConfiguration.hpp>
 
 #include <nomad/script/Documentation.hpp>
+#include <nomad/script/InstructionDump.hpp>
+#include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/Path.hpp>
 #include <nomad/system/ProgramOptions.hpp>
@@ -55,7 +56,8 @@ struct HelpParameters {
 
 void printDiagnostics(const CompilationResult& result) {
     for (const auto& diagnostic : result.diagnostics) {
-        std::cerr << formatDiagnostic(diagnostic) << '\n';
+        formatDiagnostic(diagnostic, std::cerr);
+        std::cerr << '\n';
     }
 }
 
@@ -198,14 +200,31 @@ int checkCommand(CheckParameters& parameters, const std::vector<NomadString>& ar
 int dumpCommand(DumpParameters& parameters, const std::vector<NomadString>& arguments) {
     const auto paths = resolveRequestedPaths(parameters.path);
     const auto session = createCompilerSession(paths, arguments);
-    const auto result = dumpInstructions(paths.sources, parameters.function, *session->getCompiler());
-    printDiagnostics(result.compilation);
+    const auto result = session->compileSources(loadSourcePaths(paths.sources));
+    printDiagnostics(result);
 
-    if (!result.compilation.succeeded()) {
+    if (!result.succeeded()) {
         return EXIT_FAILURE;
     }
 
-    std::cout << result.instructions;
+    const auto& runtime = *session->getRuntime();
+    std::ostringstream output;
+    if (parameters.function) {
+        const auto* function = runtime.getScriptFunction(runtime.getFunctionId(*parameters.function));
+        if (function == nullptr) {
+            formatDiagnostic({
+                DiagnosticSeverity::Error, "Unknown function '" + *parameters.function + "'",
+                paths.sources.empty() ? NomadString{} : pathToGenericUtf8(paths.sources.front()),
+                NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX
+            }, std::cerr);
+            std::cerr << '\n';
+            return EXIT_FAILURE;
+        }
+        dumpInstructions(runtime, *function, output);
+    } else {
+        dumpInstructions(runtime, output);
+    }
+    std::cout << output.str();
     return EXIT_SUCCESS;
 }
 
@@ -230,14 +249,16 @@ int documentationCommand(DocumentationParameters& parameters, const std::vector<
 
     const auto paths = resolveRequestedPaths(parameters.path);
     const auto session = createCompilerSession(paths, arguments);
-    const auto result = generateDocumentationForPaths(paths.sources, *session->getCompiler());
-    printDiagnostics(result.compilation);
+    const auto result = session->compileSources(loadSourcePaths(paths.sources));
+    printDiagnostics(result);
 
-    if (!result.compilation.succeeded()) {
+    if (!result.succeeded()) {
         return EXIT_FAILURE;
     }
 
-    return writeOutputFile(outputPath, "documentation", result.documentation);
+    std::ostringstream output;
+    generateDocumentation(session->getRuntime(), output);
+    return writeOutputFile(outputPath, "documentation", output.str());
 }
 
 int textMateCommand(TextMateParameters& parameters, const std::vector<NomadString>& arguments) {

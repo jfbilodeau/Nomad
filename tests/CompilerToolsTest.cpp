@@ -9,7 +9,10 @@
 #include <nomad/game/Cardinal.hpp>
 #include <nomad/game/Game.hpp>
 
+#include <nomad/project/EntryFunction.hpp>
+
 #include <nomad/script/Documentation.hpp>
+#include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
@@ -370,6 +373,14 @@ BOOST_AUTO_TEST_CASE(validates_project_entry_function_presence_and_signature)
     validateEntryFunction(result, &validRuntime, "init", directory.getPath() / "nomad.toml");
 
     BOOST_TEST(result.succeeded());
+
+    CompilationResult failed{
+        {{DiagnosticSeverity::Error, "Earlier compilation failure", "broken.nomad", 1, 1}}, 1, 0
+    };
+    validateEntryFunction(failed, &validRuntime, "missing", directory.getPath() / "nomad.toml");
+    BOOST_REQUIRE(failed.diagnostics.size() == 1U);
+    BOOST_TEST(failed.errorCount == 1U);
+    BOOST_TEST(failed.diagnostics.front().message == "Earlier compilation failure");
 }
 
 BOOST_AUTO_TEST_CASE(reports_compiler_diagnostics_without_executing_source)
@@ -404,11 +415,13 @@ BOOST_AUTO_TEST_CASE(dumps_generated_instructions_without_executing_source)
     TestDirectory directory("nomad_compilation_test_dump");
     const auto source = directory.write("answer.nomad", "return 42");
 
-    const auto result = dumpInstructions(source);
-
-    BOOST_REQUIRE(result.compilation.succeeded());
-    BOOST_TEST(result.instructions.find("function answer") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("return") != NomadString::npos);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_REQUIRE(compileSources(loadSourcePaths(std::vector{source}), *compiler).succeeded());
+    std::ostringstream instructions;
+    dumpInstructions(runtime, instructions);
+    BOOST_TEST(instructions.str().find("function answer") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("return") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(dumps_script_constructors_methods_and_their_call_targets)
@@ -420,15 +433,18 @@ BOOST_AUTO_TEST_CASE(dumps_script_constructors_methods_and_their_call_targets)
         "fun read\nreturn this.value\nend\nend\n"
         "counter = new Counter 4\nreturn counter.read"
     );
-    const auto result = dumpInstructions(source);
-    BOOST_REQUIRE(result.compilation.succeeded());
-    BOOST_TEST(result.instructions.find("constructor Counter amount:int") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("method Counter.read") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("method Counter$init") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("call_script_constructor") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("call_script_method") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("Counter.read (") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("Unknown") == NomadString::npos);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_REQUIRE(compileSources(loadSourcePaths(std::vector{source}), *compiler).succeeded());
+    std::ostringstream instructions;
+    dumpInstructions(runtime, instructions);
+    BOOST_TEST(instructions.str().find("constructor Counter amount:int") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("method Counter.read") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("method Counter$init") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("call_script_constructor") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("call_script_method") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("Counter.read (") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("Unknown") == NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(dumps_only_the_selected_function)
@@ -437,24 +453,15 @@ BOOST_AUTO_TEST_CASE(dumps_only_the_selected_function)
     directory.write("first.nomad", "return 1");
     directory.write("second.nomad", "return 2");
 
-    const auto result = dumpInstructions(directory.getPath(), NomadString{"second"});
-
-    BOOST_REQUIRE(result.compilation.succeeded());
-    BOOST_TEST(result.instructions.find("function second") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("function first") == NomadString::npos);
-}
-
-BOOST_AUTO_TEST_CASE(reports_unknown_dump_functions)
-{
-    TestDirectory directory("nomad_compilation_test_dump_unknown");
-    const auto source = directory.write("answer.nomad", "return 42");
-
-    const auto result = dumpInstructions(source, NomadString{"missing"});
-
-    BOOST_TEST(!result.compilation.succeeded());
-    BOOST_REQUIRE(!result.compilation.diagnostics.empty());
-    BOOST_TEST(result.compilation.diagnostics.back().message == "Unknown function 'missing'");
-    BOOST_TEST(result.instructions.empty());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_REQUIRE(compileSources(loadSourcePaths(std::vector{directory.getPath()}), *compiler).succeeded());
+    const auto* function = runtime.getScriptFunction(runtime.getFunctionId("second"));
+    BOOST_REQUIRE(function != nullptr);
+    std::ostringstream instructions;
+    dumpInstructions(runtime, *function, instructions);
+    BOOST_TEST(instructions.str().find("function second") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("function first") == NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
@@ -472,25 +479,25 @@ BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
 
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    const auto result = generateDocumentationForPath(source, *compiler);
-
-    BOOST_REQUIRE(result.compilation.succeeded());
-    BOOST_TEST(result.documentation.find("# Nomad") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("## Enums") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("## Debugging") == NomadString::npos);
-    BOOST_TEST(result.documentation.find("## Object Members") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("## Functions") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("[Constants](#constants)") == NomadString::npos);
-    BOOST_TEST(result.documentation.find("[Debugging](#debugging)") == NomadString::npos);
-    BOOST_TEST(result.documentation.find("### `string`") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("#### `length` (*read-only property*)") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("#### `toUpper` (*method*)") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("### State") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("* `State.idle`") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("* `State.walking`") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("State.idle:State") == NomadString::npos);
-    BOOST_TEST(result.documentation.find("ANSWER:int = 42") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("[Instructions](#instructions)") == NomadString::npos);
+    BOOST_REQUIRE(compileSources(loadSourcePaths(std::vector{source}), *compiler).succeeded());
+    std::ostringstream documentation;
+    generateDocumentation(&runtime, documentation);
+    BOOST_TEST(documentation.str().find("# Nomad") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("## Enums") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("## Debugging") == NomadString::npos);
+    BOOST_TEST(documentation.str().find("## Object Members") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("## Functions") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("[Constants](#constants)") == NomadString::npos);
+    BOOST_TEST(documentation.str().find("[Debugging](#debugging)") == NomadString::npos);
+    BOOST_TEST(documentation.str().find("### `string`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `length` (*read-only property*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `toUpper` (*method*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("### State") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("* `State.idle`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("* `State.walking`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("State.idle:State") == NomadString::npos);
+    BOOST_TEST(documentation.str().find("ANSWER:int = 42") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("[Instructions](#instructions)") == NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(documentation_uses_the_configured_compiler_roots_hooks_and_deferred_types)
@@ -512,27 +519,13 @@ BOOST_AUTO_TEST_CASE(documentation_uses_the_configured_compiler_roots_hooks_and_
         }
     });
 
-    const auto result = generateDocumentationForPaths(std::vector{source}, *compiler);
-
-    BOOST_REQUIRE(result.compilation.succeeded());
+    BOOST_REQUIRE(compileSources(loadSourcePaths(std::vector{source}), *compiler).succeeded());
+    std::ostringstream documentation;
+    generateDocumentation(&runtime, documentation);
     BOOST_TEST(configured);
     BOOST_TEST(runtime.getFunctionId("$sample.types").isValid());
     BOOST_TEST(runtime.getNativeFunction(id)->isSignatureResolved());
-    BOOST_TEST(result.documentation.find("settings:Settings") != NomadString::npos);
-}
-
-BOOST_AUTO_TEST_CASE(documentation_preserves_compile_errors_and_does_not_return_partial_output)
-{
-    TestDirectory directory("nomad_compilation_test_invalid_documentation");
-    const auto source = directory.write("invalid.nomad", "return missing");
-    Runtime runtime;
-    auto compiler = runtime.createCompiler();
-
-    const auto result = generateDocumentationForPath(source, *compiler);
-
-    BOOST_TEST(!result.compilation.succeeded());
-    BOOST_TEST(!result.compilation.diagnostics.empty());
-    BOOST_TEST(result.documentation.empty());
+    BOOST_TEST(documentation.str().find("settings:Settings") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overloads_without_execution)
@@ -556,17 +549,19 @@ BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overl
     runtime.registerNativeFunction("probe", [&](VirtualMachine*) { ++callbackCalls; },
         {}, runtime.getVoidType(), "");
     auto compiler = runtime.createCompiler();
-    const auto result = generateDocumentationForPath(source, *compiler);
-    BOOST_REQUIRE_MESSAGE(result.compilation.succeeded(),
-        (result.compilation.diagnostics.empty() ? "" : result.compilation.diagnostics.front().message));
+    const auto result = compileSources(loadSourcePaths(std::vector{source}), *compiler);
+    BOOST_REQUIRE_MESSAGE(result.succeeded(),
+        (result.diagnostics.empty() ? "" : result.diagnostics.front().message));
+    std::ostringstream documentation;
+    generateDocumentation(&runtime, documentation);
     BOOST_TEST(callbackCalls == 0);
-    const auto typesStart = result.documentation.find("## Types\n");
-    const auto membersStart = result.documentation.find("## Object Members\n");
-    const auto functionsStart = result.documentation.find("## Functions\n");
+    const auto typesStart = documentation.str().find("## Types\n");
+    const auto membersStart = documentation.str().find("## Object Members\n");
+    const auto functionsStart = documentation.str().find("## Functions\n");
     BOOST_REQUIRE(typesStart != NomadString::npos);
     BOOST_REQUIRE(membersStart != NomadString::npos);
     BOOST_REQUIRE(functionsStart != NomadString::npos);
-    const auto types = result.documentation.substr(typesStart, membersStart - typesStart);
+    const auto types = documentation.str().substr(typesStart, membersStart - typesStart);
     BOOST_TEST(types.find("### `Counter`") != NomadString::npos);
     BOOST_TEST(types.find("### `Empty`") != NomadString::npos);
     BOOST_TEST(types.find("### `model.Point`") != NomadString::npos);
@@ -575,7 +570,7 @@ BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overl
     BOOST_TEST(types.find("Constructor: `new Counter`") == NomadString::npos);
     BOOST_TEST(types.find("Constructor: `new Empty` -> `Empty`") != NomadString::npos);
     BOOST_TEST(types.find("Constructor: `new model.Point` -> `model.Point`") != NomadString::npos);
-    const auto members = result.documentation.substr(membersStart, functionsStart - membersStart);
+    const auto members = documentation.str().substr(membersStart, functionsStart - membersStart);
     const auto counterStart = members.find("### `Counter`");
     BOOST_REQUIRE(counterStart != NomadString::npos);
     const auto counterEnd = members.find("\n### `", counterStart + 1);
@@ -591,14 +586,14 @@ BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overl
     BOOST_TEST(counter.find("`read -> int`") < counter.find("`read delta:float -> float`"));
     BOOST_TEST(counter.find("`read delta:float -> float`") < counter.find("`read delta:int -> int`"));
     BOOST_TEST(counter.find("- `this:") == NomadString::npos);
-    BOOST_TEST(result.documentation.find("$init") == NomadString::npos);
+    BOOST_TEST(documentation.str().find("$init") == NomadString::npos);
     std::vector<ScriptFunction*> functions;
     runtime.getFunctions(functions);
     auto nestedFunctions = 0;
     for (const auto* function : functions) {
         if (!function->isNested()) continue;
         ++nestedFunctions;
-        BOOST_TEST(result.documentation.find("### `" + function->getName() + "`") == NomadString::npos);
+        BOOST_TEST(documentation.str().find("### `" + function->getName() + "`") == NomadString::npos);
     }
     BOOST_TEST(nestedFunctions > 0);
     BOOST_TEST(members.find("#### `length` (*read-only property*)") != NomadString::npos);
@@ -629,12 +624,13 @@ BOOST_AUTO_TEST_CASE(class_reference_overloads_have_deterministic_order)
             "class Counter\nvalue = 1\n" + (reversed ? other + integer : integer + other) + "end");
         Runtime runtime;
         auto compiler = runtime.createCompiler();
-        const auto result = generateDocumentationForPath(source, *compiler);
-        BOOST_REQUIRE(result.compilation.succeeded());
+        BOOST_REQUIRE(compileSources(loadSourcePaths(std::vector{source}), *compiler).succeeded());
+        std::ostringstream documentation;
+        generateDocumentation(&runtime, documentation);
         if (reversed) {
-            BOOST_TEST(result.documentation == expected);
+            BOOST_TEST(documentation.str() == expected);
         } else {
-            expected = result.documentation;
+            expected = documentation.str();
         }
     }
 }

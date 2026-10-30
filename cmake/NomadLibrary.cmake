@@ -143,6 +143,7 @@ endif()
         ${NOMAD_SOURCE_DIR}/nomad/lsp/LanguageServer.cpp
         ${NOMAD_SOURCE_DIR}/nomad/lsp/SignatureHelp.cpp
 
+        ${NOMAD_SOURCE_DIR}/nomad/project/EntryFunction.cpp
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectConfiguration.cpp
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectInitializer.cpp
         ${NOMAD_SOURCE_DIR}/nomad/project/ProjectPackager.cpp

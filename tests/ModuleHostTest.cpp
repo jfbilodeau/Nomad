@@ -15,7 +15,6 @@
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/game/Game.hpp>
@@ -23,6 +22,8 @@
 #include <nomad/log/Logger.hpp>
 #include <nomad/log/MemorySink.hpp>
 
+#include <nomad/script/Documentation.hpp>
+#include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
@@ -156,16 +157,18 @@ BOOST_AUTO_TEST_CASE(module_discovery_is_shared_by_explicit_compilation_instruct
     }
     {
         auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
-        const auto dump = dumpInstructions(std::vector{application}, std::nullopt, *host->getCompiler());
-        BOOST_TEST(dump.compilation.succeeded());
-        BOOST_TEST(dump.instructions.find("moduleAnswer") != NomadString::npos);
+        BOOST_REQUIRE(host->compileSources(loadSourcePaths(std::vector{application})).succeeded());
+        std::ostringstream instructions;
+        dumpInstructions(*host->getRuntime(), instructions);
+        BOOST_TEST(instructions.str().find("moduleAnswer") != NomadString::npos);
     }
     {
         auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
-        const auto documentation = generateDocumentationForPaths(std::vector{application}, *host->getCompiler());
-        BOOST_TEST(documentation.compilation.succeeded());
-        BOOST_TEST(documentation.documentation.find("moduleAnswer") != NomadString::npos);
-        BOOST_TEST(documentation.documentation.find("$fixture.declarations") == NomadString::npos);
+        BOOST_REQUIRE(host->compileSources(loadSourcePaths(std::vector{application})).succeeded());
+        std::ostringstream documentation;
+        generateDocumentation(host->getRuntime(), documentation);
+        BOOST_TEST(documentation.str().find("moduleAnswer") != NomadString::npos);
+        BOOST_TEST(documentation.str().find("$fixture.declarations") == NomadString::npos);
     }
 }
 
@@ -3171,10 +3174,14 @@ BOOST_AUTO_TEST_CASE(compiler_tooling_uses_module_registration_compiler_for_defe
         auto configuration = NomadConfiguration::parse("[fixture]\ndeferred = true\n");
         const auto path = directory.write("main.nomad", "open hub fixture\nclass Settings\nend\nend\nreturn 1\n");
         auto host = ModuleHost::create(configuration, directory.getPath(), fixtureModules(), {}, ModuleMode::Analysis);
-        const auto result = documentation
-            ? generateDocumentationForPaths(std::vector{path}, *host->getCompiler()).compilation
-            : dumpInstructions(std::vector{path}, std::nullopt, *host->getCompiler()).compilation;
-        BOOST_TEST(result.succeeded());
+        BOOST_REQUIRE(host->compileSources(loadSourcePaths(std::vector{path})).succeeded());
+        std::ostringstream output;
+        if (documentation) {
+            generateDocumentation(host->getRuntime(), output);
+        } else {
+            dumpInstructions(*host->getRuntime(), output);
+        }
+        BOOST_TEST(!output.str().empty());
         BOOST_TEST(events(directory).find("deferred-resolve\ndeferred-destroy\n") != NomadString::npos);
     }
 }
