@@ -25,7 +25,12 @@ using namespace nomad;
 
 namespace {
 
-void loadLogModule(boost::dll::shared_library& library, Runtime& runtime, Logger& logger) {
+void loadLogModule(
+    boost::dll::shared_library& library,
+    Runtime& runtime,
+    Logger& logger,
+    LogSinkId& sinkId
+) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"log"});
     BOOST_REQUIRE_EQUAL(modules.size(), 1U);
     const auto path = modules.front().directory / getModuleLibraryName("log");
@@ -62,6 +67,8 @@ void loadLogModule(boost::dll::shared_library& library, Runtime& runtime, Logger
     const auto* type = runtime.getTypeByName("log.ConsoleSink");
     BOOST_REQUIRE(type != nullptr);
     BOOST_REQUIRE(type->asClassType() != nullptr);
+    logger.clearAllSinks();
+    sinkId = logger.createMemorySink();
 }
 
 struct LogSinkObjectFixture {
@@ -162,7 +169,7 @@ BOOST_AUTO_TEST_CASE(logger_local_ids_resolve_against_the_stored_owner) {
 BOOST_AUTO_TEST_CASE(registers_closed_sink_type_with_native_live_properties) {
     boost::dll::shared_library library;
     Runtime runtime;
-    loadLogModule(library, runtime, logger);
+    loadLogModule(library, runtime, logger, sinkId);
     const auto hubId = runtime.getHubId("log");
     BOOST_REQUIRE(hubId.isValid());
     const auto* type = runtime.getTypeByName("log.FileSink")->asClassType();
@@ -208,7 +215,7 @@ BOOST_AUTO_TEST_CASE(registers_closed_sink_type_with_native_live_properties) {
 BOOST_AUTO_TEST_CASE(native_active_property_reads_current_state_and_controls_delivery) {
     boost::dll::shared_library library;
     Runtime runtime;
-    loadLogModule(library, runtime, logger);
+    loadLogModule(library, runtime, logger, sinkId);
     const auto* type = runtime.getTypeByName("log.ConsoleSink")->asClassType();
     const auto activeId = type->getProperty("active")->getId();
     auto machine = runtime.createVirtualMachine();
@@ -239,7 +246,7 @@ BOOST_AUTO_TEST_CASE(native_active_property_reads_current_state_and_controls_del
 BOOST_AUTO_TEST_CASE(native_active_property_rejects_removed_sink_without_touching_replacement) {
     boost::dll::shared_library library;
     Runtime runtime;
-    loadLogModule(library, runtime, logger);
+    loadLogModule(library, runtime, logger, sinkId);
     const auto* type = runtime.getTypeByName("log.ConsoleSink")->asClassType();
     const auto activeId = type->getProperty("active")->getId();
     auto machine = runtime.createVirtualMachine();
@@ -260,7 +267,7 @@ BOOST_AUTO_TEST_CASE(native_active_property_rejects_removed_sink_without_touchin
 BOOST_AUTO_TEST_CASE(native_active_property_rejects_cleared_sink) {
     boost::dll::shared_library library;
     Runtime runtime;
-    loadLogModule(library, runtime, logger);
+    loadLogModule(library, runtime, logger, sinkId);
     const auto* type = runtime.getTypeByName("log.ConsoleSink")->asClassType();
     const auto activeId = type->getProperty("active")->getId();
     auto machine = runtime.createVirtualMachine();

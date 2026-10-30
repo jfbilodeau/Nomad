@@ -220,7 +220,7 @@ BOOST_AUTO_TEST_CASE(logger_properties_use_the_receiver_and_reject_missing_insta
     machine->getProperty(deliveryId, receiver, result);
     BOOST_TEST(result.getIntegerValue() == static_cast<NomadInteger>(LogDeliveryMode::Synchronous));
     BOOST_TEST((logger.getLogLevel() == LogLevel::Info));
-    BOOST_TEST((logger.getDeliveryMode() == LogDeliveryMode::Buffered));
+    BOOST_TEST((logger.getDeliveryMode() == LogDeliveryMode::Synchronous));
     BOOST_TEST((otherLogger.getLogLevel() == LogLevel::Debug));
     BOOST_TEST((otherLogger.getDeliveryMode() == LogDeliveryMode::Synchronous));
     receiver.freeObjectValue();
@@ -281,7 +281,7 @@ BOOST_AUTO_TEST_CASE(console_settings_control_output_without_replacing_cpp_sinks
     BOOST_TEST(execute("return savedSink.active").getBooleanValue());
     BOOST_TEST(execute("return savedSink.level").getIntegerValue() == static_cast<NomadInteger>(LogLevel::Debug));
     BOOST_TEST(execute("return log.logger.level").getIntegerValue() == static_cast<NomadInteger>(LogLevel::Debug));
-    BOOST_TEST(execute("return log.logger.deliveryMode").getIntegerValue() == static_cast<NomadInteger>(LogDeliveryMode::Buffered));
+    BOOST_TEST(execute("return log.logger.deliveryMode").getIntegerValue() == static_cast<NomadInteger>(LogDeliveryMode::Synchronous));
     logger.removeSink(id);
 }
 
@@ -382,6 +382,7 @@ BOOST_AUTO_TEST_CASE(sink_objects_alias_and_release_without_removing_the_sink) {
 
 BOOST_AUTO_TEST_CASE(sink_functions_reject_objects_from_another_logger) {
     Logger otherLogger;
+    (void)otherLogger.createConsoleSink();
     const auto otherId = otherLogger.createMemorySink();
     BOOST_REQUIRE(otherId == memoryId);
     savedSink.setObjectValue(new LogSinkObject(otherLogger, otherId));
@@ -463,7 +464,7 @@ BOOST_AUTO_TEST_CASE(invalid_enum_values_are_rejected_without_narrowing_them) {
         BOOST_REQUIRE(runtime.registerConstant(deliveryName, RuntimeValue(value),
             runtime.getTypeByName("log.DeliveryMode")).isValid());
         BOOST_CHECK_THROW((void)execute("log.logger.deliveryMode = " + deliveryName), NomadException);
-        BOOST_TEST((logger.getDeliveryMode() == LogDeliveryMode::Buffered));
+        BOOST_TEST((logger.getDeliveryMode() == LogDeliveryMode::Synchronous));
     }
 }
 

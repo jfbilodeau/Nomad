@@ -99,9 +99,9 @@ Game, window, audio, text, sprite, and resource-directory settings are validated
 by the game module when it is selected, including during packaging and dry runs.
 Other projects preserve those settings without interpreting them.
 
-The selected `log` module also validates `[log]` and `[[log.sinks]]` settings.
-Log activation from project settings is not implemented yet; validation leaves
-the host logger unchanged. See the [logging schema](nomad-log.md#project-logging-schema)
+The selected `log` module applies `[log]` and `[[log.sinks]]` settings in
+application mode, replacing existing sinks. Analysis and packaging validate
+without changing the host logger. See the [logging schema](nomad-log.md#project-logging-schema)
 for accepted values and defaults.
 
 See [runtime modules](modules.md) for module selection, dependency ordering,

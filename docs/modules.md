@@ -86,6 +86,10 @@ Native filenames include a `.nomad` marker before the platform extension:
 `libgame.nomad.dylib` on macOS. Engine libraries and launcher executable names
 are unchanged.
 
+On Windows, native dependencies are searched beside the module library, beside
+the executable, and in the Windows default DLL directories. Launching with
+`--project-path` does not require the working directory to be the package root.
+
 Modules must be built for the same Nomad SDK, platform, architecture, and
 compatible compiler/runtime settings. Native modules execute trusted native
 code; only use SDKs and modules you trust.

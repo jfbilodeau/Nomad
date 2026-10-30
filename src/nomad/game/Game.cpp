@@ -117,7 +117,7 @@ void Game::initialize()
         );
     }
 
-    if (isDebug()) {
+    if (isDebug() && m_options.configureDebugLogLevel) {
         log::setLogLevel(LogLevel::Debug);
     }
 
@@ -188,7 +188,7 @@ void Game::initializeHeadless()
         setLanguage("en");
     }
 
-    if (isDebug()) {
+    if (isDebug() && m_options.configureDebugLogLevel) {
         log::setLogLevel(LogLevel::Debug);
     }
 

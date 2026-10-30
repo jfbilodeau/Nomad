@@ -12,6 +12,13 @@
 
 #include <nomad/system/Path.hpp>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -106,12 +113,19 @@ ModuleHostImpl::ModuleHostImpl(
 
 void ModuleHostImpl::loadModules(const std::vector<ModuleManifest>& modules) {
     m_moduleScriptRoots = getModuleScriptRoots(modules);
+#ifdef _WIN32
+    const auto loadMode = static_cast<boost::dll::load_mode::type>(
+        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS
+    );
+#else
+    const auto loadMode = boost::dll::load_mode::load_with_altered_search_path;
+#endif
     for (const auto& manifest : modules) {
         auto loaded = std::make_unique<LoadedModule>();
         loaded->name = manifest.name;
         const auto libraryPath = manifest.directory / getModuleLibraryName(manifest.name);
         try {
-            loaded->library.load(libraryPath.native(), boost::dll::load_mode::load_with_altered_search_path);
+            loaded->library.load(std::filesystem::absolute(libraryPath).native(), loadMode);
         } catch (const std::exception& error) {
             throw ModuleException("Failed to load module '" + manifest.name + "' at '" +
                 pathToUtf8(libraryPath) + "': " + error.what());

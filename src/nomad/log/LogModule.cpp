@@ -16,6 +16,8 @@
 #include <nomad/system/Path.hpp>
 
 #include <memory>
+#include <variant>
+#include <vector>
 
 namespace nomad {
 
@@ -551,9 +553,8 @@ void registerLogFunctions(
 }
 
 void registerLogModule(ModuleContext* context, ModuleCallbacks* callbacks) {
-    if (context->configuration != nullptr) {
-        (void)readLogConfiguration(*context->configuration, context->projectDirectory);
-    }
+    const auto settings = context->configuration != nullptr ?
+        readLogConfiguration(*context->configuration, context->projectDirectory) : LogConfiguration{};
     if (context->mode == ModuleMode::Packaging) {
         return;
     }
@@ -577,6 +578,29 @@ void registerLogModule(ModuleContext* context, ModuleCallbacks* callbacks) {
             (void)generated::log::log_FileSinkConfiguration::bind(*bindings);
         }
     };
+    if (context->mode == ModuleMode::Application) {
+        std::vector<std::unique_ptr<LogSink>> sinks;
+        sinks.reserve(settings.sinks.size());
+        for (const auto& configuration : settings.sinks) {
+            if (const auto* console = std::get_if<ConsoleSinkConfiguration>(&configuration)) {
+                sinks.push_back(std::make_unique<ConsoleSink>(*console));
+            } else {
+                const auto& file = std::get<FileSinkConfiguration>(configuration);
+                sinks.push_back(std::make_unique<FileSink>(file));
+            }
+        }
+
+        auto& logger = *context->logger;
+        logger.clearAllSinks();
+        callbacks->shutdown = [logger = context->logger] {
+            logger->clearAllSinks();
+        };
+        for (auto& sink : sinks) {
+            (void)logger.createSink(std::move(sink));
+        }
+        logger.setLogLevel(settings.level);
+        logger.setDeliveryMode(settings.deliveryMode);
+    }
 }
 
 } // namespace

@@ -178,10 +178,9 @@ unlimited append across runs. See
 
 ## Project logging schema
 
-The selected `log` module parses and validates these settings in `nomad.toml`
-in application, analysis, and packaging modes. Activation is not implemented yet:
-loading the module still preserves the host's existing sinks, level, and delivery
-mode. Validation does not create log files or directories.
+The selected `log` module applies these settings in `nomad.toml` when loaded in
+application mode. Analysis and packaging validate settings without changing the
+host logger or creating log files or directories.
 
 ```toml
 [log]
@@ -224,6 +223,21 @@ Both logger and sink level thresholds apply when logging is configured.
 Unknown keys, incorrect types, unsupported values, and file-only options on
 console sinks are rejected. Values are case-sensitive.
 Projects without the `log` module retain these settings without interpreting them.
+
+Application startup prepares the new sinks before flushing and removing all
+existing sinks. Preparation or old-sink flushing failures abort startup without
+detaching existing sinks or changing level/delivery settings. Preparing an active
+file sink can create files or rotate existing logs; these filesystem effects are
+not rolled back.
+The module registers the prepared sinks, then applies level and delivery mode.
+Failures after clearing the old sinks abort startup without restoring them.
+Inactive configured sinks remain inactive.
+
+Subsequent programmatic changes override startup settings. Sinks registered after
+the module loads remain attached until removed or session teardown. Application
+session shutdown flushes and clears all sinks, releasing file handles and custom
+sinks before module libraries unload. An explicit `log.level` is not overwritten
+by game debug startup, regardless of module order.
 
 C++ hosts can call `readLogConfiguration(configuration, projectDirectory)` from
 `<nomad/log/LogConfiguration.hpp>` to obtain the validated settings without

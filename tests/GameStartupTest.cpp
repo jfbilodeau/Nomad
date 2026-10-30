@@ -12,6 +12,8 @@
 #include <nomad/game/resource/SpriteDiscovery.hpp>
 #include <nomad/game/resource/SpritePacker.hpp>
 
+#include <nomad/log/Logger.hpp>
+
 #include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/ModuleHost.hpp>
@@ -104,6 +106,30 @@ std::unique_ptr<Game> createPreparedGame(
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(game_startup)
+
+BOOST_AUTO_TEST_CASE(debug_startup_respects_explicit_log_levels_in_either_module_order) {
+    TestDirectory directory("nomad_game_log_level");
+    selectDummyDrivers();
+    writeTextCatalogue(directory);
+    auto& logger = log::getLogger();
+    const auto previousLevel = logger.getLogLevel();
+    const auto previousDeliveryMode = logger.getDeliveryMode();
+    const auto configuration = NomadConfiguration::parse(
+        "[game]\ndebug = true\n[resources]\ndirectory = '.'\n"
+        "[log]\nlevel = 'warning'\nsinks = []\n"
+    );
+    for (const auto& names : {
+        std::vector<NomadString>{"log", "game"}, std::vector<NomadString>{"game", "log"}
+    }) {
+        const auto host = ModuleHost::create(
+            configuration, directory.getPath(), resolveModules(getSdkDirectory() / "modules", names),
+            {}, ModuleMode::Application
+        );
+        BOOST_TEST((logger.getLogLevel() == LogLevel::Warning));
+    }
+    logger.setLogLevel(previousLevel);
+    logger.setDeliveryMode(previousDeliveryMode);
+}
 
 BOOST_AUTO_TEST_CASE(displays_the_configured_splash_at_the_configured_resolution)
 {

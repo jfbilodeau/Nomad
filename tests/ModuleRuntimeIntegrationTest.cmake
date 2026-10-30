@@ -156,12 +156,26 @@ nomadRunTestCommand("Create log application" COMMAND "${NOMAD_CLI}" init "${LOG_
 file(READ "${LOG_PROJECT}/nomad.toml" LOG_CONFIGURATION)
 string(REPLACE "modules = [\"game\"]" "modules = [\"log\"]"
     LOG_CONFIGURATION "${LOG_CONFIGURATION}")
+string(REGEX MATCH "executable = \"([^\"]+)\"" LOG_EXECUTABLE_FIELD "${LOG_CONFIGURATION}")
+if(NOT LOG_EXECUTABLE_FIELD)
+    message(FATAL_ERROR "Generated log project has no executable name")
+endif()
+set(LOG_EXECUTABLE_NAME "${CMAKE_MATCH_1}")
+string(APPEND LOG_CONFIGURATION
+    "\n[log]\nlevel = 'debug'\ndelivery-mode = 'synchronous'\n"
+    "[[log.sinks]]\ntype = 'file'\nlevel = 'debug'\ndirectory = 'runtime-logs'\n"
+    "name = 'integration'\nrotate-at-startup = false\n")
 file(WRITE "${LOG_PROJECT}/nomad.toml" "${LOG_CONFIGURATION}")
 file(WRITE "${LOG_PROJECT}/res/scripts/main.nomad"
     "log.debug \"debug\"\nlog.info \"info\"\nlog.warning \"warning\"\n"
     "log.error \"error\"\nlog.critical \"critical\"\n")
 nomadRunTestCommand("Check independent log module" COMMAND "${NOMAD_CLI}" check "${LOG_PROJECT}")
+nomadRunTestCommand("Preview independent log package"
+    COMMAND "${NOMAD_CLI}" package "${LOG_PROJECT}" --dry-run)
 nomadRunTestCommand("Package independent log module" COMMAND "${NOMAD_CLI}" package "${LOG_PROJECT}")
+if(EXISTS "${LOG_PROJECT}/runtime-logs")
+    message(FATAL_ERROR "Log checking or packaging activated file sinks")
+endif()
 file(GLOB LOG_ARCHIVES "${LOG_PROJECT}/dist/*.zip")
 list(LENGTH LOG_ARCHIVES LOG_ARCHIVE_COUNT)
 if(NOT LOG_ARCHIVE_COUNT EQUAL 1)
@@ -182,7 +196,31 @@ string(REPLACE "modules = [\"log\"]" "modules = [\"game\", \"log\"]"
 file(WRITE "${LOG_PROJECT}/nomad.toml" "${LOG_CONFIGURATION}")
 file(APPEND "${LOG_PROJECT}/res/scripts/main.nomad" "print \"LOG_MODULE_COMPLETE\"\nsystem.exit\n")
 nomadRunTestCommand("Run game with explicit log module"
-    COMMAND "${NOMAD_CLI}" run "${LOG_PROJECT}" OUTPUT_MATCH "LOG_MODULE_COMPLETE")
+    COMMAND "${NOMAD_CLI}" run "${LOG_PROJECT}"
+    WORKING_DIRECTORY "${NOMAD_TEST_ROOT}" OUTPUT_MATCH "LOG_MODULE_COMPLETE")
+file(READ "${LOG_PROJECT}/runtime-logs/integration.log" LOG_OUTPUT)
+if(NOT LOG_OUTPUT MATCHES "\\[DEBUG\\] debug" OR NOT LOG_OUTPUT MATCHES "\\[CRITICAL\\] critical")
+    message(FATAL_ERROR "Development launch did not write configured log output: ${LOG_OUTPUT}")
+endif()
+nomadRunTestCommand("Package game with configured logging"
+    COMMAND "${NOMAD_CLI}" package "${LOG_PROJECT}" --force)
+set(LOG_GAME_EXTRACTED "${NOMAD_TEST_ROOT}/log-game-extracted")
+file(ARCHIVE_EXTRACT INPUT "${LOG_ARCHIVE}" DESTINATION "${LOG_GAME_EXTRACTED}")
+if(EXISTS "${LOG_GAME_EXTRACTED}/runtime-logs")
+    message(FATAL_ERROR "Generated development logs were included in the package")
+endif()
+nomadRunTestCommand("Run packaged game with configured logging from another directory"
+    COMMAND "${LOG_GAME_EXTRACTED}/${LOG_EXECUTABLE_NAME}${NOMAD_RUNTIME_SUFFIX}"
+    --project-path "${LOG_GAME_EXTRACTED}"
+    WORKING_DIRECTORY "${NOMAD_TEST_ROOT}" OUTPUT_MATCH "LOG_MODULE_COMPLETE")
+file(READ "${LOG_GAME_EXTRACTED}/runtime-logs/integration.log" LOG_RELEASE_OUTPUT)
+if(NOT LOG_RELEASE_OUTPUT MATCHES "\\[DEBUG\\] debug"
+    OR NOT LOG_RELEASE_OUTPUT MATCHES "\\[CRITICAL\\] critical")
+    message(FATAL_ERROR "Packaged launch did not write configured log output: ${LOG_RELEASE_OUTPUT}")
+endif()
+if(EXISTS "${NOMAD_TEST_ROOT}/runtime-logs")
+    message(FATAL_ERROR "Configured log paths were resolved relative to the working directory")
+endif()
 
 set(SCRIPT_SDK "${NOMAD_TEST_ROOT}/script-sdk")
 set(SCRIPT_PROJECT "${NOMAD_TEST_ROOT}/module script application")

@@ -7,6 +7,8 @@
 #include <nomad/game/GamePackaging.hpp>
 #include <nomad/game/GameResourceCheck.hpp>
 
+#include <nomad/script/Runtime.hpp>
+
 #include <nomad/system/ModuleManifest.hpp>
 #include <nomad/system/Path.hpp>
 
@@ -31,6 +33,7 @@ void packageModule(nomad::ModulePackageContext& context) {
 
 nomad::GameOptions getGameOptions(const nomad::ModuleContext& context) {
     auto options = nomad::readGameOptions(*context.configuration);
+    options.configureDebugLogLevel = !context.runtime->isHub("log") || !context.configuration->contains("log.level");
 
     if (!options.title || options.title->empty()) {
         options.title = "Nomad";
