@@ -5,6 +5,11 @@
 #include <nomad/modules/ScriptBindingObject.hpp>
 #include <nomad/modules/TypeReference.hpp>
 
+namespace nomad {
+class Compiler;
+class Type;
+}
+
 namespace nomad::generated::log {
 
 enum class log_DeliveryMode : nomad::NomadInteger {
@@ -81,5 +86,15 @@ public:
 private:
     explicit log_SinkConfiguration(nomad::ScriptBindingObject binding);
 };
+
+struct DeferredTypes {
+    const nomad::Type* deliveryMode;
+    const nomad::Type* fileRotationMode;
+    const nomad::Type* level;
+    const nomad::Type* fileSinkConfiguration;
+    const nomad::Type* sinkConfiguration;
+};
+
+[[nodiscard]] DeferredTypes deferTypes(nomad::Compiler& compiler);
 
 } // namespace nomad::generated::log

@@ -73,14 +73,10 @@ void validateEntryFunction(
     Compiler& compiler
 );
 
-// Compiles without executing and generates Markdown documentation for the registered language API.
+// Uses the configured compiler without executing scripts and generates Markdown documentation for its runtime API.
 [[nodiscard]] DocumentationResult generateDocumentationForPath(
     const std::filesystem::path& path,
-    Runtime* runtime = nullptr
-);
-[[nodiscard]] DocumentationResult generateDocumentationForPaths(
-    const std::vector<std::filesystem::path>& paths,
-    Runtime* runtime = nullptr
+    Compiler& compiler
 );
 [[nodiscard]] DocumentationResult generateDocumentationForPaths(
     const std::vector<std::filesystem::path>& paths,

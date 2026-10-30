@@ -2,6 +2,7 @@
 
 #include <nomad/generated/log/Bindings.hpp>
 
+#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerTools.hpp>
 
 #include <nomad/modules/ScriptBindings.hpp>
@@ -46,6 +47,42 @@ BOOST_AUTO_TEST_CASE(type_references_are_available_without_a_runtime_and_own_the
     BOOST_TEST(fileReference.name == "log.FileSinkConfiguration");
     BOOST_TEST(log_FileSinkConfiguration::typeReference().name == fileReference.name);
     BOOST_CHECK(copy != fileReference);
+}
+
+BOOST_AUTO_TEST_CASE(generated_deferred_types_are_compiler_local_reusable_and_cover_all_binding_types) {
+    Runtime first;
+    Runtime second;
+    auto firstCompiler = first.createCompiler();
+    auto secondCompiler = second.createCompiler();
+    const auto types = deferTypes(*firstCompiler);
+    const auto repeated = deferTypes(*firstCompiler);
+    const auto other = deferTypes(*secondCompiler);
+    const std::pair<const Type*, NomadString> declarations[]{
+        {types.deliveryMode, "log.DeliveryMode"},
+        {types.fileRotationMode, "log.FileRotationMode"},
+        {types.level, "log.Level"},
+        {types.fileSinkConfiguration, "log.FileSinkConfiguration"},
+        {types.sinkConfiguration, "log.SinkConfiguration"}
+    };
+    for (const auto& [type, name] : declarations) {
+        BOOST_REQUIRE(type != nullptr);
+        BOOST_TEST(type->getTypeName() == name);
+        BOOST_TEST(type->getRuntime() == &first);
+        BOOST_TEST(type->getId().isInvalid());
+        BOOST_TEST(first.getTypeByName(name) == nullptr);
+        BOOST_TEST(type == firstCompiler->deferType({name}));
+    }
+    BOOST_TEST(types.deliveryMode == repeated.deliveryMode);
+    BOOST_TEST(types.fileRotationMode == repeated.fileRotationMode);
+    BOOST_TEST(types.level == repeated.level);
+    BOOST_TEST(types.fileSinkConfiguration == repeated.fileSinkConfiguration);
+    BOOST_TEST(types.sinkConfiguration == repeated.sinkConfiguration);
+    BOOST_TEST(types.level != other.level);
+    BOOST_TEST(types.sinkConfiguration != other.sinkConfiguration);
+    BOOST_TEST(other.level->getRuntime() == &second);
+    const auto result = compileSources({{{"log.configuration", {"configuration.nomad", getLogBindingSource()}}}, {}},
+        *firstCompiler, CompilationTarget::Analysis);
+    BOOST_REQUIRE(result.succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(actual_generated_log_cpp_constructs_and_reads_and_writes_stored_fields) {

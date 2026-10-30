@@ -198,26 +198,8 @@ InstructionDumpResult formatInstructionDump(
 
 } // namespace
 
-DocumentationResult generateDocumentationForPath(const std::filesystem::path& path, Runtime* runtime) {
-    return generateDocumentationForPaths({path}, runtime);
-}
-
-DocumentationResult generateDocumentationForPaths(
-    const std::vector<std::filesystem::path>& paths,
-    Runtime* runtime
-) {
-    auto artifacts = compilePaths(paths, runtime);
-    DocumentationResult result{std::move(artifacts.result), {}};
-
-    if (!result.compilation.succeeded()) {
-        return result;
-    }
-
-    std::ostringstream output;
-    generateDocumentation(artifacts.runtime, output);
-    result.documentation = output.str();
-
-    return result;
+DocumentationResult generateDocumentationForPath(const std::filesystem::path& path, Compiler& compiler) {
+    return generateDocumentationForPaths({path}, compiler);
 }
 
 DocumentationResult generateDocumentationForPaths(

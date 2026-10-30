@@ -62,6 +62,24 @@ name collisions are generation errors. These references describe types only:
 they do not register or resolve types, validate contracts, or enable deferred
 native registration by themselves.
 
+For native registration, call the generated `deferTypes(Compiler&)` once to
+obtain a `DeferredTypes` bundle containing all generated enum and class types:
+
+```cpp
+const auto types = nomad::generated::log::deferTypes(*context->compiler);
+const auto parameter = nomad::defParameter("configuration", types.sinkConfiguration, "");
+// types.level is available for enum parameters and return types as well.
+```
+
+Bundle fields use camelCase qualified names, omitting a leading hub matching the
+module name: `log.SinkConfiguration` becomes `sinkConfiguration`, while
+`dependency.Mode` becomes `dependencyMode`. Field and bundle-name collisions are
+generation errors. Repeated calls reuse that compiler's placeholders; nothing is
+cached globally or registered in the runtime's type catalog. Every requested
+type must be supplied by the script declarations before compilation completes.
+Bundle pointers remain placeholders, not forwarding types; use resolved native
+signatures or runtime type lookup after compilation.
+
 Compile the module scripts into the host runtime before using a wrapper. The
 retained `modules/nomad-log/generated` example is tested against that module's
 script configuration in a bare runtime, **not** together with the existing native
@@ -1049,6 +1067,10 @@ Compiler tools offer `compileSources(batch, compiler, target)`,
 `dumpInstructions(paths, functionName, compiler)`, and
 `generateDocumentationForPaths(paths, compiler)` for borrowing the session compiler.
 Use these overloads for module-aware tooling rather than creating another compiler.
+Documentation generation requires a configured `Compiler&`; it never creates
+a runtime or compiler. `generateDocumentationForPath(path, compiler)` is the
+single-path convenience form. Both compile without executing scripts and return
+diagnostics with empty documentation on compilation failure.
 
 `ModuleContext::projectMetadata` always points to immutable, host-owned
 `ProjectMetadata` and remains valid throughout the module lifetime.

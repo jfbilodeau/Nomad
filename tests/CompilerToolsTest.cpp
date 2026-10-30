@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerTools.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
@@ -469,7 +470,9 @@ BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
         "return ANSWER"
     );
 
-    const auto result = generateDocumentationForPath(source);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = generateDocumentationForPath(source, *compiler);
 
     BOOST_REQUIRE(result.compilation.succeeded());
     BOOST_TEST(result.documentation.find("# Nomad") != NomadString::npos);
@@ -488,6 +491,48 @@ BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
     BOOST_TEST(result.documentation.find("State.idle:State") == NomadString::npos);
     BOOST_TEST(result.documentation.find("ANSWER:int = 42") != NomadString::npos);
     BOOST_TEST(result.documentation.find("[Instructions](#instructions)") == NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(documentation_uses_the_configured_compiler_roots_hooks_and_deferred_types)
+{
+    TestDirectory directory("nomad_compilation_test_configured_documentation");
+    const auto declarations = directory.write("module/types.nomad", "class Settings\nend\n");
+    const auto source = directory.write("application.nomad", "return 42");
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    compiler->registerSourceRoots(std::vector<SourceRoot>{{declarations.parent_path(), "sample", true}});
+    const auto id = runtime.registerNativeFunction("configure", [](VirtualMachine*) {},
+        {defParameter("settings", compiler->deferType({"Settings"}), "")}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(id.isValid());
+    auto configured = false;
+    compiler->registerPhaseHook([&](CompilerContext* context, const CompilationPhase phase) {
+        BOOST_TEST(context->getCompiler() == compiler.get());
+        if (phase == CompilationPhase::Configure) {
+            configured = true;
+        }
+    });
+
+    const auto result = generateDocumentationForPaths(std::vector{source}, *compiler);
+
+    BOOST_REQUIRE(result.compilation.succeeded());
+    BOOST_TEST(configured);
+    BOOST_TEST(runtime.getFunctionId("$sample.types").isValid());
+    BOOST_TEST(runtime.getNativeFunction(id)->isSignatureResolved());
+    BOOST_TEST(result.documentation.find("settings:Settings") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(documentation_preserves_compile_errors_and_does_not_return_partial_output)
+{
+    TestDirectory directory("nomad_compilation_test_invalid_documentation");
+    const auto source = directory.write("invalid.nomad", "return missing");
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+
+    const auto result = generateDocumentationForPath(source, *compiler);
+
+    BOOST_TEST(!result.compilation.succeeded());
+    BOOST_TEST(!result.compilation.diagnostics.empty());
+    BOOST_TEST(result.documentation.empty());
 }
 
 BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overloads_without_execution)
@@ -510,7 +555,8 @@ BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overl
     auto callbackCalls = 0;
     runtime.registerNativeFunction("probe", [&](VirtualMachine*) { ++callbackCalls; },
         {}, runtime.getVoidType(), "");
-    const auto result = generateDocumentationForPath(source, &runtime);
+    auto compiler = runtime.createCompiler();
+    const auto result = generateDocumentationForPath(source, *compiler);
     BOOST_REQUIRE_MESSAGE(result.compilation.succeeded(),
         (result.compilation.diagnostics.empty() ? "" : result.compilation.diagnostics.front().message));
     BOOST_TEST(callbackCalls == 0);
@@ -581,7 +627,9 @@ BOOST_AUTO_TEST_CASE(class_reference_overloads_have_deterministic_order)
     for (const auto reversed : {false, true}) {
         const auto source = directory.write("classes.nomad",
             "class Counter\nvalue = 1\n" + (reversed ? other + integer : integer + other) + "end");
-        const auto result = generateDocumentationForPath(source);
+        Runtime runtime;
+        auto compiler = runtime.createCompiler();
+        const auto result = generateDocumentationForPath(source, *compiler);
         BOOST_REQUIRE(result.compilation.succeeded());
         if (reversed) {
             BOOST_TEST(result.documentation == expected);

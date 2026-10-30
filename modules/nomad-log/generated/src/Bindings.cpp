@@ -2,6 +2,8 @@
 
 #include <nomad/generated/log/Bindings.hpp>
 
+#include <nomad/compiler/Compiler.hpp>
+
 #include <utility>
 
 namespace nomad::generated::log {
@@ -179,6 +181,16 @@ log_Level log_SinkConfiguration::getLevel() const {
 
 void log_SinkConfiguration::setLevel(log_Level value) {
     nomad::ScriptBindingObject::setInteger(1, static_cast<nomad::NomadInteger>(value));
+}
+
+DeferredTypes deferTypes(nomad::Compiler& compiler) {
+    return {
+        compiler.deferType(log_DeliveryModeBinding::typeReference()),
+        compiler.deferType(log_FileRotationModeBinding::typeReference()),
+        compiler.deferType(log_LevelBinding::typeReference()),
+        compiler.deferType(log_FileSinkConfiguration::typeReference()),
+        compiler.deferType(log_SinkConfiguration::typeReference()),
+    };
 }
 
 } // namespace nomad::generated::log

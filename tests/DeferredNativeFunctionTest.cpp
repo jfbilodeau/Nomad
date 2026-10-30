@@ -233,6 +233,7 @@ BOOST_AUTO_TEST_CASE(public_resolution_apis_validate_slots_types_and_completion_
 BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_script_native_cycle) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
+    const auto types = deferTypes(*compiler);
     ScriptBindings bindings(runtime);
     auto calls = 0;
     const auto id = runtime.registerNativeFunction("updateConfiguration",
@@ -246,17 +247,16 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
             machine->getResult().setObjectValue(object);
         },
         {
-            defParameter("level", compiler->deferType(log_LevelBinding::typeReference()), "The new level."),
-            defParameter("configuration", compiler->deferType(log_SinkConfiguration::typeReference()), "The configuration."),
+            defParameter("level", types.level, "The new level."),
+            defParameter("configuration", types.sinkConfiguration, "The configuration."),
             defParameter("active", runtime.getBooleanType(), "The active state.")
         },
-        compiler->deferType(log_SinkConfiguration::typeReference()), "Updates and returns the same script object.");
+        types.sinkConfiguration, "Updates and returns the same script object.");
     BOOST_REQUIRE(id.isValid());
     const auto* declaration = runtime.getNativeFunction(id);
     BOOST_REQUIRE(declaration != nullptr);
     BOOST_TEST(!declaration->isSignatureResolved());
-    BOOST_TEST(declaration->getParameters()[1].type ==
-        compiler->deferType(log_SinkConfiguration::typeReference()));
+    BOOST_TEST(declaration->getParameters()[1].type == types.sinkConfiguration);
     BOOST_TEST(declaration->getParameters()[1].getTypeName() == "log.SinkConfiguration");
     BOOST_TEST(declaration->getReturnTypeName() == "log.SinkConfiguration");
     BOOST_CHECK_THROW((void)declaration->getFn(), NomadException);

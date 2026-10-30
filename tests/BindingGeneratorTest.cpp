@@ -32,6 +32,9 @@ BOOST_AUTO_TEST_CASE(generation_is_deterministic_and_preserves_unchanged_files) 
     BOOST_TEST(first[0].content.find("#include <nomad/modules/ScriptBindingObject.hpp>") != NomadString::npos);
     BOOST_TEST(first[0].content.find("bind(nomad::ScriptBindings& bindings)") != NomadString::npos);
     BOOST_TEST(first[0].content.find("static nomad::TypeReference typeReference()") != NomadString::npos);
+    BOOST_TEST(first[0].content.find("struct DeferredTypes {\n    const nomad::Type* settings;\n}") != NomadString::npos);
+    BOOST_TEST(first[0].content.find("deferTypes(nomad::Compiler& compiler)") != NomadString::npos);
+    BOOST_TEST(first[1].content.find("compiler.deferType(Settings::typeReference())") != NomadString::npos);
     BOOST_TEST(first[1].content.find("Settings::typeReference().name") != NomadString::npos);
     BOOST_TEST(first[0].content.find("nomad::Runtime&") == NomadString::npos);
     BOOST_TEST(first[1].content.find("bindings.getClassBinding(") != NomadString::npos);
@@ -84,6 +87,22 @@ BOOST_AUTO_TEST_CASE(type_references_preserve_qualified_names_and_enum_classes) 
     BOOST_TEST(outputs[1].content.find(
         "nomad::TypeReference settings_Configuration::typeReference() {\n    return {\"settings.Configuration\"};"
     ) != NomadString::npos);
+    BOOST_TEST(outputs[0].content.find("const nomad::Type* settingsMode;") != NomadString::npos);
+    BOOST_TEST(outputs[0].content.find("const nomad::Type* settingsConfiguration;") != NomadString::npos);
+    BOOST_TEST(outputs[1].content.find("compiler.deferType(settings_ModeBinding::typeReference())") != NomadString::npos);
+    BOOST_TEST(outputs[1].content.find("compiler.deferType(settings_Configuration::typeReference())") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(deferred_type_members_omit_the_module_hub_and_preserve_nested_and_dependency_names) {
+    const BindingModel model{
+        "sample",
+        {{"sample.Level", {{"Ready", 1}}}, {"dependency.Mode", {{"Default", 1}}}},
+        {{"sample.nested.Settings", {}, {}}}
+    };
+    const auto outputs = renderModuleBindings(model);
+    BOOST_TEST(outputs[0].content.find("const nomad::Type* level;") != NomadString::npos);
+    BOOST_TEST(outputs[0].content.find("const nomad::Type* dependencyMode;") != NomadString::npos);
+    BOOST_TEST(outputs[0].content.find("const nomad::Type* nestedSettings;") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(invalid_scripts_and_unsupported_shapes_do_not_write_outputs) {
@@ -122,6 +141,10 @@ BOOST_AUTO_TEST_CASE(cpp_keywords_flattened_names_and_accessor_collisions_are_re
         "class Settings\nobject = 1\nend\n",
         "class Settings\nbinding = 1\nend\n",
         "class typeReference\nend\n",
+        "class DeferredTypes\nend\n",
+        "enum deferTypes\nFirst\nend\n",
+        "class Settings\nend\nclass settings\nend\n",
+        "hub one\nclass Two\nend\nend\nclass oneTwo\nend\n",
         "enum Mode\nFirst\nend\nclass ModeBinding\nend\n",
         "enum Mode\nFirst\nend\nenum ModeBinding\nFirst\nend\n",
         "enum getMode\nFirst\nend\nclass Settings\nmodeBinding = 1\nend\n",
@@ -169,6 +192,9 @@ BOOST_AUTO_TEST_CASE(dependencies_use_only_the_explicit_sdk_script_roots) {
     BOOST_TEST(model.classes.front().name == "Settings");
     BOOST_REQUIRE(model.enums.size() == 1U);
     BOOST_TEST(model.enums.front().name == "dependency.Mode");
+    const auto outputs = renderModuleBindings(model);
+    BOOST_TEST(outputs[0].content.find("const nomad::Type* dependencyMode;") != NomadString::npos);
+    BOOST_TEST(outputs[1].content.find("compiler.deferType(dependency_ModeBinding::typeReference())") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(retained_log_outputs_are_current) {

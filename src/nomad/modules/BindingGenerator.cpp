@@ -76,6 +76,29 @@ NomadString accessorSuffix(const NomadString& name) {
     return result;
 }
 
+NomadString deferredTypeMemberName(const BindingModel& model, NomadString name) {
+    const auto prefix = model.module + ".";
+    if (name.starts_with(prefix)) {
+        name.erase(0, prefix.size());
+    }
+    NomadString result;
+    auto capitalize = false;
+    for (auto character : name) {
+        if (character == '.') {
+            capitalize = true;
+            continue;
+        }
+        if (result.empty() && character >= 'A' && character <= 'Z') {
+            character = static_cast<char>(character - 'A' + 'a');
+        } else if (capitalize && character >= 'a' && character <= 'z') {
+            character = static_cast<char>(character - 'a' + 'A');
+        }
+        result += character;
+        capitalize = false;
+    }
+    return identifier(std::move(result), '.');
+}
+
 void requireCompilation(const SourceBatch& batch, Runtime& runtime) {
     const auto result = checkSources(batch, &runtime);
     if (!result.succeeded()) {
@@ -138,15 +161,26 @@ void validateModel(const BindingModel& model) {
     // Avoid hiding the library namespace used in all generated signatures.
     names.insert("nomad");
     names.insert("std");
+    names.insert("DeferredTypes");
+    names.insert("deferTypes");
     for (auto index = NomadIndex{0}; index < model.classes.size(); ++index) {
         names.insert("contract" + std::to_string(index));
     }
     std::set<NomadString> typeNames;
+    std::set<NomadString> deferredTypeMembers;
+    const auto addDeferredTypeMember = [&](const NomadString& name) {
+        const auto member = deferredTypeMemberName(model, name);
+        if (!deferredTypeMembers.insert(member).second) {
+            generatorError("C++ deferred type member name collision: '" + member + "'");
+        }
+    };
     for (const auto& enumeration : model.enums) {
+        addDeferredTypeMember(enumeration.name);
         typeNames.insert(typeIdentifier(enumeration.name));
         typeNames.insert(typeIdentifier(enumeration.name) + "Binding");
     }
     for (const auto& classType : model.classes) {
+        addDeferredTypeMember(classType.name);
         typeNames.insert(typeIdentifier(classType.name));
     }
     for (const auto& enumeration : model.enums) {
@@ -323,8 +357,10 @@ std::vector<BindingOutput> renderModuleBindings(const BindingModel& model) {
     std::ostringstream source;
     header << "// " << generatedMarker << "\n\n#pragma once\n\n"
         "#include <nomad/modules/ScriptBindingObject.hpp>\n"
-        "#include <nomad/modules/TypeReference.hpp>\n\nnamespace " << scope << " {\n\n";
+        "#include <nomad/modules/TypeReference.hpp>\n\n"
+        "namespace nomad {\nclass Compiler;\nclass Type;\n}\n\nnamespace " << scope << " {\n\n";
     source << "// " << generatedMarker << "\n\n#include <" << includePath << ">\n\n"
+        "#include <nomad/compiler/Compiler.hpp>\n\n"
         "#include <utility>\n\nnamespace " << scope << " {\n\n";
     for (const auto& enumeration : model.enums) {
         const auto name = typeIdentifier(enumeration.name);
@@ -389,8 +425,19 @@ std::vector<BindingOutput> renderModuleBindings(const BindingModel& model) {
         header << "\nprivate:\n    explicit " << name << "(nomad::ScriptBindingObject binding);\n"
             "};\n\n";
     }
-    header << "} // namespace " << scope << "\n";
-    source << "} // namespace " << scope << "\n";
+    header << "struct DeferredTypes {\n";
+    source << "DeferredTypes deferTypes(nomad::Compiler& compiler) {\n    return {\n";
+    for (const auto& enumeration : model.enums) {
+        header << "    const nomad::Type* " << deferredTypeMemberName(model, enumeration.name) << ";\n";
+        source << "        compiler.deferType(" << typeIdentifier(enumeration.name) << "Binding::typeReference()),\n";
+    }
+    for (const auto& classType : model.classes) {
+        header << "    const nomad::Type* " << deferredTypeMemberName(model, classType.name) << ";\n";
+        source << "        compiler.deferType(" << typeIdentifier(classType.name) << "::typeReference()),\n";
+    }
+    header << "};\n\n[[nodiscard]] DeferredTypes deferTypes(nomad::Compiler& compiler);\n\n"
+        "} // namespace " << scope << "\n";
+    source << "    };\n}\n\n} // namespace " << scope << "\n";
     const auto inventory = NomadString("# ") + generatedMarker +
         "\n# Include explicitly from a consuming target; this file never runs the generator.\n"
         "set(NOMAD_BINDING_INCLUDE_DIRECTORY \"${CMAKE_CURRENT_LIST_DIR}/include\")\n"
