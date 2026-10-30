@@ -35,6 +35,9 @@ public:
     [[nodiscard]] virtual const NativeProperty* asNativeProperty() const;
     [[nodiscard]] PropertyId registerWithRuntime(Runtime& runtime);
 
+protected:
+    void setValueType(const Type* valueType);
+
 private:
     PropertyId m_id;
     const ClassType* m_classType;

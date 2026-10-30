@@ -32,7 +32,7 @@ void registerListReaders(Runtime* runtime, const ClassType* classType, const boo
         }
     });
     const auto countId = runtime->addProperty(classType->getId(), {
-        .valueTypeId = runtime->getTypeId("int"),
+        .valueType = runtime->getIntegerType(),
         .name = "count",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             result.setIntegerValue(static_cast<NomadInteger>(machine->getThisAs<ListObject>()->getCount()));

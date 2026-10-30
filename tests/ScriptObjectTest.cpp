@@ -108,7 +108,7 @@ BOOST_AUTO_TEST_CASE(fields_use_owner_local_slots_and_zeroed_raw_storage) {
     BOOST_REQUIRE(runtime.registerProperty(unrelated->getId(), "other", runtime.getIntegerType()).isValid());
     const auto* type = createTestType(runtime, "Fields");
     const auto nativeId = runtime.addProperty(type->getId(), {
-        .valueTypeId = runtime.getTypeId("int"),
+        .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); }
     });
@@ -270,7 +270,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
         BOOST_REQUIRE(runtime.registerProperty(type->getId(), "text", runtime.getStringType()).isValid());
         BOOST_REQUIRE(runtime.registerProperty(type->getId(), "next", type).isValid());
         BOOST_REQUIRE(runtime.addProperty(type->getId(), {
-            .valueTypeId = runtime.getIntegerType()->getId(),
+            .valueType = runtime.getIntegerType(),
             .name = "nativeLength",
             .getter = [](VirtualMachine* machine, RuntimeValue& result) {
                 const auto* object = machine->getThisAs<ScriptObject>();
@@ -597,7 +597,7 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
     BOOST_REQUIRE(initializerId.isValid());
     auto* initializer = runtime.getScriptCallable(initializerId);
     const auto propertyId = runtime.addProperty(type->getId(), {
-        .valueTypeId = runtime.getIntegerType()->getId(),
+        .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             auto* receiver = machine->getThis();

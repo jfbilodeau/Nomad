@@ -40,6 +40,10 @@ const Type* Property::getValueType() const {
     return m_valueType;
 }
 
+void Property::setValueType(const Type* valueType) {
+    m_valueType = valueType;
+}
+
 const NomadString& Property::getDoc() const {
     return m_doc;
 }

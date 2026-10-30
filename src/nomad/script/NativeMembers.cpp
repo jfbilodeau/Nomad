@@ -54,7 +54,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
         throw NomadException("Failed to register string indexer");
     }
     const auto lengthId = runtime->addProperty(stringTypeId, {
-        .valueTypeId = runtime->getTypeId("int"),
+        .valueType = runtime->getIntegerType(),
         .name = "length",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
             const auto& text = virtualMachine->getThisAs<NomadStringObject>()->getString();
@@ -72,7 +72,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
     });
 
     const auto byteLengthId = runtime->addProperty(stringTypeId, {
-        .valueTypeId = runtime->getTypeId("int"),
+        .valueType = runtime->getIntegerType(),
         .name = "byteLength",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             result.setIntegerValue(static_cast<NomadInteger>(machine->getThisAs<NomadStringObject>()->getLength()));
@@ -82,7 +82,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
     });
 
     const auto isEmptyId = runtime->addProperty(stringTypeId, {
-        .valueTypeId = runtime->getTypeId("bool"),
+        .valueType = runtime->getBooleanType(),
         .name = "isEmpty",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             result.setBooleanValue(machine->getThisAs<NomadStringObject>()->getString().empty());

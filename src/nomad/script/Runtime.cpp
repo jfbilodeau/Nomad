@@ -128,7 +128,7 @@ Runtime::Runtime() {
                 .documentation = NomadDoc("Advances the iterator. Returns false at the end.")
             });
             const auto currentId = runtime->addProperty(id, {
-                .valueTypeId = valueType->getId(),
+                .valueType = valueType,
                 .name = "current",
                 .getter = [valueType](VirtualMachine* machine, RuntimeValue& result) {
                     RuntimeValue owned;
@@ -2019,6 +2019,22 @@ const NativeProperty* Runtime::getNativeProperty(const PropertyId id) const {
     return property == nullptr ? nullptr : property->asNativeProperty();
 }
 
+NativeProperty* Runtime::getMutableNativeProperty(const PropertyId id) {
+    if (getNativeProperty(id) == nullptr) {
+        return nullptr;
+    }
+    return static_cast<NativeProperty*>(m_properties[toNomadIndex(id.id)]);
+}
+
+void Runtime::validateNativePropertyTypes() {
+    for (auto* property : m_properties) {
+        const auto* native = property->asNativeProperty();
+        if (native != nullptr && !native->isTypeResolved()) {
+            getMutableNativeProperty(property->getId())->completeTypeResolution();
+        }
+    }
+}
+
 PropertyId Runtime::addProperty(const TypeId id, NativePropertyDefinition definition) {
     const auto type = getType(id);
     const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
@@ -2026,8 +2042,10 @@ PropertyId Runtime::addProperty(const TypeId id, NativePropertyDefinition defini
         log::error("Cannot register native property '" + definition.name + "': owner must identify a class type");
         return PropertyId::INVALID;
     }
-    const auto valueType = getType(definition.valueTypeId);
-    if (!valueType.has_value() || (*valueType)->isVoid() || (*valueType)->isInternal()) {
+    const auto* valueType = definition.valueType;
+    const auto deferred = valueType != nullptr && valueType->getRuntime() == this &&
+        dynamic_cast<const DeferredType*>(valueType) != nullptr;
+    if (!deferred && (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal())) {
         log::error("Cannot register native property '" + definition.name + "': invalid value type");
         return PropertyId::INVALID;
     }
@@ -2044,7 +2062,7 @@ PropertyId Runtime::addProperty(const TypeId id, NativePropertyDefinition defini
 
     auto* owner = getMutableClassType(classType);
     const auto propertyId = owner->registerProperty(*this, std::make_unique<NativeProperty>(
-        classType, definition.name, *valueType,
+        classType, definition.name, valueType,
         std::move(definition.getter), std::move(definition.setter), std::move(definition.documentation)
     ));
     if (propertyId.isInvalid()) {

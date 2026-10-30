@@ -114,7 +114,7 @@ BOOST_AUTO_TEST_CASE(explicit_initializer_metadata_is_owned_by_each_stored_prope
     BOOST_TEST(!first->hasExplicitInitializer());
 
     const auto nativeId = runtime.addProperty(type->getId(), {
-        .valueTypeId = runtime.getIntegerType()->getId(),
+        .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); }
     });
@@ -149,7 +149,7 @@ BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_cata
     const auto* second = createTestType(runtime, "Second", ClassMode::Opened);
     const auto scriptId = runtime.registerProperty(first->getId(), "value", runtime.getFloatType());
     const auto nativeId = runtime.addProperty(second->getId(), {
-        .valueTypeId = runtime.getTypeId("int"),
+        .valueType = runtime.getIntegerType(),
         .name = "value",
         .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); },
         .setter = {},
@@ -218,14 +218,14 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
     }).isInvalid());
     const auto typeId = type->getId();
     BOOST_TEST(runtime.addProperty(typeId, {
-        .valueTypeId = runtime.getTypeId("int"),
+        .valueType = runtime.getIntegerType(),
         .name = "x",
         .getter = [](VirtualMachine*, RuntimeValue&) {},
         .setter = {},
         .documentation = ""
     }).isInvalid());
     const auto nativeId = runtime.addProperty(typeId, {
-        .valueTypeId = runtime.getTypeId("int"),
+        .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [](VirtualMachine*, RuntimeValue&) {},
         .setter = {},
@@ -251,7 +251,7 @@ BOOST_AUTO_TEST_CASE(type_owned_native_property_callbacks_are_destroyed_once) {
         });
         observer = probe;
         const auto id = runtime.addProperty(type->getId(), {
-            .valueTypeId = runtime.getTypeId("int"),
+            .valueType = runtime.getIntegerType(),
             .name = "value",
             .getter = [probe](VirtualMachine*, RuntimeValue& value) { value.setIntegerValue(*probe); },
             .setter = {},

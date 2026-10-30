@@ -40,7 +40,7 @@ void registerArrayFamily(
             registerMembers(type, writable);
             const auto* classType = static_cast<const ArrayType*>(type);
             const auto countId = runtime->addProperty(id, {
-                .valueTypeId = runtime->getTypeId("int"),
+                .valueType = runtime->getIntegerType(),
                 .name = "count",
                 .getter = [](VirtualMachine* machine, RuntimeValue& result) {
                     const auto* array = machine->getThisAs<ArrayObject>();

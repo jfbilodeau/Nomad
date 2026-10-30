@@ -16,6 +16,7 @@ add_executable(
     ./DebugDrawTest.cpp
     ./DeclareIdTest.cpp
     ./DeferredNativeFunctionTest.cpp
+    ./DeferredNativePropertyTest.cpp
     ./EntitySpriteAnchorTest.cpp
     ./EntityTextTest.cpp
     ./EventRegistrationTest.cpp

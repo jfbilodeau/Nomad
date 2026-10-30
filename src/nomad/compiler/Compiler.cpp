@@ -9,6 +9,7 @@
 #include <nomad/compiler/FunctionParameterTypeTarget.hpp>
 #include <nomad/compiler/FunctionReturnTypeTarget.hpp>
 #include <nomad/compiler/LoopStatement.hpp>
+#include <nomad/compiler/NativePropertyTypeTarget.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 #include <nomad/compiler/StatementParsers.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
@@ -17,6 +18,7 @@
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
 #include <nomad/script/InterpreterContext.hpp>
+#include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/String.hpp>
@@ -98,6 +100,20 @@ void Compiler::resolveDeferredTypes() {
             ));
         }
     }
+    std::vector<MemberReference> members;
+    m_runtime->getNativeMembers(members);
+    for (const auto& member : members) {
+        const auto* id = std::get_if<PropertyId>(&member);
+        const auto* property = id == nullptr ? nullptr : m_runtime->getNativeProperty(*id);
+        if (property == nullptr || property->isTypeResolved()) {
+            continue;
+        }
+        if (const auto* type = dynamic_cast<const DeferredType*>(property->getValueType())) {
+            registerDeferredTypeTarget(std::make_unique<NativePropertyTypeTarget>(
+                *m_runtime, *id, type->getReference()
+            ));
+        }
+    }
     std::vector<const Type*> resolvedTypes;
     resolvedTypes.reserve(m_deferredTypeTargets.size());
     for (const auto& target : m_deferredTypeTargets) {
@@ -117,6 +133,7 @@ void Compiler::resolveDeferredTypes() {
         m_deferredTypeTargets[index]->resolve(resolvedTypes[index]);
     }
     m_runtime->validateNativeFunctionSignatures();
+    m_runtime->validateNativePropertyTypes();
     m_deferredTypeTargets.clear();
 }
 

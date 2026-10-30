@@ -270,7 +270,7 @@ void registerLoggerClass(ModuleContext* context, const HubId hubId) {
     }
 
     const auto levelId = runtime->addProperty(typeId, {
-        .valueTypeId = runtime->getTypeByName("log.Level")->getId(),
+        .valueType = runtime->getTypeByName("log.Level"),
         .name = "level",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
@@ -292,7 +292,7 @@ void registerLoggerClass(ModuleContext* context, const HubId hubId) {
     }
 
     const auto deliveryId = runtime->addProperty(typeId, {
-        .valueTypeId = runtime->getTypeByName("log.DeliveryMode")->getId(),
+        .valueType = runtime->getTypeByName("log.DeliveryMode"),
         .name = "deliveryMode",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
@@ -324,7 +324,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
     }
 
     const auto levelId = runtime->addProperty(typeId, {
-        .valueTypeId = runtime->getTypeByName("log.Level")->getId(),
+        .valueType = runtime->getTypeByName("log.Level"),
         .name = "level",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
@@ -346,7 +346,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
     }
 
     const auto activeId = runtime->addProperty(typeId, {
-        .valueTypeId = runtime->getBooleanType()->getId(),
+        .valueType = runtime->getBooleanType(),
         .name = "active",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
@@ -368,7 +368,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
     }
 
     const auto rotationId = runtime->addProperty(typeId, {
-        .valueTypeId = runtime->getTypeByName("log.FileRotationMode")->getId(),
+        .valueType = runtime->getTypeByName("log.FileRotationMode"),
         .name = "rotationMode",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
@@ -390,7 +390,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
     }
 
     const auto startupId = runtime->addProperty(typeId, {
-        .valueTypeId = runtime->getBooleanType()->getId(),
+        .valueType = runtime->getBooleanType(),
         .name = "rotateAtStartup",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
@@ -412,7 +412,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
     }
 
     const auto sizeId = runtime->addProperty(typeId, {
-        .valueTypeId = runtime->getIntegerType()->getId(),
+        .valueType = runtime->getIntegerType(),
         .name = "maxSizeBytes",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {
@@ -427,7 +427,7 @@ void registerSinkClass(ModuleContext* context, const HubId hubId) {
     }
 
     const auto filesId = runtime->addProperty(typeId, {
-        .valueTypeId = runtime->getIntegerType()->getId(),
+        .valueType = runtime->getIntegerType(),
         .name = "maxFiles",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
             executeLoggingOperation(machine, [&] {

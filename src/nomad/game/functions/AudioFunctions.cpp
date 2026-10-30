@@ -157,7 +157,7 @@ void Game::initAudioFunctions() {
     );
 
     const auto volumeId = m_runtime->addProperty(audioTypeId, {
-        .valueTypeId = m_runtime->getTypeId("float"),
+        .valueType = m_runtime->getFloatType(),
         .name = "volume",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
             result.setFloatValue(getAudioObject(virtualMachine)->getVolume());
@@ -171,7 +171,7 @@ void Game::initAudioFunctions() {
     });
 
     const auto playingId = m_runtime->addProperty(audioTypeId, {
-        .valueTypeId = m_runtime->getTypeId("bool"),
+        .valueType = m_runtime->getBooleanType(),
         .name = "playing",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
             result.setBooleanValue(getAudioObject(virtualMachine)->isPlaying());
@@ -181,7 +181,7 @@ void Game::initAudioFunctions() {
     });
 
     const auto pausedId = m_runtime->addProperty(audioTypeId, {
-        .valueTypeId = m_runtime->getTypeId("bool"),
+        .valueType = m_runtime->getBooleanType(),
         .name = "paused",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
             result.setBooleanValue(getAudioObject(virtualMachine)->isPaused());
@@ -191,7 +191,7 @@ void Game::initAudioFunctions() {
     });
 
     const auto loopingId = m_runtime->addProperty(audioTypeId, {
-        .valueTypeId = m_runtime->getTypeId("bool"),
+        .valueType = m_runtime->getBooleanType(),
         .name = "looping",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
             result.setBooleanValue(getAudioObject(virtualMachine)->isLooping());

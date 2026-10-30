@@ -702,10 +702,11 @@ native-only.
 ### Native property creation
 
 `Runtime::addProperty(TypeId id, NativePropertyDefinition definition)` registers
-a native property and returns its `PropertyId`. The owner ID must identify an
-class type. Both it and `definition.valueTypeId` are resolved in that runtime;
-IDs are runtime-local, not portable between runtimes. The value type must be
-public and non-void. Host registration is permitted on both open and closed types.
+a native property and returns its `PropertyId`. The owner ID must identify a
+class type in that runtime. `definition.valueType` takes a `const Type*` from the
+same runtime, or a placeholder obtained from its configured compiler's
+`deferType(reference)`. The resolved value type must be public and non-void.
+Host registration is permitted on both open and closed types.
 
 Provide a getter, a setter, or both. A getter-only property is read-only; a
 setter-only property is write-only. The runtime owns the registered name,
@@ -716,7 +717,7 @@ For an already registered class type identified by `typeId`:
 
 ```cpp
 const auto propertyId = runtime.addProperty(typeId, {
-    .valueTypeId = runtime.getTypeId("int"),
+    .valueType = runtime.getIntegerType(),
     .name = "answer",
     .getter = [](nomad::VirtualMachine*, nomad::RuntimeValue& value) {
         value.setIntegerValue(42);
@@ -734,6 +735,16 @@ and conflicting members are logged and return `PropertyId::INVALID` without
 registering a property. Duplicate native properties are rejected even if their
 definitions match. Use the existing property and native member lookup APIs to
 retrieve the registered metadata.
+
+Deferred properties receive their permanent `PropertyId` immediately. Compilation
+resolves their value types before parsing script bodies, in both analysis and
+executable modes. Missing or invalid types fail compilation. Native property
+callbacks cannot run until type resolution completes; registration and analysis
+do not invoke them. Metadata remains available while the type is unresolved.
+Callbacks obtained from unresolved metadata require the owning runtime to
+remain alive, including after the type has resolved.
+The runtime must outlive the compiler, and unresolved placeholders must not be
+used after their owning compiler is destroyed.
 
 ### Native method creation
 
@@ -1914,7 +1925,7 @@ output's previous contents.
 
 ```cpp
 const auto propertyId = runtime.addProperty(typeId, {
-    .valueTypeId = runtime.getTypeId("float"),
+    .valueType = runtime.getFloatType(),
     .name = "value",
     .getter = [](nomad::VirtualMachine* vm, nomad::RuntimeValue& result) {
         result.setFloatValue(vm->getThisAs<MyObject>()->getValue());

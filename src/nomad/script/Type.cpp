@@ -6,6 +6,7 @@
 
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/Event.hpp>
+#include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/String.hpp>
@@ -489,11 +490,14 @@ PropertyId ClassType::registerProperty(
     Runtime& runtime,
     std::unique_ptr<Property> property
 ) {
+    const auto* valueType = property == nullptr ? nullptr : property->getValueType();
+    const auto* native = property == nullptr ? nullptr : property->asNativeProperty();
+    const auto deferred = native != nullptr && !native->isTypeResolved() &&
+        valueType != nullptr && valueType->getRuntime() == &runtime;
     if (property == nullptr || property->getClassType() != this || property->getId().isValid() ||
         runtime.getType(getId()) != this ||
-        property->getValueType() == nullptr || property->getValueType()->isVoid() ||
-        property->getValueType()->isInternal() ||
-        runtime.getType(property->getValueType()->getId()) != property->getValueType() ||
+        valueType == nullptr || (!deferred && (valueType->isVoid() || valueType->isInternal() ||
+            runtime.getType(valueType->getId()) != valueType)) ||
         getProperty(property->getName()) != nullptr ||
         std::ranges::any_of(m_methods, [&](const auto& method) { return method->getName() == property->getName(); })) {
         log::error("Cannot register property: invalid owner, value type, or duplicate definition");

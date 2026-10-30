@@ -31,7 +31,7 @@ const ClassType* registerTestObject(Runtime& runtime) {
         .documentation = ""
     }).isValid());
     BOOST_REQUIRE(runtime.addProperty(type->getId(), {
-        .valueTypeId = runtime.getTypeId("int"),
+        .valueType = runtime.getIntegerType(),
         .name = "value",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             result.setIntegerValue(machine->getThisAs<TestObject>()->value);

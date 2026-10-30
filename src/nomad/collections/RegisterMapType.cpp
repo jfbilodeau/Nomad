@@ -53,7 +53,7 @@ void registerMapFamily(
                 throw NomadException("Failed to register Map constructor");
             }
             const auto countId = runtime->addProperty(id, {
-                .valueTypeId = runtime->getTypeId("int"),
+                .valueType = runtime->getIntegerType(),
                 .name = "count",
                 .getter = [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();

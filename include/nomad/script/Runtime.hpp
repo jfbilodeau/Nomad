@@ -103,7 +103,7 @@ struct NativeConstructorDefinition {
 };
 
 struct NativePropertyDefinition {
-    TypeId valueTypeId;
+    const Type* valueType = nullptr;
     NomadString name;
     NativePropertyGetFn getter;
     NativePropertySetFn setter;
@@ -353,7 +353,9 @@ public:
     [[nodiscard]] PropertyId catalogProperty(Property* property);
     [[nodiscard]] const Property* getProperty(PropertyId id) const;
     [[nodiscard]] const NativeProperty* getNativeProperty(PropertyId id) const;
+    [[nodiscard]] NativeProperty* getMutableNativeProperty(PropertyId id);
     [[nodiscard]] PropertyId addProperty(TypeId id, NativePropertyDefinition definition);
+    void validateNativePropertyTypes();
     [[nodiscard]] MemberReference getNativeMemberId(const Type* classType, const NomadString& name) const;
     [[nodiscard]] MemberType getMemberType(const MemberReference& member) const;
     [[nodiscard]] std::optional<NativePropertyInfo> getNativePropertyInfo(const MemberReference& member) const;
