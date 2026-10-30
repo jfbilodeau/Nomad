@@ -405,6 +405,14 @@ belong to the runtime that issued them and remain stable as more types are
 registered. They do not implicitly convert to integers or other ID categories.
 Event parameter definitions use `TypeId` for their `typeId` field.
 
+`Type::getSize()` returns the number of `RuntimeValue` slots occupied by a value,
+not its size in bytes. `void` occupies zero slots; current value types and class
+references occupy one slot. A class reference occupies one slot regardless of
+the number of fields in its instance. Types deriving directly from `Type` must
+implement this pure virtual method; `ValueType` and `ClassType` provide the
+one-slot implementation. Querying the size of an unresolved compiler-deferred
+type throws `NomadException`, as does querying its storage category.
+
 Strong IDs are invalid when default-constructed. Use `isValid()` and
 `isInvalid()` to check their numeric validity; these checks do not verify that
 the ID belongs to a particular runtime or is registered. `IdHash` supports

@@ -83,6 +83,42 @@ BOOST_AUTO_TEST_CASE(types_report_their_runtime_storage_category)
     BOOST_TEST(static_cast<int>(runtime.getStringType()->getStorage()) == static_cast<int>(TypeStorage::Object));
 }
 
+BOOST_AUTO_TEST_CASE(types_report_their_size_in_runtime_value_slots)
+{
+    Runtime runtime;
+    BOOST_REQUIRE(runtime.createEnum("State", {{"idle", 1}}).isValid());
+    BOOST_REQUIRE(runtime.getCallbackType(
+        {runtime.getIntegerType(), runtime.getFloatType()}, runtime.getVoidType()
+    ) != nullptr);
+
+    auto types = std::vector<const Type*>{};
+    runtime.getTypes(types);
+    BOOST_REQUIRE(!types.empty());
+    BOOST_TEST(runtime.getVoidType()->getSize() == 0u);
+
+    for (const auto* type : types) {
+        BOOST_TEST_CONTEXT(type->getTypeName()) {
+            const auto expectedSize = type == runtime.getVoidType() ? NomadIndex{0} : NomadIndex{1};
+            BOOST_TEST(type->getSize() == expectedSize);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(class_value_size_is_independent_of_its_field_count)
+{
+    Runtime runtime;
+    const auto typeId = runtime.registerClass("Point", ClassMode::Closed);
+    BOOST_REQUIRE(typeId.isValid());
+    const auto* type = runtime.getType(typeId).value();
+    BOOST_TEST(type->getSize() == 1u);
+    BOOST_TEST(type->asClassType()->getPropertyCount() == 0u);
+
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "x", runtime.getFloatType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "y", runtime.getFloatType()).isValid());
+    BOOST_TEST(type->asClassType()->getPropertyCount() == 2u);
+    BOOST_TEST(type->getSize() == 1u);
+}
+
 BOOST_AUTO_TEST_CASE(variable_type_is_inferred_from_first_assignment)
 {
     const std::vector<TypeCase> cases = {

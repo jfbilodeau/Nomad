@@ -25,6 +25,10 @@ TypeStorage DeferredType::getStorage() const {
     reportUnresolved();
 }
 
+NomadIndex DeferredType::getSize() const {
+    reportUnresolved();
+}
+
 void DeferredType::initValue(RuntimeValue&) const {
     reportUnresolved();
 }

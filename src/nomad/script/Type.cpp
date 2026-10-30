@@ -120,6 +120,10 @@ TypeStorage ValueType::getStorage() const {
     return TypeStorage::Value;
 }
 
+NomadIndex ValueType::getSize() const {
+    return 1;
+}
+
 bool Type::isVoid() const {
     return false;
 }
@@ -149,6 +153,10 @@ NomadString VoidType::getTypeName() const {
 
 TypeStorage VoidType::getStorage() const {
     return TypeStorage::None;
+}
+
+NomadIndex VoidType::getSize() const {
+    return 0;
 }
 
 void VoidType::copyValue(const RuntimeValue& /*sourceValue*/, RuntimeValue& /*destinationValue*/) const {
@@ -476,6 +484,10 @@ bool ClassType::sameType(const Type* other) const {
 
 TypeStorage ClassType::getStorage() const {
     return TypeStorage::Object;
+}
+
+NomadIndex ClassType::getSize() const {
+    return 1;
 }
 
 const ClassType* ClassType::asClassType() const {

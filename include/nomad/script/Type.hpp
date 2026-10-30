@@ -89,6 +89,7 @@ public:
 
     [[nodiscard]] virtual NomadString getTypeName() const = 0;
     [[nodiscard]] virtual TypeStorage getStorage() const = 0;
+    [[nodiscard]] virtual NomadIndex getSize() const = 0;
     [[nodiscard]] Runtime* getRuntime() const;
     [[nodiscard]] TypeId getId() const;
     [[nodiscard]] const NomadString& getDocumentation() const;
@@ -143,6 +144,7 @@ class ValueType : public Type {
 public:
     explicit ValueType(Runtime* runtime, TypeId id, NomadString documentation = {});
     [[nodiscard]] TypeStorage getStorage() const override;
+    [[nodiscard]] NomadIndex getSize() const override;
 };
 
 [[nodiscard]] NomadString getTypeDisplayName(const Type* type);
@@ -154,6 +156,7 @@ public:
     void initValue(RuntimeValue& value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     [[nodiscard]] TypeStorage getStorage() const override;
+    [[nodiscard]] NomadIndex getSize() const override;
     void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 
@@ -275,6 +278,7 @@ public:
     using Type::toString;
     [[nodiscard]] NomadString getTypeName() const override;
     [[nodiscard]] TypeStorage getStorage() const override;
+    [[nodiscard]] NomadIndex getSize() const override;
     [[nodiscard]] const std::vector<const Type*>& getTypeArguments() const;
     [[nodiscard]] const ClassType* asClassType() const override;
     [[nodiscard]] CallableId registerConstructor(
