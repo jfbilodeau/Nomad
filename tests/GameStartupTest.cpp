@@ -109,7 +109,6 @@ BOOST_AUTO_TEST_SUITE(game_startup)
 
 BOOST_AUTO_TEST_CASE(debug_startup_preserves_log_levels_without_the_log_module) {
     TestDirectory directory("nomad_game_independent_log_level");
-    selectDummyDrivers();
     writeTextCatalogue(directory);
     auto& logger = log::getLogger();
     const auto previousLevel = logger.getLogLevel();
@@ -117,12 +116,16 @@ BOOST_AUTO_TEST_CASE(debug_startup_preserves_log_levels_without_the_log_module) 
     for (const auto headless : {false, true}) {
         for (const auto debug : {false, true}) {
             for (const auto level : {LogLevel::Info, LogLevel::Warning}) {
+                selectDummyDrivers();
                 logger.setLogLevel(level);
                 auto options = makeOptions(directory);
                 options.debug = debug;
                 Runtime runtime;
                 auto game = Game::createForRuntime(&runtime, options, headless);
 
+                if (!headless) {
+                    BOOST_REQUIRE_EQUAL(SDL_GetCurrentVideoDriver(), "dummy");
+                }
                 BOOST_TEST(game->isDebug() == debug);
                 BOOST_TEST((logger.getLogLevel() == level));
             }
@@ -134,7 +137,6 @@ BOOST_AUTO_TEST_CASE(debug_startup_preserves_log_levels_without_the_log_module) 
 
 BOOST_AUTO_TEST_CASE(debug_startup_preserves_default_and_explicit_log_levels_in_either_module_order) {
     TestDirectory directory("nomad_game_log_level");
-    selectDummyDrivers();
     writeTextCatalogue(directory);
     auto& logger = log::getLogger();
     const auto previousLevel = logger.getLogLevel();
@@ -151,10 +153,12 @@ BOOST_AUTO_TEST_CASE(debug_startup_preserves_default_and_explicit_log_levels_in_
         for (const auto& names : {
             std::vector<NomadString>{"log", "game"}, std::vector<NomadString>{"game", "log"}
         }) {
+            selectDummyDrivers();
             const auto host = ModuleHost::create(
                 configuration, directory.getPath(), resolveModules(getSdkDirectory() / "modules", names),
                 {}, ModuleMode::Application
             );
+            BOOST_REQUIRE_EQUAL(SDL_GetCurrentVideoDriver(), "dummy");
             BOOST_TEST((logger.getLogLevel() == expectedLevel));
         }
     }

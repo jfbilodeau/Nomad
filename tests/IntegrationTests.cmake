@@ -11,6 +11,7 @@ add_test(
     NAME nomad_module_runtime_integration
     COMMAND "${CMAKE_COMMAND}"
         "-DNOMAD_CLI=$<TARGET_FILE:nomad-cli>"
+        "-DNOMAD_SCRIPT_SDK_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-cli>;$<TARGET_RUNTIME_DLLS:nomadc>;$<TARGET_RUNTIME_DLLS:nomad-runtime>,|>"
         "-DNOMAD_RUNTIME_SUFFIX=$<TARGET_FILE_SUFFIX:nomad-runtime>"
         "-DNOMAD_SYSTEM_LIBRARY=$<TARGET_FILE_NAME:nomad-system>"
         "-DNOMAD_COLLECTIONS_LIBRARY=$<TARGET_FILE_NAME:nomad-collections>"
