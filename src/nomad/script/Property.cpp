@@ -11,12 +11,12 @@
 namespace nomad {
 
 Property::Property(
-    const ClassType* classType,
+    const RecordType* ownerType,
     NomadString name,
     const Type* valueType,
     NomadString doc
 ):
-    m_classType(classType),
+    m_ownerType(ownerType),
     m_name(std::move(name)),
     m_valueType(valueType),
     m_doc(std::move(doc))
@@ -29,7 +29,11 @@ PropertyId Property::getId() const {
 }
 
 const ClassType* Property::getClassType() const {
-    return m_classType;
+    return m_ownerType == nullptr ? nullptr : m_ownerType->asClassType();
+}
+
+const RecordType* Property::getOwnerType() const {
+    return m_ownerType;
 }
 
 const NomadString& Property::getName() const {

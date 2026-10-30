@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
 #include <nomad/script/NativeProperty.hpp>
+#include <nomad/script/RecordType.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
@@ -8,6 +9,7 @@
 
 #include <array>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -19,6 +21,9 @@ static_assert(!std::is_convertible_v<NomadId, PropertyId>);
 static_assert(!std::is_convertible_v<PropertyId, NomadId>);
 static_assert(!std::is_convertible_v<PropertyId, CallableId>);
 static_assert(!std::is_copy_constructible_v<Property>);
+static_assert(std::is_abstract_v<RecordType>);
+static_assert(std::is_base_of_v<Type, RecordType>);
+static_assert(std::is_base_of_v<RecordType, ClassType>);
 static_assert(!std::is_default_constructible_v<IntegerType>);
 static_assert(!std::is_constructible_v<ClassType, NomadString, ClassMode>);
 static_assert(!std::is_constructible_v<ClassType, Runtime*, NomadString>);
@@ -72,6 +77,83 @@ const ClassType* createTestType(Runtime& runtime, const NomadString& name, const
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(class_type)
+
+BOOST_AUTO_TEST_CASE(record_and_class_views_share_member_ownership_and_layout) {
+    Runtime runtime;
+    FieldLayoutTestType* owner = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+        "Fields", ClassMode::Closed, owner, NomadIndex{1}
+    ).isValid());
+    RecordType* record = owner;
+    BOOST_TEST(record->asRecordType() == record);
+    BOOST_TEST(record->asClassType() == owner);
+    BOOST_TEST(record->getRuntime() == &runtime);
+    BOOST_TEST(record->getId() == owner->getId());
+    BOOST_TEST(record->getTypeName() == "Fields");
+    BOOST_TEST(record->getInitializerName() == "Fields$init");
+    BOOST_TEST(!record->isOpen());
+    BOOST_TEST(record->getPropertyCount() == 0U);
+    BOOST_TEST(record->getFieldStorageSize() == 0U);
+    BOOST_TEST(record->getMethods().empty());
+    BOOST_TEST(record->getConstructors().empty());
+    BOOST_TEST((record->getStorage() == TypeStorage::Object));
+    BOOST_TEST(record->getSize() == 1U);
+    BOOST_TEST(record->needsFree());
+    BOOST_TEST(runtime.getInstructionId(record->getTypeOpCodes()->initResult) ==
+        runtime.getInstructionId(OpCodes::op_object_init_r));
+    BOOST_TEST(runtime.getInstructionId(record->getTypeOpCodes()->freeResult) ==
+        runtime.getInstructionId(OpCodes::op_object_free_r));
+
+    const auto stored = record->registerProperty(runtime,
+        std::make_unique<Property>(record, "stored", runtime.getStringType()));
+    BOOST_REQUIRE(stored.isValid());
+    auto callbackCalls = 0;
+    const auto native = runtime.addProperty(owner->getId(), {
+        .valueType = runtime.getIntegerType(),
+        .name = "native",
+        .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
+    });
+    const auto method = runtime.addMethod(owner->getId(), {
+        .name = "update",
+        .parameters = {},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine*) { ++callbackCalls; },
+        .documentation = ""
+    });
+    const auto constructor = runtime.addConstructor(owner->getId(), {
+        .parameters = {},
+        .function = [&](VirtualMachine*) { ++callbackCalls; },
+        .documentation = ""
+    });
+    BOOST_REQUIRE(native.isValid());
+    BOOST_REQUIRE(method.isValid());
+    BOOST_REQUIRE(constructor.isValid());
+    BOOST_TEST(record->getProperties() == owner->getProperties());
+    BOOST_TEST(record->getMethods() == owner->getMethods());
+    BOOST_TEST(record->getConstructors() == owner->getConstructors());
+    BOOST_REQUIRE(record->getMethods().size() == 1U);
+    BOOST_REQUIRE(record->getConstructors().size() == 1U);
+    BOOST_TEST(record->getMethods().front() == runtime.getMethod(method));
+    BOOST_TEST(record->getConstructors().front() == runtime.getConstructor(constructor));
+    for (const auto id : {stored, native}) {
+        const auto* property = record->getProperty(id);
+        BOOST_REQUIRE(property != nullptr);
+        BOOST_TEST(property == runtime.getProperty(id));
+        BOOST_TEST(property->getOwnerType() == record);
+        BOOST_TEST(property->getClassType() == owner);
+    }
+    BOOST_TEST(record->getPropertyCount() == 2U);
+    BOOST_TEST(record->getFieldIndex(stored) == 0U);
+    BOOST_TEST(record->getFieldOffset(stored) == 0U);
+    BOOST_TEST(record->getFieldStorageSize() == 1U);
+    BOOST_TEST(record->getFieldIndex(native) == NOMAD_INVALID_INDEX);
+    BOOST_CHECK_THROW((void)record->getFieldOffset(native), NomadException);
+    BOOST_TEST(callbackCalls == 0);
+
+    Property unowned(nullptr, "unowned", runtime.getIntegerType());
+    BOOST_TEST(unowned.getOwnerType() == nullptr);
+    BOOST_TEST(unowned.getClassType() == nullptr);
+}
 
 BOOST_AUTO_TEST_CASE(field_layout_separates_logical_indices_from_physical_slots) {
     Runtime runtime;
@@ -250,10 +332,16 @@ BOOST_AUTO_TEST_CASE(class_conversion_returns_the_original_descriptor_for_classe
     const Type* closed = createTestType(runtime, "Closed", ClassMode::Closed);
     BOOST_TEST(opened->asClassType() == opened);
     BOOST_TEST(closed->asClassType() == closed);
+    BOOST_TEST(opened->asRecordType() == opened);
+    BOOST_TEST(closed->asRecordType() == closed);
+    BOOST_TEST(opened->asRecordType()->isOpen());
+    BOOST_TEST(!closed->asRecordType()->isOpen());
     const Type* stringType = runtime.getStringType();
     BOOST_TEST(stringType->asClassType() == runtime.getStringType());
+    BOOST_TEST(stringType->asRecordType() == runtime.getStringType());
     const auto* fileNameType = runtime.getFileNameType();
     BOOST_TEST(fileNameType->asClassType() == fileNameType);
+    BOOST_TEST(fileNameType->asRecordType() == fileNameType);
 }
 
 BOOST_AUTO_TEST_CASE(class_conversion_returns_null_for_non_class_descriptors) {
@@ -268,6 +356,7 @@ BOOST_AUTO_TEST_CASE(class_conversion_returns_null_for_non_class_descriptors) {
         BOOST_REQUIRE(type != nullptr);
         BOOST_TEST_CONTEXT(type->getTypeName()) {
             BOOST_TEST(type->asClassType() == nullptr);
+            BOOST_TEST(type->asRecordType() == nullptr);
         }
     }
 }

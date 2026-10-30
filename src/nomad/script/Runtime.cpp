@@ -1999,8 +1999,8 @@ void Runtime::setPropertyHasExplicitInitializer(
 }
 
 PropertyId Runtime::catalogProperty(Property* property) {
-    if (property == nullptr || property->getId().isValid() || !ownsType(property->getClassType()) ||
-        property->getClassType()->getProperty(property->getName()) != property ||
+    if (property == nullptr || property->getId().isValid() || !ownsType(property->getOwnerType()) ||
+        property->getOwnerType()->getProperty(property->getName()) != property ||
         m_properties.size() >= toNomadIndex(NOMAD_ID_MAX)) {
         log::error("Cannot catalog property: invalid owner, identity, or property capacity");
         return PropertyId::INVALID;

@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1C have been reviewed; Step 1D below is implemented and awaiting review.
+Steps 1A through 1D have been reviewed; Step 1E below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -304,6 +304,39 @@ Step 1D validation:
 - All four documentation preparation tests and whitespace checks passed.
 - No executable structs, aggregate allocation, calling-convention changes, or
   gameplay validation are included in this slice.
+
+Approved fifth slice (Step 1E):
+
+- Extract an abstract `RecordType : Type` base for names, openness, initializer
+  names, properties, constructors, methods, and the existing field-layout queries.
+- Derive `ClassType` from `RecordType`, retaining its one-slot reference size,
+  object lifecycle/opcodes, type arguments, native indexers, and iterable metadata.
+  The future `StructType` will be a sibling rather than a class subtype.
+- Add `Type::asRecordType()` and `Property::getOwnerType()`. Preserve the existing
+  class APIs, property IDs, borrowed pointers, registration checks, and callback
+  behavior.
+- Keep `Type.hpp` compatible for existing includes. Place the base `Type`
+  declaration in `TypeBase.hpp` so `RecordType` can have a standalone header
+  without circular includes.
+- Do not add a struct descriptor, layout-finalization state, syntax, lifecycle
+  operations, opcodes, or executable struct paths in this slice.
+
+Step 1E validation:
+
+- The Windows Debug `nomad_test` target built successfully, including the new
+  standalone record header/source. The initial rebuild reported `[[nodiscard]]`
+  warnings in untouched test files and dependency CMake deprecation warnings.
+- The `nomad_test_language`, `nomad_test_remaining`, and `nomad_test_bindings`
+  regression groups passed.
+- Focused coverage verifies shared class/record catalog identity, property-owner
+  compatibility, abstract-base/category conversions, unchanged class size and
+  object opcodes, and deferred native-property resolution. Opcode assertions use
+  registered IDs rather than cross-DLL function-address comparisons.
+- Existing field-layout, callable, object ownership, interpreter, native callback,
+  and binding tests passed. All four documentation preparation tests and
+  whitespace checks passed.
+- No struct execution, layout finalization, new opcodes, calling-convention
+  changes, or gameplay validation are included in this slice.
 
 Next design discussion: struct-specific layout finalization and finite-layout
 cycle handling, coordinated with real struct/member metadata. Object allocation

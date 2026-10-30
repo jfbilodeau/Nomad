@@ -533,7 +533,7 @@ void Compiler::reportFieldDiagnostics(CompilerContext* context) const {
         }
         const auto* property = m_runtime->getProperty(field.id);
         context->reportWarning(
-            "Externally introduced field '" + property->getClassType()->getTypeName() + "." +
+            "Externally introduced field '" + property->getOwnerType()->getTypeName() + "." +
                 property->getName() + "' is assigned but never read",
             field.sourceName, field.line, field.column
         );

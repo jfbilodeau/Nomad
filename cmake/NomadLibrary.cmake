@@ -63,6 +63,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/RangeIterator.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RangeObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RangeType.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/RecordType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RegisterRangeType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Runtime.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeOpCodes.cpp

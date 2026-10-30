@@ -625,6 +625,15 @@ whether external script declarations may extend it. Closed types are not immutab
 `Type::asClassType()` returns the same descriptor as a borrowed `const ClassType*`
 for class types and their subclasses, including strings, or `nullptr` for other types.
 
+`ClassType` inherits member metadata from the abstract `RecordType` base
+(include `<nomad/script/RecordType.hpp>`). `Type::asRecordType()` returns that
+descriptor as a borrowed `const RecordType*` for classes and their subclasses,
+or `nullptr` for types without record metadata. The record view exposes the type
+name, openness, initializer name, properties, constructors, methods, and field
+layout queries. It refers to the same member catalog and IDs as the class view.
+Existing `ClassType` member APIs and the `<nomad/script/Type.hpp>` include remain
+available. Class values retain their one-slot reference and ownership behavior.
+
 Register the owner type with the runtime before declaring its properties.
 `Runtime::registerProperty(ownerTypeId, name, valueType)` declares a stored/script
 property and returns a `PropertyId`, or `PropertyId::INVALID` on failure.
@@ -640,7 +649,9 @@ types; openness controls whether scripts may add external declarations.
 IDs return `nullptr`. Include `<nomad/script/Property.hpp>` for `PropertyId`
 and common metadata, and `<nomad/script/NativeProperty.hpp>` for native metadata.
 Use `getId()`, `getClassType()`, `getName()`, `getValueType()`, and `getDoc()`
-to inspect a property. `hasExplicitInitializer()` reports whether a stored field
+to inspect a class property. `getOwnerType()` returns its borrowed
+`const RecordType*` owner; `getClassType()` retains the class-specific view.
+`hasExplicitInitializer()` reports whether a stored field
 has a declaration initializer; assignments inside constructor bodies do not set
 this flag. `Runtime::setPropertyHasExplicitInitializer(propertyId, value)` updates
 that metadata for a stored property and rejects invalid IDs and native properties.
