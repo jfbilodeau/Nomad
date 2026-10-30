@@ -17,6 +17,14 @@ enum class log_DeliveryMode : nomad::NomadInteger {
     Synchronous = 2LL,
 };
 
+[[nodiscard]] constexpr nomad::NomadInteger log_DeliveryModeToInteger(log_DeliveryMode value) noexcept {
+    return static_cast<nomad::NomadInteger>(value);
+}
+
+[[nodiscard]] constexpr log_DeliveryMode log_DeliveryModeFromInteger(nomad::NomadInteger value) noexcept {
+    return static_cast<log_DeliveryMode>(value);
+}
+
 class log_DeliveryModeBinding final {
 public:
     [[nodiscard]] static nomad::TypeReference typeReference();
@@ -26,6 +34,14 @@ enum class log_FileRotationMode : nomad::NomadInteger {
     None = 1LL,
     Size = 2LL,
 };
+
+[[nodiscard]] constexpr nomad::NomadInteger log_FileRotationModeToInteger(log_FileRotationMode value) noexcept {
+    return static_cast<nomad::NomadInteger>(value);
+}
+
+[[nodiscard]] constexpr log_FileRotationMode log_FileRotationModeFromInteger(nomad::NomadInteger value) noexcept {
+    return static_cast<log_FileRotationMode>(value);
+}
 
 class log_FileRotationModeBinding final {
 public:
@@ -39,6 +55,14 @@ enum class log_Level : nomad::NomadInteger {
     Error = 4LL,
     Critical = 5LL,
 };
+
+[[nodiscard]] constexpr nomad::NomadInteger log_LevelToInteger(log_Level value) noexcept {
+    return static_cast<nomad::NomadInteger>(value);
+}
+
+[[nodiscard]] constexpr log_Level log_LevelFromInteger(nomad::NomadInteger value) noexcept {
+    return static_cast<log_Level>(value);
+}
 
 class log_LevelBinding final {
 public:
@@ -56,7 +80,9 @@ public:
     [[nodiscard]] nomad::NomadString getDirectory() const;
     void setDirectory(const nomad::NomadString& value);
     [[nodiscard]] log_Level getLevel() const;
+    [[nodiscard]] nomad::NomadInteger getLevelAsInteger() const;
     void setLevel(log_Level value);
+    void setLevel(nomad::NomadInteger value);
     [[nodiscard]] nomad::NomadInteger getMaxFiles() const;
     void setMaxFiles(nomad::NomadInteger value);
     [[nodiscard]] nomad::NomadInteger getMaxSizeBytes() const;
@@ -66,7 +92,9 @@ public:
     [[nodiscard]] nomad::NomadBoolean getRotateAtStartup() const;
     void setRotateAtStartup(nomad::NomadBoolean value);
     [[nodiscard]] log_FileRotationMode getRotationMode() const;
+    [[nodiscard]] nomad::NomadInteger getRotationModeAsInteger() const;
     void setRotationMode(log_FileRotationMode value);
+    void setRotationMode(nomad::NomadInteger value);
 
 private:
     explicit log_FileSinkConfiguration(nomad::ScriptBindingObject binding);
@@ -81,7 +109,9 @@ public:
     [[nodiscard]] nomad::NomadBoolean getActive() const;
     void setActive(nomad::NomadBoolean value);
     [[nodiscard]] log_Level getLevel() const;
+    [[nodiscard]] nomad::NomadInteger getLevelAsInteger() const;
     void setLevel(log_Level value);
+    void setLevel(nomad::NomadInteger value);
 
 private:
     explicit log_SinkConfiguration(nomad::ScriptBindingObject binding);

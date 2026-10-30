@@ -103,9 +103,7 @@ NomadBoolean ScriptBindingObject::getBoolean(NomadIndex slot) const {
 
 NomadInteger ScriptBindingObject::getInteger(NomadIndex slot) const {
     const auto index = getFieldIndex(slot, BindingValueKind::Integer);
-    const auto value = m_object->getField(index).getIntegerValue();
-    m_binding->validateInteger(slot, value);
-    return value;
+    return m_object->getField(index).getIntegerValue();
 }
 
 NomadFloat ScriptBindingObject::getFloat(NomadIndex slot) const {
@@ -130,7 +128,6 @@ void ScriptBindingObject::setBoolean(NomadIndex slot, NomadBoolean value) {
 
 void ScriptBindingObject::setInteger(NomadIndex slot, NomadInteger value) {
     const auto index = getFieldIndex(slot, BindingValueKind::Integer);
-    m_binding->validateInteger(slot, value);
     m_object->setField(index, RuntimeValue(value));
 }
 

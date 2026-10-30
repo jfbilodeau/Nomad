@@ -194,6 +194,12 @@ void validateModel(const BindingModel& model) {
         if (!names.insert(bindingName).second) {
             generatorError("C++ type name collision: '" + bindingName + "'");
         }
+        for (const auto& suffix : {"ToInteger", "FromInteger"}) {
+            const auto conversionName = name + suffix;
+            if (!names.insert(conversionName).second) {
+                generatorError("C++ enum conversion name collision: '" + conversionName + "'");
+            }
+        }
         std::set<NomadString> values{name};
         for (const auto& value : enumeration.values) {
             if (!values.insert(identifier(value.name, '.')).second) {
@@ -218,6 +224,12 @@ void validateModel(const BindingModel& model) {
             if (typeNames.contains("get" + suffix) || typeNames.contains("set" + suffix) ||
                 !members.insert("get" + suffix).second || !members.insert("set" + suffix).second) {
                 generatorError("C++ accessor name collision in '" + classType.name + "." + field.name + "'");
+            }
+            if (!isPrimitive(field.type)) {
+                const auto integerGetter = "get" + suffix + "AsInteger";
+                if (typeNames.contains(integerGetter) || !members.insert(integerGetter).second) {
+                    generatorError("C++ accessor name collision in '" + classType.name + "." + field.name + "'");
+                }
             }
             if (!isPrimitive(field.type) && std::ranges::none_of(model.enums, [&](const auto& enumeration) {
                 return enumeration.name == field.type;
@@ -371,7 +383,12 @@ std::vector<BindingOutput> renderModuleBindings(const BindingModel& model) {
         for (const auto& value : enumeration.values) {
             header << "    " << value.name << " = " << integerLiteral(value.value) << ",\n";
         }
-        header << "};\n\nclass " << bindingName << " final {\npublic:\n"
+        header << "};\n\n"
+            "[[nodiscard]] constexpr nomad::NomadInteger " << name << "ToInteger(" << name << " value) noexcept {\n"
+            "    return static_cast<nomad::NomadInteger>(value);\n}\n\n"
+            "[[nodiscard]] constexpr " << name << " " << name << "FromInteger(nomad::NomadInteger value) noexcept {\n"
+            "    return static_cast<" << name << ">(value);\n}\n\n"
+            "class " << bindingName << " final {\npublic:\n"
             "    [[nodiscard]] static nomad::TypeReference typeReference();\n};\n\n";
         source << "nomad::TypeReference " << bindingName << "::typeReference() {\n"
             "    return {\"" << enumeration.name << "\"};\n}\n\n";
@@ -410,19 +427,27 @@ std::vector<BindingOutput> renderModuleBindings(const BindingModel& model) {
             const auto fieldCppType = cppType(field.type);
             const auto suffix = accessorSuffix(field.name);
             const auto argument = field.type == STRING_TYPE_NAME ? "const " + fieldCppType + "&" : fieldCppType;
-            header << "    [[nodiscard]] " << fieldCppType << " get" << suffix << "() const;\n"
-                "    void set" << suffix << "(" << argument << " value);\n";
-            source << fieldCppType << " " << name << "::get" << suffix << "() const {\n    return ";
             if (!isPrimitive(field.type)) {
-                source << "static_cast<" << fieldCppType << ">(";
+                header << "    [[nodiscard]] " << fieldCppType << " get" << suffix << "() const;\n"
+                    "    [[nodiscard]] nomad::NomadInteger get" << suffix << "AsInteger() const;\n"
+                    "    void set" << suffix << "(" << argument << " value);\n"
+                    "    void set" << suffix << "(nomad::NomadInteger value);\n";
+                source << fieldCppType << " " << name << "::get" << suffix << "() const {\n"
+                    "    return ::" << scope << "::" << fieldCppType << "FromInteger(get" << suffix << "AsInteger());\n}\n\n"
+                    "nomad::NomadInteger " << name << "::get" << suffix << "AsInteger() const {\n"
+                    "    return nomad::ScriptBindingObject::getInteger(" << slot << ");\n}\n\n"
+                    "void " << name << "::set" << suffix << "(" << argument << " value) {\n"
+                    "    set" << suffix << "(::" << scope << "::" << fieldCppType << "ToInteger(value));\n}\n\n"
+                    "void " << name << "::set" << suffix << "(nomad::NomadInteger value) {\n"
+                    "    nomad::ScriptBindingObject::setInteger(" << slot << ", value);\n}\n\n";
+            } else {
+                header << "    [[nodiscard]] " << fieldCppType << " get" << suffix << "() const;\n"
+                    "    void set" << suffix << "(" << argument << " value);\n";
+                source << fieldCppType << " " << name << "::get" << suffix << "() const {\n"
+                    "    return nomad::ScriptBindingObject::get" << valueKind(field.type) << "(" << slot << ");\n}\n\n"
+                    "void " << name << "::set" << suffix << "(" << argument << " value) {\n"
+                    "    nomad::ScriptBindingObject::set" << valueKind(field.type) << "(" << slot << ", value);\n}\n\n";
             }
-            source << "nomad::ScriptBindingObject::get" << valueKind(field.type) << "(" << slot << ")";
-            if (!isPrimitive(field.type)) {
-                source << ")";
-            }
-            source << ";\n}\n\nvoid " << name << "::set" << suffix << "(" << argument << " value) {\n"
-                "    nomad::ScriptBindingObject::set" << valueKind(field.type) << "(" << slot << ", ";
-            source << (isPrimitive(field.type) ? "value" : "static_cast<nomad::NomadInteger>(value)") << ");\n}\n\n";
         }
         header << "\nprivate:\n    explicit " << name << "(nomad::ScriptBindingObject binding);\n"
             "};\n\n";

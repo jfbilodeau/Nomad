@@ -82,11 +82,19 @@ void log_FileSinkConfiguration::setDirectory(const nomad::NomadString& value) {
 }
 
 log_Level log_FileSinkConfiguration::getLevel() const {
-    return static_cast<log_Level>(nomad::ScriptBindingObject::getInteger(2));
+    return ::nomad::generated::log::log_LevelFromInteger(getLevelAsInteger());
+}
+
+nomad::NomadInteger log_FileSinkConfiguration::getLevelAsInteger() const {
+    return nomad::ScriptBindingObject::getInteger(2);
 }
 
 void log_FileSinkConfiguration::setLevel(log_Level value) {
-    nomad::ScriptBindingObject::setInteger(2, static_cast<nomad::NomadInteger>(value));
+    setLevel(::nomad::generated::log::log_LevelToInteger(value));
+}
+
+void log_FileSinkConfiguration::setLevel(nomad::NomadInteger value) {
+    nomad::ScriptBindingObject::setInteger(2, value);
 }
 
 nomad::NomadInteger log_FileSinkConfiguration::getMaxFiles() const {
@@ -122,11 +130,19 @@ void log_FileSinkConfiguration::setRotateAtStartup(nomad::NomadBoolean value) {
 }
 
 log_FileRotationMode log_FileSinkConfiguration::getRotationMode() const {
-    return static_cast<log_FileRotationMode>(nomad::ScriptBindingObject::getInteger(7));
+    return ::nomad::generated::log::log_FileRotationModeFromInteger(getRotationModeAsInteger());
+}
+
+nomad::NomadInteger log_FileSinkConfiguration::getRotationModeAsInteger() const {
+    return nomad::ScriptBindingObject::getInteger(7);
 }
 
 void log_FileSinkConfiguration::setRotationMode(log_FileRotationMode value) {
-    nomad::ScriptBindingObject::setInteger(7, static_cast<nomad::NomadInteger>(value));
+    setRotationMode(::nomad::generated::log::log_FileRotationModeToInteger(value));
+}
+
+void log_FileSinkConfiguration::setRotationMode(nomad::NomadInteger value) {
+    nomad::ScriptBindingObject::setInteger(7, value);
 }
 
 namespace {
@@ -176,11 +192,19 @@ void log_SinkConfiguration::setActive(nomad::NomadBoolean value) {
 }
 
 log_Level log_SinkConfiguration::getLevel() const {
-    return static_cast<log_Level>(nomad::ScriptBindingObject::getInteger(1));
+    return ::nomad::generated::log::log_LevelFromInteger(getLevelAsInteger());
+}
+
+nomad::NomadInteger log_SinkConfiguration::getLevelAsInteger() const {
+    return nomad::ScriptBindingObject::getInteger(1);
 }
 
 void log_SinkConfiguration::setLevel(log_Level value) {
-    nomad::ScriptBindingObject::setInteger(1, static_cast<nomad::NomadInteger>(value));
+    setLevel(::nomad::generated::log::log_LevelToInteger(value));
+}
+
+void log_SinkConfiguration::setLevel(nomad::NomadInteger value) {
+    nomad::ScriptBindingObject::setInteger(1, value);
 }
 
 DeferredTypes deferTypes(nomad::Compiler& compiler) {

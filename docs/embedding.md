@@ -44,6 +44,22 @@ in `nomad::generated::log`. Stored fields expose `getXXX()` and `setXXX(value)`.
 Enum names and numeric mappings are preserved. Unsupported names and collisions
 are errors rather than silently renamed APIs.
 
+Enum fields additionally expose an integer getter and setter overload:
+
+```cpp
+log_Level getLevel() const;
+NomadInteger getLevelAsInteger() const;
+void setLevel(log_Level value);
+void setLevel(NomadInteger value);
+```
+
+Each generated enum also provides `<enum-name>ToInteger(value)` and
+`<enum-name>FromInteger(value)`, such as `log_LevelToInteger` and
+`log_LevelFromInteger`. These are `constexpr`, `noexcept` static casts.
+Enum accessors and conversions preserve every `NomadInteger` value, including
+unnamed enum values; they do not validate membership. The receiving native API
+is responsible for rejecting values it does not support.
+
 Class wrappers expose `typeReference()` without requiring a runtime or compiled
 scripts:
 
@@ -80,11 +96,9 @@ type must be supplied by the script declarations before compilation completes.
 Bundle pointers remain placeholders, not forwarding types; use resolved native
 signatures or runtime type lookup after compilation.
 
-Compile the module scripts into the host runtime before using a wrapper. The
-retained `modules/nomad-log/generated` example is tested against that module's
-script configuration in a bare runtime, **not** together with the existing native
-log configuration registration. It does not replace or migrate that registration,
-and does not install scripts into an SDK.
+Compile the module scripts into the host runtime before using a wrapper.
+`ModuleHost` includes selected modules' scripts automatically. Bare runtimes
+must compile those declarations explicitly.
 
 ```cpp
 #include <nomad/generated/log/Bindings.hpp>
@@ -108,7 +122,7 @@ auto sameObject = Settings(bindings, settings.getObject());
   names and types, ordinary zero-argument constructor, and referenced enum
   names/numeric mappings. Native properties and unsupported shapes are rejected.
   The helper caches the resolved class, constructor ID, property IDs, field
-  indexes, and enum values. Equivalent contracts share one immutable binding in
+  indexes. Equivalent contracts share one immutable binding in
   that helper, never global mutable IDs. Subsequent wrappers reuse it. Separate
   helpers have independent caches, even when associated with the same runtime.
 - Generated classes derive from `ScriptBindingObject`, inheriting receiver
@@ -126,7 +140,7 @@ auto sameObject = Settings(bindings, settings.getObject());
   unload or replace registered types/bytecode while wrappers are live. Neither
   helpers nor wrappers extend runtime lifetime or make access thread-safe.
 - Wrong runtime, VM, class receiver, missing declarations, field-type mismatch,
-  enum mapping mismatch, and invalid enum reads/writes throw `NomadException`.
+  and enum mapping mismatch throw `NomadException`.
   Moved-from handles cannot be accessed. Strings cross the interface by value
   with their full length, including embedded nulls.
 
@@ -135,7 +149,7 @@ auto sameObject = Settings(bindings, settings.getObject());
 the input contract need not outlive the call. The returned `ScriptClassBinding`
 and all wrappers must remain within the helper's and runtime's lifetimes. Its primitive slot
 accessors check bounds and access types; integer access can also read/write a
-contracted enum, validating its value against cached numeric members.
+contracted enum without validating its numeric value.
 
 Host-side binding support is available under `<nomad/modules/...>`, including
 `BindingGenerator.hpp` for programmatic generation.

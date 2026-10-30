@@ -15,6 +15,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <limits>
 #include <type_traits>
 #include <utility>
 
@@ -29,6 +30,17 @@ static_assert(std::is_base_of_v<ScriptBindingObject, log_FileSinkConfiguration>)
 static_assert(std::is_enum_v<log_Level>);
 static_assert(std::is_enum_v<log_FileRotationMode>);
 static_assert(std::is_enum_v<log_DeliveryMode>);
+static_assert(log_LevelToInteger(log_Level::Info) == 2);
+static_assert(log_FileRotationModeToInteger(log_FileRotationMode::Size) == 2);
+static_assert(log_DeliveryModeToInteger(log_DeliveryMode::Buffered) == 1);
+static_assert(log_LevelToInteger(log_LevelFromInteger(std::numeric_limits<NomadInteger>::min())) ==
+    std::numeric_limits<NomadInteger>::min());
+static_assert(log_FileRotationModeToInteger(
+    log_FileRotationModeFromInteger(std::numeric_limits<NomadInteger>::max())) ==
+    std::numeric_limits<NomadInteger>::max());
+static_assert(log_DeliveryModeToInteger(log_DeliveryModeFromInteger(-1)) == -1);
+static_assert(noexcept(log_LevelToInteger(log_Level::Info)));
+static_assert(noexcept(log_LevelFromInteger(0)));
 
 BOOST_AUTO_TEST_CASE(type_references_are_available_without_a_runtime_and_own_their_names) {
     const auto sinkReference = log_SinkConfiguration::typeReference();
@@ -245,18 +257,41 @@ BOOST_AUTO_TEST_CASE(contract_rejects_missing_classes_wrong_field_types_and_enum
     }
 }
 
-BOOST_AUTO_TEST_CASE(invalid_enum_values_are_rejected_on_write_and_read) {
+BOOST_AUTO_TEST_CASE(enum_accessors_round_trip_named_and_unnamed_values_without_validation) {
     Runtime runtime;
     ScriptBindings bindings(runtime);
     compileLogBindingSource(runtime);
     VirtualMachine machine(&runtime);
     auto configuration = log_SinkConfiguration::create(bindings, machine);
-    BOOST_CHECK_THROW(configuration.setLevel(static_cast<log_Level>(0)), NomadException);
-    BOOST_CHECK(configuration.getLevel() == log_Level::Info);
+    auto fileConfiguration = log_FileSinkConfiguration::create(bindings, machine);
+    for (const auto value : {
+        std::numeric_limits<NomadInteger>::min(), NomadInteger{-1}, NomadInteger{0},
+        NomadInteger{2}, NomadInteger{999}, std::numeric_limits<NomadInteger>::max()
+    }) {
+        BOOST_TEST(log_LevelToInteger(log_LevelFromInteger(value)) == value);
+        BOOST_TEST(log_FileRotationModeToInteger(log_FileRotationModeFromInteger(value)) == value);
+        BOOST_TEST(log_DeliveryModeToInteger(log_DeliveryModeFromInteger(value)) == value);
+        configuration.setLevel(value);
+        BOOST_TEST(configuration.getLevelAsInteger() == value);
+        BOOST_CHECK(configuration.getLevel() == log_LevelFromInteger(value));
+        configuration.setLevel(log_LevelFromInteger(value));
+        BOOST_TEST(configuration.getLevelAsInteger() == value);
+        fileConfiguration.setLevel(value);
+        BOOST_TEST(fileConfiguration.getLevelAsInteger() == value);
+        BOOST_CHECK(fileConfiguration.getLevel() == log_LevelFromInteger(value));
+        fileConfiguration.setLevel(log_LevelFromInteger(value));
+        BOOST_TEST(fileConfiguration.getLevelAsInteger() == value);
+        fileConfiguration.setRotationMode(value);
+        BOOST_TEST(fileConfiguration.getRotationModeAsInteger() == value);
+        BOOST_CHECK(fileConfiguration.getRotationMode() == log_FileRotationModeFromInteger(value));
+        fileConfiguration.setRotationMode(log_FileRotationModeFromInteger(value));
+        BOOST_TEST(fileConfiguration.getRotationModeAsInteger() == value);
+    }
     auto* object = dynamic_cast<ScriptObject*>(configuration.getObject());
     const auto* field = object->getClassType()->getProperty("level");
     object->setField(object->getClassType()->getFieldIndex(field->getId()), RuntimeValue(NomadInteger{999}));
-    BOOST_CHECK_THROW((void)configuration.getLevel(), NomadException);
+    BOOST_TEST(configuration.getLevelAsInteger() == 999);
+    BOOST_CHECK(configuration.getLevel() == log_LevelFromInteger(999));
 }
 
 BOOST_AUTO_TEST_CASE(normal_class_initializers_run_once_per_construction_not_during_compilation_or_wrapping) {

@@ -81,6 +81,20 @@ BOOST_AUTO_TEST_CASE(type_references_preserve_qualified_names_and_enum_classes) 
     const auto outputs = renderModuleBindings(analyzeModuleBindings(fixture.getOptions()));
     BOOST_TEST(outputs[0].content.find("enum class settings_Mode : nomad::NomadInteger") != NomadString::npos);
     BOOST_TEST(outputs[0].content.find("class settings_ModeBinding final") != NomadString::npos);
+    BOOST_TEST(outputs[0].content.find(
+        "constexpr nomad::NomadInteger settings_ModeToInteger(settings_Mode value) noexcept"
+    ) != NomadString::npos);
+    BOOST_TEST(outputs[0].content.find(
+        "constexpr settings_Mode settings_ModeFromInteger(nomad::NomadInteger value) noexcept"
+    ) != NomadString::npos);
+    BOOST_TEST(outputs[0].content.find("nomad::NomadInteger getModeAsInteger() const;") != NomadString::npos);
+    BOOST_TEST(outputs[0].content.find("void setMode(nomad::NomadInteger value);") != NomadString::npos);
+    BOOST_TEST(outputs[1].content.find(
+        "::nomad::generated::test_module::settings_ModeFromInteger(getModeAsInteger())"
+    ) != NomadString::npos);
+    BOOST_TEST(outputs[1].content.find(
+        "setMode(::nomad::generated::test_module::settings_ModeToInteger(value))"
+    ) != NomadString::npos);
     BOOST_TEST(outputs[1].content.find(
         "nomad::TypeReference settings_ModeBinding::typeReference() {\n    return {\"settings.Mode\"};"
     ) != NomadString::npos);
@@ -147,11 +161,28 @@ BOOST_AUTO_TEST_CASE(cpp_keywords_flattened_names_and_accessor_collisions_are_re
         "hub one\nclass Two\nend\nend\nclass oneTwo\nend\n",
         "enum Mode\nFirst\nend\nclass ModeBinding\nend\n",
         "enum Mode\nFirst\nend\nenum ModeBinding\nFirst\nend\n",
+        "enum Mode\nFirst\nend\nclass ModeToInteger\nend\n",
+        "enum Mode\nFirst\nend\nenum ModeFromInteger\nFirst\nend\n",
+        "enum ModeToInteger\nFirst\nend\nenum Mode\nFirst\nend\n",
+        "enum Mode\nFirst\nend\nclass Settings\nmode = Mode.First\nmodeAsInteger = 1\nend\n",
+        "enum Mode\nFirst\nend\nclass Settings\nMode = Mode.First\nmodeAsInteger = 1\nend\n",
+        "enum getModeAsInteger\nFirst\nend\nclass Settings\nmode = getModeAsInteger.First\nend\n",
         "enum getMode\nFirst\nend\nclass Settings\nmodeBinding = 1\nend\n",
         "hub one\nclass Two\nend\nend\nclass one_Two\nend\n"
     }) {
         fixture.setScript(script);
         BOOST_CHECK_THROW((void)generateModuleBindings(fixture.getOptions()), NomadException);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(enum_integer_accessor_collisions_are_rejected_in_either_field_order) {
+    const BindingEnum enumeration{"Mode", {{"First", 1}}};
+    for (const auto& fields : {
+        std::vector<BindingField>{{"mode", "Mode"}, {"modeAsInteger", "int"}},
+        std::vector<BindingField>{{"modeAsInteger", "int"}, {"mode", "Mode"}}
+    }) {
+        const BindingModel model{"sample", {enumeration}, {{"Settings", fields, {enumeration}}}};
+        BOOST_CHECK_THROW((void)renderModuleBindings(model), NomadException);
     }
 }
 

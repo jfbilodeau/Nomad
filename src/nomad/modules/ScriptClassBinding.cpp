@@ -6,7 +6,6 @@
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <algorithm>
-#include <utility>
 
 namespace nomad {
 
@@ -74,7 +73,6 @@ ScriptClassBinding::ScriptClassBinding(Runtime& runtime, const BindingClass& con
         const auto* fieldType = field->getValueType();
         const auto* enumeration = fieldType->asEnum();
         auto kind = BindingValueKind::Integer;
-        std::vector<NomadInteger> enumValues;
         if (fieldType == runtime.getBooleanType()) {
             kind = BindingValueKind::Boolean;
         } else if (fieldType == runtime.getFloatType()) {
@@ -87,13 +85,10 @@ ScriptClassBinding::ScriptClassBinding(Runtime& runtime, const BindingClass& con
             })) {
                 bindingError("unsupported field type for '" + expected.name + "'");
             }
-            for (auto index = NomadIndex{0}; index < enumeration->getValueCount(); ++index) {
-                enumValues.push_back(enumeration->getValue(index).value);
-            }
         } else if (fieldType != runtime.getIntegerType()) {
             bindingError("unsupported field type for '" + expected.name + "'");
         }
-        m_fields.push_back({field->getId(), m_classType->getFieldIndex(field->getId()), kind, std::move(enumValues)});
+        m_fields.push_back({field->getId(), m_classType->getFieldIndex(field->getId()), kind});
     }
     const auto constructor = runtime.resolveConstructor(m_classType, {});
     if (!constructor.isResolved()) {
@@ -131,13 +126,6 @@ NomadIndex ScriptClassBinding::getFieldIndex(NomadIndex slot, BindingValueKind k
         bindingError("wrong access type for '" + m_contract.name + "." + m_contract.fields[slot].name + "'");
     }
     return field.index;
-}
-
-void ScriptClassBinding::validateInteger(NomadIndex slot, NomadInteger value) const {
-    const auto& field = getField(slot);
-    if (!field.enumValues.empty() && std::ranges::find(field.enumValues, value) == field.enumValues.end()) {
-        bindingError("invalid enum value for '" + m_contract.name + "." + m_contract.fields[slot].name + "'");
-    }
 }
 
 NomadObject* ScriptClassBinding::construct(VirtualMachine& machine) const {

@@ -51,7 +51,6 @@ public:
     [[nodiscard]] const ClassType* getClassType() const;
     [[nodiscard]] PropertyId getPropertyId(NomadIndex slot) const;
     [[nodiscard]] NomadIndex getFieldIndex(NomadIndex slot, BindingValueKind kind) const;
-    void validateInteger(NomadIndex slot, NomadInteger value) const;
     [[nodiscard]] NomadObject* construct(VirtualMachine& machine) const;
 
 private:
@@ -62,7 +61,6 @@ private:
         PropertyId propertyId;
         NomadIndex index;
         BindingValueKind kind;
-        std::vector<NomadInteger> enumValues;
     };
 
     [[nodiscard]] const ResolvedField& getField(NomadIndex slot) const;
