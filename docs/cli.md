@@ -135,8 +135,8 @@ their member types, and unsaved class changes update suggestions across the proj
 and invokes its runnable module. The game module executes `game.entry` (default
 `main`) before entering its event loop. `--project-path <directory-or-nomad.toml>` selects a project
 instead of discovering one from the current directory. Resource paths are
-resolved from that project's configuration. `--debug` enables diagnostic logging and the debug console;
-`--no-debug` disables project-configured debug mode.
+resolved from that project's configuration. `--debug` enables the debug console and physics debug drawing;
+`--no-debug` disables project-configured debug mode. Neither option changes logging settings.
 
 Direct launches accept application arguments after `--` as well:
 `nomad-runtime --project-path MyProject -- "Player One" --help`.

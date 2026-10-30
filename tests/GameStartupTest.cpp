@@ -107,25 +107,56 @@ std::unique_ptr<Game> createPreparedGame(
 
 BOOST_AUTO_TEST_SUITE(game_startup)
 
-BOOST_AUTO_TEST_CASE(debug_startup_respects_explicit_log_levels_in_either_module_order) {
+BOOST_AUTO_TEST_CASE(debug_startup_preserves_log_levels_without_the_log_module) {
+    TestDirectory directory("nomad_game_independent_log_level");
+    selectDummyDrivers();
+    writeTextCatalogue(directory);
+    auto& logger = log::getLogger();
+    const auto previousLevel = logger.getLogLevel();
+
+    for (const auto headless : {false, true}) {
+        for (const auto debug : {false, true}) {
+            for (const auto level : {LogLevel::Info, LogLevel::Warning}) {
+                logger.setLogLevel(level);
+                auto options = makeOptions(directory);
+                options.debug = debug;
+                Runtime runtime;
+                auto game = Game::createForRuntime(&runtime, options, headless);
+
+                BOOST_TEST(game->isDebug() == debug);
+                BOOST_TEST((logger.getLogLevel() == level));
+            }
+        }
+    }
+
+    logger.setLogLevel(previousLevel);
+}
+
+BOOST_AUTO_TEST_CASE(debug_startup_preserves_default_and_explicit_log_levels_in_either_module_order) {
     TestDirectory directory("nomad_game_log_level");
     selectDummyDrivers();
     writeTextCatalogue(directory);
     auto& logger = log::getLogger();
     const auto previousLevel = logger.getLogLevel();
     const auto previousDeliveryMode = logger.getDeliveryMode();
-    const auto configuration = NomadConfiguration::parse(
-        "[game]\ndebug = true\n[resources]\ndirectory = '.'\n"
-        "[log]\nlevel = 'warning'\nsinks = []\n"
-    );
-    for (const auto& names : {
-        std::vector<NomadString>{"log", "game"}, std::vector<NomadString>{"game", "log"}
-    }) {
-        const auto host = ModuleHost::create(
-            configuration, directory.getPath(), resolveModules(getSdkDirectory() / "modules", names),
-            {}, ModuleMode::Application
+    for (const auto explicitLevel : {false, true}) {
+        auto configuration = NomadConfiguration::parse(
+            "[game]\ndebug = true\n[resources]\ndirectory = '.'\n"
+            "[log]\nsinks = []\n"
         );
-        BOOST_TEST((logger.getLogLevel() == LogLevel::Warning));
+        if (explicitLevel) {
+            configuration.setString("log.level", "warning");
+        }
+        const auto expectedLevel = explicitLevel ? LogLevel::Warning : LogLevel::Info;
+        for (const auto& names : {
+            std::vector<NomadString>{"log", "game"}, std::vector<NomadString>{"game", "log"}
+        }) {
+            const auto host = ModuleHost::create(
+                configuration, directory.getPath(), resolveModules(getSdkDirectory() / "modules", names),
+                {}, ModuleMode::Application
+            );
+            BOOST_TEST((logger.getLogLevel() == expectedLevel));
+        }
     }
     logger.setLogLevel(previousLevel);
     logger.setDeliveryMode(previousDeliveryMode);

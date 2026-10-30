@@ -39,7 +39,6 @@ struct GameOptions {
     TextOptions text;
     std::optional<bool> fullscreen;
     std::optional<bool> debug;
-    bool configureDebugLogLevel = true;
 };
 
 } // namespace nomad

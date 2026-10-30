@@ -236,8 +236,8 @@ Inactive configured sinks remain inactive.
 Subsequent programmatic changes override startup settings. Sinks registered after
 the module loads remain attached until removed or session teardown. Application
 session shutdown flushes and clears all sinks, releasing file handles and custom
-sinks before module libraries unload. An explicit `log.level` is not overwritten
-by game debug startup, regardless of module order.
+sinks before module libraries unload. Game debug mode does not change logging
+levels or sinks.
 
 C++ hosts can call `readLogConfiguration(configuration, projectDirectory)` from
 `<nomad/log/LogConfiguration.hpp>` to obtain the validated settings without

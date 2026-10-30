@@ -1,11 +1,11 @@
 # Debugging
 
-Nomad's debug mode enables diagnostic logging, the in-game debug console, and
+Nomad's debug mode enables the in-game debug console and
 Box2D physics debug drawing. These facilities are disabled in normal game
 runs.
 
-When the `log` module is selected, an explicit `log.level` takes precedence over
-the debug startup log level. Sink levels still filter output independently.
+Debug mode does not change logging levels or sinks. Configure logging separately
+through the [log module](nomad-log.md).
 
 ## Enable debug mode
 

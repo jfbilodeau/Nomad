@@ -117,10 +117,6 @@ void Game::initialize()
         );
     }
 
-    if (isDebug() && m_options.configureDebugLogLevel) {
-        log::setLogLevel(LogLevel::Debug);
-    }
-
     log::info("Game initialized");
 
     log::flush();
@@ -186,10 +182,6 @@ void Game::initializeHeadless()
     // When one is present the `t.*` constants it defines resolve just like they do in a windowed game.
     if (tryInitText()) {
         setLanguage("en");
-    }
-
-    if (isDebug() && m_options.configureDebugLogLevel) {
-        log::setLogLevel(LogLevel::Debug);
     }
 
     log::info("Game initialized (headless)");

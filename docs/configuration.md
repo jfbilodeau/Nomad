@@ -74,7 +74,7 @@ exclude = [
 | `game.entry` | Game script entry function taking no arguments and returning `void`. | Optional; `"main"` |
 | `nomad.version` | Required SDK version in canonical `major.minor.patch` form; packaging requires this exact runtime version. | Required |
 | `nomad.modules` | Requested native modules; dependencies are included automatically. Use `[]` for the bare runtime. | Required |
-| `game.debug` | Whether diagnostic logging and the in-game debug console are enabled. | Optional; `false` |
+| `game.debug` | Whether the in-game debug console and physics debug drawing are enabled. Does not change logging settings. | Optional; `false` |
 | `resources.directory` | Game-module asset directory relative to the project root. Does not affect script discovery. | Optional; `"res"` |
 | `window.title` | Initial game window title. Scripts may change it after startup. | Optional; `project.name` |
 | `window.resolution` | Initial logical rendering resolution as `[width, height]`. | Optional; `[800, 600]` |
