@@ -191,7 +191,7 @@ bool preDeclareClass(
     CompilerContext* context,
     ScriptCallableBase* function,
     Tokenizer* tokens,
-    const ObjectTypeMode mode
+    const ClassMode mode
 ) {
     NomadString name;
     std::vector<std::unique_ptr<ClassMemberDeclaration>> members;
@@ -199,7 +199,7 @@ bool preDeclareClass(
         return false;
     }
     if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown ||
-        context->getRuntime()->createObjectType(name, mode).isInvalid()) {
+        context->getRuntime()->registerClass(name, mode).isInvalid()) {
         context->reportError("Cannot declare class '" + name + "': identifier is already declared or invalid", tokens);
         return false;
     }
@@ -218,12 +218,12 @@ bool registerMemberSignatures(
     }
     auto* runtime = context->getRuntime();
     const auto* type = runtime->getTypeByName(name);
-    if (type == nullptr || type->asObjectType() == nullptr) {
-        context->reportError("Class '" + name + "' has no registered object type", tokens);
+    if (type == nullptr || type->asClassType() == nullptr) {
+        context->reportError("Class '" + name + "' has no registered class type", tokens);
         return false;
     }
-    const auto& initializerName = type->asObjectType()->getInitializerName();
-    auto initializerRegistered = std::ranges::any_of(type->asObjectType()->getMethods(), [&](const auto* method) {
+    const auto& initializerName = type->asClassType()->getInitializerName();
+    auto initializerRegistered = std::ranges::any_of(type->asClassType()->getMethods(), [&](const auto* method) {
         return method->getName() == initializerName;
     });
     for (const auto& member : members) {
@@ -278,7 +278,7 @@ bool registerMemberSignatures(
         context->getCompiler()->registerMemberCompilation(id, function->getId(), CompilationCallableTarget::ObjectInitializer);
         context->getCompiler()->setFunctionBody(id, std::make_unique<FunctionNode>(0, 0));
     }
-    if (type->asObjectType()->getConstructors().empty()) {
+    if (type->asClassType()->getConstructors().empty()) {
         const auto id = runtime->registerScriptConstructor(
             type->getId(), {}, tokens->getSourceName(), tokens->getSource()
         );
@@ -293,7 +293,7 @@ bool registerMemberSignatures(
     return true;
 }
 
-CallableId findMemberCallable(const ObjectType* type, const ClassMemberDeclaration& member) {
+CallableId findMemberCallable(const ClassType* type, const ClassMemberDeclaration& member) {
     if (member.getKind() == ClassMemberKind::Constructor) {
         for (const auto* constructor : type->getConstructors()) {
             if (std::ranges::equal(constructor->getParameters(), member.getParameters(),
@@ -316,7 +316,7 @@ CallableId findMemberCallable(const ObjectType* type, const ClassMemberDeclarati
 
 bool parseMemberBodies(
     CompilerContext* context,
-    const ObjectType* type,
+    const ClassType* type,
     const Tokenizer* source,
     std::vector<std::unique_ptr<ClassMemberDeclaration>>& members
 ) {
@@ -381,7 +381,7 @@ bool parseMemberBodies(
 ClassDeclaration::ClassDeclaration(
     const NomadIndex line,
     const NomadIndex column,
-    const ObjectType* type,
+    const ClassType* type,
     std::vector<std::unique_ptr<ClassMemberDeclaration>> members
 ):
     Statement(line, column),
@@ -389,7 +389,7 @@ ClassDeclaration::ClassDeclaration(
     m_members(std::move(members))
 {}
 
-const ObjectType* ClassDeclaration::getType() const {
+const ClassType* ClassDeclaration::getType() const {
     return m_type;
 }
 
@@ -431,7 +431,7 @@ bool preParseOpenClassStatement(
     const PreParsePhase phase
 ) {
     if (phase == PreParsePhase::Declarations) {
-        return preDeclareClass(context, function, tokens, ObjectTypeMode::Opened);
+        return preDeclareClass(context, function, tokens, ClassMode::Opened);
     }
     return registerMemberSignatures(context, function, tokens);
 }
@@ -443,7 +443,7 @@ bool preParseClassStatement(
     const PreParsePhase phase
 ) {
     if (phase == PreParsePhase::Declarations) {
-        return preDeclareClass(context, function, tokens, ObjectTypeMode::Closed);
+        return preDeclareClass(context, function, tokens, ClassMode::Closed);
     }
     return registerMemberSignatures(context, function, tokens);
 }
@@ -465,14 +465,14 @@ std::unique_ptr<Statement> parseClassStatement(CompilerContext* context, ScriptC
         return nullptr;
     }
     const auto* type = context->getRuntime()->getTypeByName(name);
-    if (type == nullptr || type->asObjectType() == nullptr) {
-        context->reportError("Class '" + name + "' has no registered object type", tokens);
+    if (type == nullptr || type->asClassType() == nullptr) {
+        context->reportError("Class '" + name + "' has no registered class type", tokens);
         return nullptr;
     }
-    if (!parseMemberBodies(context, type->asObjectType(), tokens, members)) {
+    if (!parseMemberBodies(context, type->asClassType(), tokens, members)) {
         return nullptr;
     }
-    auto declaration = std::make_unique<ClassDeclaration>(line, column, type->asObjectType(), std::move(members));
+    auto declaration = std::make_unique<ClassDeclaration>(line, column, type->asClassType(), std::move(members));
     declaration->setEndSpan(tokens->getLineIndex(), tokens->getColumnIndex());
     return declaration;
 }

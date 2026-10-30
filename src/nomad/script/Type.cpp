@@ -6,6 +6,7 @@
 
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/Event.hpp>
+#include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/String.hpp>
@@ -107,7 +108,7 @@ const EnumType* Type::asEnum() const {
     return nullptr;
 }
 
-const ObjectType* Type::asObjectType() const {
+const ClassType* Type::asClassType() const {
     return nullptr;
 }
 
@@ -337,14 +338,14 @@ void BooleanType::toString(const RuntimeValue& value, NomadString& string) const
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// ObjectType
-ObjectType::~ObjectType() = default;
+// ClassType
+ClassType::~ClassType() = default;
 
-CallableId ObjectType::registerConstructor(
+CallableId ClassType::registerConstructor(
     Runtime& runtime,
     std::unique_ptr<Constructor> constructor
 ) {
-    if (constructor == nullptr || constructor->getObjectType() != this ||
+    if (constructor == nullptr || constructor->getClassType() != this ||
         constructor->getId() != CallableId{} || runtime.getType(getId()) != this) {
         log::error("Cannot register constructor: invalid owner or previously registered callable");
         return CallableId::INVALID;
@@ -359,7 +360,7 @@ CallableId ObjectType::registerConstructor(
     return id;
 }
 
-std::vector<const Constructor*> ObjectType::getConstructors() const {
+std::vector<const Constructor*> ClassType::getConstructors() const {
     std::vector<const Constructor*> constructors;
     constructors.reserve(m_constructors.size());
     for (const auto& constructor : m_constructors) {
@@ -368,11 +369,11 @@ std::vector<const Constructor*> ObjectType::getConstructors() const {
     return constructors;
 }
 
-CallableId ObjectType::registerMethod(
+CallableId ClassType::registerMethod(
     Runtime& runtime,
     std::unique_ptr<Method> method
 ) {
-    if (method == nullptr || method->getObjectType() != this ||
+    if (method == nullptr || method->getClassType() != this ||
         method->getId() != CallableId{} || runtime.getType(getId()) != this ||
         getProperty(method->getName()) != nullptr) {
         log::error("Cannot register method: invalid owner or previously registered callable");
@@ -388,7 +389,7 @@ CallableId ObjectType::registerMethod(
     return id;
 }
 
-std::vector<const Method*> ObjectType::getMethods() const {
+std::vector<const Method*> ClassType::getMethods() const {
     std::vector<const Method*> methods;
     methods.reserve(m_methods.size());
     for (const auto& method : m_methods) {
@@ -397,11 +398,11 @@ std::vector<const Method*> ObjectType::getMethods() const {
     return methods;
 }
 
-ObjectType::ObjectType(
+ClassType::ClassType(
     Runtime* runtime,
     TypeId id,
     NomadString name,
-    const ObjectTypeMode mode,
+    const ClassMode mode,
     std::vector<const Type*> typeArguments,
     NomadString documentation
 ):
@@ -447,19 +448,19 @@ ObjectType::ObjectType(
     m_typeOpCodes.setContextVariable = op_context_variable_set;
 }
 
-const NomadString& ObjectType::getInitializerName() const {
+const NomadString& ClassType::getInitializerName() const {
     return m_initializerName;
 }
 
-void ObjectType::initValue(RuntimeValue& value) const {
+void ClassType::initValue(RuntimeValue& value) const {
     value.setObjectValue(nullptr);
 }
 
-void ObjectType::freeValue(RuntimeValue& value) const {
+void ClassType::freeValue(RuntimeValue& value) const {
     value.freeObjectValue();
 }
 
-void ObjectType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
+void ClassType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
     if (&sourceValue == &destinationValue) {
         return;
     }
@@ -469,31 +470,34 @@ void ObjectType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destin
     destinationValue = copy;
 }
 
-bool ObjectType::sameType(const Type* other) const {
+bool ClassType::sameType(const Type* other) const {
     return this == other;
 }
 
-TypeStorage ObjectType::getStorage() const {
+TypeStorage ClassType::getStorage() const {
     return TypeStorage::Object;
 }
 
-const ObjectType* ObjectType::asObjectType() const {
+const ClassType* ClassType::asClassType() const {
     return this;
 }
 
-bool ObjectType::isOpen() const {
-    return m_mode == ObjectTypeMode::Opened;
+bool ClassType::isOpen() const {
+    return m_mode == ClassMode::Opened;
 }
 
-PropertyId ObjectType::registerProperty(
+PropertyId ClassType::registerProperty(
     Runtime& runtime,
     std::unique_ptr<Property> property
 ) {
-    if (property == nullptr || property->getObjectType() != this || property->getId().isValid() ||
+    const auto* valueType = property == nullptr ? nullptr : property->getValueType();
+    const auto* native = property == nullptr ? nullptr : property->asNativeProperty();
+    const auto deferred = native != nullptr && !native->isTypeResolved() &&
+        valueType != nullptr && valueType->getRuntime() == &runtime;
+    if (property == nullptr || property->getClassType() != this || property->getId().isValid() ||
         runtime.getType(getId()) != this ||
-        property->getValueType() == nullptr || property->getValueType()->isVoid() ||
-        property->getValueType()->isInternal() ||
-        runtime.getType(property->getValueType()->getId()) != property->getValueType() ||
+        valueType == nullptr || (!deferred && (valueType->isVoid() || valueType->isInternal() ||
+            runtime.getType(valueType->getId()) != valueType)) ||
         getProperty(property->getName()) != nullptr ||
         std::ranges::any_of(m_methods, [&](const auto& method) { return method->getName() == property->getName(); })) {
         log::error("Cannot register property: invalid owner, value type, or duplicate definition");
@@ -508,7 +512,7 @@ PropertyId ObjectType::registerProperty(
     return id;
 }
 
-const Property* ObjectType::getProperty(const NomadString& name) const {
+const Property* ClassType::getProperty(const NomadString& name) const {
     const auto property = std::find_if(
         m_properties.begin(),
         m_properties.end(),
@@ -519,14 +523,14 @@ const Property* ObjectType::getProperty(const NomadString& name) const {
     return property == m_properties.end() ? nullptr : property->get();
 }
 
-const Property* ObjectType::getProperty(const PropertyId id) const {
+const Property* ClassType::getProperty(const PropertyId id) const {
     const auto property = std::find_if(m_properties.begin(), m_properties.end(), [id](const auto& candidate) {
         return candidate->getId() == id;
     });
     return property == m_properties.end() ? nullptr : property->get();
 }
 
-std::vector<const Property*> ObjectType::getProperties() const {
+std::vector<const Property*> ClassType::getProperties() const {
     std::vector<const Property*> properties;
     properties.reserve(m_properties.size());
     for (const auto& property : m_properties) {
@@ -535,11 +539,11 @@ std::vector<const Property*> ObjectType::getProperties() const {
     return properties;
 }
 
-NomadIndex ObjectType::getPropertyCount() const {
+NomadIndex ClassType::getPropertyCount() const {
     return static_cast<NomadIndex>(m_properties.size());
 }
 
-NomadIndex ObjectType::getFieldIndex(const PropertyId id) const {
+NomadIndex ClassType::getFieldIndex(const PropertyId id) const {
     auto index = NomadIndex{0};
     for (const auto& property : m_properties) {
         if (property->asNativeProperty() != nullptr) {
@@ -553,11 +557,11 @@ NomadIndex ObjectType::getFieldIndex(const PropertyId id) const {
     return NOMAD_INVALID_INDEX;
 }
 
-IndexerId ObjectType::registerNativeIndexer(
+IndexerId ClassType::registerNativeIndexer(
     Runtime& runtime,
     NativeIndexerInfo info
 ) {
-    if (info.objectType != this || info.id.isValid() ||
+    if (info.classType != this || info.id.isValid() ||
         runtime.getType(getId()) != this) {
         log::error("Cannot register native indexer: invalid owner or identity");
         return IndexerId::INVALID;
@@ -599,14 +603,14 @@ IndexerId ObjectType::registerNativeIndexer(
     return id;
 }
 
-const NativeIndexerInfo* ObjectType::getNativeIndexer(const NomadIndex indexCount) const {
+const NativeIndexerInfo* ClassType::getNativeIndexer(const NomadIndex indexCount) const {
     const auto indexer = std::find_if(m_nativeIndexers.begin(), m_nativeIndexers.end(), [&](const auto& candidate) {
         return candidate->indexTypes.size() == indexCount;
     });
     return indexer == m_nativeIndexers.end() ? nullptr : indexer->get();
 }
 
-std::vector<const NativeIndexerInfo*> ObjectType::getNativeIndexers() const {
+std::vector<const NativeIndexerInfo*> ClassType::getNativeIndexers() const {
     std::vector<const NativeIndexerInfo*> indexers;
     indexers.reserve(m_nativeIndexers.size());
     for (const auto& indexer : m_nativeIndexers) {
@@ -615,7 +619,7 @@ std::vector<const NativeIndexerInfo*> ObjectType::getNativeIndexers() const {
     return indexers;
 }
 
-void ObjectType::registerIterableType(
+void ClassType::registerIterableType(
     Runtime& runtime,
     const Type* valueType,
     const Method* factory
@@ -623,33 +627,33 @@ void ObjectType::registerIterableType(
     const auto* iteratorType = runtime.getIteratorType(valueType);
     if (runtime.getType(getId()) != this ||
         factory == nullptr || runtime.getMethod(factory->getId()) != factory ||
-        factory->getObjectType() != this || factory->getParameterCount() != 0 ||
+        factory->getClassType() != this || factory->getParameterCount() != 0 ||
         factory->getReturnType() != iteratorType || m_iterableInfo.has_value()) {
         throw NomadException("Invalid iterable registration");
     }
     m_iterableInfo = IterableInfo{valueType, iteratorType, factory->getId()};
 }
 
-std::optional<IterableInfo> ObjectType::getIterableInfo() const {
+std::optional<IterableInfo> ClassType::getIterableInfo() const {
     return m_iterableInfo;
 }
 
-NomadString ObjectType::getTypeName() const {
+NomadString ClassType::getTypeName() const {
     return m_name;
 }
 
-const std::vector<const Type*>& ObjectType::getTypeArguments() const {
+const std::vector<const Type*>& ClassType::getTypeArguments() const {
     return m_typeArguments;
 }
 
-void ObjectType::toString(const RuntimeValue&, NomadString& string) const {
+void ClassType::toString(const RuntimeValue&, NomadString& string) const {
     string = m_name;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // BaseStringType
 BaseStringType::BaseStringType(Runtime* runtime, TypeId id):
-    ObjectType(runtime, id, STRING_TYPE_NAME, ObjectTypeMode::Closed)
+    ClassType(runtime, id, STRING_TYPE_NAME, ClassMode::Closed)
 {
     m_typeOpCodes.initResult = op_string_init_r;
     m_typeOpCodes.initIntermediate = op_string_init_i;

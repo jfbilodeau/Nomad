@@ -666,7 +666,7 @@ bool NativeMemberExpression::resolveMember(
     auto* runtime = context->getRuntime();
     m_memberId = runtime->getNativeMemberId(m_receiver->getType(), m_memberName);
 
-    const auto* owner = m_receiver->getType()->asObjectType();
+    const auto* owner = m_receiver->getType()->asClassType();
     if (runtime->getMemberType(m_memberId) == MemberType::Method ||
         (owner != nullptr && std::ranges::any_of(owner->getMethods(),
             [&](const auto* method) { return method->getName() == m_memberName; }))) {
@@ -1208,12 +1208,12 @@ ConstructorExpression::ConstructorExpression(
     const NomadIndex line,
     const NomadIndex column,
     NomadString constructorName,
-    const Type* objectType,
+    const Type* classType,
     ArgumentList arguments
 ):
     Expression(parent, line, column),
     m_constructorName(std::move(constructorName)),
-    m_objectType(objectType),
+    m_classType(classType),
     m_arguments(std::move(arguments))
 {
 }
@@ -1230,24 +1230,24 @@ void ConstructorExpression::onResolve(CompilerContext* context, ScriptCallableBa
     for (const auto& argument : arguments) {
         argumentTypes.push_back(argument->resolveOverloadType(context, function));
     }
-    if (m_objectType == nullptr && context->getErrorCount() != errorCount) {
+    if (m_classType == nullptr && context->getErrorCount() != errorCount) {
         return;
     }
 
-    const auto* objectType = m_objectType;
-    if (objectType == nullptr) {
+    const auto* classType = m_classType;
+    if (classType == nullptr) {
         const auto inference = runtime->inferConstructorTypeArguments(m_constructorName, argumentTypes);
         if (!inference.isResolved()) {
             reportError(context, function, inference.error);
             return;
         }
-        objectType = runtime->getParameterizedType(m_constructorName, inference.typeArguments);
-        if (objectType == nullptr) {
+        classType = runtime->getParameterizedType(m_constructorName, inference.typeArguments);
+        if (classType == nullptr) {
             reportError(context, function, "Cannot specialize inferred constructor '" + m_constructorName + "'");
             return;
         }
     }
-    const auto resolution = runtime->resolveConstructor(objectType, argumentTypes);
+    const auto resolution = runtime->resolveConstructor(classType, argumentTypes);
     if (resolution.status != ResolveStatus::Resolved) {
         reportError(context, function, runtime->describeResolveFailure(m_constructorName, resolution));
         return;
@@ -1278,7 +1278,7 @@ void ConstructorExpression::onCompile(Compiler* compiler, ScriptCallableBase* fu
         compiler->addNativeConstructorCall(m_constructor->getId(), function, &m_arguments);
     } else {
         compiler->addScriptConstructorCall(
-            m_constructor->getId(), m_constructor->getObjectType()->getId(), function, &m_arguments
+            m_constructor->getId(), m_constructor->getClassType()->getId(), function, &m_arguments
         );
     }
     compiler->addMoveResult(getType(), target);
@@ -1599,7 +1599,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBas
         return;
     }
     if (context->getCompiler()->getReceiverType(function) != nullptr && m_identifier.starts_with("this.")) {
-        const auto* owner = context->getCompiler()->getReceiverType(function)->asObjectType();
+        const auto* owner = context->getCompiler()->getReceiverType(function)->asClassType();
         const auto* property = owner->getProperty(m_identifier.substr(5));
         if (property == nullptr) {
             reportError(context, function, "Unknown class field '" + m_identifier.substr(5) + "'");
@@ -1935,9 +1935,9 @@ bool IdentifierExpression::parseCapture(const Compiler* compiler, ScriptCallable
 }
 
 bool getCapture(const NomadString& identifier, const ScriptCallableBase* function, Capture& capture) {
-    if (identifier == "this" && function->getObjectType() != nullptr) {
+    if (identifier == "this" && function->getClassType() != nullptr) {
         capture.source = CaptureSource::Receiver;
-        capture.type = function->getObjectType();
+        capture.type = function->getClassType();
         return true;
     }
     const auto variableId = function->getVariableId(identifier);

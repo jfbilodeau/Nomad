@@ -5,6 +5,9 @@
 #include <nomad/system/NomadConfiguration.hpp>
 #include <nomad/system/Path.hpp>
 
+#include <boost/dll/shared_library.hpp>
+#include <boost/predef/os.h>
+
 #include <algorithm>
 #include <functional>
 #include <unordered_map>
@@ -24,13 +27,14 @@ NomadPath getModuleLibraryName(const NomadStringView name) {
     if (!isValidModuleName(name)) {
         throw ModuleException("Invalid module name: '" + NomadString(name) + "'");
     }
-#if defined(_WIN32)
-    return pathFromUtf8(NomadString(name) + ".dll");
-#elif defined(__APPLE__)
-    return pathFromUtf8("lib" + NomadString(name) + ".dylib");
-#else
-    return pathFromUtf8("lib" + NomadString(name) + ".so");
+    auto libraryName = NomadString(name) + ".nomad";
+#if !BOOST_OS_WINDOWS
+    // Boost.DLL treats an initial "lib" as an existing prefix, not part of the module name.
+    if (name.starts_with("lib")) {
+        libraryName.insert(0, "lib");
+    }
 #endif
+    return NomadPath(boost::dll::shared_library::decorate(pathFromUtf8(libraryName).native()).native());
 }
 
 ModuleManifest loadModuleManifest(const NomadPath& directory) {
@@ -46,6 +50,16 @@ ModuleManifest loadModuleManifest(const NomadPath& directory) {
             throw ModuleException("Module manifest '" + pathToUtf8(path) + "' requires a valid module.name");
         }
         ModuleManifest result{name, directory, {}};
+        if (document.contains("scripts")) {
+            throw ModuleException("Module manifest '" + pathToUtf8(path) +
+                "' no longer supports [scripts] settings; remove them and place module scripts in 'scripts'");
+        }
+        const auto relativeScripts = std::filesystem::weakly_canonical(directory / "scripts")
+            .lexically_relative(std::filesystem::weakly_canonical(directory));
+        if (relativeScripts.empty() || relativeScripts == "." || *relativeScripts.begin() == "..") {
+            throw ModuleException("Module manifest '" + pathToUtf8(path) +
+                "' scripts directory must stay below the module directory");
+        }
         const auto dependencies = document.getStringArray("nomad.modules");
         if (dependencies) {
             for (const auto& dependency : *dependencies) {
@@ -62,6 +76,9 @@ ModuleManifest loadModuleManifest(const NomadPath& directory) {
     } catch (const NomadConfigurationException& error) {
         throw ModuleException("Invalid module manifest '" + pathToUtf8(path) + "': " +
             NomadString(error.what()));
+    } catch (const std::filesystem::filesystem_error& error) {
+        throw ModuleException("Failed to resolve module script directory in '" +
+            pathToUtf8(path) + "': " + error.what());
     }
 }
 

@@ -10,7 +10,7 @@ namespace nomad {
 class NativeProperty final : public Property {
 public:
     NativeProperty(
-        const ObjectType* objectType,
+        const ClassType* classType,
         NomadString name,
         const Type* valueType,
         NativePropertyGetFn getFn,
@@ -20,10 +20,17 @@ public:
 
     [[nodiscard]] const NativeProperty* asNativeProperty() const override;
     [[nodiscard]] NativePropertyInfo getInfo() const;
+    [[nodiscard]] bool isTypeResolved() const;
+    void resolveValueType(const Type* type);
+    void completeTypeResolution();
 
 private:
+    [[nodiscard]] bool isRegisteredType(const Type* type) const;
+    void requireResolvedType() const;
+
     NativePropertyGetFn m_getFn;
     NativePropertySetFn m_setFn;
+    bool m_typeResolved;
 };
 
 } // namespace nomad

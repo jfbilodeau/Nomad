@@ -4,6 +4,8 @@
 
 #include <nomad/Nomad.hpp>
 
+#include <nomad/compiler/Diagnostic.hpp>
+
 #include <span>
 #include <utility>
 #include <vector>
@@ -17,27 +19,11 @@ class Runtime;
 class ScriptCallableBase;
 class Tokenizer;
 
-enum class DiagnosticSeverity {
-    Warning = 1,
-    Error,
-};
-
 // Script: compiled source. Interpreter: AST evaluation without changing compiled function definitions.
 enum class CompilerMode {
     Script = 1,
     Interpreter,
 };
-
-struct Diagnostic {
-    DiagnosticSeverity severity;
-    NomadString message;
-    NomadString sourceName;
-    NomadIndex line;
-    NomadIndex column;
-};
-
-// Formats as `source:line:column: error: message`, omitting unknown location parts.
-[[nodiscard]] NomadString formatDiagnostic(const Diagnostic& diagnostic);
 
 // Collects loading, registration, parsing and resolution diagnostics. A single context can span many scripts:
 // each diagnostic records the source name it was reported against.

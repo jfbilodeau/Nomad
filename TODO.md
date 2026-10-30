@@ -6,18 +6,18 @@ Things the author wants to do.
 [ ] `$init` shows up in LSP
 
 ## Open
+[ ] Improve animations declaration (avoid duplicate files...)
+[ ] Add private hub/class members
 [ ] Finish converting `NomadId` to strong types.
 [ ] Script fault handling
 [ ] `struct` (Embedded types, pass by copy)
-[ ] Nomad scripts in modules
 [ ] Object serialization
 [ ] File IO module.
 [ ] Replace ref counting with garbage collector.
 [ ] Game debug console--root should be Game/Inventory/Windows/etc.
 [ ] Need to add `game.mouse.x/y`, `scene.mouse.x/y` and `this.mouse.x/y`
-[ ] Configure logging via `nomad.toml`
 [ ] "Nomad Doc" strings for script functions, enums, events, etc...
-[ ] Sample game
+[ ] Sample game/apps
 [ ] Native GUI?
 [ ] Select text (`t.*`) language--"en", "fr", etc.
 [ ] `this.wait`, `scene.wait`, `game.wait`
@@ -39,6 +39,9 @@ a = new 20  # Type for `a` is known. Reused.
 ```
  
 ## Completed
+[X] Refactor module names. `<module_name>` -> `<module_name>.nomad.dll`. Drop the `nomad-*` prefix. Replace with `nomad.*`?
+[X] Nomad scripts in modules
+[X] Configure logging via `nomad.toml`
 [X] `args`
 [X] Rename `init` to `main`
 [X] Indexer notation.

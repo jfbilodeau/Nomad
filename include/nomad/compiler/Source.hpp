@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/Diagnostic.hpp>
 
 #include <filesystem>
 #include <optional>
@@ -21,6 +21,14 @@ struct SourceText {
 struct ScriptSource {
     NomadString scriptName;
     SourceText source;
+    NomadString owner = {};
+    NomadPath relativePath = {};
+};
+
+struct SourceRoot {
+    NomadPath path;
+    NomadString owner = {};
+    bool required = true;
 };
 
 struct SourceBatch {

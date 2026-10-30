@@ -1,2 +1,2 @@
 # Initialize the game.
-log.info "Works!"
+print "Works!"

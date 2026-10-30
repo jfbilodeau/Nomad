@@ -21,21 +21,30 @@ public:
         NativeFunctionFn fn,
         std::vector<Parameter> parameters,
         const Type* returnType,
-        NomadString doc
+        NomadString doc,
+        bool deferSignatureValidation = false
     );
 
     [[nodiscard]] const NativeFunction* asNativeFunction() const override { return this; }
-    [[nodiscard]] const NativeFunctionFn& getFn() const { return m_fn; }
+    [[nodiscard]] const NativeFunctionFn& getFn() const;
+    [[nodiscard]] bool isSignatureResolved() const;
+    [[nodiscard]] NomadString getReturnTypeName() const;
+    void resolveParameterType(NomadIndex index, const Type* type);
+    void resolveReturnType(const Type* type);
+    void completeSignatureResolution();
 
 private:
+    [[nodiscard]] bool isRegisteredType(const Type* type) const;
+
     NativeFunctionFn m_fn;
+    bool m_signatureResolved;
 };
 
 class NativeMethod : public Method {
 public:
     NativeMethod(
         NomadString name,
-        const Type* objectType,
+        const Type* classType,
         NativeFunctionFn fn,
         std::vector<Parameter> parameters,
         const Type* returnType,
@@ -53,7 +62,7 @@ class NativeConstructor : public Constructor {
 public:
     NativeConstructor(
         NomadString name,
-        const Type* objectType,
+        const Type* classType,
         const Type* createdType,
         NativeFunctionFn fn,
         std::vector<Parameter> parameters,

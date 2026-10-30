@@ -10,12 +10,12 @@ ArrayType::ArrayType(
     Runtime* runtime,
     TypeId id,
     NomadString name,
-    const ObjectTypeMode mode,
+    const ClassMode mode,
     const Type* elementType,
     const NomadIndex dimensionCount,
     const bool readOnly
 ):
-    ObjectType(
+    ClassType(
         runtime, id, std::move(name), mode,
         {elementType},
         readOnly ? "A read-only fixed-size array." :

@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/Compilation.hpp>
+#include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/game/Game.hpp>
 
@@ -8,13 +10,14 @@
 #include <nomad/game/resource/AudioObject.hpp>
 #include <nomad/game/resource/ResourceManager.hpp>
 
+#include <nomad/log/Logger.hpp>
 #include <nomad/log/MemorySink.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
-#include <nomad/system/NativeFunctions.hpp>
 #include <nomad/system/Path.hpp>
+#include <nomad/system/SystemFunctions.hpp>
 
 #include <TestDirectory.hpp>
 
@@ -66,11 +69,12 @@ std::unique_ptr<Game> createHeadlessGame(const TestDirectory& directory) {
 }
 
 std::unique_ptr<Game> createAudioGame(Runtime& runtime, GameOptions options) {
-    registerBuildInNativeFunctions(&runtime);
+    registerSystemFunctions(&runtime);
     auto game = Game::createForRuntime(&runtime, options, false);
     const std::vector<NomadPath> paths{pathFromUtf8(options.resourcePath) / "scripts"};
+    auto compiler = runtime.createCompiler();
     game->prepareScripts([&] {
-        const auto result = checkPaths(paths, &runtime);
+        const auto result = compileSources(loadSourcePaths(paths), *compiler);
         if (!result.succeeded()) {
             NomadString message = "Failed to compile audio test scripts";
             for (const auto& diagnostic : result.diagnostics) {
@@ -105,22 +109,22 @@ bool waitForAudioCallback(AudioManager* audio, Predicate&& predicate) {
 class ScopedLogCapture final {
 public:
     ScopedLogCapture() {
-        log::addSink(&m_sink);
+        m_sinkId = log::createMemorySink();
     }
 
     ScopedLogCapture(const ScopedLogCapture&) = delete;
     ScopedLogCapture& operator=(const ScopedLogCapture&) = delete;
 
     ~ScopedLogCapture() {
-        log::removeSink(&m_sink);
+        log::removeSink(m_sinkId);
     }
 
     [[nodiscard]] const std::vector<LogEntry>& getEntries() const {
-        return m_sink.getEntries();
+        return static_cast<MemorySink*>(log::getSink(m_sinkId))->getEntries();
     }
 
 private:
-    MemorySink m_sink;
+    LogSinkId m_sinkId;
 };
 
 class AudioDriverHintReset final {

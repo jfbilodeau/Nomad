@@ -3,19 +3,26 @@ add_executable(
     ./ArrayObjectTest.cpp
     ./AudioDiscoveryTest.cpp
     ./AudioTest.cpp
+    ./BindingGeneratorTest.cpp
+    ./BindingTestFixture.cpp
+    ./BindingTestFixture.hpp
     ./CallableCatalogTest.cpp
+    ./ClassTypeTest.cpp
     ./ColorTest.cpp
+    ./CompilationTest.cpp
     ./CompilerContextTest.cpp
     ./CompilerHooksTest.cpp
     ./CompilerTest.cpp
-    ./CompilerToolsTest.cpp
     ./DebugDrawTest.cpp
     ./DeclareIdTest.cpp
+    ./DeferredNativeFunctionTest.cpp
+    ./DeferredNativePropertyTest.cpp
     ./EntitySpriteAnchorTest.cpp
     ./EntityTextTest.cpp
     ./EventRegistrationTest.cpp
     ./ExpressionEvaluationTest.cpp
     ./ExpressionResolveTest.cpp
+    ./FileSinkTest.cpp
     ./FormatStringCompilerTest.cpp
     ./GameConfigurationTest.cpp
     ./GameEventQueueTest.cpp
@@ -39,7 +46,11 @@ add_executable(
     ./LanguageTestFixture.cpp
     ./LanguageTypeTest.cpp
     ./LanguageVariableIdTest.cpp
+    ./LogConfigurationTest.cpp
+    ./LogModuleTest.cpp
+    ./LogSinkObjectTest.cpp
     ./LogTest.cpp
+    ./LogTomlConfigurationTest.cpp
     ./ModuleGameTest.cpp
     ./ModuleHostTest.cpp
     ./ModuleManifestTest.cpp
@@ -63,9 +74,10 @@ add_executable(
     ./ReadOnlyCollectionTest.cpp
     ./RectanglePackerTest.cpp
     ./RuntimeTest.cpp
+    ./ScriptBindingTest.cpp
     ./ScriptMethodTest.cpp
     ./ScriptObjectTest.cpp
-    ./ScriptObjectTypeTest.cpp
+    ./SourceCompilationTest.cpp
     ./SourceLoaderTest.cpp
     ./SpriteCatalogTest.cpp
     ./SpriteDiscoveryTest.cpp
@@ -76,11 +88,17 @@ add_executable(
     ./TestDirectoryTest.cpp
     ./TileMapDataTest.cpp
     ./TileMapTest.cpp
+    ./TypedNativeFunctionTest.cpp
     ./TokenizerTest.cpp
     ./VariablePersistenceTest.cpp
 )
 
 target_include_directories(nomad_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Compile the retained example directly; generation is always an explicit developer action.
+include("${CMAKE_CURRENT_SOURCE_DIR}/../modules/nomad-log/generated/nomad-module.cmake")
+target_sources(nomad_test PRIVATE ${NOMAD_BINDING_HEADERS} ${NOMAD_BINDING_SOURCES})
+target_include_directories(nomad_test PRIVATE "${NOMAD_BINDING_INCLUDE_DIRECTORY}")
 
 # Matches the `nomad` library so debug-only checks (e.g. the live string counter) are compiled into the tests.
 target_compile_definitions(
@@ -90,11 +108,12 @@ target_compile_definitions(
     NOMAD_TEST_PROJECT_TEMPLATE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../templates/projects/default"
     NOMAD_TEST_FONT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/projects/package-smoke/res/fonts/ProggyClean.ttf"
     NOMAD_TEST_MODULE_DIRECTORY="$<TARGET_FILE_DIR:nomad-module-fixture>"
-    NOMAD_TEST_CORE_DIRECTORY="$<TARGET_FILE_DIR:nomad-language>"
+    NOMAD_TEST_CORE_LIBRARY="$<TARGET_FILE:nomad-language>"
+    NOMAD_TEST_LOG_BINDING_MODULE_DIRECTORY="${CMAKE_CURRENT_SOURCE_DIR}/../modules/nomad-log"
 )
 
 add_library(nomad-module-fixture SHARED ModuleFixture.cpp)
-set_target_properties(nomad-module-fixture PROPERTIES OUTPUT_NAME fixture)
+set_target_properties(nomad-module-fixture PROPERTIES OUTPUT_NAME "fixture.nomad")
 if(WIN32)
     set_target_properties(nomad-module-fixture PROPERTIES PREFIX "")
 endif()
@@ -107,6 +126,7 @@ target_link_libraries(
     nomad
     nomad-collections
     nomad-game
+    nomad-log
     nomad-system
     Nomad::CliOptions
     archive
@@ -124,9 +144,15 @@ nomad_copy_runtime_dependencies(nomad_test)
 # including newly added tests, so splitting the runner cannot silently omit coverage.
 set(NOMAD_TEST_AUDIO_FILTER "audio")
 set(NOMAD_TEST_LANGUAGE_FILTER "language_*,native_*,array_objects,object_construction,callable_*,function_resolution")
+set(NOMAD_TEST_BINDING_FILTER "binding_generator,script_bindings")
 set(NOMAD_TEST_TOOLING_FILTER "compilation,project_*,sprite_*,audio_discovery,module_host,module_manifest,source_overlays")
 set(NOMAD_TEST_REMAINING_FILTER
-    "!${NOMAD_TEST_AUDIO_FILTER}:!${NOMAD_TEST_LANGUAGE_FILTER}:!${NOMAD_TEST_TOOLING_FILTER}")
+    "!${NOMAD_TEST_AUDIO_FILTER}:!${NOMAD_TEST_LANGUAGE_FILTER}:!${NOMAD_TEST_TOOLING_FILTER}:!${NOMAD_TEST_BINDING_FILTER}")
+
+add_test(NAME nomad_test_bindings
+    COMMAND nomad_test "--run_test=${NOMAD_TEST_BINDING_FILTER}"
+        --log_level=error --log_format=XML --log_sink=bindings-test-results.xml --color_output=no)
+set_tests_properties(nomad_test_bindings PROPERTIES LABELS unit)
 
 foreach(GROUP IN ITEMS audio language tooling remaining)
     string(TOUPPER "${GROUP}" GROUP_UPPER)
@@ -135,10 +161,29 @@ foreach(GROUP IN ITEMS audio language tooling remaining)
     set_tests_properties(nomad_test_${GROUP} PROPERTIES LABELS unit)
 endforeach()
 
+add_test(NAME nomad_module_script_staging
+    COMMAND "${CMAKE_COMMAND}"
+        "-DNOMAD_MODULE_SCRIPT_STAGER=${CMAKE_SOURCE_DIR}/cmake/CopyModuleScripts.cmake"
+        "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/module-script-staging/$<CONFIG>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/ModuleScriptStagingTest.cmake")
+set_tests_properties(nomad_module_script_staging PROPERTIES TIMEOUT 60)
+
+if(TARGET nomadc)
+    add_dependencies(nomad_test nomadc)
+    add_test(NAME nomad_compiler_exports
+        COMMAND "${CMAKE_COMMAND}"
+            "-DNOMADC=$<TARGET_FILE:nomadc>"
+            "-DNOMAD_VERSION=${PROJECT_VERSION}"
+            "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/compiler-exports/$<CONFIG>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/CompilerExportProcessTest.cmake")
+    set_tests_properties(nomad_compiler_exports PROPERTIES TIMEOUT 60)
+endif()
+
 if(TARGET nomad-lsp)
     add_test(NAME nomad_lsp_process
         COMMAND "${CMAKE_COMMAND}"
             "-DNOMAD_LSP=$<TARGET_FILE:nomad-lsp>"
+            "-DNOMAD_LSP_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-lsp>,|>"
             "-DNOMAD_VERSION=${PROJECT_VERSION}"
             "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/lsp-process/$<CONFIG>"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/LanguageServerProcessTest.cmake")

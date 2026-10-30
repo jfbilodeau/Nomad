@@ -1,12 +1,12 @@
 # Operating system
 
-Select `nomad-os` in `nomad.toml` to access startup information through the `os`
-hub. Its `nomad-collections` dependency is loaded automatically.
+Select `os` in `nomad.toml` to access startup information through the `os`
+hub. Its `collections` dependency is loaded automatically.
 
 ```toml
 [nomad]
 version = "0.1.8"
-modules = ["nomad-os"]
+modules = ["os"]
 ```
 
 ## Startup snapshots
@@ -93,6 +93,6 @@ if os.env.contains "HOME"
 end
 ```
 
-Packaged applications retain `nomad-os` and its collections dependency and
+Packaged applications retain `os` and its collections dependency and
 capture fresh snapshots when launched. Packaging itself does not run scripts or
 capture the packager's environment.

@@ -24,10 +24,10 @@ static_assert(!std::is_copy_assignable_v<ScriptObject>);
 
 namespace {
 
-const ObjectType* createTestType(Runtime& runtime, const NomadString& name) {
-    const auto id = runtime.createObjectType(name, ObjectTypeMode::Opened);
+const ClassType* createTestType(Runtime& runtime, const NomadString& name) {
+    const auto id = runtime.registerClass(name, ClassMode::Opened);
     BOOST_REQUIRE(id.isValid());
-    return runtime.getType(id).value()->asObjectType();
+    return runtime.getType(id).value()->asClassType();
 }
 
 class CountingObject final : public NomadObject {
@@ -39,18 +39,18 @@ private:
     NomadIndex& m_destroyed;
 };
 
-class InitializingType final : public ObjectType {
+class InitializingType final : public ClassType {
 public:
     InitializingType(
         Runtime* runtime,
         TypeId id,
         NomadString name,
-        ObjectTypeMode mode,
+        ClassMode mode,
         NomadIndex& initialized,
         NomadIndex& destroyed,
         bool fail
     ):
-        ObjectType(runtime, id, std::move(name), mode),
+        ClassType(runtime, id, std::move(name), mode),
         m_initialized(initialized),
         m_destroyed(destroyed),
         m_fail(fail)
@@ -70,7 +70,7 @@ private:
     bool m_fail;
 };
 
-auto constructScriptObject(VirtualMachine& machine, const ObjectType* type) {
+auto constructScriptObject(VirtualMachine& machine, const ClassType* type) {
     BOOST_REQUIRE(type->getConstructors().size() == 1u);
     const auto release = [](ScriptObject* object) { object->releaseRef(); };
     return std::unique_ptr<ScriptObject, decltype(release)>(
@@ -82,7 +82,7 @@ auto constructScriptObject(VirtualMachine& machine, const ObjectType* type) {
 void compileTestConstructor(
     Runtime& runtime,
     Compiler& compiler,
-    const ObjectType* type,
+    const ClassType* type,
     CallableId initializerId
 ) {
     const auto id = runtime.registerScriptConstructor(type->getId(), {}, "", "");
@@ -108,7 +108,7 @@ BOOST_AUTO_TEST_CASE(fields_use_owner_local_slots_and_zeroed_raw_storage) {
     BOOST_REQUIRE(runtime.registerProperty(unrelated->getId(), "other", runtime.getIntegerType()).isValid());
     const auto* type = createTestType(runtime, "Fields");
     const auto nativeId = runtime.addProperty(type->getId(), {
-        .valueTypeId = runtime.getTypeId("int"),
+        .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); }
     });
@@ -122,7 +122,7 @@ BOOST_AUTO_TEST_CASE(fields_use_owner_local_slots_and_zeroed_raw_storage) {
         BOOST_REQUIRE(id.isValid());
     }
     ScriptObject object(type);
-    BOOST_TEST(object.getObjectType() == type);
+    BOOST_TEST(object.getClassType() == type);
     BOOST_TEST(object.getFieldCount() == 5u);
     BOOST_TEST(type->getFieldIndex(nativeId) == NOMAD_INVALID_INDEX);
     BOOST_TEST(type->getFieldIndex(integerId) == 0u);
@@ -138,8 +138,8 @@ BOOST_AUTO_TEST_CASE(allocation_and_stores_do_not_run_type_initializers) {
     Runtime runtime;
     auto initialized = NomadIndex{0};
     auto destroyed = NomadIndex{0};
-    const auto valueId = runtime.createObjectType<InitializingType>(
-        "Counted", ObjectTypeMode::Closed, initialized, destroyed, false
+    const auto valueId = runtime.registerClass<InitializingType>(
+        "Counted", ClassMode::Closed, initialized, destroyed, false
     );
     BOOST_REQUIRE(valueId.isValid());
     const auto* type = createTestType(runtime, "Owner");
@@ -218,8 +218,8 @@ BOOST_AUTO_TEST_CASE(partial_out_of_order_stores_release_values_without_initiali
     Runtime runtime;
     auto initialized = NomadIndex{0};
     auto destroyed = NomadIndex{0};
-    const auto countedId = runtime.createObjectType<InitializingType>(
-        "Counted", ObjectTypeMode::Closed, initialized, destroyed, false
+    const auto countedId = runtime.registerClass<InitializingType>(
+        "Counted", ClassMode::Closed, initialized, destroyed, false
     );
     BOOST_REQUIRE(countedId.isValid());
     const auto* type = createTestType(runtime, "Partial");
@@ -270,7 +270,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
         BOOST_REQUIRE(runtime.registerProperty(type->getId(), "text", runtime.getStringType()).isValid());
         BOOST_REQUIRE(runtime.registerProperty(type->getId(), "next", type).isValid());
         BOOST_REQUIRE(runtime.addProperty(type->getId(), {
-            .valueTypeId = runtime.getIntegerType()->getId(),
+            .valueType = runtime.getIntegerType(),
             .name = "nativeLength",
             .getter = [](VirtualMachine* machine, RuntimeValue& result) {
                 const auto* object = machine->getThisAs<ScriptObject>();
@@ -397,7 +397,7 @@ BOOST_AUTO_TEST_CASE(generated_initializer_runs_explicit_expressions_in_source_o
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    const auto* type = runtime.getTypeByName("Point")->asObjectType();
+    const auto* type = runtime.getTypeByName("Point")->asClassType();
     for (const auto* name : {"first", "second", "third", "description"}) {
         BOOST_TEST(type->getProperty(name)->hasExplicitInitializer());
     }
@@ -433,7 +433,7 @@ BOOST_AUTO_TEST_CASE(generated_initializers_run_per_instance_and_preserve_fresh_
     fixture.addFunction("main", "class Owner\nvalue = fresh\nend");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     BOOST_TEST(created == 0u);
-    const auto* type = runtime.getTypeByName("Owner")->asObjectType();
+    const auto* type = runtime.getTypeByName("Owner")->asClassType();
     {
         auto machine = runtime.createVirtualMachine();
         const auto first = constructScriptObject(*machine, type);
@@ -460,7 +460,7 @@ BOOST_AUTO_TEST_CASE(initializer_source_order_is_independent_of_property_registr
         "fun forwardValue\nreturn nextValue\nend\nreturn new Fields false"
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto* type = runtime.getTypeByName("Fields")->asObjectType();
+    const auto* type = runtime.getTypeByName("Fields")->asClassType();
     BOOST_REQUIRE(type->getProperties().size() == 3u);
     BOOST_TEST(type->getProperties()[0]->getName() == "second");
     BOOST_TEST(type->getProperty("first")->hasExplicitInitializer());
@@ -484,8 +484,8 @@ BOOST_AUTO_TEST_CASE(generated_defaults_honor_type_initialization_only_for_field
     auto initialized = NomadIndex{0};
     auto destroyed = NomadIndex{0};
     auto explicitCalls = NomadIndex{0};
-    const auto valueId = runtime.createObjectType<InitializingType>(
-        "Counted", ObjectTypeMode::Closed, initialized, destroyed, false
+    const auto valueId = runtime.registerClass<InitializingType>(
+        "Counted", ClassMode::Closed, initialized, destroyed, false
     );
     BOOST_REQUIRE(valueId.isValid());
     BOOST_REQUIRE(runtime.registerNativeFunction(
@@ -539,8 +539,8 @@ BOOST_AUTO_TEST_CASE(host_construction_releases_stored_fields_on_initializer_fai
         "class Working\nvalue = 42\nend"
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto* broken = runtime.getTypeByName("Broken")->asObjectType();
-    const auto* working = runtime.getTypeByName("Working")->asObjectType();
+    const auto* broken = runtime.getTypeByName("Broken")->asClassType();
+    const auto* working = runtime.getTypeByName("Working")->asClassType();
     const auto before = NomadObject::getLiveObjectCount();
     {
         auto machine = runtime.createVirtualMachine();
@@ -561,7 +561,7 @@ BOOST_AUTO_TEST_CASE(empty_initializers_and_invalid_host_construction_requests) 
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
     auto machine = runtime.createVirtualMachine();
-    const auto* type = runtime.getTypeByName("Empty")->asObjectType();
+    const auto* type = runtime.getTypeByName("Empty")->asClassType();
     const auto empty = constructScriptObject(*machine, type);
     BOOST_TEST(empty->getFieldCount() == 0u);
     BOOST_TEST(empty->getReferenceCount() == 1u);
@@ -597,7 +597,7 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
     BOOST_REQUIRE(initializerId.isValid());
     auto* initializer = runtime.getScriptCallable(initializerId);
     const auto propertyId = runtime.addProperty(type->getId(), {
-        .valueTypeId = runtime.getIntegerType()->getId(),
+        .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             auto* receiver = machine->getThis();
@@ -619,14 +619,14 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
     BOOST_REQUIRE(propertyId.isValid());
     const auto probe = runtime.registerInstruction("test.receiver", [](VirtualMachine* machine) {
         auto* object = machine->getThisAs<ScriptObject>();
-        BOOST_TEST(object->getObjectType()->getTypeName() == "Receiver");
+        BOOST_TEST(object->getClassType()->getTypeName() == "Receiver");
         BOOST_TEST(object->getReferenceCount() == 1u);
-        const auto* initializer = object->getObjectType()->getMethods()[0]->asScriptCallable();
+        const auto* initializer = object->getClassType()->getMethods()[0]->asScriptCallable();
         BOOST_TEST(initializer->getVariableId("this").isInvalid());
         RuntimeValue receiver;
         receiver.setObjectValue(object);
         RuntimeValue result;
-        machine->getProperty(object->getObjectType()->getProperty("native")->getId(), receiver, result);
+        machine->getProperty(object->getClassType()->getProperty("native")->getId(), receiver, result);
         BOOST_TEST(result.getIntegerValue() == 42);
         BOOST_TEST(machine->getThis() == object);
         object->setField(0, RuntimeValue{object->getField(0).getIntegerValue() + 1});
@@ -667,13 +667,13 @@ BOOST_AUTO_TEST_CASE(script_receiver_restores_after_nested_host_construction_and
     const auto probe = runtime.registerInstruction("test.nestedReceiver", [](VirtualMachine* machine) {
         auto* object = machine->getThisAs<ScriptObject>();
         BOOST_TEST(object->getReferenceCount() == 1u);
-        const auto& name = object->getObjectType()->getTypeName();
+        const auto& name = object->getClassType()->getTypeName();
         if (name == "BrokenReceiver") {
             throw NomadException("Receiver frame failed");
         }
         if (name == "OuterReceiver") {
             for (const auto* nestedName : {"InnerReceiver", "BrokenReceiver"}) {
-                const auto* nestedType = machine->getRuntime()->getTypeByName(nestedName)->asObjectType();
+                const auto* nestedType = machine->getRuntime()->getTypeByName(nestedName)->asClassType();
                 if (NomadString(nestedName) == "BrokenReceiver") {
                     BOOST_CHECK_THROW(constructScriptObject(*machine, nestedType), NomadException);
                 } else {
@@ -699,13 +699,13 @@ BOOST_AUTO_TEST_CASE(script_receiver_restores_after_nested_host_construction_and
     const auto before = NomadObject::getLiveObjectCount();
     {
         auto machine = runtime.createVirtualMachine();
-        const auto outer = constructScriptObject(*machine, runtime.getTypeByName("OuterReceiver")->asObjectType());
+        const auto outer = constructScriptObject(*machine, runtime.getTypeByName("OuterReceiver")->asClassType());
         BOOST_TEST(outer->getReferenceCount() == 1u);
         BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
         BOOST_CHECK_THROW(constructScriptObject(*machine,
-            runtime.getTypeByName("BrokenReceiver")->asObjectType()), NomadException);
+            runtime.getTypeByName("BrokenReceiver")->asClassType()), NomadException);
         BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
-        const auto recovered = constructScriptObject(*machine, runtime.getTypeByName("InnerReceiver")->asObjectType());
+        const auto recovered = constructScriptObject(*machine, runtime.getTypeByName("InnerReceiver")->asClassType());
         BOOST_TEST(recovered->getReferenceCount() == 1u);
         BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
     }

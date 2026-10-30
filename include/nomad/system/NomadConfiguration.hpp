@@ -31,6 +31,8 @@ public:
     [[nodiscard]] bool contains(NomadStringView path) const;
     // Missing sections are allowed; existing values must be configuration sections.
     void validateSection(NomadStringView path) const;
+    [[nodiscard]] std::vector<NomadString> getKeys(NomadStringView path = {}) const;
+    [[nodiscard]] std::optional<std::vector<NomadConfiguration>> getSectionArray(NomadStringView path) const;
     [[nodiscard]] std::optional<NomadString> getString(NomadStringView path) const;
     [[nodiscard]] std::optional<NomadInteger> getInteger(NomadStringView path) const;
     [[nodiscard]] std::optional<bool> getBoolean(NomadStringView path) const;

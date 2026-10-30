@@ -12,10 +12,19 @@
 
 #include <nomad/system/Path.hpp>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <exception>
+#include <memory>
+#include <system_error>
 #include <utility>
 
 namespace nomad {
@@ -54,6 +63,7 @@ ModuleHostImpl::~ModuleHostImpl() {
             }
         }
     }
+    m_compiler.reset();
     m_runtime.reset();
     for (auto module = m_modules.rbegin(); module != m_modules.rend(); ++module) {
         (*module)->callbacks = {};
@@ -99,16 +109,40 @@ ModuleHostImpl::ModuleHostImpl(
     m_mode(mode) {
     if (mode != ModuleMode::Packaging) {
         m_runtime = std::make_unique<Runtime>();
+        m_compiler = m_runtime->createCompiler();
     }
 }
 
 void ModuleHostImpl::loadModules(const std::vector<ModuleManifest>& modules) {
+    m_moduleScriptRoots = getModuleScriptRoots(modules);
+#ifdef _WIN32
+    const auto loadMode = static_cast<boost::dll::load_mode::type>(
+        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS
+    );
+#else
+    const auto loadMode = boost::dll::load_mode::load_with_altered_search_path;
+#endif
     for (const auto& manifest : modules) {
         auto loaded = std::make_unique<LoadedModule>();
         loaded->name = manifest.name;
         const auto libraryPath = manifest.directory / getModuleLibraryName(manifest.name);
         try {
-            loaded->library.load(libraryPath.native(), boost::dll::load_mode::load_with_altered_search_path);
+#ifdef _WIN32
+            // Package dependencies live at the package root, which differs from
+            // the running executable's directory when SDK tools check an external package.
+            // Register it only for this load; the deleter removes the process-wide search entry.
+            const auto dependencyDirectory = std::filesystem::absolute(manifest.directory).parent_path().parent_path();
+            const auto dependencySearch = std::unique_ptr<void, decltype(&RemoveDllDirectory)>(
+                AddDllDirectory(dependencyDirectory.c_str()), &RemoveDllDirectory
+            );
+            if (!dependencySearch) {
+                throw std::system_error(
+                    static_cast<int>(GetLastError()), std::system_category(),
+                    "Failed to add module dependency directory '" + pathToUtf8(dependencyDirectory) + "'"
+                );
+            }
+#endif
+            loaded->library.load(std::filesystem::absolute(libraryPath).native(), loadMode);
         } catch (const std::exception& error) {
             throw ModuleException("Failed to load module '" + manifest.name + "' at '" +
                 pathToUtf8(libraryPath) + "': " + error.what());
@@ -117,7 +151,7 @@ void ModuleHostImpl::loadModules(const std::vector<ModuleManifest>& modules) {
             throw ModuleException("Module '" + manifest.name + "' does not export registerModule");
         }
         loaded->context = {
-            m_runtime.get(), &m_configuration, &log::getLogger(), m_mode,
+            m_runtime.get(), m_compiler.get(), &m_configuration, &log::getLogger(), m_mode,
             m_projectDirectory, manifest.directory, m_arguments,
             [this](const int status) { requestExit(status); },
             [this] { return pollExit(); }, {},
@@ -145,42 +179,50 @@ void ModuleHostImpl::loadModules(const std::vector<ModuleManifest>& modules) {
         throw ModuleException("Only one configured module may provide an application run callback");
     }
     if (m_runtime != nullptr) {
-        m_runtime->registerCompilerSetup([this](Compiler* compiler) {
+        const auto configureCompiler = [this](Compiler* compiler) {
+            compiler->registerSourceRoots(m_moduleScriptRoots);
             compiler->registerPhaseHook([this](CompilerContext*, const CompilationPhase phase) {
                 if (phase == CompilationPhase::Configure) {
                     m_compilationFailed = true;
                 }
             });
-            for (const auto& loaded : m_modules) {
-                auto* module = loaded.get();
-                compiler->registerPhaseHook([module](CompilerContext* context, const CompilationPhase phase) {
-                    const auto index = static_cast<NomadIndex>(phase) - 1U;
-                    if (index < PHASE_CALLBACKS.size()) {
-                        const auto& callback = module->callbacks.*PHASE_CALLBACKS[index];
-                        if (callback) {
-                            try {
-                                callback(context);
-                            } catch (const NomadBug&) {
-                                throw;
-                            } catch (const NomadException& error) {
-                                throw ModuleException("Module '" + module->name + "' compiler hook failed: " + error.what());
-                            }
+        };
+
+        configureCompiler(m_compiler.get());
+        m_runtime->registerCompilerSetup(configureCompiler);
+        for (const auto& loaded : m_modules) {
+            auto* module = loaded.get();
+            m_compiler->registerPhaseHook([module](CompilerContext* context, const CompilationPhase phase) {
+                const auto index = static_cast<NomadIndex>(phase) - 1U;
+                if (index < PHASE_CALLBACKS.size()) {
+                    const auto& callback = module->callbacks.*PHASE_CALLBACKS[index];
+                    if (callback) {
+                        try {
+                            callback(context);
+                        } catch (const NomadBug&) {
+                            throw;
+                        } catch (const NomadException& error) {
+                            throw ModuleException("Module '" + module->name + "' compiler hook failed: " + error.what());
                         }
                     }
-                });
-            }
-            compiler->registerPhaseHook([this](CompilerContext* context, const CompilationPhase phase) {
-                if (phase != CompilationPhase::Completed) {
-                    return;
                 }
-                m_compilationFailed = context->hasError();
             });
+        }
+        m_compiler->registerPhaseHook([this](CompilerContext* context, const CompilationPhase phase) {
+            if (phase != CompilationPhase::Completed) {
+                return;
+            }
+            m_compilationFailed = context->hasError();
         });
     }
 }
 
 Runtime* ModuleHostImpl::getRuntime() const {
     return m_runtime.get();
+}
+
+Compiler* ModuleHostImpl::getCompiler() const {
+    return m_compiler.get();
 }
 
 int ModuleHostImpl::run() {
@@ -225,8 +267,19 @@ CompilationResult ModuleHostImpl::compileProject() {
     }
     m_compilationFailed = true;
     const auto paths = resolveScriptPaths(m_configuration, m_projectDirectory);
-    return compileSources(loadSourcePaths(paths),
+    return compileSources(loadSources(paths),
         m_mode == ModuleMode::Analysis ? CompilationTarget::Analysis : CompilationTarget::Executable);
+}
+
+SourceBatch ModuleHostImpl::loadSources(
+    const std::span<const NomadPath> paths,
+    const std::span<const ScriptSource> overrides
+) const {
+    auto roots = m_moduleScriptRoots;
+    for (const auto& path : paths) {
+        roots.push_back({path});
+    }
+    return loadSourceRoots(roots, overrides);
 }
 
 CompilationResult ModuleHostImpl::compileSources(const SourceBatch& sources, const CompilationTarget target) {
@@ -236,9 +289,7 @@ CompilationResult ModuleHostImpl::compileSources(const SourceBatch& sources, con
     m_compilationFailed = true;
     CompilationResult result;
     prepareCompilation([&] {
-        result = target == CompilationTarget::Analysis
-            ? analyzeSources(sources, m_runtime.get())
-            : checkSources(sources, m_runtime.get());
+        result = nomad::compileSources(sources, *m_compiler, target);
     });
     m_compilationFailed = !result.succeeded();
     return result;

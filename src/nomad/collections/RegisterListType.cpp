@@ -17,9 +17,9 @@ namespace nomad {
 
 namespace {
 
-void registerListReaders(Runtime* runtime, const ObjectType* objectType, const bool writable) {
-    const auto* elementType = objectType->getTypeArguments()[0];
-    runtime->addIterable(objectType->getId(), {
+void registerListReaders(Runtime* runtime, const ClassType* classType, const bool writable) {
+    const auto* elementType = classType->getTypeArguments()[0];
+    runtime->addIterable(classType->getId(), {
         .valueTypeId = elementType->getId(),
         .factory = {
             .name = "iterator",
@@ -31,8 +31,8 @@ void registerListReaders(Runtime* runtime, const ObjectType* objectType, const b
             .documentation = NomadDoc("Creates an independent live iterator. Structural changes invalidate its next advance.")
         }
     });
-    const auto countId = runtime->addProperty(objectType->getId(), {
-        .valueTypeId = runtime->getTypeId("int"),
+    const auto countId = runtime->addProperty(classType->getId(), {
+        .valueType = runtime->getIntegerType(),
         .name = "count",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             result.setIntegerValue(static_cast<NomadInteger>(machine->getThisAs<ListObject>()->getCount()));
@@ -46,7 +46,7 @@ void registerListReaders(Runtime* runtime, const ObjectType* objectType, const b
             machine->getThisAs<ListObject>()->setValue(machine->getIntegerParameter(0), machine->getParameter(1));
         };
     }
-    const auto indexerId = runtime->addIndexer(objectType->getId(), {
+    const auto indexerId = runtime->addIndexer(classType->getId(), {
         .valueTypeId = elementType->getId(),
         .indexTypes = {runtime->getIntegerType()->getId()},
         .getter = [elementType](VirtualMachine* machine) {
@@ -71,12 +71,12 @@ void registerListType(Runtime* runtime) {
         [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             return std::make_unique<ReadOnlyListType>(
                 owningRuntime, id, "ReadOnlyList<" + arguments[0]->getTypeName() + ">",
-                ObjectTypeMode::Closed, arguments[0]
+                ClassMode::Closed, arguments[0]
             );
         },
         [](Runtime* runtime, const TypeId id) {
             const auto* type = runtime->getType(id).value();
-            registerListReaders(runtime, static_cast<const ObjectType*>(type), false);
+            registerListReaders(runtime, static_cast<const ClassType*>(type), false);
         }
     )) {
         throw NomadException("Failed to register ReadOnlyList");
@@ -87,14 +87,14 @@ void registerListType(Runtime* runtime) {
         [](Runtime* owningRuntime, TypeId id, const std::vector<const nomad::Type*>& arguments) {
             const auto* elementType = arguments[0];
             return std::make_unique<nomad::ListType>(
-                owningRuntime, id, "List<" + elementType->getTypeName() + ">", ObjectTypeMode::Closed, elementType
+                owningRuntime, id, "List<" + elementType->getTypeName() + ">", ClassMode::Closed, elementType
             );
         },
         [](Runtime* runtime, const TypeId id) {
             const auto* type = runtime->getType(id).value();
-            const auto* objectType = static_cast<const nomad::ObjectType*>(type);
-            const auto* elementType = objectType->getTypeArguments()[0];
-            registerListReaders(runtime, objectType, true);
+            const auto* classType = static_cast<const nomad::ClassType*>(type);
+            const auto* elementType = classType->getTypeArguments()[0];
+            registerListReaders(runtime, classType, true);
             const auto* readOnlyType = runtime->getParameterizedType("ReadOnlyList", {elementType});
             if (readOnlyType == nullptr || runtime->addMethod(id, {
                 .name = "toReadOnly",

@@ -1,7 +1,7 @@
 schema = 1
 
 [module]
-name = "nomad-os"
+name = "os"
 
 [nomad]
-modules = ["nomad-collections"]
+modules = ["collections"]

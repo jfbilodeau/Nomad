@@ -12,7 +12,7 @@
 namespace nomad {
 
 void registerRangeType(Runtime* runtime) {
-    const auto id = runtime->createObjectType<RangeType>("Range", ObjectTypeMode::Closed);
+    const auto id = runtime->registerClass<RangeType>("Range", ClassMode::Closed);
     if (id.isInvalid()) {
         throw NomadException("Failed to create Range type");
     }

@@ -444,7 +444,7 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
 
     if (const auto* receiverType = compiler->getReceiverType(function);
         receiverType != nullptr && m_identifier.starts_with("this.")) {
-        const auto* property = receiverType->asObjectType()->getProperty(m_identifier.substr(5));
+        const auto* property = receiverType->asClassType()->getProperty(m_identifier.substr(5));
         if (property == nullptr) {
             compiler->reportInternalError("Unresolved class field: " + m_identifier);
         }

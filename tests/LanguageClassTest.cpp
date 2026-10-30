@@ -58,7 +58,7 @@ BOOST_AUTO_TEST_CASE(init_is_contextual_not_a_globally_reserved_identifier)
     BOOST_TEST(!compileErrors("class Point\ninit = 42\nend").empty());
 }
 
-BOOST_AUTO_TEST_CASE(empty_declarations_publish_closed_and_open_object_types)
+BOOST_AUTO_TEST_CASE(empty_declarations_publish_closed_and_open_class_types)
 {
     LanguageTestFixture fixture;
     fixture.addFunction("main",
@@ -67,8 +67,8 @@ BOOST_AUTO_TEST_CASE(empty_declarations_publish_closed_and_open_object_types)
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    const auto* closed = runtime.getTypeByName("Closed")->asObjectType();
-    const auto* opened = runtime.getTypeByName("Opened")->asObjectType();
+    const auto* closed = runtime.getTypeByName("Closed")->asClassType();
+    const auto* opened = runtime.getTypeByName("Opened")->asClassType();
     BOOST_REQUIRE(closed != nullptr);
     BOOST_REQUIRE(opened != nullptr);
     BOOST_TEST(!closed->isOpen());
@@ -127,7 +127,7 @@ BOOST_AUTO_TEST_CASE(nested_hubs_prefix_class_names_without_implicit_type_lookup
         "fun identity value:game.model.Point\nreturn value\nend\nend\nend"
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto* type = fixture.getRuntime().getTypeByName("game.model.Point")->asObjectType();
+    const auto* type = fixture.getRuntime().getTypeByName("game.model.Point")->asClassType();
     BOOST_REQUIRE(type != nullptr);
     BOOST_TEST(type->isOpen());
     BOOST_TEST(fixture.getRuntime().getTypeByName("Point") == nullptr);
@@ -146,7 +146,7 @@ BOOST_AUTO_TEST_CASE(duplicate_classes_are_rejected_even_when_open)
         }
     }
     LanguageTestFixture fixture;
-    BOOST_REQUIRE(fixture.getRuntime().createObjectType("Point", ObjectTypeMode::Closed).isValid());
+    BOOST_REQUIRE(fixture.getRuntime().registerClass("Point", ClassMode::Closed).isValid());
     fixture.addFunction("main", "class Point\nend");
     BOOST_TEST(!fixture.compile());
 }
@@ -183,7 +183,7 @@ BOOST_AUTO_TEST_CASE(member_declarations_retain_typed_headers_initializers_and_b
     fixture.addFunction("main", "return");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    BOOST_REQUIRE(runtime.createObjectType("Point", ObjectTypeMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.registerClass("Point", ClassMode::Closed).isValid());
     auto* compiler = &fixture.getCompiler();
     CompilerContext context(compiler);
     std::unique_ptr<Statement> statement;
@@ -305,7 +305,7 @@ BOOST_AUTO_TEST_CASE(member_overloads_register_distinct_parameter_types_on_the_c
     fixture.addFunction("main", "return");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    BOOST_REQUIRE(runtime.createObjectType("Point", ObjectTypeMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.registerClass("Point", ClassMode::Closed).isValid());
     auto* compiler = &fixture.getCompiler();
     CompilerContext context(compiler);
     Tokenizer tokens(&context, "overloads.nomad",
@@ -413,7 +413,7 @@ BOOST_AUTO_TEST_CASE(member_signatures_precede_body_parsing_and_receiver_types_a
     auto sawSignatures = false;
     fixture.getCompiler().registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
         if (phase != CompilationPhase::Parse) return;
-        const auto* type = fixture.getRuntime().getTypeByName("Point")->asObjectType();
+        const auto* type = fixture.getRuntime().getTypeByName("Point")->asClassType();
         BOOST_REQUIRE(type != nullptr);
         BOOST_TEST(type->getConstructors().size() == 1u);
         BOOST_TEST(type->getMethods().size() == 3u);
@@ -424,12 +424,12 @@ BOOST_AUTO_TEST_CASE(member_signatures_precede_body_parsing_and_receiver_types_a
     BOOST_TEST(!fixture.hasError("Missing `return`"));
     BOOST_TEST(!fixture.hasError("Unknown identifier"));
     auto& runtime = fixture.getRuntime();
-    const auto* type = runtime.getTypeByName("Point")->asObjectType();
+    const auto* type = runtime.getTypeByName("Point")->asClassType();
     for (const auto* method : type->getMethods()) {
         const auto* callable = runtime.getScriptCallable(method->getId());
         BOOST_REQUIRE(callable != nullptr);
         BOOST_TEST(callable->getVariableId("this").isInvalid());
-        BOOST_TEST(callable->getObjectType() == type);
+        BOOST_TEST(callable->getClassType() == type);
         BOOST_TEST(callable->getParameterId("this") == NOMAD_INVALID_ID);
         BOOST_TEST(runtime.getScriptFunction(method->getId()) == nullptr);
         if (method->getName() == "identity") BOOST_TEST(method->getReturnType() == type);
@@ -478,7 +478,7 @@ BOOST_AUTO_TEST_CASE(bare_member_names_remain_locals_and_initializers_resolve_no
         "class Point\nvalue = 1.0\nfun move\nvalue = 2\nreturn value\nend\nend"
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto* type = fixture.getRuntime().getTypeByName("Point")->asObjectType();
+    const auto* type = fixture.getRuntime().getTypeByName("Point")->asClassType();
     for (const auto* method : type->getMethods()) {
         if (method->getName() == "move") {
             const auto* callable = fixture.getRuntime().getScriptCallable(method->getId());
@@ -509,7 +509,7 @@ BOOST_AUTO_TEST_CASE(class_fields_are_discovered_across_branches_and_constructor
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    const auto* type = runtime.getTypeByName("Point")->asObjectType();
+    const auto* type = runtime.getTypeByName("Point")->asClassType();
     BOOST_REQUIRE(type != nullptr);
     BOOST_REQUIRE(type->getProperties().size() == 4u);
     for (const auto* name : {"name", "x", "y", "label"}) {
@@ -547,7 +547,7 @@ BOOST_AUTO_TEST_CASE(field_inference_resolves_initializer_calls_and_constructor_
         "fun sixthValue\nreturn 42\nend"
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto* type = fixture.getRuntime().getTypeByName("Chain")->asObjectType();
+    const auto* type = fixture.getRuntime().getTypeByName("Chain")->asClassType();
     BOOST_REQUIRE(type->getProperties().size() == 7u);
     for (const auto* name : {"first", "second", "third", "fourth", "fifth", "sixth"}) {
         BOOST_TEST(type->getProperty(name)->hasExplicitInitializer());
@@ -630,8 +630,8 @@ BOOST_AUTO_TEST_CASE(field_slots_are_owner_local_stable_and_distinct_from_catalo
     );
     BOOST_TEST(fixture.compile());
     auto& runtime = fixture.getRuntime();
-    const auto* first = runtime.getTypeByName("First")->asObjectType();
-    const auto* second = runtime.getTypeByName("Second")->asObjectType();
+    const auto* first = runtime.getTypeByName("First")->asClassType();
+    const auto* second = runtime.getTypeByName("Second")->asClassType();
     BOOST_REQUIRE(first->getProperty("x") != nullptr);
     BOOST_REQUIRE(first->getProperty("y") != nullptr);
     BOOST_REQUIRE(second->getProperty("x") != nullptr);
@@ -648,7 +648,7 @@ BOOST_AUTO_TEST_CASE(field_slots_are_owner_local_stable_and_distinct_from_catalo
     BOOST_TEST(first->getFieldIndex(firstId) == 0u);
     BOOST_TEST(first->getFieldIndex(first->getProperty("later")->getId()) == 2u);
     const auto nativeId = runtime.addProperty(first->getId(), {
-        .valueTypeId = runtime.getIntegerType()->getId(),
+        .valueType = runtime.getIntegerType(),
         .name = "nativeValue",
         .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadInteger{1}}; },
         .setter = {},
@@ -686,10 +686,10 @@ BOOST_AUTO_TEST_CASE(field_reads_and_writes_capture_this_without_native_member_n
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     registerCallbackTestFunctions(runtime);
-    const auto otherId = runtime.createObjectType("Other", ObjectTypeMode::Closed);
+    const auto otherId = runtime.registerClass("Other", ClassMode::Closed);
     BOOST_REQUIRE(otherId.isValid());
     BOOST_REQUIRE(runtime.addProperty(otherId, {
-        .valueTypeId = runtime.getFloatType()->getId(),
+        .valueType = runtime.getFloatType(),
         .name = "value",
         .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadFloat{1.0}}; },
         .setter = {},
@@ -701,7 +701,7 @@ BOOST_AUTO_TEST_CASE(field_reads_and_writes_capture_this_without_native_member_n
         "fun describe\nreturn $\"value {this.value}\"\nend\nend"
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto* type = runtime.getTypeByName("Point")->asObjectType();
+    const auto* type = runtime.getTypeByName("Point")->asClassType();
     BOOST_REQUIRE(type->getProperty("value") != nullptr);
     BOOST_TEST(type->getProperty("value")->getValueType() == runtime.getIntegerType());
     auto foundCapture = false;
@@ -739,7 +739,7 @@ BOOST_AUTO_TEST_CASE(member_callbacks_capture_this_and_format_placeholders_use_m
     BOOST_TEST(!fixture.hasError("Unknown identifier"));
     BOOST_TEST(!fixture.hasError("Callback return type"));
     auto& runtime = fixture.getRuntime();
-    const auto* type = runtime.getTypeByName("Point")->asObjectType();
+    const auto* type = runtime.getTypeByName("Point")->asClassType();
     CallableId callbackMethod;
     for (const auto* method : type->getMethods()) {
         if (method->getName() == "describe") BOOST_TEST(method->getReturnType() == runtime.getStringType());
@@ -769,7 +769,7 @@ BOOST_AUTO_TEST_CASE(member_bodies_use_registered_declaration_pre_parsers)
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     BOOST_TEST(!fixture.hasError("Unknown identifier"));
-    const auto* type = fixture.getRuntime().getTypeByName("Point")->asObjectType();
+    const auto* type = fixture.getRuntime().getTypeByName("Point")->asClassType();
     BOOST_REQUIRE(type->getMethods().size() == 2u);
     BOOST_TEST(type->getMethods()[0]->getReturnType() == fixture.getRuntime().getIntegerType());
 }
@@ -808,7 +808,7 @@ BOOST_AUTO_TEST_CASE(external_open_class_fields_are_shared_across_functions_and_
         CompilerContext context(&fixture.getCompiler());
         BOOST_TEST(fixture.getCompiler().compileScripts(&context));
         BOOST_TEST(context.getWarningCount() == 0u);
-        const auto* type = fixture.getRuntime().getTypeByName("Point")->asObjectType();
+        const auto* type = fixture.getRuntime().getTypeByName("Point")->asClassType();
         BOOST_REQUIRE(type->getProperty("extra") != nullptr);
         BOOST_TEST(type->getProperty("extra")->getValueType() == fixture.getRuntime().getIntegerType());
         const auto* read = fixture.getRuntime().getScriptFunction(fixture.getRuntime().getFunctionId("read"));
@@ -853,7 +853,7 @@ BOOST_AUTO_TEST_CASE(external_reads_of_never_declared_fields_are_errors_not_decl
     BOOST_REQUIRE(error != nullptr);
     BOOST_TEST(error->sourceName == "main.nomad");
     BOOST_TEST(error->line == 4u);
-    BOOST_TEST(fixture.getRuntime().getTypeByName("Point")->asObjectType()->getProperties().empty());
+    BOOST_TEST(fixture.getRuntime().getTypeByName("Point")->asClassType()->getProperties().empty());
 }
 
 BOOST_AUTO_TEST_CASE(external_class_fields_reject_closed_types_conflicting_types_and_methods)
@@ -896,10 +896,10 @@ BOOST_AUTO_TEST_CASE(external_fields_work_on_native_open_types_and_preserve_nati
 {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto id = runtime.createObjectType("Host", ObjectTypeMode::Opened);
+    const auto id = runtime.registerClass("Host", ClassMode::Opened);
     BOOST_REQUIRE(id.isValid());
     BOOST_REQUIRE(runtime.addProperty(id, {
-        .valueTypeId = runtime.getIntegerType()->getId(),
+        .valueType = runtime.getIntegerType(),
         .name = "nativeValue",
         .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadInteger{1}}; },
         .setter = {},
@@ -912,7 +912,7 @@ BOOST_AUTO_TEST_CASE(external_fields_work_on_native_open_types_and_preserve_nati
     BOOST_TEST(fixture.getCompiler().compileScripts(&context));
     BOOST_TEST(context.getWarningCount() == 0u);
     BOOST_TEST(context.getErrorCount() == 0u);
-    const auto* type = runtime.getTypeByName("Host")->asObjectType();
+    const auto* type = runtime.getTypeByName("Host")->asClassType();
     BOOST_REQUIRE(type->getProperty("extra") != nullptr);
     BOOST_TEST(type->getFieldIndex(type->getProperty("extra")->getId()) == 0u);
     BOOST_TEST(type->getFieldIndex(type->getProperty("nativeValue")->getId()) == NOMAD_INVALID_INDEX);
@@ -938,7 +938,7 @@ BOOST_AUTO_TEST_CASE(external_fields_resolve_nested_receivers_and_captured_alias
     CompilerContext context(&fixture.getCompiler());
     BOOST_TEST(fixture.getCompiler().compileScripts(&context));
     BOOST_TEST(context.getWarningCount() == 0u);
-    const auto* type = fixture.getRuntime().getTypeByName("Inner")->asObjectType();
+    const auto* type = fixture.getRuntime().getTypeByName("Inner")->asClassType();
     BOOST_REQUIRE(type->getProperty("extra") != nullptr);
     BOOST_TEST(context.getErrorCount() == 0u);
 }
@@ -956,7 +956,7 @@ BOOST_AUTO_TEST_CASE(stored_fields_are_not_parsed_as_other_types_native_methods)
     for (const auto sourceParameter : {false, true}) {
         LanguageTestFixture fixture;
         auto& runtime = fixture.getRuntime();
-        const auto id = runtime.createObjectType("Other", ObjectTypeMode::Closed);
+        const auto id = runtime.registerClass("Other", ClassMode::Closed);
         BOOST_REQUIRE(id.isValid());
         BOOST_REQUIRE(runtime.addMethod(id, {
             .name = "extra",

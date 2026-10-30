@@ -16,6 +16,13 @@ const ScriptCallableBase* Callable::asScriptCallable() const {
     return nullptr;
 }
 
+NomadString Parameter::getTypeName() const {
+    if (type != nullptr) {
+        return type->getTypeName();
+    }
+    return "unknown";
+}
+
 Parameter defParameter(const NomadString& name, const Type* type, const NomadString& doc) {
     return {
         name,
@@ -38,7 +45,7 @@ Callable::Callable(
     NomadString name,
     std::vector<Parameter> parameters,
     const Type* returnType,
-    const Type* objectType,
+    const Type* classType,
     NomadString doc
 ):
     m_name(std::move(name)),
@@ -46,7 +53,7 @@ Callable::Callable(
     m_source(source),
     m_parameters(std::move(parameters)),
     m_returnType(returnType),
-    m_objectType(objectType),
+    m_classType(classType),
     m_doc(std::move(doc))
 {
 }
@@ -81,8 +88,8 @@ const Type* Callable::getReturnType() const {
     return m_returnType;
 }
 
-const Type* Callable::getObjectType() const {
-    return m_objectType;
+const Type* Callable::getClassType() const {
+    return m_classType;
 }
 
 const NomadString& Callable::getDoc() const {
@@ -136,12 +143,12 @@ const ScriptFunction* Function::asScriptFunction() const {
 Method::Method(
     const CallableSource source,
     NomadString name,
-    const Type* objectType,
+    const Type* classType,
     std::vector<Parameter> parameters,
     const Type* returnType,
     NomadString doc
 ):
-    Callable(CallableType::Method, source, std::move(name), std::move(parameters), returnType, objectType, std::move(doc))
+    Callable(CallableType::Method, source, std::move(name), std::move(parameters), returnType, classType, std::move(doc))
 {
 }
 
@@ -156,12 +163,12 @@ const ScriptMethod* Method::asScriptMethod() const {
 Constructor::Constructor(
     const CallableSource source,
     NomadString name,
-    const Type* objectType,
+    const Type* classType,
     std::vector<Parameter> parameters,
     const Type* createdType,
     NomadString doc
 ):
-    Callable(CallableType::Constructor, source, std::move(name), std::move(parameters), createdType, objectType, std::move(doc))
+    Callable(CallableType::Constructor, source, std::move(name), std::move(parameters), createdType, classType, std::move(doc))
 {
 }
 

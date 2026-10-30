@@ -388,6 +388,10 @@ public:
         validatePackagePath(relative);
         const auto key = stringToLowerAscii(pathToGenericUtf8(relative));
         const auto existing = m_entries.find(key);
+        if (existing != m_entries.end() && existing->second.relative == relative &&
+            !existing->second.source.empty() && std::filesystem::equivalent(existing->second.source, source)) {
+            return;
+        }
         if (existing != m_entries.end() && nativeDependency && existing->second.nativeDependency &&
             haveIdenticalContent(existing->second.source, source)) {
             return;
@@ -412,30 +416,43 @@ public:
         }
     }
 
+    void createDirectory(const NomadPath& relative) {
+        reserve(relative, {}, false, true);
+        if (!m_dryRun) {
+            createDirectories(m_staging / relative);
+        }
+    }
+
     void reserve(
         const NomadPath& relative,
         const NomadPath& source = {},
-        const bool nativeDependency = false
+        const bool nativeDependency = false,
+        const bool directory = false
     ) {
         validatePackagePath(relative);
         const auto key = stringToLowerAscii(pathToGenericUtf8(relative));
         const auto next = m_entries.lower_bound(key);
-        if (next != m_entries.end() && (next->first == key || next->first.starts_with(key + "/"))) {
+        if (next != m_entries.end() && next->first == key && directory && next->second.directory) {
+            return;
+        }
+        if (next != m_entries.end() && (next->first == key ||
+            (!directory && next->first.starts_with(key + "/")))) {
             throw ProjectPackagingException("Package entry collision: '" + pathToUtf8(relative) + "'");
         }
         for (auto parent = relative.parent_path(); !parent.empty(); parent = parent.parent_path()) {
-            if (m_entries.contains(stringToLowerAscii(pathToGenericUtf8(parent)))) {
+            const auto entry = m_entries.find(stringToLowerAscii(pathToGenericUtf8(parent)));
+            if (entry != m_entries.end() && !entry->second.directory) {
                 throw ProjectPackagingException("Package entry collision: '" + pathToUtf8(relative) + "'");
             }
         }
-        m_entries.emplace(key, Entry{relative, source, nativeDependency});
+        m_entries.emplace(key, Entry{relative, source, nativeDependency, directory});
     }
 
     [[nodiscard]] std::vector<NomadPath> getFiles() const {
         std::vector<NomadPath> files;
         for (const auto& [key, entry] : m_entries) {
             const auto file = m_staging / entry.relative;
-            if (!m_dryRun) {
+            if (!m_dryRun && !entry.directory) {
                 validateSourceFile(file);
             }
             files.push_back(file);
@@ -448,6 +465,7 @@ private:
         NomadPath relative;
         NomadPath source;
         bool nativeDependency;
+        bool directory;
     };
     NomadPath m_staging;
     bool m_dryRun;
@@ -493,24 +511,29 @@ void writeDeterministicZipArchive(
 
     std::array<char, 65536> buffer{};
     for (const auto& file : files) {
-        std::ifstream input(file, std::ios::binary);
-        if (!input) {
-            throw ProjectPackagingException("Failed to read staged file '" + pathToUtf8(file) + "'");
-        }
+        const auto directory = std::filesystem::is_directory(file);
         const std::unique_ptr<archive_entry, decltype(&archive_entry_free)> entry(archive_entry_new(), &archive_entry_free);
         if (!entry) {
             throw ProjectPackagingException("Failed to allocate ZIP entry");
         }
-        const auto name = pathToGenericUtf8(file.lexically_relative(root));
+        const auto name = pathToGenericUtf8(file.lexically_relative(root)) + (directory ? "/" : "");
         archive_entry_set_pathname_utf8(entry.get(), name.c_str());
-        archive_entry_set_filetype(entry.get(), AE_IFREG);
+        archive_entry_set_filetype(entry.get(), directory ? AE_IFDIR : AE_IFREG);
         const auto permissions = std::filesystem::status(file).permissions();
         const auto executable = (permissions & (std::filesystem::perms::owner_exec |
             std::filesystem::perms::group_exec | std::filesystem::perms::others_exec)) != std::filesystem::perms::none;
-        archive_entry_set_perm(entry.get(), executable ? 0755 : 0644);
-        archive_entry_set_size(entry.get(), static_cast<la_int64_t>(std::filesystem::file_size(file)));
+        archive_entry_set_perm(entry.get(), directory || executable ? 0755 : 0644);
+        archive_entry_set_size(entry.get(), directory ? 0 : static_cast<la_int64_t>(std::filesystem::file_size(file)));
         archive_entry_set_mtime(entry.get(), 315532800, 0);
         checkArchive(archive_write_header(writer.get(), entry.get()), writer.get());
+        if (directory) {
+            checkArchive(archive_write_finish_entry(writer.get()), writer.get());
+            continue;
+        }
+        std::ifstream input(file, std::ios::binary);
+        if (!input) {
+            throw ProjectPackagingException("Failed to read staged file '" + pathToUtf8(file) + "'");
+        }
         while (input) {
             input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
             const auto size = input.gcount();
@@ -588,6 +611,16 @@ ProjectPackageResult packageProject(
         );
     } catch (const ModuleException& error) {
         throw ProjectPackagingException("Failed to load packaging modules: " + NomadString(error.what()));
+    }
+    const auto moduleScriptRoots = getModuleScriptRoots(modules);
+    const auto moduleSources = loadSourceRoots(moduleScriptRoots);
+    if (!moduleSources.diagnostics.empty()) {
+        throw ProjectPackagingException("Failed to package module scripts: " +
+            formatDiagnostic(moduleSources.diagnostics.front()));
+    }
+    std::set<std::pair<NomadString, NomadPath>> moduleSourcePaths;
+    for (const auto& source : moduleSources.sources) {
+        moduleSourcePaths.emplace(source.owner, source.relativePath);
     }
     const auto output = outputDirectory / pathFromUtf8(configuration.project.executable + "-" +
         bundle.target + "-" + configuration.project.version + ".zip");
@@ -667,8 +700,24 @@ ProjectPackageResult packageProject(
         for (auto index = NomadIndex{0}; index < modules.size(); ++index) {
             const auto& module = modules[index];
             const auto library = getModuleLibraryName(module.name);
-            packageFiles.copy(module.directory / library, library, true);
-            copyNativeBundle(moduleBundles[index], module.directory);
+            const auto destination = NomadPath("modules") / pathFromUtf8(module.name);
+            packageFiles.copy(module.directory / library, destination / library, true);
+            packageFiles.copy(module.directory / "module.toml", destination / "module.toml");
+            auto dependencies = moduleBundles[index];
+            std::erase_if(dependencies.files, [&](const auto& entry) {
+                return entry.path == library;
+            });
+            copyNativeBundle(dependencies, module.directory);
+            if (std::filesystem::is_directory(module.directory / "scripts")) {
+                packageFiles.createDirectory(destination / "scripts");
+            }
+            for (const auto& source : moduleSources.sources) {
+                if (source.owner == module.name) {
+                    packageFiles.copy(
+                        *source.source.filePath, destination / "scripts" / source.relativePath
+                    );
+                }
+            }
             moduleNames.push_back(module.name);
         }
 
@@ -684,6 +733,14 @@ ProjectPackageResult packageProject(
         std::map<NomadPath, NomadPath> copiedResources;
         auto packagedScriptDirectories = scriptDirectories;
         context.copyFile = [&](const NomadPath& source, const NomadPath& relative) {
+            if (source.extension() == ".nomad") {
+                for (const auto& root : moduleScriptRoots) {
+                    const auto moduleRelative = getSourceRelativePath(root.path, source);
+                    if (moduleRelative && moduleSourcePaths.contains({root.owner, *moduleRelative})) {
+                        return;
+                    }
+                }
+            }
             const auto [entry, inserted] = copiedResources.emplace(relative.lexically_normal(), source.lexically_normal());
             if (inserted || entry->second != source.lexically_normal()) {
                 packageFiles.copy(source, relative);
@@ -727,6 +784,18 @@ ProjectPackageResult packageProject(
         for (auto index = NomadIndex{0}; index < scriptDirectories.size(); ++index) {
             if (releaseScripts[index] == scriptDirectories[index]) {
                 releaseScripts[index] = packagedScriptDirectories[index];
+            }
+            const auto source = project.root / scriptDirectories[index];
+            for (const auto& module : modules) {
+                const auto root = module.directory / "scripts";
+                const auto relative = getSourceRelativePath(root, source);
+                if (relative && std::filesystem::is_directory(root)) {
+                    releaseScripts[index] = NomadPath("modules") / pathFromUtf8(module.name) / "scripts";
+                    if (!std::filesystem::equivalent(root, source)) {
+                        releaseScripts[index] /= *relative;
+                    }
+                    break;
+                }
             }
         }
         std::vector<NomadString> releaseScriptPaths;

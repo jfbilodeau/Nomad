@@ -11,11 +11,14 @@ add_test(
     NAME nomad_module_runtime_integration
     COMMAND "${CMAKE_COMMAND}"
         "-DNOMAD_CLI=$<TARGET_FILE:nomad-cli>"
+        "-DNOMAD_SCRIPT_SDK_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-cli>;$<TARGET_RUNTIME_DLLS:nomadc>;$<TARGET_RUNTIME_DLLS:nomad-runtime>,|>"
         "-DNOMAD_RUNTIME_SUFFIX=$<TARGET_FILE_SUFFIX:nomad-runtime>"
         "-DNOMAD_SYSTEM_LIBRARY=$<TARGET_FILE_NAME:nomad-system>"
         "-DNOMAD_COLLECTIONS_LIBRARY=$<TARGET_FILE_NAME:nomad-collections>"
         "-DNOMAD_GAME_LIBRARY=$<TARGET_FILE_NAME:nomad-game>"
         "-DNOMAD_OS_LIBRARY=$<TARGET_FILE_NAME:nomad-os>"
+        "-DNOMAD_LOG_LIBRARY=$<TARGET_FILE_NAME:nomad-log>"
+        "-DNOMAD_FIXTURE_LIBRARY=$<TARGET_FILE:nomad-module-fixture>"
         "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/module-runtime/$<CONFIG>"
         -P "${CMAKE_CURRENT_LIST_DIR}/ModuleRuntimeIntegrationTest.cmake"
 )
@@ -84,6 +87,8 @@ add_test(
         "${CMAKE_COMMAND}"
         "-DNOMAD_CLI=$<TARGET_FILE:nomad-cli>"
         "-DNOMAD_COMPILER=$<TARGET_FILE:nomadc>"
+        "-DNOMAD_CLI_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomad-cli>,|>"
+        "-DNOMAD_COMPILER_RUNTIME_DEPENDENCIES=$<JOIN:$<TARGET_RUNTIME_DLLS:nomadc>,|>"
         "-DNOMAD_RUNTIME_SUFFIX=$<TARGET_FILE_SUFFIX:nomad-runtime>"
         "-DNOMAD_TEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/package-integration/$<CONFIG>"
         "-DNOMAD_PACKAGE_ARTIFACT_DIR=${CMAKE_CURRENT_BINARY_DIR}/package-artifact/$<CONFIG>"

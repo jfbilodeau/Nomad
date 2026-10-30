@@ -38,7 +38,7 @@ void callNativeIndexer(VirtualMachine* machine, const bool write) {
             info->valueType->freeValue(value);
         }
         auto savedReceiver = machine->popValue();
-        info->objectType->freeValue(savedReceiver);
+        info->classType->freeValue(savedReceiver);
         machine->popThis();
     };
 

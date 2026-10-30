@@ -1,7 +1,10 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/Compilation.hpp>
+#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
+
+#include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/Path.hpp>
 
@@ -22,6 +25,24 @@ using namespace nomad;
 using namespace nomad::test;
 
 BOOST_AUTO_TEST_SUITE(source_overlays)
+
+BOOST_AUTO_TEST_CASE(programmatic_modules_use_fixed_optional_script_directories)
+{
+    TestDirectory directory("nomad_module_fixed_scripts");
+    const std::vector<ModuleManifest> modules{{"sample", directory.getPath(), {}}};
+    const auto roots = getModuleScriptRoots(modules);
+    BOOST_REQUIRE(roots.size() == 1U);
+    BOOST_TEST(roots[0].path == directory.getPath() / "scripts");
+    BOOST_TEST(roots[0].owner == "sample");
+    BOOST_TEST(!roots[0].required);
+    BOOST_TEST(loadSourceRoots(roots).diagnostics.empty());
+    directory.write("source/ignored.nomad", "return missing");
+    directory.write("scripts/nested/answer.nomad", "return 42");
+    const auto batch = loadSourceRoots(roots);
+    BOOST_REQUIRE(batch.diagnostics.empty());
+    BOOST_REQUIRE(batch.sources.size() == 1U);
+    BOOST_TEST(batch.sources[0].scriptName == "$sample.nested.answer");
+}
 
 BOOST_AUTO_TEST_CASE(script_roots_default_to_the_project_scripts_directory_independently_of_game_settings)
 {
@@ -120,8 +141,12 @@ BOOST_AUTO_TEST_CASE(editor_text_replaces_disk_snapshot_and_keeps_discovered_scr
     BOOST_TEST(batch.sources[0].source.text == "return 42");
     BOOST_REQUIRE(batch.sources[0].source.filePath.has_value());
     BOOST_TEST(*batch.sources[0].source.filePath == path);
-    BOOST_TEST(checkSources(batch).succeeded());
-    BOOST_TEST(!checkPath(path).succeeded());
+    Runtime editorRuntime;
+    auto editorCompiler = editorRuntime.createCompiler();
+    BOOST_TEST(compileSources(batch, *editorCompiler).succeeded());
+    Runtime diskRuntime;
+    auto diskCompiler = diskRuntime.createCompiler();
+    BOOST_TEST(!compileSources(loadSourcePaths(std::vector{path}), *diskCompiler).succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(overrides_include_new_file_backed_and_untitled_scripts)
@@ -140,7 +165,9 @@ BOOST_AUTO_TEST_CASE(overrides_include_new_file_backed_and_untitled_scripts)
     BOOST_TEST(batch.sources[0].scriptName == "bonus");
     BOOST_TEST(!batch.sources[0].source.filePath.has_value());
     BOOST_TEST(batch.sources[1].scriptName == "helpers.answer");
-    BOOST_TEST(checkSources(batch).succeeded());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(compileSources(batch, *compiler).succeeded());
     BOOST_TEST(!std::filesystem::exists(path));
 }
 
@@ -154,7 +181,9 @@ BOOST_AUTO_TEST_CASE(explicit_missing_file_uses_editor_snapshot_without_loading_
     BOOST_REQUIRE(batch.diagnostics.empty());
     BOOST_REQUIRE(batch.sources.size() == 1U);
     BOOST_TEST(batch.sources[0].scriptName == "answer");
-    BOOST_TEST(checkSources(batch).succeeded());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(compileSources(batch, *compiler).succeeded());
     BOOST_TEST(!std::filesystem::exists(path));
 }
 
@@ -171,7 +200,9 @@ BOOST_AUTO_TEST_CASE(path_identity_handles_relative_and_lexically_equivalent_pat
     BOOST_REQUIRE(batch.diagnostics.empty());
     BOOST_REQUIRE(batch.sources.size() == 1U);
     BOOST_TEST(batch.sources[0].source.sourceName == "editor:answer");
-    BOOST_TEST(checkSources(batch).succeeded());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(compileSources(batch, *compiler).succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(duplicate_file_overrides_report_an_error_instead_of_choosing_a_version)
@@ -187,7 +218,9 @@ BOOST_AUTO_TEST_CASE(duplicate_file_overrides_report_an_error_instead_of_choosin
     BOOST_REQUIRE(batch.diagnostics.size() == 1U);
     BOOST_TEST(batch.diagnostics[0].sourceName == "editor:second");
     BOOST_TEST(batch.diagnostics[0].message.find("Duplicate source override") != NomadString::npos);
-    BOOST_TEST(!checkSources(batch).succeeded());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(!compileSources(batch, *compiler).succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(untitled_identity_uses_exact_source_name_not_script_name)
@@ -200,7 +233,9 @@ BOOST_AUTO_TEST_CASE(untitled_identity_uses_exact_source_name_not_script_name)
 
     BOOST_REQUIRE(batch.diagnostics.size() == 1U);
     BOOST_TEST(batch.diagnostics[0].sourceName == "untitled:document");
-    BOOST_TEST(!checkSources(batch).succeeded());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(!compileSources(batch, *compiler).succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(different_documents_with_same_script_name_remain_a_compilation_collision)
@@ -212,7 +247,9 @@ BOOST_AUTO_TEST_CASE(different_documents_with_same_script_name_remain_a_compilat
 
     BOOST_TEST(batch.diagnostics.empty());
     BOOST_REQUIRE(batch.sources.size() == 2U);
-    const auto result = checkSources(batch);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(batch, *compiler);
     BOOST_TEST(!result.succeeded());
     BOOST_REQUIRE(!result.diagnostics.empty());
     BOOST_TEST(result.diagnostics[0].message.find("already used") != NomadString::npos);
@@ -228,7 +265,9 @@ BOOST_AUTO_TEST_CASE(unrelated_disk_loading_failures_are_not_suppressed)
     BOOST_REQUIRE(batch.diagnostics.size() == 1U);
     BOOST_TEST(batch.diagnostics[0].message == "Path does not exist");
     BOOST_REQUIRE(batch.sources.size() == 1U);
-    BOOST_TEST(!checkSources(batch).succeeded());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(!compileSources(batch, *compiler).succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(empty_backing_paths_are_errors_not_untitled_documents)
@@ -241,7 +280,9 @@ BOOST_AUTO_TEST_CASE(empty_backing_paths_are_errors_not_untitled_documents)
     BOOST_REQUIRE(batch.diagnostics.size() == 1U);
     BOOST_TEST(batch.diagnostics[0].sourceName == "editor:answer");
     BOOST_TEST(batch.sources.empty());
-    BOOST_TEST(!checkSources(batch).succeeded());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(!compileSources(batch, *compiler).succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(removing_override_restores_disk_snapshot)
@@ -249,8 +290,12 @@ BOOST_AUTO_TEST_CASE(removing_override_restores_disk_snapshot)
     TestDirectory directory("nomad_overlay_close");
     const auto path = directory.write("answer.nomad", "return missing");
     const std::vector<ScriptSource> overrides{{"answer", {"editor:answer", "return 42", path}}};
-    BOOST_TEST(checkSources(loadSourcePaths(std::vector{directory.getPath()}, overrides)).succeeded());
-    BOOST_TEST(!checkSources(loadSourcePaths(std::vector{directory.getPath()})).succeeded());
+    Runtime editorRuntime;
+    auto editorCompiler = editorRuntime.createCompiler();
+    BOOST_TEST(compileSources(loadSourcePaths(std::vector{directory.getPath()}, overrides), *editorCompiler).succeeded());
+    Runtime diskRuntime;
+    auto diskCompiler = diskRuntime.createCompiler();
+    BOOST_TEST(!compileSources(loadSourcePaths(std::vector{directory.getPath()}), *diskCompiler).succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(overlay_diagnostics_use_editor_source_name_and_current_text)
@@ -260,12 +305,130 @@ BOOST_AUTO_TEST_CASE(overlay_diagnostics_use_editor_source_name_and_current_text
     const std::vector<ScriptSource> overrides{
         {"answer", {"editor:answer", "value = 1\nreturn missing", path}}
     };
-    const auto result = checkSources(loadSourcePaths(std::vector{directory.getPath()}, overrides));
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{directory.getPath()}, overrides), *compiler);
 
     BOOST_TEST(!result.succeeded());
     BOOST_REQUIRE(result.diagnostics.size() == 1U);
     BOOST_TEST(result.diagnostics[0].sourceName == "editor:answer");
     BOOST_TEST(result.diagnostics[0].line == 2U);
+}
+
+BOOST_AUTO_TEST_CASE(module_sources_keep_owner_relative_path_and_application_file_names) {
+    TestDirectory directory("nomad_module_source_identity");
+    directory.write("application/main.nomad", "return 1");
+    directory.write("os/main.nomad", "return 2");
+    const auto modulePath = directory.write("os/utilities/paths.nomad", "return 3");
+    const std::vector<SourceRoot> roots{
+        {directory.getPath() / "application"},
+        {directory.getPath() / "os", "os"}
+    };
+    const auto batch = loadSourceRoots(roots);
+    BOOST_REQUIRE(batch.diagnostics.empty());
+    BOOST_REQUIRE(batch.sources.size() == 3U);
+    BOOST_TEST(batch.sources[0].scriptName == "$os.main");
+    BOOST_TEST(batch.sources[1].scriptName == "$os.utilities.paths");
+    BOOST_TEST(batch.sources[1].owner == "os");
+    BOOST_TEST(batch.sources[1].relativePath == NomadPath("utilities/paths.nomad"));
+    BOOST_TEST(batch.sources[1].source.sourceName == pathToGenericUtf8(modulePath));
+    BOOST_TEST(batch.sources[2].scriptName == "main");
+    BOOST_TEST(batch.sources[2].owner.empty());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(compileSources(batch, *compiler).succeeded());
+}
+
+BOOST_AUTO_TEST_CASE(module_ownership_wins_over_repeated_or_overlapping_application_roots) {
+    TestDirectory directory("nomad_module_source_deduplication");
+    const auto modulePath = directory.write("modules/os/scripts/main.nomad", "return 42");
+    const auto moduleRoot = modulePath.parent_path();
+    const std::vector<SourceRoot> roots{
+        {directory.getPath()}, {moduleRoot}, {moduleRoot, "os"}, {moduleRoot, "os"}, {modulePath}
+    };
+    const auto batch = loadSourceRoots(roots);
+    BOOST_REQUIRE(batch.diagnostics.empty());
+    BOOST_REQUIRE(batch.sources.size() == 1U);
+    BOOST_TEST(batch.sources[0].scriptName == "$os.main");
+    BOOST_TEST(batch.sources[0].owner == "os");
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(compileSources(batch, *compiler).succeeded());
+}
+
+BOOST_AUTO_TEST_CASE(dotted_module_identity_collisions_and_conflicting_owners_are_errors) {
+    TestDirectory directory("nomad_module_source_collisions");
+    directory.write("utilities.paths.nomad", "return 1");
+    directory.write("utilities/paths.nomad", "return 2");
+    const std::vector<SourceRoot> roots{{directory.getPath(), "os"}};
+    const auto batch = loadSourceRoots(roots);
+    BOOST_REQUIRE(batch.diagnostics.size() == 1U);
+    BOOST_TEST(batch.diagnostics[0].message.find("$os.utilities.paths") != NomadString::npos);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(!compileSources(batch, *compiler).succeeded());
+    const std::vector<SourceRoot> conflicting{
+        {directory.getPath() / "utilities", "os"},
+        {directory.getPath() / "utilities", "other"}
+    };
+    const auto duplicate = loadSourceRoots(conflicting);
+    BOOST_REQUIRE(duplicate.diagnostics.size() == 1U);
+    BOOST_TEST(duplicate.diagnostics[0].message.find("both modules") != NomadString::npos);
+    Runtime conflictingRuntime;
+    auto conflictingCompiler = conflictingRuntime.createCompiler();
+    BOOST_TEST(!compileSources(duplicate, *conflictingCompiler).succeeded());
+}
+
+BOOST_AUTO_TEST_CASE(module_overrides_preserve_ownership_for_existing_and_unsaved_files) {
+    TestDirectory directory("nomad_module_source_overrides");
+    const auto path = directory.write("main.nomad", "return missing");
+    const auto unsaved = directory.getPath() / "nested" / "new.nomad";
+    const std::vector<SourceRoot> roots{{directory.getPath(), "os"}};
+    const std::vector<ScriptSource> overrides{
+        {"ignored", {"editor:main", "return 42", path}},
+        {"also.ignored", {"editor:new", "return 7", unsaved}}
+    };
+    const auto batch = loadSourceRoots(roots, overrides);
+    BOOST_REQUIRE(batch.diagnostics.empty());
+    BOOST_REQUIRE(batch.sources.size() == 2U);
+    BOOST_TEST(batch.sources[0].scriptName == "$os.main");
+    BOOST_TEST(batch.sources[0].source.sourceName == "editor:main");
+    BOOST_TEST(batch.sources[1].scriptName == "$os.nested.new");
+    BOOST_TEST(batch.sources[1].relativePath == NomadPath("nested/new.nomad"));
+    BOOST_TEST(batch.sources[1].owner == "os");
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(compileSources(batch, *compiler).succeeded());
+}
+
+BOOST_AUTO_TEST_CASE(missing_default_module_directories_are_optional_but_explicit_roots_are_not) {
+    TestDirectory directory("nomad_module_source_missing");
+    const auto missing = directory.getPath() / "scripts";
+    BOOST_TEST(loadSourceRoots(std::vector<SourceRoot>{{missing, "os", false}}).diagnostics.empty());
+    const auto required = loadSourceRoots(std::vector<SourceRoot>{{missing, "os"}});
+    BOOST_REQUIRE(required.diagnostics.size() == 1U);
+    BOOST_TEST(required.diagnostics[0].message.find("os") != NomadString::npos);
+    const auto file = directory.write("file.nomad", "return 42");
+    const auto notDirectory = loadSourceRoots(std::vector<SourceRoot>{{file, "os"}});
+    BOOST_REQUIRE(notDirectory.diagnostics.size() == 1U);
+    BOOST_TEST(notDirectory.diagnostics[0].message.find("script directory") != NomadString::npos);
+}
+
+BOOST_AUTO_TEST_CASE(module_source_identity_is_stable_when_its_directory_moves) {
+    TestDirectory directory("nomad_module_source_relocation");
+    const auto original = directory.getPath() / "original";
+    const auto relocated = directory.getPath() / "relocated";
+    directory.write("original/scripts/nested/main.nomad", "return 42");
+    const auto before = loadSourceRoots(std::vector<SourceRoot>{{original / "scripts", "os"}});
+    std::filesystem::rename(original, relocated);
+    const auto after = loadSourceRoots(std::vector<SourceRoot>{{relocated / "scripts", "os"}});
+    BOOST_REQUIRE(before.diagnostics.empty());
+    BOOST_REQUIRE(after.diagnostics.empty());
+    BOOST_REQUIRE(before.sources.size() == 1U);
+    BOOST_REQUIRE(after.sources.size() == 1U);
+    BOOST_TEST(before.sources[0].scriptName == after.sources[0].scriptName);
+    BOOST_TEST(before.sources[0].relativePath == after.sources[0].relativePath);
+    BOOST_TEST(before.sources[0].source.sourceName != after.sources[0].source.sourceName);
 }
 
 #ifdef _WIN32
@@ -279,7 +442,9 @@ BOOST_AUTO_TEST_CASE(windows_path_matching_is_case_insensitive)
 
     BOOST_REQUIRE(batch.diagnostics.empty());
     BOOST_REQUIRE(batch.sources.size() == 1U);
-    BOOST_TEST(checkSources(batch).succeeded());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(compileSources(batch, *compiler).succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(editor_override_bypasses_exclusively_locked_disk_file)
@@ -301,10 +466,33 @@ BOOST_AUTO_TEST_CASE(editor_override_bypasses_exclusively_locked_disk_file)
     const auto batch = loadSourcePaths(std::vector{directory.getPath()}, overrides);
     BOOST_REQUIRE(batch.diagnostics.empty());
     BOOST_REQUIRE(batch.sources.size() == 1U);
-    BOOST_TEST(checkSources(batch).succeeded());
-    BOOST_TEST(!checkPath(path).succeeded());
+    Runtime editorRuntime;
+    auto editorCompiler = editorRuntime.createCompiler();
+    BOOST_TEST(compileSources(batch, *editorCompiler).succeeded());
+    Runtime diskRuntime;
+    auto diskCompiler = diskRuntime.createCompiler();
+    BOOST_TEST(!compileSources(loadSourcePaths(std::vector{path}), *diskCompiler).succeeded());
 }
 #else
+BOOST_AUTO_TEST_CASE(directory_aliases_do_not_duplicate_module_sources_or_break_overrides)
+{
+    TestDirectory directory("nomad_module_directory_alias");
+    const auto path = directory.write("source/main.nomad", "return missing");
+    const auto alias = directory.getPath() / "alias";
+    std::filesystem::create_directory_symlink(path.parent_path(), alias);
+    const std::vector<SourceRoot> roots{{alias, "os"}, {path.parent_path()}};
+    const std::vector<ScriptSource> overrides{
+        {"ignored", {"editor:main", "return 42", path}}
+    };
+    const auto batch = loadSourceRoots(roots, overrides);
+    BOOST_REQUIRE(batch.diagnostics.empty());
+    BOOST_REQUIRE(batch.sources.size() == 1U);
+    BOOST_TEST(batch.sources[0].scriptName == "$os.main");
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(compileSources(batch, *compiler).succeeded());
+}
+
 BOOST_AUTO_TEST_CASE(non_windows_path_matching_preserves_case)
 {
     const auto root = std::filesystem::current_path();

@@ -212,6 +212,21 @@ run_success(
     "Release package validation"
     "${NOMAD_CLI}" check "${PACKAGE_DIR}"
 )
+set(ISOLATED_TOOLS "${NOMAD_TEST_ROOT}/isolated-tools")
+set(NOMAD_RUNTIME_DESTINATION "${ISOLATED_TOOLS}")
+foreach(PROGRAM IN ITEMS CLI COMPILER)
+    set(NOMAD_RUNTIME "${NOMAD_${PROGRAM}}")
+    unset(NOMAD_RUNTIME_DEPENDENCIES)
+    if(WIN32)
+        set(NOMAD_RUNTIME_DEPENDENCIES "${NOMAD_${PROGRAM}_RUNTIME_DEPENDENCIES}")
+    endif()
+    include("${CMAKE_CURRENT_LIST_DIR}/../cmake/BundleRuntimeDependencies.cmake")
+endforeach()
+get_filename_component(CLI_FILENAME "${NOMAD_CLI}" NAME)
+run_success(
+    "Isolated tooling release package validation"
+    "${ISOLATED_TOOLS}/${CLI_FILENAME}" check "${PACKAGE_DIR}"
+)
 run_success(
     "Isolated packaged runtime startup"
     "${CMAKE_COMMAND}"

@@ -4,6 +4,7 @@
 
 #include <TestDirectory.hpp>
 
+#include <boost/predef/os.h>
 #include <boost/test/unit_test.hpp>
 
 using namespace nomad;
@@ -11,18 +12,34 @@ using namespace nomad::test;
 
 BOOST_AUTO_TEST_SUITE(module_manifest)
 
+BOOST_AUTO_TEST_CASE(native_library_names_include_the_nomad_marker_and_platform_conventions) {
+    for (const auto* name : {"collections", "game", "log", "os", "system", "custom-module", "lib", "library", "lib-custom"}) {
+#if BOOST_OS_WINDOWS
+        const auto expected = NomadString(name) + ".nomad.dll";
+#elif BOOST_OS_MACOS || BOOST_OS_IOS
+        const auto expected = "lib" + NomadString(name) + ".nomad.dylib";
+#else
+        const auto expected = "lib" + NomadString(name) + ".nomad.so";
+#endif
+        BOOST_TEST(getModuleLibraryName(name).string() == expected);
+    }
+    for (const auto* name : {"", "../log", "Log", "log.nomad", "log/module"}) {
+        BOOST_CHECK_THROW(getModuleLibraryName(name), ModuleException);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(resolves_dependencies_before_dependents_once_in_declared_order) {
     TestDirectory directory("nomad_module_dependencies");
-    directory.write("nomad-system/module.toml",
-        "schema = 1\n[module]\nname = 'nomad-system'\n");
-    directory.write("nomad-game/module.toml",
-        "schema = 1\n[module]\nname = 'nomad-game'\n[nomad]\nmodules = ['nomad-system']\n");
+    directory.write("system/module.toml",
+        "schema = 1\n[module]\nname = 'system'\n");
+    directory.write("game/module.toml",
+        "schema = 1\n[module]\nname = 'game'\n[nomad]\nmodules = ['system']\n");
     directory.write("telemetry/module.toml",
-        "schema = 1\n[module]\nname = 'telemetry'\n[nomad]\nmodules = ['nomad-system']\n");
-    const auto modules = resolveModules(directory.getPath(), {"nomad-game", "telemetry"});
+        "schema = 1\n[module]\nname = 'telemetry'\n[nomad]\nmodules = ['system']\n");
+    const auto modules = resolveModules(directory.getPath(), {"game", "telemetry"});
     BOOST_REQUIRE_EQUAL(modules.size(), 3U);
-    BOOST_TEST(modules[0].name == "nomad-system");
-    BOOST_TEST(modules[1].name == "nomad-game");
+    BOOST_TEST(modules[0].name == "system");
+    BOOST_TEST(modules[1].name == "game");
     BOOST_TEST(modules[2].name == "telemetry");
 }
 
@@ -44,15 +61,15 @@ BOOST_AUTO_TEST_CASE(reports_cycles_with_dependency_chain) {
 BOOST_AUTO_TEST_CASE(resolves_transitive_dependencies_and_explicit_roots_without_duplicates) {
     TestDirectory directory("nomad_module_transitive");
     directory.write("base/module.toml", "schema = 1\n[module]\nname = 'base'\n");
-    directory.write("nomad-system/module.toml",
-        "schema = 1\n[module]\nname = 'nomad-system'\n[nomad]\nmodules = ['base']\n");
-    directory.write("nomad-game/module.toml",
-        "schema = 1\n[module]\nname = 'nomad-game'\n[nomad]\nmodules = ['nomad-system']\n");
-    const auto modules = resolveModules(directory.getPath(), {"nomad-game", "base", "nomad-system"});
+    directory.write("system/module.toml",
+        "schema = 1\n[module]\nname = 'system'\n[nomad]\nmodules = ['base']\n");
+    directory.write("game/module.toml",
+        "schema = 1\n[module]\nname = 'game'\n[nomad]\nmodules = ['system']\n");
+    const auto modules = resolveModules(directory.getPath(), {"game", "base", "system"});
     BOOST_REQUIRE_EQUAL(modules.size(), 3U);
     BOOST_TEST(modules[0].name == "base");
-    BOOST_TEST(modules[1].name == "nomad-system");
-    BOOST_TEST(modules[2].name == "nomad-game");
+    BOOST_TEST(modules[1].name == "system");
+    BOOST_TEST(modules[2].name == "game");
 }
 
 BOOST_AUTO_TEST_CASE(rejects_invalid_missing_and_mismatched_modules) {
@@ -80,5 +97,48 @@ BOOST_AUTO_TEST_CASE(empty_requests_resolve_to_no_modules) {
     TestDirectory directory("nomad_module_empty");
     BOOST_TEST(resolveModules(directory.getPath(), {}).empty());
 }
+
+BOOST_AUTO_TEST_CASE(module_manifests_do_not_require_a_scripts_directory) {
+    TestDirectory directory("nomad_module_script_directory");
+    directory.write("module.toml", "schema = 1\n[module]\nname = 'example'\n");
+    BOOST_TEST(loadModuleManifest(directory.getPath()).name == "example");
+    std::filesystem::create_directories(directory.getPath() / "scripts");
+    BOOST_TEST(loadModuleManifest(directory.getPath()).name == "example");
+}
+
+BOOST_AUTO_TEST_CASE(legacy_module_script_settings_report_a_migration_error) {
+    TestDirectory directory("nomad_module_script_directory_invalid");
+    for (const auto* setting : {
+        "scripts = false\n",
+        "[scripts]\n",
+        "[scripts]\ndirectory = 'scripts'\n",
+        "[scripts]\ndirectory = 'source/library'\n",
+        "[scripts]\ndirectory = false\n",
+        "[scripts]\ndirectory = ['source']\n",
+        "[scripts]\ndirectory = ''\n",
+        "[scripts]\ndirectory = '.'\n",
+        "[scripts]\ndirectory = '../outside'\n",
+        "[scripts]\ndirectory = '/outside'\n"
+    }) {
+        directory.write("module.toml", NomadString("schema = 1\n") + setting + "[module]\nname = 'example'\n");
+        BOOST_CHECK_EXCEPTION((void)loadModuleManifest(directory.getPath()), ModuleException, [](const auto& error) {
+            const auto message = NomadStringView(error.what());
+            return message.find("no longer supports [scripts]") != NomadStringView::npos &&
+                message.find("place module scripts in 'scripts'") != NomadStringView::npos;
+        });
+    }
+}
+
+#if !BOOST_OS_WINDOWS
+BOOST_AUTO_TEST_CASE(module_script_directories_cannot_escape_through_directory_links) {
+    TestDirectory directory("nomad_module_script_directory_link");
+    directory.write("module/module.toml", "schema = 1\n[module]\nname = 'example'\n");
+    directory.write("outside/main.nomad", "return 42");
+    std::filesystem::create_directory_symlink(
+        directory.getPath() / "outside", directory.getPath() / "module" / "scripts"
+    );
+    BOOST_CHECK_THROW((void)loadModuleManifest(directory.getPath() / "module"), ModuleException);
+}
+#endif
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -19,14 +19,14 @@ void registerKeyValueType(Runtime* runtime) {
             const auto* valueType = arguments[1];
             return std::make_unique<KeyValueType>(
                 owningRuntime, id, "KeyValue<" + keyType->getTypeName() + " " + valueType->getTypeName() + ">",
-                ObjectTypeMode::Closed, keyType, valueType
+                ClassMode::Closed, keyType, valueType
             );
         },
         [](Runtime* runtime, const TypeId id) {
             const auto* type = runtime->getType(id).value();
-            const auto* objectType = static_cast<const KeyValueType*>(type);
-            const auto* keyType = objectType->getTypeArguments()[0];
-            const auto* valueType = objectType->getTypeArguments()[1];
+            const auto* classType = static_cast<const KeyValueType*>(type);
+            const auto* keyType = classType->getTypeArguments()[0];
+            const auto* valueType = classType->getTypeArguments()[1];
             const auto constructorId = runtime->addConstructor(id, {
                 .parameters = {
                     {keyType->getId(), "key", NomadDoc("The key to store.")},
@@ -40,7 +40,7 @@ void registerKeyValueType(Runtime* runtime) {
                 .documentation = NomadDoc("Creates a pair with read-only key and value properties.")
             });
             const auto keyId = runtime->addProperty(id, {
-                .valueTypeId = keyType->getId(),
+                .valueType = keyType,
                 .name = "key",
                 .getter = [keyType](VirtualMachine* machine, RuntimeValue& result) {
                     const auto* pair = machine->getThisAs<KeyValueObject>();
@@ -53,7 +53,7 @@ void registerKeyValueType(Runtime* runtime) {
                 .documentation = NomadDoc("The read-only key. Object keys share their referenced object.")
             });
             const auto valueId = runtime->addProperty(id, {
-                .valueTypeId = valueType->getId(),
+                .valueType = valueType,
                 .name = "value",
                 .getter = [valueType](VirtualMachine* machine, RuntimeValue& result) {
                     const auto* pair = machine->getThisAs<KeyValueObject>();

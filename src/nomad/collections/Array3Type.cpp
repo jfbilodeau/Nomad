@@ -10,7 +10,7 @@ Array3Type::Array3Type(
     Runtime* runtime,
     TypeId id,
     NomadString name,
-    const ObjectTypeMode mode,
+    const ClassMode mode,
     const Type* elementType
 ):
     ArrayType(runtime, id, std::move(name), mode, elementType, 3)

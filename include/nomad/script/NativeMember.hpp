@@ -16,7 +16,7 @@
 namespace nomad {
 
 class Type;
-class ObjectType;
+class ClassType;
 class VirtualMachine;
 
 using NativePropertyGetFn = std::function<void(VirtualMachine*, RuntimeValue&)>;
@@ -24,7 +24,7 @@ using NativePropertySetFn = std::function<void(VirtualMachine*, const RuntimeVal
 
 struct NativePropertyInfo {
     PropertyId id;
-    const Type* objectType = nullptr;
+    const Type* classType = nullptr;
     NomadString name;
     const Type* valueType = nullptr;
     NativePropertyGetFn getFn;
@@ -36,7 +36,7 @@ DeclareId(IndexerId);
 
 struct NativeIndexerInfo {
     IndexerId id;
-    const ObjectType* objectType = nullptr;
+    const ClassType* classType = nullptr;
     std::vector<const Type*> indexTypes;
     const Type* valueType = nullptr;
     NativeFunctionFn getFn;

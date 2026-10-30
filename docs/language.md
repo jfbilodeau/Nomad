@@ -16,7 +16,7 @@ Nomad is case‑sensitive.
 - [Hubs](#hubs)
 - [Class declarations](#class-declarations)
 - [Data types and numeric ranges](#data-types-and-numeric-ranges)
-- [Object types and members](#object-types-and-members)
+- [Class types and members](#class-types-and-members)
 - [Variables and variable kinds](#variables-and-variable-kinds)
 - [Constants and predefined values](#constants-and-predefined-values)
 - [Enumerations (`enum`)](#enums)
@@ -63,12 +63,13 @@ The SDK includes:
 
 | Module | Purpose |
 | --- | --- |
-| `nomad-collections` | Typed collections. |
-| `nomad-os` | Arguments, environment snapshots, platform, architecture, and OS paths. |
-| `nomad-system` | Logging, math, conversions, and application exit. |
-| `nomad-game` | Graphics, input, audio, scenes, entities, and game resources. |
+| `collections` | Typed collections. |
+| `os` | Arguments, environment snapshots, platform, architecture, and OS paths. |
+| `log` | Structured logging through the open `log` hub. |
+| `system` | Math, conversions, and application exit. |
+| `game` | Graphics, input, audio, scenes, entities, and game resources. |
 
-Core language features, including strings, do not require a module. See
+Core language features, including strings and `print`, do not require a module. See
 [Runtime modules](modules.md) for module selection, dependencies, and usage.
 
 ---
@@ -224,7 +225,7 @@ hubs.
 
 ## Class declarations
 
-Empty script class declarations introduce object types. Classes are closed by
+Empty script class declarations introduce class types. Classes are closed by
 default; `open class` marks a type as open for compile-time extension:
 
 ```nomad
@@ -358,7 +359,7 @@ warning at its introducing assignment. Reads through another instance, an
 alias, `this`, a callback, or a format placeholder count as uses. These checks
 do not prove that an assignment executes before a read.
 
-The same extension rules apply to native object types marked open by the host.
+The same extension rules apply to native class types marked open by the host.
 Native properties retain their getter/setter contracts and do not need a script
 assignment before a read. Host-declared fields are not subject to the
 external-introduction warning.
@@ -420,7 +421,7 @@ Numeric literal notes:
 
 ---
 
-## Object types and members
+## Class types and members
 
 ### Object construction
 
@@ -462,7 +463,7 @@ upperName = name.toUpper
 containsName = name.contains "mad"
 ```
 
-Properties do not take arguments. Methods use Nomad's normal no-parentheses calling convention. Members can be chained when the preceding property or method returns an object type:
+Properties do not take arguments. Methods use Nomad's normal no-parentheses calling convention. Members can be chained when the preceding property or method returns a class type:
 
 ```nomad
 upperLength = name.toUpper.length
@@ -483,7 +484,7 @@ Script classes support construction with `new`, but cannot yet execute ordinary
 methods. Their stored properties are readable and writable in compiled code and
 the interpreter. See [Class declarations](#class-declarations).
 
-The available members for each object type are listed in the [engine API](engine-api.md#object-members).
+The available members for each class type are listed in the [engine API](engine-api.md#object-members).
 
 ### Indexers
 
@@ -705,11 +706,11 @@ requiring any modules:
 
 ```nomad
 for value in range 0 10
-    log.info value  # 0 through 9
+    print $"{value}"  # 0 through 9
 end
 
 for value in range 10 0 (-2)
-    log.info value  # 10, 8, 6, 4, 2
+    print $"{value}"  # 10, 8, 6, 4, 2
 end
 ```
 
@@ -728,11 +729,11 @@ names = new List<string>
 names.append "Ada"
 names.append "Grace"
 for name in names
-    log.info name
+    print name
 end
 
 for entry in scores.entries
-    log.info $"{entry.key}: {entry.value}"
+    print $"{entry.key}: {entry.value}"
 end
 ```
 
@@ -751,7 +752,7 @@ value = 42
 for value in range 0 3
     value = value + 10
 end
-log.info value  # 12; the body assignment does not affect the next range value
+print $"{value}"  # 12; the body assignment does not affect the next range value
 
 for value in range 0
     # Empty: value remains 12.
@@ -827,10 +828,10 @@ text = $"Player {name} got {score} points"
 ```nomad
 x = 10
 y = 20
-log.info $"total = {x + y}"
-log.info $"doubled = {(x + y) * 2}"
-log.info $"nested = {$"total {x + y}"}"
-log.info $"player = {name.toUpper}"
+print $"total = {x + y}"
+print $"doubled = {(x + y) * 2}"
+print $"nested = {$"total {x + y}"}"
+print $"player = {name.toUpper}"
 ```
 
 Expressions are compiled in the containing function's lexical scope, including
@@ -1003,7 +1004,7 @@ end
 ```nomad
 # Declaring the function `simple`
 fun simple
-    log.info "called!"
+    print "called!"
 end
 
 # Declaring the `add` function
@@ -1040,7 +1041,7 @@ Name collision rules:
 Native functions are callable entities provided by the runtime/engine and invoked like functions.
 
 ```nomad
-log.info "Example"
+print "Example"
 ```
 
 Inline callback parameters support three forms:
@@ -1066,7 +1067,7 @@ game.createSceneByNameThen "test" afterCreateScene
 ```nomad
 game.createSceneByNameThen "test" fun
     scene.z = 100
-    log.info "scene created!"
+    print "scene created!"
 end
 ```
 
@@ -1075,7 +1076,7 @@ end
 ```nomad
 game.createSceneByNameThen "test" then
 scene.z = 100
-log.info "scene created!"
+print "scene created!"
 ```
 
 `then` notes:
@@ -1088,9 +1089,16 @@ log.info "scene created!"
   not inside an `if` or loop. An explicit `fun ... end` callback inside a block
   establishes a fresh function body and may use `then` at its own root.
 
-Predefined native functions:
+The built-in `print message:string` writes plain text followed by a newline
+to standard output, independently of logging levels and sinks. It is available
+without any modules. Use format strings to print non-string values.
 
-- `log.info` — Write an "info" level string to the log.
+The [logging module](nomad-log.md) supplies `log.debug`, `log.info`,
+`log.warning`, `log.error`, and `log.critical`. Select `log` explicitly;
+`log.fatal` is not available to scripts.
+
+The system module supplies these native functions:
+
 - `math.floor` — Floor a float value.
 - `toFloat` — Convert an `int` or a `string` to a `float`.
 - `toInt` — Convert a `float` or a `string` to an `int`.
@@ -1199,7 +1207,7 @@ event bespokeEvent x:int y:float z:string
 
 ```nomad
 this.on bespokeEvent fun x y z
-    log.info $"x: {x}, y: {y}, z: {z}"
+    print $"x: {x}, y: {y}, z: {z}"
 end
 ```
 
@@ -1207,7 +1215,7 @@ Named callback functions may also be passed to native functions that accept a co
 
 ```nomad
 fun handleBespokeEvent x:int y:float z:string
-    log.info $"x: {x}, y: {y}, z: {z}"
+    print $"x: {x}, y: {y}, z: {z}"
 end
 
 this.on bespokeEvent handleBespokeEvent

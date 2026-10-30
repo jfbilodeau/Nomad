@@ -12,6 +12,8 @@
 #include <nomad/game/resource/SpriteCatalog.hpp>
 #include <nomad/game/resource/SpritePacker.hpp>
 
+#include <nomad/script/Runtime.hpp>
+
 #include <nomad/system/Path.hpp>
 #include <nomad/system/ProjectSession.hpp>
 
@@ -84,6 +86,10 @@ void extractArchive(const NomadPath& source, const NomadPath& destination) {
     auto result = ARCHIVE_OK;
     while ((result = archive_read_next_header(reader.get(), &entry)) == ARCHIVE_OK) {
         const auto path = destination / std::filesystem::u8path(archive_entry_pathname(entry));
+        if (archive_entry_filetype(entry) == AE_IFDIR) {
+            std::filesystem::create_directories(path);
+            continue;
+        }
         std::filesystem::create_directories(path.parent_path());
         std::ofstream output(path, std::ios::binary);
         char buffer[4096];
@@ -108,22 +114,32 @@ void writeRuntimeManifest(TestDirectory& directory, const NomadString& executabl
 }
 
 void stageSystemModule(TestDirectory& directory, const NomadStringView nativeContents) {
-    const auto library = getModuleLibraryName("nomad-system");
-    const auto source = getSdkDirectory() / "modules" / "nomad-system" / library;
-    BOOST_REQUIRE_MESSAGE(std::filesystem::is_regular_file(source), "SDK must stage the nomad-system module for packaging tests");
-    const auto destination = directory.getPath() / "modules" / "nomad-system";
+    const auto library = getModuleLibraryName("system");
+    const auto source = getSdkDirectory() / "modules" / "system" / library;
+    BOOST_REQUIRE_MESSAGE(std::filesystem::is_regular_file(source), "SDK must stage the system module for packaging tests");
+    const auto destination = directory.getPath() / "modules" / "system";
     std::filesystem::create_directories(destination);
     std::filesystem::copy_file(source, destination / library);
-    directory.write("modules/nomad-system/module.toml", "schema = 1\n[module]\nname = \"nomad-system\"\n");
-    directory.write("modules/nomad-system/shared.dll", NomadString(nativeContents));
-    directory.write("modules/nomad-system/runtime.json",
+    directory.write("modules/system/module.toml", "schema = 1\n[module]\nname = \"system\"\n");
+    directory.write("modules/system/shared.dll", NomadString(nativeContents));
+    directory.write("modules/system/runtime.json",
         R"({"schema":1,"files":[{"path":"shared.dll","role":"library"}]})");
 }
 
 NomadString configurationWithSystemModule() {
     auto text = NomadString(CONFIGURATION);
-    text.replace(text.find("modules = []"), NomadStringView("modules = []").size(), "modules = [\"nomad-system\"]");
+    text.replace(text.find("modules = []"), NomadStringView("modules = []").size(), "modules = [\"system\"]");
     return text;
+}
+
+void stageFixtureModule(TestDirectory& directory) {
+    const auto library = getModuleLibraryName("fixture");
+    const auto destination = directory.getPath() / "modules" / "fixture";
+    directory.write("modules/fixture/module.toml",
+        "schema = 1\n[module]\nname = 'fixture'\n[nomad]\nmodules = ['system']\n");
+    std::filesystem::copy_file(NomadPath(NOMAD_TEST_MODULE_DIRECTORY) / library, destination / library);
+    directory.write("modules/fixture/runtime.json",
+        "{\"schema\":1,\"files\":[{\"path\":\"" + pathToGenericUtf8(library) + "\",\"role\":\"library\"}]}");
 }
 
 } // namespace
@@ -381,7 +397,7 @@ BOOST_AUTO_TEST_CASE(packages_only_selected_modules_and_deduplicates_identical_n
     stageSystemModule(directory, "shared native dependency");
     directory.write("modules/unselected/module.toml", "must not ship");
     directory.write(
-        NomadPath("modules") / "nomad-game" / getModuleLibraryName("nomad-game"),
+        NomadPath("modules") / "game" / getModuleLibraryName("game"),
         "unselected game module must not ship"
     );
     const auto project = loadNomadProject(projectFile);
@@ -393,23 +409,139 @@ BOOST_AUTO_TEST_CASE(packages_only_selected_modules_and_deduplicates_identical_n
     BOOST_TEST(std::ranges::count(result.files, NomadPath("shared.dll")) == 1);
     const auto output = directory.getPath() / "extracted";
     extractArchive(result.output, output);
-    BOOST_TEST(std::filesystem::is_regular_file(output / getModuleLibraryName("nomad-system")));
-    BOOST_TEST(!std::filesystem::exists(output / getModuleLibraryName("nomad-game")));
-    BOOST_TEST(!std::filesystem::exists(output / "modules"));
+    BOOST_TEST(std::filesystem::is_regular_file(output / "modules" / "system" / getModuleLibraryName("system")));
+    BOOST_TEST(std::filesystem::is_regular_file(output / "modules" / "system" / "module.toml"));
+    BOOST_TEST(!std::filesystem::exists(output / getModuleLibraryName("system")));
+    BOOST_TEST(!std::filesystem::exists(output / getModuleLibraryName("game")));
+    BOOST_TEST(!std::filesystem::exists(output / "modules" / "unselected"));
+    BOOST_TEST(!std::filesystem::exists(output / "modules" / "game"));
     BOOST_TEST(!std::filesystem::exists(output / "module.toml"));
     BOOST_TEST(!std::filesystem::exists(output / "runtime.json"));
     const auto release = NomadConfiguration::readFile(output / NOMAD_PROJECT_FILE_NAME);
     BOOST_TEST(release.requireString("custom-module.setting") == "preserved");
     const auto modules = release.requireStringArray("nomad.modules");
     BOOST_REQUIRE_EQUAL(modules.size(), 1U);
-    BOOST_TEST(modules.front() == "nomad-system");
+    BOOST_TEST(modules.front() == "system");
 
     const auto previousArchive = readFile(result.output);
-    directory.write("modules/nomad-system/shared.dll", "different native dependency");
+    directory.write("modules/system/shared.dll", "different native dependency");
     BOOST_CHECK_THROW((void)packageProject(project, runtime, true, true), ProjectPackagingException);
     BOOST_CHECK_THROW((void)packageProject(project, runtime, true), ProjectPackagingException);
     BOOST_TEST(readFile(result.output) == previousArchive);
     BOOST_TEST(!std::filesystem::exists(NomadPath(pathToUtf8(result.output) + ".staging")));
+}
+
+BOOST_AUTO_TEST_CASE(module_scripts_keep_their_ownership_after_packaging_and_relocation)
+{
+    for (const auto& scripts : {"scripts", "scripts/nested"}) {
+        TestDirectory directory("nomad_module_scripts_package");
+        auto text = NomadString(CONFIGURATION);
+        text.replace(text.find("modules = []"), NomadStringView("modules = []").size(),
+            "modules = ['fixture', 'system']");
+        text.replace(text.find("directories = [\"assets\"]"), NomadStringView("directories = [\"assets\"]").size(),
+            "directories = ['assets', 'modules/fixture/" + NomadString(scripts) + "']");
+        const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, text);
+        directory.write("assets/main.nomad",
+            "settings = new packaged.Configuration\n"
+            "assert settings.answer == 40\n"
+            "value = moduleAnswer\nassert value == 42\n");
+        directory.write("runtime/engine", "runtime");
+        writeRuntimeManifest(directory, "engine");
+        stageSystemModule(directory, "shared");
+        stageFixtureModule(directory);
+        const auto moduleFunction = NomadString(scripts) == "scripts" ? "$fixture.main" : "$fixture.nested.main";
+        const auto moduleScript = NomadPath("modules/fixture") / scripts / "main.nomad";
+        directory.write(moduleScript,
+            "open hub packaged\nclass Configuration\nanswer = dependencyAnswer\nend\nend\n"
+            "fun moduleAnswer\nreturn 42\nend\nassert false\n");
+        directory.write("modules/system/scripts/main.nomad",
+            "fun dependencyAnswer\nreturn 40\nend\nassert false\n");
+        directory.write(NomadPath("modules/fixture") / scripts / "ignored.txt", "not a source");
+        directory.write("modules/fixture/source/library/ignored.nomad", "not the module script directory");
+        const auto project = loadNomadProject(projectFile);
+        const auto runtime = directory.getPath() / "runtime";
+        const auto preview = packageProject(project, runtime, false, true);
+        BOOST_TEST(!std::filesystem::exists(directory.getPath() / "dist"));
+        BOOST_TEST(!std::filesystem::exists(directory.getPath() / "module-events.txt"));
+        const auto result = packageProject(project, runtime, false);
+        BOOST_TEST(preview.files == result.files, boost::test_tools::per_element());
+        const auto bytes = readFile(result.output);
+        (void)packageProject(project, runtime, true);
+        BOOST_TEST(readFile(result.output) == bytes);
+        const auto output = directory.getPath() / "relocated";
+        extractArchive(result.output, output);
+        BOOST_TEST(readFile(output / moduleScript) == readFile(directory.getPath() / moduleScript));
+        BOOST_TEST(readFile(output / "modules/fixture/module.toml") ==
+            readFile(directory.getPath() / "modules/fixture/module.toml"));
+        BOOST_TEST(!std::filesystem::exists(output / "modules/fixture/runtime.json"));
+        BOOST_TEST(!std::filesystem::exists(output / getModuleLibraryName("fixture")));
+        BOOST_TEST(readFile(output / "modules/fixture" / scripts / "ignored.txt") == "not a source");
+        BOOST_TEST(!std::filesystem::exists(output / "modules/fixture/source"));
+        const auto release = loadNomadProject(output / NOMAD_PROJECT_FILE_NAME);
+        BOOST_TEST(release.configuration.sdk.modules == std::vector<NomadString>({"system", "fixture"}),
+            boost::test_tools::per_element());
+        const auto roots = getScriptPaths(release.document);
+        BOOST_REQUIRE(roots.size() == 2U);
+        BOOST_TEST(roots[1] == NomadPath("modules/fixture") / scripts);
+        const auto modules = resolveProjectModules(release, directory.getPath() / "unavailable-sdk");
+        auto host = ModuleHost::create(release.document, output, modules, {}, ModuleMode::Analysis);
+        const auto batch = host->loadSources(resolveScriptPaths(release.document, output));
+        BOOST_REQUIRE(batch.diagnostics.empty());
+        BOOST_TEST(batch.sources.size() == 3U);
+        BOOST_TEST(std::ranges::count(batch.sources, NomadString(moduleFunction), &ScriptSource::scriptName) == 1);
+        const auto compilation = host->compileSources(batch, CompilationTarget::Analysis);
+        NomadString diagnostics;
+        for (const auto& diagnostic : compilation.diagnostics) {
+            diagnostics += formatDiagnostic(diagnostic) + "\n";
+        }
+        BOOST_REQUIRE_MESSAGE(compilation.succeeded(), diagnostics);
+        BOOST_TEST(host->getRuntime()->getFunctionId("$system.main").isValid());
+        BOOST_TEST(host->getRuntime()->getFunctionId(moduleFunction).isValid());
+        BOOST_TEST(host->getRuntime()->getFunctionId("main").isValid());
+        host.reset();
+        std::filesystem::remove(output / "modules/fixture/module.toml");
+        BOOST_CHECK_THROW((void)resolveProjectModules(release, directory.getPath()), ModuleException);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(empty_module_script_directories_survive_packaging)
+{
+    TestDirectory directory("nomad_empty_module_scripts_package");
+    const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, configurationWithSystemModule());
+    directory.write("assets/main.nomad", "return\n");
+    directory.write("runtime/engine", "runtime");
+    writeRuntimeManifest(directory, "engine");
+    stageSystemModule(directory, "shared");
+    std::filesystem::create_directories(directory.getPath() / "modules/system/scripts");
+    const auto project = loadNomadProject(projectFile);
+    const auto runtime = directory.getPath() / "runtime";
+    const auto preview = packageProject(project, runtime, false, true);
+    const auto result = packageProject(project, runtime, false);
+    BOOST_TEST(preview.files == result.files, boost::test_tools::per_element());
+    const auto output = directory.getPath() / "extracted";
+    extractArchive(result.output, output);
+    BOOST_TEST(std::filesystem::is_directory(output / "modules/system/scripts"));
+    const auto release = loadNomadProject(output / NOMAD_PROJECT_FILE_NAME);
+    const auto modules = resolveProjectModules(release, directory.getPath() / "missing-sdk");
+    const auto batch = loadSourceRoots(getModuleScriptRoots(modules));
+    BOOST_TEST(batch.diagnostics.empty());
+    BOOST_TEST(batch.sources.empty());
+}
+
+BOOST_AUTO_TEST_CASE(invalid_module_script_roots_fail_packaging_and_dry_runs)
+{
+    TestDirectory directory("nomad_invalid_module_scripts_package");
+    const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, configurationWithSystemModule());
+    directory.write("assets/main.nomad", "return\n");
+    directory.write("runtime/engine", "runtime");
+    writeRuntimeManifest(directory, "engine");
+    stageSystemModule(directory, "shared");
+    directory.write("modules/system/scripts", "not a directory");
+    const auto project = loadNomadProject(projectFile);
+    const auto runtime = directory.getPath() / "runtime";
+    BOOST_CHECK_THROW((void)packageProject(project, runtime, false, true), ProjectPackagingException);
+    BOOST_CHECK_THROW((void)packageProject(project, runtime, false), ProjectPackagingException);
+    BOOST_TEST(!std::filesystem::exists(directory.getPath() / "dist"));
 }
 
 BOOST_AUTO_TEST_CASE(game_packaging_hook_plans_generated_sprites_without_writing_during_dry_run)
@@ -470,7 +602,7 @@ BOOST_AUTO_TEST_CASE(failed_game_generation_preserves_previous_archive_and_clean
 {
     TestDirectory directory("nomad_package_failed_game_generation");
     auto text = NomadString(CONFIGURATION);
-    text.replace(text.find("modules = []"), NomadStringView("modules = []").size(), "modules = [\"nomad-game\"]");
+    text.replace(text.find("modules = []"), NomadStringView("modules = []").size(), "modules = [\"game\"]");
     text.replace(text.find("directories = [\"assets\"]"), NomadStringView("directories = [\"assets\"]").size(),
         "directories = [\"assets/scripts\", \"scripts\"]");
     const auto sdkVersion = getNomadVersion().toString();
@@ -487,7 +619,7 @@ BOOST_AUTO_TEST_CASE(failed_game_generation_preserves_previous_archive_and_clean
         NomadString(getPackagePlatform()) + "\",\"files\":["
         "{\"path\":\"engine\",\"role\":\"runtime\"},"
         "{\"path\":\"licenses/Nomad.txt\",\"role\":\"license\"}]}");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-game"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"game"});
     for (const auto& module : modules) {
         const auto destination = directory.getPath() / "modules" / pathFromUtf8(module.name);
         std::filesystem::create_directories(destination);

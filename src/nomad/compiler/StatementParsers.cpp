@@ -1351,7 +1351,7 @@ bool preParseParamsStatement(
     if (phase == PreParsePhase::Declarations) {
         return true;
     }
-    if (function->getObjectType() != nullptr) {
+    if (function->getClassType() != nullptr) {
         context->reportError("Class member parameters must be declared in the member header", tokens);
         return false;
     }

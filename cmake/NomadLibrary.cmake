@@ -6,12 +6,17 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/compiler/ClassDeclaration.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/ClassFieldInitializerStatement.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/ClassMemberDeclaration.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/Compilation.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Compiler.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerContext.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerTools.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/DeferredType.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/Diagnostic.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Expression.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/FormatStringCompiler.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/FunctionParameterTypeTarget.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/FunctionReturnTypeTarget.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/LoopStatement.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/NativePropertyTypeTarget.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Operators.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Parser.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/SourceLoader.cpp
@@ -23,8 +28,17 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/compiler/statements/ReturnStatement.cpp
 
     ${NOMAD_SOURCE_DIR}/nomad/log/ConsoleSink.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/log/FileSink.cpp
     ${NOMAD_SOURCE_DIR}/nomad/log/Logger.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/log/LoggerObject.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/log/LogSink.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/log/LogSinkObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/log/MemorySink.cpp
+
+    ${NOMAD_SOURCE_DIR}/nomad/modules/BindingGenerator.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/modules/ScriptBindingObject.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/modules/ScriptBindings.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/modules/ScriptClassBinding.cpp
 
     ${NOMAD_SOURCE_DIR}/nomad/script/Callable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Closure.cpp
@@ -33,11 +47,13 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/Event.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/FormatString.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Hub.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/InstructionDump.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterContext.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/IteratorObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeCallable.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunctions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeMembers.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeProperty.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NomadObject.cpp
@@ -99,6 +115,7 @@ if(MSVC)
     set_source_files_properties(
         ${NOMAD_SOURCE_DIR}/nomad/system/ModuleHost.cpp
         ${NOMAD_SOURCE_DIR}/nomad/system/ModuleHostImpl.cpp
+        ${NOMAD_SOURCE_DIR}/nomad/system/ModuleManifest.cpp
         PROPERTIES COMPILE_OPTIONS "/wd4456"
     )
 else()

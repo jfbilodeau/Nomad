@@ -13,6 +13,7 @@ command-specific help. Options belong to individual verbs.
 | `nomad check [directory]` | Validate project scripts and sprite packing through the sibling `nomadc`. |
 | `nomad run [directory] [--debug\|--no-debug] [-- application-arguments...]` | Launch the sibling runtime from the project root, forwarding application arguments unchanged. |
 | `nomad package [directory] [--force] [--dry-run]` | Create a standalone game ZIP using the included runtime bundle. |
+| `nomad generate-bindings <module-directory> [--output <directory>] [--sdk <directory>] [--check]` | Generate experimental C++ enum and stored-field configuration interfaces from module scripts. |
 | `nomad version` | Print the SDK version. |
 
 Project discovery searches the requested directory and its parents for
@@ -21,7 +22,7 @@ Packaging additionally requires an exact match between the runtime bundle
 version and `nomad.version`.
 
 For `run`, the first `--` ends launcher options. Everything after it, including
-option-looking strings, belongs to the application. With `nomad-os` selected,
+option-looking strings, belongs to the application. With `os` selected,
 scripts read these strings through `os.argv`; the executable, project directory,
 launcher options, and separator are excluded. For example,
 `nomad run --debug -- "Player One" --help` supplies two application arguments.
@@ -32,6 +33,37 @@ Resources are selected using `package.exclude`. Output is named
 Entries are sorted with normalized timestamps and permissions.
 `--force` (`-f`) replaces only the matching archive, preserving other output files.
 Cross-target runtime selection is not supported.
+
+### Experimental module bindings
+
+`generate-bindings` reads `module.toml` and the selected module's declared script
+directory, using the ordinary compiler without running scripts or loading native
+modules. It does not discover a project or load the engine API. Unresolved
+native-dependent declarations fail with compiler diagnostics. Script dependencies
+require an explicit `--sdk` root containing `modules/<name>/module.toml`; only their
+transitive script roots are read.
+
+The default output is `<module-directory>/generated`. An explicit `--output` is
+relative to the current working directory. Commit the generated files:
+
+- `include/nomad/generated/<module-name>/Bindings.hpp`
+- `src/Bindings.cpp`
+- `nomad-module.cmake`
+
+Only enums and ordinary configuration classes with primitive (`bool`, `int`,
+`float`, `string`) or enum stored fields and one zero-argument script constructor
+are supported. Methods, parameterized classes, other field types, and native
+properties are rejected. Free functions may supply initializer values but do not
+receive generated callable interfaces. Invalid scripts, unsupported shapes, C++
+keywords, and generated-name collisions fail before files are changed.
+
+Generation is deterministic and leaves unchanged files untouched. `--check`
+returns nonzero for stale or deleted inventory files and never creates or changes
+files or directories. Source/output overlap, symbolic-link output paths, and
+collisions with unrelated files are rejected. Other files in an output directory
+are not removed. There is no automatic CMake generation or SDK script staging.
+See [embedding](embedding.md#experimental-generated-script-bindings) for ownership,
+runtime checks, and explicit CMake consumption.
 
 Packaging compiles each nonempty raw sprite root into `catalog.json` and
 adjacent packed PNG pages. Individual source PNGs from that root are omitted
@@ -103,15 +135,15 @@ their member types, and unsaved class changes update suggestions across the proj
 and invokes its runnable module. The game module executes `game.entry` (default
 `main`) before entering its event loop. `--project-path <directory-or-nomad.toml>` selects a project
 instead of discovering one from the current directory. Resource paths are
-resolved from that project's configuration. `--debug` enables diagnostic logging and the debug console;
-`--no-debug` disables project-configured debug mode.
+resolved from that project's configuration. `--debug` enables the debug console and physics debug drawing;
+`--no-debug` disables project-configured debug mode. Neither option changes logging settings.
 
 Direct launches accept application arguments after `--` as well:
 `nomad-runtime --project-path MyProject -- "Player One" --help`.
 Packaged executables use the same convention: `MyGame -- "Player One" --help`.
 After the separator, `--help`, `--project-path`, `--debug`, and `--no-debug` are
 application data, not runtime options. Without `--`, `os.argv` is empty.
-See [nomad-os](nomad-os.md) for startup environment and path snapshots.
+See [os](nomad-os.md) for startup environment and path snapshots.
 
 Run `nomad run --debug` and press the grave/tilde key (`~`) in the game window
 to open the debug console. Runtime log messages appear in its **Logs** panel.

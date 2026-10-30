@@ -97,7 +97,7 @@ BOOST_AUTO_TEST_CASE(game_rejects_invalid_resource_directory_lists)
 BOOST_AUTO_TEST_CASE(packaging_delegates_game_configuration_without_creating_a_runtime_or_initializing_sdl)
 {
     const TestDirectory directory("nomad_game_configuration_packaging");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-game"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"game"});
     const auto source = NomadConfiguration::parse(
         "[game]\nentry = \"launch\"\ndebug = false\ncustom = \"preserved\"\n"
         "[window]\nresolution = [1280, 720]\nsplash-image = 'images\\menu\\..\\splash.png'\n"
@@ -142,7 +142,7 @@ BOOST_AUTO_TEST_CASE(packaging_delegates_game_configuration_without_creating_a_r
 BOOST_AUTO_TEST_CASE(game_validation_is_shared_by_application_analysis_and_packaging)
 {
     const TestDirectory directory("nomad_game_configuration_invalid");
-    const auto modules = resolveModules(getSdkDirectory() / "modules", {"nomad-game"});
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"game"});
     for (const auto& text : {
         "[game]\nentry = \"\"\n",
         "[game]\ndebug = \"yes\"\n",
@@ -183,7 +183,7 @@ BOOST_AUTO_TEST_CASE(api_only_projects_preserve_game_configuration_without_valid
     const auto file = directory.write(NOMAD_PROJECT_FILE_NAME,
         "schema = 1\n[project]\nname = \"API\"\nidentifier = \"org.nomad.api\"\n"
         "version = \"0.1.0\"\nexecutable = \"api\"\n"
-        "[nomad]\nversion = \"0.1.0\"\nmodules = [\"nomad-system\"]\n"
+        "[nomad]\nversion = \"0.1.0\"\nmodules = [\"system\"]\n"
         "[game]\nentry = 42\n[window]\nresolution = false\n[audio]\ndirectories = 42\n"
     );
     const auto project = loadNomadProject(file);

@@ -1,16 +1,16 @@
 # Game module
 
-Select `nomad-game` in `nomad.toml` for windows, input, graphics, audio, scenes,
+Select `game` in `nomad.toml` for windows, input, graphics, audio, scenes,
 entities, and game resources:
 
 ```toml
 [nomad]
-modules = ["nomad-game"]
+modules = ["game"]
 ```
 
 Keep the project's existing `nomad.version`. The module automatically loads
-[nomad-system](nomad-system.md). Collections are separate: add
-`nomad-collections` explicitly when a game uses lists or arrays.
+[system](nomad-system.md). Collections are separate: add
+`collections` explicitly when a game uses lists or arrays.
 See [Runtime modules](modules.md) for module setup.
 
 ## Startup and configuration

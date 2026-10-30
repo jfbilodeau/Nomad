@@ -30,9 +30,9 @@ void registerMapFamily(
         std::move(factory),
         [writable](Runtime* runtime, const TypeId id) {
             const auto* type = runtime->getType(id).value();
-            const auto* objectType = static_cast<const nomad::ObjectType*>(type);
-            const auto* valueType = objectType->getTypeArguments()[1];
-            const auto* keyType = objectType->getTypeArguments()[0];
+            const auto* classType = static_cast<const nomad::ClassType*>(type);
+            const auto* valueType = classType->getTypeArguments()[1];
+            const auto* keyType = classType->getTypeArguments()[0];
             const auto* keysType = runtime->getParameterizedType("Array1", {keyType});
             const auto* valuesType = runtime->getParameterizedType("Array1", {valueType});
             const auto* entryType = dynamic_cast<const KeyValueType*>(
@@ -53,7 +53,7 @@ void registerMapFamily(
                 throw NomadException("Failed to register Map constructor");
             }
             const auto countId = runtime->addProperty(id, {
-                .valueTypeId = runtime->getTypeId("int"),
+                .valueType = runtime->getIntegerType(),
                 .name = "count",
                 .getter = [](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
                     const auto* map = machine->getThisAs<nomad::MapObject>();
@@ -187,13 +187,13 @@ void registerMapType(Runtime* runtime) {
     registerMapFamily(runtime, "ReadOnlyMap", [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
         return std::make_unique<ReadOnlyMapType>(
             owningRuntime, id, "ReadOnlyMap<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
-            ObjectTypeMode::Closed, arguments[0], arguments[1]
+            ClassMode::Closed, arguments[0], arguments[1]
         );
     }, false);
     registerMapFamily(runtime, "Map", [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
         return std::make_unique<MapType>(
             owningRuntime, id, "Map<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
-            ObjectTypeMode::Closed, arguments[0], arguments[1]
+            ClassMode::Closed, arguments[0], arguments[1]
         );
     }, true);
 }

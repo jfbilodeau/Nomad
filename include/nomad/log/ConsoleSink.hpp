@@ -2,13 +2,15 @@
 
 #pragma once
 
-#include <nomad/log/Logger.hpp>
+#include <nomad/log/LogSink.hpp>
 
 namespace nomad {
 
+    struct ConsoleSinkConfiguration : SinkConfiguration {};
+
     class ConsoleSink final : public LogSink {
     public:
-        ConsoleSink() = default;
+        explicit ConsoleSink(const ConsoleSinkConfiguration& configuration = {});
         ConsoleSink(const ConsoleSink&) = delete;
         ~ConsoleSink() override = default;
 

@@ -46,25 +46,25 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
         "Box", 1,
         [&](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             ++specializations;
-            return std::make_unique<ObjectType>(owningRuntime, id, "Box<" + arguments[0]->getTypeName() + ">", ObjectTypeMode::Closed, arguments);
+            return std::make_unique<ClassType>(owningRuntime, id, "Box<" + arguments[0]->getTypeName() + ">", ClassMode::Closed, arguments);
         },
         [&](Runtime* owningRuntime, const TypeId id) {
             const auto* type = owningRuntime->getType(id).value();
-            const auto* objectType = static_cast<const ObjectType*>(type);
-            const auto* valueType = objectType->getTypeArguments()[0];
-            BOOST_REQUIRE(runtime.addConstructor(objectType->getId(), {
+            const auto* classType = static_cast<const ClassType*>(type);
+            const auto* valueType = classType->getTypeArguments()[0];
+            BOOST_REQUIRE(runtime.addConstructor(classType->getId(), {
                 .parameters = {{valueType->getId(), "value", ""}},
                 .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new NomadObject); },
                 .documentation = ""
             }).isValid());
-            BOOST_REQUIRE(runtime.addProperty(objectType->getId(), {
-                .valueTypeId = valueType->getId(),
+            BOOST_REQUIRE(runtime.addProperty(classType->getId(), {
+                .valueType = valueType,
                 .name = "declaredProperty",
                 .getter = [](VirtualMachine*, RuntimeValue&) {},
                 .setter = {},
                 .documentation = ""
             }).isValid());
-            BOOST_REQUIRE(runtime.addMethod(objectType->getId(), {
+            BOOST_REQUIRE(runtime.addMethod(classType->getId(), {
                 .name = "declaredMethod",
                 .parameters = {
                     {valueType->getId(), "value", ""},
@@ -162,7 +162,7 @@ BOOST_AUTO_TEST_CASE(rejects_reading_write_only_property) {
     CompilerContext context(compiler.get());
 
     BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
-        .valueTypeId = runtime.getTypeId("int"),
+        .valueType = runtime.getIntegerType(),
         .name = "sink",
         .getter = {},
         .setter = propertySetter(),
@@ -200,7 +200,7 @@ BOOST_AUTO_TEST_CASE(allows_assigning_write_only_property) {
     ScriptFunction function(CallableId::INVALID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
     BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
-        .valueTypeId = runtime.getTypeId("int"),
+        .valueType = runtime.getIntegerType(),
         .name = "sink",
         .getter = {},
         .setter = propertySetter(),
@@ -220,7 +220,7 @@ BOOST_AUTO_TEST_CASE(chained_assignment_reads_receiver_but_only_requires_final_s
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
-        .valueTypeId = runtime.getTypeId("int"),
+        .valueType = runtime.getIntegerType(),
         .name = "sink",
         .getter = {},
         .setter = propertySetter(),
@@ -291,7 +291,7 @@ BOOST_AUTO_TEST_CASE(context_assignment_takes_precedence_over_native_member_name
     Runtime runtime;
     runtime.registerVariableContext("entity", "this.", std::make_unique<SimpleVariableContext>());
     BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
-        .valueTypeId = runtime.getTypeId("int"),
+        .valueType = runtime.getIntegerType(),
         .name = "value",
         .getter = [](VirtualMachine*, RuntimeValue&) {},
         .setter = {},

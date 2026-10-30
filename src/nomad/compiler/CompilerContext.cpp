@@ -56,26 +56,6 @@ LoopStatement* CompilerContext::getEnclosingLoop(const ScriptCallableBase* funct
     return nullptr;
 }
 
-NomadString formatDiagnostic(const Diagnostic& diagnostic) {
-    NomadString location = diagnostic.sourceName;
-
-    if (diagnostic.line != NOMAD_INVALID_INDEX) {
-        location += ":" + std::to_string(diagnostic.line);
-
-        if (diagnostic.column != NOMAD_INVALID_INDEX) {
-            location += ":" + std::to_string(diagnostic.column);
-        }
-    }
-
-    const NomadString severity = diagnostic.severity == DiagnosticSeverity::Error ? "error" : "warning";
-
-    if (location.empty()) {
-        return severity + ": " + diagnostic.message;
-    }
-
-    return location + ": " + severity + ": " + diagnostic.message;
-}
-
 CompilerContext::CompilerContext(Compiler* compiler, const CompilerMode mode,
     const InterpreterContext* interpreterContext, const bool hubInitializer):
     m_compiler(compiler),

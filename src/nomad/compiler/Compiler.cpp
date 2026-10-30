@@ -6,7 +6,11 @@
 #include <nomad/compiler/ClassDeclaration.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/CompilerException.hpp>
+#include <nomad/compiler/FunctionParameterTypeTarget.hpp>
+#include <nomad/compiler/FunctionReturnTypeTarget.hpp>
 #include <nomad/compiler/LoopStatement.hpp>
+#include <nomad/compiler/NativePropertyTypeTarget.hpp>
+#include <nomad/compiler/SourceLoader.hpp>
 #include <nomad/compiler/StatementParsers.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
@@ -14,6 +18,7 @@
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
 #include <nomad/script/InterpreterContext.hpp>
+#include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/String.hpp>
@@ -55,6 +60,81 @@ Compiler::~Compiler() = default;
 
 Runtime* Compiler::getRuntime() const {
     return m_runtime;
+}
+
+const DeferredType* Compiler::deferType(TypeReference reference) {
+    for (const auto& type : m_deferredTypes) {
+        if (type->getReference() == reference) {
+            return type.get();
+        }
+    }
+    auto type = std::make_unique<DeferredType>(m_runtime, std::move(reference));
+    const auto* result = type.get();
+    m_deferredTypes.push_back(std::move(type));
+    return result;
+}
+
+void Compiler::registerDeferredTypeTarget(std::unique_ptr<DeferredTypeTarget> target) {
+    if (target == nullptr || target->getDeferredType().name.empty()) {
+        throw NomadException("Cannot register a null deferred type target or an empty type name");
+    }
+    m_deferredTypeTargets.push_back(std::move(target));
+}
+
+void Compiler::resolveDeferredTypes() {
+    for (const auto* function : m_runtime->getNativeFunctions()) {
+        if (function->isSignatureResolved()) {
+            continue;
+        }
+        for (auto index = NomadIndex{0}; index < function->getParameterCount(); ++index) {
+            const auto& parameter = function->getParameters()[index];
+            if (const auto* type = dynamic_cast<const DeferredType*>(parameter.type)) {
+                registerDeferredTypeTarget(std::make_unique<FunctionParameterTypeTarget>(
+                    *m_runtime, function->getId(), index, type->getReference()
+                ));
+            }
+        }
+        if (const auto* type = dynamic_cast<const DeferredType*>(function->getReturnType())) {
+            registerDeferredTypeTarget(std::make_unique<FunctionReturnTypeTarget>(
+                *m_runtime, function->getId(), type->getReference()
+            ));
+        }
+    }
+    std::vector<MemberReference> members;
+    m_runtime->getNativeMembers(members);
+    for (const auto& member : members) {
+        const auto* id = std::get_if<PropertyId>(&member);
+        const auto* property = id == nullptr ? nullptr : m_runtime->getNativeProperty(*id);
+        if (property == nullptr || property->isTypeResolved()) {
+            continue;
+        }
+        if (const auto* type = dynamic_cast<const DeferredType*>(property->getValueType())) {
+            registerDeferredTypeTarget(std::make_unique<NativePropertyTypeTarget>(
+                *m_runtime, *id, type->getReference()
+            ));
+        }
+    }
+    std::vector<const Type*> resolvedTypes;
+    resolvedTypes.reserve(m_deferredTypeTargets.size());
+    for (const auto& target : m_deferredTypeTargets) {
+        const auto* type = m_runtime->getTypeByName(target->getDeferredType().name);
+        if (type == nullptr) {
+            throw NomadException("Cannot resolve " + target->getDescription() +
+                ": unknown type '" + target->getDeferredType().name + "'");
+        }
+        resolvedTypes.push_back(type);
+    }
+    for (const auto& placeholder : m_deferredTypes) {
+        if (m_runtime->getTypeByName(placeholder->getTypeName()) == nullptr) {
+            throw NomadException("Cannot resolve deferred type '" + placeholder->getTypeName() + "'");
+        }
+    }
+    for (auto index = NomadIndex{0}; index < m_deferredTypeTargets.size(); ++index) {
+        m_deferredTypeTargets[index]->resolve(resolvedTypes[index]);
+    }
+    m_runtime->validateNativeFunctionSignatures();
+    m_runtime->validateNativePropertyTypes();
+    m_deferredTypeTargets.clear();
 }
 
 void Compiler::reportError(const NomadString& message) const {
@@ -185,7 +265,7 @@ bool Compiler::foldBinary(
 
 IdentifierType Compiler::getIdentifierType(const NomadString& name, const ScriptCallableBase* function) const {
     if (getReceiverType(function) != nullptr) {
-        if (name == "this") return function->getObjectType() != nullptr ? IdentifierType::Receiver :
+        if (name == "this") return function->getClassType() != nullptr ? IdentifierType::Receiver :
             (function->getParameterId(name) != NOMAD_INVALID_ID ? IdentifierType::Parameter : IdentifierType::Unknown);
         if (name.starts_with("this.")) return IdentifierType::Unknown;
     }
@@ -236,7 +316,7 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
 void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptCallableBase* function, IdentifierDefinition& definition) const {
     if (const auto* receiverType = getReceiverType(function)) {
         if (name == "this") {
-            definition.identifierType = function->getObjectType() != nullptr ? IdentifierType::Receiver :
+            definition.identifierType = function->getClassType() != nullptr ? IdentifierType::Receiver :
                 (function->getParameterId(name) != NOMAD_INVALID_ID ? IdentifierType::Parameter : IdentifierType::Unknown);
             if (definition.identifierType == IdentifierType::Parameter) {
                 definition.parameterId = function->getParameterId(name);
@@ -368,7 +448,7 @@ const Property* Compiler::resolveClassField(
     const NomadIndex column
 ) {
     const auto* receiver = getReceiverType(function);
-    const auto* owner = receiver != nullptr ? receiver->asObjectType() : nullptr;
+    const auto* owner = receiver != nullptr ? receiver->asClassType() : nullptr;
     if (owner == nullptr) {
         reportInternalError("Class field resolution requires an object receiver");
     }
@@ -392,7 +472,7 @@ const Property* Compiler::resolveClassField(
 const Property* Compiler::resolveObjectField(
     CompilerContext* context,
     ScriptCallableBase* function,
-    const ObjectType* owner,
+    const ClassType* owner,
     const NomadString& name,
     const Type* valueType,
     const bool allowDeclaration,
@@ -453,7 +533,7 @@ void Compiler::reportFieldDiagnostics(CompilerContext* context) const {
         }
         const auto* property = m_runtime->getProperty(field.id);
         context->reportWarning(
-            "Externally introduced field '" + property->getObjectType()->getTypeName() + "." +
+            "Externally introduced field '" + property->getClassType()->getTypeName() + "." +
                 property->getName() + "' is assigned but never read",
             field.sourceName, field.line, field.column
         );
@@ -1126,8 +1206,8 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
 
     for (const auto& source: m_functions) {
         types.push_back(source.function->getReturnType());
-        if (const auto* receiver = source.function->getObjectType()) {
-            for (const auto* property : receiver->asObjectType()->getProperties()) {
+        if (const auto* receiver = source.function->getClassType()) {
+            for (const auto* property : receiver->asClassType()->getProperties()) {
                 types.push_back(property->getValueType());
             }
         }
@@ -1169,7 +1249,7 @@ void Compiler::compileFunction(const FunctionCompilation& source) {
 
 void Compiler::compileObjectInitializer(const FunctionCompilation& source) {
     auto* function = source.function;
-    const auto* owner = function->getObjectType()->asObjectType();
+    const auto* owner = function->getClassType()->asClassType();
     function->setFunctionStart(m_instructions.size());
     addFunctionEntry(function);
     source.ast->compile(this, function);
@@ -1193,7 +1273,7 @@ void Compiler::compileConstructor(const FunctionCompilation& source) {
     auto* constructor = source.function;
     constructor->setFunctionStart(m_instructions.size());
     addFunctionEntry(constructor);
-    const auto* type = constructor->getObjectType()->asObjectType();
+    const auto* type = constructor->getClassType()->asClassType();
     const auto methods = type->getMethods();
     const auto initializer = std::ranges::find_if(methods, [&](const auto* method) {
         return method->getName() == type->getInitializerName();
@@ -1236,12 +1316,12 @@ void Compiler::addStoreParameter(const NomadId parameterId, const Type* type) {
 }
 
 void Compiler::addLoadReceiver(ScriptCallableBase* function, const ExpressionTarget target) {
-    if (function->getObjectType() != nullptr) {
+    if (function->getClassType() != nullptr) {
         if (target == ExpressionTarget::Intermediate) {
             addOpCode(OpCodes::op_copy_this_to_i);
         } else {
             addOpCode(OpCodes::op_copy_this_to_r);
-            addMoveResult(function->getObjectType(), target);
+            addMoveResult(function->getClassType(), target);
         }
     } else {
         const auto parameterId = function->getParameterId("this");
@@ -1351,7 +1431,7 @@ void Compiler::registerMemberCompilation(
     const CompilationCallableTarget kind
 ) {
     auto* member = m_runtime->getScriptCallable(memberId);
-    if (member == nullptr || member->getObjectType() == nullptr) {
+    if (member == nullptr || member->getClassType() == nullptr) {
         reportInternalError("Invalid script member compilation");
     }
     const auto scriptId = getScriptId(sourceFunctionId);
@@ -1360,7 +1440,7 @@ void Compiler::registerMemberCompilation(
 
 const Type* Compiler::getReceiverType(const ScriptCallableBase* function) const {
     while (function != nullptr) {
-        if (function->getObjectType() != nullptr) return function->getObjectType();
+        if (function->getClassType() != nullptr) return function->getClassType();
         function = m_runtime->getScriptCallable(function->getParentId());
     }
     return nullptr;
@@ -1404,11 +1484,36 @@ void Compiler::setFunctionBody(
     reportInternalError("Unknown function id: " + toString(functionId.id));
 }
 
+void Compiler::registerSourceRoots(const std::span<const SourceRoot> roots) {
+    if (m_sourceRootsLoaded) {
+        throw NomadBug("Source roots must be configured before registering source snapshots");
+    }
+    m_sourceRoots.insert(m_sourceRoots.end(), roots.begin(), roots.end());
+}
+
 void Compiler::registerSources(CompilerContext* context, const SourceBatch& batch) {
     if (context == nullptr || context->getCompiler() != this) {
         throw NomadBug("Source registration requires this compiler's context");
     }
 
+    if (!m_sourceRootsLoaded) {
+        m_sourceRootsLoaded = true;
+        if (!m_sourceRoots.empty()) {
+            auto resolved = loadSourceRoots(m_sourceRoots, batch.sources);
+            for (const auto& diagnostic : batch.diagnostics) {
+                const auto duplicate = std::ranges::any_of(resolved.diagnostics, [&](const auto& existing) {
+                    return existing.severity == diagnostic.severity && existing.message == diagnostic.message &&
+                        existing.sourceName == diagnostic.sourceName && existing.line == diagnostic.line &&
+                        existing.column == diagnostic.column;
+                });
+                if (!duplicate) {
+                    resolved.diagnostics.push_back(diagnostic);
+                }
+            }
+            registerSources(context, resolved);
+            return;
+        }
+    }
     context->reportDiagnostics(batch.diagnostics);
     for (const auto& script : batch.sources) {
         registerScript(context, script);
@@ -1520,6 +1625,9 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     if (context == nullptr || context->getCompiler() != this) {
         throw NomadBug("Compilation requires this compiler's context");
     }
+    if (!m_sourceRootsLoaded) {
+        registerSources(context, {});
+    }
     if (context->hasError()) {
         return false;
     }
@@ -1611,6 +1719,12 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     }
 
     if (!beginPhase(CompilationPhase::Parse)) {
+        return false;
+    }
+    reportExceptions({}, [&] {
+        resolveDeferredTypes();
+    });
+    if (hasNewErrors()) {
         return false;
     }
     log::info("Parsing functions");

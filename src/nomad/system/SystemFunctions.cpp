@@ -1,6 +1,6 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/system/NativeFunctions.hpp>
+#include <nomad/system/SystemFunctions.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -13,7 +13,7 @@
 
 namespace nomad {
 
-void registerBuildInNativeFunctions(Runtime *runtime) {
+void registerSystemFunctions(Runtime* runtime) {
     runtime->registerNativeFunction(
         "breakpoint",
         [](const VirtualMachine* interpreter) {
@@ -33,37 +33,6 @@ void registerBuildInNativeFunctions(Runtime *runtime) {
         },
         runtime->getVoidType(),
         NomadDoc("Set a breakpoint")
-    );
-
-    runtime->registerNativeFunction(
-        "log.info",
-        [](const VirtualMachine* interpreter) {
-            const auto fileNameValue = interpreter->getStringParameter(0);
-            const auto functionNameValue = interpreter->getStringParameter(1);
-            const auto lineNumber = interpreter->getIntegerParameter(2);
-            const auto messageValue = interpreter->getStringParameter(3);
-
-            const auto functionName = functionNameValue->getText();
-            const auto fileName = fileNameValue->getText();
-            const auto& message = messageValue->getString();
-
-            const Location location(
-                functionName,
-                fileName,
-                lineNumber,
-                0
-            );
-
-           log::info(message, location);
-        },  // NativeFunction function
-        {
-            defParameter("$file", runtime->getFileNameType(), NomadParamDoc("(hidden) The file name from which the log is issued")),
-            defParameter("$function", runtime->getFunctionNameType(), NomadParamDoc("(hidden) The function name from which the log is issued")),
-            defParameter("$line", runtime->getLineNumberType(), NomadParamDoc("(hidden) The line number from which the log is issued")),
-            defParameter("message", runtime->getStringType(), NomadParamDoc("The text to log"))
-        },
-        runtime->getVoidType(),
-        NomadDoc("Write a 'info' level string to the log.")
     );
 
     runtime->registerNativeFunction(

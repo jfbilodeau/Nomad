@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/Compilation.hpp>
+#include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/game/Game.hpp>
 
@@ -10,12 +12,14 @@
 #include <nomad/game/resource/SpriteDiscovery.hpp>
 #include <nomad/game/resource/SpritePacker.hpp>
 
+#include <nomad/log/Logger.hpp>
+
 #include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/ModuleHost.hpp>
-#include <nomad/system/NativeFunctions.hpp>
 #include <nomad/system/Path.hpp>
 #include <nomad/system/ProjectSession.hpp>
+#include <nomad/system/SystemFunctions.hpp>
 
 #include <TestDirectory.hpp>
 
@@ -73,7 +77,7 @@ std::unique_ptr<ModuleHost> createGameHost(
     configuration.setString("resources.directory", ".");
     return ModuleHost::create(
         std::move(configuration), directory.getPath(),
-        resolveModules(getSdkDirectory() / "modules", {"nomad-game"}),
+        resolveModules(getSdkDirectory() / "modules", {"game"}),
         {}, ModuleMode::Application
     );
 }
@@ -82,11 +86,12 @@ std::unique_ptr<Game> createPreparedGame(
     Runtime& runtime,
     const GameOptions& options
 ) {
-    registerBuildInNativeFunctions(&runtime);
+    registerSystemFunctions(&runtime);
     auto game = Game::createForRuntime(&runtime, options, false);
     const std::vector<NomadPath> paths{pathFromUtf8(options.resourcePath) / "scripts"};
+    auto compiler = runtime.createCompiler();
     game->prepareScripts([&] {
-        const auto result = checkPaths(paths, &runtime);
+        const auto result = compileSources(loadSourcePaths(paths), *compiler);
         if (!result.succeeded()) {
             NomadString message = "Failed to compile functions";
             for (const auto& diagnostic : result.diagnostics) {
@@ -101,6 +106,65 @@ std::unique_ptr<Game> createPreparedGame(
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(game_startup)
+
+BOOST_AUTO_TEST_CASE(debug_startup_preserves_log_levels_without_the_log_module) {
+    TestDirectory directory("nomad_game_independent_log_level");
+    writeTextCatalogue(directory);
+    auto& logger = log::getLogger();
+    const auto previousLevel = logger.getLogLevel();
+
+    for (const auto headless : {false, true}) {
+        for (const auto debug : {false, true}) {
+            for (const auto level : {LogLevel::Info, LogLevel::Warning}) {
+                selectDummyDrivers();
+                logger.setLogLevel(level);
+                auto options = makeOptions(directory);
+                options.debug = debug;
+                Runtime runtime;
+                auto game = Game::createForRuntime(&runtime, options, headless);
+
+                if (!headless) {
+                    BOOST_REQUIRE_EQUAL(SDL_GetCurrentVideoDriver(), "dummy");
+                }
+                BOOST_TEST(game->isDebug() == debug);
+                BOOST_TEST((logger.getLogLevel() == level));
+            }
+        }
+    }
+
+    logger.setLogLevel(previousLevel);
+}
+
+BOOST_AUTO_TEST_CASE(debug_startup_preserves_default_and_explicit_log_levels_in_either_module_order) {
+    TestDirectory directory("nomad_game_log_level");
+    writeTextCatalogue(directory);
+    auto& logger = log::getLogger();
+    const auto previousLevel = logger.getLogLevel();
+    const auto previousDeliveryMode = logger.getDeliveryMode();
+    for (const auto explicitLevel : {false, true}) {
+        auto configuration = NomadConfiguration::parse(
+            "[game]\ndebug = true\n[resources]\ndirectory = '.'\n"
+            "[log]\nsinks = []\n"
+        );
+        if (explicitLevel) {
+            configuration.setString("log.level", "warning");
+        }
+        const auto expectedLevel = explicitLevel ? LogLevel::Warning : LogLevel::Info;
+        for (const auto& names : {
+            std::vector<NomadString>{"log", "game"}, std::vector<NomadString>{"game", "log"}
+        }) {
+            selectDummyDrivers();
+            const auto host = ModuleHost::create(
+                configuration, directory.getPath(), resolveModules(getSdkDirectory() / "modules", names),
+                {}, ModuleMode::Application
+            );
+            BOOST_REQUIRE_EQUAL(SDL_GetCurrentVideoDriver(), "dummy");
+            BOOST_TEST((logger.getLogLevel() == expectedLevel));
+        }
+    }
+    logger.setLogLevel(previousLevel);
+    logger.setDeliveryMode(previousDeliveryMode);
+}
 
 BOOST_AUTO_TEST_CASE(displays_the_configured_splash_at_the_configured_resolution)
 {
@@ -201,7 +265,7 @@ BOOST_AUTO_TEST_CASE(reports_sprite_failure_after_successful_script_compilation)
     TestDirectory directory("nomad_game_startup_sprite_failure");
     writeTextCatalogue(directory);
     directory.write("sprites/player.png", "not a PNG");
-    directory.write("scripts/main.nomad", "log.info \"compiled\"\n");
+    directory.write("scripts/main.nomad", "print \"compiled\"\n");
     selectDummyDrivers();
 
     const auto host = createGameHost(directory);

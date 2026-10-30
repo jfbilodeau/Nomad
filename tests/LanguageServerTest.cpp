@@ -266,7 +266,7 @@ BOOST_AUTO_TEST_CASE(signature_help_lists_overloads_and_filters_member_receivers
         "text = \" hello \"\ntrimmed = text.trim\n"
         "converted = toFloat \"2\"\n"
         "sequence = range 1 4 2\n"
-        "log.info \"message\"\n"
+        "print \"message\"\n"
         "selected = chooseTyped \"text\"\n";
     const auto diagnostics = analyzeLanguageDocuments({{uri, {source, 1}}});
     BOOST_REQUIRE_MESSAGE(diagnostics.empty(), (diagnostics.empty() ? "" : json::serialize(diagnostics.begin()->second)));
@@ -284,7 +284,7 @@ BOOST_AUTO_TEST_CASE(signature_help_lists_overloads_and_filters_member_receivers
         query(13, "text.trim", 9) +
         query(14, "toFloat \"2\"", 11) +
         query(15, "range 1 4 ", 10) +
-        query(16, "log.info \"message\"", 18) +
+        query(16, "print \"message\"", 15) +
         query(18, "chooseTyped \"text\"", 18) + frame(change) +
         symbolRequest(17, "textDocument/signatureHelp", uri, unknownSource, "unknown.read 1", 14) + finish());
     std::ostringstream output;
@@ -361,7 +361,7 @@ executable = "signatures"
 entry = "main"
 [nomad]
 version = "0.1.0"
-modules = ["nomad-system", "nomad-collections"]
+modules = ["system", "collections"]
 [scripts]
 directories = ["scripts"]
 [resources]
@@ -587,17 +587,17 @@ executable = "lsp-test"
 entry = "init"
 [nomad]
 version = "0.1.0"
-modules = ["nomad-game"]
+modules = ["game"]
 [resources]
 directory = "res"
 [scripts]
 directories = ["res/scripts", "res/mods"]
 )");
-    const auto init = directory.write("res/scripts/init.nomad", "value = helpers.answer\nlog.info \"ready\"");
+    const auto init = directory.write("res/scripts/init.nomad", "value = helpers.answer\nprint \"ready\"");
     const auto answer = directory.write("res/mods/helpers/answer.nomad", "return missing");
     const auto initUri = uriFor(init);
     const auto answerUri = uriFor(answer);
-    LanguageDocuments documents{{initUri, {"value = helpers.answer\nlog.info \"ready\"", 1}}};
+    LanguageDocuments documents{{initUri, {"value = helpers.answer\nprint \"ready\"", 1}}};
     const auto diskErrors = analyzeLanguageDocuments(documents);
     BOOST_TEST(!diskErrors.empty());
     documents[answerUri] = {"return 42", 2};
@@ -612,7 +612,7 @@ BOOST_AUTO_TEST_CASE(completion_and_hover_use_api_metadata_on_incomplete_unsaved
 {
     TestDirectory directory("nomad_lsp_completion");
     const auto uri = uriFor(directory.getPath() / "answer.nomad");
-    const auto text = NomadString("math.fl\r\nlog.info \"") + "\xF0\x9F\x98\x80" +
+    const auto text = NomadString("math.fl\r\nprint \"") + "\xF0\x9F\x98\x80" +
         "\"\r\nvalue = \"" + "\xF0\x9F\x98\x80" +
         "\" + toFloat 1\r\n# math.fl\r\ntext = \"math.fl\"\r\nunknown";
     const auto query = [&](const int id, const char* method, const int line, const int character) {
@@ -691,7 +691,7 @@ executable = "completion"
 entry = "init"
 [nomad]
 version = "0.1.0"
-modules = ["nomad-game"]
+modules = ["game"]
 [scripts]
 directories = ["res/scripts"]
 [resources]
@@ -734,13 +734,13 @@ version = "0.1.0"
 executable = "system-project"
 [nomad]
 version = "0.1.0"
-modules = ["nomad-system"]
+modules = ["system"]
 [scripts]
 directories = ["res/scripts"]
 [resources]
 directory = "res"
 )");
-    const auto valid = NomadString("value = math.floor 1.5\nlog.info \"ready\"\nreturn value");
+    const auto valid = NomadString("value = math.floor 1.5\nprint \"ready\"\nreturn value");
     const auto uri = uriFor(directory.write("res/scripts/init.nomad", valid));
     BOOST_TEST(analyzeLanguageDocuments({{uri, {valid, 1}}}).empty());
     const auto diagnostics = analyzeLanguageDocuments({{uri, {"game.createScene", 2}}});
@@ -786,13 +786,13 @@ executable = "symbols"
 entry = "init"
 [nomad]
 version = "0.1.0"
-modules = ["nomad-game"]
+modules = ["game"]
 [scripts]
 directories = ["res/scripts"]
 [resources]
 directory = "res"
 )");
-    const auto initUri = uriFor(directory.write("res/scripts/init.nomad", "log.info \"ready\""));
+    const auto initUri = uriFor(directory.write("res/scripts/init.nomad", "print \"ready\""));
     const auto libraryUri = uriFor(directory.write("res/scripts/helpers/library.nomad",
         "fun doubleValue value:int\nreturn value * 2\nend"));
     const auto request = [&](const int id, const char* method, const int character) {
@@ -1077,7 +1077,7 @@ version = "0.1.0"
 executable = "members"
 [nomad]
 version = "0.1.0"
-modules = ["nomad-system"]
+modules = ["system"]
 [scripts]
 directories = ["res/scripts"]
 [resources]
@@ -1156,7 +1156,7 @@ executable = "members"
 entry = "init"
 [nomad]
 version = "0.1.0"
-modules = ["nomad-game"]
+modules = ["game"]
 [scripts]
 directories = ["res/scripts"]
 [resources]

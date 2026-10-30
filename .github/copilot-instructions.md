@@ -34,7 +34,7 @@ The Nomad game engine is a 2D game engine written in C++ using modern C++20 feat
 	- Keep headers sorted alphabetically within each group.
 - Prefer C++20 standard library types and features over Boost equivalents when one exists (for example, `std::optional` instead of `boost::optional`). Use Boost only for utilities that have no C++20 standard equivalent. Do not replace existing Boost usage unless the task asks for it.
 - Use K&R style for formatting and indentation. Follow the existing formatting manually; do not run `clang-format`.
-- When a C++ function or method parameter list is too long for one line, put each parameter on its own indented line, with the closing parenthesis on a separate line. Apply this to both declarations and definitions:
+- When a C++ function or method parameter list is too long for one line, put each parameter on its own indented line, with the closing parenthesis on a separate line. Apply this to both declarations and definitions. Do not combine multiple parameters on the same line:
   ```cpp
   void myFunc(
       int param1,

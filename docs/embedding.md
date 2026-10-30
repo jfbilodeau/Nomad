@@ -21,6 +21,333 @@ Types and callables used by a context must remain valid.
 
 Neither the interpreter nor its context creates or owns a VM.
 
+## Experimental generated script bindings
+
+`nomad generate-bindings <module-directory>` produces a C++ header, source, and
+`nomad-module.cmake` inventory. Generate explicitly and commit the outputs; use
+`--check` in a separate freshness check. See [CLI reference](cli.md#experimental-module-bindings)
+for supported declaration shapes and dependency discovery.
+
+Consume the inventory explicitly; it never invokes a generator:
+
+```cmake
+include("${MODULE_DIRECTORY}/generated/nomad-module.cmake")
+target_sources(my_host PRIVATE ${NOMAD_BINDING_HEADERS} ${NOMAD_BINDING_SOURCES})
+target_include_directories(my_host PRIVATE "${NOMAD_BINDING_INCLUDE_DIRECTORY}")
+target_link_libraries(my_host PRIVATE Nomad::Language)
+```
+
+Generated names live in `nomad::generated::<module-name>` with module hyphens
+changed to underscores. Qualified script type names use underscores in C++;
+for example `log.FileSinkConfiguration` becomes `log_FileSinkConfiguration`
+in `nomad::generated::log`. Stored fields expose `getXXX()` and `setXXX(value)`.
+Enum names and numeric mappings are preserved. Unsupported names and collisions
+are errors rather than silently renamed APIs.
+
+Enum fields additionally expose an integer getter and setter overload:
+
+```cpp
+log_Level getLevel() const;
+NomadInteger getLevelAsInteger() const;
+void setLevel(log_Level value);
+void setLevel(NomadInteger value);
+```
+
+Each generated enum also provides `<enum-name>ToInteger(value)` and
+`<enum-name>FromInteger(value)`, such as `log_LevelToInteger` and
+`log_LevelFromInteger`. These are `constexpr`, `noexcept` static casts.
+Enum accessors and conversions preserve every `NomadInteger` value, including
+unnamed enum values; they do not validate membership. The receiving native API
+is responsible for rejecting values it does not support.
+
+Class wrappers expose `typeReference()` without requiring a runtime or compiled
+scripts:
+
+```cpp
+using Settings = nomad::generated::log::log_FileSinkConfiguration;
+auto configurationType = Settings::typeReference();
+auto levelType = nomad::generated::log::log_LevelBinding::typeReference();
+```
+
+Both return `nomad::TypeReference`, declared in
+`<nomad/modules/TypeReference.hpp>`. Its `name` owns the fully qualified script
+type name, such as `log.FileSinkConfiguration` or `log.Level`; it contains no
+runtime pointer or resolved ID. An enum retains its C++ `enum class` API and
+gets a separate `<enum-name>Binding` companion for `typeReference()`. Companion
+name collisions are generation errors. These references describe types only:
+they do not register or resolve types, validate contracts, or enable deferred
+native registration by themselves.
+
+For native registration, call the generated `deferTypes(Compiler&)` once to
+obtain a `DeferredTypes` bundle containing all generated enum and class types:
+
+```cpp
+const auto types = nomad::generated::log::deferTypes(*context->compiler);
+const auto parameter = nomad::defParameter("configuration", types.sinkConfiguration, "");
+// types.level is available for enum parameters and return types as well.
+```
+
+Bundle fields use camelCase qualified names, omitting a leading hub matching the
+module name: `log.SinkConfiguration` becomes `sinkConfiguration`, while
+`dependency.Mode` becomes `dependencyMode`. Field and bundle-name collisions are
+generation errors. Repeated calls reuse that compiler's placeholders; nothing is
+cached globally or registered in the runtime's type catalog. Every requested
+type must be supplied by the script declarations before compilation completes.
+Bundle pointers remain placeholders, not forwarding types; use resolved native
+signatures or runtime type lookup after compilation.
+
+Compile the module scripts into the host runtime before using a wrapper.
+`ModuleHost` includes selected modules' scripts automatically. Bare runtimes
+must compile those declarations explicitly.
+
+```cpp
+#include <nomad/generated/log/Bindings.hpp>
+#include <nomad/modules/ScriptBindings.hpp>
+#include <nomad/script/VirtualMachine.hpp>
+
+// runtime already contains the compiled module script declarations.
+nomad::ScriptBindings bindings(runtime);
+nomad::VirtualMachine machine(&runtime);
+using Settings = nomad::generated::log::log_FileSinkConfiguration;
+const auto& binding = Settings::bind(bindings); // Optional eager validation and cache initialization.
+auto settings = Settings::create(bindings, machine);
+settings.setDirectory("logs");
+auto sameObject = Settings(bindings, settings.getObject());
+```
+
+- `create(bindings, machine)` runs the ordinary script constructor and class field
+  initializers. Defaults are not copied into C++. Compiling/generating bindings,
+  wrapping an existing receiver, and copying a wrapper do not run initializers.
+- The first `bind(bindings)`, construction, or wrapping validates the runtime-local class, exact stored-field
+  names and types, ordinary zero-argument constructor, and referenced enum
+  names/numeric mappings. Native properties and unsupported shapes are rejected.
+  The helper caches the resolved class, constructor ID, property IDs, field
+  indexes. Equivalent contracts share one immutable binding in
+  that helper, never global mutable IDs. Subsequent wrappers reuse it. Separate
+  helpers have independent caches, even when associated with the same runtime.
+- Generated classes derive from `ScriptBindingObject`, inheriting receiver
+  ownership, `getObject()`, `getRuntime()`, and `getBinding()`. Field accessors use
+  numeric contract slots mapped to cached runtime field indexes, not string
+  lookups or repeated schema validation. Contract slots are independent of script
+  declaration order. Adding class members does not freeze the class or invalidate
+  existing slots; bindings do not automatically revalidate later extensions.
+- Wrapping borrows the input pointer and retains its own intrusive reference.
+  Copies retain another reference; moves transfer it. Destruction releases it.
+  `getObject()` is borrowed; use `addRef()` if retaining it beyond the wrapper.
+  No `shared_ptr` is put in a `RuntimeValue`.
+- The runtime must outlive the helper, wrappers, and receivers. The helper must
+  outlive all returned binding references and wrappers that use them. Do not
+  unload or replace registered types/bytecode while wrappers are live. Neither
+  helpers nor wrappers extend runtime lifetime or make access thread-safe.
+- Wrong runtime, VM, class receiver, missing declarations, field-type mismatch,
+  and enum mapping mismatch throw `NomadException`.
+  Moved-from handles cannot be accessed. Strings cross the interface by value
+  with their full length, including embedded nulls.
+
+`<nomad/modules/ScriptBindingObject.hpp>` supplies the shared wrapper base.
+`ScriptBindings::getClassBinding(contract)` retains its own contract snapshot, so
+the input contract need not outlive the call. The returned `ScriptClassBinding`
+and all wrappers must remain within the helper's and runtime's lifetimes. Its primitive slot
+accessors check bounds and access types; integer access can also read/write a
+contracted enum without validating its numeric value.
+
+Host-side binding support is available under `<nomad/modules/...>`, including
+`BindingGenerator.hpp` for programmatic generation.
+
+### C++ logging
+
+Include `<nomad/log/Logger.hpp>` to use a standalone `Logger` or the engine's
+`nomad::log::getLogger()`. A new logger owns a default console sink, uses the
+global minimum level `Info`, and buffers ordinary messages until `flush()`.
+Error, critical, and fatal messages flush immediately; fatal then throws.
+
+The logger owns all its sinks. `createConsoleSink(ConsoleSinkConfiguration)`,
+`createFileSink(FileSinkConfiguration)`, and
+`createMemorySink(MemorySinkConfiguration)` return a strong `LogSinkId`.
+All configuration structs inherit `active` and `level` from
+`SinkConfiguration`. Sinks default to active with a minimum level of `Info`;
+the global logger level still filters messages first.
+To deliver debug messages, lower both the global level and the receiving sink's
+level to `Debug`.
+
+The `log` module also exposes typed script logging configuration,
+including ordinary `ScriptObject` settings and distinct `log.ConsoleSink` and
+`log.FileSink` objects. See
+[Programmatic configuration](nomad-log.md#programmatic-configuration).
+Script factories use the module context's logger and copy the supplied settings;
+discarding the configuration or script handle does not remove a sink.
+
+`<nomad/log/LogSinkObject.hpp>` provides the C++ `LogSinkObject` wrapper.
+Construct it with the owning `Logger&` and a registered `LogSinkId`.
+`getLogger()` returns the owning logger. `getSinkId()` retains the ID even after removal;
+`getSink()` resolves it on each
+call and throws for an unknown or removed sink. Construction also rejects
+unknown or removed IDs. The wrapper does not own or cache the concrete sink;
+destroying it does not remove or deactivate that sink.
+The logger must outlive the wrapper. Coordinate lookup and use with concurrent
+sink removal, just as for `Logger::getSink()`.
+
+`log` registers the wrapper under the independent closed class types
+`log.ConsoleSink` and `log.FileSink`. Both expose read/write `level` and `active`
+properties; only `log.FileSink` exposes file settings. Native property access resolves the sink
+ID on every read and write; removed sinks throw rather than accessing stale
+storage. There is no script constructor; each script sink factory returns
+its corresponding class type. `log.removeSink` has an overload for each type.
+Sink functions reject objects belonging to a different logger.
+Hosts must supply non-null objects matching the declared script type when
+invoking native callbacks directly.
+Type registration is internal to the logging module; C++ hosts obtain the
+registered descriptor from the module's runtime.
+
+The base configuration, level, and sink ID are declared in
+`<nomad/log/LogSink.hpp>`. Each concrete configuration is declared in its sink's
+header: `<nomad/log/ConsoleSink.hpp>`, `<nomad/log/FileSink.hpp>`, or
+`<nomad/log/MemorySink.hpp>`. `<nomad/log/Logger.hpp>` includes these headers and
+declares `LogDeliveryMode`.
+
+```cpp
+nomad::Logger logger;
+nomad::ConsoleSinkConfiguration console;
+console.active = false;
+console.level = nomad::LogLevel::Warning;
+const auto consoleId = logger.createConsoleSink(console);
+
+logger.replaceSinks({consoleId});
+logger.setDeliveryMode(nomad::LogDeliveryMode::Synchronous);
+logger.warning("Configuration applied");
+```
+
+An inactive sink remains owned and addressable but receives no delivery
+callbacks. Use inactive factories to prepare a replacement:
+`replaceSinks(ids)` validates the IDs, flushes pending entries to the currently
+active sinks, retains and activates the specified sinks, and destroys every
+other sink. Requested IDs remain unchanged. Failed validation or delivery does
+not commit the replacement.
+
+`getSink(id)` returns a borrowed `LogSink*`, or null for an unknown or removed
+ID. The const logger overload returns `const LogSink*`. Include the concrete
+sink header when casting to `ConsoleSink`, `FileSink`, or `MemorySink`. The base exposes
+`getActive`/`setActive` and `getLogLevel`/`setLogLevel` for later adjustment.
+The pointer remains valid until that sink is removed, discarded by replacement,
+or destroyed with its logger.
+The global level is checked when submitting a message; sink activation and
+levels are checked when delivering it.
+
+- `removeSink(id)` flushes before destroying the specified sink; an unknown ID
+  throws.
+- `clearAllSinks()` flushes before destroying all sinks, without installing a
+  replacement console sink. It also destroys inactive staged sinks.
+- `clear()` discards pending entries without changing sinks.
+- Removed IDs are never reassigned by that logger. IDs belong to the logger
+  that created them; `isValid()` checks the numeric range, not registry membership.
+- `setDeliveryMode(Synchronous)` flushes the buffered backlog before changing
+  mode. Subsequent accepted messages are delivered before the call returns.
+  `Buffered` preserves the usual host-controlled flushing behavior.
+
+The `nomad::log` namespace offers the same factory, lookup, removal, replacement,
+level, delivery-mode, and flushing operations for the engine logger.
+The former borrowed-pointer `Logger(LogSink*)`, `addSink(LogSink*)`, and
+pointer-based removal APIs are no longer supported.
+
+For custom sinks, derive from `LogSink`, pass a `SinkConfiguration` to its
+constructor, and transfer ownership with `createSink(std::unique_ptr<LogSink>)`.
+Do not delete a pointer obtained from `getSink`. A module providing custom sink
+code must remove its sinks before its native library unloads. Core console,
+file, and memory sink code does not depend on the game or log module remaining loaded.
+
+Submission, delivery, factories, replacement, and removal are serialized.
+Borrowed pointers and concrete sink data still require coordination with any
+thread that may remove a sink or deliver entries. In particular, do not inspect
+or clear a memory sink's entries while another thread writes to it.
+Sink callbacks may change activation/levels, but must not recursively log,
+flush, remove, or replace sinks through the same logger; those operations throw
+instead of recursing or destroying a sink while its callback is running.
+
+Sink exceptions propagate to the caller. A failed delivery batch is consumed,
+not replayed: earlier sinks or entries may already have received it. Explicitly
+handle `flush()` or configuration errors if delivery is required for shutdown.
+Delivery stops at the first exception; custom sinks must use RAII for cleanup
+rather than relying on `end()` being called after a failed callback.
+The logger destructor reports standard exception failures to standard error and
+releases owned sinks without allowing those exceptions to escape.
+
+#### File sinks
+
+Include `<nomad/log/FileSink.hpp>` to inspect a file sink or adjust its rotation
+settings. C++ callers supply an explicit `directory`; relative directories are
+resolved when the sink is created. The selected `log` module supplies
+project-relative defaults through its
+[project logging settings](nomad-log.md#project-logging-schema).
+
+```cpp
+nomad::FileSinkConfiguration file;
+file.directory = projectDirectory / "logs";
+file.name = "application";
+file.active = false;
+const auto fileId = logger.createFileSink(file);
+logger.replaceSinks({fileId});
+logger.info("File logging configured");
+logger.flush();
+```
+
+`name` is a base filename, not a path or extension. It defaults to `application`,
+producing `application.log`. Archives are `application.1.log`,
+`application.2.log`, etc.; `.1` is newest.
+
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| `rotationMode` | `FileRotationMode::Size` | Select `None` or `Size` for ongoing rotation. |
+| `rotateAtStartup` | `true` | Rotate a nonempty existing log once when the sink starts, independently of `rotationMode`. |
+| `maxSizeBytes` | 10 MiB (10,485,760 bytes) | Positive byte limit, used by `Size`. |
+| `maxFiles` | 10 | Number of archives, excluding the active file. Zero discards old active contents when rotating. |
+
+`maxSizeBytes`, `maxFiles`, their getters, and `setRotationLimits` use signed
+`NomadInteger` values. The sink rejects nonpositive byte limits, negative archive
+counts, and limits exceeding the platform's native size capacity. Invalid
+settings are rejected before creating files, even for inactive sinks.
+Invalid limit updates leave both previous settings unchanged.
+
+- `None` disables ongoing rotation, allowing unlimited growth after startup.
+  To append across runs without rotating or pruning archives, also set
+  `rotateAtStartup = false`.
+- Startup rotation does not repeat when disabled/re-enabled, but creating a new
+  sink starts a new lifetime. Empty files are not archived.
+- `Size` rotates before a complete new record would
+  exceed the byte limit. A record includes its final newline. One oversized
+  record is allowed in an empty file; the next record rotates it.
+  With startup rotation disabled, existing content is appended and counted
+  toward the limit.
+- Output preserves message bytes and uses a single LF newline on every platform.
+  The full formatted log entry, including timestamp and source location, counts
+  toward the limit.
+- Rotation prunes matching numbered archives outside retention. Other files are
+  left alone. Lowering retention takes effect at the next rotation.
+
+An active factory creates directories and opens the file immediately, including
+startup rotation unless disabled. An inactive factory validates options without
+filesystem writes. Such a sink starts on its first active delivery callback
+(including an empty logger flush), or an explicit `begin()` call.
+
+`getPath()` returns the resolved active file path. `getRotationMode()`, `getRotateAtStartup()`,
+`getMaxSizeBytes()`, and `getMaxFiles()` inspect rotation settings;
+`setRotationMode()`, `setRotateAtStartup()`, and
+`setRotationLimits(bytes, archives)` adjust them.
+`LogLevel`, `LogDeliveryMode`, and `FileRotationMode` have `NomadInteger`
+underlying types. Logger and sink APIs reject unsupported enum values without
+narrowing them first. C++ consumers must be rebuilt after this representation change.
+The startup flag can be changed before a staged sink starts; changing it after
+startup does not trigger or undo rotation. Other changes affect subsequent writes.
+Coordinate
+these operations with delivery; unlike base activation/level changes, they are
+not independently synchronized. To change the directory or base name, create
+a replacement sink.
+
+Use only one sink/process per output path; external writers and external
+rotation are not supported. Open, write, flush, close, rename, and retention
+failures propagate to the caller. Rotation is not a filesystem transaction:
+an error can leave archives partially shifted. Do not retry an entire failed
+delivery batch, because some records may already have been written.
+
 ### Creation inputs and metadata
 
 API structures use these naming conventions:
@@ -86,14 +413,14 @@ Streaming an ID prints its type and numeric value, for example `CallableId{42}`
 or `CallableId{-1}`.
 
 
-### Object type creation
+### Class registration
 
-`Runtime::createObjectType(name, mode, documentation = {})` creates an object
+`Runtime::registerClass(name, mode, documentation = {})` registers a class
 type and returns its `TypeId`. The mode is required:
-`ObjectTypeMode::Opened` permits external script member declarations, while
-`ObjectTypeMode::Closed` prevents them. Neither mode makes existing properties
+`ClassMode::Opened` permits external script member declarations, while
+`ClassMode::Closed` prevents them. Neither mode makes existing properties
 immutable or prevents the type's own declarations. Native and script objects
-use the same `ObjectType` descriptor; `isOpen()` reports its mode.
+use the same `ClassType` descriptor; `isOpen()` reports its mode.
 
 The runtime owns the descriptor and its name and documentation. Use
 `getType(id)` to retrieve a borrowed descriptor. Empty names, invalid modes,
@@ -107,13 +434,13 @@ which must outlive the descriptor. `Type::getId()` returns the immutable,
 runtime-local ID. Use it when passing an existing descriptor to an ID-based API;
 name lookup does not distinguish callback signatures.
 
-`createObjectType<Descriptor>(name, mode, arguments...)` creates specialized
-`ObjectType` subclasses. It calls
+`registerClass<Descriptor>(name, mode, arguments...)` creates specialized
+`ClassType` subclasses. It calls
 `Descriptor(Runtime*, TypeId, name, mode, arguments...)`, forwarding additional arguments.
-Invalid creation requests are rejected before calling the descriptor constructor.
+Invalid registration requests are rejected before calling the descriptor constructor.
 The constructor initializes the descriptor without registering it; the runtime
 registers the completed descriptor and returns its `TypeId`. The descriptor's
-runtime, ID, name, and mode must match the creation request.
+runtime, ID, name, and mode must match the registration request.
 
 The ID is reserved before construction and is not resolvable through `getType()`
 until the descriptor is registered. Constructors may create other types without
@@ -270,17 +597,17 @@ variable source or a numeric `NomadId` for a parameter source, followed by the
 name and type. `flagVariableAsCaptured` and `flagParameterAsCaptured` provide
 the corresponding source-specific registration APIs.
 
-### Object type property metadata
+### Class type property metadata
 
-`ObjectType` describes both native and script-defined object types. `isOpen()` reports
+`ClassType` describes both native and script-defined class types. `isOpen()` reports
 whether external script declarations may extend it. Closed types are not immutable.
-`Type::asObjectType()` returns the same descriptor as a borrowed `const ObjectType*`
-for object types and their subclasses, including strings, or `nullptr` for other types.
+`Type::asClassType()` returns the same descriptor as a borrowed `const ClassType*`
+for class types and their subclasses, including strings, or `nullptr` for other types.
 
 Register the owner type with the runtime before declaring its properties.
 `Runtime::registerProperty(ownerTypeId, name, valueType)` declares a stored/script
 property and returns a `PropertyId`, or `PropertyId::INVALID` on failure.
-The owner ID is resolved within that runtime and must identify an object type.
+The owner ID is resolved within that runtime and must identify a class type.
 The value type must also be registered with the same runtime and must be public
 and non-void. Repeating a declaration with the same name and type returns its
 existing ID. Conflicting declarations are logged and rejected without changing
@@ -291,17 +618,17 @@ types; openness controls whether scripts may add external declarations.
 `getNativeProperty(id)` returns only native properties. Invalid or unregistered
 IDs return `nullptr`. Include `<nomad/script/Property.hpp>` for `PropertyId`
 and common metadata, and `<nomad/script/NativeProperty.hpp>` for native metadata.
-Use `getId()`, `getObjectType()`, `getName()`, `getValueType()`, and `getDoc()`
+Use `getId()`, `getClassType()`, `getName()`, `getValueType()`, and `getDoc()`
 to inspect a property. `hasExplicitInitializer()` reports whether a stored field
 has a declaration initializer; assignments inside constructor bodies do not set
 this flag. `Runtime::setPropertyHasExplicitInitializer(propertyId, value)` updates
 that metadata for a stored property and rejects invalid IDs and native properties.
-`ObjectType::getProperty(name)`, `getProperty(id)`, and `getProperties()` expose
+`ClassType::getProperty(name)`, `getProperty(id)`, and `getProperties()` expose
 the owner's properties as borrowed const pointers. IDs and pointers remain
 stable as more properties are registered and are valid for the owning runtime's
 lifetime. Property IDs are runtime-wide, not per-object field offsets.
 
-`ObjectType::getFieldIndex(id)` returns the zero-based owner-local slot for a
+`ClassType::getFieldIndex(id)` returns the zero-based owner-local slot for a
 stored/script property. Slots remain stable when properties are appended.
 Native properties do not occupy slots; native, invalid, and other owners'
 property IDs return `NOMAD_INVALID_INDEX`. Slot order follows successful
@@ -315,7 +642,7 @@ source `init` body. Classes without a source `init` have a parameterless constru
 ### Script object storage
 
 `ScriptObject` (include `<nomad/script/ScriptObject.hpp>`) provides fixed
-instance storage for stored properties. Construct it with a `const ObjectType*`
+instance storage for stored properties. Construct it with a `const ClassType*`
 whose field layout has been resolved. The runtime and its type descriptors must
 outlive the object. Native properties do not occupy storage slots.
 
@@ -330,7 +657,7 @@ initialization. Field initializer expressions cannot use or capture `this`;
 bare names resolve normally outside the class fields. Object-valued initializer
 expressions run separately for each instance.
 The type stores its fully qualified initializer name, available through
-`ObjectType::getInitializerName()` (for example, `game.Point$init`).
+`ClassType::getInitializerName()` (for example, `game.Point$init`).
 
 Compile the class and complete field discovery before allocating the object.
 Initialize script-level hub variables with `initializeScripts()` first when
@@ -375,7 +702,7 @@ required script-level hub variables before using this lower-level VM API.
 Native constructors that allocate `ScriptObject` storage must explicitly supply
 any required field values. Direct allocation does not run a defaults-only pass.
 
-`getObjectType()` and `getFieldCount()` describe the instance. `getField(index)`
+`getClassType()` and `getFieldCount()` describe the instance. `getField(index)`
 returns a borrowed const value; `setField(index, value)` copies a value of the
 field's declared type, retaining object references and releasing the previous
 value. Callers must supply the correct value type. Both use owner-local
@@ -404,21 +731,22 @@ native-only.
 ### Native property creation
 
 `Runtime::addProperty(TypeId id, NativePropertyDefinition definition)` registers
-a native property and returns its `PropertyId`. The owner ID must identify an
-object type. Both it and `definition.valueTypeId` are resolved in that runtime;
-IDs are runtime-local, not portable between runtimes. The value type must be
-public and non-void. Host registration is permitted on both open and closed types.
+a native property and returns its `PropertyId`. The owner ID must identify a
+class type in that runtime. `definition.valueType` takes a `const Type*` from the
+same runtime, or a placeholder obtained from its configured compiler's
+`deferType(reference)`. The resolved value type must be public and non-void.
+Host registration is permitted on both open and closed types.
 
 Provide a getter, a setter, or both. A getter-only property is read-only; a
 setter-only property is write-only. The runtime owns the registered name,
 documentation, and callbacks. Captured references must remain valid whenever
 the callbacks are invoked.
 
-For an already registered object type identified by `typeId`:
+For an already registered class type identified by `typeId`:
 
 ```cpp
 const auto propertyId = runtime.addProperty(typeId, {
-    .valueTypeId = runtime.getTypeId("int"),
+    .valueType = runtime.getIntegerType(),
     .name = "answer",
     .getter = [](nomad::VirtualMachine*, nomad::RuntimeValue& value) {
         value.setIntegerValue(42);
@@ -431,11 +759,21 @@ if (propertyId.isInvalid()) {
 }
 ```
 
-Invalid IDs, non-object owners, invalid value types or names, missing callbacks,
+Invalid IDs, non-class owners, invalid value types or names, missing callbacks,
 and conflicting members are logged and return `PropertyId::INVALID` without
 registering a property. Duplicate native properties are rejected even if their
 definitions match. Use the existing property and native member lookup APIs to
 retrieve the registered metadata.
+
+Deferred properties receive their permanent `PropertyId` immediately. Compilation
+resolves their value types before parsing script bodies, in both analysis and
+executable modes. Missing or invalid types fail compilation. Native property
+callbacks cannot run until type resolution completes; registration and analysis
+do not invoke them. Metadata remains available while the type is unresolved.
+Callbacks obtained from unresolved metadata require the owning runtime to
+remain alive, including after the type has resolved.
+The runtime must outlive the compiler, and unresolved placeholders must not be
+used after their owning compiler is destroyed.
 
 ### Native method creation
 
@@ -499,13 +837,17 @@ address. These lookups return `nullptr` when no callable matches.
 The existing function-only lookup and enumeration APIs still exclude methods
 and constructors.
 
-`dumpInstructions(output)` includes every compiled script callable.
-The overload taking a script-callable pointer dumps just that callable.
+Include `<nomad/script/InstructionDump.hpp>` and use
+`dumpInstructions(runtime, output)` to include every compiled script callable.
+`dumpInstructions(runtime, callable, output)` takes a script-callable reference
+and dumps just that callable. These free functions inspect existing compiled code;
+they do not compile or execute scripts. The runtime exposes the data but does
+not own instruction formatting.
 Methods are qualified by their declaring type, and constructor and method call
 targets are identified by name and callable ID.
 
-Use `resolveFunction(name, argumentTypes)`, `resolveMethod(objectType, name,
-argumentTypes)`, or `resolveConstructor(objectType, argumentTypes)` to select an
+Use `resolveFunction(name, argumentTypes)`, `resolveMethod(classType, name,
+argumentTypes)`, or `resolveConstructor(classType, argumentTypes)` to select an
 overload. Inspect the `ResolveResult` before retrieving the selected callable.
 The selected ID or pointer can be retained without repeating name resolution.
 Function overloads are selected by parameter count and types, independently of
@@ -559,7 +901,7 @@ source/bytecode lookups continue to exclude methods and constructors.
 script function, method, or constructor, and `nullptr` for native or invalid IDs.
 Const runtimes return a const interface. `Callable::asScriptCallable()` provides
 the same view from a descriptor. Method and constructor descriptors remain owned
-by their declaring object type; they are not returned by `getFunction(id)` or
+by their declaring class type; they are not returned by `getFunction(id)` or
 `getScriptFunction(id)`.
 
 Include `<nomad/script/Callable.hpp>` for common callable metadata,
@@ -571,7 +913,7 @@ the callable constructors.
 
 `Runtime::registerScriptMethod(typeId, name, parameters, path, source)` and
 `registerScriptConstructor(typeId, parameters, path, source)` publish script
-signatures on a runtime-owned object type. They return an invalid ID and log an
+signatures on a runtime-owned class type. They return an invalid ID and log an
 error for an invalid owner, unsupported parameter types, or duplicate signatures.
 These registration APIs associate members with their receiver type without adding
 an implicit local or a receiver to the explicit parameter list. A parameter named
@@ -607,14 +949,19 @@ throw `NomadConfigurationException` for incorrect types. Required getters also
 reject missing fields. Integer and string arrays are checked element by element.
 `validateSection(path)` permits an absent section but rejects an existing scalar
 or array at that path.
+`getKeys(path)` lists a section's immediate keys; an omitted path lists root keys,
+and a missing section returns an empty list. `getSectionArray(path)` returns
+independently owned configuration documents for table-array entries, distinguishes
+missing arrays from empty ones, and rejects non-table elements.
 
 Modules supply their own defaults and validate constraints such as positive
 dimensions and valid resource paths. The configuration API keeps the storage
 format out of module code.
 
-Project loading, discovery, compatibility checks, and module configuration
-validation report configuration failures through `NomadConfigurationException`.
-Hosts can handle these failures with a single exception type.
+Project loading, discovery, compatibility checks, and module configuration type
+validation report failures through `NomadConfigurationException`. Native sink
+constraints checked by logging configuration propagate their original
+`NomadException` errors.
 
 The compiler source loader reads `scripts.directories` independently of game
 settings. `readScriptDirectories(configuration)` returns normalized project-relative
@@ -664,9 +1011,68 @@ Use `std::get_if<ConstantId>(member)` or the corresponding alternative to
 inspect a member, then pass the ID directly to its typed API. Function overloads
 use `HubFunctions::ids`; generic families use `HubTypeFamily::argumentCount`.
 
-Register native APIs under their qualified names using the existing runtime
-registration functions. For example, register hub `"os"`, enum `"os.Platform"`,
-and constant `"os.platform"`. Scripts may add distinct members only to native
+Use `registerHubNativeFunction(hubId, name, function, parameters, returnType, documentation)`
+to register a native function with a local member name, such as `"info"` in hub
+`"log"`. The name must be a simple identifier, not a qualified name.
+The function is available under its qualified name and shares overload resolution,
+documentation, and compiler-supplied source parameters with `registerNativeFunction`.
+Both open and closed hubs accept host registrations. Invalid hub IDs, names,
+callbacks, type references, and conflicting declarations are logged and return
+`CallableId::INVALID` without adding a function. Referenced types must belong to
+the receiving runtime; hidden source parameter types are supported.
+
+Use `registerHubScriptFunction(hubId, name, path, source)` to register a script
+function descriptor with a simple local name. It returns a `CallableId` and
+preserves the path and source in the shared callable catalog, just as
+`registerScriptFunction` does. Registration alone does not compile the body or
+make it executable. Both hub modes accept host registration. Invalid owners,
+nonlocal names, conflicting members, and existing callable names are logged and
+return `CallableId::INVALID`; this API does not introduce script overloads.
+Use compiler source registration for normal source compilation.
+
+Use `registerHubVariable(hubId, name)` to declare a variable using a simple local
+name. It returns a `ContextVariableId` for the same storage used by
+`registerHubVariable(qualifiedName)`. Variables start without a resolved type;
+script assignments resolve their types through the existing compilation path.
+For host-declared variables, supply a compiled parameterless `void` initialization
+function through `setScriptInitializer` when no generated script initializer exists.
+They remain writable in both open and closed hubs. Invalid owners, nonlocal
+names, duplicates, conflicts, and registration after script initialization are
+logged and return `ContextVariableId::INVALID`.
+
+Use `registerHubClass(hubId, name, mode, documentation = {})` to register a class
+with a local name, such as `"ConsoleSink"` in hub `"log"`. It returns a `TypeId` and
+exposes the class as `log.ConsoleSink`. The name must be a simple identifier.
+The hub may be open or closed; `ClassMode` independently controls whether scripts
+may extend the class. Invalid hub IDs, local names, class modes, and conflicting
+declarations are logged and return `TypeId::INVALID`.
+
+`registerHubClass<Descriptor>(hubId, name, mode, arguments...)` also supports
+specialized `ClassType` descriptors. It forwards the qualified name, mode, and
+additional arguments through the same registration path as
+`registerClass<Descriptor>`. Properties, constructors, and methods are then
+registered using the returned class ID and the existing member APIs.
+
+Use `registerHubEnum(hubId, name, values, documentation = {})` to register an enum
+with a local name, such as `"Platform"` in hub `"os"`. Enum value names must also
+be simple identifiers. It returns a `TypeId`; the enum and its typed constants
+are available as `os.Platform` and `os.Platform.ValueName`. Empty value lists,
+duplicate names or numeric values, and conflicting declarations fail without
+publishing the enum or any of its values.
+
+Use `registerHubConstant(hubId, name, value, type)` to register a locally named
+constant, such as `"platform"` in hub `"os"`. It returns a `ConstantId` and
+copies the value using the supplied runtime-owned, public, non-void type.
+Object values are retained; the caller remains responsible for releasing its
+original reference. The value must match the supplied type, just as with
+`registerConstant`.
+
+Both APIs accept open and closed hubs. Invalid hub IDs, nonlocal names, invalid
+types, and conflicts are logged and return the corresponding invalid ID.
+Existing qualified-name registration APIs remain available.
+
+Other native APIs still use qualified names with their existing runtime
+registration functions. Scripts may add distinct members only to native
 hubs registered as open, using matching `open hub` blocks. Existing writable
 members remain assignable regardless of hub mode. Hub references must be fully
 qualified, including in initializers and signatures; nesting only prefixes
@@ -699,6 +1105,42 @@ Create a host with `ModuleHost::create(...)`, which returns a
 `std::unique_ptr<ModuleHost>`. `ModuleHost` is a pure virtual interface; callers
 do not construct or depend on its concrete implementation.
 
+`ModuleContext::compiler` is the host-owned compiler, available during native
+module registration in application and analysis sessions. `ModuleHost::getCompiler()`
+returns that same compiler. Use it for deferred types and compilation targets;
+host compilation and phase callbacks use this instance. Packaging supplies neither
+a runtime nor a compiler. Shutdown callbacks run before the compiler and runtime
+are destroyed, and both are destroyed before module libraries are unloaded.
+
+`<nomad/compiler/Compilation.hpp>` provides `CompilationResult` and
+`compileSources(batch, compiler, target)`. Compilation uses the supplied compiler
+and does not create a runtime, replace the compiler, or execute scripts.
+Results own diagnostics and error/warning counts; `succeeded()` means there are
+no errors, so warnings alone do not fail compilation.
+`<nomad/compiler/Diagnostic.hpp>` provides `DiagnosticSeverity`, `Diagnostic`,
+and `formatDiagnostic`, independently of compiler contexts.
+`formatDiagnostic(diagnostic, stream)` writes to an existing `std::ostream`
+without adding a newline. The string-returning overload produces the same text.
+
+Exports use explicit steps: load sources, compile with the configured compiler,
+check the result, then format the compiled runtime API. Neither instruction
+dumping nor documentation generation loads sources, creates a compiler, or
+compiles scripts.
+
+```cpp
+const auto result = session->compileSources(session->loadSources(scriptRoots));
+if (result.succeeded()) {
+    nomad::dumpInstructions(*session->getRuntime(), instructionOutput);
+    nomad::generateDocumentation(session->getRuntime(), documentationOutput);
+}
+```
+
+Include `<nomad/script/InstructionDump.hpp>` and
+`<nomad/script/Documentation.hpp>` for these output functions. Callers handle
+compilation diagnostics and decide whether to create or replace output files.
+The compiler CLI does not emit instructions or overwrite documentation when
+compilation fails; an unknown requested dump function is an error.
+
 `ModuleContext::projectMetadata` always points to immutable, host-owned
 `ProjectMetadata` and remains valid throughout the module lifetime.
 Omitted metadata defaults to blank fields, including for standalone tooling.
@@ -720,7 +1162,7 @@ execution.
 
 ## Source input and compilation
 
-The compiler consumes source text, not filesystem paths. `SourceText` owns a
+The compiler registers source snapshots. `SourceText` owns a
 `sourceName` (used in diagnostics), `text`, and an optional `filePath`. The name
 does not need to exist on disk and is never interpreted as a path. `filePath`
 identifies a backing file, not a request to read it: the supplied text is always
@@ -728,6 +1170,9 @@ authoritative, including unsaved editor changes and files not yet created.
 Untitled documents and interpreter input can leave it unset.
 `ScriptSource` pairs that text with an explicit `scriptName`. This is the
 source-level name used to register the script's compiled runtime function.
+It also retains an `owner` (empty for application sources) and `relativePath`
+when loaded from a root. Module sources use `$owner.relative.file` script names;
+their diagnostic source names remain paths or editor document names.
 `SourceBatch` holds script sources and any diagnostics from loading them.
 
 ```cpp
@@ -758,6 +1203,13 @@ functions. Duplicate script names are reported immediately to the supplied
 compilation refuses to proceed if it already contains errors. Use a fresh runtime
 for independent analysis snapshots, or provide a runtime containing the host APIs
 needed by the scripts. Compilation does not execute scripts.
+
+`registerSourceRoots(roots)` configures additional `SourceRoot` entries before
+the first `registerSources` call. Each entry supplies a path, optional owner
+name, and a `required` flag. The compiler discovers these roots with the first
+batch (or when compilation starts without a batch); supplied snapshots override
+matching backing files. Module hosts configure their resolved module roots
+automatically, including for compiler tools using the host's runtime.
 
 Custom statements register with
 `registerParseStatementFn(name, availability, parser, preParser)`.
@@ -794,11 +1246,12 @@ disk snapshots **before their contents are read**, so a locked disk file does
 not block analysis. An explicit missing `.nomad` file also uses its matching
 buffer without a missing-path error. Other loading failures are still reported.
 
-File-backed overrides match by absolute, lexically normalized `filePath`, not by
-`scriptName` or `sourceName`. Relative paths use the current working directory.
-Matching is case-insensitive on Windows and case-sensitive elsewhere. This is a
-lexical policy: it does not resolve symbolic links, hard links, or filesystem
-case-sensitivity settings (including case-sensitive Windows directories).
+File-backed overrides match by absolute `filePath` with canonical parent
+directories, not by `scriptName` or `sourceName`. Relative paths use the current
+working directory. Matching is case-insensitive on Windows and case-sensitive
+elsewhere. Directory aliases are resolved; hard links and filesystem
+case-sensitivity settings (including case-sensitive Windows directories) do not
+change this identity policy.
 The caller decodes document URIs into filesystem paths.
 
 A discovered file keeps its disk-derived script name and takes the override's
@@ -810,22 +1263,39 @@ Duplicate file identities or duplicate untitled `sourceName` values produce
 loading errors, not last-write-wins behavior. Different documents with the same
 script name remain ordinary compiler collisions.
 
+Use `loadSourceRoots(roots, overrides)` for owner-aware loading or
+`ModuleHost::loadSources(paths, overrides)` to combine application paths and
+configured module roots. Module ownership takes precedence over overlapping
+application roots. A discovered or unsaved module file receives its
+owner-qualified identity regardless of the override's supplied script name.
+Repeated disk paths are deduplicated; conflicting module ownership and module
+dotted-name collisions are loading errors.
+
+Every module contributes its fixed, optional `<module-directory>/scripts` root,
+including programmatic `ModuleManifest` descriptors. Module manifests cannot
+configure that directory. A missing directory contributes no sources; a
+non-directory path is an error. Application script roots remain configurable.
+
 ```cpp
 const std::vector<nomad::ScriptSource> buffers{
     {"entities.player", {"editor:player", unsavedText, playerPath}}
 };
 const auto batch = nomad::loadSourcePaths(scriptRoots, buffers);
-const auto result = nomad::checkSources(batch);
+const auto result = nomad::compileSources(batch, compiler, nomad::CompilationTarget::Analysis);
 ```
 
 The loader returns owned, sorted snapshots without changing the disk or buffers.
 Rebuild a batch with the latest buffers for each analysis; remove an override
 when its document closes to use disk text again. Document versions, project
 association and stale-analysis rejection belong to the editor adapter, not the
-compiler. `checkSources(batch, runtime)` from
-`<nomad/compiler/CompilerTools.hpp>` returns the same `CompilationResult` as
-`checkPaths`, without reading files. Loading warnings permit compilation; loading
-errors stop it before parsing.
+compiler. `compileSources(batch, compiler, target)` accepts snapshots without
+reading their backing files; configured source roots can contribute additional
+scripts. Loading warnings permit compilation; loading errors stop it before
+parsing. Create and configure the runtime and compiler explicitly, then use
+`compileSources` with `CompilationTarget::Analysis` for analysis or
+`CompilationTarget::Executable` for executable output. For module-aware
+compilation, use the module host's compilation API so its configured compiler
+and module lifecycle are preserved.
 
 ## Persistent interpretation
 
@@ -914,7 +1384,7 @@ registers a type family. The factory has the signature
 the owning runtime, reserved specialization ID, and resolved type arguments.
 It returns a fully constructed, unregistered descriptor carrying that runtime
 and ID. It must not register the
-returned descriptor itself, including through `createObjectType`.
+returned descriptor itself, including through `registerClass`.
 
 The runtime validates and registers the descriptor, then calls the optional
 initializer with `(Runtime*, TypeId)`. The ID identifies the registered
@@ -998,9 +1468,9 @@ constructor with `addConstructor`, usually in the type-family
 initializer. Compiled scripts and the interpreter both support inferred
 construction through the existing native constructor execution paths.
 
-### Native object types and constructors
+### Native class types and constructors
 
-`ObjectType` describes an object type and its type arguments. Its default value
+`ClassType` describes a class type and its type arguments. Its default value
 is null, and its text representation is its type name. Specialized types may
 provide other default values and formatting.
 
@@ -1011,7 +1481,7 @@ through `freeValue` when they are no longer needed.
 Register a constructor through `Runtime::addConstructor(typeId, definition)`.
 `NativeConstructorDefinition` supplies parameter definitions, a `function` callback, and
 documentation. By default, the constructor creates its declaring type.
-`ObjectType::getConstructors()`
+`ClassType::getConstructors()`
 lists that type's registered constructors as borrowed `const Constructor*`
 pointers, in registration order. These pointers remain valid until the runtime
 is destroyed. A constructor returning another type is listed under its declaring
@@ -1020,7 +1490,7 @@ type, not its result type.
 Scripts invoke constructors with `new` and the type's name:
 
 ```cpp
-const auto typeId = runtime.createObjectType("Example", nomad::ObjectTypeMode::Closed);
+const auto typeId = runtime.registerClass("Example", nomad::ClassMode::Closed);
 const auto registeredType = runtime.getType(typeId);
 if (!registeredType) {
     throw nomad::NomadException("Failed to create Example type");
@@ -1046,9 +1516,9 @@ list for a parameterless constructor.
 When a class creates a different kind of object, use
 `addConstructor(typeId, createdTypeId, definition)`.
 Different overloads of one class may then create different types. The created type must be a public
-object type.
+class type.
 
-All IDs are local to the receiving runtime. Invalid or non-object owner/result IDs,
+All IDs are local to the receiving runtime. Invalid or non-class owner/result IDs,
 invalid parameter IDs, and missing callbacks are rejected before a constructor is
 published. Definitions are owned inputs; modifying one after registration does not
 change the registered constructor. `addConstructor` returns its `CallableId`.
@@ -1075,10 +1545,155 @@ a type with that name and its constructors with `addConstructor`.
 Specializations are reused on subsequent requests through
 `getParameterizedConstructorName(name, arguments)`.
 
+## Deferred native function signatures
+
+Native functions can reference script types before those declarations have been
+compiled. Pass a generated `typeReference()` to `Compiler::deferType`, then use
+the returned `const DeferredType*` with ordinary `defParameter` and return-type
+arguments. Concrete runtime types and placeholders can be mixed in one signature:
+
+```cpp
+using Settings = nomad::generated::log::log_SinkConfiguration;
+const auto* settingsType = compiler.deferType(Settings::typeReference());
+const auto id = runtime.registerNativeFunction(
+    "isActive",
+    [&bindings](nomad::VirtualMachine* machine) {
+        const auto settings = Settings(bindings, machine->getParameter(0).getObjectValue());
+        machine->setBooleanResult(settings.getActive());
+    },
+    {nomad::defParameter("configuration", settingsType, "")},
+    runtime.getBooleanType(),
+    ""
+);
+```
+
+Registration immediately returns the permanent `CallableId` and publishes the
+declaration's name and parameter names. `NativeFunction::isSignatureResolved()`
+reports readiness. Before resolution, parameter and return pointers hold
+compiler-owned placeholders; `getTypeName()` exposes their declared names.
+Placeholders have invalid type IDs and are not published in the runtime's type
+catalog. They cannot initialize, copy, free, or format values or provide storage.
+Calling an unresolved native function or obtaining its callback throws.
+
+Compilation resolves native signatures after script pre-parsing and the `parse`
+callbacks, before parsing function bodies. This also happens in analysis mode,
+without running callbacks or script initializers. Missing types, invalid types,
+duplicate overload signatures, and incompatible overload sets produce compilation
+diagnostics. Script-dependent signatures are not usable in earlier compiler
+callbacks or compile-time expressions evaluated before this boundary.
+
+Resolution preserves callable IDs and does not republish declarations on later
+compilations. References resolve independently in each runtime. Hosts with already
+declared types can explicitly call `Compiler::resolveDeferredTypes()`;
+it throws on unresolved types or invalid overloads. Resolving a signature does not
+compile a script constructor or resolve a generated wrapper's field binding.
+
+The compiler owns `DeferredTypeTarget` objects, which expose the requested
+`TypeReference`, a diagnostic description, and `resolve(const Type*)`. Register
+additional targets with `Compiler::registerDeferredTypeTarget`; null targets and
+empty type names are errors. Targets must use the supplied canonical runtime type
+or throw if it is invalid for their destination. Their referenced destinations
+must outlive compilation.
+
+Native function parameter and return targets are collected automatically at the
+resolution boundary, including functions registered by `parse` callbacks.
+`FunctionParameterTypeTarget` identifies its destination by callable ID and
+parameter index; `FunctionReturnTypeTarget` uses the callable ID. They never
+retain addresses into a parameter vector. All requested names must resolve before
+targets are applied, and native signatures and overload sets must validate before
+callbacks become usable. Successful resolution releases the targets; compilation
+failure aborts startup.
+
+For custom native-function targets, `Runtime::getMutableNativeFunction(id)`
+returns the destination or null for a non-native/invalid ID.
+`resolveParameterType(index, type)` and `resolveReturnType(type)` assign only
+matching canonical types belonging to that function's runtime. They reject
+invalid indices, non-deferred slots, and completed signatures, and leave the
+function uncallable. Use `Runtime::validateNativeFunctionSignatures()` after
+applying targets to validate all pending signatures and overload sets before
+marking them complete. `NativeFunction::completeSignatureResolution()` validates
+the individual signature; it is the final
+step used by runtime validation, not a substitute for overload-set validation.
+
+`Compiler::deferType` reuses one placeholder per name in that compiler and rejects
+empty names. Resolution replaces signature pointers with canonical runtime types;
+it does not turn placeholders into forwarding types. All requested placeholder
+names must exist, even if a placeholder has no targets. The compiler must outlive
+pending declarations and custom targets; after successful resolution, native
+signatures no longer depend on its placeholders. Failed compilation aborts startup.
+
+Deferred signatures currently support free native functions, including hub
+functions, through the VM-callback API. Native properties, methods, constructors,
+and automatic C++ object/enum conversion in the typed callable adapter are not
+included.
+
+## Typed native functions
+
+For primitive and string functions, `registerNativeFunction` can infer script
+parameter and return types from a C++ callable:
+
+```cpp
+nomad::NomadInteger measure(const nomad::NomadString& text, nomad::NomadFloat scale) {
+    return static_cast<nomad::NomadInteger>(text.size()) *
+        static_cast<nomad::NomadInteger>(scale);
+}
+
+const auto id = runtime.registerNativeFunction(
+    "measure",
+    measure,
+    {
+        {"text", NomadParamDoc("The text to measure.")},
+        {"scale", NomadParamDoc("The multiplier.")}
+    },
+    NomadDoc("Measures scaled text length.")
+);
+```
+
+The typed overload omits the explicit return type. It extracts stack arguments,
+calls the C++ function, and stores its result. Parameter names and documentation
+remain explicit; there must be exactly one `TypedParameterDefinition` per C++
+argument. Invalid counts, empty parameter names, and null function pointers are
+logged and return `CallableId::INVALID` without publishing a function.
+
+Use the corresponding
+`registerHubNativeFunction(hubId, localName, callable, parameters, documentation)`
+overload for a hub member. Both APIs share the existing callable catalog and
+overload resolution with VM-callback registrations.
+
+Supported C++ values are `NomadBoolean`, `NomadInteger`, `NomadFloat`, and
+`NomadString`. Arguments may be passed by value or const lvalue reference.
+Results are returned by value, or `void`. The types must match exactly: for
+example, use `NomadInteger` rather than `int`, and `NomadFloat` rather than
+`double`. Integer arguments and results preserve the full `NomadInteger` range.
+
+Argument references are valid only for the duration of the callback; do not
+retain their addresses. A string passed by value is a C++ copy that the callback
+may modify without changing the script argument. String results are copied into
+owned Nomad strings, including embedded null characters.
+
+Free functions (including `noexcept`) and copyable non-generic lambdas, including
+captured and mutable lambdas, are supported. Registration stores its own callable
+by value; mutable capture state persists between calls. Reference captures remain
+the host's responsibility and must outlive the registered callable.
+
+Objects, enums, hidden source arguments, methods, and arbitrary C++ numeric
+conversions are not inferred. Mutable-reference arguments, volatile-reference
+arguments, rvalue-reference arguments, reference results, generic lambdas,
+move-only callables, and member-function pointers are rejected at compile time.
+Disambiguate overloaded C++ functions explicitly before registration.
+
+Callback exceptions follow the existing VM-callback contract; the typed adapter
+adds no exception translation or additional unwind cleanup. The existing
+compiled-call fault path can retain formatted temporary strings when a native
+callback throws.
+
+Keep the existing VM-callback overload for bindings needing direct VM access or
+explicit script types.
+
 ## Native object methods
 
 Use `Runtime::addMethod(typeId, NativeMethodDefinition{...})`
-for methods on a registered object type. Read the instance inside the callback:
+for methods on a registered class type. Read the instance inside the callback:
 
 ```cpp
 [](nomad::VirtualMachine* vm) {
@@ -1088,10 +1703,10 @@ for methods on a registered object type. Read the instance inside the callback:
 ```
 
 Use `registerNativeFunction` for a global function and `addMethod` for a
-method on an object type identified by its runtime-local `TypeId`.
+method on a class type identified by its runtime-local `TypeId`.
 Global function lookup and enumeration exclude methods.
 
-`ObjectType::getMethods()` lists the type's registered methods as borrowed
+`ClassType::getMethods()` lists the type's registered methods as borrowed
 `const Method*` pointers, in registration order.
 The pointers remain valid until the runtime is destroyed, even when additional
 methods are registered. Use a method's `getId()` with Runtime's callable accessors.
@@ -1118,11 +1733,11 @@ The definition supplies `valueTypeId`, a non-empty `std::vector<TypeId>` named
 `indexTypes`, `getter`, `setter`, and `documentation`.
 The index vector specifies the number and types of indices. All IDs are local
 to the receiving runtime, and all value/index types must belong to that runtime
-and be public, non-void types. An object type may register one indexer per index
+and be public, non-void types. An class type may register one indexer per index
 count; lookup uses the receiver type and number of indices, not index-type
 overloading.
 
-Registration and `getNativeIndexerId(objectType, indexCount)` return an
+Registration and `getNativeIndexerId(classType, indexCount)` return an
 `IndexerId`, or `IndexerId::INVALID` on failure or missing lookup. Registration
 failures are logged. Include `<nomad/script/NativeMember.hpp>` for the ID and
 `NativeIndexerInfo`. IDs are runtime-local and remain stable as more
@@ -1130,7 +1745,7 @@ indexers are registered. They do not implicitly convert to integers or other
 ID categories. `getNativeIndexerInfo(id)` returns
 `std::optional<NativeIndexerInfo>`, empty for invalid or unregistered IDs.
 
-Invalid or non-object owner IDs, invalid value/index IDs, and definitions with
+Invalid or non-class owner IDs, invalid value/index IDs, and definitions with
 neither callback are rejected without publishing an indexer. Definitions are
 owned inputs; modifying one after registration does not change the registered
 indexer.
@@ -1142,18 +1757,18 @@ if (info) {
 }
 ```
 
-The object type owns each indexer's metadata. `ObjectType::getNativeIndexer(indexCount)`
+The class type owns each indexer's metadata. `ClassType::getNativeIndexer(indexCount)`
 returns a borrowed `const NativeIndexerInfo*`, or `nullptr` when absent.
-`ObjectType::getNativeIndexers()` enumerates that type's indexers, while
+`ClassType::getNativeIndexers()` enumerates that type's indexers, while
 `Runtime::getNativeIndexers()` enumerates the runtime-wide borrowed catalog in
 registration order. Both enumerate const metadata pointers; these pointers
 remain valid as more indexers are registered, until the runtime destroys their
 owning types. `getNativeIndexerInfo` returns a metadata copy.
 
-Hosts retaining a mutable registered object type may also call
-`ObjectType::registerNativeIndexer(runtime, info)`. This existing low-level
+Hosts retaining a mutable registered class type may also call
+`ClassType::registerNativeIndexer(runtime, info)`. This existing low-level
 operation accepts `NativeIndexerInfo`; supply an invalid ID and that object
-type as `info.objectType`. The same registration rules
+type as `info.classType`. The same registration rules
 apply; foreign-runtime types, preassigned IDs, and duplicate index counts are
 rejected without changing the owner or catalog.
 
@@ -1161,7 +1776,7 @@ Omit the setter for read-only indexing, or omit
 the getter for write-only indexing. Invalid access is rejected during compilation.
 
 ```cpp
-const auto indexerId = runtime.addIndexer(objectType->getId(), {
+const auto indexerId = runtime.addIndexer(classType->getId(), {
     .valueTypeId = runtime.getStringType()->getId(),
     .indexTypes = {runtime.getIntegerType()->getId()},
     .getter = [](nomad::VirtualMachine* machine) {
@@ -1255,7 +1870,7 @@ runtime.addIterable(sourceType->getId(), {
 
 `NativeInterableDefinition` supplies the element type ID and a
 `NativeMethodDefinition` for the factory. All IDs are runtime-local. The source
-must be an object type, and the element type must be registered, public, and
+must be a class type, and the element type must be registered, public, and
 non-void. The factory must have a callback, take no arguments (including
 compiler-supplied parameters), and return the matching iterator type.
 Duplicate associations, conflicting member names, and invalid registrations throw
@@ -1266,13 +1881,13 @@ after registration does not change the registered factory.
 `getIterableInfo(sourceType)` returns an optional association containing its
 factory ID.
 
-The source `ObjectType` owns its iterable association. Include
+The source `ClassType` owns its iterable association. Include
 `<nomad/script/Type.hpp>` for `IterableInfo`.
-`ObjectType::getIterableInfo()` returns an optional snapshot containing
+`ClassType::getIterableInfo()` returns an optional snapshot containing
 the element type, iterator type, and factory `CallableId`. Runtime lookup returns
 the same snapshot, or an empty optional for a non-iterable or foreign-runtime type.
-Hosts retaining a mutable registered object type may call
-`ObjectType::registerIterableType(runtime, elementType, factory)` directly;
+Hosts retaining a mutable registered class type may call
+`ClassType::registerIterableType(runtime, elementType, factory)` directly;
 the same ownership, signature, and duplicate-registration checks apply. The
 already registered factory must belong to the source type and take no arguments,
 and its return type must match the iterator type for the element type.
@@ -1344,7 +1959,7 @@ output's previous contents.
 
 ```cpp
 const auto propertyId = runtime.addProperty(typeId, {
-    .valueTypeId = runtime.getTypeId("float"),
+    .valueType = runtime.getFloatType(),
     .name = "value",
     .getter = [](nomad::VirtualMachine* vm, nomad::RuntimeValue& result) {
         result.setFloatValue(vm->getThisAs<MyObject>()->getValue());
@@ -1359,7 +1974,7 @@ if (propertyId.isInvalid()) {
 }
 ```
 
-Members require a registered object type. Property setters mutate that instance,
+Members require a registered class type. Property setters mutate that instance,
 not the variable holding its reference.
 
 ## Object reference helpers

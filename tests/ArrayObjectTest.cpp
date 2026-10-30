@@ -10,6 +10,7 @@
 #include <nomad/collections/ListObject.hpp>
 #include <nomad/collections/ListType.hpp>
 
+#include <nomad/log/Logger.hpp>
 #include <nomad/log/MemorySink.hpp>
 
 #include <nomad/script/Runtime.hpp>
@@ -72,9 +73,9 @@ TrackedArrayElement::~TrackedArrayElement() {
     ++m_destroyed;
 }
 
-class FailingElementType final : public ObjectType {
+class FailingElementType final : public ClassType {
 public:
-    explicit FailingElementType(Runtime* runtime, TypeId id): ObjectType(runtime, id, "FailingElement", ObjectTypeMode::Closed) {}
+    explicit FailingElementType(Runtime* runtime, TypeId id): ClassType(runtime, id, "FailingElement", ClassMode::Closed) {}
 
     [[nodiscard]] NomadString getTypeName() const override;
     void toString(const RuntimeValue& value, NomadString& text) const override;
@@ -106,11 +107,11 @@ void FailingElementType::initValue(RuntimeValue& value) const {
 
 void FailingElementType::freeValue(RuntimeValue& value) const {
     ++freed;
-    ObjectType::freeValue(value);
+    ClassType::freeValue(value);
 }
 
 void FailingElementType::copyValue(const RuntimeValue& source, RuntimeValue& destination) const {
-    ObjectType::copyValue(source, destination);
+    ClassType::copyValue(source, destination);
     if (failCopy) {
         throw NomadException("Element copy failed");
     }
@@ -123,15 +124,16 @@ BOOST_AUTO_TEST_SUITE(array_objects)
 BOOST_AUTO_TEST_CASE(invalid_indices_log_errors_and_return_fresh_owned_defaults) {
     Runtime runtime;
     struct LogCapture {
-        MemorySink sink;
+        LogSinkId sinkId = log::createMemorySink();
+        MemorySink& sink = *static_cast<MemorySink*>(log::getSink(sinkId));
         LogCapture() {
             log::flush();
-            log::addSink(&sink);
+            sink.clear();
         }
-        ~LogCapture() { log::removeSink(&sink); }
+        ~LogCapture() { log::removeSink(sinkId); }
     } capture;
     IntegerType integers(&runtime, TypeId::INVALID);
-    ListType lists(&runtime, TypeId::INVALID, "List<int>", ObjectTypeMode::Closed, &integers);
+    ListType lists(&runtime, TypeId::INVALID, "List<int>", ClassMode::Closed, &integers);
     const auto before = NomadObject::getLiveObjectCount();
     {
         Array1dObject array(&lists, 1);
@@ -171,7 +173,7 @@ BOOST_AUTO_TEST_CASE(invalid_read_default_initialization_failure_releases_partia
 BOOST_AUTO_TEST_CASE(read_results_own_values_after_array_destruction_for_every_rank) {
     Runtime runtime;
     IntegerType integers(&runtime, TypeId::INVALID);
-    ListType lists(&runtime, TypeId::INVALID, "List<int>", ObjectTypeMode::Closed, &integers);
+    ListType lists(&runtime, TypeId::INVALID, "List<int>", ClassMode::Closed, &integers);
     const auto before = NomadObject::getLiveObjectCount();
     std::array<RuntimeValue, 6> results;
     {
@@ -310,9 +312,9 @@ BOOST_AUTO_TEST_CASE(dimensions_and_element_types_are_validated_before_allocatio
     BOOST_CHECK_THROW(Array1dObject(nullptr, 1), NomadException);
     BOOST_CHECK_THROW(Array2dObject(&voidType, 1, 1), NomadException);
     BOOST_CHECK_THROW(Array3dObject(&internalType, 1, 1, 1), NomadException);
-    BOOST_CHECK_THROW(Array1Type(&runtime, TypeId::INVALID, "Invalid", ObjectTypeMode::Closed, nullptr), NomadException);
-    BOOST_CHECK_THROW(static_cast<void>(Array2Type(&runtime, TypeId::INVALID, "Invalid", ObjectTypeMode::Closed, &voidType)), NomadException);
-    BOOST_CHECK_THROW(static_cast<void>(Array3Type(&runtime, TypeId::INVALID, "Invalid", ObjectTypeMode::Closed, &internalType)), NomadException);
+    BOOST_CHECK_THROW(Array1Type(&runtime, TypeId::INVALID, "Invalid", ClassMode::Closed, nullptr), NomadException);
+    BOOST_CHECK_THROW(static_cast<void>(Array2Type(&runtime, TypeId::INVALID, "Invalid", ClassMode::Closed, &voidType)), NomadException);
+    BOOST_CHECK_THROW(static_cast<void>(Array3Type(&runtime, TypeId::INVALID, "Invalid", ClassMode::Closed, &internalType)), NomadException);
 }
 
 BOOST_AUTO_TEST_CASE(default_values_include_zero_primitives_and_empty_strings) {
@@ -354,8 +356,8 @@ BOOST_AUTO_TEST_CASE(array_defaults_are_lazy_shared_and_separate_by_descriptor) 
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue survivor;
     {
-        Array2Type type(&runtime, TypeId::INVALID, "Array2<int>", ObjectTypeMode::Closed, &integers);
-        Array2Type otherType(&runtime, TypeId::INVALID, "Array2<int>", ObjectTypeMode::Closed, &integers);
+        Array2Type type(&runtime, TypeId::INVALID, "Array2<int>", ClassMode::Closed, &integers);
+        Array2Type otherType(&runtime, TypeId::INVALID, "Array2<int>", ClassMode::Closed, &integers);
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
         BOOST_TEST(type.getTypeName() == "Array2<int>");
         BOOST_TEST(type.getDimensionCount() == 2u);
@@ -389,9 +391,9 @@ BOOST_AUTO_TEST_CASE(each_array_rank_has_an_empty_default_that_rejects_writes) {
     IntegerType integers(&runtime, TypeId::INVALID);
     const auto before = NomadObject::getLiveObjectCount();
     {
-        Array1Type lineType(&runtime, TypeId::INVALID, "Array1<int>", ObjectTypeMode::Closed, &integers);
-        Array2Type gridType(&runtime, TypeId::INVALID, "Array2<int>", ObjectTypeMode::Closed, &integers);
-        Array3Type volumeType(&runtime, TypeId::INVALID, "Array3<int>", ObjectTypeMode::Closed, &integers);
+        Array1Type lineType(&runtime, TypeId::INVALID, "Array1<int>", ClassMode::Closed, &integers);
+        Array2Type gridType(&runtime, TypeId::INVALID, "Array2<int>", ClassMode::Closed, &integers);
+        Array3Type volumeType(&runtime, TypeId::INVALID, "Array3<int>", ClassMode::Closed, &integers);
         for (auto* type : std::array<ArrayType*, 3>{&lineType, &gridType, &volumeType}) {
             const auto dimensions = type->getDimensionCount();
             RuntimeValue value;
@@ -425,9 +427,9 @@ BOOST_AUTO_TEST_CASE(rank_specific_typed_factories) {
     IntegerType integers(&runtime, TypeId::INVALID);
     const auto before = NomadObject::getLiveObjectCount();
     {
-        Array1Type lineType(&runtime, TypeId::INVALID, "Array1<int>", ObjectTypeMode::Closed, &integers);
-        Array2Type gridType(&runtime, TypeId::INVALID, "Array2<int>", ObjectTypeMode::Closed, &integers);
-        Array3Type volumeType(&runtime, TypeId::INVALID, "Array3<int>", ObjectTypeMode::Closed, &integers);
+        Array1Type lineType(&runtime, TypeId::INVALID, "Array1<int>", ClassMode::Closed, &integers);
+        Array2Type gridType(&runtime, TypeId::INVALID, "Array2<int>", ClassMode::Closed, &integers);
+        Array3Type volumeType(&runtime, TypeId::INVALID, "Array3<int>", ClassMode::Closed, &integers);
         const std::unique_ptr<Array1dObject> line(lineType.createObject(NomadInteger{2}));
         const std::unique_ptr<Array2dObject> grid(gridType.createObject(NomadInteger{2}, NomadInteger{3}));
         const std::unique_ptr<Array3dObject> volume(
@@ -450,7 +452,7 @@ BOOST_AUTO_TEST_CASE(nested_defaults_share_arrays_but_not_mutable_lists) {
     IntegerType integers(&runtime, TypeId::INVALID);
     const auto before = NomadObject::getLiveObjectCount();
     {
-        ListType listType(&runtime, TypeId::INVALID, "List<int>", ObjectTypeMode::Closed, &integers);
+        ListType listType(&runtime, TypeId::INVALID, "List<int>", ClassMode::Closed, &integers);
         Array1dObject lists(&listType, 2);
         const ArrayValue first(lists, 0);
         const ArrayValue second(lists, 1);
@@ -461,7 +463,7 @@ BOOST_AUTO_TEST_CASE(nested_defaults_share_arrays_but_not_mutable_lists) {
         BOOST_TEST(firstList->getCount() == 1u);
         BOOST_TEST(secondList->getCount() == 0u);
 
-        Array3Type arrayType(&runtime, TypeId::INVALID, "Array3<int>", ObjectTypeMode::Closed, &integers);
+        Array3Type arrayType(&runtime, TypeId::INVALID, "Array3<int>", ClassMode::Closed, &integers);
         Array1dObject arrays(&arrayType, 2);
         BOOST_TEST(ArrayValue(arrays, 0).getObjectValue() == ArrayValue(arrays, 1).getObjectValue());
         BOOST_TEST(ArrayValue(arrays, 0).asObject<Array3dObject>()->getCount() == 0u);
@@ -509,7 +511,7 @@ BOOST_AUTO_TEST_CASE(copying_arrays_does_not_construct_unused_defaults) {
     IntegerType integers(&runtime, TypeId::INVALID);
     const auto before = NomadObject::getLiveObjectCount();
     {
-        Array1Type type(&runtime, TypeId::INVALID, "Array1<int>", ObjectTypeMode::Closed, &integers);
+        Array1Type type(&runtime, TypeId::INVALID, "Array1<int>", ClassMode::Closed, &integers);
         RuntimeValue source;
         RuntimeValue destination;
         source.setObjectValue(new Array1dObject(&integers, 2));
@@ -528,7 +530,7 @@ BOOST_AUTO_TEST_CASE(empty_caches_do_not_access_destroyed_element_descriptors) {
     const auto before = NomadObject::getLiveObjectCount();
     {
         auto elementType = std::make_unique<IntegerType>(&runtime, TypeId::INVALID);
-        auto type = std::make_unique<Array1Type>(&runtime, TypeId::INVALID, "Array1<int>", ObjectTypeMode::Closed, elementType.get());
+        auto type = std::make_unique<Array1Type>(&runtime, TypeId::INVALID, "Array1<int>", ClassMode::Closed, elementType.get());
         RuntimeValue value;
         type->initValue(value);
         type->freeValue(value);

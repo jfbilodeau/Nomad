@@ -13,7 +13,7 @@
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
-#include <nomad/system/NativeFunctions.hpp>
+#include <nomad/system/SystemFunctions.hpp>
 
 #include <memory>
 #include <span>
@@ -45,16 +45,16 @@ static_assert(std::is_same_v<decltype(std::declval<Runtime&>().getScriptFunction
 
 namespace {
 
-class ScriptCallableTestType final : public ObjectType {
+class ScriptCallableTestType final : public ClassType {
 public:
     ScriptCallableTestType(
         Runtime* runtime,
         const TypeId id,
         NomadString name,
-        const ObjectTypeMode mode,
-        ObjectType*& descriptor
+        const ClassMode mode,
+        ClassType*& descriptor
     ):
-        ObjectType(runtime, id, std::move(name), mode)
+        ClassType(runtime, id, std::move(name), mode)
     {
         descriptor = this;
     }
@@ -96,7 +96,7 @@ BOOST_AUTO_TEST_SUITE(callable_catalog)
 BOOST_AUTO_TEST_CASE(script_registration_binds_receiver_without_exposing_a_free_function)
 {
     Runtime runtime;
-    const auto typeId = runtime.createObjectType("ScriptOwner", ObjectTypeMode::Closed);
+    const auto typeId = runtime.registerClass("ScriptOwner", ClassMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
     const auto* owner = runtime.getTypeByName("ScriptOwner");
     const auto parameters = std::vector<Parameter>{defParameter("value", runtime.getIntegerType(), "")};
@@ -110,7 +110,7 @@ BOOST_AUTO_TEST_CASE(script_registration_binds_receiver_without_exposing_a_free_
         BOOST_TEST(callable->getParameterCount() == 1u);
         BOOST_TEST(callable->getParameterId("this") == NOMAD_INVALID_ID);
         BOOST_TEST(callable->getVariableId("this").isInvalid());
-        BOOST_TEST(callable->getObjectType() == owner);
+        BOOST_TEST(callable->getClassType() == owner);
         BOOST_TEST(runtime.getFunction(id) == nullptr);
     }
     BOOST_TEST(runtime.getFunctionId("move").isInvalid());
@@ -149,9 +149,9 @@ BOOST_AUTO_TEST_CASE(script_callable_lookup_preserves_function_and_native_catego
 BOOST_AUTO_TEST_CASE(script_member_descriptors_are_type_owned_with_shared_compilation_state)
 {
     Runtime runtime;
-    ObjectType* type = nullptr;
-    BOOST_REQUIRE(runtime.createObjectType<ScriptCallableTestType>(
-        "Point", ObjectTypeMode::Closed, type
+    ClassType* type = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
+        "Point", ClassMode::Closed, type
     ).isValid());
     BOOST_REQUIRE(type != nullptr);
     const auto parameters = std::vector<Parameter>{defParameter("value", runtime.getIntegerType(), "")};
@@ -169,8 +169,8 @@ BOOST_AUTO_TEST_CASE(script_member_descriptors_are_type_owned_with_shared_compil
     BOOST_REQUIRE(constructor != nullptr);
     BOOST_TEST((method->getSource() == CallableSource::Script));
     BOOST_TEST((constructor->getSource() == CallableSource::Script));
-    BOOST_TEST(method->getObjectType() == type);
-    BOOST_TEST(constructor->getObjectType() == type);
+    BOOST_TEST(method->getClassType() == type);
+    BOOST_TEST(constructor->getClassType() == type);
     BOOST_TEST(constructor->getReturnType() == runtime.getVoidType());
     BOOST_TEST(constructor->getConstructedType() == type);
     BOOST_TEST(method->asNativeMethod() == nullptr);
@@ -196,7 +196,7 @@ BOOST_AUTO_TEST_CASE(script_member_descriptors_are_type_owned_with_shared_compil
         BOOST_TEST(script == runtime.getCallable(id)->asScriptCallable());
         BOOST_TEST(script == std::as_const(runtime).getScriptCallable(id));
         BOOST_TEST(script->getId() == id);
-        BOOST_TEST(script->getObjectType() == type);
+        BOOST_TEST(script->getClassType() == type);
         BOOST_TEST(script->getPath() == "point.nomad");
         BOOST_TEST(!script->getSourceCode().empty());
         BOOST_TEST(script->getParameterCount() == 1u);
@@ -472,13 +472,13 @@ BOOST_AUTO_TEST_CASE(duplicate_function_name_is_rejected)
 BOOST_AUTO_TEST_CASE(function_cannot_shadow_native_function)
 {
     Runtime runtime;
-    registerBuildInNativeFunctions(&runtime);
+    registerSystemFunctions(&runtime);
 
-    BOOST_REQUIRE(runtime.getNativeFunctionId("log.info").isValid());
+    BOOST_REQUIRE(runtime.getNativeFunctionId("print").isValid());
 
-    BOOST_TEST(runtime.registerScriptFunction("log.info", "log/info.nomad", "return 1").isInvalid());
+    BOOST_TEST(runtime.registerScriptFunction("print", "print.nomad", "return 1").isInvalid());
 
-    const auto callable = runtime.getCallableId("log.info");
+    const auto callable = runtime.getCallableId("print");
 
     BOOST_REQUIRE(callable.isValid());
     BOOST_TEST((runtime.getFunction(callable)->asNativeFunction() != nullptr));
@@ -823,17 +823,17 @@ namespace {
 class ResolutionObject final : public NomadObject {
 };
 
-const ObjectType* registerResolutionType(Runtime& runtime, const NomadString& name) {
-    const auto descriptorId = runtime.createObjectType<ObjectType>(name, ObjectTypeMode::Closed, std::vector<const Type*>{}, "A test object."
+const ClassType* registerResolutionType(Runtime& runtime, const NomadString& name) {
+    const auto descriptorId = runtime.registerClass<ClassType>(name, ClassMode::Closed, std::vector<const Type*>{}, "A test object."
     );
     BOOST_REQUIRE(descriptorId.isValid());
-    const auto* type = runtime.getType(descriptorId).value()->asObjectType();
+    const auto* type = runtime.getType(descriptorId).value()->asClassType();
     return type;
 }
 
 CallableId registerResolutionConstructor(
     Runtime& runtime,
-    const ObjectType* type,
+    const ClassType* type,
     const std::vector<ParameterDefinition>& parameters
 ) {
     return runtime.addConstructor(type->getId(), {
@@ -874,7 +874,7 @@ BOOST_AUTO_TEST_CASE(registered_callables_share_one_id_space)
 
     BOOST_TEST(functionResult.id == function);
     BOOST_TEST(constructorResult.id == constructor);
-    BOOST_TEST(runtime.getCallable(methodResult.id)->getObjectType() == type);
+    BOOST_TEST(runtime.getCallable(methodResult.id)->getClassType() == type);
     BOOST_TEST(runtime.getNativeFunction(functionResult.id) != nullptr);
     BOOST_TEST(runtime.getNativeFunction(methodResult.id) == nullptr);
     BOOST_TEST(runtime.getNativeMemberMethod(method)->getId() == methodResult.id);
@@ -936,17 +936,17 @@ BOOST_AUTO_TEST_CASE(type_owned_constructor_factory_is_released_once)
     auto destructions = 0;
     auto aliveAtTypeDestruction = false;
     {
-        class ConstructorOwner final : public ObjectType {
+        class ConstructorOwner final : public ClassType {
         public:
             ConstructorOwner(
                 Runtime* runtime,
                 TypeId id,
                 NomadString name,
-                ObjectTypeMode mode,
+                ClassMode mode,
                 int& destructions,
                 bool& alive
             ):
-                ObjectType(runtime, id, std::move(name), mode),
+                ClassType(runtime, id, std::move(name), mode),
                 m_destructions(destructions),
                 m_alive(alive)
             {
@@ -962,11 +962,11 @@ BOOST_AUTO_TEST_CASE(type_owned_constructor_factory_is_released_once)
         };
 
         Runtime runtime;
-        const auto ownerId = runtime.createObjectType<ConstructorOwner>(
-            "LifetimeOwner", ObjectTypeMode::Closed, destructions, aliveAtTypeDestruction
+        const auto ownerId = runtime.registerClass<ConstructorOwner>(
+            "LifetimeOwner", ClassMode::Closed, destructions, aliveAtTypeDestruction
         );
         BOOST_REQUIRE(ownerId.isValid());
-        const auto* type = runtime.getType(ownerId).value()->asObjectType();
+        const auto* type = runtime.getType(ownerId).value()->asClassType();
         auto lifetime = std::shared_ptr<int>(new int{0}, [&destructions](int* value) {
             ++destructions;
             delete value;
@@ -1059,17 +1059,17 @@ BOOST_AUTO_TEST_CASE(type_owned_method_callback_is_released_once)
     auto destructions = 0;
     auto aliveAtTypeDestruction = false;
     {
-        class MethodOwner final : public ObjectType {
+        class MethodOwner final : public ClassType {
         public:
             MethodOwner(
                 Runtime* runtime,
                 TypeId id,
                 NomadString name,
-                ObjectTypeMode mode,
+                ClassMode mode,
                 int& destructions,
                 bool& alive
             ):
-                ObjectType(runtime, id, std::move(name), mode),
+                ClassType(runtime, id, std::move(name), mode),
                 m_destructions(destructions),
                 m_alive(alive)
             {
@@ -1085,11 +1085,11 @@ BOOST_AUTO_TEST_CASE(type_owned_method_callback_is_released_once)
         };
 
         Runtime runtime;
-        const auto ownerId = runtime.createObjectType<MethodOwner>(
-            "MethodLifetimeOwner", ObjectTypeMode::Closed, destructions, aliveAtTypeDestruction
+        const auto ownerId = runtime.registerClass<MethodOwner>(
+            "MethodLifetimeOwner", ClassMode::Closed, destructions, aliveAtTypeDestruction
         );
         BOOST_REQUIRE(ownerId.isValid());
-        const auto* type = runtime.getType(ownerId).value()->asObjectType();
+        const auto* type = runtime.getType(ownerId).value()->asClassType();
         auto lifetime = std::shared_ptr<int>(new int{0}, [&destructions](int* value) {
             ++destructions;
             delete value;
@@ -1163,7 +1163,7 @@ BOOST_AUTO_TEST_CASE(member_method_lookup_distinguishes_member_and_callable_ids)
         BOOST_REQUIRE(registerVoidNativeFunction(runtime, "padding" + std::to_string(index)).isValid());
     }
     const auto propertyId = runtime.addProperty(type->getId(), {
-        .valueTypeId = runtime.getTypeId("int"),
+        .valueType = runtime.getIntegerType(),
         .name = "value",
         .getter = [](VirtualMachine*, RuntimeValue&) {},
         .setter = {},
@@ -1234,7 +1234,7 @@ BOOST_AUTO_TEST_CASE(resolve_function_picks_between_overloads)
     BOOST_TEST(runtime.describeResolveFailure("test.convert", wildcard).find("Ambiguous") != NomadString::npos);
 }
 
-BOOST_AUTO_TEST_CASE(resolve_method_is_scoped_to_the_object_type)
+BOOST_AUTO_TEST_CASE(resolve_method_is_scoped_to_the_class_type)
 {
     Runtime runtime;
     const auto* first = registerResolutionType(runtime, "First");

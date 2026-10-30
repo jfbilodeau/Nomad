@@ -6,13 +6,13 @@
 
 namespace nomad {
 
-class ListType final : public ObjectType {
+class ListType final : public ClassType {
 public:
     ListType(
         Runtime* runtime,
         TypeId id,
         NomadString name,
-        ObjectTypeMode mode,
+        ClassMode mode,
         const Type* elementType
     );
 

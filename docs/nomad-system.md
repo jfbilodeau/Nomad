@@ -1,27 +1,28 @@
 # System module
 
-Select `nomad-system` in `nomad.toml` for logging, math functions, conversions,
+Select `system` in `nomad.toml` for math functions, conversions,
 and orderly application shutdown:
 
 ```toml
 [nomad]
-modules = ["nomad-system"]
+modules = ["system"]
 ```
 
 Keep the project's existing `nomad.version`. This module does not open a game
-window. It is also loaded automatically when a project selects `nomad-game`.
+window. It is also loaded automatically when a project selects `game`.
 See [Runtime modules](modules.md) for module setup and startup behavior.
 
-## Logging
+## Plain output and logging
 
-Use `log.info` to write a message:
+Use the built-in `print` function for plain output; it requires no module:
 
 ```nomad
-log.info "Application started"
+print "Application started"
 ```
 
-Messages include the script location. See [Debugging](debugging.md) for game
-logging and the in-game console.
+For structured logging with script locations, select the independent
+[log](nomad-log.md) module explicitly. `system` no longer supplies
+`log.info` and does not load `log` automatically.
 
 ## Math and conversions
 
@@ -37,7 +38,7 @@ String conversions return zero when the string does not start with a number.
 ```nomad
 amount = toInt "42"
 rounded = math.ceiling 2.3
-log.info $"Amount: {amount}, rounded: {rounded}"
+print $"Amount: {amount}, rounded: {rounded}"
 ```
 
 ## Shutdown

@@ -6,13 +6,13 @@
 
 namespace nomad {
 
-class KeyValueType final : public ObjectType {
+class KeyValueType final : public ClassType {
 public:
     KeyValueType(
         Runtime* runtime,
         TypeId id,
         NomadString name,
-        ObjectTypeMode mode,
+        ClassMode mode,
         const Type* keyType,
         const Type* valueType
     );

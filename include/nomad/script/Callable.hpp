@@ -27,6 +27,8 @@ struct Parameter {
     NomadString name;
     const Type* type;
     NomadDocField;
+
+    [[nodiscard]] NomadString getTypeName() const;
 };
 
 Parameter defParameter(const NomadString& name, const Type* type, NomadDocArg);
@@ -59,7 +61,7 @@ enum class CallableSource {
 };
 
 // Root of everything that can be called, whatever its kind or source. All callables share one ID space in `Runtime`'s
-// catalog; ownership belongs to Runtime for free functions and to the object type for constructors and methods.
+// catalog; ownership belongs to Runtime for free functions and to the class type for constructors and methods.
 class Callable {
 public:
     Callable(const Callable&) = delete;
@@ -76,7 +78,7 @@ public:
     [[nodiscard]] const Type* getReturnType() const;
     // Method: the receiver's type. Constructor: the declaring class, which may differ from the constructed type
     // for native factories (e.g. `Array` creating `Array1<int>`). Null for functions.
-    [[nodiscard]] const Type* getObjectType() const;
+    [[nodiscard]] const Type* getClassType() const;
     [[nodiscard]] const NomadString& getDoc() const;
     [[nodiscard]] CallableId registerWithRuntime(Runtime& runtime);
     [[nodiscard]] virtual ScriptCallableBase* asScriptCallable();
@@ -89,7 +91,7 @@ protected:
         NomadString name,
         std::vector<Parameter> parameters,
         const Type* returnType,
-        const Type* objectType,
+        const Type* classType,
         NomadString doc
     );
 
@@ -104,7 +106,7 @@ private:
     CallableSource m_source;
     std::vector<Parameter> m_parameters;
     const Type* m_returnType;
-    const Type* m_objectType;
+    const Type* m_classType;
     NomadString m_doc;
 };
 
@@ -125,7 +127,7 @@ protected:
     );
 };
 
-// A callable invoked on an object of `objectType`.
+// A callable invoked on an object of `classType`.
 class Method : public Callable {
 public:
     [[nodiscard]] virtual const NativeMethod* asNativeMethod() const;
@@ -135,7 +137,7 @@ protected:
     Method(
         const CallableSource source,
         NomadString name,
-        const Type* objectType,
+        const Type* classType,
         std::vector<Parameter> parameters,
         const Type* returnType,
         NomadString doc
@@ -154,7 +156,7 @@ protected:
     Constructor(
         const CallableSource source,
         NomadString name,
-        const Type* objectType,
+        const Type* classType,
         std::vector<Parameter> parameters,
         const Type* createdType,
         NomadString doc

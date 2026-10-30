@@ -4,6 +4,7 @@
 
 #include <nomad/compiler/Parser.hpp>
 
+#include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/IteratorObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -104,9 +105,9 @@ BOOST_AUTO_TEST_CASE(iterator_types_are_specialized_and_interned)
 BOOST_AUTO_TEST_CASE(add_iterable_owns_factory_metadata_and_association)
 {
     Runtime runtime;
-    const auto id = runtime.createObjectType("DefinitionSequence", ObjectTypeMode::Closed);
+    const auto id = runtime.registerClass("DefinitionSequence", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
-    const auto* type = runtime.getType(id).value()->asObjectType();
+    const auto* type = runtime.getType(id).value()->asClassType();
     const auto* valueType = runtime.getIntegerType();
     const auto* iteratorType = runtime.getIteratorType(valueType);
     auto calls = 0;
@@ -134,7 +135,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_owns_factory_metadata_and_association)
     BOOST_TEST(info->factoryId == owned->factoryId);
     const auto* factory = runtime.getNativeMethod(info->factoryId);
     BOOST_REQUIRE(factory != nullptr);
-    BOOST_TEST(factory->getObjectType() == type);
+    BOOST_TEST(factory->getClassType() == type);
     BOOST_TEST(factory->getName() == "startTraversal");
     BOOST_TEST(factory->getReturnType() == iteratorType);
     BOOST_TEST(factory->getParameters().empty());
@@ -157,9 +158,9 @@ BOOST_AUTO_TEST_CASE(add_iterable_owns_factory_metadata_and_association)
 BOOST_AUTO_TEST_CASE(add_iterable_rejects_invalid_definitions_before_publishing_a_factory)
 {
     Runtime runtime;
-    const auto id = runtime.createObjectType("InvalidDefinitionSequence", ObjectTypeMode::Closed);
+    const auto id = runtime.registerClass("InvalidDefinitionSequence", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
-    const auto* type = runtime.getType(id).value()->asObjectType();
+    const auto* type = runtime.getType(id).value()->asClassType();
     const auto* integer = runtime.getIntegerType();
     const NativeInterableDefinition definition{
         integer->getId(),
@@ -216,12 +217,12 @@ BOOST_AUTO_TEST_CASE(add_iterable_rejects_invalid_definitions_before_publishing_
     BOOST_TEST(type->getIterableInfo().has_value());
 }
 
-BOOST_AUTO_TEST_CASE(add_iterable_preserves_existing_member_conflicts_and_object_type_associations)
+BOOST_AUTO_TEST_CASE(add_iterable_preserves_existing_member_conflicts_and_class_type_associations)
 {
     Runtime runtime;
-    const auto id = runtime.createObjectType("ConflictingSequence", ObjectTypeMode::Closed);
+    const auto id = runtime.registerClass("ConflictingSequence", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
-    const auto* type = runtime.getType(id).value()->asObjectType();
+    const auto* type = runtime.getType(id).value()->asClassType();
     const auto* integer = runtime.getIntegerType();
     const NativeInterableDefinition definition{
         integer->getId(),
@@ -234,7 +235,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_preserves_existing_member_conflicts_and_object
     BOOST_TEST(runtime.getFunctionTableSize() == count);
     BOOST_TEST(type->getMethods().size() == 1u);
     BOOST_TEST(!type->getIterableInfo().has_value());
-    auto* mutableType = const_cast<ObjectType*>(type);
+    auto* mutableType = const_cast<ClassType*>(type);
     mutableType->registerIterableType(runtime, integer, runtime.getMethod(methodId));
     auto candidate = definition;
     candidate.factory.name = "anotherTraversal";
@@ -261,7 +262,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_supports_compiled_and_interpreted_loops)
     };
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto id = runtime.createObjectType("LoopDefinition", ObjectTypeMode::Closed);
+    const auto id = runtime.registerClass("LoopDefinition", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
     BOOST_REQUIRE(runtime.addConstructor(id, {
         {}, [](VirtualMachine* machine) { machine->getResult().setObjectValue(new NomadObject); }, ""
@@ -306,13 +307,13 @@ BOOST_AUTO_TEST_CASE(add_iterable_supports_compiled_and_interpreted_loops)
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
-BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
+BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_class_type)
 {
     Runtime runtime;
     Runtime other;
-    const auto descriptorId = runtime.createObjectType("SequenceMetadata", ObjectTypeMode::Closed);
+    const auto descriptorId = runtime.registerClass("SequenceMetadata", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
-    auto* type = const_cast<ObjectType*>(runtime.getType(descriptorId).value()->asObjectType());
+    auto* type = const_cast<ClassType*>(runtime.getType(descriptorId).value()->asClassType());
     const auto* integer = runtime.getIntegerType();
     const auto* iterator = runtime.getIteratorType(integer);
     const auto factoryId = runtime.addMethod(type->getId(), {
@@ -330,7 +331,7 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
     BOOST_TEST(!runtime.getIterableInfo(integer).has_value());
     BOOST_TEST(!other.getIterableInfo(type).has_value());
     BOOST_TEST(!runtime.getIterableInfo(other.getStringType()).has_value());
-    ObjectType unregistered(&runtime, TypeId::INVALID, "SequenceMetadata", ObjectTypeMode::Closed);
+    ClassType unregistered(&runtime, TypeId::INVALID, "SequenceMetadata", ClassMode::Closed);
     BOOST_TEST(!runtime.getIterableInfo(&unregistered).has_value());
     BOOST_CHECK_THROW(unregistered.registerIterableType(runtime, integer, factory), NomadException);
     BOOST_CHECK_THROW(type->registerIterableType(other, other.getIntegerType(), factory), NomadException);
@@ -390,9 +391,9 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
     snapshot->valueType = runtime.getStringType();
     snapshot->factoryId = CallableId::INVALID;
     for (auto index = 0; index < 32; ++index) {
-        const auto additionalId = runtime.createObjectType("AdditionalSequence" + std::to_string(index), ObjectTypeMode::Closed);
+        const auto additionalId = runtime.registerClass("AdditionalSequence" + std::to_string(index), ClassMode::Closed);
         BOOST_REQUIRE(additionalId.isValid());
-        const auto* additionalType = runtime.getType(additionalId).value()->asObjectType();
+        const auto* additionalType = runtime.getType(additionalId).value()->asClassType();
         runtime.addIterable(additionalId, {
             .valueTypeId = integer->getId(),
             .factory = {
@@ -406,7 +407,7 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
         BOOST_REQUIRE(runtime.getIterableInfo(additionalType).has_value());
         const auto additionalFactoryId = runtime.getIterableInfo(additionalType)->factoryId;
         BOOST_REQUIRE(runtime.getMethod(additionalFactoryId) != nullptr);
-        BOOST_TEST(runtime.getMethod(additionalFactoryId)->getObjectType() == additionalType);
+        BOOST_TEST(runtime.getMethod(additionalFactoryId)->getClassType() == additionalType);
     }
     verifyAssociation();
 }
@@ -414,7 +415,7 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_object_type)
 BOOST_AUTO_TEST_CASE(range_iterable_metadata_is_exposed_by_its_owner)
 {
     Runtime runtime;
-    const auto* range = dynamic_cast<const ObjectType*>(runtime.getTypeByName("Range"));
+    const auto* range = dynamic_cast<const ClassType*>(runtime.getTypeByName("Range"));
     BOOST_REQUIRE(range != nullptr);
     const auto owned = range->getIterableInfo();
     const auto forwarded = runtime.getIterableInfo(range);
@@ -424,7 +425,7 @@ BOOST_AUTO_TEST_CASE(range_iterable_metadata_is_exposed_by_its_owner)
     BOOST_TEST(owned->iteratorType == runtime.getIteratorType(runtime.getIntegerType()));
     BOOST_TEST(forwarded->factoryId == owned->factoryId);
     BOOST_REQUIRE(runtime.getMethod(owned->factoryId) != nullptr);
-    BOOST_TEST(runtime.getMethod(owned->factoryId)->getObjectType() == range);
+    BOOST_TEST(runtime.getMethod(owned->factoryId)->getClassType() == range);
 }
 
 BOOST_AUTO_TEST_CASE(range_evaluates_bounds_once)
@@ -466,7 +467,7 @@ BOOST_AUTO_TEST_CASE(range_loops_lower_to_generic_calls_and_jumps)
     BOOST_TEST(runtime.getInstructionId("op_numeric_for_test").isInvalid());
     BOOST_TEST(runtime.getInstructionId("op_numeric_for_advance").isInvalid());
     std::ostringstream instructions;
-    runtime.dumpInstructions(instructions, runtime.getScriptFunction(runtime.getFunctionId("main")));
+    dumpInstructions(runtime, *runtime.getScriptFunction(runtime.getFunctionId("main")), instructions);
     const auto text = instructions.str();
     BOOST_TEST(text.find("op_jump_if_false") != NomadString::npos);
     BOOST_TEST(text.find("op_jump") != NomadString::npos);
@@ -493,9 +494,9 @@ BOOST_AUTO_TEST_CASE(for_uses_registered_iteration_not_collection_names)
 
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto typeId = runtime.createObjectType("Sequence", ObjectTypeMode::Closed);
+    const auto typeId = runtime.registerClass("Sequence", ClassMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
-    auto* sourceType = const_cast<ObjectType*>(runtime.getType(typeId).value()->asObjectType());
+    auto* sourceType = const_cast<ClassType*>(runtime.getType(typeId).value()->asClassType());
     BOOST_REQUIRE(runtime.addConstructor(sourceType->getId(), {
         .parameters = {},
         .function = [](VirtualMachine* machine) {

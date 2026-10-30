@@ -218,6 +218,51 @@ void NomadConfiguration::validateSection(const NomadStringView path) const {
     }
 }
 
+std::vector<NomadString> NomadConfiguration::getKeys(const NomadStringView path) const {
+    const auto* table = &m_implementation->document;
+    if (!path.empty()) {
+        const auto* node = findNode(*table, path);
+        if (node == nullptr) {
+            return {};
+        }
+        table = node->as_table();
+        if (table == nullptr) {
+            throw wrongType(path, "a configuration section");
+        }
+    }
+    std::vector<NomadString> keys;
+    keys.reserve(table->size());
+    for (const auto& [key, node] : *table) {
+        keys.emplace_back(key.str());
+    }
+    return keys;
+}
+
+std::optional<std::vector<NomadConfiguration>> NomadConfiguration::getSectionArray(
+    const NomadStringView path
+) const {
+    const auto* node = findNode(m_implementation->document, path);
+    if (node == nullptr) {
+        return std::nullopt;
+    }
+    const auto* array = node->as_array();
+    if (array == nullptr) {
+        throw wrongType(path, "an array of configuration sections");
+    }
+    std::vector<NomadConfiguration> sections;
+    sections.reserve(array->size());
+    for (auto index = NomadIndex{0}; index < array->size(); ++index) {
+        const auto* table = (*array)[index].as_table();
+        if (table == nullptr) {
+            throw wrongType(NomadString(path) + "[" + std::to_string(index) + "]", "a configuration section");
+        }
+        NomadConfiguration section;
+        section.m_implementation->document = *table;
+        sections.push_back(std::move(section));
+    }
+    return sections;
+}
+
 std::optional<NomadString> NomadConfiguration::getString(const NomadStringView path) const {
     return readValue<NomadString>(m_implementation->document, path);
 }

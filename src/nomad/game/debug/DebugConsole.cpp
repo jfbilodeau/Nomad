@@ -339,7 +339,7 @@ DebugConsole::DebugConsole(Game* game, SDL_Window* window, SDL_Renderer* rendere
         throw std::runtime_error("Failed to initialize the Dear ImGui SDL renderer backend");
     }
 
-    log::addSink(&m_memorySink);
+    m_memorySinkId = log::createMemorySink();
 }
 
 DebugConsole::~DebugConsole() {
@@ -347,7 +347,13 @@ DebugConsole::~DebugConsole() {
         deactivate();
     }
 
-    log::removeSink(&m_memorySink);
+    if (log::getSink(m_memorySinkId) != nullptr) {
+        try {
+            log::removeSink(m_memorySinkId);
+        } catch (const std::exception& error) {
+            log::error("Failed to remove debug console log sink: " + NomadString(error.what()));
+        }
+    }
     ImGui_ImplSDLRenderer3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
@@ -1603,11 +1609,17 @@ void DebugConsole::renderLogs() {
     setPanel(x, y, viewport->WorkSize.x - x, viewport->WorkSize.y - y);
     ImGui::Begin("Logs", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
 
+    auto* memorySink = dynamic_cast<MemorySink*>(log::getSink(m_memorySinkId));
+    if (memorySink == nullptr) {
+        ImGui::TextUnformatted("The log sink has been removed.");
+        ImGui::End();
+        return;
+    }
     if (ImGui::Button("Clear")) {
-        m_memorySink.clear();
+        memorySink->clear();
     }
     ImGui::SameLine();
-    ImGui::Text("%zu entries", m_memorySink.getEntries().size());
+    ImGui::Text("%zu entries", memorySink->getEntries().size());
     ImGui::Separator();
 
     ImGui::BeginChild(
@@ -1616,7 +1628,7 @@ void DebugConsole::renderLogs() {
         ImGuiChildFlags_None,
         ImGuiWindowFlags_HorizontalScrollbar
     );
-    for (const auto& entry : m_memorySink.getEntries()) {
+    for (const auto& entry : memorySink->getEntries()) {
         ImVec4 color;
         switch (entry.level) {
         case LogLevel::Debug:
@@ -1629,6 +1641,7 @@ void DebugConsole::renderLogs() {
             color = {1.0f, 0.80f, 0.20f, 1.0f};
             break;
         case LogLevel::Error:
+        case LogLevel::Critical:
         case LogLevel::Fatal:
             color = {1.0f, 0.30f, 0.30f, 1.0f};
             break;

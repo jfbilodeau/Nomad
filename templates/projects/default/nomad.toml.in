@@ -8,7 +8,7 @@ executable = "{{project_executable}}"
 
 [nomad]
 version = "{{nomad_version}}"
-modules = ["nomad-game"]
+modules = ["game"]
 
 [game]
 entry = "main"

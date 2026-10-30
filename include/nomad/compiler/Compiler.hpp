@@ -6,6 +6,8 @@
 
 #include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/DeferredType.hpp>
+#include <nomad/compiler/DeferredTypeTarget.hpp>
 #include <nomad/compiler/Identifier.hpp>
 #include <nomad/compiler/Operators.hpp>
 #include <nomad/compiler/Parser.hpp>
@@ -17,6 +19,7 @@
 #include <nomad/script/Type.hpp>
 
 #include <functional>
+#include <span>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -115,7 +118,7 @@ public:
     [[nodiscard]] const Property* resolveObjectField(
         CompilerContext* context,
         ScriptCallableBase* function,
-        const ObjectType* owner,
+        const ClassType* owner,
         const NomadString& name,
         const Type* valueType,
         bool allowDeclaration,
@@ -185,7 +188,9 @@ public:
     void setId(NomadIndex index, NomadId id);
     void setIndex(NomadIndex index, NomadIndex value);
 
-    // The only script-input API. Copies snapshots and immediately reports loading and registration diagnostics.
+    // Configure additional roots before registering snapshots. Snapshots override their backing files.
+    void registerSourceRoots(std::span<const SourceRoot> roots);
+    // Copies snapshots and immediately reports loading and registration diagnostics.
     void registerSources(CompilerContext* context, const SourceBatch& batch);
     // Parser interface: creates a function belonging to an already registered script.
     // Returns NOMAD_INVALID_ID and reports to context if the function name is already used.
@@ -223,6 +228,9 @@ public:
         bool hubInitializer
     );
     void registerPhaseHook(std::function<void(CompilerContext*, CompilationPhase)> hook);
+    [[nodiscard]] const DeferredType* deferType(TypeReference reference);
+    void registerDeferredTypeTarget(std::unique_ptr<DeferredTypeTarget> target);
+    void resolveDeferredTypes();
     [[nodiscard]] bool compileScripts(
         CompilerContext* context,
         CompilationTarget target = CompilationTarget::Executable
@@ -243,6 +251,9 @@ public:
     NomadString generateFunctionName(const NomadString& name, const ScriptCallableBase* function, NomadIndex line);
 
 private:
+    std::vector<std::unique_ptr<DeferredType>> m_deferredTypes;
+    std::vector<std::unique_ptr<DeferredTypeTarget>> m_deferredTypeTargets;
+
     struct FunctionCompilation {
         NomadId scriptId = NOMAD_INVALID_ID;
         std::unique_ptr<FunctionNode> ast;
@@ -304,6 +315,8 @@ private:
     std::unordered_map<NomadString, ParseStatementFnRegistration> m_statements;
     std::vector<OpCodeRegistration> m_opCodeRegistrations;
     std::vector<std::function<void(CompilerContext*, CompilationPhase)>> m_phaseHooks;
+    std::vector<SourceRoot> m_sourceRoots;
+    bool m_sourceRootsLoaded = false;
     std::vector<ScriptCompilation> m_scripts;
     std::vector<FunctionCompilation> m_functions;
     std::vector<PendingFormatString> m_pendingFormatStrings;

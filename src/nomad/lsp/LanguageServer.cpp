@@ -5,7 +5,7 @@
 #include <nomad/lsp/SignatureHelp.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
-#include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
@@ -70,6 +70,7 @@ struct ApiCatalogKey {
 
 struct AnalysisGroup {
     std::vector<NomadPath> roots;
+    std::vector<SourceRoot> moduleRoots;
     std::vector<ScriptSource> overrides;
     std::optional<NomadProject> project;
 };
@@ -86,7 +87,7 @@ NomadPath documentPath(const NomadString& uri);
 NomadString symbolValueType(const std::vector<ApiSymbol>& symbols, const NomadString& name);
 
 ApiSymbol createMethodSymbol(const Method& method) {
-    const auto receiver = method.getObjectType()->getTypeName();
+    const auto receiver = method.getClassType()->getTypeName();
     auto signature = receiver + "." + method.getName();
     auto documentation = method.getDoc();
     if (const auto* script = method.asScriptCallable()) {
@@ -110,7 +111,7 @@ std::unique_ptr<ModuleHost> createAnalysisSession(const AnalysisGroup& group, co
     }
     NomadProject project;
     project.root = path.parent_path();
-    project.configuration.sdk.modules = {"nomad-system"};
+    project.configuration.sdk.modules = {"system"};
     return ModuleHost::create(
         project.document, project.root, resolveProjectModules(project, getSdkDirectory()),
         std::vector<NomadString>{}, ModuleMode::Analysis
@@ -129,7 +130,7 @@ ApiAnalysis analyzeApiSymbols(
     // Destroy callback metadata before unloading modules, and the complete session before recovery.
     const auto session = createAnalysisSession(group, path);
     auto* runtime = session->getRuntime();
-    auto batch = loadSourcePaths(group.roots, group.overrides);
+    auto batch = session->loadSources(group.roots, group.overrides);
     auto classMemberPosition = false;
     for (const auto& script : batch.sources) {
         if (script.source.sourceName != uri) continue;
@@ -196,7 +197,7 @@ ApiAnalysis analyzeApiSymbols(
             symbols.push_back({type->getTypeName(), CompletionItemKind::Class,
                 type->getTypeName(), type->getDocumentation()});
         }
-        const auto* object = type->asObjectType();
+        const auto* object = type->asClassType();
         if (object == nullptr || type->isInternal()) continue;
         for (const auto* property : object->getProperties()) {
             if (property->asNativeProperty() != nullptr) continue;
@@ -219,13 +220,13 @@ ApiAnalysis analyzeApiSymbols(
             const auto shape = runtime->getParameterShape(parameter.type);
             if (shape == ParameterShape::SourceFile || shape == ParameterShape::SourceFunction ||
                 shape == ParameterShape::SourceLine) continue;
-            const auto typeName = parameter.type->getTypeName();
+            const auto typeName = parameter.getTypeName();
             signature += " " + parameter.name + ":" + typeName;
             if (!parameter.doc.empty()) {
                 documentation += "\n\n- `" + parameter.name + "`: " + parameter.doc;
             }
         }
-        signature += " -> " + function->getReturnType()->getTypeName();
+        signature += " -> " + function->getReturnTypeName();
         symbols.push_back({function->getName(), CompletionItemKind::Function,
             std::move(signature), std::move(documentation)});
     }
@@ -262,7 +263,7 @@ ApiAnalysis analyzeApiSymbols(
             if (!info) {
                 throw std::runtime_error("Registered native property is unavailable");
             }
-            const auto receiver = info->objectType->getTypeName();
+            const auto receiver = info->classType->getTypeName();
             const auto value = info->valueType->getTypeName();
             symbols.push_back({info->name, CompletionItemKind::Property,
                 receiver + "." + info->name + ":" + value, info->doc, value, receiver});
@@ -277,7 +278,7 @@ ApiAnalysis analyzeApiSymbols(
     std::vector<ScriptFunction*> scriptFunctions;
     runtime->getFunctions(scriptFunctions);
     for (const auto* function : scriptFunctions) {
-        if (function->isNested()) continue;
+        if (function->isNested() || function->getName().starts_with('$')) continue;
         auto signature = function->getName();
         for (auto index = NomadIndex{0}; index < function->getParameterCount(); ++index) {
             const auto parameterId = toNomadId(index);
@@ -311,8 +312,8 @@ ApiAnalysis analyzeApiSymbols(
         for (auto index = NomadIndex{0}; index < function->getParameterCount(); ++index) {
             addLocal(function->getParameterName(toNomadId(index)), function->getParameterType(toNomadId(index)));
         }
-        if (function->getObjectType() != nullptr) {
-            addLocal("this", function->getObjectType());
+        if (function->getClassType() != nullptr) {
+            addLocal("this", function->getClassType());
         }
     }
     std::set<NomadString> namespaces;
@@ -348,13 +349,24 @@ std::vector<ApiSymbol> createApiSymbols(
     LanguageDocuments relatedDocuments;
     for (const auto& [documentUri, document] : documents) {
         const auto candidate = documentPath(documentUri);
-        if (root ? findProjectRoot(candidate.parent_path()) == root : candidate == path) {
+        const auto candidateRoot = findProjectRoot(candidate.parent_path());
+        if (!root || !candidateRoot || candidateRoot == root) {
             relatedDocuments.emplace(documentUri, document);
         }
     }
     const auto groups = collectAnalysisGroups(relatedDocuments);
-    const auto& group = groups.at(root.value_or(path));
-    auto analysis = analyzeApiSymbols(group, path, uri, line, completion, omitCurrentLine, signaturePrefix);
+    auto group = groups.find(root.value_or(path));
+    if (group == groups.end()) {
+        group = std::find_if(groups.begin(), groups.end(), [&](const auto& entry) {
+            return std::ranges::any_of(entry.second.overrides, [&](const auto& script) {
+                return script.source.sourceName == uri;
+            });
+        });
+    }
+    if (group == groups.end()) {
+        throw std::runtime_error("No analysis group for document: " + uri);
+    }
+    auto analysis = analyzeApiSymbols(group->second, path, uri, line, completion, omitCurrentLine, signaturePrefix);
     if (signatureHelp != nullptr) *signatureHelp = std::move(analysis.signatureHelp);
     auto& symbols = analysis.symbols;
     if (analysis.recover) {
@@ -604,35 +616,65 @@ std::optional<NomadString> readMessage(std::istream& input) {
 
 std::map<NomadPath, AnalysisGroup> collectAnalysisGroups(const LanguageDocuments& documents) {
     std::map<NomadPath, AnalysisGroup> groups;
-    for (const auto& [uri, document] : documents) {
-        const auto path = documentPath(uri);
-        const auto projectRoot = findProjectRoot(path.parent_path());
-        const auto key = projectRoot.value_or(path);
-        auto [iterator, inserted] = groups.try_emplace(key);
-        auto& group = iterator->second;
-        if (inserted) {
-            if (projectRoot) {
-                group.project = loadNomadProject(*projectRoot / NOMAD_PROJECT_FILE_NAME);
-                group.roots = resolveScriptPaths(group.project->document, group.project->root);
-            } else {
-                group.roots.push_back(path);
-            }
-        }
+    const auto appendDocument = [&](AnalysisGroup& group, const NomadPath& path,
+        const NomadString& uri, const LanguageDocument& document) {
         auto scriptName = pathToUtf8(path.stem());
         if (group.project) {
             auto matched = false;
-            for (const auto& root : group.roots) {
-                const auto relative = path.lexically_relative(root.lexically_normal());
-                if (!relative.empty() && *relative.begin() != "..") {
-                    scriptName = pathToGenericUtf8(relative.parent_path() / relative.stem());
-                    std::replace(scriptName.begin(), scriptName.end(), '/', '.');
+            for (const auto& root : group.moduleRoots) {
+                if (getSourceRelativePath(root.path, path)) {
                     matched = true;
                     break;
+                }
+            }
+            if (!matched) {
+                for (const auto& root : group.roots) {
+                    const auto relative = getSourceRelativePath(root, path);
+                    if (relative) {
+                        scriptName = pathToGenericUtf8(relative->parent_path() / relative->stem());
+                        std::ranges::replace(scriptName, '/', '.');
+                        matched = true;
+                        break;
+                    }
                 }
             }
             if (!matched) throw std::runtime_error("Document is outside configured script roots: " + uri);
         }
         group.overrides.push_back({scriptName, {uri, document.text, path}});
+    };
+    std::vector<std::pair<NomadString, NomadPath>> standaloneDocuments;
+    for (const auto& [uri, document] : documents) {
+        const auto path = documentPath(uri);
+        const auto projectRoot = findProjectRoot(path.parent_path());
+        if (!projectRoot) {
+            standaloneDocuments.emplace_back(uri, path);
+            continue;
+        }
+        auto [iterator, inserted] = groups.try_emplace(*projectRoot);
+        auto& group = iterator->second;
+        if (inserted) {
+            group.project = loadNomadProject(*projectRoot / NOMAD_PROJECT_FILE_NAME);
+            group.roots = resolveScriptPaths(group.project->document, group.project->root);
+            group.moduleRoots = getModuleScriptRoots(resolveProjectModules(*group.project, getSdkDirectory()));
+        }
+        appendDocument(group, path, uri, document);
+    }
+    for (const auto& [uri, path] : standaloneDocuments) {
+        auto matched = false;
+        for (auto& [key, group] : groups) {
+            for (const auto& root : group.moduleRoots) {
+                if (getSourceRelativePath(root.path, path)) {
+                    appendDocument(group, path, uri, documents.at(uri));
+                    matched = true;
+                    break;
+                }
+            }
+        }
+        if (!matched) {
+            auto& group = groups[path];
+            group.roots.push_back(path);
+            appendDocument(group, path, uri, documents.at(uri));
+        }
     }
     return groups;
 }
@@ -643,8 +685,8 @@ LanguageDiagnostics analyzeLanguageDocuments(const LanguageDocuments& documents)
     const auto groups = collectAnalysisGroups(documents);
     LanguageDiagnostics published;
     for (const auto& [key, group] : groups) {
-        const auto batch = loadSourcePaths(group.roots, group.overrides);
         const auto session = createAnalysisSession(group, key);
+        const auto batch = session->loadSources(group.roots, group.overrides);
         const auto result = session->compileSources(batch, CompilationTarget::Analysis);
         std::map<NomadString, NomadString> sourceUris;
         std::map<NomadString, NomadStringView> sourceTexts;

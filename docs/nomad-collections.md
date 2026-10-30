@@ -1,15 +1,15 @@
 # Collections module
 
-Select `nomad-collections` in `nomad.toml` to use typed lists, fixed-size
+Select `collections` in `nomad.toml` to use typed lists, fixed-size
 arrays, maps, and key/value pairs:
 
 ```toml
 [nomad]
-modules = ["nomad-collections"]
+modules = ["collections"]
 ```
 
 Keep the project's existing `nomad.version`. Add other modules to the same list
-when needed; for example, use `["nomad-game", "nomad-collections"]` in a game
+when needed; for example, use `["game", "collections"]` in a game
 that uses collections. See [Runtime modules](modules.md) for module setup.
 
 ## Read-only collections
@@ -53,7 +53,7 @@ it does not make another copy.
 
 ### Native hosts
 
-With `nomad-collections` registered, resolve `ReadOnlyList`, `ReadOnlyMap`, or
+With `collections` registered, resolve `ReadOnlyList`, `ReadOnlyMap`, or
 `ReadOnlyArray1` through `ReadOnlyArray3` using `Runtime::getParameterizedType`
 and the same type arguments as the corresponding mutable collection.
 
@@ -168,7 +168,7 @@ Removal and clearing release the list's references to stored objects; other
 references remain valid. The list can be reused after clearing. `append`
 replaces the former `push` name; `push` and `pop` are not available.
 
-See [Object types and members](language.md#object-types-and-members) for
+See [Class types and members](language.md#class-types-and-members) for
 construction, reference semantics, and indexer syntax.
 
 ## Maps

@@ -14,7 +14,7 @@ executable = "example-game"
 
 [nomad]
 version = "0.1.0"
-modules = ["nomad-game"]
+modules = ["game"]
 
 [game]
 entry = "main"
@@ -74,7 +74,7 @@ exclude = [
 | `game.entry` | Game script entry function taking no arguments and returning `void`. | Optional; `"main"` |
 | `nomad.version` | Required SDK version in canonical `major.minor.patch` form; packaging requires this exact runtime version. | Required |
 | `nomad.modules` | Requested native modules; dependencies are included automatically. Use `[]` for the bare runtime. | Required |
-| `game.debug` | Whether diagnostic logging and the in-game debug console are enabled. | Optional; `false` |
+| `game.debug` | Whether the in-game debug console and physics debug drawing are enabled. Does not change logging settings. | Optional; `false` |
 | `resources.directory` | Game-module asset directory relative to the project root. Does not affect script discovery. | Optional; `"res"` |
 | `window.title` | Initial game window title. Scripts may change it after startup. | Optional; `project.name` |
 | `window.resolution` | Initial logical rendering resolution as `[width, height]`. | Optional; `[800, 600]` |
@@ -99,11 +99,16 @@ Game, window, audio, text, sprite, and resource-directory settings are validated
 by the game module when it is selected, including during packaging and dry runs.
 Other projects preserve those settings without interpreting them.
 
+The selected `log` module applies `[log]` and `[[log.sinks]]` settings in
+application mode, replacing existing sinks. Analysis and packaging validate
+without changing the host logger. See the [logging schema](nomad-log.md#project-logging-schema)
+for accepted values and defaults.
+
 See [runtime modules](modules.md) for module selection, dependency ordering,
 SDK layout, and packaged applications. Set `nomad.modules` to
-`["nomad-system"]` for non-graphical script APIs or `[]` for the fundamental
+`["system"]` for non-graphical script APIs or `[]` for the fundamental
 language runtime only. Running an application requires a module with a run
-callback; `nomad-system` alone only supplies script APIs, not an application
+callback; `system` alone only supplies script APIs, not an application
 entry point. The former `project.entry` field is rejected; move it to `game.entry`.
 
 `window.resolution` and `window.size` must each contain exactly two positive
@@ -204,8 +209,16 @@ game and window settings, and explicit audio, text, script, and sprite configura
 and `[package]`. The game module sets `resources.directory` to `res` and
 packages its assets there. Script roots inside the asset directory are remapped
 to the corresponding packaged paths; other script roots retain their
-project-relative locations. Projects without the game module package their
+project-relative locations, except roots inside a selected module's script
+directory, which follow that module under `modules/<name>/`. Projects without
+the game module package their
 configured script directories without interpreting game asset settings.
+
+Selected modules retain their manifests and discovered `.nomad` sources under
+`modules/<name>/`. Their fixed `scripts/` directories are loaded automatically;
+the application does not need to list them separately.
+Shared native dependencies remain at the package root. Packages do not fall back
+to development SDK modules.
 
 Packaging replaces the source PNGs in every nonempty raw sprite root with a
 versioned `catalog.json` and adjacent packed PNG pages. Empty roots remain

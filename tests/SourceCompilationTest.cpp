@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/Compilation.hpp>
+#include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
 #include <nomad/game/Alignment.hpp>
@@ -9,6 +10,7 @@
 #include <nomad/game/Game.hpp>
 
 #include <nomad/script/Documentation.hpp>
+#include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
@@ -33,7 +35,8 @@ BOOST_AUTO_TEST_CASE(checks_named_in_memory_sources_without_reading_files)
         {"helpers.answer", {"untitled:answer", "return 42"}}
     }, {}};
     Runtime runtime;
-    const auto result = checkSources(batch, &runtime);
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(batch, *compiler);
 
     BOOST_REQUIRE(result.succeeded());
     BOOST_TEST(runtime.getFunctionId("helpers.answer").isValid());
@@ -52,8 +55,12 @@ BOOST_AUTO_TEST_CASE(checks_editor_text_instead_of_disk_contents)
     BOOST_TEST(*batch.sources.front().source.filePath == file);
     batch.sources.front().source.text = "return 42";
 
-    BOOST_TEST(checkSources(batch).succeeded());
-    BOOST_TEST(!checkPath(file).succeeded());
+    Runtime editorRuntime;
+    auto editorCompiler = editorRuntime.createCompiler();
+    BOOST_TEST(compileSources(batch, *editorCompiler).succeeded());
+    Runtime diskRuntime;
+    auto diskCompiler = diskRuntime.createCompiler();
+    BOOST_TEST(!compileSources(loadSourcePaths(std::vector{file}), *diskCompiler).succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_compilation)
@@ -78,7 +85,8 @@ BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_compilation)
         {"other", {"editor:other", "return 42"}}
     }, {}};
 
-    BOOST_REQUIRE(checkSources(batch, &runtime).succeeded());
+    auto compiler = runtime.createCompiler();
+    BOOST_REQUIRE(compileSources(batch, *compiler).succeeded());
     const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
     const auto* outer = runtime.getScriptFunction(runtime.getFunctionId("outer"));
     const auto* callback = runtime.getFunctionAtLine("editor:main", 4);
@@ -126,7 +134,8 @@ BOOST_AUTO_TEST_CASE(runtime_looks_up_script_members_and_nested_callbacks_by_sou
         "end\n"
         "counter = new Counter 4\n"
         "return counter.read 1"}}}, {}};
-    BOOST_REQUIRE(checkSources(batch, &runtime).succeeded());
+    auto compiler = runtime.createCompiler();
+    BOOST_REQUIRE(compileSources(batch, *compiler).succeeded());
     const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
     const auto* constructor = runtime.getScriptCallableAtLine("editor:members", 4);
     const auto* method = runtime.getScriptCallableAtLine("editor:members", 8);
@@ -177,7 +186,8 @@ BOOST_AUTO_TEST_CASE(runtime_retains_member_source_ranges_without_compiled_bytec
     Runtime runtime;
     const SourceBatch batch{{{"main", {"editor:members",
         "class Counter\nfun broken amount:int\nreturn missing\nend\nend"}}}, {}};
-    BOOST_TEST(!checkSources(batch, &runtime).succeeded());
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(!compileSources(batch, *compiler).succeeded());
     const auto* method = runtime.getScriptCallableAtLine("editor:members", 3);
     BOOST_REQUIRE(method != nullptr);
     BOOST_TEST(runtime.getMethod(method->getId()) != nullptr);
@@ -194,7 +204,8 @@ BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_type_errors)
     const SourceBatch batch{{{"main", {"editor:main",
         "fun broken\nreturn missing\nend"}}}, {}};
 
-    BOOST_TEST(!checkSources(batch, &runtime).succeeded());
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(!compileSources(batch, *compiler).succeeded());
     const auto* function = runtime.getFunctionAtLine("editor:main", 2);
     BOOST_REQUIRE(function != nullptr);
     BOOST_TEST(function->getName() == "broken");
@@ -208,14 +219,18 @@ BOOST_AUTO_TEST_CASE(backing_path_is_metadata_not_a_compilation_input)
     const auto missing = directory.getPath() / "not-created.nomad";
     const SourceBatch batch{{{"answer", {"editor:answer", "return 42", missing}}}, {}};
 
-    BOOST_TEST(checkSources(batch).succeeded());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(compileSources(batch, *compiler).succeeded());
     BOOST_TEST(!std::filesystem::exists(missing));
 }
 
 BOOST_AUTO_TEST_CASE(in_memory_diagnostics_keep_source_names_and_locations)
 {
     const SourceBatch batch{{{"broken", {"untitled:broken", "value = 1\nreturn missing"}}}, {}};
-    const auto result = checkSources(batch);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(batch, *compiler);
 
     BOOST_TEST(!result.succeeded());
     BOOST_REQUIRE(!result.diagnostics.empty());
@@ -230,7 +245,9 @@ BOOST_AUTO_TEST_CASE(batch_loading_errors_prevent_compilation)
         {{"broken", {"untitled:broken", "return missing"}}},
         {{DiagnosticSeverity::Error, "Could not load dependency", "untitled:dependency", 3, 4}}
     };
-    const auto result = checkSources(batch);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(batch, *compiler);
 
     BOOST_TEST(!result.succeeded());
     BOOST_TEST(result.errorCount == 1U);
@@ -247,7 +264,9 @@ BOOST_AUTO_TEST_CASE(batch_loading_warnings_allow_compilation)
         {{"answer", {"untitled:answer", "return 42"}}},
         {{DiagnosticSeverity::Warning, "Source warning", "untitled:answer", 1, 1}}
     };
-    const auto result = checkSources(batch);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(batch, *compiler);
 
     BOOST_TEST(result.succeeded());
     BOOST_TEST(result.warningCount == 1U);
@@ -261,7 +280,9 @@ BOOST_AUTO_TEST_CASE(in_memory_function_name_collisions_are_rejected)
         {"answer", {"untitled:first", "return 1"}},
         {"answer", {"untitled:second", "return 2"}}
     }, {}};
-    const auto result = checkSources(batch);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(batch, *compiler);
 
     BOOST_TEST(!result.succeeded());
     BOOST_REQUIRE(result.diagnostics.size() == 1U);
@@ -283,7 +304,9 @@ BOOST_AUTO_TEST_CASE(filesystem_adapter_retains_loading_errors_and_valid_sources
     BOOST_REQUIRE(batch.diagnostics.size() == 2U);
     BOOST_TEST(batch.diagnostics[0].sourceName == missing.generic_string());
     BOOST_TEST(batch.diagnostics[1].sourceName == invalid.generic_string());
-    BOOST_TEST(!checkSources(batch).succeeded());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_TEST(!compileSources(batch, *compiler).succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(filesystem_adapter_returns_deterministically_ordered_snapshots)
@@ -306,7 +329,9 @@ BOOST_AUTO_TEST_CASE(checks_a_single_source_file)
     TestDirectory directory("nomad_compilation_test_single");
     const auto source = directory.write("answer.nomad", "return 42");
 
-    const auto result = checkPath(source);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{source}), *compiler);
 
     BOOST_TEST(result.succeeded());
     BOOST_TEST(result.errorCount == 0U);
@@ -319,7 +344,9 @@ BOOST_AUTO_TEST_CASE(checks_source_files_recursively)
     directory.write("init.nomad", "return functions.answer");
     directory.write("functions/answer.nomad", "return 42");
 
-    const auto result = checkPath(directory.getPath());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{directory.getPath()}), *compiler);
 
     BOOST_TEST(result.succeeded());
     BOOST_TEST(result.errorCount == 0U);
@@ -331,44 +358,12 @@ BOOST_AUTO_TEST_CASE(checks_multiple_script_roots_in_one_compilation)
     const auto scripts = directory.write("scripts/init.nomad", "return helpers.answer").parent_path();
     const auto mods = directory.write("mods/helpers/answer.nomad", "return 42").parent_path().parent_path();
 
-    const auto result = checkPaths({scripts, mods});
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{scripts, mods}), *compiler);
 
     BOOST_TEST(result.succeeded());
     BOOST_TEST(result.errorCount == 0U);
-}
-
-BOOST_AUTO_TEST_CASE(validates_project_entry_function_presence_and_signature)
-{
-    TestDirectory directory("nomad_compilation_test_entry");
-    Runtime runtime;
-    auto result = checkPath(directory.write("other.nomad", "return"), &runtime);
-
-    validateEntryFunction(result, &runtime, "init", directory.getPath() / "nomad.toml");
-
-    BOOST_TEST(!result.succeeded());
-    BOOST_REQUIRE(!result.diagnostics.empty());
-    BOOST_TEST(result.diagnostics.back().message == "Configured entry function 'init' was not found");
-    BOOST_TEST(result.diagnostics.back().sourceName == (directory.getPath() / "nomad.toml").generic_string());
-
-    Runtime parameterRuntime;
-    result = checkPath(directory.write("init.nomad", "params value:int\n"), &parameterRuntime);
-    validateEntryFunction(result, &parameterRuntime, "init", directory.getPath() / "nomad.toml");
-
-    BOOST_TEST(!result.succeeded());
-    BOOST_TEST(result.diagnostics.back().message == "Configured entry function 'init' must not have parameters");
-
-    Runtime returnRuntime;
-    result = checkPath(directory.write("init.nomad", "return 1\n"), &returnRuntime);
-    validateEntryFunction(result, &returnRuntime, "init", directory.getPath() / "nomad.toml");
-
-    BOOST_TEST(!result.succeeded());
-    BOOST_TEST(result.diagnostics.back().message == "Configured entry function 'init' must return void");
-
-    Runtime validRuntime;
-    result = checkPath(directory.write("init.nomad", "return\n"), &validRuntime);
-    validateEntryFunction(result, &validRuntime, "init", directory.getPath() / "nomad.toml");
-
-    BOOST_TEST(result.succeeded());
 }
 
 BOOST_AUTO_TEST_CASE(reports_compiler_diagnostics_without_executing_source)
@@ -376,7 +371,9 @@ BOOST_AUTO_TEST_CASE(reports_compiler_diagnostics_without_executing_source)
     TestDirectory directory("nomad_compilation_test_diagnostic");
     const auto source = directory.write("broken.nomad", "return missing");
 
-    const auto result = checkPath(source);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{source}), *compiler);
 
     BOOST_TEST(!result.succeeded());
     BOOST_TEST(result.errorCount == 1U);
@@ -390,7 +387,9 @@ BOOST_AUTO_TEST_CASE(reports_missing_paths)
     TestDirectory directory("nomad_compilation_test_missing");
     const auto missing = directory.getPath() / "missing.nomad";
 
-    const auto result = checkPath(missing);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{missing}), *compiler);
 
     BOOST_TEST(!result.succeeded());
     BOOST_TEST(result.errorCount == 1U);
@@ -403,11 +402,13 @@ BOOST_AUTO_TEST_CASE(dumps_generated_instructions_without_executing_source)
     TestDirectory directory("nomad_compilation_test_dump");
     const auto source = directory.write("answer.nomad", "return 42");
 
-    const auto result = dumpInstructions(source);
-
-    BOOST_REQUIRE(result.compilation.succeeded());
-    BOOST_TEST(result.instructions.find("function answer") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("return") != NomadString::npos);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_REQUIRE(compileSources(loadSourcePaths(std::vector{source}), *compiler).succeeded());
+    std::ostringstream instructions;
+    dumpInstructions(runtime, instructions);
+    BOOST_TEST(instructions.str().find("function answer") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("return") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(dumps_script_constructors_methods_and_their_call_targets)
@@ -419,15 +420,18 @@ BOOST_AUTO_TEST_CASE(dumps_script_constructors_methods_and_their_call_targets)
         "fun read\nreturn this.value\nend\nend\n"
         "counter = new Counter 4\nreturn counter.read"
     );
-    const auto result = dumpInstructions(source);
-    BOOST_REQUIRE(result.compilation.succeeded());
-    BOOST_TEST(result.instructions.find("constructor Counter amount:int") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("method Counter.read") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("method Counter$init") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("call_script_constructor") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("call_script_method") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("Counter.read (") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("Unknown") == NomadString::npos);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_REQUIRE(compileSources(loadSourcePaths(std::vector{source}), *compiler).succeeded());
+    std::ostringstream instructions;
+    dumpInstructions(runtime, instructions);
+    BOOST_TEST(instructions.str().find("constructor Counter amount:int") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("method Counter.read") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("method Counter$init") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("call_script_constructor") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("call_script_method") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("Counter.read (") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("Unknown") == NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(dumps_only_the_selected_function)
@@ -436,24 +440,15 @@ BOOST_AUTO_TEST_CASE(dumps_only_the_selected_function)
     directory.write("first.nomad", "return 1");
     directory.write("second.nomad", "return 2");
 
-    const auto result = dumpInstructions(directory.getPath(), NomadString{"second"});
-
-    BOOST_REQUIRE(result.compilation.succeeded());
-    BOOST_TEST(result.instructions.find("function second") != NomadString::npos);
-    BOOST_TEST(result.instructions.find("function first") == NomadString::npos);
-}
-
-BOOST_AUTO_TEST_CASE(reports_unknown_dump_functions)
-{
-    TestDirectory directory("nomad_compilation_test_dump_unknown");
-    const auto source = directory.write("answer.nomad", "return 42");
-
-    const auto result = dumpInstructions(source, NomadString{"missing"});
-
-    BOOST_TEST(!result.compilation.succeeded());
-    BOOST_REQUIRE(!result.compilation.diagnostics.empty());
-    BOOST_TEST(result.compilation.diagnostics.back().message == "Unknown function 'missing'");
-    BOOST_TEST(result.instructions.empty());
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_REQUIRE(compileSources(loadSourcePaths(std::vector{directory.getPath()}), *compiler).succeeded());
+    const auto* function = runtime.getScriptFunction(runtime.getFunctionId("second"));
+    BOOST_REQUIRE(function != nullptr);
+    std::ostringstream instructions;
+    dumpInstructions(runtime, *function, instructions);
+    BOOST_TEST(instructions.str().find("function second") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("function first") == NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
@@ -469,25 +464,55 @@ BOOST_AUTO_TEST_CASE(generates_documentation_without_executing_source)
         "return ANSWER"
     );
 
-    const auto result = generateDocumentationForPath(source);
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_REQUIRE(compileSources(loadSourcePaths(std::vector{source}), *compiler).succeeded());
+    std::ostringstream documentation;
+    generateDocumentation(&runtime, documentation);
+    BOOST_TEST(documentation.str().find("# Nomad") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("## Enums") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("## Debugging") == NomadString::npos);
+    BOOST_TEST(documentation.str().find("## Object Members") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("## Functions") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("[Constants](#constants)") == NomadString::npos);
+    BOOST_TEST(documentation.str().find("[Debugging](#debugging)") == NomadString::npos);
+    BOOST_TEST(documentation.str().find("### `string`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `length` (*read-only property*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `toUpper` (*method*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("### State") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("* `State.idle`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("* `State.walking`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("State.idle:State") == NomadString::npos);
+    BOOST_TEST(documentation.str().find("ANSWER:int = 42") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("[Instructions](#instructions)") == NomadString::npos);
+}
 
-    BOOST_REQUIRE(result.compilation.succeeded());
-    BOOST_TEST(result.documentation.find("# Nomad") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("## Enums") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("## Debugging") == NomadString::npos);
-    BOOST_TEST(result.documentation.find("## Object Members") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("## Functions") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("[Constants](#constants)") == NomadString::npos);
-    BOOST_TEST(result.documentation.find("[Debugging](#debugging)") == NomadString::npos);
-    BOOST_TEST(result.documentation.find("### `string`") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("#### `length` (*read-only property*)") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("#### `toUpper` (*method*)") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("### State") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("* `State.idle`") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("* `State.walking`") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("State.idle:State") == NomadString::npos);
-    BOOST_TEST(result.documentation.find("ANSWER:int = 42") != NomadString::npos);
-    BOOST_TEST(result.documentation.find("[Instructions](#instructions)") == NomadString::npos);
+BOOST_AUTO_TEST_CASE(documentation_uses_the_configured_compiler_roots_hooks_and_deferred_types)
+{
+    TestDirectory directory("nomad_compilation_test_configured_documentation");
+    const auto declarations = directory.write("module/types.nomad", "class Settings\nend\n");
+    const auto source = directory.write("application.nomad", "return 42");
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    compiler->registerSourceRoots(std::vector<SourceRoot>{{declarations.parent_path(), "sample", true}});
+    const auto id = runtime.registerNativeFunction("configure", [](VirtualMachine*) {},
+        {defParameter("settings", compiler->deferType({"Settings"}), "")}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(id.isValid());
+    auto configured = false;
+    compiler->registerPhaseHook([&](CompilerContext* context, const CompilationPhase phase) {
+        BOOST_TEST(context->getCompiler() == compiler.get());
+        if (phase == CompilationPhase::Configure) {
+            configured = true;
+        }
+    });
+
+    BOOST_REQUIRE(compileSources(loadSourcePaths(std::vector{source}), *compiler).succeeded());
+    std::ostringstream documentation;
+    generateDocumentation(&runtime, documentation);
+    BOOST_TEST(configured);
+    BOOST_TEST(runtime.getFunctionId("$sample.types").isValid());
+    BOOST_TEST(runtime.getNativeFunction(id)->isSignatureResolved());
+    BOOST_TEST(documentation.str().find("settings:Settings") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overloads_without_execution)
@@ -510,17 +535,20 @@ BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overl
     auto callbackCalls = 0;
     runtime.registerNativeFunction("probe", [&](VirtualMachine*) { ++callbackCalls; },
         {}, runtime.getVoidType(), "");
-    const auto result = generateDocumentationForPath(source, &runtime);
-    BOOST_REQUIRE_MESSAGE(result.compilation.succeeded(),
-        (result.compilation.diagnostics.empty() ? "" : result.compilation.diagnostics.front().message));
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{source}), *compiler);
+    BOOST_REQUIRE_MESSAGE(result.succeeded(),
+        (result.diagnostics.empty() ? "" : result.diagnostics.front().message));
+    std::ostringstream documentation;
+    generateDocumentation(&runtime, documentation);
     BOOST_TEST(callbackCalls == 0);
-    const auto typesStart = result.documentation.find("## Types\n");
-    const auto membersStart = result.documentation.find("## Object Members\n");
-    const auto functionsStart = result.documentation.find("## Functions\n");
+    const auto typesStart = documentation.str().find("## Types\n");
+    const auto membersStart = documentation.str().find("## Object Members\n");
+    const auto functionsStart = documentation.str().find("## Functions\n");
     BOOST_REQUIRE(typesStart != NomadString::npos);
     BOOST_REQUIRE(membersStart != NomadString::npos);
     BOOST_REQUIRE(functionsStart != NomadString::npos);
-    const auto types = result.documentation.substr(typesStart, membersStart - typesStart);
+    const auto types = documentation.str().substr(typesStart, membersStart - typesStart);
     BOOST_TEST(types.find("### `Counter`") != NomadString::npos);
     BOOST_TEST(types.find("### `Empty`") != NomadString::npos);
     BOOST_TEST(types.find("### `model.Point`") != NomadString::npos);
@@ -529,7 +557,7 @@ BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overl
     BOOST_TEST(types.find("Constructor: `new Counter`") == NomadString::npos);
     BOOST_TEST(types.find("Constructor: `new Empty` -> `Empty`") != NomadString::npos);
     BOOST_TEST(types.find("Constructor: `new model.Point` -> `model.Point`") != NomadString::npos);
-    const auto members = result.documentation.substr(membersStart, functionsStart - membersStart);
+    const auto members = documentation.str().substr(membersStart, functionsStart - membersStart);
     const auto counterStart = members.find("### `Counter`");
     BOOST_REQUIRE(counterStart != NomadString::npos);
     const auto counterEnd = members.find("\n### `", counterStart + 1);
@@ -545,14 +573,14 @@ BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overl
     BOOST_TEST(counter.find("`read -> int`") < counter.find("`read delta:float -> float`"));
     BOOST_TEST(counter.find("`read delta:float -> float`") < counter.find("`read delta:int -> int`"));
     BOOST_TEST(counter.find("- `this:") == NomadString::npos);
-    BOOST_TEST(result.documentation.find("$init") == NomadString::npos);
+    BOOST_TEST(documentation.str().find("$init") == NomadString::npos);
     std::vector<ScriptFunction*> functions;
     runtime.getFunctions(functions);
     auto nestedFunctions = 0;
     for (const auto* function : functions) {
         if (!function->isNested()) continue;
         ++nestedFunctions;
-        BOOST_TEST(result.documentation.find("### `" + function->getName() + "`") == NomadString::npos);
+        BOOST_TEST(documentation.str().find("### `" + function->getName() + "`") == NomadString::npos);
     }
     BOOST_TEST(nestedFunctions > 0);
     BOOST_TEST(members.find("#### `length` (*read-only property*)") != NomadString::npos);
@@ -581,12 +609,15 @@ BOOST_AUTO_TEST_CASE(class_reference_overloads_have_deterministic_order)
     for (const auto reversed : {false, true}) {
         const auto source = directory.write("classes.nomad",
             "class Counter\nvalue = 1\n" + (reversed ? other + integer : integer + other) + "end");
-        const auto result = generateDocumentationForPath(source);
-        BOOST_REQUIRE(result.compilation.succeeded());
+        Runtime runtime;
+        auto compiler = runtime.createCompiler();
+        BOOST_REQUIRE(compileSources(loadSourcePaths(std::vector{source}), *compiler).succeeded());
+        std::ostringstream documentation;
+        generateDocumentation(&runtime, documentation);
         if (reversed) {
-            BOOST_TEST(result.documentation == expected);
+            BOOST_TEST(documentation.str() == expected);
         } else {
-            expected = result.documentation;
+            expected = documentation.str();
         }
     }
 }
@@ -606,7 +637,9 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     );
 
     // A bare runtime knows only the language built-ins, so the engine symbols are unresolved.
-    const auto withoutEngine = checkPath(directory.getPath());
+    Runtime bareRuntime;
+    auto bareCompiler = bareRuntime.createCompiler();
+    const auto withoutEngine = compileSources(loadSourcePaths(std::vector{directory.getPath()}), *bareCompiler);
     BOOST_TEST(!withoutEngine.succeeded());
 
     GameOptions options;
@@ -687,7 +720,8 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     game->setDebugDrawVisible(true);
     BOOST_TEST(game->isDebugDrawVisible());
 
-    const auto result = checkPath(directory.getPath(), runtime);
+    auto compiler = runtime->createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{directory.getPath()}), *compiler);
 
     for (const auto& diagnostic : result.diagnostics) {
         BOOST_TEST_MESSAGE(formatDiagnostic(diagnostic));
@@ -696,8 +730,9 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     BOOST_TEST(result.succeeded());
     BOOST_TEST(result.errorCount == 0U);
 
-    directory.write("invalid-font.nomad", "this.text.font = 1\n");
-    const auto invalidFontResult = checkPath(directory.getPath(), runtime);
+    const auto invalidFont = directory.write("invalid-font.nomad", "this.text.font = 1\n");
+    auto invalidFontCompiler = runtime->createCompiler();
+    const auto invalidFontResult = compileSources(loadSourcePaths(std::vector{invalidFont}), *invalidFontCompiler);
     BOOST_TEST(!invalidFontResult.succeeded());
     BOOST_TEST(invalidFontResult.errorCount > 0U);
 }

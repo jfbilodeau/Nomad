@@ -33,7 +33,8 @@ std::filesystem::path normalizeSourcePath(const std::filesystem::path& path) {
         throw std::filesystem::filesystem_error("Source backing path is empty", path,
             std::make_error_code(std::errc::invalid_argument));
     }
-    return std::filesystem::absolute(path).lexically_normal().make_preferred();
+    const auto absolute = std::filesystem::absolute(path).lexically_normal();
+    return (std::filesystem::weakly_canonical(absolute.parent_path()) / absolute.filename()).make_preferred();
 }
 
 bool sameSourcePath(const std::filesystem::path& left, const std::filesystem::path& right) {
@@ -52,6 +53,42 @@ bool sameSourcePath(const std::filesystem::path& left, const std::filesystem::pa
 void reportOverrideError(SourceBatch& batch, const ScriptSource& script, NomadString message) {
     batch.diagnostics.push_back({DiagnosticSeverity::Error, std::move(message),
         script.source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX});
+}
+
+void appendSource(SourceBatch& batch, ScriptSource script) {
+    for (auto& existing : batch.sources) {
+        if (script.source.filePath && existing.source.filePath &&
+            sameSourcePath(normalizeSourcePath(*script.source.filePath),
+                normalizeSourcePath(*existing.source.filePath))) {
+            if (existing.owner == script.owner || script.owner.empty()) {
+                return;
+            }
+            if (existing.owner.empty()) {
+                existing = std::move(script);
+                return;
+            }
+            reportOverrideError(batch, script, "Source file is owned by both modules '" +
+                existing.owner + "' and '" + script.owner + "'");
+            return;
+        }
+        if (existing.scriptName == script.scriptName &&
+            (!existing.owner.empty() || !script.owner.empty())) {
+            reportOverrideError(batch, script, "Source identity '" + script.scriptName +
+                "' is already used by '" + existing.source.sourceName + "'");
+            return;
+        }
+    }
+    batch.sources.push_back(std::move(script));
+}
+
+ScriptSource describeSource(const SourceRoot& root, const NomadPath& relativePath) {
+    auto scriptName = pathToGenericUtf8(relativePath.parent_path() / relativePath.stem());
+    std::ranges::replace(scriptName, '/', '.');
+    std::ranges::replace(scriptName, '\\', '.');
+    if (!root.owner.empty()) {
+        scriptName = "$" + root.owner + "." + scriptName;
+    }
+    return {std::move(scriptName), {}, root.owner, relativePath};
 }
 
 std::vector<SourceOverride> prepareOverrides(SourceBatch& batch, std::span<const ScriptSource> scripts) {
@@ -82,7 +119,7 @@ std::vector<SourceOverride> prepareOverrides(SourceBatch& batch, std::span<const
     return overrides;
 }
 
-bool applyOverride(SourceBatch& batch, const std::filesystem::path& path, const NomadString& scriptName,
+bool applyOverride(SourceBatch& batch, const std::filesystem::path& path, ScriptSource script,
     std::vector<SourceOverride>& overrides) {
     if (overrides.empty()) {
         return false;
@@ -90,7 +127,8 @@ bool applyOverride(SourceBatch& batch, const std::filesystem::path& path, const 
     const auto normalizedPath = normalizeSourcePath(path);
     for (auto& replacement : overrides) {
         if (replacement.normalizedPath && sameSourcePath(normalizedPath, *replacement.normalizedPath)) {
-            batch.sources.push_back({scriptName, replacement.script->source});
+            script.source = replacement.script->source;
+            appendSource(batch, std::move(script));
             replacement.used = true;
             return true;
         }
@@ -108,9 +146,9 @@ void reportLoadError(SourceBatch& batch, const std::filesystem::path& path, Noma
     });
 }
 
-void readSource(SourceBatch& batch, const std::filesystem::path& path, NomadString scriptName,
+void readSource(SourceBatch& batch, const std::filesystem::path& path, ScriptSource script,
     std::vector<SourceOverride>& overrides) {
-    if (applyOverride(batch, path, scriptName, overrides)) {
+    if (applyOverride(batch, path, script, overrides)) {
         return;
     }
     std::ifstream file(path, std::ios::binary);
@@ -125,12 +163,13 @@ void readSource(SourceBatch& batch, const std::filesystem::path& path, NomadStri
         return;
     }
 
-    batch.sources.push_back({std::move(scriptName), {pathToGenericUtf8(path), std::move(text), path}});
+    script.source = {pathToGenericUtf8(path), std::move(text), path};
+    appendSource(batch, std::move(script));
 }
 
-void scanDirectory(SourceBatch& batch, const std::filesystem::path& root,
+void scanDirectory(SourceBatch& batch, const SourceRoot& root,
     const std::filesystem::path& relative, NomadIndex remainingDepth, std::vector<SourceOverride>& overrides) {
-    const auto path = root / relative;
+    const auto path = root.path / relative;
     if (remainingDepth == 0) {
         log::debug("Skipping directory '" + pathToGenericUtf8(path) + "' (max depth reached)");
         return;
@@ -144,26 +183,26 @@ void scanDirectory(SourceBatch& batch, const std::filesystem::path& root,
     }
 
     const auto end = std::filesystem::directory_iterator();
+    std::vector<NomadPath> entries;
     while (iterator != end) {
-        const auto entry = *iterator;
-        const auto status = entry.symlink_status(error);
-        if (error) {
-            reportLoadError(batch, entry.path(), "Failed to inspect path: " + error.message());
-        } else if (std::filesystem::is_symlink(status)) {
-            log::debug("Skipping symbolic link '" + pathToGenericUtf8(entry.path()) + "'");
-        } else if (std::filesystem::is_directory(status)) {
-            scanDirectory(batch, root, relative / entry.path().filename(), remainingDepth - 1, overrides);
-        } else if (std::filesystem::is_regular_file(status) && entry.path().extension() == ".nomad") {
-            auto scriptName = pathToGenericUtf8(relative / entry.path().stem());
-            std::replace(scriptName.begin(), scriptName.end(), '/', '.');
-            std::replace(scriptName.begin(), scriptName.end(), '\\', '.');
-            readSource(batch, entry.path(), std::move(scriptName), overrides);
-        }
-
+        entries.push_back(iterator->path());
         iterator.increment(error);
         if (error) {
             reportLoadError(batch, path, "Failed to continue scanning directory: " + error.message());
             break;
+        }
+    }
+    std::sort(entries.begin(), entries.end());
+    for (const auto& entry : entries) {
+        const auto status = std::filesystem::symlink_status(entry, error);
+        if (error) {
+            reportLoadError(batch, entry, "Failed to inspect path: " + error.message());
+        } else if (std::filesystem::is_symlink(status)) {
+            log::debug("Skipping symbolic link '" + pathToGenericUtf8(entry) + "'");
+        } else if (std::filesystem::is_directory(status)) {
+            scanDirectory(batch, root, relative / entry.filename(), remainingDepth - 1, overrides);
+        } else if (std::filesystem::is_regular_file(status) && entry.extension() == ".nomad") {
+            readSource(batch, entry, describeSource(root, relative / entry.filename()), overrides);
         }
     }
 }
@@ -196,24 +235,67 @@ std::vector<NomadPath> resolveScriptPaths (
     return paths;
 }
 
-SourceBatch loadSourcePaths(std::span<const std::filesystem::path> paths, std::span<const ScriptSource> overrideSources) {
+std::vector<SourceRoot> getModuleScriptRoots(const std::span<const ModuleManifest> modules) {
+    std::vector<SourceRoot> roots;
+    for (const auto& module : modules) {
+        roots.push_back({module.directory / "scripts", module.name, false});
+    }
+    return roots;
+}
+
+std::optional<NomadPath> getSourceRelativePath(const NomadPath& root, const NomadPath& path) {
+    const auto normalizedPath = normalizeSourcePath(path);
+    if (sameSourcePath(normalizeSourcePath(root), normalizedPath)) {
+        return normalizedPath.filename();
+    }
+    const auto normalizedRoot = std::filesystem::weakly_canonical(
+        std::filesystem::absolute(root).lexically_normal()).make_preferred();
+    auto component = normalizedPath.begin();
+    for (const auto& rootComponent : normalizedRoot) {
+        if (component == normalizedPath.end() || !sameSourcePath(rootComponent, *component)) {
+            return std::nullopt;
+        }
+        ++component;
+    }
+    if (component == normalizedPath.end()) {
+        return normalizedPath.filename();
+    }
+    NomadPath relative;
+    for (; component != normalizedPath.end(); ++component) {
+        relative /= *component;
+    }
+    return relative;
+}
+
+SourceBatch loadSourceRoots(std::span<const SourceRoot> roots, std::span<const ScriptSource> overrideSources) {
     SourceBatch batch;
     auto overrides = prepareOverrides(batch, overrideSources);
-    for (const auto& path : paths) {
+    auto orderedRoots = std::vector<SourceRoot>(roots.begin(), roots.end());
+    std::stable_sort(orderedRoots.begin(), orderedRoots.end(), [](const auto& left, const auto& right) {
+        return !left.owner.empty() && right.owner.empty();
+    });
+    for (const auto& root : orderedRoots) {
+        const auto& path = root.path;
         try {
-            if (path.extension() == ".nomad" && applyOverride(batch, path, pathToUtf8(path.stem()), overrides)) {
+            if (root.owner.empty() && path.extension() == ".nomad" &&
+                applyOverride(batch, path, describeSource(root, path.filename()), overrides)) {
                 continue;
             }
             if (!std::filesystem::exists(path)) {
-                reportLoadError(batch, path, "Path does not exist");
+                if (root.required) {
+                    reportLoadError(batch, path, "Path does not exist" +
+                        (root.owner.empty() ? NomadString{} : " for module '" + root.owner + "'"));
+                }
             } else if (std::filesystem::is_regular_file(path)) {
-                if (path.extension() != ".nomad") {
+                if (!root.owner.empty()) {
+                    reportLoadError(batch, path, "Expected a script directory for module '" + root.owner + "'");
+                } else if (path.extension() != ".nomad") {
                     reportLoadError(batch, path, "Expected a .nomad source file");
                 } else {
-                    readSource(batch, path, pathToUtf8(path.stem()), overrides);
+                    readSource(batch, path, describeSource(root, path.filename()), overrides);
                 }
             } else if (std::filesystem::is_directory(path)) {
-                scanDirectory(batch, path, {}, 10, overrides);
+                scanDirectory(batch, root, {}, 10, overrides);
             } else {
                 reportLoadError(batch, path, "Path is not a regular file or directory");
             }
@@ -224,7 +306,30 @@ SourceBatch loadSourcePaths(std::span<const std::filesystem::path> paths, std::s
 
     for (const auto& replacement : overrides) {
         if (!replacement.used) {
-            batch.sources.push_back(*replacement.script);
+            try {
+                auto script = *replacement.script;
+                if (script.source.filePath) {
+                    for (const auto& root : orderedRoots) {
+                        if (root.path.empty()) {
+                            continue;
+                        }
+                        const auto relative = getSourceRelativePath(root.path, *script.source.filePath);
+                        if (relative) {
+                            if (!root.owner.empty()) {
+                                auto owned = describeSource(root, *relative);
+                                owned.source = script.source;
+                                script = std::move(owned);
+                            } else {
+                                script.relativePath = *relative;
+                            }
+                            break;
+                        }
+                    }
+                }
+                appendSource(batch, std::move(script));
+            } catch (const std::filesystem::filesystem_error& exception) {
+                reportOverrideError(batch, *replacement.script, exception.what());
+            }
         }
     }
 
@@ -235,6 +340,14 @@ SourceBatch loadSourcePaths(std::span<const std::filesystem::path> paths, std::s
         return left.source.sourceName < right.source.sourceName;
     });
     return batch;
+}
+
+SourceBatch loadSourcePaths(std::span<const std::filesystem::path> paths, std::span<const ScriptSource> overrides) {
+    std::vector<SourceRoot> roots;
+    for (const auto& path : paths) {
+        roots.push_back({path});
+    }
+    return loadSourceRoots(roots, overrides);
 }
 
 } // namespace nomad

@@ -13,10 +13,11 @@ class Type;
 // Why a call could not be resolved to a single callable.
 enum class ResolveStatus {
     Resolved = 1,
-    UnknownName,      // No callable is registered under that name (or for that object type).
-    NoMatchingArity,  // Callables exist, but none accepts this number of arguments.
-    NoMatchingTypes,  // Some accept this many arguments, but none accepts these types.
-    Ambiguous,        // Several callables match equally well.
+    UnknownName,         // No callable is registered under that name (or for that class type).
+    NoMatchingArity,     // Callables exist, but none accepts this number of arguments.
+    NoMatchingTypes,     // Some accept this many arguments, but none accepts these types.
+    Ambiguous,           // Several callables match equally well.
+    UnresolvedSignature, // Native declarations still contain deferred types or await validation.
 };
 
 struct ResolveResult {

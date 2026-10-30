@@ -1,6 +1,8 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <ranges>
+#include <nomad/script/VirtualMachine.hpp>
+
+#include <nomad/compiler/Identifier.hpp>
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Interpreter.hpp>
@@ -10,9 +12,9 @@
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/Type.hpp>
 
-#include <nomad/script/VirtualMachine.hpp>
-
 #include <nomad/system/String.hpp>
+
+#include <ranges>
 
 #ifdef NOMAD_DEBUG
 #define TEST_STACK_OVERFLOW if (m_stackIndex >= m_stack.size()) { fault("Stack overflow"); }
@@ -196,7 +198,7 @@ NomadObject* VirtualMachine::runScriptConstructor(
         for (auto index = args.size(); index > 0; --index) {
             pushHostArgument(constructor->getParameterType(toNomadId(index - 1)), args[index - 1], argumentTypes);
         }
-        callScriptConstructor(constructor->getFunctionStart(), constructor->getObjectType()->getId());
+        callScriptConstructor(constructor->getFunctionStart(), constructor->getClassType()->getId());
         object.reset(m_this.getObjectValue());
         executeScript();
         if (m_yielded) {
@@ -258,8 +260,8 @@ void VirtualMachine::callScriptConstructor(const NomadIndex address, const TypeI
 }
 
 void VirtualMachine::createScriptObject(const TypeId typeId) {
-    const auto* objectType = m_runtime->getType(typeId).value()->asObjectType();
-    m_this.setObjectValue(new ScriptObject(objectType));
+    const auto* classType = m_runtime->getType(typeId).value()->asClassType();
+    m_this.setObjectValue(new ScriptObject(classType));
 }
 
 void VirtualMachine::pushScriptFrame() {
@@ -386,10 +388,10 @@ void VirtualMachine::getProperty(
         return;
     }
     auto* object = dynamic_cast<ScriptObject*>(receiver.getObjectValue());
-    if (object == nullptr || object->getObjectType() != property->getObjectType()) {
+    if (object == nullptr || object->getClassType() != property->getClassType()) {
         fault("Stored property receiver has no matching field storage");
     }
-    const auto index = property->getObjectType()->getFieldIndex(memberId);
+    const auto index = property->getClassType()->getFieldIndex(memberId);
     property->getValueType()->copyValue(object->getField(index), result);
 }
 
@@ -407,10 +409,10 @@ void VirtualMachine::setProperty(
         return;
     }
     auto* object = dynamic_cast<ScriptObject*>(receiver.getObjectValue());
-    if (object == nullptr || object->getObjectType() != property->getObjectType()) {
+    if (object == nullptr || object->getClassType() != property->getClassType()) {
         fault("Stored property receiver has no matching field storage");
     }
-    object->setField(property->getObjectType()->getFieldIndex(memberId), value);
+    object->setField(property->getClassType()->getFieldIndex(memberId), value);
 }
 
 void VirtualMachine::setNativeProperty(
@@ -479,7 +481,7 @@ void VirtualMachine::runNativeIndexer(
             --m_stackIndex;
         }
         if (m_stackIndex > initialStackIndex + 1) {
-            info->objectType->freeValue(m_stack[initialStackIndex + 2]);
+            info->classType->freeValue(m_stack[initialStackIndex + 2]);
         }
         m_stackIndex = initialStackIndex;
         m_this = savedThis;
@@ -505,6 +507,9 @@ void VirtualMachine::runNativeFunction(const CallableId nativeFunctionId, const 
     const auto* function = m_runtime->getNativeFunction(nativeFunctionId);
     if (function == nullptr) {
         fault("Invalid native function id: " + toString(nativeFunctionId.id));
+    }
+    if (!function->isSignatureResolved()) {
+        fault("Native function '" + function->getName() + "' has an unresolved signature");
     }
     if (function->getReturnType() == nullptr) {
         fault("NativeFunction '" + function->getName() + "' has no return type");
@@ -603,7 +608,7 @@ void VirtualMachine::runScriptMethod(
     const auto releaseArguments = [&]() {
         freeHostArguments(state.stackIndex + 3, argumentTypes);
         if (m_stackIndex > state.stackIndex + 1) {
-            method->getObjectType()->freeValue(m_stack[state.stackIndex + 2]);
+            method->getClassType()->freeValue(m_stack[state.stackIndex + 2]);
         }
     };
     try {
@@ -662,7 +667,7 @@ void VirtualMachine::runNativeMethod(const CallableId memberId, const std::vecto
     const auto releaseArguments = [&]() {
         freeHostArguments(initialStackIndex + 3, argumentTypes);
         if (m_stackIndex > initialStackIndex + 1) {
-            method->getObjectType()->freeValue(m_stack[initialStackIndex + 2]);
+            method->getClassType()->freeValue(m_stack[initialStackIndex + 2]);
         }
         m_stackIndex = initialStackIndex;
         m_this = savedThis;

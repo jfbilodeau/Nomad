@@ -2,7 +2,8 @@
 
 #pragma once
 
-#include <nomad/compiler/CompilerTools.hpp>
+#include <nomad/compiler/Compilation.hpp>
+#include <nomad/compiler/Source.hpp>
 
 #include <nomad/project/ProjectMetadata.hpp>
 
@@ -11,6 +12,7 @@
 #include <nomad/system/NomadConfiguration.hpp>
 
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace nomad {
@@ -30,10 +32,15 @@ public:
     virtual ~ModuleHost() = default;
 
     [[nodiscard]] virtual Runtime* getRuntime() const = 0;
+    [[nodiscard]] virtual Compiler* getCompiler() const = 0;
     [[nodiscard]] virtual bool pollExit() = 0;
     virtual void requestExit(int status = 0) = 0;
     [[nodiscard]] virtual int run() = 0;
     [[nodiscard]] virtual CompilationResult compileProject() = 0;
+    [[nodiscard]] virtual SourceBatch loadSources(
+        std::span<const NomadPath> paths,
+        std::span<const ScriptSource> overrides = {}
+    ) const = 0;
     [[nodiscard]] virtual CompilationResult compileSources(
         const SourceBatch& sources,
         CompilationTarget target = CompilationTarget::Executable
