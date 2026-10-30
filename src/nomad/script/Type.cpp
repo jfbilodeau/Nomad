@@ -12,6 +12,7 @@
 #include <nomad/system/String.hpp>
 
 #include <algorithm>
+#include <limits>
 
 namespace nomad {
 
@@ -567,6 +568,45 @@ NomadIndex ClassType::getFieldIndex(const PropertyId id) const {
         ++index;
     }
     return NOMAD_INVALID_INDEX;
+}
+
+NomadIndex ClassType::getFieldOffset(const PropertyId id) const {
+    const auto* field = getProperty(id);
+    if (field == nullptr || field->asNativeProperty() != nullptr) {
+        throw NomadException("Cannot calculate field offset: property ID does not identify a stored field of '" +
+            getTypeName() + "'");
+    }
+
+    auto offset = NomadIndex{0};
+    for (const auto& property : m_properties) {
+        if (property.get() == field) {
+            break;
+        }
+        if (property->asNativeProperty() != nullptr) {
+            continue;
+        }
+        const auto size = property->getValueType()->getSize();
+        if (size > std::numeric_limits<NomadIndex>::max() - offset) {
+            throw NomadException("Field storage size exceeds the maximum slot count at '" + property->getName() + "'");
+        }
+        offset += size;
+    }
+    return offset;
+}
+
+NomadIndex ClassType::getFieldStorageSize() const {
+    auto size = NomadIndex{0};
+    for (const auto& property : m_properties) {
+        if (property->asNativeProperty() != nullptr) {
+            continue;
+        }
+        const auto fieldSize = property->getValueType()->getSize();
+        if (fieldSize > std::numeric_limits<NomadIndex>::max() - size) {
+            throw NomadException("Field storage size exceeds the maximum slot count at '" + property->getName() + "'");
+        }
+        size += fieldSize;
+    }
+    return size;
 }
 
 IndexerId ClassType::registerNativeIndexer(

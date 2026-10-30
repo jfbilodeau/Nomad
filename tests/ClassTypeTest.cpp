@@ -6,7 +6,12 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <array>
+#include <limits>
+#include <optional>
+#include <string>
 #include <type_traits>
+#include <utility>
 
 using namespace nomad;
 
@@ -25,6 +30,37 @@ static_assert(static_cast<int>(ClassMode::Closed) == 2);
 
 namespace {
 
+class FieldLayoutTestType final : public ClassType {
+public:
+    FieldLayoutTestType(
+        Runtime* runtime,
+        const TypeId id,
+        NomadString name,
+        const ClassMode mode,
+        FieldLayoutTestType*& descriptor,
+        const std::optional<NomadIndex> size
+    ):
+        ClassType(runtime, id, std::move(name), mode),
+        m_size(size)
+    {
+        descriptor = this;
+    }
+
+    [[nodiscard]] NomadIndex getSize() const override {
+        if (!m_size.has_value()) {
+            throw NomadException("Test field size is unresolved");
+        }
+        return *m_size;
+    }
+
+    void setSize(const NomadIndex size) {
+        m_size = size;
+    }
+
+private:
+    std::optional<NomadIndex> m_size;
+};
+
 const ClassType* createTestType(Runtime& runtime, const NomadString& name, const ClassMode mode) {
     const auto id = runtime.registerClass(name, mode);
     BOOST_REQUIRE(id.isValid());
@@ -36,6 +72,177 @@ const ClassType* createTestType(Runtime& runtime, const NomadString& name, const
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(class_type)
+
+BOOST_AUTO_TEST_CASE(field_layout_separates_logical_indices_from_physical_slots) {
+    Runtime runtime;
+    FieldLayoutTestType* emptyType = nullptr;
+    FieldLayoutTestType* pointType = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+        "EmptyWidth", ClassMode::Closed, emptyType, NomadIndex{0}
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+        "PointWidth", ClassMode::Closed, pointType, NomadIndex{3}
+    ).isValid());
+    const auto* owner = createTestType(runtime, "Fields", ClassMode::Opened);
+    auto callbackCalls = 0;
+    const auto nativeBefore = runtime.addProperty(owner->getId(), {
+        .valueType = pointType,
+        .name = "nativeBefore",
+        .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; },
+        .setter = [&](VirtualMachine*, const RuntimeValue&) { ++callbackCalls; }
+    });
+    const auto first = runtime.registerProperty(owner->getId(), "first", emptyType);
+    const auto point = runtime.registerProperty(owner->getId(), "point", pointType);
+    const auto nativeBetween = runtime.addProperty(owner->getId(), {
+        .valueType = runtime.getIntegerType(),
+        .name = "nativeBetween",
+        .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
+    });
+    const auto text = runtime.registerProperty(owner->getId(), "text", runtime.getStringType());
+    const auto middle = runtime.registerProperty(owner->getId(), "middle", emptyType);
+    const auto number = runtime.registerProperty(owner->getId(), "number", runtime.getIntegerType());
+    const auto last = runtime.registerProperty(owner->getId(), "last", emptyType);
+    const auto nativeAfter = runtime.addProperty(owner->getId(), {
+        .valueType = emptyType,
+        .name = "nativeAfter",
+        .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
+    });
+    const auto fields = std::array{first, point, text, middle, number, last};
+    const auto offsets = std::array<NomadIndex, 6>{0, 0, 3, 4, 4, 5};
+    for (auto index = NomadIndex{0}; index < fields.size(); ++index) {
+        BOOST_REQUIRE(fields[index].isValid());
+        BOOST_TEST(owner->getFieldIndex(fields[index]) == index);
+        BOOST_TEST(owner->getFieldOffset(fields[index]) == offsets[index]);
+    }
+    for (const auto id : {nativeBefore, nativeBetween, nativeAfter}) {
+        BOOST_REQUIRE(id.isValid());
+        BOOST_TEST(owner->getFieldIndex(id) == NOMAD_INVALID_INDEX);
+        BOOST_CHECK_THROW((void)owner->getFieldOffset(id), NomadException);
+    }
+    BOOST_TEST(owner->getPropertyCount() == 9U);
+    BOOST_TEST(owner->getFieldStorageSize() == 5U);
+    BOOST_TEST(owner->getSize() == 1U);
+
+    const auto* pointProperty = owner->getProperty(point);
+    const auto appended = runtime.registerProperty(owner->getId(), "appended", pointType);
+    BOOST_REQUIRE(appended.isValid());
+    BOOST_TEST(owner->getFieldIndex(appended) == 6U);
+    BOOST_TEST(owner->getFieldOffset(appended) == 5U);
+    BOOST_TEST(owner->getFieldStorageSize() == 8U);
+    BOOST_TEST(owner->getPropertyCount() == 10U);
+    BOOST_TEST(owner->getProperty("point")->getId() == point);
+    BOOST_TEST(owner->getProperty(point) == pointProperty);
+    for (auto index = NomadIndex{0}; index < fields.size(); ++index) {
+        BOOST_TEST(owner->getFieldIndex(fields[index]) == index);
+        BOOST_TEST(owner->getFieldOffset(fields[index]) == offsets[index]);
+    }
+    BOOST_TEST(callbackCalls == 0);
+}
+
+BOOST_AUTO_TEST_CASE(empty_and_native_only_field_layouts_use_no_storage) {
+    Runtime runtime;
+    const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
+    BOOST_TEST(owner->getPropertyCount() == 0U);
+    BOOST_TEST(owner->getFieldStorageSize() == 0U);
+    BOOST_TEST(owner->getSize() == 1U);
+    auto getterCalls = 0;
+    const auto native = runtime.addProperty(owner->getId(), {
+        .valueType = runtime.getIntegerType(),
+        .name = "native",
+        .getter = [&](VirtualMachine*, RuntimeValue&) { ++getterCalls; }
+    });
+    BOOST_REQUIRE(native.isValid());
+    BOOST_TEST(owner->getPropertyCount() == 1U);
+    BOOST_TEST(owner->getFieldStorageSize() == 0U);
+    BOOST_TEST(owner->getSize() == 1U);
+    BOOST_CHECK_THROW((void)owner->getFieldOffset(native), NomadException);
+    BOOST_TEST(getterCalls == 0);
+}
+
+BOOST_AUTO_TEST_CASE(field_layout_queries_follow_size_resolution) {
+    Runtime runtime;
+    FieldLayoutTestType* pendingType = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+        "PendingWidth", ClassMode::Closed, pendingType, std::nullopt
+    ).isValid());
+    const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
+    const auto first = runtime.registerProperty(owner->getId(), "first", runtime.getIntegerType());
+    const auto pending = runtime.registerProperty(owner->getId(), "pending", pendingType);
+    const auto following = runtime.registerProperty(owner->getId(), "following", runtime.getFloatType());
+    const auto native = runtime.addProperty(owner->getId(), {
+        .valueType = pendingType,
+        .name = "native",
+        .getter = [](VirtualMachine*, RuntimeValue&) {}
+    });
+    BOOST_REQUIRE(first.isValid());
+    BOOST_REQUIRE(pending.isValid());
+    BOOST_REQUIRE(following.isValid());
+    BOOST_REQUIRE(native.isValid());
+    BOOST_TEST(owner->getFieldOffset(first) == 0U);
+    BOOST_TEST(owner->getFieldOffset(pending) == 1U);
+    BOOST_CHECK_THROW((void)owner->getFieldOffset(following), NomadException);
+    BOOST_CHECK_THROW((void)owner->getFieldStorageSize(), NomadException);
+    for (const auto id : {native, PropertyId::INVALID, PropertyId{NOMAD_ID_MAX}}) {
+        BOOST_CHECK_EXCEPTION((void)owner->getFieldOffset(id), NomadException, [](const NomadException& error) {
+            return std::string(error.what()).find("property ID does not identify a stored field") != std::string::npos;
+        });
+    }
+
+    pendingType->setSize(0);
+    BOOST_TEST(owner->getFieldOffset(following) == 1U);
+    BOOST_TEST(owner->getFieldStorageSize() == 2U);
+    pendingType->setSize(3);
+    BOOST_TEST(owner->getFieldOffset(following) == 4U);
+    BOOST_TEST(owner->getFieldStorageSize() == 5U);
+    BOOST_TEST(owner->getFieldIndex(following) == 2U);
+    BOOST_TEST(owner->getProperty("pending")->getId() == pending);
+}
+
+BOOST_AUTO_TEST_CASE(field_layout_checks_overflow_without_rejecting_representable_sizes) {
+    Runtime runtime;
+    const auto maximumSize = std::numeric_limits<NomadIndex>::max();
+    FieldLayoutTestType* maximumType = nullptr;
+    FieldLayoutTestType* emptyType = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+        "MaximumWidth", ClassMode::Closed, maximumType, maximumSize
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+        "EmptyWidth", ClassMode::Closed, emptyType, NomadIndex{0}
+    ).isValid());
+    const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
+    const auto maximum = runtime.registerProperty(owner->getId(), "maximum", maximumType);
+    const auto empty = runtime.registerProperty(owner->getId(), "empty", emptyType);
+    BOOST_REQUIRE(maximum.isValid());
+    BOOST_REQUIRE(empty.isValid());
+    BOOST_TEST(owner->getFieldOffset(maximum) == 0U);
+    BOOST_TEST(owner->getFieldOffset(empty) == maximumSize);
+    BOOST_TEST(owner->getFieldStorageSize() == maximumSize);
+
+    const auto overflow = runtime.registerProperty(owner->getId(), "overflow", runtime.getIntegerType());
+    BOOST_REQUIRE(overflow.isValid());
+    BOOST_TEST(owner->getFieldOffset(overflow) == maximumSize);
+    BOOST_CHECK_THROW((void)owner->getFieldStorageSize(), NomadException);
+    const auto following = runtime.registerProperty(owner->getId(), "following", runtime.getIntegerType());
+    BOOST_REQUIRE(following.isValid());
+    BOOST_CHECK_THROW((void)owner->getFieldOffset(following), NomadException);
+}
+
+BOOST_AUTO_TEST_CASE(field_offsets_reject_invalid_and_foreign_property_ids) {
+    Runtime runtime;
+    const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
+    const auto* other = createTestType(runtime, "Other", ClassMode::Closed);
+    BOOST_CHECK_THROW((void)owner->getFieldOffset(PropertyId::INVALID), NomadException);
+    const auto first = runtime.registerProperty(owner->getId(), "first", runtime.getIntegerType());
+    const auto foreign = runtime.registerProperty(other->getId(), "foreign", runtime.getIntegerType());
+    BOOST_REQUIRE(first.isValid());
+    BOOST_REQUIRE(foreign.isValid());
+    BOOST_TEST(owner->getFieldOffset(first) == 0U);
+    for (const auto id : {PropertyId::INVALID, PropertyId{-2}, PropertyId{NOMAD_ID_MAX - 1},
+        PropertyId{NOMAD_ID_MAX}, foreign}) {
+        BOOST_CHECK_THROW((void)owner->getFieldOffset(id), NomadException);
+        BOOST_TEST(owner->getFieldIndex(id) == NOMAD_INVALID_INDEX);
+    }
+}
 
 BOOST_AUTO_TEST_CASE(class_conversion_returns_the_original_descriptor_for_classes_and_derived_types) {
     Runtime runtime;

@@ -65,6 +65,11 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
         BOOST_TEST(!property->isTypeResolved());
         const auto info = property->getInfo();
         BOOST_TEST(info.valueType == placeholder);
+        const auto* owner = runtime.getType(ownerId).value()->asClassType();
+        BOOST_REQUIRE(owner != nullptr);
+        BOOST_TEST(owner->getFieldStorageSize() == 0U);
+        BOOST_TEST(owner->getFieldIndex(id) == NOMAD_INVALID_INDEX);
+        BOOST_CHECK_THROW((void)owner->getFieldOffset(id), NomadException);
         RuntimeValue value;
         BOOST_CHECK_THROW(info.getFn(nullptr, value), NomadException);
         BOOST_CHECK_THROW(info.setFn(nullptr, RuntimeValue(NomadInteger{2})), NomadException);
@@ -102,6 +107,8 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
         BOOST_TEST(property->isTypeResolved());
         BOOST_TEST(property->getValueType() == runtime.getTypeByName("example.Level"));
         BOOST_TEST(runtime.getType(ownerId).value()->asClassType()->getProperty("level") == property);
+        BOOST_TEST(owner->getFieldStorageSize() == 0U);
+        BOOST_CHECK_THROW((void)owner->getFieldOffset(id), NomadException);
         BOOST_TEST(getterCalls == 0);
         BOOST_TEST(setterCalls == 0);
         if (target == CompilationTarget::Analysis) {

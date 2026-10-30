@@ -307,6 +307,8 @@ public:
     [[nodiscard]] const Property* getProperty(PropertyId id) const;
     [[nodiscard]] std::vector<const Property*> getProperties() const;
     [[nodiscard]] NomadIndex getFieldIndex(PropertyId id) const;
+    [[nodiscard]] NomadIndex getFieldOffset(PropertyId id) const;
+    [[nodiscard]] NomadIndex getFieldStorageSize() const;
     [[nodiscard]] virtual NomadIndex getPropertyCount() const;
     [[nodiscard]] IndexerId registerNativeIndexer(
         Runtime& runtime,

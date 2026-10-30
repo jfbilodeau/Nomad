@@ -649,11 +649,28 @@ the owner's properties as borrowed const pointers. IDs and pointers remain
 stable as more properties are registered and are valid for the owning runtime's
 lifetime. Property IDs are runtime-wide, not per-object field offsets.
 
-`ClassType::getFieldIndex(id)` returns the zero-based owner-local slot for a
-stored/script property. Slots remain stable when properties are appended.
-Native properties do not occupy slots; native, invalid, and other owners'
-property IDs return `NOMAD_INVALID_INDEX`. Slot order follows successful
+`ClassType::getFieldIndex(id)` returns the zero-based owner-local logical index
+for a stored/script property. Indices remain stable when properties are appended.
+Native properties do not occupy field indices; native, invalid, and other owners'
+property IDs return `NOMAD_INVALID_INDEX`. Index order follows successful
 registration order, not necessarily source declaration order.
+
+`ClassType::getFieldOffset(id)` returns the stored field's zero-based physical
+offset in `RuntimeValue` slots. It sums the current `Type::getSize()` values of
+preceding stored fields. `getFieldStorageSize()` sums all stored field sizes.
+Native properties contribute no slots, even when their value types are unresolved;
+these queries do not invoke property callbacks. Empty and native-only field
+layouts have storage size zero, while the class's reference size remains one.
+
+Offsets and storage size are calculated on demand. A zero-width field retains
+its logical index and property ID and can share an offset with another field.
+Offsets require resolved sizes only for preceding stored fields; total storage
+size requires all stored field sizes. Required unresolved-size errors propagate,
+and arithmetic overflow raises `NomadException`. Unlike `getFieldIndex()`, the
+offset query raises `NomadException` for native, missing, or other owners'
+property IDs. Representable offsets, including the maximum `NomadIndex`, are
+valid results rather than invalid-ID sentinels. These metadata queries do not
+change the current one-slot-per-field object storage or execution APIs.
 
 Compiled code and the interpreter can read and assign stored properties on
 host-provided, initialized `ScriptObject` instances, as well as instances created

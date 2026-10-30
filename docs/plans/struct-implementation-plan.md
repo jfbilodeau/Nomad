@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A and 1B have been reviewed; Step 1C below is implemented and awaiting review.
+Steps 1A through 1C have been reviewed; Step 1D below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -274,14 +274,44 @@ Step 1C validation:
 - Synthetic type widths remain test-only fixtures. This slice does not implement
   executable structs or change the calling convention.
 
-Proposed next slice: stored-field physical offsets and total storage-size
-metadata, separate from logical field identity and property counts. Discuss the
-API and treatment of native properties before implementation. Object allocation
+Approved fourth slice (Step 1D):
+
+- Add `ClassType::getFieldOffset(PropertyId)` and `getFieldStorageSize()`.
+- Sum stored fields' current `Type::getSize()` values on demand. Native
+  properties occupy no slots and their value sizes are not queried.
+- Preserve `getFieldIndex()`, logical property identity, and property counts.
+  Empty/native-only owners have field-storage size zero and reference size one.
+- Offset queries require only preceding stored sizes; total-size queries require
+  all stored sizes. Propagate unresolved-size errors and report arithmetic
+  overflow explicitly.
+- The new offset query throws `NomadException` for native, missing, and foreign
+  property IDs, unlike the legacy `getFieldIndex()` sentinel. This preserves the
+  full representable offset range, including a zero-width field at the maximum
+  `NomadIndex`.
+- Do not add helpers, cached state, opcodes, object-allocation changes, or VM
+  wiring. Synthetic widths remain test-only metadata fixtures.
+
+Step 1D validation:
+
+- The Windows Debug `nomad_test` target built successfully. The build reported
+  `[[nodiscard]]` warnings in untouched test files.
+- The `nomad_test_language` and `nomad_test_remaining` regression groups passed,
+  including field-layout tests and existing class, script-object, interpreter,
+  and deferred-native-property coverage.
+- Focused cases cover mixed and zero widths, native-property exclusion, stable
+  logical indices and IDs, appended fields, size resolution, maximum offsets,
+  overflow, and invalid/foreign property IDs.
+- All four documentation preparation tests and whitespace checks passed.
+- No executable structs, aggregate allocation, calling-convention changes, or
+  gameplay validation are included in this slice.
+
+Next design discussion: struct-specific layout finalization and finite-layout
+cycle handling, coordinated with real struct/member metadata. Object allocation
 and executable aggregate accesses remain later work.
 
 Remaining Step 1 work, requiring separate design approval:
 
-- Add approved struct size/finalization metadata and stored-field layout mappings.
+- Add approved struct size/finalization metadata.
 - Preserve current sizes and behavior for existing non-struct types.
 - Preserve logical IDs, names, catalog entries, and API signatures where possible.
 - Add focused tests for mixed widths, unresolved layouts, zero widths, offset
