@@ -6,6 +6,7 @@
 
 #include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/EnumType.hpp>
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/Interpreter.hpp>

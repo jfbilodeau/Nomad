@@ -400,8 +400,9 @@ snapshot directly.
 
 Include `<nomad/script/Type.hpp>` for the base `Type`, storage categories, and
 lifecycle and bytecode-emission APIs. Concrete built-in descriptors such as `IntegerType`,
-`StringType`, `EnumType`, and the hidden source-location types are declared in
-`<nomad/script/BaseTypes.hpp>`. The category bases have dedicated headers:
+`StringType` and the hidden source-location types are declared in
+`<nomad/script/BaseTypes.hpp>`. Include `<nomad/script/EnumType.hpp>` for
+`EnumType` and `EnumValueDefinition`. The category bases have dedicated headers:
 `<nomad/script/ValueType.hpp>`, `<nomad/script/CompositeType.hpp>`, and
 `<nomad/script/ClassType.hpp>`. Include the descriptor's header when deriving
 from it or accessing its category-specific APIs.

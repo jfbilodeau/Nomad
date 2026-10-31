@@ -6,6 +6,7 @@
 #include <nomad/compiler/Parser.hpp>
 
 #include <nomad/script/BaseTypes.hpp>
+#include <nomad/script/EnumType.hpp>
 #include <nomad/script/Property.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>

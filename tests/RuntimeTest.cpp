@@ -6,6 +6,7 @@
 #include "nomad/game/EntityVariableContext.hpp"
 #include "nomad/game/Scene.hpp"
 #include "nomad/script/Documentation.hpp"
+#include <nomad/script/EnumType.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/Property.hpp>
 #include "nomad/script/Runtime.hpp"

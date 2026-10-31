@@ -12,6 +12,7 @@
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/DynamicVariable.hpp>
+#include <nomad/script/EnumType.hpp>
 #include <nomad/script/Event.hpp>
 #include <nomad/script/FunctionResolution.hpp>
 #include <nomad/script/IteratorObject.hpp>

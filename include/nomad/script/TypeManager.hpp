@@ -4,6 +4,7 @@
 
 #include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/ClassType.hpp>
+#include <nomad/script/EnumType.hpp>
 #include <nomad/script/FunctionResolution.hpp>
 #include <nomad/script/NativeMember.hpp>
 #include <nomad/script/Property.hpp>

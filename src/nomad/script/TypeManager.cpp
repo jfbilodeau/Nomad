@@ -6,6 +6,7 @@
 
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/CompositeType.hpp>
+#include <nomad/script/EnumType.hpp>
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
