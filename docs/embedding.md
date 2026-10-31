@@ -429,8 +429,9 @@ The existing Runtime lookup and finalization methods remain available with
 the same behavior. Declare stored fields with
 `TypeManager::registerScriptClassProperty` or `registerScriptStructProperty`.
 Register native class accessors with `TypeManager::registerNativeClassProperty`.
-Continue using Runtime's registration methods for types,
-methods, and constructors during this migration. Callable
+Register class methods and constructors with the manager's explicit
+native/script class APIs. Continue using Runtime's registration methods for
+types during this migration. Callable
 IDs still belong to Runtime. `TypeManager::reserveTypeId()` and `catalogType()`
 are low-level catalog operations: they do not register namespace members or
 check namespace collisions. `catalogType()` requires a non-null descriptor
@@ -973,7 +974,7 @@ used after their owning compiler is destroyed.
 
 ### Native method creation
 
-`Runtime::addMethod(TypeId id, NativeMethodDefinition definition)` registers a
+`TypeManager::registerNativeClassMethod(TypeId id, NativeMethodDefinition definition)` registers a
 native method and returns its `CallableId`. The owner ID must identify an object
 type. Parameter and return-type IDs are resolved in the same runtime; IDs are
 runtime-local and must not be transferred between runtimes.
@@ -984,7 +985,7 @@ parameter types retain their existing calling conventions. The return type may
 be `void`, but otherwise must be public. The callback must be nonempty.
 
 ```cpp
-const auto methodId = runtime.addMethod(typeId, {
+const auto methodId = runtime.getTypeManager().registerNativeClassMethod(typeId, {
     .name = "move",
     .parameters = {{runtime.getTypeId("float"), "distance", "Distance to move."}},
     .returnTypeId = runtime.getTypeId("void"),
@@ -1130,8 +1131,8 @@ the shared implementation template. The common compilation interface is in
 `<nomad/script/ScriptCallableBase.hpp>`. No receiver parameter is synthesized by
 the callable constructors.
 
-`Runtime::registerScriptMethod(typeId, name, parameters, path, source)` and
-`registerScriptConstructor(typeId, parameters, path, source)` publish script
+`TypeManager::registerScriptClassMethod(typeId, name, parameters, path, source)` and
+`registerScriptClassConstructor(typeId, parameters, path, source)` publish script
 signatures on a runtime-owned class type. They return an invalid ID and log an
 error for an invalid owner, unsupported parameter types, or duplicate signatures.
 These registration APIs associate members with their receiver type without adding
@@ -1139,6 +1140,21 @@ an implicit local or a receiver to the explicit parameter list. A parameter name
 `this` is invalid. The supplied
 source is retained for compiler diagnostics; registration alone does not parse,
 compile, or enable invocation of the member.
+
+Runtime's existing `addMethod`, `addConstructor`, `registerScriptMethod`, and
+`registerScriptConstructor` methods remain compatibility entry points.
+Callable IDs and category lookup APIs remain runtime-wide. Class descriptors
+own their methods and constructors; returned pointers are borrowed for the
+runtime's lifetime. Registration does not run native callbacks or alter stored
+field layouts, and remains available after field layout finalization.
+Struct owner IDs are rejected by these class APIs.
+
+Include `<nomad/script/NativeMember.hpp>` for `ParameterDefinition`,
+`NativeMethodDefinition`, and `NativeConstructorDefinition`.
+For low-level integration, `Runtime::catalogNativeMethod(id)` indexes an
+already registered native method for member lookup. Invalid IDs, other callable
+categories, duplicate indexing, and incompatible shared signatures throw
+`NomadException`. Ordinary host code should use manager registration instead.
 
 ## API reference generation
 
@@ -1758,9 +1774,13 @@ when aggregate execution is implemented, without an additional assignment copy.
 Hosts overriding these functions must use the pointer signatures; existing
 callers passing a `RuntimeValue` reference must instead pass its address.
 
-Register a constructor through `Runtime::addConstructor(typeId, definition)`.
+Register a constructor through
+`TypeManager::registerNativeClassConstructor(typeId, definition)`.
 `NativeConstructorDefinition` supplies parameter definitions, a `function` callback, and
 documentation. By default, the constructor creates its declaring type.
+The overload taking `(typeId, createdTypeId, definition)` registers a constructor
+that creates another registered public class type while retaining its declaring
+owner. Existing constructor signature and reserved-name rules apply.
 `ClassType::getConstructors()`
 lists that type's registered constructors as borrowed `const Constructor*`
 pointers, in registration order. These pointers remain valid until the runtime
@@ -1775,7 +1795,7 @@ const auto registeredType = runtime.getType(typeId);
 if (!registeredType) {
     throw nomad::NomadException("Failed to create Example type");
 }
-const auto constructorId = runtime.addConstructor(typeId, {
+const auto constructorId = runtime.getTypeManager().registerNativeClassConstructor(typeId, {
     .parameters = {{runtime.getIntegerType()->getId(), "size", ""}},
     .function = [](nomad::VirtualMachine* machine) {
         machine->getResult().setObjectValue(new ExampleObject(machine->getIntegerParameter(0)));
@@ -1972,7 +1992,7 @@ explicit script types.
 
 ## Native object methods
 
-Use `Runtime::addMethod(typeId, NativeMethodDefinition{...})`
+Use `runtime.getTypeManager().registerNativeClassMethod(typeId, NativeMethodDefinition{...})`
 for methods on a registered class type. Read the instance inside the callback:
 
 ```cpp

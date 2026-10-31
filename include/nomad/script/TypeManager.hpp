@@ -31,6 +31,32 @@ public:
     [[nodiscard]] ClassType* getMutableClassType(const ClassType* type);
     [[nodiscard]] CompositeType* getMutableCompositeType(TypeId id);
     void finalizeCompositeFieldLayout(TypeId id);
+    [[nodiscard]] CallableId registerNativeClassMethod(
+        TypeId ownerId,
+        NativeMethodDefinition definition
+    );
+    [[nodiscard]] CallableId registerNativeClassConstructor(
+        TypeId ownerId,
+        NativeConstructorDefinition definition
+    );
+    [[nodiscard]] CallableId registerNativeClassConstructor(
+        TypeId ownerId,
+        TypeId createdTypeId,
+        NativeConstructorDefinition definition
+    );
+    [[nodiscard]] CallableId registerScriptClassMethod(
+        TypeId ownerId,
+        NomadString name,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
+    [[nodiscard]] CallableId registerScriptClassConstructor(
+        TypeId ownerId,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
     [[nodiscard]] PropertyId registerNativeClassProperty(
         TypeId ownerId,
         NativePropertyDefinition definition

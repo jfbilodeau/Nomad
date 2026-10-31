@@ -90,7 +90,7 @@ BOOST_AUTO_TEST_CASE(add_method_resolves_ids_and_owns_registered_metadata_and_ca
         .function = [&](VirtualMachine*) { ++calls; },
         .documentation = "Returns an answer."
     };
-    const auto id = runtime.addMethod(typeId, definition);
+    const auto id = runtime.getTypeManager().registerNativeClassMethod(typeId, definition);
     BOOST_REQUIRE(id.isValid());
     definition.name = "changed";
     definition.parameters.clear();
@@ -147,21 +147,21 @@ BOOST_AUTO_TEST_CASE(add_method_rejects_invalid_definitions_without_partial_regi
     for (const auto ownerId : {
         TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getTypeId("int"), runtime.getTypeId("void")
     }) {
-        BOOST_TEST(runtime.addMethod(ownerId, definition).isInvalid());
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(ownerId, definition).isInvalid());
     }
     for (const auto returnTypeId : {
         TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getFileNameType()->getId()
     }) {
         auto invalidDefinition = definition;
         invalidDefinition.returnTypeId = returnTypeId;
-        BOOST_TEST(runtime.addMethod(typeId, std::move(invalidDefinition)).isInvalid());
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(typeId, std::move(invalidDefinition)).isInvalid());
     }
     for (const auto parameterTypeId : {
         TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getTypeId("void")
     }) {
         auto invalidDefinition = definition;
         invalidDefinition.parameters.push_back({parameterTypeId, "second", ""});
-        BOOST_TEST(runtime.addMethod(typeId, std::move(invalidDefinition)).isInvalid());
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(typeId, std::move(invalidDefinition)).isInvalid());
     }
     auto unnamedParameter = definition;
     unnamedParameter.parameters[0].name.clear();

@@ -9,6 +9,7 @@
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Property.hpp>
 #include <nomad/script/RuntimeValue.hpp>
+#include <nomad/script/Type.hpp>
 
 #include <functional>
 #include <vector>
@@ -21,6 +22,26 @@ class VirtualMachine;
 
 using NativePropertyGetFn = std::function<void(VirtualMachine*, RuntimeValue&)>;
 using NativePropertySetFn = std::function<void(VirtualMachine*, const RuntimeValue&)>;
+
+struct ParameterDefinition {
+    TypeId typeId;
+    NomadString name;
+    NomadString documentation;
+};
+
+struct NativeMethodDefinition {
+    NomadString name;
+    std::vector<ParameterDefinition> parameters;
+    TypeId returnTypeId;
+    NativeFunctionFn function;
+    NomadString documentation;
+};
+
+struct NativeConstructorDefinition {
+    std::vector<ParameterDefinition> parameters;
+    NativeFunctionFn function;
+    NomadString documentation;
+};
 
 struct NativePropertyDefinition {
     const Type* valueType = nullptr;

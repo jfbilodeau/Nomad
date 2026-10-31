@@ -83,26 +83,6 @@ struct KeywordDefinition {
     NomadDocField;
 };
 
-struct ParameterDefinition {
-    TypeId typeId;
-    NomadString name;
-    NomadString documentation;
-};
-
-struct NativeMethodDefinition {
-    NomadString name;
-    std::vector<ParameterDefinition> parameters;
-    TypeId returnTypeId;
-    NativeFunctionFn function;
-    NomadString documentation;
-};
-
-struct NativeConstructorDefinition {
-    std::vector<ParameterDefinition> parameters;
-    NativeFunctionFn function;
-    NomadString documentation;
-};
-
 struct NativeIndexerDefinition {
     TypeId valueTypeId;
     std::vector<TypeId> indexTypes;
@@ -354,6 +334,7 @@ public:
     [[nodiscard]] PropertyId addProperty(TypeId id, NativePropertyDefinition definition);
     // Indexes an already registered native property for native-member lookup.
     void catalogNativeProperty(PropertyId id);
+    void catalogNativeMethod(CallableId id);
     [[nodiscard]] bool canRegisterNativeMember(
         const Type* classType,
         const NomadString& name,
@@ -685,7 +666,6 @@ private:
 
     // Callable registration and resolution
     CallableId registerNativeCallable(
-        const ClassType* classType,
         const NomadString& name,
         NativeFunctionFn fn,
         const std::vector<Parameter>& parameters,

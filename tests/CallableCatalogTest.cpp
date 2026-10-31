@@ -289,8 +289,8 @@ BOOST_AUTO_TEST_CASE(script_registration_binds_receiver_without_exposing_a_free_
     BOOST_REQUIRE(typeId.isValid());
     const auto* owner = runtime.getTypeByName("ScriptOwner");
     const auto parameters = std::vector<Parameter>{defParameter("value", runtime.getIntegerType(), "")};
-    const auto methodId = runtime.registerScriptMethod(typeId, "move", parameters, "owner.nomad", "");
-    const auto constructorId = runtime.registerScriptConstructor(typeId, parameters, "owner.nomad", "");
+    const auto methodId = runtime.getTypeManager().registerScriptClassMethod(typeId, "move", parameters, "owner.nomad", "");
+    const auto constructorId = runtime.getTypeManager().registerScriptClassConstructor(typeId, parameters, "owner.nomad", "");
     BOOST_REQUIRE(methodId.isValid());
     BOOST_REQUIRE(constructorId.isValid());
     for (const auto id : {methodId, constructorId}) {
@@ -305,14 +305,14 @@ BOOST_AUTO_TEST_CASE(script_registration_binds_receiver_without_exposing_a_free_
     BOOST_TEST(runtime.getFunctionId("move").isInvalid());
     BOOST_TEST(runtime.registerScriptMethod(typeId, "move", parameters, "owner.nomad", "").isInvalid());
     BOOST_TEST(runtime.registerScriptConstructor(typeId, parameters, "owner.nomad", "").isInvalid());
-    BOOST_TEST(runtime.registerScriptMethod(runtime.getIntegerType()->getId(), "move", {}, "", "").isInvalid());
-    BOOST_TEST(runtime.registerScriptConstructor(TypeId{}, {}, "", "").isInvalid());
-    BOOST_TEST(runtime.registerScriptMethod(typeId, "bad",
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassMethod(runtime.getIntegerType()->getId(), "move", {}, "", "").isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassConstructor(TypeId{}, {}, "", "").isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassMethod(typeId, "bad",
         {defParameter("this", runtime.getIntegerType(), "")}, "", "").isInvalid());
     Runtime foreign;
-    BOOST_TEST(runtime.registerScriptConstructor(typeId,
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassConstructor(typeId,
         {defParameter("value", foreign.getIntegerType(), "")}, "", "").isInvalid());
-    BOOST_TEST(runtime.registerScriptMethod(typeId, "untyped",
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassMethod(typeId, "untyped",
         {defParameter("value", nullptr, "")}, "", "").isInvalid());
 }
 

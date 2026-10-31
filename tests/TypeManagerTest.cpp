@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/TypeManager.hpp>
 
@@ -327,6 +328,105 @@ BOOST_AUTO_TEST_CASE(explicit_script_fields_support_nested_and_empty_struct_stor
     BOOST_TEST(owner->getFieldStorageSize() == 3U);
     BOOST_TEST(owner->getSize() == 1U);
     BOOST_TEST(owner->getPropertyCount() == 2U);
+}
+
+BOOST_AUTO_TEST_CASE(class_callables_share_runtime_ids_without_changing_layout_or_running_callbacks) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto ownerId = runtime.registerClass("CallableOwner", ClassMode::Closed);
+    const auto createdId = runtime.registerClass("Created", ClassMode::Closed);
+    const auto* owner = manager.getTypeByName("CallableOwner")->asClassType();
+    BOOST_REQUIRE(manager.registerScriptClassProperty(ownerId, "value", runtime.getIntegerType()).isValid());
+    manager.finalizeCompositeFieldLayout(ownerId);
+    const auto before = runtime.getFunctionTableSize();
+    auto callbacks = 0;
+    const NativeMethodDefinition methodDefinition{
+        .name = "managedMethod",
+        .parameters = {},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine*) { ++callbacks; },
+        .documentation = "Managed method."
+    };
+    const NativeConstructorDefinition constructorDefinition{
+        .parameters = {},
+        .function = [&](VirtualMachine*) { ++callbacks; },
+        .documentation = "Managed constructor."
+    };
+    const auto methodId = manager.registerNativeClassMethod(ownerId, methodDefinition);
+    const auto constructorId = manager.registerNativeClassConstructor(ownerId, createdId, constructorDefinition);
+    const auto scriptMethodId = manager.registerScriptClassMethod(ownerId, "scriptMethod", {}, "owner.nomad", "return 1");
+    const auto scriptConstructorId = manager.registerScriptClassConstructor(ownerId,
+        {defParameter("value", runtime.getIntegerType(), "")}, "owner.nomad", "this.value = value");
+    BOOST_REQUIRE(methodId.isValid() && constructorId.isValid() && scriptMethodId.isValid() && scriptConstructorId.isValid());
+    BOOST_TEST(runtime.getFunctionTableSize() == before + 4);
+    for (const auto id : {methodId, constructorId, scriptMethodId, scriptConstructorId}) {
+        BOOST_TEST(runtime.getFunction(id) == nullptr);
+        BOOST_TEST(runtime.getCallable(id) != nullptr);
+    }
+    BOOST_TEST(runtime.getNativeMethod(methodId)->getClassType() == owner);
+    BOOST_TEST(runtime.getNativeConstructor(constructorId)->getConstructedType() == manager.getTypeByName("Created"));
+    BOOST_TEST(runtime.getNativeConstructor(constructorId)->getClassType() == owner);
+    BOOST_TEST(runtime.getNativeMemberId(owner, "managedMethod") == MemberReference{methodId});
+    BOOST_TEST(runtime.getNativeMemberOverloadCount("managedMethod") == 1U);
+    BOOST_TEST(runtime.getScriptCallable(scriptMethodId)->getSourceCode() == "return 1");
+    BOOST_TEST(runtime.getScriptCallable(scriptConstructorId)->getPath() == "owner.nomad");
+    BOOST_TEST(owner->getMethods().size() == 2U);
+    BOOST_TEST(owner->getConstructors().size() == 2U);
+    BOOST_TEST(owner->getFieldStorageSize() == 1U);
+    BOOST_TEST(callbacks == 0);
+    BOOST_CHECK_THROW(runtime.catalogNativeMethod(methodId), NomadException);
+    BOOST_CHECK_THROW(runtime.catalogNativeMethod(scriptMethodId), NomadException);
+    BOOST_CHECK_THROW(runtime.catalogNativeMethod(constructorId), NomadException);
+    BOOST_CHECK_THROW(runtime.catalogNativeMethod(CallableId::INVALID), NomadException);
+    BOOST_TEST(runtime.addMethod(ownerId, methodDefinition).isInvalid());
+    BOOST_TEST(runtime.addConstructor(ownerId, createdId, constructorDefinition).isInvalid());
+    BOOST_TEST(runtime.registerScriptMethod(ownerId, "scriptMethod", {}, "", "").isInvalid());
+    BOOST_TEST(runtime.registerScriptConstructor(ownerId,
+        {defParameter("value", runtime.getIntegerType(), "")}, "", "").isInvalid());
+    BOOST_TEST(runtime.getFunctionTableSize() == before + 4);
+    runtime.getNativeMethod(methodId)->getFn()(nullptr);
+    runtime.getNativeConstructor(constructorId)->getFn()(nullptr);
+    BOOST_TEST(callbacks == 2);
+}
+
+BOOST_AUTO_TEST_CASE(class_callable_registration_rejects_invalid_owners_and_constructor_definitions) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto ownerId = runtime.registerClass("ConstructorOwner", ClassMode::Closed);
+    const auto structId = runtime.registerStruct("NotAClass");
+    NativeConstructorDefinition definition{
+        .parameters = {},
+        .function = [](VirtualMachine*) {},
+        .documentation = ""
+    };
+    const auto before = runtime.getFunctionTableSize();
+    for (const auto invalidId : {TypeId::INVALID, structId, runtime.getIntegerType()->getId(), manager.reserveTypeId()}) {
+        BOOST_TEST(manager.registerNativeClassConstructor(invalidId, definition).isInvalid());
+        BOOST_TEST(manager.registerNativeClassConstructor(ownerId, invalidId, definition).isInvalid());
+        BOOST_TEST(manager.registerScriptClassConstructor(invalidId, {}, "", "").isInvalid());
+        BOOST_TEST(manager.registerScriptClassMethod(invalidId, "method", {}, "", "").isInvalid());
+        BOOST_TEST(manager.registerNativeClassMethod(invalidId, {
+            .name = "method",
+            .parameters = {},
+            .returnTypeId = runtime.getVoidType()->getId(),
+            .function = [](VirtualMachine*) {},
+            .documentation = ""
+        }).isInvalid());
+    }
+    definition.function = {};
+    BOOST_TEST(manager.registerNativeClassConstructor(ownerId, definition).isInvalid());
+    definition.function = [](VirtualMachine*) {};
+    for (const auto invalidId : {TypeId::INVALID, runtime.getVoidType()->getId()}) {
+        definition.parameters = {{invalidId, "value", ""}};
+        BOOST_TEST(manager.registerNativeClassConstructor(ownerId, definition).isInvalid());
+    }
+    BOOST_TEST(runtime.getFunctionTableSize() == before);
+    definition.parameters = {};
+    const auto id = manager.registerNativeClassConstructor(ownerId, definition);
+    BOOST_REQUIRE(id.isValid());
+    BOOST_TEST(runtime.getNativeConstructor(id)->getConstructedType() == manager.getTypeByName("ConstructorOwner"));
+    BOOST_TEST(manager.registerNativeClassConstructor(ownerId, definition).isInvalid());
+    BOOST_TEST(runtime.getFunctionTableSize() == before + 1);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

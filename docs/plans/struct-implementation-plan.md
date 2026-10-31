@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1O have been reviewed; Step 1P below is implemented and awaiting review.
+Steps 1A through 1P have been reviewed; Step 1Q below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -705,6 +705,41 @@ Validation:
   and executable modes while preserving IDs and callback guards.
 - All four documentation preparation tests and whitespace checks passed.
 - No aggregate execution or gameplay validation is claimed.
+
+### Step 1Q: Class callable registration
+
+TypeManager provides `registerNativeClassMethod`, `registerNativeClassConstructor`
+(including a distinct constructed-type overload), `registerScriptClassMethod`,
+and `registerScriptClassConstructor`. Existing Runtime entry points delegate.
+The compiler registers class members and generated initializers through the
+explicit manager APIs.
+
+Callable IDs and lookups remain in Runtime, while class descriptors continue
+to own methods and constructors. The approved `Runtime::catalogNativeMethod`
+indexes an already registered native method without friendship. Registration
+preserves parameter/return checks, receiver handling, native-member signatures,
+constructor collision rules, source metadata, and frozen field layouts.
+Runtime's native free-function path no longer includes class registration.
+
+ParameterDefinition, NativeMethodDefinition, and NativeConstructorDefinition
+are available through NativeMember.hpp. No struct callable ABI is introduced.
+
+Next slice after review: migrate class/struct type registration and namespace
+publication through TypeManager; specialization/family registration follows.
+Aggregate struct addressing and callable ABI design remain subsequent work.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, binding, tooling, and LSP process regressions passed.
+- Direct manager coverage verifies shared callable IDs, source and owner
+  metadata, distinct constructed types, invalid owners and definitions,
+  duplicate registration/indexing, native-member lookup, frozen layouts,
+  and callback invocation without registration-time execution.
+- Compiler class construction, methods, and generated initializers pass
+  existing executable language regressions through the manager path.
+- All four documentation preparation tests and whitespace checks passed.
+- No aggregate struct execution or gameplay validation is claimed.
 
 Remaining Step 1 work, requiring separate design approval:
 
