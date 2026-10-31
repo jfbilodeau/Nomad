@@ -542,8 +542,10 @@ void Runtime::rebuildHubMembers() {
     for (const auto& name : typeFamilyNames) {
         add(name, HubTypeFamily{m_typeManager.getParameterizedTypeArgumentCount(name).value()});
     }
-    for (const auto& family : m_parameterizedConstructors) {
-        add(family.name, HubTypeFamily{family.argumentCount});
+    std::vector<NomadString> constructorFamilyNames;
+    m_typeManager.getParameterizedConstructorNames(constructorFamilyNames);
+    for (const auto& name : constructorFamilyNames) {
+        add(name, HubTypeFamily{m_typeManager.getParameterizedConstructorArgumentCount(name).value()});
     }
     for (auto index = NomadIndex{0}; index < m_hubs.size(); ++index) {
         m_hubs[index]->m_members = std::move(members[index]);
@@ -1221,7 +1223,10 @@ std::optional<NomadIndex> Runtime::getParameterizedTypeArgumentCount(const Nomad
 }
 
 void Runtime::publishTypeFamilyNamespace(const NomadString& name, const NomadIndex argumentCount) {
-    const auto registeredArgumentCount = m_typeManager.getParameterizedTypeArgumentCount(name);
+    auto registeredArgumentCount = m_typeManager.getParameterizedTypeArgumentCount(name);
+    if (!registeredArgumentCount.has_value()) {
+        registeredArgumentCount = m_typeManager.getParameterizedConstructorArgumentCount(name);
+    }
     const auto matchesRegistration = registeredArgumentCount.has_value() && *registeredArgumentCount == argumentCount;
     const auto canPublish = matchesRegistration && canRegisterTypeName(name);
     if (!canPublish) {
@@ -1406,65 +1411,18 @@ bool Runtime::registerNativeParameterizedConstructor(
     const NomadIndex argumentCount,
     ParameterizedConstructorInitializer initializer
 ) {
-    if (name.empty() || isHub(name) || !canRegisterHubMember(name) || argumentCount == 0 || !initializer ||
-        getParameterizedConstructorArgumentCount(name) || getParameterizedTypeArgumentCount(name) ||
-        getTypeByName(name) != nullptr ||
-        std::ranges::any_of(m_callables, [&](const auto* callable) {
-            return callable->getType() == CallableType::Constructor && callable->getName() == name;
-        })) {
-        log::error("Cannot register parameterized constructor '" + name + "': invalid or duplicate definition");
-        return false;
-    }
-    m_parameterizedConstructors.push_back({name, argumentCount, std::move(initializer)});
-    registerHubMember(name, HubTypeFamily{argumentCount});
-    return true;
+    return m_typeManager.registerNativeParameterizedConstructor(name, argumentCount, std::move(initializer));
 }
 
 std::optional<NomadIndex> Runtime::getParameterizedConstructorArgumentCount(const NomadString& name) const {
-    const auto registration = std::ranges::find(
-        m_parameterizedConstructors, name, &ParameterizedConstructorRegistration::name
-    );
-    if (registration == m_parameterizedConstructors.end()) {
-        return std::nullopt;
-    }
-    return registration->argumentCount;
+    return m_typeManager.getParameterizedConstructorArgumentCount(name);
 }
 
 NomadString Runtime::getParameterizedConstructorName(
     const NomadString& name,
     const std::vector<const Type*>& arguments
 ) {
-    const auto registration = std::ranges::find(
-        m_parameterizedConstructors, name, &ParameterizedConstructorRegistration::name
-    );
-    if (registration == m_parameterizedConstructors.end() || arguments.size() != registration->argumentCount ||
-        std::ranges::any_of(arguments, [this](const auto* type) {
-            return !ownsType(type) || type->isVoid() || type->isInternal();
-        })) {
-        log::error("Cannot resolve parameterized constructor '" + name + "': invalid name or type arguments");
-        return {};
-    }
-    auto specializedName = name + "<";
-    for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
-        if (index != 0) {
-            specializedName += " ";
-        }
-        specializedName += arguments[index]->getTypeName();
-    }
-    specializedName += ">";
-    if (std::ranges::find(m_constructorSpecializations, specializedName) != m_constructorSpecializations.end()) {
-        return specializedName;
-    }
-    const auto initializer = registration->initializer;
-    initializer(specializedName, arguments);
-    if (std::ranges::none_of(m_callables, [&](const auto* callable) {
-        return callable->getType() == CallableType::Constructor && callable->getName() == specializedName;
-    })) {
-        log::error("No constructors registered for '" + specializedName + "'");
-        return {};
-    }
-    m_constructorSpecializations.push_back(specializedName);
-    return specializedName;
+    return m_typeManager.getParameterizedConstructorName(name, arguments);
 }
 
 IndexerId Runtime::addIndexer(const TypeId id, NativeIndexerDefinition definition) {

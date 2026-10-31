@@ -1892,11 +1892,14 @@ Validate value restrictions inside the callback: construction runs at evaluation
 time in both compiled scripts and the interpreter.
 
 For a constructor with type arguments, use
-`registerNativeParameterizedConstructor(name, argumentCount, initializer)`. Its
+`TypeManager::registerNativeParameterizedConstructor(name, argumentCount, initializer)`. Its
 initializer receives the specialized name and resolved type arguments; it registers
-a type with that name and its constructors with `addConstructor`.
+a type with that name and its constructors with `registerNativeClassConstructor`.
 Specializations are reused on subsequent requests through
-`getParameterizedConstructorName(name, arguments)`.
+`TypeManager::getParameterizedConstructorName(name, arguments)`. The manager owns
+the family registrations and specialization cache. Existing Runtime registration
+and lookup methods remain compatibility wrappers. `getParameterizedConstructorNames`
+appends registered family names to the supplied vector.
 
 ## Deferred native function signatures
 

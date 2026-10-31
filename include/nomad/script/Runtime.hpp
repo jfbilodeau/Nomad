@@ -284,8 +284,7 @@ public:
     [[nodiscard]] const NativeConstructor* getNativeConstructor(CallableId functionId) const;
     [[nodiscard]] std::vector<const NativeConstructor*> getConstructors() const;
     [[nodiscard]] std::vector<const NativeConstructor*> getConstructors(const Type* classType) const;
-    using ParameterizedConstructorInitializer =
-        std::function<void(const NomadString&, const std::vector<const Type*>&)>;
+    using ParameterizedConstructorInitializer = TypeManager::ParameterizedConstructorInitializer;
     // The initializer registers a class type named after the specialization and its constructors.
     bool registerNativeParameterizedConstructor(
         const NomadString& name,
@@ -611,12 +610,6 @@ public:
 
 private:
     // Nested types
-    struct ParameterizedConstructorRegistration {
-        NomadString name;
-        NomadIndex argumentCount;
-        ParameterizedConstructorInitializer initializer;
-    };
-
     struct UnaryOperatorRegistration {
         UnaryOperator op;
         const Type* operand;
@@ -700,8 +693,6 @@ private:
     std::vector<Instruction> m_instructions;
     std::vector<OpCodeDefinition> m_opCodes;
     TypeManager m_typeManager;
-    std::vector<ParameterizedConstructorRegistration> m_parameterizedConstructors;
-    std::vector<NomadString> m_constructorSpecializations;
     std::vector<UnaryOperatorRegistration> m_unaryOperators;
     std::vector<BinaryOperatorRegistration> m_binaryOperators;
     std::vector<std::unique_ptr<Function>> m_functions;

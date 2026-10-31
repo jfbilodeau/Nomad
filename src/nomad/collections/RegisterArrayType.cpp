@@ -267,7 +267,7 @@ void registerArrayType(Runtime* runtime) {
             }
         }
     );
-    if (!runtime->registerNativeParameterizedConstructor(
+    if (!runtime->getTypeManager().registerNativeParameterizedConstructor(
         "Array", 1,
         [runtime](const NomadString& name, const std::vector<const nomad::Type*>& arguments) {
             // One class per specialization (e.g. `Array<int>`); each rank constructor builds a different array type.

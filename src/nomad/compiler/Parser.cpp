@@ -864,7 +864,7 @@ std::unique_ptr<Expression> parseNewExpression(
     }
     auto* runtime = context->getRuntime();
     NomadString constructorName = tokens->currentToken().textValue;
-    if (const auto count = runtime->getParameterizedConstructorArgumentCount(constructorName)) {
+    if (const auto count = runtime->getTypeManager().getParameterizedConstructorArgumentCount(constructorName)) {
         tokens->next();
         if (!tokens->expect("<")) {
             return nullptr;
@@ -884,7 +884,7 @@ std::unique_ptr<Expression> parseNewExpression(
             context->reportError("Incorrect number of constructor type arguments for '" + constructorName + "'", tokens);
             return nullptr;
         }
-        constructorName = runtime->getParameterizedConstructorName(constructorName, typeArguments);
+        constructorName = runtime->getTypeManager().getParameterizedConstructorName(constructorName, typeArguments);
         if (constructorName.empty()) {
             context->reportError("Cannot resolve parameterized constructor", tokens);
             return nullptr;

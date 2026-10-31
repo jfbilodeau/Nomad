@@ -692,4 +692,97 @@ BOOST_AUTO_TEST_CASE(manager_opaque_ids_and_callback_signatures_preserve_identit
     BOOST_TEST(manager.getTypeCount() == count);
 }
 
+BOOST_AUTO_TEST_CASE(constructor_families_publish_names_and_cache_across_catalog_growth) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto hubId = runtime.registerHub("constructors", HubMode::Closed);
+    BOOST_REQUIRE(hubId.isValid());
+    auto calls = 0;
+    BOOST_REQUIRE(manager.registerNativeParameterizedConstructor("constructors.Create", 1,
+        [&](const NomadString& name, const std::vector<const Type*>& arguments) {
+            ++calls;
+            if (calls == 1) {
+                for (auto index = 0; index < 64; ++index) {
+                    BOOST_REQUIRE(manager.registerNativeParameterizedConstructor(
+                        "AdditionalConstructor" + std::to_string(index), 1,
+                        [](const NomadString&, const std::vector<const Type*>&) {}));
+                }
+            }
+            const auto ownerId = manager.registerClass(name, ClassMode::Closed);
+            BOOST_REQUIRE(ownerId.isValid());
+            BOOST_REQUIRE(manager.registerNativeClassConstructor(ownerId, {
+                .parameters = {{arguments.front()->getId(), "value", ""}},
+                .function = [](VirtualMachine*) {},
+                .documentation = ""
+            }).isValid());
+        }
+    ));
+    BOOST_TEST(manager.getParameterizedConstructorArgumentCount("constructors.Create").value() == 1U);
+    BOOST_TEST(runtime.getParameterizedConstructorArgumentCount("constructors.Create").value() == 1U);
+    BOOST_TEST(std::get<HubTypeFamily>(*runtime.getHub(hubId)->getMember("Create")).argumentCount == 1U);
+    BOOST_CHECK_THROW(runtime.publishTypeFamilyNamespace("constructors.Create", 2), NomadException);
+    BOOST_CHECK_THROW(runtime.publishTypeFamilyNamespace("constructors.Create", 1), NomadException);
+    BOOST_TEST(manager.getParameterizedConstructorName("constructors.Create",
+        {runtime.getIntegerType()}) == "constructors.Create<int>");
+    const auto* original = manager.getTypeByName("constructors.Create<int>");
+    BOOST_REQUIRE(original != nullptr);
+    BOOST_TEST(runtime.getParameterizedConstructorName("constructors.Create",
+        {runtime.getIntegerType()}) == "constructors.Create<int>");
+    BOOST_TEST(manager.getTypeByName("constructors.Create<int>") == original);
+    BOOST_TEST(calls == 1);
+    BOOST_TEST(manager.getParameterizedConstructorName("constructors.Create",
+        {runtime.getFloatType()}) == "constructors.Create<float>");
+    BOOST_TEST(calls == 2);
+    BOOST_TEST(manager.getParameterizedConstructorArgumentCount("AdditionalConstructor63").value() == 1U);
+    std::vector<NomadString> names{"existing"};
+    manager.getParameterizedConstructorNames(names);
+    BOOST_TEST(names.front() == "existing");
+    const auto containsFamily = std::ranges::find(names, "constructors.Create") != names.end();
+    BOOST_TEST(containsFamily);
+    BOOST_REQUIRE(manager.registerNativeParameterizedConstructor("late.Create", 1,
+        [](const NomadString&, const std::vector<const Type*>&) {}));
+    const auto lateHub = runtime.registerHub("late", HubMode::Opened);
+    BOOST_REQUIRE(lateHub.isValid());
+    BOOST_TEST(std::get<HubTypeFamily>(*runtime.getHub(lateHub)->getMember("Create")).argumentCount == 1U);
+    BOOST_TEST(!manager.registerNativeParameterizedConstructor("late.Create", 1,
+        [](const NomadString&, const std::vector<const Type*>&) {}));
+    BOOST_TEST(!manager.registerParameterizedType("late.Create", 1,
+        [](Runtime* owner, TypeId id, const std::vector<const Type*>& arguments) {
+            return std::make_unique<ClassType>(owner, id, "late.Create<int>", ClassMode::Closed, arguments);
+        }));
+}
+
+BOOST_AUTO_TEST_CASE(constructor_family_initialization_retries_failures_and_accepts_script_constructors) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    auto attempts = 0;
+    BOOST_REQUIRE(manager.registerNativeParameterizedConstructor("Retry", 1,
+        [&](const NomadString& name, const std::vector<const Type*>&) {
+            ++attempts;
+            if (attempts == 1) {
+                return;
+            }
+            if (attempts == 2) {
+                const auto ownerId = manager.registerClass(name, ClassMode::Closed);
+                BOOST_REQUIRE(ownerId.isValid());
+                BOOST_REQUIRE(manager.registerScriptClassConstructor(ownerId, {}, "test.nomad", "").isValid());
+                throw NomadException("Initialization failed");
+            }
+        }
+    ));
+    BOOST_TEST(manager.getParameterizedConstructorName("Retry", {runtime.getIntegerType()}).empty());
+    BOOST_CHECK_THROW(static_cast<void>(manager.getParameterizedConstructorName(
+        "Retry", {runtime.getIntegerType()})), NomadException);
+    BOOST_TEST(manager.getParameterizedConstructorName("Retry", {runtime.getIntegerType()}) == "Retry<int>");
+    BOOST_TEST(runtime.getParameterizedConstructorName("Retry", {runtime.getIntegerType()}) == "Retry<int>");
+    BOOST_TEST(attempts == 3);
+    Runtime other;
+    BOOST_TEST(manager.getParameterizedConstructorName("Retry", {other.getIntegerType()}).empty());
+    BOOST_TEST(manager.getParameterizedConstructorName("Retry", {runtime.getVoidType()}).empty());
+    BOOST_TEST(manager.getParameterizedConstructorName("Retry", {nullptr}).empty());
+    BOOST_TEST(manager.getParameterizedConstructorName("Retry", {}).empty());
+    BOOST_TEST(manager.getParameterizedConstructorName("Missing", {runtime.getIntegerType()}).empty());
+    BOOST_TEST(attempts == 3);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

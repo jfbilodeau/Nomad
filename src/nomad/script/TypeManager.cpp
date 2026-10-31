@@ -453,7 +453,7 @@ CallableId TypeManager::registerNativeClassConstructor(
     }
     const auto name = classType->getTypeName();
     const auto isReservedName = name.empty() ||
-        m_runtime.getParameterizedConstructorArgumentCount(name).has_value() ||
+        getParameterizedConstructorArgumentCount(name).has_value() ||
         getParameterizedTypeArgumentCount(name).has_value();
     if (isReservedName) {
         log::error("Cannot register constructor '" + name + "': the name is reserved");
@@ -484,6 +484,101 @@ CallableId TypeManager::registerNativeClassConstructor(
     ));
 }
 
+bool TypeManager::hasConstructor(const NomadString& name) const {
+    for (const auto& type : m_types) {
+        const auto* classType = type != nullptr ? type->asClassType() : nullptr;
+        if (classType == nullptr) {
+            continue;
+        }
+        const auto constructors = classType->getConstructors();
+        const auto matchesName = std::ranges::any_of(constructors, [&](const auto* constructor) {
+            return constructor->getName() == name;
+        });
+        if (matchesName) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool TypeManager::registerNativeParameterizedConstructor(
+    const NomadString& name,
+    const NomadIndex argumentCount,
+    ParameterizedConstructorInitializer initializer
+) {
+    const auto hasAvailableName = !name.empty() && m_runtime.canRegisterTypeName(name) &&
+        getTypeByName(name) == nullptr;
+    const auto isConstructorFamily = getParameterizedConstructorArgumentCount(name).has_value();
+    const auto isTypeFamily = getParameterizedTypeArgumentCount(name).has_value();
+    const auto hasExistingConstructor = hasConstructor(name);
+    if (!hasAvailableName || argumentCount == 0 || !initializer ||
+        isConstructorFamily || isTypeFamily || hasExistingConstructor) {
+        log::error("Cannot register parameterized constructor '" + name + "': invalid or duplicate definition");
+        return false;
+    }
+    m_parameterizedConstructors.push_back({name, argumentCount, std::move(initializer)});
+    m_runtime.publishTypeFamilyNamespace(name, argumentCount);
+    return true;
+}
+
+std::optional<NomadIndex> TypeManager::getParameterizedConstructorArgumentCount(const NomadString& name) const {
+    const auto registration = std::ranges::find(
+        m_parameterizedConstructors, name, &ParameterizedConstructorRegistration::name
+    );
+    if (registration == m_parameterizedConstructors.end()) {
+        return std::nullopt;
+    }
+    return registration->argumentCount;
+}
+
+void TypeManager::getParameterizedConstructorNames(std::vector<NomadString>& names) const {
+    names.reserve(names.size() + m_parameterizedConstructors.size());
+    for (const auto& registration : m_parameterizedConstructors) {
+        names.push_back(registration.name);
+    }
+}
+
+NomadString TypeManager::getParameterizedConstructorName(
+    const NomadString& name,
+    const std::vector<const Type*>& arguments
+) {
+    const auto registration = std::ranges::find(
+        m_parameterizedConstructors, name, &ParameterizedConstructorRegistration::name
+    );
+    const auto hasRegisteredFamily = registration != m_parameterizedConstructors.end();
+    const auto hasMatchingArity = hasRegisteredFamily && arguments.size() == registration->argumentCount;
+    const auto hasValidArguments = std::ranges::all_of(arguments, [this](const auto* type) {
+        return ownsType(type) && !type->isVoid() && !type->isInternal();
+    });
+    if (!hasMatchingArity || !hasValidArguments) {
+        log::error("Cannot resolve parameterized constructor '" + name + "': invalid name or type arguments");
+        return {};
+    }
+    auto specializedName = name + "<";
+    for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
+        if (index != 0) {
+            specializedName += " ";
+        }
+        specializedName += arguments[index]->getTypeName();
+    }
+    specializedName += ">";
+    const auto isCached = std::ranges::find(m_constructorSpecializations, specializedName) !=
+        m_constructorSpecializations.end();
+    if (isCached) {
+        return specializedName;
+    }
+    // Initializers may register more families and invalidate the registration iterator.
+    const auto initializer = registration->initializer;
+    initializer(specializedName, arguments);
+    const auto hasRegisteredConstructor = hasConstructor(specializedName);
+    if (!hasRegisteredConstructor) {
+        log::error("No constructors registered for '" + specializedName + "'");
+        return {};
+    }
+    m_constructorSpecializations.push_back(specializedName);
+    return specializedName;
+}
+
 bool TypeManager::registerParameterizedType(
     const NomadString& name,
     const NomadIndex argumentCount,
@@ -493,7 +588,7 @@ bool TypeManager::registerParameterizedType(
     const auto hasAvailableName = !name.empty() && m_runtime.canRegisterTypeName(name) &&
         getTypeByName(name) == nullptr;
     const auto isConstructorFamily = hasAvailableName &&
-        m_runtime.getParameterizedConstructorArgumentCount(name).has_value();
+        getParameterizedConstructorArgumentCount(name).has_value();
     const auto isTypeFamily = getParameterizedTypeArgumentCount(name).has_value();
     if (!hasAvailableName || argumentCount == 0 || !factory || isConstructorFamily || isTypeFamily) {
         log::error("Cannot register parameterized type '" + name + "': invalid or duplicate definition");

@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1S have been reviewed; Step 1T below is implemented and awaiting review.
+Steps 1A through 1T have been reviewed; Step 1U below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -839,6 +839,35 @@ Validation:
 Next slice after review: migrate native parameterized constructor families and
 their specialization state, then review remaining Runtime type surfaces before
 returning to aggregate struct storage addressing and callable ABI design.
+
+### Step 1U: Native parameterized constructor families
+
+TypeManager owns native parameterized constructor family registrations,
+initializers, and specialization caching. Runtime registration and lookup APIs
+remain compatibility wrappers. Compiler and signature-help resolution and the
+Array constructor family registration use the manager.
+
+Runtime's existing `publishTypeFamilyNamespace` accepts registered type or
+constructor families; late hub creation includes both manager-owned catalogs.
+Initializer callbacks are copied before invocation so registration of additional
+families cannot invalidate the active callback. Missing constructors and thrown
+initializers remain uncached, allowing subsequent attempts.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, tooling, and LSP process regressions passed.
+- Direct manager tests verify namespace publication, late hubs, append-only name
+  enumeration, specialization reuse, catalog growth during initialization,
+  retries after missing constructors or exceptions, and script constructors.
+- Existing Runtime constructor-family validation and executable Array
+  construction regressions passed.
+- All four documentation preparation tests and whitespace checks passed.
+- No aggregate struct execution or gameplay validation is claimed.
+
+Next slice after review: review remaining Runtime type surfaces (events,
+iterables, indexers, and convenience lookups) for cohesive manager ownership,
+then return to aggregate struct storage addressing and callable ABI design.
 
 Remaining Step 1 work, requiring separate design approval:
 

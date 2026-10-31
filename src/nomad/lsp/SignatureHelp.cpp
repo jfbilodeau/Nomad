@@ -68,7 +68,7 @@ std::vector<const Callable*> findCallables(
         if (!tokens.is(TokenType::Identifier)) return {};
         const Type* type = nullptr;
         const auto constructorName = tokens.currentToken().textValue;
-        if (const auto count = runtime.getParameterizedConstructorArgumentCount(constructorName)) {
+        if (const auto count = runtime.getTypeManager().getParameterizedConstructorArgumentCount(constructorName)) {
             tokens.next();
             if (!tokens.expect("<")) return {};
             std::vector<const Type*> arguments;
@@ -78,7 +78,9 @@ std::vector<const Callable*> findCallables(
                 arguments.push_back(argument);
             }
             if (!tokens.expect(">") || arguments.size() != *count) return {};
-            type = runtime.getTypeByName(runtime.getParameterizedConstructorName(constructorName, arguments));
+            const auto specializedName =
+                runtime.getTypeManager().getParameterizedConstructorName(constructorName, arguments);
+            type = runtime.getTypeManager().getTypeByName(specializedName);
         } else {
             type = parser::parseType(&context, &tokens);
         }

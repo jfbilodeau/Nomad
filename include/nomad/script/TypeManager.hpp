@@ -62,6 +62,19 @@ public:
         const Type* returnType
     );
     [[nodiscard]] const Type* getPredicateType();
+    using ParameterizedConstructorInitializer =
+        std::function<void(const NomadString&, const std::vector<const Type*>&)>;
+    bool registerNativeParameterizedConstructor(
+        const NomadString& name,
+        NomadIndex argumentCount,
+        ParameterizedConstructorInitializer initializer
+    );
+    [[nodiscard]] std::optional<NomadIndex> getParameterizedConstructorArgumentCount(const NomadString& name) const;
+    void getParameterizedConstructorNames(std::vector<NomadString>& names) const;
+    [[nodiscard]] NomadString getParameterizedConstructorName(
+        const NomadString& name,
+        const std::vector<const Type*>& arguments
+    );
     using ParameterizedTypeFactory =
         std::function<std::unique_ptr<Type>(Runtime*, TypeId, const std::vector<const Type*>&)>;
     using ParameterizedTypeInitializer = std::function<void(Runtime*, TypeId)>;
@@ -145,6 +158,12 @@ public:
     void catalogType(std::unique_ptr<Type> type);
 
 private:
+    struct ParameterizedConstructorRegistration {
+        NomadString name;
+        NomadIndex argumentCount;
+        ParameterizedConstructorInitializer initializer;
+    };
+
     struct ParameterizedTypeRegistration {
         NomadString name;
         NomadIndex argumentCount;
@@ -161,6 +180,7 @@ private:
     };
 
     [[nodiscard]] bool canRegisterClass(const NomadString& name, ClassMode mode) const;
+    [[nodiscard]] bool hasConstructor(const NomadString& name) const;
     [[nodiscard]] TypeId publishClass(
         TypeId id,
         const NomadString& name,
@@ -177,6 +197,8 @@ private:
     std::vector<std::unique_ptr<Type>> m_types;
     std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;
     std::vector<TypeSpecialization> m_typeSpecializations;
+    std::vector<ParameterizedConstructorRegistration> m_parameterizedConstructors;
+    std::vector<NomadString> m_constructorSpecializations;
 };
 
 } // namespace nomad
