@@ -15,11 +15,11 @@ KeyValueObject::KeyValueObject(const Type* keyType, const Type* valueType):
         throw NomadException("KeyValue types must be public, non-void types");
     }
     try {
-        m_keyType->initValue(m_key);
-        m_valueType->initValue(m_value);
+        m_keyType->initValue(&m_key);
+        m_valueType->initValue(&m_value);
     } catch (...) {
-        m_keyType->freeValue(m_key);
-        m_valueType->freeValue(m_value);
+        m_keyType->freeValue(&m_key);
+        m_valueType->freeValue(&m_value);
         throw;
     }
 }
@@ -38,21 +38,21 @@ KeyValueObject::KeyValueObject(
         throw NomadException("KeyValue types must be public, non-void types");
     }
     try {
-        m_keyType->copyValue(key, m_key);
-        m_valueType->copyValue(value, m_value);
+        m_keyType->copyValue(&key, &m_key);
+        m_valueType->copyValue(&value, &m_value);
     } catch (...) {
-        m_keyType->freeValue(m_key);
-        m_valueType->freeValue(m_value);
+        m_keyType->freeValue(&m_key);
+        m_valueType->freeValue(&m_value);
         throw;
     }
 }
 
 KeyValueObject::~KeyValueObject() {
     if (m_keyType->needsFree()) {
-        m_keyType->freeValue(m_key);
+        m_keyType->freeValue(&m_key);
     }
     if (m_valueType->needsFree()) {
-        m_valueType->freeValue(m_value);
+        m_valueType->freeValue(&m_value);
     }
 }
 

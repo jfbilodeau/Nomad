@@ -1472,7 +1472,7 @@ void Game::loadTextIntoConst(const NomadString& languageCode) const {
 
         m_runtime->registerConstant(constantName, constantValue, constantType);
 
-        constantType->freeValue(constantValue);
+        constantType->freeValue(&constantValue);
     }
 }
 

@@ -480,7 +480,7 @@ void loadVariableContext(const Runtime* runtime, VariableContext& context, const
     for (auto& pendingValue : pendingValues) {
         // The variable context copies what it keeps.
         context.setValue(pendingValue.variableId, pendingValue.value);
-        pendingValue.type->freeValue(pendingValue.value);
+        pendingValue.type->freeValue(&pendingValue.value);
     }
 }
 

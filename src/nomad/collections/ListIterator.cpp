@@ -23,7 +23,7 @@ bool ListIterator::onMoveNext(RuntimeValue& value) {
     if (m_next == m_list->getCount()) {
         return false;
     }
-    m_list->getElementType()->copyValue(m_list->getValue(static_cast<NomadInteger>(m_next)), value);
+    m_list->getElementType()->copyValue(&m_list->getValue(static_cast<NomadInteger>(m_next)), &value);
     ++m_next;
     return true;
 }

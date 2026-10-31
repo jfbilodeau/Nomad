@@ -231,7 +231,7 @@ BOOST_AUTO_TEST_CASE(string_operands_evaluate_left_first_and_snapshot_before_rig
             }, {}, runtime.getStringType(), NomadDoc("Right string"));
             runtime.registerNativeFunction("test.replaceLocal", [&](VirtualMachine* machine) {
                 auto previous = machine->getFunctionVariableValue(VariableId{0});
-                runtime.getStringType()->freeValue(previous);
+                runtime.getStringType()->freeValue(&previous);
                 RuntimeValue replacement;
                 replacement.setStringValue("after");
                 machine->setFunctionVariableValue(VariableId{0}, replacement);

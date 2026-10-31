@@ -1605,14 +1605,14 @@ void Compiler::installScriptInitialValues() {
             m_runtime->setContextVariableValue(id, initialValue->getValue());
         } else {
             RuntimeValue value;
-            type->initValue(value);
+            type->initValue(&value);
             try {
                 m_runtime->setContextVariableValue(id, value);
             } catch (...) {
-                type->freeValue(value);
+                type->freeValue(&value);
                 throw;
             }
-            type->freeValue(value);
+            type->freeValue(&value);
         }
     }
 }

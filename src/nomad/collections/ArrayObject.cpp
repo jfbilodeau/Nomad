@@ -44,7 +44,7 @@ ArrayObject::ArrayObject(const Type* elementType, const std::span<const NomadInt
     // The delegated constructor ensures destruction also frees partial initialization.
     for (auto index = NomadIndex{0}; index < count; ++index) {
         m_values.emplace_back();
-        m_elementType->initValue(m_values.back());
+        m_elementType->initValue(&m_values.back());
     }
 }
 
@@ -55,7 +55,7 @@ ArrayObject::~ArrayObject() {
 void ArrayObject::freeElements() noexcept {
     if (!m_values.empty() && m_elementType->needsFree()) {
         for (auto& value : m_values) {
-            m_elementType->freeValue(value);
+            m_elementType->freeValue(&value);
         }
     }
 }

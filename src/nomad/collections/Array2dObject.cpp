@@ -44,9 +44,9 @@ void Array2dObject::getValue(
 ) const {
     const auto offset = getOffset(index1, index2);
     if (offset == NOMAD_INVALID_INDEX) {
-        m_elementType->initValue(result);
+        m_elementType->initValue(&result);
     } else {
-        m_elementType->copyValue(m_values[offset], result);
+        m_elementType->copyValue(&m_values[offset], &result);
     }
 }
 

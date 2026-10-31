@@ -38,7 +38,7 @@ Expression::Expression(const Expression* parent, const NomadIndex line, const No
 
 Expression::~Expression() {
     if (m_type != nullptr) {
-        m_type->freeValue(m_value);
+        m_type->freeValue(&m_value);
     }
 }
 
@@ -173,7 +173,7 @@ void Expression::setType(const Type* type) {
 }
 
 void Expression::setValue(const RuntimeValue& value) {
-    m_type->copyValue(value, m_value);
+    m_type->copyValue(&value, &m_value);
 
     m_hasValue = true;
 }
@@ -259,7 +259,7 @@ std::unique_ptr<TypedValue> UnaryExpression::getInitialValue(Compiler* compiler)
         return nullptr;
     }
     auto result = std::make_unique<TypedValue>(getType(), value);
-    getType()->freeValue(value);
+    getType()->freeValue(&value);
     return result;
 }
 
@@ -319,10 +319,10 @@ void DynamicFormatExpression::onEvaluate(InterpreterContext& context) const {
     try {
         context.setResult(getType(), formatted);
     } catch (...) {
-        getType()->freeValue(formatted);
+        getType()->freeValue(&formatted);
         throw;
     }
-    getType()->freeValue(formatted);
+    getType()->freeValue(&formatted);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -360,7 +360,7 @@ std::unique_ptr<TypedValue> BinaryExpression::getInitialValue(Compiler* compiler
         return nullptr;
     }
     auto result = std::make_unique<TypedValue>(getType(), value);
-    getType()->freeValue(value);
+    getType()->freeValue(&value);
     return result;
 }
 
@@ -872,13 +872,13 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
 
     const auto* receiverType = m_receiver->getType();
     RuntimeValue receiver;
-    receiverType->copyValue(evaluatedReceiver->getValue(), receiver);
+    receiverType->copyValue(&evaluatedReceiver->getValue(), &receiver);
 
     auto* runtime = context.getRuntime();
     if (m_memberType == MemberType::Property) {
         const auto* property = runtime->getProperty(std::get<PropertyId>(m_memberId));
         if (property == nullptr) {
-            receiverType->freeValue(receiver);
+            receiverType->freeValue(&receiver);
             raiseException("Invalid property getter: " + m_qualifiedName);
         }
         const auto* valueType = property->getValueType();
@@ -888,12 +888,12 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
             context.getVirtualMachine()->getProperty(std::get<PropertyId>(m_memberId), receiver, result);
             context.setResult(valueType, result);
         } catch (...) {
-            valueType->freeValue(result);
-            receiverType->freeValue(receiver);
+            valueType->freeValue(&result);
+            receiverType->freeValue(&receiver);
             throw;
         }
-        valueType->freeValue(result);
-        receiverType->freeValue(receiver);
+        valueType->freeValue(&result);
+        receiverType->freeValue(&receiver);
         return;
     }
 
@@ -904,7 +904,7 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
     std::vector<RuntimeValue> values;
     m_arguments.evaluate(context, evaluatedArguments, values);
     if (context.hasError()) {
-        receiverType->freeValue(receiver);
+        receiverType->freeValue(&receiver);
         return;
     }
 
@@ -921,17 +921,17 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
             context.setVoidResult();
         } else {
             context.setResult(returnType, virtualMachine->getResult());
-            returnType->freeValue(virtualMachine->getResult());
+            returnType->freeValue(&virtualMachine->getResult());
         }
     } catch (...) {
         if (!returnType->isVoid()) {
-            returnType->freeValue(virtualMachine->getResult());
+            returnType->freeValue(&virtualMachine->getResult());
         }
-        receiverType->freeValue(receiver);
+        receiverType->freeValue(&receiver);
         throw;
     }
 
-    receiverType->freeValue(receiver);
+    receiverType->freeValue(&receiver);
 }
 
 void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression) {
@@ -959,12 +959,12 @@ void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, con
 
     const auto* receiverType = m_receiver->getType();
     RuntimeValue receiver;
-    receiverType->copyValue(evaluatedReceiver->getValue(), receiver);
+    receiverType->copyValue(&evaluatedReceiver->getValue(), &receiver);
 
     expression->evaluate(context);
     const auto* assignedValue = context.getResult();
     if (assignedValue == nullptr) {
-        receiverType->freeValue(receiver);
+        receiverType->freeValue(&receiver);
         if (!context.hasError()) {
             context.setError("Native property assignment did not produce a value");
         }
@@ -973,7 +973,7 @@ void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, con
 
     const auto* property = context.getRuntime()->getProperty(std::get<PropertyId>(m_memberId));
     if (property == nullptr) {
-        receiverType->freeValue(receiver);
+        receiverType->freeValue(&receiver);
         raiseException("Invalid property setter: " + m_qualifiedName);
     }
 
@@ -981,11 +981,11 @@ void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, con
         context.getVirtualMachine()->setProperty(std::get<PropertyId>(m_memberId), receiver, assignedValue->getValue());
         context.setResult(property->getValueType(), assignedValue->getValue());
     } catch (...) {
-        receiverType->freeValue(receiver);
+        receiverType->freeValue(&receiver);
         throw;
     }
 
-    receiverType->freeValue(receiver);
+    receiverType->freeValue(&receiver);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1126,12 +1126,12 @@ void IndexerExpression::evaluateIndexer(InterpreterContext& context, const Expre
         }
     } catch (...) {
         if (assigned == nullptr) {
-            getType()->freeValue(machine->getResult());
+            getType()->freeValue(&machine->getResult());
         }
         throw;
     }
     if (assigned == nullptr) {
-        getType()->freeValue(machine->getResult());
+        getType()->freeValue(&machine->getResult());
     }
 }
 
@@ -1321,7 +1321,7 @@ void StringLiteral::onResolve(CompilerContext* context, ScriptCallableBase* /*fu
     RuntimeValue value{m_value};
 
     setResolved(value, stringType);
-    stringType->freeValue(value);
+    stringType->freeValue(&value);
 }
 
 void StringLiteral::onCompile(Compiler* compiler, ScriptCallableBase* /*function*/, ExpressionTarget /*target*/) {
@@ -1569,10 +1569,10 @@ void FormatStringLiteral::onEvaluate(InterpreterContext& context) const {
     try {
         context.setResult(getType(), value);
     } catch (...) {
-        getType()->freeValue(value);
+        getType()->freeValue(&value);
         throw;
     }
-    getType()->freeValue(value);
+    getType()->freeValue(&value);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1893,7 +1893,7 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
 
         // `setResult` copies the value, so the temporary is released here.
         context.setResult(type, value);
-        type->freeValue(value);
+        type->freeValue(&value);
         break;
     }
 

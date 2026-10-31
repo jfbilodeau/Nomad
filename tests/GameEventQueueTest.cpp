@@ -25,20 +25,20 @@ public:
         m_valueFreed(valueFreed)
     {}
 
-    void initValue(RuntimeValue& value) const override {
-        value = RuntimeValue{};
+    void initValue(RuntimeValue* value) const override {
+        *value = RuntimeValue{};
     }
 
     [[nodiscard]] NomadString getTypeName() const override {
         return "tracking";
     }
 
-    void freeValue(RuntimeValue& /*value*/) const override {
+    void freeValue(RuntimeValue* /*value*/) const override {
         m_valueFreed = true;
     }
 
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override {
-        destinationValue = sourceValue;
+    void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override {
+        *destinationValue = *sourceValue;
     }
 
     void toString(const RuntimeValue& /*value*/, NomadString& string) const override {

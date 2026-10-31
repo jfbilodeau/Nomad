@@ -34,9 +34,9 @@ NomadIndex Array1dObject::getDimensionSize(const NomadIndex dimension) const {
 void Array1dObject::getValue(const NomadInteger index, RuntimeValue& result) const {
     const auto offset = getOffset(index);
     if (offset == NOMAD_INVALID_INDEX) {
-        m_elementType->initValue(result);
+        m_elementType->initValue(&result);
     } else {
-        m_elementType->copyValue(m_values[offset], result);
+        m_elementType->copyValue(&m_values[offset], &result);
     }
 }
 

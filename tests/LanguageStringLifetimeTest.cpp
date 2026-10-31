@@ -211,11 +211,11 @@ BOOST_AUTO_TEST_CASE(null_string_converts_to_empty_text)
 {
     LanguageTestFixture fixture;
     RuntimeValue value;
-    fixture.getRuntime().getStringType()->initValue(value);
+    fixture.getRuntime().getStringType()->initValue(&value);
 
     BOOST_TEST(fixture.getRuntime().getStringType()->toString(value) == "");
 
-    fixture.getRuntime().getStringType()->freeValue(value);
+    fixture.getRuntime().getStringType()->freeValue(&value);
 }
 
 BOOST_AUTO_TEST_CASE(discarded_closure_string_result_is_freed)
@@ -378,7 +378,7 @@ BOOST_AUTO_TEST_CASE(closures_keep_captured_parameters_alive)
     RuntimeValue result;
     runtime.executeFunction(closure.get(), {}, result);
     BOOST_TEST(result.getStringValue() == "name");
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
 
     closure.reset();
 #ifdef NOMAD_DEBUG

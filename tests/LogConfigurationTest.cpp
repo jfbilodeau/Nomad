@@ -154,7 +154,7 @@ BOOST_AUTO_TEST_CASE(configuration_objects_are_script_objects_with_matching_defa
     BOOST_TEST(base->getFieldCount() == 2U);
     BOOST_TEST(field(*base, "active").getBooleanValue());
     BOOST_TEST(field(*base, "level").getIntegerValue() == static_cast<NomadInteger>(LogLevel::Info));
-    runtime.getTypeByName("log.SinkConfiguration")->freeValue(baseValue);
+    runtime.getTypeByName("log.SinkConfiguration")->freeValue(&baseValue);
 
     auto fileValue = execute("return new log.FileSinkConfiguration");
     const auto* file = dynamic_cast<ScriptObject*>(fileValue.getObjectValue());
@@ -168,7 +168,7 @@ BOOST_AUTO_TEST_CASE(configuration_objects_are_script_objects_with_matching_defa
     BOOST_TEST(field(*file, "rotateAtStartup").getBooleanValue());
     BOOST_TEST(field(*file, "maxSizeBytes").getIntegerValue() == 10 * 1024 * 1024);
     BOOST_TEST(field(*file, "maxFiles").getIntegerValue() == 10);
-    runtime.getTypeByName("log.FileSinkConfiguration")->freeValue(fileValue);
+    runtime.getTypeByName("log.FileSinkConfiguration")->freeValue(&fileValue);
     BOOST_TEST(!std::filesystem::exists(directory.getPath() / "logs"));
     BOOST_TEST(runtime.getTypeByName("log.ConsoleSinkConfiguration") == nullptr);
     BOOST_TEST(runtime.getNativeFunctionId("log.createMemorySink").isInvalid());
@@ -311,7 +311,7 @@ BOOST_AUTO_TEST_CASE(staged_file_settings_remain_adjustable_before_activation) {
     BOOST_TEST(execute("return savedSink.maxFiles").getIntegerValue() == 0);
     auto path = execute("return log.getFilePath savedSink");
     BOOST_TEST(path.getStringObject()->getString() == pathToUtf8(directory.getPath() / "logs" / "application.log"));
-    runtime.getStringType()->freeValue(path);
+    runtime.getStringType()->freeValue(&path);
 }
 
 BOOST_AUTO_TEST_CASE(absolute_directories_are_supported_and_configuration_is_copied) {

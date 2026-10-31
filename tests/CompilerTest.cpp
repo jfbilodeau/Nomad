@@ -138,7 +138,7 @@ BOOST_AUTO_TEST_CASE(context_variables_in_format_strings_use_global_ids)
 
     BOOST_TEST(result.getStringValue() == "value 17");
 
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
 }
 
 BOOST_AUTO_TEST_CASE(functions_keep_their_script_identity_across_registration_and_sorting)
@@ -186,7 +186,7 @@ BOOST_AUTO_TEST_CASE(functions_keep_their_script_identity_across_registration_an
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("z"), {}, result);
     BOOST_TEST(result.getStringValue() == "42");
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
 }
 
 BOOST_AUTO_TEST_CASE(script_lookup_rejects_invalid_and_out_of_range_ids)

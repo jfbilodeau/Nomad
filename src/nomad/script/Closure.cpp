@@ -30,7 +30,7 @@ Closure::~Closure() {
 	// Clean up captured parameter values
 	for (NomadIndex i = 0; i < m_capturedParameters.size(); ++i) {
 		if (const auto type = m_function->getCaptureType(toNomadId(i))) {
-			type->freeValue(m_capturedParameters[i]);
+			type->freeValue(&m_capturedParameters[i]);
 		}
 	}
 }

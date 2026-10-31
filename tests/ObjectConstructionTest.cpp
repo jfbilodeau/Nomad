@@ -800,7 +800,7 @@ BOOST_AUTO_TEST_CASE(add_constructor_preserves_distinct_created_types_and_shared
     RuntimeValue result;
     runtime.executeFunction(functionId, {}, result);
     BOOST_REQUIRE(result.getObjectValue() != nullptr);
-    createdType->freeValue(result);
+    createdType->freeValue(&result);
 
     auto machine = runtime.createVirtualMachine();
     InterpreterContext context(*machine);
@@ -857,7 +857,7 @@ BOOST_AUTO_TEST_CASE(add_constructor_preserves_compiler_supplied_parameters) {
     RuntimeValue result;
     runtime.executeFunction(functionId, {}, result);
     BOOST_TEST(line == 2);
-    type->freeValue(result);
+    type->freeValue(&result);
 }
 
 BOOST_AUTO_TEST_CASE(inferred_constructors_resolve_execute_and_reuse_specializations) {
@@ -904,7 +904,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_resolve_execute_and_reuse_specializat
             RuntimeValue result;
             runtime.executeFunction(id, {}, result);
             BOOST_REQUIRE(result.getObjectValue() != nullptr);
-            expectedType->freeValue(result);
+            expectedType->freeValue(&result);
             {
                 auto machine = runtime.createVirtualMachine();
                 InterpreterContext context(*machine);
@@ -1607,7 +1607,7 @@ BOOST_AUTO_TEST_CASE(native_constructor_host_calls_preserve_registers_and_borrow
     BOOST_CHECK_THROW(static_cast<void>(machine->constructObject(constructorId, {})), NomadException);
     BOOST_TEST(machine->getIntegerResult() == 41);
     object->releaseRef();
-    runtime.getStringType()->freeValue(text);
+    runtime.getStringType()->freeValue(&text);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 

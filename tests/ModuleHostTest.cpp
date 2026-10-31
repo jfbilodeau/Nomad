@@ -697,8 +697,8 @@ BOOST_AUTO_TEST_CASE(collection_loops_run_in_compiler_and_interpreter) {
     BOOST_REQUIRE_MESSAGE(compiled,
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     RuntimeValue empty;
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
@@ -725,8 +725,8 @@ BOOST_AUTO_TEST_CASE(collection_iterators_keep_sources_and_obey_current_and_comp
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
     RuntimeValue empty;
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     {
         auto machine = runtime.createVirtualMachine();
         InterpreterContext context(*machine);
@@ -757,7 +757,7 @@ BOOST_AUTO_TEST_CASE(collection_iterators_keep_sources_and_obey_current_and_comp
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("earlyReturn"), {}, result);
     BOOST_TEST(result.getStringValue() == "kept");
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
@@ -873,13 +873,13 @@ BOOST_AUTO_TEST_CASE(collection_loop_bindings_preserve_values_and_allow_reassign
     BOOST_REQUIRE_MESSAGE(compiled,
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     RuntimeValue emptyString;
-    runtime.getStringType()->initValue(emptyString);
-    runtime.getStringType()->freeValue(emptyString);
+    runtime.getStringType()->initValue(&emptyString);
+    runtime.getStringType()->freeValue(&emptyString);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringValue() == "LASTbreak20 0 6 100");
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         auto machine = runtime.createVirtualMachine();
@@ -982,8 +982,8 @@ BOOST_AUTO_TEST_CASE(collections_key_values_construct_read_and_share_references)
     BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&compilation, CompilationTarget::Executable),
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     RuntimeValue empty;
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
@@ -1063,8 +1063,8 @@ BOOST_AUTO_TEST_CASE(collections_key_values_infer_constructor_types) {
     BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("makeEntry"))->getReturnType() == entryType);
     BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("makeFlags"))->getReturnType() == flagsType);
     RuntimeValue empty;
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
@@ -1184,11 +1184,11 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
     BOOST_REQUIRE_MESSAGE(compiled, (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
     const auto* nestedType = runtime.getParameterizedType("Array2", {runtime.getIntegerType()});
     RuntimeValue empty;
-    nestedType->initValue(empty);
-    nestedType->freeValue(empty);
+    nestedType->initValue(&empty);
+    nestedType->freeValue(&empty);
     // The process-wide empty string is retained after the runtime's arrays are released.
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
@@ -1201,8 +1201,8 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
     outer->getValue(1, second);
     BOOST_TEST(first.getObjectValue() == second.getObjectValue());
     BOOST_TEST(first.asObject<Array2dObject>()->getCount() == 0u);
-    nestedType->freeValue(first);
-    nestedType->freeValue(second);
+    nestedType->freeValue(&first);
+    nestedType->freeValue(&second);
     result.freeObjectValue();
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     calls.clear();
@@ -1224,7 +1224,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
         RuntimeValue element;
         grid->getValue(1, 2, element);
         BOOST_TEST(runtime.getStringType()->toString(element) == "");
-        runtime.getStringType()->freeValue(element);
+        runtime.getStringType()->freeValue(&element);
         evaluation.getVariableValue("volume")->asObject<Array3dObject>()->getValue(1, 2, 3, element);
         BOOST_TEST(element.getFloatValue() == 0.0f);
     }
@@ -1367,13 +1367,13 @@ BOOST_AUTO_TEST_CASE(collections_maps_construct_empty_typed_instances_and_defaul
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue first;
     RuntimeValue second;
-    mapType->initValue(first);
-    mapType->initValue(second);
+    mapType->initValue(&first);
+    mapType->initValue(&second);
     BOOST_TEST(first.getObjectValue() != second.getObjectValue());
     BOOST_TEST(first.asObject<MapObject>()->getCount() == 0u);
     BOOST_TEST(first.asObject<MapObject>()->getValueType() == runtime.getIntegerType());
-    mapType->freeValue(first);
-    mapType->freeValue(second);
+    mapType->freeValue(&first);
+    mapType->freeValue(&second);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     const std::vector<NomadString> sources = {
         "names = new Map<string string>",
@@ -1495,13 +1495,13 @@ BOOST_AUTO_TEST_CASE(collections_map_indexers_insert_replace_and_preserve_owned_
     BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&compilation, CompilationTarget::Executable),
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     RuntimeValue empty;
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringObject()->getString() == "updated");
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
@@ -1676,8 +1676,8 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
     BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&compilation, CompilationTarget::Executable),
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     RuntimeValue empty;
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     struct LogCapture {
         LogSinkId sinkId = log::createMemorySink();
@@ -1810,8 +1810,8 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_prese
     BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&compilation, CompilationTarget::Executable),
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     RuntimeValue empty;
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     struct LogCapture {
         LogSinkId sinkId = log::createMemorySink();
@@ -1846,17 +1846,17 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_prese
     {
         MapObject map(listType);
         RuntimeValue value;
-        listType->initValue(value);
+        listType->initValue(&value);
         map.setValue("list", value);
         BOOST_TEST(value.getObjectValue()->getReferenceCount() == 2u);
         BOOST_TEST(map.remove("list"));
         BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
         map.setValue("list", value);
-        listType->freeValue(value);
+        listType->freeValue(&value);
         const auto storedObjects = NomadObject::getLiveObjectCount();
         BOOST_TEST(map.remove("list"));
         BOOST_TEST(NomadObject::getLiveObjectCount() == storedObjects - 1);
-        listType->initValue(value);
+        listType->initValue(&value);
         map.setValue("first", value);
         map.setValue("second", value);
         BOOST_TEST(value.getObjectValue()->getReferenceCount() == 3u);
@@ -1864,7 +1864,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_prese
         BOOST_TEST(map.getCount() == 0u);
         BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
         map.setValue("discarded", value);
-        listType->freeValue(value);
+        listType->freeValue(&value);
         const auto beforeClear = NomadObject::getLiveObjectCount();
         map.clear();
         BOOST_TEST(NomadObject::getLiveObjectCount() == beforeClear - 1);
@@ -1885,7 +1885,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_release_partial_copies_and_preserve_entrie
 
         [[nodiscard]] NomadString getTypeName() const override { return "MapValue"; }
         void toString(const RuntimeValue&, NomadString& text) const override { text = getTypeName(); }
-        void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override {
+        void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
             ClassType::copyValue(source, destination);
             if (failCopy) {
                 throw NomadException("Map value copy failed");
@@ -1913,15 +1913,15 @@ BOOST_AUTO_TEST_CASE(collections_maps_release_partial_copies_and_preserve_entrie
         BOOST_TEST(second.getObjectValue()->getReferenceCount() == 1u);
         RuntimeValue result;
         BOOST_CHECK_THROW(map.getValue("stored", result), NomadException);
-        type.freeValue(result);
+        type.freeValue(&result);
         BOOST_TEST(first.getObjectValue()->getReferenceCount() == 2u);
         type.failCopy = false;
         map.getValue("stored", result);
         BOOST_TEST(result.getObjectValue() == first.getObjectValue());
-        type.freeValue(first);
-        type.freeValue(second);
+        type.freeValue(&first);
+        type.freeValue(&second);
         BOOST_TEST(result.getObjectValue()->getReferenceCount() == 2u);
-        type.freeValue(result);
+        type.freeValue(&result);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
@@ -1931,14 +1931,14 @@ BOOST_AUTO_TEST_CASE(collections_map_snapshots_own_references_and_release_partia
     class SnapshotValueType final : public ClassType {
     public:
         explicit SnapshotValueType(Runtime* runtime, TypeId id): ClassType(runtime, id, "SnapshotValue", ClassMode::Closed) {}
-        void initValue(RuntimeValue& value) const override {
+        void initValue(RuntimeValue* value) const override {
             if (failInitialization) {
-                value.setObjectValue(new NomadObject);
+                value->setObjectValue(new NomadObject);
                 throw NomadException("Snapshot value initialization failed");
             }
             ClassType::initValue(value);
         }
-        void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override {
+        void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
             ClassType::copyValue(source, destination);
             if (copiesUntilFailure == 0) {
                 throw NomadException("Snapshot value copy failed");
@@ -1953,8 +1953,8 @@ BOOST_AUTO_TEST_CASE(collections_map_snapshots_own_references_and_release_partia
     StringType keyType(&runtime, TypeId::INVALID);
     KeyValueType entryType(&runtime, TypeId::INVALID, "KeyValue<string SnapshotValue>", ClassMode::Closed, &keyType, &valueType);
     RuntimeValue empty;
-    keyType.initValue(empty);
-    keyType.freeValue(empty);
+    keyType.initValue(&empty);
+    keyType.freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     {
         MapObject map(&valueType);
@@ -2001,11 +2001,11 @@ BOOST_AUTO_TEST_CASE(collections_map_snapshots_own_references_and_release_partia
             BOOST_TEST(otherEntry.asObject<KeyValueObject>()->getValue().getObjectValue() == value.getObjectValue());
             map.clear();
             BOOST_TEST(value.getObjectValue()->getReferenceCount() == 7u);
-            entryType.freeValue(firstEntry);
-            entryType.freeValue(otherEntry);
+            entryType.freeValue(&firstEntry);
+            entryType.freeValue(&otherEntry);
         }
         BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
-        valueType.freeValue(value);
+        valueType.freeValue(&value);
         BOOST_TEST(map.getValues()->getCount() == 0u);
         BOOST_TEST(map.getEntries(&entryType)->getCount() == 0u);
         BOOST_CHECK_THROW(static_cast<void>(map.getEntries(nullptr)), NomadException);
@@ -2271,8 +2271,8 @@ BOOST_AUTO_TEST_CASE(collections_lists_mutate_order_return_indices_and_release_v
     BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&compilation, CompilationTarget::Executable),
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     RuntimeValue empty;
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     struct LogCapture {
         LogSinkId sinkId = log::createMemorySink();
@@ -2332,13 +2332,13 @@ BOOST_AUTO_TEST_CASE(collections_list_insertion_bounds_fault_without_changing_li
                 (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
             const auto* listType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
             RuntimeValue value;
-            listType->initValue(value);
+            listType->initValue(&value);
             const auto before = NomadObject::getLiveObjectCount();
             auto machine = runtime.createVirtualMachine();
             BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(runtime.getFunctionId("main")), {value}), NomadException);
             BOOST_TEST(value.asObject<ListObject>()->getCount() == 0u);
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
-            listType->freeValue(value);
+            listType->freeValue(&value);
         }
     }
 }
@@ -2398,7 +2398,7 @@ BOOST_AUTO_TEST_CASE(collections_indexers_read_replace_chain_and_preserve_evalua
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringObject()->getString() == "updated:9");
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
@@ -2446,8 +2446,8 @@ BOOST_AUTO_TEST_CASE(array1_indexers_read_replace_and_preserve_references) {
     BOOST_REQUIRE_MESSAGE(compiled,
         (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
     RuntimeValue empty;
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
@@ -2511,13 +2511,13 @@ BOOST_AUTO_TEST_CASE(array2_indexers_read_write_chain_and_preserve_reference_sem
     BOOST_REQUIRE_MESSAGE(compiled,
         (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
     RuntimeValue empty;
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringObject()->getString() == "changed:46");
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     std::ostringstream documentation;
     generateNativeMemberDocumentation(&runtime, documentation);
@@ -2530,8 +2530,8 @@ BOOST_AUTO_TEST_CASE(array2_indexers_work_in_interpreter_and_reject_invalid_synt
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
     RuntimeValue empty;
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     {
         VirtualMachine machine(&runtime);
@@ -2633,8 +2633,8 @@ BOOST_AUTO_TEST_CASE(array3_indexers_work_in_compiled_scripts_and_interpreter) {
     BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&compilation, CompilationTarget::Executable),
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     RuntimeValue empty;
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
@@ -2805,8 +2805,8 @@ BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
     RuntimeValue postfix;
     runtime.executeFunction(runtime.getFunctionId("postfix"), {}, postfix);
     BOOST_TEST(postfix.getBooleanValue());
-    listType->freeValue(first);
-    listType->freeValue(second);
+    listType->freeValue(&first);
+    listType->freeValue(&second);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 
     {
@@ -3024,13 +3024,13 @@ BOOST_AUTO_TEST_CASE(collections_list_defaults_are_distinct_empty_instances) {
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue first;
     RuntimeValue second;
-    type->initValue(first);
-    type->initValue(second);
+    type->initValue(&first);
+    type->initValue(&second);
     BOOST_REQUIRE(first.getObjectValue() != nullptr);
     BOOST_REQUIRE(second.getObjectValue() != nullptr);
     BOOST_TEST(first.getObjectValue() != second.getObjectValue());
-    type->freeValue(first);
-    type->freeValue(second);
+    type->freeValue(&first);
+    type->freeValue(&second);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 

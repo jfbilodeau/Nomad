@@ -748,7 +748,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_lists_variables_in_name_order)
     context.setVariable("zeta", runtime.getBooleanType(), RuntimeValue{true});
     RuntimeValue stringValue{NomadString{"ready"}};
     context.setVariable("alpha", runtime.getStringType(), stringValue);
-    runtime.getStringType()->freeValue(stringValue);
+    runtime.getStringType()->freeValue(&stringValue);
 
     const auto variables = context.listVariables();
     BOOST_REQUIRE_EQUAL(variables.size(), 2U);

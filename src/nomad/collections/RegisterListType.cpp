@@ -51,7 +51,7 @@ void registerListReaders(Runtime* runtime, const ClassType* classType, const boo
         .indexTypes = {runtime->getIntegerType()->getId()},
         .getter = [elementType](VirtualMachine* machine) {
             const auto* list = machine->getThisAs<ListObject>();
-            elementType->copyValue(list->getValue(machine->getIntegerParameter(0)), machine->getResult());
+            elementType->copyValue(&list->getValue(machine->getIntegerParameter(0)), &machine->getResult());
         },
         .setter = std::move(setter),
         .documentation = writable

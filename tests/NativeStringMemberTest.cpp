@@ -173,7 +173,7 @@ BOOST_AUTO_TEST_CASE(compiled_to_upper_uses_unicode_casing) {
     runtime.executeFunction(functionId, {}, result);
 
     BOOST_TEST(result.getStringValue() == "H\xC3\x89LLO");
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
 }
 
 BOOST_AUTO_TEST_CASE(to_upper_does_not_modify_receiver) {
@@ -216,7 +216,7 @@ BOOST_AUTO_TEST_CASE(to_lower_uses_unicode_casing) {
     runtime.executeFunction(functionId, {}, result);
 
     BOOST_TEST(result.getStringValue() == "h\xC3\xA9llo");
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
 }
 
 BOOST_AUTO_TEST_CASE(trim_methods_remove_locale_whitespace) {
@@ -262,7 +262,7 @@ BOOST_AUTO_TEST_CASE(string_members_reject_malformed_utf8) {
     RuntimeValue invalidValue;
     invalidValue.setStringValue(NomadString("\xC3\x28", 2));
     interpreter.setVariable("text", runtime.getStringType(), invalidValue);
-    runtime.getStringType()->freeValue(invalidValue);
+    runtime.getStringType()->freeValue(&invalidValue);
 
     BOOST_REQUIRE(Interpreter{}.execute("text.byteLength", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getIntegerValue() == 2);

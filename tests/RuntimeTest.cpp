@@ -697,7 +697,7 @@ BOOST_AUTO_TEST_CASE(runtime_registers_nominal_opaque_id_types)
     RuntimeValue source;
     source.setIdValue(42);
     RuntimeValue destination;
-    soundType->copyValue(source, destination);
+    soundType->copyValue(&source, &destination);
 
     BOOST_TEST(destination.getIdValue() == 42);
     BOOST_TEST(soundType->toString(destination) == "sound(42)");

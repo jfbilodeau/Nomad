@@ -14,7 +14,21 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <array>
+#include <type_traits>
+
 using namespace nomad;
+
+static_assert(std::is_same_v<decltype(&Type::initValue), void (Type::*)(RuntimeValue*) const>);
+static_assert(std::is_same_v<decltype(&Type::freeValue), void (Type::*)(RuntimeValue*) const>);
+static_assert(std::is_same_v<
+    decltype(&Type::copyValue),
+    void (Type::*)(const RuntimeValue*, RuntimeValue*) const
+>);
+static_assert(std::is_same_v<
+    decltype(&Type::assignValue),
+    void (Type::*)(const RuntimeValue&, RuntimeValue&) const
+>);
 
 namespace {
 
@@ -43,23 +57,23 @@ public:
 
     NomadString getTypeName() const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
-    void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override;
+    void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
 };
 
 class UnmanagedType final : public ValueType {
 public:
     using ValueType::ValueType;
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     NomadString getTypeName() const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
-    void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override;
-    void freeValue(RuntimeValue& value) const override;
+    void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
+    void freeValue(RuntimeValue* value) const override;
 
     mutable NomadIndex freeCalls = 0;
 };
 
-void UnmanagedType::initValue(RuntimeValue& value) const {
-    value = RuntimeValue{};
+void UnmanagedType::initValue(RuntimeValue* value) const {
+    *value = RuntimeValue{};
 }
 
 NomadString UnmanagedType::getTypeName() const {
@@ -70,11 +84,11 @@ void UnmanagedType::toString(const RuntimeValue&, NomadString& string) const {
     string = getTypeName();
 }
 
-void UnmanagedType::copyValue(const RuntimeValue& source, RuntimeValue& destination) const {
-    destination = source;
+void UnmanagedType::copyValue(const RuntimeValue* source, RuntimeValue* destination) const {
+    *destination = *source;
 }
 
-void UnmanagedType::freeValue(RuntimeValue&) const {
+void UnmanagedType::freeValue(RuntimeValue*) const {
     ++freeCalls;
 }
 
@@ -86,7 +100,7 @@ void FailingCopyType::toString(const RuntimeValue&, NomadString& string) const {
     string = getTypeName();
 }
 
-void FailingCopyType::copyValue(const RuntimeValue& source, RuntimeValue& destination) const {
+void FailingCopyType::copyValue(const RuntimeValue* source, RuntimeValue* destination) const {
     ClassType::copyValue(source, destination);
     throw NomadException("Copy failed");
 }
@@ -94,6 +108,67 @@ void FailingCopyType::copyValue(const RuntimeValue& source, RuntimeValue& destin
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(NomadObjectTests)
+
+BOOST_AUTO_TEST_CASE(PointerLifecycleTouchesOnlyTheSelectedScalarSlot) {
+    Runtime runtime;
+    const Type* type = runtime.getIntegerType();
+    std::array<RuntimeValue, 3> values{};
+    values.front().setIntegerValue(41);
+    values.back().setIntegerValue(43);
+    type->initValue(&values[1]);
+    BOOST_TEST(values[1].getIntegerValue() == 0);
+    const RuntimeValue source{NomadInteger{17}};
+    type->copyValue(&source, &values[1]);
+    BOOST_TEST(values[1].getIntegerValue() == 17);
+    type->copyValue(&values[1], &values[1]);
+    type->freeValue(&values[1]);
+    BOOST_TEST(values[1].getIntegerValue() == 17);
+    BOOST_TEST(values.front().getIntegerValue() == 41);
+    BOOST_TEST(values.back().getIntegerValue() == 43);
+    BOOST_TEST(source.getIntegerValue() == 17);
+}
+
+BOOST_AUTO_TEST_CASE(PointerCopyReplacesOwnedReferencesAndPreservesSelfCopy) {
+    Runtime runtime;
+    ClassType type(&runtime, TypeId::INVALID, "Element", ClassMode::Closed);
+    NomadIndex sourceDestroyed = 0;
+    NomadIndex destinationDestroyed = 0;
+    RuntimeValue source;
+    RuntimeValue destination;
+    source.setObjectValue(new CountingObject(sourceDestroyed));
+    destination.setObjectValue(new CountingObject(destinationDestroyed));
+    const Type* descriptor = &type;
+    descriptor->copyValue(&source, &destination);
+    BOOST_TEST(destinationDestroyed == 1U);
+    BOOST_TEST(sourceDestroyed == 0U);
+    BOOST_TEST(source.getObjectValue() == destination.getObjectValue());
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    descriptor->copyValue(&destination, &destination);
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    descriptor->freeValue(&source);
+    BOOST_TEST(source.getObjectValue() == nullptr);
+    BOOST_TEST(destination.getObjectValue()->getReferenceCount() == 1U);
+    descriptor->freeValue(&destination);
+    BOOST_TEST(destination.getObjectValue() == nullptr);
+    BOOST_TEST(sourceDestroyed == 1U);
+    BOOST_TEST(destinationDestroyed == 1U);
+}
+
+BOOST_AUTO_TEST_CASE(VoidLifecycleRequiresNoStorageAndTouchesNoSlots) {
+    Runtime runtime;
+    const Type* type = runtime.getVoidType();
+    BOOST_TEST(type->getSize() == 0U);
+    type->initValue(nullptr);
+    type->copyValue(nullptr, nullptr);
+    type->freeValue(nullptr);
+    const RuntimeValue source{NomadInteger{11}};
+    RuntimeValue destination{NomadInteger{22}};
+    type->initValue(&destination);
+    type->copyValue(&source, &destination);
+    type->freeValue(&destination);
+    BOOST_TEST(source.getIntegerValue() == 11);
+    BOOST_TEST(destination.getIntegerValue() == 22);
+}
 
 BOOST_AUTO_TEST_CASE(KeyValueRetainsBothReferencesAndReleasesThemOnDestruction) {
     Runtime runtime;
@@ -106,7 +181,7 @@ BOOST_AUTO_TEST_CASE(KeyValueRetainsBothReferencesAndReleasesThemOnDestruction) 
         BOOST_TEST(pair.getKey().getObjectValue() == value.getObjectValue());
         BOOST_TEST(pair.getValue().getObjectValue() == value.getObjectValue());
         BOOST_TEST(value.getObjectValue()->getReferenceCount() == 3u);
-        type.freeValue(value);
+        type.freeValue(&value);
         BOOST_TEST(pair.getKey().getObjectValue()->getReferenceCount() == 2u);
         BOOST_TEST(destroyed == 0u);
     }
@@ -128,8 +203,8 @@ BOOST_AUTO_TEST_CASE(KeyValueReleasesPartialCopiesWhenEitherArgumentFails) {
     BOOST_CHECK_THROW(KeyValueObject(&type, &failingType, key, value), NomadException);
     BOOST_TEST(key.getObjectValue()->getReferenceCount() == 1u);
     BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
-    type.freeValue(key);
-    type.freeValue(value);
+    type.freeValue(&key);
+    type.freeValue(&value);
     BOOST_TEST(destroyed == 2u);
 }
 
@@ -141,8 +216,8 @@ BOOST_AUTO_TEST_CASE(KeyValueReleasesPartiallyInitializedDefaults) {
             ClassType(runtime, id, "Initializing", ClassMode::Closed),
             m_destroyed(destroyed)
         {}
-        void initValue(RuntimeValue& value) const override {
-            value.setObjectValue(new CountingObject(m_destroyed));
+        void initValue(RuntimeValue* value) const override {
+            value->setObjectValue(new CountingObject(m_destroyed));
             if (failInitialization) {
                 throw NomadException("Initialization failed");
             }
@@ -172,13 +247,13 @@ BOOST_AUTO_TEST_CASE(KeyValueDefaultsAndUnmanagedValuesNeedNoCleanup) {
     KeyValueType pairType(&runtime, TypeId::INVALID, "KeyValue<Unmanaged Unmanaged>", ClassMode::Closed, &type, &type);
     RuntimeValue first;
     RuntimeValue second;
-    pairType.initValue(first);
-    pairType.initValue(second);
+    pairType.initValue(&first);
+    pairType.initValue(&second);
     BOOST_TEST(first.getObjectValue() != second.getObjectValue());
     BOOST_TEST(first.asObject<KeyValueObject>()->getKey().getIntegerValue() == 0);
     BOOST_TEST(first.asObject<KeyValueObject>()->getValue().getIntegerValue() == 0);
-    pairType.freeValue(first);
-    pairType.freeValue(second);
+    pairType.freeValue(&first);
+    pairType.freeValue(&second);
     BOOST_TEST(type.freeCalls == 0u);
 }
 
@@ -275,7 +350,7 @@ BOOST_AUTO_TEST_CASE(ListReleasesPartialCopyWhenAppendFails) {
     BOOST_TEST(list->getCount() == 0u);
     BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
     list->releaseRef();
-    elementType.freeValue(value);
+    elementType.freeValue(&value);
     BOOST_TEST(destroyed == 1u);
 }
 
@@ -293,7 +368,7 @@ BOOST_AUTO_TEST_CASE(ListRetainsAndReleasesStoredObjects) {
     }
     BOOST_TEST(list->getCount() == 100u);
     BOOST_TEST(value.getObjectValue()->getReferenceCount() == 101u);
-    elementType.freeValue(value);
+    elementType.freeValue(&value);
     BOOST_TEST(destroyed == 0u);
     list->releaseRef();
     BOOST_TEST(destroyed == 1u);
@@ -330,7 +405,7 @@ BOOST_AUTO_TEST_CASE(ListInsertionCopiesAliasedValuesBeforeReallocation) {
     BOOST_TEST(!list.removeFirst());
     BOOST_TEST(!list.removeLast());
     list.append(value);
-    elementType.freeValue(value);
+    elementType.freeValue(&value);
     BOOST_TEST(destroyed == 0u);
     BOOST_TEST(list.removeFirst());
     BOOST_TEST(destroyed == 1u);
@@ -344,7 +419,7 @@ BOOST_AUTO_TEST_CASE(ListFailedInsertionPreservesExistingElements) {
 
         NomadString getTypeName() const override { return "ConditionalCopy"; }
         void toString(const RuntimeValue&, NomadString& string) const override { string = getTypeName(); }
-        void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override {
+        void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
             ClassType::copyValue(source, destination);
             if (failCopy) {
                 throw NomadException("Copy failed");
@@ -364,7 +439,7 @@ BOOST_AUTO_TEST_CASE(ListFailedInsertionPreservesExistingElements) {
     BOOST_TEST(list.getCount() == 1u);
     BOOST_TEST(list.getValue(0).getObjectValue() == value.getObjectValue());
     BOOST_TEST(value.getObjectValue()->getReferenceCount() == 2u);
-    elementType.freeValue(value);
+    elementType.freeValue(&value);
     list.clear();
     BOOST_TEST(destroyed == 1u);
 }
@@ -373,9 +448,9 @@ BOOST_AUTO_TEST_CASE(ObjectDescriptorsInitializeNullReferences) {
     Runtime runtime;
     ClassType type(&runtime, TypeId::INVALID, "Example", ClassMode::Closed);
     RuntimeValue value;
-    type.initValue(value);
+    type.initValue(&value);
     BOOST_TEST(value.getObjectValue() == nullptr);
-    type.freeValue(value);
+    type.freeValue(&value);
 }
 
 BOOST_AUTO_TEST_CASE(ClassTypeSharesAndReleasesReferences) {
@@ -386,16 +461,16 @@ BOOST_AUTO_TEST_CASE(ClassTypeSharesAndReleasesReferences) {
     RuntimeValue source;
     source.setObjectValue(new ListObject(&elementType));
     RuntimeValue destination;
-    type.initValue(destination);
-    type.copyValue(source, destination);
+    type.initValue(&destination);
+    type.copyValue(&source, &destination);
     BOOST_TEST(source.getObjectValue() == destination.getObjectValue());
     BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
-    type.copyValue(source, source);
+    type.copyValue(&source, &source);
     BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
-    type.freeValue(source);
+    type.freeValue(&source);
     BOOST_TEST(destination.getObjectValue()->getReferenceCount() == 1U);
     BOOST_TEST(type.needsFree());
-    type.freeValue(destination);
+    type.freeValue(&destination);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 

@@ -65,10 +65,10 @@ void registerSnapshot(Runtime* runtime, const NomadString& name, RuntimeValue va
             throw NomadException("Failed to register " + name);
         }
     } catch (...) {
-        type->freeValue(value);
+        type->freeValue(&value);
         throw;
     }
-    type->freeValue(value);
+    type->freeValue(&value);
 }
 
 void setEnvironmentEntry(MapObject& environment, const NomadStringView entry) {

@@ -1244,7 +1244,7 @@ void DebugConsole::collectDynamicVariableRows(std::vector<VariableRow>& rows) co
         });
 
         if (type != nullptr && type->isString()) {
-            type->freeValue(value);
+            type->freeValue(&value);
         }
     }
 }
@@ -1313,7 +1313,7 @@ bool DebugConsole::applyVariableEdit(const VariableRow& row, const NomadString& 
             runtime->getVariableContext(row.contextId)->setValue(row.variableId, value);
         }
 
-        row.type->freeValue(value);
+        row.type->freeValue(&value);
         return applied;
     }
     case VariableRow::Source::Dynamic:
@@ -1323,12 +1323,12 @@ bool DebugConsole::applyVariableEdit(const VariableRow& row, const NomadString& 
         // `Interpreter` copies the value, so the temporary is released here.
         const auto name = row.name.substr(std::strlen("console."));
         m_interpreterContext.setVariable(name, row.type, value);
-        row.type->freeValue(value);
+        row.type->freeValue(&value);
         return true;
     }
     }
 
-    row.type->freeValue(value);
+    row.type->freeValue(&value);
     return false;
 }
 

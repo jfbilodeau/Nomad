@@ -14,8 +14,7 @@ namespace nomad {
 
 ///////////////////////////////////////////////////////////////////////////////
 // VoidType
-void VoidType::initValue(RuntimeValue& value) const {
-    value = RuntimeValue{};
+void VoidType::initValue(RuntimeValue* /*value*/) const {
 }
 
 NomadString VoidType::getTypeName() const {
@@ -30,7 +29,7 @@ NomadIndex VoidType::getSize() const {
     return 0;
 }
 
-void VoidType::copyValue(const RuntimeValue& /*sourceValue*/, RuntimeValue& /*destinationValue*/) const {
+void VoidType::copyValue(const RuntimeValue* /*sourceValue*/, RuntimeValue* /*destinationValue*/) const {
     // Nothing to do...
 }
 
@@ -45,16 +44,16 @@ bool VoidType::isVoid() const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // IdType
-void IdType::initValue(RuntimeValue& value) const {
-    value.setIdValue(0);
+void IdType::initValue(RuntimeValue* value) const {
+    value->setIdValue(0);
 }
 
 NomadString IdType::getTypeName() const {
     return ID_TYPE_NAME;
 }
 
-void IdType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.setIdValue(sourceValue.getIdValue());
+void IdType::copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const {
+    destinationValue->setIdValue(sourceValue->getIdValue());
 }
 
 void IdType::toString(const RuntimeValue& value, NomadString& string) const {
@@ -69,16 +68,16 @@ OpaqueIdType::OpaqueIdType(Runtime* runtime, TypeId id, NomadString name, NomadS
 {
 }
 
-void OpaqueIdType::initValue(RuntimeValue& value) const {
-    value.setIdValue(0);
+void OpaqueIdType::initValue(RuntimeValue* value) const {
+    value->setIdValue(0);
 }
 
 NomadString OpaqueIdType::getTypeName() const {
     return m_name;
 }
 
-void OpaqueIdType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.setIdValue(sourceValue.getIdValue());
+void OpaqueIdType::copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const {
+    destinationValue->setIdValue(sourceValue->getIdValue());
 }
 
 void OpaqueIdType::toString(const RuntimeValue& value, NomadString& string) const {
@@ -91,16 +90,16 @@ bool OpaqueIdType::sameType(const Type* other) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // FloatType
-void FloatType::initValue(RuntimeValue& value) const {
-    value.setFloatValue(0.0f);
+void FloatType::initValue(RuntimeValue* value) const {
+    value->setFloatValue(0.0f);
 }
 
 NomadString FloatType::getTypeName() const {
     return FLOAT_TYPE_NAME;
 }
 
-void FloatType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.setFloatValue(sourceValue.getFloatValue());
+void FloatType::copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const {
+    destinationValue->setFloatValue(sourceValue->getFloatValue());
 }
 
 void FloatType::toString(const RuntimeValue& value, NomadString& string) const {
@@ -109,16 +108,16 @@ void FloatType::toString(const RuntimeValue& value, NomadString& string) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // IntegerType
-void IntegerType::initValue(RuntimeValue& value) const {
-    value.setIntegerValue(0);
+void IntegerType::initValue(RuntimeValue* value) const {
+    value->setIntegerValue(0);
 }
 
 NomadString IntegerType::getTypeName() const {
     return INTEGER_TYPE_NAME;
 }
 
-void IntegerType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.setIntegerValue(sourceValue.getIntegerValue());
+void IntegerType::copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const {
+    destinationValue->setIntegerValue(sourceValue->getIntegerValue());
 }
 
 void IntegerType::toString(const RuntimeValue& value, NomadString& string) const {
@@ -140,16 +139,16 @@ EnumType::EnumType(
 {
 }
 
-void EnumType::initValue(RuntimeValue& value) const {
-    value.setIntegerValue(0);
+void EnumType::initValue(RuntimeValue* value) const {
+    value->setIntegerValue(0);
 }
 
 NomadString EnumType::getTypeName() const {
     return m_name;
 }
 
-void EnumType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.setIntegerValue(sourceValue.getIntegerValue());
+void EnumType::copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const {
+    destinationValue->setIntegerValue(sourceValue->getIntegerValue());
 }
 
 void EnumType::toString(const RuntimeValue& value, NomadString& string) const {
@@ -198,16 +197,16 @@ bool EnumType::getNameByValue(const NomadInteger value, NomadString& name) const
 
 ///////////////////////////////////////////////////////////////////////////////
 // BooleanType
-void BooleanType::initValue(RuntimeValue& value) const {
-    value.setBooleanValue(NOMAD_FALSE);
+void BooleanType::initValue(RuntimeValue* value) const {
+    value->setBooleanValue(NOMAD_FALSE);
 }
 
 NomadString BooleanType::getTypeName() const {
     return BOOLEAN_TYPE_NAME;
 }
 
-void BooleanType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.setIntegerValue(sourceValue.getIntegerValue());
+void BooleanType::copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const {
+    destinationValue->setIntegerValue(sourceValue->getIntegerValue());
 }
 
 void BooleanType::toString(const RuntimeValue& value, NomadString& string) const {
@@ -225,8 +224,8 @@ BaseStringType::BaseStringType(Runtime* runtime, TypeId id):
     m_typeOpCodes.initIntermediate = op_string_init_i;
 }
 
-void BaseStringType::initValue(RuntimeValue& value) const {
-    value.initStringValue();
+void BaseStringType::initValue(RuntimeValue* value) const {
+    value->initStringValue();
 }
 
 bool BaseStringType::sameType(const Type* other) const {
@@ -261,16 +260,16 @@ NomadString FunctionNameType::getTypeName() const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // FunctionLineNumberType
-void FunctionLineNumberType::initValue(RuntimeValue& value) const {
-    value.setIntegerValue(0);
+void FunctionLineNumberType::initValue(RuntimeValue* value) const {
+    value->setIntegerValue(0);
 }
 
 NomadString FunctionLineNumberType::getTypeName() const {
     return FUNCTION_LINE_NUMBER_TYPE_NAME;
 }
 
-void FunctionLineNumberType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.setIntegerValue(sourceValue.getIntegerValue());
+void FunctionLineNumberType::copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const {
+    destinationValue->setIntegerValue(sourceValue->getIntegerValue());
 }
 
 void FunctionLineNumberType::toString(const RuntimeValue& value, NomadString& string) const {
@@ -302,16 +301,16 @@ FunctionType::FunctionType(
     m_name += "):" + returnType->getTypeName();
 }
 
-void FunctionType::initValue(RuntimeValue& value) const {
-    value.setIdValue(0);
+void FunctionType::initValue(RuntimeValue* value) const {
+    value->setIdValue(0);
 }
 
 NomadString FunctionType::getTypeName() const {
     return FUNCTION_TYPE_NAME;
 }
 
-void FunctionType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.setIdValue(sourceValue.getIdValue());
+void FunctionType::copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const {
+    destinationValue->setIdValue(sourceValue->getIdValue());
 }
 
 void FunctionType::toString(const RuntimeValue& value, NomadString& string) const {
@@ -361,16 +360,16 @@ const FunctionType* FunctionType::asCallback() const {
 
 ///////////////////////////////////////////////////////////////////////////////
 // EventCallbackType
-void EventCallbackType::initValue(RuntimeValue& value) const {
-    value.setIdValue(0);
+void EventCallbackType::initValue(RuntimeValue* value) const {
+    value->setIdValue(0);
 }
 
 NomadString EventCallbackType::getTypeName() const {
     return EVENT_CALLBACK_TYPE_NAME;
 }
 
-void EventCallbackType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.setIdValue(sourceValue.getIdValue());
+void EventCallbackType::copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const {
+    destinationValue->setIdValue(sourceValue->getIdValue());
 }
 
 void EventCallbackType::toString(const RuntimeValue& value, NomadString& string) const {
@@ -379,16 +378,16 @@ void EventCallbackType::toString(const RuntimeValue& value, NomadString& string)
 
 ///////////////////////////////////////////////////////////////////////////////
 // EventDispatchType
-void EventDispatchType::initValue(RuntimeValue& value) const {
-    value.setIdValue(0);
+void EventDispatchType::initValue(RuntimeValue* value) const {
+    value->setIdValue(0);
 }
 
 NomadString EventDispatchType::getTypeName() const {
     return EVENT_DISPATCH_TYPE_NAME;
 }
 
-void EventDispatchType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    destinationValue.setIdValue(sourceValue.getIdValue());
+void EventDispatchType::copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const {
+    destinationValue->setIdValue(sourceValue->getIdValue());
 }
 
 void EventDispatchType::toString(const RuntimeValue& value, NomadString& string) const {

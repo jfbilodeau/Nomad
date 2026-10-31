@@ -62,7 +62,7 @@ BOOST_AUTO_TEST_CASE(unrelated_qualified_identifier_does_not_conflict) {
     RuntimeValue result;
     runtime.executeFunction(functionId, {}, result);
     BOOST_TEST(result.getStringValue() == "J-F");
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

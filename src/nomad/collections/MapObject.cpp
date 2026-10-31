@@ -57,10 +57,10 @@ std::unique_ptr<Array1dObject> MapObject::getKeys(const Type* keyType) const {
         try {
             keys->setValue(index, storedKey);
         } catch (...) {
-            keyType->freeValue(storedKey);
+            keyType->freeValue(&storedKey);
             throw;
         }
-        keyType->freeValue(storedKey);
+        keyType->freeValue(&storedKey);
         ++index;
     }
     return keys;
@@ -104,12 +104,12 @@ std::unique_ptr<Array1dObject> MapObject::getEntries(const KeyValueType* entryTy
             entry.setObjectValue(new KeyValueObject(keyType, m_valueType, storedKey, value));
             entries->setValue(index, entry);
         } catch (...) {
-            entryType->freeValue(entry);
-            keyType->freeValue(storedKey);
+            entryType->freeValue(&entry);
+            keyType->freeValue(&storedKey);
             throw;
         }
-        entryType->freeValue(entry);
-        keyType->freeValue(storedKey);
+        entryType->freeValue(&entry);
+        keyType->freeValue(&storedKey);
         ++index;
     }
     return entries;
@@ -124,7 +124,7 @@ bool MapObject::remove(const NomadStringView key) {
     if (entry == m_values.end()) {
         return false;
     }
-    m_valueType->freeValue(entry->second);
+    m_valueType->freeValue(&entry->second);
     m_values.erase(entry);
     return true;
 }
@@ -136,7 +136,7 @@ MapObject::~MapObject() {
 void MapObject::clear() {
     if (m_valueType->needsFree()) {
         for (auto& [key, value] : m_values) {
-            m_valueType->freeValue(value);
+            m_valueType->freeValue(&value);
         }
     }
     m_values.clear();
@@ -146,9 +146,9 @@ void MapObject::getValue(const NomadStringView key, RuntimeValue& result) const 
     const auto entry = m_values.find(key);
     if (entry == m_values.end()) {
         log::error("Map key '" + NomadString(key) + "' was not found");
-        m_valueType->initValue(result);
+        m_valueType->initValue(&result);
     } else {
-        m_valueType->copyValue(entry->second, result);
+        m_valueType->copyValue(&entry->second, &result);
     }
 }
 
@@ -160,10 +160,10 @@ void MapObject::setValue(const NomadStringView key, const RuntimeValue& value) {
     }
     RuntimeValue storedValue;
     try {
-        m_valueType->copyValue(value, storedValue);
+        m_valueType->copyValue(&value, &storedValue);
         m_values.emplace(NomadString(key), storedValue);
     } catch (...) {
-        m_valueType->freeValue(storedValue);
+        m_valueType->freeValue(&storedValue);
         throw;
     }
 }

@@ -127,7 +127,7 @@ FunctionOutcome LanguageTestFixture::execute(const NomadString& functionName, co
         outcome.booleanValue = result.getBooleanValue();
     }
 
-    returnType->freeValue(result);
+    returnType->freeValue(&result);
     outcome.leakedStrings = RuntimeValue::getLiveStringCount() - liveStringsBefore;
 
     return outcome;

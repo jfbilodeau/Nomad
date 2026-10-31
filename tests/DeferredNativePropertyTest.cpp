@@ -143,7 +143,7 @@ BOOST_AUTO_TEST_CASE(script_class_properties_preserve_object_reference_ownership
         .valueType = compiler->deferType({"Settings"}),
         .name = "settings",
         .getter = [&](VirtualMachine*, RuntimeValue& result) {
-            runtime.getTypeByName("Settings")->copyValue(stored, result);
+            runtime.getTypeByName("Settings")->copyValue(&stored, &result);
         },
         .setter = [&](VirtualMachine*, const RuntimeValue& value) {
             runtime.getTypeByName("Settings")->assignValue(value, stored);

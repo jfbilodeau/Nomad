@@ -29,15 +29,15 @@ NomadIndex DeferredType::getSize() const {
     reportUnresolved();
 }
 
-void DeferredType::initValue(RuntimeValue&) const {
+void DeferredType::initValue(RuntimeValue*) const {
     reportUnresolved();
 }
 
-void DeferredType::freeValue(RuntimeValue&) const {
+void DeferredType::freeValue(RuntimeValue*) const {
     reportUnresolved();
 }
 
-void DeferredType::copyValue(const RuntimeValue&, RuntimeValue&) const {
+void DeferredType::copyValue(const RuntimeValue*, RuntimeValue*) const {
     reportUnresolved();
 }
 

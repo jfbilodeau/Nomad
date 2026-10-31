@@ -16,9 +16,9 @@ public:
     [[nodiscard]] NomadString getTypeName() const override;
     [[nodiscard]] TypeStorage getStorage() const override;
     [[nodiscard]] NomadIndex getSize() const override;
-    void initValue(RuntimeValue& value) const override;
-    void freeValue(RuntimeValue& value) const override;
-    void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override;
+    void initValue(RuntimeValue* value) const override;
+    void freeValue(RuntimeValue* value) const override;
+    void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 
 private:

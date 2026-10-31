@@ -9,16 +9,16 @@ EventType::EventType(Runtime* runtime, TypeId id, const EventDefinition* declara
     m_event(*declaration)
 {}
 
-void EventType::initValue(RuntimeValue& value) const {
-    value.setIdValue(0);
+void EventType::initValue(RuntimeValue* value) const {
+    value->setIdValue(0);
 }
 
 NomadString EventType::getTypeName() const {
     return EVENT_TYPE_NAME;
 }
 
-void EventType::copyValue(const RuntimeValue &sourceValue, RuntimeValue &destinationValue) const {
-    destinationValue.setIdValue(sourceValue.getIdValue());
+void EventType::copyValue(const RuntimeValue *sourceValue, RuntimeValue *destinationValue) const {
+    destinationValue->setIdValue(sourceValue->getIdValue());
 }
 
 void EventType::toString(const RuntimeValue & /*value*/, NomadString &string) const {

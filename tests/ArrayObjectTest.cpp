@@ -37,7 +37,7 @@ public:
             array.getValue(indices..., *this);
         } catch (...) {
             if (m_type->needsFree()) {
-                m_type->freeValue(*this);
+                m_type->freeValue(this);
             }
             throw;
         }
@@ -45,7 +45,7 @@ public:
 
     ~ArrayValue() {
         if (m_type->needsFree()) {
-            m_type->freeValue(*this);
+            m_type->freeValue(this);
         }
     }
 
@@ -79,9 +79,9 @@ public:
 
     [[nodiscard]] NomadString getTypeName() const override;
     void toString(const RuntimeValue& value, NomadString& text) const override;
-    void initValue(RuntimeValue& value) const override;
-    void freeValue(RuntimeValue& value) const override;
-    void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override;
+    void initValue(RuntimeValue* value) const override;
+    void freeValue(RuntimeValue* value) const override;
+    void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
 
     mutable NomadIndex initialized = 0;
     mutable NomadIndex destroyed = 0;
@@ -98,19 +98,19 @@ void FailingElementType::toString(const RuntimeValue&, NomadString& text) const 
     text = getTypeName();
 }
 
-void FailingElementType::initValue(RuntimeValue& value) const {
-    value.setObjectValue(new TrackedArrayElement(destroyed));
+void FailingElementType::initValue(RuntimeValue* value) const {
+    value->setObjectValue(new TrackedArrayElement(destroyed));
     if (++initialized == failInitialization) {
         throw NomadException("Element initialization failed");
     }
 }
 
-void FailingElementType::freeValue(RuntimeValue& value) const {
+void FailingElementType::freeValue(RuntimeValue* value) const {
     ++freed;
     ClassType::freeValue(value);
 }
 
-void FailingElementType::copyValue(const RuntimeValue& source, RuntimeValue& destination) const {
+void FailingElementType::copyValue(const RuntimeValue* source, RuntimeValue* destination) const {
     ClassType::copyValue(source, destination);
     if (failCopy) {
         throw NomadException("Element copy failed");
@@ -194,7 +194,7 @@ BOOST_AUTO_TEST_CASE(read_results_own_values_after_array_destruction_for_every_r
         BOOST_TEST(result.asObject<ListObject>()->getCount() == 0u);
         result.asObject<ListObject>()->append(RuntimeValue(NomadInteger{42}));
         BOOST_TEST(result.asObject<ListObject>()->getCount() == 1u);
-        lists.freeValue(result);
+        lists.freeValue(&result);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
@@ -324,13 +324,13 @@ BOOST_AUTO_TEST_CASE(default_values_include_zero_primitives_and_empty_strings) {
     BooleanType booleans(&runtime, TypeId::INVALID);
     StringType strings(&runtime, TypeId::INVALID);
     RuntimeValue value(NomadInteger{123});
-    integers.initValue(value);
+    integers.initValue(&value);
     BOOST_TEST(value.getIntegerValue() == 0);
     Array1dObject floatArray(&floats, 2);
     Array1dObject booleanArray(&booleans, 2);
     RuntimeValue emptyString;
-    strings.initValue(emptyString);
-    strings.freeValue(emptyString);
+    strings.initValue(&emptyString);
+    strings.freeValue(&emptyString);
     const auto before = NomadObject::getLiveObjectCount();
     {
         Array1dObject stringArray(&strings, 2);
@@ -342,7 +342,7 @@ BOOST_AUTO_TEST_CASE(default_values_include_zero_primitives_and_empty_strings) {
         RuntimeValue text(NomadString{"hello"});
         stringArray.setValue(0, text);
         BOOST_TEST(text.getObjectValue()->getReferenceCount() == 2u);
-        strings.freeValue(text);
+        strings.freeValue(&text);
         stringArray.setValue(0, ArrayValue(stringArray, 0));
         BOOST_TEST(strings.toString(ArrayValue(stringArray, 0)) == "hello");
         BOOST_TEST(strings.toString(ArrayValue(stringArray, 1)) == "");
@@ -365,9 +365,9 @@ BOOST_AUTO_TEST_CASE(array_defaults_are_lazy_shared_and_separate_by_descriptor) 
         RuntimeValue first;
         RuntimeValue second;
         RuntimeValue other;
-        type.initValue(first);
-        type.initValue(second);
-        otherType.initValue(other);
+        type.initValue(&first);
+        type.initValue(&second);
+        otherType.initValue(&other);
         BOOST_TEST(first.getObjectValue() == second.getObjectValue());
         BOOST_TEST(first.getObjectValue() != other.getObjectValue());
         BOOST_TEST(first.getObjectValue()->getReferenceCount() == 3u);
@@ -376,10 +376,10 @@ BOOST_AUTO_TEST_CASE(array_defaults_are_lazy_shared_and_separate_by_descriptor) 
         BOOST_TEST(empty->getDimensionSize(0) == 0u);
         BOOST_TEST(empty->getDimensionSize(1) == 0u);
         BOOST_TEST(ArrayValue(*empty, 0, 0).getIntegerValue() == 0);
-        type.copyValue(first, survivor);
-        type.freeValue(first);
-        type.freeValue(second);
-        otherType.freeValue(other);
+        type.copyValue(&first, &survivor);
+        type.freeValue(&first);
+        type.freeValue(&second);
+        otherType.freeValue(&other);
     }
     BOOST_TEST(survivor.getObjectValue()->getReferenceCount() == 1u);
     survivor.freeObjectValue();
@@ -397,7 +397,7 @@ BOOST_AUTO_TEST_CASE(each_array_rank_has_an_empty_default_that_rejects_writes) {
         for (auto* type : std::array<ArrayType*, 3>{&lineType, &gridType, &volumeType}) {
             const auto dimensions = type->getDimensionCount();
             RuntimeValue value;
-            type->initValue(value);
+            type->initValue(&value);
             const auto* array = value.asObject<ArrayObject>();
             BOOST_TEST(array->getDimensionCount() == dimensions);
             BOOST_TEST(array->getCount() == 0u);
@@ -415,7 +415,7 @@ BOOST_AUTO_TEST_CASE(each_array_rank_has_an_empty_default_that_rejects_writes) {
                 BOOST_CHECK_NO_THROW(value.asObject<Array3dObject>()->setValue(0, 0, 0, RuntimeValue{}));
                 break;
             }
-            type->freeValue(value);
+            type->freeValue(&value);
         }
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -470,7 +470,7 @@ BOOST_AUTO_TEST_CASE(nested_defaults_share_arrays_but_not_mutable_lists) {
         RuntimeValue replacement;
         replacement.setObjectValue(new Array3dObject(&integers, 1, 2, 3));
         arrays.setValue(0, replacement);
-        arrayType.freeValue(replacement);
+        arrayType.freeValue(&replacement);
         BOOST_TEST(ArrayValue(arrays, 0).asObject<Array3dObject>()->getCount() == 6u);
         BOOST_TEST(ArrayValue(arrays, 1).asObject<Array3dObject>()->getCount() == 0u);
     }
@@ -492,7 +492,7 @@ BOOST_AUTO_TEST_CASE(partial_initialization_and_failed_replacement_release_owned
     {
         Array1dObject array(&type, 1);
         RuntimeValue value;
-        type.initValue(value);
+        type.initValue(&value);
         const auto* original = ArrayValue(array, 0).getObjectValue();
         type.failCopy = true;
         BOOST_CHECK_THROW(array.setValue(0, value), NomadException);
@@ -501,7 +501,7 @@ BOOST_AUTO_TEST_CASE(partial_initialization_and_failed_replacement_release_owned
         type.failCopy = false;
         BOOST_TEST(ArrayValue(array, 0).getObjectValue() == original);
         BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
-        type.freeValue(value);
+        type.freeValue(&value);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
@@ -519,8 +519,8 @@ BOOST_AUTO_TEST_CASE(copying_arrays_does_not_construct_unused_defaults) {
         BOOST_TEST(source.getObjectValue() == destination.getObjectValue());
         BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2u);
         BOOST_TEST(NomadObject::getLiveObjectCount() == before + 1);
-        type.freeValue(source);
-        type.freeValue(destination);
+        type.freeValue(&source);
+        type.freeValue(&destination);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
@@ -532,8 +532,8 @@ BOOST_AUTO_TEST_CASE(empty_caches_do_not_access_destroyed_element_descriptors) {
         auto elementType = std::make_unique<IntegerType>(&runtime, TypeId::INVALID);
         auto type = std::make_unique<Array1Type>(&runtime, TypeId::INVALID, "Array1<int>", ClassMode::Closed, elementType.get());
         RuntimeValue value;
-        type->initValue(value);
-        type->freeValue(value);
+        type->initValue(&value);
+        type->freeValue(&value);
         elementType.reset();
         type.reset();
     }

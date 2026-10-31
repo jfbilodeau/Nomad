@@ -19,8 +19,8 @@ ReadOnlyListType::ReadOnlyListType(
     }
 }
 
-void ReadOnlyListType::initValue(RuntimeValue& value) const {
-    value.setObjectValue(new ListObject(getTypeArguments()[0]));
+void ReadOnlyListType::initValue(RuntimeValue* value) const {
+    value->setObjectValue(new ListObject(getTypeArguments()[0]));
 }
 
 } // namespace nomad

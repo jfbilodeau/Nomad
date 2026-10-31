@@ -506,7 +506,7 @@ private:
 struct ConstantValue {
     ~ConstantValue() {
         if (type != nullptr) {
-            type->freeValue(value);
+            type->freeValue(&value);
         }
     }
 
@@ -569,7 +569,7 @@ bool parseConstantPrimary(CompilerContext* context, Tokenizer* tokens, ConstantV
         RuntimeValue borrowedValue;
         context->getRuntime()->getConstantValue(constantId, borrowedValue);
         constant.type = context->getRuntime()->getConstantType(constantId);
-        constant.type->copyValue(borrowedValue, constant.value);
+        constant.type->copyValue(&borrowedValue, &constant.value);
 
         return true;
     }

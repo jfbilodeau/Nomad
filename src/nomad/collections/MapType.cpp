@@ -24,8 +24,8 @@ MapType::MapType(
     }
 }
 
-void MapType::initValue(RuntimeValue& value) const {
-    value.setObjectValue(new MapObject(getTypeArguments()[1]));
+void MapType::initValue(RuntimeValue* value) const {
+    value->setObjectValue(new MapObject(getTypeArguments()[1]));
 }
 
 } // namespace nomad

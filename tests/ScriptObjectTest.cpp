@@ -56,9 +56,9 @@ public:
         m_fail(fail)
     {}
 
-    void initValue(RuntimeValue& value) const override {
+    void initValue(RuntimeValue* value) const override {
         ++m_initialized;
-        value.setObjectValue(new CountingObject(m_destroyed));
+        value->setObjectValue(new CountingObject(m_destroyed));
         if (m_fail) {
             throw NomadException("Field initialization failed");
         }
@@ -176,14 +176,14 @@ BOOST_AUTO_TEST_CASE(instances_have_independent_values_and_aliases_share_the_sam
     auto* first = owner.asObject<ScriptObject>();
     ScriptObject second(type);
     RuntimeValue alias;
-    type->copyValue(owner, alias);
+    type->copyValue(&owner, &alias);
     BOOST_TEST(first->getReferenceCount() == 2u);
     alias.asObject<ScriptObject>()->setField(0, RuntimeValue(NomadInteger{17}));
     BOOST_TEST(first->getField(0).getIntegerValue() == 17);
     BOOST_TEST(second.getField(0).getIntegerValue() == 0);
-    type->freeValue(owner);
+    type->freeValue(&owner);
     BOOST_TEST(alias.asObject<ScriptObject>()->getField(0).getIntegerValue() == 17);
-    type->freeValue(alias);
+    type->freeValue(&alias);
 }
 
 BOOST_AUTO_TEST_CASE(field_replacement_retains_references_and_handles_self_assignment) {
@@ -200,7 +200,7 @@ BOOST_AUTO_TEST_CASE(field_replacement_retains_references_and_handles_self_assig
         object.setField(1, object.getField(0));
         object.setField(0, object.getField(0));
         BOOST_TEST(value.getObjectValue()->getReferenceCount() == 3u);
-        type->freeValue(value);
+        type->freeValue(&value);
         object.setField(0, RuntimeValue{});
         BOOST_TEST(destroyed == 0u);
         BOOST_TEST(object.getField(1).getObjectValue()->getReferenceCount() == 1u);
@@ -209,7 +209,7 @@ BOOST_AUTO_TEST_CASE(field_replacement_retains_references_and_handles_self_assig
         RuntimeValue remaining;
         remaining.setObjectValue(new CountingObject(destroyed));
         object.setField(0, remaining);
-        type->freeValue(remaining);
+        type->freeValue(&remaining);
     }
     BOOST_TEST(destroyed == 2u);
 }
@@ -335,7 +335,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
                 RuntimeValue result;
                 runtime.executeFunction(runtime.getFunctionId("test"), {}, result);
                 BOOST_TEST(NomadString(result.getStringValue()) == "hello");
-                runtime.getStringType()->freeValue(result);
+                runtime.getStringType()->freeValue(&result);
                 BOOST_TEST(NomadObject::getLiveObjectCount() == beforeExecution);
             }
         }
@@ -374,7 +374,7 @@ BOOST_AUTO_TEST_CASE(property_dispatch_rejects_missing_storage_wrong_owners_and_
     BOOST_CHECK_THROW(machine->setProperty(PropertyId::INVALID, receiver, result), NomadException);
     machine->getProperty(id, receiver, result);
     BOOST_TEST(result.getObjectValue() == nullptr);
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
 }
 
 BOOST_AUTO_TEST_CASE(generated_initializer_runs_explicit_expressions_in_source_order_then_late_defaults) {

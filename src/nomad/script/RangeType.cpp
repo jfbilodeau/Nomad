@@ -10,8 +10,8 @@ RangeType::RangeType(Runtime* runtime, TypeId id, NomadString name, const ClassM
     ClassType(runtime, id, std::move(name), mode, {}, "An immutable integer sequence with an exclusive stop.")
 {}
 
-void RangeType::initValue(RuntimeValue& value) const {
-    value.setObjectValue(new RangeObject(0, 0, 1));
+void RangeType::initValue(RuntimeValue* value) const {
+    value->setObjectValue(new RangeObject(0, 0, 1));
 }
 
 } // namespace nomad

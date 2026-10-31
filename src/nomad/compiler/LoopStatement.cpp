@@ -140,15 +140,15 @@ protected:
         if (context.getVariableValue(m_binding) == nullptr) {
             RuntimeValue initial;
             if (m_valueType->isString()) {
-                m_valueType->initValue(initial);
+                m_valueType->initValue(&initial);
             }
             try {
                 context.setVariable(m_binding, m_valueType, initial);
             } catch (...) {
-                m_valueType->freeValue(initial);
+                m_valueType->freeValue(&initial);
                 throw;
             }
-            m_valueType->freeValue(initial);
+            m_valueType->freeValue(&initial);
         }
         context.setVariable(m_iterator, m_iteratorType, context.getResult()->getValue());
         while (!context.hasError()) {

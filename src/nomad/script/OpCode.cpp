@@ -31,14 +31,14 @@ void callNativeIndexer(VirtualMachine* machine, const bool write) {
     const auto releaseArguments = [&]() {
         for (const auto* type : info->indexTypes) {
             auto value = machine->popValue();
-            type->freeValue(value);
+            type->freeValue(&value);
         }
         if (write) {
             auto value = machine->popValue();
-            info->valueType->freeValue(value);
+            info->valueType->freeValue(&value);
         }
         auto savedReceiver = machine->popValue();
-        info->classType->freeValue(savedReceiver);
+        info->classType->freeValue(&savedReceiver);
         machine->popThis();
     };
 
@@ -47,7 +47,7 @@ void callNativeIndexer(VirtualMachine* machine, const bool write) {
     } catch (...) {
         releaseArguments();
         if (!write) {
-            info->valueType->freeValue(machine->getResult());
+            info->valueType->freeValue(&machine->getResult());
         }
         throw;
     }
@@ -211,7 +211,7 @@ void op_code_load_default_r(VirtualMachine* interpreter) {
     if (!type || (*type)->isVoid()) {
         interpreter->fault("Invalid type for default value");
     }
-    (*type)->initValue(interpreter->getResult());
+    (*type)->initValue(&interpreter->getResult());
 }
 
 void op_call_script_function(VirtualMachine* interpreter) {
@@ -245,7 +245,7 @@ void op_call_native_constructor(VirtualMachine* interpreter) {
         const auto& parameters = constructor->getParameters();
         for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
             auto argument = interpreter->peekStack(index);
-            parameters[index].type->freeValue(argument);
+            parameters[index].type->freeValue(&argument);
         }
         throw;
     }
@@ -388,7 +388,7 @@ void op_constant_get_r(VirtualMachine* machine) {
     RuntimeValue value;
     machine->getRuntime()->getConstantValue(id, value);
     RuntimeValue copy;
-    machine->getRuntime()->getConstantType(id)->copyValue(value, copy);
+    machine->getRuntime()->getConstantType(id)->copyValue(&value, &copy);
     machine->setResult(copy);
 }
 
@@ -397,7 +397,7 @@ void op_constant_get_i(VirtualMachine* machine) {
     RuntimeValue value;
     machine->getRuntime()->getConstantValue(id, value);
     RuntimeValue copy;
-    machine->getRuntime()->getConstantType(id)->copyValue(value, copy);
+    machine->getRuntime()->getConstantType(id)->copyValue(&value, &copy);
     machine->setIntermediate(copy);
 }
 
@@ -406,7 +406,7 @@ void op_constant_push(VirtualMachine* machine) {
     RuntimeValue value;
     machine->getRuntime()->getConstantValue(id, value);
     RuntimeValue copy;
-    machine->getRuntime()->getConstantType(id)->copyValue(value, copy);
+    machine->getRuntime()->getConstantType(id)->copyValue(&value, &copy);
     machine->pushValue(copy);
 }
 

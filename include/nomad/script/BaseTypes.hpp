@@ -13,11 +13,11 @@ const NomadString VOID_TYPE_NAME = "void";
 class VoidType final : public Type {
 public:
     using Type::Type;
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     [[nodiscard]] TypeStorage getStorage() const override;
     [[nodiscard]] NomadIndex getSize() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 
     [[nodiscard]] bool isVoid() const override;
@@ -27,21 +27,21 @@ const NomadString ID_TYPE_NAME = "id";
 class IdType final : public ValueType {
 public:
     using ValueType::ValueType;
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 
 class OpaqueIdType final : public ValueType {
 public:
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     OpaqueIdType(Runtime* runtime, TypeId id, NomadString name, NomadString documentation);
 
     using Type::toString;
 
     [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
 
@@ -53,9 +53,9 @@ const NomadString INTEGER_TYPE_NAME = "int";
 class IntegerType final : public ValueType {
 public:
     using ValueType::ValueType;
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 
@@ -66,7 +66,7 @@ struct EnumValueDefinition {
 
 class EnumType final : public ValueType {
 public:
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     EnumType(
         Runtime* runtime,
         TypeId id,
@@ -78,7 +78,7 @@ public:
     using Type::toString;
 
     [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
     [[nodiscard]] const EnumType* asEnum() const override;
@@ -97,9 +97,9 @@ const NomadString FLOAT_TYPE_NAME = "float";
 class FloatType final : public ValueType {
 public:
     using ValueType::ValueType;
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 
@@ -109,9 +109,9 @@ const NomadString BOOLEAN_FALSE_STRING = "false";
 class BooleanType final : public ValueType {
 public:
     using ValueType::ValueType;
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 
@@ -120,7 +120,7 @@ public:
     explicit BaseStringType(Runtime* runtime, TypeId id);
 
     using Type::toString;
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
     [[nodiscard]]
@@ -156,16 +156,16 @@ const NomadString FUNCTION_LINE_NUMBER_TYPE_NAME = "$line";
 class FunctionLineNumberType final : public ValueType {
 public:
     using ValueType::ValueType;
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 
 const NomadString FUNCTION_TYPE_NAME = "callback";
 class FunctionType final : public ValueType {
 public:
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     FunctionType(
         Runtime* runtime,
         TypeId id,
@@ -174,7 +174,7 @@ public:
     );
 
     [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
 
@@ -194,9 +194,9 @@ const NomadString EVENT_CALLBACK_TYPE_NAME = "eventCallback";
 class EventCallbackType final : public ValueType {
 public:
     using ValueType::ValueType;
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 
@@ -204,9 +204,9 @@ const NomadString EVENT_DISPATCH_TYPE_NAME = "eventDispatch";
 class EventDispatchType final : public ValueType {
 public:
     using ValueType::ValueType;
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
+    void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 };
 

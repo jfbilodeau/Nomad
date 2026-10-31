@@ -28,20 +28,20 @@ const NomadString& Type::getDocumentation() const {
     return m_documentation;
 }
 
-void Type::freeValue(RuntimeValue& /*value*/) const {
+void Type::freeValue(RuntimeValue* /*value*/) const {
     // Default implementation does nothing
 }
 
 void Type::assignValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
     RuntimeValue copy;
     try {
-        copyValue(sourceValue, copy);
+        copyValue(&sourceValue, &copy);
     } catch (...) {
-        freeValue(copy);
+        freeValue(&copy);
         throw;
     }
 
-    freeValue(destinationValue);
+    freeValue(&destinationValue);
     destinationValue = copy;
 }
 

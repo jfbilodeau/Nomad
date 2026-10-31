@@ -288,7 +288,7 @@ BOOST_AUTO_TEST_CASE(collection_constants_survive_compiler_destruction_and_inter
     RuntimeValue result;
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getObjectValue() == arguments);
-    runtime.getConstantType(runtime.getConstantId("os.argv"))->freeValue(result);
+    runtime.getConstantType(runtime.getConstantId("os.argv"))->freeValue(&result);
     BOOST_TEST(arguments->getReferenceCount() == references);
     {
         auto machine = runtime.createVirtualMachine();

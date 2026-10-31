@@ -24,7 +24,7 @@ namespace {
 VariableId registerValue(SimpleVariableContext& context, const NomadString& name, const Type* type, RuntimeValue value) {
     const auto variableId = context.registerVariable(name, type);
     context.setValue(variableId, value);
-    type->freeValue(value);
+    type->freeValue(&value);
     return variableId;
 }
 

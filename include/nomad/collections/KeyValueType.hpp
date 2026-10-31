@@ -17,7 +17,7 @@ public:
         const Type* valueType
     );
 
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
 };
 
 } // namespace nomad

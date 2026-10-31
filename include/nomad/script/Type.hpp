@@ -76,11 +76,12 @@ public:
     [[nodiscard]] Runtime* getRuntime() const;
     [[nodiscard]] TypeId getId() const;
     [[nodiscard]] const NomadString& getDocumentation() const;
-    // Initializes fresh storage with an owned default value. Does not release existing contents.
-    virtual void initValue(RuntimeValue& value) const = 0;
-    virtual void freeValue(RuntimeValue& value) const;
+    // Storage points to getSize() contiguous RuntimeValue slots. Zero-size types access no slots.
+    // Initializes cleared, unowned storage with an owned default value. Does not run script constructors.
+    virtual void initValue(RuntimeValue* value) const = 0;
+    virtual void freeValue(RuntimeValue* value) const;
     // Copies into empty RuntimeValue storage or replaces an owned value; does not require initValue first.
-    virtual void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const = 0;
+    virtual void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const = 0;
 
     // Replace an owned value with a copy of `sourceValue`. Safe when `sourceValue` shares the destination's storage.
     void assignValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const;

@@ -62,22 +62,22 @@ ClassType::ClassType(
     m_typeOpCodes.setContextVariable = op_context_variable_set;
 }
 
-void ClassType::initValue(RuntimeValue& value) const {
-    value.setObjectValue(nullptr);
+void ClassType::initValue(RuntimeValue* value) const {
+    value->setObjectValue(nullptr);
 }
 
-void ClassType::freeValue(RuntimeValue& value) const {
-    value.freeObjectValue();
+void ClassType::freeValue(RuntimeValue* value) const {
+    value->freeObjectValue();
 }
 
-void ClassType::copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    if (&sourceValue == &destinationValue) {
+void ClassType::copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const {
+    if (sourceValue == destinationValue) {
         return;
     }
     RuntimeValue copy;
-    copy.copyObjectValue(sourceValue);
-    destinationValue.freeObjectValue();
-    destinationValue = copy;
+    copy.copyObjectValue(*sourceValue);
+    destinationValue->freeObjectValue();
+    *destinationValue = copy;
 }
 
 bool ClassType::sameType(const Type* other) const {

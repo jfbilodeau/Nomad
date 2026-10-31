@@ -11,12 +11,12 @@ IteratorObject::IteratorObject(const Type* valueType): m_valueType(valueType) {
 }
 
 IteratorObject::~IteratorObject() {
-    m_valueType->freeValue(m_current);
+    m_valueType->freeValue(&m_current);
 }
 
 bool IteratorObject::moveNext() {
     m_valid = false;
-    m_valueType->freeValue(m_current);
+    m_valueType->freeValue(&m_current);
     m_current = RuntimeValue{};
     if (m_completed) {
         return false;
@@ -24,7 +24,7 @@ bool IteratorObject::moveNext() {
     try {
         m_valid = onMoveNext(m_current);
     } catch (...) {
-        m_valueType->freeValue(m_current);
+        m_valueType->freeValue(&m_current);
         m_current = RuntimeValue{};
         throw;
     }

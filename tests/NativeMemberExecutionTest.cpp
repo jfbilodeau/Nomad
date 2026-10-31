@@ -388,7 +388,7 @@ BOOST_AUTO_TEST_CASE(string_indexing_handles_unicode_chains_and_precedence) {
             RuntimeValue result;
             runtime.executeFunction(id, {}, result);
             BOOST_TEST(result.getStringObject()->getString() == expected);
-            runtime.getStringType()->freeValue(result);
+            runtime.getStringType()->freeValue(&result);
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
         }
     }
@@ -679,8 +679,8 @@ BOOST_AUTO_TEST_CASE(two_dimensional_interpreter_stops_after_a_failed_index_with
         machine->setIntegerResult(2);
     }, {}, runtime.getIntegerType(), "");
     RuntimeValue empty;
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     {
         auto machine = runtime.createVirtualMachine();
@@ -776,8 +776,8 @@ BOOST_AUTO_TEST_CASE(indexers_support_arbitrary_arity_and_restore_native_paramet
         }).isValid());
     }
     RuntimeValue empty;
-    runtime.getStringType()->initValue(empty);
-    runtime.getStringType()->freeValue(empty);
+    runtime.getStringType()->initValue(&empty);
+    runtime.getStringType()->freeValue(&empty);
     for (const auto count : {NomadIndex{1}, NomadIndex{2}, NomadIndex{3}, NomadIndex{5}, NomadIndex{8}}) {
         NomadString indexes;
         auto expected = NomadInteger{10};

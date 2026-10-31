@@ -153,7 +153,7 @@ VariableList::VariableList(const VariableMap* variableMap):
         const auto type = m_variableMap.getVariableType(variableId);
 
         if (type != nullptr) {
-            type->initValue(m_variableValues[i]);
+            type->initValue(&m_variableValues[i]);
         } else {
             log::warning("Initializing variable ID " + toString(variableId.id) + " with null type" );
         }
@@ -166,7 +166,7 @@ VariableList::~VariableList() {
 
         auto type = m_variableMap.getVariableType(variableId);
 
-        type->freeValue(m_variableValues[i]);
+        type->freeValue(&m_variableValues[i]);
     }
 }
 

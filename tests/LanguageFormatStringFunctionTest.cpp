@@ -646,7 +646,7 @@ BOOST_AUTO_TEST_CASE(format_string_expression_fault_releases_captures_and_restor
 
     machine->run(runtime.getScriptFunction(runtime.getFunctionId("healthy")), {});
     BOOST_TEST(machine->getStringResult()->getString() == "3");
-    runtime.getStringType()->freeValue(machine->getResult());
+    runtime.getStringType()->freeValue(&machine->getResult());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

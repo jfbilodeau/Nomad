@@ -138,10 +138,10 @@ NomadString FormatString::format(VirtualMachine *interpreter) const {
             try {
                 string += segment.valueType->toString(value);
             } catch (...) {
-                segment.valueType->freeValue(value);
+                segment.valueType->freeValue(&value);
                 throw;
             }
-            segment.valueType->freeValue(value);
+            segment.valueType->freeValue(&value);
         } catch (...) {
             interpreter->setResult(savedResult);
             interpreter->setIntermediate(savedIntermediate);
@@ -184,7 +184,7 @@ NomadString FormatString::format(VirtualMachine *interpreter) const {
 
                 // Dynamic getters hand over an owned value; other variables are shared.
                 if (segment.variableType == IdentifierType::DynamicVariable) {
-                    segment.valueType->freeValue(value);
+                    segment.valueType->freeValue(&value);
                 }
 
                 break;

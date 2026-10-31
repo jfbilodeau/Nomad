@@ -165,7 +165,7 @@ void VirtualMachine::pushHostArgument(
     }
     pushValue(RuntimeValue{});
     argumentTypes.push_back(type);
-    type->copyValue(value, m_stack[m_stackIndex]);
+    type->copyValue(&value, &m_stack[m_stackIndex]);
 }
 
 void VirtualMachine::freeHostArguments(
@@ -173,7 +173,7 @@ void VirtualMachine::freeHostArguments(
     const std::vector<const Type*>& argumentTypes
 ) {
     for (auto index = NomadIndex{0}; index < argumentTypes.size(); ++index) {
-        argumentTypes[index]->freeValue(m_stack[firstIndex + index]);
+        argumentTypes[index]->freeValue(&m_stack[firstIndex + index]);
     }
 }
 
@@ -310,7 +310,7 @@ void VirtualMachine::callNativeConstructor(const CallableId constructorId) {
             fault("Native constructor for '" + constructor->getName() + "' returned null");
         }
     } catch (...) {
-        constructor->getReturnType()->freeValue(m_result);
+        constructor->getReturnType()->freeValue(&m_result);
         endNativeCall(frame);
         throw;
     }
@@ -392,7 +392,7 @@ void VirtualMachine::getProperty(
         fault("Stored property receiver has no matching field storage");
     }
     const auto index = property->getClassType()->getFieldIndex(memberId);
-    property->getValueType()->copyValue(object->getField(index), result);
+    property->getValueType()->copyValue(&object->getField(index), &result);
 }
 
 void VirtualMachine::setProperty(
@@ -477,11 +477,11 @@ void VirtualMachine::runNativeIndexer(
     const auto releaseArguments = [&]() {
         while (m_stackIndex > initialStackIndex + 2) {
             const auto index = args.size() - (m_stackIndex - initialStackIndex - 2);
-            parameterType(index)->freeValue(m_stack[m_stackIndex]);
+            parameterType(index)->freeValue(&m_stack[m_stackIndex]);
             --m_stackIndex;
         }
         if (m_stackIndex > initialStackIndex + 1) {
-            info->classType->freeValue(m_stack[initialStackIndex + 2]);
+            info->classType->freeValue(&m_stack[initialStackIndex + 2]);
         }
         m_stackIndex = initialStackIndex;
         m_this = savedThis;
@@ -493,7 +493,7 @@ void VirtualMachine::runNativeIndexer(
         for (auto index = args.size(); index > 0; --index) {
             ++m_stackIndex;
             m_stack[m_stackIndex] = RuntimeValue{};
-            parameterType(index - 1)->copyValue(args[index - 1], m_stack[m_stackIndex]);
+            parameterType(index - 1)->copyValue(&args[index - 1], &m_stack[m_stackIndex]);
         }
         callNativeIndexer(indexerId, receiver, write);
     } catch (...) {
@@ -608,7 +608,7 @@ void VirtualMachine::runScriptMethod(
     const auto releaseArguments = [&]() {
         freeHostArguments(state.stackIndex + 3, argumentTypes);
         if (m_stackIndex > state.stackIndex + 1) {
-            method->getClassType()->freeValue(m_stack[state.stackIndex + 2]);
+            method->getClassType()->freeValue(&m_stack[state.stackIndex + 2]);
         }
     };
     try {
@@ -667,7 +667,7 @@ void VirtualMachine::runNativeMethod(const CallableId memberId, const std::vecto
     const auto releaseArguments = [&]() {
         freeHostArguments(initialStackIndex + 3, argumentTypes);
         if (m_stackIndex > initialStackIndex + 1) {
-            method->getClassType()->freeValue(m_stack[initialStackIndex + 2]);
+            method->getClassType()->freeValue(&m_stack[initialStackIndex + 2]);
         }
         m_stackIndex = initialStackIndex;
         m_this = savedThis;
@@ -752,19 +752,19 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, c
             // Capture from the enclosing function's parameter frame
             const auto& value = getEnclosingParameter(capture.parameterId);
 
-            captureType->copyValue(value, captureValue);
+            captureType->copyValue(&value, &captureValue);
         } else if (captureSource == CaptureSource::Variable) {
             // Capture from the enclosing function's variable frame
             const auto& value = getFunctionVariableValue(capture.variableId);
 
-            captureType->copyValue(value, captureValue);
+            captureType->copyValue(&value, &captureValue);
         } else if (captureSource == CaptureSource::Receiver) {
             // Receiver captures originate in a method or constructor's script frame.
             const auto& receiver = m_stack[m_variableIndex - 1];
             if (receiver.getObjectValue() == nullptr) {
                 fault("Cannot capture a missing enclosing receiver");
             }
-            captureType->copyValue(receiver, captureValue);
+            captureType->copyValue(&receiver, &captureValue);
         } else {
             fault("Invalid capture type");
         }

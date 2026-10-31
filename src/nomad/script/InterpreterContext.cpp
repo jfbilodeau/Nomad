@@ -32,9 +32,9 @@ TypedValue::TypedValue(const Type* type, const RuntimeValue& value):
     }
 
     try {
-        m_type->copyValue(value, m_value);
+        m_type->copyValue(&value, &m_value);
     } catch (...) {
-        m_type->freeValue(m_value);
+        m_type->freeValue(&m_value);
         m_type = nullptr;
         throw;
     }
@@ -87,7 +87,7 @@ const RuntimeValue& TypedValue::getValue() const {
 
 void TypedValue::release() noexcept {
     if (m_type != nullptr && !m_type->isVoid()) {
-        m_type->freeValue(m_value);
+        m_type->freeValue(&m_value);
     }
     m_type = nullptr;
 }
@@ -119,13 +119,13 @@ void InterpreterContext::setVariable(
         }
         RuntimeValue replacement;
         try {
-            type->copyValue(value, replacement);
+            type->copyValue(&value, &replacement);
         } catch (...) {
-            type->freeValue(replacement);
+            type->freeValue(&replacement);
             throw;
         }
         auto& previous = m_virtualMachine.m_stack[m_variableIndex + frameId.id];
-        type->freeValue(previous);
+        type->freeValue(&previous);
         previous = replacement;
         return;
     }
@@ -402,10 +402,10 @@ void InterpreterContext::evaluateFunctionCall(const CallableId functionId, const
         try {
             setResult(type, machine->getResult());
         } catch (...) {
-            type->freeValue(machine->getResult());
+            type->freeValue(&machine->getResult());
             throw;
         }
-        type->freeValue(machine->getResult());
+        type->freeValue(&machine->getResult());
     } catch (...) {
         machine->setResult(savedResult);
         machine->setIntermediate(savedIntermediate);
@@ -427,9 +427,9 @@ void InterpreterContext::evaluateNativeFunctionCall(const CallableId functionId,
     try {
         machine->runNativeFunction(functionId, arguments);
         setResult(function->getReturnType(), machine->getResult());
-        function->getReturnType()->freeValue(machine->getResult());
+        function->getReturnType()->freeValue(&machine->getResult());
     } catch (...) {
-        function->getReturnType()->freeValue(machine->getResult());
+        function->getReturnType()->freeValue(&machine->getResult());
         machine->setResult(savedResult);
         machine->setIntermediate(savedIntermediate);
         throw;

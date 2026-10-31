@@ -235,7 +235,7 @@ Runtime::Runtime() {
 Runtime::~Runtime() {
     for (NomadIndex constantIndex = 0; constantIndex < m_constants.size(); ++constantIndex) {
         if (const auto* type = m_constantsMap.getVariableType(VariableId{toNomadId(constantIndex)})) {
-            type->freeValue(m_constants[constantIndex]);
+            type->freeValue(&m_constants[constantIndex]);
         }
     }
 
@@ -2620,7 +2620,7 @@ ConstantId Runtime::registerConstant(const NomadString& name, const RuntimeValue
     const auto constantIndex = toNomadIndex(constantId.id);
 
     m_constants.resize(constantIndex + 1);
-    type->copyValue(value, m_constants[constantIndex]);
+    type->copyValue(&value, &m_constants[constantIndex]);
     registerHubMember(name, constantId);
 
     return constantId;
@@ -3398,7 +3398,7 @@ void Runtime::executeFunction(const Closure* closure, const std::vector<RuntimeV
 
     // The result is discarded.
     if (const auto returnType = function->getReturnType()) {
-        returnType->freeValue(m_virtualMachine->getResult());
+        returnType->freeValue(&m_virtualMachine->getResult());
     }
 }
 
@@ -3411,8 +3411,8 @@ void Runtime::executeFunction(const Closure* closure, const std::vector<RuntimeV
 
     if (const auto returnType = function->getReturnType()) {
         // The caller receives its own copy; the virtual machine's result is released.
-        returnType->copyValue(m_virtualMachine->getResult(), returnValue);
-        returnType->freeValue(m_virtualMachine->getResult());
+        returnType->copyValue(&m_virtualMachine->getResult(), &returnValue);
+        returnType->freeValue(&m_virtualMachine->getResult());
     }  // Else keep existing value
 }
 
@@ -3433,7 +3433,7 @@ void Runtime::executeFunction(const CallableId functionId, const std::vector<Run
 
     // The result is discarded.
     if (const auto returnType = function->getReturnType()) {
-        returnType->freeValue(m_virtualMachine->getResult());
+        returnType->freeValue(&m_virtualMachine->getResult());
     }
 }
 
@@ -3456,8 +3456,8 @@ void Runtime::executeFunction(const CallableId functionId, const std::vector<Run
 
     if (returnType) {
         // The caller receives its own copy; the virtual machine's result is released.
-        returnType->copyValue(m_virtualMachine->getResult(), returnValue);
-        returnType->freeValue(m_virtualMachine->getResult());
+        returnType->copyValue(&m_virtualMachine->getResult(), &returnValue);
+        returnType->freeValue(&m_virtualMachine->getResult());
     }  // Else keep existing value
 }
 

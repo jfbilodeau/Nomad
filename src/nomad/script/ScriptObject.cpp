@@ -24,7 +24,7 @@ ScriptObject::ScriptObject(const ClassType* classType):
 ScriptObject::~ScriptObject() {
     for (auto index = NomadIndex{0}; index < m_values.size(); ++index) {
         if (m_fieldTypes[index]->needsFree()) {
-            m_fieldTypes[index]->freeValue(m_values[index]);
+            m_fieldTypes[index]->freeValue(&m_values[index]);
         }
     }
 }

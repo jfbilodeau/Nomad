@@ -138,7 +138,7 @@ FunctionOutcome invokeStoredClosure(Runtime& runtime, const CallbackStore& store
             outcome.integerValue = result.getIntegerValue();
         }
 
-        returnType->freeValue(result);
+        returnType->freeValue(&result);
     }
 
     return outcome;
