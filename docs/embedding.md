@@ -860,6 +860,27 @@ generic struct collections, and aggregate VM allocation are not supported yet.
 Do not pass struct storage to existing single-slot object, constant, argument,
 or interpreter APIs.
 
+### Borrowed VM storage
+
+`VirtualMachine::getLocalStorage(offset, count)`, `getParameterStorage(offset, count)`,
+and `getEnclosingParameterStorage(offset, count)` return contiguous borrowed slot
+views. Each has mutable and const overloads. Offsets and counts are physical,
+not logical variable or parameter IDs. Views must not outlive their owning frame;
+the VM stack does not relocate during calls.
+
+Local offsets start at the active script frame's variable base. Parameter offsets
+count slots from the parameter anchor toward lower addresses; a block of width
+`count` starts at `anchor - offset - (count - 1)` and its fields run in increasing
+address order. Enclosing-parameter views use the script frame's anchor even during
+a native call. Empty requests return empty views without address arithmetic.
+Invalid ranges throw `VirtualMachineException`. Bounds checks cover the allocated
+live stack, not a logical parameter or local declaration's type or width; callers
+must supply offsets/counts belonging to the intended value and frame.
+
+These low-level APIs do not initialize, copy, or release values. Direct writes
+must obey the type's ownership contracts. Existing scalar accessors, argument
+APIs, and bytecode are unchanged; these views do not enable aggregate VM calls.
+
 ### Script object storage
 
 `ScriptObject` (include `<nomad/script/ScriptObject.hpp>`) provides fixed

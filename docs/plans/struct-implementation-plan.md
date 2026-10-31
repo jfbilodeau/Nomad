@@ -1,8 +1,8 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1X have been reviewed; Step 1Y records the approved frame
-addressing foundation. Aggregate VM execution remains unimplemented.
+Steps 1A through 1Y have been reviewed; Step 1Z below is implemented and awaiting
+review. Aggregate VM execution remains unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -1044,6 +1044,37 @@ low-level tests for multi-slot and empty blocks, nested script frames, native
 reentry, and arithmetic/bounds failures. Then review physical frame reservation,
 aggregate lifecycle emission, and exact receiver/return-destination instruction
 contracts separately before changing the aggregate call ABI.
+
+### Step 1Z: Borrowed VM storage views
+
+VirtualMachine provides the six approved const/mutable local, parameter, and
+enclosing-parameter storage-view overloads. Nonempty ranges check arithmetic and
+live physical stack bounds before forming spans; empty requests return empty
+views without index arithmetic. Mutable overloads reuse const validation.
+
+Parameter blocks retain increasing field order with descending argument offsets.
+Enclosing parameter views derive their anchor from the saved script-frame
+boundary, independently of the active native parameter anchor. Bounds checks
+do not validate logical declarations or types. Views remain caller-managed
+borrows and carry no ownership or lifecycle operations.
+
+Existing scalar APIs, frame layout/reservation, argument emission, and opcodes
+remain unchanged. No executable aggregate call paths are enabled.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Remaining and language regression groups passed.
+- Low-level tests verify contiguous multi-slot parameter order, mutable/const
+  views, local offsets, nested frame restoration, enclosing parameter access
+  during native calls and script reentry, empty requests, and overflow/bounds
+  rejection.
+- All four documentation preparation tests and whitespace checks passed.
+- No aggregate call execution or gameplay validation is claimed.
+
+Next slice after review: design physical frame reservation and aggregate
+lifecycle emission, then exact receiver/return-destination instruction contracts
+before changing the aggregate call ABI.
 
 Remaining Step 1 work, requiring separate design approval:
 

@@ -93,6 +93,7 @@ add_executable(
     ./TypedNativeFunctionTest.cpp
     ./TokenizerTest.cpp
     ./VariablePersistenceTest.cpp
+    ./VirtualMachineStorageTest.cpp
 )
 
 target_include_directories(nomad_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

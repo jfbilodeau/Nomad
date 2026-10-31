@@ -13,6 +13,7 @@
 #include <nomad/script/ScriptCallable.hpp>
 
 #include <functional>
+#include <span>
 #include <vector>
 
 namespace nomad {
@@ -40,6 +41,12 @@ public:
 
     void setFunctionVariableValue(VariableId variableId, const RuntimeValue& value);
     [[nodiscard]] const RuntimeValue& getFunctionVariableValue(VariableId variableId) const;
+    [[nodiscard]] std::span<RuntimeValue> getLocalStorage(NomadIndex offset, NomadIndex count);
+    [[nodiscard]] std::span<const RuntimeValue> getLocalStorage(NomadIndex offset, NomadIndex count) const;
+    [[nodiscard]] std::span<RuntimeValue> getParameterStorage(NomadIndex offset, NomadIndex count);
+    [[nodiscard]] std::span<const RuntimeValue> getParameterStorage(NomadIndex offset, NomadIndex count) const;
+    [[nodiscard]] std::span<RuntimeValue> getEnclosingParameterStorage(NomadIndex offset, NomadIndex count);
+    [[nodiscard]] std::span<const RuntimeValue> getEnclosingParameterStorage(NomadIndex offset, NomadIndex count) const;
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
     [[nodiscard]] NomadObject* constructObject(
