@@ -6,11 +6,12 @@ Things the author wants to do.
 [ ] `$init` shows up in LSP
 
 ## Open
+[ ] `struct` (Embedded types, pass by copy)
+[ ] Support for Nomad unit testing
 [ ] Improve animations declaration (avoid duplicate files...)
 [ ] Add private hub/class members
 [ ] Finish converting `NomadId` to strong types.
 [ ] Script fault handling
-[ ] `struct` (Embedded types, pass by copy)
 [ ] Object serialization
 [ ] File IO module.
 [ ] Replace ref counting with garbage collector.

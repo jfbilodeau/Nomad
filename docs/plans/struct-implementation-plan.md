@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1G have been reviewed; Step 1H below is implemented and awaiting review.
+Steps 1A through 1H have been reviewed; Step 1I below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -433,6 +433,43 @@ Step 1H validation:
   recovery, caching, and continued stored-field mutation.
 - All four documentation preparation tests and whitespace checks passed.
 - No gameplay validation or executable struct support is claimed.
+
+Approved ninth slice (Step 1I):
+
+- Replace the existing `Type::initValue`, `copyValue`, and `freeValue` reference
+  parameters with slot pointers. Keep one API set without compatibility
+  overloads or forwarding helpers.
+- Each pointer addresses one typed value occupying `getSize()` contiguous, valid
+  `RuntimeValue` slots. Initialization receives cleared, unowned storage and does
+  not run script constructors.
+- Zero-slot types access no storage and may receive null pointers. Void
+  initialization is now a zero-slot no-op rather than clearing a supplied slot.
+- Preserve existing scalar/reference copy, self-copy, release, and exception
+  cleanup behavior. Retain the scalar `assignValue` reference API and adapt its
+  internal lifecycle calls without changing its replacement semantics.
+- Migrate every existing implementation and caller, including deferred types,
+  compiler/interpreter/VM paths, collections, game event dispatch, native
+  integration, and test fixtures.
+- Add pointer-signature, selected-slot, owned-reference replacement, self-copy,
+  and zero-slot regression coverage. Update the embedding contracts.
+- The Runtime finalization entry point is now named
+  `finalizeCompositeFieldLayout`, following the reviewed rename.
+- No concrete struct descriptor, new opcode, VM storage change, aggregate
+  assignment API, or `needsFree()` redesign in this slice.
+
+Step 1I validation:
+
+- The Windows Debug `nomad_test`, `nomad-runtime`, and `nomad-lsp` targets built
+  successfully.
+- The `nomad_test_language`, `nomad_test_remaining`, `nomad_test_bindings`, and
+  `nomad_test_tooling` groups passed, together with `nomad_lsp_process`.
+- Focused tests verify the exact pointer API signatures, unchanged scalar
+  assignment signature, selected-slot access, owned-reference replacement,
+  self-copy, and null/no-access behavior for void.
+- Existing reference-count, partial initialization/copy cleanup, failed
+  replacement, collection, native-module, and interpreter regressions passed.
+- All four documentation preparation tests and whitespace checks passed.
+- No struct execution, aggregate assignment, or gameplay validation is claimed.
 
 Next design discussion: the real struct descriptor and its size/lifecycle API
 contracts. Wire finalization at the existing Resolve-to-Emit boundary once struct

@@ -693,7 +693,7 @@ property IDs. Representable offsets, including the maximum `NomadIndex`, are
 valid results rather than invalid-ID sentinels. These metadata queries do not
 change the current one-slot-per-field object storage or execution APIs.
 
-`Runtime::finalizeFieldLayout(typeId)` explicitly finalizes the stored-field
+`Runtime::finalizeCompositeFieldLayout(typeId)` explicitly finalizes the stored-field
 layout using an ID from the owning runtime. Invalid IDs and non-composite types
 raise `NomadException`. Type descriptors remain available through const pointers;
 `isFieldLayoutFinalized()` reports whether finalization succeeded. It recursively
@@ -1576,9 +1576,35 @@ construction through the existing native constructor execution paths.
 is null, and its text representation is its type name. Specialized types may
 provide other default values and formatting.
 
-`Type::initValue(value)` initializes a fresh value with the type's default.
-Implement it when defining a type descriptor, and release initialized values
-through `freeValue` when they are no longer needed.
+The type lifecycle functions use pointers to the first slot of one typed value:
+
+```cpp
+virtual void initValue(RuntimeValue* storage) const = 0;
+virtual void copyValue(
+    const RuntimeValue* source,
+    RuntimeValue* destination
+) const = 0;
+virtual void freeValue(RuntimeValue* storage) const;
+```
+
+Provide `getSize()` contiguous, valid `RuntimeValue` slots. Nonempty values require
+non-null pointers. Zero-slot types, including `void`, access no storage and may
+receive `nullptr`; their lifecycle operations do not alter a supplied slot.
+
+`initValue(&value)` initializes cleared, unowned storage with the type's default;
+it does not run script constructors or release existing contents.
+`copyValue(&source, &destination)` copies into cleared storage or replaces an
+owned value. Class and string copies retain their existing reference semantics,
+and self-copy is supported. Release owned contents through `freeValue(&value)`;
+this does not release the storage itself. If initialization or copying fails
+after acquiring resources, release the partial destination through `freeValue`.
+
+The scalar `assignValue(source, destination)` API still takes references. It
+stages a copy before releasing the destination, preserving the previous value
+when copying fails. No aggregate assignment API is introduced here.
+
+Hosts overriding these functions must use the pointer signatures; existing
+callers passing a `RuntimeValue` reference must instead pass its address.
 
 Register a constructor through `Runtime::addConstructor(typeId, definition)`.
 `NativeConstructorDefinition` supplies parameter definitions, a `function` callback, and
