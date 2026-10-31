@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1N have been reviewed; Step 1O below is implemented and awaiting review.
+Steps 1A through 1O have been reviewed; Step 1P below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -669,6 +669,40 @@ Validation:
 - New coverage verifies category-specific registration, invalid owners and
   value types, identity-preserving redeclaration, member collisions, frozen
   layouts, nested/empty structs, and host names outside identifier syntax.
+- All four documentation preparation tests and whitespace checks passed.
+- No aggregate execution or gameplay validation is claimed.
+
+### Step 1P: Native class property registration
+
+`TypeManager::registerNativeClassProperty` owns native class accessor validation
+and construction. `Runtime::addProperty` delegates for compatibility.
+`NativePropertyDefinition` is available through `NativeMember.hpp`, without a
+TypeManager-to-Runtime header dependency.
+
+Runtime retains native-member signature checks, shared native-member indexes,
+property IDs/lookup, and deferred property resolution. The approved public
+`canRegisterNativeMember` and `catalogNativeProperty` operations coordinate
+registration without friendship. Invalid or duplicate catalog requests throw.
+
+TypeManager uses NativeProperty's existing resolution state to recognize
+deferred types without adding a compiler dependency. Registration preserves
+callbacks, permanent IDs, unresolved callback guards, collisions, frozen-layout
+behavior, and host-name semantics. Native properties add no stored-field slots.
+
+Next slice after review: migrate class methods and constructors through
+TypeManager while callable IDs stay in Runtime. Native struct accessors and
+callables remain deferred until their aggregate storage ABI is approved.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, binding, tooling, and LSP process regressions passed.
+- Direct manager coverage verifies read-only/write-only accessors, invalid
+  definitions and owners, runtime catalog identity, callback behavior,
+  shared-signature collisions, duplicate catalog rejection, and registration
+  after layout finalization without adding storage slots.
+- Deferred enum properties resolve through the manager path in both analysis
+  and executable modes while preserving IDs and callback guards.
 - All four documentation preparation tests and whitespace checks passed.
 - No aggregate execution or gameplay validation is claimed.
 

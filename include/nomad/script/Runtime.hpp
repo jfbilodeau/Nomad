@@ -103,14 +103,6 @@ struct NativeConstructorDefinition {
     NomadString documentation;
 };
 
-struct NativePropertyDefinition {
-    const Type* valueType = nullptr;
-    NomadString name;
-    NativePropertyGetFn getter;
-    NativePropertySetFn setter;
-    NomadString documentation;
-};
-
 struct NativeIndexerDefinition {
     TypeId valueTypeId;
     std::vector<TypeId> indexTypes;
@@ -360,6 +352,15 @@ public:
     [[nodiscard]] const NativeProperty* getNativeProperty(PropertyId id) const;
     [[nodiscard]] NativeProperty* getMutableNativeProperty(PropertyId id);
     [[nodiscard]] PropertyId addProperty(TypeId id, NativePropertyDefinition definition);
+    // Indexes an already registered native property for native-member lookup.
+    void catalogNativeProperty(PropertyId id);
+    [[nodiscard]] bool canRegisterNativeMember(
+        const Type* classType,
+        const NomadString& name,
+        MemberType type,
+        const std::vector<Parameter>& parameters,
+        NomadString& error
+    ) const;
     void validateNativePropertyTypes();
     [[nodiscard]] MemberReference getNativeMemberId(const Type* classType, const NomadString& name) const;
     [[nodiscard]] MemberType getMemberType(const MemberReference& member) const;
@@ -715,13 +716,6 @@ private:
         ClassMode mode,
         std::unique_ptr<ClassType> type
     );
-    [[nodiscard]] bool canRegisterNativeMember(
-        const Type* classType,
-        const NomadString& name,
-        MemberType type,
-        const std::vector<Parameter>& parameters,
-        NomadString& error
-    ) const;
     [[nodiscard]] bool canRegisterMemberSignature(
         const NomadString& name,
         MemberType type,

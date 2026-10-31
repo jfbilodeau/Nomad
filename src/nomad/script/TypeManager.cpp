@@ -6,7 +6,10 @@
 
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/CompositeType.hpp>
+#include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
+
+#include <utility>
 
 namespace nomad {
 
@@ -105,6 +108,46 @@ PropertyId TypeManager::registerScriptClassProperty(
     return registerScriptProperty(
         owner != nullptr && owner->asClassType() != nullptr ? owner : nullptr, name, valueType
     );
+}
+
+PropertyId TypeManager::registerNativeClassProperty(
+    const TypeId ownerId,
+    NativePropertyDefinition definition
+) {
+    const auto type = getType(ownerId);
+    const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
+    if (classType == nullptr) {
+        log::error("Cannot register native property '" + definition.name + "': owner must identify a class type");
+        return PropertyId::INVALID;
+    }
+    const auto* valueType = definition.valueType;
+    const auto hasAccessors = static_cast<bool>(definition.getter) || static_cast<bool>(definition.setter);
+    auto property = std::make_unique<NativeProperty>(
+        classType, definition.name, valueType,
+        std::move(definition.getter), std::move(definition.setter), std::move(definition.documentation)
+    );
+    const auto deferred = !property->isTypeResolved() &&
+        valueType != nullptr && valueType->getRuntime() == &m_runtime;
+    if (!deferred && (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal())) {
+        log::error("Cannot register native property '" + definition.name + "': invalid value type");
+        return PropertyId::INVALID;
+    }
+    if (!hasAccessors) {
+        log::error("Cannot register native property '" + definition.name + "': property has no accessor or mutator");
+        return PropertyId::INVALID;
+    }
+    NomadString error;
+    if (!m_runtime.canRegisterNativeMember(classType, definition.name, MemberType::Property, {}, error)) {
+        log::error("Cannot register native property '" + definition.name + "': " + error);
+        return PropertyId::INVALID;
+    }
+    auto* owner = getMutableClassType(classType);
+    const auto propertyId = owner->registerProperty(m_runtime, std::move(property));
+    if (propertyId.isInvalid()) {
+        return PropertyId::INVALID;
+    }
+    m_runtime.catalogNativeProperty(propertyId);
+    return propertyId;
 }
 
 PropertyId TypeManager::registerScriptStructProperty(

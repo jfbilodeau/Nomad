@@ -294,14 +294,14 @@ BOOST_AUTO_TEST_CASE(add_property_accepts_read_only_and_write_only_properties_on
             mode == ClassMode::Opened ? "OpenedProperties" : "ClosedProperties", mode
         );
         BOOST_REQUIRE(typeId.isValid());
-        const auto readOnlyId = runtime.addProperty(typeId, {
+        const auto readOnlyId = runtime.getTypeManager().registerNativeClassProperty(typeId, {
             .valueType = runtime.getIntegerType(),
             .name = "readOnly",
             .getter = propertyGetter(),
             .setter = {},
             .documentation = "Read only."
         });
-        const auto writeOnlyId = runtime.addProperty(typeId, {
+        const auto writeOnlyId = runtime.getTypeManager().registerNativeClassProperty(typeId, {
             .valueType = runtime.getIntegerType(),
             .name = "writeOnly",
             .getter = {},
@@ -319,6 +319,104 @@ BOOST_AUTO_TEST_CASE(add_property_accepts_read_only_and_write_only_properties_on
         BOOST_TEST(!writeOnly->getFn);
         BOOST_TEST(static_cast<bool>(writeOnly->setFn));
     }
+}
+
+BOOST_AUTO_TEST_CASE(manager_native_properties_preserve_catalog_identity_and_frozen_layouts) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto ownerId = runtime.registerClass("ManagedProperties", ClassMode::Closed);
+    const auto* owner = manager.getTypeByName("ManagedProperties")->asClassType();
+    const auto storedId = manager.registerScriptClassProperty(ownerId, "stored", runtime.getIntegerType());
+    BOOST_REQUIRE(storedId.isValid());
+    manager.finalizeCompositeFieldLayout(ownerId);
+    auto getterCalls = 0;
+    auto setterCalls = 0;
+    NomadInteger stored = 42;
+    const NativePropertyDefinition definition{
+        .valueType = runtime.getIntegerType(),
+        .name = "managed",
+        .getter = [&](VirtualMachine*, RuntimeValue& result) {
+            ++getterCalls;
+            result.setIntegerValue(stored);
+        },
+        .setter = [&](VirtualMachine*, const RuntimeValue& value) {
+            ++setterCalls;
+            stored = value.getIntegerValue();
+        },
+        .documentation = "Managed accessor."
+    };
+    const auto id = manager.registerNativeClassProperty(ownerId, definition);
+    BOOST_REQUIRE(id.isValid());
+    const auto* property = runtime.getNativeProperty(id);
+    BOOST_REQUIRE(property != nullptr);
+    BOOST_TEST(property == owner->getProperty("managed"));
+    BOOST_TEST(property == runtime.getProperty(id));
+    BOOST_TEST(property->getDoc() == "Managed accessor.");
+    BOOST_TEST(property->getValueType() == runtime.getIntegerType());
+    BOOST_TEST(property->isTypeResolved());
+    BOOST_TEST(runtime.getNativeMemberId(owner, "managed") == MemberReference{id});
+    std::vector<MemberReference> overloads;
+    runtime.getNativeMemberOverloads("managed", overloads);
+    BOOST_REQUIRE(overloads.size() == 1U);
+    BOOST_TEST(overloads.front() == MemberReference{id});
+    BOOST_TEST(getterCalls == 0);
+    BOOST_TEST(setterCalls == 0);
+    BOOST_TEST(owner->isFieldLayoutFinalized());
+    BOOST_TEST(owner->getFieldStorageSize() == 1U);
+    BOOST_TEST(owner->getFieldIndex(id) == NOMAD_INVALID_INDEX);
+    BOOST_CHECK_THROW((void)owner->getFieldOffset(id), NomadException);
+    BOOST_TEST(manager.registerNativeClassProperty(ownerId, definition).isInvalid());
+    BOOST_TEST(runtime.addProperty(ownerId, definition).isInvalid());
+    BOOST_CHECK_THROW(runtime.catalogNativeProperty(id), NomadException);
+    BOOST_CHECK_THROW(runtime.catalogNativeProperty(storedId), NomadException);
+    BOOST_CHECK_THROW(runtime.catalogNativeProperty(PropertyId::INVALID), NomadException);
+    BOOST_TEST(runtime.getNativeMemberOverloadCount("managed") == 1U);
+    const auto info = property->getInfo();
+    RuntimeValue value;
+    info.getFn(nullptr, value);
+    BOOST_TEST(value.getIntegerValue() == 42);
+    info.setFn(nullptr, RuntimeValue(NomadInteger{7}));
+    BOOST_TEST(stored == 7);
+    BOOST_TEST(getterCalls == 1);
+    BOOST_TEST(setterCalls == 1);
+}
+
+BOOST_AUTO_TEST_CASE(manager_native_property_rejections_do_not_publish_members) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto ownerId = runtime.registerClass("PropertyRegistration", ClassMode::Closed);
+    const auto structId = runtime.registerStruct("NotAClass");
+    const auto* owner = manager.getTypeByName("PropertyRegistration")->asClassType();
+    NativePropertyDefinition definition{
+        .valueType = runtime.getIntegerType(),
+        .name = "candidate",
+        .getter = propertyGetter()
+    };
+    BOOST_TEST(manager.registerNativeClassProperty(structId, definition).isInvalid());
+    BOOST_TEST(manager.registerNativeClassProperty(manager.reserveTypeId(), definition).isInvalid());
+    const auto methodOwnerId = runtime.registerClass("MethodRegistration", ClassMode::Closed);
+    BOOST_REQUIRE(runtime.addMethod(methodOwnerId, {
+        .name = "candidate",
+        .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [](VirtualMachine*) {},
+        .documentation = ""
+    }).isValid());
+    BOOST_TEST(manager.registerNativeClassProperty(ownerId, definition).isInvalid());
+    BOOST_TEST(owner->getProperties().empty());
+    BOOST_TEST(runtime.getNativeMemberId(owner, "candidate") == MemberReference{});
+    BOOST_TEST(runtime.getNativeMemberOverloadCount("candidate") == 1U);
+    definition.name = "noAccessors";
+    definition.getter = {};
+    BOOST_TEST(manager.registerNativeClassProperty(ownerId, definition).isInvalid());
+    definition.name = "stored";
+    definition.getter = propertyGetter();
+    const auto storedId = manager.registerScriptClassProperty(ownerId, "stored", runtime.getIntegerType());
+    BOOST_REQUIRE(storedId.isValid());
+    BOOST_TEST(manager.registerNativeClassProperty(ownerId, definition).isInvalid());
+    BOOST_TEST(runtime.getNativeProperty(storedId) == nullptr);
+    BOOST_TEST(runtime.getNativeMemberOverloadCount("stored") == 0U);
+    BOOST_TEST(owner->getPropertyCount() == 1U);
 }
 
 BOOST_AUTO_TEST_CASE(add_property_rejects_invalid_definitions_without_partial_registration) {
@@ -342,7 +440,7 @@ BOOST_AUTO_TEST_CASE(add_property_rejects_invalid_definitions_without_partial_re
     for (const auto invalidOwner : {
         TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getTypeId("int"), runtime.getTypeId("void")
     }) {
-        BOOST_TEST(runtime.addProperty(invalidOwner, definition).isInvalid());
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(invalidOwner, definition).isInvalid());
     }
     Runtime otherRuntime;
     for (const auto* invalidValueType : {
@@ -351,7 +449,7 @@ BOOST_AUTO_TEST_CASE(add_property_rejects_invalid_definitions_without_partial_re
     }) {
         auto invalidDefinition = definition;
         invalidDefinition.valueType = invalidValueType;
-        BOOST_TEST(runtime.addProperty(typeId, std::move(invalidDefinition)).isInvalid());
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(typeId, std::move(invalidDefinition)).isInvalid());
     }
     auto inaccessibleDefinition = definition;
     inaccessibleDefinition.getter = {};

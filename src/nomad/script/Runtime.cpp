@@ -1989,42 +1989,22 @@ void Runtime::validateNativePropertyTypes() {
 }
 
 PropertyId Runtime::addProperty(const TypeId id, NativePropertyDefinition definition) {
-    const auto type = getType(id);
-    const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
-    if (classType == nullptr) {
-        log::error("Cannot register native property '" + definition.name + "': owner must identify a class type");
-        return PropertyId::INVALID;
-    }
-    const auto* valueType = definition.valueType;
-    const auto deferred = valueType != nullptr && valueType->getRuntime() == this &&
-        dynamic_cast<const DeferredType*>(valueType) != nullptr;
-    if (!deferred && (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal())) {
-        log::error("Cannot register native property '" + definition.name + "': invalid value type");
-        return PropertyId::INVALID;
-    }
-    if (!definition.getter && !definition.setter) {
-        log::error("Cannot register native property '" + definition.name + "': property has no accessor or mutator");
-        return PropertyId::INVALID;
-    }
+    return m_typeManager.registerNativeClassProperty(id, std::move(definition));
+}
 
+void Runtime::catalogNativeProperty(const PropertyId id) {
+    const auto* property = getNativeProperty(id);
+    if (property == nullptr || !ownsType(property->getClassType()) ||
+        property->getClassType()->getProperty(property->getName()) != property ||
+        std::ranges::find(m_nativeMembers, MemberReference{id}) != m_nativeMembers.end()) {
+        throw NomadException("Cannot catalog native property: invalid registration or duplicate native member");
+    }
     NomadString error;
-    if (!canRegisterNativeMember(classType, definition.name, MemberType::Property, {}, error)) {
-        log::error("Cannot register native property '" + definition.name + "': " + error);
-        return PropertyId::INVALID;
+    if (!canRegisterMemberSignature(property->getName(), MemberType::Property, {}, error)) {
+        throw NomadException("Cannot catalog native property '" + property->getName() + "': " + error);
     }
-
-    auto* owner = getMutableClassType(classType);
-    const auto propertyId = owner->registerProperty(*this, std::make_unique<NativeProperty>(
-        classType, definition.name, valueType,
-        std::move(definition.getter), std::move(definition.setter), std::move(definition.documentation)
-    ));
-    if (propertyId.isInvalid()) {
-        return PropertyId::INVALID;
-    }
-    m_nativeMembers.push_back(propertyId);
-    m_nativeMembersByName[definition.name].push_back(propertyId);
-
-    return propertyId;
+    m_nativeMembers.push_back(id);
+    m_nativeMembersByName[property->getName()].push_back(id);
 }
 
 CallableId Runtime::registerScriptMethod(

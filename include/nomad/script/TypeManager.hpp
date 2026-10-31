@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <nomad/script/NativeMember.hpp>
 #include <nomad/script/Property.hpp>
 #include <nomad/script/Type.hpp>
 
@@ -30,6 +31,10 @@ public:
     [[nodiscard]] ClassType* getMutableClassType(const ClassType* type);
     [[nodiscard]] CompositeType* getMutableCompositeType(TypeId id);
     void finalizeCompositeFieldLayout(TypeId id);
+    [[nodiscard]] PropertyId registerNativeClassProperty(
+        TypeId ownerId,
+        NativePropertyDefinition definition
+    );
     [[nodiscard]] PropertyId registerScriptClassProperty(
         TypeId ownerId,
         const NomadString& name,

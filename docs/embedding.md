@@ -428,7 +428,8 @@ runtime ownership and catalog identity.
 The existing Runtime lookup and finalization methods remain available with
 the same behavior. Declare stored fields with
 `TypeManager::registerScriptClassProperty` or `registerScriptStructProperty`.
-Continue using Runtime's registration methods for types, native properties,
+Register native class accessors with `TypeManager::registerNativeClassProperty`.
+Continue using Runtime's registration methods for types,
 methods, and constructors during this migration. Callable
 IDs still belong to Runtime. `TypeManager::reserveTypeId()` and `catalogType()`
 are low-level catalog operations: they do not register namespace members or
@@ -910,12 +911,15 @@ native-only.
 
 ### Native property creation
 
-`Runtime::addProperty(TypeId id, NativePropertyDefinition definition)` registers
+`TypeManager::registerNativeClassProperty(TypeId id, NativePropertyDefinition definition)` registers
 a native property and returns its `PropertyId`. The owner ID must identify a
 class type in that runtime. `definition.valueType` takes a `const Type*` from the
 same runtime, or a placeholder obtained from its configured compiler's
 `deferType(reference)`. The resolved value type must be public and non-void.
 Host registration is permitted on both open and closed types.
+Include `<nomad/script/NativeMember.hpp>` for `NativePropertyDefinition`.
+`Runtime::addProperty` remains a compatibility entry point with identical behavior.
+Native struct accessors are not supported; struct owner IDs are rejected.
 
 Provide a getter, a setter, or both. A getter-only property is read-only; a
 setter-only property is write-only. The runtime owns the registered name,
@@ -925,7 +929,7 @@ the callbacks are invoked.
 For an already registered class type identified by `typeId`:
 
 ```cpp
-const auto propertyId = runtime.addProperty(typeId, {
+const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(typeId, {
     .valueType = runtime.getIntegerType(),
     .name = "answer",
     .getter = [](nomad::VirtualMachine*, nomad::RuntimeValue& value) {
@@ -944,6 +948,18 @@ and conflicting members are logged and return `PropertyId::INVALID` without
 registering a property. Duplicate native properties are rejected even if their
 definitions match. Use the existing property and native member lookup APIs to
 retrieve the registered metadata.
+
+Registration adds the property to Runtime's shared native-member indexes without
+running callbacks or adding stored-field slots. It remains permitted after
+class field layout finalization. Runtime retains property lookup and deferred
+type-resolution APIs.
+
+For low-level integration, `Runtime::canRegisterNativeMember` checks registered
+class ownership, collisions, and shared native-member parameter signatures,
+returning an error description on failure. `Runtime::catalogNativeProperty(id)`
+indexes an already registered native property; invalid IDs, stored properties,
+duplicate indexing, and incompatible signatures throw `NomadException`.
+Ordinary host code should use the manager registration API instead.
 
 Deferred properties receive their permanent `PropertyId` immediately. Compilation
 resolves their value types before parsing script bodies, in both analysis and

@@ -22,6 +22,14 @@ class VirtualMachine;
 using NativePropertyGetFn = std::function<void(VirtualMachine*, RuntimeValue&)>;
 using NativePropertySetFn = std::function<void(VirtualMachine*, const RuntimeValue&)>;
 
+struct NativePropertyDefinition {
+    const Type* valueType = nullptr;
+    NomadString name;
+    NativePropertyGetFn getter;
+    NativePropertySetFn setter;
+    NomadString documentation;
+};
+
 struct NativePropertyInfo {
     PropertyId id;
     const Type* classType = nullptr;

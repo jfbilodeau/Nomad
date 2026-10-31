@@ -46,7 +46,7 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
         auto getterCalls = 0;
         auto setterCalls = 0;
         NomadInteger stored = 1;
-        const auto id = runtime.addProperty(ownerId, {
+        const auto id = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
             .valueType = placeholder,
             .name = "level",
             .getter = [&](VirtualMachine*, RuntimeValue& result) {
