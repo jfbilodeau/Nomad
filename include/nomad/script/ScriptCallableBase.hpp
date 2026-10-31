@@ -228,6 +228,10 @@ public:
     }
 
     [[nodiscard]] NomadIndex getVariableCount() const { return m_variables.getVariableCount(); }
+    [[nodiscard]] NomadIndex getVariableOffset(const VariableId variableId) const {
+        return m_variables.getVariableOffset(variableId);
+    }
+    [[nodiscard]] NomadIndex getVariableStorageSize() const { return m_variables.getStorageSize(); }
 
     [[nodiscard]] NomadString getVisibleVariableName(VariableId variableId) const {
         const auto& storageName = getVariableName(variableId);

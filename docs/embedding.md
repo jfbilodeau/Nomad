@@ -710,6 +710,12 @@ Logical IDs and `getVariableCount()` remain independent of physical slot counts.
 Queries reflect the current metadata after variable registration or type changes;
 they do not allocate storage or change existing VM access.
 
+`ScriptCallableBase::getVariableOffset(id)` and `getVariableStorageSize()`
+expose the same physical layout queries for script function, method, and
+constructor locals. They include all registered locals, including compiler-owned
+temporaries. These metadata APIs do not yet change bytecode addressing or frame
+reservation; logical IDs remain stable when sizes change.
+
 An offset query requires resolved sizes for the preceding variables; a total-size
 query requires resolved sizes for every variable. Missing types, deferred-size
 queries, and slot-count overflow throw `NomadException`. An invalid or out-of-range

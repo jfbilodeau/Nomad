@@ -11,6 +11,7 @@
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/SystemFunctions.hpp>
@@ -102,6 +103,79 @@ CallableId registerNativeFunction(
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(callable_catalog)
+
+BOOST_AUTO_TEST_CASE(local_layout_metadata_is_shared_across_script_callable_categories) {
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("EmptyLocal");
+    const auto pointId = runtime.registerStruct("PointLocal");
+    const auto* empty = runtime.getTypeByName("EmptyLocal")->asStructType();
+    const auto* point = runtime.getTypeByName("PointLocal")->asStructType();
+    for (const auto* name : {"x", "y", "z"}) {
+        BOOST_REQUIRE(runtime.registerProperty(pointId, name, runtime.getFloatType()).isValid());
+    }
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.finalizeCompositeFieldLayout(pointId);
+    const auto ownerId = runtime.registerClass("LocalOwner", ClassMode::Closed);
+    const auto* owner = runtime.getTypeByName("LocalOwner")->asClassType();
+    BOOST_REQUIRE(ownerId.isValid());
+    ScriptFunction function(CallableId{}, "locals", "locals.nomad", "");
+    ScriptMethod method("locals", owner, {}, runtime.getVoidType(), "locals.nomad", "");
+    ScriptConstructor constructor(owner, {}, "locals.nomad", "");
+    for (auto* callable : std::vector<ScriptCallableBase*>{&function, &method, &constructor}) {
+        BOOST_TEST(callable->getVariableStorageSize() == 0U);
+        const auto counter = callable->registerVariable("counter", runtime.getIntegerType());
+        const auto marker = callable->registerVariable("marker", empty);
+        const auto location = callable->registerVariable("location", point);
+        const auto label = callable->registerVariable("label", runtime.getStringType());
+        BOOST_TEST(counter == VariableId{0});
+        BOOST_TEST(marker == VariableId{1});
+        BOOST_TEST(location == VariableId{2});
+        BOOST_TEST(label == VariableId{3});
+        BOOST_TEST(callable->getVariableCount() == 4U);
+        BOOST_TEST(callable->getVariableOffset(counter) == 0U);
+        BOOST_TEST(callable->getVariableOffset(marker) == 1U);
+        BOOST_TEST(callable->getVariableOffset(location) == 1U);
+        BOOST_TEST(callable->getVariableOffset(label) == 4U);
+        BOOST_TEST(callable->getVariableStorageSize() == 5U);
+        callable->setVariableType(location, empty);
+        BOOST_TEST(callable->getVariableOffset(label) == 1U);
+        BOOST_TEST(callable->getVariableStorageSize() == 2U);
+        BOOST_TEST(callable->getVariableId("label") == label);
+        const auto scratch = callable->registerVariable("scratch", point);
+        BOOST_TEST(callable->getVariableOffset(scratch) == 2U);
+        BOOST_TEST(callable->getVariableStorageSize() == 5U);
+        BOOST_CHECK_THROW((void)callable->getVariableOffset(VariableId::INVALID), NomadException);
+        BOOST_CHECK_THROW((void)callable->getVariableOffset(VariableId{5}), NomadException);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(local_layout_metadata_reports_unresolved_sizes_and_overflow) {
+    Runtime runtime;
+    ScriptFunction function(CallableId{}, "locals", "locals.nomad", "");
+    const auto inferred = function.registerVariable("inferred", nullptr);
+    const auto following = function.registerVariable("following", runtime.getIntegerType());
+    BOOST_TEST(function.getVariableOffset(inferred) == 0U);
+    BOOST_CHECK_THROW((void)function.getVariableOffset(following), NomadException);
+    BOOST_CHECK_THROW((void)function.getVariableStorageSize(), NomadException);
+    auto compiler = runtime.createCompiler();
+    function.setVariableType(inferred, compiler->deferType({"UnresolvedLocal"}));
+    BOOST_CHECK_THROW((void)function.getVariableStorageSize(), NomadException);
+    function.setVariableType(inferred, runtime.getFloatType());
+    BOOST_TEST(function.getVariableStorageSize() == 2U);
+    const auto structId = runtime.registerStruct("PendingLocal");
+    function.setVariableType(inferred, runtime.getTypeByName("PendingLocal"));
+    BOOST_CHECK_THROW((void)function.getVariableOffset(following), NomadException);
+    runtime.finalizeCompositeFieldLayout(structId);
+    BOOST_TEST(function.getVariableOffset(following) == 0U);
+    ClassType* maximumType = nullptr;
+    const auto maximum = std::numeric_limits<NomadIndex>::max();
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
+        "MaximumLocal", ClassMode::Closed, maximumType, maximum
+    ).isValid());
+    function.setVariableType(inferred, maximumType);
+    BOOST_TEST(function.getVariableOffset(following) == maximum);
+    BOOST_CHECK_THROW((void)function.getVariableStorageSize(), NomadException);
+}
 
 BOOST_AUTO_TEST_CASE(parameter_stack_widths_preserve_existing_argument_shapes)
 {

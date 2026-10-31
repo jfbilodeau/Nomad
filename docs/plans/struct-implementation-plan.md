@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1Z have been reviewed; Step 1AA below is implemented and awaiting
+Steps 1A through 1AA have been reviewed; Step 1AB below is implemented and awaiting
 review. Aggregate VM execution remains unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1100,6 +1100,40 @@ Validation:
 
 Next slice after review: physical frame reservation and aggregate lifecycle
 emission design, followed by receiver/return-destination instruction contracts.
+
+### Step 1AB: Callable-local physical metadata
+
+ScriptCallableBase exposes `getVariableOffset(VariableId)` and
+`getVariableStorageSize`, delegating to its existing VariableMap. Functions,
+methods, and constructors share the same metadata contract. Logical variable
+IDs and counts remain independent of physical sizes.
+
+Approved addressing direction: local load, store, and cleanup instructions will
+receive compiler-computed physical offsets, not logical IDs. Runtime execution
+will use the frame base plus that offset without a layout lookup. Parameter
+instruction addressing must likewise account for physical argument layout.
+This slice does not change existing opcode operands or VM access.
+
+For locals `[counter:int, marker:Empty, location:Point, label:string]`, the
+logical IDs are 0, 1, 2, and 3, while offsets are 0, 1, 1, and 4 and total width
+is five slots. Layout queries reflect type changes and additional temporary
+registrations and retain existing unresolved-size and overflow errors.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Remaining and language regression groups passed.
+- Callable coverage verifies all three script callable categories, real
+  multi-slot/empty structs, stable logical IDs, changed types, appended scratch
+  locals, unresolved/deferred layouts, invalid IDs, and storage-size overflow.
+- All four documentation preparation tests and whitespace checks passed.
+- No physical bytecode migration, aggregate execution, or gameplay validation
+  is claimed.
+
+Next slice after review: agree on the coherent migration of local instruction
+operands and all local frame consumers to physical offsets, including frame
+reservation and cleanup. Review necessary operand/API changes before execution
+changes; aggregate receiver and return-destination contracts follow separately.
 
 Remaining Step 1 work, requiring separate design approval:
 
