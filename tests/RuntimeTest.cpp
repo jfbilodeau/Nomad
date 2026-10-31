@@ -75,7 +75,7 @@ BOOST_AUTO_TEST_CASE(runtime_specialized_creation_forwards_arguments_and_publish
     Runtime runtime;
     int constructions = 0;
     bool unpublished = false;
-    const auto id = runtime.registerClass<CreationProbe>(
+    const auto id = runtime.getTypeManager().registerClass<CreationProbe>(
         "CreationProbe", ClassMode::Opened, std::make_unique<int>(42), constructions, unpublished
     );
     BOOST_REQUIRE(id.isValid());
@@ -89,11 +89,11 @@ BOOST_AUTO_TEST_CASE(runtime_specialized_creation_forwards_arguments_and_publish
     BOOST_TEST(constructions == 1);
 
     for (const auto& name : {"CreationProbe", ""}) {
-        BOOST_TEST(runtime.registerClass<CreationProbe>(
+        BOOST_TEST(runtime.getTypeManager().registerClass<CreationProbe>(
             name, ClassMode::Closed, std::make_unique<int>(1), constructions, unpublished
         ).isInvalid());
     }
-    BOOST_TEST(runtime.registerClass<CreationProbe>(
+    BOOST_TEST(runtime.getTypeManager().registerClass<CreationProbe>(
         "InvalidMode", static_cast<ClassMode>(0), std::make_unique<int>(1), constructions, unpublished
     ).isInvalid());
     BOOST_TEST(constructions == 1);
@@ -135,7 +135,7 @@ BOOST_AUTO_TEST_CASE(runtime_type_ids_survive_nested_creation_and_failed_constru
     Runtime runtime;
     TypeId observedId;
     TypeId nestedId;
-    const auto id = runtime.registerClass<NestedCreation>(
+    const auto id = runtime.getTypeManager().registerClass<NestedCreation>(
         "Nested", ClassMode::Closed, observedId, nestedId, false
     );
     BOOST_REQUIRE(id.isValid());
@@ -144,7 +144,7 @@ BOOST_AUTO_TEST_CASE(runtime_type_ids_survive_nested_creation_and_failed_constru
     const auto* nested = runtime.getType(nestedId).value();
     BOOST_TEST(nested->getId() == nestedId);
 
-    BOOST_CHECK_THROW(static_cast<void>(runtime.registerClass<NestedCreation>(
+    BOOST_CHECK_THROW(static_cast<void>(runtime.getTypeManager().registerClass<NestedCreation>(
         "Failed", ClassMode::Closed, observedId, nestedId, true
     )), NomadException);
     const auto failedId = observedId;

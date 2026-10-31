@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/script/Hub.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/StructType.hpp>
@@ -74,8 +75,8 @@ BOOST_AUTO_TEST_CASE(runtime_composes_the_catalog_and_preserves_lookup_identity)
     BOOST_TEST(!manager.getType(TypeId::INVALID).has_value());
     BOOST_TEST(manager.getTypeByName("Missing") == nullptr);
     BOOST_TEST(manager.getTypeId("Missing").isInvalid());
-    const auto classId = runtime.registerClass("CatalogClass", ClassMode::Closed);
-    const auto structId = runtime.registerStruct("CatalogStruct");
+    const auto classId = manager.registerClass("CatalogClass", ClassMode::Closed);
+    const auto structId = manager.registerStruct("CatalogStruct");
     BOOST_REQUIRE(classId.isValid() && structId.isValid());
     const auto* originalClass = manager.getTypeByName("CatalogClass");
     const auto* originalStruct = manager.getTypeByName("CatalogStruct");
@@ -427,6 +428,81 @@ BOOST_AUTO_TEST_CASE(class_callable_registration_rejects_invalid_owners_and_cons
     BOOST_TEST(runtime.getNativeConstructor(id)->getConstructedType() == manager.getTypeByName("ConstructorOwner"));
     BOOST_TEST(manager.registerNativeClassConstructor(ownerId, definition).isInvalid());
     BOOST_TEST(runtime.getFunctionTableSize() == before + 1);
+}
+
+BOOST_AUTO_TEST_CASE(manager_type_registration_publishes_hub_members_and_rejects_conflicts) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto hubId = runtime.registerHub("types", HubMode::Closed);
+    BOOST_REQUIRE(hubId.isValid());
+    const auto classId = manager.registerClass("types.Player", ClassMode::Opened, "Player documentation.");
+    const auto structId = manager.registerStruct("types.Point", "Point documentation.");
+    BOOST_REQUIRE(classId.isValid() && structId.isValid());
+    const auto* classType = manager.getTypeByName("types.Player");
+    const auto* structType = manager.getTypeByName("types.Point");
+    BOOST_TEST(classType->getDocumentation() == "Player documentation.");
+    BOOST_TEST(structType->getDocumentation() == "Point documentation.");
+    BOOST_TEST(classType->asClassType()->isOpen());
+    BOOST_TEST(structType->asStructType() != nullptr);
+    BOOST_TEST(std::get<const Type*>(*runtime.getHub(hubId)->getMember("Player")) == classType);
+    BOOST_TEST(std::get<const Type*>(*runtime.getHub(hubId)->getMember("Point")) == structType);
+    BOOST_REQUIRE(runtime.registerHubConstant(hubId, "constant",
+        RuntimeValue(NomadInteger{1}), runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerHubVariable(hubId, "variable").isValid());
+    BOOST_REQUIRE(runtime.registerHubScriptFunction(hubId, "function", "", "").isValid());
+    const auto count = manager.getTypeCount();
+    for (const auto* name : {"", "int", "types", "types.Player", "types.Point",
+        "types.constant", "types.variable", "types.function"}) {
+        BOOST_TEST(manager.registerClass(name, ClassMode::Closed).isInvalid());
+        BOOST_TEST(manager.registerStruct(name).isInvalid());
+    }
+    BOOST_TEST(manager.registerClass("types.Invalid", static_cast<ClassMode>(0)).isInvalid());
+    BOOST_TEST(manager.getTypeCount() == count);
+    BOOST_TEST(runtime.registerClass("types.Player", ClassMode::Opened).isInvalid());
+    BOOST_TEST(runtime.registerStruct("types.Point").isInvalid());
+    BOOST_TEST(runtime.getTypeByName("types.Player") == classType);
+    BOOST_TEST(runtime.getTypeByName("types.Point") == structType);
+    const auto lateId = manager.registerStruct("late.Record");
+    BOOST_REQUIRE(lateId.isValid());
+    const auto* late = manager.getTypeByName("late.Record");
+    const auto lateHub = runtime.registerHub("late", HubMode::Opened);
+    BOOST_REQUIRE(lateHub.isValid());
+    BOOST_TEST(std::get<const Type*>(*runtime.getHub(lateHub)->getMember("Record")) == late);
+}
+
+BOOST_AUTO_TEST_CASE(full_type_registration_validates_reservations_and_namespace_before_publication) {
+    Runtime runtime;
+    Runtime other;
+    auto& manager = runtime.getTypeManager();
+    const auto hubId = runtime.registerHub("catalog", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    const auto id = manager.reserveTypeId();
+    BOOST_CHECK_THROW(manager.registerType(nullptr), NomadException);
+    BOOST_CHECK_THROW(manager.registerType(std::make_unique<ClassType>(
+        &other, id, "catalog.Foreign", ClassMode::Closed)), NomadException);
+    BOOST_CHECK_THROW(manager.registerType(std::make_unique<ClassType>(
+        &runtime, TypeId::INVALID, "catalog.Invalid", ClassMode::Closed)), NomadException);
+    BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
+    auto type = std::make_unique<ClassType>(&runtime, id, "catalog.Registered", ClassMode::Closed);
+    const auto* original = type.get();
+    manager.registerType(std::move(type));
+    BOOST_TEST(*manager.getType(id) == original);
+    BOOST_TEST(std::get<const Type*>(*runtime.getHub(hubId)->getMember("Registered")) == original);
+    BOOST_CHECK_THROW(manager.registerType(std::make_unique<ClassType>(
+        &runtime, id, "catalog.Replacement", ClassMode::Closed)), NomadException);
+    BOOST_TEST(runtime.getHub(hubId)->getMember("Replacement") == nullptr);
+    BOOST_CHECK_THROW(runtime.publishTypeNamespace(*original), NomadException);
+    const auto unusedId = manager.reserveTypeId();
+    BOOST_CHECK_THROW(manager.registerType(std::make_unique<ClassType>(
+        &runtime, unusedId, "catalog.Registered", ClassMode::Closed)), NomadException);
+    BOOST_TEST(!manager.getType(unusedId).has_value());
+    BOOST_TEST(std::get<const Type*>(*runtime.getHub(hubId)->getMember("Registered")) == original);
+    BOOST_CHECK_THROW(manager.registerType(std::make_unique<ClassType>(
+        &runtime, unusedId, "catalog", ClassMode::Closed)), NomadException);
+    BOOST_TEST(!manager.getType(unusedId).has_value());
+    BOOST_TEST(!runtime.canRegisterTypeName("catalog"));
+    BOOST_TEST(!runtime.canRegisterTypeName("catalog.Registered"));
+    BOOST_TEST(runtime.canRegisterTypeName("catalog.Available"));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

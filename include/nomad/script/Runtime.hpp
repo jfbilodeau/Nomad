@@ -240,14 +240,9 @@ public:
         ClassMode mode,
         Arguments&&... arguments
     ) {
-        if (!canRegisterClass(name, mode)) {
-            return TypeId::INVALID;
-        }
-        const auto id = reserveTypeId();
-        auto type = std::make_unique<Descriptor>(
-            this, id, name, mode, std::forward<Arguments>(arguments)...
+        return m_typeManager.registerClass<Descriptor>(
+            std::move(name), mode, std::forward<Arguments>(arguments)...
         );
-        return publishClass(id, name, mode, std::move(type));
     }
     [[nodiscard]] const ClassType* getIteratorType(const Type* valueType);
     [[nodiscard]] TypeId registerStruct(NomadString name, NomadString documentation = {});
@@ -256,6 +251,8 @@ public:
     [[nodiscard]] TypeId getTypeId(const NomadString& typeName) const;
     [[nodiscard]] TypeManager& getTypeManager();
     [[nodiscard]] const TypeManager& getTypeManager() const;
+    [[nodiscard]] bool canRegisterTypeName(const NomadString& name) const;
+    void publishTypeNamespace(const Type& type);
     [[nodiscard]] std::optional<const Type*> getType(TypeId id) const;
     [[nodiscard]] const Type* getTypeByName(const NomadString& name) const;
     void getTypes(std::vector<const Type*>& types) const;
@@ -689,13 +686,6 @@ private:
     void registerType(std::unique_ptr<Type>&& type);
     [[nodiscard]] bool ownsType(const Type* type) const;
     [[nodiscard]] ClassType* getMutableClassType(const ClassType* type);
-    [[nodiscard]] bool canRegisterClass(const NomadString& name, ClassMode mode) const;
-    [[nodiscard]] TypeId publishClass(
-        TypeId id,
-        const NomadString& name,
-        ClassMode mode,
-        std::unique_ptr<ClassType> type
-    );
     [[nodiscard]] bool canRegisterMemberSignature(
         const NomadString& name,
         MemberType type,

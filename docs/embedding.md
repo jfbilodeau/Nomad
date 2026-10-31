@@ -430,13 +430,31 @@ the same behavior. Declare stored fields with
 `TypeManager::registerScriptClassProperty` or `registerScriptStructProperty`.
 Register native class accessors with `TypeManager::registerNativeClassProperty`.
 Register class methods and constructors with the manager's explicit
-native/script class APIs. Continue using Runtime's registration methods for
-types during this migration. Callable
+native/script class APIs. Register class and struct types with
+`TypeManager::registerClass` and `registerStruct`; existing Runtime entry points
+remain compatible. Enum, opaque-ID, callback, and parameterized-family creation
+still use Runtime during this migration. Callable
 IDs still belong to Runtime. `TypeManager::reserveTypeId()` and `catalogType()`
 are low-level catalog operations: they do not register namespace members or
 check namespace collisions. `catalogType()` requires a non-null descriptor
 owned by the same runtime and an unused reserved ID, otherwise it throws
 `NomadException`. An unused reserved ID is absent from lookup and enumeration.
+
+`TypeManager::registerType(descriptor)` publishes a completed descriptor in its
+namespace and transfers ownership to the manager. It requires a non-null
+descriptor owned by the same runtime with an unused reserved ID; invalid
+ownership, reservations, or hub collisions throw `NomadException`.
+Callback descriptors are not published as hub type members; event descriptors
+retain their event namespace entry. Prefer the class/struct creation APIs for
+ordinary registration.
+
+Runtime maintains hub indexes through `canRegisterTypeName(name)` and
+`publishTypeNamespace(type)`. The former checks hub-name and member collisions,
+not identifier syntax or catalog duplication. The latter requires a same-runtime
+descriptor with an unused reserved ID and publishes a borrowed namespace entry;
+it does not take ownership. It is a low-level coordination operation: the
+descriptor must immediately be cataloged and remain alive for the runtime's
+lifetime. Ordinary hosts should use manager registration instead.
 
 `TypeManager::finalizeCompositeFieldLayout(id)` finalizes class or struct
 stored-field layouts, including nested inline structs. Invalid IDs and
@@ -491,7 +509,7 @@ opcode-table fields. Types deriving directly from `Type` also implement
 
 ### Class registration
 
-`Runtime::registerClass(name, mode, documentation = {})` registers a class
+`TypeManager::registerClass(name, mode, documentation = {})` registers a class
 type and returns its `TypeId`. The mode is required:
 `ClassMode::Opened` permits external script member declarations, while
 `ClassMode::Closed` prevents them. Neither mode makes existing properties
@@ -510,7 +528,7 @@ which must outlive the descriptor. `Type::getId()` returns the immutable,
 runtime-local ID. Use it when passing an existing descriptor to an ID-based API;
 name lookup does not distinguish callback signatures.
 
-`registerClass<Descriptor>(name, mode, arguments...)` creates specialized
+`TypeManager::registerClass<Descriptor>(name, mode, arguments...)` creates specialized
 `ClassType` subclasses. It calls
 `Descriptor(Runtime*, TypeId, name, mode, arguments...)`, forwarding additional arguments.
 Invalid registration requests are rejected before calling the descriptor constructor.
@@ -523,7 +541,8 @@ until the descriptor is registered. Constructors may create other types without
 changing the reserved ID. Failed creation leaves an unused ID; IDs are never
 reassigned, and `getTypes()` lists only registered descriptors. Construct
 standalone, unregistered descriptors with `TypeId::INVALID`. Registration is
-managed by the runtime's creation APIs rather than a public `registerType()`.
+managed by the runtime-owned manager's creation APIs. Runtime's class creation
+overloads remain compatibility wrappers.
 
 Type creation does not register constructors or finalize a script field layout.
 
@@ -791,7 +810,7 @@ source `init` body. Classes without a source `init` have a parameterless constru
 
 `StructType` is declared in `<nomad/script/StructType.hpp>` and derives from
 `CompositeType`, not `ClassType`. Register a closed descriptor with
-`Runtime::registerStruct(name, documentation = {})`, add stored fields with
+`TypeManager::registerStruct(name, documentation = {})`, add stored fields with
 `runtime.getTypeManager().registerScriptStructProperty(ownerId, name, valueType)`,
 then call `runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId)`.
 Invalid or reserved names are logged and registration returns `TypeId::INVALID`.

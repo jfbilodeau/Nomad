@@ -199,7 +199,7 @@ bool preDeclareClass(
         return false;
     }
     if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown ||
-        context->getRuntime()->registerClass(name, mode).isInvalid()) {
+        context->getRuntime()->getTypeManager().registerClass(name, mode).isInvalid()) {
         context->reportError("Cannot declare class '" + name + "': identifier is already declared or invalid", tokens);
         return false;
     }

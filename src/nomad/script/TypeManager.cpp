@@ -9,6 +9,7 @@
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/StructType.hpp>
 
 #include <algorithm>
 #include <utility>
@@ -23,6 +24,71 @@ TypeManager::~TypeManager() = default;
 
 Runtime& TypeManager::getRuntime() const {
     return m_runtime;
+}
+
+void TypeManager::registerType(std::unique_ptr<Type> type) {
+    if (type == nullptr || type->getRuntime() != &m_runtime ||
+        isIdOutOfRange(type->getId().id, m_types.size()) ||
+        getType(type->getId()).has_value()) {
+        throw NomadException("Cannot register a type without a matching runtime and reserved ID");
+    }
+    m_runtime.publishTypeNamespace(*type);
+    catalogType(std::move(type));
+}
+
+TypeId TypeManager::registerClass(
+    NomadString name,
+    const ClassMode mode,
+    NomadString documentation
+) {
+    return registerClass<ClassType>(
+        std::move(name), mode, std::vector<const Type*>{}, std::move(documentation)
+    );
+}
+
+bool TypeManager::canRegisterClass(const NomadString& name, const ClassMode mode) const {
+    if (name.empty()) {
+        log::error("Cannot register a class with an empty name");
+        return false;
+    }
+    if (mode != ClassMode::Opened && mode != ClassMode::Closed) {
+        log::error("Cannot register class '" + name + "': invalid class mode");
+        return false;
+    }
+    if (getTypeId(name).isValid()) {
+        log::error("Type with name '" + name + "' already registered");
+        return false;
+    }
+    if (!m_runtime.canRegisterTypeName(name)) {
+        log::error("Cannot register class '" + name + "': name is reserved by a hub declaration");
+        return false;
+    }
+    return true;
+}
+
+TypeId TypeManager::publishClass(
+    const TypeId id,
+    const NomadString& name,
+    const ClassMode mode,
+    std::unique_ptr<ClassType> type
+) {
+    if (type->getRuntime() != &m_runtime || type->getId() != id || type->getTypeName() != name ||
+        !canRegisterClass(name, mode) || type->isOpen() != (mode == ClassMode::Opened)) {
+        log::error("Cannot register class '" + name + "': descriptor does not match its registration request");
+        return TypeId::INVALID;
+    }
+    registerType(std::move(type));
+    return id;
+}
+
+TypeId TypeManager::registerStruct(NomadString name, NomadString documentation) {
+    if (name.empty() || getTypeId(name).isValid() || !m_runtime.canRegisterTypeName(name)) {
+        log::error("Cannot register struct '" + name + "': invalid or reserved type name");
+        return TypeId::INVALID;
+    }
+    const auto id = reserveTypeId();
+    registerType(std::make_unique<StructType>(&m_runtime, id, std::move(name), std::move(documentation)));
+    return id;
 }
 
 TypeId TypeManager::reserveTypeId() {

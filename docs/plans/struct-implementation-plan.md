@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1P have been reviewed; Step 1Q below is implemented and awaiting review.
+Steps 1A through 1Q have been reviewed; Step 1R below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -738,6 +738,43 @@ Validation:
   and callback invocation without registration-time execution.
 - Compiler class construction, methods, and generated initializers pass
   existing executable language regressions through the manager path.
+- All four documentation preparation tests and whitespace checks passed.
+- No aggregate struct execution or gameplay validation is claimed.
+
+### Step 1R: Class/struct creation and full type publication
+
+TypeManager owns class creation (including custom descriptor templates),
+struct creation, request validation, and full descriptor registration.
+Runtime's existing entry points delegate, and compiler class predeclaration
+uses the manager.
+
+The approved Runtime `canRegisterTypeName` and `publishTypeNamespace` operations
+maintain hub indexes without exposing general hub mutation or friendship.
+`TypeManager::registerType` validates a same-runtime, unused reserved ID,
+publishes namespace metadata, and takes catalog ownership. Low-level
+`catalogType` retains its namespace-free behavior.
+
+Reserved holes, nested construction, descriptor identity, event/callback
+namespace handling, hub collisions, and host naming semantics are preserved.
+Other Runtime type factories publish through the manager's full registration
+path while remaining on Runtime in this slice.
+
+Next slice after review: move parameterized type families and specialization
+state into TypeManager, preserving Runtime factory signatures and callable IDs.
+Enum/opaque-ID/callback creation and remaining type registration surfaces will
+follow before returning to aggregate struct addressing and ABI design.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, binding, tooling, and LSP process regressions passed.
+- Direct manager coverage verifies class/struct namespace publication,
+  documentation, stable descriptor identity, hub collisions, invalid modes,
+  reservations, foreign ownership, failed publication, and late hub creation.
+- Custom descriptor and nested/failed construction regressions exercise the
+  manager API; existing Runtime template and hub wrappers remain covered.
+- Existing event, callback, enum, and specialization regressions pass through
+  the full manager publication path.
 - All four documentation preparation tests and whitespace checks passed.
 - No aggregate struct execution or gameplay validation is claimed.
 
