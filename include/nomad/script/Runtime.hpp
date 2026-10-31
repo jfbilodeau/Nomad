@@ -350,7 +350,7 @@ public:
     );
     PropertyId registerProperty(TypeId ownerId, const NomadString& name, const Type* valueType);
     void setPropertyHasExplicitInitializer(PropertyId id, bool hasExplicitInitializer);
-    void finalizeFieldLayout(TypeId id);
+    void finalizeCompositeFieldLayout(TypeId id);
     [[nodiscard]] PropertyId catalogProperty(Property* property);
     [[nodiscard]] const Property* getProperty(PropertyId id) const;
     [[nodiscard]] const NativeProperty* getNativeProperty(PropertyId id) const;

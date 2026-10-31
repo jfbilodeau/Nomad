@@ -1998,7 +1998,7 @@ void Runtime::setPropertyHasExplicitInitializer(
     m_properties[toNomadIndex(id.id)]->setHasExplicitInitializer(hasExplicitInitializer);
 }
 
-void Runtime::finalizeFieldLayout(const TypeId id) {
+void Runtime::finalizeCompositeFieldLayout(const TypeId id) {
     const auto type = getType(id);
     if (!type.has_value() || (*type)->asCompositeType() == nullptr) {
         throw NomadException("Cannot finalize field layout: type ID does not identify a composite type");

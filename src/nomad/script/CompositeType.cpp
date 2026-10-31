@@ -246,7 +246,7 @@ void CompositeType::finalizeFieldLayout() {
                     throw NomadException("Cannot finalize field '" + getTypeName() + "." + property->getName() +
                         "': inline struct type has no composite metadata");
                 }
-                getRuntime()->finalizeFieldLayout(composite->getId());
+                getRuntime()->finalizeCompositeFieldLayout(composite->getId());
             }
             const auto fieldSize = type->getSize();
             if (fieldSize > std::numeric_limits<NomadIndex>::max() - size) {
