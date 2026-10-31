@@ -873,9 +873,12 @@ count slots from the parameter anchor toward lower addresses; a block of width
 `count` starts at `anchor - offset - (count - 1)` and its fields run in increasing
 address order. Enclosing-parameter views use the script frame's anchor even during
 a native call. Empty requests return empty views without address arithmetic.
-Invalid ranges throw `VirtualMachineException`. Bounds checks cover the allocated
-live stack, not a logical parameter or local declaration's type or width; callers
-must supply offsets/counts belonging to the intended value and frame.
+These are trusted accessors: nonempty requests require a valid active frame and
+offsets/counts belonging to the intended value within reserved live storage.
+The compiler supplies valid physical ranges for compiled code; hosts must obey
+the same contract. Invalid nonempty ranges violate the API contract and are not
+reported as VM faults. Stack allocation, reservation, and frame-entry operations
+retain their capacity checks.
 
 These low-level APIs do not initialize, copy, or release values. Direct writes
 must obey the type's ownership contracts. Existing scalar accessors, argument

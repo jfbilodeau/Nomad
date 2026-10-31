@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1Y have been reviewed; Step 1Z below is implemented and awaiting
+Steps 1A through 1Z have been reviewed; Step 1AA below is implemented and awaiting
 review. Aggregate VM execution remains unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1075,6 +1075,31 @@ Validation:
 Next slice after review: design physical frame reservation and aggregate
 lifecycle emission, then exact receiver/return-destination instruction contracts
 before changing the aggregate call ABI.
+
+### Step 1AA: Trusted VM storage accessors
+
+The storage accessors now perform address calculation only, with empty-view
+handling before arithmetic. Removed repeated frame-state and physical range
+validation, including mutable-to-const validation forwarding. Nonempty accesses
+require valid caller-provided ranges in the intended live frame.
+
+This revises the per-access validation contract approved in Steps 1Y and 1Z.
+The compiler owns offset/width correctness; host callers must meet the same
+preconditions. Stack reservation, argument pushing, and frame entry retain
+their existing capacity checks. No scalar API or opcode contract changes.
+
+Tests retain valid contiguous addressing, nested calls, native reentry, and
+empty-view coverage; invalid nonempty requests are no longer executed.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Remaining and language regression groups passed, including storage-view tests.
+- All four documentation preparation tests and whitespace checks passed.
+- No aggregate call execution or gameplay validation is claimed.
+
+Next slice after review: physical frame reservation and aggregate lifecycle
+emission design, followed by receiver/return-destination instruction contracts.
 
 Remaining Step 1 work, requiring separate design approval:
 

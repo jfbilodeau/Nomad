@@ -82,7 +82,7 @@ BOOST_AUTO_TEST_CASE(native_calls_and_reentry_preserve_enclosing_script_storage)
     machine.popN(3);
 }
 
-BOOST_AUTO_TEST_CASE(empty_views_and_invalid_physical_ranges_are_safe) {
+BOOST_AUTO_TEST_CASE(empty_views_do_not_require_storage_or_address_arithmetic) {
     Runtime runtime;
     VirtualMachine machine(&runtime, 16);
     const auto maximum = std::numeric_limits<NomadIndex>::max();
@@ -93,23 +93,18 @@ BOOST_AUTO_TEST_CASE(empty_views_and_invalid_physical_ranges_are_safe) {
     BOOST_TEST(constMachine.getLocalStorage(maximum, 0).empty());
     BOOST_TEST(constMachine.getParameterStorage(maximum, 0).empty());
     BOOST_TEST(constMachine.getEnclosingParameterStorage(maximum, 0).empty());
-    BOOST_CHECK_THROW((void)machine.getLocalStorage(0, 1), VirtualMachineException);
-    BOOST_CHECK_THROW((void)machine.getParameterStorage(0, 1), VirtualMachineException);
-    BOOST_CHECK_THROW((void)machine.getEnclosingParameterStorage(0, 1), VirtualMachineException);
     machine.pushInteger(1);
     machine.callScriptFunction(0);
-    BOOST_CHECK_THROW((void)machine.getLocalStorage(0, 1), VirtualMachineException);
-    machine.reserveLocals(2);
-    BOOST_CHECK_THROW((void)machine.getLocalStorage(maximum, 1), VirtualMachineException);
-    BOOST_CHECK_THROW((void)constMachine.getLocalStorage(0, maximum), VirtualMachineException);
-    BOOST_CHECK_THROW((void)machine.getLocalStorage(2, 1), VirtualMachineException);
-    BOOST_CHECK_THROW((void)machine.getParameterStorage(0, 2), VirtualMachineException);
-    BOOST_CHECK_THROW((void)machine.getParameterStorage(maximum, 1), VirtualMachineException);
-    BOOST_CHECK_THROW((void)machine.getParameterStorage(0, maximum), VirtualMachineException);
-    BOOST_CHECK_THROW((void)machine.getEnclosingParameterStorage(0, 2), VirtualMachineException);
-    BOOST_CHECK_THROW((void)machine.getEnclosingParameterStorage(maximum, 1), VirtualMachineException);
-    BOOST_CHECK_THROW((void)machine.getEnclosingParameterStorage(0, maximum), VirtualMachineException);
-    machine.returnFunction(2);
+    for (const auto offset : {NomadIndex{0}, NomadIndex{1}, maximum}) {
+        BOOST_TEST(machine.getLocalStorage(offset, 0).empty());
+        BOOST_TEST(machine.getParameterStorage(offset, 0).empty());
+        BOOST_TEST(machine.getEnclosingParameterStorage(offset, 0).empty());
+        BOOST_TEST(constMachine.getLocalStorage(offset, 0).empty());
+        BOOST_TEST(constMachine.getParameterStorage(offset, 0).empty());
+        BOOST_TEST(constMachine.getEnclosingParameterStorage(offset, 0).empty());
+    }
+    BOOST_TEST(machine.getParameterStorage(0, 1)[0].getIntegerValue() == 1);
+    machine.returnFunction(0);
     machine.pop1();
 }
 

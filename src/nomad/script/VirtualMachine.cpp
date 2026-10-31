@@ -45,8 +45,7 @@ const RuntimeValue& VirtualMachine::getFunctionVariableValue(const VariableId va
 }
 
 std::span<RuntimeValue> VirtualMachine::getLocalStorage(const NomadIndex offset, const NomadIndex count) {
-    const auto storage = std::as_const(*this).getLocalStorage(offset, count);
-    if (storage.empty()) {
+    if (count == 0) {
         return {};
     }
     return std::span<RuntimeValue>(m_stack).subspan(m_variableIndex + offset, count);
@@ -59,20 +58,12 @@ std::span<const RuntimeValue> VirtualMachine::getLocalStorage(
     if (count == 0) {
         return {};
     }
-    if (m_variableIndex == 0 || m_stackIndex >= m_stack.size() || m_variableIndex > m_stackIndex ||
-        offset > m_stackIndex - m_variableIndex) {
-        fault("Local storage offset is out of bounds");
-    }
     const auto start = m_variableIndex + offset;
-    if (count - 1 > m_stackIndex - start) {
-        fault("Local storage slot count is out of bounds");
-    }
     return std::span<const RuntimeValue>(m_stack).subspan(start, count);
 }
 
 std::span<RuntimeValue> VirtualMachine::getParameterStorage(const NomadIndex offset, const NomadIndex count) {
-    const auto storage = std::as_const(*this).getParameterStorage(offset, count);
-    if (storage.empty()) {
+    if (count == 0) {
         return {};
     }
     return std::span<RuntimeValue>(m_stack).subspan(m_parameterIndex - offset - (count - 1), count);
@@ -85,10 +76,6 @@ std::span<const RuntimeValue> VirtualMachine::getParameterStorage(
     if (count == 0) {
         return {};
     }
-    if (m_parameterIndex == 0 || m_stackIndex >= m_stack.size() || m_parameterIndex > m_stackIndex ||
-        offset >= m_parameterIndex || count - 1 >= m_parameterIndex - offset) {
-        fault("Parameter storage is out of bounds");
-    }
     const auto start = m_parameterIndex - offset - (count - 1);
     return std::span<const RuntimeValue>(m_stack).subspan(start, count);
 }
@@ -97,8 +84,7 @@ std::span<RuntimeValue> VirtualMachine::getEnclosingParameterStorage(
     const NomadIndex offset,
     const NomadIndex count
 ) {
-    const auto storage = std::as_const(*this).getEnclosingParameterStorage(offset, count);
-    if (storage.empty()) {
+    if (count == 0) {
         return {};
     }
     const auto anchor = m_variableIndex - s_scriptFrameSlotCount - 1;
@@ -112,14 +98,7 @@ std::span<const RuntimeValue> VirtualMachine::getEnclosingParameterStorage(
     if (count == 0) {
         return {};
     }
-    if (m_variableIndex <= s_scriptFrameSlotCount + 1 || m_stackIndex >= m_stack.size() ||
-        m_variableIndex - 1 > m_stackIndex) {
-        fault("Enclosing parameter storage has no valid script frame");
-    }
     const auto anchor = m_variableIndex - s_scriptFrameSlotCount - 1;
-    if (offset >= anchor || count - 1 >= anchor - offset) {
-        fault("Enclosing parameter storage is out of bounds");
-    }
     return std::span<const RuntimeValue>(m_stack).subspan(anchor - offset - (count - 1), count);
 }
 
