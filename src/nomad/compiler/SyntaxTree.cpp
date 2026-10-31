@@ -461,7 +461,7 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
     compiler->getIdentifierDefinition(m_identifier, function, identifier);
 
     // Resolve validated the target and the expression type.
-    const auto* typeOpCodes = m_expression->getType()->getTypeOpCodes();
+    const auto* type = m_expression->getType();
 
     switch (identifier.identifierType) {
     case IdentifierType::Parameter:
@@ -470,21 +470,18 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
     case IdentifierType::FunctionVariable:
         // `r` is moved into the variable, so its previous value is released first.
         m_expression->getType()->emitFreeFunctionVariable(*compiler, toNomadIndex(identifier.variableId.id));
-        compiler->addOpCode(typeOpCodes->setFunctionVariable);
-        compiler->addId(identifier.variableId.id);
+        type->emitStoreFunctionVariable(*compiler, identifier.variableId.id);
         break;
 
     case IdentifierType::DynamicVariable:
         // The setter copies what it keeps.
-        compiler->addOpCode(typeOpCodes->setDynamicVariable);
-        compiler->addId(identifier.dynamicVariableId.id);
+        type->emitStoreDynamicVariable(*compiler, identifier.dynamicVariableId.id);
         m_expression->getType()->emitFreeResult(*compiler);
         break;
 
     case IdentifierType::ContextVariable: {
         // The variable context copies what it keeps.
-        compiler->addOpCode(typeOpCodes->setContextVariable);
-        compiler->addId(identifier.contextVariableId.id);
+        type->emitStoreContextVariable(*compiler, identifier.contextVariableId.id);
         m_expression->getType()->emitFreeResult(*compiler);
 
         compiler->getRuntime()->setContextVariableWritten(identifier.contextVariableId, true);

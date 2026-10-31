@@ -108,8 +108,7 @@ protected:
         const auto store = [&](Expression* expression, const Type* type, VariableId id) {
             expression->compile(compiler, function, ExpressionTarget::Result);
             type->emitFreeFunctionVariable(*compiler, toNomadIndex(id.id));
-            compiler->addOpCode(type->getTypeOpCodes()->setFunctionVariable);
-            compiler->addId(id.id);
+            type->emitStoreFunctionVariable(*compiler, id.id);
         };
         store(m_factory.get(), m_iteratorType, m_iteratorId);
         const auto continuation = compiler->getOpCodeSize();

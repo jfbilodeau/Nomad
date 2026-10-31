@@ -16,6 +16,12 @@ class VirtualMachine;
 
 using InstructionFn = void (*)(VirtualMachine*);
 
+enum class ExpressionTarget {
+    Result,
+    Intermediate,
+    Stack
+};
+
 class OpCodeEmitter {
 public:
     virtual ~OpCodeEmitter() = default;
@@ -23,6 +29,13 @@ public:
     virtual NomadIndex addOpCode(InstructionFn instruction) = 0;
     virtual NomadIndex addId(NomadId id) = 0;
     virtual NomadIndex addIndex(NomadIndex index) = 0;
+    NomadIndex addLoadTarget(
+        InstructionFn result,
+        InstructionFn intermediate,
+        InstructionFn stack,
+        NomadId operand,
+        ExpressionTarget target
+    );
 };
 
 struct Instruction {

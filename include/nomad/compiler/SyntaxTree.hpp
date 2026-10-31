@@ -6,6 +6,8 @@
 
 #include <nomad/compiler/Identifier.hpp>
 
+#include <nomad/script/OpCode.hpp>
+
 #include <memory>
 #include <vector>
 
@@ -82,12 +84,6 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 // Expressions
 ///////////////////////////////////////////////////////////////////////////////
-enum class ExpressionTarget {
-    Result,
-    Intermediate,
-    Stack
-};
-
 class Expression : public AstNode {
 public:
     Expression(const Expression* parent, NomadIndex line, NomadIndex column, const Type* type = nullptr);

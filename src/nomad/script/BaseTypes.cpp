@@ -223,12 +223,18 @@ void BooleanType::toString(const RuntimeValue& value, NomadString& string) const
 BaseStringType::BaseStringType(Runtime* runtime, TypeId id):
     ClassType(runtime, id, STRING_TYPE_NAME, ClassMode::Closed)
 {
-    m_typeOpCodes.initResult = op_string_init_r;
-    m_typeOpCodes.initIntermediate = op_string_init_i;
 }
 
 void BaseStringType::initValue(RuntimeValue* value) const {
     value->initStringValue();
+}
+
+void BaseStringType::emitInitResult(OpCodeEmitter& emitter) const {
+    emitter.addOpCode(op_string_init_r);
+}
+
+void BaseStringType::emitInitIntermediate(OpCodeEmitter& emitter) const {
+    emitter.addOpCode(op_string_init_i);
 }
 
 bool BaseStringType::sameType(const Type* other) const {

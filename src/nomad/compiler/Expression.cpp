@@ -1786,7 +1786,7 @@ const IdentifierExpression* IdentifierExpression::asIdentifierExpression() const
 }
 
 void IdentifierExpression::compileStore(Compiler* compiler) const {
-    const auto* typeOpCodes = m_identifierDefinition.valueType->getTypeOpCodes();
+    const auto* type = m_identifierDefinition.valueType;
 
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::Parameter:
@@ -1797,19 +1797,16 @@ void IdentifierExpression::compileStore(Compiler* compiler) const {
             *compiler,
             toNomadIndex(m_identifierDefinition.variableId.id)
         );
-        compiler->addOpCode(typeOpCodes->setFunctionVariable);
-        compiler->addId(m_identifierDefinition.variableId.id);
+        type->emitStoreFunctionVariable(*compiler, m_identifierDefinition.variableId.id);
         break;
 
     case IdentifierType::DynamicVariable:
-        compiler->addOpCode(typeOpCodes->setDynamicVariable);
-        compiler->addId(m_identifierDefinition.dynamicVariableId.id);
+        type->emitStoreDynamicVariable(*compiler, m_identifierDefinition.dynamicVariableId.id);
         m_identifierDefinition.valueType->emitFreeResult(*compiler);
         break;
 
     case IdentifierType::ContextVariable:
-        compiler->addOpCode(typeOpCodes->setContextVariable);
-        compiler->addId(m_identifierDefinition.contextVariableId.id);
+        type->emitStoreContextVariable(*compiler, m_identifierDefinition.contextVariableId.id);
         m_identifierDefinition.valueType->emitFreeResult(*compiler);
         compiler->getRuntime()->setContextVariableWritten(m_identifierDefinition.contextVariableId, true);
         break;

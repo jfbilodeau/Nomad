@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <nomad/compiler/Compiler.hpp>
+
 #include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/CompositeType.hpp>
 #include <nomad/script/NativeProperty.hpp>
@@ -15,6 +17,7 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 using namespace nomad;
 
@@ -414,9 +417,14 @@ BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout
     BOOST_TEST((composite->getStorage() == TypeStorage::Object));
     BOOST_TEST(composite->getSize() == 1U);
     BOOST_TEST(composite->needsFree());
-    BOOST_TEST(runtime.getInstructionId(composite->getTypeOpCodes()->initResult) ==
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    composite->emitInitResult(compiler);
+    composite->emitFreeResult(compiler);
+    BOOST_REQUIRE(instructions.size() == 2U);
+    BOOST_TEST(runtime.getInstructionId(instructions[0].fn) ==
         runtime.getInstructionId(OpCodes::op_object_init_r));
-    BOOST_TEST(runtime.getInstructionId(composite->getTypeOpCodes()->freeResult) ==
+    BOOST_TEST(runtime.getInstructionId(instructions[1].fn) ==
         runtime.getInstructionId(OpCodes::op_object_free_r));
 
     const auto stored = composite->registerProperty(runtime,

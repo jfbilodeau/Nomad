@@ -39,7 +39,39 @@ public:
     void freeValue(RuntimeValue* value) const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
+    [[nodiscard]] bool needsFree() const override;
+    void emitInitResult(OpCodeEmitter& emitter) const override;
+    void emitInitIntermediate(OpCodeEmitter& emitter) const override;
+    void emitFreeResult(OpCodeEmitter& emitter) const override;
+    void emitFreeIntermediate(OpCodeEmitter& emitter) const override;
+    void emitFreeStackValue(OpCodeEmitter& emitter, NomadIndex offset) const override;
+    void emitFreeFunctionVariable(
+        OpCodeEmitter& emitter,
+        NomadIndex variableIndex
+    ) const override;
     void emitFreeParameter(OpCodeEmitter& emitter, NomadId parameterId) const override;
+    NomadIndex emitLoadFunctionVariable(
+        OpCodeEmitter& emitter,
+        NomadId variableId,
+        ExpressionTarget target
+    ) const override;
+    NomadIndex emitLoadParameter(
+        OpCodeEmitter& emitter,
+        NomadId parameterId,
+        ExpressionTarget target
+    ) const override;
+    NomadIndex emitLoadContextVariable(
+        OpCodeEmitter& emitter,
+        NomadId variableId,
+        ExpressionTarget target
+    ) const override;
+    NomadIndex emitCopyResultToStack(OpCodeEmitter& emitter) const override;
+    void emitMoveResultToIntermediate(OpCodeEmitter& emitter) const override;
+    void emitMoveIntermediateToResult(OpCodeEmitter& emitter) const override;
+    void emitMoveResultToStack(OpCodeEmitter& emitter) const override;
+    NomadIndex emitPushIntermediate(OpCodeEmitter& emitter) const override;
+    NomadIndex emitPopResult(OpCodeEmitter& emitter) const override;
+    NomadIndex emitPopIntermediate(OpCodeEmitter& emitter) const override;
 
     [[nodiscard]] IndexerId registerNativeIndexer(
         Runtime& runtime,

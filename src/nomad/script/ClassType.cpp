@@ -26,40 +26,6 @@ ClassType::ClassType(
     CompositeType(runtime, id, std::move(name), mode, std::move(documentation)),
     m_typeArguments(std::move(typeArguments))
 {
-    m_typeOpCodes.initResult = op_object_init_r;
-    m_typeOpCodes.initIntermediate = op_object_init_i;
-
-    m_typeOpCodes.freeResult = op_object_free_r;
-    m_typeOpCodes.freeIntermediate = op_object_free_i;
-    m_typeOpCodes.freeStack = op_object_free_stack;
-    m_typeOpCodes.freeFunctionVariable = op_object_free_variable;
-
-    m_typeOpCodes.loadFunctionVariable = {
-        op_function_variable_object_get_r, op_function_variable_object_get_i, op_function_variable_object_push
-    };
-    m_typeOpCodes.loadParameter = {
-        op_object_parameter_load_r, op_object_parameter_load_i, op_object_parameter_push
-    };
-    // Dynamic getters hand over an owned object.
-    m_typeOpCodes.loadDynamicVariable = {
-        op_dynamic_variable_get_r, op_dynamic_variable_get_i, op_dynamic_variable_push
-    };
-    m_typeOpCodes.loadContextVariable = {
-        op_context_variable_object_get_r, op_context_variable_object_get_i, op_context_variable_object_push
-    };
-
-    m_typeOpCodes.copyResultToStack = op_object_push_r;
-    m_typeOpCodes.moveResultToIntermediate = op_object_move_r_to_i;
-    m_typeOpCodes.moveIntermediateToResult = op_object_move_i_to_r;
-    m_typeOpCodes.moveResultToStack = op_object_move_r_to_stack;
-    m_typeOpCodes.pushIntermediate = op_object_push_i;
-    m_typeOpCodes.popResult = op_object_pop_r;
-    m_typeOpCodes.popIntermediate = op_object_pop_i;
-
-    // The compiler frees the previous value, then `r` is moved into the variable.
-    m_typeOpCodes.setFunctionVariable = op_function_variable_set;
-    m_typeOpCodes.setDynamicVariable = op_dynamic_variable_set;
-    m_typeOpCodes.setContextVariable = op_context_variable_set;
 }
 
 void ClassType::initValue(RuntimeValue* value) const {
@@ -84,9 +50,115 @@ bool ClassType::sameType(const Type* other) const {
     return this == other;
 }
 
+bool ClassType::needsFree() const {
+    return true;
+}
+
+void ClassType::emitInitResult(OpCodeEmitter& emitter) const {
+    emitter.addOpCode(op_object_init_r);
+}
+
+void ClassType::emitInitIntermediate(OpCodeEmitter& emitter) const {
+    emitter.addOpCode(op_object_init_i);
+}
+
+void ClassType::emitFreeResult(OpCodeEmitter& emitter) const {
+    emitter.addOpCode(op_object_free_r);
+}
+
+void ClassType::emitFreeIntermediate(OpCodeEmitter& emitter) const {
+    emitter.addOpCode(op_object_free_i);
+}
+
+void ClassType::emitFreeStackValue(
+    OpCodeEmitter& emitter,
+    const NomadIndex offset
+) const {
+    emitter.addOpCode(op_object_free_stack);
+    emitter.addIndex(offset);
+}
+
+void ClassType::emitFreeFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadIndex variableIndex
+) const {
+    emitter.addOpCode(op_object_free_variable);
+    emitter.addIndex(variableIndex);
+}
+
 void ClassType::emitFreeParameter(OpCodeEmitter& emitter, const NomadId parameterId) const {
     emitter.addOpCode(op_object_free_parameter);
     emitter.addId(parameterId);
+}
+
+NomadIndex ClassType::emitLoadFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadId variableId,
+    const ExpressionTarget target
+) const {
+    return emitter.addLoadTarget(
+        op_function_variable_object_get_r,
+        op_function_variable_object_get_i,
+        op_function_variable_object_push,
+        variableId,
+        target
+    );
+}
+
+NomadIndex ClassType::emitLoadParameter(
+    OpCodeEmitter& emitter,
+    const NomadId parameterId,
+    const ExpressionTarget target
+) const {
+    return emitter.addLoadTarget(
+        op_object_parameter_load_r,
+        op_object_parameter_load_i,
+        op_object_parameter_push,
+        parameterId,
+        target
+    );
+}
+
+NomadIndex ClassType::emitLoadContextVariable(
+    OpCodeEmitter& emitter,
+    const NomadId variableId,
+    const ExpressionTarget target
+) const {
+    return emitter.addLoadTarget(
+        op_context_variable_object_get_r,
+        op_context_variable_object_get_i,
+        op_context_variable_object_push,
+        variableId,
+        target
+    );
+}
+
+NomadIndex ClassType::emitCopyResultToStack(OpCodeEmitter& emitter) const {
+    return emitter.addOpCode(op_object_push_r);
+}
+
+void ClassType::emitMoveResultToIntermediate(OpCodeEmitter& emitter) const {
+    emitter.addOpCode(op_object_move_r_to_i);
+}
+
+void ClassType::emitMoveIntermediateToResult(OpCodeEmitter& emitter) const {
+    emitter.addOpCode(op_object_move_i_to_r);
+}
+
+void ClassType::emitMoveResultToStack(OpCodeEmitter& emitter) const {
+    emitter.addOpCode(op_object_move_r_to_stack);
+}
+
+NomadIndex ClassType::emitPushIntermediate(OpCodeEmitter& emitter) const {
+    return emitter.addOpCode(op_object_push_i);
+}
+
+NomadIndex ClassType::emitPopResult(OpCodeEmitter& emitter) const {
+    return emitter.addOpCode(op_object_pop_r);
+}
+
+NomadIndex ClassType::emitPopIntermediate(OpCodeEmitter& emitter) const {
+    return emitter.addOpCode(op_object_pop_i);
 }
 
 TypeStorage ClassType::getStorage() const {

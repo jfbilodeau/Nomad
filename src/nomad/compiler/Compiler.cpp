@@ -661,7 +661,7 @@ NomadIndex Compiler::addFloat(NomadFloat value) {
 }
 
 NomadIndex Compiler::addLoadConstant(const ConstantId constantId, const ExpressionTarget target) {
-    return addLoadTarget({op_constant_get_r, op_constant_get_i, op_constant_push}, constantId.id, target);
+    return addLoadTarget(op_constant_get_r, op_constant_get_i, op_constant_push, constantId.id, target);
 }
 
 NomadIndex Compiler::addLoadValue(const Type* type, const RuntimeValue& value, ExpressionTarget target) {
@@ -802,30 +802,12 @@ NomadIndex Compiler::addLoadStringValue(const NomadString& value, const Expressi
     this->reportInternalError("BUG: Invalid expression target for string value");
 }
 
-NomadIndex Compiler::addLoadTarget(const TargetOpCodes& opCodes, const NomadId operand, const ExpressionTarget target) {
-    switch (target) {
-    case ExpressionTarget::Result:
-        addOpCode(opCodes.result);
-        return addId(operand);
-
-    case ExpressionTarget::Intermediate:
-        addOpCode(opCodes.intermediate);
-        return addId(operand);
-
-    case ExpressionTarget::Stack:
-        addOpCode(opCodes.stack);
-        return addId(operand);
-    }
-
-    reportInternalError("BUG: Invalid expression target");
-}
-
 NomadIndex Compiler::addLoadFunctionVariable(const VariableId variableId, const Type* type, const ExpressionTarget target) {
-    return addLoadTarget(type->getTypeOpCodes()->loadFunctionVariable, variableId.id, target);
+    return type->emitLoadFunctionVariable(*this, variableId.id, target);
 }
 
 NomadIndex Compiler::addLoadDynamicVariable(const DynamicVariableId variableId, const Type* type, const ExpressionTarget target) {
-    return addLoadTarget(type->getTypeOpCodes()->loadDynamicVariable, variableId.id, target);
+    return type->emitLoadDynamicVariable(*this, variableId.id, target);
 }
 
 NomadIndex Compiler::addLoadContextVariable(
@@ -833,46 +815,47 @@ NomadIndex Compiler::addLoadContextVariable(
     const Type* type,
     const ExpressionTarget target
 ) {
-    return addLoadTarget(type->getTypeOpCodes()->loadContextVariable, contextVariableId.id, target);
+    return type->emitLoadContextVariable(*this, contextVariableId.id, target);
 }
 
 NomadIndex Compiler::addLoadParameter(const NomadIndex parameterId, const Type* type, const ExpressionTarget target) {
-    return addLoadTarget(type->getTypeOpCodes()->loadParameter, toNomadId(parameterId), target);
+    return type->emitLoadParameter(*this, toNomadId(parameterId), target);
 }
 
 NomadIndex Compiler::addPushResult(const Type* type) {
-    return addOpCode(type->getTypeOpCodes()->copyResultToStack);
+    return type->emitCopyResultToStack(*this);
 }
 
 void Compiler::addMoveResult(const Type* type, const ExpressionTarget target) {
     switch (target) {
     case ExpressionTarget::Result:
-        break;
+        return;
 
     case ExpressionTarget::Intermediate:
-        addOpCode(type->getTypeOpCodes()->moveResultToIntermediate);
-        break;
+        type->emitMoveResultToIntermediate(*this);
+        return;
 
     case ExpressionTarget::Stack:
-        addOpCode(type->getTypeOpCodes()->moveResultToStack);
-        break;
+        type->emitMoveResultToStack(*this);
+        return;
     }
+    reportInternalError("BUG: Invalid expression target");
 }
 
 void Compiler::addMoveIntermediateToResult(const Type* type) {
-    addOpCode(type->getTypeOpCodes()->moveIntermediateToResult);
+    type->emitMoveIntermediateToResult(*this);
 }
 
 NomadIndex Compiler::addPushIntermediate(const Type* type) {
-    return addOpCode(type->getTypeOpCodes()->pushIntermediate);
+    return type->emitPushIntermediate(*this);
 }
 
 NomadIndex Compiler::addPopResult(const Type* type) {
-    return addOpCode(type->getTypeOpCodes()->popResult);
+    return type->emitPopResult(*this);
 }
 
 NomadIndex Compiler::addPopIntermediate(const Type* type) {
-    return addOpCode(type->getTypeOpCodes()->popIntermediate);
+    return type->emitPopIntermediate(*this);
 }
 
 NomadIndex Compiler::addScriptFunctionCall(const CallableId targetFunctionId, ScriptCallableBase* function, const ArgumentList* arguments) {
@@ -1295,8 +1278,7 @@ void Compiler::addFunctionEntry(const ScriptCallableBase* function) {
 
 void Compiler::addStoreParameter(const NomadId parameterId, const Type* type) {
     type->emitFreeParameter(*this, parameterId);
-    addOpCode(OpCodes::op_parameter_set);
-    addId(parameterId);
+    type->emitStoreParameter(*this, parameterId);
 }
 
 void Compiler::addLoadReceiver(ScriptCallableBase* function, const ExpressionTarget target) {

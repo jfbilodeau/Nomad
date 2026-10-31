@@ -19,6 +19,222 @@ using namespace nomad;
 static_assert(std::is_abstract_v<OpCodeEmitter>);
 static_assert(std::has_virtual_destructor_v<OpCodeEmitter>);
 static_assert(std::is_base_of_v<OpCodeEmitter, Compiler>);
+static_assert(static_cast<int>(ExpressionTarget::Result) == 0);
+static_assert(static_cast<int>(ExpressionTarget::Intermediate) == 1);
+static_assert(static_cast<int>(ExpressionTarget::Stack) == 2);
+
+BOOST_AUTO_TEST_CASE(type_load_emission_preserves_every_target_and_operand) {
+    Runtime runtime;
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    const std::array<const Type*, 2> types{runtime.getIntegerType(), runtime.getStringType()};
+    const std::array<ExpressionTarget, 3> targets{
+        ExpressionTarget::Result, ExpressionTarget::Intermediate, ExpressionTarget::Stack
+    };
+    const std::array<NomadString, 12> valueNames{
+        OpCodes::op_function_variable_get_r, OpCodes::op_function_variable_get_i, OpCodes::op_function_variable_push,
+        OpCodes::op_parameter_load_r, OpCodes::op_parameter_load_i, OpCodes::op_parameter_push,
+        OpCodes::op_dynamic_variable_get_r, OpCodes::op_dynamic_variable_get_i, OpCodes::op_dynamic_variable_push,
+        OpCodes::op_context_variable_get_r, OpCodes::op_context_variable_get_i, OpCodes::op_context_variable_push
+    };
+    const std::array<NomadString, 12> objectNames{
+        OpCodes::op_function_variable_object_get_r,
+        OpCodes::op_function_variable_object_get_i,
+        OpCodes::op_function_variable_object_push,
+        OpCodes::op_object_parameter_load_r,
+        OpCodes::op_object_parameter_load_i,
+        OpCodes::op_object_parameter_push,
+        OpCodes::op_dynamic_variable_get_r,
+        OpCodes::op_dynamic_variable_get_i,
+        OpCodes::op_dynamic_variable_push,
+        OpCodes::op_context_variable_object_get_r,
+        OpCodes::op_context_variable_object_get_i,
+        OpCodes::op_context_variable_object_push
+    };
+    const std::array<NomadId, 4> operands{17, 19, 23, 29};
+    for (const auto* type : types) {
+        const auto& names = type->needsFree() ? objectNames : valueNames;
+        for (auto targetIndex = NomadIndex{0}; targetIndex < targets.size(); ++targetIndex) {
+            instructions.clear();
+            BOOST_TEST(type->emitLoadFunctionVariable(compiler, operands[0], targets[targetIndex]) == 1U);
+            BOOST_TEST(type->emitLoadParameter(compiler, operands[1], targets[targetIndex]) == 3U);
+            BOOST_TEST(type->emitLoadDynamicVariable(compiler, operands[2], targets[targetIndex]) == 5U);
+            BOOST_TEST(type->emitLoadContextVariable(compiler, operands[3], targets[targetIndex]) == 7U);
+            BOOST_REQUIRE(instructions.size() == 8U);
+            for (auto index = NomadIndex{0}; index < operands.size(); ++index) {
+                BOOST_TEST(runtime.getInstructionId(instructions[index * 2].fn).id ==
+                    runtime.getInstructionId(names[index * 3 + targetIndex]).id);
+                BOOST_TEST(instructions[index * 2 + 1].value.getIdValue() == operands[index]);
+            }
+        }
+    }
+    instructions.clear();
+    BOOST_CHECK_THROW(
+        runtime.getIntegerType()->emitLoadParameter(compiler, 1, static_cast<ExpressionTarget>(99)),
+        NomadBug
+    );
+    BOOST_TEST(instructions.empty());
+}
+
+BOOST_AUTO_TEST_CASE(type_register_emission_preserves_copy_and_move_ownership_instructions) {
+    Runtime runtime;
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    const std::array<const Type*, 2> types{runtime.getIntegerType(), runtime.getStringType()};
+    const std::array<NomadString, 7> valueNames{
+        OpCodes::op_push_r, OpCodes::op_copy_r_to_i, OpCodes::op_copy_i_to_r,
+        OpCodes::op_push_r, OpCodes::op_push_i, OpCodes::op_pop_r, OpCodes::op_pop_i
+    };
+    const std::array<NomadString, 7> objectNames{
+        OpCodes::op_object_push_r, OpCodes::op_object_move_r_to_i, OpCodes::op_object_move_i_to_r,
+        OpCodes::op_object_move_r_to_stack, OpCodes::op_object_push_i,
+        OpCodes::op_object_pop_r, OpCodes::op_object_pop_i
+    };
+    for (const auto* type : types) {
+        instructions.clear();
+        BOOST_TEST(compiler.addPushResult(type) == 0U);
+        compiler.addMoveResult(type, ExpressionTarget::Intermediate);
+        compiler.addMoveIntermediateToResult(type);
+        compiler.addMoveResult(type, ExpressionTarget::Stack);
+        BOOST_TEST(compiler.addPushIntermediate(type) == 4U);
+        BOOST_TEST(compiler.addPopResult(type) == 5U);
+        BOOST_TEST(compiler.addPopIntermediate(type) == 6U);
+        BOOST_REQUIRE(instructions.size() == 7U);
+        const auto& names = type->needsFree() ? objectNames : valueNames;
+        for (auto index = NomadIndex{0}; index < names.size(); ++index) {
+            BOOST_TEST(runtime.getInstructionId(instructions[index].fn).id ==
+                runtime.getInstructionId(names[index]).id);
+        }
+        compiler.addMoveResult(type, ExpressionTarget::Result);
+        BOOST_TEST(instructions.size() == 7U);
+        BOOST_CHECK_THROW(compiler.addMoveResult(type, static_cast<ExpressionTarget>(99)), NomadBug);
+        BOOST_TEST(instructions.size() == 7U);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(type_store_emission_preserves_existing_instruction_and_id_encoding) {
+    Runtime runtime;
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    const std::array<const Type*, 2> types{runtime.getIntegerType(), runtime.getStringType()};
+    const std::array<NomadString, 4> names{
+        OpCodes::op_function_variable_set, OpCodes::op_dynamic_variable_set,
+        OpCodes::op_context_variable_set, OpCodes::op_parameter_set
+    };
+    const std::array<NomadId, 4> operands{17, 19, 23, 29};
+    for (const auto* type : types) {
+        instructions.clear();
+        BOOST_TEST(type->emitStoreFunctionVariable(compiler, operands[0]) == 1U);
+        BOOST_TEST(type->emitStoreDynamicVariable(compiler, operands[1]) == 3U);
+        BOOST_TEST(type->emitStoreContextVariable(compiler, operands[2]) == 5U);
+        BOOST_TEST(type->emitStoreParameter(compiler, operands[3]) == 7U);
+        BOOST_REQUIRE(instructions.size() == 8U);
+        for (auto index = NomadIndex{0}; index < operands.size(); ++index) {
+            BOOST_TEST(runtime.getInstructionId(instructions[index * 2].fn).id ==
+                runtime.getInstructionId(names[index]).id);
+            BOOST_TEST(instructions[index * 2 + 1].value.getIdValue() == operands[index]);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(type_initialization_emission_preserves_empty_and_reference_defaults) {
+    Runtime runtime;
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    runtime.getIntegerType()->emitInitResult(compiler);
+    runtime.getIntegerType()->emitInitIntermediate(compiler);
+    runtime.getVoidType()->emitInitResult(compiler);
+    runtime.getVoidType()->emitInitIntermediate(compiler);
+    BOOST_TEST(instructions.empty());
+    BOOST_TEST(!runtime.getIntegerType()->needsFree());
+    BOOST_TEST(!runtime.getVoidType()->needsFree());
+    ClassType classType(&runtime, TypeId::INVALID, "Default", ClassMode::Closed);
+    classType.emitInitResult(compiler);
+    classType.emitInitIntermediate(compiler);
+    runtime.getStringType()->emitInitResult(compiler);
+    runtime.getStringType()->emitInitIntermediate(compiler);
+    BOOST_REQUIRE(instructions.size() == 4U);
+    const std::array<NomadString, 4> names{
+        OpCodes::op_object_init_r, OpCodes::op_object_init_i,
+        OpCodes::op_string_init_r, OpCodes::op_string_init_i
+    };
+    for (auto index = NomadIndex{0}; index < names.size(); ++index) {
+        BOOST_TEST(runtime.getInstructionId(instructions[index].fn).id == runtime.getInstructionId(names[index]).id);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(constant_loads_use_the_shared_script_target_dispatch) {
+    Runtime runtime;
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    const std::array<ExpressionTarget, 3> targets{
+        ExpressionTarget::Result, ExpressionTarget::Intermediate, ExpressionTarget::Stack
+    };
+    const std::array<NomadString, 3> names{
+        OpCodes::op_constant_get_r, OpCodes::op_constant_get_i, OpCodes::op_constant_push
+    };
+    for (auto index = NomadIndex{0}; index < targets.size(); ++index) {
+        instructions.clear();
+        BOOST_TEST(compiler.addLoadConstant(ConstantId{17}, targets[index]) == 1U);
+        BOOST_REQUIRE(instructions.size() == 2U);
+        BOOST_TEST(runtime.getInstructionId(instructions[0].fn).id == runtime.getInstructionId(names[index]).id);
+        BOOST_TEST(instructions[1].value.getIdValue() == 17);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(compiler_uses_type_overrides_for_load_copy_move_and_parameter_store) {
+    class EmissionType final : public ClassType {
+    public:
+        using ClassType::ClassType;
+
+        NomadIndex emitLoadFunctionVariable(
+            OpCodeEmitter& emitter,
+            NomadId,
+            ExpressionTarget
+        ) const override {
+            const auto instruction = getRuntime()->getInstructionFn(
+                getRuntime()->getInstructionId(OpCodes::op_nop)
+            );
+            return emitter.addOpCode(instruction);
+        }
+        NomadIndex emitCopyResultToStack(OpCodeEmitter& emitter) const override {
+            const auto instruction = getRuntime()->getInstructionFn(
+                getRuntime()->getInstructionId(OpCodes::op_nop)
+            );
+            return emitter.addOpCode(instruction);
+        }
+        void emitMoveResultToIntermediate(OpCodeEmitter& emitter) const override {
+            const auto instruction = getRuntime()->getInstructionFn(
+                getRuntime()->getInstructionId(OpCodes::op_nop)
+            );
+            emitter.addOpCode(instruction);
+        }
+        NomadIndex emitStoreParameter(OpCodeEmitter& emitter, NomadId) const override {
+            const auto instruction = getRuntime()->getInstructionFn(
+                getRuntime()->getInstructionId(OpCodes::op_nop)
+            );
+            return emitter.addOpCode(instruction);
+        }
+    };
+    Runtime runtime;
+    EmissionType type(&runtime, TypeId::INVALID, "Emission", ClassMode::Closed);
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    BOOST_TEST(compiler.addLoadFunctionVariable(VariableId{1}, &type, ExpressionTarget::Result) == 0U);
+    BOOST_TEST(compiler.addPushResult(&type) == 1U);
+    compiler.addMoveResult(&type, ExpressionTarget::Intermediate);
+    BOOST_REQUIRE(instructions.size() == 3U);
+    for (const auto& instruction : instructions) {
+        BOOST_TEST(runtime.getInstructionId(instruction.fn).id == runtime.getInstructionId(OpCodes::op_nop).id);
+    }
+    instructions.clear();
+    compiler.addStoreParameter(5, &type);
+    BOOST_REQUIRE(instructions.size() == 3U);
+    BOOST_TEST(runtime.getInstructionId(instructions[0].fn).id ==
+        runtime.getInstructionId(OpCodes::op_object_free_parameter).id);
+    BOOST_TEST(instructions[1].value.getIdValue() == 5);
+    BOOST_TEST(runtime.getInstructionId(instructions[2].fn).id == runtime.getInstructionId(OpCodes::op_nop).id);
+}
 
 BOOST_AUTO_TEST_CASE(opcode_emitter_writes_directly_through_compiler) {
     Runtime runtime;

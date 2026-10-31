@@ -45,41 +45,139 @@ void Type::assignValue(const RuntimeValue& sourceValue, RuntimeValue& destinatio
     destinationValue = copy;
 }
 
-const TypeOpCodes* Type::getTypeOpCodes() const {
-    return &m_typeOpCodes;
-}
-
 bool Type::needsFree() const {
-    return m_typeOpCodes.freeResult != nullptr;
+    return false;
 }
 
-void Type::emitFreeResult(OpCodeEmitter& emitter) const {
-    if (m_typeOpCodes.freeResult != nullptr) {
-        emitter.addOpCode(m_typeOpCodes.freeResult);
-    }
+void Type::emitInitResult(OpCodeEmitter&) const {
 }
 
-void Type::emitFreeIntermediate(OpCodeEmitter& emitter) const {
-    if (m_typeOpCodes.freeIntermediate != nullptr) {
-        emitter.addOpCode(m_typeOpCodes.freeIntermediate);
-    }
+void Type::emitInitIntermediate(OpCodeEmitter&) const {
 }
 
-void Type::emitFreeStackValue(OpCodeEmitter& emitter, const NomadIndex offset) const {
-    if (m_typeOpCodes.freeStack != nullptr) {
-        emitter.addOpCode(m_typeOpCodes.freeStack);
-        emitter.addIndex(offset);
-    }
+void Type::emitFreeResult(OpCodeEmitter&) const {
 }
 
-void Type::emitFreeFunctionVariable(
+void Type::emitFreeIntermediate(OpCodeEmitter&) const {
+}
+
+void Type::emitFreeStackValue(OpCodeEmitter&, NomadIndex) const {
+}
+
+void Type::emitFreeFunctionVariable(OpCodeEmitter&, NomadIndex) const {
+}
+
+NomadIndex Type::emitLoadFunctionVariable(
     OpCodeEmitter& emitter,
-    const NomadIndex variableIndex
+    const NomadId variableId,
+    const ExpressionTarget target
 ) const {
-    if (m_typeOpCodes.freeFunctionVariable != nullptr) {
-        emitter.addOpCode(m_typeOpCodes.freeFunctionVariable);
-        emitter.addIndex(variableIndex);
-    }
+    return emitter.addLoadTarget(
+        op_function_variable_get_r,
+        op_function_variable_get_i,
+        op_function_variable_push,
+        variableId,
+        target
+    );
+}
+
+NomadIndex Type::emitLoadParameter(
+    OpCodeEmitter& emitter,
+    const NomadId parameterId,
+    const ExpressionTarget target
+) const {
+    return emitter.addLoadTarget(
+        op_parameter_load_r,
+        op_parameter_load_i,
+        op_parameter_push,
+        parameterId,
+        target
+    );
+}
+
+NomadIndex Type::emitLoadDynamicVariable(
+    OpCodeEmitter& emitter,
+    const NomadId variableId,
+    const ExpressionTarget target
+) const {
+    return emitter.addLoadTarget(
+        op_dynamic_variable_get_r,
+        op_dynamic_variable_get_i,
+        op_dynamic_variable_push,
+        variableId,
+        target
+    );
+}
+
+NomadIndex Type::emitLoadContextVariable(
+    OpCodeEmitter& emitter,
+    const NomadId variableId,
+    const ExpressionTarget target
+) const {
+    return emitter.addLoadTarget(
+        op_context_variable_get_r,
+        op_context_variable_get_i,
+        op_context_variable_push,
+        variableId,
+        target
+    );
+}
+
+NomadIndex Type::emitCopyResultToStack(OpCodeEmitter& emitter) const {
+    return emitter.addOpCode(op_push_r);
+}
+
+void Type::emitMoveResultToIntermediate(OpCodeEmitter& emitter) const {
+    emitter.addOpCode(op_copy_r_to_i);
+}
+
+void Type::emitMoveIntermediateToResult(OpCodeEmitter& emitter) const {
+    emitter.addOpCode(op_copy_i_to_r);
+}
+
+void Type::emitMoveResultToStack(OpCodeEmitter& emitter) const {
+    emitter.addOpCode(op_push_r);
+}
+
+NomadIndex Type::emitPushIntermediate(OpCodeEmitter& emitter) const {
+    return emitter.addOpCode(op_push_i);
+}
+
+NomadIndex Type::emitPopResult(OpCodeEmitter& emitter) const {
+    return emitter.addOpCode(op_pop_r);
+}
+
+NomadIndex Type::emitPopIntermediate(OpCodeEmitter& emitter) const {
+    return emitter.addOpCode(op_pop_i);
+}
+
+NomadIndex Type::emitStoreParameter(OpCodeEmitter& emitter, const NomadId parameterId) const {
+    emitter.addOpCode(op_parameter_set);
+    return emitter.addId(parameterId);
+}
+
+NomadIndex Type::emitStoreFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadId variableId
+) const {
+    emitter.addOpCode(op_function_variable_set);
+    return emitter.addId(variableId);
+}
+
+NomadIndex Type::emitStoreDynamicVariable(
+    OpCodeEmitter& emitter,
+    const NomadId variableId
+) const {
+    emitter.addOpCode(op_dynamic_variable_set);
+    return emitter.addId(variableId);
+}
+
+NomadIndex Type::emitStoreContextVariable(
+    OpCodeEmitter& emitter,
+    const NomadId variableId
+) const {
+    emitter.addOpCode(op_context_variable_set);
+    return emitter.addId(variableId);
 }
 
 bool Type::acceptsArgument(const Type* argumentType) const {

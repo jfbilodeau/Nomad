@@ -17,6 +17,27 @@
 
 namespace nomad {
 
+NomadIndex OpCodeEmitter::addLoadTarget(
+    const InstructionFn result,
+    const InstructionFn intermediate,
+    const InstructionFn stack,
+    const NomadId operand,
+    const ExpressionTarget target
+) {
+    switch (target) {
+    case ExpressionTarget::Result:
+        addOpCode(result);
+        return addId(operand);
+    case ExpressionTarget::Intermediate:
+        addOpCode(intermediate);
+        return addId(operand);
+    case ExpressionTarget::Stack:
+        addOpCode(stack);
+        return addId(operand);
+    }
+    throw NomadBug("Internal error: BUG: Invalid expression target");
+}
+
 namespace {
 
 void callNativeIndexer(VirtualMachine* machine, const bool write) {
