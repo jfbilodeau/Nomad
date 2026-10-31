@@ -18,4 +18,7 @@ NomadIndex ValueType::getSize() const {
     return 1;
 }
 
+void ValueType::emitFreeParameter(OpCodeEmitter&, NomadId) const {
+}
+
 } // namespace nomad

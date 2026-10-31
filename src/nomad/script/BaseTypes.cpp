@@ -42,6 +42,9 @@ bool VoidType::isVoid() const {
     return true;
 }
 
+void VoidType::emitFreeParameter(OpCodeEmitter&, NomadId) const {
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // IdType
 void IdType::initValue(RuntimeValue* value) const {

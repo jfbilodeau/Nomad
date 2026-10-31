@@ -53,6 +53,35 @@ bool Type::needsFree() const {
     return m_typeOpCodes.freeResult != nullptr;
 }
 
+void Type::emitFreeResult(OpCodeEmitter& emitter) const {
+    if (m_typeOpCodes.freeResult != nullptr) {
+        emitter.addOpCode(m_typeOpCodes.freeResult);
+    }
+}
+
+void Type::emitFreeIntermediate(OpCodeEmitter& emitter) const {
+    if (m_typeOpCodes.freeIntermediate != nullptr) {
+        emitter.addOpCode(m_typeOpCodes.freeIntermediate);
+    }
+}
+
+void Type::emitFreeStackValue(OpCodeEmitter& emitter, const NomadIndex offset) const {
+    if (m_typeOpCodes.freeStack != nullptr) {
+        emitter.addOpCode(m_typeOpCodes.freeStack);
+        emitter.addIndex(offset);
+    }
+}
+
+void Type::emitFreeFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadIndex variableIndex
+) const {
+    if (m_typeOpCodes.freeFunctionVariable != nullptr) {
+        emitter.addOpCode(m_typeOpCodes.freeFunctionVariable);
+        emitter.addIndex(variableIndex);
+    }
+}
+
 bool Type::acceptsArgument(const Type* argumentType) const {
     return sameType(argumentType);
 }

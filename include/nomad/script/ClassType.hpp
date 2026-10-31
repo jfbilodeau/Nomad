@@ -39,6 +39,7 @@ public:
     void freeValue(RuntimeValue* value) const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
+    void emitFreeParameter(OpCodeEmitter& emitter, NomadId parameterId) const override;
 
     [[nodiscard]] IndexerId registerNativeIndexer(
         Runtime& runtime,

@@ -16,6 +16,15 @@ class VirtualMachine;
 
 using InstructionFn = void (*)(VirtualMachine*);
 
+class OpCodeEmitter {
+public:
+    virtual ~OpCodeEmitter() = default;
+
+    virtual NomadIndex addOpCode(InstructionFn instruction) = 0;
+    virtual NomadIndex addId(NomadId id) = 0;
+    virtual NomadIndex addIndex(NomadIndex index) = 0;
+};
+
 struct Instruction {
     explicit Instruction(const InstructionFn fn) : fn(fn) {}
     explicit Instruction(const RuntimeValue& value) : value(value) {}

@@ -44,11 +44,11 @@ enum class CompilationCallableTarget {
     ObjectInitializer
 };
 
-class Compiler {
+class Compiler : public OpCodeEmitter {
 public:
     explicit Compiler(Runtime* runtime, std::vector<Instruction>& instructions);
     Compiler(const Compiler& other) = delete;
-    ~Compiler();
+    ~Compiler() override;
 
     [[nodiscard]] Runtime* getRuntime() const;
 
@@ -135,13 +135,13 @@ public:
 
     NomadIndex addOpCode(OpCodeId opCode);
     NomadIndex addOpCode(const NomadString& opCodeName);
-    NomadIndex addOpCode(InstructionFn opCode);
+    NomadIndex addOpCode(InstructionFn opCode) override;
     void addFunctionReturn(const ScriptCallableBase* function);
     void addFunctionEntry(const ScriptCallableBase* function);
     void addLoadReceiver(ScriptCallableBase* function, ExpressionTarget target);
     void addStoreParameter(NomadId parameterId, const Type* type);
-    NomadIndex addId(NomadId id);
-    NomadIndex addIndex(NomadIndex index);
+    NomadIndex addId(NomadId id) override;
+    NomadIndex addIndex(NomadIndex index) override;
     NomadIndex addInteger(NomadInteger value);
     NomadIndex addFloat(NomadFloat value);
     NomadIndex addLoadValue(const Type* type, const RuntimeValue& value, ExpressionTarget target);
@@ -164,11 +164,6 @@ public:
     NomadIndex addPushIntermediate(const Type* type);
     NomadIndex addPopResult(const Type* type);
     NomadIndex addPopIntermediate(const Type* type);
-    // Emit a free opcode taken from `TypeOpCodes`. Emits nothing when `freeOpCode` is `nullptr` (plain values).
-    void addFreeValue(InstructionFn freeOpCode);
-    // Same, for free opcodes taking an operand (stack offset from the top or function variable index).
-    void addFreeValue(InstructionFn freeOpCode, NomadIndex operand);
-
     NomadIndex addScriptFunctionCall(CallableId targetFunctionId, ScriptCallableBase* function, const ArgumentList* arguments);
     NomadIndex addScriptMethodCall(CallableId memberId, ScriptCallableBase* function, const ArgumentList* arguments);
     NomadIndex addScriptConstructorCall(

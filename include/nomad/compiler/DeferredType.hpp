@@ -18,6 +18,7 @@ public:
     [[nodiscard]] NomadIndex getSize() const override;
     void initValue(RuntimeValue* value) const override;
     void freeValue(RuntimeValue* value) const override;
+    void emitFreeParameter(OpCodeEmitter& emitter, NomadId parameterId) const override;
     void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 

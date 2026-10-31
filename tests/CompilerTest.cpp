@@ -4,10 +4,115 @@
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/script/ClassType.hpp>
+#include <nomad/script/OpCode.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 
+#include <array>
+#include <limits>
+#include <type_traits>
+#include <vector>
+
 using namespace nomad;
+
+static_assert(std::is_abstract_v<OpCodeEmitter>);
+static_assert(std::has_virtual_destructor_v<OpCodeEmitter>);
+static_assert(std::is_base_of_v<OpCodeEmitter, Compiler>);
+
+BOOST_AUTO_TEST_CASE(opcode_emitter_writes_directly_through_compiler) {
+    Runtime runtime;
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    OpCodeEmitter& emitter = compiler;
+    const auto instruction = runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_nop));
+    BOOST_REQUIRE(instruction != nullptr);
+    BOOST_TEST(emitter.addOpCode(instruction) == 0U);
+    BOOST_TEST(emitter.addId(NomadId{23}) == 1U);
+    BOOST_TEST(emitter.addIndex(std::numeric_limits<NomadIndex>::max()) == 2U);
+    BOOST_REQUIRE(instructions.size() == 3U);
+    BOOST_TEST(instructions[0].fn == instruction);
+    BOOST_TEST(instructions[1].value.getIdValue() == 23);
+    BOOST_TEST(instructions[2].value.getIndexValue() == std::numeric_limits<NomadIndex>::max());
+    BOOST_CHECK_THROW(emitter.addOpCode(nullptr), NomadBug);
+    const auto unregistered = +[](VirtualMachine*) {};
+    BOOST_CHECK_THROW(emitter.addOpCode(unregistered), NomadBug);
+    BOOST_TEST(instructions.size() == 3U);
+}
+
+BOOST_AUTO_TEST_CASE(value_and_void_types_emit_no_cleanup_instructions) {
+    Runtime runtime;
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    OpCodeEmitter& emitter = compiler;
+    for (const auto* type : {runtime.getIntegerType(), runtime.getFloatType(), runtime.getBooleanType(),
+        runtime.getVoidType(), runtime.getCallbackType({}, runtime.getVoidType())}) {
+        type->emitFreeResult(emitter);
+        type->emitFreeIntermediate(emitter);
+        type->emitFreeStackValue(emitter, 5);
+        type->emitFreeFunctionVariable(emitter, 7);
+        type->emitFreeParameter(emitter, 9);
+    }
+    BOOST_TEST(instructions.empty());
+}
+
+BOOST_AUTO_TEST_CASE(class_types_emit_existing_cleanup_instructions_and_operands) {
+    Runtime runtime;
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    OpCodeEmitter& emitter = compiler;
+    ClassType classType(&runtime, TypeId::INVALID, "Cleanup", ClassMode::Closed);
+    const std::array<const Type*, 2> types{runtime.getStringType(), &classType};
+    for (const auto* type : types) {
+        instructions.clear();
+        type->emitFreeResult(emitter);
+        type->emitFreeIntermediate(emitter);
+        type->emitFreeStackValue(emitter, std::numeric_limits<NomadIndex>::max());
+        type->emitFreeFunctionVariable(emitter, 11);
+        type->emitFreeParameter(emitter, 13);
+        BOOST_REQUIRE(instructions.size() == 8U);
+        const std::array<NomadIndex, 5> positions{0, 1, 2, 4, 6};
+        const std::array<NomadString, 5> names{
+            OpCodes::op_object_free_r,
+            OpCodes::op_object_free_i,
+            OpCodes::op_object_free_stack,
+            OpCodes::op_object_free_variable,
+            OpCodes::op_object_free_parameter
+        };
+        for (auto index = NomadIndex{0}; index < positions.size(); ++index) {
+            BOOST_TEST(runtime.getInstructionId(instructions[positions[index]].fn).id ==
+                runtime.getInstructionId(names[index]).id);
+        }
+        BOOST_TEST(instructions[3].value.getIndexValue() == std::numeric_limits<NomadIndex>::max());
+        BOOST_TEST(instructions[5].value.getIndexValue() == 11U);
+        BOOST_TEST(instructions[7].value.getIdValue() == 13);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(parameter_cleanup_is_delegated_to_the_type) {
+    class ParameterEmissionType final : public ClassType {
+    public:
+        using ClassType::ClassType;
+
+        void emitFreeParameter(OpCodeEmitter& emitter, NomadId) const override {
+            const auto instruction = getRuntime()->getInstructionFn(
+                getRuntime()->getInstructionId(OpCodes::op_nop)
+            );
+            emitter.addOpCode(instruction);
+        }
+    };
+    Runtime runtime;
+    ParameterEmissionType type(&runtime, TypeId::INVALID, "ParameterEmission", ClassMode::Closed);
+    BOOST_TEST(type.needsFree());
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    compiler.addStoreParameter(5, &type);
+    BOOST_REQUIRE(instructions.size() == 3U);
+    BOOST_TEST(runtime.getInstructionId(instructions[0].fn).id == runtime.getInstructionId(OpCodes::op_nop).id);
+    BOOST_TEST(runtime.getInstructionId(instructions[1].fn).id ==
+        runtime.getInstructionId(OpCodes::op_parameter_set).id);
+    BOOST_TEST(instructions[2].value.getIdValue() == 5);
+}
 
 BOOST_AUTO_TEST_CASE(script_registration_reports_collisions_immediately)
 {

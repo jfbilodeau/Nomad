@@ -107,7 +107,7 @@ protected:
         resetControls();
         const auto store = [&](Expression* expression, const Type* type, VariableId id) {
             expression->compile(compiler, function, ExpressionTarget::Result);
-            compiler->addFreeValue(type->getTypeOpCodes()->freeFunctionVariable, toNomadIndex(id.id));
+            type->emitFreeFunctionVariable(*compiler, toNomadIndex(id.id));
             compiler->addOpCode(type->getTypeOpCodes()->setFunctionVariable);
             compiler->addId(id.id);
         };
@@ -128,7 +128,7 @@ protected:
         const auto cleanup = compiler->getOpCodeSize();
         compiler->setIndex(exit, cleanup);
         patchControls(compiler, continuation, cleanup);
-        compiler->addFreeValue(m_iteratorType->getTypeOpCodes()->freeFunctionVariable, toNomadIndex(m_iteratorId.id));
+        m_iteratorType->emitFreeFunctionVariable(*compiler, toNomadIndex(m_iteratorId.id));
     }
 
     void onEvaluate(InterpreterContext& context) const override {

@@ -84,6 +84,11 @@ bool ClassType::sameType(const Type* other) const {
     return this == other;
 }
 
+void ClassType::emitFreeParameter(OpCodeEmitter& emitter, const NomadId parameterId) const {
+    emitter.addOpCode(op_object_free_parameter);
+    emitter.addId(parameterId);
+}
+
 TypeStorage ClassType::getStorage() const {
     return TypeStorage::Object;
 }

@@ -37,6 +37,9 @@ void DeferredType::freeValue(RuntimeValue*) const {
     reportUnresolved();
 }
 
+void DeferredType::emitFreeParameter(OpCodeEmitter&, NomadId) const {
+}
+
 void DeferredType::copyValue(const RuntimeValue*, RuntimeValue*) const {
     reportUnresolved();
 }

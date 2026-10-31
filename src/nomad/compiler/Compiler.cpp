@@ -875,19 +875,6 @@ NomadIndex Compiler::addPopIntermediate(const Type* type) {
     return addOpCode(type->getTypeOpCodes()->popIntermediate);
 }
 
-void Compiler::addFreeValue(const InstructionFn freeOpCode) {
-    if (freeOpCode != nullptr) {
-        addOpCode(freeOpCode);
-    }
-}
-
-void Compiler::addFreeValue(const InstructionFn freeOpCode, const NomadIndex operand) {
-    if (freeOpCode != nullptr) {
-        addOpCode(freeOpCode);
-        addIndex(operand);
-    }
-}
-
 NomadIndex Compiler::addScriptFunctionCall(const CallableId targetFunctionId, ScriptCallableBase* function, const ArgumentList* arguments) {
     addOpCode(OpCodes::op_push_this);
     arguments->compile(this, function);
@@ -913,14 +900,14 @@ void Compiler::addFreeArguments(const ArgumentList* arguments) {
 
     for (const auto& argument : arguments->getArguments()) {
         if (const auto* argumentType = argument->getType()) {
-            addFreeValue(argumentType->getTypeOpCodes()->freeStack, stackOffset);
+            argumentType->emitFreeStackValue(*this, stackOffset);
         }
 
         stackOffset += argument->getStackValueCount();
     }
 
     if (const auto* receiverType = arguments->getReceiverType()) {
-        addFreeValue(receiverType->getTypeOpCodes()->freeStack, stackOffset);
+        receiverType->emitFreeStackValue(*this, stackOffset);
     }
     switch (stackCount) {
     case 1:
@@ -1262,8 +1249,8 @@ void Compiler::compileObjectInitializer(const FunctionCompilation& source) {
         addLoadReceiver(function, ExpressionTarget::Intermediate);
         addOpCode(OpCodes::op_native_property_set);
         addId(property->getId().id);
-        addFreeValue(property->getValueType()->getTypeOpCodes()->freeResult);
-        addFreeValue(owner->getTypeOpCodes()->freeIntermediate);
+        property->getValueType()->emitFreeResult(*this);
+        owner->emitFreeIntermediate(*this);
     }
     addFunctionReturn(function);
     function->setFunctionEnd(m_instructions.size());
@@ -1307,10 +1294,7 @@ void Compiler::addFunctionEntry(const ScriptCallableBase* function) {
 }
 
 void Compiler::addStoreParameter(const NomadId parameterId, const Type* type) {
-    if (type->needsFree()) {
-        addOpCode(OpCodes::op_object_free_parameter);
-        addId(parameterId);
-    }
+    type->emitFreeParameter(*this, parameterId);
     addOpCode(OpCodes::op_parameter_set);
     addId(parameterId);
 }
@@ -1342,7 +1326,7 @@ void Compiler::addFunctionReturn(const ScriptCallableBase* function) {
 
     // Free owned variables before releasing the function's variable slots.
     for (auto i = NomadIndex{0}; i < variableCount; ++i) {
-        addFreeValue(function->getVariableType(VariableId{toNomadId(i)})->getTypeOpCodes()->freeFunctionVariable, i);
+        function->getVariableType(VariableId{toNomadId(i)})->emitFreeFunctionVariable(*this, i);
     }
 
     switch (variableCount) {

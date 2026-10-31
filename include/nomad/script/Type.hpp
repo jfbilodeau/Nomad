@@ -92,6 +92,14 @@ public:
     // Opcodes the compiler uses to manage the lifecycle of values of this type.
     [[nodiscard]] const TypeOpCodes* getTypeOpCodes() const;
     [[nodiscard]] bool needsFree() const;
+    virtual void emitFreeResult(OpCodeEmitter& emitter) const;
+    virtual void emitFreeIntermediate(OpCodeEmitter& emitter) const;
+    virtual void emitFreeStackValue(OpCodeEmitter& emitter, NomadIndex offset) const;
+    virtual void emitFreeFunctionVariable(
+        OpCodeEmitter& emitter,
+        NomadIndex variableIndex
+    ) const;
+    virtual void emitFreeParameter(OpCodeEmitter& emitter, NomadId parameterId) const = 0;
 
     // Can an expression of `argumentType` be passed where a value of this type is expected?
     [[nodiscard]] virtual bool acceptsArgument(const Type* argumentType) const;

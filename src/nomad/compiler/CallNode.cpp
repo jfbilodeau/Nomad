@@ -304,7 +304,7 @@ void FunctionCallStatementNode::onCompile(Compiler* compiler, ScriptCallableBase
 
     // The statement discards the function's return value.
     if (const auto* returnType = m_function->getReturnType()) {
-        compiler->addFreeValue(returnType->getTypeOpCodes()->freeResult);
+        returnType->emitFreeResult(*compiler);
     }
 }
 

@@ -21,6 +21,7 @@ public:
     void toString(const RuntimeValue& value, NomadString& string) const override;
 
     [[nodiscard]] bool isVoid() const override;
+    void emitFreeParameter(OpCodeEmitter& emitter, NomadId parameterId) const override;
 };
 
 const NomadString ID_TYPE_NAME = "id";

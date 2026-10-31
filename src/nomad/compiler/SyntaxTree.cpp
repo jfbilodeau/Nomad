@@ -451,8 +451,8 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
         compiler->addLoadReceiver(function, ExpressionTarget::Intermediate);
         compiler->addOpCode(op_native_property_set);
         compiler->addId(property->getId().id);
-        compiler->addFreeValue(m_expression->getType()->getTypeOpCodes()->freeResult);
-        compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
+        m_expression->getType()->emitFreeResult(*compiler);
+        receiverType->emitFreeIntermediate(*compiler);
         return;
     }
 
@@ -469,7 +469,7 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
         break;
     case IdentifierType::FunctionVariable:
         // `r` is moved into the variable, so its previous value is released first.
-        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(identifier.variableId.id));
+        m_expression->getType()->emitFreeFunctionVariable(*compiler, toNomadIndex(identifier.variableId.id));
         compiler->addOpCode(typeOpCodes->setFunctionVariable);
         compiler->addId(identifier.variableId.id);
         break;
@@ -478,14 +478,14 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
         // The setter copies what it keeps.
         compiler->addOpCode(typeOpCodes->setDynamicVariable);
         compiler->addId(identifier.dynamicVariableId.id);
-        compiler->addFreeValue(typeOpCodes->freeResult);
+        m_expression->getType()->emitFreeResult(*compiler);
         break;
 
     case IdentifierType::ContextVariable: {
         // The variable context copies what it keeps.
         compiler->addOpCode(typeOpCodes->setContextVariable);
         compiler->addId(identifier.contextVariableId.id);
-        compiler->addFreeValue(typeOpCodes->freeResult);
+        m_expression->getType()->emitFreeResult(*compiler);
 
         compiler->getRuntime()->setContextVariableWritten(identifier.contextVariableId, true);
         break;
@@ -592,7 +592,7 @@ void ExpressionStatement::onResolve(CompilerContext* context, ScriptCallableBase
 void ExpressionStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     m_expression->compile(compiler, function, ExpressionTarget::Result);
     if (!m_expression->getType()->isVoid()) {
-        compiler->addFreeValue(m_expression->getType()->getTypeOpCodes()->freeResult);
+        m_expression->getType()->emitFreeResult(*compiler);
     }
 }
 

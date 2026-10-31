@@ -840,7 +840,7 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
     if (m_memberType == MemberType::Property) {
         compiler->addOpCode(op_native_property_get);
         compiler->addId(std::get<PropertyId>(m_memberId).id);
-        compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
+        receiverType->emitFreeIntermediate(*compiler);
         compiler->addMoveResult(getType(), target);
         return;
     }
@@ -943,8 +943,8 @@ void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptCallabl
     compiler->addPopIntermediate(receiverType);
     compiler->addOpCode(op_native_property_set);
     compiler->addId(std::get<PropertyId>(m_memberId).id);
-    compiler->addFreeValue(propertyType->getTypeOpCodes()->freeResult);
-    compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
+    propertyType->emitFreeResult(*compiler);
+    receiverType->emitFreeIntermediate(*compiler);
 }
 
 void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, const Expression* expression) const {
@@ -1793,7 +1793,10 @@ void IdentifierExpression::compileStore(Compiler* compiler) const {
         compiler->addStoreParameter(m_identifierDefinition.parameterId, m_identifierDefinition.valueType);
         break;
     case IdentifierType::FunctionVariable:
-        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(m_identifierDefinition.variableId.id));
+        m_identifierDefinition.valueType->emitFreeFunctionVariable(
+            *compiler,
+            toNomadIndex(m_identifierDefinition.variableId.id)
+        );
         compiler->addOpCode(typeOpCodes->setFunctionVariable);
         compiler->addId(m_identifierDefinition.variableId.id);
         break;
@@ -1801,13 +1804,13 @@ void IdentifierExpression::compileStore(Compiler* compiler) const {
     case IdentifierType::DynamicVariable:
         compiler->addOpCode(typeOpCodes->setDynamicVariable);
         compiler->addId(m_identifierDefinition.dynamicVariableId.id);
-        compiler->addFreeValue(typeOpCodes->freeResult);
+        m_identifierDefinition.valueType->emitFreeResult(*compiler);
         break;
 
     case IdentifierType::ContextVariable:
         compiler->addOpCode(typeOpCodes->setContextVariable);
         compiler->addId(m_identifierDefinition.contextVariableId.id);
-        compiler->addFreeValue(typeOpCodes->freeResult);
+        m_identifierDefinition.valueType->emitFreeResult(*compiler);
         compiler->getRuntime()->setContextVariableWritten(m_identifierDefinition.contextVariableId, true);
         break;
 
