@@ -747,6 +747,39 @@ host-provided, initialized `ScriptObject` instances, as well as instances create
 with `new`. Script construction runs field initialization before the selected
 source `init` body. Classes without a source `init` have a parameterless constructor.
 
+### Host-owned struct storage
+
+`StructType` is declared in `<nomad/script/StructType.hpp>` and derives from
+`CompositeType`, not `ClassType`. Register a closed descriptor with
+`Runtime::registerStruct(name, documentation = {})`, add stored fields with
+`Runtime::registerProperty`, then call `Runtime::finalizeCompositeFieldLayout`.
+Invalid or reserved names are logged and registration returns `TypeId::INVALID`.
+Use `Type::asStructType()` to inspect its category.
+
+`getSize()` and `needsFree()` require a finalized layout; otherwise they throw
+`NomadException`. Nested inline dependencies finalize recursively. Empty structs
+occupy zero slots and remain distinct from void. Types match by descriptor
+identity, not by name across runtimes.
+
+Supply contiguous, cleared `RuntimeValue` storage for initialization or copying
+into fresh storage. Initialization applies field defaults without running script
+constructors. Copying preserves inline scalar values and retains references held
+by string and class fields. `freeValue` releases stored fields, including nested
+structs; native properties are not storage. After a partial initialization or
+copy failure, call `freeValue` on the partial destination before discarding it.
+Direct copying requires disjoint source and destination, except self-copy;
+use `assignValue` with disjoint scratch for overlapping replacement.
+
+Zero-slot lifecycle operations accept null pointers and access no slots.
+Formatting currently returns the type name without inspecting its fields.
+
+This descriptor supports host-owned slot storage only. Every struct bytecode
+emission operation raises `NomadException`, including empty structs. Struct
+declarations, compiled/interpreted aggregate execution, native struct accessors,
+generic struct collections, and aggregate VM allocation are not supported yet.
+Do not pass struct storage to existing single-slot object, constant, argument,
+or interpreter APIs.
+
 ### Script object storage
 
 `ScriptObject` (include `<nomad/script/ScriptObject.hpp>`) provides fixed

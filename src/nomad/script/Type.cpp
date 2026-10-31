@@ -255,6 +255,10 @@ const CompositeType* Type::asCompositeType() const {
     return nullptr;
 }
 
+const StructType* Type::asStructType() const {
+    return nullptr;
+}
+
 bool Type::isVoid() const {
     return false;
 }

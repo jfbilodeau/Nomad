@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1K have been reviewed; Step 1L below is implemented and awaiting review.
+Steps 1A through 1L have been reviewed; Step 1M below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -567,14 +567,47 @@ Step 1L validation:
 - Multi-slot descriptors remain native storage test fixtures, not executable
   struct support. No gameplay validation is claimed.
 
-Next design discussion: the real struct descriptor and its size/lifecycle API
-contracts. Wire finalization at the existing Resolve-to-Emit boundary once struct
+Approved thirteenth slice (Step 1M):
+
+- Add concrete `StructType : CompositeType` with dedicated header/source files,
+  identity-based matching, and `Type::asStructType()`.
+- Add closed host descriptor registration through `Runtime::registerStruct`;
+  extend stored-property registration to composite owners.
+- Require finalized field layouts for slot size, ownership queries, and storage
+  lifecycle operations. Empty structs remain zero-slot, non-void values.
+- Implement field-wise initialization, copy, release, and scratch-backed
+  assignment using existing lifecycle APIs. Native properties consume no slots.
+  Zero-width fields access no storage and copying does not run constructors.
+- Preserve caller-managed partial-failure cleanup. Direct copy requires disjoint
+  storage except self-copy; assignment stages overlapping replacements.
+- Explicitly reject every struct bytecode emission operation without emitting
+  scalar fallback instructions. Formatting reports the type name only.
+- No parser change, automatic compiler finalization, aggregate VM allocation,
+  struct accessor registration, generic support, or open-struct language behavior.
+
+Step 1M validation:
+
+- Windows Debug builds passed for `nomad_test`, `nomad-runtime`, and `nomad-lsp`.
+- The language, remaining, binding, and tooling regression groups passed,
+  together with the LSP process test.
+- Real struct coverage verifies registration, identity, unresolved layouts,
+  empty/nested field offsets, scalar copies, owned-reference cleanup, inline
+  cycles, reference-cycle breaks, field freezing, partial nested initialization
+  and copy failure, and rejection of every emission operation.
+- The strengthened partial nested failure tests passed after rebuilding the
+  test target. All four documentation preparation tests and whitespace checks
+  passed.
+- This is host-owned inline storage support, not compiled/interpreted struct
+  execution or gameplay validation.
+
+Next design discussion: aggregate VM storage addressing and type-owned emission.
+Wire finalization at the existing Resolve-to-Emit boundary once struct
 declarations and member inference are available. Object allocation and executable
 aggregate accesses remain later work.
 
 Remaining Step 1 work, requiring separate design approval:
 
-- Add the approved real struct descriptor and its finalized-size contract.
+- Integrate the real struct descriptor with approved aggregate emission.
 - Preserve current sizes and behavior for existing non-struct types.
 - Preserve logical IDs, names, catalog entries, and API signatures where possible.
 - Extend the layout coverage to the real struct descriptor, including unresolved

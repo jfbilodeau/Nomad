@@ -15,6 +15,7 @@
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/RegisterRangeType.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/String.hpp>
@@ -1214,6 +1215,20 @@ bool Runtime::canRegisterClass(const NomadString& name, const ClassMode mode) co
     return true;
 }
 
+TypeId Runtime::registerStruct(
+    NomadString name,
+    NomadString documentation
+) {
+    if (name.empty() || getTypeId(name).isValid() || !canRegisterHubMember(name) ||
+        isHub(name) || isHubVariable(name)) {
+        log::error("Cannot register struct '" + name + "': invalid or reserved type name");
+        return TypeId::INVALID;
+    }
+    const auto id = reserveTypeId();
+    registerType(std::make_unique<StructType>(this, id, std::move(name), std::move(documentation)));
+    return id;
+}
+
 TypeId Runtime::publishClass(
     const TypeId id,
     const NomadString& name,
@@ -1969,13 +1984,13 @@ PropertyId Runtime::registerProperty(
     const Type* valueType
 ) {
     const auto type = getType(ownerId);
-    const auto* classType = type ? (*type)->asClassType() : nullptr;
-    auto* owner = getMutableClassType(classType);
-    if (owner == nullptr || !isValidIdentifier(name) || !ownsType(valueType) ||
+    const auto* composite = type ? (*type)->asCompositeType() : nullptr;
+    if (composite == nullptr || !isValidIdentifier(name) || !ownsType(valueType) ||
         valueType->isVoid() || valueType->isInternal()) {
         log::error("Cannot register property '" + name + "': invalid owner, name, or value type");
         return PropertyId::INVALID;
     }
+    auto* owner = static_cast<CompositeType*>(m_types[toNomadIndex(ownerId.id)].get());
     if (const auto* existing = owner->getProperty(name)) {
         if (existing->asNativeProperty() == nullptr && existing->getValueType() == valueType) {
             return existing->getId();
@@ -1983,11 +1998,11 @@ PropertyId Runtime::registerProperty(
         log::error("Cannot register property '" + name + "': conflicting definition");
         return PropertyId::INVALID;
     }
-    if (getMemberType(getNativeMemberId(classType, name)) != MemberType::Unknown) {
+    if (getMemberType(getNativeMemberId(composite, name)) != MemberType::Unknown) {
         log::error("Cannot register property '" + name + "': the type already has a member with that name");
         return PropertyId::INVALID;
     }
-    return owner->registerProperty(*this, std::make_unique<Property>(classType, name, valueType));
+    return owner->registerProperty(*this, std::make_unique<Property>(composite, name, valueType));
 }
 
 void Runtime::setPropertyHasExplicitInitializer(

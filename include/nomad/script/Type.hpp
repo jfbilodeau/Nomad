@@ -17,6 +17,7 @@ class FunctionType;
 class EnumType;
 class ClassType;
 class CompositeType;
+class StructType;
 
 enum class TypeStorage {
     None = 1,  // for `void`
@@ -120,6 +121,7 @@ public:
     [[nodiscard]] virtual const EnumType* asEnum() const;
     [[nodiscard]] virtual const ClassType* asClassType() const;
     [[nodiscard]] virtual const CompositeType* asCompositeType() const;
+    [[nodiscard]] virtual const StructType* asStructType() const;
 
 private:
     Runtime* m_runtime;

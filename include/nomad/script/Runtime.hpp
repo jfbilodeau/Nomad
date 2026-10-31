@@ -277,6 +277,7 @@ public:
         return publishClass(id, name, mode, std::move(type));
     }
     [[nodiscard]] const ClassType* getIteratorType(const Type* valueType);
+    [[nodiscard]] TypeId registerStruct(NomadString name, NomadString documentation = {});
     void addIterable(TypeId id, NativeInterableDefinition definition);
     [[nodiscard]] std::optional<IterableInfo> getIterableInfo(const Type* sourceType) const;
     [[nodiscard]] TypeId getTypeId(const NomadString& typeName) const;
