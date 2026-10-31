@@ -1,8 +1,8 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1AB have been reviewed; Step 1AC below is implemented and awaiting
-review. Aggregate VM execution remains unimplemented.
+Steps 1A through 1AC have been reviewed; Step 1AD below is implemented and awaiting
+review. Aggregate loads, stores, and calls remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -1170,6 +1170,35 @@ Next slice after review: type-owned aggregate local cleanup using finalized
 field offsets and existing cleanup instructions. Aggregate load/store,
 parameter/call lowering, and receiver/return-destination contracts follow
 separate design approvals.
+
+### Step 1AD: Type-owned aggregate local cleanup
+
+Implemented:
+
+- `StructType::emitFreeFunctionVariable` requires a finalized layout and
+  delegates cleanup to owned stored-field types at physical local offsets.
+- Nested structs recursively emit existing field cleanup instructions; no new
+  opcodes or runtime layout lookups are introduced.
+- Empty and scalar-only structs emit no cleanup instructions.
+- Existing function-return cleanup now releases nested struct locals before
+  popping their physical storage. Cleared, untouched local storage is releasable.
+- Aggregate initialization, loads, stores, parameter cleanup, and return
+  destinations remain unsupported.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language and remaining regression groups passed.
+- Emission coverage checks unresolved layouts, empty/scalar-only structs,
+  nested string/object fields, and full-width offsets beyond the NomadId range.
+- Execution coverage checks nested string release, untouched struct locals,
+  neighboring scalar return values, and repeated calls without leaked strings.
+- All four documentation preparation tests and whitespace checks passed.
+- This verifies cleanup execution, not struct language syntax or gameplay.
+
+Next slice after review: agree on aggregate local initialization and load/store
+lowering, including temporary ownership and replacement semantics. Physical
+parameter/call lowering and borrowed receiver/return destinations follow.
 
 Remaining Step 1 work, requiring separate design approval:
 

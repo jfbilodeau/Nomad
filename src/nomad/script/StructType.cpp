@@ -124,8 +124,22 @@ void StructType::emitFreeStackValue(OpCodeEmitter&, NomadIndex) const {
     throw NomadException("Struct bytecode emission is not supported: " + getTypeName());
 }
 
-void StructType::emitFreeFunctionVariable(OpCodeEmitter&, NomadIndex) const {
-    throw NomadException("Struct bytecode emission is not supported: " + getTypeName());
+void StructType::emitFreeFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadIndex offset
+) const {
+    if (getSize() == 0) {
+        return;
+    }
+    for (const auto* property : getProperties()) {
+        if (property->asNativeProperty() != nullptr) {
+            continue;
+        }
+        const auto* type = property->getValueType();
+        if (type->needsFree()) {
+            type->emitFreeFunctionVariable(emitter, offset + getFieldOffset(property->getId()));
+        }
+    }
 }
 
 void StructType::emitFreeParameter(OpCodeEmitter&, NomadId) const {

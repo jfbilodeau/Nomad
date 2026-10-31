@@ -3,8 +3,10 @@
 #include <nomad/compiler/Compiler.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
@@ -280,7 +282,96 @@ BOOST_AUTO_TEST_CASE(inline_cycles_fail_but_reference_cycles_do_not) {
     BOOST_TEST(!owner->asCompositeType()->isFieldLayoutFinalized());
 }
 
-BOOST_AUTO_TEST_CASE(every_emission_operation_rejects_scalar_fallback_without_writing_instructions) {
+BOOST_AUTO_TEST_CASE(local_cleanup_emits_only_owned_fields_at_full_width_nested_offsets) {
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("EmptyCleanup");
+    const auto innerId = runtime.registerStruct("InnerCleanup");
+    const auto outerId = runtime.registerStruct("OuterCleanup");
+    const auto scalarId = runtime.registerStruct("ScalarCleanup");
+    const auto* empty = runtime.getTypeByName("EmptyCleanup")->asStructType();
+    const auto* inner = runtime.getTypeByName("InnerCleanup")->asStructType();
+    const auto* outer = runtime.getTypeByName("OuterCleanup")->asStructType();
+    const auto* scalar = runtime.getTypeByName("ScalarCleanup")->asStructType();
+    const auto ownerId = runtime.registerClass("CleanupOwner", ClassMode::Closed);
+    BOOST_REQUIRE(ownerId.isValid());
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "name", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "before", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "inner", inner).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "empty", empty).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "owner", runtime.getTypeByName("CleanupOwner")).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "label", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(scalarId, "number", runtime.getIntegerType()).isValid());
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    const auto initialSize = instructions.size();
+    BOOST_CHECK_THROW(outer->emitFreeFunctionVariable(compiler, 0), NomadException);
+    BOOST_TEST(instructions.size() == initialSize);
+    runtime.finalizeCompositeFieldLayout(outerId);
+    runtime.finalizeCompositeFieldLayout(scalarId);
+    const auto offset = toNomadIndex(NOMAD_ID_MAX) + 1;
+    empty->emitFreeFunctionVariable(compiler, offset);
+    scalar->emitFreeFunctionVariable(compiler, offset);
+    BOOST_TEST(instructions.size() == initialSize);
+    outer->emitFreeFunctionVariable(compiler, offset);
+    BOOST_REQUIRE(instructions.size() == initialSize + 6);
+    for (auto index = NomadIndex{0}; index < 3; ++index) {
+        const auto position = initialSize + index * 2;
+        BOOST_TEST(runtime.getInstructionId(instructions[position].fn).id ==
+            runtime.getInstructionId(OpCodes::op_object_free_variable).id);
+        BOOST_TEST(instructions[position + 1].value.getIndexValue() == offset + index + 2);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(function_return_releases_nested_struct_locals_and_preserves_scalar_neighbors) {
+    const auto before = RuntimeValue::getLiveStringCount();
+    Runtime runtime;
+    const auto innerId = runtime.registerStruct("LocalPayload");
+    const auto outerId = runtime.registerStruct("LocalWrapper");
+    const auto* inner = runtime.getTypeByName("LocalPayload")->asStructType();
+    const auto* outer = runtime.getTypeByName("LocalWrapper")->asStructType();
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "name", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "payload", inner).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "label", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(outerId);
+    const auto id = runtime.registerScriptFunction("cleanupLocals", "cleanup.nomad", "");
+    auto* function = runtime.getScriptFunction(id);
+    BOOST_REQUIRE(function != nullptr);
+    function->setReturnType(runtime.getIntegerType());
+    const auto leading = function->registerVariable("leading", runtime.getIntegerType());
+    const auto value = function->registerVariable("value", outer);
+    function->registerVariable("untouched", outer);
+    const auto trailing = function->registerVariable("trailing", runtime.getIntegerType());
+    const auto initialize = runtime.registerNativeFunction("initializeCleanupLocals",
+        [&](VirtualMachine* machine) {
+            machine->setIntegerVariableValue(leading, 17);
+            machine->setIntegerVariableValue(trailing, 29);
+            const auto storage = machine->getLocalStorage(function->getVariableOffset(value), outer->getSize());
+            storage[0].setIntegerValue(31);
+            storage[1].setStringValue("nested");
+            storage[2].setStringValue("label");
+            BOOST_TEST(RuntimeValue::getLiveStringCount() == before + 2);
+        }, {}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(initialize.isValid());
+    auto compiler = runtime.createCompiler();
+    function->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(function);
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(initialize.id);
+    compiler->addLoadFunctionVariable(function->getVariableOffset(trailing), runtime.getIntegerType(),
+        ExpressionTarget::Result);
+    compiler->addFunctionReturn(function);
+    function->setFunctionEnd(runtime.getInstructions().size());
+    for (auto index = 0; index < 2; ++index) {
+        RuntimeValue result;
+        runtime.executeFunction(id, {}, result);
+        BOOST_TEST(result.getIntegerValue() == 29);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == before);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_without_writing_instructions) {
     Runtime runtime;
     const auto id = runtime.registerStruct("Empty");
     const Type* type = runtime.getTypeByName("Empty");
@@ -293,7 +384,7 @@ BOOST_AUTO_TEST_CASE(every_emission_operation_rejects_scalar_fallback_without_wr
     BOOST_CHECK_THROW(type->emitFreeResult(compiler), NomadException);
     BOOST_CHECK_THROW(type->emitFreeIntermediate(compiler), NomadException);
     BOOST_CHECK_THROW(type->emitFreeStackValue(compiler, 0), NomadException);
-    BOOST_CHECK_THROW(type->emitFreeFunctionVariable(compiler, 0), NomadException);
+    type->emitFreeFunctionVariable(compiler, 0);
     BOOST_CHECK_THROW(type->emitFreeParameter(compiler, 0), NomadException);
     for (const auto target : {ExpressionTarget::Result, ExpressionTarget::Intermediate, ExpressionTarget::Stack}) {
         BOOST_CHECK_THROW(type->emitLoadFunctionVariable(compiler, 0, target), NomadException);

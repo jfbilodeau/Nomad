@@ -720,6 +720,11 @@ resolve those IDs through callable metadata; instruction execution does not.
 Local instruction operands use full-width `Index` values, and instruction dumps
 show numeric offsets. Parameter bytecode is unchanged.
 
+Struct-local cleanup releases owned stored fields, including fields in nested
+structs. Empty structs and fields that need no cleanup emit no cleanup
+instructions. Aggregate local loads, stores, and initialization are not yet
+supported by bytecode.
+
 An offset query requires resolved sizes for the preceding variables; a total-size
 query requires resolved sizes for every variable. Missing types, deferred-size
 queries, and slot-count overflow throw `NomadException`. An invalid or out-of-range
