@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1E have been reviewed; Step 1F below is implemented and awaiting review.
+Steps 1A through 1F have been reviewed; Step 1G below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -375,17 +375,55 @@ Step 1F validation:
 - No struct execution, layout finalization, new opcodes, calling-convention
   changes, or gameplay validation are included in this slice.
 
-Next design discussion: struct-specific layout finalization and finite-layout
-cycle handling, coordinated with real struct/member metadata. Object allocation
-and executable aggregate accesses remain later work.
+Approved seventh slice (Step 1G):
+
+- Add explicit `CompositeType::finalizeFieldLayout() const` and
+  `isFieldLayoutFinalized()`, with unresolved/resolving/finalized states separate
+  from slot size.
+- Recursively finalize only stored inline-struct dependencies. Class references
+  and native properties do not create inline-layout dependencies.
+- Cache the total size after successful finalization; retain the existing offset
+  queries. Empty layouts finalize to zero slots.
+- Report cycles, unresolved sizes, and arithmetic overflow. Failed owners remain
+  unfinalized and retryable; successfully completed dependencies remain finalized.
+- Reject new stored fields once explicit finalization starts or succeeds.
+  Preserve same-type redeclarations, native property/method/constructor
+  registration, initializer metadata, and field-value mutation.
+- Keep existing unfinalized class behavior unchanged. No automatic compiler
+  finalization, new compilation phase, shared helpers, opcodes, VM changes, or
+  executable struct descriptor in this slice.
+- Use metadata-only inline test descriptors, not boxed or placeholder executable
+  structs.
+
+Step 1G validation:
+
+- The Windows Debug `nomad_test` target built successfully. Existing
+  `[[nodiscard]]` warnings remain in untouched test files.
+- The `nomad_test_language` and `nomad_test_remaining` regression groups passed.
+- Focused coverage verifies empty and nested layouts, direct/indirect inline
+  cycles, reference-cycle breaks, maximum offsets, overflow, unresolved-size
+  recovery, completed dependencies, cached-size query counts, frozen stored-field
+  registration, and continued field-value mutation.
+- Deferred native-property resolution and later native-property registration
+  passed with an explicitly finalized owner. Layout queries do not invoke
+  native callbacks.
+- All four documentation preparation tests and whitespace checks passed.
+- Inline descriptors remain metadata-only test fixtures. There is no production
+  struct descriptor, automatic compiler finalization, new opcode, VM change, or
+  gameplay validation in this slice.
+
+Next design discussion: the real struct descriptor and its size/lifecycle API
+contracts. Wire finalization at the existing Resolve-to-Emit boundary once struct
+declarations and member inference are available. Object allocation and executable
+aggregate accesses remain later work.
 
 Remaining Step 1 work, requiring separate design approval:
 
-- Add approved struct size/finalization metadata.
+- Add the approved real struct descriptor and its finalized-size contract.
 - Preserve current sizes and behavior for existing non-struct types.
 - Preserve logical IDs, names, catalog entries, and API signatures where possible.
-- Add focused tests for mixed widths, unresolved layouts, zero widths, offset
-  calculation, overflow, and finite-layout cycle detection.
+- Extend the layout coverage to the real struct descriptor, including unresolved
+  and zero-size types remaining distinct from `void`.
 - Do not add struct syntax or generic collection support in this step.
 
 Review stop: metadata changes, compatibility results, and any revised architecture

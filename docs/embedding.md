@@ -682,7 +682,8 @@ Native properties contribute no slots, even when their value types are unresolve
 these queries do not invoke property callbacks. Empty and native-only field
 layouts have storage size zero, while the class's reference size remains one.
 
-Offsets and storage size are calculated on demand. A zero-width field retains
+Without explicit finalization, offsets and storage size are calculated on demand.
+A zero-width field retains
 its logical index and property ID and can share an offset with another field.
 Offsets require resolved sizes only for preceding stored fields; total storage
 size requires all stored field sizes. Required unresolved-size errors propagate,
@@ -691,6 +692,24 @@ offset query raises `NomadException` for native, missing, or other owners'
 property IDs. Representable offsets, including the maximum `NomadIndex`, are
 valid results rather than invalid-ID sentinels. These metadata queries do not
 change the current one-slot-per-field object storage or execution APIs.
+
+`CompositeType::finalizeFieldLayout()` explicitly finalizes the stored-field
+layout; `isFieldLayoutFinalized()` reports whether that succeeded. It recursively
+finalizes stored inline-struct dependencies, but does not traverse class-reference
+fields or native properties. Direct and indirect inline cycles, required
+unresolved sizes, and arithmetic overflow raise `NomadException`. A failed owner
+remains unfinalized and can be retried after its metadata is corrected;
+successfully finalized dependencies remain finalized.
+
+After finalization, `getFieldStorageSize()` returns the cached total. Empty
+layouts finalize successfully with size zero. Field offsets remain available
+through the existing queries, and a class's reference size remains one.
+Repeated finalization is a no-op. New stored-field registrations are logged and
+rejected after finalization; redeclaring an existing field with the same name and
+type retains its ID. Native properties, methods, constructors, initializer flags,
+and stored field values may still change without altering the layout.
+Finalization is explicit: ordinary compilation does not automatically finalize
+existing class layouts.
 
 Compiled code and the interpreter can read and assign stored properties on
 host-provided, initialized `ScriptObject` instances, as well as instances created

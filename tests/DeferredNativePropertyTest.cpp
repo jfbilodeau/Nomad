@@ -69,6 +69,8 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
         BOOST_REQUIRE(owner != nullptr);
         BOOST_TEST(property->getOwnerType() == owner->asCompositeType());
         BOOST_TEST(property->getClassType() == owner);
+        owner->finalizeFieldLayout();
+        BOOST_TEST(owner->isFieldLayoutFinalized());
         BOOST_TEST(owner->getFieldStorageSize() == 0U);
         BOOST_TEST(owner->getFieldIndex(id) == NOMAD_INVALID_INDEX);
         BOOST_CHECK_THROW((void)owner->getFieldOffset(id), NomadException);
@@ -109,6 +111,7 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
         BOOST_TEST(property->isTypeResolved());
         BOOST_TEST(property->getValueType() == runtime.getTypeByName("example.Level"));
         BOOST_TEST(property->getOwnerType() == owner->asCompositeType());
+        BOOST_TEST(owner->isFieldLayoutFinalized());
         BOOST_TEST(runtime.getType(ownerId).value()->asClassType()->getProperty("level") == property);
         BOOST_TEST(owner->getFieldStorageSize() == 0U);
         BOOST_CHECK_THROW((void)owner->getFieldOffset(id), NomadException);

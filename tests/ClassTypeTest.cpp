@@ -4,6 +4,7 @@
 #include <nomad/script/CompositeType.hpp>
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptObject.hpp>
 
 #include <boost/test/unit_test.hpp>
 
@@ -52,6 +53,7 @@ public:
     }
 
     [[nodiscard]] NomadIndex getSize() const override {
+        ++m_sizeQueryCount;
         if (!m_size.has_value()) {
             throw NomadException("Test field size is unresolved");
         }
@@ -62,8 +64,39 @@ public:
         m_size = size;
     }
 
+    [[nodiscard]] NomadIndex getSizeQueryCount() const {
+        return m_sizeQueryCount;
+    }
+
 private:
     std::optional<NomadIndex> m_size;
+    mutable NomadIndex m_sizeQueryCount = 0;
+};
+
+class InlineLayoutTestType final : public ClassType {
+public:
+    InlineLayoutTestType(
+        Runtime* runtime,
+        const TypeId id,
+        NomadString name,
+        const ClassMode mode,
+        InlineLayoutTestType*& descriptor
+    ):
+        ClassType(runtime, id, std::move(name), mode)
+    {
+        descriptor = this;
+    }
+
+    [[nodiscard]] TypeStorage getStorage() const override {
+        return TypeStorage::Struct;
+    }
+
+    [[nodiscard]] NomadIndex getSize() const override {
+        if (!isFieldLayoutFinalized()) {
+            throw NomadException("Test inline field layout is unresolved");
+        }
+        return getFieldStorageSize();
+    }
 };
 
 const ClassType* createTestType(Runtime& runtime, const NomadString& name, const ClassMode mode) {
@@ -77,6 +110,268 @@ const ClassType* createTestType(Runtime& runtime, const NomadString& name, const
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(class_type)
+
+BOOST_AUTO_TEST_CASE(explicit_finalization_freezes_stored_fields_but_not_values_or_native_members) {
+    Runtime runtime;
+    const auto* owner = createTestType(runtime, "Fields", ClassMode::Opened);
+    const auto first = runtime.registerProperty(owner->getId(), "first", runtime.getFloatType());
+    const auto second = runtime.registerProperty(owner->getId(), "second", runtime.getStringType());
+    BOOST_REQUIRE(first.isValid());
+    BOOST_REQUIRE(second.isValid());
+    BOOST_TEST(!owner->isFieldLayoutFinalized());
+    BOOST_TEST(owner->getFieldStorageSize() == 2U);
+    BOOST_TEST(!owner->isFieldLayoutFinalized());
+
+    owner->finalizeFieldLayout();
+    BOOST_TEST(owner->isFieldLayoutFinalized());
+    BOOST_TEST(owner->getFieldStorageSize() == 2U);
+    BOOST_TEST(owner->getFieldOffset(first) == 0U);
+    BOOST_TEST(owner->getFieldOffset(second) == 1U);
+    BOOST_TEST(owner->getSize() == 1U);
+    owner->finalizeFieldLayout();
+    BOOST_TEST(runtime.registerProperty(owner->getId(), "first", runtime.getFloatType()) == first);
+    BOOST_TEST(runtime.registerProperty(owner->getId(), "extra", runtime.getIntegerType()).isInvalid());
+    BOOST_TEST(owner->getProperty("extra") == nullptr);
+    BOOST_TEST(owner->getPropertyCount() == 2U);
+    runtime.setPropertyHasExplicitInitializer(first, true);
+    BOOST_TEST(owner->getProperty(first)->hasExplicitInitializer());
+    ScriptObject object(owner);
+    object.setField(owner->getFieldIndex(first), RuntimeValue(NomadFloat{3.5}));
+    BOOST_TEST(object.getField(owner->getFieldIndex(first)).getFloatValue() == 3.5);
+    object.setField(owner->getFieldIndex(first), RuntimeValue(NomadFloat{7.0}));
+    BOOST_TEST(object.getField(owner->getFieldIndex(first)).getFloatValue() == 7.0);
+
+    auto callbackCalls = 0;
+    const auto native = runtime.addProperty(owner->getId(), {
+        .valueType = runtime.getIntegerType(),
+        .name = "native",
+        .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
+    });
+    const auto method = runtime.addMethod(owner->getId(), {
+        .name = "update",
+        .parameters = {},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine*) { ++callbackCalls; },
+        .documentation = ""
+    });
+    const auto constructor = runtime.addConstructor(owner->getId(), {
+        .parameters = {},
+        .function = [&](VirtualMachine*) { ++callbackCalls; },
+        .documentation = ""
+    });
+    BOOST_REQUIRE(native.isValid());
+    BOOST_REQUIRE(method.isValid());
+    BOOST_REQUIRE(constructor.isValid());
+    BOOST_TEST(owner->isFieldLayoutFinalized());
+    BOOST_TEST(owner->getPropertyCount() == 3U);
+    BOOST_TEST(owner->getFieldStorageSize() == 2U);
+    BOOST_TEST(owner->getFieldIndex(second) == 1U);
+    BOOST_TEST(owner->getFieldOffset(second) == 1U);
+    BOOST_CHECK_THROW((void)owner->getFieldOffset(native), NomadException);
+    BOOST_TEST(callbackCalls == 0);
+}
+
+BOOST_AUTO_TEST_CASE(finalization_distinguishes_empty_inline_layouts_from_unresolved_layouts) {
+    Runtime runtime;
+    InlineLayoutTestType* empty = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+        "EmptyInline", ClassMode::Closed, empty
+    ).isValid());
+    const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
+    const auto first = runtime.registerProperty(owner->getId(), "first", empty);
+    const auto number = runtime.registerProperty(owner->getId(), "number", runtime.getIntegerType());
+    const auto middle = runtime.registerProperty(owner->getId(), "middle", empty);
+    const auto last = runtime.registerProperty(owner->getId(), "last", empty);
+    BOOST_REQUIRE(first.isValid());
+    BOOST_REQUIRE(number.isValid());
+    BOOST_REQUIRE(middle.isValid());
+    BOOST_REQUIRE(last.isValid());
+    BOOST_TEST(!empty->isFieldLayoutFinalized());
+    BOOST_CHECK_THROW((void)empty->getSize(), NomadException);
+    BOOST_CHECK_THROW((void)owner->getFieldStorageSize(), NomadException);
+
+    owner->finalizeFieldLayout();
+    BOOST_TEST(owner->isFieldLayoutFinalized());
+    BOOST_TEST(empty->isFieldLayoutFinalized());
+    BOOST_TEST(!empty->isVoid());
+    BOOST_TEST(empty->getSize() == 0U);
+    BOOST_TEST(owner->getFieldStorageSize() == 1U);
+    BOOST_TEST(owner->getFieldOffset(first) == 0U);
+    BOOST_TEST(owner->getFieldOffset(number) == 0U);
+    BOOST_TEST(owner->getFieldOffset(middle) == 1U);
+    BOOST_TEST(owner->getFieldOffset(last) == 1U);
+    BOOST_TEST(owner->getFieldIndex(last) == 3U);
+    empty->finalizeFieldLayout();
+    BOOST_TEST(empty->getSize() == 0U);
+}
+
+BOOST_AUTO_TEST_CASE(finalization_resolves_nested_inline_dependencies_before_containing_layouts) {
+    Runtime runtime;
+    InlineLayoutTestType* point = nullptr;
+    InlineLayoutTestType* pair = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+        "PointInline", ClassMode::Closed, point
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+        "PairInline", ClassMode::Closed, pair
+    ).isValid());
+    for (const auto* name : {"x", "y", "z"}) {
+        BOOST_REQUIRE(runtime.registerProperty(point->getId(), name, runtime.getFloatType()).isValid());
+    }
+    const auto origin = runtime.registerProperty(pair->getId(), "origin", point);
+    const auto destination = runtime.registerProperty(pair->getId(), "destination", point);
+    const auto label = runtime.registerProperty(pair->getId(), "label", runtime.getStringType());
+    const auto* owner = createTestType(runtime, "Player", ClassMode::Closed);
+    const auto name = runtime.registerProperty(owner->getId(), "name", runtime.getStringType());
+    const auto location = runtime.registerProperty(owner->getId(), "location", pair);
+    BOOST_REQUIRE(origin.isValid());
+    BOOST_REQUIRE(destination.isValid());
+    BOOST_REQUIRE(label.isValid());
+    BOOST_REQUIRE(name.isValid());
+    BOOST_REQUIRE(location.isValid());
+
+    owner->finalizeFieldLayout();
+    BOOST_TEST(point->isFieldLayoutFinalized());
+    BOOST_TEST(pair->isFieldLayoutFinalized());
+    BOOST_TEST(point->getSize() == 3U);
+    BOOST_TEST(pair->getSize() == 7U);
+    BOOST_TEST(pair->getFieldOffset(origin) == 0U);
+    BOOST_TEST(pair->getFieldOffset(destination) == 3U);
+    BOOST_TEST(pair->getFieldOffset(label) == 6U);
+    BOOST_TEST(owner->getFieldOffset(location) == 1U);
+    BOOST_TEST(owner->getFieldStorageSize() == 8U);
+    BOOST_TEST(owner->getSize() == 1U);
+    BOOST_TEST(runtime.registerProperty(point->getId(), "extra", runtime.getIntegerType()).isInvalid());
+    owner->finalizeFieldLayout();
+    BOOST_TEST(owner->getFieldStorageSize() == 8U);
+}
+
+BOOST_AUTO_TEST_CASE(finalization_rejects_direct_and_indirect_inline_cycles_without_committing_failed_layouts) {
+    for (const auto indirect : {false, true}) {
+        Runtime runtime;
+        InlineLayoutTestType* first = nullptr;
+        InlineLayoutTestType* second = nullptr;
+        BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+            "FirstInline", ClassMode::Closed, first
+        ).isValid());
+        BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+            "SecondInline", ClassMode::Closed, second
+        ).isValid());
+        BOOST_REQUIRE(runtime.registerProperty(first->getId(), "number", runtime.getIntegerType()).isValid());
+        BOOST_REQUIRE(runtime.registerProperty(first->getId(), "next", indirect ? second : first).isValid());
+        if (indirect) {
+            BOOST_REQUIRE(runtime.registerProperty(second->getId(), "next", first).isValid());
+        }
+        BOOST_CHECK_EXCEPTION(first->finalizeFieldLayout(), NomadException, [](const NomadException& error) {
+            const auto message = std::string(error.what());
+            return message.find("cycle") != std::string::npos && message.find("FirstInline") != std::string::npos;
+        });
+        BOOST_TEST(!first->isFieldLayoutFinalized());
+        BOOST_TEST(!second->isFieldLayoutFinalized());
+        BOOST_CHECK_THROW((void)first->getSize(), NomadException);
+        BOOST_CHECK_THROW(first->finalizeFieldLayout(), NomadException);
+        BOOST_TEST(!first->isFieldLayoutFinalized());
+        BOOST_REQUIRE(runtime.registerProperty(first->getId(), "extra", runtime.getIntegerType()).isValid());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(class_references_and_native_properties_do_not_create_inline_dependencies) {
+    Runtime runtime;
+    InlineLayoutTestType* point = nullptr;
+    InlineLayoutTestType* nativeOnly = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+        "PointInline", ClassMode::Closed, point
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+        "NativeInline", ClassMode::Closed, nativeOnly
+    ).isValid());
+    const auto* owner = createTestType(runtime, "Player", ClassMode::Closed);
+    BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "location", point).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(point->getId(), "player", owner).isValid());
+    auto getterCalls = 0;
+    BOOST_REQUIRE(runtime.addProperty(point->getId(), {
+        .valueType = nativeOnly,
+        .name = "native",
+        .getter = [&](VirtualMachine*, RuntimeValue&) { ++getterCalls; }
+    }).isValid());
+
+    owner->finalizeFieldLayout();
+    BOOST_TEST(owner->isFieldLayoutFinalized());
+    BOOST_TEST(point->isFieldLayoutFinalized());
+    BOOST_TEST(point->getSize() == 1U);
+    BOOST_TEST(owner->getFieldStorageSize() == 1U);
+    BOOST_TEST(!nativeOnly->isFieldLayoutFinalized());
+    BOOST_TEST(getterCalls == 0);
+
+    InlineLayoutTestType* referenceOnly = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+        "ReferenceInline", ClassMode::Closed, referenceOnly
+    ).isValid());
+    const auto* referencedClass = createTestType(runtime, "Referenced", ClassMode::Closed);
+    BOOST_REQUIRE(runtime.registerProperty(referenceOnly->getId(), "reference", referencedClass).isValid());
+    referenceOnly->finalizeFieldLayout();
+    BOOST_TEST(referenceOnly->getSize() == 1U);
+    BOOST_TEST(!referencedClass->isFieldLayoutFinalized());
+}
+
+BOOST_AUTO_TEST_CASE(finalization_can_retry_unresolved_sizes_without_rolling_back_completed_dependencies) {
+    Runtime runtime;
+    InlineLayoutTestType* empty = nullptr;
+    FieldLayoutTestType* pending = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+        "EmptyInline", ClassMode::Closed, empty
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+        "PendingWidth", ClassMode::Closed, pending, std::nullopt
+    ).isValid());
+    const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
+    BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "empty", empty).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "pending", pending).isValid());
+    BOOST_CHECK_THROW(owner->finalizeFieldLayout(), NomadException);
+    BOOST_TEST(!owner->isFieldLayoutFinalized());
+    BOOST_TEST(empty->isFieldLayoutFinalized());
+    BOOST_TEST(empty->getSize() == 0U);
+    BOOST_TEST(pending->getSizeQueryCount() == 1U);
+    BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "extra", runtime.getIntegerType()).isValid());
+
+    pending->setSize(3);
+    owner->finalizeFieldLayout();
+    BOOST_TEST(owner->isFieldLayoutFinalized());
+    BOOST_TEST(owner->getFieldStorageSize() == 4U);
+    BOOST_TEST(pending->getSizeQueryCount() == 2U);
+    owner->finalizeFieldLayout();
+    BOOST_TEST(owner->getFieldStorageSize() == 4U);
+    BOOST_TEST(pending->getSizeQueryCount() == 2U);
+}
+
+BOOST_AUTO_TEST_CASE(finalization_checks_overflow_without_rejecting_maximum_offsets) {
+    Runtime runtime;
+    const auto maximumSize = std::numeric_limits<NomadIndex>::max();
+    FieldLayoutTestType* maximum = nullptr;
+    InlineLayoutTestType* empty = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+        "MaximumWidth", ClassMode::Closed, maximum, maximumSize
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+        "EmptyInline", ClassMode::Closed, empty
+    ).isValid());
+    const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
+    BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "maximum", maximum).isValid());
+    const auto emptyField = runtime.registerProperty(owner->getId(), "empty", empty);
+    BOOST_REQUIRE(emptyField.isValid());
+    owner->finalizeFieldLayout();
+    BOOST_TEST(owner->isFieldLayoutFinalized());
+    BOOST_TEST(owner->getFieldStorageSize() == maximumSize);
+    BOOST_TEST(owner->getFieldOffset(emptyField) == maximumSize);
+
+    const auto* overflow = createTestType(runtime, "Overflow", ClassMode::Closed);
+    BOOST_REQUIRE(runtime.registerProperty(overflow->getId(), "maximum", maximum).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(overflow->getId(), "extra", runtime.getIntegerType()).isValid());
+    BOOST_CHECK_THROW(overflow->finalizeFieldLayout(), NomadException);
+    BOOST_TEST(!overflow->isFieldLayoutFinalized());
+    BOOST_CHECK_THROW(overflow->finalizeFieldLayout(), NomadException);
+    BOOST_TEST(!overflow->isFieldLayoutFinalized());
+}
 
 BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout) {
     Runtime runtime;

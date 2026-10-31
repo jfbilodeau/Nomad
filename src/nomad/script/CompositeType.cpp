@@ -118,6 +118,11 @@ PropertyId CompositeType::registerProperty(
         log::error("Cannot register property: invalid owner, value type, or duplicate definition");
         return PropertyId::INVALID;
     }
+    if (native == nullptr && m_fieldLayoutState != FieldLayoutState::Unresolved) {
+        log::error("Cannot register stored property '" + property->getName() + "': field layout of '" +
+            getTypeName() + "' is being finalized or already finalized");
+        return PropertyId::INVALID;
+    }
     m_properties.push_back(std::move(property));
     const auto id = m_properties.back()->registerWithRuntime(runtime);
     if (id.isInvalid()) {
@@ -197,6 +202,10 @@ NomadIndex CompositeType::getFieldOffset(const PropertyId id) const {
 }
 
 NomadIndex CompositeType::getFieldStorageSize() const {
+    if (isFieldLayoutFinalized()) {
+        return m_finalizedFieldStorageSize;
+    }
+
     auto size = NomadIndex{0};
     for (const auto& property : m_properties) {
         if (property->asNativeProperty() != nullptr) {
@@ -209,6 +218,48 @@ NomadIndex CompositeType::getFieldStorageSize() const {
         size += fieldSize;
     }
     return size;
+}
+
+bool CompositeType::isFieldLayoutFinalized() const {
+    return m_fieldLayoutState == FieldLayoutState::Finalized;
+}
+
+void CompositeType::finalizeFieldLayout() const {
+    if (isFieldLayoutFinalized()) {
+        return;
+    }
+    if (m_fieldLayoutState == FieldLayoutState::Resolving) {
+        throw NomadException("Inline struct field layout cycle involving '" + getTypeName() + "'");
+    }
+
+    m_fieldLayoutState = FieldLayoutState::Resolving;
+    try {
+        auto size = NomadIndex{0};
+        for (const auto& property : m_properties) {
+            if (property->asNativeProperty() != nullptr) {
+                continue;
+            }
+            const auto* type = property->getValueType();
+            if (type->getStorage() == TypeStorage::Struct) {
+                const auto* composite = type->asCompositeType();
+                if (composite == nullptr) {
+                    throw NomadException("Cannot finalize field '" + getTypeName() + "." + property->getName() +
+                        "': inline struct type has no composite metadata");
+                }
+                composite->finalizeFieldLayout();
+            }
+            const auto fieldSize = type->getSize();
+            if (fieldSize > std::numeric_limits<NomadIndex>::max() - size) {
+                throw NomadException("Field storage size exceeds the maximum slot count at '" + property->getName() + "'");
+            }
+            size += fieldSize;
+        }
+        m_finalizedFieldStorageSize = size;
+        m_fieldLayoutState = FieldLayoutState::Finalized;
+    } catch (...) {
+        m_fieldLayoutState = FieldLayoutState::Unresolved;
+        throw;
+    }
 }
 
 } // namespace nomad
