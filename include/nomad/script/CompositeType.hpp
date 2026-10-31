@@ -46,7 +46,7 @@ public:
     [[nodiscard]] NomadIndex getFieldOffset(PropertyId id) const;
     [[nodiscard]] NomadIndex getFieldStorageSize() const;
     [[nodiscard]] bool isFieldLayoutFinalized() const;
-    void finalizeFieldLayout() const;
+    void finalizeFieldLayout();
     [[nodiscard]] virtual NomadIndex getPropertyCount() const;
 
 protected:
@@ -71,8 +71,8 @@ private:
     std::vector<std::unique_ptr<Property>> m_properties;
     std::vector<std::unique_ptr<Constructor>> m_constructors;
     std::vector<std::unique_ptr<Method>> m_methods;
-    mutable FieldLayoutState m_fieldLayoutState = FieldLayoutState::Unresolved;
-    mutable NomadIndex m_finalizedFieldStorageSize = 0;
+    FieldLayoutState m_fieldLayoutState = FieldLayoutState::Unresolved;
+    NomadIndex m_finalizedFieldStorageSize = 0;
 };
 
 } // namespace nomad

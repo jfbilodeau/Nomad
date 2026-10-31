@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1F have been reviewed; Step 1G below is implemented and awaiting review.
+Steps 1A through 1G have been reviewed; Step 1H below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -411,6 +411,28 @@ Step 1G validation:
 - Inline descriptors remain metadata-only test fixtures. There is no production
   struct descriptor, automatic compiler finalization, new opcode, VM change, or
   gameplay validation in this slice.
+
+Approved eighth slice (Step 1H):
+
+- Add `Runtime::finalizeFieldLayout(TypeId)` to finalize the runtime's owned
+  mutable composite descriptor; reject invalid IDs and non-composite types.
+- Make `CompositeType::finalizeFieldLayout()` non-const and remove `mutable`
+  from its layout state and cached size. Keep inspection APIs const.
+- Route nested inline finalization through Runtime. Preserve existing cycle,
+  overflow, recovery, caching, and field-registration behavior.
+- Migrate host examples and test calls to the Runtime API. Add rejection tests
+  and compile-time coverage for const access and strongly typed IDs.
+- No `friend`, `const_cast`, new shared helper, compiler-phase change, opcode,
+  or executable struct support in this slice.
+
+Step 1H validation:
+
+- The Windows Debug `nomad_test` target built successfully.
+- The `nomad_test_language` and `nomad_test_remaining` regression groups passed,
+  including invalid/non-composite ID rejection, nested finalization, cycles,
+  recovery, caching, and continued stored-field mutation.
+- All four documentation preparation tests and whitespace checks passed.
+- No gameplay validation or executable struct support is claimed.
 
 Next design discussion: the real struct descriptor and its size/lifecycle API
 contracts. Wire finalization at the existing Resolve-to-Emit boundary once struct

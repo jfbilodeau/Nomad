@@ -693,8 +693,10 @@ property IDs. Representable offsets, including the maximum `NomadIndex`, are
 valid results rather than invalid-ID sentinels. These metadata queries do not
 change the current one-slot-per-field object storage or execution APIs.
 
-`CompositeType::finalizeFieldLayout()` explicitly finalizes the stored-field
-layout; `isFieldLayoutFinalized()` reports whether that succeeded. It recursively
+`Runtime::finalizeFieldLayout(typeId)` explicitly finalizes the stored-field
+layout using an ID from the owning runtime. Invalid IDs and non-composite types
+raise `NomadException`. Type descriptors remain available through const pointers;
+`isFieldLayoutFinalized()` reports whether finalization succeeded. It recursively
 finalizes stored inline-struct dependencies, but does not traverse class-reference
 fields or native properties. Direct and indirect inline cycles, required
 unresolved sizes, and arithmetic overflow raise `NomadException`. A failed owner

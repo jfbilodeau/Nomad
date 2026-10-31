@@ -1998,6 +1998,15 @@ void Runtime::setPropertyHasExplicitInitializer(
     m_properties[toNomadIndex(id.id)]->setHasExplicitInitializer(hasExplicitInitializer);
 }
 
+void Runtime::finalizeFieldLayout(const TypeId id) {
+    const auto type = getType(id);
+    if (!type.has_value() || (*type)->asCompositeType() == nullptr) {
+        throw NomadException("Cannot finalize field layout: type ID does not identify a composite type");
+    }
+    auto* owner = static_cast<CompositeType*>(m_types[toNomadIndex(id.id)].get());
+    owner->finalizeFieldLayout();
+}
+
 PropertyId Runtime::catalogProperty(Property* property) {
     if (property == nullptr || property->getId().isValid() || !ownsType(property->getOwnerType()) ||
         property->getOwnerType()->getProperty(property->getName()) != property ||
