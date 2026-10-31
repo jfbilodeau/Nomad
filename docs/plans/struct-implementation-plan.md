@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1L have been reviewed; Step 1M below is implemented and awaiting review.
+Steps 1A through 1M have been reviewed; Step 1N below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -604,6 +604,39 @@ Next design discussion: aggregate VM storage addressing and type-owned emission.
 Wire finalization at the existing Resolve-to-Emit boundary once struct
 declarations and member inference are available. Object allocation and executable
 aggregate accesses remain later work.
+
+### Step 1N: Runtime-owned type catalog
+
+Runtime now composes a `TypeManager`, accessible through const/non-const
+`getTypeManager()` overloads. The manager owns type descriptors, reserves IDs,
+provides lookup and catalog-owned mutable category access, and finalizes
+composite layouts. Existing Runtime lookup and finalization APIs delegate to it.
+
+Existing registration entry points remain on Runtime for this initial slice;
+Runtime still coordinates hub publication, specialization factories, member
+registration, and callable IDs. The manager's low-level catalog operations
+preserve unused reserved IDs and reject invalid ownership or occupied slots;
+they do not publish namespace members.
+
+The manager occupies the former type catalog's lifetime position so runtime
+values and the VM are cleaned up before type descriptors. This extraction
+does not add friendship, struct syntax, native struct callback contracts, or
+aggregate bytecode.
+
+Next slice after review: move type/member registration coordination to
+TypeManager and introduce cohesive native/script class/struct registration
+entry points while retaining Runtime's callable ID catalog.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Manager coverage verifies composed access, catalog identity, stable descriptor
+  pointers, append-style enumeration, reserved holes, invalid publication,
+  nested finalization, mutable owner validation, and descriptor lifetime through
+  runtime-owned constant/context cleanup.
+- Language, remaining, binding, tooling, and LSP process regressions passed.
+- All four documentation preparation tests and whitespace checks passed.
+- No aggregate execution or gameplay validation is claimed.
 
 Remaining Step 1 work, requiring separate design approval:
 

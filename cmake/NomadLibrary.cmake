@@ -76,6 +76,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/StructType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Type.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/TypeManager.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ValueType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Variable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/VariableContext.cpp

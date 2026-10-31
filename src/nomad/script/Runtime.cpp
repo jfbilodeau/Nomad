@@ -95,7 +95,9 @@ bool isValidIdentifier(const NomadString& name) {
 
 } // namespace
 
-Runtime::Runtime() {
+Runtime::Runtime():
+    m_typeManager(*this)
+{
     // Types
     registerType(std::make_unique<VoidType>(this, reserveTypeId()));
     registerType(std::make_unique<IdType>(this, reserveTypeId()));
@@ -551,9 +553,10 @@ void Runtime::rebuildHubMembers() {
     for (auto id = getFirstConstantId(); id.isValid(); id = getNextConstantId(id)) {
         add(getConstantName(id), id);
     }
-    for (const auto& type : m_types) {
-        if (type != nullptr && getEventId(type->getTypeName()).isInvalid()) {
-            add(type->getTypeName(), type.get());
+    for (auto index = NomadIndex{0}; index < m_typeManager.getTypeCount(); ++index) {
+        const auto type = getType(TypeId{toNomadId(index)});
+        if (type.has_value() && getEventId((*type)->getTypeName()).isInvalid()) {
+            add((*type)->getTypeName(), *type);
         }
     }
     for (const auto& event : m_events) {
@@ -1158,15 +1161,13 @@ bool Runtime::canOverloadCallable(
 }
 
 TypeId Runtime::reserveTypeId() {
-    const auto id = TypeId{toNomadId(m_types.size())};
-    m_types.push_back(nullptr);
-    return id;
+    return m_typeManager.reserveTypeId();
 }
 
 void Runtime::registerType(std::unique_ptr<Type>&& type) {
     if (type == nullptr || type->getRuntime() != this ||
-        isIdOutOfRange(type->getId().id, m_types.size()) ||
-        m_types[toNomadIndex(type->getId().id)] != nullptr) {
+        isIdOutOfRange(type->getId().id, m_typeManager.getTypeCount()) ||
+        getType(type->getId()).has_value()) {
         throw NomadException("Cannot register a type without a matching runtime and reserved ID");
     }
     if (type->asCallback() == nullptr) {
@@ -1180,8 +1181,7 @@ void Runtime::registerType(std::unique_ptr<Type>&& type) {
             registerHubMember(type->getTypeName(), type.get());
         }
     }
-    const auto index = toNomadIndex(type->getId().id);
-    m_types[index] = std::move(type);
+    m_typeManager.catalogType(std::move(type));
 }
 
 TypeId Runtime::registerClass(
@@ -1246,41 +1246,27 @@ TypeId Runtime::publishClass(
 }
 
 TypeId Runtime::getTypeId(const NomadString& typeName) const {
-    for (NomadIndex i = 0; i < m_types.size(); ++i) {
-        if (m_types[i] != nullptr && m_types[i]->getTypeName() == typeName) {
-            return TypeId{toNomadId(i)};
-        }
-    }
-
-    return TypeId::INVALID;
+    return m_typeManager.getTypeId(typeName);
 }
 
 std::optional<const Type*> Runtime::getType(const TypeId id) const {
-    if (isIdOutOfRange(id.id, m_types.size()) || m_types[toNomadIndex(id.id)] == nullptr) {
-        return std::nullopt;
-    }
-
-    return m_types[toNomadIndex(id.id)].get();
+    return m_typeManager.getType(id);
 }
 
 const Type* Runtime::getTypeByName(const NomadString& name) const {
-    for (const auto& type: m_types) {
-        if (type != nullptr && type->getTypeName() == name) {
-            return type.get();
-        }
-    }
-
-    return nullptr;
+    return m_typeManager.getTypeByName(name);
 }
 
 void Runtime::getTypes(std::vector<const Type*>& types) const {
-    types.reserve(types.size() + m_types.size());
+    m_typeManager.getTypes(types);
+}
 
-    for (const auto& type : m_types) {
-        if (type != nullptr) {
-            types.push_back(type.get());
-        }
-    }
+TypeManager& Runtime::getTypeManager() {
+    return m_typeManager;
+}
+
+const TypeManager& Runtime::getTypeManager() const {
+    return m_typeManager;
 }
 
 const OpaqueIdType* Runtime::registerOpaqueIdType(const NomadString& name, const NomadString& doc) {
@@ -1573,8 +1559,9 @@ const Type* Runtime::getParameterizedType(
 }
 
 const Type* Runtime::getCallbackType(const std::vector<const Type*>& parameterTypes, const Type* returnType) {
-    for (const auto& type: m_types) {
-        const auto* callback = type == nullptr ? nullptr : type->asCallback();
+    for (auto typeIndex = NomadIndex{0}; typeIndex < m_typeManager.getTypeCount(); ++typeIndex) {
+        const auto type = getType(TypeId{toNomadId(typeIndex)});
+        const auto* callback = type.has_value() ? (*type)->asCallback() : nullptr;
         if (callback != nullptr && callback->getReturnType() == returnType &&
             callback->getParameterCount() == parameterTypes.size()) {
             auto matches = true;
@@ -1585,7 +1572,7 @@ const Type* Runtime::getCallbackType(const std::vector<const Type*>& parameterTy
                 }
             }
             if (matches) {
-                return type.get();
+                return *type;
             }
         }
     }
@@ -1597,13 +1584,7 @@ const Type* Runtime::getCallbackType(const std::vector<const Type*>& parameterTy
 }
 
 const Type * Runtime::getEventType(const NomadString &name) const {
-    for (const auto& type: m_types) {
-        if (type != nullptr && type->getTypeName() == name) {
-            return type.get();
-        }
-    }
-
-    return nullptr;
+    return m_typeManager.getTypeByName(name);
 }
 
 const Type* Runtime::getPredicateType() {
@@ -1611,14 +1592,11 @@ const Type* Runtime::getPredicateType() {
 }
 
 bool Runtime::ownsType(const Type* type) const {
-    return type != nullptr && type->getRuntime() == this && getType(type->getId()) == type;
+    return m_typeManager.ownsType(type);
 }
 
 ClassType* Runtime::getMutableClassType(const ClassType* type) {
-    if (ownsType(type)) {
-        return static_cast<ClassType*>(m_types[toNomadIndex(type->getId().id)].get());
-    }
-    return nullptr;
+    return m_typeManager.getMutableClassType(type);
 }
 
 bool Runtime::canRegisterNativeMember(const Type* classType, const NomadString& name, const MemberType type,
@@ -1990,7 +1968,7 @@ PropertyId Runtime::registerProperty(
         log::error("Cannot register property '" + name + "': invalid owner, name, or value type");
         return PropertyId::INVALID;
     }
-    auto* owner = static_cast<CompositeType*>(m_types[toNomadIndex(ownerId.id)].get());
+    auto* owner = m_typeManager.getMutableCompositeType(ownerId);
     if (const auto* existing = owner->getProperty(name)) {
         if (existing->asNativeProperty() == nullptr && existing->getValueType() == valueType) {
             return existing->getId();
@@ -2017,12 +1995,7 @@ void Runtime::setPropertyHasExplicitInitializer(
 }
 
 void Runtime::finalizeCompositeFieldLayout(const TypeId id) {
-    const auto type = getType(id);
-    if (!type.has_value() || (*type)->asCompositeType() == nullptr) {
-        throw NomadException("Cannot finalize field layout: type ID does not identify a composite type");
-    }
-    auto* owner = static_cast<CompositeType*>(m_types[toNomadIndex(id.id)].get());
-    owner->finalizeFieldLayout();
+    m_typeManager.finalizeCompositeFieldLayout(id);
 }
 
 PropertyId Runtime::catalogProperty(Property* property) {

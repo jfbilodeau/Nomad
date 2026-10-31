@@ -20,6 +20,7 @@
 #include <nomad/script/NativeMember.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/TypeManager.hpp>
 #include <nomad/script/TypedNativeFunction.hpp>
 #include <nomad/script/VariableContext.hpp>
 
@@ -281,6 +282,8 @@ public:
     void addIterable(TypeId id, NativeInterableDefinition definition);
     [[nodiscard]] std::optional<IterableInfo> getIterableInfo(const Type* sourceType) const;
     [[nodiscard]] TypeId getTypeId(const NomadString& typeName) const;
+    [[nodiscard]] TypeManager& getTypeManager();
+    [[nodiscard]] const TypeManager& getTypeManager() const;
     [[nodiscard]] std::optional<const Type*> getType(TypeId id) const;
     [[nodiscard]] const Type* getTypeByName(const NomadString& name) const;
     void getTypes(std::vector<const Type*>& types) const;
@@ -747,7 +750,7 @@ private:
     // Data members
     std::vector<Instruction> m_instructions;
     std::vector<OpCodeDefinition> m_opCodes;
-    std::vector<std::unique_ptr<Type>> m_types;
+    TypeManager m_typeManager;
     std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;
     std::vector<TypeSpecialization> m_typeSpecializations;
     std::vector<ParameterizedConstructorRegistration> m_parameterizedConstructors;

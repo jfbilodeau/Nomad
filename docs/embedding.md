@@ -406,12 +406,39 @@ lifecycle and bytecode-emission APIs. Concrete built-in descriptors such as `Int
 `<nomad/script/ClassType.hpp>`. Include the descriptor's header when deriving
 from it or accessing its category-specific APIs.
 
-`Runtime::getTypeId(name)` returns a `TypeId`, or `TypeId::INVALID`
+`Runtime::getTypeManager()` returns the runtime-owned `TypeManager` by reference;
+the const runtime overload returns a const reference. Include
+`<nomad/script/TypeManager.hpp>` to use its APIs. The manager and its descriptors
+remain valid for the lifetime of the runtime; returned descriptor pointers are
+borrowed, remain stable as types are registered, and must not be deleted.
+
+`TypeManager::getTypeId(name)` returns a `TypeId`, or `TypeId::INVALID`
 when the type is not registered. Pass it to `getType(id)` to retrieve an optional
 `const Type*`; invalid or unregistered IDs return an empty optional. Type IDs
 belong to the runtime that issued them and remain stable as more types are
 registered. They do not implicitly convert to integers or other ID categories.
 Event parameter definitions use `TypeId` for their `typeId` field.
+
+`getTypeByName(name)` returns a borrowed descriptor or `nullptr`.
+`getTypes(types)` appends registered descriptors to the supplied vector without
+clearing its existing entries. `getTypeCount()` counts all reserved IDs,
+including IDs that do not yet have a descriptor. `ownsType(type)` checks both
+runtime ownership and catalog identity.
+
+The existing Runtime lookup and finalization methods remain available with
+the same behavior. Continue using Runtime's registration methods for types,
+properties, methods, and constructors during this initial migration. Callable
+IDs still belong to Runtime. `TypeManager::reserveTypeId()` and `catalogType()`
+are low-level catalog operations: they do not register namespace members or
+check namespace collisions. `catalogType()` requires a non-null descriptor
+owned by the same runtime and an unused reserved ID, otherwise it throws
+`NomadException`. An unused reserved ID is absent from lookup and enumeration.
+
+`TypeManager::finalizeCompositeFieldLayout(id)` finalizes class or struct
+stored-field layouts, including nested inline structs. Invalid IDs and
+non-composite types throw `NomadException`. Mutable category accessors return
+only catalog-owned descriptors, or `nullptr` when the requested owner does
+not match; stored-field additions remain subject to layout freezing.
 
 `Type::getSize()` returns the number of `RuntimeValue` slots occupied by a value,
 not its size in bytes. `void` occupies zero slots; current value types and class
