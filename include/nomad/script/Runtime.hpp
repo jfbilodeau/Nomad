@@ -84,19 +84,6 @@ struct KeywordDefinition {
     NomadDocField;
 };
 
-struct NativeIndexerDefinition {
-    TypeId valueTypeId;
-    std::vector<TypeId> indexTypes;
-    NativeFunctionFn getter;
-    NativeFunctionFn setter;
-    NomadString documentation;
-};
-
-struct NativeInterableDefinition {
-    TypeId valueTypeId;
-    NativeMethodDefinition factory;
-};
-
 class Runtime {
 private:
     struct DynamicVariableRegistration {

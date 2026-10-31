@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1T have been reviewed; Step 1U below is implemented and awaiting review.
+Steps 1A through 1U have been reviewed; Step 1V below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -868,6 +868,36 @@ Validation:
 Next slice after review: review remaining Runtime type surfaces (events,
 iterables, indexers, and convenience lookups) for cohesive manager ownership,
 then return to aggregate struct storage addressing and callable ABI design.
+
+### Step 1V: Native class indexers and iterable associations
+
+TypeManager registers native class indexers and iterable factory methods and
+associations, resolves iterator specializations, and provides iterable lookup.
+Native creation definitions live in `NativeMember.hpp`; the existing
+`NativeInterableDefinition` spelling remains compatible.
+
+Runtime retains indexer IDs and their catalog/lookup operations. Existing
+registration and iterator/iterable APIs delegate to the manager. Compiler loop
+resolution and built-in collection/range registration use the manager.
+
+The remaining-surface review keeps event registration and event definitions/IDs,
+operator tables, and built-in convenience getters in Runtime. Event descriptor
+creation already uses manager-owned type registration.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, binding, tooling, and LSP process regressions passed.
+- Direct manager coverage verifies indexer catalog identity, iterator reuse,
+  invalid class/struct/value inputs, frozen-layout registration, iterable
+  factory identity, failed-registration publication, and Runtime compatibility.
+- Existing executable collection indexing and iteration regressions passed.
+- All four documentation preparation tests and whitespace checks passed.
+- No aggregate struct execution or gameplay validation is claimed.
+
+Next slice after review: design aggregate struct storage addressing, borrowed
+receivers, and caller-provided return destinations. Discuss any necessary VM
+instructions or compiler special cases before implementation.
 
 Remaining Step 1 work, requiring separate design approval:
 

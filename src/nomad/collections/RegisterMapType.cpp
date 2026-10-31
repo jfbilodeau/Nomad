@@ -104,7 +104,7 @@ void registerMapFamily(
                     map->setValue(key, machine->getParameter(1));
                 };
             }
-            const auto indexerId = runtime->addIndexer(id, {
+            const auto indexerId = runtime->getTypeManager().registerNativeClassIndexer(id, {
                 .valueTypeId = valueType->getId(),
                 .indexTypes = {runtime->getStringType()->getId()},
                 .getter = [](nomad::VirtualMachine* machine) {

@@ -121,7 +121,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_owns_factory_metadata_and_association)
             .documentation = "Creates a fresh cursor."
         }
     };
-    runtime.addIterable(id, definition);
+    runtime.getTypeManager().registerNativeClassIterable(id, definition);
     definition.valueTypeId = runtime.getStringType()->getId();
     definition.factory.name = "changed";
     definition.factory.function = {};

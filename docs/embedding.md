@@ -382,9 +382,12 @@ These input structures do not register anything when constructed.
 `addProperty(TypeId, NativePropertyDefinition)`,
 `addMethod(TypeId, NativeMethodDefinition)`,
 `addConstructor(TypeId, NativeConstructorDefinition)`, and
-`addIndexer(TypeId, NativeIndexerDefinition)` register native members
-using their creation inputs. `addIterable(TypeId, NativeInterableDefinition)`
-registers a native factory method and its iterable association.
+`addIndexer(TypeId, NativeIndexerDefinition)` remain Runtime compatibility APIs
+for native member registration. Prefer the corresponding explicit TypeManager
+registration APIs, including `registerNativeClassIndexer` and
+`registerNativeClassIterable`. The latter registers a native factory method
+and its iterable association. Include `<nomad/script/NativeMember.hpp>` for
+the native member creation definitions.
 Their metadata structures are now named `NativePropertyInfo`,
 `NativeIndexerInfo`, and `IterableInfo`. Corresponding lookup operations are
 `getNativePropertyInfo`, `getNativeIndexerInfo`, and `getIterableInfo`;
@@ -2084,7 +2087,9 @@ argument counts raise `VirtualMachineException`.
 
 ## Native indexers
 
-Register an indexer with `addIndexer(typeId, NativeIndexerDefinition{...})`.
+Register an indexer with
+`TypeManager::registerNativeClassIndexer(typeId, NativeIndexerDefinition{...})`.
+`Runtime::addIndexer` remains a compatibility wrapper.
 The definition supplies `valueTypeId`, a non-empty `std::vector<TypeId>` named
 `indexTypes`, `getter`, `setter`, and `documentation`.
 The index vector specifies the number and types of indices. All IDs are local
@@ -2096,7 +2101,8 @@ overloading.
 Registration and `getNativeIndexerId(classType, indexCount)` return an
 `IndexerId`, or `IndexerId::INVALID` on failure or missing lookup. Registration
 failures are logged. Include `<nomad/script/NativeMember.hpp>` for the ID and
-`NativeIndexerInfo`. IDs are runtime-local and remain stable as more
+`NativeIndexerDefinition` and `NativeIndexerInfo`. Runtime retains the indexer
+ID catalog and lookup operations. IDs are runtime-local and remain stable as more
 indexers are registered. They do not implicitly convert to integers or other
 ID categories. `getNativeIndexerInfo(id)` returns
 `std::optional<NativeIndexerInfo>`, empty for invalid or unregistered IDs.
@@ -2132,7 +2138,7 @@ Omit the setter for read-only indexing, or omit
 the getter for write-only indexing. Invalid access is rejected during compilation.
 
 ```cpp
-const auto indexerId = runtime.addIndexer(classType->getId(), {
+const auto indexerId = runtime.getTypeManager().registerNativeClassIndexer(classType->getId(), {
     .valueTypeId = runtime.getStringType()->getId(),
     .indexTypes = {runtime.getIntegerType()->getId()},
     .getter = [](nomad::VirtualMachine* machine) {
@@ -2204,27 +2210,29 @@ compiler support:
    type. Implement `onMoveNext(RuntimeValue&)`: return `true` after writing one
    owned element into its empty output, or `false` at completion. The cursor must
    retain any source objects it needs and release them when destroyed.
-2. Obtain the cursor's script type with `runtime.getIteratorType(elementType)`.
+2. Obtain the cursor's script type with
+   `runtime.getTypeManager().getIteratorType(elementType)`.
    It exposes parameterless `moveNext` and the read-only `current` property.
    Reading `current` before a successful advance or after completion faults.
-3. Use `addIterable` to register a parameterless native factory method and its
+3. Use `TypeManager::registerNativeClassIterable` to register a parameterless native factory method and its
    association with the source type. The factory returns a fresh cursor of that
    iterator type. Its name is not prescribed:
 
 ```cpp
-runtime.addIterable(sourceType->getId(), {
+runtime.getTypeManager().registerNativeClassIterable(sourceType->getId(), {
     .valueTypeId = elementType->getId(),
     .factory = {
         .name = "iterator",
         .parameters = {},
-        .returnTypeId = runtime.getIteratorType(elementType)->getId(),
+        .returnTypeId = runtime.getTypeManager().getIteratorType(elementType)->getId(),
         .function = createIterator,
         .documentation = ""
     }
 });
 ```
 
-`NativeInterableDefinition` supplies the element type ID and a
+`NativeInterableDefinition`, declared in `<nomad/script/NativeMember.hpp>`,
+supplies the element type ID and a
 `NativeMethodDefinition` for the factory. All IDs are runtime-local. The source
 must be a class type, and the element type must be registered, public, and
 non-void. The factory must have a callback, take no arguments (including
@@ -2234,8 +2242,9 @@ Duplicate associations, conflicting member names, and invalid registrations thro
 resolving the iterator type may create its registered specialization.
 The runtime owns the factory metadata and callback; changing the input definition
 after registration does not change the registered factory.
-`getIterableInfo(sourceType)` returns an optional association containing its
-factory ID.
+`TypeManager::getIterableInfo(sourceType)` returns an optional association
+containing its factory ID. Runtime's `addIterable`, `getIteratorType`, and
+`getIterableInfo` remain compatibility wrappers.
 
 The source `ClassType` owns its iterable association. Include
 `<nomad/script/ClassType.hpp>` for `IterableInfo`.

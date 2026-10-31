@@ -51,6 +51,19 @@ struct NativePropertyDefinition {
     NomadString documentation;
 };
 
+struct NativeIndexerDefinition {
+    TypeId valueTypeId;
+    std::vector<TypeId> indexTypes;
+    NativeFunctionFn getter;
+    NativeFunctionFn setter;
+    NomadString documentation;
+};
+
+struct NativeInterableDefinition {
+    TypeId valueTypeId;
+    NativeMethodDefinition factory;
+};
+
 struct NativePropertyInfo {
     PropertyId id;
     const Type* classType = nullptr;

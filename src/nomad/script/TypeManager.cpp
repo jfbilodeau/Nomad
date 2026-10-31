@@ -484,6 +484,89 @@ CallableId TypeManager::registerNativeClassConstructor(
     ));
 }
 
+const ClassType* TypeManager::getIteratorType(const Type* valueType) {
+    const auto hasValidValueType = ownsType(valueType) && !valueType->isVoid() && !valueType->isInternal();
+    if (!hasValidValueType) {
+        throw NomadException("Iterator value type must be a registered non-void type");
+    }
+    const auto* type = getParameterizedType("Iterator", {valueType});
+    if (type == nullptr) {
+        throw NomadException("Failed to specialize iterator type");
+    }
+    return static_cast<const ClassType*>(type);
+}
+
+void TypeManager::registerNativeClassIterable(const TypeId ownerId, NativeInterableDefinition definition) {
+    const auto type = getType(ownerId);
+    auto* owner = type.has_value() ? getMutableClassType((*type)->asClassType()) : nullptr;
+    if (owner == nullptr) {
+        throw NomadException("Cannot register iterable: owner must identify a class type");
+    }
+    const auto valueType = getType(definition.valueTypeId);
+    const auto hasValidValueType = valueType.has_value() && !(*valueType)->isVoid() && !(*valueType)->isInternal();
+    if (!hasValidValueType) {
+        throw NomadException("Cannot register iterable: value type must identify a public, non-void type");
+    }
+    if (owner->getIterableInfo().has_value()) {
+        throw NomadException("Cannot register iterable: type already has an iterable association");
+    }
+    const auto hasValidFactory = definition.factory.parameters.empty() && definition.factory.function;
+    if (!hasValidFactory) {
+        throw NomadException("Cannot register iterable: a parameterless factory callback is required");
+    }
+    const auto returnType = getType(definition.factory.returnTypeId);
+    const auto hasMatchingReturnType = returnType.has_value() && *returnType == getIteratorType(*valueType);
+    if (!hasMatchingReturnType) {
+        throw NomadException("Cannot register iterable: factory must return the matching iterator type");
+    }
+    const auto factoryId = registerNativeClassMethod(ownerId, std::move(definition.factory));
+    if (factoryId.isInvalid()) {
+        throw NomadException("Cannot register iterable: failed to register factory method");
+    }
+    owner->registerIterableType(m_runtime, *valueType, m_runtime.getMethod(factoryId));
+}
+
+std::optional<IterableInfo> TypeManager::getIterableInfo(const Type* sourceType) const {
+    if (!ownsType(sourceType)) {
+        return std::nullopt;
+    }
+    const auto* owner = sourceType->asClassType();
+    return owner == nullptr ? std::nullopt : owner->getIterableInfo();
+}
+
+IndexerId TypeManager::registerNativeClassIndexer(const TypeId ownerId, NativeIndexerDefinition definition) {
+    const auto type = getType(ownerId);
+    const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
+    if (classType == nullptr) {
+        log::error("Cannot register native indexer: owner must identify a class type");
+        return IndexerId::INVALID;
+    }
+    const auto valueType = getType(definition.valueTypeId);
+    if (!valueType.has_value()) {
+        log::error("Cannot register native indexer: invalid value type ID");
+        return IndexerId::INVALID;
+    }
+    std::vector<const Type*> indexTypes;
+    indexTypes.reserve(definition.indexTypes.size());
+    for (const auto indexTypeId : definition.indexTypes) {
+        const auto indexType = getType(indexTypeId);
+        if (!indexType.has_value()) {
+            log::error("Cannot register native indexer: invalid index type ID");
+            return IndexerId::INVALID;
+        }
+        indexTypes.push_back(*indexType);
+    }
+    auto* owner = getMutableClassType(classType);
+    if (owner == nullptr) {
+        log::error("Cannot register native indexer: class type must be registered with this runtime");
+        return IndexerId::INVALID;
+    }
+    return owner->registerNativeIndexer(m_runtime, {
+        IndexerId::INVALID, classType, std::move(indexTypes), *valueType,
+        std::move(definition.getter), std::move(definition.setter), definition.documentation
+    });
+}
+
 bool TypeManager::hasConstructor(const NomadString& name) const {
     for (const auto& type : m_types) {
         const auto* classType = type != nullptr ? type->asClassType() : nullptr;

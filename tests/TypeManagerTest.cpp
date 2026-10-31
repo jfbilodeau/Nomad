@@ -785,4 +785,58 @@ BOOST_AUTO_TEST_CASE(constructor_family_initialization_retries_failures_and_acce
     BOOST_TEST(attempts == 3);
 }
 
+BOOST_AUTO_TEST_CASE(manager_indexers_and_iterables_preserve_catalogs_and_registration_boundaries) {
+    Runtime runtime;
+    Runtime other;
+    auto& manager = runtime.getTypeManager();
+    const auto ownerId = manager.registerClass("ManagedSequence", ClassMode::Closed);
+    const auto structId = manager.registerStruct("NotASequence");
+    BOOST_REQUIRE(ownerId.isValid());
+    BOOST_REQUIRE(structId.isValid());
+    const auto* owner = manager.getTypeByName("ManagedSequence")->asClassType();
+    const auto* integer = runtime.getIntegerType();
+    const auto* iterator = manager.getIteratorType(integer);
+    BOOST_TEST(runtime.getIteratorType(integer) == iterator);
+    BOOST_CHECK_THROW(static_cast<void>(manager.getIteratorType(nullptr)), NomadException);
+    BOOST_CHECK_THROW(static_cast<void>(manager.getIteratorType(other.getIntegerType())), NomadException);
+    const NativeIndexerDefinition indexer{
+        integer->getId(), {integer->getId()}, [](VirtualMachine*) {}, {}, "Indexed values."
+    };
+    const auto indexerCount = runtime.getNativeIndexers().size();
+    BOOST_TEST(manager.registerNativeClassIndexer(structId, indexer).isInvalid());
+    BOOST_TEST(manager.registerNativeClassIndexer(TypeId::INVALID, indexer).isInvalid());
+    BOOST_TEST(manager.registerNativeClassIndexer(ownerId, {
+        runtime.getVoidType()->getId(), {integer->getId()}, [](VirtualMachine*) {}, {}, ""
+    }).isInvalid());
+    BOOST_TEST(runtime.getNativeIndexers().size() == indexerCount);
+    manager.finalizeCompositeFieldLayout(ownerId);
+    const auto indexerId = manager.registerNativeClassIndexer(ownerId, indexer);
+    BOOST_REQUIRE(indexerId.isValid());
+    BOOST_TEST(runtime.getNativeIndexerId(owner, 1) == indexerId);
+    BOOST_TEST(runtime.getNativeIndexers().back() == owner->getNativeIndexer(1));
+    BOOST_TEST(runtime.addIndexer(ownerId, indexer).isInvalid());
+    const NativeInterableDefinition iterable{
+        integer->getId(), {"managedIterator", {}, iterator->getId(), [](VirtualMachine*) {}, "Fresh cursor."}
+    };
+    BOOST_CHECK_THROW(manager.registerNativeClassIterable(structId, iterable), NomadException);
+    auto invalid = iterable;
+    invalid.factory.returnTypeId = integer->getId();
+    BOOST_CHECK_THROW(manager.registerNativeClassIterable(ownerId, invalid), NomadException);
+    BOOST_TEST(owner->getMethods().empty());
+    BOOST_TEST(!manager.getIterableInfo(owner).has_value());
+    manager.registerNativeClassIterable(ownerId, iterable);
+    const auto association = manager.getIterableInfo(owner);
+    BOOST_REQUIRE(association.has_value());
+    BOOST_TEST(association->valueType == integer);
+    BOOST_TEST(association->iteratorType == iterator);
+    BOOST_TEST(runtime.getIterableInfo(owner)->factoryId == association->factoryId);
+    BOOST_TEST(runtime.getNativeMethod(association->factoryId)->getName() == "managedIterator");
+    BOOST_TEST(!manager.getIterableInfo(nullptr).has_value());
+    BOOST_TEST(!manager.getIterableInfo(other.getIntegerType()).has_value());
+    BOOST_TEST(!manager.getIterableInfo(manager.getTypeByName("NotASequence")).has_value());
+    const auto callableCount = runtime.getFunctionTableSize();
+    BOOST_CHECK_THROW(runtime.addIterable(ownerId, iterable), NomadException);
+    BOOST_TEST(runtime.getFunctionTableSize() == callableCount);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

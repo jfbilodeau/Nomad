@@ -28,49 +28,15 @@
 namespace nomad {
 
 const ClassType* Runtime::getIteratorType(const Type* valueType) {
-    if (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
-        throw NomadException("Iterator value type must be a registered non-void type");
-    }
-    const auto* type = getParameterizedType("Iterator", {valueType});
-    if (type == nullptr) {
-        throw NomadException("Failed to specialize iterator type");
-    }
-    return static_cast<const ClassType*>(type);
+    return m_typeManager.getIteratorType(valueType);
 }
 
 void Runtime::addIterable(const TypeId id, NativeInterableDefinition definition) {
-    const auto type = getType(id);
-    auto* owner = type.has_value() ? getMutableClassType((*type)->asClassType()) : nullptr;
-    if (owner == nullptr) {
-        throw NomadException("Cannot register iterable: owner must identify a class type");
-    }
-    const auto valueType = getType(definition.valueTypeId);
-    if (!valueType.has_value() || (*valueType)->isVoid() || (*valueType)->isInternal()) {
-        throw NomadException("Cannot register iterable: value type must identify a public, non-void type");
-    }
-    if (owner->getIterableInfo().has_value()) {
-        throw NomadException("Cannot register iterable: type already has an iterable association");
-    }
-    if (!definition.factory.parameters.empty() || !definition.factory.function) {
-        throw NomadException("Cannot register iterable: a parameterless factory callback is required");
-    }
-    const auto returnType = getType(definition.factory.returnTypeId);
-    if (!returnType.has_value() || *returnType != getIteratorType(*valueType)) {
-        throw NomadException("Cannot register iterable: factory must return the matching iterator type");
-    }
-    const auto factoryId = addMethod(id, std::move(definition.factory));
-    if (factoryId.isInvalid()) {
-        throw NomadException("Cannot register iterable: failed to register factory method");
-    }
-    owner->registerIterableType(*this, *valueType, getMethod(factoryId));
+    m_typeManager.registerNativeClassIterable(id, std::move(definition));
 }
 
 std::optional<IterableInfo> Runtime::getIterableInfo(const Type* sourceType) const {
-    if (!ownsType(sourceType)) {
-        return std::nullopt;
-    }
-    const auto* owner = sourceType->asClassType();
-    return owner == nullptr ? std::nullopt : owner->getIterableInfo();
+    return m_typeManager.getIterableInfo(sourceType);
 }
 
 Runtime::Runtime():
@@ -1426,36 +1392,7 @@ NomadString Runtime::getParameterizedConstructorName(
 }
 
 IndexerId Runtime::addIndexer(const TypeId id, NativeIndexerDefinition definition) {
-    const auto type = getType(id);
-    const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
-    if (classType == nullptr) {
-        log::error("Cannot register native indexer: owner must identify a class type");
-        return IndexerId::INVALID;
-    }
-    const auto valueType = getType(definition.valueTypeId);
-    if (!valueType.has_value()) {
-        log::error("Cannot register native indexer: invalid value type ID");
-        return IndexerId::INVALID;
-    }
-    std::vector<const Type*> indexTypes;
-    indexTypes.reserve(definition.indexTypes.size());
-    for (const auto indexTypeId : definition.indexTypes) {
-        const auto indexType = getType(indexTypeId);
-        if (!indexType.has_value()) {
-            log::error("Cannot register native indexer: invalid index type ID");
-            return IndexerId::INVALID;
-        }
-        indexTypes.push_back(*indexType);
-    }
-    auto* owner = getMutableClassType(classType);
-    if (owner == nullptr) {
-        log::error("Cannot register native indexer: class type must be registered with this runtime");
-        return IndexerId::INVALID;
-    }
-    return owner->registerNativeIndexer(*this, {
-        IndexerId::INVALID, classType, std::move(indexTypes), *valueType,
-        std::move(definition.getter), std::move(definition.setter), definition.documentation
-    });
+    return m_typeManager.registerNativeClassIndexer(id, std::move(definition));
 }
 
 IndexerId Runtime::catalogNativeIndexer(const NativeIndexerInfo* info) {

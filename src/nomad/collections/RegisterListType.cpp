@@ -19,12 +19,12 @@ namespace {
 
 void registerListReaders(Runtime* runtime, const ClassType* classType, const bool writable) {
     const auto* elementType = classType->getTypeArguments()[0];
-    runtime->addIterable(classType->getId(), {
+    runtime->getTypeManager().registerNativeClassIterable(classType->getId(), {
         .valueTypeId = elementType->getId(),
         .factory = {
             .name = "iterator",
             .parameters = {},
-            .returnTypeId = runtime->getIteratorType(elementType)->getId(),
+            .returnTypeId = runtime->getTypeManager().getIteratorType(elementType)->getId(),
             .function = [](VirtualMachine* machine) {
                 machine->getResult().setObjectValue(new ListIterator(machine->getThisAs<ListObject>()));
             },
@@ -46,7 +46,7 @@ void registerListReaders(Runtime* runtime, const ClassType* classType, const boo
             machine->getThisAs<ListObject>()->setValue(machine->getIntegerParameter(0), machine->getParameter(1));
         };
     }
-    const auto indexerId = runtime->addIndexer(classType->getId(), {
+    const auto indexerId = runtime->getTypeManager().registerNativeClassIndexer(classType->getId(), {
         .valueTypeId = elementType->getId(),
         .indexTypes = {runtime->getIntegerType()->getId()},
         .getter = [elementType](VirtualMachine* machine) {

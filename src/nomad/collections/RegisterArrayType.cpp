@@ -120,19 +120,19 @@ void registerArrayType(Runtime* runtime) {
                 }
             }
             const auto* elementType = arrayType->getElementType();
-            runtime->addIterable(arrayType->getId(), {
+            runtime->getTypeManager().registerNativeClassIterable(arrayType->getId(), {
                 .valueTypeId = elementType->getId(),
                 .factory = {
                     .name = "iterator",
                     .parameters = {},
-                    .returnTypeId = runtime->getIteratorType(elementType)->getId(),
+                    .returnTypeId = runtime->getTypeManager().getIteratorType(elementType)->getId(),
                     .function = [](VirtualMachine* machine) {
                         machine->getResult().setObjectValue(new ArrayIterator(machine->getThisAs<Array1dObject>()));
                     },
                     .documentation = NomadDoc("Creates an independent live iterator over the array.")
                 }
             });
-            if (runtime->addIndexer(arrayType->getId(), {
+            if (runtime->getTypeManager().registerNativeClassIndexer(arrayType->getId(), {
                 .valueTypeId = elementType->getId(),
                 .indexTypes = {runtime->getIntegerType()->getId()},
                 .getter = [](nomad::VirtualMachine* machine) {
@@ -182,7 +182,7 @@ void registerArrayType(Runtime* runtime) {
                     throw nomad::NomadException("Failed to register Array2 constructor");
                 }
             }
-            if (runtime->addIndexer(arrayType->getId(), {
+            if (runtime->getTypeManager().registerNativeClassIndexer(arrayType->getId(), {
                 .valueTypeId = arrayType->getElementType()->getId(),
                 .indexTypes = {runtime->getIntegerType()->getId(), runtime->getIntegerType()->getId()},
                 .getter = [](nomad::VirtualMachine* machine) {
@@ -236,7 +236,7 @@ void registerArrayType(Runtime* runtime) {
                     throw nomad::NomadException("Failed to register Array3 constructor");
                 }
             }
-            if (runtime->addIndexer(arrayType->getId(), {
+            if (runtime->getTypeManager().registerNativeClassIndexer(arrayType->getId(), {
                 .valueTypeId = arrayType->getElementType()->getId(),
                 .indexTypes = {
                     runtime->getIntegerType()->getId(),

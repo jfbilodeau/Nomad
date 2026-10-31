@@ -112,6 +112,10 @@ public:
     [[nodiscard]] ClassType* getMutableClassType(const ClassType* type);
     [[nodiscard]] CompositeType* getMutableCompositeType(TypeId id);
     void finalizeCompositeFieldLayout(TypeId id);
+    [[nodiscard]] const ClassType* getIteratorType(const Type* valueType);
+    [[nodiscard]] std::optional<IterableInfo> getIterableInfo(const Type* sourceType) const;
+    void registerNativeClassIterable(TypeId ownerId, NativeInterableDefinition definition);
+    [[nodiscard]] IndexerId registerNativeClassIndexer(TypeId ownerId, NativeIndexerDefinition definition);
     [[nodiscard]] CallableId registerNativeClassMethod(
         TypeId ownerId,
         NativeMethodDefinition definition

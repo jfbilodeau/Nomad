@@ -1018,7 +1018,7 @@ BOOST_AUTO_TEST_CASE(add_indexer_resolves_ids_and_owns_metadata_and_callbacks) {
         .documentation = "Two-key indexer."
     };
     const auto originalCount = runtime.getNativeIndexers().size();
-    const auto id = runtime.addIndexer(type->getId(), definition);
+    const auto id = runtime.getTypeManager().registerNativeClassIndexer(type->getId(), definition);
     BOOST_REQUIRE(id.isValid());
     definition.valueTypeId = runtime.getBooleanType()->getId();
     definition.indexTypes.clear();
