@@ -1628,9 +1628,38 @@ and self-copy is supported. Release owned contents through `freeValue(&value)`;
 this does not release the storage itself. If initialization or copying fails
 after acquiring resources, release the partial destination through `freeValue`.
 
-The scalar `assignValue(source, destination)` API still takes references. It
-stages a copy before releasing the destination, preserving the previous value
-when copying fails. No aggregate assignment API is introduced here.
+Assignment uses one API with optional external scratch:
+
+```cpp
+NomadIndex getAssignmentScratchSize() const;
+void assignValue(
+    const RuntimeValue* source,
+    RuntimeValue* destination,
+    RuntimeValue* scratch = nullptr
+) const;
+```
+
+`getAssignmentScratchSize()` returns zero for values occupying zero or one slot,
+and `getSize()` for larger values. Zero-slot assignment accesses no storage and
+accepts null pointers. Single-slot assignments such as
+`assignValue(&source, &destination)` use one local temporary without allocating
+scratch on the heap.
+
+For larger values, supply `getSize()` cleared, valid `RuntimeValue` slots.
+Supplied scratch must be disjoint from source and destination; source and
+destination may overlap, including self-assignment. Missing required scratch
+raises `NomadException` with the type name and required slot count.
+
+Assignment copies into scratch before releasing the destination, preserving the
+previous value if copying fails. The prepared contents transfer into destination
+storage, and scratch is cleared after success or successful failure cleanup.
+Initialization and script constructors do not run during copying. If destination
+cleanup throws, the prepared copy is also released and the error propagates;
+the destination may already have been partially released.
+
+This API manages existing slot storage; it does not reserve VM frames or enable
+struct declarations. An already-owned staged return result can transfer directly
+when aggregate execution is implemented, without an additional assignment copy.
 
 Hosts overriding these functions must use the pointer signatures; existing
 callers passing a `RuntimeValue` reference must instead pass its address.

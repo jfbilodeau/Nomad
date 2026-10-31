@@ -132,7 +132,10 @@ Runtime::Runtime() {
                 .name = "current",
                 .getter = [valueType](VirtualMachine* machine, RuntimeValue& result) {
                     RuntimeValue owned;
-                    valueType->assignValue(machine->getThisAs<IteratorObject>()->getCurrent(), owned);
+                    valueType->assignValue(
+                        &machine->getThisAs<IteratorObject>()->getCurrent(),
+                        &owned
+                    );
                     result = owned;
                 },
                 .setter = {},

@@ -515,7 +515,7 @@ BOOST_AUTO_TEST_CASE(copying_arrays_does_not_construct_unused_defaults) {
         RuntimeValue source;
         RuntimeValue destination;
         source.setObjectValue(new Array1dObject(&integers, 2));
-        type.assignValue(source, destination);
+        type.assignValue(&source, &destination);
         BOOST_TEST(source.getObjectValue() == destination.getObjectValue());
         BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2u);
         BOOST_TEST(NomadObject::getLiveObjectCount() == before + 1);

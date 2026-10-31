@@ -90,7 +90,7 @@ std::unique_ptr<ArrayObject> ArrayObject::createCopy() const {
         throw NomadException("Invalid array rank");
     }
     for (auto index = NomadIndex{0}; index < m_values.size(); ++index) {
-        m_elementType->assignValue(m_values[index], snapshot->m_values[index]);
+        m_elementType->assignValue(&m_values[index], &snapshot->m_values[index]);
     }
     return snapshot;
 }

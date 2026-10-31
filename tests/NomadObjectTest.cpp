@@ -15,6 +15,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <array>
+#include <limits>
 #include <type_traits>
 
 using namespace nomad;
@@ -27,8 +28,9 @@ static_assert(std::is_same_v<
 >);
 static_assert(std::is_same_v<
     decltype(&Type::assignValue),
-    void (Type::*)(const RuntimeValue&, RuntimeValue&) const
+    void (Type::*)(const RuntimeValue*, RuntimeValue*, RuntimeValue*) const
 >);
+static_assert(std::is_same_v<decltype(&Type::getAssignmentScratchSize), NomadIndex (Type::*)() const>);
 
 namespace {
 
@@ -105,9 +107,290 @@ void FailingCopyType::copyValue(const RuntimeValue* source, RuntimeValue* destin
     throw NomadException("Copy failed");
 }
 
+class AssignmentStorageType final : public ValueType {
+public:
+    AssignmentStorageType(Runtime* runtime, const NomadIndex size):
+        ValueType(runtime, TypeId::INVALID),
+        m_size(size),
+        m_slotType(runtime, TypeId::INVALID, "AssignmentElement", ClassMode::Closed)
+    {}
+
+    [[nodiscard]] NomadString getTypeName() const override {
+        return "AssignmentStorage";
+    }
+
+    [[nodiscard]] NomadIndex getSize() const override {
+        return m_size;
+    }
+
+    [[nodiscard]] bool needsFree() const override {
+        return m_size != 0;
+    }
+
+    [[nodiscard]] NomadIndex getInitializationCount() const {
+        return m_initializationCount;
+    }
+
+    void initValue(RuntimeValue* values) const override {
+        ++m_initializationCount;
+        for (auto index = NomadIndex{0}; index < m_size; ++index) {
+            m_slotType.initValue(values + index);
+        }
+    }
+
+    void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
+        for (auto index = NomadIndex{0}; index < m_size; ++index) {
+            m_slotType.copyValue(source + index, destination + index);
+            if (index + 1 == failCopyAfterSlot) {
+                throw NomadException("Slot copy failed");
+            }
+        }
+    }
+
+    void freeValue(RuntimeValue* values) const override {
+        for (auto index = NomadIndex{0}; index < m_size; ++index) {
+            m_slotType.freeValue(values + index);
+        }
+        if (failFreeStorage != nullptr && values == failFreeStorage) {
+            throw NomadException("Slot release failed");
+        }
+    }
+
+    void toString(const RuntimeValue&, NomadString& string) const override {
+        string = getTypeName();
+    }
+
+    NomadIndex failCopyAfterSlot = 0;
+    RuntimeValue* failFreeStorage = nullptr;
+
+private:
+    const NomadIndex m_size;
+    ClassType m_slotType;
+    mutable NomadIndex m_initializationCount = 0;
+};
+
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(NomadObjectTests)
+
+BOOST_AUTO_TEST_CASE(AssignmentScratchSizeReflectsExternalStorageRequirements) {
+    Runtime runtime;
+    BOOST_TEST(runtime.getVoidType()->getAssignmentScratchSize() == 0U);
+    BOOST_TEST(runtime.getIntegerType()->getAssignmentScratchSize() == 0U);
+    BOOST_TEST(runtime.getStringType()->getAssignmentScratchSize() == 0U);
+    for (const auto size : {NomadIndex{0}, NomadIndex{1}, NomadIndex{3},
+        std::numeric_limits<NomadIndex>::max()}) {
+        AssignmentStorageType type(&runtime, size);
+        BOOST_TEST(type.getAssignmentScratchSize() == (size > 1 ? size : 0));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(SingleSlotAssignmentUsesOptionalScratchAndPreservesNeighboringStorage) {
+    Runtime runtime;
+    const auto* type = runtime.getIntegerType();
+    const RuntimeValue source{NomadInteger{17}};
+    RuntimeValue destination{NomadInteger{99}};
+    type->assignValue(&source, &destination);
+    BOOST_TEST(destination.getIntegerValue() == 17);
+    type->assignValue(&destination, &destination);
+    BOOST_TEST(destination.getIntegerValue() == 17);
+    std::array<RuntimeValue, 3> scratch{};
+    scratch.front().setIntegerValue(37);
+    scratch.back().setIntegerValue(41);
+    type->assignValue(&source, &destination, &scratch[1]);
+    BOOST_TEST(destination.getIntegerValue() == 17);
+    BOOST_TEST(source.getIntegerValue() == 17);
+    BOOST_TEST(scratch[1].getIntegerValue() == 0);
+    BOOST_TEST(scratch.front().getIntegerValue() == 37);
+    BOOST_TEST(scratch.back().getIntegerValue() == 41);
+}
+
+BOOST_AUTO_TEST_CASE(ZeroSlotAssignmentRequiresNoStorageAndHasNoInitializationSideEffects) {
+    Runtime runtime;
+    const auto* type = runtime.getVoidType();
+    type->assignValue(nullptr, nullptr);
+    RuntimeValue source{NomadInteger{17}};
+    RuntimeValue destination{NomadInteger{19}};
+    RuntimeValue scratch{NomadInteger{23}};
+    type->assignValue(&source, &destination, &scratch);
+    BOOST_TEST(source.getIntegerValue() == 17);
+    BOOST_TEST(destination.getIntegerValue() == 19);
+    BOOST_TEST(scratch.getIntegerValue() == 23);
+    AssignmentStorageType empty(&runtime, 0);
+    empty.assignValue(nullptr, nullptr);
+    BOOST_TEST(empty.getInitializationCount() == 0U);
+}
+
+BOOST_AUTO_TEST_CASE(ClassAssignmentUsesLocalOrSuppliedScratchWithoutChangingReferenceSemantics) {
+    Runtime runtime;
+    ClassType type(&runtime, TypeId::INVALID, "Element", ClassMode::Closed);
+    NomadIndex sourceDestroyed = 0;
+    NomadIndex destinationDestroyed = 0;
+    RuntimeValue source;
+    RuntimeValue destination;
+    RuntimeValue scratch;
+    source.setObjectValue(new CountingObject(sourceDestroyed));
+    destination.setObjectValue(new CountingObject(destinationDestroyed));
+    type.assignValue(&source, &destination);
+    BOOST_TEST(destinationDestroyed == 1U);
+    BOOST_TEST(source.getObjectValue() == destination.getObjectValue());
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    type.assignValue(&source, &destination, &scratch);
+    BOOST_TEST(scratch.getObjectValue() == nullptr);
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    type.assignValue(&destination, &destination);
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    type.freeValue(&source);
+    type.freeValue(&destination);
+    BOOST_TEST(sourceDestroyed == 1U);
+    BOOST_TEST(destinationDestroyed == 1U);
+}
+
+BOOST_AUTO_TEST_CASE(MultiSlotAssignmentRejectsMissingScratchBeforeMutatingValues) {
+    Runtime runtime;
+    AssignmentStorageType type(&runtime, 3);
+    std::array<RuntimeValue, 3> source{};
+    std::array<RuntimeValue, 3> destination{};
+    destination[1].setIntegerValue(37);
+    BOOST_CHECK_EXCEPTION(type.assignValue(source.data(), destination.data()), NomadException,
+        [](const NomadException& error) {
+            const auto message = NomadString{error.what()};
+            return message.find("AssignmentStorage") != NomadString::npos &&
+                message.find("3 scratch slots") != NomadString::npos;
+        });
+    BOOST_TEST(destination[1].getIntegerValue() == 37);
+    BOOST_TEST(type.getInitializationCount() == 0U);
+}
+
+BOOST_AUTO_TEST_CASE(MultiSlotAssignmentCleansPartialCopiesAndReusesScratchAfterFailure) {
+    Runtime runtime;
+    for (auto failureSlot = NomadIndex{1}; failureSlot <= 3; ++failureSlot) {
+        AssignmentStorageType type(&runtime, 3);
+        std::array<NomadIndex, 6> destroyed{};
+        std::array<RuntimeValue, 3> source{};
+        std::array<RuntimeValue, 3> destination{};
+        std::array<RuntimeValue, 5> scratch{};
+        scratch.front().setIntegerValue(37);
+        scratch.back().setIntegerValue(41);
+        for (auto index = NomadIndex{0}; index < source.size(); ++index) {
+            source[index].setObjectValue(new CountingObject(destroyed[index]));
+            destination[index].setObjectValue(new CountingObject(destroyed[index + 3]));
+        }
+        const auto originalDestination = destination;
+        type.failCopyAfterSlot = failureSlot;
+        BOOST_CHECK_THROW(type.assignValue(source.data(), destination.data(), &scratch[1]), NomadException);
+        for (auto index = NomadIndex{0}; index < source.size(); ++index) {
+            BOOST_TEST(source[index].getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(destination[index].getObjectValue() == originalDestination[index].getObjectValue());
+            BOOST_TEST(destination[index].getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(scratch[index + 1].getObjectValue() == nullptr);
+            BOOST_TEST(destroyed[index] == 0U);
+            BOOST_TEST(destroyed[index + 3] == 0U);
+        }
+        type.failCopyAfterSlot = 0;
+        type.assignValue(source.data(), destination.data(), &scratch[1]);
+        for (auto index = NomadIndex{0}; index < source.size(); ++index) {
+            BOOST_TEST(destination[index].getObjectValue() == source[index].getObjectValue());
+            BOOST_TEST(source[index].getObjectValue()->getReferenceCount() == 2U);
+            BOOST_TEST(destroyed[index + 3] == 1U);
+            BOOST_TEST(scratch[index + 1].getObjectValue() == nullptr);
+        }
+        BOOST_TEST(scratch.front().getIntegerValue() == 37);
+        BOOST_TEST(scratch.back().getIntegerValue() == 41);
+        BOOST_TEST(type.getInitializationCount() == 0U);
+        type.freeValue(source.data());
+        type.freeValue(destination.data());
+        for (const auto count : destroyed) {
+            BOOST_TEST(count == 1U);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(MultiSlotAssignmentSupportsForwardBackwardOverlapAndSelfAssignment) {
+    Runtime runtime;
+    for (const auto sourceOffset : {NomadIndex{0}, NomadIndex{1}}) {
+        AssignmentStorageType type(&runtime, 3);
+        std::array<NomadIndex, 4> destroyed{};
+        std::array<RuntimeValue, 4> values{};
+        std::array<RuntimeValue, 3> scratch{};
+        for (auto index = NomadIndex{0}; index < values.size(); ++index) {
+            values[index].setObjectValue(new CountingObject(destroyed[index]));
+        }
+        const auto original = values;
+        const auto destinationOffset = 1 - sourceOffset;
+        type.assignValue(values.data() + sourceOffset, values.data() + destinationOffset, scratch.data());
+        for (auto index = NomadIndex{0}; index < scratch.size(); ++index) {
+            BOOST_TEST(values[destinationOffset + index].getObjectValue() == original[sourceOffset + index].getObjectValue());
+            BOOST_TEST(scratch[index].getObjectValue() == nullptr);
+        }
+        const auto assigned = values;
+        type.assignValue(values.data() + destinationOffset, values.data() + destinationOffset, scratch.data());
+        for (auto index = NomadIndex{0}; index < scratch.size(); ++index) {
+            BOOST_TEST(values[destinationOffset + index].getObjectValue() == assigned[destinationOffset + index].getObjectValue());
+            BOOST_TEST(scratch[index].getObjectValue() == nullptr);
+        }
+        for (auto& value : values) {
+            value.freeObjectValue();
+        }
+        for (const auto count : destroyed) {
+            BOOST_TEST(count == 1U);
+        }
+        BOOST_TEST(type.getInitializationCount() == 0U);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(SingleSlotCopyFailurePreservesOwnedDestinationWithoutExternalScratch) {
+    Runtime runtime;
+    FailingCopyType type(&runtime, TypeId::INVALID);
+    NomadIndex sourceDestroyed = 0;
+    NomadIndex destinationDestroyed = 0;
+    RuntimeValue source;
+    RuntimeValue destination;
+    source.setObjectValue(new CountingObject(sourceDestroyed));
+    destination.setObjectValue(new CountingObject(destinationDestroyed));
+    const auto* originalDestination = destination.getObjectValue();
+    BOOST_TEST(type.getAssignmentScratchSize() == 0U);
+    BOOST_CHECK_THROW(type.assignValue(&source, &destination), NomadException);
+    BOOST_TEST(destination.getObjectValue() == originalDestination);
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 1U);
+    BOOST_TEST(destination.getObjectValue()->getReferenceCount() == 1U);
+    BOOST_TEST(sourceDestroyed == 0U);
+    BOOST_TEST(destinationDestroyed == 0U);
+    type.freeValue(&source);
+    type.freeValue(&destination);
+    BOOST_TEST(sourceDestroyed == 1U);
+    BOOST_TEST(destinationDestroyed == 1U);
+}
+
+BOOST_AUTO_TEST_CASE(DestinationReleaseFailureDoesNotLeakThePreparedCopy) {
+    Runtime runtime;
+    AssignmentStorageType type(&runtime, 3);
+    std::array<NomadIndex, 6> destroyed{};
+    std::array<RuntimeValue, 3> source{};
+    std::array<RuntimeValue, 3> destination{};
+    std::array<RuntimeValue, 3> scratch{};
+    for (auto index = NomadIndex{0}; index < source.size(); ++index) {
+        source[index].setObjectValue(new CountingObject(destroyed[index]));
+        destination[index].setObjectValue(new CountingObject(destroyed[index + 3]));
+    }
+    type.failFreeStorage = destination.data();
+    BOOST_CHECK_EXCEPTION(type.assignValue(source.data(), destination.data(), scratch.data()), NomadException,
+        [](const NomadException& error) {
+            return NomadString{error.what()}.find("Slot release failed") != NomadString::npos;
+        });
+    for (auto index = NomadIndex{0}; index < source.size(); ++index) {
+        BOOST_TEST(source[index].getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(destination[index].getObjectValue() == nullptr);
+        BOOST_TEST(scratch[index].getObjectValue() == nullptr);
+        BOOST_TEST(destroyed[index] == 0U);
+        BOOST_TEST(destroyed[index + 3] == 1U);
+    }
+    type.failFreeStorage = nullptr;
+    type.freeValue(source.data());
+    for (const auto count : destroyed) {
+        BOOST_TEST(count == 1U);
+    }
+}
 
 BOOST_AUTO_TEST_CASE(PointerLifecycleTouchesOnlyTheSelectedScalarSlot) {
     Runtime runtime;

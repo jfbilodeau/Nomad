@@ -44,7 +44,7 @@ const RuntimeValue& ScriptObject::getField(const NomadIndex index) const {
 
 void ScriptObject::setField(const NomadIndex index, const RuntimeValue& value) {
     validateFieldAccess(index);
-    m_fieldTypes[index]->assignValue(value, m_values[index]);
+    m_fieldTypes[index]->assignValue(&value, &m_values[index]);
 }
 
 void ScriptObject::validateFieldAccess(const NomadIndex index) const {

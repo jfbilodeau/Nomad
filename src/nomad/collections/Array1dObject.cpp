@@ -43,7 +43,7 @@ void Array1dObject::getValue(const NomadInteger index, RuntimeValue& result) con
 void Array1dObject::setValue(const NomadInteger index, const RuntimeValue& value) {
     const auto offset = getOffset(index);
     if (offset != NOMAD_INVALID_INDEX) {
-        m_elementType->assignValue(value, m_values[offset]);
+        m_elementType->assignValue(&value, &m_values[offset]);
     }
 }
 

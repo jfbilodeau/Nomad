@@ -46,7 +46,7 @@ void registerKeyValueType(Runtime* runtime) {
                     const auto* pair = machine->getThisAs<KeyValueObject>();
                     const auto& key = pair->getKey();
                     RuntimeValue keyCopy;
-                    keyType->assignValue(key, keyCopy);
+                    keyType->assignValue(&key, &keyCopy);
                     result = keyCopy;
                 },
                 .setter = {},
@@ -59,7 +59,7 @@ void registerKeyValueType(Runtime* runtime) {
                     const auto* pair = machine->getThisAs<KeyValueObject>();
                     const auto& value = pair->getValue();
                     RuntimeValue valueCopy;
-                    valueType->assignValue(value, valueCopy);
+                    valueType->assignValue(&value, &valueCopy);
                     result = valueCopy;
                 },
                 .setter = {},

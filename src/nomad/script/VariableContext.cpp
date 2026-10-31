@@ -76,7 +76,7 @@ void SimpleVariableContext::setValue(const VariableId variableId, const RuntimeV
         return;
     }
 
-    type->assignValue(value, m_values[toNomadIndex(variableId.id)]);
+    type->assignValue(&value, &m_values[toNomadIndex(variableId.id)]);
 }
 
 void SimpleVariableContext::getValue(const VariableId variableId, RuntimeValue& value) {

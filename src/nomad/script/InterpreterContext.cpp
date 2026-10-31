@@ -383,7 +383,8 @@ void InterpreterContext::setParameter(const NomadId parameterId, const RuntimeVa
     }
     validateFrame();
     m_function->getParameterType(parameterId)->assignValue(
-        value, m_virtualMachine.m_stack[m_parameterIndex - parameterId]
+        &value,
+        &m_virtualMachine.m_stack[m_parameterIndex - parameterId]
     );
 }
 

@@ -202,7 +202,7 @@ void VariableList::setVariableValue(const VariableId variableId, const RuntimeVa
         return;
     }
 
-    type->assignValue(value, m_variableValues[variableIndex]);
+    type->assignValue(&value, &m_variableValues[variableIndex]);
 }
 
 void VariableList::getVariableValue(const VariableId variableId, RuntimeValue& value) const {

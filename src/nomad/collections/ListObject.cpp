@@ -107,7 +107,7 @@ const RuntimeValue& ListObject::getValue(const NomadInteger index) const {
 }
 
 void ListObject::setValue(const NomadInteger index, const RuntimeValue& value) {
-    m_elementType->assignValue(value, m_values[validateIndex(index)]);
+    m_elementType->assignValue(&value, &m_values[validateIndex(index)]);
 }
 
 } // namespace nomad

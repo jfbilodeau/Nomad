@@ -146,7 +146,7 @@ BOOST_AUTO_TEST_CASE(script_class_properties_preserve_object_reference_ownership
             runtime.getTypeByName("Settings")->copyValue(&stored, &result);
         },
         .setter = [&](VirtualMachine*, const RuntimeValue& value) {
-            runtime.getTypeByName("Settings")->assignValue(value, stored);
+            runtime.getTypeByName("Settings")->assignValue(&value, &stored);
         }
     });
     BOOST_REQUIRE(id.isValid());

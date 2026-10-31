@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1J have been reviewed; Step 1K below is implemented and awaiting review.
+Steps 1A through 1K have been reviewed; Step 1L below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -522,6 +522,50 @@ Steps 1J and 1K validation:
 - No references to the removed tables or getter remain in C++ source or headers.
 - All four documentation preparation tests and whitespace checks passed.
 - No struct execution, aggregate assignment, or gameplay validation is claimed.
+
+Approved twelfth slice (Step 1L):
+
+- Add `Type::getAssignmentScratchSize()`, returning zero for zero/one-slot values
+  and the full slot count for larger values, without cached state or a policy
+  flag.
+- Replace the scalar reference assignment API with one pointer-based
+  `assignValue(source, destination, scratch = nullptr)` operation. No mutually
+  exclusive overloads are introduced.
+- Zero-slot assignment accesses no storage. One-slot assignment uses a local
+  `RuntimeValue` when external scratch is omitted; larger values require
+  caller-provided scratch and explicitly reject its absence.
+- Supplied scratch is cleared, spans `getSize()` slots, and is disjoint from
+  source and destination. Source/destination overlap and self-assignment remain
+  safe through staging.
+- Delegate copy and release to the type's existing lifecycle operations. Copy
+  before releasing the destination; transfer owned slots and clear scratch.
+  Clean up partially copied scratch on failure. If destination release fails,
+  also clean up the prepared copy rather than leaking it.
+- Migrate all existing host/interpreter/collection callers to pointers without
+  adding heap scratch allocation to their single-slot paths.
+- Add native multi-slot storage fixtures covering reference ownership, overlap,
+  self-assignment, failure at each copied slot, missing scratch, zero size,
+  scratch reuse, and source/destination cleanup.
+- Leave VM storage, bytecode, struct syntax, generic collections, and caller
+  return-destination handling unchanged. Already-staged return results will
+  transfer directly in the later aggregate execution work.
+
+Step 1L validation:
+
+- The Windows Debug `nomad_test`, `nomad-runtime`, and `nomad-lsp` targets built
+  successfully.
+- The `nomad_test_language`, `nomad_test_remaining`, `nomad_test_bindings`, and
+  `nomad_test_tooling` regression groups passed, together with
+  `nomad_lsp_process`.
+- Focused coverage verifies the single pointer API, zero/one/multi-slot scratch
+  sizes, scalar and class assignment with optional scratch, forward/backward
+  overlap, self-assignment, failure after each copied slot, scratch reuse,
+  missing-scratch diagnostics, and prepared-copy cleanup when release fails.
+- Existing collection, interpreter, native property, partial-copy cleanup, and
+  reference-lifetime behavior remains covered. Deferred sizes propagate errors.
+- All four documentation preparation tests and whitespace checks passed.
+- Multi-slot descriptors remain native storage test fixtures, not executable
+  struct support. No gameplay validation is claimed.
 
 Next design discussion: the real struct descriptor and its size/lifecycle API
 contracts. Wire finalization at the existing Resolve-to-Emit boundary once struct

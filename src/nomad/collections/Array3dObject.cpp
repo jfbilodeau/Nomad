@@ -62,7 +62,7 @@ void Array3dObject::setValue(
 ) {
     const auto offset = getOffset(index1, index2, index3);
     if (offset != NOMAD_INVALID_INDEX) {
-        m_elementType->assignValue(value, m_values[offset]);
+        m_elementType->assignValue(&value, &m_values[offset]);
     }
 }
 

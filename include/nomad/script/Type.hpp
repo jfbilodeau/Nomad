@@ -43,8 +43,15 @@ public:
     // Copies into empty RuntimeValue storage or replaces an owned value; does not require initValue first.
     virtual void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const = 0;
 
-    // Replace an owned value with a copy of `sourceValue`. Safe when `sourceValue` shares the destination's storage.
-    void assignValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const;
+    [[nodiscard]] NomadIndex getAssignmentScratchSize() const;
+    // Copy before releasing the destination; source and destination may overlap.
+    // Scratch must be cleared, contain getSize() slots, and be disjoint from source and destination.
+    // Without supplied scratch, values of at most one slot use local storage.
+    void assignValue(
+        const RuntimeValue* sourceValue,
+        RuntimeValue* destinationValue,
+        RuntimeValue* scratch = nullptr
+    ) const;
     // Convert value to string.
     virtual void toString(const RuntimeValue& value, NomadString& string) const = 0;
     [[nodiscard]] NomadString toString(const RuntimeValue& value) const;

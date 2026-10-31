@@ -2,6 +2,8 @@
 
 #include <nomad/script/Type.hpp>
 
+#include <algorithm>
+#include <string>
 #include <utility>
 
 namespace nomad {
@@ -32,17 +34,38 @@ void Type::freeValue(RuntimeValue* /*value*/) const {
     // Default implementation does nothing
 }
 
-void Type::assignValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const {
-    RuntimeValue copy;
+NomadIndex Type::getAssignmentScratchSize() const {
+    const auto size = getSize();
+    return size > 1 ? size : 0;
+}
+
+void Type::assignValue(
+    const RuntimeValue* sourceValue,
+    RuntimeValue* destinationValue,
+    RuntimeValue* scratch
+) const {
+    const auto size = getSize();
+    if (size == 0) {
+        return;
+    }
+    RuntimeValue localScratch;
+    if (scratch == nullptr) {
+        if (size > 1) {
+            throw NomadException("Assignment of type '" + getTypeName() + "' requires " +
+                std::to_string(size) + " scratch slots");
+        }
+        scratch = &localScratch;
+    }
     try {
-        copyValue(&sourceValue, &copy);
+        copyValue(sourceValue, scratch);
+        freeValue(destinationValue);
     } catch (...) {
-        freeValue(&copy);
+        freeValue(scratch);
+        std::fill_n(scratch, size, RuntimeValue{});
         throw;
     }
-
-    freeValue(&destinationValue);
-    destinationValue = copy;
+    std::copy_n(scratch, size, destinationValue);
+    std::fill_n(scratch, size, RuntimeValue{});
 }
 
 bool Type::needsFree() const {

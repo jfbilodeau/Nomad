@@ -155,7 +155,7 @@ void MapObject::getValue(const NomadStringView key, RuntimeValue& result) const 
 void MapObject::setValue(const NomadStringView key, const RuntimeValue& value) {
     const auto entry = m_values.find(key);
     if (entry != m_values.end()) {
-        m_valueType->assignValue(value, entry->second);
+        m_valueType->assignValue(&value, &entry->second);
         return;
     }
     RuntimeValue storedValue;
