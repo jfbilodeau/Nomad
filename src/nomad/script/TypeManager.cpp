@@ -27,9 +27,10 @@ Runtime& TypeManager::getRuntime() const {
 }
 
 void TypeManager::registerType(std::unique_ptr<Type> type) {
-    if (type == nullptr || type->getRuntime() != &m_runtime ||
-        isIdOutOfRange(type->getId().id, m_types.size()) ||
-        getType(type->getId()).has_value()) {
+    const auto belongsToRuntime = type != nullptr && type->getRuntime() == &m_runtime;
+    const auto hasReservedId = belongsToRuntime && !isIdOutOfRange(type->getId().id, m_types.size());
+    const auto hasUnusedId = hasReservedId && !getType(type->getId()).has_value();
+    if (!hasUnusedId) {
         throw NomadException("Cannot register a type without a matching runtime and reserved ID");
     }
     m_runtime.publishTypeNamespace(*type);
@@ -72,8 +73,12 @@ TypeId TypeManager::publishClass(
     const ClassMode mode,
     std::unique_ptr<ClassType> type
 ) {
-    if (type->getRuntime() != &m_runtime || type->getId() != id || type->getTypeName() != name ||
-        !canRegisterClass(name, mode) || type->isOpen() != (mode == ClassMode::Opened)) {
+    const auto matchesIdentity = type->getRuntime() == &m_runtime &&
+        type->getId() == id && type->getTypeName() == name;
+    // Descriptor construction may register other types, so recheck name availability.
+    const auto canPublish = matchesIdentity && canRegisterClass(name, mode);
+    const auto matchesMode = canPublish && type->isOpen() == (mode == ClassMode::Opened);
+    if (!canPublish || !matchesMode) {
         log::error("Cannot register class '" + name + "': descriptor does not match its registration request");
         return TypeId::INVALID;
     }
@@ -82,7 +87,9 @@ TypeId TypeManager::publishClass(
 }
 
 TypeId TypeManager::registerStruct(NomadString name, NomadString documentation) {
-    if (name.empty() || getTypeId(name).isValid() || !m_runtime.canRegisterTypeName(name)) {
+    const auto hasAvailableName = !name.empty() && getTypeId(name).isInvalid();
+    const auto canRegisterName = hasAvailableName && m_runtime.canRegisterTypeName(name);
+    if (!canRegisterName) {
         log::error("Cannot register struct '" + name + "': invalid or reserved type name");
         return TypeId::INVALID;
     }
@@ -98,9 +105,10 @@ TypeId TypeManager::reserveTypeId() {
 }
 
 void TypeManager::catalogType(std::unique_ptr<Type> type) {
-    if (type == nullptr || type->getRuntime() != &m_runtime ||
-        isIdOutOfRange(type->getId().id, m_types.size()) ||
-        m_types[toNomadIndex(type->getId().id)] != nullptr) {
+    const auto belongsToRuntime = type != nullptr && type->getRuntime() == &m_runtime;
+    const auto hasReservedId = belongsToRuntime && !isIdOutOfRange(type->getId().id, m_types.size());
+    const auto hasUnusedId = hasReservedId && m_types[toNomadIndex(type->getId().id)] == nullptr;
+    if (!hasUnusedId) {
         throw NomadException("Cannot register a type without a matching runtime and reserved ID");
     }
     m_types[toNomadIndex(type->getId().id)] = std::move(type);
@@ -116,10 +124,14 @@ TypeId TypeManager::getTypeId(const NomadString& name) const {
 }
 
 std::optional<const Type*> TypeManager::getType(const TypeId id) const {
-    if (isIdOutOfRange(id.id, m_types.size()) || m_types[toNomadIndex(id.id)] == nullptr) {
+    if (isIdOutOfRange(id.id, m_types.size())) {
         return std::nullopt;
     }
-    return m_types[toNomadIndex(id.id)].get();
+    const auto* type = m_types[toNomadIndex(id.id)].get();
+    if (type == nullptr) {
+        return std::nullopt;
+    }
+    return type;
 }
 
 const Type* TypeManager::getTypeByName(const NomadString& name) const {
@@ -141,7 +153,13 @@ NomadIndex TypeManager::getTypeCount() const {
 }
 
 bool TypeManager::ownsType(const Type* type) const {
-    return type != nullptr && type->getRuntime() == &m_runtime && getType(type->getId()) == type;
+    const auto belongsToRuntime = type != nullptr && type->getRuntime() == &m_runtime;
+    if (!belongsToRuntime) {
+        return false;
+    }
+    // Matching IDs alone do not establish ownership of the descriptor.
+    const auto registeredType = getType(type->getId());
+    return registeredType == type;
 }
 
 ClassType* TypeManager::getMutableClassType(const ClassType* type) {
@@ -153,7 +171,8 @@ ClassType* TypeManager::getMutableClassType(const ClassType* type) {
 
 CompositeType* TypeManager::getMutableCompositeType(const TypeId id) {
     const auto type = getType(id);
-    if (!type.has_value() || (*type)->asCompositeType() == nullptr) {
+    const auto* compositeType = type.has_value() ? (*type)->asCompositeType() : nullptr;
+    if (compositeType == nullptr) {
         return nullptr;
     }
     return static_cast<CompositeType*>(m_types[toNomadIndex(id.id)].get());
@@ -173,9 +192,9 @@ PropertyId TypeManager::registerScriptClassProperty(
     const Type* valueType
 ) {
     auto* owner = getMutableCompositeType(ownerId);
-    return registerScriptProperty(
-        owner != nullptr && owner->asClassType() != nullptr ? owner : nullptr, name, valueType
-    );
+    const auto isClassOwner = owner != nullptr && owner->asClassType() != nullptr;
+    auto* classOwner = isClassOwner ? owner : nullptr;
+    return registerScriptProperty(classOwner, name, valueType);
 }
 
 PropertyId TypeManager::registerNativeClassProperty(
@@ -194,9 +213,12 @@ PropertyId TypeManager::registerNativeClassProperty(
         classType, definition.name, valueType,
         std::move(definition.getter), std::move(definition.setter), std::move(definition.documentation)
     );
-    const auto deferred = !property->isTypeResolved() &&
-        valueType != nullptr && valueType->getRuntime() == &m_runtime;
-    if (!deferred && (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal())) {
+    const auto belongsToRuntime = valueType != nullptr && valueType->getRuntime() == &m_runtime;
+    const auto isDeferredType = !property->isTypeResolved() && belongsToRuntime;
+    // Same-runtime placeholders may be registered before their value type resolves.
+    const auto hasValidValueType = isDeferredType ||
+        (ownsType(valueType) && !valueType->isVoid() && !valueType->isInternal());
+    if (!hasValidValueType) {
         log::error("Cannot register native property '" + definition.name + "': invalid value type");
         return PropertyId::INVALID;
     }
@@ -224,9 +246,9 @@ PropertyId TypeManager::registerScriptStructProperty(
     const Type* valueType
 ) {
     auto* owner = getMutableCompositeType(ownerId);
-    return registerScriptProperty(
-        owner != nullptr && owner->asStructType() != nullptr ? owner : nullptr, name, valueType
-    );
+    const auto isStructOwner = owner != nullptr && owner->asStructType() != nullptr;
+    auto* structOwner = isStructOwner ? owner : nullptr;
+    return registerScriptProperty(structOwner, name, valueType);
 }
 
 PropertyId TypeManager::registerScriptProperty(
@@ -234,19 +256,24 @@ PropertyId TypeManager::registerScriptProperty(
     const NomadString& name,
     const Type* valueType
 ) {
-    if (owner == nullptr || !ownsType(valueType) ||
-        valueType->isVoid() || valueType->isInternal()) {
+    const auto hasValidValueType = owner != nullptr && ownsType(valueType) &&
+        !valueType->isVoid() && !valueType->isInternal();
+    if (owner == nullptr || !hasValidValueType) {
         log::error("Cannot register property '" + name + "': invalid owner or value type");
         return PropertyId::INVALID;
     }
     if (const auto* existing = owner->getProperty(name)) {
-        if (existing->asNativeProperty() == nullptr && existing->getValueType() == valueType) {
+        const auto isMatchingStoredProperty = existing->asNativeProperty() == nullptr &&
+            existing->getValueType() == valueType;
+        if (isMatchingStoredProperty) {
             return existing->getId();
         }
         log::error("Cannot register property '" + name + "': conflicting definition");
         return PropertyId::INVALID;
     }
-    if (m_runtime.getMemberType(m_runtime.getNativeMemberId(owner, name)) != MemberType::Unknown) {
+    const auto nativeMember = m_runtime.getNativeMemberId(owner, name);
+    const auto hasNativeMember = m_runtime.getMemberType(nativeMember) != MemberType::Unknown;
+    if (hasNativeMember) {
         log::error("Cannot register property '" + name + "': the type already has a member with that name");
         return PropertyId::INVALID;
     }
@@ -261,18 +288,26 @@ CallableId TypeManager::registerScriptClassMethod(
     NomadString source
 ) {
     const auto type = getType(ownerId);
-    auto* owner = type && (*type)->asClassType() != nullptr ? getMutableClassType((*type)->asClassType()) : nullptr;
-    if (owner == nullptr || name.empty() ||
-        std::ranges::any_of(parameters, [this](const auto& parameter) {
-            return parameter.name == "this" || !ownsType(parameter.type) ||
-                parameter.type->isVoid() || parameter.type->isInternal();
-        })) {
+    const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
+    auto* owner = getMutableClassType(classType);
+    const auto canValidateParameters = owner != nullptr && !name.empty();
+    const auto hasInvalidParameters = canValidateParameters && std::ranges::any_of(parameters, [this](const auto& parameter) {
+        const auto isReceiverName = parameter.name == "this";
+        const auto hasValidType = !isReceiverName && ownsType(parameter.type) &&
+            !parameter.type->isVoid() && !parameter.type->isInternal();
+        return !hasValidType;
+    });
+    if (owner == nullptr || name.empty() || hasInvalidParameters) {
         log::error("Cannot register script method: invalid owner, name, or parameter type");
         return CallableId::INVALID;
     }
     for (const auto* method : owner->getMethods()) {
-        if (method->getName() == name && std::ranges::equal(method->getParameters(), parameters,
-            [](const auto& first, const auto& second) { return first.type == second.type; })) {
+        const auto hasSameName = method->getName() == name;
+        const auto hasSameSignature = hasSameName && std::ranges::equal(
+            method->getParameters(), parameters,
+            [](const auto& first, const auto& second) { return first.type == second.type; }
+        );
+        if (hasSameSignature) {
             log::error("Cannot register script method: duplicate signature");
             return CallableId::INVALID;
         }
@@ -290,18 +325,24 @@ CallableId TypeManager::registerScriptClassConstructor(
     NomadString source
 ) {
     const auto type = getType(ownerId);
-    auto* owner = type && (*type)->asClassType() != nullptr ? getMutableClassType((*type)->asClassType()) : nullptr;
-    if (owner == nullptr ||
-        std::ranges::any_of(parameters, [this](const auto& parameter) {
-            return parameter.name == "this" || !ownsType(parameter.type) ||
-                parameter.type->isVoid() || parameter.type->isInternal();
-        })) {
+    const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
+    auto* owner = getMutableClassType(classType);
+    const auto hasInvalidParameters = owner != nullptr && std::ranges::any_of(parameters, [this](const auto& parameter) {
+        const auto isReceiverName = parameter.name == "this";
+        const auto hasValidType = !isReceiverName && ownsType(parameter.type) &&
+            !parameter.type->isVoid() && !parameter.type->isInternal();
+        return !hasValidType;
+    });
+    if (owner == nullptr || hasInvalidParameters) {
         log::error("Cannot register script constructor: invalid owner or parameter type");
         return CallableId::INVALID;
     }
     for (const auto* constructor : owner->getConstructors()) {
-        if (std::ranges::equal(constructor->getParameters(), parameters,
-            [](const auto& first, const auto& second) { return first.type == second.type; })) {
+        const auto hasSameSignature = std::ranges::equal(
+            constructor->getParameters(), parameters,
+            [](const auto& first, const auto& second) { return first.type == second.type; }
+        );
+        if (hasSameSignature) {
             log::error("Cannot register script constructor: duplicate signature");
             return CallableId::INVALID;
         }
@@ -339,7 +380,9 @@ CallableId TypeManager::registerNativeClassMethod(
             parameterDefinition.name, *parameterType, parameterDefinition.documentation
         ));
     }
-    if (!definition.function || ((*returnType)->isInternal() && !(*returnType)->isVoid())) {
+    const auto hasValidReturnType = definition.function &&
+        (!(*returnType)->isInternal() || (*returnType)->isVoid());
+    if (!definition.function || !hasValidReturnType) {
         log::error("Cannot register native callable '" + definition.name + "': invalid callback or return type");
         return CallableId::INVALID;
     }
@@ -408,8 +451,10 @@ CallableId TypeManager::registerNativeClassConstructor(
         return CallableId::INVALID;
     }
     const auto name = classType->getTypeName();
-    if (name.empty() || m_runtime.getParameterizedConstructorArgumentCount(name) ||
-        m_runtime.getParameterizedTypeArgumentCount(name)) {
+    const auto isReservedName = name.empty() ||
+        m_runtime.getParameterizedConstructorArgumentCount(name).has_value() ||
+        m_runtime.getParameterizedTypeArgumentCount(name).has_value();
+    if (isReservedName) {
         log::error("Cannot register constructor '" + name + "': the name is reserved");
         return CallableId::INVALID;
     }
@@ -423,8 +468,11 @@ CallableId TypeManager::registerNativeClassConstructor(
         if (existing->getParameterCount() != parameters.size()) {
             continue;
         }
-        if (std::ranges::equal(existing->getParameters(), parameters,
-            [](const auto& left, const auto& right) { return left.type->sameType(right.type); })) {
+        const auto hasSameSignature = std::ranges::equal(
+            existing->getParameters(), parameters,
+            [](const auto& left, const auto& right) { return left.type->sameType(right.type); }
+        );
+        if (hasSameSignature) {
             log::error("Cannot register constructor '" + name + "': duplicate signature");
             return CallableId::INVALID;
         }
