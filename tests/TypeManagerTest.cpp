@@ -175,4 +175,158 @@ BOOST_AUTO_TEST_CASE(type_descriptors_outlive_runtime_owned_value_cleanup) {
     BOOST_TEST(released >= 2U);
 }
 
+BOOST_AUTO_TEST_CASE(script_property_apis_enforce_owner_categories_and_value_contracts) {
+    Runtime runtime;
+    Runtime other;
+    auto& manager = runtime.getTypeManager();
+    const auto classId = runtime.registerClass("Fields", ClassMode::Closed);
+    const auto structId = runtime.registerStruct("Record");
+    BOOST_REQUIRE(classId.isValid() && structId.isValid());
+    BOOST_TEST(manager.registerScriptClassProperty(structId, "wrong", runtime.getIntegerType()).isInvalid());
+    BOOST_TEST(manager.registerScriptStructProperty(classId, "wrong", runtime.getIntegerType()).isInvalid());
+    for (const auto ownerId : {classId, structId}) {
+        const auto registerField = [&](const TypeId id, const NomadString& name, const Type* valueType) {
+            return ownerId == classId ?
+                manager.registerScriptClassProperty(id, name, valueType) :
+                manager.registerScriptStructProperty(id, name, valueType);
+        };
+        BOOST_TEST(registerField(TypeId::INVALID, "value", runtime.getIntegerType()).isInvalid());
+        BOOST_TEST(registerField(runtime.getIntegerType()->getId(), "value", runtime.getIntegerType()).isInvalid());
+        const auto reservedId = manager.reserveTypeId();
+        BOOST_TEST(registerField(reservedId, "value", runtime.getIntegerType()).isInvalid());
+        BOOST_TEST(registerField(ownerId, "value", nullptr).isInvalid());
+        BOOST_TEST(registerField(ownerId, "value", other.getIntegerType()).isInvalid());
+        BOOST_TEST(registerField(ownerId, "value", runtime.getVoidType()).isInvalid());
+        BOOST_REQUIRE(runtime.getFileNameType()->isInternal());
+        BOOST_TEST(registerField(ownerId, "value", runtime.getFileNameType()).isInvalid());
+        const auto* owner = manager.getType(ownerId).value()->asCompositeType();
+        BOOST_TEST(owner->getPropertyCount() == 0U);
+        const auto fieldId = registerField(ownerId, "value", runtime.getIntegerType());
+        BOOST_REQUIRE(fieldId.isValid());
+        const auto* property = runtime.getProperty(fieldId);
+        BOOST_REQUIRE(property != nullptr);
+        BOOST_TEST(property->getOwnerType() == owner);
+        BOOST_TEST(property->getValueType() == runtime.getIntegerType());
+        BOOST_TEST(property->asNativeProperty() == nullptr);
+        BOOST_TEST(!property->hasExplicitInitializer());
+        BOOST_TEST(registerField(ownerId, "value", runtime.getIntegerType()) == fieldId);
+        BOOST_TEST(runtime.registerProperty(ownerId, "value", runtime.getIntegerType()) == fieldId);
+        BOOST_TEST(registerField(ownerId, "value", runtime.getFloatType()).isInvalid());
+        BOOST_TEST(owner->getPropertyCount() == 1U);
+        BOOST_TEST(owner->getFieldIndex(fieldId) == 0U);
+        manager.finalizeCompositeFieldLayout(ownerId);
+        BOOST_TEST(registerField(ownerId, "later", runtime.getIntegerType()).isInvalid());
+        BOOST_TEST(registerField(ownerId, "value", runtime.getIntegerType()) == fieldId);
+        BOOST_TEST(owner->getPropertyCount() == 1U);
+        BOOST_TEST(owner->getFieldOffset(fieldId) == 0U);
+        BOOST_TEST(owner->getFieldStorageSize() == 1U);
+        runtime.setPropertyHasExplicitInitializer(fieldId, true);
+        BOOST_TEST(property->hasExplicitInitializer());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(script_field_registration_does_not_validate_identifier_syntax) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto classId = runtime.registerClass("Fields", ClassMode::Closed);
+    const auto structId = runtime.registerStruct("Record");
+    for (const auto* name : {"", "invalid.name", "1field", "bad name", "field@hidden", "not-a-field"}) {
+        const auto classField = manager.registerScriptClassProperty(classId, name, runtime.getIntegerType());
+        const auto structField = manager.registerScriptStructProperty(structId, name, runtime.getIntegerType());
+        BOOST_REQUIRE(classField.isValid() && structField.isValid());
+        BOOST_TEST(runtime.getProperty(classField)->getName() == name);
+        BOOST_TEST(runtime.getProperty(structField)->getName() == name);
+        BOOST_TEST(runtime.registerProperty(classId, name, runtime.getIntegerType()) == classField);
+        BOOST_TEST(runtime.registerProperty(structId, name, runtime.getIntegerType()) == structField);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(script_fields_reject_native_and_script_member_collisions) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto classId = runtime.registerClass("Members", ClassMode::Opened);
+    BOOST_REQUIRE(classId.isValid());
+    const auto* owner = manager.getTypeByName("Members")->asClassType();
+    const auto nativeProperty = runtime.addProperty(classId, {
+        .valueType = runtime.getIntegerType(),
+        .name = "nativeProperty",
+        .getter = [](VirtualMachine*, RuntimeValue&) {}
+    });
+    const auto nativeMethod = runtime.addMethod(classId, {
+        .name = "nativeMethod",
+        .parameters = {},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [](VirtualMachine*) {},
+        .documentation = ""
+    });
+    const auto scriptMethod = runtime.registerScriptMethod(classId, "scriptMethod", {}, "", "");
+    BOOST_REQUIRE(nativeProperty.isValid() && nativeMethod.isValid() && scriptMethod.isValid());
+    for (const auto* name : {"nativeProperty", "nativeMethod", "scriptMethod"}) {
+        BOOST_TEST(manager.registerScriptClassProperty(classId, name, runtime.getIntegerType()).isInvalid());
+    }
+    BOOST_TEST(owner->getPropertyCount() == 1U);
+    BOOST_TEST(owner->getFieldStorageSize() == 0U);
+    BOOST_TEST(runtime.getNativeProperty(nativeProperty) != nullptr);
+    const auto fieldId = manager.registerScriptClassProperty(classId, "stored", runtime.getIntegerType());
+    BOOST_REQUIRE(fieldId.isValid());
+    BOOST_TEST(runtime.addProperty(classId, {
+        .valueType = runtime.getIntegerType(),
+        .name = "stored",
+        .getter = [](VirtualMachine*, RuntimeValue&) {}
+    }).isInvalid());
+    BOOST_TEST(owner->getPropertyCount() == 2U);
+    BOOST_TEST(owner->getFieldIndex(fieldId) == 0U);
+}
+
+BOOST_AUTO_TEST_CASE(native_member_registration_does_not_validate_identifier_syntax) {
+    for (const auto* name : {"", "invalid.name", "1member", "bad name", "member@hidden"}) {
+        Runtime methodRuntime;
+        const auto methodOwner = methodRuntime.registerClass("Methods", ClassMode::Closed);
+        const auto methodId = methodRuntime.addMethod(methodOwner, {
+            .name = name,
+            .parameters = {},
+            .returnTypeId = methodRuntime.getVoidType()->getId(),
+            .function = [](VirtualMachine*) {},
+            .documentation = ""
+        });
+        BOOST_REQUIRE(methodId.isValid());
+        BOOST_TEST(methodRuntime.getNativeMethod(methodId)->getName() == name);
+        Runtime propertyRuntime;
+        const auto propertyOwner = propertyRuntime.registerClass("Properties", ClassMode::Closed);
+        const auto propertyId = propertyRuntime.addProperty(propertyOwner, {
+            .valueType = propertyRuntime.getIntegerType(),
+            .name = name,
+            .getter = [](VirtualMachine*, RuntimeValue&) {}
+        });
+        BOOST_REQUIRE(propertyId.isValid());
+        BOOST_TEST(propertyRuntime.getProperty(propertyId)->getName() == name);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(explicit_script_fields_support_nested_and_empty_struct_storage) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto emptyId = runtime.registerStruct("Empty");
+    const auto pointId = runtime.registerStruct("Point");
+    const auto classId = runtime.registerClass("Player", ClassMode::Closed);
+    const auto* empty = manager.getTypeByName("Empty");
+    const auto* point = manager.getTypeByName("Point");
+    const auto x = manager.registerScriptStructProperty(pointId, "x", runtime.getFloatType());
+    const auto y = manager.registerScriptStructProperty(pointId, "y", runtime.getFloatType());
+    const auto emptyField = manager.registerScriptStructProperty(pointId, "empty", empty);
+    const auto name = manager.registerScriptClassProperty(classId, "name", runtime.getStringType());
+    const auto location = manager.registerScriptClassProperty(classId, "location", point);
+    BOOST_REQUIRE(x.isValid() && y.isValid() && emptyField.isValid() && name.isValid() && location.isValid());
+    const auto* owner = manager.getTypeByName("Player")->asClassType();
+    manager.finalizeCompositeFieldLayout(classId);
+    BOOST_TEST(empty->getSize() == 0U);
+    BOOST_TEST(point->getSize() == 2U);
+    BOOST_TEST(point->asStructType()->getFieldIndex(emptyField) == 2U);
+    BOOST_TEST(point->asStructType()->getFieldOffset(emptyField) == 2U);
+    BOOST_TEST(owner->getFieldOffset(location) == 1U);
+    BOOST_TEST(owner->getFieldStorageSize() == 3U);
+    BOOST_TEST(owner->getSize() == 1U);
+    BOOST_TEST(owner->getPropertyCount() == 2U);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

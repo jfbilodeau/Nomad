@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1M have been reviewed; Step 1N below is implemented and awaiting review.
+Steps 1A through 1N have been reviewed; Step 1O below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -635,6 +635,40 @@ Validation:
   nested finalization, mutable owner validation, and descriptor lifetime through
   runtime-owned constant/context cleanup.
 - Language, remaining, binding, tooling, and LSP process regressions passed.
+- All four documentation preparation tests and whitespace checks passed.
+- No aggregate execution or gameplay validation is claimed.
+
+### Step 1O: Explicit stored-field registration
+
+`TypeManager::registerScriptClassProperty` and `registerScriptStructProperty`
+declare stored fields for their respective owner categories. Existing
+value-type, member-collision, redeclaration, and layout-freezing behavior is
+preserved. Property IDs remain runtime-wide, and metadata lookup and initializer
+flags retain their existing Runtime APIs.
+
+The compiler declares class fields through the explicit manager API.
+`Runtime::registerProperty` remains a compatibility delegator. Native accessor
+registration remains separate and unchanged; no native struct callback or
+aggregate execution contract is introduced.
+
+At the user's request, the runtime identifier checker and all of its uses
+were removed. Host field, native-member, and hub-member registration no longer
+enforce script identifier syntax. Source declaration validation remains the
+compiler's responsibility. Ownership, value-type, collision, signature,
+and layout checks remain; other existing registration preconditions are unchanged.
+
+Next slice after review: migrate native class accessor registration, then
+class callable registration, keeping Runtime's callable ID catalog. Struct
+accessors and callables still require the separately approved aggregate ABI.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, binding, tooling, and LSP process regressions passed;
+  the language group was rerun after updating the typed hub-registration test.
+- New coverage verifies category-specific registration, invalid owners and
+  value types, identity-preserving redeclaration, member collisions, frozen
+  layouts, nested/empty structs, and host names outside identifier syntax.
 - All four documentation preparation tests and whitespace checks passed.
 - No aggregate execution or gameplay validation is claimed.
 

@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <nomad/script/Property.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <memory>
@@ -29,12 +30,28 @@ public:
     [[nodiscard]] ClassType* getMutableClassType(const ClassType* type);
     [[nodiscard]] CompositeType* getMutableCompositeType(TypeId id);
     void finalizeCompositeFieldLayout(TypeId id);
+    [[nodiscard]] PropertyId registerScriptClassProperty(
+        TypeId ownerId,
+        const NomadString& name,
+        const Type* valueType
+    );
+    [[nodiscard]] PropertyId registerScriptStructProperty(
+        TypeId ownerId,
+        const NomadString& name,
+        const Type* valueType
+    );
 
     // Low-level catalog operations; Runtime coordinates namespace registration.
     [[nodiscard]] TypeId reserveTypeId();
     void catalogType(std::unique_ptr<Type> type);
 
 private:
+    [[nodiscard]] PropertyId registerScriptProperty(
+        CompositeType* owner,
+        const NomadString& name,
+        const Type* valueType
+    );
+
     Runtime& m_runtime;
     std::vector<std::unique_ptr<Type>> m_types;
 };

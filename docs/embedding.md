@@ -426,8 +426,10 @@ including IDs that do not yet have a descriptor. `ownsType(type)` checks both
 runtime ownership and catalog identity.
 
 The existing Runtime lookup and finalization methods remain available with
-the same behavior. Continue using Runtime's registration methods for types,
-properties, methods, and constructors during this initial migration. Callable
+the same behavior. Declare stored fields with
+`TypeManager::registerScriptClassProperty` or `registerScriptStructProperty`.
+Continue using Runtime's registration methods for types, native properties,
+methods, and constructors during this migration. Callable
 IDs still belong to Runtime. `TypeManager::reserveTypeId()` and `catalogType()`
 are low-level catalog operations: they do not register namespace members or
 check namespace collisions. `catalogType()` requires a non-null descriptor
@@ -700,14 +702,23 @@ Existing `ClassType` member APIs remain available through
 ownership behavior.
 
 Register the owner type with the runtime before declaring its properties.
-`Runtime::registerProperty(ownerTypeId, name, valueType)` declares a stored/script
+`TypeManager::registerScriptClassProperty(ownerTypeId, name, valueType)` declares a stored/script
 property and returns a `PropertyId`, or `PropertyId::INVALID` on failure.
-The owner ID is resolved within that runtime and must identify a class type.
+The owner ID is resolved within the manager's runtime and must identify a class type.
 The value type must also be registered with the same runtime and must be public
 and non-void. Repeating a declaration with the same name and type returns its
 existing ID. Conflicting declarations are logged and rejected without changing
 the type's properties. Host declarations are permitted on both open and closed
 types; openness controls whether scripts may add external declarations.
+
+`registerScriptStructProperty(ownerTypeId, name, valueType)` provides the same
+stored-field contract for struct owners. Each operation rejects the other
+owner category, invalid or unused IDs, and invalid value types with a logged
+error. Field names are stored as supplied; identifier syntax is validated by
+the compiler, not by these registration operations. These declarations create storage metadata,
+not native accessor callbacks. Names already used by native properties or
+methods are rejected. `Runtime::registerProperty` remains a compatibility
+entry point that delegates to the appropriate manager operation.
 
 `Runtime::getProperty(id)` returns metadata for native or script properties;
 `getNativeProperty(id)` returns only native properties. Invalid or unregistered
@@ -779,7 +790,8 @@ source `init` body. Classes without a source `init` have a parameterless constru
 `StructType` is declared in `<nomad/script/StructType.hpp>` and derives from
 `CompositeType`, not `ClassType`. Register a closed descriptor with
 `Runtime::registerStruct(name, documentation = {})`, add stored fields with
-`Runtime::registerProperty`, then call `Runtime::finalizeCompositeFieldLayout`.
+`runtime.getTypeManager().registerScriptStructProperty(ownerId, name, valueType)`,
+then call `runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId)`.
 Invalid or reserved names are logged and registration returns `TypeId::INVALID`.
 Use `Type::asStructType()` to inspect its category.
 
@@ -927,7 +939,7 @@ if (propertyId.isInvalid()) {
 }
 ```
 
-Invalid IDs, non-class owners, invalid value types or names, missing callbacks,
+Invalid IDs, non-class owners, invalid value types, missing callbacks,
 and conflicting members are logged and return `PropertyId::INVALID` without
 registering a property. Duplicate native properties are rejected even if their
 definitions match. Use the existing property and native member lookup APIs to
@@ -1204,38 +1216,38 @@ use `HubFunctions::ids`; generic families use `HubTypeFamily::argumentCount`.
 
 Use `registerHubNativeFunction(hubId, name, function, parameters, returnType, documentation)`
 to register a native function with a local member name, such as `"info"` in hub
-`"log"`. The name must be a simple identifier, not a qualified name.
+`"log"`. The supplied name is appended to the hub name without identifier validation.
 The function is available under its qualified name and shares overload resolution,
 documentation, and compiler-supplied source parameters with `registerNativeFunction`.
-Both open and closed hubs accept host registrations. Invalid hub IDs, names,
+Both open and closed hubs accept host registrations. Invalid hub IDs,
 callbacks, type references, and conflicting declarations are logged and return
 `CallableId::INVALID` without adding a function. Referenced types must belong to
 the receiving runtime; hidden source parameter types are supported.
 
 Use `registerHubScriptFunction(hubId, name, path, source)` to register a script
-function descriptor with a simple local name. It returns a `CallableId` and
+function descriptor with a host-supplied member name. It returns a `CallableId` and
 preserves the path and source in the shared callable catalog, just as
 `registerScriptFunction` does. Registration alone does not compile the body or
 make it executable. Both hub modes accept host registration. Invalid owners,
-nonlocal names, conflicting members, and existing callable names are logged and
+conflicting members and existing callable names are logged and
 return `CallableId::INVALID`; this API does not introduce script overloads.
 Use compiler source registration for normal source compilation.
 
-Use `registerHubVariable(hubId, name)` to declare a variable using a simple local
+Use `registerHubVariable(hubId, name)` to declare a variable using a host-supplied
 name. It returns a `ContextVariableId` for the same storage used by
 `registerHubVariable(qualifiedName)`. Variables start without a resolved type;
 script assignments resolve their types through the existing compilation path.
 For host-declared variables, supply a compiled parameterless `void` initialization
 function through `setScriptInitializer` when no generated script initializer exists.
-They remain writable in both open and closed hubs. Invalid owners, nonlocal
-names, duplicates, conflicts, and registration after script initialization are
+They remain writable in both open and closed hubs. Invalid owners,
+duplicates, conflicts, and registration after script initialization are
 logged and return `ContextVariableId::INVALID`.
 
 Use `registerHubClass(hubId, name, mode, documentation = {})` to register a class
 with a local name, such as `"ConsoleSink"` in hub `"log"`. It returns a `TypeId` and
-exposes the class as `log.ConsoleSink`. The name must be a simple identifier.
+exposes the class as `log.ConsoleSink`. Member names are not checked for identifier syntax.
 The hub may be open or closed; `ClassMode` independently controls whether scripts
-may extend the class. Invalid hub IDs, local names, class modes, and conflicting
+may extend the class. Invalid hub IDs, class modes, and conflicting
 declarations are logged and return `TypeId::INVALID`.
 
 `registerHubClass<Descriptor>(hubId, name, mode, arguments...)` also supports
@@ -1245,8 +1257,8 @@ additional arguments through the same registration path as
 registered using the returned class ID and the existing member APIs.
 
 Use `registerHubEnum(hubId, name, values, documentation = {})` to register an enum
-with a local name, such as `"Platform"` in hub `"os"`. Enum value names must also
-be simple identifiers. It returns a `TypeId`; the enum and its typed constants
+with a local name, such as `"Platform"` in hub `"os"`. Enum value names are not
+checked for identifier syntax, but must be non-empty. It returns a `TypeId`; the enum and its typed constants
 are available as `os.Platform` and `os.Platform.ValueName`. Empty value lists,
 duplicate names or numeric values, and conflicting declarations fail without
 publishing the enum or any of its values.
@@ -1258,9 +1270,15 @@ Object values are retained; the caller remains responsible for releasing its
 original reference. The value must match the supplied type, just as with
 `registerConstant`.
 
-Both APIs accept open and closed hubs. Invalid hub IDs, nonlocal names, invalid
+Both APIs accept open and closed hubs. Invalid hub IDs, invalid
 types, and conflicts are logged and return the corresponding invalid ID.
 Existing qualified-name registration APIs remain available.
+
+Host member names are stored as supplied, including names that are not valid
+script identifiers. The compiler validates names in source declarations;
+host registration does not make an otherwise invalid identifier usable in
+script syntax. Existing namespace qualification and internal-name handling
+still apply.
 
 Other native APIs still use qualified names with their existing runtime
 registration functions. Scripts may add distinct members only to native

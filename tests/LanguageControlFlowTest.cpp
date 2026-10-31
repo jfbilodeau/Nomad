@@ -206,12 +206,6 @@ BOOST_AUTO_TEST_CASE(add_iterable_rejects_invalid_definitions_before_publishing_
     candidate.factory.parameters = {{runtime.getLineNumberType()->getId(), "line", ""}};
     BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
     verifyUnchanged();
-    for (const auto* name : {"", "invalid.name"}) {
-        candidate = definition;
-        candidate.factory.name = name;
-        BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
-        verifyUnchanged();
-    }
     runtime.addIterable(id, definition);
     BOOST_TEST(type->getMethods().size() == 1u);
     BOOST_TEST(type->getIterableInfo().has_value());

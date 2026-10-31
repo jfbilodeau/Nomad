@@ -2,8 +2,11 @@
 
 #include <nomad/script/TypeManager.hpp>
 
+#include <nomad/log/Logger.hpp>
+
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/CompositeType.hpp>
+#include <nomad/script/Runtime.hpp>
 
 namespace nomad {
 
@@ -91,6 +94,52 @@ void TypeManager::finalizeCompositeFieldLayout(const TypeId id) {
         throw NomadException("Cannot finalize field layout: type ID does not identify a composite type");
     }
     owner->finalizeFieldLayout();
+}
+
+PropertyId TypeManager::registerScriptClassProperty(
+    const TypeId ownerId,
+    const NomadString& name,
+    const Type* valueType
+) {
+    auto* owner = getMutableCompositeType(ownerId);
+    return registerScriptProperty(
+        owner != nullptr && owner->asClassType() != nullptr ? owner : nullptr, name, valueType
+    );
+}
+
+PropertyId TypeManager::registerScriptStructProperty(
+    const TypeId ownerId,
+    const NomadString& name,
+    const Type* valueType
+) {
+    auto* owner = getMutableCompositeType(ownerId);
+    return registerScriptProperty(
+        owner != nullptr && owner->asStructType() != nullptr ? owner : nullptr, name, valueType
+    );
+}
+
+PropertyId TypeManager::registerScriptProperty(
+    CompositeType* owner,
+    const NomadString& name,
+    const Type* valueType
+) {
+    if (owner == nullptr || !ownsType(valueType) ||
+        valueType->isVoid() || valueType->isInternal()) {
+        log::error("Cannot register property '" + name + "': invalid owner or value type");
+        return PropertyId::INVALID;
+    }
+    if (const auto* existing = owner->getProperty(name)) {
+        if (existing->asNativeProperty() == nullptr && existing->getValueType() == valueType) {
+            return existing->getId();
+        }
+        log::error("Cannot register property '" + name + "': conflicting definition");
+        return PropertyId::INVALID;
+    }
+    if (m_runtime.getMemberType(m_runtime.getNativeMemberId(owner, name)) != MemberType::Unknown) {
+        log::error("Cannot register property '" + name + "': the type already has a member with that name");
+        return PropertyId::INVALID;
+    }
+    return owner->registerProperty(m_runtime, std::make_unique<Property>(owner, name, valueType));
 }
 
 } // namespace nomad

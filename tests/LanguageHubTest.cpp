@@ -73,9 +73,6 @@ BOOST_AUTO_TEST_CASE(hub_script_function_validation_rejects_conflicts_without_pu
     for (const auto invalidId : {HubId::INVALID, HubId{-2}, HubId{NOMAD_ID_MAX}}) {
         BOOST_TEST(runtime.registerHubScriptFunction(invalidId, "answer", "answer.nomad", "").isInvalid());
     }
-    for (const auto* name : {"", "example.answer", "child.answer", "answer@hidden", "1answer", "bad name"}) {
-        BOOST_TEST(runtime.registerHubScriptFunction(hubId, name, "answer.nomad", "").isInvalid());
-    }
     BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
     BOOST_TEST(runtime.getFunctionTableSize() == count);
     BOOST_REQUIRE(runtime.registerHubConstant(hubId, "constant", RuntimeValue(NomadInteger{1}),
@@ -99,6 +96,42 @@ BOOST_AUTO_TEST_CASE(hub_script_function_validation_rejects_conflicts_without_pu
     BOOST_TEST(runtime.getHub(hubId)->getMembers().size() == memberCount);
     BOOST_TEST(runtime.getScriptFunction(id)->getSourceCode() == "return 42");
     BOOST_TEST(runtime.getScriptFunction(id)->getPath() == "answer.nomad");
+}
+
+BOOST_AUTO_TEST_CASE(host_hub_registration_does_not_validate_member_identifier_syntax)
+{
+    for (const auto* name : {"", "qualified.name", "name@hidden", "1name", "bad name"}) {
+        Runtime runtime;
+        const auto scriptHub = runtime.registerHub("scripts", HubMode::Closed);
+        const auto nativeHub = runtime.registerHub("natives", HubMode::Closed);
+        const auto variableHub = runtime.registerHub("variables", HubMode::Closed);
+        const auto classHub = runtime.registerHub("classes", HubMode::Closed);
+        const auto enumHub = runtime.registerHub("enums", HubMode::Closed);
+        const auto constantHub = runtime.registerHub("constants", HubMode::Closed);
+        const auto scriptId = runtime.registerHubScriptFunction(scriptHub, name, "host.nomad", "");
+        const auto nativeId = runtime.registerHubNativeFunction(
+            nativeHub, name, [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+        );
+        const auto variableId = runtime.registerHubVariable(variableHub, name);
+        const auto classId = runtime.registerHubClass(classHub, name, ClassMode::Closed);
+        const auto enumId = runtime.registerHubEnum(enumHub, name, {{"Ready", 1}});
+        const auto constantId = runtime.registerHubConstant(
+            constantHub, name, RuntimeValue(NomadInteger{42}), runtime.getIntegerType()
+        );
+        BOOST_REQUIRE(scriptId.isValid() && nativeId.isValid() && variableId.isValid());
+        BOOST_REQUIRE(classId.isValid() && enumId.isValid() && constantId.isValid());
+        BOOST_TEST(runtime.getScriptFunction(scriptId)->getName() == "scripts." + NomadString(name));
+        BOOST_TEST(runtime.getNativeFunction(nativeId)->getName() == "natives." + NomadString(name));
+        BOOST_TEST(runtime.getTypeByName("classes." + NomadString(name)) != nullptr);
+        BOOST_TEST(runtime.getTypeByName("enums." + NomadString(name)) != nullptr);
+        BOOST_TEST(runtime.getConstantId("constants." + NomadString(name)) == constantId);
+    }
+    for (const auto* name : {"qualified.name", "name@hidden", "1name", "bad name"}) {
+        Runtime runtime;
+        const auto hubId = runtime.registerHub("example", HubMode::Closed);
+        BOOST_REQUIRE(runtime.registerHubEnum(hubId, "State", {{name, 1}}).isValid());
+        BOOST_TEST(runtime.getConstantId("example.State." + NomadString(name)).isValid());
+    }
 }
 
 BOOST_AUTO_TEST_CASE(hub_variable_ids_share_existing_storage_and_script_type_resolution)
@@ -145,9 +178,6 @@ BOOST_AUTO_TEST_CASE(hub_variable_validation_preserves_existing_members_and_cont
     BOOST_REQUIRE(hubId.isValid());
     for (const auto invalidId : {HubId::INVALID, HubId{-2}, HubId{NOMAD_ID_MAX}}) {
         BOOST_TEST(runtime.registerHubVariable(invalidId, "value").isInvalid());
-    }
-    for (const auto* name : {"", "example.value", "child.value", "value@hidden", "1value", "bad name"}) {
-        BOOST_TEST(runtime.registerHubVariable(hubId, name).isInvalid());
     }
     BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
     BOOST_TEST(runtime.getVariableContextIdByPrefix("$hub.example.value").isInvalid());
@@ -251,9 +281,6 @@ BOOST_AUTO_TEST_CASE(hub_class_validation_does_not_publish_partial_registrations
     for (const auto invalidId : {HubId::INVALID, HubId{-2}, HubId{NOMAD_ID_MAX}}) {
         reject(invalidId, "Point", ClassMode::Closed);
     }
-    for (const auto* name : {"", "example.Point", "child.Point", "Point@hidden", "1Point", "bad name"}) {
-        reject(hubId, name, ClassMode::Closed);
-    }
     reject(hubId, "Point", static_cast<ClassMode>(0));
     BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
     BOOST_TEST(runtime.getTypeByName("example.Point") == nullptr);
@@ -322,10 +349,6 @@ BOOST_AUTO_TEST_CASE(hub_enum_and_constant_validation_preserves_existing_members
         BOOST_TEST(runtime.registerHubConstant(invalidId, "value", value, runtime.getIntegerType()).isInvalid());
         BOOST_TEST(runtime.registerHubEnum(invalidId, "State", {{"Ready", 1}}).isInvalid());
     }
-    for (const auto* name : {"", "example.value", "child.value", "value@hidden", "1value", "bad name"}) {
-        BOOST_TEST(runtime.registerHubConstant(hubId, name, value, runtime.getIntegerType()).isInvalid());
-        BOOST_TEST(runtime.registerHubEnum(hubId, name, {{"Ready", 1}}).isInvalid());
-    }
     for (const auto* type : {
         static_cast<const Type*>(nullptr), otherRuntime.getIntegerType(), runtime.getVoidType(), runtime.getFileNameType()
     }) {
@@ -361,7 +384,7 @@ BOOST_AUTO_TEST_CASE(hub_enums_reject_invalid_values_without_publishing_a_type_o
     const auto hubId = runtime.registerHub("example", HubMode::Opened);
     BOOST_REQUIRE(hubId.isValid());
     for (const auto& values : std::vector<std::vector<EnumValueDefinition>>{
-        {}, {{"", 1}}, {{"bad.name", 1}}, {{"bad@name", 1}}, {{"1name", 1}},
+        {}, {{"", 1}},
         {{"First", 1}, {"First", 2}}, {{"First", 1}, {"Second", 1}}
     }) {
         BOOST_TEST(runtime.registerHubEnum(hubId, "State", values).isInvalid());
@@ -454,11 +477,6 @@ BOOST_AUTO_TEST_CASE(hub_native_function_validation_does_not_publish_partial_reg
         ).isInvalid());
     }
     const auto* hub = runtime.getHub(hubId);
-    for (const auto* name : {"", "example.answer", "child.answer", "answer@hidden", "1answer", "bad name"}) {
-        BOOST_TEST(runtime.registerHubNativeFunction(
-            hubId, name, callback, {}, runtime.getVoidType(), ""
-        ).isInvalid());
-    }
     BOOST_TEST(runtime.registerHubNativeFunction(
         hubId, "answer", {}, {}, runtime.getVoidType(), ""
     ).isInvalid());

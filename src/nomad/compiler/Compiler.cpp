@@ -513,7 +513,7 @@ const Property* Compiler::resolveObjectField(
         }
         return property;
     }
-    const auto id = m_runtime->registerProperty(owner->getId(), name, valueType);
+    const auto id = m_runtime->getTypeManager().registerScriptClassProperty(owner->getId(), name, valueType);
     if (id.isInvalid()) {
         report("Cannot register class field '" + name + "'");
         return nullptr;

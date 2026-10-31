@@ -23,7 +23,6 @@
 #include <boost/json/array.hpp>
 
 #include <algorithm>
-#include <cctype>
 #include <utility>
 
 namespace nomad {
@@ -73,27 +72,6 @@ std::optional<IterableInfo> Runtime::getIterableInfo(const Type* sourceType) con
     const auto* owner = sourceType->asClassType();
     return owner == nullptr ? std::nullopt : owner->getIterableInfo();
 }
-
-namespace {
-
-// TODO: Remove?
-bool isValidIdentifier(const NomadString& name) {
-    if (name.empty()) {
-        return false;
-    }
-
-    const auto firstCharacter = static_cast<unsigned char>(name.front());
-    if (!std::isalpha(firstCharacter) && firstCharacter != '_') {
-        return false;
-    }
-
-    return std::ranges::all_of(name.begin() + 1, name.end(), [](const NomadChar character) {
-        const auto unsignedCharacter = static_cast<unsigned char>(character);
-        return std::isalnum(unsignedCharacter) || character == '_';
-    });
-}
-
-} // namespace
 
 Runtime::Runtime():
     m_typeManager(*this)
@@ -274,8 +252,8 @@ CallableId Runtime::registerNativeFunction(
 
 std::optional<NomadString> Runtime::qualifyHubMemberName(const HubId hubId, const NomadString& name) const {
     const auto* hub = getHub(hubId);
-    if (hub == nullptr || !isValidIdentifier(name)) {
-        log::error("Cannot register hub member '" + name + "': invalid hub or local member name");
+    if (hub == nullptr) {
+        log::error("Cannot register hub member '" + name + "': invalid hub");
         return std::nullopt;
     }
     return hub->getName() + "." + name;
@@ -301,8 +279,8 @@ ConstantId Runtime::registerHubConstant(
     const Type* type
 ) {
     const auto* hub = getHub(hubId);
-    if (hub == nullptr || !isValidIdentifier(name)) {
-        log::error("Cannot register hub constant '" + name + "': invalid hub or local member name");
+    if (hub == nullptr) {
+        log::error("Cannot register hub constant '" + name + "': invalid hub");
         return ConstantId::INVALID;
     }
     if (!ownsType(type) || type->isVoid() || type->isInternal()) {
@@ -319,15 +297,9 @@ TypeId Runtime::registerHubEnum(
     NomadString documentation
 ) {
     const auto* hub = getHub(hubId);
-    if (hub == nullptr || !isValidIdentifier(name)) {
-        log::error("Cannot register hub enum '" + name + "': invalid hub or local member name");
+    if (hub == nullptr) {
+        log::error("Cannot register hub enum '" + name + "': invalid hub");
         return TypeId::INVALID;
-    }
-    for (const auto& value : values) {
-        if (!isValidIdentifier(value.name)) {
-            log::error("Cannot register hub enum '" + name + "': value names must be simple identifiers");
-            return TypeId::INVALID;
-        }
     }
     return createEnum(hub->getName() + "." + name, std::move(values), std::move(documentation));
 }
@@ -341,8 +313,8 @@ CallableId Runtime::registerHubNativeFunction(
     NomadDocArg
 ) {
     const auto* hub = getHub(hubId);
-    if (hub == nullptr || !isValidIdentifier(name)) {
-        log::error("Cannot register hub native function '" + name + "': invalid hub or local member name");
+    if (hub == nullptr) {
+        log::error("Cannot register hub native function '" + name + "': invalid hub");
         return CallableId::INVALID;
     }
     return registerNativeFunction(hub->getName() + "." + name, std::move(function), parameters, returnType, doc);
@@ -1628,10 +1600,6 @@ bool Runtime::canRegisterMemberSignature(
     const std::vector<Parameter>& parameters,
     NomadString& error
 ) const {
-    if (!isValidIdentifier(name)) {
-        error = "member name must be a simple identifier";
-        return false;
-    }
     if (type != MemberType::Property && type != MemberType::Method) {
         error = "member must be a property or method";
         return false;
@@ -1962,25 +1930,10 @@ PropertyId Runtime::registerProperty(
     const Type* valueType
 ) {
     const auto type = getType(ownerId);
-    const auto* composite = type ? (*type)->asCompositeType() : nullptr;
-    if (composite == nullptr || !isValidIdentifier(name) || !ownsType(valueType) ||
-        valueType->isVoid() || valueType->isInternal()) {
-        log::error("Cannot register property '" + name + "': invalid owner, name, or value type");
-        return PropertyId::INVALID;
+    if (type.has_value() && (*type)->asClassType() != nullptr) {
+        return m_typeManager.registerScriptClassProperty(ownerId, name, valueType);
     }
-    auto* owner = m_typeManager.getMutableCompositeType(ownerId);
-    if (const auto* existing = owner->getProperty(name)) {
-        if (existing->asNativeProperty() == nullptr && existing->getValueType() == valueType) {
-            return existing->getId();
-        }
-        log::error("Cannot register property '" + name + "': conflicting definition");
-        return PropertyId::INVALID;
-    }
-    if (getMemberType(getNativeMemberId(composite, name)) != MemberType::Unknown) {
-        log::error("Cannot register property '" + name + "': the type already has a member with that name");
-        return PropertyId::INVALID;
-    }
-    return owner->registerProperty(*this, std::make_unique<Property>(composite, name, valueType));
+    return m_typeManager.registerScriptStructProperty(ownerId, name, valueType);
 }
 
 void Runtime::setPropertyHasExplicitInitializer(

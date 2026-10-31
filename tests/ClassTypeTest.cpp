@@ -818,7 +818,6 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
     }
     BOOST_TEST(runtime.registerProperty(type->getId(), "value", other.getIntegerType()).isInvalid());
     BOOST_TEST(runtime.registerProperty(type->getId(), "value", runtime.getVoidType()).isInvalid());
-    BOOST_TEST(runtime.registerProperty(type->getId(), "invalid.name", runtime.getIntegerType()).isInvalid());
     const auto method = runtime.addMethod(type->getId(), {
         .name = "move",
         .parameters = {},

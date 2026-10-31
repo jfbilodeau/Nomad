@@ -163,11 +163,6 @@ BOOST_AUTO_TEST_CASE(add_method_rejects_invalid_definitions_without_partial_regi
         invalidDefinition.parameters.push_back({parameterTypeId, "second", ""});
         BOOST_TEST(runtime.addMethod(typeId, std::move(invalidDefinition)).isInvalid());
     }
-    for (const auto* name : {"", "invalid.name"}) {
-        auto invalidDefinition = definition;
-        invalidDefinition.name = name;
-        BOOST_TEST(runtime.addMethod(typeId, std::move(invalidDefinition)).isInvalid());
-    }
     auto unnamedParameter = definition;
     unnamedParameter.parameters[0].name.clear();
     BOOST_TEST(runtime.addMethod(typeId, std::move(unnamedParameter)).isInvalid());
@@ -356,11 +351,6 @@ BOOST_AUTO_TEST_CASE(add_property_rejects_invalid_definitions_without_partial_re
     }) {
         auto invalidDefinition = definition;
         invalidDefinition.valueType = invalidValueType;
-        BOOST_TEST(runtime.addProperty(typeId, std::move(invalidDefinition)).isInvalid());
-    }
-    for (const auto* invalidName : {"", "invalid.name"}) {
-        auto invalidDefinition = definition;
-        invalidDefinition.name = invalidName;
         BOOST_TEST(runtime.addProperty(typeId, std::move(invalidDefinition)).isInvalid());
     }
     auto inaccessibleDefinition = definition;
@@ -596,7 +586,7 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
 
     BOOST_TEST(!runtime.registerMemberTemplate("Family", "declaredMethod", MemberType::Method, parameters));
     BOOST_TEST(!runtime.registerMemberTemplate("Missing", "member", MemberType::Property));
-    BOOST_TEST(!runtime.registerMemberTemplate("Family", "invalid.name", MemberType::Property));
+    BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "invalid.name", MemberType::Property));
     BOOST_TEST(!runtime.registerMemberTemplate("Family", "unknownKind", MemberType::Unknown));
     BOOST_REQUIRE(runtime.registerMemberTemplate("Other", "declaredProperty", MemberType::Method));
     BOOST_TEST(!runtime.registerMemberTemplate("Family", "withArguments", MemberType::Property, parameters));
