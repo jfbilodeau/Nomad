@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1H have been reviewed; Step 1I below is implemented and awaiting review.
+Steps 1A through 1J have been reviewed; Step 1K below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -468,6 +468,58 @@ Step 1I validation:
   self-copy, and null/no-access behavior for void.
 - Existing reference-count, partial initialization/copy cleanup, failed
   replacement, collection, native-module, and interpreter regressions passed.
+- All four documentation preparation tests and whitespace checks passed.
+- No struct execution, aggregate assignment, or gameplay validation is claimed.
+
+Approved tenth slice (Step 1J):
+
+- Add `OpCodeEmitter` directly to `script/OpCode.hpp`, exposing the existing
+  instruction-function, ID, and index append operations. Compiler implements
+  that interface directly without an adapter or intermediate opcode collection.
+- Add type-owned cleanup emission for results, intermediate registers, stack
+  values, function variables, and parameters. Migrate every compiler cleanup
+  site and remove the old opcode-taking `Compiler::addFreeValue` helpers.
+- Keep existing opcode tables as temporary backing for scalar cleanup. Parameter
+  cleanup is supplied by the type categories rather than an object-specific
+  compiler branch.
+- Preserve the existing no-cleanup emission for unresolved deferred metadata.
+- Add exact instruction/operand tests, direct emitter error tests, and a type
+  override regression. The user reported all tests passing after running the
+  tests directly; that running process blocked a subsequent module-copy build.
+
+Approved eleventh slice (Step 1K):
+
+- Remove `TargetOpCodes`, `TypeOpCodes`, `getTypeOpCodes()`, and `m_typeOpCodes`.
+- Move `ExpressionTarget` unchanged from compiler syntax metadata to
+  `script/OpCode.hpp`, retaining its name and numeric values.
+- Reuse the former compiler target dispatch as `OpCodeEmitter::addLoadTarget`,
+  accepting three instruction functions directly. Types and constant loading
+  share it without additional tables or duplicate dispatch helpers.
+- Supply virtual type-owned initialization, load, store, copy, move, push, pop,
+  and cleanup operations. Migrate all remaining compiler and test consumers.
+- Make `needsFree()` an independent virtual ownership query, false by default
+  and true for class references. Keep runtime lifecycle APIs unchanged.
+- Preserve existing scalar/reference bytecode, operand widths, emitted word
+  positions, dynamic getter ownership, and string initialization.
+- Leave compiler literal-loading logic in place. No new opcode, compiler
+  dependency in Type, intermediate opcode collection, struct execution, or
+  physical storage/calling-convention change.
+- Add exact target/load/store/register/initialization tests and type-override
+  delegation coverage. Invalid emission targets raise an explicit error.
+
+Steps 1J and 1K validation:
+
+- The Windows Debug `nomad_test`, `nomad-runtime`, and `nomad-lsp` targets built
+  successfully. The earlier module-copy blockage cleared after the user's test
+  process completed; no build-script workaround was introduced.
+- The `nomad_test_language`, `nomad_test_remaining`, `nomad_test_bindings`, and
+  `nomad_test_tooling` groups passed, together with `nomad_lsp_process`.
+- Emission tests verify every load target, instruction ID, operand width, return
+  position, initialization variant, register ownership operation, store
+  instruction, type override, and invalid-target error.
+- Direct emission assertions account for the compiler's existing initial
+  `op_stop`; no production initialization behavior was changed.
+- No references to the removed tables or getter remain in C++ source or headers.
 - All four documentation preparation tests and whitespace checks passed.
 - No struct execution, aggregate assignment, or gameplay validation is claimed.
 

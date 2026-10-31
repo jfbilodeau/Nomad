@@ -399,7 +399,7 @@ snapshot directly.
 ### Type lookup
 
 Include `<nomad/script/Type.hpp>` for the base `Type`, storage categories, and
-opcode metadata. Concrete built-in descriptors such as `IntegerType`,
+lifecycle and bytecode-emission APIs. Concrete built-in descriptors such as `IntegerType`,
 `StringType`, `EnumType`, and the hidden source-location types are declared in
 `<nomad/script/BaseTypes.hpp>`. The category bases have dedicated headers:
 `<nomad/script/ValueType.hpp>`, `<nomad/script/CompositeType.hpp>`, and
@@ -427,6 +427,35 @@ the ID belongs to a particular runtime or is registered. `IdHash` supports
 strong IDs as keys in standard unordered containers.
 Streaming an ID prints its type and numeric value, for example `CallableId{42}`
 or `CallableId{-1}`.
+
+#### Type-owned bytecode emission
+
+`OpCodeEmitter` and `ExpressionTarget` are declared in
+`<nomad/script/OpCode.hpp>`. `ExpressionTarget` selects the result register,
+intermediate register, or stack. `Compiler` implements `OpCodeEmitter` directly.
+Custom emitters implement `addOpCode(InstructionFn)`, `addId(NomadId)`, and
+`addIndex(NomadIndex)`; each returns the position of the appended instruction word.
+`addLoadTarget` selects one of three supplied instruction functions, writes it
+and its ID operand, and returns the operand position. Invalid targets raise
+`NomadBug`.
+
+Type descriptors provide virtual `emitInit*`, `emitFree*`, `emitLoad*`,
+`emitStore*`, and register copy/move/push/pop operations. These accept an
+`OpCodeEmitter`, not a compiler, and write directly to its output without an
+intermediate instruction collection. Operand IDs and offsets retain their
+existing VM meanings.
+
+Default value operations use bitwise register traffic and emit no initialization
+or cleanup. Class types emit reference-aware loads, copies, transfers, and
+cleanup; string types specialize initialization for empty strings. Runtime
+`initValue`, `copyValue`, and `freeValue` remain separate from bytecode emission.
+`needsFree()` is a virtual ownership query, independent of opcode selection:
+false by default and true for class references.
+
+The former `TargetOpCodes`, `TypeOpCodes`, and `getTypeOpCodes()` APIs have been
+removed. Custom descriptors must override emission operations instead of setting
+opcode-table fields. Types deriving directly from `Type` also implement
+`emitFreeParameter`; `ValueType` and `ClassType` supply their category's behavior.
 
 
 ### Class registration

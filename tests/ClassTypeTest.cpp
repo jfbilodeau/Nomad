@@ -419,12 +419,13 @@ BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout
     BOOST_TEST(composite->needsFree());
     std::vector<Instruction> instructions;
     Compiler compiler(&runtime, instructions);
+    const auto firstInstruction = compiler.getOpCodeSize();
     composite->emitInitResult(compiler);
     composite->emitFreeResult(compiler);
-    BOOST_REQUIRE(instructions.size() == 2U);
-    BOOST_TEST(runtime.getInstructionId(instructions[0].fn) ==
+    BOOST_REQUIRE(instructions.size() == firstInstruction + 2);
+    BOOST_TEST(runtime.getInstructionId(instructions[firstInstruction].fn) ==
         runtime.getInstructionId(OpCodes::op_object_init_r));
-    BOOST_TEST(runtime.getInstructionId(instructions[1].fn) ==
+    BOOST_TEST(runtime.getInstructionId(instructions[firstInstruction + 1].fn) ==
         runtime.getInstructionId(OpCodes::op_object_free_r));
 
     const auto stored = composite->registerProperty(runtime,
