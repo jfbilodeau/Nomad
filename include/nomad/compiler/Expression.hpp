@@ -319,7 +319,7 @@ public:
     [[nodiscard]] IdentifierExpression* asIdentifierExpression() override;
     [[nodiscard]] const IdentifierExpression* asIdentifierExpression() const override;
     [[nodiscard]] std::unique_ptr<TypedValue> getInitialValue(Compiler* compiler) const override;
-    void compileStore(Compiler* compiler) const;
+    void compileStore(Compiler* compiler, const ScriptCallableBase* function) const;
     void evaluateStore(InterpreterContext& context, const RuntimeValue& value) const;
 
 protected:

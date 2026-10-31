@@ -52,7 +52,7 @@ public:
     void emitFreeParameter(OpCodeEmitter& emitter, NomadId parameterId) const override;
     NomadIndex emitLoadFunctionVariable(
         OpCodeEmitter& emitter,
-        NomadId variableId,
+        NomadIndex offset,
         ExpressionTarget target
     ) const override;
     NomadIndex emitLoadParameter(

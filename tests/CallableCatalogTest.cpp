@@ -8,6 +8,8 @@
 #include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/script/Callable.hpp>
+#include <nomad/script/InstructionDump.hpp>
+#include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
@@ -19,6 +21,7 @@
 #include <limits>
 #include <memory>
 #include <span>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -103,6 +106,53 @@ CallableId registerNativeFunction(
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(callable_catalog)
+
+BOOST_AUTO_TEST_CASE(physical_local_bytecode_and_host_reads_use_offsets_after_wide_storage) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    ClassType* padding = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
+        "Padding", ClassMode::Closed, padding, NomadIndex{3}
+    ).isValid());
+    const auto id = runtime.registerScriptFunction("offsetExecution", "offsets.nomad", "");
+    auto* function = runtime.getScriptFunction(id);
+    BOOST_REQUIRE(function != nullptr);
+    function->setReturnType(runtime.getIntegerType());
+    function->registerVariable("padding", padding);
+    const auto number = function->registerVariable("number", runtime.getIntegerType());
+    const auto text = function->registerVariable("text", runtime.getStringType());
+    BOOST_TEST(number == VariableId{1});
+    BOOST_TEST(function->getVariableOffset(number) == 3U);
+    BOOST_TEST(function->getVariableOffset(text) == 4U);
+    const auto inspect = runtime.registerNativeFunction("inspectOffsetLocals",
+        [&](VirtualMachine* machine) {
+            BOOST_TEST(machine->getFunctionIntegerVariableValue(number) == 42);
+            BOOST_TEST(NomadString(machine->getFunctionStringVariableValue(text)->getString()) == "");
+            machine->setIntegerVariableValue(number, 43);
+            InterpreterContext context(*machine, *function);
+            BOOST_TEST(context.getVariableValueById(number)->getIntegerValue() == 43);
+            context.setVariable("number", runtime.getIntegerType(), RuntimeValue(NomadInteger{44}));
+            BOOST_TEST(machine->getFunctionIntegerVariableValue(number) == 44);
+        }, {}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(inspect.isValid());
+    function->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(function);
+    compiler->addLoadIntegerValue(42, ExpressionTarget::Result);
+    runtime.getIntegerType()->emitStoreFunctionVariable(*compiler, function->getVariableOffset(number));
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(inspect.id);
+    compiler->addLoadFunctionVariable(function->getVariableOffset(number), runtime.getIntegerType(),
+        ExpressionTarget::Result);
+    compiler->addFunctionReturn(function);
+    function->setFunctionEnd(runtime.getInstructions().size());
+    RuntimeValue result;
+    runtime.executeFunction(id, {}, result);
+    BOOST_TEST(result.getIntegerValue() == 44);
+    std::ostringstream dump;
+    dumpInstructions(runtime, *function, dump);
+    BOOST_TEST(dump.str().find("number (1)") == NomadString::npos);
+    BOOST_TEST(dump.str().find("op_function_variable_get_r") != NomadString::npos);
+}
 
 BOOST_AUTO_TEST_CASE(local_layout_metadata_is_shared_across_script_callable_categories) {
     Runtime runtime;

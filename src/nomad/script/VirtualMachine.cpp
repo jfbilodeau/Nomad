@@ -37,11 +37,13 @@ VirtualMachine::VirtualMachine(Runtime* runtime, NomadIndex stack_size):
 VirtualMachine::~VirtualMachine() = default;
 
 void VirtualMachine::setFunctionVariableValue(const VariableId variableId, const RuntimeValue& value) {
-    m_stack[m_variableIndex + variableId.id] = value;
+    const auto offset = getCurrentCallable()->getVariableOffset(variableId);
+    getLocalStorage(offset, 1)[0] = value;
 }
 
 const RuntimeValue& VirtualMachine::getFunctionVariableValue(const VariableId variableId) const {
-    return m_stack[m_variableIndex + variableId.id];
+    const auto offset = getCurrentCallable()->getVariableOffset(variableId);
+    return getLocalStorage(offset, 1)[0];
 }
 
 std::span<RuntimeValue> VirtualMachine::getLocalStorage(const NomadIndex offset, const NomadIndex count) {
@@ -814,7 +816,8 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, c
             captureType->copyValue(&value, &captureValue);
         } else if (captureSource == CaptureSource::Variable) {
             // Capture from the enclosing function's variable frame
-            const auto& value = getFunctionVariableValue(capture.variableId);
+            const auto* parent = runtime->getScriptCallable(function->getParentId());
+            const auto& value = getLocalStorage(parent->getVariableOffset(capture.variableId), 1)[0];
 
             captureType->copyValue(&value, &captureValue);
         } else if (captureSource == CaptureSource::Receiver) {
@@ -920,7 +923,8 @@ void VirtualMachine::moveObjectResultToStack() {
 }
 
 void VirtualMachine::freeObjectVariable(const VariableId variableId) {
-    m_stack[m_variableIndex + variableId.id].freeObjectValue();
+    const auto offset = getCurrentCallable()->getVariableOffset(variableId);
+    getLocalStorage(offset, 1)[0].freeObjectValue();
 }
 
 void VirtualMachine::freeObjectStack(const NomadIndex index) {

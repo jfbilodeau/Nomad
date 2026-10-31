@@ -124,7 +124,7 @@ void InterpreterContext::setVariable(
             type->freeValue(&replacement);
             throw;
         }
-        auto& previous = m_virtualMachine.m_stack[m_variableIndex + frameId.id];
+        auto& previous = m_virtualMachine.m_stack[m_variableIndex + m_frameCallable->getVariableOffset(frameId)];
         type->freeValue(&previous);
         previous = replacement;
         return;
@@ -192,7 +192,7 @@ const RuntimeValue* InterpreterContext::getVariableValue(const NomadString& name
 const RuntimeValue* InterpreterContext::getVariableValueById(const VariableId variableId) const {
     if (isFrameVariable(variableId)) {
         validateFrame();
-        return &m_virtualMachine.m_stack[m_variableIndex + variableId.id];
+        return &m_virtualMachine.m_stack[m_variableIndex + m_frameCallable->getVariableOffset(variableId)];
     }
     if (variableId.isInvalid()) {
         return nullptr;

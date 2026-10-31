@@ -92,16 +92,23 @@ void Type::emitFreeFunctionVariable(OpCodeEmitter&, NomadIndex) const {
 
 NomadIndex Type::emitLoadFunctionVariable(
     OpCodeEmitter& emitter,
-    const NomadId variableId,
+    const NomadIndex offset,
     const ExpressionTarget target
 ) const {
-    return emitter.addLoadTarget(
-        op_function_variable_get_r,
-        op_function_variable_get_i,
-        op_function_variable_push,
-        variableId,
-        target
-    );
+    switch (target) {
+    case ExpressionTarget::Result:
+        emitter.addOpCode(op_function_variable_get_r);
+        break;
+    case ExpressionTarget::Intermediate:
+        emitter.addOpCode(op_function_variable_get_i);
+        break;
+    case ExpressionTarget::Stack:
+        emitter.addOpCode(op_function_variable_push);
+        break;
+    default:
+        throw NomadBug("Invalid expression target for local load");
+    }
+    return emitter.addIndex(offset);
 }
 
 NomadIndex Type::emitLoadParameter(
@@ -181,10 +188,10 @@ NomadIndex Type::emitStoreParameter(OpCodeEmitter& emitter, const NomadId parame
 
 NomadIndex Type::emitStoreFunctionVariable(
     OpCodeEmitter& emitter,
-    const NomadId variableId
+    const NomadIndex offset
 ) const {
     emitter.addOpCode(op_function_variable_set);
-    return emitter.addId(variableId);
+    return emitter.addIndex(offset);
 }
 
 NomadIndex Type::emitStoreDynamicVariable(

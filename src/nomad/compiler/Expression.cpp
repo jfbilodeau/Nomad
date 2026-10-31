@@ -1739,7 +1739,8 @@ void IdentifierExpression::onCompile(Compiler* compiler, ScriptCallableBase* fun
             break;
 
         case IdentifierType::FunctionVariable:
-            compiler->addLoadFunctionVariable(m_identifierDefinition.variableId, m_identifierDefinition.valueType, target);
+            compiler->addLoadFunctionVariable(
+                function->getVariableOffset(m_identifierDefinition.variableId), m_identifierDefinition.valueType, target);
             break;
 
         case IdentifierType::DynamicVariable:
@@ -1785,7 +1786,7 @@ const IdentifierExpression* IdentifierExpression::asIdentifierExpression() const
     return this;
 }
 
-void IdentifierExpression::compileStore(Compiler* compiler) const {
+void IdentifierExpression::compileStore(Compiler* compiler, const ScriptCallableBase* function) const {
     const auto* type = m_identifierDefinition.valueType;
 
     switch (m_identifierDefinition.identifierType) {
@@ -1795,9 +1796,9 @@ void IdentifierExpression::compileStore(Compiler* compiler) const {
     case IdentifierType::FunctionVariable:
         m_identifierDefinition.valueType->emitFreeFunctionVariable(
             *compiler,
-            toNomadIndex(m_identifierDefinition.variableId.id)
+            function->getVariableOffset(m_identifierDefinition.variableId)
         );
-        type->emitStoreFunctionVariable(*compiler, m_identifierDefinition.variableId.id);
+        type->emitStoreFunctionVariable(*compiler, function->getVariableOffset(m_identifierDefinition.variableId));
         break;
 
     case IdentifierType::DynamicVariable:

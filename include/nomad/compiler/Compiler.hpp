@@ -150,7 +150,7 @@ public:
     NomadIndex addLoadFloatValue(NomadFloat value, ExpressionTarget target);
     NomadIndex addLoadIntegerValue(NomadInteger value, ExpressionTarget target);
     NomadIndex addLoadStringValue(const NomadString& value, ExpressionTarget target);
-    NomadIndex addLoadFunctionVariable(VariableId variableId, const Type* type, ExpressionTarget target);
+    NomadIndex addLoadFunctionVariable(NomadIndex offset, const Type* type, ExpressionTarget target);
     NomadIndex addLoadDynamicVariable(DynamicVariableId variableId, const Type* type, ExpressionTarget target);
     NomadIndex addLoadContextVariable(ContextVariableId contextVariableId, const Type* type, ExpressionTarget target);
     NomadIndex addLoadParameter(NomadIndex parameterId, const Type* type, ExpressionTarget target);

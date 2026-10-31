@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1AA have been reviewed; Step 1AB below is implemented and awaiting
+Steps 1A through 1AB have been reviewed; Step 1AC below is implemented and awaiting
 review. Aggregate VM execution remains unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1134,6 +1134,42 @@ Next slice after review: agree on the coherent migration of local instruction
 operands and all local frame consumers to physical offsets, including frame
 reservation and cleanup. Review necessary operand/API changes before execution
 changes; aggregate receiver and return-destination contracts follow separately.
+
+### Step 1AC: Physical local instruction offsets
+
+Local load, store, and cleanup instructions use full-width physical Index
+operands. Type-owned load/store emission accepts NomadIndex offsets, and all
+compiler local emission paths resolve logical IDs through callable metadata.
+Loops and direct string defaults use those offsets as well.
+
+Entry and return instructions reserve/pop physical local storage totals while
+metadata iteration retains logical counts. Local instruction execution uses
+the borrowed local-storage API without runtime layout lookup or narrowing.
+Instruction descriptions and dumps treat these operands as numeric offsets.
+Host-facing VariableId access, frame-backed interpreter access, and local
+captures resolve IDs through the appropriate callable's layout.
+
+Existing scalar/reference behavior and ownership are preserved. StructType
+local load/store/cleanup emission remains explicitly unsupported. Parameter
+instructions, aggregate call ABI, and return destinations are unchanged.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, binding, tooling, and LSP process regressions passed.
+- New coverage executes scalar locals following three-slot padding, checks
+  host and frame-backed interpreter access, verifies string initialization and
+  physical frame teardown, and checks numeric instruction dumps.
+- Type emission tests verify full-width offsets beyond the NomadId range.
+- An initial dump regression used an executable-side instruction thunk; using
+  the registered instruction name corrected the Windows test setup.
+- All four documentation preparation tests and whitespace checks passed.
+- No struct local execution or gameplay validation is claimed.
+
+Next slice after review: type-owned aggregate local cleanup using finalized
+field offsets and existing cleanup instructions. Aggregate load/store,
+parameter/call lowering, and receiver/return-destination contracts follow
+separate design approvals.
 
 Remaining Step 1 work, requiring separate design approval:
 

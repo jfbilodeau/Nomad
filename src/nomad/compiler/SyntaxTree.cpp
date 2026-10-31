@@ -469,8 +469,8 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
         break;
     case IdentifierType::FunctionVariable:
         // `r` is moved into the variable, so its previous value is released first.
-        m_expression->getType()->emitFreeFunctionVariable(*compiler, toNomadIndex(identifier.variableId.id));
-        type->emitStoreFunctionVariable(*compiler, identifier.variableId.id);
+        m_expression->getType()->emitFreeFunctionVariable(*compiler, function->getVariableOffset(identifier.variableId));
+        type->emitStoreFunctionVariable(*compiler, function->getVariableOffset(identifier.variableId));
         break;
 
     case IdentifierType::DynamicVariable:

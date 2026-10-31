@@ -344,62 +344,49 @@ void op_object_free_parameter(VirtualMachine* interpreter) {
 }
 
 void op_function_variable_set(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{interpreter->nextId()};
-
-    interpreter->setFunctionVariableValue(variableId, interpreter->getResult());
+    const auto offset = interpreter->nextIndex();
+    interpreter->getLocalStorage(offset, 1)[0] = interpreter->getResult();
 }
 
 
 void op_function_variable_get_r(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{interpreter->nextId()};
-
-    RuntimeValue value;
-    interpreter->getFunctionVariableValue(variableId, value);
+    const auto offset = interpreter->nextIndex();
+    const auto value = interpreter->getLocalStorage(offset, 1)[0];
 
     interpreter->setResult(value);
 }
 
 void op_function_variable_object_get_r(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{interpreter->nextId()};
-
-    RuntimeValue value;
-    interpreter->getFunctionVariableValue(variableId, value);
+    const auto offset = interpreter->nextIndex();
+    const auto value = interpreter->getLocalStorage(offset, 1)[0];
 
     interpreter->getResult().copyObjectValue(value);
 }
 
 void op_function_variable_get_i(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{interpreter->nextId()};
-
-    RuntimeValue value;
-    interpreter->getFunctionVariableValue(variableId, value);
+    const auto offset = interpreter->nextIndex();
+    const auto value = interpreter->getLocalStorage(offset, 1)[0];
 
     interpreter->setIntermediate(value);
 }
 
 void op_function_variable_object_get_i(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{interpreter->nextId()};
-
-    RuntimeValue value;
-    interpreter->getFunctionVariableValue(variableId, value);
+    const auto offset = interpreter->nextIndex();
+    const auto value = interpreter->getLocalStorage(offset, 1)[0];
 
     interpreter->getIntermediate().copyObjectValue(value);
 }
 
 void op_function_variable_push(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{interpreter->nextId()};
-
-    RuntimeValue value;
-    interpreter->getFunctionVariableValue(variableId, value);
+    const auto offset = interpreter->nextIndex();
+    const auto value = interpreter->getLocalStorage(offset, 1)[0];
 
     interpreter->pushValue(value);
 }
 
 void op_function_variable_object_push(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{interpreter->nextId()};
-
-    RuntimeValue value;
-    interpreter->getFunctionVariableValue(variableId, value);
+    const auto offset = interpreter->nextIndex();
+    const auto value = interpreter->getLocalStorage(offset, 1)[0];
 
     interpreter->pushObjectValue(value);
 }
@@ -995,9 +982,8 @@ void op_object_free_i(VirtualMachine* interpreter) {
 }
 
 void op_object_free_variable(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{toNomadId(interpreter->nextIndex())};
-
-    interpreter->freeObjectVariable(variableId);
+    const auto offset = interpreter->nextIndex();
+    interpreter->getLocalStorage(offset, 1)[0].freeObjectValue();
 }
 
 void op_object_free_stack(VirtualMachine* interpreter) {

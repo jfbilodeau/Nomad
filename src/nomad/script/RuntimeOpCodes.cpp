@@ -81,14 +81,14 @@ void Runtime::registerDefaultInstructions() {
     // Variable operations
     registerInstruction(
         OpCodes::op_function_variable_set, op_function_variable_set,
-        "Set the `id` function variable from the `r` register value", {Operand::FunctionVariable}
+        "Set the physical local `offset` from the `r` register value", {Operand::Index}
     );
-    registerInstruction(OpCodes::op_function_variable_get_r, op_function_variable_get_r, "Load the `id` function variable value to the `result` register", {Operand::FunctionVariable});
-    registerInstruction(OpCodes::op_function_variable_object_get_r, op_function_variable_object_get_r, "Load the `id` object function variable value to the `result` register", {Operand::FunctionVariable});
-    registerInstruction(OpCodes::op_function_variable_get_i, op_function_variable_get_i, "Load the `id` function variable value to the `intermediate` register", {Operand::FunctionVariable});
-    registerInstruction(OpCodes::op_function_variable_object_get_i, op_function_variable_object_get_i, "Load the `id` object function variable value to the `intermediate` register", {Operand::FunctionVariable});
-    registerInstruction(OpCodes::op_function_variable_push, op_function_variable_push, "Push the `id` function variable value to the stack", {Operand::FunctionVariable});
-    registerInstruction(OpCodes::op_function_variable_object_push, op_function_variable_object_push, "Push the `id` object function variable to the stack", {Operand::FunctionVariable});
+    registerInstruction(OpCodes::op_function_variable_get_r, op_function_variable_get_r, "Load the physical local `offset` to the `result` register", {Operand::Index});
+    registerInstruction(OpCodes::op_function_variable_object_get_r, op_function_variable_object_get_r, "Copy the object at physical local `offset` to the `result` register", {Operand::Index});
+    registerInstruction(OpCodes::op_function_variable_get_i, op_function_variable_get_i, "Load the physical local `offset` to the `intermediate` register", {Operand::Index});
+    registerInstruction(OpCodes::op_function_variable_object_get_i, op_function_variable_object_get_i, "Copy the object at physical local `offset` to the `intermediate` register", {Operand::Index});
+    registerInstruction(OpCodes::op_function_variable_push, op_function_variable_push, "Push the physical local `offset` to the stack", {Operand::Index});
+    registerInstruction(OpCodes::op_function_variable_object_push, op_function_variable_object_push, "Copy the object at physical local `offset` to the stack", {Operand::Index});
     registerInstruction(OpCodes::op_constant_get_r, op_constant_get_r, "Load the constant into the result register", {Operand::Id});
     registerInstruction(OpCodes::op_constant_get_i, op_constant_get_i, "Load the constant into the intermediate register", {Operand::Id});
     registerInstruction(OpCodes::op_constant_push, op_constant_push, "Push the constant onto the stack", {Operand::Id});
@@ -304,7 +304,7 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_object_free_r, op_object_free_r, "Release the object in the `r` register", {});
     registerInstruction(OpCodes::op_object_free_i, op_object_free_i, "Release the object in the `i` register", {});
     registerInstruction(
-        OpCodes::op_object_free_variable, op_object_free_variable, "Release the object function variable", {Operand::Index}
+        OpCodes::op_object_free_variable, op_object_free_variable, "Release the object at physical local `offset`", {Operand::Index}
     );
     registerInstruction(
         OpCodes::op_object_free_stack, op_object_free_stack, "Release the object at stack offset (0 = top)", {Operand::Index}

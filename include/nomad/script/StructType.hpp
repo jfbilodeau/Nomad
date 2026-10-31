@@ -35,7 +35,7 @@ public:
     void emitFreeParameter(OpCodeEmitter& emitter, NomadId parameterId) const override;
     NomadIndex emitLoadFunctionVariable(
         OpCodeEmitter& emitter,
-        NomadId variableId,
+        NomadIndex offset,
         ExpressionTarget target
     ) const override;
     NomadIndex emitLoadParameter(
@@ -61,7 +61,7 @@ public:
     NomadIndex emitPopResult(OpCodeEmitter& emitter) const override;
     NomadIndex emitPopIntermediate(OpCodeEmitter& emitter) const override;
     NomadIndex emitStoreParameter(OpCodeEmitter& emitter, NomadId parameterId) const override;
-    NomadIndex emitStoreFunctionVariable(OpCodeEmitter& emitter, NomadId variableId) const override;
+    NomadIndex emitStoreFunctionVariable(OpCodeEmitter& emitter, NomadIndex offset) const override;
     NomadIndex emitStoreDynamicVariable(OpCodeEmitter& emitter, NomadId variableId) const override;
     NomadIndex emitStoreContextVariable(OpCodeEmitter& emitter, NomadId variableId) const override;
 };

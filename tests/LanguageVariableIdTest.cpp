@@ -267,13 +267,14 @@ BOOST_AUTO_TEST_CASE(local_loads_keep_existing_scalar_and_object_bytecode)
         const auto name = "local" + type->getTypeName();
         const auto id = function.registerVariable(name, type);
         const auto originalCount = runtime.getInstructions().size();
-        const auto result = compiler->addLoadFunctionVariable(id, type, ExpressionTarget::Result);
-        const auto intermediate = compiler->addLoadFunctionVariable(id, type, ExpressionTarget::Intermediate);
-        const auto stack = compiler->addLoadFunctionVariable(id, type, ExpressionTarget::Stack);
+        const auto offset = function.getVariableOffset(id);
+        const auto result = compiler->addLoadFunctionVariable(offset, type, ExpressionTarget::Result);
+        const auto intermediate = compiler->addLoadFunctionVariable(offset, type, ExpressionTarget::Intermediate);
+        const auto stack = compiler->addLoadFunctionVariable(offset, type, ExpressionTarget::Stack);
         const auto& instructions = runtime.getInstructions();
         BOOST_REQUIRE(instructions.size() == originalCount + 6);
         for (const auto operand : {result, intermediate, stack}) {
-            BOOST_TEST(instructions[operand].value.getIdValue() == id.id);
+            BOOST_TEST(instructions[operand].value.getIndexValue() == offset);
         }
         const auto resultOpCode = type->isString() ? OpCodes::op_function_variable_object_get_r :
             OpCodes::op_function_variable_get_r;

@@ -134,7 +134,7 @@ void StructType::emitFreeParameter(OpCodeEmitter&, NomadId) const {
 
 NomadIndex StructType::emitLoadFunctionVariable(
     OpCodeEmitter&,
-    NomadId,
+    NomadIndex,
     ExpressionTarget
 ) const {
     throw NomadException("Struct bytecode emission is not supported: " + getTypeName());
@@ -196,7 +196,7 @@ NomadIndex StructType::emitStoreParameter(OpCodeEmitter&, NomadId) const {
     throw NomadException("Struct bytecode emission is not supported: " + getTypeName());
 }
 
-NomadIndex StructType::emitStoreFunctionVariable(OpCodeEmitter&, NomadId) const {
+NomadIndex StructType::emitStoreFunctionVariable(OpCodeEmitter&, NomadIndex) const {
     throw NomadException("Struct bytecode emission is not supported: " + getTypeName());
 }
 

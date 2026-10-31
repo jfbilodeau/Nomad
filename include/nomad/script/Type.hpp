@@ -70,7 +70,7 @@ public:
     virtual void emitFreeParameter(OpCodeEmitter& emitter, NomadId parameterId) const = 0;
     virtual NomadIndex emitLoadFunctionVariable(
         OpCodeEmitter& emitter,
-        NomadId variableId,
+        NomadIndex offset,
         ExpressionTarget target
     ) const;
     virtual NomadIndex emitLoadParameter(
@@ -96,7 +96,7 @@ public:
     virtual NomadIndex emitPopResult(OpCodeEmitter& emitter) const;
     virtual NomadIndex emitPopIntermediate(OpCodeEmitter& emitter) const;
     virtual NomadIndex emitStoreParameter(OpCodeEmitter& emitter, NomadId parameterId) const;
-    virtual NomadIndex emitStoreFunctionVariable(OpCodeEmitter& emitter, NomadId variableId) const;
+    virtual NomadIndex emitStoreFunctionVariable(OpCodeEmitter& emitter, NomadIndex offset) const;
     virtual NomadIndex emitStoreDynamicVariable(OpCodeEmitter& emitter, NomadId variableId) const;
     virtual NomadIndex emitStoreContextVariable(OpCodeEmitter& emitter, NomadId variableId) const;
 

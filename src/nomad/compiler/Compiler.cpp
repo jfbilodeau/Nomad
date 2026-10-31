@@ -802,8 +802,8 @@ NomadIndex Compiler::addLoadStringValue(const NomadString& value, const Expressi
     this->reportInternalError("BUG: Invalid expression target for string value");
 }
 
-NomadIndex Compiler::addLoadFunctionVariable(const VariableId variableId, const Type* type, const ExpressionTarget target) {
-    return type->emitLoadFunctionVariable(*this, variableId.id, target);
+NomadIndex Compiler::addLoadFunctionVariable(const NomadIndex offset, const Type* type, const ExpressionTarget target) {
+    return type->emitLoadFunctionVariable(*this, offset, target);
 }
 
 NomadIndex Compiler::addLoadDynamicVariable(const DynamicVariableId variableId, const Type* type, const ExpressionTarget target) {
@@ -1263,15 +1263,16 @@ void Compiler::compileConstructor(const FunctionCompilation& source) {
 
 void Compiler::addFunctionEntry(const ScriptCallableBase* function) {
     const auto count = function->getVariableCount();
-    if (count > 0) {
+    const auto storageSize = function->getVariableStorageSize();
+    if (storageSize > 0) {
         addOpCode(OpCodes::op_stack_reserve);
-        addIndex(count);
+        addIndex(storageSize);
     }
     for (auto index = NomadIndex{0}; index < count; ++index) {
         if (function->getVariableType(VariableId{toNomadId(index)})->isString()) {
             addLoadStringValue("", ExpressionTarget::Result);
             addOpCode(OpCodes::op_function_variable_set);
-            addId(toNomadId(index));
+            addIndex(function->getVariableOffset(VariableId{toNomadId(index)}));
         }
     }
 }
@@ -1300,6 +1301,7 @@ void Compiler::addLoadReceiver(ScriptCallableBase* function, const ExpressionTar
 
 void Compiler::addFunctionReturn(const ScriptCallableBase* function) {
     const NomadIndex variableCount = function->getVariableCount();
+    const auto storageSize = function->getVariableStorageSize();
     if (variableCount == 0) {
         addOpCode(OpCodes::op_return);
 
@@ -1308,10 +1310,14 @@ void Compiler::addFunctionReturn(const ScriptCallableBase* function) {
 
     // Free owned variables before releasing the function's variable slots.
     for (auto i = NomadIndex{0}; i < variableCount; ++i) {
-        function->getVariableType(VariableId{toNomadId(i)})->emitFreeFunctionVariable(*this, i);
+        const auto id = VariableId{toNomadId(i)};
+        function->getVariableType(id)->emitFreeFunctionVariable(*this, function->getVariableOffset(id));
     }
 
-    switch (variableCount) {
+    switch (storageSize) {
+    case 0:
+        addOpCode(OpCodes::op_return);
+        break;
     case 1:
         addOpCode(OpCodes::op_return_1);
         break;
@@ -1323,7 +1329,7 @@ void Compiler::addFunctionReturn(const ScriptCallableBase* function) {
         break;
     default:
         addOpCode(OpCodes::op_return_n);
-        addIndex(variableCount);
+        addIndex(storageSize);
     }
 }
 
