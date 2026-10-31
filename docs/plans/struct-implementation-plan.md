@@ -1,8 +1,8 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1W have been reviewed; Step 1X below is implemented and awaiting
-review. Aggregate VM execution remains unimplemented.
+Steps 1A through 1X have been reviewed; Step 1Y records the approved frame
+addressing foundation. Aggregate VM execution remains unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -993,6 +993,57 @@ Validation:
 Next slice after review: settle frame/parameter storage addressing and the exact
 aggregate instruction contracts, including receiver and return-destination
 save/restore, before changing the VM ABI.
+
+### Step 1Y: Approved frame and parameter storage addressing
+
+Local storage starts at `m_variableIndex + physicalOffset`. Parameters retain
+right-to-left argument evaluation and pushing, while each aggregate argument
+occupies a contiguous block in increasing field-offset order.
+
+For a nonempty parameter of width `W` and cumulative parameter offset `O`,
+its storage starts at `m_parameterIndex - O - (W - 1)`. The parameter anchor
+points at the last slot of the first nonempty parameter, not necessarily its
+first field. Empty parameters return empty views before index arithmetic.
+
+For `updatePoint p:Point x:float y:float`, physical memory from low to high is
+`[y, x, p.x, p.y, p.z]`. The parameter anchor points at `p.z`. Logical offsets
+are `p=0`, `x=3`, `y=4`; the Point block begins two slots below the anchor.
+Nested fields use subviews of that block, not scalar parameter-ID arithmetic.
+Zero-width parameters before, between, or after nonempty parameters retain
+logical IDs without consuming slots or shifting the argument anchor.
+
+Approved storage-view APIs for the next implementation slice:
+
+- Const/mutable `getLocalStorage(offset, count)`.
+- Const/mutable `getParameterStorage(offset, count)`.
+- Const/mutable `getEnclosingParameterStorage(offset, count)`.
+
+The enclosing-parameter APIs use the active script frame's argument anchor,
+derived from its saved-frame boundary, independently of an intervening native
+call's parameter anchor. All views borrow the fixed VM stack and must not
+outlive their owning frame. Check physical stack bounds and arithmetic; do not
+revalidate compiled types. Empty views must not form pointers to nonexistent
+slots.
+
+Existing scalar VM APIs and opcodes remain unchanged in this foundation.
+Do not reinterpret logical VariableId or parameter IDs as physical offsets.
+Later compiler lowering resolves logical IDs to physical addresses before
+emission and retains logical IDs for source metadata and host-facing access.
+
+Argument emission must retain special shapes such as the two-slot event
+callback. `ArgumentList::getArgumentCount` currently counts emitted slots,
+despite its name; later call lowering must distinguish that count from logical
+arity without changing overload resolution.
+
+This slice records the design only. No storage-view API, frame reservation,
+aggregate argument emission, receiver/return-destination state, or opcode has
+been implemented.
+
+Next reviewable implementation slice: add these borrowed storage views with
+low-level tests for multi-slot and empty blocks, nested script frames, native
+reentry, and arithmetic/bounds failures. Then review physical frame reservation,
+aggregate lifecycle emission, and exact receiver/return-destination instruction
+contracts separately before changing the aggregate call ABI.
 
 Remaining Step 1 work, requiring separate design approval:
 
