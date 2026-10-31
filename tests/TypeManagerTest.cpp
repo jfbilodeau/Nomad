@@ -612,4 +612,83 @@ BOOST_AUTO_TEST_CASE(parameterized_callbacks_can_grow_family_catalog_and_initial
     BOOST_TEST(manager.getParameterizedTypeArgumentCount("InitializerFamily63").value() == 1U);
 }
 
+BOOST_AUTO_TEST_CASE(manager_enum_creation_preserves_constants_and_equality_operations) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto hubId = runtime.registerHub("values", HubMode::Closed);
+    BOOST_REQUIRE(hubId.isValid());
+    const auto id = manager.createEnum("values.Level", {{"Low", 3}, {"High", 9}}, "Levels.");
+    BOOST_REQUIRE(id.isValid());
+    const auto* type = manager.getTypeByName("values.Level")->asEnum();
+    BOOST_REQUIRE(type != nullptr);
+    BOOST_TEST(type->getDocumentation() == "Levels.");
+    BOOST_TEST(type->getValueCount() == 2U);
+    BOOST_TEST(std::get<const Type*>(*runtime.getHub(hubId)->getMember("Level")) == type);
+    const auto lowId = runtime.getConstantId("values.Level.Low");
+    BOOST_REQUIRE(lowId.isValid());
+    BOOST_TEST(runtime.getConstantType(lowId) == type);
+    RuntimeValue low;
+    runtime.getConstantValue(lowId, low);
+    BOOST_TEST(low.getIntegerValue() == 3);
+    BOOST_TEST(runtime.getBinaryOperatorResultType(BinaryOperator::EqualEqual, type, type) == runtime.getBooleanType());
+    BOOST_TEST(runtime.getBinaryOperatorResultType(BinaryOperator::BangEqual, type, type) == runtime.getBooleanType());
+    RuntimeValue result;
+    BOOST_REQUIRE(runtime.foldBinary(BinaryOperator::EqualEqual, type, low, type, RuntimeValue(NomadInteger{3}), result));
+    BOOST_TEST(result.getBooleanValue());
+    BOOST_REQUIRE(runtime.foldBinary(BinaryOperator::BangEqual, type, low, type, RuntimeValue(NomadInteger{9}), result));
+    BOOST_TEST(result.getBooleanValue());
+    const auto count = manager.getTypeCount();
+    BOOST_TEST(runtime.createEnum("values.Level", {{"Replacement", 1}}).isInvalid());
+    for (const auto& definitions : std::vector<std::vector<EnumValueDefinition>>{
+        {}, {{"", 1}}, {{"Same", 1}, {"Same", 2}}, {{"First", 1}, {"Second", 1}}
+    }) {
+        BOOST_TEST(manager.createEnum("values.Invalid", definitions).isInvalid());
+    }
+    BOOST_TEST(manager.getTypeCount() == count);
+    BOOST_TEST(runtime.getConstantId("values.Invalid.First").isInvalid());
+    BOOST_REQUIRE(runtime.registerConstant("values.Blocked.Reserved",
+        RuntimeValue(NomadInteger{42}), runtime.getIntegerType()).isValid());
+    BOOST_TEST(manager.createEnum("values.Blocked", {{"First", 1}, {"Reserved", 2}}).isInvalid());
+    BOOST_TEST(manager.getTypeByName("values.Blocked") == nullptr);
+    BOOST_TEST(runtime.getConstantId("values.Blocked.First").isInvalid());
+    BOOST_CHECK_THROW(runtime.registerEnumOperators(nullptr), NomadException);
+    Runtime other;
+    const auto otherId = other.createEnum("Foreign", {{"One", 1}});
+    BOOST_REQUIRE(otherId.isValid());
+    BOOST_CHECK_THROW(runtime.registerEnumOperators(other.getTypeByName("Foreign")->asEnum()), NomadException);
+}
+
+BOOST_AUTO_TEST_CASE(manager_opaque_ids_and_callback_signatures_preserve_identity) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto hubId = runtime.registerHub("handles", HubMode::Closed);
+    BOOST_REQUIRE(hubId.isValid());
+    const auto* handle = manager.registerOpaqueIdType("handles.Token", "Opaque token.");
+    BOOST_REQUIRE(handle != nullptr);
+    BOOST_TEST(handle->getRuntime() == &runtime);
+    BOOST_TEST(handle->getDocumentation() == "Opaque token.");
+    BOOST_TEST(std::get<const Type*>(*runtime.getHub(hubId)->getMember("Token")) == handle);
+    BOOST_TEST(runtime.registerOpaqueIdType("handles.Token", "") == nullptr);
+    BOOST_TEST(manager.registerOpaqueIdType("", "") == nullptr);
+    BOOST_TEST(manager.registerOpaqueIdType("handles", "") == nullptr);
+    BOOST_TEST(manager.registerOpaqueIdType("int", "") == nullptr);
+    const auto* first = manager.getCallbackType({}, runtime.getVoidType());
+    const auto* second = manager.getCallbackType({}, runtime.getBooleanType());
+    const auto* third = manager.getCallbackType({runtime.getIntegerType()}, runtime.getVoidType());
+    BOOST_REQUIRE(first != nullptr && second != nullptr && third != nullptr);
+    BOOST_TEST(first != second);
+    BOOST_TEST(first != third);
+    BOOST_TEST(second != third);
+    BOOST_TEST(first->getTypeName() == second->getTypeName());
+    BOOST_TEST(runtime.getCallbackType({}, runtime.getVoidType()) == first);
+    BOOST_TEST(manager.getCallbackType({runtime.getIntegerType()}, runtime.getVoidType()) == third);
+    BOOST_TEST(manager.getPredicateType() == second);
+    BOOST_TEST(runtime.getPredicateType() == second);
+    BOOST_TEST(*manager.getType(first->getId()) == first);
+    BOOST_TEST(third->asCallback()->getParameterType(0) == runtime.getIntegerType());
+    const auto count = manager.getTypeCount();
+    BOOST_TEST(manager.getCallbackType({}, runtime.getBooleanType()) == second);
+    BOOST_TEST(manager.getTypeCount() == count);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

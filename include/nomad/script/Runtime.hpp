@@ -270,6 +270,7 @@ public:
     [[nodiscard]] const Type* getCallbackType(const std::vector<const Type*>& parameterTypes, const Type* returnType);
     [[nodiscard]] const Type* getEventType(const NomadString& name) const;
     [[nodiscard]] const Type* getPredicateType();
+    void registerEnumOperators(const EnumType* type);
 
     // `id` identifies the declaring type; `createdTypeId` can identify a different result type.
     [[nodiscard]] CallableId addConstructor(TypeId id, NativeConstructorDefinition definition);

@@ -733,4 +733,122 @@ std::optional<MemberSignature> TypeManager::getMemberTemplateSignature(const Nom
     return std::nullopt;
 }
 
+const OpaqueIdType* TypeManager::registerOpaqueIdType(const NomadString& name, const NomadString& doc) {
+    const auto isReservedByHub = m_runtime.isHub(name) || m_runtime.isHubVariable(name);
+    if (isReservedByHub) {
+        log::error("Cannot register type '" + name + "': name is reserved by a hub declaration");
+        return nullptr;
+    }
+    if (name.empty()) {
+        log::error("Cannot register an opaque ID type with an empty name");
+        return nullptr;
+    }
+    if (getTypeByName(name) != nullptr) {
+        log::error("Type with name '" + name + "' already registered");
+        return nullptr;
+    }
+    auto type = std::make_unique<OpaqueIdType>(&m_runtime, reserveTypeId(), name, doc);
+    const auto* result = type.get();
+    registerType(std::move(type));
+    return result;
+}
+
+TypeId TypeManager::createEnum(
+    NomadString name,
+    std::vector<EnumValueDefinition> values,
+    NomadString documentation
+) {
+    if (!m_runtime.canRegisterTypeName(name)) {
+        log::error("Cannot create enum '" + name + "': name is reserved by a hub declaration");
+        return TypeId::INVALID;
+    }
+    if (name.empty()) {
+        log::error("Cannot create an enum with an empty name");
+        return TypeId::INVALID;
+    }
+    if (getTypeByName(name) != nullptr) {
+        log::error("Type with name '" + name + "' already registered");
+        return TypeId::INVALID;
+    }
+    if (values.empty()) {
+        log::error("Cannot create enum '" + name + "' without values");
+        return TypeId::INVALID;
+    }
+    for (auto index = NomadIndex{0}; index < values.size(); ++index) {
+        const auto& definition = values[index];
+        const auto constantName = name + "." + definition.name;
+        if (definition.name.empty()) {
+            log::error("Cannot create an unnamed value in enum '" + name + "'");
+            return TypeId::INVALID;
+        }
+        if (!m_runtime.canRegisterTypeName(constantName)) {
+            log::error("Cannot create enum '" + name + "': value '" + constantName + "' is reserved by a hub");
+            return TypeId::INVALID;
+        }
+        if (m_runtime.getConstantId(constantName).isValid()) {
+            log::error("Constant with name '" + constantName + "' already registered");
+            return TypeId::INVALID;
+        }
+        for (auto previousIndex = NomadIndex{0}; previousIndex < index; ++previousIndex) {
+            const auto& previousDefinition = values[previousIndex];
+            if (previousDefinition.name == definition.name) {
+                log::error("Enum '" + name + "' has duplicate value name '" + definition.name + "'");
+                return TypeId::INVALID;
+            }
+            if (previousDefinition.value == definition.value) {
+                log::error("Enum '" + name + "' assigns value " + std::to_string(definition.value) + " more than once");
+                return TypeId::INVALID;
+            }
+        }
+    }
+    const auto id = reserveTypeId();
+    auto type = std::make_unique<EnumType>(&m_runtime, id, name, std::move(values), std::move(documentation));
+    const auto* result = type.get();
+    registerType(std::move(type));
+    for (auto index = NomadIndex{0}; index < result->getValueCount(); ++index) {
+        const auto& definition = result->getValue(index);
+        const auto constantId = m_runtime.registerConstant(
+            name + "." + definition.name, RuntimeValue(definition.value), result
+        );
+        if (constantId.isInvalid()) {
+            throw NomadException("Failed to register value '" + definition.name + "' in enum '" + name + "'");
+        }
+    }
+    m_runtime.registerEnumOperators(result);
+    return id;
+}
+
+const Type* TypeManager::getCallbackType(
+    const std::vector<const Type*>& parameterTypes,
+    const Type* returnType
+) {
+    for (const auto& type : m_types) {
+        const auto* callback = type != nullptr ? type->asCallback() : nullptr;
+        const auto hasMatchingReturnType = callback != nullptr && callback->getReturnType() == returnType;
+        const auto hasMatchingArity = hasMatchingReturnType && callback->getParameterCount() == parameterTypes.size();
+        if (!hasMatchingArity) {
+            continue;
+        }
+        auto matches = true;
+        for (auto index = NomadIndex{0}; index < parameterTypes.size(); ++index) {
+            if (callback->getParameterType(index) != parameterTypes[index]) {
+                matches = false;
+                break;
+            }
+        }
+        if (matches) {
+            return type.get();
+        }
+    }
+    const auto id = reserveTypeId();
+    auto type = std::make_unique<FunctionType>(&m_runtime, id, parameterTypes, returnType);
+    const auto* result = type.get();
+    registerType(std::move(type));
+    return result;
+}
+
+const Type* TypeManager::getPredicateType() {
+    return getCallbackType({}, m_runtime.getBooleanType());
+}
+
 } // namespace nomad

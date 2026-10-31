@@ -432,8 +432,8 @@ Register native class accessors with `TypeManager::registerNativeClassProperty`.
 Register class methods and constructors with the manager's explicit
 native/script class APIs. Register class and struct types with
 `TypeManager::registerClass` and `registerStruct`; existing Runtime entry points
-remain compatible. Enum, opaque-ID, and callback creation
-still use Runtime during this migration. Callable
+remain compatible. Enum, opaque-ID, and callback creation also belong to
+TypeManager, with compatible Runtime entry points. Callable
 IDs still belong to Runtime. `TypeManager::reserveTypeId()` and `catalogType()`
 are low-level catalog operations: they do not register namespace members or
 check namespace collisions. `catalogType()` requires a non-null descriptor
@@ -548,10 +548,26 @@ Type creation does not register constructors or finalize a script field layout.
 
 ### Enum creation
 
-`Runtime::createEnum(name, values, documentation = {})` creates an enum and
+`TypeManager::createEnum(name, values, documentation = {})` creates an enum and
 returns its `TypeId`. Each `EnumValueDefinition` supplies a member name and an
 explicit integer value. The runtime owns the resulting type and copies or moves
 the supplied names, values, and documentation.
+
+Access it through `runtime.getTypeManager()`; `Runtime::createEnum` remains
+compatible. Enum constants and equality operators are registered in Runtime
+with their existing IDs and calling conventions.
+`Runtime::registerEnumOperators(type)` registers enum equality/inequality for
+an already registered same-runtime enum. Invalid ownership throws
+`NomadException`; duplicate operators are rejected. Ordinary hosts should use
+manager enum creation rather than register operators separately.
+
+`TypeManager::registerOpaqueIdType(name, documentation)` creates a borrowed
+opaque-ID descriptor with the existing name and namespace rules.
+`getCallbackType(parameterTypes, returnType)` interns callback descriptors by
+their exact parameter and return-type pointers. Matching signatures reuse a
+descriptor; different signatures have distinct IDs even when their type names
+match. `getPredicateType()` returns the parameterless boolean callback type.
+Runtime's corresponding methods remain compatible.
 
 Creation also registers typed constants named `EnumName.MemberName` and
 same-enum equality and inequality operators. Existing script enum syntax is

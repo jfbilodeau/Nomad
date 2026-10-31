@@ -1571,7 +1571,9 @@ bool parseCallableArguments(
             });
 
             const auto callbackType =
-                context->getRuntime()->getCallbackType(eventParameterTypes, context->getRuntime()->getVoidType());
+                context->getRuntime()->getTypeManager().getCallbackType(
+                    eventParameterTypes, context->getRuntime()->getVoidType()
+                );
 
             if (!callbackType) {
                 context->getCompiler()->reportInternalError("Failed to get callback type for event '" + eventName + "'");

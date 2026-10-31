@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1R have been reviewed; Step 1S below is implemented and awaiting review.
+Steps 1A through 1S have been reviewed; Step 1T below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -814,6 +814,31 @@ Validation:
   remains covered by executable language regressions.
 - All four documentation preparation tests and whitespace checks passed.
 - No aggregate struct execution or gameplay validation is claimed.
+
+### Step 1T: Enum, opaque-ID, and callback creation
+
+TypeManager owns enum and opaque-ID descriptor creation and callback signature
+interning, including predicate types. Existing Runtime APIs delegate.
+Compiler enum declarations and event callback signatures use the manager.
+
+Enum constant IDs and equality operators remain in Runtime. The approved
+`registerEnumOperators` operation retains compiler-owned folding functions
+without adding a compiler dependency to TypeManager. Enum definitions are
+validated before publication; existing namespace, duplicate, value, callback
+identity, and ownership behavior is preserved.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, binding, tooling, and LSP process regressions passed.
+- Direct manager coverage verifies enum constants and equality folding, opaque-ID
+  publication, callback signature identity, and Runtime compatibility.
+- All four documentation preparation tests and whitespace checks passed.
+- No aggregate struct execution or gameplay validation is claimed.
+
+Next slice after review: migrate native parameterized constructor families and
+their specialization state, then review remaining Runtime type surfaces before
+returning to aggregate struct storage addressing and callable ABI design.
 
 Remaining Step 1 work, requiring separate design approval:
 

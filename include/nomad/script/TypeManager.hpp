@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/FunctionResolution.hpp>
 #include <nomad/script/NativeMember.hpp>
@@ -49,6 +50,17 @@ public:
     }
     [[nodiscard]] TypeId registerStruct(NomadString name, NomadString documentation = {});
     void registerType(std::unique_ptr<Type> type);
+    [[nodiscard]] const OpaqueIdType* registerOpaqueIdType(const NomadString& name, NomadDocArg);
+    [[nodiscard]] TypeId createEnum(
+        NomadString name,
+        std::vector<EnumValueDefinition> values,
+        NomadString documentation = {}
+    );
+    [[nodiscard]] const Type* getCallbackType(
+        const std::vector<const Type*>& parameterTypes,
+        const Type* returnType
+    );
+    [[nodiscard]] const Type* getPredicateType();
     using ParameterizedTypeFactory =
         std::function<std::unique_ptr<Type>(Runtime*, TypeId, const std::vector<const Type*>&)>;
     using ParameterizedTypeInitializer = std::function<void(Runtime*, TypeId)>;
