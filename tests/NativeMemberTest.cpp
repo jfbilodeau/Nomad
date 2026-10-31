@@ -663,12 +663,12 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
             }
         ));
     }
-    BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "declaredProperty", MemberType::Property));
+    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Family", "declaredProperty", MemberType::Property));
     const std::vector<TemplateParameter> parameters = {
         defTemplateParameter("value", TypeParameterIndex{0}, ""),
         defTemplateParameter("line", runtime.getLineNumberType(), "")
     };
-    BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "declaredMethod", MemberType::Method, parameters));
+    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Family", "declaredMethod", MemberType::Method, parameters));
     BOOST_REQUIRE(runtime.registerMemberTemplate("Other", "declaredMethod", MemberType::Method, parameters));
     BOOST_TEST(specializations == 0u);
     BOOST_TEST(runtime.getNativeMemberOverloadCount("declaredMethod") == 0u);

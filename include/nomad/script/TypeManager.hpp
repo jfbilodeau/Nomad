@@ -3,6 +3,7 @@
 #pragma once
 
 #include <nomad/script/ClassType.hpp>
+#include <nomad/script/FunctionResolution.hpp>
 #include <nomad/script/NativeMember.hpp>
 #include <nomad/script/Property.hpp>
 #include <nomad/script/Type.hpp>
@@ -10,6 +11,7 @@
 #include <concepts>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -47,6 +49,34 @@ public:
     }
     [[nodiscard]] TypeId registerStruct(NomadString name, NomadString documentation = {});
     void registerType(std::unique_ptr<Type> type);
+    using ParameterizedTypeFactory =
+        std::function<std::unique_ptr<Type>(Runtime*, TypeId, const std::vector<const Type*>&)>;
+    using ParameterizedTypeInitializer = std::function<void(Runtime*, TypeId)>;
+    bool registerParameterizedType(
+        const NomadString& name,
+        NomadIndex argumentCount,
+        ParameterizedTypeFactory factory,
+        ParameterizedTypeInitializer initializer = {}
+    );
+    [[nodiscard]] std::optional<NomadIndex> getParameterizedTypeArgumentCount(const NomadString& name) const;
+    void getParameterizedTypeNames(std::vector<NomadString>& names) const;
+    [[nodiscard]] const Type* getParameterizedType(
+        const NomadString& name,
+        const std::vector<const Type*>& arguments
+    );
+    bool registerConstructorTemplate(const NomadString& name, std::vector<TemplateParameter> parameters);
+    [[nodiscard]] std::optional<std::vector<TemplateParameter>> getConstructorTemplate(const NomadString& name) const;
+    [[nodiscard]] ConstructorInferenceResult inferConstructorTypeArguments(
+        const NomadString& name,
+        const std::vector<const Type*>& argumentTypes
+    ) const;
+    bool registerMemberTemplate(
+        const NomadString& family,
+        const NomadString& name,
+        MemberType type,
+        const std::vector<TemplateParameter>& parameters = {}
+    );
+    [[nodiscard]] std::optional<MemberSignature> getMemberTemplateSignature(const NomadString& name) const;
     [[nodiscard]] TypeId getTypeId(const NomadString& name) const;
     [[nodiscard]] std::optional<const Type*> getType(TypeId id) const;
     [[nodiscard]] const Type* getTypeByName(const NomadString& name) const;
@@ -102,6 +132,21 @@ public:
     void catalogType(std::unique_ptr<Type> type);
 
 private:
+    struct ParameterizedTypeRegistration {
+        NomadString name;
+        NomadIndex argumentCount;
+        ParameterizedTypeFactory factory;
+        ParameterizedTypeInitializer initializer;
+        std::optional<std::vector<TemplateParameter>> constructorTemplate;
+        std::unordered_map<NomadString, MemberSignature> memberTemplates;
+    };
+
+    struct TypeSpecialization {
+        NomadString name;
+        std::vector<const Type*> arguments;
+        const Type* type;
+    };
+
     [[nodiscard]] bool canRegisterClass(const NomadString& name, ClassMode mode) const;
     [[nodiscard]] TypeId publishClass(
         TypeId id,
@@ -117,6 +162,8 @@ private:
 
     Runtime& m_runtime;
     std::vector<std::unique_ptr<Type>> m_types;
+    std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;
+    std::vector<TypeSpecialization> m_typeSpecializations;
 };
 
 } // namespace nomad

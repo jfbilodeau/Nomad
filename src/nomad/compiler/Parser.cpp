@@ -38,7 +38,7 @@ const Type* parseTypeName(
         return nullptr;
     }
     auto* runtime = context->getRuntime();
-    const auto argumentCount = runtime->getParameterizedTypeArgumentCount(name);
+    const auto argumentCount = runtime->getTypeManager().getParameterizedTypeArgumentCount(name);
     if (tokens->is("<")) {
         tokens->next();
         if (!argumentCount) {
@@ -69,7 +69,7 @@ const Type* parseTypeName(
             );
             return nullptr;
         }
-        const auto* type = runtime->getParameterizedType(name, arguments);
+        const auto* type = runtime->getTypeManager().getParameterizedType(name, arguments);
         if (type == nullptr) {
             context->reportError("Cannot resolve parameterized type '" + name + "'", tokens);
         }
@@ -889,10 +889,10 @@ std::unique_ptr<Expression> parseNewExpression(
             context->reportError("Cannot resolve parameterized constructor", tokens);
             return nullptr;
         }
-    } else if (runtime->getParameterizedTypeArgumentCount(constructorName)) {
+    } else if (runtime->getTypeManager().getParameterizedTypeArgumentCount(constructorName)) {
         tokens->next();
         if (!tokens->is("<")) {
-            const auto signature = runtime->getConstructorTemplate(constructorName);
+            const auto signature = runtime->getTypeManager().getConstructorTemplate(constructorName);
             if (!signature) {
                 context->reportError("Constructor '" + constructorName +
                     "' requires explicit type arguments: no inference signature is registered", tokens);

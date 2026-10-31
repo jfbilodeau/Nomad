@@ -453,7 +453,7 @@ CallableId TypeManager::registerNativeClassConstructor(
     const auto name = classType->getTypeName();
     const auto isReservedName = name.empty() ||
         m_runtime.getParameterizedConstructorArgumentCount(name).has_value() ||
-        m_runtime.getParameterizedTypeArgumentCount(name).has_value();
+        getParameterizedTypeArgumentCount(name).has_value();
     if (isReservedName) {
         log::error("Cannot register constructor '" + name + "': the name is reserved");
         return CallableId::INVALID;
@@ -481,6 +481,256 @@ CallableId TypeManager::registerNativeClassConstructor(
         name, classType, createdType, std::move(definition.function), std::move(parameters),
         std::move(definition.documentation)
     ));
+}
+
+bool TypeManager::registerParameterizedType(
+    const NomadString& name,
+    const NomadIndex argumentCount,
+    ParameterizedTypeFactory factory,
+    ParameterizedTypeInitializer initializer
+) {
+    const auto hasAvailableName = !name.empty() && m_runtime.canRegisterTypeName(name) &&
+        getTypeByName(name) == nullptr;
+    const auto isConstructorFamily = hasAvailableName &&
+        m_runtime.getParameterizedConstructorArgumentCount(name).has_value();
+    const auto isTypeFamily = getParameterizedTypeArgumentCount(name).has_value();
+    if (!hasAvailableName || argumentCount == 0 || !factory || isConstructorFamily || isTypeFamily) {
+        log::error("Cannot register parameterized type '" + name + "': invalid or duplicate definition");
+        return false;
+    }
+    m_parameterizedTypes.push_back({name, argumentCount, std::move(factory), std::move(initializer), std::nullopt, {}});
+    m_runtime.publishTypeFamilyNamespace(name, argumentCount);
+    return true;
+}
+
+std::optional<NomadIndex> TypeManager::getParameterizedTypeArgumentCount(const NomadString& name) const {
+    const auto registration = std::ranges::find(m_parameterizedTypes, name, &ParameterizedTypeRegistration::name);
+    if (registration == m_parameterizedTypes.end()) {
+        return std::nullopt;
+    }
+    return registration->argumentCount;
+}
+
+void TypeManager::getParameterizedTypeNames(std::vector<NomadString>& names) const {
+    names.reserve(names.size() + m_parameterizedTypes.size());
+    for (const auto& registration : m_parameterizedTypes) {
+        names.push_back(registration.name);
+    }
+}
+
+bool TypeManager::registerConstructorTemplate(
+    const NomadString& name,
+    std::vector<TemplateParameter> parameters
+) {
+    const auto registration = std::ranges::find(m_parameterizedTypes, name, &ParameterizedTypeRegistration::name);
+    if (registration == m_parameterizedTypes.end()) {
+        log::error("Cannot register constructor template '" + name + "': a registered parameterized type is required");
+        return false;
+    }
+    if (registration->constructorTemplate) {
+        log::error("Cannot register constructor template '" + name + "': duplicate definition");
+        return false;
+    }
+    std::vector<bool> boundArguments(registration->argumentCount, false);
+    for (const auto& parameter : parameters) {
+        if (const auto* argument = std::get_if<TypeParameterIndex>(&parameter.type)) {
+            if (argument->index >= registration->argumentCount) {
+                log::error("Cannot register constructor template '" + name + "': type argument index is out of range");
+                return false;
+            }
+            boundArguments[argument->index] = true;
+        } else {
+            const auto* type = std::get<const Type*>(parameter.type);
+            const auto hasValidType = ownsType(type) && !type->isVoid();
+            if (!hasValidType) {
+                log::error("Cannot register constructor template '" + name +
+                    "': parameter types must be registered and non-void");
+                return false;
+            }
+        }
+    }
+    if (std::ranges::find(boundArguments, false) != boundArguments.end()) {
+        log::error("Cannot register constructor template '" + name + "': every type argument must appear in the signature");
+        return false;
+    }
+    registration->constructorTemplate = std::move(parameters);
+    return true;
+}
+
+std::optional<std::vector<TemplateParameter>> TypeManager::getConstructorTemplate(const NomadString& name) const {
+    const auto registration = std::ranges::find(m_parameterizedTypes, name, &ParameterizedTypeRegistration::name);
+    if (registration == m_parameterizedTypes.end()) {
+        return std::nullopt;
+    }
+    return registration->constructorTemplate;
+}
+
+ConstructorInferenceResult TypeManager::inferConstructorTypeArguments(
+    const NomadString& name,
+    const std::vector<const Type*>& argumentTypes
+) const {
+    const auto registration = std::ranges::find(m_parameterizedTypes, name, &ParameterizedTypeRegistration::name);
+    const auto hasRegisteredFamily = registration != m_parameterizedTypes.end();
+    const auto hasInferenceSignature = hasRegisteredFamily && registration->constructorTemplate.has_value();
+    if (!hasInferenceSignature) {
+        return {
+            ResolveStatus::UnknownName, {},
+            "No constructor inference signature is registered for '" + name + "'"
+        };
+    }
+    const auto& parameters = *registration->constructorTemplate;
+    if (argumentTypes.size() != parameters.size()) {
+        return {
+            ResolveStatus::NoMatchingArity, {},
+            "Constructor inference for '" + name + "' expects " + std::to_string(parameters.size()) +
+                " argument(s), received " + std::to_string(argumentTypes.size())
+        };
+    }
+    std::vector<const Type*> typeArguments(registration->argumentCount, nullptr);
+    for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
+        const auto& parameter = parameters[index];
+        const auto* argumentType = argumentTypes[index];
+        const auto prefix = "Cannot infer constructor '" + name + "' from argument " +
+            std::to_string(index + 1) + " ('" + parameter.name + "'): ";
+        if (const auto* typeParameter = std::get_if<TypeParameterIndex>(&parameter.type)) {
+            const auto hasValidType = ownsType(argumentType) && !argumentType->isVoid() && !argumentType->isInternal();
+            if (!hasValidType) {
+                return {
+                    ResolveStatus::NoMatchingTypes, {},
+                    prefix + "a registered public, non-void argument type is required; supply explicit type arguments"
+                };
+            }
+            auto& binding = typeArguments[typeParameter->index];
+            const auto hasConflictingBinding = binding != nullptr && !binding->sameType(argumentType);
+            if (hasConflictingBinding) {
+                return {
+                    ResolveStatus::NoMatchingTypes, {},
+                    prefix + "conflicting types for type parameter " + std::to_string(typeParameter->index) +
+                        " ('" + binding->getTypeName() + "' and '" + argumentType->getTypeName() + "')"
+                };
+            }
+            if (binding == nullptr) {
+                binding = argumentType;
+            }
+        } else {
+            const auto* parameterType = std::get<const Type*>(parameter.type);
+            const auto shape = m_runtime.getParameterShape(parameterType);
+            const auto isSourceParameter = shape == ParameterShape::SourceFile ||
+                shape == ParameterShape::SourceFunction || shape == ParameterShape::SourceLine;
+            if (argumentType == nullptr && isSourceParameter) {
+                continue;
+            }
+            const auto hasMatchingType = ownsType(argumentType) && parameterType->sameType(argumentType);
+            if (!hasMatchingType) {
+                return {
+                    ResolveStatus::NoMatchingTypes, {},
+                    prefix + "expected exact type '" + parameterType->getTypeName() + "'"
+                };
+            }
+        }
+    }
+    return {ResolveStatus::Resolved, std::move(typeArguments), {}};
+}
+
+const Type* TypeManager::getParameterizedType(
+    const NomadString& name,
+    const std::vector<const Type*>& arguments
+) {
+    const auto registration = std::ranges::find(m_parameterizedTypes, name, &ParameterizedTypeRegistration::name);
+    if (registration == m_parameterizedTypes.end()) {
+        log::error("Unknown parameterized type '" + name + "'");
+        return nullptr;
+    }
+    const auto hasMatchingArity = arguments.size() == registration->argumentCount;
+    const auto hasInvalidArguments = hasMatchingArity && std::ranges::any_of(arguments, [this](const Type* type) {
+        const auto hasValidType = ownsType(type) && !type->isVoid() && !type->isInternal();
+        return !hasValidType;
+    });
+    if (!hasMatchingArity || hasInvalidArguments) {
+        log::error("Invalid type arguments for '" + name + "'");
+        return nullptr;
+    }
+    for (const auto& entry : m_typeSpecializations) {
+        const auto hasMatchingSpecialization = entry.name == name && entry.arguments == arguments;
+        if (hasMatchingSpecialization) {
+            return entry.type;
+        }
+    }
+    // Callbacks can register more families and invalidate the registration iterator.
+    const auto factory = registration->factory;
+    const auto initializer = registration->initializer;
+    const auto id = reserveTypeId();
+    auto type = factory(&m_runtime, id, arguments);
+    const auto matchesIdentity = type != nullptr && type->getRuntime() == &m_runtime && type->getId() == id;
+    const auto hasAvailableName = matchesIdentity && !type->getTypeName().empty() &&
+        getTypeByName(type->getTypeName()) == nullptr;
+    if (!hasAvailableName) {
+        log::error("Factory for '" + name + "' returned an invalid or duplicate type");
+        return nullptr;
+    }
+    const auto* result = type.get();
+    registerType(std::move(type));
+    if (initializer) {
+        initializer(&m_runtime, id);
+    }
+    m_typeSpecializations.push_back({name, arguments, result});
+    return result;
+}
+
+bool TypeManager::registerMemberTemplate(
+    const NomadString& family,
+    const NomadString& name,
+    const MemberType type,
+    const std::vector<TemplateParameter>& parameters
+) {
+    const auto registration = std::ranges::find(m_parameterizedTypes, family, &ParameterizedTypeRegistration::name);
+    if (registration == m_parameterizedTypes.end()) {
+        log::error("Cannot register member template '" + name + "': a registered parameterized type is required");
+        return false;
+    }
+    if (registration->memberTemplates.contains(name)) {
+        log::error("Cannot register member template '" + name + "': duplicate definition for '" + family + "'");
+        return false;
+    }
+    std::vector<Parameter> parserParameters;
+    for (const auto& parameter : parameters) {
+        const Type* parameterType = nullptr;
+        if (const auto* index = std::get_if<TypeParameterIndex>(&parameter.type)) {
+            if (index->index >= registration->argumentCount) {
+                log::error("Cannot register member template '" + name + "': type argument index is out of range");
+                return false;
+            }
+        } else {
+            parameterType = std::get<const Type*>(parameter.type);
+            const auto hasValidType = ownsType(parameterType) && !parameterType->isVoid();
+            if (!hasValidType) {
+                log::error("Cannot register member template '" + name + "': parameter types must be registered and non-void");
+                return false;
+            }
+        }
+        if (parameter.name.empty()) {
+            log::error("Cannot register member template '" + name + "': parameter name is empty");
+            return false;
+        }
+        parserParameters.push_back(defParameter(parameter.name, parameterType, parameter.doc));
+    }
+    NomadString error;
+    if (!m_runtime.canRegisterMemberSignature(name, type, parserParameters, error)) {
+        log::error("Cannot register member template '" + name + "': " + error);
+        return false;
+    }
+    registration->memberTemplates.emplace(name, MemberSignature{type, std::move(parserParameters)});
+    return true;
+}
+
+std::optional<MemberSignature> TypeManager::getMemberTemplateSignature(const NomadString& name) const {
+    for (const auto& registration : m_parameterizedTypes) {
+        const auto member = registration.memberTemplates.find(name);
+        if (member != registration.memberTemplates.end()) {
+            return member->second;
+        }
+    }
+    return std::nullopt;
 }
 
 } // namespace nomad

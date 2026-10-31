@@ -191,7 +191,7 @@ BOOST_AUTO_TEST_CASE(runtime_parameterized_factories_preserve_reservations_and_r
     TypeId nestedId;
     auto validId = false;
     auto initializerCalls = 0;
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "IdentityBox", 1,
         [&](Runtime* owner, TypeId id, const std::vector<const Type*>& arguments) {
             reservedId = id;

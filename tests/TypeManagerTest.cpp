@@ -8,6 +8,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -503,6 +504,112 @@ BOOST_AUTO_TEST_CASE(full_type_registration_validates_reservations_and_namespace
     BOOST_TEST(!runtime.canRegisterTypeName("catalog"));
     BOOST_TEST(!runtime.canRegisterTypeName("catalog.Registered"));
     BOOST_TEST(runtime.canRegisterTypeName("catalog.Available"));
+}
+
+BOOST_AUTO_TEST_CASE(parameterized_families_keep_templates_namespace_and_specialization_identity) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto hubId = runtime.registerHub("families", HubMode::Closed);
+    BOOST_REQUIRE(hubId.isValid());
+    auto factoryCalls = 0;
+    auto initializerCalls = 0;
+    BOOST_REQUIRE(manager.registerParameterizedType("families.Box", 1,
+        [&](Runtime* owner, TypeId id, const std::vector<const Type*>& arguments) {
+            ++factoryCalls;
+            BOOST_TEST(owner == &runtime);
+            BOOST_TEST(!manager.getType(id).has_value());
+            return std::make_unique<ClassType>(owner, id,
+                "families.Box<" + arguments.front()->getTypeName() + ">", ClassMode::Closed, arguments);
+        },
+        [&](Runtime* owner, TypeId id) {
+            ++initializerCalls;
+            BOOST_TEST(owner == &runtime);
+            BOOST_TEST(manager.getType(id).has_value());
+        }
+    ));
+    BOOST_TEST(manager.getParameterizedTypeArgumentCount("families.Box").value() == 1U);
+    BOOST_TEST(runtime.getParameterizedTypeArgumentCount("families.Box").value() == 1U);
+    BOOST_TEST(std::get<HubTypeFamily>(*runtime.getHub(hubId)->getMember("Box")).argumentCount == 1U);
+    BOOST_REQUIRE(manager.registerConstructorTemplate("families.Box",
+        {defTemplateParameter("value", TypeParameterIndex{0}, "")}));
+    BOOST_TEST(runtime.getConstructorTemplate("families.Box")->size() == 1U);
+    const auto inferred = manager.inferConstructorTypeArguments("families.Box", {runtime.getIntegerType()});
+    BOOST_REQUIRE(inferred.isResolved());
+    BOOST_TEST(inferred.typeArguments.front() == runtime.getIntegerType());
+    BOOST_REQUIRE(manager.registerMemberTemplate("families.Box", "managedValue", MemberType::Property));
+    BOOST_TEST(manager.getMemberTemplateSignature("managedValue").has_value());
+    BOOST_TEST(runtime.getMemberSignature("managedValue").has_value());
+    const auto* integerBox = manager.getParameterizedType("families.Box", {runtime.getIntegerType()});
+    BOOST_REQUIRE(integerBox != nullptr);
+    BOOST_TEST(runtime.getParameterizedType("families.Box", {runtime.getIntegerType()}) == integerBox);
+    BOOST_TEST(factoryCalls == 1);
+    BOOST_TEST(initializerCalls == 1);
+    const auto* floatBox = manager.getParameterizedType("families.Box", {runtime.getFloatType()});
+    BOOST_REQUIRE(floatBox != nullptr);
+    BOOST_TEST(floatBox != integerBox);
+    BOOST_TEST(factoryCalls == 2);
+    BOOST_TEST(initializerCalls == 2);
+    std::vector<NomadString> names{"existing"};
+    manager.getParameterizedTypeNames(names);
+    BOOST_TEST(names.front() == "existing");
+    const auto containsBoxFamily = std::ranges::find(names, "families.Box") != names.end();
+    BOOST_TEST(containsBoxFamily);
+    BOOST_CHECK_THROW(runtime.publishTypeFamilyNamespace("families.Box", 2), NomadException);
+    BOOST_CHECK_THROW(runtime.publishTypeFamilyNamespace("families.Box", 1), NomadException);
+    BOOST_CHECK_THROW(runtime.publishTypeFamilyNamespace("Missing", 1), NomadException);
+    BOOST_TEST(manager.getParameterizedType("families.Box", {}) == nullptr);
+    BOOST_TEST(!manager.registerConstructorTemplate("families.Box", {}));
+    BOOST_TEST(!manager.registerMemberTemplate("families.Box", "managedValue", MemberType::Property));
+    BOOST_TEST(!manager.registerMemberTemplate("Missing", "absent", MemberType::Property));
+    BOOST_TEST(!manager.getMemberTemplateSignature("absent").has_value());
+    const auto lateFactory = [](Runtime* owner, TypeId id, const std::vector<const Type*>& arguments) {
+        return std::make_unique<ClassType>(owner, id, "late.Box<int>", ClassMode::Closed, arguments);
+    };
+    BOOST_REQUIRE(manager.registerParameterizedType("late.Box", 1, lateFactory));
+    const auto lateHub = runtime.registerHub("late", HubMode::Opened);
+    BOOST_REQUIRE(lateHub.isValid());
+    BOOST_TEST(std::get<HubTypeFamily>(*runtime.getHub(lateHub)->getMember("Box")).argumentCount == 1U);
+}
+
+BOOST_AUTO_TEST_CASE(parameterized_callbacks_can_grow_family_catalog_and_initializer_registers_callables) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto additionalFactory = [](Runtime* owner, TypeId id, const std::vector<const Type*>& arguments) {
+        return std::make_unique<ClassType>(owner, id, "Additional<int>", ClassMode::Closed, arguments);
+    };
+    auto factoryCalls = 0;
+    auto initializerCalls = 0;
+    BOOST_REQUIRE(manager.registerParameterizedType("Growing", 1,
+        [&](Runtime* owner, TypeId id, const std::vector<const Type*>& arguments) {
+            ++factoryCalls;
+            for (auto index = 0; index < 64; ++index) {
+                BOOST_REQUIRE(manager.registerParameterizedType(
+                    "FactoryFamily" + std::to_string(index), 1, additionalFactory));
+            }
+            return std::make_unique<ClassType>(owner, id, "Growing<int>", ClassMode::Closed, arguments);
+        },
+        [&](Runtime*, TypeId id) {
+            ++initializerCalls;
+            for (auto index = 0; index < 64; ++index) {
+                BOOST_REQUIRE(manager.registerParameterizedType(
+                    "InitializerFamily" + std::to_string(index), 1, additionalFactory));
+            }
+            BOOST_REQUIRE(manager.registerNativeClassMethod(id, {
+                .name = "growingMethod",
+                .parameters = {},
+                .returnTypeId = runtime.getVoidType()->getId(),
+                .function = [](VirtualMachine*) {},
+                .documentation = ""
+            }).isValid());
+        }
+    ));
+    const auto* type = manager.getParameterizedType("Growing", {runtime.getIntegerType()});
+    BOOST_REQUIRE(type != nullptr);
+    BOOST_TEST(runtime.getParameterizedType("Growing", {runtime.getIntegerType()}) == type);
+    BOOST_TEST(factoryCalls == 1);
+    BOOST_TEST(initializerCalls == 1);
+    BOOST_TEST(runtime.getNativeMemberOverloadCount("growingMethod") == 1U);
+    BOOST_TEST(manager.getParameterizedTypeArgumentCount("InitializerFamily63").value() == 1U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

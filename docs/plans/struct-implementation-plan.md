@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1Q have been reviewed; Step 1R below is implemented and awaiting review.
+Steps 1A through 1R have been reviewed; Step 1S below is implemented and awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -775,6 +775,43 @@ Validation:
   manager API; existing Runtime template and hub wrappers remain covered.
 - Existing event, callback, enum, and specialization regressions pass through
   the full manager publication path.
+- All four documentation preparation tests and whitespace checks passed.
+- No aggregate struct execution or gameplay validation is claimed.
+
+### Step 1S: Parameterized families and specialization ownership
+
+TypeManager owns parameterized type factories, initializers, constructor
+inference signatures, member templates, and specialization caches. Existing
+Runtime APIs and Runtime* callback signatures remain compatible. Compiler
+annotations and inferred construction resolve through the manager.
+
+The approved `Runtime::publishTypeFamilyNamespace` and shared
+`canRegisterMemberSignature` operations maintain namespace and parser-signature
+coordination without friendship. Runtime's combined member signature lookup
+consults manager-owned templates before native members. Hub rebuilding enumerates
+manager-owned family names, including families registered before a hub exists.
+
+Specializations preserve reserved IDs, invalid factory handling, callback
+ordering, identity caching, and nested registration. Factory and initializer
+callbacks are copied before invocation so family-catalog growth remains safe.
+Constructor-family callbacks and specialization state remain on Runtime for now.
+This extraction adds no struct generic support or aggregate ABI.
+
+Next slice after review: migrate remaining enum, opaque-ID, and callback type
+creation into TypeManager; then address remaining constructor-family and type
+registration surfaces before aggregate struct ABI design.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, binding, tooling, and LSP process regressions passed.
+- Direct manager coverage verifies family namespace and metadata publication,
+  constructor inference, Runtime compatibility, specialization identity and
+  callback counts, late hub creation, invalid publication, and family-catalog
+  growth inside both factories and initializers.
+- Existing invalid factory/reserved-ID and member-template regressions exercise
+  manager registration. Compiler annotation and inferred-construction behavior
+  remains covered by executable language regressions.
 - All four documentation preparation tests and whitespace checks passed.
 - No aggregate struct execution or gameplay validation is claimed.
 

@@ -202,10 +202,8 @@ public:
     void initializeScripts();
 
     // Types
-    using ParameterizedTypeFactory =
-        std::function<std::unique_ptr<Type>(Runtime*, TypeId, const std::vector<const Type*>&)>;
-
-    using ParameterizedTypeInitializer = std::function<void(Runtime*, TypeId)>;
+    using ParameterizedTypeFactory = TypeManager::ParameterizedTypeFactory;
+    using ParameterizedTypeInitializer = TypeManager::ParameterizedTypeInitializer;
     
     [[nodiscard]] std::optional<NomadIndex> getParameterizedTypeArgumentCount(const NomadString& name) const;
     bool registerParameterizedType(
@@ -253,6 +251,13 @@ public:
     [[nodiscard]] const TypeManager& getTypeManager() const;
     [[nodiscard]] bool canRegisterTypeName(const NomadString& name) const;
     void publishTypeNamespace(const Type& type);
+    void publishTypeFamilyNamespace(const NomadString& name, NomadIndex argumentCount);
+    [[nodiscard]] bool canRegisterMemberSignature(
+        const NomadString& name,
+        MemberType type,
+        const std::vector<Parameter>& parameters,
+        NomadString& error
+    ) const;
     [[nodiscard]] std::optional<const Type*> getType(TypeId id) const;
     [[nodiscard]] const Type* getTypeByName(const NomadString& name) const;
     void getTypes(std::vector<const Type*>& types) const;
@@ -604,21 +609,6 @@ public:
 
 private:
     // Nested types
-    struct ParameterizedTypeRegistration {
-        NomadString name;
-        NomadIndex argumentCount;
-        ParameterizedTypeFactory factory;
-        ParameterizedTypeInitializer initializer;
-        std::optional<std::vector<TemplateParameter>> constructorTemplate;
-        std::unordered_map<NomadString, MemberSignature> memberTemplates;
-    };
-
-    struct TypeSpecialization {
-        NomadString name;
-        std::vector<const Type*> arguments;
-        const Type* type;
-    };
-
     struct ParameterizedConstructorRegistration {
         NomadString name;
         NomadIndex argumentCount;
@@ -686,13 +676,6 @@ private:
     void registerType(std::unique_ptr<Type>&& type);
     [[nodiscard]] bool ownsType(const Type* type) const;
     [[nodiscard]] ClassType* getMutableClassType(const ClassType* type);
-    [[nodiscard]] bool canRegisterMemberSignature(
-        const NomadString& name,
-        MemberType type,
-        const std::vector<Parameter>& parameters,
-        NomadString& error
-    ) const;
-
     // Hub registration
     [[nodiscard]] std::optional<NomadString> qualifyHubMemberName(HubId hubId, const NomadString& name) const;
     void registerHubMember(const NomadString& name, HubMember member);
@@ -715,8 +698,6 @@ private:
     std::vector<Instruction> m_instructions;
     std::vector<OpCodeDefinition> m_opCodes;
     TypeManager m_typeManager;
-    std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;
-    std::vector<TypeSpecialization> m_typeSpecializations;
     std::vector<ParameterizedConstructorRegistration> m_parameterizedConstructors;
     std::vector<NomadString> m_constructorSpecializations;
     std::vector<UnaryOperatorRegistration> m_unaryOperators;

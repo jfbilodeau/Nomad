@@ -432,7 +432,7 @@ Register native class accessors with `TypeManager::registerNativeClassProperty`.
 Register class methods and constructors with the manager's explicit
 native/script class APIs. Register class and struct types with
 `TypeManager::registerClass` and `registerStruct`; existing Runtime entry points
-remain compatible. Enum, opaque-ID, callback, and parameterized-family creation
+remain compatible. Enum, opaque-ID, and callback creation
 still use Runtime during this migration. Callable
 IDs still belong to Runtime. `TypeManager::reserveTypeId()` and `catalogType()`
 are low-level catalog operations: they do not register namespace members or
@@ -1638,7 +1638,7 @@ the same VM. Access to a shared context or VM must be serialized by the host.
 
 ## Parameterized types
 
-`Runtime::registerParameterizedType(name, argumentCount, factory, initializer = {})`
+`TypeManager::registerParameterizedType(name, argumentCount, factory, initializer = {})`
 registers a type family. The factory has the signature
 `std::unique_ptr<Type>(Runtime*, TypeId, const std::vector<const Type*>&)`. It receives
 the owning runtime, reserved specialization ID, and resolved type arguments.
@@ -1646,9 +1646,9 @@ It returns a fully constructed, unregistered descriptor carrying that runtime
 and ID. It must not register the
 returned descriptor itself, including through `registerClass`.
 
-The runtime validates and registers the descriptor, then calls the optional
+The runtime-owned manager validates and registers the descriptor, then calls the optional
 initializer with `(Runtime*, TypeId)`. The ID identifies the registered
-specialization and can be used to retrieve it and add its members. The runtime
+specialization and can be used to retrieve it and add its members. The manager
 caches the specialization after initialization succeeds.
 `getParameterizedType(name, arguments)` creates a specialization on first use
 and reuses it on subsequent requests without rerunning either callback. Arguments must
@@ -1657,6 +1657,23 @@ return null.
 
 `getParameterizedTypeArgumentCount(name)` returns the registered family's arity,
 or an empty optional if the family is not registered.
+
+Access these APIs through `runtime.getTypeManager()`. Existing Runtime methods
+and factory/initializer type aliases remain compatible. Constructor-inference
+and member-template registration also belong to TypeManager; Runtime wrappers
+retain the same behavior. `getParameterizedTypeNames(names)` appends family
+names in registration order without clearing existing entries.
+`getMemberTemplateSignature(name)` returns family template metadata only;
+`Runtime::getMemberSignature(name)` continues to combine it with native members.
+
+Runtime's low-level `publishTypeFamilyNamespace(name, argumentCount)` publishes
+a registered manager-owned family into hub indexes. Missing families, mismatched
+arity, and namespace collisions throw `NomadException`. Families registered
+before their hub are included when that hub is created.
+`Runtime::canRegisterMemberSignature` checks a proposed member against the
+shared parser signature without registering it; an incompatible proposal
+returns false and an error description. Ordinary hosts should use the manager
+registration APIs.
 
 Requesting a specialization creates a descriptor, not an object. The compiler resolves parameterized
 annotations in script parameters, function parameters, and event declarations
@@ -1673,7 +1690,7 @@ Each `TemplateParameter` describes either a concrete `Type*` or a
 For example, for an already registered two-argument family named `Pair`:
 
 ```cpp
-if (!runtime.registerConstructorTemplate(
+if (!runtime.getTypeManager().registerConstructorTemplate(
     "Pair",
     {
         nomad::defTemplateParameter("key", nomad::TypeParameterIndex{0}, "The key."),
@@ -2224,8 +2241,8 @@ constructors. This lets scripts access members before any concrete specializatio
 has been created:
 
 ```cpp
-if (!runtime.registerMemberTemplate("KeyValue", "key", nomad::MemberType::Property) ||
-    !runtime.registerMemberTemplate("KeyValue", "value", nomad::MemberType::Property)) {
+if (!runtime.getTypeManager().registerMemberTemplate("KeyValue", "key", nomad::MemberType::Property) ||
+    !runtime.getTypeManager().registerMemberTemplate("KeyValue", "value", nomad::MemberType::Property)) {
     throw nomad::NomadException("Failed to register KeyValue member signatures");
 }
 ```
@@ -2235,7 +2252,7 @@ declaration takes no parameters. For methods, supply `TemplateParameter` entries
 using concrete types or `TypeParameterIndex`:
 
 ```cpp
-if (!runtime.registerMemberTemplate(
+if (!runtime.getTypeManager().registerMemberTemplate(
     "Box", "store", nomad::MemberType::Method,
     {nomad::defTemplateParameter("value", nomad::TypeParameterIndex{0}, "")}
 )) {

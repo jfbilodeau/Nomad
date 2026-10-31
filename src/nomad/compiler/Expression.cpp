@@ -1236,12 +1236,12 @@ void ConstructorExpression::onResolve(CompilerContext* context, ScriptCallableBa
 
     const auto* classType = m_classType;
     if (classType == nullptr) {
-        const auto inference = runtime->inferConstructorTypeArguments(m_constructorName, argumentTypes);
+        const auto inference = runtime->getTypeManager().inferConstructorTypeArguments(m_constructorName, argumentTypes);
         if (!inference.isResolved()) {
             reportError(context, function, inference.error);
             return;
         }
-        classType = runtime->getParameterizedType(m_constructorName, inference.typeArguments);
+        classType = runtime->getTypeManager().getParameterizedType(m_constructorName, inference.typeArguments);
         if (classType == nullptr) {
             reportError(context, function, "Cannot specialize inferred constructor '" + m_constructorName + "'");
             return;
