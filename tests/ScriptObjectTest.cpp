@@ -9,10 +9,13 @@
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
+#include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
+#include <array>
+#include <span>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -132,6 +135,155 @@ BOOST_AUTO_TEST_CASE(fields_use_owner_local_slots_and_zeroed_raw_storage) {
     BOOST_TEST(!object.getField(type->getFieldIndex(booleanId)).getBooleanValue());
     BOOST_TEST(object.getField(type->getFieldIndex(stringId)).getObjectValue() == nullptr);
     BOOST_TEST(object.getField(type->getFieldIndex(referenceId)).getObjectValue() == nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(inline_struct_fields_use_physical_storage_and_copy_owned_values) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto emptyId = manager.registerStruct("EmptyMarker");
+    const auto payloadId = manager.registerStruct("Payload");
+    const auto wrapperId = manager.registerStruct("Wrapper");
+    const auto ownerId = manager.registerClass("AggregateOwner", ClassMode::Opened);
+    const auto* empty = manager.getTypeByName("EmptyMarker")->asStructType();
+    const auto* payload = manager.getTypeByName("Payload")->asStructType();
+    const auto* wrapper = manager.getTypeByName("Wrapper")->asStructType();
+    const auto* owner = manager.getTypeByName("AggregateOwner")->asClassType();
+    BOOST_REQUIRE(manager.registerScriptStructProperty(payloadId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(manager.registerScriptStructProperty(payloadId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(manager.registerScriptStructProperty(payloadId, "reference", owner).isValid());
+    BOOST_REQUIRE(manager.registerScriptStructProperty(wrapperId, "payload", payload).isValid());
+    BOOST_REQUIRE(manager.registerScriptStructProperty(wrapperId, "marker", empty).isValid());
+    manager.finalizeCompositeFieldLayout(wrapperId);
+    const auto before = manager.registerScriptClassProperty(ownerId, "before", runtime.getIntegerType());
+    const auto marker = manager.registerScriptClassProperty(ownerId, "marker", empty);
+    const auto first = manager.registerScriptClassProperty(ownerId, "first", wrapper);
+    const auto second = manager.registerScriptClassProperty(ownerId, "second", wrapper);
+    const auto after = manager.registerScriptClassProperty(ownerId, "after", runtime.getIntegerType());
+    for (const auto id : {before, marker, first, second, after}) {
+        BOOST_REQUIRE(id.isValid());
+    }
+    BOOST_TEST(owner->getFieldOffset(first) == 1U);
+    BOOST_TEST(owner->getFieldOffset(second) == 4U);
+    BOOST_TEST(owner->getFieldOffset(after) == 7U);
+    BOOST_TEST(owner->getFieldStorageSize() == 8U);
+    const auto firstIndex = owner->getFieldIndex(first);
+    const auto secondIndex = owner->getFieldIndex(second);
+    const auto afterIndex = owner->getFieldIndex(after);
+    auto destroyed = NomadIndex{0};
+    {
+        ScriptObject object(owner);
+        ScriptObject independent(owner);
+        const auto& constObject = object;
+        BOOST_TEST(object.getFieldCount() == 5U);
+        BOOST_TEST(object.getFieldStorage(firstIndex).size() == 3U);
+        BOOST_TEST(constObject.getFieldStorage(firstIndex).size() == 3U);
+        BOOST_TEST(object.getFieldStorage(owner->getFieldIndex(marker)).empty());
+        BOOST_TEST(object.getFieldStorage(firstIndex)[1].getObjectValue() == nullptr);
+        object.setFieldStorage(owner->getFieldIndex(marker), {});
+        BOOST_CHECK_THROW((void)object.getField(firstIndex), NomadException);
+        BOOST_CHECK_THROW(object.setField(firstIndex, RuntimeValue{}), NomadException);
+        BOOST_CHECK_THROW((void)object.getField(owner->getFieldIndex(marker)), NomadException);
+        BOOST_CHECK_THROW((void)object.getFieldStorage(NOMAD_INVALID_INDEX), NomadException);
+        BOOST_CHECK_THROW((void)constObject.getFieldStorage(NOMAD_INVALID_INDEX), NomadException);
+        std::array<RuntimeValue, 3> source{};
+        std::array<RuntimeValue, 3> scratch{};
+        source[0].setIntegerValue(17);
+        source[1].setStringValue("copied");
+        source[2].setObjectValue(new CountingObject(destroyed));
+        BOOST_CHECK_THROW(object.setFieldStorage(firstIndex, source), NomadException);
+        BOOST_CHECK_THROW(object.setFieldStorage(firstIndex, std::span(source).first(2), scratch), NomadException);
+        BOOST_CHECK_THROW(object.setFieldStorage(firstIndex, source, std::span(scratch).first(2)), NomadException);
+        BOOST_TEST(source[2].getObjectValue()->getReferenceCount() == 1U);
+        object.setFieldStorage(firstIndex, source, scratch);
+        object.setFieldStorage(secondIndex, constObject.getFieldStorage(firstIndex), scratch);
+        object.setFieldStorage(firstIndex, constObject.getFieldStorage(firstIndex), scratch);
+        BOOST_TEST(source[1].getObjectValue()->getReferenceCount() == 3U);
+        BOOST_TEST(source[2].getObjectValue()->getReferenceCount() == 3U);
+        object.getFieldStorage(firstIndex)[0].setIntegerValue(23);
+        BOOST_TEST(source[0].getIntegerValue() == 17);
+        BOOST_TEST(object.getFieldStorage(secondIndex)[0].getIntegerValue() == 17);
+        BOOST_TEST(independent.getFieldStorage(firstIndex)[0].getIntegerValue() == 0);
+        object.setField(afterIndex, RuntimeValue(NomadInteger{42}));
+        BOOST_TEST(object.getField(afterIndex).getIntegerValue() == 42);
+        BOOST_TEST(object.getField(owner->getFieldIndex(before)).getIntegerValue() == 0);
+        const auto* storage = object.getFieldStorage(firstIndex).data();
+        BOOST_REQUIRE(manager.registerScriptClassProperty(ownerId, "late", runtime.getFloatType()).isValid());
+        BOOST_TEST(object.getFieldStorage(firstIndex).data() == storage);
+        BOOST_TEST(object.getFieldCount() == 5U);
+        BOOST_CHECK_THROW((void)object.getFieldStorage(5), NomadException);
+        wrapper->freeValue(source.data());
+        BOOST_TEST(destroyed == 0U);
+    }
+    BOOST_TEST(destroyed == 1U);
+}
+
+BOOST_AUTO_TEST_CASE(zero_and_single_slot_structs_do_not_use_scalar_field_access) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto emptyId = manager.registerStruct("Zero");
+    const auto scalarId = manager.registerStruct("One");
+    const auto* empty = manager.getTypeByName("Zero")->asStructType();
+    const auto* scalar = manager.getTypeByName("One")->asStructType();
+    BOOST_REQUIRE(manager.registerScriptStructProperty(scalarId, "value", runtime.getIntegerType()).isValid());
+    const auto ownerId = manager.registerClass("ZeroOwner", ClassMode::Closed);
+    const auto* owner = manager.getTypeByName("ZeroOwner")->asClassType();
+    BOOST_REQUIRE(manager.registerScriptClassProperty(ownerId, "first", empty).isValid());
+    BOOST_REQUIRE(manager.registerScriptClassProperty(ownerId, "second", empty).isValid());
+    BOOST_CHECK_THROW(ScriptObject{owner}, NomadException);
+    manager.finalizeCompositeFieldLayout(ownerId);
+    ScriptObject object(owner);
+    BOOST_TEST(object.getFieldCount() == 2U);
+    BOOST_TEST(owner->getFieldStorageSize() == 0U);
+    BOOST_TEST(object.getFieldStorage(0).empty());
+    BOOST_TEST(object.getFieldStorage(1).empty());
+    object.setFieldStorage(0, {});
+    object.setFieldStorage(1, {});
+    BOOST_CHECK_THROW((void)object.getField(0), NomadException);
+    BOOST_CHECK_THROW(object.setFieldStorage(0, std::array<RuntimeValue, 1>{}), NomadException);
+    const auto scalarOwnerId = manager.registerClass("OneOwner", ClassMode::Closed);
+    const auto* scalarOwner = manager.getTypeByName("OneOwner")->asClassType();
+    BOOST_REQUIRE(manager.registerScriptClassProperty(scalarOwnerId, "value", scalar).isValid());
+    manager.finalizeCompositeFieldLayout(scalarOwnerId);
+    ScriptObject single(scalarOwner);
+    BOOST_CHECK_THROW(single.setField(0, RuntimeValue(NomadInteger{7})), NomadException);
+    const std::array<RuntimeValue, 1> value{RuntimeValue(NomadInteger{7})};
+    std::array<RuntimeValue, 1> unusedScratch{RuntimeValue(NomadInteger{99})};
+    single.setFieldStorage(0, value, std::span(unusedScratch).first(0));
+    BOOST_TEST(single.getFieldStorage(0)[0].getIntegerValue() == 7);
+    BOOST_TEST(unusedScratch[0].getIntegerValue() == 99);
+}
+
+BOOST_AUTO_TEST_CASE(aggregate_field_assignment_supports_overlapping_source_storage) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto tripleId = manager.registerStruct("Triple");
+    const auto* triple = manager.getTypeByName("Triple")->asStructType();
+    for (const auto* name : {"first", "second", "third"}) {
+        BOOST_REQUIRE(manager.registerScriptStructProperty(tripleId, name, runtime.getIntegerType()).isValid());
+    }
+    const auto ownerId = manager.registerClass("Overlapping", ClassMode::Closed);
+    const auto* owner = manager.getTypeByName("Overlapping")->asClassType();
+    BOOST_REQUIRE(manager.registerScriptClassProperty(ownerId, "first", triple).isValid());
+    BOOST_REQUIRE(manager.registerScriptClassProperty(ownerId, "second", triple).isValid());
+    manager.finalizeCompositeFieldLayout(ownerId);
+    ScriptObject object(owner);
+    const std::array<RuntimeValue, 3> first{
+        RuntimeValue(NomadInteger{1}), RuntimeValue(NomadInteger{2}), RuntimeValue(NomadInteger{3})
+    };
+    const std::array<RuntimeValue, 3> second{
+        RuntimeValue(NomadInteger{4}), RuntimeValue(NomadInteger{5}), RuntimeValue(NomadInteger{6})
+    };
+    std::array<RuntimeValue, 3> scratch{};
+    object.setFieldStorage(0, first, scratch);
+    object.setFieldStorage(1, second, scratch);
+    const auto storage = object.getFieldStorage(0);
+    BOOST_TEST(storage.data() + storage.size() == object.getFieldStorage(1).data());
+    const std::span<const RuntimeValue> overlapping(storage.data() + 1, 3);
+    object.setFieldStorage(0, overlapping, scratch);
+    BOOST_TEST(object.getFieldStorage(0)[0].getIntegerValue() == 2);
+    BOOST_TEST(object.getFieldStorage(0)[1].getIntegerValue() == 3);
+    BOOST_TEST(object.getFieldStorage(0)[2].getIntegerValue() == 4);
+    BOOST_TEST(object.getFieldStorage(1)[0].getIntegerValue() == 4);
 }
 
 BOOST_AUTO_TEST_CASE(allocation_and_stores_do_not_run_type_initializers) {

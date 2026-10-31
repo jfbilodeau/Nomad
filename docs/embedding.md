@@ -867,7 +867,30 @@ instance storage for stored properties. Construct it with a `const ClassType*`
 whose field layout has been resolved. The runtime and its type descriptors must
 outlive the object. Native properties do not occupy storage slots.
 
-Direct allocation captures the field layout and zeroes storage without running
+Direct allocation snapshots each stored field's type, physical offset, and size.
+Inline struct layouts must be finalized before allocation; allocation does not
+freeze an enclosing open class. Each instance's storage remains fixed if fields
+are later added to that class. Native properties have no stored-field index.
+`getFieldCount()` counts logical stored fields, not physical slots.
+`getField(index)` and `setField(index, value)` use logical stored-field indices
+and support only single-slot, non-struct fields. Their physical offsets may
+differ from their indices when an earlier field is a struct.
+
+Use `getFieldStorage(index)` for a borrowed contiguous view of a stored field,
+including an inline struct. The const overload returns read-only slots; the
+mutable overload permits direct mutation. The object must remain alive throughout
+the borrow. Empty structs return empty views and still have distinct logical
+field indices. Native accessor results are not field-storage views.
+`setFieldStorage(index, source, scratch)` copies exactly one field's slots using
+its type's assignment operation. Source width must match the field size. Supply
+at least `Type::getAssignmentScratchSize()` cleared scratch slots, disjoint from
+source and destination, when required. Source and destination may alias or
+overlap; assignment stages the copy before releasing the destination. Invalid
+indices, scalar access to structs, incorrect source widths, and insufficient
+scratch storage throw `NomadException`. Direct view writes must follow the type's
+ownership and lifecycle contracts; use the assignment API to replace owned values.
+
+Direct allocation zeroes storage without running
 type defaults or field initializer expressions. To create a ready-to-use script
 instance from the host, use `VirtualMachine::constructObject()` with a compiled
 constructor. Every generated constructor calls the class's `$init` before its

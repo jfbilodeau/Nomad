@@ -3,6 +3,7 @@
 #include <nomad/compiler/Compiler.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>
 
 #include <boost/test/unit_test.hpp>
@@ -59,6 +60,44 @@ private:
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(struct_type)
+
+BOOST_AUTO_TEST_CASE(object_aggregate_assignment_cleans_partial_scratch_and_preserves_destination) {
+    const auto before = RuntimeValue::getLiveStringCount();
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    FailingFieldType* field = nullptr;
+    const auto fieldId = manager.registerClass<FailingFieldType>("Failing", ClassMode::Closed, field);
+    const auto aggregateId = manager.registerStruct("PartialAggregate");
+    const auto* aggregate = manager.getTypeByName("PartialAggregate")->asStructType();
+    BOOST_REQUIRE(manager.registerScriptStructProperty(aggregateId, "first", manager.getType(fieldId).value()).isValid());
+    BOOST_REQUIRE(manager.registerScriptStructProperty(aggregateId, "second", manager.getType(fieldId).value()).isValid());
+    const auto ownerId = manager.registerClass("PartialAggregateOwner", ClassMode::Closed);
+    const auto* owner = manager.getTypeByName("PartialAggregateOwner")->asClassType();
+    BOOST_REQUIRE(manager.registerScriptClassProperty(ownerId, "value", aggregate).isValid());
+    manager.finalizeCompositeFieldLayout(ownerId);
+    {
+        ScriptObject object(owner);
+        std::array<RuntimeValue, 2> source{};
+        std::array<RuntimeValue, 2> scratch{};
+        source[0].setStringValue("first");
+        source[1].setStringValue("second");
+        field->failCopyAt = 2;
+        BOOST_CHECK_THROW(object.setFieldStorage(0, source, scratch), NomadException);
+        BOOST_TEST(source[0].getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(source[1].getObjectValue()->getReferenceCount() == 1U);
+        for (const auto& value : object.getFieldStorage(0)) {
+            BOOST_TEST(value.getObjectValue() == nullptr);
+        }
+        for (const auto& value : scratch) {
+            BOOST_TEST(value.getObjectValue() == nullptr);
+        }
+        field->failCopyAt = 0;
+        object.setFieldStorage(0, source, scratch);
+        aggregate->freeValue(source.data());
+        BOOST_TEST(object.getFieldStorage(0)[0].getObjectValue()->getReferenceCount() == 1U);
+    }
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == before);
+}
 
 BOOST_AUTO_TEST_CASE(registration_identity_and_unresolved_layout_contracts) {
     Runtime runtime;

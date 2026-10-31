@@ -1,7 +1,8 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1U have been reviewed; Step 1V below is implemented and awaiting review.
+Steps 1A through 1W have been reviewed; Step 1X below is implemented and awaiting
+review. Aggregate VM execution remains unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -898,6 +899,100 @@ Validation:
 Next slice after review: design aggregate struct storage addressing, borrowed
 receivers, and caller-provided return destinations. Discuss any necessary VM
 instructions or compiler special cases before implementation.
+
+### Step 1W: Approved borrowed storage representation
+
+Use non-owning contiguous slot views: `std::span<RuntimeValue>` for mutable
+destinations and receivers, and `std::span<const RuntimeValue>` for sources.
+These views do not own a struct or its enclosing object. No polymorphic location
+hierarchy, struct boxing, or shared ownership is introduced.
+
+The VM stack currently allocates its slots once; it must not relocate storage
+while a view is borrowed. Object field storage is likewise fixed after
+allocation. Interpreter-owned values must keep their storage stable across
+borrows. Empty structs use empty views without forming a pointer to a
+nonexistent slot. Nested fields compose finalized offset/size subviews.
+
+The caller owns local and temporary storage. For an object-field receiver or
+destination, retain the enclosing object before argument evaluation and release
+it after the operation, including failure cleanup. Internal views cannot become
+ordinary struct values: arguments, returns, and captures copy slots.
+
+Existing scalar result/intermediate registers and object `this` remain unchanged.
+Struct calls use separate internal receiver and return-destination views, saved
+and restored across script calls, native calls, and host reentry. Bind the views
+after argument evaluation so nested argument calls do not inherit the pending
+outer call's destination.
+
+Lowering constraints:
+
+- `printPoint p:Point` copies one logical argument into three parameter slots.
+- `updatePoint p:Point x:float y:float` has physical parameter offsets 0, 3, and
+  4 and five argument slots, with a separate caller-owned return destination.
+- Preserve right-to-left argument evaluation. Within each aggregate argument
+  block, fields occupy increasing physical offsets; parameter addressing must
+  account for the existing descending logical parameter order.
+- Empty arguments keep logical IDs and consume no slots.
+- `player.location.move ...` borrows the retained player's location subview.
+  Nested calls save and restore that borrow.
+- `player.location = calculate player` initially stages the RHS in caller-owned,
+  cleared storage, then invokes `Type::assignValue` with disjoint scratch after
+  RHS completion. Do not write into the live destination prematurely.
+- New local initialization may subsequently construct into empty final storage.
+  NRVO eligibility, initialization tracking, failure cleanup, and exact opcode
+  contracts still require separate design review.
+
+Accessor-backed struct properties return owned temporary copies, not addressable
+field storage. Methods mutate the temporary without implicit setter write-back.
+Native struct accessor API design remains a separate approval gate.
+
+This slice changes the plan only. No VM instructions, runtime storage, source
+syntax, or aggregate execution have changed.
+
+Next reviewable implementation slice: migrate ScriptObject allocation and field
+access to finalized physical offsets and sizes, with host-level nested-struct
+lifecycle tests. Do not enable struct syntax or add opcodes in that slice.
+
+### Step 1X: Physical ScriptObject field storage
+
+ScriptObject snapshots stored-field types, physical offsets, and sizes and
+allocates the total physical slot width. Allocation keeps its existing zeroed
+storage behavior without running type defaults or constructors. Destruction
+releases each logical field through its type at the captured physical offset,
+including nested struct fields.
+
+Approved compatibility choice: inline struct layouts must already be finalized,
+but allocation does not freeze the enclosing class. The snapshot and its storage
+remain fixed when an open class later gains fields.
+
+`getFieldCount`, `getField`, and `setField` retain logical stored-field indices.
+Single-slot APIs reject structs, including empty and one-slot structs, rather
+than treating aggregate storage as a scalar. Const/mutable `getFieldStorage`
+overloads expose borrowed contiguous field views. `setFieldStorage` validates
+source/scratch widths and uses the existing type-owned assignment operation.
+Empty fields have distinct logical indices and empty views.
+
+Existing VM properties and generated scalar bindings keep logical field-index
+access and therefore use the captured physical offsets without API changes.
+No struct syntax, aggregate VM instructions, or compiled aggregate calls are
+enabled in this slice.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully. A constructor
+  assertion initially failed to compile due to C++ declaration parsing; brace
+  initialization corrected the test.
+- Language, remaining, and binding regression groups passed.
+- Host-level coverage verifies nested struct slot widths, scalar fields after
+  aggregates, independent instances, retained strings/object references,
+  self-assignment, overlapping sources, empty and one-slot structs, stable
+  snapshots, invalid spans, and cleanup after partial copy failure.
+- All four documentation preparation tests and whitespace checks passed.
+- No compiled aggregate execution or gameplay validation is claimed.
+
+Next slice after review: settle frame/parameter storage addressing and the exact
+aggregate instruction contracts, including receiver and return-destination
+save/restore, before changing the VM ABI.
 
 Remaining Step 1 work, requiring separate design approval:
 
