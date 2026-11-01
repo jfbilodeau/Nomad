@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1AF have been reviewed; Step 1AG below is implemented and awaiting
+Steps 1A through 1AG have been reviewed; Step 1AH below is implemented and awaiting
 review. Aggregate loads, stores, and calls remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1300,6 +1300,39 @@ Validation:
 Next slice after review: compiler-owned aggregate destinations and assignment
 staging allocated during resolution, before physical frame sizes are computed.
 Parameter/call lowering and borrowed receiver/return destinations follow.
+
+### Step 1AH: Compiler-owned struct assignment staging
+
+Approved scope and implementation:
+
+- Struct-local assignment registers one same-type staging local during script
+  resolution. Repeated resolution retains the same VariableId.
+- Internal names contain `@` and are hidden by the existing variable-visibility
+  API. Their storage is included in physical frame reservation and return cleanup.
+- RHS local-destination compilation completes before replacing the target;
+  owned staging fields are released after each assignment.
+- Scalar assignment behavior is unchanged. Empty structs have logical staging
+  locals but consume no physical slots.
+- Layout finalization and offset calculation remain deferred until emission.
+- No new instructions, syntax, struct parameters/object fields/calls, or
+  interpreter aggregate assignment are introduced.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, and binding regression groups passed.
+- Tests verify staging registration before layout finalization, stable IDs
+  across repeated resolution, hidden names, and physical frame widths/offsets.
+- Execution coverage checks nested copies, scalar independence, self-assignment,
+  staging reuse, release immediately after use, and scalar assignment behavior.
+- Repeated calls restore live-string and shared-empty-string reference counts.
+- Empty struct staging adds no physical slots or assignment instructions.
+- All four documentation preparation tests and whitespace checks passed.
+- This verifies compiled assignment staging, not struct syntax or gameplay.
+
+Next slice after review: design physical parameter/call lowering and borrowed
+receiver/return destinations. Struct call expressions and object-field locations
+will extend the local-destination path in separately approved slices.
 
 Remaining Step 1 work, requiring separate design approval:
 

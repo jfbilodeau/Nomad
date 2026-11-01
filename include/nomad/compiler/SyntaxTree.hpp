@@ -202,6 +202,7 @@ private:
     NomadString m_identifier;
     IdentifierDefinition m_identifierDefinition;
     std::unique_ptr<Expression> m_expression;
+    VariableId m_stagingVariable = VariableId::INVALID;
 };
 
 class HubInitializerStatement final : public AssignmentStatement {

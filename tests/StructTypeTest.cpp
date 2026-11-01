@@ -742,6 +742,132 @@ BOOST_AUTO_TEST_CASE(local_expression_destinations_handle_empty_structs_and_reje
     BOOST_TEST(instructions.size() == initialSize);
 }
 
+BOOST_AUTO_TEST_CASE(struct_local_assignments_allocate_staging_before_entry_and_release_it_after_use) {
+    Runtime runtime;
+    const auto innerId = runtime.registerStruct("AssignmentPayload");
+    const auto outerId = runtime.registerStruct("AssignmentWrapper");
+    const auto* inner = runtime.getTypeByName("AssignmentPayload")->asStructType();
+    const auto* outer = runtime.getTypeByName("AssignmentWrapper")->asStructType();
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "payload", inner).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "label", runtime.getStringType()).isValid());
+    const auto id = runtime.registerScriptFunction("stagedAssignment", "assignment.nomad", "");
+    auto* function = runtime.getScriptFunction(id);
+    BOOST_REQUIRE(function != nullptr);
+    function->setReturnType(runtime.getIntegerType());
+    const auto source = function->registerVariable("source", outer);
+    const auto destination = function->registerVariable("destination", outer);
+    const auto number = function->registerVariable("number", runtime.getIntegerType());
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    AssignmentStatement assignment(1, 1, "destination",
+        std::make_unique<IdentifierExpression>(nullptr, 1, 1, "source"));
+    AssignmentStatement selfAssignment(2, 1, "source",
+        std::make_unique<IdentifierExpression>(nullptr, 2, 1, "source"));
+    AssignmentStatement scalarAssignment(3, 1, "number",
+        std::make_unique<IntegerLiteral>(nullptr, 3, 1, 47));
+    BOOST_REQUIRE(assignment.resolve(&context, function));
+    BOOST_REQUIRE(selfAssignment.resolve(&context, function));
+    BOOST_REQUIRE(scalarAssignment.resolve(&context, function));
+    BOOST_TEST(function->getVariableCount() == 5U);
+    BOOST_REQUIRE(assignment.resolve(&context, function));
+    BOOST_REQUIRE(selfAssignment.resolve(&context, function));
+    BOOST_TEST(function->getVariableCount() == 5U);
+    const auto firstStaging = VariableId{3};
+    const auto secondStaging = VariableId{4};
+    BOOST_TEST(function->getVariableType(firstStaging) == outer);
+    BOOST_TEST(function->getVariableType(secondStaging) == outer);
+    BOOST_TEST(function->getVisibleVariableName(firstStaging).empty());
+    BOOST_TEST(function->getVisibleVariableName(secondStaging).empty());
+    BOOST_TEST(!outer->isFieldLayoutFinalized());
+    runtime.finalizeCompositeFieldLayout(outerId);
+    BOOST_TEST(function->getVariableStorageSize() == 13U);
+    BOOST_TEST(function->getVariableOffset(firstStaging) == 7U);
+    BOOST_TEST(function->getVariableOffset(secondStaging) == 10U);
+    const auto initialize = runtime.registerNativeFunction("initializeAssignmentStorage",
+        [&](VirtualMachine* machine) {
+            for (const auto variable : {source, destination}) {
+                const auto values = machine->getLocalStorage(function->getVariableOffset(variable), outer->getSize());
+                values[0].setIntegerValue(variable == source ? 17 : 99);
+                for (auto index = NomadIndex{1}; index < 3; ++index) {
+                    values[index].freeObjectValue();
+                    values[index].setStringValue(variable == source ? "source" : "old");
+                }
+            }
+        }, {}, runtime.getVoidType(), "");
+    const auto inspect = runtime.registerNativeFunction("inspectStagedAssignment",
+        [&](VirtualMachine* machine) {
+            const auto sourceValues = machine->getLocalStorage(function->getVariableOffset(source), outer->getSize());
+            const auto destinationValues = machine->getLocalStorage(
+                function->getVariableOffset(destination), outer->getSize());
+            BOOST_TEST(sourceValues[0].getIntegerValue() == 17);
+            BOOST_TEST(destinationValues[0].getIntegerValue() == 17);
+            BOOST_TEST(machine->getFunctionIntegerVariableValue(number) == 47);
+            for (auto index = NomadIndex{1}; index < 3; ++index) {
+                BOOST_TEST(sourceValues[index].getObjectValue() == destinationValues[index].getObjectValue());
+                BOOST_TEST(sourceValues[index].getObjectValue()->getReferenceCount() == 2U);
+            }
+            for (const auto staging : {firstStaging, secondStaging}) {
+                const auto values = machine->getLocalStorage(function->getVariableOffset(staging), outer->getSize());
+                BOOST_TEST(values[1].getObjectValue() == nullptr);
+                BOOST_TEST(values[2].getObjectValue() == nullptr);
+            }
+            destinationValues[0].setIntegerValue(23);
+            BOOST_TEST(sourceValues[0].getIntegerValue() == 17);
+        }, {}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(initialize.isValid() && inspect.isValid());
+    function->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(function);
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(initialize.id);
+    for (auto index = 0; index < 2; ++index) {
+        assignment.compile(compiler.get(), function);
+        selfAssignment.compile(compiler.get(), function);
+        scalarAssignment.compile(compiler.get(), function);
+        compiler->addOpCode(OpCodes::op_call_native_function);
+        compiler->addId(inspect.id);
+    }
+    compiler->addLoadFunctionVariable(function->getVariableOffset(number), runtime.getIntegerType(),
+        ExpressionTarget::Result);
+    compiler->addFunctionReturn(function);
+    function->setFunctionEnd(runtime.getInstructions().size());
+    RuntimeValue emptyDefault;
+    runtime.getStringType()->initValue(&emptyDefault);
+    const auto emptyReferences = emptyDefault.getObjectValue()->getReferenceCount();
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    for (auto index = 0; index < 2; ++index) {
+        RuntimeValue result;
+        runtime.executeFunction(id, {}, result);
+        BOOST_TEST(result.getIntegerValue() == 47);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(emptyDefault.getObjectValue()->getReferenceCount() == emptyReferences);
+    }
+    runtime.getStringType()->freeValue(&emptyDefault);
+}
+
+BOOST_AUTO_TEST_CASE(empty_struct_assignment_staging_occupies_no_physical_slots) {
+    Runtime runtime;
+    const auto id = runtime.registerStruct("EmptyAssignment");
+    const auto* empty = runtime.getTypeByName("EmptyAssignment")->asStructType();
+    runtime.finalizeCompositeFieldLayout(id);
+    ScriptFunction function(CallableId{}, "emptyAssignment", "empty.nomad", "");
+    function.registerVariable("source", empty);
+    function.registerVariable("destination", empty);
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    CompilerContext context(&compiler);
+    AssignmentStatement assignment(1, 1, "destination",
+        std::make_unique<IdentifierExpression>(nullptr, 1, 1, "source"));
+    BOOST_REQUIRE(assignment.resolve(&context, &function));
+    BOOST_REQUIRE(assignment.resolve(&context, &function));
+    BOOST_TEST(function.getVariableCount() == 3U);
+    BOOST_TEST(function.getVariableStorageSize() == 0U);
+    const auto initialSize = instructions.size();
+    assignment.compile(&compiler, &function);
+    BOOST_TEST(instructions.size() == initialSize);
+}
+
 BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_without_writing_instructions) {
     Runtime runtime;
     const auto id = runtime.registerStruct("Empty");

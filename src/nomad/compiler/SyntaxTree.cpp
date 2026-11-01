@@ -376,6 +376,10 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
         }
 
         function->setVariableType(identifier.variableId, expressionType);
+        if (expressionType->asStructType() != nullptr && m_stagingVariable.isInvalid()) {
+            m_stagingVariable = function->registerVariable(
+                "@assignment" + std::to_string(function->getVariableCount()), expressionType);
+        }
         break;
     }
     case IdentifierType::DynamicVariable: {
@@ -440,6 +444,19 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
 }
 
 void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
+    if (m_stagingVariable.isValid()) {
+        IdentifierDefinition identifier;
+        compiler->getIdentifierDefinition(m_identifier, function, identifier);
+        if (identifier.identifierType != IdentifierType::FunctionVariable) {
+            compiler->reportInternalError("Aggregate assignment staging requires a local destination");
+        }
+        m_expression->compileIntoLocal(compiler, function, m_stagingVariable);
+        const auto* type = m_expression->getType();
+        const auto stagingOffset = function->getVariableOffset(m_stagingVariable);
+        type->emitCopyFunctionVariable(*compiler, stagingOffset, function->getVariableOffset(identifier.variableId));
+        type->emitFreeFunctionVariable(*compiler, stagingOffset);
+        return;
+    }
     m_expression->compile(compiler, function, ExpressionTarget::Result);
 
     if (const auto* receiverType = compiler->getReceiverType(function);

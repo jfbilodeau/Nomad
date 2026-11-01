@@ -758,6 +758,14 @@ before execution. This API does not allocate temporary locals or stage assignmen
 targets. It follows the same result-register ownership preconditions as local
 copy emission.
 
+Compiled struct-local assignments allocate a same-type staging local during
+resolution. The RHS completes there before destination replacement; owned
+staging fields are released after each assignment. Staging locals participate
+in physical frame reservation and return cleanup, but their internal names
+are hidden by `getVisibleVariableName`. Repeated resolution reuses the same
+staging local. Scalar assignments retain their existing path. Struct parameter,
+object-field, call-result, and interpreter assignment lowering remain unsupported.
+
 An offset query requires resolved sizes for the preceding variables; a total-size
 query requires resolved sizes for every variable. Missing types, deferred-size
 queries, and slot-count overflow throw `NomadException`. An invalid or out-of-range
