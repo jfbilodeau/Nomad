@@ -2,7 +2,7 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Step 1AP below replaces the Step 1AN prototype and is awaiting review. Struct argument copies
+Step 1AP has been reviewed; Step 1AQ below is implemented and awaiting review. Struct argument copies
 are supported; compiled struct receivers and destination returns remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1669,6 +1669,45 @@ Next slice after review: type-owned emission to borrowed destinations and
 compiler-owned hidden-argument layout/lowering. Then wire struct methods and
 caller-destination returns, followed by retained object-field owners and
 conservative RVO eligibility.
+
+### Step 1AQ: Type-owned borrowed storage emission
+
+Approved scope and implementation:
+
+- Types emit copies from locals and ordinary parameters into borrowed storage,
+  and from borrowed storage into locals, using existing address-based opcodes.
+- Structs recurse through stored fields with finalized increasing borrowed/local
+  offsets and reverse anchor-relative ordinary parameter offsets.
+- Class/string fields select reference-retaining load instructions and release
+  replaced ownership before storing. Scalar fields select scalar instructions.
+- Borrowed cleanup releases owned nested fields without releasing descriptors
+  or enclosing objects. Stack-target borrowed struct loads push field copies in
+  increasing order; result/intermediate aggregate loads remain unsupported.
+- Empty types emit no instructions. Unfinalized struct layouts fail before
+  emission. Source/destination ranges must be same-type and disjoint; possible
+  overlap requires prior staging into disjoint local storage.
+- The emitter does not allocate scratch or initialize destinations/run constructors.
+  Copies retain existing result-register ownership and clobbering contracts.
+- No new opcodes, runtime checks, VM allocation, or language syntax are introduced.
+
+Validation:
+
+- Built Debug tests, runtime, and LSP targets successfully.
+- Language, remaining, and bindings regression groups passed.
+- Emission tests verify full-width pointer/source/field offsets, nested parameter
+  reversal, scalar/reference opcode selection, stack order, cleanup offsets,
+  zero-width omission, and unfinalized-layout/register-load rejection.
+- Execution tests exercise repeated local-to-borrowed, parameter-to-borrowed,
+  and borrowed-to-local copies of nested scalar/string/class fields, borrowed
+  subranges, ownership replacement, independent scalar copies, stack copies,
+  sentinel preservation, and restored live object/string counts.
+- Four documentation tests and whitespace checks passed.
+- Automatic hidden-call lowering, actual RVO selection, and gameplay remain
+  unvalidated and are not implemented by this slice.
+
+Next slice after review: compiler-owned hidden-argument layout and lowering,
+using these emitters for caller destinations. Then struct methods and returns,
+retained object-field owners, and conservative RVO eligibility.
 
 Remaining Step 1 work, requiring separate design approval:
 

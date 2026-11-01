@@ -80,6 +80,37 @@ public:
         NomadIndex sourceOffset,
         NomadIndex parameterOffset
     ) const;
+    // Same-type disjoint ranges; pointerOffset addresses a hidden storage-pointer parameter.
+    // Destination fields must be cleared or valid owned values. These copies clobber result.
+    virtual void emitCopyFunctionVariableToStorageParameter(
+        OpCodeEmitter& emitter,
+        NomadIndex sourceOffset,
+        NomadIndex pointerOffset,
+        NomadIndex fieldOffset
+    ) const;
+    virtual void emitCopyParameterToStorageParameter(
+        OpCodeEmitter& emitter,
+        NomadIndex sourceOffset,
+        NomadIndex pointerOffset,
+        NomadIndex fieldOffset
+    ) const;
+    virtual void emitCopyStorageParameterToFunctionVariable(
+        OpCodeEmitter& emitter,
+        NomadIndex pointerOffset,
+        NomadIndex fieldOffset,
+        NomadIndex destinationOffset
+    ) const;
+    virtual void emitFreeStorageParameter(
+        OpCodeEmitter& emitter,
+        NomadIndex pointerOffset,
+        NomadIndex fieldOffset
+    ) const;
+    virtual NomadIndex emitLoadStorageParameter(
+        OpCodeEmitter& emitter,
+        NomadIndex pointerOffset,
+        NomadIndex fieldOffset,
+        ExpressionTarget target
+    ) const;
     // Pushes an owned copy of reserved local storage in increasing slot order; empty values push nothing.
     virtual void emitPushFunctionVariable(OpCodeEmitter& emitter, NomadIndex offset) const;
     // Stages the complete source before replacement. Same-type scratch must be disjoint from both ranges.

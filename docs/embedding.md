@@ -862,7 +862,33 @@ aggregate-state register or per-call allocation is required. Callers clean owned
 argument fields and pop hidden pointers without object cleanup. The earlier
 `StructCallState`, binding accessors, and separate snapshot vector are removed.
 
-This is a bytecode/VM foundation, validated with low-level call fixtures.
+The type-owned emission APIs also support borrowed storage:
+
+- `emitCopyFunctionVariableToStorageParameter(emitter, sourceOffset,
+  pointerOffset, fieldOffset)` replaces a borrowed destination from a local.
+- `emitCopyParameterToStorageParameter(emitter, sourceOffset, pointerOffset,
+  fieldOffset)` replaces it from an ordinary parameter block.
+- `emitCopyStorageParameterToFunctionVariable(emitter, pointerOffset,
+  fieldOffset, destinationOffset)` replaces a local from borrowed storage.
+- `emitFreeStorageParameter(emitter, pointerOffset, fieldOffset)` releases and
+  clears owned fields without releasing the pointer or enclosing owner.
+- `emitLoadStorageParameter(emitter, pointerOffset, fieldOffset, target)` loads a
+  scalar/reference field or pushes a struct's field copies in increasing order.
+  Struct result/intermediate register loads remain unsupported. The return value
+  is the first pointer operand position, or `NOMAD_INVALID_INDEX` for empty types.
+
+All offsets are physical and resolved at emission. Nested parameter source
+offsets remain reverse anchor-relative; borrowed fields and locals use increasing
+offsets. The caller must provide finalized types, same-type disjoint source and
+destination ranges, and cleared or valid owned destination fields. For possible
+overlap, stage the source in disjoint local storage first; these APIs do not
+allocate scratch, perform alias checks, or provide scratch-backed aggregate
+replacement themselves. Copies retain reference fields and clobber the result
+register under the existing local-copy ownership contract. Empty types emit
+nothing. Initialization supplies existing type defaults separately and does not
+run constructors.
+
+This is a bytecode/type-emission foundation, validated with low-level fixtures.
 Automatic hidden-argument emission, compiled struct methods and return expressions,
 retained object-field lowering, aggregate host `run` arguments, and aggregate
 yield/resume support remain unsupported.

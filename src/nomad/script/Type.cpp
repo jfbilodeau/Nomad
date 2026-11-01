@@ -146,6 +146,82 @@ void Type::emitCopyFunctionVariableToParameter(
 void Type::emitFreeIntermediate(OpCodeEmitter&) const {
 }
 
+void Type::emitCopyFunctionVariableToStorageParameter(
+    OpCodeEmitter& emitter,
+    const NomadIndex sourceOffset,
+    const NomadIndex pointerOffset,
+    const NomadIndex fieldOffset
+) const {
+    if (getSize() == 0) {
+        return;
+    }
+    emitLoadFunctionVariable(emitter, sourceOffset, ExpressionTarget::Result);
+    emitFreeStorageParameter(emitter, pointerOffset, fieldOffset);
+    emitter.addOpCode(op_storage_parameter_set);
+    emitter.addIndex(pointerOffset);
+    emitter.addIndex(fieldOffset);
+}
+
+void Type::emitCopyParameterToStorageParameter(
+    OpCodeEmitter& emitter,
+    const NomadIndex sourceOffset,
+    const NomadIndex pointerOffset,
+    const NomadIndex fieldOffset
+) const {
+    if (getSize() == 0) {
+        return;
+    }
+    emitLoadParameter(emitter, sourceOffset, ExpressionTarget::Result);
+    emitFreeStorageParameter(emitter, pointerOffset, fieldOffset);
+    emitter.addOpCode(op_storage_parameter_set);
+    emitter.addIndex(pointerOffset);
+    emitter.addIndex(fieldOffset);
+}
+
+void Type::emitCopyStorageParameterToFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadIndex pointerOffset,
+    const NomadIndex fieldOffset,
+    const NomadIndex destinationOffset
+) const {
+    if (getSize() == 0) {
+        return;
+    }
+    emitLoadStorageParameter(emitter, pointerOffset, fieldOffset, ExpressionTarget::Result);
+    emitFreeFunctionVariable(emitter, destinationOffset);
+    emitStoreFunctionVariable(emitter, destinationOffset);
+}
+
+void Type::emitFreeStorageParameter(OpCodeEmitter&, NomadIndex, NomadIndex) const {
+}
+
+NomadIndex Type::emitLoadStorageParameter(
+    OpCodeEmitter& emitter,
+    const NomadIndex pointerOffset,
+    const NomadIndex fieldOffset,
+    const ExpressionTarget target
+) const {
+    if (getSize() == 0) {
+        return NOMAD_INVALID_INDEX;
+    }
+    switch (target) {
+    case ExpressionTarget::Result:
+        emitter.addOpCode(op_storage_parameter_load_r);
+        break;
+    case ExpressionTarget::Intermediate:
+        emitter.addOpCode(op_storage_parameter_load_i);
+        break;
+    case ExpressionTarget::Stack:
+        emitter.addOpCode(op_storage_parameter_push);
+        break;
+    default:
+        throw NomadBug("Invalid expression target for borrowed storage load");
+    }
+    const auto operand = emitter.addIndex(pointerOffset);
+    emitter.addIndex(fieldOffset);
+    return operand;
+}
+
 void Type::emitFreeStackValue(OpCodeEmitter&, NomadIndex) const {
 }
 

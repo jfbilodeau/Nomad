@@ -221,6 +221,110 @@ void StructType::emitFreeParameter(
     }
 }
 
+void StructType::emitCopyFunctionVariableToStorageParameter(
+    OpCodeEmitter& emitter,
+    const NomadIndex sourceOffset,
+    const NomadIndex pointerOffset,
+    const NomadIndex fieldOffset
+) const {
+    if (getSize() == 0) {
+        return;
+    }
+    for (const auto* property : getProperties()) {
+        if (property->asNativeProperty() != nullptr) {
+            continue;
+        }
+        const auto offset = getFieldOffset(property->getId());
+        property->getValueType()->emitCopyFunctionVariableToStorageParameter(
+            emitter, sourceOffset + offset, pointerOffset, fieldOffset + offset);
+    }
+}
+
+void StructType::emitCopyParameterToStorageParameter(
+    OpCodeEmitter& emitter,
+    const NomadIndex sourceOffset,
+    const NomadIndex pointerOffset,
+    const NomadIndex fieldOffset
+) const {
+    const auto size = getSize();
+    if (size == 0) {
+        return;
+    }
+    for (const auto* property : getProperties()) {
+        if (property->asNativeProperty() != nullptr) {
+            continue;
+        }
+        const auto* type = property->getValueType();
+        const auto offset = getFieldOffset(property->getId());
+        type->emitCopyParameterToStorageParameter(
+            emitter, sourceOffset + (size - offset - type->getSize()), pointerOffset, fieldOffset + offset);
+    }
+}
+
+void StructType::emitCopyStorageParameterToFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadIndex pointerOffset,
+    const NomadIndex fieldOffset,
+    const NomadIndex destinationOffset
+) const {
+    if (getSize() == 0) {
+        return;
+    }
+    for (const auto* property : getProperties()) {
+        if (property->asNativeProperty() != nullptr) {
+            continue;
+        }
+        const auto offset = getFieldOffset(property->getId());
+        property->getValueType()->emitCopyStorageParameterToFunctionVariable(
+            emitter, pointerOffset, fieldOffset + offset, destinationOffset + offset);
+    }
+}
+
+void StructType::emitFreeStorageParameter(
+    OpCodeEmitter& emitter,
+    const NomadIndex pointerOffset,
+    const NomadIndex fieldOffset
+) const {
+    if (getSize() == 0) {
+        return;
+    }
+    for (const auto* property : getProperties()) {
+        if (property->asNativeProperty() != nullptr) {
+            continue;
+        }
+        const auto* type = property->getValueType();
+        if (type->needsFree()) {
+            type->emitFreeStorageParameter(emitter, pointerOffset, fieldOffset + getFieldOffset(property->getId()));
+        }
+    }
+}
+
+NomadIndex StructType::emitLoadStorageParameter(
+    OpCodeEmitter& emitter,
+    const NomadIndex pointerOffset,
+    const NomadIndex fieldOffset,
+    const ExpressionTarget target
+) const {
+    if (target != ExpressionTarget::Stack) {
+        throw NomadException("Struct register load is not supported: " + getTypeName());
+    }
+    if (getSize() == 0) {
+        return NOMAD_INVALID_INDEX;
+    }
+    auto firstOperand = NOMAD_INVALID_INDEX;
+    for (const auto* property : getProperties()) {
+        if (property->asNativeProperty() != nullptr || property->getValueType()->getSize() == 0) {
+            continue;
+        }
+        const auto operand = property->getValueType()->emitLoadStorageParameter(
+            emitter, pointerOffset, fieldOffset + getFieldOffset(property->getId()), target);
+        if (firstOperand == NOMAD_INVALID_INDEX) {
+            firstOperand = operand;
+        }
+    }
+    return firstOperand;
+}
+
 void StructType::emitCopyParameterToFunctionVariable(
     OpCodeEmitter& emitter,
     const NomadIndex parameterOffset,

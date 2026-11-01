@@ -1344,6 +1344,222 @@ BOOST_AUTO_TEST_CASE(mixed_struct_and_empty_arguments_keep_right_to_left_evaluat
     }
 }
 
+BOOST_AUTO_TEST_CASE(borrowed_storage_emission_resolves_nested_offsets_and_ownership_opcodes) {
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("StorageEmpty");
+    const auto innerId = runtime.registerStruct("StorageInner");
+    const auto outerId = runtime.registerStruct("StorageOuter");
+    const auto* empty = runtime.getTypeByName("StorageEmpty")->asStructType();
+    const auto* inner = runtime.getTypeByName("StorageInner")->asStructType();
+    const auto* outer = runtime.getTypeByName("StorageOuter")->asStructType();
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "before", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "inner", inner).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "empty", empty).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "label", runtime.getStringType()).isValid());
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    const auto initialSize = instructions.size();
+    BOOST_CHECK_THROW(outer->emitCopyFunctionVariableToStorageParameter(compiler, 0, 0, 0), NomadException);
+    BOOST_CHECK_THROW(outer->emitCopyParameterToStorageParameter(compiler, 0, 0, 0), NomadException);
+    BOOST_CHECK_THROW(outer->emitCopyStorageParameterToFunctionVariable(compiler, 0, 0, 0), NomadException);
+    BOOST_CHECK_THROW(outer->emitFreeStorageParameter(compiler, 0, 0), NomadException);
+    BOOST_CHECK_THROW(outer->emitLoadStorageParameter(compiler, 0, 0, ExpressionTarget::Stack), NomadException);
+    BOOST_TEST(instructions.size() == initialSize);
+    runtime.finalizeCompositeFieldLayout(outerId);
+    const auto wide = toNomadIndex(NOMAD_ID_MAX) + 1;
+    empty->emitCopyFunctionVariableToStorageParameter(compiler, wide, wide, wide);
+    empty->emitCopyParameterToStorageParameter(compiler, wide, wide, wide);
+    empty->emitCopyStorageParameterToFunctionVariable(compiler, wide, wide, wide);
+    empty->emitFreeStorageParameter(compiler, wide, wide);
+    BOOST_TEST(empty->emitLoadStorageParameter(compiler, wide, wide, ExpressionTarget::Stack) == NOMAD_INVALID_INDEX);
+    runtime.getVoidType()->emitCopyFunctionVariableToStorageParameter(compiler, wide, wide, wide);
+    BOOST_TEST(instructions.size() == initialSize);
+    for (const auto target : {ExpressionTarget::Result, ExpressionTarget::Intermediate}) {
+        BOOST_CHECK_THROW(outer->emitLoadStorageParameter(compiler, wide, wide, target), NomadException);
+    }
+    BOOST_TEST(instructions.size() == initialSize);
+    const std::array<NomadIndex, 4> starts{0, 5, 10, 18};
+    const std::array<NomadIndex, 4> stores{2, 7, 15, 23};
+    for (const auto parameterSource : {false, true}) {
+        instructions.clear();
+        if (parameterSource) {
+            outer->emitCopyParameterToStorageParameter(compiler, wide, wide + 10, wide + 20);
+        } else {
+            outer->emitCopyFunctionVariableToStorageParameter(compiler, wide, wide + 10, wide + 20);
+        }
+        BOOST_REQUIRE(instructions.size() == 26U);
+        for (auto index = NomadIndex{0}; index < 4; ++index) {
+            BOOST_TEST(instructions[starts[index] + 1].value.getIndexValue() ==
+                wide + (parameterSource ? 3 - index : index));
+            BOOST_TEST(instructions[stores[index] + 1].value.getIndexValue() == wide + 10);
+            BOOST_TEST(instructions[stores[index] + 2].value.getIndexValue() == wide + 20 + index);
+            BOOST_TEST(runtime.getInstructionId(instructions[stores[index]].fn).id ==
+                runtime.getInstructionId(OpCodes::op_storage_parameter_set).id);
+        }
+        for (const auto position : {NomadIndex{12}, NomadIndex{20}}) {
+            BOOST_TEST(runtime.getInstructionId(instructions[position].fn).id ==
+                runtime.getInstructionId(OpCodes::op_object_free_storage_parameter).id);
+        }
+    }
+    instructions.clear();
+    outer->emitCopyStorageParameterToFunctionVariable(compiler, wide + 10, wide + 20, wide);
+    BOOST_REQUIRE(instructions.size() == 24U);
+    const std::array<NomadIndex, 4> loads{0, 5, 10, 17};
+    const std::array<NomadIndex, 4> destinations{4, 9, 16, 23};
+    for (auto index = NomadIndex{0}; index < 4; ++index) {
+        BOOST_TEST(instructions[loads[index] + 1].value.getIndexValue() == wide + 10);
+        BOOST_TEST(instructions[loads[index] + 2].value.getIndexValue() == wide + 20 + index);
+        BOOST_TEST(instructions[destinations[index]].value.getIndexValue() == wide + index);
+        BOOST_TEST(runtime.getInstructionId(instructions[loads[index]].fn).id ==
+            runtime.getInstructionId(index < 2 ? OpCodes::op_storage_parameter_load_r :
+                OpCodes::op_object_storage_parameter_load_r).id);
+    }
+    instructions.clear();
+    BOOST_TEST(outer->emitLoadStorageParameter(compiler, wide + 10, wide + 20, ExpressionTarget::Stack) == 1U);
+    BOOST_REQUIRE(instructions.size() == 12U);
+    for (auto index = NomadIndex{0}; index < 4; ++index) {
+        BOOST_TEST(instructions[index * 3 + 1].value.getIndexValue() == wide + 10);
+        BOOST_TEST(instructions[index * 3 + 2].value.getIndexValue() == wide + 20 + index);
+        BOOST_TEST(runtime.getInstructionId(instructions[index * 3].fn).id ==
+            runtime.getInstructionId(index < 2 ? OpCodes::op_storage_parameter_push :
+                OpCodes::op_object_storage_parameter_push).id);
+    }
+    instructions.clear();
+    outer->emitFreeStorageParameter(compiler, wide + 10, wide + 20);
+    BOOST_REQUIRE(instructions.size() == 6U);
+    BOOST_TEST(instructions[2].value.getIndexValue() == wide + 22);
+    BOOST_TEST(instructions[5].value.getIndexValue() == wide + 23);
+    for (const auto target : {ExpressionTarget::Result, ExpressionTarget::Intermediate, ExpressionTarget::Stack}) {
+        instructions.clear();
+        runtime.getStringType()->emitLoadStorageParameter(compiler, wide, wide + 1, target);
+        BOOST_REQUIRE(instructions.size() == 3U);
+        BOOST_TEST(instructions[1].value.getIndexValue() == wide);
+        BOOST_TEST(instructions[2].value.getIndexValue() == wide + 1);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(borrowed_destination_copies_preserve_nested_values_and_release_replaced_ownership) {
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("BorrowCopyEmpty");
+    const auto innerId = runtime.registerStruct("BorrowCopyInner");
+    const auto outerId = runtime.registerStruct("BorrowCopyOuter");
+    const auto ownerId = runtime.registerClass("BorrowCopyOwner", ClassMode::Closed);
+    const auto* empty = runtime.getTypeByName("BorrowCopyEmpty");
+    const auto* inner = runtime.getTypeByName("BorrowCopyInner");
+    const auto* outer = runtime.getTypeByName("BorrowCopyOuter");
+    const auto* owner = runtime.getTypeByName("BorrowCopyOwner")->asClassType();
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "owner", owner).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "before", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "inner", inner).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "empty", empty).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "label", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(outerId);
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    BOOST_REQUIRE(outer->getSize() == 5U);
+    std::array<RuntimeValue, 5> parameters;
+    parameters[0].setIntegerValue(11);
+    parameters[1].setIntegerValue(12);
+    parameters[2].setStringValue("parameter");
+    parameters[3].setObjectValue(new ScriptObject(owner));
+    parameters[4].setStringValue("parameter label");
+    std::array<RuntimeValue, 7> destination;
+    destination.front().setIntegerValue(101);
+    destination.back().setIntegerValue(103);
+    outer->initValue(destination.data() + 1);
+    VirtualMachine machine(&runtime, 64);
+    machine.pushStorageAddress(destination.data());
+    for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
+        if (index < 2) {
+            machine.pushValue(parameters[index]);
+        } else {
+            machine.pushObjectValue(parameters[index]);
+        }
+    }
+    machine.callScriptFunction(0);
+    machine.reserveLocals(13);
+    const auto locals = machine.getLocalStorage(0, 13);
+    locals[0].setIntegerValue(107);
+    locals[6].setIntegerValue(109);
+    locals[12].setIntegerValue(113);
+    auto compiler = runtime.createCompiler();
+    const auto execute = [&](const auto& emit) {
+        const auto start = runtime.getInstructions().size();
+        emit();
+        const auto end = runtime.getInstructions().size();
+        machine.jump(start);
+        while (machine.getInstructionIndex() < end) {
+            const auto address = machine.getInstructionIndex();
+            machine.jump(address + 1);
+            runtime.getInstructions()[address].fn(&machine);
+        }
+    };
+    execute([&] {
+        outer->emitInitFunctionVariable(*compiler, 1);
+        outer->emitInitFunctionVariable(*compiler, 7);
+    });
+    locals[1].setIntegerValue(31);
+    locals[2].setIntegerValue(32);
+    locals[3].freeObjectValue();
+    locals[3].setStringValue("local");
+    locals[4].setObjectValue(new ScriptObject(owner));
+    locals[5].freeObjectValue();
+    locals[5].setStringValue("local label");
+    for (auto index = 0; index < 3; ++index) {
+        execute([&] { outer->emitCopyFunctionVariableToStorageParameter(*compiler, 1, 5, 1); });
+        BOOST_TEST(destination[1].getIntegerValue() == 31);
+        BOOST_TEST(destination[2].getIntegerValue() == 32);
+        BOOST_TEST(destination[4].getObjectValue() == locals[4].getObjectValue());
+        BOOST_TEST(locals[4].getObjectValue()->getReferenceCount() == 2U);
+        execute([&] { outer->emitCopyParameterToStorageParameter(*compiler, 0, 5, 1); });
+        BOOST_TEST(locals[4].getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(destination[1].getIntegerValue() == 11);
+        BOOST_TEST(destination[2].getIntegerValue() == 12);
+        BOOST_TEST(destination[3].getObjectValue() == parameters[2].getObjectValue());
+        BOOST_TEST(destination[4].getObjectValue() == parameters[3].getObjectValue());
+        BOOST_TEST(destination[5].getObjectValue() == parameters[4].getObjectValue());
+        execute([&] { outer->emitCopyStorageParameterToFunctionVariable(*compiler, 5, 1, 7); });
+        BOOST_TEST(parameters[3].getObjectValue()->getReferenceCount() == 4U);
+        BOOST_TEST(locals[7].getIntegerValue() == 11);
+        BOOST_TEST(locals[10].getObjectValue() == parameters[3].getObjectValue());
+        locals[7].setIntegerValue(41);
+        BOOST_TEST(destination[1].getIntegerValue() == 11);
+        BOOST_TEST(parameters[0].getIntegerValue() == 11);
+    }
+    execute([&] { outer->emitLoadStorageParameter(*compiler, 5, 1, ExpressionTarget::Stack); });
+    BOOST_TEST(machine.peekStack(4).getIntegerValue() == 11);
+    BOOST_TEST(machine.peekStack(0).getObjectValue() == parameters[4].getObjectValue());
+    BOOST_TEST(parameters[3].getObjectValue()->getReferenceCount() == 5U);
+    execute([&] { outer->emitFreeStackValue(*compiler, 0); });
+    machine.popN(5);
+    BOOST_TEST(parameters[3].getObjectValue()->getReferenceCount() == 4U);
+    execute([&] { outer->emitFreeStorageParameter(*compiler, 5, 1); });
+    for (const auto index : {3, 4, 5}) {
+        BOOST_TEST(destination[index].getObjectValue() == nullptr);
+    }
+    BOOST_TEST(destination.front().getIntegerValue() == 101);
+    BOOST_TEST(destination.back().getIntegerValue() == 103);
+    BOOST_TEST(locals[0].getIntegerValue() == 107);
+    BOOST_TEST(locals[6].getIntegerValue() == 109);
+    BOOST_TEST(locals[12].getIntegerValue() == 113);
+    execute([&] {
+        outer->emitFreeFunctionVariable(*compiler, 1);
+        outer->emitFreeFunctionVariable(*compiler, 7);
+        outer->emitFreeParameter(*compiler, 0);
+    });
+    BOOST_TEST(parameters[3].getObjectValue()->getReferenceCount() == 1U);
+    machine.returnFunction(13);
+    machine.popN(6);
+    outer->freeValue(parameters.data());
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
 BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_without_writing_instructions) {
     Runtime runtime;
     const auto id = runtime.registerStruct("Empty");

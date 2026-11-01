@@ -50,6 +50,17 @@ public:
         NomadIndex variableIndex
     ) const override;
     void emitFreeParameter(OpCodeEmitter& emitter, NomadIndex offset) const override;
+    void emitFreeStorageParameter(
+        OpCodeEmitter& emitter,
+        NomadIndex pointerOffset,
+        NomadIndex fieldOffset
+    ) const override;
+    NomadIndex emitLoadStorageParameter(
+        OpCodeEmitter& emitter,
+        NomadIndex pointerOffset,
+        NomadIndex fieldOffset,
+        ExpressionTarget target
+    ) const override;
     NomadIndex emitLoadFunctionVariable(
         OpCodeEmitter& emitter,
         NomadIndex offset,
