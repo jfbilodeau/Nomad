@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1AC have been reviewed; Step 1AD below is implemented and awaiting
+Steps 1A through 1AD have been reviewed; Step 1AE below is implemented and awaiting
 review. Aggregate loads, stores, and calls remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1199,6 +1199,37 @@ Validation:
 Next slice after review: agree on aggregate local initialization and load/store
 lowering, including temporary ownership and replacement semantics. Physical
 parameter/call lowering and borrowed receiver/return destinations follow.
+
+### Step 1AE: Type-owned local storage initialization
+
+Approved scope and implementation:
+
+- Add `Type::emitInitFunctionVariable` for reserved, cleared local storage.
+- Existing scalar and class types retain cleared defaults. String types emit
+  existing string initialization and local store instructions.
+- Structs recursively delegate stored-field initialization at finalized offsets.
+  Empty structs emit no instructions.
+- Function entry delegates to types instead of selecting top-level strings.
+- Script field initializers and constructors do not run during storage setup.
+- Aggregate loads, stores, parameter/call lowering, and return destinations remain
+  unsupported; no new opcodes or runtime layout inspection are introduced.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, and binding regression groups passed.
+- Emission coverage checks unresolved layouts, empty/scalar-only structs,
+  nested string initialization, unchanged scalar/class defaults, and full-width
+  physical offsets.
+- Execution coverage verifies nested empty-string defaults, scalar neighbors,
+  replacement and cleanup, and repeated calls restoring shared-empty-string
+  reference counts and live-string counts.
+- All four documentation preparation tests and whitespace checks passed.
+- This verifies local storage setup, not script constructors or gameplay.
+
+Next slice after review: design explicit aggregate source/destination storage
+and scratch-backed replacement. Parameter/call lowering and borrowed receivers
+and return destinations follow.
 
 Remaining Step 1 work, requiring separate design approval:
 

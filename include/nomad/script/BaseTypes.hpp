@@ -90,6 +90,7 @@ public:
     void initValue(RuntimeValue* value) const override;
     void emitInitResult(OpCodeEmitter& emitter) const override;
     void emitInitIntermediate(OpCodeEmitter& emitter) const override;
+    void emitInitFunctionVariable(OpCodeEmitter& emitter, NomadIndex offset) const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
     [[nodiscard]]

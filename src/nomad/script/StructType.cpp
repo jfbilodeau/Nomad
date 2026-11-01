@@ -112,6 +112,22 @@ void StructType::emitInitIntermediate(OpCodeEmitter&) const {
     throw NomadException("Struct bytecode emission is not supported: " + getTypeName());
 }
 
+void StructType::emitInitFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadIndex offset
+) const {
+    if (getSize() == 0) {
+        return;
+    }
+    for (const auto* property : getProperties()) {
+        if (property->asNativeProperty() != nullptr) {
+            continue;
+        }
+        property->getValueType()->emitInitFunctionVariable(
+            emitter, offset + getFieldOffset(property->getId()));
+    }
+}
+
 void StructType::emitFreeResult(OpCodeEmitter&) const {
     throw NomadException("Struct bytecode emission is not supported: " + getTypeName());
 }

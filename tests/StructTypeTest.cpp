@@ -305,11 +305,14 @@ BOOST_AUTO_TEST_CASE(local_cleanup_emits_only_owned_fields_at_full_width_nested_
     std::vector<Instruction> instructions;
     Compiler compiler(&runtime, instructions);
     const auto initialSize = instructions.size();
+    BOOST_CHECK_THROW(outer->emitInitFunctionVariable(compiler, 0), NomadException);
     BOOST_CHECK_THROW(outer->emitFreeFunctionVariable(compiler, 0), NomadException);
     BOOST_TEST(instructions.size() == initialSize);
     runtime.finalizeCompositeFieldLayout(outerId);
     runtime.finalizeCompositeFieldLayout(scalarId);
     const auto offset = toNomadIndex(NOMAD_ID_MAX) + 1;
+    empty->emitInitFunctionVariable(compiler, offset);
+    scalar->emitInitFunctionVariable(compiler, offset);
     empty->emitFreeFunctionVariable(compiler, offset);
     scalar->emitFreeFunctionVariable(compiler, offset);
     BOOST_TEST(instructions.size() == initialSize);
@@ -321,11 +324,25 @@ BOOST_AUTO_TEST_CASE(local_cleanup_emits_only_owned_fields_at_full_width_nested_
             runtime.getInstructionId(OpCodes::op_object_free_variable).id);
         BOOST_TEST(instructions[position + 1].value.getIndexValue() == offset + index + 2);
     }
+    instructions.clear();
+    outer->emitInitFunctionVariable(compiler, offset);
+    BOOST_REQUIRE(instructions.size() == 6U);
+    for (auto index = NomadIndex{0}; index < 2; ++index) {
+        const auto position = index * 3;
+        BOOST_TEST(runtime.getInstructionId(instructions[position].fn).id ==
+            runtime.getInstructionId(OpCodes::op_string_init_r).id);
+        BOOST_TEST(runtime.getInstructionId(instructions[position + 1].fn).id ==
+            runtime.getInstructionId(OpCodes::op_function_variable_set).id);
+        BOOST_TEST(instructions[position + 2].value.getIndexValue() == offset + (index == 0 ? 2 : 4));
+    }
 }
 
 BOOST_AUTO_TEST_CASE(function_return_releases_nested_struct_locals_and_preserves_scalar_neighbors) {
     const auto before = RuntimeValue::getLiveStringCount();
     Runtime runtime;
+    RuntimeValue emptyDefault;
+    runtime.getStringType()->initValue(&emptyDefault);
+    const auto emptyReferences = emptyDefault.getObjectValue()->getReferenceCount();
     const auto innerId = runtime.registerStruct("LocalPayload");
     const auto outerId = runtime.registerStruct("LocalWrapper");
     const auto* inner = runtime.getTypeByName("LocalPayload")->asStructType();
@@ -341,14 +358,28 @@ BOOST_AUTO_TEST_CASE(function_return_releases_nested_struct_locals_and_preserves
     function->setReturnType(runtime.getIntegerType());
     const auto leading = function->registerVariable("leading", runtime.getIntegerType());
     const auto value = function->registerVariable("value", outer);
-    function->registerVariable("untouched", outer);
+    const auto untouched = function->registerVariable("untouched", outer);
     const auto trailing = function->registerVariable("trailing", runtime.getIntegerType());
     const auto initialize = runtime.registerNativeFunction("initializeCleanupLocals",
         [&](VirtualMachine* machine) {
+            BOOST_TEST(machine->getFunctionIntegerVariableValue(leading) == 0);
+            BOOST_TEST(machine->getFunctionIntegerVariableValue(trailing) == 0);
             machine->setIntegerVariableValue(leading, 17);
             machine->setIntegerVariableValue(trailing, 29);
             const auto storage = machine->getLocalStorage(function->getVariableOffset(value), outer->getSize());
+            const auto untouchedStorage = machine->getLocalStorage(
+                function->getVariableOffset(untouched), outer->getSize());
+            BOOST_TEST(emptyDefault.getObjectValue()->getReferenceCount() == emptyReferences + 4);
+            for (const auto values : {storage, untouchedStorage}) {
+                BOOST_TEST(values[0].getIntegerValue() == 0);
+                for (auto index = NomadIndex{1}; index < 3; ++index) {
+                    BOOST_REQUIRE(values[index].getObjectValue() != nullptr);
+                    BOOST_TEST(NomadString(values[index].getStringValue()) == "");
+                }
+            }
             storage[0].setIntegerValue(31);
+            storage[1].freeObjectValue();
+            storage[2].freeObjectValue();
             storage[1].setStringValue("nested");
             storage[2].setStringValue("label");
             BOOST_TEST(RuntimeValue::getLiveStringCount() == before + 2);
@@ -368,7 +399,9 @@ BOOST_AUTO_TEST_CASE(function_return_releases_nested_struct_locals_and_preserves
         runtime.executeFunction(id, {}, result);
         BOOST_TEST(result.getIntegerValue() == 29);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == before);
+        BOOST_TEST(emptyDefault.getObjectValue()->getReferenceCount() == emptyReferences);
     }
+    runtime.getStringType()->freeValue(&emptyDefault);
 }
 
 BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_without_writing_instructions) {
@@ -381,6 +414,7 @@ BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_with
     const auto initialSize = instructions.size();
     BOOST_CHECK_THROW(type->emitInitResult(compiler), NomadException);
     BOOST_CHECK_THROW(type->emitInitIntermediate(compiler), NomadException);
+    type->emitInitFunctionVariable(compiler, 0);
     BOOST_CHECK_THROW(type->emitFreeResult(compiler), NomadException);
     BOOST_CHECK_THROW(type->emitFreeIntermediate(compiler), NomadException);
     BOOST_CHECK_THROW(type->emitFreeStackValue(compiler, 0), NomadException);

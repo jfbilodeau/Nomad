@@ -722,8 +722,12 @@ show numeric offsets. Parameter bytecode is unchanged.
 
 Struct-local cleanup releases owned stored fields, including fields in nested
 structs. Empty structs and fields that need no cleanup emit no cleanup
-instructions. Aggregate local loads, stores, and initialization are not yet
-supported by bytecode.
+instructions. Local storage initialization supplies empty strings for stored
+string fields, including fields in nested structs; other fields retain their
+cleared defaults. It does not run script field initializers or constructors.
+`Type::emitInitFunctionVariable(emitter, offset)` targets reserved, cleared local
+storage, not an existing owned value. Aggregate local loads and stores are not
+yet supported by bytecode.
 
 An offset query requires resolved sizes for the preceding variables; a total-size
 query requires resolved sizes for every variable. Missing types, deferred-size

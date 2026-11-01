@@ -78,6 +78,9 @@ void Type::emitInitResult(OpCodeEmitter&) const {
 void Type::emitInitIntermediate(OpCodeEmitter&) const {
 }
 
+void Type::emitInitFunctionVariable(OpCodeEmitter&, NomadIndex) const {
+}
+
 void Type::emitFreeResult(OpCodeEmitter&) const {
 }
 

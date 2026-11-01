@@ -175,6 +175,10 @@ BOOST_AUTO_TEST_CASE(type_initialization_emission_preserves_empty_and_reference_
     BOOST_TEST(!runtime.getIntegerType()->needsFree());
     BOOST_TEST(!runtime.getVoidType()->needsFree());
     ClassType classType(&runtime, TypeId::INVALID, "Default", ClassMode::Closed);
+    runtime.getIntegerType()->emitInitFunctionVariable(compiler, 7);
+    runtime.getVoidType()->emitInitFunctionVariable(compiler, 7);
+    classType.emitInitFunctionVariable(compiler, 7);
+    BOOST_TEST(instructions.size() == firstInstruction);
     classType.emitInitResult(compiler);
     classType.emitInitIntermediate(compiler);
     runtime.getStringType()->emitInitResult(compiler);

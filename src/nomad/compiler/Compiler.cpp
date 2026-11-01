@@ -1269,11 +1269,8 @@ void Compiler::addFunctionEntry(const ScriptCallableBase* function) {
         addIndex(storageSize);
     }
     for (auto index = NomadIndex{0}; index < count; ++index) {
-        if (function->getVariableType(VariableId{toNomadId(index)})->isString()) {
-            addLoadStringValue("", ExpressionTarget::Result);
-            addOpCode(OpCodes::op_function_variable_set);
-            addIndex(function->getVariableOffset(VariableId{toNomadId(index)}));
-        }
+        const auto id = VariableId{toNomadId(index)};
+        function->getVariableType(id)->emitInitFunctionVariable(*this, function->getVariableOffset(id));
     }
 }
 

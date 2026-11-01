@@ -165,6 +165,14 @@ void BaseStringType::emitInitIntermediate(OpCodeEmitter& emitter) const {
     emitter.addOpCode(op_string_init_i);
 }
 
+void BaseStringType::emitInitFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadIndex offset
+) const {
+    emitInitResult(emitter);
+    emitStoreFunctionVariable(emitter, offset);
+}
+
 bool BaseStringType::sameType(const Type* other) const {
     return Type::sameType(other);
 }

@@ -60,6 +60,8 @@ public:
     [[nodiscard]] virtual bool needsFree() const;
     virtual void emitInitResult(OpCodeEmitter& emitter) const;
     virtual void emitInitIntermediate(OpCodeEmitter& emitter) const;
+    // Initializes reserved, cleared local storage without running script initializers or constructors.
+    virtual void emitInitFunctionVariable(OpCodeEmitter& emitter, NomadIndex offset) const;
     virtual void emitFreeResult(OpCodeEmitter& emitter) const;
     virtual void emitFreeIntermediate(OpCodeEmitter& emitter) const;
     virtual void emitFreeStackValue(OpCodeEmitter& emitter, NomadIndex offset) const;
