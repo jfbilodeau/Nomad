@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1AJ have been reviewed; Step 1AK below is implemented and awaiting
+Steps 1A through 1AK have been reviewed; Step 1AL below is implemented and awaiting
 review. Aggregate loads, stores, and calls remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1431,6 +1431,39 @@ Validation:
 
 Next slice after review: aggregate argument lowering, followed by borrowed
 receiver/return destinations.
+
+### Step 1AL: Aggregate expression argument lowering
+
+Approved scope and implementation:
+
+- Struct expression arguments allocate hidden `$argument`-prefixed same-type staging locals during
+  script resolution, retaining IDs on repeated resolution.
+- RHS compilation into staging precedes increasing-order field pushes using
+  type-owned local-to-stack emission and existing scalar instructions.
+- Staging ownership is released after pushing; existing caller argument cleanup
+  recursively releases nested stack fields and pops physical widths.
+- Arguments remain evaluated right-to-left. Empty structs consume zero slots;
+  scalar and specialized event argument widths remain unchanged.
+- Local and parameter struct expressions are supported. Struct-returning calls,
+  host/interpreter aggregate argument APIs, and receiver/return destinations
+  remain unsupported. No new opcodes or syntax are introduced.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, binding, tooling, and LSP process regressions passed.
+- Emission tests verify nested increasing-order pushes, reversed stack cleanup
+  offsets, full-width operands, empty structs, and unresolved-layout failures.
+- Execution tests verify local arguments to script calls, parameter forwarding
+  to native callbacks, mixed multiple struct/empty/scalar arguments, right-to-left
+  evaluation, independent scalar copies, and reference ownership.
+- Repeated resolution retains staging IDs and physical frame sizes; repeated
+  calls restore live-string/object counts and preserve caller values.
+- All four documentation preparation tests and whitespace checks passed.
+- Host/interpreter aggregate argument APIs and gameplay remain unvalidated.
+
+Next slice after review: design borrowed receiver and caller-provided return
+destination state, including save/restore across calls and native reentry.
 
 Remaining Step 1 work, requiring separate design approval:
 

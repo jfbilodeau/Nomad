@@ -997,12 +997,16 @@ BOOST_AUTO_TEST_CASE(parameter_copy_and_cleanup_use_reversed_nested_field_offset
     BOOST_CHECK_THROW(outer->emitCopyParameterToFunctionVariable(compiler, 0, 0), NomadException);
     BOOST_CHECK_THROW(outer->emitCopyFunctionVariableToParameter(compiler, 0, 0), NomadException);
     BOOST_CHECK_THROW(outer->emitFreeParameter(compiler, 0), NomadException);
+    BOOST_CHECK_THROW(outer->emitPushFunctionVariable(compiler, 0), NomadException);
+    BOOST_CHECK_THROW(outer->emitFreeStackValue(compiler, 0), NomadException);
     BOOST_TEST(instructions.size() == initialSize);
     runtime.finalizeCompositeFieldLayout(outerId);
     const auto offset = toNomadIndex(NOMAD_ID_MAX) + 1;
     empty->emitCopyParameterToFunctionVariable(compiler, offset, offset);
     empty->emitCopyFunctionVariableToParameter(compiler, offset, offset);
     empty->emitFreeParameter(compiler, offset);
+    empty->emitPushFunctionVariable(compiler, offset);
+    empty->emitFreeStackValue(compiler, offset);
     BOOST_TEST(instructions.size() == initialSize);
     instructions.clear();
     outer->emitCopyParameterToFunctionVariable(compiler, offset, offset + 10);
@@ -1032,6 +1036,20 @@ BOOST_AUTO_TEST_CASE(parameter_copy_and_cleanup_use_reversed_nested_field_offset
         BOOST_TEST(runtime.getInstructionId(instructions[destinationPositions[index] - 1].fn).id ==
             runtime.getInstructionId(OpCodes::op_parameter_set).id);
     }
+    instructions.clear();
+    outer->emitPushFunctionVariable(compiler, offset);
+    BOOST_REQUIRE(instructions.size() == 8U);
+    for (auto index = NomadIndex{0}; index < 4; ++index) {
+        BOOST_TEST(instructions[index * 2 + 1].value.getIndexValue() == offset + index);
+        BOOST_TEST(runtime.getInstructionId(instructions[index * 2].fn).id ==
+            runtime.getInstructionId(index < 2 ? OpCodes::op_function_variable_push :
+                OpCodes::op_function_variable_object_push).id);
+    }
+    instructions.clear();
+    outer->emitFreeStackValue(compiler, offset);
+    BOOST_REQUIRE(instructions.size() == 4U);
+    BOOST_TEST(instructions[1].value.getIndexValue() == offset + 1);
+    BOOST_TEST(instructions[3].value.getIndexValue() == offset);
 }
 
 BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutating_caller_storage) {
@@ -1116,9 +1134,28 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
         }, {}, runtime.getVoidType(), "");
     BOOST_REQUIRE(inspect.isValid());
     BOOST_REQUIRE(inspectReplacement.isValid());
+    const auto inspectForwarded = runtime.registerNativeFunction("inspectForwardedStruct",
+        [&](VirtualMachine* machine) {
+            const auto values = machine->getParameterStorage(0, 4);
+            BOOST_TEST(values[0].getIntegerValue() == 17);
+            BOOST_TEST(NomadString(values[1].getStringValue()) == "nested");
+            for (auto index = NomadIndex{1}; index < 4; ++index) {
+                BOOST_TEST(values[index].getObjectValue()->getReferenceCount() == 4U);
+            }
+            values[0].setIntegerValue(99);
+            BOOST_TEST(machine->getEnclosingParameterStorage(1, 4)[0].getIntegerValue() == 17);
+        }, {defParameter("value", outerType, "")}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(inspectForwarded.isValid());
+    ArgumentList forwarded;
+    forwarded.addExpressionArgument(1, 1, outerType,
+        std::make_unique<IdentifierExpression>(nullptr, 1, 1, "value"));
+    BOOST_REQUIRE(forwarded.resolve(&context, callee));
+    BOOST_REQUIRE(forwarded.resolve(&context, callee));
+    BOOST_TEST(forwarded.getArgumentCount() == 4U);
     callee->setFunctionStart(runtime.getInstructions().size());
     compiler->addFunctionEntry(callee);
     assignment.compile(compiler.get(), callee);
+    compiler->addNativeFunctionCall(inspectForwarded, callee, &forwarded);
     compiler->addOpCode(OpCodes::op_call_native_function);
     compiler->addId(inspect.id);
     for (auto index = 0; index < 2; ++index) {
@@ -1138,6 +1175,19 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
     caller->setReturnType(runtime.getIntegerType());
     const auto source = caller->registerVariable("source", outerType);
     const auto returnedNumber = caller->registerVariable("returnedNumber", runtime.getIntegerType());
+    ArgumentList arguments;
+    arguments.addExpressionArgument(1, 1, runtime.getIntegerType(),
+        std::make_unique<IntegerLiteral>(nullptr, 1, 1, 11));
+    arguments.addExpressionArgument(1, 1, outerType,
+        std::make_unique<IdentifierExpression>(nullptr, 1, 1, "source"));
+    arguments.addExpressionArgument(1, 1, runtime.getIntegerType(),
+        std::make_unique<IntegerLiteral>(nullptr, 1, 1, 29));
+    BOOST_REQUIRE(arguments.resolve(&context, caller));
+    BOOST_REQUIRE(arguments.resolve(&context, caller));
+    BOOST_TEST(caller->getVariableCount() == 3U);
+    BOOST_TEST(caller->getVariableName(VariableId{2}).starts_with("$argument"));
+    BOOST_TEST(caller->getVisibleVariableName(VariableId{2}).empty());
+    BOOST_TEST(arguments.getArgumentCount() == 6U);
     const auto initialize = runtime.registerNativeFunction("initializeCallerParameter",
         [&](VirtualMachine* machine) {
             const auto storage = machine->getLocalStorage(caller->getVariableOffset(source), 4);
@@ -1164,19 +1214,10 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
     compiler->addFunctionEntry(caller);
     compiler->addOpCode(OpCodes::op_call_native_function);
     compiler->addId(initialize.id);
-    compiler->addLoadIntegerValue(29, ExpressionTarget::Stack);
-    const std::array<const Type*, 4> types{
-        runtime.getIntegerType(), runtime.getStringType(), owner, runtime.getStringType()
-    };
-    for (auto index = NomadIndex{0}; index < 4; ++index) {
-        types[index]->emitLoadFunctionVariable(*compiler, caller->getVariableOffset(source) + index,
-            ExpressionTarget::Stack);
-    }
-    compiler->addLoadIntegerValue(11, ExpressionTarget::Stack);
+    arguments.compile(compiler.get(), caller);
     compiler->addOpCode(OpCodes::op_call_script_function);
     compiler->addIndex(callee->getFunctionStart());
-    compiler->addOpCode(OpCodes::op_pop_n);
-    compiler->addIndex(6);
+    compiler->addFreeArguments(&arguments);
     runtime.getIntegerType()->emitStoreFunctionVariable(*compiler, caller->getVariableOffset(returnedNumber));
     compiler->addOpCode(OpCodes::op_call_native_function);
     compiler->addId(inspectCaller.id);
@@ -1195,6 +1236,98 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
     }
 }
 
+BOOST_AUTO_TEST_CASE(mixed_struct_and_empty_arguments_keep_right_to_left_evaluation_and_cleanup) {
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("EmptyArgument");
+    const auto pairId = runtime.registerStruct("PairArgument");
+    const auto* empty = runtime.getTypeByName("EmptyArgument")->asStructType();
+    const auto* pair = runtime.getTypeByName("PairArgument")->asStructType();
+    BOOST_REQUIRE(runtime.registerProperty(pairId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(pairId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.finalizeCompositeFieldLayout(pairId);
+    const auto id = runtime.registerScriptFunction("mixedArguments", "arguments.nomad", "");
+    auto* function = runtime.getScriptFunction(id);
+    BOOST_REQUIRE(function != nullptr);
+    function->setReturnType(runtime.getIntegerType());
+    const auto source = function->registerVariable("source", pair);
+    function->registerVariable("empty", empty);
+    std::vector<NomadInteger> order;
+    for (const auto number : {1, 2}) {
+        BOOST_REQUIRE(runtime.registerNativeFunction("argument" + std::to_string(number),
+            [&, number](VirtualMachine* machine) {
+                order.push_back(number);
+                machine->getResult().setIntegerValue(number);
+            }, {}, runtime.getIntegerType(), "").isValid());
+    }
+    const auto inspect = runtime.registerNativeFunction("inspectMixedArguments",
+        [&](VirtualMachine* machine) {
+            BOOST_REQUIRE(order.size() == 2U);
+            BOOST_TEST(order[0] == 2);
+            BOOST_TEST(order[1] == 1);
+            BOOST_TEST(machine->getParameterStorage(0, 1)[0].getIntegerValue() == 1);
+            BOOST_TEST(machine->getParameterStorage(5, 1)[0].getIntegerValue() == 2);
+            const auto first = machine->getParameterStorage(1, 2);
+            const auto second = machine->getParameterStorage(3, 2);
+            BOOST_TEST(first[0].getIntegerValue() == 17);
+            BOOST_TEST(second[0].getIntegerValue() == 17);
+            BOOST_TEST(first[1].getObjectValue() == second[1].getObjectValue());
+            BOOST_TEST(first[1].getObjectValue()->getReferenceCount() == 3U);
+            first[0].setIntegerValue(23);
+            BOOST_TEST(second[0].getIntegerValue() == 17);
+            machine->getResult().setIntegerValue(47);
+        }, {defParameter("left", runtime.getIntegerType(), ""), defParameter("first", pair, ""),
+            defParameter("empty", empty, ""), defParameter("second", pair, ""),
+            defParameter("right", runtime.getIntegerType(), "")}, runtime.getIntegerType(), "");
+    BOOST_REQUIRE(inspect.isValid());
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    ArgumentList arguments;
+    arguments.addExpressionArgument(1, 1, runtime.getIntegerType(),
+        std::make_unique<FunctionCallExpression>(nullptr, 1, 1, "argument1"));
+    arguments.addExpressionArgument(1, 1, pair,
+        std::make_unique<IdentifierExpression>(nullptr, 1, 1, "source"));
+    arguments.addExpressionArgument(1, 1, empty,
+        std::make_unique<IdentifierExpression>(nullptr, 1, 1, "empty"));
+    arguments.addExpressionArgument(1, 1, pair,
+        std::make_unique<IdentifierExpression>(nullptr, 1, 1, "source"));
+    arguments.addExpressionArgument(1, 1, runtime.getIntegerType(),
+        std::make_unique<FunctionCallExpression>(nullptr, 1, 1, "argument2"));
+    BOOST_REQUIRE(arguments.resolve(&context, function));
+    BOOST_REQUIRE(arguments.resolve(&context, function));
+    BOOST_TEST(function->getVariableCount() == 5U);
+    BOOST_TEST(function->getVariableStorageSize() == 6U);
+    for (auto index = NomadIndex{2}; index < 5; ++index) {
+        const auto variable = VariableId{toNomadId(index)};
+        BOOST_TEST(function->getVariableName(variable).starts_with("$argument"));
+        BOOST_TEST(function->getVisibleVariableName(variable).empty());
+    }
+    BOOST_TEST(arguments.getStackCount() == 6U);
+    const auto initialize = runtime.registerNativeFunction("initializeMixedArgument",
+        [&](VirtualMachine* machine) {
+            const auto values = machine->getLocalStorage(function->getVariableOffset(source), 2);
+            values[0].setIntegerValue(17);
+            values[1].freeObjectValue();
+            values[1].setStringValue("source");
+        }, {}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(initialize.isValid());
+    function->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(function);
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(initialize.id);
+    compiler->addNativeFunctionCall(inspect, function, &arguments);
+    compiler->addFunctionReturn(function);
+    function->setFunctionEnd(runtime.getInstructions().size());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    for (auto index = 0; index < 2; ++index) {
+        order.clear();
+        RuntimeValue result;
+        runtime.executeFunction(id, {}, result);
+        BOOST_TEST(result.getIntegerValue() == 47);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_without_writing_instructions) {
     Runtime runtime;
     const auto id = runtime.registerStruct("Empty");
@@ -1208,7 +1341,7 @@ BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_with
     type->emitInitFunctionVariable(compiler, 0);
     BOOST_CHECK_THROW(type->emitFreeResult(compiler), NomadException);
     BOOST_CHECK_THROW(type->emitFreeIntermediate(compiler), NomadException);
-    BOOST_CHECK_THROW(type->emitFreeStackValue(compiler, 0), NomadException);
+    type->emitFreeStackValue(compiler, 0);
     type->emitFreeFunctionVariable(compiler, 0);
     type->emitFreeParameter(compiler, 0);
     for (const auto target : {ExpressionTarget::Result, ExpressionTarget::Intermediate, ExpressionTarget::Stack}) {

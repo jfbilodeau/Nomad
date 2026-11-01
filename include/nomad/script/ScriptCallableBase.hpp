@@ -235,7 +235,8 @@ public:
 
     [[nodiscard]] NomadString getVisibleVariableName(VariableId variableId) const {
         const auto& storageName = getVariableName(variableId);
-        return storageName.find('@') == NomadString::npos ? storageName : NomadString{};
+        return storageName.find('@') == NomadString::npos && !storageName.starts_with("$") ?
+            storageName : NomadString{};
     }
 
     void setFunctionStart(const NomadIndex functionStartIndex) { m_functionStartIndex = functionStartIndex; }

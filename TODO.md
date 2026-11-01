@@ -6,6 +6,7 @@ Things the author wants to do.
 [ ] `$init` shows up in LSP
 
 ## Open
+[ ] Code: distinguish between property and variable
 [ ] `struct` (Embedded types, pass by copy)
 [ ] Support for Nomad unit testing
 [ ] Improve animations declaration (avoid duplicate files...)

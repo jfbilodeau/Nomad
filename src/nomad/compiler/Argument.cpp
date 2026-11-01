@@ -29,6 +29,7 @@ public:
     );
 
     [[nodiscard]] const Type* resolveOverloadType(CompilerContext* context, ScriptCallableBase* function) override;
+    [[nodiscard]] NomadIndex getStackValueCount() const override;
 
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
@@ -40,6 +41,7 @@ private:
     bool resolveExpression(CompilerContext* context, ScriptCallableBase* function);
 
     std::unique_ptr<Expression> m_expression;
+    VariableId m_stagingVariable = VariableId::INVALID;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -204,10 +206,28 @@ void ExpressionArgument::onResolve(CompilerContext* context, ScriptCallableBase*
             "Argument type mismatch. Expected " + getTypeDisplayName(argumentType) + " but got " +
                 getTypeDisplayName(expressionType)
         );
+        return;
+    }
+    if (context->getMode() == CompilerMode::Script && expressionType->asStructType() != nullptr &&
+        m_stagingVariable.isInvalid()) {
+        m_stagingVariable = function->registerVariable(
+            "$argument" + std::to_string(function->getVariableCount()), expressionType);
     }
 }
 
+NomadIndex ExpressionArgument::getStackValueCount() const {
+    const auto* type = getType();
+    return type != nullptr && type->asStructType() != nullptr ? type->getSize() : 1;
+}
+
 void ExpressionArgument::onCompile(Compiler* compiler, ScriptCallableBase* function) {
+    if (m_stagingVariable.isValid()) {
+        m_expression->compileIntoLocal(compiler, function, m_stagingVariable);
+        const auto offset = function->getVariableOffset(m_stagingVariable);
+        getType()->emitPushFunctionVariable(*compiler, offset);
+        getType()->emitFreeFunctionVariable(*compiler, offset);
+        return;
+    }
     m_expression->compile(compiler, function, ExpressionTarget::Stack);
 }
 

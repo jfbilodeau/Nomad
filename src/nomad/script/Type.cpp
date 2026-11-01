@@ -124,6 +124,12 @@ void Type::emitCopyParameterToFunctionVariable(
 void Type::emitFreeResult(OpCodeEmitter&) const {
 }
 
+void Type::emitPushFunctionVariable(OpCodeEmitter& emitter, const NomadIndex offset) const {
+    if (getSize() != 0) {
+        emitLoadFunctionVariable(emitter, offset, ExpressionTarget::Stack);
+    }
+}
+
 void Type::emitCopyFunctionVariableToParameter(
     OpCodeEmitter& emitter,
     const NomadIndex sourceOffset,

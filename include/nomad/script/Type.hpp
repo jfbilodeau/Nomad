@@ -80,6 +80,8 @@ public:
         NomadIndex sourceOffset,
         NomadIndex parameterOffset
     ) const;
+    // Pushes an owned copy of reserved local storage in increasing slot order; empty values push nothing.
+    virtual void emitPushFunctionVariable(OpCodeEmitter& emitter, NomadIndex offset) const;
     // Stages the complete source before replacement. Same-type scratch must be disjoint from both ranges.
     void emitAssignFunctionVariable(
         OpCodeEmitter& emitter,

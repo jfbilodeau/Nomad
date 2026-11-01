@@ -44,6 +44,7 @@ public:
         NomadIndex sourceOffset,
         NomadIndex parameterOffset
     ) const override;
+    void emitPushFunctionVariable(OpCodeEmitter& emitter, NomadIndex offset) const override;
     void emitFreeResult(OpCodeEmitter& emitter) const override;
     void emitFreeIntermediate(OpCodeEmitter& emitter) const override;
     void emitFreeStackValue(OpCodeEmitter& emitter, NomadIndex offset) const override;
