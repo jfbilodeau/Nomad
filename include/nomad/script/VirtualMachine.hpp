@@ -98,7 +98,7 @@ public:
     void setNativeProperty(PropertyId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
     void getProperty(PropertyId memberId, const RuntimeValue& receiver, RuntimeValue& result);
     void setProperty(PropertyId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
-    [[nodiscard]] RuntimeValue& getStoredField(NomadIndex offset);
+    [[nodiscard]] RuntimeValue& getStoredProperty(NomadIndex offset);
     void callNativeIndexer(IndexerId indexerId, const RuntimeValue& receiver, bool write);
     void runNativeIndexer(
         IndexerId indexerId,

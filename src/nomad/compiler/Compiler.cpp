@@ -1238,9 +1238,9 @@ void Compiler::addPropertyAccess(const PropertyId id, const bool write) {
         return;
     }
     if (type->getStorage() == TypeStorage::Object) {
-        addOpCode(write ? OpCodes::op_object_field_set : OpCodes::op_object_field_load_r);
+        addOpCode(write ? OpCodes::op_object_stored_property_set : OpCodes::op_object_stored_property_load_r);
     } else {
-        addOpCode(write ? OpCodes::op_field_set : OpCodes::op_field_load_r);
+        addOpCode(write ? OpCodes::op_stored_property_set : OpCodes::op_stored_property_load_r);
     }
     addIndex(property->getClassType()->getFieldOffset(id));
 }

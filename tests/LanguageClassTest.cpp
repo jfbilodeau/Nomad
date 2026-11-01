@@ -1006,8 +1006,8 @@ BOOST_AUTO_TEST_CASE(stored_property_opcodes_preserve_initializer_assignment_and
     auto& runtime = fixture.getRuntime();
     std::ostringstream dump;
     dumpInstructions(runtime, dump);
-    for (const auto& name : {OpCodes::op_field_load_r, OpCodes::op_field_set,
-        OpCodes::op_object_field_load_r, OpCodes::op_object_field_set}) {
+    for (const auto& name : {OpCodes::op_stored_property_load_r, OpCodes::op_stored_property_set,
+        OpCodes::op_object_stored_property_load_r, OpCodes::op_object_stored_property_set}) {
         BOOST_TEST(dump.str().find(name) != NomadString::npos);
     }
     BOOST_TEST(dump.str().find(OpCodes::op_native_property_get) == NomadString::npos);

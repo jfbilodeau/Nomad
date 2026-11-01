@@ -66,14 +66,14 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_call_native_constructor, op_call_native_constructor, "Call a native factory and bind its result", {Operand::Id});
     registerInstruction(OpCodes::op_native_property_get, op_native_property_get, "Read a native or stored property", {Operand::Id});
     registerInstruction(OpCodes::op_native_property_set, op_native_property_set, "Write a native or stored property", {Operand::Id});
-    registerInstruction(OpCodes::op_field_load_r, op_field_load_r,
-        "Load a scalar stored field at a physical offset into result", {Operand::Index});
-    registerInstruction(OpCodes::op_object_field_load_r, op_object_field_load_r,
-        "Copy a reference stored field at a physical offset into result", {Operand::Index});
-    registerInstruction(OpCodes::op_field_set, op_field_set,
-        "Store result in a scalar field at a physical offset", {Operand::Index});
-    registerInstruction(OpCodes::op_object_field_set, op_object_field_set,
-        "Copy result into a reference field at a physical offset, replacing owned storage", {Operand::Index});
+    registerInstruction(OpCodes::op_stored_property_load_r, op_stored_property_load_r,
+        "Load a scalar stored property at a physical offset into result", {Operand::Index});
+    registerInstruction(OpCodes::op_object_stored_property_load_r, op_object_stored_property_load_r,
+        "Copy a reference stored property at a physical offset into result", {Operand::Index});
+    registerInstruction(OpCodes::op_stored_property_set, op_stored_property_set,
+        "Store result in a scalar property at a physical offset", {Operand::Index});
+    registerInstruction(OpCodes::op_object_stored_property_set, op_object_stored_property_set,
+        "Copy result into a reference property at a physical offset, replacing owned storage", {Operand::Index});
     registerInstruction(OpCodes::op_native_index_get, op_native_index_get, "Read an indexer", {Operand::Id});
     registerInstruction(OpCodes::op_native_index_set, op_native_index_set, "Write an indexer", {Operand::Id});
     // Parameter operations

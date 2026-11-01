@@ -927,7 +927,7 @@ BOOST_AUTO_TEST_CASE(compiled_field_access_uses_full_width_physical_offsets_and_
     std::ostringstream dump;
     dumpInstructions(runtime, *function, dump);
     BOOST_TEST(dump.str().find(std::to_string(wide + 1)) != NomadString::npos);
-    BOOST_TEST(dump.str().find(OpCodes::op_object_field_set) != NomadString::npos);
+    BOOST_TEST(dump.str().find(OpCodes::op_object_stored_property_set) != NomadString::npos);
     ScriptObject object(owner);
     VirtualMachine machine(&runtime);
     RuntimeValue receiver;

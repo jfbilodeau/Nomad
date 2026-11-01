@@ -482,7 +482,7 @@ void VirtualMachine::setProperty(
     object->setField(property->getClassType()->getFieldIndex(memberId), value);
 }
 
-RuntimeValue& VirtualMachine::getStoredField(const NomadIndex offset) {
+RuntimeValue& VirtualMachine::getStoredProperty(const NomadIndex offset) {
     auto* object = dynamic_cast<ScriptObject*>(m_intermediate.getObjectValue());
     if (object == nullptr) {
         fault("Stored property receiver has no matching field storage");
