@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1AK have been reviewed; Step 1AL below is implemented and awaiting
+Steps 1A through 1AL have been reviewed; Step 1AM below is implemented and awaiting
 review. Aggregate loads, stores, and calls remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1464,6 +1464,32 @@ Validation:
 
 Next slice after review: design borrowed receiver and caller-provided return
 destination state, including save/restore across calls and native reentry.
+
+### Step 1AM: Direct struct identifier argument pushes
+
+Approved scope and implementation:
+
+- Struct local and parameter identifier arguments push owned field copies
+  directly, without allocating or copying through `$argument` staging.
+- Stack-target struct loads recurse in increasing physical field order; parameter
+  source offsets remain reverse anchor-relative. Existing scalar push opcodes
+  retain reference fields.
+- Other expression forms retain the existing staging destination path.
+- Argument evaluation order, physical widths, caller cleanup, and pass-by-copy
+  behavior remain unchanged. No new opcodes or aggregate registers are added.
+- Empty identifier arguments allocate no staging and push no slots.
+
+Validation:
+
+- Built `nomad_test`, `nomad-runtime`, and `nomad-lsp`.
+- Language, remaining, and bindings regression groups passed.
+- Tests cover direct local/parameter copies, nested full-width offsets, ownership,
+  repeated resolution/calls, mixed argument evaluation, empty structs, and
+  unresolved-layout rejection before emission.
+- Four documentation tests and whitespace checks passed.
+
+Next slice after review: borrowed receiver and caller-provided return-destination
+state, including nested calls and native reentry.
 
 Remaining Step 1 work, requiring separate design approval:
 

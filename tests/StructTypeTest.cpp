@@ -132,6 +132,12 @@ BOOST_AUTO_TEST_CASE(registration_identity_and_unresolved_layout_contracts) {
     BOOST_CHECK_THROW(type->initValue(nullptr), NomadException);
     BOOST_CHECK_THROW(type->copyValue(nullptr, nullptr), NomadException);
     BOOST_CHECK_THROW(type->freeValue(nullptr), NomadException);
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    const auto instructionCount = instructions.size();
+    BOOST_CHECK_THROW(type->emitLoadFunctionVariable(compiler, 0, ExpressionTarget::Stack), NomadException);
+    BOOST_CHECK_THROW(type->emitLoadParameter(compiler, 0, ExpressionTarget::Stack), NomadException);
+    BOOST_TEST(instructions.size() == instructionCount);
     BOOST_TEST(runtime.registerStruct("Point").isInvalid());
     BOOST_TEST(runtime.registerStruct("").isInvalid());
     BOOST_TEST(runtime.registerStruct("int").isInvalid());
@@ -1046,6 +1052,21 @@ BOOST_AUTO_TEST_CASE(parameter_copy_and_cleanup_use_reversed_nested_field_offset
                 OpCodes::op_function_variable_object_push).id);
     }
     instructions.clear();
+    BOOST_TEST(outer->emitLoadFunctionVariable(compiler, offset, ExpressionTarget::Stack) == 1U);
+    BOOST_REQUIRE(instructions.size() == 8U);
+    for (auto index = NomadIndex{0}; index < 4; ++index) {
+        BOOST_TEST(instructions[index * 2 + 1].value.getIndexValue() == offset + index);
+    }
+    instructions.clear();
+    BOOST_TEST(outer->emitLoadParameter(compiler, offset, ExpressionTarget::Stack) == 1U);
+    BOOST_REQUIRE(instructions.size() == 8U);
+    for (auto index = NomadIndex{0}; index < 4; ++index) {
+        BOOST_TEST(instructions[index * 2 + 1].value.getIndexValue() == offset + 3 - index);
+        BOOST_TEST(runtime.getInstructionId(instructions[index * 2].fn).id ==
+            runtime.getInstructionId(index < 2 ? OpCodes::op_parameter_push :
+                OpCodes::op_object_parameter_push).id);
+    }
+    instructions.clear();
     outer->emitFreeStackValue(compiler, offset);
     BOOST_REQUIRE(instructions.size() == 4U);
     BOOST_TEST(instructions[1].value.getIndexValue() == offset + 1);
@@ -1151,6 +1172,7 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
         std::make_unique<IdentifierExpression>(nullptr, 1, 1, "value"));
     BOOST_REQUIRE(forwarded.resolve(&context, callee));
     BOOST_REQUIRE(forwarded.resolve(&context, callee));
+    BOOST_TEST(callee->getVariableCount() == variableCount);
     BOOST_TEST(forwarded.getArgumentCount() == 4U);
     callee->setFunctionStart(runtime.getInstructions().size());
     compiler->addFunctionEntry(callee);
@@ -1184,9 +1206,8 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
         std::make_unique<IntegerLiteral>(nullptr, 1, 1, 29));
     BOOST_REQUIRE(arguments.resolve(&context, caller));
     BOOST_REQUIRE(arguments.resolve(&context, caller));
-    BOOST_TEST(caller->getVariableCount() == 3U);
-    BOOST_TEST(caller->getVariableName(VariableId{2}).starts_with("$argument"));
-    BOOST_TEST(caller->getVisibleVariableName(VariableId{2}).empty());
+    BOOST_TEST(caller->getVariableCount() == 2U);
+    BOOST_TEST(caller->getVariableStorageSize() == 5U);
     BOOST_TEST(arguments.getArgumentCount() == 6U);
     const auto initialize = runtime.registerNativeFunction("initializeCallerParameter",
         [&](VirtualMachine* machine) {
@@ -1295,13 +1316,8 @@ BOOST_AUTO_TEST_CASE(mixed_struct_and_empty_arguments_keep_right_to_left_evaluat
         std::make_unique<FunctionCallExpression>(nullptr, 1, 1, "argument2"));
     BOOST_REQUIRE(arguments.resolve(&context, function));
     BOOST_REQUIRE(arguments.resolve(&context, function));
-    BOOST_TEST(function->getVariableCount() == 5U);
-    BOOST_TEST(function->getVariableStorageSize() == 6U);
-    for (auto index = NomadIndex{2}; index < 5; ++index) {
-        const auto variable = VariableId{toNomadId(index)};
-        BOOST_TEST(function->getVariableName(variable).starts_with("$argument"));
-        BOOST_TEST(function->getVisibleVariableName(variable).empty());
-    }
+    BOOST_TEST(function->getVariableCount() == 2U);
+    BOOST_TEST(function->getVariableStorageSize() == 2U);
     BOOST_TEST(arguments.getStackCount() == 6U);
     const auto initialize = runtime.registerNativeFunction("initializeMixedArgument",
         [&](VirtualMachine* machine) {
@@ -1345,8 +1361,13 @@ BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_with
     type->emitFreeFunctionVariable(compiler, 0);
     type->emitFreeParameter(compiler, 0);
     for (const auto target : {ExpressionTarget::Result, ExpressionTarget::Intermediate, ExpressionTarget::Stack}) {
-        BOOST_CHECK_THROW(type->emitLoadFunctionVariable(compiler, 0, target), NomadException);
-        BOOST_CHECK_THROW(type->emitLoadParameter(compiler, 0, target), NomadException);
+        if (target == ExpressionTarget::Stack) {
+            BOOST_TEST(type->emitLoadFunctionVariable(compiler, 0, target) == NOMAD_INVALID_INDEX);
+            BOOST_TEST(type->emitLoadParameter(compiler, 0, target) == NOMAD_INVALID_INDEX);
+        } else {
+            BOOST_CHECK_THROW(type->emitLoadFunctionVariable(compiler, 0, target), NomadException);
+            BOOST_CHECK_THROW(type->emitLoadParameter(compiler, 0, target), NomadException);
+        }
         BOOST_CHECK_THROW(type->emitLoadDynamicVariable(compiler, 0, target), NomadException);
         BOOST_CHECK_THROW(type->emitLoadContextVariable(compiler, 0, target), NomadException);
     }

@@ -42,6 +42,7 @@ private:
 
     std::unique_ptr<Expression> m_expression;
     VariableId m_stagingVariable = VariableId::INVALID;
+    bool m_directStack = false;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -208,10 +209,18 @@ void ExpressionArgument::onResolve(CompilerContext* context, ScriptCallableBase*
         );
         return;
     }
-    if (context->getMode() == CompilerMode::Script && expressionType->asStructType() != nullptr &&
-        m_stagingVariable.isInvalid()) {
-        m_stagingVariable = function->registerVariable(
-            "$argument" + std::to_string(function->getVariableCount()), expressionType);
+    if (context->getMode() == CompilerMode::Script && expressionType->asStructType() != nullptr) {
+        m_directStack = false;
+        if (const auto* identifier = m_expression->asIdentifierExpression()) {
+            IdentifierDefinition definition;
+            context->getCompiler()->getIdentifierDefinition(identifier->getIdentifier(), function, definition);
+            m_directStack = definition.identifierType == IdentifierType::FunctionVariable ||
+                definition.identifierType == IdentifierType::Parameter;
+        }
+        if (!m_directStack && m_stagingVariable.isInvalid()) {
+            m_stagingVariable = function->registerVariable(
+                "$argument" + std::to_string(function->getVariableCount()), expressionType);
+        }
     }
 }
 
@@ -221,7 +230,7 @@ NomadIndex ExpressionArgument::getStackValueCount() const {
 }
 
 void ExpressionArgument::onCompile(Compiler* compiler, ScriptCallableBase* function) {
-    if (m_stagingVariable.isValid()) {
+    if (!m_directStack && m_stagingVariable.isValid()) {
         m_expression->compileIntoLocal(compiler, function, m_stagingVariable);
         const auto offset = function->getVariableOffset(m_stagingVariable);
         getType()->emitPushFunctionVariable(*compiler, offset);

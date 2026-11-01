@@ -790,8 +790,10 @@ preconditions and does not allocate storage. Compiled struct parameter assignmen
 stages the entire RHS first, including for self-assignment and parameter sources.
 Argument ownership and cleanup responsibility remain with the caller.
 
-Compiled struct expression arguments use hidden `$argument`-prefixed same-type staging locals
-allocated during resolution. Each RHS completes in staging, then
+Struct local and parameter identifier arguments push field copies directly
+onto the argument stack without allocating `$argument` staging locals.
+Other struct expression forms retain hidden `$argument`-prefixed same-type
+staging locals allocated during resolution. Each such RHS completes in staging, then
 `Type::emitPushFunctionVariable` pushes an owned copy in increasing field-slot
 order and staging ownership is released. The caller releases nested argument
 fields after the call using `StructType::emitFreeStackValue`, then pops physical
@@ -799,6 +801,9 @@ argument slots. Arguments still evaluate right-to-left. Empty structs consume
 zero argument slots; scalar and specialized event argument shapes are unchanged.
 Local and parameter struct sources are supported. Struct-returning calls,
 host aggregate argument APIs, and interpreter aggregate arguments remain unsupported.
+Struct local/parameter load emission supports `ExpressionTarget::Stack`, returning
+the first emitted operand position, or `NOMAD_INVALID_INDEX` for empty structs.
+Result and intermediate register loads remain unsupported.
 
 An offset query requires resolved sizes for the preceding variables; a total-size
 query requires resolved sizes for every variable. Missing types, deferred-size

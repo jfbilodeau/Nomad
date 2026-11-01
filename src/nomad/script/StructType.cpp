@@ -245,11 +245,28 @@ void StructType::emitCopyParameterToFunctionVariable(
 }
 
 NomadIndex StructType::emitLoadFunctionVariable(
-    OpCodeEmitter&,
-    NomadIndex,
-    ExpressionTarget
+    OpCodeEmitter& emitter,
+    const NomadIndex offset,
+    const ExpressionTarget target
 ) const {
-    throw NomadException("Struct bytecode emission is not supported: " + getTypeName());
+    if (target != ExpressionTarget::Stack) {
+        throw NomadException("Struct register load is not supported: " + getTypeName());
+    }
+    if (getSize() == 0) {
+        return NOMAD_INVALID_INDEX;
+    }
+    auto firstOperand = NOMAD_INVALID_INDEX;
+    for (const auto* property : getProperties()) {
+        if (property->asNativeProperty() != nullptr || property->getValueType()->getSize() == 0) {
+            continue;
+        }
+        const auto operand = property->getValueType()->emitLoadFunctionVariable(
+            emitter, offset + getFieldOffset(property->getId()), target);
+        if (firstOperand == NOMAD_INVALID_INDEX) {
+            firstOperand = operand;
+        }
+    }
+    return firstOperand;
 }
 
 void StructType::emitCopyFunctionVariableToParameter(
@@ -276,11 +293,30 @@ void StructType::emitCopyFunctionVariableToParameter(
 }
 
 NomadIndex StructType::emitLoadParameter(
-    OpCodeEmitter&,
-    NomadIndex,
-    ExpressionTarget
+    OpCodeEmitter& emitter,
+    const NomadIndex offset,
+    const ExpressionTarget target
 ) const {
-    throw NomadException("Struct bytecode emission is not supported: " + getTypeName());
+    if (target != ExpressionTarget::Stack) {
+        throw NomadException("Struct register load is not supported: " + getTypeName());
+    }
+    const auto size = getSize();
+    auto firstOperand = NOMAD_INVALID_INDEX;
+    for (const auto* property : getProperties()) {
+        if (property->asNativeProperty() != nullptr) {
+            continue;
+        }
+        const auto* type = property->getValueType();
+        if (type->getSize() == 0) {
+            continue;
+        }
+        const auto operand = type->emitLoadParameter(
+            emitter, offset + (size - getFieldOffset(property->getId()) - type->getSize()), target);
+        if (firstOperand == NOMAD_INVALID_INDEX) {
+            firstOperand = operand;
+        }
+    }
+    return firstOperand;
 }
 
 NomadIndex StructType::emitLoadDynamicVariable(
