@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1AI have been reviewed; Step 1AJ below is implemented and awaiting
+Steps 1A through 1AJ have been reviewed; Step 1AK below is implemented and awaiting
 review. Aggregate loads, stores, and calls remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1397,6 +1397,40 @@ Validation:
 
 Next slice after review: local-to-parameter replacement, followed by aggregate
 argument lowering and borrowed receiver/return destinations.
+
+### Step 1AK: Local-to-parameter copying and staged parameter assignment
+
+Approved scope and implementation:
+
+- Type-owned local-to-parameter copy emission replaces owned parameter fields
+  using existing scalar instructions and reversed nested parameter offsets.
+- Struct parameter assignment allocates hidden same-type staging during script
+  resolution, reusing it on repeated resolution.
+- RHS completion precedes parameter replacement, supporting local and parameter
+  sources and self-assignment without modifying the caller's original struct.
+- Scalar assignment and caller-owned argument cleanup are unchanged.
+- Empty structs consume no physical staging slots or copy instructions.
+- No new opcodes, struct syntax, aggregate argument lowering, borrowed receivers,
+  or return destinations are introduced.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, and binding regression groups passed.
+- Emission tests verify full-width local/parameter operands, reversed nested
+  parameter offsets, empty values, and unresolved-layout failures.
+- Execution coverage verifies replacement of nested scalar/string/class fields,
+  staged parameter self-assignment, repeated staging reuse, hidden stable local
+  IDs, immediate staging release, and adjacent scalar parameters.
+- Caller storage retains its original values and reference counts after
+  parameter replacement; repeated calls restore live-string/object counts.
+- Empty parameter assignments consume no physical slots or instructions.
+- All four documentation preparation tests and whitespace checks passed.
+- Aggregate argument lowering, host struct parameters, and gameplay remain
+  unsupported and unvalidated.
+
+Next slice after review: aggregate argument lowering, followed by borrowed
+receiver/return destinations.
 
 Remaining Step 1 work, requiring separate design approval:
 

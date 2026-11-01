@@ -227,6 +227,29 @@ NomadIndex StructType::emitLoadFunctionVariable(
     throw NomadException("Struct bytecode emission is not supported: " + getTypeName());
 }
 
+void StructType::emitCopyFunctionVariableToParameter(
+    OpCodeEmitter& emitter,
+    const NomadIndex sourceOffset,
+    const NomadIndex parameterOffset
+) const {
+    const auto size = getSize();
+    if (size == 0) {
+        return;
+    }
+    for (const auto* property : getProperties()) {
+        if (property->asNativeProperty() != nullptr) {
+            continue;
+        }
+        const auto* type = property->getValueType();
+        const auto fieldOffset = getFieldOffset(property->getId());
+        type->emitCopyFunctionVariableToParameter(
+            emitter,
+            sourceOffset + fieldOffset,
+            parameterOffset + (size - fieldOffset - type->getSize())
+        );
+    }
+}
+
 NomadIndex StructType::emitLoadParameter(
     OpCodeEmitter&,
     NomadIndex,

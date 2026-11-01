@@ -767,8 +767,10 @@ resolution. The RHS completes there before destination replacement; owned
 staging fields are released after each assignment. Staging locals participate
 in physical frame reservation and return cleanup, but their internal names
 are hidden by `getVisibleVariableName`. Repeated resolution reuses the same
-staging local. Scalar assignments retain their existing path. Struct parameter,
-object-field, call-result, and interpreter assignment lowering remain unsupported.
+staging local. Scalar assignments retain their existing path. Struct parameter
+targets use the same staging contract and replace the parameter copy, not the
+caller's original value. Object-field, call-result, and interpreter assignment
+lowering remain unsupported.
 
 `Type::emitCopyParameterToFunctionVariable(emitter, parameterOffset,
 destinationOffset)` replaces a same-type local from a disjoint parameter block.
@@ -779,7 +781,14 @@ copy result-register ownership contract and does not allocate storage.
 slots. It is explicit: function return does not release caller-owned arguments.
 Empty types emit nothing; nonempty ranges require valid storage and finalized
 layouts. Struct parameter sources can be assigned to locals using existing
-assignment staging; assigning to struct parameters remains unsupported.
+assignment staging.
+`Type::emitCopyFunctionVariableToParameter(emitter, sourceOffset, parameterOffset)`
+copies disjoint same-type local storage into a parameter block, replacing its
+owned fields. Nested parameter field offsets use the same reversed order as
+parameter-to-local copying. It follows the same result-register ownership
+preconditions and does not allocate storage. Compiled struct parameter assignment
+stages the entire RHS first, including for self-assignment and parameter sources.
+Argument ownership and cleanup responsibility remain with the caller.
 
 An offset query requires resolved sizes for the preceding variables; a total-size
 query requires resolved sizes for every variable. Missing types, deferred-size

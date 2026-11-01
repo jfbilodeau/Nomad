@@ -435,6 +435,11 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
     case IdentifierType::Parameter:
         if (identifier.valueType != expressionType) {
             reportError(context, function, "Cannot change type of parameter '" + m_identifier + "'");
+            return;
+        }
+        if (expressionType->asStructType() != nullptr && m_stagingVariable.isInvalid()) {
+            m_stagingVariable = function->registerVariable(
+                "@assignment" + std::to_string(function->getVariableCount()), expressionType);
         }
         break;
     default:
@@ -447,13 +452,19 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
     if (m_stagingVariable.isValid()) {
         IdentifierDefinition identifier;
         compiler->getIdentifierDefinition(m_identifier, function, identifier);
-        if (identifier.identifierType != IdentifierType::FunctionVariable) {
-            compiler->reportInternalError("Aggregate assignment staging requires a local destination");
+        if (identifier.identifierType != IdentifierType::FunctionVariable &&
+            identifier.identifierType != IdentifierType::Parameter) {
+            compiler->reportInternalError("Aggregate assignment staging requires a local or parameter destination");
         }
         m_expression->compileIntoLocal(compiler, function, m_stagingVariable);
         const auto* type = m_expression->getType();
         const auto stagingOffset = function->getVariableOffset(m_stagingVariable);
-        type->emitCopyFunctionVariable(*compiler, stagingOffset, function->getVariableOffset(identifier.variableId));
+        if (identifier.identifierType == IdentifierType::FunctionVariable) {
+            type->emitCopyFunctionVariable(*compiler, stagingOffset, function->getVariableOffset(identifier.variableId));
+        } else {
+            type->emitCopyFunctionVariableToParameter(*compiler, stagingOffset,
+                function->getParameterOffset(identifier.parameterId));
+        }
         type->emitFreeFunctionVariable(*compiler, stagingOffset);
         return;
     }

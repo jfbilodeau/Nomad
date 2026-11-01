@@ -856,6 +856,7 @@ BOOST_AUTO_TEST_CASE(empty_struct_assignment_staging_occupies_no_physical_slots)
     ScriptFunction function(CallableId{}, "emptyAssignment", "empty.nomad", "");
     function.registerVariable("source", empty);
     function.registerVariable("destination", empty);
+    function.addParameter("parameter", empty, "");
     std::vector<Instruction> instructions;
     Compiler compiler(&runtime, instructions);
     CompilerContext context(&compiler);
@@ -867,6 +868,18 @@ BOOST_AUTO_TEST_CASE(empty_struct_assignment_staging_occupies_no_physical_slots)
     BOOST_TEST(function.getVariableStorageSize() == 0U);
     const auto initialSize = instructions.size();
     assignment.compile(&compiler, &function);
+    BOOST_TEST(instructions.size() == initialSize);
+    AssignmentStatement parameterAssignment(2, 1, "parameter",
+        std::make_unique<IdentifierExpression>(nullptr, 2, 1, "source"));
+    AssignmentStatement parameterSelfAssignment(3, 1, "parameter",
+        std::make_unique<IdentifierExpression>(nullptr, 3, 1, "parameter"));
+    BOOST_REQUIRE(parameterAssignment.resolve(&context, &function));
+    BOOST_REQUIRE(parameterSelfAssignment.resolve(&context, &function));
+    BOOST_REQUIRE(parameterAssignment.resolve(&context, &function));
+    BOOST_TEST(function.getVariableCount() == 5U);
+    BOOST_TEST(function.getVariableStorageSize() == 0U);
+    parameterAssignment.compile(&compiler, &function);
+    parameterSelfAssignment.compile(&compiler, &function);
     BOOST_TEST(instructions.size() == initialSize);
 }
 
@@ -982,11 +995,13 @@ BOOST_AUTO_TEST_CASE(parameter_copy_and_cleanup_use_reversed_nested_field_offset
     Compiler compiler(&runtime, instructions);
     const auto initialSize = instructions.size();
     BOOST_CHECK_THROW(outer->emitCopyParameterToFunctionVariable(compiler, 0, 0), NomadException);
+    BOOST_CHECK_THROW(outer->emitCopyFunctionVariableToParameter(compiler, 0, 0), NomadException);
     BOOST_CHECK_THROW(outer->emitFreeParameter(compiler, 0), NomadException);
     BOOST_TEST(instructions.size() == initialSize);
     runtime.finalizeCompositeFieldLayout(outerId);
     const auto offset = toNomadIndex(NOMAD_ID_MAX) + 1;
     empty->emitCopyParameterToFunctionVariable(compiler, offset, offset);
+    empty->emitCopyFunctionVariableToParameter(compiler, offset, offset);
     empty->emitFreeParameter(compiler, offset);
     BOOST_TEST(instructions.size() == initialSize);
     instructions.clear();
@@ -1007,6 +1022,15 @@ BOOST_AUTO_TEST_CASE(parameter_copy_and_cleanup_use_reversed_nested_field_offset
     for (const auto position : {0, 2}) {
         BOOST_TEST(runtime.getInstructionId(instructions[position].fn).id ==
             runtime.getInstructionId(OpCodes::op_object_free_parameter).id);
+    }
+    instructions.clear();
+    outer->emitCopyFunctionVariableToParameter(compiler, offset + 10, offset);
+    BOOST_REQUIRE(instructions.size() == 20U);
+    for (auto index = NomadIndex{0}; index < positions.size(); ++index) {
+        BOOST_TEST(instructions[positions[index] + 1].value.getIndexValue() == offset + 10 + index);
+        BOOST_TEST(instructions[destinationPositions[index]].value.getIndexValue() == offset + parameterOffsets[index]);
+        BOOST_TEST(runtime.getInstructionId(instructions[destinationPositions[index] - 1].fn).id ==
+            runtime.getInstructionId(OpCodes::op_parameter_set).id);
     }
 }
 
@@ -1037,7 +1061,17 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
     const auto destination = callee->registerVariable("destination", outerType);
     AssignmentStatement assignment(1, 1, "destination",
         std::make_unique<IdentifierExpression>(nullptr, 1, 1, "value"));
+    AssignmentStatement replaceParameter(2, 1, "value",
+        std::make_unique<IdentifierExpression>(nullptr, 2, 1, "destination"));
+    AssignmentStatement selfParameter(3, 1, "value",
+        std::make_unique<IdentifierExpression>(nullptr, 3, 1, "value"));
     BOOST_REQUIRE(assignment.resolve(&context, callee));
+    BOOST_REQUIRE(replaceParameter.resolve(&context, callee));
+    BOOST_REQUIRE(selfParameter.resolve(&context, callee));
+    const auto variableCount = callee->getVariableCount();
+    BOOST_REQUIRE(replaceParameter.resolve(&context, callee));
+    BOOST_REQUIRE(selfParameter.resolve(&context, callee));
+    BOOST_TEST(callee->getVariableCount() == variableCount);
     const auto inspect = runtime.registerNativeFunction("inspectParameterCopy",
         [&](VirtualMachine* machine) {
             const auto parameter = machine->getEnclosingParameterStorage(1, 4);
@@ -1051,13 +1085,48 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
             }
             local[0].setIntegerValue(47);
             BOOST_TEST(parameter[0].getIntegerValue() == 17);
+            local[1].freeObjectValue();
+            local[1].setStringValue("replacement");
+            local[2].freeObjectValue();
+            local[2].setObjectValue(new ScriptObject(owner));
+            local[3].freeObjectValue();
+            local[3].setStringValue("replaced label");
+        }, {}, runtime.getVoidType(), "");
+    const auto inspectReplacement = runtime.registerNativeFunction("inspectReplacedParameter",
+        [&](VirtualMachine* machine) {
+            const auto parameter = machine->getEnclosingParameterStorage(1, 4);
+            const auto local = machine->getLocalStorage(callee->getVariableOffset(destination), 4);
+            BOOST_TEST(parameter[0].getIntegerValue() == 47);
+            BOOST_TEST(NomadString(parameter[1].getStringValue()) == "replacement");
+            BOOST_TEST(NomadString(parameter[3].getStringValue()) == "replaced label");
+            for (auto index = NomadIndex{1}; index < 4; ++index) {
+                BOOST_TEST(parameter[index].getObjectValue() == local[index].getObjectValue());
+                BOOST_TEST(parameter[index].getObjectValue()->getReferenceCount() == 2U);
+            }
+            for (auto index = NomadIndex{1}; index < callee->getVariableCount(); ++index) {
+                const auto staging = VariableId{toNomadId(index)};
+                BOOST_TEST(callee->getVisibleVariableName(staging).empty());
+                const auto values = machine->getLocalStorage(callee->getVariableOffset(staging), 4);
+                for (auto field = NomadIndex{1}; field < 4; ++field) {
+                    BOOST_TEST(values[field].getObjectValue() == nullptr);
+                }
+            }
+            BOOST_TEST(machine->getEnclosingParameterStorage(0, 1)[0].getIntegerValue() == 11);
+            BOOST_TEST(machine->getEnclosingParameterStorage(5, 1)[0].getIntegerValue() == 29);
         }, {}, runtime.getVoidType(), "");
     BOOST_REQUIRE(inspect.isValid());
+    BOOST_REQUIRE(inspectReplacement.isValid());
     callee->setFunctionStart(runtime.getInstructions().size());
     compiler->addFunctionEntry(callee);
     assignment.compile(compiler.get(), callee);
     compiler->addOpCode(OpCodes::op_call_native_function);
     compiler->addId(inspect.id);
+    for (auto index = 0; index < 2; ++index) {
+        replaceParameter.compile(compiler.get(), callee);
+        selfParameter.compile(compiler.get(), callee);
+        compiler->addOpCode(OpCodes::op_call_native_function);
+        compiler->addId(inspectReplacement.id);
+    }
     outerType->emitFreeParameter(*compiler, 1);
     compiler->addLoadFunctionVariable(callee->getVariableOffset(destination), runtime.getIntegerType(),
         ExpressionTarget::Result);
@@ -1068,6 +1137,7 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
     BOOST_REQUIRE(caller != nullptr);
     caller->setReturnType(runtime.getIntegerType());
     const auto source = caller->registerVariable("source", outerType);
+    const auto returnedNumber = caller->registerVariable("returnedNumber", runtime.getIntegerType());
     const auto initialize = runtime.registerNativeFunction("initializeCallerParameter",
         [&](VirtualMachine* machine) {
             const auto storage = machine->getLocalStorage(caller->getVariableOffset(source), 4);
@@ -1079,6 +1149,17 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
             storage[3].setStringValue("label");
         }, {}, runtime.getVoidType(), "");
     BOOST_REQUIRE(initialize.isValid());
+    const auto inspectCaller = runtime.registerNativeFunction("inspectOriginalCallerValue",
+        [&](VirtualMachine* machine) {
+            const auto storage = machine->getLocalStorage(caller->getVariableOffset(source), 4);
+            BOOST_TEST(storage[0].getIntegerValue() == 17);
+            BOOST_TEST(NomadString(storage[1].getStringValue()) == "nested");
+            BOOST_TEST(NomadString(storage[3].getStringValue()) == "label");
+            for (auto index = NomadIndex{1}; index < 4; ++index) {
+                BOOST_TEST(storage[index].getObjectValue()->getReferenceCount() == 1U);
+            }
+        }, {}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(inspectCaller.isValid());
     caller->setFunctionStart(runtime.getInstructions().size());
     compiler->addFunctionEntry(caller);
     compiler->addOpCode(OpCodes::op_call_native_function);
@@ -1096,6 +1177,11 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
     compiler->addIndex(callee->getFunctionStart());
     compiler->addOpCode(OpCodes::op_pop_n);
     compiler->addIndex(6);
+    runtime.getIntegerType()->emitStoreFunctionVariable(*compiler, caller->getVariableOffset(returnedNumber));
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(inspectCaller.id);
+    compiler->addLoadFunctionVariable(caller->getVariableOffset(returnedNumber), runtime.getIntegerType(),
+        ExpressionTarget::Result);
     compiler->addFunctionReturn(caller);
     caller->setFunctionEnd(runtime.getInstructions().size());
     const auto stringsBefore = RuntimeValue::getLiveStringCount();

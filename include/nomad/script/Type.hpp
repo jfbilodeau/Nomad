@@ -74,6 +74,12 @@ public:
         NomadIndex parameterOffset,
         NomadIndex destinationOffset
     ) const;
+    // Copies disjoint same-type local storage into a parameter block, replacing owned fields.
+    virtual void emitCopyFunctionVariableToParameter(
+        OpCodeEmitter& emitter,
+        NomadIndex sourceOffset,
+        NomadIndex parameterOffset
+    ) const;
     // Stages the complete source before replacement. Same-type scratch must be disjoint from both ranges.
     void emitAssignFunctionVariable(
         OpCodeEmitter& emitter,
