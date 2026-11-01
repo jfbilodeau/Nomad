@@ -62,6 +62,19 @@ public:
     virtual void emitInitIntermediate(OpCodeEmitter& emitter) const;
     // Initializes reserved, cleared local storage without running script initializers or constructors.
     virtual void emitInitFunctionVariable(OpCodeEmitter& emitter, NomadIndex offset) const;
+    // Copies same-type local storage; ranges must be disjoint or identical. Replaces owned destinations.
+    virtual void emitCopyFunctionVariable(
+        OpCodeEmitter& emitter,
+        NomadIndex sourceOffset,
+        NomadIndex destinationOffset
+    ) const;
+    // Stages the complete source before replacement. Same-type scratch must be disjoint from both ranges.
+    void emitAssignFunctionVariable(
+        OpCodeEmitter& emitter,
+        NomadIndex sourceOffset,
+        NomadIndex destinationOffset,
+        NomadIndex scratchOffset
+    ) const;
     virtual void emitFreeResult(OpCodeEmitter& emitter) const;
     virtual void emitFreeIntermediate(OpCodeEmitter& emitter) const;
     virtual void emitFreeStackValue(OpCodeEmitter& emitter, NomadIndex offset) const;

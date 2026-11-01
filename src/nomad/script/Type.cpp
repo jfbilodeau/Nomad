@@ -81,6 +81,33 @@ void Type::emitInitIntermediate(OpCodeEmitter&) const {
 void Type::emitInitFunctionVariable(OpCodeEmitter&, NomadIndex) const {
 }
 
+void Type::emitCopyFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadIndex sourceOffset,
+    const NomadIndex destinationOffset
+) const {
+    if (getSize() == 0 || sourceOffset == destinationOffset) {
+        return;
+    }
+    emitLoadFunctionVariable(emitter, sourceOffset, ExpressionTarget::Result);
+    emitFreeFunctionVariable(emitter, destinationOffset);
+    emitStoreFunctionVariable(emitter, destinationOffset);
+}
+
+void Type::emitAssignFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadIndex sourceOffset,
+    const NomadIndex destinationOffset,
+    const NomadIndex scratchOffset
+) const {
+    if (getSize() == 0 || sourceOffset == destinationOffset) {
+        return;
+    }
+    emitCopyFunctionVariable(emitter, sourceOffset, scratchOffset);
+    emitCopyFunctionVariable(emitter, scratchOffset, destinationOffset);
+    emitFreeFunctionVariable(emitter, scratchOffset);
+}
+
 void Type::emitFreeResult(OpCodeEmitter&) const {
 }
 

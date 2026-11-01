@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1AD have been reviewed; Step 1AE below is implemented and awaiting
+Steps 1A through 1AE have been reviewed; Step 1AF below is implemented and awaiting
 review. Aggregate loads, stores, and calls remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1230,6 +1230,41 @@ Validation:
 Next slice after review: design explicit aggregate source/destination storage
 and scratch-backed replacement. Parameter/call lowering and borrowed receivers
 and return destinations follow.
+
+### Step 1AF: Local copy and scratch-backed assignment emission
+
+Approved scope and implementation:
+
+- Add type-owned local copy emission with explicit source/destination physical
+  offsets. Direct copy replaces owned destination fields and requires disjoint
+  ranges; exact self-copy emits nothing.
+- Scalars and references reuse existing load, cleanup, and store instructions.
+  Structs recursively delegate stored-field copies at finalized offsets.
+- Assignment stages the complete source into disjoint same-type scratch before
+  replacing any destination fields, then releases scratch-owned fields.
+- Empty values emit no instructions. Caller-supplied scratch may contain cleared
+  or valid owned storage and remains releasable and reusable after assignment.
+- No new opcodes, aggregate registers, runtime layout inspection, compiler
+  scratch allocation, or expression lowering are introduced.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language and remaining regression groups passed.
+- Emission coverage verifies full-width source/destination/scratch offsets,
+  complete staging before replacement, unresolved layouts, empty structs, and
+  exact self-copy/assignment no-ops.
+- Execution coverage verifies nested scalar independence, string/class reference
+  sharing, replacement of owned destinations and scratch, scratch reuse, and
+  overlapping reference assignment in both directions.
+- Repeated calls restore live-object, live-string, and shared-empty-string
+  reference counts.
+- All four documentation preparation tests and whitespace checks passed.
+- This verifies low-level local copying, not struct expressions or gameplay.
+
+Next slice after review: design aggregate expression destinations and compiler
+temporary allocation. Physical parameter/call lowering, borrowed receiver and
+return destinations, and object-field addressing follow separately.
 
 Remaining Step 1 work, requiring separate design approval:
 

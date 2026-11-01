@@ -29,6 +29,11 @@ public:
     void emitInitResult(OpCodeEmitter& emitter) const override;
     void emitInitIntermediate(OpCodeEmitter& emitter) const override;
     void emitInitFunctionVariable(OpCodeEmitter& emitter, NomadIndex offset) const override;
+    void emitCopyFunctionVariable(
+        OpCodeEmitter& emitter,
+        NomadIndex sourceOffset,
+        NomadIndex destinationOffset
+    ) const override;
     void emitFreeResult(OpCodeEmitter& emitter) const override;
     void emitFreeIntermediate(OpCodeEmitter& emitter) const override;
     void emitFreeStackValue(OpCodeEmitter& emitter, NomadIndex offset) const override;

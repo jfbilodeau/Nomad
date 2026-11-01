@@ -729,6 +729,25 @@ cleared defaults. It does not run script field initializers or constructors.
 storage, not an existing owned value. Aggregate local loads and stores are not
 yet supported by bytecode.
 
+`Type::emitCopyFunctionVariable(emitter, sourceOffset, destinationOffset)`
+copies between same-type local ranges, replacing owned destination fields.
+Ranges must be disjoint or identical; identical ranges and empty types emit
+nothing. Nested structs copy their scalar fields independently and retain
+their reference fields without copying the referenced objects.
+
+`Type::emitAssignFunctionVariable(emitter, sourceOffset, destinationOffset,
+scratchOffset)` supports overlapping source and destination ranges by staging
+the complete source in a same-type scratch local before replacement. Scratch
+must be disjoint from both ranges and contain cleared or valid owned storage.
+Its owned fields are released afterward; it can be reused and cleaned up at
+function return. Identical source/destination ranges and empty types emit
+nothing and leave scratch unchanged. Both emission APIs require valid reserved local ranges and
+resolved sizes. They clobber the scalar result register using the existing
+local load/store ownership conventions; callers must not retain an owned
+result there across these operations or treat the register afterward as an
+additional owned copy. They do not allocate scratch locals or
+provide aggregate expression, parameter, or object-field lowering.
+
 An offset query requires resolved sizes for the preceding variables; a total-size
 query requires resolved sizes for every variable. Missing types, deferred-size
 queries, and slot-count overflow throw `NomadException`. An invalid or out-of-range
