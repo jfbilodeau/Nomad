@@ -108,6 +108,19 @@ void Type::emitAssignFunctionVariable(
     emitFreeFunctionVariable(emitter, scratchOffset);
 }
 
+void Type::emitCopyParameterToFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadIndex parameterOffset,
+    const NomadIndex destinationOffset
+) const {
+    if (getSize() == 0) {
+        return;
+    }
+    emitLoadParameter(emitter, parameterOffset, ExpressionTarget::Result);
+    emitFreeFunctionVariable(emitter, destinationOffset);
+    emitStoreFunctionVariable(emitter, destinationOffset);
+}
+
 void Type::emitFreeResult(OpCodeEmitter&) const {
 }
 

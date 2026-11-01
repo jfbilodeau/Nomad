@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1AH have been reviewed; Step 1AI below is implemented and awaiting
+Steps 1A through 1AI have been reviewed; Step 1AJ below is implemented and awaiting
 review. Aggregate loads, stores, and calls remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1364,6 +1364,39 @@ Validation:
 
 Next slice after review: field-wise struct parameter access and copying, then
 aggregate argument lowering and borrowed receiver/return-destination state.
+
+### Step 1AJ: Struct parameter-to-local copies and explicit cleanup
+
+Approved scope and implementation:
+
+- Type-owned parameter-to-local emission reuses scalar parameter loads and local
+  replacement instructions.
+- Structs recursively delegate using reverse anchor-relative parameter field
+  offsets and increasing local destination offsets.
+- Struct parameter identifiers compile into local destinations; existing
+  local-assignment staging supports parameter sources.
+- Explicit struct parameter cleanup releases owned nested fields. Function
+  return does not automatically release caller-owned arguments.
+- Empty structs emit nothing. No new opcodes, parameter assignment, aggregate
+  argument pushing, or return destinations are introduced.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language and remaining regression groups passed.
+- Emission tests verify nested reversed parameter offsets, increasing local
+  offsets, full-width operands, empty structs, and unresolved-layout failures.
+- Execution tests manually supply aggregate argument blocks and verify
+  parameter-to-local assignment staging, independent scalar mutation,
+  string/class reference ownership, explicit parameter cleanup, and adjacent
+  scalar parameters.
+- Repeated calls restore live-string and live-object counts.
+- All four documentation preparation tests and whitespace checks passed.
+- Aggregate argument lowering, host struct parameters, and gameplay remain
+  unvalidated and unsupported.
+
+Next slice after review: local-to-parameter replacement, followed by aggregate
+argument lowering and borrowed receiver/return destinations.
 
 Remaining Step 1 work, requiring separate design approval:
 

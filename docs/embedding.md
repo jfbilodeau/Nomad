@@ -755,7 +755,8 @@ provide aggregate expression, parameter, or object-field lowering.
 resolved expression into a same-type local. Scalar expressions replace the
 local using their existing result-register path. Struct-local identifiers copy
 into disjoint local storage; identical source/destination locals are a no-op.
-Other struct expression sources are not yet supported. The destination ID is
+Struct parameter identifiers also copy into local storage, preserving the
+parameter's value. Other struct expression sources are not yet supported. The destination ID is
 resolved to a physical offset during emission, and its storage must be reserved
 before execution. This API does not allocate temporary locals or stage assignment
 targets. It follows the same result-register ownership preconditions as local
@@ -768,6 +769,17 @@ in physical frame reservation and return cleanup, but their internal names
 are hidden by `getVisibleVariableName`. Repeated resolution reuses the same
 staging local. Scalar assignments retain their existing path. Struct parameter,
 object-field, call-result, and interpreter assignment lowering remain unsupported.
+
+`Type::emitCopyParameterToFunctionVariable(emitter, parameterOffset,
+destinationOffset)` replaces a same-type local from a disjoint parameter block.
+Nested fields use physical parameter offsets in reverse anchor-relative order
+while destination fields retain increasing local offsets. It follows the local
+copy result-register ownership contract and does not allocate storage.
+`StructType::emitFreeParameter` releases owned nested fields and clears their
+slots. It is explicit: function return does not release caller-owned arguments.
+Empty types emit nothing; nonempty ranges require valid storage and finalized
+layouts. Struct parameter sources can be assigned to locals using existing
+assignment staging; assigning to struct parameters remains unsupported.
 
 An offset query requires resolved sizes for the preceding variables; a total-size
 query requires resolved sizes for every variable. Missing types, deferred-size

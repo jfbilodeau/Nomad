@@ -1804,11 +1804,18 @@ void IdentifierExpression::onCompileIntoLocal(
         Expression::onCompileIntoLocal(compiler, function, destinationOffset);
         return;
     }
-    if (m_identifierDefinition.identifierType != IdentifierType::FunctionVariable) {
-        compiler->reportError("Struct local destinations currently support only local variable sources");
+    switch (m_identifierDefinition.identifierType) {
+    case IdentifierType::FunctionVariable:
+        getType()->emitCopyFunctionVariable(
+            *compiler, function->getVariableOffset(m_identifierDefinition.variableId), destinationOffset);
+        break;
+    case IdentifierType::Parameter:
+        getType()->emitCopyParameterToFunctionVariable(
+            *compiler, function->getParameterOffset(m_identifierDefinition.parameterId), destinationOffset);
+        break;
+    default:
+        compiler->reportError("Struct local destinations currently support only local variable or parameter sources");
     }
-    getType()->emitCopyFunctionVariable(
-        *compiler, function->getVariableOffset(m_identifierDefinition.variableId), destinationOffset);
 }
 
 std::unique_ptr<TypedValue> IdentifierExpression::getInitialValue(Compiler* compiler) const {

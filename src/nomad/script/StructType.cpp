@@ -176,8 +176,47 @@ void StructType::emitFreeFunctionVariable(
     }
 }
 
-void StructType::emitFreeParameter(OpCodeEmitter&, NomadIndex) const {
-    throw NomadException("Struct bytecode emission is not supported: " + getTypeName());
+void StructType::emitFreeParameter(
+    OpCodeEmitter& emitter,
+    const NomadIndex offset
+) const {
+    const auto size = getSize();
+    if (size == 0) {
+        return;
+    }
+    for (const auto* property : getProperties()) {
+        if (property->asNativeProperty() != nullptr) {
+            continue;
+        }
+        const auto* type = property->getValueType();
+        if (type->needsFree()) {
+            const auto fieldOffset = getFieldOffset(property->getId());
+            type->emitFreeParameter(emitter, offset + (size - fieldOffset - type->getSize()));
+        }
+    }
+}
+
+void StructType::emitCopyParameterToFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadIndex parameterOffset,
+    const NomadIndex destinationOffset
+) const {
+    const auto size = getSize();
+    if (size == 0) {
+        return;
+    }
+    for (const auto* property : getProperties()) {
+        if (property->asNativeProperty() != nullptr) {
+            continue;
+        }
+        const auto* type = property->getValueType();
+        const auto fieldOffset = getFieldOffset(property->getId());
+        type->emitCopyParameterToFunctionVariable(
+            emitter,
+            parameterOffset + (size - fieldOffset - type->getSize()),
+            destinationOffset + fieldOffset
+        );
+    }
 }
 
 NomadIndex StructType::emitLoadFunctionVariable(
