@@ -2,7 +2,7 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Step 1AP has been reviewed; Step 1AQ below is implemented and awaiting review. Struct argument copies
+Steps 1AP and 1AQ have been reviewed; Step 1AR below is implemented and awaiting review. Struct argument copies
 are supported; compiled struct receivers and destination returns remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1708,6 +1708,47 @@ Validation:
 Next slice after review: compiler-owned hidden-argument layout and lowering,
 using these emitters for caller destinations. Then struct methods and returns,
 retained object-field owners, and conservative RVO eligibility.
+
+### Step 1AR: Stored-property opcode specialization
+
+Approved optimization detour and implementation:
+
+- A shared compiler property-access path selects native accessors versus
+  single-slot scalar/reference stored fields, resolving physical offsets before
+  emission. Aggregate stored fields retain the existing unsupported path.
+- Four specialized load/store opcodes use full-width `Index` offsets and omit
+  property-ID lookup, native/stored dispatch, field-index resolution, declared
+  type lookup, and stored-field-width validation.
+- Reference writes retain the new value before releasing the old one; result
+  ownership remains with the caller. Scalar operations copy their slots.
+- Property expressions, assignments, constructor-inferred `this` writes,
+  explicit field initializers, and inferred defaults use the shared emitter.
+- Native callbacks and checked host/interpreter APIs retain existing behavior.
+- Receiver validity and actual instance-capacity guards remain: the compiler
+  does not prove every receiver is a non-null ScriptObject, and older instances
+  do not resize when an open class gains stored fields.
+- No aggregate field lowering, call-ABI changes, or generic collection support
+  are introduced. No runtime performance percentage is claimed without a benchmark.
+
+Validation:
+
+- Built Debug tests, runtime, and LSP targets successfully.
+- Language, remaining, bindings, and tooling regression groups passed.
+- Emission/execution tests verify offsets above `NOMAD_ID_MAX`, physical versus
+  logical field addressing after embedded storage, native accessor fallback,
+  scalar/reference load/store selection, self-assignment, result ownership,
+  and instruction dumps.
+- Source-level tests cover field initializers, constructor and ordinary `this`
+  writes, chained reads, reference replacement, nested RHS calls, and repeated
+  live-object/string restoration.
+- Invalid/null receivers and instances allocated before field extension retain
+  explicit errors rather than unchecked memory access.
+- Four documentation tests and whitespace checks passed.
+- Gameplay and a before/after performance benchmark were not run.
+
+Next slice after review: resume compiler-owned hidden-argument layout/lowering,
+then struct methods and caller-destination returns. Scalar local/parameter span
+elimination and native-indexer specialization remain separate optimization work.
 
 Remaining Step 1 work, requiring separate design approval:
 

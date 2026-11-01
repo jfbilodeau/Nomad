@@ -6,6 +6,7 @@
 #include <nomad/compiler/CompilerContext.hpp>
 
 #include <nomad/script/ClassType.hpp>
+#include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
@@ -16,6 +17,7 @@
 
 #include <array>
 #include <span>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -862,6 +864,127 @@ BOOST_AUTO_TEST_CASE(script_receiver_restores_after_nested_host_construction_and
         BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(compiled_field_access_uses_full_width_physical_offsets_and_native_fallback) {
+    Runtime runtime;
+    const Type* prefix = runtime.getIntegerType();
+    for (auto index = 0; prefix->getSize() <= toNomadIndex(NOMAD_ID_MAX); ++index) {
+        const auto name = "FieldPadding" + std::to_string(index);
+        const auto id = runtime.registerStruct(name);
+        BOOST_REQUIRE(runtime.registerProperty(id, "left", prefix).isValid());
+        BOOST_REQUIRE(runtime.registerProperty(id, "right", prefix).isValid());
+        runtime.finalizeCompositeFieldLayout(id);
+        prefix = runtime.getTypeByName(name);
+    }
+    const auto ownerId = runtime.registerClass("PhysicalFields", ClassMode::Closed);
+    const auto prefixId = runtime.registerProperty(ownerId, "padding", prefix);
+    const auto numberId = runtime.registerProperty(ownerId, "number", runtime.getIntegerType());
+    const auto textId = runtime.registerProperty(ownerId, "text", runtime.getStringType());
+    auto accessorCalls = 0;
+    const auto accessorId = runtime.addProperty(ownerId, {
+        .valueType = runtime.getIntegerType(),
+        .name = "accessor",
+        .getter = [&](VirtualMachine*, RuntimeValue& result) {
+            ++accessorCalls;
+            result.setIntegerValue(41);
+        }
+    });
+    BOOST_REQUIRE(prefixId.isValid());
+    BOOST_REQUIRE(numberId.isValid());
+    BOOST_REQUIRE(textId.isValid());
+    BOOST_REQUIRE(accessorId.isValid());
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    const auto* owner = runtime.getTypeByName("PhysicalFields")->asClassType();
+    const auto wide = prefix->getSize();
+    BOOST_TEST(wide > NOMAD_ID_MAX);
+    const auto functionId = runtime.registerScriptFunction("fieldEmission", "fields.nomad", "");
+    auto* function = runtime.getScriptFunction(functionId);
+    function->setReturnType(runtime.getVoidType());
+    auto compiler = runtime.createCompiler();
+    function->setFunctionStart(runtime.getInstructions().size());
+    const auto numberLoad = runtime.getInstructions().size();
+    compiler->addLoadProperty(numberId);
+    const auto numberStore = runtime.getInstructions().size();
+    compiler->addStoreProperty(numberId);
+    const auto textLoad = runtime.getInstructions().size();
+    compiler->addLoadProperty(textId);
+    const auto textStore = runtime.getInstructions().size();
+    compiler->addStoreProperty(textId);
+    const auto nativeLoad = runtime.getInstructions().size();
+    compiler->addLoadProperty(accessorId);
+    const auto aggregateLoad = runtime.getInstructions().size();
+    compiler->addLoadProperty(prefixId);
+    function->setFunctionEnd(runtime.getInstructions().size());
+    const auto& instructions = runtime.getInstructions();
+    BOOST_TEST(instructions[numberLoad + 1].value.getIndexValue() == wide);
+    BOOST_TEST(instructions[numberStore + 1].value.getIndexValue() == wide);
+    BOOST_TEST(instructions[textLoad + 1].value.getIndexValue() == wide + 1);
+    BOOST_TEST(instructions[textStore + 1].value.getIndexValue() == wide + 1);
+    BOOST_TEST(instructions[nativeLoad + 1].value.getIdValue() == accessorId.id);
+    BOOST_TEST(runtime.getInstructionId(instructions[aggregateLoad].fn).id ==
+        runtime.getInstructionId(OpCodes::op_native_property_get).id);
+    std::ostringstream dump;
+    dumpInstructions(runtime, *function, dump);
+    BOOST_TEST(dump.str().find(std::to_string(wide + 1)) != NomadString::npos);
+    BOOST_TEST(dump.str().find(OpCodes::op_object_field_set) != NomadString::npos);
+    ScriptObject object(owner);
+    VirtualMachine machine(&runtime);
+    RuntimeValue receiver;
+    receiver.setObjectValue(&object);
+    machine.setIntermediate(receiver);
+    const auto execute = [&](const NomadIndex address) {
+        machine.jump(address + 1);
+        instructions[address].fn(&machine);
+    };
+    machine.setIntegerResult(17);
+    execute(numberStore);
+    execute(numberLoad);
+    BOOST_TEST(machine.getIntegerResult() == 17);
+    BOOST_TEST(object.getField(owner->getFieldIndex(numberId)).getIntegerValue() == 17);
+    machine.setStringResult("retained");
+    execute(textStore);
+    BOOST_TEST(machine.getStringResult()->getReferenceCount() == 2U);
+    execute(textStore);
+    BOOST_TEST(machine.getStringResult()->getReferenceCount() == 2U);
+    machine.freeObjectResult();
+    execute(textLoad);
+    BOOST_TEST(NomadString(machine.getResult().getStringValue()) == "retained");
+    BOOST_TEST(machine.getStringResult()->getReferenceCount() == 2U);
+    machine.freeObjectResult();
+    execute(nativeLoad);
+    BOOST_TEST(accessorCalls == 1);
+    BOOST_TEST(machine.getIntegerResult() == 41);
+    machine.setIntermediate(RuntimeValue{});
+    BOOST_CHECK_THROW(execute(numberLoad), VirtualMachineException);
+    RuntimeValue nativeReceiver;
+    nativeReceiver.setStringValue("not script storage");
+    machine.setIntermediate(nativeReceiver);
+    BOOST_CHECK_THROW(execute(numberStore), VirtualMachineException);
+    machine.setIntermediate(RuntimeValue{});
+    nativeReceiver.freeObjectValue();
+}
+
+BOOST_AUTO_TEST_CASE(specialized_fields_preserve_errors_for_instances_created_before_field_extension) {
+    Runtime runtime;
+    const auto* owner = createTestType(runtime, "ExtendedFields");
+    const auto beforeId = runtime.registerProperty(owner->getId(), "before", runtime.getIntegerType());
+    BOOST_REQUIRE(beforeId.isValid());
+    ScriptObject object(owner);
+    const auto afterId = runtime.registerProperty(owner->getId(), "after", runtime.getIntegerType());
+    BOOST_REQUIRE(afterId.isValid());
+    auto compiler = runtime.createCompiler();
+    const auto address = runtime.getInstructions().size();
+    compiler->addLoadProperty(afterId);
+    VirtualMachine machine(&runtime);
+    RuntimeValue receiver;
+    receiver.setObjectValue(&object);
+    machine.setIntermediate(receiver);
+    machine.jump(address + 1);
+    BOOST_CHECK_THROW(runtime.getInstructions()[address].fn(&machine), VirtualMachineException);
+    BOOST_TEST(object.getStorageSize() == 1U);
+    BOOST_TEST(object.getFieldCount() == 1U);
+    machine.setIntermediate(RuntimeValue{});
 }
 
 BOOST_AUTO_TEST_SUITE_END()

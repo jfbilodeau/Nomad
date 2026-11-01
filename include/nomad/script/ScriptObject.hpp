@@ -20,9 +20,13 @@ public:
 
     [[nodiscard]] const ClassType* getClassType() const;
     [[nodiscard]] NomadIndex getFieldCount() const;
+    [[nodiscard]] NomadIndex getStorageSize() const { return m_values.size(); }
 
     [[nodiscard]] const RuntimeValue& getField(NomadIndex index) const;
     void setField(NomadIndex index, const RuntimeValue& value);
+    // Trusted physical slot offset, supplied by compiled field access.
+    [[nodiscard]] RuntimeValue& getStorageValue(NomadIndex offset) { return m_values.data()[offset]; }
+    [[nodiscard]] const RuntimeValue& getStorageValue(NomadIndex offset) const { return m_values.data()[offset]; }
     [[nodiscard]] std::span<RuntimeValue> getFieldStorage(NomadIndex index);
     [[nodiscard]] std::span<const RuntimeValue> getFieldStorage(NomadIndex index) const;
     void setFieldStorage(

@@ -1217,6 +1217,34 @@ void Compiler::compileFunction(const FunctionCompilation& source) {
     function->setFunctionEnd(m_instructions.size());
 }
 
+void Compiler::addLoadProperty(const PropertyId id) {
+    addPropertyAccess(id, false);
+}
+
+void Compiler::addStoreProperty(const PropertyId id) {
+    addPropertyAccess(id, true);
+}
+
+void Compiler::addPropertyAccess(const PropertyId id, const bool write) {
+    const auto* property = m_runtime->getProperty(id);
+    if (property == nullptr) {
+        reportInternalError("Invalid property for compiled access");
+    }
+    const auto* type = property->getValueType();
+    if (property->asNativeProperty() != nullptr || property->getClassType() == nullptr ||
+        type->asStructType() != nullptr || type->getSize() != 1) {
+        addOpCode(write ? OpCodes::op_native_property_set : OpCodes::op_native_property_get);
+        addId(id.id);
+        return;
+    }
+    if (type->getStorage() == TypeStorage::Object) {
+        addOpCode(write ? OpCodes::op_object_field_set : OpCodes::op_object_field_load_r);
+    } else {
+        addOpCode(write ? OpCodes::op_field_set : OpCodes::op_field_load_r);
+    }
+    addIndex(property->getClassType()->getFieldOffset(id));
+}
+
 void Compiler::compileObjectInitializer(const FunctionCompilation& source) {
     auto* function = source.function;
     const auto* owner = function->getClassType()->asClassType();
@@ -1230,8 +1258,7 @@ void Compiler::compileObjectInitializer(const FunctionCompilation& source) {
         addOpCode(OpCodes::op_code_load_default_r);
         addId(property->getValueType()->getId().id);
         addLoadReceiver(function, ExpressionTarget::Intermediate);
-        addOpCode(OpCodes::op_native_property_set);
-        addId(property->getId().id);
+        addStoreProperty(property->getId());
         property->getValueType()->emitFreeResult(*this);
         owner->emitFreeIntermediate(*this);
     }

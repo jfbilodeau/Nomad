@@ -8,6 +8,7 @@
 
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/Hub.hpp>
+#include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/VariableContext.hpp>
@@ -15,6 +16,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -988,6 +990,37 @@ BOOST_AUTO_TEST_CASE(missing_native_method_arguments_still_report_source_errors)
     BOOST_TEST(!fixture.compile());
     BOOST_REQUIRE(fixture.hasError("No overload of 'value.contains' accepts 0 argument(s)"));
     BOOST_TEST(!fixture.hasError("Internal error"));
+}
+
+BOOST_AUTO_TEST_CASE(stored_property_opcodes_preserve_initializer_assignment_and_receiver_ownership) {
+    LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "class Child\nnumber = 2\nlabel = \"child\"\nend\n"
+        "class Owner\nnumber = 1\nlabel = \"owner\"\nchild = new Child\n"
+        "init number:int\nthis.number = number\nend\nend\n"
+        "fun replace owner:Owner\nowner.child = new Child\nreturn \"replacement\"\nend\n"
+        "owner = new Owner 17\nowner.number = owner.number + owner.child.number\n"
+        "owner.label = owner.label\nowner.child = owner.child\n"
+        "owner.label = replace owner\nreturn owner.label");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    std::ostringstream dump;
+    dumpInstructions(runtime, dump);
+    for (const auto& name : {OpCodes::op_field_load_r, OpCodes::op_field_set,
+        OpCodes::op_object_field_load_r, OpCodes::op_object_field_set}) {
+        BOOST_TEST(dump.str().find(name) != NomadString::npos);
+    }
+    BOOST_TEST(dump.str().find(OpCodes::op_native_property_get) == NomadString::npos);
+    BOOST_TEST(dump.str().find(OpCodes::op_native_property_set) == NomadString::npos);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE(!outcome.fault.has_value());
+        BOOST_TEST(outcome.text == "replacement");
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

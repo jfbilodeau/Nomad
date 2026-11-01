@@ -477,8 +477,7 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
             compiler->reportInternalError("Unresolved class field: " + m_identifier);
         }
         compiler->addLoadReceiver(function, ExpressionTarget::Intermediate);
-        compiler->addOpCode(op_native_property_set);
-        compiler->addId(property->getId().id);
+        compiler->addStoreProperty(property->getId());
         m_expression->getType()->emitFreeResult(*compiler);
         receiverType->emitFreeIntermediate(*compiler);
         return;

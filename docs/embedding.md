@@ -1068,6 +1068,23 @@ are later added to that class. Native properties have no stored-field index.
 and support only single-slot, non-struct fields. Their physical offsets may
 differ from their indices when an earlier field is a struct.
 
+Compiled single-slot scalar/reference stored-property access uses specialized
+opcodes with full-width physical offsets. The compiler selects stored versus
+native access and the field's ownership behavior; execution does not resolve
+property IDs, field indices, declared types, or stored-field widths.
+Reference writes copy/retain the result before releasing the previous field;
+the result remains owned by the caller. Self-assignment preserves ownership.
+Explicit initializers, inferred defaults, constructor writes, and ordinary
+property reads/assignments use the same compiler selection path.
+
+The VM still checks that the receiver is a non-null `ScriptObject` and that the
+offset fits its allocated storage. These facts are not established by the
+compiler for all host/native receivers or instances allocated before an open
+class gained fields. `getStorageSize()` reports actual allocated slots;
+`getStorageValue(offset)` is a trusted unchecked physical-slot API.
+Native accessors and checked host/interpreter property APIs retain their existing
+behavior. Aggregate stored-field lowering remains unsupported.
+
 Use `getFieldStorage(index)` for a borrowed contiguous view of a stored field,
 including an inline struct. The const overload returns read-only slots; the
 mutable overload permits direct mutation. The object must remain alive throughout

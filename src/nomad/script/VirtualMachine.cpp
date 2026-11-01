@@ -482,6 +482,17 @@ void VirtualMachine::setProperty(
     object->setField(property->getClassType()->getFieldIndex(memberId), value);
 }
 
+RuntimeValue& VirtualMachine::getStoredField(const NomadIndex offset) {
+    auto* object = dynamic_cast<ScriptObject*>(m_intermediate.getObjectValue());
+    if (object == nullptr) {
+        fault("Stored property receiver has no matching field storage");
+    }
+    if (offset >= object->getStorageSize()) {
+        fault("Script object field index is out of bounds");
+    }
+    return object->getStorageValue(offset);
+}
+
 void VirtualMachine::setNativeProperty(
     const PropertyId memberId,
     const RuntimeValue& receiver,

@@ -288,6 +288,30 @@ void op_native_index_get(VirtualMachine* interpreter) {
     callNativeIndexer(interpreter, false);
 }
 
+void op_field_load_r(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->setResult(interpreter->getStoredField(offset));
+}
+
+void op_object_field_load_r(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->getResult().copyObjectValue(interpreter->getStoredField(offset));
+}
+
+void op_field_set(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->getStoredField(offset) = interpreter->getResult();
+}
+
+void op_object_field_set(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    auto& field = interpreter->getStoredField(offset);
+    RuntimeValue copy;
+    copy.copyObjectValue(interpreter->getResult());
+    field.freeObjectValue();
+    field = copy;
+}
+
 void op_native_index_set(VirtualMachine* interpreter) {
     callNativeIndexer(interpreter, true);
 }

@@ -862,8 +862,7 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
     m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
 
     if (m_memberType == MemberType::Property) {
-        compiler->addOpCode(op_native_property_get);
-        compiler->addId(std::get<PropertyId>(m_memberId).id);
+        compiler->addLoadProperty(std::get<PropertyId>(m_memberId));
         receiverType->emitFreeIntermediate(*compiler);
         compiler->addMoveResult(getType(), target);
         return;
@@ -965,8 +964,7 @@ void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptCallabl
     compiler->addPushIntermediate(receiverType);
     expression->compile(compiler, function, ExpressionTarget::Result);
     compiler->addPopIntermediate(receiverType);
-    compiler->addOpCode(op_native_property_set);
-    compiler->addId(std::get<PropertyId>(m_memberId).id);
+    compiler->addStoreProperty(std::get<PropertyId>(m_memberId));
     propertyType->emitFreeResult(*compiler);
     receiverType->emitFreeIntermediate(*compiler);
 }

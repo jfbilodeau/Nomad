@@ -140,6 +140,8 @@ public:
     void addFunctionEntry(const ScriptCallableBase* function);
     void addLoadReceiver(ScriptCallableBase* function, ExpressionTarget target);
     void addStoreParameter(NomadIndex offset, const Type* type);
+    void addLoadProperty(PropertyId id);
+    void addStoreProperty(PropertyId id);
     NomadIndex addId(NomadId id) override;
     NomadIndex addIndex(NomadIndex index) override;
     NomadIndex addInteger(NomadInteger value);
@@ -244,6 +246,7 @@ public:
     NomadString generateFunctionName(const NomadString& name, const ScriptCallableBase* function, NomadIndex line);
 
 private:
+    void addPropertyAccess(PropertyId id, bool write);
     std::vector<std::unique_ptr<DeferredType>> m_deferredTypes;
     std::vector<std::unique_ptr<DeferredTypeTarget>> m_deferredTypeTargets;
 

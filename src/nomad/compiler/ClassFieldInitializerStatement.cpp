@@ -19,8 +19,7 @@ void ClassFieldInitializerStatement::onCompile(Compiler* compiler, ScriptCallabl
     const auto* receiverType = function->getClassType();
     initializer->compile(compiler, function, ExpressionTarget::Result);
     compiler->addLoadReceiver(function, ExpressionTarget::Intermediate);
-    compiler->addOpCode(op_native_property_set);
-    compiler->addId(m_member->getPropertyId().id);
+    compiler->addStoreProperty(m_member->getPropertyId());
     initializer->getType()->emitFreeResult(*compiler);
     receiverType->emitFreeIntermediate(*compiler);
 }
