@@ -92,6 +92,12 @@ public:
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptCallableBase* function);
     // The expression must have been resolved first.
     void compile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target);
+    // Destination must be a resolved same-type local, disjoint from borrowed sources or identical.
+    void compileIntoLocal(
+        Compiler* compiler,
+        ScriptCallableBase* function,
+        VariableId destination
+    );
     [[nodiscard]] virtual bool isWritable() const;
     [[nodiscard]] virtual IdentifierExpression* asIdentifierExpression();
     [[nodiscard]] virtual const IdentifierExpression* asIdentifierExpression() const;
@@ -129,6 +135,11 @@ protected:
 
     virtual void onResolve(CompilerContext* context, ScriptCallableBase* function) = 0;
     virtual void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) = 0;
+    virtual void onCompileIntoLocal(
+        Compiler* compiler,
+        ScriptCallableBase* function,
+        NomadIndex destinationOffset
+    );
     virtual void onEvaluate(InterpreterContext& context) const;
     [[nodiscard]]
     virtual const Statement* onGetStatement() const;

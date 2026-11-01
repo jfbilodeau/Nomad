@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1AE have been reviewed; Step 1AF below is implemented and awaiting
+Steps 1A through 1AF have been reviewed; Step 1AG below is implemented and awaiting
 review. Aggregate loads, stores, and calls remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1265,6 +1265,41 @@ Validation:
 Next slice after review: design aggregate expression destinations and compiler
 temporary allocation. Physical parameter/call lowering, borrowed receiver and
 return destinations, and object-field addressing follow separately.
+
+### Step 1AG: Local-destination expression entry point
+
+Approved scope and implementation:
+
+- Add `Expression::compileIntoLocal` with a resolved same-type local VariableId.
+  Emission translates the ID to its physical offset.
+- Scalar expressions retain their compilation path and replace the destination.
+- Struct-local identifier expressions use existing type-owned local copy
+  emission; source/destination must be disjoint or identical.
+- Other struct expression sources remain explicitly unsupported.
+- Expression cache cleanup now releases only an actually cached value, rather
+  than treating the single-slot cache of a type-only expression as aggregate
+  storage.
+- No new opcodes, automatic temporary allocation, assignment rewiring, parameter
+  changes, or struct syntax are introduced.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, and binding regression groups passed.
+- Execution coverage verifies nested struct-local copying, scalar independence,
+  reference sharing, integer/string literal destinations, and repeated-call
+  cleanup without leaked strings.
+- Empty struct destinations and identical locals emit no instructions.
+- Unsupported struct parameter/call sources, mismatched destination types, and
+  unresolved expressions fail without writing instructions.
+- Type-only aggregate expressions are destroyed without freeing aggregate
+  storage through their single-slot cache.
+- All four documentation preparation tests and whitespace checks passed.
+- This verifies the compiler entry point, not struct syntax or gameplay.
+
+Next slice after review: compiler-owned aggregate destinations and assignment
+staging allocated during resolution, before physical frame sizes are computed.
+Parameter/call lowering and borrowed receiver/return destinations follow.
 
 Remaining Step 1 work, requiring separate design approval:
 

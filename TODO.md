@@ -31,6 +31,7 @@ Things the author wants to do.
 [ ] Auto publish Nomad plugin to VS Code extensions
 [ ] Compile to binary
 [ ] LLVM
+[ ] Compiler inline functions
 [ ] Gen game docs for modding
 [ ] Implicit constructor name:
 ```nomad

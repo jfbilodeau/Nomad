@@ -748,6 +748,16 @@ result there across these operations or treat the register afterward as an
 additional owned copy. They do not allocate scratch locals or
 provide aggregate expression, parameter, or object-field lowering.
 
+`Expression::compileIntoLocal(compiler, callable, destinationId)` compiles a
+resolved expression into a same-type local. Scalar expressions replace the
+local using their existing result-register path. Struct-local identifiers copy
+into disjoint local storage; identical source/destination locals are a no-op.
+Other struct expression sources are not yet supported. The destination ID is
+resolved to a physical offset during emission, and its storage must be reserved
+before execution. This API does not allocate temporary locals or stage assignment
+targets. It follows the same result-register ownership preconditions as local
+copy emission.
+
 An offset query requires resolved sizes for the preceding variables; a total-size
 query requires resolved sizes for every variable. Missing types, deferred-size
 queries, and slot-count overflow throw `NomadException`. An invalid or out-of-range

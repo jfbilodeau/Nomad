@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
 #include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/CompilerException.hpp>
+#include <nomad/compiler/Expression.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
@@ -630,6 +632,114 @@ BOOST_AUTO_TEST_CASE(local_assignment_stages_overlapping_reference_ranges_in_bot
         runtime.executeFunction(id, {}, result);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
     }
+}
+
+BOOST_AUTO_TEST_CASE(expressions_compile_into_local_storage_without_aggregate_registers) {
+    Runtime runtime;
+    const auto innerId = runtime.registerStruct("ExpressionPayload");
+    const auto outerId = runtime.registerStruct("ExpressionWrapper");
+    const auto* inner = runtime.getTypeByName("ExpressionPayload")->asStructType();
+    const auto* outer = runtime.getTypeByName("ExpressionWrapper")->asStructType();
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "payload", inner).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "label", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(outerId);
+    const auto id = runtime.registerScriptFunction("expressionDestinations", "expressions.nomad", "");
+    auto* function = runtime.getScriptFunction(id);
+    BOOST_REQUIRE(function != nullptr);
+    function->setReturnType(runtime.getIntegerType());
+    const auto source = function->registerVariable("source", outer);
+    const auto destination = function->registerVariable("destination", outer);
+    const auto number = function->registerVariable("number", runtime.getIntegerType());
+    const auto text = function->registerVariable("text", runtime.getStringType());
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    IdentifierExpression sourceExpression(nullptr, 1, 1, "source");
+    IntegerLiteral numberExpression(nullptr, 1, 1, 47);
+    StringLiteral textExpression(nullptr, 1, 1, "literal");
+    BOOST_REQUIRE(sourceExpression.resolve(&context, function));
+    BOOST_REQUIRE(numberExpression.resolve(&context, function));
+    BOOST_REQUIRE(textExpression.resolve(&context, function));
+    BOOST_TEST(!sourceExpression.hasValue());
+    const auto initialize = runtime.registerNativeFunction("initializeExpressionLocals",
+        [&](VirtualMachine* machine) {
+            const auto values = machine->getLocalStorage(function->getVariableOffset(source), outer->getSize());
+            values[0].setIntegerValue(17);
+            values[1].freeObjectValue();
+            values[2].freeObjectValue();
+            values[1].setStringValue("nested");
+            values[2].setStringValue("label");
+        }, {}, runtime.getVoidType(), "");
+    const auto inspect = runtime.registerNativeFunction("inspectExpressionDestinations",
+        [&](VirtualMachine* machine) {
+            const auto sourceValues = machine->getLocalStorage(function->getVariableOffset(source), outer->getSize());
+            const auto destinationValues = machine->getLocalStorage(
+                function->getVariableOffset(destination), outer->getSize());
+            BOOST_TEST(destinationValues[0].getIntegerValue() == 17);
+            BOOST_TEST(destinationValues[1].getObjectValue() == sourceValues[1].getObjectValue());
+            BOOST_TEST(destinationValues[2].getObjectValue() == sourceValues[2].getObjectValue());
+            BOOST_TEST(sourceValues[1].getObjectValue()->getReferenceCount() == 2U);
+            BOOST_TEST(machine->getFunctionIntegerVariableValue(number) == 47);
+            BOOST_TEST(NomadString(machine->getFunctionStringVariableValue(text)->getString()) == "literal");
+            destinationValues[0].setIntegerValue(23);
+            BOOST_TEST(sourceValues[0].getIntegerValue() == 17);
+        }, {}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(initialize.isValid() && inspect.isValid());
+    function->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(function);
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(initialize.id);
+    sourceExpression.compileIntoLocal(compiler.get(), function, destination);
+    sourceExpression.compileIntoLocal(compiler.get(), function, source);
+    numberExpression.compileIntoLocal(compiler.get(), function, number);
+    textExpression.compileIntoLocal(compiler.get(), function, text);
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(inspect.id);
+    compiler->addLoadFunctionVariable(function->getVariableOffset(number), runtime.getIntegerType(),
+        ExpressionTarget::Result);
+    compiler->addFunctionReturn(function);
+    function->setFunctionEnd(runtime.getInstructions().size());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    for (auto index = 0; index < 2; ++index) {
+        RuntimeValue result;
+        runtime.executeFunction(id, {}, result);
+        BOOST_TEST(result.getIntegerValue() == 47);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(local_expression_destinations_handle_empty_structs_and_reject_unsupported_sources) {
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("EmptyExpression");
+    const auto* empty = runtime.getTypeByName("EmptyExpression")->asStructType();
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    ScriptFunction function(CallableId{}, "destinationChecks", "checks.nomad", "");
+    const auto source = function.registerVariable("source", empty);
+    const auto destination = function.registerVariable("destination", empty);
+    const auto wrongType = function.registerVariable("number", runtime.getIntegerType());
+    function.addParameter("parameter", empty, "");
+    BOOST_REQUIRE(runtime.registerNativeFunction("getEmptyExpression",
+        [](VirtualMachine*) {}, {}, empty, "").isValid());
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    CompilerContext context(&compiler);
+    IdentifierExpression expression(nullptr, 1, 1, "source");
+    IdentifierExpression parameter(nullptr, 1, 1, "parameter");
+    FunctionCallExpression unsupported(nullptr, 1, 1, "getEmptyExpression");
+    IntegerLiteral unresolved(nullptr, 1, 1, 3);
+    BOOST_REQUIRE(expression.resolve(&context, &function));
+    BOOST_REQUIRE(parameter.resolve(&context, &function));
+    BOOST_REQUIRE(unsupported.resolve(&context, &function));
+    const auto initialSize = instructions.size();
+    expression.compileIntoLocal(&compiler, &function, destination);
+    expression.compileIntoLocal(&compiler, &function, source);
+    BOOST_TEST(instructions.size() == initialSize);
+    BOOST_CHECK_THROW(parameter.compileIntoLocal(&compiler, &function, destination), CompilerException);
+    BOOST_CHECK_THROW(unsupported.compileIntoLocal(&compiler, &function, destination), CompilerException);
+    BOOST_CHECK_THROW(expression.compileIntoLocal(&compiler, &function, wrongType), NomadBug);
+    BOOST_CHECK_THROW(unresolved.compileIntoLocal(&compiler, &function, wrongType), NomadBug);
+    BOOST_TEST(instructions.size() == initialSize);
 }
 
 BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_without_writing_instructions) {

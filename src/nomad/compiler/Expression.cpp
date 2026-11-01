@@ -37,7 +37,7 @@ Expression::Expression(const Expression* parent, const NomadIndex line, const No
 { }
 
 Expression::~Expression() {
-    if (m_type != nullptr) {
+    if (m_type != nullptr && m_hasValue) {
         m_type->freeValue(&m_value);
     }
 }
@@ -60,6 +60,30 @@ void Expression::compile(Compiler* compiler, ScriptCallableBase* function, const
     } else {
         onCompile(compiler, function, target);
     }
+}
+
+void Expression::compileIntoLocal(
+    Compiler* compiler,
+    ScriptCallableBase* function,
+    const VariableId destination
+) {
+    if (m_type == nullptr || m_type->isVoid() || function->getVariableType(destination) != m_type) {
+        compiler->reportInternalError("Expression local destination requires a resolved matching value type");
+    }
+    onCompileIntoLocal(compiler, function, function->getVariableOffset(destination));
+}
+
+void Expression::onCompileIntoLocal(
+    Compiler* compiler,
+    ScriptCallableBase* function,
+    const NomadIndex destinationOffset
+) {
+    if (m_type->asStructType() != nullptr) {
+        compiler->reportError("Struct expression local destination is not supported for this expression");
+    }
+    compile(compiler, function, ExpressionTarget::Result);
+    m_type->emitFreeFunctionVariable(*compiler, destinationOffset);
+    m_type->emitStoreFunctionVariable(*compiler, destinationOffset);
 }
 
 bool Expression::isWritable() const {
@@ -1768,6 +1792,22 @@ void IdentifierExpression::onCompile(Compiler* compiler, ScriptCallableBase* fun
 
 bool IdentifierExpression::isWritable() const {
     return m_writable;
+}
+
+void IdentifierExpression::onCompileIntoLocal(
+    Compiler* compiler,
+    ScriptCallableBase* function,
+    const NomadIndex destinationOffset
+) {
+    if (getType()->asStructType() == nullptr) {
+        Expression::onCompileIntoLocal(compiler, function, destinationOffset);
+        return;
+    }
+    if (m_identifierDefinition.identifierType != IdentifierType::FunctionVariable) {
+        compiler->reportError("Struct local destinations currently support only local variable sources");
+    }
+    getType()->emitCopyFunctionVariable(
+        *compiler, function->getVariableOffset(m_identifierDefinition.variableId), destinationOffset);
 }
 
 std::unique_ptr<TypedValue> IdentifierExpression::getInitialValue(Compiler* compiler) const {
