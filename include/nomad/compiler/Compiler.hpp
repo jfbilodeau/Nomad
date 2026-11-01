@@ -139,7 +139,7 @@ public:
     void addFunctionReturn(const ScriptCallableBase* function);
     void addFunctionEntry(const ScriptCallableBase* function);
     void addLoadReceiver(ScriptCallableBase* function, ExpressionTarget target);
-    void addStoreParameter(NomadId parameterId, const Type* type);
+    void addStoreParameter(NomadIndex offset, const Type* type);
     NomadIndex addId(NomadId id) override;
     NomadIndex addIndex(NomadIndex index) override;
     NomadIndex addInteger(NomadInteger value);
@@ -153,7 +153,7 @@ public:
     NomadIndex addLoadFunctionVariable(NomadIndex offset, const Type* type, ExpressionTarget target);
     NomadIndex addLoadDynamicVariable(DynamicVariableId variableId, const Type* type, ExpressionTarget target);
     NomadIndex addLoadContextVariable(ContextVariableId contextVariableId, const Type* type, ExpressionTarget target);
-    NomadIndex addLoadParameter(NomadIndex parameterId, const Type* type, ExpressionTarget target);
+    NomadIndex addLoadParameter(NomadIndex offset, const Type* type, ExpressionTarget target);
 
     NomadIndex addPushResult(const Type* type);
     // Moves a freshly computed value from the `r` register to target. String buffers are moved, not copied.

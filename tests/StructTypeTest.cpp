@@ -4,6 +4,7 @@
 #include <nomad/compiler/CompilerException.hpp>
 #include <nomad/compiler/Expression.hpp>
 
+#include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>
@@ -14,6 +15,7 @@
 
 #include <array>
 #include <limits>
+#include <sstream>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -866,6 +868,100 @@ BOOST_AUTO_TEST_CASE(empty_struct_assignment_staging_occupies_no_physical_slots)
     const auto initialSize = instructions.size();
     assignment.compile(&compiler, &function);
     BOOST_TEST(instructions.size() == initialSize);
+}
+
+BOOST_AUTO_TEST_CASE(scalar_parameter_bytecode_uses_offsets_after_wide_parameters) {
+    Runtime runtime;
+    const auto paddingId = runtime.registerStruct("ParameterPadding");
+    const auto* padding = runtime.getTypeByName("ParameterPadding")->asStructType();
+    for (const auto* name : {"x", "y", "z"}) {
+        BOOST_REQUIRE(runtime.registerProperty(paddingId, name, runtime.getIntegerType()).isValid());
+    }
+    runtime.finalizeCompositeFieldLayout(paddingId);
+    const auto innerId = runtime.registerScriptFunction("offsetParameters", "parameters.nomad", "");
+    auto* inner = runtime.getScriptFunction(innerId);
+    BOOST_REQUIRE(inner != nullptr);
+    inner->setReturnType(runtime.getIntegerType());
+    inner->addParameter("padding", padding, "");
+    const auto textId = inner->addParameter("text", runtime.getStringType(), "");
+    const auto numberId = inner->addParameter("number", runtime.getIntegerType(), "");
+    BOOST_TEST(inner->getParameterOffset(textId) == 3U);
+    BOOST_TEST(inner->getParameterOffset(numberId) == 4U);
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    AssignmentStatement textAssignment(1, 1, "text",
+        std::make_unique<StringLiteral>(nullptr, 1, 1, "replacement"));
+    AssignmentStatement numberAssignment(2, 1, "number",
+        std::make_unique<IntegerLiteral>(nullptr, 2, 1, 47));
+    IdentifierExpression textExpression(nullptr, 3, 1, "text");
+    IdentifierExpression numberExpression(nullptr, 3, 1, "number");
+    BOOST_REQUIRE(textAssignment.resolve(&context, inner));
+    BOOST_REQUIRE(numberAssignment.resolve(&context, inner));
+    BOOST_REQUIRE(textExpression.resolve(&context, inner));
+    BOOST_REQUIRE(numberExpression.resolve(&context, inner));
+    const auto inspect = runtime.registerNativeFunction("inspectOffsetParameters",
+        [&](VirtualMachine* machine) {
+            const auto point = machine->getEnclosingParameterStorage(0, 3);
+            BOOST_TEST(point[0].getIntegerValue() == 1);
+            BOOST_TEST(point[2].getIntegerValue() == 3);
+            BOOST_TEST(NomadString(machine->getEnclosingParameterStorage(3, 1)[0].getStringValue()) == "replacement");
+            BOOST_TEST(machine->getEnclosingParameterStorage(4, 1)[0].getIntegerValue() == 47);
+        }, {}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(inspect.isValid());
+    inner->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(inner);
+    textAssignment.compile(compiler.get(), inner);
+    numberAssignment.compile(compiler.get(), inner);
+    for (const auto target : {ExpressionTarget::Result, ExpressionTarget::Intermediate, ExpressionTarget::Stack}) {
+        textExpression.compile(compiler.get(), inner, target);
+        if (target == ExpressionTarget::Result) {
+            runtime.getStringType()->emitFreeResult(*compiler);
+        } else if (target == ExpressionTarget::Intermediate) {
+            runtime.getStringType()->emitFreeIntermediate(*compiler);
+        } else {
+            runtime.getStringType()->emitFreeStackValue(*compiler, 0);
+            compiler->addOpCode(OpCodes::op_pop_n);
+            compiler->addIndex(1);
+        }
+        numberExpression.compile(compiler.get(), inner, target);
+        if (target == ExpressionTarget::Stack) {
+            compiler->addOpCode(OpCodes::op_pop_n);
+            compiler->addIndex(1);
+        }
+    }
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(inspect.id);
+    numberExpression.compile(compiler.get(), inner, ExpressionTarget::Result);
+    compiler->addFunctionReturn(inner);
+    inner->setFunctionEnd(runtime.getInstructions().size());
+    const auto outerId = runtime.registerScriptFunction("callOffsetParameters", "caller.nomad", "");
+    auto* outer = runtime.getScriptFunction(outerId);
+    BOOST_REQUIRE(outer != nullptr);
+    outer->setReturnType(runtime.getIntegerType());
+    outer->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(outer);
+    compiler->addLoadIntegerValue(99, ExpressionTarget::Stack);
+    compiler->addLoadStringValue("original", ExpressionTarget::Stack);
+    for (const auto value : {1, 2, 3}) {
+        compiler->addLoadIntegerValue(value, ExpressionTarget::Stack);
+    }
+    compiler->addOpCode(OpCodes::op_call_script_function);
+    compiler->addIndex(inner->getFunctionStart());
+    runtime.getStringType()->emitFreeStackValue(*compiler, 3);
+    compiler->addOpCode(OpCodes::op_pop_n);
+    compiler->addIndex(5);
+    compiler->addFunctionReturn(outer);
+    outer->setFunctionEnd(runtime.getInstructions().size());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    for (auto index = 0; index < 2; ++index) {
+        RuntimeValue result;
+        runtime.executeFunction(outerId, {}, result);
+        BOOST_TEST(result.getIntegerValue() == 47);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    }
+    std::ostringstream dump;
+    dumpInstructions(runtime, *inner, dump);
+    BOOST_TEST(dump.str().find("op_parameter_load_r") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_without_writing_instructions) {

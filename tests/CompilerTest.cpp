@@ -64,8 +64,8 @@ BOOST_AUTO_TEST_CASE(type_load_emission_preserves_every_target_and_operand) {
             for (auto index = NomadIndex{0}; index < operands.size(); ++index) {
                 BOOST_TEST(runtime.getInstructionId(instructions[index * 2].fn).id ==
                     runtime.getInstructionId(names[index * 3 + targetIndex]).id);
-                if (index == 0) {
-                    BOOST_TEST(instructions[1].value.getIndexValue() == toNomadIndex(operands[0]));
+                if (index <= 1) {
+                    BOOST_TEST(instructions[index * 2 + 1].value.getIndexValue() == toNomadIndex(operands[index]));
                 } else {
                     BOOST_TEST(instructions[index * 2 + 1].value.getIdValue() == operands[index]);
                 }
@@ -94,6 +94,23 @@ BOOST_AUTO_TEST_CASE(local_operands_preserve_full_width_offsets) {
         BOOST_TEST(instructions[operand].value.getIndexValue() == offset);
     }
     runtime.getStringType()->emitFreeFunctionVariable(compiler, offset);
+    BOOST_TEST(instructions.back().value.getIndexValue() == offset);
+}
+
+BOOST_AUTO_TEST_CASE(parameter_operands_preserve_full_width_offsets) {
+    Runtime runtime;
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    const auto offset = toNomadIndex(NOMAD_ID_MAX) + 1;
+    for (const auto* type : {runtime.getIntegerType(), static_cast<const Type*>(runtime.getStringType())}) {
+        for (const auto target : {ExpressionTarget::Result, ExpressionTarget::Intermediate, ExpressionTarget::Stack}) {
+            const auto operand = type->emitLoadParameter(compiler, offset, target);
+            BOOST_TEST(instructions[operand].value.getIndexValue() == offset);
+        }
+        const auto operand = type->emitStoreParameter(compiler, offset);
+        BOOST_TEST(instructions[operand].value.getIndexValue() == offset);
+    }
+    runtime.getStringType()->emitFreeParameter(compiler, offset);
     BOOST_TEST(instructions.back().value.getIndexValue() == offset);
 }
 
@@ -153,8 +170,8 @@ BOOST_AUTO_TEST_CASE(type_store_emission_preserves_existing_instruction_and_id_e
         for (auto index = NomadIndex{0}; index < operands.size(); ++index) {
             BOOST_TEST(runtime.getInstructionId(instructions[index * 2].fn).id ==
                 runtime.getInstructionId(names[index]).id);
-            if (index == 0) {
-                BOOST_TEST(instructions[1].value.getIndexValue() == toNomadIndex(operands[0]));
+            if (index == 0 || index == 3) {
+                BOOST_TEST(instructions[index * 2 + 1].value.getIndexValue() == toNomadIndex(operands[index]));
             } else {
                 BOOST_TEST(instructions[index * 2 + 1].value.getIdValue() == operands[index]);
             }
@@ -240,7 +257,7 @@ BOOST_AUTO_TEST_CASE(compiler_uses_type_overrides_for_load_copy_move_and_paramet
             );
             emitter.addOpCode(instruction);
         }
-        NomadIndex emitStoreParameter(OpCodeEmitter& emitter, NomadId) const override {
+        NomadIndex emitStoreParameter(OpCodeEmitter& emitter, NomadIndex) const override {
             const auto instruction = getRuntime()->getInstructionFn(
                 getRuntime()->getInstructionId(OpCodes::op_nop)
             );
@@ -264,7 +281,7 @@ BOOST_AUTO_TEST_CASE(compiler_uses_type_overrides_for_load_copy_move_and_paramet
     BOOST_REQUIRE(instructions.size() == 3U);
     BOOST_TEST(runtime.getInstructionId(instructions[0].fn).id ==
         runtime.getInstructionId(OpCodes::op_object_free_parameter).id);
-    BOOST_TEST(instructions[1].value.getIdValue() == 5);
+    BOOST_TEST(instructions[1].value.getIndexValue() == 5U);
     BOOST_TEST(runtime.getInstructionId(instructions[2].fn).id == runtime.getInstructionId(OpCodes::op_nop).id);
 }
 
@@ -336,7 +353,7 @@ BOOST_AUTO_TEST_CASE(class_types_emit_existing_cleanup_instructions_and_operands
         }
         BOOST_TEST(instructions[3].value.getIndexValue() == std::numeric_limits<NomadIndex>::max());
         BOOST_TEST(instructions[5].value.getIndexValue() == 11U);
-        BOOST_TEST(instructions[7].value.getIdValue() == 13);
+        BOOST_TEST(instructions[7].value.getIndexValue() == 13U);
     }
 }
 
@@ -345,7 +362,7 @@ BOOST_AUTO_TEST_CASE(parameter_cleanup_is_delegated_to_the_type) {
     public:
         using ClassType::ClassType;
 
-        void emitFreeParameter(OpCodeEmitter& emitter, NomadId) const override {
+        void emitFreeParameter(OpCodeEmitter& emitter, NomadIndex) const override {
             const auto instruction = getRuntime()->getInstructionFn(
                 getRuntime()->getInstructionId(OpCodes::op_nop)
             );
@@ -364,7 +381,7 @@ BOOST_AUTO_TEST_CASE(parameter_cleanup_is_delegated_to_the_type) {
         runtime.getInstructionId(OpCodes::op_nop).id);
     BOOST_TEST(runtime.getInstructionId(instructions[firstInstruction + 1].fn).id ==
         runtime.getInstructionId(OpCodes::op_parameter_set).id);
-    BOOST_TEST(instructions[firstInstruction + 2].value.getIdValue() == 5);
+    BOOST_TEST(instructions[firstInstruction + 2].value.getIndexValue() == 5U);
 }
 
 BOOST_AUTO_TEST_CASE(script_registration_reports_collisions_immediately)

@@ -482,7 +482,7 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
 
     switch (identifier.identifierType) {
     case IdentifierType::Parameter:
-        compiler->addStoreParameter(identifier.parameterId, m_expression->getType());
+        compiler->addStoreParameter(function->getParameterOffset(identifier.parameterId), m_expression->getType());
         break;
     case IdentifierType::FunctionVariable:
         // `r` is moved into the variable, so its previous value is released first.

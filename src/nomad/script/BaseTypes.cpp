@@ -41,7 +41,7 @@ bool VoidType::isVoid() const {
     return true;
 }
 
-void VoidType::emitFreeParameter(OpCodeEmitter&, NomadId) const {
+void VoidType::emitFreeParameter(OpCodeEmitter&, NomadIndex) const {
 }
 
 ///////////////////////////////////////////////////////////////////////////////

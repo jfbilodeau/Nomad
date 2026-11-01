@@ -1,7 +1,7 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1AG have been reviewed; Step 1AH below is implemented and awaiting
+Steps 1A through 1AH have been reviewed; Step 1AI below is implemented and awaiting
 review. Aggregate loads, stores, and calls remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1333,6 +1333,37 @@ Validation:
 Next slice after review: design physical parameter/call lowering and borrowed
 receiver/return destinations. Struct call expressions and object-field locations
 will extend the local-destination path in separately approved slices.
+
+### Step 1AI: Physical parameter bytecode offsets
+
+Approved scope and implementation:
+
+- Parameter load/store/cleanup emission and operands use full-width physical
+  Index offsets, not logical parameter IDs.
+- Compiler identifier, assignment, loop, and captured-receiver emission resolve
+  parameter IDs through callable layout metadata.
+- Execution accesses scalar slots directly through existing parameter-storage
+  views without runtime layout lookup.
+- Native callback parameter APIs and special argument shapes remain unchanged.
+- Struct parameter emission, aggregate argument lowering, receiver and return
+  destinations remain unsupported.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, binding, tooling, and LSP process regression groups passed.
+- Emission coverage verifies full-width parameter offsets beyond the NomadId
+  range for all scalar/reference load targets, stores, and reference cleanup.
+- Execution coverage manually supplies a three-slot parameter block followed
+  by scalar/string parameters, verifying compiler-computed offsets, replacement,
+  all load targets, native reentry inspection, and numeric instruction dumps.
+- Repeated calls release replaced strings and preserve scalar results.
+- All four documentation preparation tests and whitespace checks passed.
+- Aggregate argument lowering, host struct parameters, and gameplay are not
+  claimed as validated.
+
+Next slice after review: field-wise struct parameter access and copying, then
+aggregate argument lowering and borrowed receiver/return-destination state.
 
 Remaining Step 1 work, requiring separate design approval:
 

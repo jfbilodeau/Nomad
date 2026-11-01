@@ -1782,7 +1782,8 @@ void IdentifierExpression::onCompile(Compiler* compiler, ScriptCallableBase* fun
             break;
 
         case IdentifierType::Parameter:
-            compiler->addLoadParameter(m_identifierDefinition.parameterId, m_identifierDefinition.valueType, target);
+            compiler->addLoadParameter(function->getParameterOffset(m_identifierDefinition.parameterId),
+                m_identifierDefinition.valueType, target);
             break;
 
         default:
@@ -1831,7 +1832,8 @@ void IdentifierExpression::compileStore(Compiler* compiler, const ScriptCallable
 
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::Parameter:
-        compiler->addStoreParameter(m_identifierDefinition.parameterId, m_identifierDefinition.valueType);
+        compiler->addStoreParameter(function->getParameterOffset(m_identifierDefinition.parameterId),
+            m_identifierDefinition.valueType);
         break;
     case IdentifierType::FunctionVariable:
         m_identifierDefinition.valueType->emitFreeFunctionVariable(

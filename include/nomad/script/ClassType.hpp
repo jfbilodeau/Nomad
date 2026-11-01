@@ -49,7 +49,7 @@ public:
         OpCodeEmitter& emitter,
         NomadIndex variableIndex
     ) const override;
-    void emitFreeParameter(OpCodeEmitter& emitter, NomadId parameterId) const override;
+    void emitFreeParameter(OpCodeEmitter& emitter, NomadIndex offset) const override;
     NomadIndex emitLoadFunctionVariable(
         OpCodeEmitter& emitter,
         NomadIndex offset,
@@ -57,7 +57,7 @@ public:
     ) const override;
     NomadIndex emitLoadParameter(
         OpCodeEmitter& emitter,
-        NomadId parameterId,
+        NomadIndex offset,
         ExpressionTarget target
     ) const override;
     NomadIndex emitLoadContextVariable(

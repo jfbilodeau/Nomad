@@ -143,16 +143,23 @@ NomadIndex Type::emitLoadFunctionVariable(
 
 NomadIndex Type::emitLoadParameter(
     OpCodeEmitter& emitter,
-    const NomadId parameterId,
+    const NomadIndex offset,
     const ExpressionTarget target
 ) const {
-    return emitter.addLoadTarget(
-        op_parameter_load_r,
-        op_parameter_load_i,
-        op_parameter_push,
-        parameterId,
-        target
-    );
+    switch (target) {
+    case ExpressionTarget::Result:
+        emitter.addOpCode(op_parameter_load_r);
+        break;
+    case ExpressionTarget::Intermediate:
+        emitter.addOpCode(op_parameter_load_i);
+        break;
+    case ExpressionTarget::Stack:
+        emitter.addOpCode(op_parameter_push);
+        break;
+    default:
+        throw NomadBug("Invalid expression target for parameter load");
+    }
+    return emitter.addIndex(offset);
 }
 
 NomadIndex Type::emitLoadDynamicVariable(
@@ -211,9 +218,9 @@ NomadIndex Type::emitPopIntermediate(OpCodeEmitter& emitter) const {
     return emitter.addOpCode(op_pop_i);
 }
 
-NomadIndex Type::emitStoreParameter(OpCodeEmitter& emitter, const NomadId parameterId) const {
+NomadIndex Type::emitStoreParameter(OpCodeEmitter& emitter, const NomadIndex offset) const {
     emitter.addOpCode(op_parameter_set);
-    return emitter.addId(parameterId);
+    return emitter.addIndex(offset);
 }
 
 NomadIndex Type::emitStoreFunctionVariable(

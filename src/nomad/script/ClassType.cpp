@@ -86,9 +86,9 @@ void ClassType::emitFreeFunctionVariable(
     emitter.addIndex(variableIndex);
 }
 
-void ClassType::emitFreeParameter(OpCodeEmitter& emitter, const NomadId parameterId) const {
+void ClassType::emitFreeParameter(OpCodeEmitter& emitter, const NomadIndex offset) const {
     emitter.addOpCode(op_object_free_parameter);
-    emitter.addId(parameterId);
+    emitter.addIndex(offset);
 }
 
 NomadIndex ClassType::emitLoadFunctionVariable(
@@ -114,16 +114,23 @@ NomadIndex ClassType::emitLoadFunctionVariable(
 
 NomadIndex ClassType::emitLoadParameter(
     OpCodeEmitter& emitter,
-    const NomadId parameterId,
+    const NomadIndex offset,
     const ExpressionTarget target
 ) const {
-    return emitter.addLoadTarget(
-        op_object_parameter_load_r,
-        op_object_parameter_load_i,
-        op_object_parameter_push,
-        parameterId,
-        target
-    );
+    switch (target) {
+    case ExpressionTarget::Result:
+        emitter.addOpCode(op_object_parameter_load_r);
+        break;
+    case ExpressionTarget::Intermediate:
+        emitter.addOpCode(op_object_parameter_load_i);
+        break;
+    case ExpressionTarget::Stack:
+        emitter.addOpCode(op_object_parameter_push);
+        break;
+    default:
+        throw NomadBug("Invalid expression target for object parameter load");
+    }
+    return emitter.addIndex(offset);
 }
 
 NomadIndex ClassType::emitLoadContextVariable(

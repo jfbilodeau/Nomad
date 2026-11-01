@@ -294,53 +294,55 @@ void op_native_index_set(VirtualMachine* interpreter) {
 
 // Parameter operations
 void op_parameter_load_r(VirtualMachine* interpreter) {
-    const auto parameterId = interpreter->nextId();
+    const auto offset = interpreter->nextIndex();
 
-    auto& value = interpreter->getParameter(parameterId);
+    auto& value = interpreter->getParameterStorage(offset, 1)[0];
 
     interpreter->setResult(value);
 }
 
 void op_parameter_load_i(VirtualMachine* interpreter) {
-    const auto parameterId = interpreter->nextId();
+    const auto offset = interpreter->nextIndex();
 
-    auto& value = interpreter->getParameter(parameterId);
+    auto& value = interpreter->getParameterStorage(offset, 1)[0];
 
     interpreter->setIntermediate(value);
 }
 
 void op_parameter_push(VirtualMachine* interpreter) {
-    const auto parameterId = interpreter->nextId();
+    const auto offset = interpreter->nextIndex();
 
-    auto& value = interpreter->getParameter(parameterId);
+    auto& value = interpreter->getParameterStorage(offset, 1)[0];
 
     interpreter->pushValue(value);
 }
 
 void op_object_parameter_load_r(VirtualMachine* interpreter) {
-    const auto parameterId = interpreter->nextId();
+    const auto offset = interpreter->nextIndex();
 
-    interpreter->getResult().copyObjectValue(interpreter->getParameter(parameterId));
+    interpreter->getResult().copyObjectValue(interpreter->getParameterStorage(offset, 1)[0]);
 }
 
 void op_object_parameter_load_i(VirtualMachine* interpreter) {
-    const auto parameterId = interpreter->nextId();
+    const auto offset = interpreter->nextIndex();
 
-    interpreter->getIntermediate().copyObjectValue(interpreter->getParameter(parameterId));
+    interpreter->getIntermediate().copyObjectValue(interpreter->getParameterStorage(offset, 1)[0]);
 }
 
 void op_object_parameter_push(VirtualMachine* interpreter) {
-    const auto parameterId = interpreter->nextId();
+    const auto offset = interpreter->nextIndex();
 
-    interpreter->pushObjectValue(interpreter->getParameter(parameterId));
+    interpreter->pushObjectValue(interpreter->getParameterStorage(offset, 1)[0]);
 }
 
 void op_parameter_set(VirtualMachine* interpreter) {
-    interpreter->setParameter(interpreter->nextId(), interpreter->getResult());
+    const auto offset = interpreter->nextIndex();
+    interpreter->getParameterStorage(offset, 1)[0] = interpreter->getResult();
 }
 
 void op_object_free_parameter(VirtualMachine* interpreter) {
-    interpreter->freeObjectParameter(interpreter->nextId());
+    const auto offset = interpreter->nextIndex();
+    interpreter->getParameterStorage(offset, 1)[0].freeObjectValue();
 }
 
 void op_function_variable_set(VirtualMachine* interpreter) {

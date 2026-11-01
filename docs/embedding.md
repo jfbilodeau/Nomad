@@ -718,7 +718,10 @@ cleanup, and frames reserve/pop physical slot totals. Logical IDs remain stable
 when sizes change. VM host-facing local APIs and frame-backed interpreter access
 resolve those IDs through callable metadata; instruction execution does not.
 Local instruction operands use full-width `Index` values, and instruction dumps
-show numeric offsets. Parameter bytecode is unchanged.
+show numeric offsets. Parameter load/store/cleanup bytecode also uses full-width
+physical offsets computed with `getParameterOffset(parameterId)`. Scalar accesses
+address one slot below the argument anchor at that offset. Parameter IDs remain
+logical metadata; native callback parameter APIs and argument shapes are unchanged.
 
 Struct-local cleanup releases owned stored fields, including fields in nested
 structs. Empty structs and fields that need no cleanup emit no cleanup

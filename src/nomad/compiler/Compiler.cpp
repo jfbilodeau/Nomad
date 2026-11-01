@@ -818,8 +818,8 @@ NomadIndex Compiler::addLoadContextVariable(
     return type->emitLoadContextVariable(*this, contextVariableId.id, target);
 }
 
-NomadIndex Compiler::addLoadParameter(const NomadIndex parameterId, const Type* type, const ExpressionTarget target) {
-    return type->emitLoadParameter(*this, toNomadId(parameterId), target);
+NomadIndex Compiler::addLoadParameter(const NomadIndex offset, const Type* type, const ExpressionTarget target) {
+    return type->emitLoadParameter(*this, offset, target);
 }
 
 NomadIndex Compiler::addPushResult(const Type* type) {
@@ -1274,9 +1274,9 @@ void Compiler::addFunctionEntry(const ScriptCallableBase* function) {
     }
 }
 
-void Compiler::addStoreParameter(const NomadId parameterId, const Type* type) {
-    type->emitFreeParameter(*this, parameterId);
-    type->emitStoreParameter(*this, parameterId);
+void Compiler::addStoreParameter(const NomadIndex offset, const Type* type) {
+    type->emitFreeParameter(*this, offset);
+    type->emitStoreParameter(*this, offset);
 }
 
 void Compiler::addLoadReceiver(ScriptCallableBase* function, const ExpressionTarget target) {
@@ -1292,7 +1292,7 @@ void Compiler::addLoadReceiver(ScriptCallableBase* function, const ExpressionTar
         if (parameterId == NOMAD_INVALID_ID) {
             reportInternalError("Missing receiver capture");
         }
-        addLoadParameter(parameterId, function->getParameterType(parameterId), target);
+        addLoadParameter(function->getParameterOffset(parameterId), function->getParameterType(parameterId), target);
     }
 }
 

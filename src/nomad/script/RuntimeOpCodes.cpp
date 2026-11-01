@@ -69,14 +69,14 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_native_index_get, op_native_index_get, "Read an indexer", {Operand::Id});
     registerInstruction(OpCodes::op_native_index_set, op_native_index_set, "Write an indexer", {Operand::Id});
     // Parameter operations
-    registerInstruction(OpCodes::op_parameter_load_r, op_parameter_load_r, "Load the `n`th parameter into result", {Operand::Id});
-    registerInstruction(OpCodes::op_parameter_load_i, op_parameter_load_i, "Load the `n`th parameter into intermediate", {Operand::Id});
-    registerInstruction(OpCodes::op_parameter_push, op_parameter_push, "Push the `n`th parameter onto the stack", {Operand::Id});
-    registerInstruction(OpCodes::op_object_parameter_load_r, op_object_parameter_load_r, "Load the `n`th object parameter into result", {Operand::Id});
-    registerInstruction(OpCodes::op_object_parameter_load_i, op_object_parameter_load_i, "Load the `n`th object parameter into intermediate", {Operand::Id});
-    registerInstruction(OpCodes::op_object_parameter_push, op_object_parameter_push, "Push the `n`th object parameter onto the stack", {Operand::Id});
-    registerInstruction(OpCodes::op_parameter_set, op_parameter_set, "Store result in an argument slot after releasing its previous owned value", {Operand::Id});
-    registerInstruction(OpCodes::op_object_free_parameter, op_object_free_parameter, "Release the object owned by an argument slot", {Operand::Id});
+    registerInstruction(OpCodes::op_parameter_load_r, op_parameter_load_r, "Load parameter at physical offset into result", {Operand::Index});
+    registerInstruction(OpCodes::op_parameter_load_i, op_parameter_load_i, "Load parameter at physical offset into intermediate", {Operand::Index});
+    registerInstruction(OpCodes::op_parameter_push, op_parameter_push, "Push parameter at physical offset onto the stack", {Operand::Index});
+    registerInstruction(OpCodes::op_object_parameter_load_r, op_object_parameter_load_r, "Load object parameter at physical offset into result", {Operand::Index});
+    registerInstruction(OpCodes::op_object_parameter_load_i, op_object_parameter_load_i, "Load object parameter at physical offset into intermediate", {Operand::Index});
+    registerInstruction(OpCodes::op_object_parameter_push, op_object_parameter_push, "Push object parameter at physical offset onto the stack", {Operand::Index});
+    registerInstruction(OpCodes::op_parameter_set, op_parameter_set, "Store result at physical parameter offset after releasing its previous owned value", {Operand::Index});
+    registerInstruction(OpCodes::op_object_free_parameter, op_object_free_parameter, "Release object at physical parameter offset", {Operand::Index});
 
     // Variable operations
     registerInstruction(

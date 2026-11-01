@@ -117,7 +117,7 @@ protected:
         const auto exit = compiler->addIndex(NOMAD_INVALID_INDEX);
         if (m_parameterId != NOMAD_INVALID_ID) {
             m_current->compile(compiler, function, ExpressionTarget::Result);
-            compiler->addStoreParameter(m_parameterId, m_valueType);
+            compiler->addStoreParameter(function->getParameterOffset(m_parameterId), m_valueType);
         } else {
             store(m_current.get(), m_valueType, m_valueId);
         }
