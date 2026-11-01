@@ -302,6 +302,81 @@ BOOST_AUTO_TEST_CASE(parameter_layout_preserves_logical_positions_across_callabl
     }
 }
 
+BOOST_AUTO_TEST_CASE(hidden_call_layout_excludes_descriptors_from_explicit_parameters) {
+    Runtime runtime;
+    const auto pointId = runtime.registerStruct("HiddenPoint");
+    const auto emptyId = runtime.registerStruct("HiddenEmpty");
+    const auto* point = runtime.getTypeByName("HiddenPoint");
+    const auto* empty = runtime.getTypeByName("HiddenEmpty");
+    BOOST_REQUIRE(runtime.registerProperty(pointId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(pointId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(pointId);
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    const std::vector<Parameter> parameters{
+        defParameter("point", point, ""),
+        defParameter("handler", runtime.getEventCallbackType(), ""),
+        defParameter("empty", empty, ""),
+        defParameter("number", runtime.getIntegerType(), "")
+    };
+    ScriptMethod method("layout", point, parameters, point, "layout.nomad", "");
+    const auto layout = method.getCallStorageLayout();
+    BOOST_TEST(layout.argumentSlotCount == 5U);
+    BOOST_REQUIRE(layout.receiverOffset.has_value());
+    BOOST_REQUIRE(layout.returnOffset.has_value());
+    BOOST_TEST(*layout.receiverOffset == 5U);
+    BOOST_TEST(*layout.returnOffset == 6U);
+    BOOST_TEST(layout.stackSlotCount == 7U);
+    BOOST_TEST(method.getParameterCount() == 4U);
+    BOOST_TEST(method.getParameterStorageSize() == 5U);
+    BOOST_TEST(method.getParameterOffset(1) == 2U);
+    BOOST_TEST(method.getParameterOffset(3) == 4U);
+    const ScriptCallableBase& script = method;
+    BOOST_TEST(*script.getCallStorageLayout().returnOffset == 6U);
+    const auto nativeId = runtime.registerNativeFunction("pointResult", [](VirtualMachine*) {},
+        parameters, point, "");
+    BOOST_REQUIRE(nativeId.isValid());
+    const auto nativeLayout = runtime.getCallable(nativeId)->getCallStorageLayout();
+    BOOST_TEST(!nativeLayout.receiverOffset.has_value());
+    BOOST_TEST(*nativeLayout.returnOffset == 5U);
+    BOOST_TEST(nativeLayout.stackSlotCount == 6U);
+    ScriptMethod emptyMethod("empty", empty, {}, empty, "layout.nomad", "");
+    const auto emptyLayout = emptyMethod.getCallStorageLayout();
+    BOOST_TEST(!emptyLayout.receiverOffset.has_value());
+    BOOST_TEST(!emptyLayout.returnOffset.has_value());
+    BOOST_TEST(emptyLayout.stackSlotCount == 0U);
+    ScriptMethod scalarMethod("scalar", point, {}, runtime.getIntegerType(), "layout.nomad", "");
+    BOOST_TEST(scalarMethod.getCallStorageLayout().stackSlotCount == 1U);
+    BOOST_TEST(!scalarMethod.getCallStorageLayout().returnOffset.has_value());
+    const auto maximum = std::numeric_limits<NomadIndex>::max();
+    BOOST_CHECK_THROW((void)method.getCallStorageLayout(maximum - 1), NomadException);
+    BOOST_CHECK_THROW((void)runtime.getCallable(nativeId)->getCallStorageLayout(maximum), NomadException);
+    BOOST_TEST(emptyMethod.getCallStorageLayout(maximum).stackSlotCount == maximum);
+    const auto dispatchId = runtime.registerNativeFunction("dispatchResult", [](VirtualMachine*) {},
+        {defParameter("dispatch", runtime.getEventDispatchType(), "")}, point, "");
+    BOOST_REQUIRE(dispatchId.isValid());
+    BOOST_CHECK_THROW((void)runtime.getCallable(dispatchId)->getCallStorageLayout(), NomadException);
+    BOOST_TEST(*runtime.getCallable(dispatchId)->getCallStorageLayout(17).returnOffset == 17U);
+}
+
+BOOST_AUTO_TEST_CASE(hidden_call_layout_requires_resolved_sizes_and_return_types) {
+    Runtime runtime;
+    ScriptFunction function(CallableId{}, "unresolved", "layout.nomad", "");
+    BOOST_CHECK_THROW((void)function.getCallStorageLayout(), NomadException);
+    const auto pointId = runtime.registerStruct("UnfinalizedReturn");
+    BOOST_REQUIRE(pointId.isValid());
+    function.setReturnType(runtime.getTypeByName("UnfinalizedReturn"));
+    BOOST_CHECK_THROW((void)function.getCallStorageLayout(), NomadException);
+    auto compiler = runtime.createCompiler();
+    function.setReturnType(compiler->deferType({"MissingReturn"}));
+    BOOST_CHECK_THROW((void)function.getCallStorageLayout(), NomadException);
+    ScriptMethod method("missingReceiver", compiler->deferType({"MissingReceiver"}), {},
+        runtime.getVoidType(), "layout.nomad", "");
+    BOOST_CHECK_THROW((void)method.getCallStorageLayout(), NomadException);
+    function.setReturnType(runtime.getVoidType());
+    function.addParameter("deferred", compiler->deferType({"MissingParameter"}), "");
+    BOOST_CHECK_THROW((void)function.getCallStorageLayout(), NomadException);
+}
+
 BOOST_AUTO_TEST_CASE(parameter_layout_queries_reflect_inferred_parameters_and_appended_captures)
 {
     Runtime runtime;

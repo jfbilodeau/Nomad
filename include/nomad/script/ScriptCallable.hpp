@@ -22,6 +22,10 @@ public:
         return Base::getParameterOffset(parameterId);
     }
     [[nodiscard]] NomadIndex getParameterStorageSize() const override { return Base::getParameterStorageSize(); }
+    [[nodiscard]] CallStorageLayout getCallStorageLayout() const override { return Base::getCallStorageLayout(); }
+    [[nodiscard]] CallStorageLayout getCallStorageLayout(const NomadIndex argumentSlotCount) const override {
+        return Base::getCallStorageLayout(argumentSlotCount);
+    }
     [[nodiscard]] const Type* getReturnType() const override { return Base::getReturnType(); }
     [[nodiscard]] const Type* getClassType() const override { return Base::getClassType(); }
     void setReturnType(const Type* returnType) override { Base::setReturnType(returnType); }

@@ -119,6 +119,37 @@ NomadIndex Callable::getParameterOffset(const NomadId parameterId) const {
     return offset;
 }
 
+CallStorageLayout Callable::getCallStorageLayout() const {
+    return getCallStorageLayout(getParameterStorageSize());
+}
+
+CallStorageLayout Callable::getCallStorageLayout(const NomadIndex argumentSlotCount) const {
+    if (m_returnType == nullptr) {
+        throw NomadException("Cannot calculate call storage layout: return type of '" + m_name + "' is unresolved");
+    }
+    const auto returnSize = m_returnType->getSize();
+    CallStorageLayout layout{argumentSlotCount, {}, {}, argumentSlotCount};
+    const auto appendPointer = [&]() {
+        if (layout.stackSlotCount == std::numeric_limits<NomadIndex>::max()) {
+            throw NomadException("Call storage size exceeds the maximum slot count for '" + m_name + "'");
+        }
+        return layout.stackSlotCount++;
+    };
+    if (m_type == CallableType::Method) {
+        if (m_classType == nullptr) {
+            throw NomadException("Cannot calculate call storage layout: receiver type of '" + m_name + "' is unresolved");
+        }
+        const auto receiverSize = m_classType->getSize();
+        if (m_classType->asStructType() != nullptr && receiverSize != 0) {
+            layout.receiverOffset = appendPointer();
+        }
+    }
+    if (m_returnType->asStructType() != nullptr && returnSize != 0) {
+        layout.returnOffset = appendPointer();
+    }
+    return layout;
+}
+
 NomadIndex Callable::getParameterStorageSize() const {
     auto size = NomadIndex{0};
     for (const auto& parameter : m_parameters) {

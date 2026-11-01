@@ -1560,6 +1560,133 @@ BOOST_AUTO_TEST_CASE(borrowed_destination_copies_preserve_nested_values_and_rele
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
 }
 
+BOOST_AUTO_TEST_CASE(compiler_destination_calls_emit_only_required_hidden_pointers) {
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    Runtime runtime;
+    const auto pointId = runtime.registerStruct("DestinationPoint");
+    const auto emptyId = runtime.registerStruct("DestinationEmpty");
+    const auto* point = runtime.getTypeByName("DestinationPoint");
+    const auto* empty = runtime.getTypeByName("DestinationEmpty");
+    BOOST_REQUIRE(runtime.registerProperty(pointId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(pointId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(pointId);
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    const auto callerId = runtime.registerScriptFunction("destinationCaller", "destination.nomad", "");
+    const auto calleeId = runtime.registerScriptFunction("destinationCallee", "destination.nomad", "");
+    auto* caller = runtime.getScriptFunction(callerId);
+    auto* callee = runtime.getScriptFunction(calleeId);
+    caller->setReturnType(runtime.getIntegerType());
+    callee->setReturnType(point);
+    callee->addParameter("point", point, "");
+    callee->addParameter("number", runtime.getIntegerType(), "");
+    const auto sourceId = caller->registerVariable("source", point);
+    const auto destinationId = caller->registerVariable("destination", point);
+    const auto emptyLocal = caller->registerVariable("empty", empty);
+    const auto layout = callee->getCallStorageLayout();
+    BOOST_REQUIRE(layout.returnOffset.has_value());
+    BOOST_TEST(*layout.returnOffset == 3U);
+    BOOST_TEST(layout.stackSlotCount == 4U);
+    auto evaluations = 0;
+    auto emptyCalls = 0;
+    const auto sideEffect = runtime.registerNativeFunction("destinationArgument", [&](VirtualMachine* active) {
+        ++evaluations;
+        active->setIntegerResult(3);
+    }, {}, runtime.getIntegerType(), "");
+    const auto initialize = runtime.registerNativeFunction("initializeDestination", [&](VirtualMachine* active) {
+        const auto source = active->getLocalStorage(caller->getVariableOffset(sourceId), 2);
+        source[0].setIntegerValue(17);
+        source[1].freeObjectValue();
+        source[1].setStringValue("source");
+    }, {}, runtime.getVoidType(), "");
+    const auto nativeId = runtime.registerNativeFunction("nativeDestination", [&](VirtualMachine* active) {
+        BOOST_TEST(active->getIntegerParameter(2) == 3);
+        auto* destination = active->getParameter(3).getStorageAddress();
+        BOOST_TEST(destination == active->getLocalAddress(caller->getVariableOffset(destinationId)));
+        point->copyValue(active->getParameterStorage(0, 2).data(), destination);
+        destination[0].setIntegerValue(77);
+    }, {defParameter("point", point, ""), defParameter("number", runtime.getIntegerType(), "")}, point, "");
+    const auto emptyFunction = runtime.registerNativeFunction("emptyDestination", [&](VirtualMachine*) {
+        ++emptyCalls;
+    }, {}, empty, "");
+    const auto inspectScript = runtime.registerNativeFunction("inspectScriptDestination", [&](VirtualMachine* active) {
+        BOOST_TEST(active->getLocalStorage(caller->getVariableOffset(sourceId), 2)[0].getIntegerValue() == 17);
+        BOOST_TEST(active->getLocalStorage(caller->getVariableOffset(destinationId), 2)[0].getIntegerValue() == 99);
+    }, {}, runtime.getVoidType(), "");
+    const auto inspect = runtime.registerNativeFunction("inspectDestination", [&](VirtualMachine* active) {
+        const auto source = active->getLocalStorage(caller->getVariableOffset(sourceId), 2);
+        const auto destination = active->getLocalStorage(caller->getVariableOffset(destinationId), 2);
+        BOOST_TEST(source[0].getIntegerValue() == 17);
+        BOOST_TEST(destination[0].getIntegerValue() == 77);
+        BOOST_TEST(source[1].getObjectValue() == destination[1].getObjectValue());
+        BOOST_TEST(source[1].getObjectValue()->getReferenceCount() == 2U);
+    }, {}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(sideEffect.isValid());
+    BOOST_REQUIRE(initialize.isValid());
+    BOOST_REQUIRE(nativeId.isValid());
+    BOOST_REQUIRE(emptyFunction.isValid());
+    BOOST_REQUIRE(inspect.isValid());
+    BOOST_REQUIRE(inspectScript.isValid());
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    ArgumentList arguments;
+    arguments.addExpressionArgument(1, 1, point,
+        std::make_unique<IdentifierExpression>(nullptr, 1, 1, "source"));
+    arguments.addExpressionArgument(1, 1, runtime.getIntegerType(),
+        std::make_unique<FunctionCallExpression>(nullptr, 1, 1, "destinationArgument"));
+    BOOST_REQUIRE(arguments.resolve(&context, caller));
+    BOOST_REQUIRE(arguments.resolve(&context, caller));
+    BOOST_TEST(caller->getVariableCount() == 3U);
+    BOOST_TEST(caller->getVariableStorageSize() == 4U);
+    ArgumentList emptyArguments;
+    const auto beforeInvalid = runtime.getInstructions().size();
+    BOOST_CHECK_THROW(compiler->addFunctionCallIntoLocal(calleeId, caller, &arguments, emptyLocal), NomadBug);
+    BOOST_TEST(runtime.getInstructions().size() == beforeInvalid);
+    callee->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(callee);
+    compiler->addLoadValue(runtime.getIntegerType(), RuntimeValue(NomadInteger{99}), ExpressionTarget::Result);
+    runtime.getIntegerType()->emitStoreParameter(*compiler, 1);
+    point->emitCopyParameterToStorageParameter(*compiler, 0, *layout.returnOffset, 0);
+    compiler->addFunctionReturn(callee);
+    callee->setFunctionEnd(runtime.getInstructions().size());
+    caller->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(caller);
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(initialize.id);
+    const auto scriptCallStart = runtime.getInstructions().size();
+    compiler->addFunctionCallIntoLocal(calleeId, caller, &arguments, destinationId);
+    BOOST_TEST(runtime.getInstructionId(runtime.getInstructions()[scriptCallStart + 1].fn).id ==
+        runtime.getInstructionId(OpCodes::op_local_address_push).id);
+    BOOST_TEST(runtime.getInstructions()[scriptCallStart + 2].value.getIndexValue() ==
+        caller->getVariableOffset(destinationId));
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(inspectScript.id);
+    compiler->addFunctionCallIntoLocal(nativeId, caller, &arguments, destinationId);
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(inspect.id);
+    const auto emptyCallStart = runtime.getInstructions().size();
+    compiler->addFunctionCallIntoLocal(emptyFunction, caller, &emptyArguments, emptyLocal);
+    BOOST_TEST(runtime.getInstructions().size() == emptyCallStart + 4);
+    BOOST_TEST(runtime.getInstructionId(runtime.getInstructions()[emptyCallStart].fn).id ==
+        runtime.getInstructionId(OpCodes::op_push_this).id);
+    BOOST_TEST(runtime.getInstructionId(runtime.getInstructions()[emptyCallStart + 1].fn).id ==
+        runtime.getInstructionId(OpCodes::op_call_native_function).id);
+    BOOST_TEST(runtime.getInstructionId(runtime.getInstructions()[emptyCallStart + 3].fn).id ==
+        runtime.getInstructionId(OpCodes::op_pop_this).id);
+    compiler->addLoadFunctionVariable(caller->getVariableOffset(destinationId), runtime.getIntegerType(),
+        ExpressionTarget::Result);
+    compiler->addFunctionReturn(caller);
+    caller->setFunctionEnd(runtime.getInstructions().size());
+    compiler->linkFunctions();
+    for (auto index = 0; index < 3; ++index) {
+        RuntimeValue result;
+        runtime.executeFunction(callerId, {}, result);
+        BOOST_TEST(result.getIntegerValue() == 77);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    }
+    BOOST_TEST(evaluations == 6);
+    BOOST_TEST(emptyCalls == 3);
+}
+
 BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_without_writing_instructions) {
     Runtime runtime;
     const auto id = runtime.registerStruct("Empty");

@@ -40,6 +40,8 @@ public:
     [[nodiscard]] virtual NomadIndex getParameterCount() const = 0;
     [[nodiscard]] virtual NomadIndex getParameterOffset(NomadId parameterId) const = 0;
     [[nodiscard]] virtual NomadIndex getParameterStorageSize() const = 0;
+    [[nodiscard]] virtual CallStorageLayout getCallStorageLayout() const = 0;
+    [[nodiscard]] virtual CallStorageLayout getCallStorageLayout(NomadIndex argumentSlotCount) const = 0;
     [[nodiscard]] virtual const Type* getReturnType() const = 0;
     [[nodiscard]] virtual const Type* getClassType() const = 0;
     virtual void setReturnType(const Type* returnType) = 0;

@@ -165,6 +165,14 @@ public:
     NomadIndex addPopResult(const Type* type);
     NomadIndex addPopIntermediate(const Type* type);
     NomadIndex addScriptFunctionCall(CallableId targetFunctionId, ScriptCallableBase* function, const ArgumentList* arguments);
+    // Resolved free-function arguments; destination is a same-type, reserved struct local.
+    // Its fields must be cleared or valid owned values for the callee's destination emitter.
+    void addFunctionCallIntoLocal(
+        CallableId targetFunctionId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments,
+        VariableId destinationId
+    );
     NomadIndex addScriptMethodCall(CallableId memberId, ScriptCallableBase* function, const ArgumentList* arguments);
     NomadIndex addScriptConstructorCall(
         CallableId constructorId,

@@ -870,6 +870,45 @@ NomadIndex Compiler::addScriptFunctionCall(const CallableId targetFunctionId, Sc
     return m_instructions.size() - 1;
 }
 
+void Compiler::addFunctionCallIntoLocal(
+    const CallableId targetFunctionId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments,
+    const VariableId destinationId
+) {
+    const auto* target = m_runtime->getFunction(targetFunctionId);
+    if (target == nullptr || function == nullptr || arguments == nullptr) {
+        reportInternalError("Struct destination call requires a resolved function, caller, and arguments");
+    }
+    const auto* returnType = target->getReturnType();
+    const auto* destinationType = function->getVariableType(destinationId);
+    if (returnType == nullptr || returnType->asStructType() == nullptr || destinationType == nullptr ||
+        !returnType->sameType(destinationType) || arguments->getReceiverType() != nullptr) {
+        reportInternalError("Struct destination call requires a same-type local and free-function arguments");
+    }
+    const auto layout = target->getCallStorageLayout(arguments->getArgumentCount());
+    const auto destinationOffset = function->getVariableOffset(destinationId);
+    addOpCode(OpCodes::op_push_this);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_local_address_push);
+        addIndex(destinationOffset);
+    }
+    arguments->compile(this, function);
+    if (target->asScriptFunction() != nullptr) {
+        addOpCode(OpCodes::op_call_script_function);
+        addFunctionLink(targetFunctionId, m_instructions.size());
+        addIndex(0);
+    } else {
+        addOpCode(OpCodes::op_call_native_function);
+        addId(targetFunctionId.id);
+    }
+    addFreeArguments(arguments);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_pop_1);
+    }
+    addOpCode(OpCodes::op_pop_this);
+}
+
 void Compiler::addFreeArguments(const ArgumentList* arguments) {
     const auto stackCount = arguments->getStackCount();
 

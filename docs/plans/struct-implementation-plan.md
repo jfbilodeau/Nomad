@@ -2,7 +2,7 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Steps 1AP and 1AQ have been reviewed; Step 1AR below is implemented and awaiting review. Struct argument copies
+Steps 1AP through 1AR have been reviewed; Step 1AS below is implemented and awaiting review. Struct argument copies
 are supported; compiled struct receivers and destination returns remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1749,6 +1749,50 @@ Validation:
 Next slice after review: resume compiler-owned hidden-argument layout/lowering,
 then struct methods and caller-destination returns. Scalar local/parameter span
 elimination and native-indexer specialization remain separate optimization work.
+
+### Step 1AS: Consistent terminology and compiler-owned destination calls
+
+Approved scope and implementation:
+
+- Renamed the new stored-property opcodes to `op_stored_property_load_r`,
+  `op_object_stored_property_load_r`, `op_stored_property_set`, and
+  `op_object_stored_property_set`, and the VM accessor to `getStoredProperty`.
+  Existing logical field-storage APIs retain their established names.
+- Callable/script-callable metadata computes explicit physical argument width,
+  optional borrowed receiver/return-pointer offsets, and arguments-plus-hidden
+  slot count. It omits empty-struct descriptors and scalar/void return pointers.
+- Static queries use signature widths, including expanded event callbacks;
+  call-site queries accept compiler-resolved widths for event dispatch.
+  Unresolved layouts and total-slot overflow fail explicitly.
+- `Compiler::addFunctionCallIntoLocal` emits script/native free-function calls
+  into reserved same-type struct locals, preserving argument evaluation order,
+  ordinary call/return instructions, argument ownership cleanup, and unowned
+  pointer popping. Empty results emit no pointer or pointer cleanup.
+- Callee fixtures use type-owned destination-copy emission. This helper does not
+  resolve arguments, initialize destination storage, or choose RVO eligibility.
+- No new opcodes beyond the terminology rename, runtime layout queries,
+  per-call allocation, struct syntax, or automatic return-expression lowering
+  are introduced.
+
+Validation:
+
+- Built Debug tests, runtime, and LSP targets successfully.
+- Language, remaining, bindings, and tooling regression groups passed.
+- Verified no references to the old opcode/accessor names remain in code/tests.
+- Layout tests cover logical/physical parameter preservation, expanded event
+  callbacks, call-site event-dispatch widths, borrowed receiver/return offsets,
+  empty/scalar omission, unresolved sizes, and total-slot overflow.
+- Destination-call tests execute linked script and native calls, preserve
+  caller values when the callee mutates parameter copies, evaluate nested
+  arguments, replace owned destination fields, omit empty-result pointers,
+  reject wrong destination types before emission, and restore string counts.
+- Four documentation tests and whitespace checks passed.
+- Automatic return-expression lowering, actual RVO selection, and gameplay
+  remain unvalidated and are not implemented by this slice.
+
+Next slice after review: wire struct-returning function expressions and return
+statements into caller destinations, including staged existing assignment
+targets. Borrowed struct methods and retained object-property owners follow.
 
 Remaining Step 1 work, requiring separate design approval:
 

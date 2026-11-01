@@ -862,6 +862,34 @@ aggregate-state register or per-call allocation is required. Callers clean owned
 argument fields and pop hidden pointers without object cleanup. The earlier
 `StructCallState`, binding accessors, and separate snapshot vector are removed.
 
+`Callable::getCallStorageLayout()` and the script-callable view expose
+compiler-side `CallStorageLayout` metadata: `argumentSlotCount`, optional
+`receiverOffset` and `returnOffset`, and `stackSlotCount` for arguments plus
+required hidden pointers. Existing logical parameter counts and physical
+parameter offsets exclude these descriptors. Nonempty struct method receivers
+use one pointer; nonempty struct results use one pointer. Empty structs and
+scalar/void results need no return pointer. Ordinary object receivers and saved
+call-frame slots are not included.
+
+The overload `getCallStorageLayout(argumentSlotCount)` accepts a compiler-resolved
+physical call-site width, including specialized event-dispatch arguments.
+Without it, the query uses ordinary signature layout and retains its
+call-site-dependent-width errors. Signature queries require resolved parameter
+sizes; both overloads require resolved return/receiver sizes and reject total
+slot overflow with `NomadException`. These queries do not change VM call paths
+or save metadata values on the stack.
+
+`Compiler::addFunctionCallIntoLocal(targetId, caller, arguments, destinationId)`
+emits a resolved script/native free-function call into a same-type reserved struct
+local. It pushes a destination address only for a nonempty result, evaluates
+arguments in their existing right-to-left order, emits the ordinary call,
+cleans argument ownership, and pops the unowned destination pointer. Empty
+results emit no pointer or pointer cleanup. The destination must contain cleared
+or valid owned fields for the callee's destination emission; use a separate
+staging local before replacing an existing live target when required.
+This API does not resolve arguments, initialize storage, run constructors, or
+automatically compile a return statement into the destination.
+
 The type-owned emission APIs also support borrowed storage:
 
 - `emitCopyFunctionVariableToStorageParameter(emitter, sourceOffset,
@@ -1084,6 +1112,12 @@ class gained fields. `getStorageSize()` reports actual allocated slots;
 `getStorageValue(offset)` is a trusted unchecked physical-slot API.
 Native accessors and checked host/interpreter property APIs retain their existing
 behavior. Aggregate stored-field lowering remains unsupported.
+
+The specialized opcode names use stored-property terminology:
+`op_stored_property_load_r`, `op_object_stored_property_load_r`,
+`op_stored_property_set`, and `op_object_stored_property_set`.
+`VirtualMachine::getStoredProperty(offset)` accesses the physical slot on the
+intermediate-register receiver with the receiver/capacity guards described above.
 
 Use `getFieldStorage(index)` for a borrowed contiguous view of a stored field,
 including an inline struct. The const overload returns read-only slots; the
