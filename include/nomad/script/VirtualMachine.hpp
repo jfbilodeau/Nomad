@@ -48,6 +48,22 @@ public:
     [[nodiscard]] std::span<const RuntimeValue> getParameterStorage(NomadIndex offset, NomadIndex count) const;
     [[nodiscard]] std::span<RuntimeValue> getEnclosingParameterStorage(NomadIndex offset, NomadIndex count);
     [[nodiscard]] std::span<const RuntimeValue> getEnclosingParameterStorage(NomadIndex offset, NomadIndex count) const;
+    // Trusted nonempty storage; offsets and address-slot provenance are compiler-verified.
+    [[nodiscard]] RuntimeValue* getLocalAddress(NomadIndex offset) { return m_stack.data() + m_variableIndex + offset; }
+    [[nodiscard]] RuntimeValue* getParameterAddress(NomadIndex distance) { return m_stack.data() + m_parameterIndex - distance; }
+    [[nodiscard]] RuntimeValue& getStorageParameter(
+        NomadIndex pointerOffset,
+        NomadIndex fieldOffset
+    ) {
+        return m_stack[m_parameterIndex - pointerOffset].getStorageAddress()[fieldOffset];
+    }
+    [[nodiscard]] const RuntimeValue& getStorageParameter(
+        NomadIndex pointerOffset,
+        NomadIndex fieldOffset
+    ) const {
+        return m_stack[m_parameterIndex - pointerOffset].getStorageAddress()[fieldOffset];
+    }
+    void pushStorageAddress(RuntimeValue* address);
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
     [[nodiscard]] NomadObject* constructObject(

@@ -36,6 +36,9 @@ public:
     void setStringValue(const NomadChar* value);
     // Stores the object without changing its reference count: the value takes over the caller's reference.
     void setObjectValue(NomadObject* value);
+    // Internal borrowed storage address; never an owned object value.
+    void setStorageAddress(RuntimeValue* address) { m_storageAddress = address; }
+    [[nodiscard]] RuntimeValue* getStorageAddress() const { return m_storageAddress; }
 
     // Overloaded setter
     void set(NomadFloat value);
@@ -78,6 +81,7 @@ private:
         NomadBoolean m_booleanValue;
         NomadId m_idValue;
         NomadObject* m_objectValue;
+        RuntimeValue* m_storageAddress;
     };
 };
 

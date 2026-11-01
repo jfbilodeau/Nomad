@@ -104,6 +104,12 @@ std::span<const RuntimeValue> VirtualMachine::getEnclosingParameterStorage(
     return std::span<const RuntimeValue>(m_stack).subspan(anchor - offset - (count - 1), count);
 }
 
+void VirtualMachine::pushStorageAddress(RuntimeValue* address) {
+    RuntimeValue value;
+    value.setStorageAddress(address);
+    pushValue(value);
+}
+
 NomadObject* VirtualMachine::constructObject(
     const CallableId constructorId,
     const std::vector<RuntimeValue>& arguments

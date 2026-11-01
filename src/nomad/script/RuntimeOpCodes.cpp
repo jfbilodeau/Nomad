@@ -78,6 +78,30 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_parameter_set, op_parameter_set, "Store result at physical parameter offset after releasing its previous owned value", {Operand::Index});
     registerInstruction(OpCodes::op_object_free_parameter, op_object_free_parameter, "Release object at physical parameter offset", {Operand::Index});
 
+    // Internal borrowed storage operations
+    registerInstruction(OpCodes::op_local_address_push, op_local_address_push,
+        "Push a borrowed local storage address at physical offset", {Operand::Index});
+    registerInstruction(OpCodes::op_parameter_address_push, op_parameter_address_push,
+        "Push a borrowed parameter address at the anchor distance to its first slot", {Operand::Index});
+    registerInstruction(OpCodes::op_storage_parameter_address_push, op_storage_parameter_address_push,
+        "Push a borrowed subfield address from a pointer parameter and physical field offset", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_storage_parameter_load_r, op_storage_parameter_load_r,
+        "Load borrowed storage into result", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_storage_parameter_load_i, op_storage_parameter_load_i,
+        "Load borrowed storage into intermediate", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_storage_parameter_push, op_storage_parameter_push,
+        "Push a scalar copy from borrowed storage", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_object_storage_parameter_load_r, op_object_storage_parameter_load_r,
+        "Copy an object from borrowed storage into result, retaining its reference", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_object_storage_parameter_load_i, op_object_storage_parameter_load_i,
+        "Copy an object from borrowed storage into intermediate, retaining its reference", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_object_storage_parameter_push, op_object_storage_parameter_push,
+        "Push an owned object copy from borrowed storage", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_storage_parameter_set, op_storage_parameter_set,
+        "Store result into borrowed storage after any required owned-value cleanup", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_object_free_storage_parameter, op_object_free_storage_parameter,
+        "Release and clear an owned borrowed-storage field", {Operand::Index, Operand::Index});
+
     // Variable operations
     registerInstruction(
         OpCodes::op_function_variable_set, op_function_variable_set,

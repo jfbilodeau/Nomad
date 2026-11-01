@@ -1,8 +1,9 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Steps 1A through 1AL have been reviewed; Step 1AM below is implemented and awaiting
-review. Aggregate loads, stores, and calls remain unimplemented.
+Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
+Step 1AP below replaces the Step 1AN prototype and is awaiting review. Struct argument copies
+are supported; compiled struct receivers and destination returns remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -902,6 +903,11 @@ instructions or compiler special cases before implementation.
 
 ### Step 1W: Approved borrowed storage representation
 
+The contiguous storage and owner-lifetime contracts below remain applicable.
+Step 1AO supersedes the separate VM binding/save-restore representation for
+compiled calls: compiler-sized storage pointers travel in hidden argument slots.
+Spans need not be constructed or checked by trusted opcode execution.
+
 Use non-owning contiguous slot views: `std::span<RuntimeValue>` for mutable
 destinations and receivers, and `std::span<const RuntimeValue>` for sources.
 These views do not own a struct or its enclosing object. No polymorphic location
@@ -1490,6 +1496,179 @@ Validation:
 
 Next slice after review: borrowed receiver and caller-provided return-destination
 state, including nested calls and native reentry.
+
+### Step 1AN: Borrowed struct call-state foundations
+
+This validated prototype has been replaced by Step 1AP. Step 1AO supersedes its
+per-script-call vector snapshots and optional VM bindings; they are not the
+approved final compiled-call ABI.
+
+Approved scope and implementation:
+
+- Separate optional borrowed receiver and return-destination spans distinguish
+  unbound storage from bound empty structs. Const access exposes read-only spans;
+  accessing an unbound span faults explicitly.
+- Explicit state is supplied at script/native function or method call entry,
+  after argument evaluation. Ordinary calls start unbound.
+- Typed VM-owned script frame snapshots preserve enclosing state without
+  changing existing four-slot value frames or physical offsets.
+- Native call frames and host script-run snapshots preserve bindings on normal
+  completion and exception propagation. Failed host script runs discard their
+  nested typed snapshots.
+- Native object properties and indexers isolate and restore aggregate state.
+- Views never retain/release enclosing objects or own struct values. Stable
+  storage and owner lifetime remain the caller's responsibility.
+- No new opcodes, syntax, compiled struct calls, aggregate host argument APIs,
+  or aggregate yield/resume support are introduced.
+
+Validation:
+
+- Built Debug tests, runtime, and LSP targets.
+- Language, remaining, bindings, tooling, and LSP process regressions passed.
+- Focused tests cover local-backed/nested spans, mutation without copying or
+  retaining referenced fields, bound empty versus unbound state, native success
+  and failure, repeated host script reentry with failed nested frames, object
+  members/constructors, and stack-overflow preservation.
+- Four documentation tests and whitespace checks passed.
+- No compiled struct receiver/return expressions or gameplay were validated.
+
+Next slice after review: exact receiver/return-destination binding and access
+instruction contracts, followed by struct method and destination-return lowering.
+Object-field lowering will retain enclosing owners before argument evaluation;
+this foundation does not implement that lifetime management.
+
+### Step 1AO: Approved minimal hidden-pointer call ABI
+
+This is an approved design step only. No runtime or bytecode implementation has
+changed in this slice.
+
+Execution constraints:
+
+- The compiler resolves storage sizes, physical field offsets, hidden argument
+  positions, ownership operations, and required call shape.
+- Call/frame bookkeeping uses the existing fixed VM value stack, without C++
+  heap allocation or a separate aggregate-state vector.
+- Emit only required storage descriptors and ownership operations. Favor
+  compiler-selected instructions over runtime shape checks or dispatch.
+- Trusted storage operations do not validate spans, look up logical variable
+  IDs, or inspect runtime type tags. Existing stack-capacity checks remain.
+
+Hidden argument layout:
+
+- A nonempty struct-returning call receives one borrowed destination pointer.
+- A method with a nonempty borrowed struct receiver receives one receiver pointer.
+- Push the destination pointer first when required, then the receiver pointer
+  when required, then explicit arguments in their existing right-to-left order.
+- Each descriptor occupies one `RuntimeValue` slot containing a dedicated
+  `RuntimeValue*` storage address. It contains no width, optional flag, or type
+  tag and is not an object reference. Add explicit internal address support;
+  do not cast storage pointers to `NomadObject*`.
+- Let `N` be the explicit arguments' total physical width. The receiver
+  descriptor, when present, is at anchor-relative offset `N`. The destination
+  descriptor, when present, is at `N + 1` if a receiver descriptor exists,
+  otherwise at `N`.
+- Hidden descriptors do not enter logical parameter IDs or ordinary parameter
+  width metadata. Existing explicit parameter offsets and native scalar argument
+  APIs remain unchanged. The compiler computes their positions from the signature.
+- Empty struct receivers and results require no descriptors or runtime presence
+  markers. Their types remain distinct from `void` in compiler metadata.
+- Scalar/void results have no hidden destination descriptor. Ordinary struct
+  arguments still pass owned field copies, not borrowed pointers.
+
+Call and lifetime behavior:
+
+- Reuse existing script/native call and return instructions where their
+  parameter anchors and scalar/object behavior suffice. Do not add call variants
+  merely to encode combinations of absent/present hidden pointers.
+- Descriptors below evaluated arguments do not alter any VM binding register.
+  They become the callee's hidden parameters only when the call establishes its
+  argument anchor. Nested argument evaluation cannot inherit them.
+- Returning restores existing anchors; enclosing descriptors remain in their
+  original argument slots. No aggregate receiver/destination register or
+  aggregate-state save/restore stack is required.
+- Callers release owned argument fields and pop the explicit and hidden slots
+  using compile-time counts. Hidden pointers are never released as objects.
+- Native calls and synchronous host script reentry use existing parameter-frame
+  restoration. Aggregate host argument construction remains a separate slice.
+- Descriptor storage is stable for the operation. For object-field storage,
+  retain the enclosing owner before argument evaluation and release it after
+  completion or failure. Any owner-lifetime slots are separate from descriptors.
+- Destination storage follows the approved initialization/replacement contract.
+  Existing live targets initially stage the RHS before replacement; passing an
+  address does not authorize premature mutation or unsafe aliasing.
+
+Required instruction semantics:
+
+- Push a local storage address using a compiler-computed physical local offset.
+- Push a parameter storage address using the compiler-folded distance from the
+  argument anchor to the first slot, including its finalized block width.
+- Compose a borrowed subfield address from a hidden pointer at a constant
+  parameter offset plus a constant physical field offset.
+- Load/store through a hidden pointer and constant field offset, selecting
+  scalar or reference ownership behavior during compilation. Reuse existing
+  result/intermediate/argument registers and type-owned field-wise emission.
+- No instruction switches on storage owner, aggregate width, or call shape.
+  Compiler-known widths need not be saved on the stack or read by the callee.
+- Object-field address extraction and exact retained-owner lowering follow
+  separately; accessor-backed properties still produce owned temporaries.
+
+Next implementation slice:
+
+- Replace the Step 1AN prototype with internal address slots and minimal
+  local/parameter-backed hidden-pointer execution.
+- Verify descriptor counts, unchanged explicit parameter offsets, nested script
+  and native calls, host reentry/failure restoration, zero-width omission, owned
+  field copies/cleanup, and absence of call-bookkeeping heap allocation.
+- Do not add struct syntax, generic collections, object-field lowering, or
+  complete constructor/return-expression lowering in that slice.
+
+Then wire struct methods and caller-destination returns, followed by retained
+object-field owners and conservative RVO eligibility. Review exact instruction
+names and any additional required specialization during implementation.
+
+### Step 1AP: Stack-pointer execution foundation
+
+Approved scope and implementation:
+
+- Removed `StructCallState`, optional binding accessors, and the per-call
+  aggregate-state vector. Existing script/native frame shapes and parameter
+  anchors handle nested calls and host reentry without aggregate bookkeeping.
+- Added dedicated borrowed `RuntimeValue*` address slots without object casts,
+  ownership changes, or an increase in the value union's required pointer size.
+- Added trusted local/parameter address access and indirect field references;
+  no span, presence, size, or type checks execute in these paths.
+- Registered address-push and scalar/reference indirect load/push/store/cleanup
+  opcodes with full-width `Index` operands. Parameter address instructions take
+  the compiler-folded anchor distance to the block's first slot.
+- Existing call/return instructions execute low-level hidden-pointer fixtures.
+  Explicit argument offsets and logical metadata remain unchanged.
+- Pointer descriptors are passed/popped as unowned slots. Reference field copies
+  retain ownership; indirect replacement uses explicit cleanup before storing.
+- Compiler-driven method/return-expression lowering, struct syntax,
+  object-field owners, aggregate host arguments, and yield/resume remain deferred.
+
+Validation:
+
+- Built Debug tests, runtime, and LSP targets successfully.
+- Language, remaining, bindings, tooling, and LSP process regressions passed.
+- Instruction fixtures cover full-width pointer/field offsets and address dumps,
+  compiler-folded parameter distances, all scalar/reference indirect operations,
+  explicit argument offsets, borrowed mutation, forwarding, and owned cleanup.
+- Repeated bytecode calls restore string counts. Nested script/native calls and
+  host reentry failures preserve enclosing pointer descriptors and argument anchors.
+- Exact-capacity tests show calls need only existing frames and requested
+  pointer slots; calls with no descriptors incur no aggregate-state slots.
+- A Windows Debug CRT allocation hook measured zero allocations across 100
+  iterations of nested script calls and a native pointer-writing callback.
+  This checks call bookkeeping, not allocations performed by script operations,
+  constructors, host argument setup, or arbitrary native callbacks.
+- Four documentation tests and whitespace checks passed.
+- Actual compiler RVO selection, struct syntax, and gameplay remain unvalidated.
+
+Next slice after review: type-owned emission to borrowed destinations and
+compiler-owned hidden-argument layout/lowering. Then wire struct methods and
+caller-destination returns, followed by retained object-field owners and
+conservative RVO eligibility.
 
 Remaining Step 1 work, requiring separate design approval:
 

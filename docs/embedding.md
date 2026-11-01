@@ -820,6 +820,53 @@ variable source or a numeric `NomadId` for a parameter source, followed by the
 name and type. `flagVariableAsCaptured` and `flagParameterAsCaptured` provide
 the corresponding source-specific registration APIs.
 
+### Borrowed struct call storage
+
+The VM supports internal borrowed storage pointers on its existing value stack.
+`RuntimeValue::setStorageAddress()` and `getStorageAddress()` store/read a
+`RuntimeValue*` without ownership changes. An address slot must never be treated
+as an object value or passed to object cleanup.
+
+For a low-level call fixture, push a required destination pointer, then a required
+receiver pointer, then explicit arguments in their existing right-to-left order.
+If explicit arguments occupy `N` slots, the receiver pointer is at parameter
+offset `N`; the destination pointer is at `N + 1` with a receiver, or `N` without
+one. Empty structs require no pointers. Hidden pointers are excluded from logical
+parameter metadata and do not change explicit parameter offsets.
+
+`VirtualMachine::getLocalAddress(offset)` addresses the first local slot at a
+physical offset. `getParameterAddress(distance)` uses the distance from the active
+argument anchor to the first slot of a block, not its logical parameter ID.
+For a block at parameter offset `offset` with width `size`, that distance is
+`offset + size - 1`, folded by the compiler for nonempty blocks.
+`pushStorageAddress(address)` pushes one borrowed pointer slot.
+`getStorageParameter(pointerOffset, fieldOffset)` accesses a field through the
+pointer parameter; const VM access exposes a read-only field reference.
+
+These are trusted internal APIs. Callers must supply valid nonempty ranges,
+storage-pointer slots, and physical offsets; access does not perform span,
+presence, width, or type checks. Storage and enclosing owners must remain alive
+and stable throughout the operation. No address is required for empty structs.
+
+Address and indirect-access opcodes use full-width `Index` operands. Scalar
+loads/pushes copy slots; reference loads/pushes retain objects. Indirect stores
+follow existing result-to-storage ownership transfer: release any previous owned
+field first, store the result, and do not treat the result register afterward as
+an additional owned copy. Explicit indirect cleanup releases and clears fields.
+These operations do not allocate destination storage or select initialization
+versus replacement behavior.
+
+Existing script/native calls and returns use their ordinary parameter anchors.
+Nested calls and synchronous host reentry restore those anchors; no additional
+aggregate-state register or per-call allocation is required. Callers clean owned
+argument fields and pop hidden pointers without object cleanup. The earlier
+`StructCallState`, binding accessors, and separate snapshot vector are removed.
+
+This is a bytecode/VM foundation, validated with low-level call fixtures.
+Automatic hidden-argument emission, compiled struct methods and return expressions,
+retained object-field lowering, aggregate host `run` arguments, and aggregate
+yield/resume support remain unsupported.
+
 ### Class type property metadata
 
 `ClassType` describes both native and script-defined class types. `isOpen()` reports

@@ -345,6 +345,70 @@ void op_object_free_parameter(VirtualMachine* interpreter) {
     interpreter->getParameterStorage(offset, 1)[0].freeObjectValue();
 }
 
+void op_local_address_push(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->pushStorageAddress(interpreter->getLocalAddress(offset));
+}
+
+void op_parameter_address_push(VirtualMachine* interpreter) {
+    const auto distance = interpreter->nextIndex();
+    interpreter->pushStorageAddress(interpreter->getParameterAddress(distance));
+}
+
+void op_storage_parameter_address_push(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->pushStorageAddress(&interpreter->getStorageParameter(pointerOffset, fieldOffset));
+}
+
+void op_storage_parameter_load_r(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->setResult(interpreter->getStorageParameter(pointerOffset, fieldOffset));
+}
+
+void op_storage_parameter_load_i(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->setIntermediate(interpreter->getStorageParameter(pointerOffset, fieldOffset));
+}
+
+void op_storage_parameter_push(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->pushValue(interpreter->getStorageParameter(pointerOffset, fieldOffset));
+}
+
+void op_object_storage_parameter_load_r(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->getResult().copyObjectValue(interpreter->getStorageParameter(pointerOffset, fieldOffset));
+}
+
+void op_object_storage_parameter_load_i(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->getIntermediate().copyObjectValue(interpreter->getStorageParameter(pointerOffset, fieldOffset));
+}
+
+void op_object_storage_parameter_push(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->pushObjectValue(interpreter->getStorageParameter(pointerOffset, fieldOffset));
+}
+
+void op_storage_parameter_set(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->getStorageParameter(pointerOffset, fieldOffset) = interpreter->getResult();
+}
+
+void op_object_free_storage_parameter(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->getStorageParameter(pointerOffset, fieldOffset).freeObjectValue();
+}
+
 void op_function_variable_set(VirtualMachine* interpreter) {
     const auto offset = interpreter->nextIndex();
     interpreter->getLocalStorage(offset, 1)[0] = interpreter->getResult();
