@@ -8,6 +8,7 @@
 
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/InterpreterContext.hpp>
+#include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>
@@ -1691,6 +1692,280 @@ BOOST_AUTO_TEST_CASE(compiler_destination_calls_emit_only_required_hidden_pointe
     }
     BOOST_TEST(evaluations == 6);
     BOOST_TEST(emptyCalls == 3);
+}
+
+BOOST_AUTO_TEST_CASE(compiler_struct_method_calls_borrow_locals_parameters_and_enclosing_receivers) {
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    Runtime runtime;
+    const auto typeId = runtime.registerStruct("BorrowedPoint");
+    const auto* type = runtime.getTypeByName("BorrowedPoint");
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(typeId);
+    auto* owner = runtime.getTypeManager().getMutableCompositeType(typeId);
+    const auto parameters = std::vector<Parameter>{
+        defParameter("snapshot", type, ""), defParameter("delta", runtime.getIntegerType(), "")};
+    auto nativeCalls = 0;
+    auto readCalls = 0;
+    auto argumentCalls = 0;
+    const auto mutateId = owner->registerMethod(runtime, std::make_unique<NativeMethod>(
+        "borrowedMutate", type, [&](VirtualMachine* active) {
+            ++nativeCalls;
+            auto* receiver = &active->getStorageParameter(3, 0);
+            auto* destination = &active->getStorageParameter(4, 0);
+            auto snapshot = active->getParameterStorage(0, 2);
+            BOOST_TEST(receiver != snapshot.data());
+            BOOST_TEST(receiver != destination);
+            BOOST_TEST(snapshot[0].getIntegerValue() == receiver[0].getIntegerValue());
+            BOOST_TEST(snapshot[1].getObjectValue() == receiver[1].getObjectValue());
+            receiver[0].setIntegerValue(receiver[0].getIntegerValue() + active->getIntegerParameter(2));
+            snapshot[0].setIntegerValue(-99);
+            snapshot[1].freeObjectValue();
+            snapshot[1].setStringValue("argument copy");
+            type->freeValue(destination);
+            type->copyValue(receiver, destination);
+            destination[0].setIntegerValue(destination[0].getIntegerValue() + 1000);
+        }, parameters, type, ""));
+    const auto readId = owner->registerMethod(runtime, std::make_unique<NativeMethod>(
+        "borrowedRead", type, [&](VirtualMachine* active) {
+            ++readCalls;
+            auto* receiver = &active->getStorageParameter(0, 0);
+            BOOST_TEST(NomadString(receiver[1].getStringValue()) == "original");
+            active->setIntegerResult(receiver[0].getIntegerValue());
+        }, std::vector<Parameter>{}, runtime.getIntegerType(), ""));
+    const auto scriptId = owner->registerMethod(runtime, std::make_unique<ScriptMethod>(
+        "borrowedForward", type, parameters, type, "borrowed.nomad", ""));
+    BOOST_REQUIRE(mutateId.isValid());
+    BOOST_REQUIRE(readId.isValid());
+    BOOST_REQUIRE(scriptId.isValid());
+    auto* script = runtime.getScriptCallable(scriptId);
+    const auto scriptDestination = script->registerVariable("destination", type);
+    const auto parameterCallerId = runtime.registerScriptFunction("borrowedParameter", "borrowed.nomad", "");
+    auto* parameterCaller = runtime.getScriptFunction(parameterCallerId);
+    parameterCaller->setReturnType(runtime.getIntegerType());
+    parameterCaller->addParameter("snapshot", type, "");
+    parameterCaller->addParameter("delta", runtime.getIntegerType(), "");
+    const auto parameterDestination = parameterCaller->registerVariable("destination", type);
+    const auto callerId = runtime.registerScriptFunction("borrowedCaller", "borrowed.nomad", "");
+    auto* caller = runtime.getScriptFunction(callerId);
+    caller->setReturnType(runtime.getIntegerType());
+    const auto sourceId = caller->registerVariable("source", type);
+    const auto destinationId = caller->registerVariable("destination", type);
+    const auto initializeId = runtime.registerNativeFunction("borrowedInitialize", [&](VirtualMachine* active) {
+        auto* source = active->getLocalAddress(caller->getVariableOffset(sourceId));
+        source[0].setIntegerValue(17);
+        source[1].freeObjectValue();
+        source[1].setStringValue("original");
+    }, {}, runtime.getVoidType(), "");
+    const auto argumentId = runtime.registerNativeFunction("borrowedArgument", [&](VirtualMachine* active) {
+        ++argumentCalls;
+        auto* source = active->getLocalAddress(caller->getVariableOffset(sourceId));
+        BOOST_TEST(source[0].getIntegerValue() == (argumentCalls % 2 == 1 ? 17 : 18));
+        source[0].setIntegerValue(source[0].getIntegerValue() + 1);
+        active->setIntegerResult(3);
+    }, {}, runtime.getIntegerType(), "");
+    const auto inspectId = runtime.registerNativeFunction("borrowedInspect", [&](VirtualMachine* active) {
+        auto* source = active->getLocalAddress(caller->getVariableOffset(sourceId));
+        auto* destination = active->getLocalAddress(caller->getVariableOffset(destinationId));
+        BOOST_TEST(source[0].getIntegerValue() == 22);
+        BOOST_TEST(destination[0].getIntegerValue() == 1022);
+        BOOST_TEST(source[1].getObjectValue() == destination[1].getObjectValue());
+        BOOST_TEST(source[1].getObjectValue()->getReferenceCount() == 2U);
+        BOOST_TEST(NomadString(source[1].getStringValue()) == "original");
+    }, {}, runtime.getVoidType(), "");
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    const auto resolveArguments = [&](
+        ScriptCallableBase* function,
+        const NomadString& snapshot,
+        const NomadString& delta,
+        const bool callArgument
+    ) {
+        auto arguments = std::make_unique<ArgumentList>();
+        arguments->addExpressionArgument(1, 1, type,
+            std::make_unique<IdentifierExpression>(nullptr, 1, 1, snapshot));
+        if (callArgument) {
+            arguments->addExpressionArgument(1, 1, runtime.getIntegerType(),
+                std::make_unique<FunctionCallExpression>(nullptr, 1, 1, delta));
+        } else {
+            arguments->addExpressionArgument(1, 1, runtime.getIntegerType(),
+                std::make_unique<IdentifierExpression>(nullptr, 1, 1, delta));
+        }
+        BOOST_REQUIRE(arguments->resolve(&context, function));
+        return arguments;
+    };
+    auto scriptArguments = resolveArguments(script, "snapshot", "delta", false);
+    auto parameterArguments = resolveArguments(parameterCaller, "snapshot", "delta", false);
+    auto callerArguments = resolveArguments(caller, "source", "borrowedArgument", true);
+    ArgumentList noArguments;
+    IdentifierDefinition borrowedReceiver;
+    borrowedReceiver.identifierType = IdentifierType::Receiver;
+    IdentifierDefinition parameterReceiver;
+    parameterReceiver.identifierType = IdentifierType::Parameter;
+    parameterReceiver.parameterId = 0;
+    IdentifierDefinition localReceiver;
+    localReceiver.identifierType = IdentifierType::FunctionVariable;
+    localReceiver.variableId = sourceId;
+    const auto beforeInvalid = runtime.getInstructions().size();
+    BOOST_CHECK_THROW(compiler->addStructMethodCall(mutateId, caller, callerArguments.get(), localReceiver), NomadBug);
+    BOOST_CHECK_THROW(compiler->addStructMethodCall(readId, caller, &noArguments, localReceiver, destinationId), NomadBug);
+    BOOST_CHECK_THROW(compiler->addStructMethodCall(readId, caller, &noArguments, borrowedReceiver), NomadBug);
+    BOOST_TEST(runtime.getInstructions().size() == beforeInvalid);
+    script->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(script);
+    const auto nestedCallStart = runtime.getInstructions().size();
+    compiler->addStructMethodCall(mutateId, script, scriptArguments.get(), borrowedReceiver, scriptDestination);
+    BOOST_TEST(runtime.getInstructionId(runtime.getInstructions()[nestedCallStart + 2].fn).id ==
+        runtime.getInstructionId(OpCodes::op_storage_parameter_address_push).id);
+    BOOST_TEST(runtime.getInstructions()[nestedCallStart + 3].value.getIndexValue() == 3U);
+    compiler->addStructMethodCall(readId, script, &noArguments, borrowedReceiver);
+    type->emitCopyFunctionVariableToStorageParameter(*compiler, script->getVariableOffset(scriptDestination), 4, 0);
+    compiler->addFunctionReturn(script);
+    script->setFunctionEnd(runtime.getInstructions().size());
+    parameterCaller->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(parameterCaller);
+    const auto parameterCallStart = runtime.getInstructions().size();
+    compiler->addStructMethodCall(mutateId, parameterCaller, parameterArguments.get(),
+        parameterReceiver, parameterDestination);
+    BOOST_TEST(runtime.getInstructionId(runtime.getInstructions()[parameterCallStart + 2].fn).id ==
+        runtime.getInstructionId(OpCodes::op_parameter_address_push).id);
+    BOOST_TEST(runtime.getInstructions()[parameterCallStart + 3].value.getIndexValue() == 1U);
+    compiler->addStructMethodCall(readId, parameterCaller, &noArguments, parameterReceiver);
+    compiler->addFunctionReturn(parameterCaller);
+    parameterCaller->setFunctionEnd(runtime.getInstructions().size());
+    caller->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(caller);
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(initializeId.id);
+    compiler->addScriptFunctionCall(parameterCallerId, caller, callerArguments.get());
+    const auto localCallStart = runtime.getInstructions().size();
+    compiler->addStructMethodCall(scriptId, caller, callerArguments.get(), localReceiver, destinationId);
+    BOOST_TEST(runtime.getInstructionId(runtime.getInstructions()[localCallStart].fn).id ==
+        runtime.getInstructionId(OpCodes::op_local_address_push).id);
+    BOOST_TEST(runtime.getInstructions()[localCallStart + 1].value.getIndexValue() ==
+        caller->getVariableOffset(destinationId));
+    BOOST_TEST(runtime.getInstructionId(runtime.getInstructions()[localCallStart + 2].fn).id ==
+        runtime.getInstructionId(OpCodes::op_local_address_push).id);
+    BOOST_TEST(runtime.getInstructions()[localCallStart + 3].value.getIndexValue() ==
+        caller->getVariableOffset(sourceId));
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(inspectId.id);
+    compiler->addStructMethodCall(readId, caller, &noArguments, localReceiver);
+    compiler->addFunctionReturn(caller);
+    caller->setFunctionEnd(runtime.getInstructions().size());
+    compiler->linkFunctions();
+    for (auto index = 0; index < 3; ++index) {
+        RuntimeValue result;
+        runtime.executeFunction(callerId, {}, result);
+        BOOST_TEST(result.getIntegerValue() == 22);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+    BOOST_TEST(nativeCalls == 6);
+    BOOST_TEST(readCalls == 9);
+    BOOST_TEST(argumentCalls == 6);
+    BOOST_REQUIRE(argumentId.isValid());
+}
+
+BOOST_AUTO_TEST_CASE(compiler_struct_method_calls_omit_empty_storage_and_preserve_void_and_reference_results) {
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("BorrowedEmpty");
+    const auto textId = runtime.registerStruct("BorrowedText");
+    const auto* empty = runtime.getTypeByName("BorrowedEmpty");
+    const auto* text = runtime.getTypeByName("BorrowedText");
+    BOOST_REQUIRE(runtime.registerProperty(textId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.finalizeCompositeFieldLayout(textId);
+    auto* emptyOwner = runtime.getTypeManager().getMutableCompositeType(emptyId);
+    auto* textOwner = runtime.getTypeManager().getMutableCompositeType(textId);
+    auto emptyCalls = 0;
+    auto voidCalls = 0;
+    const auto emptyMethodId = emptyOwner->registerMethod(runtime, std::make_unique<NativeMethod>(
+        "borrowedEmptyResult", empty, [&](VirtualMachine*) { ++emptyCalls; },
+        std::vector<Parameter>{}, empty, ""));
+    const auto createId = emptyOwner->registerMethod(runtime, std::make_unique<NativeMethod>(
+        "borrowedCreateText", empty, [](VirtualMachine* active) {
+            auto& destination = active->getStorageParameter(0, 0);
+            destination.freeObjectValue();
+            destination.setStringValue("borrowed text");
+        }, std::vector<Parameter>{}, text, ""));
+    const auto voidId = textOwner->registerMethod(runtime, std::make_unique<NativeMethod>(
+        "borrowedVoid", text, [&](VirtualMachine* active) {
+            ++voidCalls;
+            BOOST_TEST(NomadString(active->getStorageParameter(0, 0).getStringValue()) == "borrowed text");
+        }, std::vector<Parameter>{}, runtime.getVoidType(), ""));
+    const auto textMethodId = textOwner->registerMethod(runtime, std::make_unique<ScriptMethod>(
+        "borrowedTextResult", text, std::vector<Parameter>{}, runtime.getStringType(), "empty.nomad", ""));
+    const auto forwardId = emptyOwner->registerMethod(runtime, std::make_unique<ScriptMethod>(
+        "borrowedEmptyForward", empty, std::vector<Parameter>{}, empty, "empty.nomad", ""));
+    BOOST_REQUIRE(emptyMethodId.isValid());
+    BOOST_REQUIRE(createId.isValid());
+    BOOST_REQUIRE(voidId.isValid());
+    BOOST_REQUIRE(textMethodId.isValid());
+    BOOST_REQUIRE(forwardId.isValid());
+    auto* forward = runtime.getScriptCallable(forwardId);
+    const auto forwardDestination = forward->registerVariable("emptyDestination", empty);
+    const auto callerId = runtime.registerScriptFunction("emptyBorrowedCaller", "empty.nomad", "");
+    auto* caller = runtime.getScriptFunction(callerId);
+    caller->setReturnType(runtime.getStringType());
+    const auto emptyLocal = caller->registerVariable("emptyReceiver", empty);
+    const auto emptyDestination = caller->registerVariable("emptyDestination", empty);
+    const auto textLocal = caller->registerVariable("text", text);
+    auto compiler = runtime.createCompiler();
+    ArgumentList noArguments;
+    IdentifierDefinition emptyReceiver;
+    emptyReceiver.identifierType = IdentifierType::FunctionVariable;
+    emptyReceiver.variableId = emptyLocal;
+    IdentifierDefinition textReceiver;
+    textReceiver.identifierType = IdentifierType::FunctionVariable;
+    textReceiver.variableId = textLocal;
+    IdentifierDefinition enclosingReceiver;
+    enclosingReceiver.identifierType = IdentifierType::Receiver;
+    forward->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(forward);
+    const auto emptyNestedStart = runtime.getInstructions().size();
+    compiler->addStructMethodCall(emptyMethodId, forward, &noArguments, enclosingReceiver, forwardDestination);
+    BOOST_TEST(runtime.getInstructions().size() == emptyNestedStart + 2);
+    compiler->addFunctionReturn(forward);
+    forward->setFunctionEnd(runtime.getInstructions().size());
+    auto* textMethod = runtime.getScriptCallable(textMethodId);
+    textMethod->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(textMethod);
+    runtime.getStringType()->emitLoadStorageParameter(*compiler, 0, 0, ExpressionTarget::Result);
+    compiler->addFunctionReturn(textMethod);
+    textMethod->setFunctionEnd(runtime.getInstructions().size());
+    caller->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(caller);
+    const auto emptyStart = runtime.getInstructions().size();
+    compiler->addStructMethodCall(forwardId, caller, &noArguments, emptyReceiver, emptyDestination);
+    BOOST_TEST(runtime.getInstructions().size() == emptyStart + 2);
+    BOOST_TEST(runtime.getInstructionId(runtime.getInstructions()[emptyStart].fn).id ==
+        runtime.getInstructionId(OpCodes::op_call_script_method).id);
+    const auto createStart = runtime.getInstructions().size();
+    compiler->addStructMethodCall(createId, caller, &noArguments, emptyReceiver, textLocal);
+    BOOST_TEST(runtime.getInstructions().size() == createStart + 5);
+    BOOST_TEST(runtime.getInstructions()[createStart + 1].value.getIndexValue() == caller->getVariableOffset(textLocal));
+    const auto voidStart = runtime.getInstructions().size();
+    compiler->addStructMethodCall(voidId, caller, &noArguments, textReceiver);
+    BOOST_TEST(runtime.getInstructions().size() == voidStart + 5);
+    BOOST_TEST(runtime.getInstructionId(runtime.getInstructions()[voidStart + 4].fn).id ==
+        runtime.getInstructionId(OpCodes::op_pop_1).id);
+    compiler->addStructMethodCall(textMethodId, caller, &noArguments, textReceiver);
+    compiler->addFunctionReturn(caller);
+    caller->setFunctionEnd(runtime.getInstructions().size());
+    compiler->linkFunctions();
+    BOOST_TEST(caller->getVariableStorageSize() == 1U);
+    for (auto index = 0; index < 3; ++index) {
+        RuntimeValue result;
+        runtime.executeFunction(callerId, {}, result);
+        BOOST_TEST(NomadString(result.getStringValue()) == "borrowed text");
+        result.freeObjectValue();
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    }
+    BOOST_TEST(emptyCalls == 3);
+    BOOST_TEST(voidCalls == 3);
 }
 
 BOOST_AUTO_TEST_CASE(compiled_struct_returns_support_nested_calls_assignments_arguments_and_discard) {

@@ -2,9 +2,9 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Steps 1AP through 1AS have been reviewed; Step 1AT below is implemented and awaiting review.
+Steps 1AP through 1AT have been reviewed; Step 1AU below is implemented and awaiting review.
 Struct argument copies and free-function destination returns are supported;
-compiled struct receivers remain unimplemented.
+source-level struct receiver expressions remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -1832,6 +1832,47 @@ Validation:
 Next slice after review: borrowed struct method calls and retained object-property
 owners. Direct return-call forwarding and conservative NRVO remain separate
 optimization work.
+
+### Step 1AU: Compiler-owned borrowed struct method calls
+
+Approved ABI implementation slice:
+
+- Added `Compiler::addStructMethodCall` for resolved script/native methods,
+  borrowing local, ordinary parameter, or enclosing struct-method receiver
+  storage. This is an emission helper, not automatic member-expression lowering.
+- Struct results use reserved same-type locals; scalar/reference results use the
+  existing result register, and void results use no destination.
+- Pushes only nonempty destination/receiver pointers, in ABI order. Parameter
+  anchor distances are calculated during compilation; nested receivers use the
+  existing indirect-address opcode.
+- Explicit arguments remain owned copies, with existing evaluation order and
+  cleanup. Hidden pointers use specialized one/two-slot cleanup without object
+  ownership operations.
+- Existing script/native method call frames preserve object `this`; no extra
+  receiver binding or `push_this`/`pop_this` pair is emitted.
+- Receiver/destination metadata is checked before emission. No new VM opcode,
+  runtime receiver selection, or call-state allocation was added.
+- TypeManager's convenience method registration and source-level member
+  resolution remain class-only. Low-level composite registration supplies the
+  method fixtures, without broadening those APIs in this slice.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Remaining regression group passed, including executable method fixtures for
+  local mutation, parameter-copy isolation, nested borrowed receiver forwarding,
+  script/native calls, right-to-left argument evaluation, struct destinations,
+  scalar/reference/void results, and empty descriptor omission.
+- Repeated calls restore string/object counts, and invalid metadata is rejected
+  before emission.
+- Language, bindings, and tooling regression groups passed.
+- Four documentation tests and whitespace checks passed.
+- Source-level struct methods, object-property owner retention, gameplay, and
+  performance benchmarks remain outside this slice.
+
+Next slice after review: struct method registration/resolution and source-level
+receiver lowering. Retained object-property addressing requires its own approved
+lowering/opcode design; return-call forwarding and NRVO remain later work.
 
 Remaining Step 1 work, requiring separate design approval:
 

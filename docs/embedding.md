@@ -898,6 +898,29 @@ targets are replaced only after their source expression finishes. Discarded
 struct results are released, and empty results still execute their side effects.
 Return-call forwarding and named-return copy elision are not yet supported.
 
+`Compiler::addStructMethodCall(methodId, caller, arguments, receiver,
+destinationId)` emits resolved script/native method calls borrowing a struct
+local, ordinary parameter, or enclosing struct-method receiver. `receiver` is
+an `IdentifierDefinition` with the corresponding storage category and ID.
+Arguments contain only explicit arguments; do not set their object receiver
+type. Struct results require a same-type reserved destination local, even when
+empty. Scalar/reference/void results require no destination; scalar/reference
+results use the ordinary result register.
+
+Nonempty result and receiver pointers are pushed in that order before explicit
+arguments. Empty storage contributes no pointer. Parameter addresses use
+precomputed anchor distances; nested methods forward the enclosing receiver
+pointer. Explicit arguments remain owned copies and retain their existing
+evaluation order and cleanup. The borrowed receiver is not copied, retained, or
+freed by the call emitter. Destination fields must be cleared or valid owned
+values, with storage disjoint from the receiver and arguments.
+
+The callee accesses its struct receiver through the hidden storage parameter,
+not `VirtualMachine::getThis()`. Existing call frames preserve the enclosing
+object receiver without an additional `push_this`/`pop_this` pair. This emission
+API does not register methods, resolve source expressions, retain object-property
+owners, or make source-level struct member access executable.
+
 The type-owned emission APIs also support borrowed storage:
 
 - `emitCopyFunctionVariableToStorageParameter(emitter, sourceOffset,
@@ -924,7 +947,7 @@ register under the existing local-copy ownership contract. Empty types emit
 nothing. Initialization supplies existing type defaults separately and does not
 run constructors.
 
-Compiled struct methods, retained object-property lowering, aggregate
+Source-level struct methods, retained object-property lowering, aggregate
 interpreter/host values, and aggregate yield/resume support remain unsupported.
 Host free-function calls reject struct arguments and returns instead of using
 single-slot values for aggregate storage.

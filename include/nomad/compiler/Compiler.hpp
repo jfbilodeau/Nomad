@@ -173,6 +173,15 @@ public:
         const ArgumentList* arguments,
         VariableId destinationId
     );
+    // Borrows a resolved struct local, parameter, or enclosing method receiver.
+    // Struct results require a reserved same-type destination, disjoint from the receiver and arguments.
+    void addStructMethodCall(
+        CallableId methodId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments,
+        const IdentifierDefinition& receiver,
+        VariableId destinationId = VariableId::INVALID
+    );
     NomadIndex addScriptMethodCall(CallableId memberId, ScriptCallableBase* function, const ArgumentList* arguments);
     NomadIndex addScriptConstructorCall(
         CallableId constructorId,
