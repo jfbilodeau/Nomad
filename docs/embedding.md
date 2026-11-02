@@ -935,8 +935,8 @@ A script method can copy or return `this`, or pass it as an ordinary struct
 argument; those uses copy its fields rather than expose the borrowed address.
 Empty receivers and results still execute their calls.
 
-Stored struct properties rooted in locals, ordinary struct parameters, or
-borrowed struct `this` can be read and assigned.
+Stored struct properties rooted in locals, ordinary struct parameters,
+borrowed struct `this`, or class objects can be read and assigned.
 Nested scalar/reference properties load and store directly. Struct property
 values can be copied into locals, passed as ordinary arguments, or returned.
 Aggregate property assignments evaluate the complete right-hand side in reserved
@@ -945,9 +945,22 @@ method calls that mutate the target. Reference properties retain ordinary
 reference semantics. Empty property calls and assignment expressions still
 execute their side effects.
 
-Temporary struct-value receivers, value reads/writes through object-owned
-struct storage, and struct closure captures remain unsupported and produce
-compilation errors. This does not
+Object-owned reads evaluate the owner once and keep it alive until copied values
+are independently owned. Writes retain the original owner and capture the
+destination before evaluating the RHS. Replacing the owner's former variable
+during the RHS therefore does not redirect the assignment. Aggregate writes
+stage the complete value before replacement, including self-assignment and
+RHS method calls that mutate the destination. Reference properties keep their
+ordinary reference semantics.
+
+Class properties can have struct-valued explicit initializers, and constructor
+assignments can infer struct-valued properties. Their default initialization
+uses existing type defaults recursively; copying or initializing storage does
+not run a struct constructor. Existing initializer restrictions on user-written
+`this` expressions remain unchanged.
+
+Temporary struct-value receivers and struct closure captures remain unsupported
+and produce compilation errors. This does not
 prevent accessing ordinary class properties through a reference stored inside
 a supported struct.
 
@@ -965,13 +978,18 @@ staging. `emitAddress` pushes a non-owning pointer for nonempty storage and
 nothing for empty storage. `Compiler::addStructMethodCall` also accepts this
 storage description for nested receivers. These operations do not allocate
 runtime call state or perform runtime alias checks.
+`emitAssignment(compiler, caller, expression, stagingVariable)` performs the
+complete assignment lowering. The expression must be resolved and same-type;
+struct assignments require a same-type reserved staging local disjoint from
+the destination and source. Scalar/reference assignments need no staging local.
 
 `StorageLocation(ownerExpression, property)` describes a stored struct property
 of a resolved class expression. The expression must have the property's owner
 type and remain alive through emission; native properties are not supported.
 `getProperty` can further select nested stored struct properties.
-This form currently supports method receiver addresses only; its value loads,
-stores, and local-copy operations report unsupported access.
+`StorageLocation(property)` instead selects the enclosing class receiver; the
+caller must have the matching resolved receiver type.
+Both forms support receiver addresses, value loads, local copies, and assignments.
 `emitRetainOwner` evaluates the class expression into one owned stack slot;
 `emitFreeOwner` releases and pops that slot when it is back at the stack top.
 For object-owned locations, `emitAddress` takes the owner's current stack
@@ -979,9 +997,13 @@ distance, including any result descriptor already pushed. The struct-method
 call emitter sequences these operations automatically. Other storage roots
 emit no owner retention or cleanup. Empty receivers still evaluate and retain
 their class owner, but emit no receiver address.
+Object-owned `emitLoad` and `emitCopyToLocal` evaluate and release their owner
+automatically. Low-level `emitStoreResult` and `emitCopyFromLocal` instead
+require a captured destination address in intermediate and a retained owner;
+use `emitAssignment` to prepare and clean up that scope.
 
 `op_stored_property_address_push(ownerOffset, firstOffset, lastOffset)` provides
-the address primitive for object-owned struct method receivers. `ownerOffset` is
+the address primitive for object-owned struct access. `ownerOffset` is
 the distance from the current stack top to an already-retained object, measured
 before the address is pushed. The other operands are inclusive physical slot
 offsets within that object, computed by the compiler. All three are full-width
@@ -1002,6 +1024,26 @@ This primitive itself does not manage owner lifetimes. Compiled method calls
 retain the evaluated owner through argument evaluation and the borrowed call,
 then release it without clobbering scalar/reference results. The existing
 fatal-fault contract still applies; this lowering adds no exception unwinding.
+
+Indirect value operations use the trusted borrowed address in intermediate:
+`op_storage_load_r`, `op_storage_push`, `op_object_storage_load_r`,
+`op_object_storage_push`, `op_storage_set`, and `op_object_free_storage`.
+Each takes one full-width physical slot offset and performs no further type,
+capacity, or alias check. Reference loads/pushes retain their copied value;
+stores transfer result ownership after any required destination release.
+`VirtualMachine::getStorage(offset)` exposes the same unchecked, borrowed slot.
+The address must remain valid and its owner alive for the entire operation.
+
+The corresponding type-owned APIs are `emitLoadStorage`, `emitFreeStorage`,
+`emitInitStorage`, `emitCopyFunctionVariableToStorage`, and
+`emitCopyStorageToFunctionVariable`. Nested structs emit recursive field
+operations. Copies require same-type disjoint storage and replace
+owned destination fields. They preserve the address and clobber result.
+Stack loads preserve result and the address while pushing owned field copies
+in increasing physical order; an intermediate-target load overwrites the
+borrowed address after reading. Struct result/intermediate loads remain
+unsupported. Empty types emit no field access or address dereference.
+Initialization supplies existing defaults without running constructors.
 
 The type-owned emission APIs also support borrowed storage:
 
@@ -1029,7 +1071,7 @@ register under the existing local-copy ownership contract. Empty types emit
 nothing. Initialization supplies existing type defaults separately and does not
 run constructors.
 
-Struct declarations, object-owned struct value reads/writes, aggregate
+Struct declarations and construction, aggregate
 interpreter/host values, and aggregate yield/resume support remain unsupported.
 Host free-function calls reject struct arguments and returns instead of using
 single-slot values for aggregate storage. Host method calls likewise reject

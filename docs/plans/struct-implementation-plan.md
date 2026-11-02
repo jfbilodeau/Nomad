@@ -2,13 +2,14 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Steps 1AP through 1AY have been reviewed. Step 1AZ is in progress with
-validation blocked; it is not complete or ready for review.
+Steps 1AP through 1AY have been reviewed. Step 1AZ is implemented and awaiting
+review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
-object-owned struct properties with retained owners; value reads/writes through
-that storage remain unimplemented.
+object-owned struct properties with retained owners. Value reads/writes,
+argument/return copies, and staged replacements through that storage are
+supported.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -2064,7 +2065,7 @@ including aggregate argument/return copies and staged replacement. Reuse shared
 storage lowering and retain evaluated owners across RHS effects. Return-call
 forwarding and NRVO remain later optimization work.
 
-### Step 1AZ: Object-owned struct value reads and writes (in progress)
+### Step 1AZ: Object-owned struct value reads and writes
 
 Approved design:
 
@@ -2078,7 +2079,7 @@ Approved design:
   RHS. Restore that address afterward and stage complete aggregate replacements.
 - Keep existing local/parameter paths and fatal-fault behavior unchanged.
 
-Work added, not yet validated:
+Implementation:
 
 - Indirect VM operations and type-owned scalar/reference/recursive struct
   emission, including defaults and local copies.
@@ -2092,21 +2093,27 @@ Work added, not yet validated:
   RHS-side owner replacement, empty storage, reference fields, and class
   property initialization.
 
-Validation blocker:
+Validation:
 
-- Both CMake build-tool requests timed out without returning a completion
-  result. The language DLL timestamp advanced, but the test executable remained
-  older than these changes.
-- CMake diagnostics returned dependency/nodiscard warnings, not a compiler
-  error identifying a fix. No completed build or executable regression result
-  has been verified for this slice.
-- Stopped after two unsuccessful build requests. Changes remain uncommitted;
-  documentation of supported embedding behavior still describes the last
-  validated slice.
+- The user completed the previously blocked build and reported a successful
+  CTest run. Expanded regression validation identified one negative-test
+  expectation using the wrong wording for an existing class-field diagnostic;
+  the expectation was corrected without changing compiler behavior.
+- Debug tests and LSP targets built successfully. Language, remaining,
+  bindings, and tooling regression groups passed.
+- Executable coverage verifies reads/writes through temporary and retained
+  owners, direct aggregate argument pushes, return copies, nested properties,
+  reference ownership, self-assignment, and RHS-side owner replacement.
+- Class-field tests cover explicit struct initializers, constructor-inferred
+  defaults, and aggregate `this` assignments.
+- Empty values preserve owner evaluation and RHS side effects without accessing
+  nonexistent storage. Repeated execution restores live string/object counts.
+- Four documentation tests and whitespace checks passed. Gameplay, performance
+  benchmarks, and fault-unwind cleanup were not validated.
 
-Next action: obtain a completed build and run the focused struct/class
-regressions, fix any failures, then finish embedding documentation and review
-this slice before starting further work.
+Next after review: agree on the next construction/declaration slice. Struct
+construction and declaration syntax remain unsupported; return-call forwarding
+and NRVO remain later optimization work.
 
 Remaining Step 1 work, requiring separate design approval:
 

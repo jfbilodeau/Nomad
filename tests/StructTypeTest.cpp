@@ -3061,7 +3061,8 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_reject_unknown_properties_and_unsu
         {"value = makeBoundaryLeaf\nvalue.number = \"bad\"", "Cannot assign value of type"},
         {"return (makeBoundaryLeaf).number", "Struct property receivers currently require"},
         {"owner = makeBoundaryOwner\nowner.value.number = \"bad\"", "Cannot assign value of type"},
-        {"owner = makeBoundaryOwner\nowner.value = 3", "Cannot assign value of type"},
+        {"owner = makeBoundaryOwner\nowner.value = 3",
+            "Cannot assign type 'int' to class field 'value' of type 'BoundaryLeaf'"},
         {"owner = makeBoundaryOwner\nreturn owner.value.missing", "Unknown struct property"}
     }};
     for (const auto& [source, diagnostic] : cases) {
@@ -3083,7 +3084,7 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_reject_unknown_properties_and_unsu
         }, {}, owner, "").isValid());
         fixture.addFunction("main", source);
         BOOST_TEST(!fixture.compile());
-        BOOST_TEST(fixture.hasError(diagnostic));
+        BOOST_CHECK_MESSAGE(fixture.hasError(diagnostic), fixture.getDiagnostics());
         BOOST_TEST(calls == 0);
     }
 }
