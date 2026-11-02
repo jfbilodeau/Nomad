@@ -181,6 +181,34 @@ NomadIndex ClassType::emitLoadStorageParameter(
     return operand;
 }
 
+void ClassType::emitFreeStorage(OpCodeEmitter& emitter, const NomadIndex offset) const {
+    emitter.addOpCode(op_object_free_storage);
+    emitter.addIndex(offset);
+}
+
+NomadIndex ClassType::emitLoadStorage(
+    OpCodeEmitter& emitter,
+    const NomadIndex offset,
+    const ExpressionTarget target
+) const {
+    switch (target) {
+    case ExpressionTarget::Result:
+    case ExpressionTarget::Intermediate:
+        emitter.addOpCode(op_object_storage_load_r);
+        break;
+    case ExpressionTarget::Stack:
+        emitter.addOpCode(op_object_storage_push);
+        break;
+    default:
+        throw NomadBug("Invalid expression target for borrowed reference storage load");
+    }
+    const auto operand = emitter.addIndex(offset);
+    if (target == ExpressionTarget::Intermediate) {
+        emitMoveResultToIntermediate(emitter);
+    }
+    return operand;
+}
+
 NomadIndex ClassType::emitCopyResultToStack(OpCodeEmitter& emitter) const {
     return emitter.addOpCode(op_object_push_r);
 }

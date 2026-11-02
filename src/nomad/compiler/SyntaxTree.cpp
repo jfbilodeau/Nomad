@@ -243,10 +243,15 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
     const auto expressionType = m_expression->getType();
 
     if (compiler->getReceiverType(function) != nullptr && m_identifier.starts_with("this.")) {
-        (void)compiler->resolveClassField(
+        const auto* property = compiler->resolveClassField(
             context, function, m_identifier.substr(5), expressionType,
             context->getRuntime()->getConstructor(function->getId()) != nullptr, getLine(), getColumn()
         );
+        if (property != nullptr && expressionType != nullptr && expressionType->asStructType() != nullptr &&
+            m_stagingVariable.isInvalid()) {
+            m_stagingVariable = function->registerVariable(
+                "@assignment" + std::to_string(function->getVariableCount()), expressionType);
+        }
         return;
     }
 
@@ -450,6 +455,12 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
 
 void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     if (m_stagingVariable.isValid()) {
+        if (const auto* receiver = compiler->getReceiverType(function);
+            receiver != nullptr && m_identifier.starts_with("this.")) {
+            const auto* property = receiver->asClassType()->getProperty(m_identifier.substr(5));
+            StorageLocation(property).emitAssignment(*compiler, function, *m_expression, m_stagingVariable);
+            return;
+        }
         IdentifierDefinition identifier;
         compiler->getIdentifierDefinition(m_identifier, function, identifier);
         if (identifier.identifierType != IdentifierType::FunctionVariable &&

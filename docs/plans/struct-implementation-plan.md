@@ -2,7 +2,8 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Steps 1AP through 1AX have been reviewed; Step 1AY below is implemented and awaiting review.
+Steps 1AP through 1AY have been reviewed. Step 1AZ is in progress with
+validation blocked; it is not complete or ready for review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -2062,6 +2063,50 @@ Next slice after review: object-owned struct property reads and writes,
 including aggregate argument/return copies and staged replacement. Reuse shared
 storage lowering and retain evaluated owners across RHS effects. Return-call
 forwarding and NRVO remain later optimization work.
+
+### Step 1AZ: Object-owned struct value reads and writes (in progress)
+
+Approved design:
+
+- Add six specialized indirect-storage opcodes: scalar/reference load,
+  scalar/reference push, store, and reference release. Intermediate holds the
+  borrowed address; physical property offsets are compiler-computed.
+- Validate the nonempty object range once with the existing address opcode.
+  Indirect field operations add no spans, type checks, source-kind branches,
+  or allocation.
+- Retain the evaluated destination owner and capture its address before the
+  RHS. Restore that address afterward and stage complete aggregate replacements.
+- Keep existing local/parameter paths and fatal-fault behavior unchanged.
+
+Work added, not yet validated:
+
+- Indirect VM operations and type-owned scalar/reference/recursive struct
+  emission, including defaults and local copies.
+- Object-owned value loads, direct argument pushes, return copies, and staged
+  assignments through shared storage locations. Pure field-push sequences keep
+  their owner in result while preserving the address in intermediate.
+- Class `this` aggregate assignments, explicit aggregate property initializers,
+  and defaults for constructor-inferred struct properties use the same storage
+  operations rather than single-slot result initialization.
+- Expanded regression fixtures for ownership, source/destination aliasing,
+  RHS-side owner replacement, empty storage, reference fields, and class
+  property initialization.
+
+Validation blocker:
+
+- Both CMake build-tool requests timed out without returning a completion
+  result. The language DLL timestamp advanced, but the test executable remained
+  older than these changes.
+- CMake diagnostics returned dependency/nodiscard warnings, not a compiler
+  error identifying a fix. No completed build or executable regression result
+  has been verified for this slice.
+- Stopped after two unsuccessful build requests. Changes remain uncommitted;
+  documentation of supported embedding behavior still describes the last
+  validated slice.
+
+Next action: obtain a completed build and run the focused struct/class
+regressions, fix any failures, then finish embedding documentation and review
+this slice before starting further work.
 
 Remaining Step 1 work, requiring separate design approval:
 

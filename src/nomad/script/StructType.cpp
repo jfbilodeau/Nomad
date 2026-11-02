@@ -6,6 +6,19 @@
 
 namespace nomad {
 
+namespace {
+
+template<typename EmitProperty>
+void emitStoredProperties(const StructType& type, const EmitProperty& emitProperty) {
+    for (const auto* property : type.getProperties()) {
+        if (property->asNativeProperty() == nullptr) {
+            emitProperty(*property->getValueType(), type.getFieldOffset(property->getId()));
+        }
+    }
+}
+
+} // namespace
+
 StructType::StructType(
     Runtime* runtime,
     TypeId id,
@@ -230,14 +243,10 @@ void StructType::emitCopyFunctionVariableToStorageParameter(
     if (getSize() == 0) {
         return;
     }
-    for (const auto* property : getProperties()) {
-        if (property->asNativeProperty() != nullptr) {
-            continue;
-        }
-        const auto offset = getFieldOffset(property->getId());
-        property->getValueType()->emitCopyFunctionVariableToStorageParameter(
+    emitStoredProperties(*this, [&](const Type& type, const NomadIndex offset) {
+        type.emitCopyFunctionVariableToStorageParameter(
             emitter, sourceOffset + offset, pointerOffset, fieldOffset + offset);
-    }
+    });
 }
 
 void StructType::emitCopyParameterToStorageParameter(
@@ -270,13 +279,74 @@ void StructType::emitCopyStorageParameterToFunctionVariable(
     if (getSize() == 0) {
         return;
     }
-    for (const auto* property : getProperties()) {
-        if (property->asNativeProperty() != nullptr) {
-            continue;
-        }
-        const auto offset = getFieldOffset(property->getId());
-        property->getValueType()->emitCopyStorageParameterToFunctionVariable(
+    emitStoredProperties(*this, [&](const Type& type, const NomadIndex offset) {
+        type.emitCopyStorageParameterToFunctionVariable(
             emitter, pointerOffset, fieldOffset + offset, destinationOffset + offset);
+    });
+}
+
+void StructType::emitInitStorage(OpCodeEmitter& emitter, const NomadIndex offset) const {
+    if (getSize() != 0) {
+        emitStoredProperties(*this, [&](const Type& type, const NomadIndex propertyOffset) {
+            type.emitInitStorage(emitter, offset + propertyOffset);
+        });
+    }
+}
+
+void StructType::emitFreeStorage(OpCodeEmitter& emitter, const NomadIndex offset) const {
+    if (getSize() != 0) {
+        emitStoredProperties(*this, [&](const Type& type, const NomadIndex propertyOffset) {
+            if (type.needsFree()) {
+                type.emitFreeStorage(emitter, offset + propertyOffset);
+            }
+        });
+    }
+}
+
+NomadIndex StructType::emitLoadStorage(
+    OpCodeEmitter& emitter,
+    const NomadIndex offset,
+    const ExpressionTarget target
+) const {
+    if (target != ExpressionTarget::Stack) {
+        throw NomadException("Struct register load is not supported: " + getTypeName());
+    }
+    if (getSize() == 0) {
+        return NOMAD_INVALID_INDEX;
+    }
+    auto firstOperand = NOMAD_INVALID_INDEX;
+    emitStoredProperties(*this, [&](const Type& type, const NomadIndex propertyOffset) {
+        if (type.getSize() != 0) {
+            const auto operand = type.emitLoadStorage(emitter, offset + propertyOffset, target);
+            if (firstOperand == NOMAD_INVALID_INDEX) {
+                firstOperand = operand;
+            }
+        }
+    });
+    return firstOperand;
+}
+
+void StructType::emitCopyFunctionVariableToStorage(
+    OpCodeEmitter& emitter,
+    const NomadIndex sourceOffset,
+    const NomadIndex destinationOffset
+) const {
+    if (getSize() != 0) {
+        emitStoredProperties(*this, [&](const Type& type, const NomadIndex offset) {
+            type.emitCopyFunctionVariableToStorage(emitter, sourceOffset + offset, destinationOffset + offset);
+        });
+    }
+}
+
+void StructType::emitCopyStorageToFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadIndex sourceOffset,
+    const NomadIndex destinationOffset
+) const {
+    if (getSize() != 0) {
+        emitStoredProperties(*this, [&](const Type& type, const NomadIndex offset) {
+            type.emitCopyStorageToFunctionVariable(emitter, sourceOffset + offset, destinationOffset + offset);
+        });
     }
 }
 

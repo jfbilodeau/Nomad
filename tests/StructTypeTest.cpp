@@ -2666,6 +2666,7 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_preserve_class_reference_semantics
         "this.actor = this.actor\nthis.actor = makePropertyActor\nthis.actor.value = number\nreturn this.actor");
     BOOST_REQUIRE(methodId.isValid());
     fixture.addFunction("main",
+        "class PropertyBox\nvalue = makePropertyHolder\nend\n"
         "fun mutatePropertyHolder copy:PropertyHolder\n"
         "copy.actor.value = 23\ncopy.actor = makePropertyActor\ncopy.actor.value = 71\nreturn copy.actor\nend\n"
         "value = makePropertyHolder\nvalue.actor.value = 12\nvalue.actor = value.actor\n"
@@ -2673,7 +2674,12 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_preserve_class_reference_semantics
         "returned = mutatePropertyHolder value\nassert returned.value == 71\nassert value.actor.value == 23\n"
         "copy.actor = makePropertyActor\ncopy.actor.value = 31\n"
         "assert value.actor.value == 23\nassert copy.actor.value == 31\n"
-        "returned = value.replacePropertyActor 41\nassert returned.value == 41\nreturn value.actor.value");
+        "returned = value.replacePropertyActor 41\nassert returned.value == 41\n"
+        "boxed = new PropertyBox\nboxed.value.actor.value = 11\n"
+        "held = boxed.value\nheld.actor.value = 13\nassert boxed.value.actor.value == 13\n"
+        "boxed.value.actor = makePropertyActor\nboxed.value.actor.value = 29\nassert held.actor.value == 13\n"
+        "boxed.value = held\nboxed.value = boxed.value\nassert boxed.value.actor.value == 13\n"
+        "return value.actor.value");
     fixture.getCompiler().registerPhaseHook([&](CompilerContext* context, const CompilationPhase phase) {
         if (phase != CompilationPhase::Parse) {
             return;
@@ -2700,7 +2706,7 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_preserve_class_reference_semantics
     }
 }
 
-BOOST_AUTO_TEST_CASE(source_object_owned_struct_methods_retain_evaluated_owners_through_calls) {
+BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evaluated_owners) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     const auto emptyId = runtime.registerStruct("OwnedEmpty");
@@ -2738,6 +2744,40 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_methods_retain_evaluated_owners_
     BOOST_REQUIRE(runtime.registerNativeFunction("makeOwnedReceiver", [&](VirtualMachine* active) {
         active->getResult().setObjectValue(createOwner(17));
     }, {}, owner, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeOwnedPoint", [](VirtualMachine* active) {
+        auto* destination = active->getParameter(1).getStorageAddress();
+        destination[0] = active->getParameter(0);
+        destination[1].freeObjectValue();
+        destination[1].setStringValue("made");
+    }, {defParameter("number", runtime.getIntegerType(), "")}, point, "").isValid());
+    auto emptyValues = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeOwnedEmptyValue", [&](VirtualMachine*) {
+        ++emptyValues;
+    }, {}, empty, "").isValid());
+    ScriptObject* valueOwner = nullptr;
+    std::vector<NomadInteger> assignmentOrder;
+    BOOST_REQUIRE(runtime.registerNativeFunction("getValueOwner", [&](VirtualMachine* active) {
+        assignmentOrder.push_back(0);
+        valueOwner = createOwner(17);
+        active->getResult().setObjectValue(valueOwner);
+    }, {}, owner, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("inspectValueOwner", [&](VirtualMachine* active) {
+        assignmentOrder.push_back(1);
+        BOOST_TEST(valueOwner->getReferenceCount() == 1U);
+        BOOST_TEST(valueOwner->getStorageValue(2).getIntegerValue() == 17);
+        BOOST_TEST(NomadString(valueOwner->getStorageValue(3).getStringValue()) == "kept");
+        active->setIntegerResult(90);
+    }, {}, runtime.getIntegerType(), "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("inspectThenMakePoint", [&](VirtualMachine* active) {
+        assignmentOrder.push_back(2);
+        BOOST_TEST(valueOwner->getReferenceCount() == 1U);
+        BOOST_TEST(valueOwner->getStorageValue(2).getIntegerValue() == 17);
+        BOOST_TEST(NomadString(valueOwner->getStorageValue(3).getStringValue()) == "kept");
+        auto* destination = active->getParameter(0).getStorageAddress();
+        destination[0].setIntegerValue(89);
+        destination[1].freeObjectValue();
+        destination[1].setStringValue("copied");
+    }, {}, point, "").isValid());
     BOOST_REQUIRE(runtime.registerNativeFunction("makeOnlyEmptyOwner", [emptyOwner](VirtualMachine* active) {
         auto* object = new ScriptObject(emptyOwner);
         BOOST_TEST(object->getStorageSize() == 0U);
@@ -2884,8 +2924,14 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_methods_retain_evaluated_owners_
         .documentation = ""
     }).isValid());
     fixture.addFunction("main",
+        "class ExplicitOwnedBox\npoint = makeOwnedPoint 7\nempty = makeOwnedEmptyValue\n"
+        "fun replaceExplicitOwnedPoint number:int\nthis.point = makeOwnedPoint number\nreturn this.point.number\nend\nend\n"
+        "class InferredOwnedBox\ninit\nassert this.point.number == 0\nassert this.point.text == \"\"\n"
+        "this.point = makeOwnedPoint 5\nend\nend\n"
         "fun takeOwnedPoint value:OwnedPoint\nvalue.number = value.number + 10\nreturn value.number\nend\n"
         "fun relayOwned owner:OwnedReceiver\nreturn owner.outer.point.ownedCopy\nend\n"
+        "fun readOwned owner:OwnedReceiver\nreturn owner.outer.point\nend\n"
+        "fun takeOwnedEmpty value:OwnedEmpty\nreturn 7\nend\n"
         "owner = makeOwnedReceiver\nowner.outer.point.ownedShift 3\n"
         "assert (owner.outer.point.ownedRead) == 20\n"
         "result = owner.outer.point.ownedScript 2\nresult.number = 500\n"
@@ -2908,6 +2954,30 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_methods_retain_evaluated_owners_
         "assert (onlyOwnedScalar) == 17\njustReceiver = onlyOwnedStruct\nassert justReceiver.number == 18\n"
         "owner.outer.point.ownedShift (owner.outer.point.ownedRead)\n"
         "assert owner.prefix == 101\nassert owner.suffix == 505\n"
+        "assert (takeOwnedPoint owner.outer.point) == 64\n"
+        "assert (takeOwnedPoint (makeOwnedReceiver).outer.point) == 27\n"
+        "snapshot = owner.outer\nsnapshot.point.number = 700\nassert owner.outer.point.number == 54\n"
+        "owner.outer.point.number = 61\nowner.outer.point.text = owner.outer.point.text\n"
+        "owner.outer.point = owner.outer.point\nowner.outer = owner.outer\n"
+        "assert owner.outer.before == 202\nassert owner.outer.after == 404\n"
+        "pointCopy = readOwned owner\npointCopy.number = 900\nassert owner.outer.point.number == 61\n"
+        "owner.outer.point = makeOwnedPoint 9\n"
+        "owner.outer.point = owner.outer.point.ownedScript 2\nassert owner.outer.point.number == 11\n"
+        "owner.outer.point = makeOwnedPoint (owner.outer.point.number + 1)\n"
+        "assert owner.outer.point.number == 12\nassert owner.outer.point.text == \"made\"\n"
+        "(getValueOwner).outer.point.number = inspectValueOwner\n"
+        "(getValueOwner).outer.point = inspectThenMakePoint\n"
+        "victim = makeOwnedReceiver\nvictim.outer.point.number = replaceOwnedReceiver\n"
+        "assert victim.outer.point.number == 100\n"
+        "victim = makeOwnedReceiver\nvictim.outer.point = makeOwnedPoint replaceOwnedReceiver\n"
+        "assert victim.outer.point.number == 100\n"
+        "emptyValue = (makeOnlyEmptyOwner).empty\nowner.empty = emptyValue\n"
+        "(makeOnlyEmptyOwner).empty = makeOwnedEmptyValue\n"
+        "owner.empty = (makeOnlyEmptyOwner).empty\n"
+        "assert (takeOwnedEmpty (makeOnlyEmptyOwner).empty) == 7\n"
+        "explicit = new ExplicitOwnedBox\nassert explicit.point.number == 7\n"
+        "assert (explicit.replaceExplicitOwnedPoint 31) == 31\n"
+        "inferred = new InferredOwnedBox\nassert inferred.point.number == 5\n"
         "return owner.outer.point.ownedRead");
     fixture.addFunction("onlyEmpty",
         "owner = makeOwnedReceiver\nowner.empty.ownedEmpty\n(makeOnlyEmptyOwner).empty.ownedEmpty\n"
@@ -2941,7 +3011,7 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_methods_retain_evaluated_owners_
     for (auto index = 0; index < 3; ++index) {
         const auto outcome = fixture.execute("main");
         BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
-        BOOST_TEST(outcome.integerValue == 54);
+        BOOST_TEST(outcome.integerValue == 12);
         BOOST_TEST(order == expectedOrder, boost::test_tools::per_element());
         const auto emptyOutcome = fixture.execute("onlyEmpty");
         BOOST_REQUIRE_MESSAGE(!emptyOutcome.fault.has_value(), emptyOutcome.fault.value_or(""));
@@ -2949,7 +3019,8 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_methods_retain_evaluated_owners_
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
     }
-    BOOST_TEST(replacements == 6);
+    BOOST_TEST(replacements == 12);
+    BOOST_TEST(emptyValues == 6);
     BOOST_TEST(orderedCalls == 3);
     BOOST_TEST(emptyCalls == 6);
     std::ostringstream dump;
@@ -2979,18 +3050,19 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_methods_retain_evaluated_owners_
     }
     BOOST_TEST(sawOwnerAtTop);
     BOOST_TEST(sawOwnerBelowReturn);
+    const std::vector<NomadInteger> expectedAssignments{0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2};
+    BOOST_TEST(assignmentOrder == expectedAssignments, boost::test_tools::per_element());
 }
 
 BOOST_AUTO_TEST_CASE(source_struct_properties_reject_unknown_properties_and_unsupported_storage) {
-    const std::array<std::pair<NomadString, NomadString>, 8> cases{{
+    const std::array<std::pair<NomadString, NomadString>, 7> cases{{
         {"value = makeBoundaryLeaf\nreturn value.missing", "Unknown struct property"},
         {"value = makeBoundaryLeaf\nvalue.missing = 3", "Unknown struct property"},
         {"value = makeBoundaryLeaf\nvalue.number = \"bad\"", "Cannot assign value of type"},
         {"return (makeBoundaryLeaf).number", "Struct property receivers currently require"},
-        {"owner = makeBoundaryOwner\nreturn owner.value.number", "Object-owned struct property reads and writes"},
-        {"owner = makeBoundaryOwner\ncopy = owner.value", "Object-owned struct property reads and writes"},
-        {"owner = makeBoundaryOwner\nowner.value.number = 3", "Object-owned struct property reads and writes"},
-        {"owner = makeBoundaryOwner\nowner.value = makeBoundaryLeaf", "Object-owned struct property reads and writes"}
+        {"owner = makeBoundaryOwner\nowner.value.number = \"bad\"", "Cannot assign value of type"},
+        {"owner = makeBoundaryOwner\nowner.value = 3", "Cannot assign value of type"},
+        {"owner = makeBoundaryOwner\nreturn owner.value.missing", "Unknown struct property"}
     }};
     for (const auto& [source, diagnostic] : cases) {
         nomad::test::LanguageTestFixture fixture;

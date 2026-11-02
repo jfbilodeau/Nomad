@@ -111,6 +111,25 @@ public:
         NomadIndex fieldOffset,
         ExpressionTarget target
     ) const;
+    // Intermediate holds a trusted nonempty storage address. Stack loads preserve result and the address.
+    virtual NomadIndex emitLoadStorage(
+        OpCodeEmitter& emitter,
+        NomadIndex offset,
+        ExpressionTarget target
+    ) const;
+    virtual void emitFreeStorage(OpCodeEmitter& emitter, NomadIndex offset) const;
+    virtual void emitInitStorage(OpCodeEmitter& emitter, NomadIndex offset) const;
+    // Same-type disjoint ranges; copy operations preserve the address and clobber result.
+    virtual void emitCopyFunctionVariableToStorage(
+        OpCodeEmitter& emitter,
+        NomadIndex sourceOffset,
+        NomadIndex destinationOffset
+    ) const;
+    virtual void emitCopyStorageToFunctionVariable(
+        OpCodeEmitter& emitter,
+        NomadIndex sourceOffset,
+        NomadIndex destinationOffset
+    ) const;
     // Pushes an owned copy of reserved local storage in increasing slot order; empty values push nothing.
     virtual void emitPushFunctionVariable(OpCodeEmitter& emitter, NomadIndex offset) const;
     // Stages the complete source before replacement. Same-type scratch must be disjoint from both ranges.

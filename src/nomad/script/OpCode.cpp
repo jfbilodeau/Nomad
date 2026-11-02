@@ -369,6 +369,36 @@ void op_object_free_parameter(VirtualMachine* interpreter) {
     interpreter->getParameterStorage(offset, 1)[0].freeObjectValue();
 }
 
+void op_storage_load_r(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->setResult(interpreter->getStorage(offset));
+}
+
+void op_storage_push(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->pushValue(interpreter->getStorage(offset));
+}
+
+void op_object_storage_load_r(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->getResult().copyObjectValue(interpreter->getStorage(offset));
+}
+
+void op_object_storage_push(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->pushObjectValue(interpreter->getStorage(offset));
+}
+
+void op_storage_set(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->getStorage(offset) = interpreter->getResult();
+}
+
+void op_object_free_storage(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->getStorage(offset).freeObjectValue();
+}
+
 void op_stored_property_address_push(VirtualMachine* interpreter) {
     const auto ownerOffset = interpreter->nextIndex();
     const auto firstOffset = interpreter->nextIndex();

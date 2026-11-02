@@ -74,6 +74,23 @@ public:
         NomadIndex fieldOffset,
         ExpressionTarget target
     ) const override;
+    void emitInitStorage(OpCodeEmitter& emitter, NomadIndex offset) const override;
+    void emitFreeStorage(OpCodeEmitter& emitter, NomadIndex offset) const override;
+    NomadIndex emitLoadStorage(
+        OpCodeEmitter& emitter,
+        NomadIndex offset,
+        ExpressionTarget target
+    ) const override;
+    void emitCopyFunctionVariableToStorage(
+        OpCodeEmitter& emitter,
+        NomadIndex sourceOffset,
+        NomadIndex destinationOffset
+    ) const override;
+    void emitCopyStorageToFunctionVariable(
+        OpCodeEmitter& emitter,
+        NomadIndex sourceOffset,
+        NomadIndex destinationOffset
+    ) const override;
     void emitFreeResult(OpCodeEmitter& emitter) const override;
     void emitFreeIntermediate(OpCodeEmitter& emitter) const override;
     void emitFreeStackValue(OpCodeEmitter& emitter, NomadIndex offset) const override;

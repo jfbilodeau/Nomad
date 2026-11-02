@@ -192,6 +192,69 @@ void Type::emitCopyStorageParameterToFunctionVariable(
     emitStoreFunctionVariable(emitter, destinationOffset);
 }
 
+NomadIndex Type::emitLoadStorage(
+    OpCodeEmitter& emitter,
+    const NomadIndex offset,
+    const ExpressionTarget target
+) const {
+    if (getSize() == 0) {
+        return NOMAD_INVALID_INDEX;
+    }
+    switch (target) {
+    case ExpressionTarget::Result:
+    case ExpressionTarget::Intermediate:
+        emitter.addOpCode(op_storage_load_r);
+        break;
+    case ExpressionTarget::Stack:
+        emitter.addOpCode(op_storage_push);
+        break;
+    default:
+        throw NomadBug("Invalid expression target for borrowed storage load");
+    }
+    const auto operand = emitter.addIndex(offset);
+    if (target == ExpressionTarget::Intermediate) {
+        emitMoveResultToIntermediate(emitter);
+    }
+    return operand;
+}
+
+void Type::emitFreeStorage(OpCodeEmitter&, NomadIndex) const {
+}
+
+void Type::emitInitStorage(OpCodeEmitter& emitter, const NomadIndex offset) const {
+    if (getSize() != 0) {
+        emitInitResult(emitter);
+        emitFreeStorage(emitter, offset);
+        emitter.addOpCode(op_storage_set);
+        emitter.addIndex(offset);
+    }
+}
+
+void Type::emitCopyFunctionVariableToStorage(
+    OpCodeEmitter& emitter,
+    const NomadIndex sourceOffset,
+    const NomadIndex destinationOffset
+) const {
+    if (getSize() != 0) {
+        emitLoadFunctionVariable(emitter, sourceOffset, ExpressionTarget::Result);
+        emitFreeStorage(emitter, destinationOffset);
+        emitter.addOpCode(op_storage_set);
+        emitter.addIndex(destinationOffset);
+    }
+}
+
+void Type::emitCopyStorageToFunctionVariable(
+    OpCodeEmitter& emitter,
+    const NomadIndex sourceOffset,
+    const NomadIndex destinationOffset
+) const {
+    if (getSize() != 0) {
+        emitLoadStorage(emitter, sourceOffset, ExpressionTarget::Result);
+        emitFreeFunctionVariable(emitter, destinationOffset);
+        emitStoreFunctionVariable(emitter, destinationOffset);
+    }
+}
+
 void Type::emitFreeStorageParameter(OpCodeEmitter&, NomadIndex, NomadIndex) const {
 }
 

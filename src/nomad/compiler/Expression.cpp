@@ -1083,14 +1083,7 @@ void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptCallabl
     const auto* receiverType = m_receiver->getType();
     const auto* propertyType = getType();
     if (m_storage.has_value()) {
-        if (propertyType->asStructType() != nullptr) {
-            expression->compileIntoLocal(compiler, function, m_stagingVariable);
-            m_storage->emitCopyFromLocal(*compiler, function, m_stagingVariable);
-            propertyType->emitFreeFunctionVariable(*compiler, function->getVariableOffset(m_stagingVariable));
-        } else {
-            expression->compile(compiler, function, ExpressionTarget::Result);
-            m_storage->emitStoreResult(*compiler, function);
-        }
+        m_storage->emitAssignment(*compiler, function, *expression, m_stagingVariable);
         return;
     }
     m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);

@@ -1381,6 +1381,17 @@ void Compiler::compileObjectInitializer(const FunctionCompilation& source) {
         if (property->asNativeProperty() != nullptr || property->hasExplicitInitializer()) {
             continue;
         }
+        if (property->getValueType()->asStructType() != nullptr) {
+            if (property->getValueType()->getSize() != 0) {
+                const auto storage = StorageLocation(property);
+                storage.emitRetainOwner(*this, function);
+                storage.emitAddress(*this, function);
+                addOpCode(OpCodes::op_pop_i);
+                property->getValueType()->emitInitStorage(*this, 0);
+                storage.emitFreeOwner(*this);
+            }
+            continue;
+        }
         addOpCode(OpCodes::op_code_load_default_r);
         addId(property->getValueType()->getId().id);
         addLoadReceiver(function, ExpressionTarget::Intermediate);

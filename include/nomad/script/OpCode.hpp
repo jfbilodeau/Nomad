@@ -154,6 +154,12 @@ DECLARE_OP_CODE(op_parameter_set)
 DECLARE_OP_CODE(op_object_free_parameter)
 
 // Internal borrowed storage operations
+DECLARE_OP_CODE(op_storage_load_r)
+DECLARE_OP_CODE(op_storage_push)
+DECLARE_OP_CODE(op_object_storage_load_r)
+DECLARE_OP_CODE(op_object_storage_push)
+DECLARE_OP_CODE(op_storage_set)
+DECLARE_OP_CODE(op_object_free_storage)
 DECLARE_OP_CODE(op_stored_property_address_push)
 DECLARE_OP_CODE(op_local_address_push)
 DECLARE_OP_CODE(op_parameter_address_push)

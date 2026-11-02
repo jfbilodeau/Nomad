@@ -64,6 +64,9 @@ public:
         return m_stack[m_parameterIndex - pointerOffset].getStorageAddress()[fieldOffset];
     }
     void pushStorageAddress(RuntimeValue* address);
+    [[nodiscard]] RuntimeValue& getStorage(const NomadIndex offset) {
+        return m_intermediate.getStorageAddress()[offset];
+    }
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
     [[nodiscard]] NomadObject* constructObject(

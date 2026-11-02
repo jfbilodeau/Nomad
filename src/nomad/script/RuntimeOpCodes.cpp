@@ -87,6 +87,18 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_object_free_parameter, op_object_free_parameter, "Release object at physical parameter offset", {Operand::Index});
 
     // Internal borrowed storage operations
+    registerInstruction(OpCodes::op_storage_load_r, op_storage_load_r,
+        "Load a scalar from the borrowed address in intermediate into result", {Operand::Index});
+    registerInstruction(OpCodes::op_storage_push, op_storage_push,
+        "Push a scalar from the borrowed address in intermediate, preserving result", {Operand::Index});
+    registerInstruction(OpCodes::op_object_storage_load_r, op_object_storage_load_r,
+        "Copy a reference from the borrowed address in intermediate into result", {Operand::Index});
+    registerInstruction(OpCodes::op_object_storage_push, op_object_storage_push,
+        "Push an owned reference copy from the borrowed address in intermediate, preserving result", {Operand::Index});
+    registerInstruction(OpCodes::op_storage_set, op_storage_set,
+        "Transfer result into borrowed intermediate-address storage after owned-value cleanup", {Operand::Index});
+    registerInstruction(OpCodes::op_object_free_storage, op_object_free_storage,
+        "Release and clear a reference at the borrowed address in intermediate", {Operand::Index});
     registerInstruction(OpCodes::op_stored_property_address_push, op_stored_property_address_push,
         "Push a nonempty stored property address from a retained stack owner and inclusive physical slot bounds",
         {Operand::Index, Operand::Index, Operand::Index});

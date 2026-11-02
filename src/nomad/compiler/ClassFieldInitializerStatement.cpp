@@ -14,9 +14,26 @@ ClassFieldInitializerStatement::ClassFieldInitializerStatement(ClassMemberDeclar
     m_member(member)
 {}
 
+void ClassFieldInitializerStatement::onResolve(CompilerContext* context, ScriptCallableBase* function) {
+    auto* initializer = m_member->getInitializer();
+    if (!initializer->resolve(context, function)) {
+        return;
+    }
+    if (initializer->getType() != nullptr && initializer->getType()->asStructType() != nullptr &&
+        m_stagingVariable.isInvalid()) {
+        m_stagingVariable = function->registerVariable(
+            "$fieldInitializer" + std::to_string(function->getVariableCount()), initializer->getType());
+    }
+}
+
 void ClassFieldInitializerStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     auto* initializer = m_member->getInitializer();
     const auto* receiverType = function->getClassType();
+    if (initializer->getType()->asStructType() != nullptr) {
+        const auto* property = compiler->getRuntime()->getProperty(m_member->getPropertyId());
+        StorageLocation(property).emitAssignment(*compiler, function, *initializer, m_stagingVariable);
+        return;
+    }
     initializer->compile(compiler, function, ExpressionTarget::Result);
     compiler->addLoadReceiver(function, ExpressionTarget::Intermediate);
     compiler->addStoreProperty(m_member->getPropertyId());

@@ -13,10 +13,12 @@ public:
     explicit ClassFieldInitializerStatement(ClassMemberDeclaration* member);
 
 protected:
+    void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
 
 private:
     ClassMemberDeclaration* m_member;
+    VariableId m_stagingVariable = VariableId::INVALID;
 };
 
 } // namespace nomad

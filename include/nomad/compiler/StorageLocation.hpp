@@ -16,6 +16,7 @@ class ScriptCallableBase;
 class StorageLocation {
 public:
     explicit StorageLocation(IdentifierDefinition root);
+    explicit StorageLocation(const Property* property);
     StorageLocation(Expression* owner, const Property* property);
 
     [[nodiscard]] const Type* getType() const;
@@ -23,6 +24,12 @@ public:
     void validate(const ScriptCallableBase* function) const;
     void emitRetainOwner(Compiler& compiler, ScriptCallableBase* function) const;
     void emitFreeOwner(Compiler& compiler) const;
+    void emitAssignment(
+        Compiler& compiler,
+        ScriptCallableBase* function,
+        Expression& expression,
+        VariableId stagingVariable
+    ) const;
     void emitAddress(
         Compiler& compiler,
         const ScriptCallableBase* function,
@@ -30,13 +37,13 @@ public:
     ) const;
     void emitLoad(
         Compiler& compiler,
-        const ScriptCallableBase* function,
+        ScriptCallableBase* function,
         ExpressionTarget target
     ) const;
     void emitStoreResult(Compiler& compiler, const ScriptCallableBase* function) const;
     void emitCopyToLocal(
         Compiler& compiler,
-        const ScriptCallableBase* function,
+        ScriptCallableBase* function,
         VariableId destination
     ) const;
     void emitCopyFromLocal(
