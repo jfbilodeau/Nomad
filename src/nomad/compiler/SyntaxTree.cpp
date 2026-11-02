@@ -610,10 +610,22 @@ ExpressionStatement::ExpressionStatement(const NomadIndex line, const NomadIndex
 }
 
 void ExpressionStatement::onResolve(CompilerContext* context, ScriptCallableBase* function) {
-    (void)m_expression->resolve(context, function);
+    if (!m_expression->resolve(context, function)) {
+        return;
+    }
+    if (context->getMode() == CompilerMode::Script && function != nullptr &&
+        m_expression->getType()->asStructType() != nullptr && m_destination.isInvalid()) {
+        m_destination = function->registerVariable(
+            "$discard" + std::to_string(function->getVariableCount()), m_expression->getType());
+    }
 }
 
 void ExpressionStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
+    if (m_destination.isValid()) {
+        m_expression->compileIntoLocal(compiler, function, m_destination);
+        m_expression->getType()->emitFreeFunctionVariable(*compiler, function->getVariableOffset(m_destination));
+        return;
+    }
     m_expression->compile(compiler, function, ExpressionTarget::Result);
     if (!m_expression->getType()->isVoid()) {
         m_expression->getType()->emitFreeResult(*compiler);

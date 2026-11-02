@@ -684,6 +684,9 @@ void VirtualMachine::runScriptMethod(
         script->getFunctionStart() >= script->getFunctionEnd()) {
         fault("Cannot call script method: invalid or uncompiled method");
     }
+    if (method->getClassType()->asStructType() != nullptr || method->getReturnType()->asStructType() != nullptr) {
+        fault("Host method calls do not support struct receiver or return storage");
+    }
     if (args.size() != method->getParameterCount()) {
         fault("Incorrect argument count when calling script method '" + method->getName() + "'");
     }
@@ -734,6 +737,9 @@ void VirtualMachine::runNativeMethod(const CallableId memberId, const std::vecto
     }
     if (method->getReturnType() == nullptr) {
         fault("Native method '" + method->getName() + "' has no return type");
+    }
+    if (method->getClassType()->asStructType() != nullptr || method->getReturnType()->asStructType() != nullptr) {
+        fault("Host method calls do not support struct receiver or return storage");
     }
     if (!method->getReturnType()->isVoid()) {
         m_result = RuntimeValue{};

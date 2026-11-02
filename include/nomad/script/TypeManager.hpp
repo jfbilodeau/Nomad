@@ -120,6 +120,10 @@ public:
         TypeId ownerId,
         NativeMethodDefinition definition
     );
+    [[nodiscard]] CallableId registerNativeStructMethod(
+        TypeId ownerId,
+        NativeMethodDefinition definition
+    );
     [[nodiscard]] CallableId registerNativeClassConstructor(
         TypeId ownerId,
         NativeConstructorDefinition definition
@@ -130,6 +134,13 @@ public:
         NativeConstructorDefinition definition
     );
     [[nodiscard]] CallableId registerScriptClassMethod(
+        TypeId ownerId,
+        NomadString name,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
+    [[nodiscard]] CallableId registerScriptStructMethod(
         TypeId ownerId,
         NomadString name,
         std::vector<Parameter> parameters,
@@ -195,6 +206,17 @@ private:
         CompositeType* owner,
         const NomadString& name,
         const Type* valueType
+    );
+    [[nodiscard]] CallableId registerNativeMethod(
+        CompositeType* owner,
+        NativeMethodDefinition definition
+    );
+    [[nodiscard]] CallableId registerScriptMethod(
+        CompositeType* owner,
+        NomadString name,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
     );
 
     Runtime& m_runtime;

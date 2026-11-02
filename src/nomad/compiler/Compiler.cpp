@@ -449,6 +449,11 @@ const Property* Compiler::resolveClassField(
 ) {
     const auto* receiver = getReceiverType(function);
     const auto* owner = receiver != nullptr ? receiver->asClassType() : nullptr;
+    if (receiver != nullptr && receiver->asStructType() != nullptr) {
+        context->reportError("Struct property assignment is not yet supported",
+            function->getPath(), line, column);
+        return nullptr;
+    }
     if (owner == nullptr) {
         reportInternalError("Class field resolution requires an object receiver");
     }
@@ -1307,7 +1312,7 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
     for (const auto& source: m_functions) {
         types.push_back(source.function->getReturnType());
         if (const auto* receiver = source.function->getClassType()) {
-            for (const auto* property : receiver->asClassType()->getProperties()) {
+            for (const auto* property : receiver->asCompositeType()->getProperties()) {
                 types.push_back(property->getValueType());
             }
         }
@@ -1437,6 +1442,12 @@ void Compiler::addStoreParameter(const NomadIndex offset, const Type* type) {
 }
 
 void Compiler::addLoadReceiver(ScriptCallableBase* function, const ExpressionTarget target) {
+    if (const auto* receiver = function->getClassType(); receiver != nullptr && receiver->asStructType() != nullptr) {
+        if (receiver->getSize() != 0) {
+            receiver->emitLoadStorageParameter(*this, *function->getCallStorageLayout().receiverOffset, 0, target);
+        }
+        return;
+    }
     if (function->getClassType() != nullptr) {
         if (target == ExpressionTarget::Intermediate) {
             addOpCode(OpCodes::op_copy_this_to_i);

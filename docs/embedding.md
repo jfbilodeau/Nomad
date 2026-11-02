@@ -919,7 +919,18 @@ The callee accesses its struct receiver through the hidden storage parameter,
 not `VirtualMachine::getThis()`. Existing call frames preserve the enclosing
 object receiver without an additional `push_this`/`pop_this` pair. This emission
 API does not register methods, resolve source expressions, retain object-property
-owners, or make source-level struct member access executable.
+owners, or compile method bodies.
+
+Compiled member expressions can call registered struct methods on locals,
+ordinary parameters, and a struct method's `this`. Calls mutate the borrowed
+receiver, while explicit struct arguments remain independent copies. Struct
+results support assignment, arguments, returns, and discarded call statements.
+A script method can copy or return `this`, or pass it as an ordinary struct
+argument; those uses copy its fields rather than expose the borrowed address.
+Empty receivers and results still execute their calls.
+
+Temporary and embedded-property receivers, direct struct property access, and
+struct closure captures remain unsupported and produce compilation errors.
 
 The type-owned emission APIs also support borrowed storage:
 
@@ -947,10 +958,11 @@ register under the existing local-copy ownership contract. Empty types emit
 nothing. Initialization supplies existing type defaults separately and does not
 run constructors.
 
-Source-level struct methods, retained object-property lowering, aggregate
+Struct declarations, retained object-property lowering, aggregate
 interpreter/host values, and aggregate yield/resume support remain unsupported.
 Host free-function calls reject struct arguments and returns instead of using
-single-slot values for aggregate storage.
+single-slot values for aggregate storage. Host method calls likewise reject
+struct receivers and struct returns.
 
 ### Class type property metadata
 
@@ -1315,6 +1327,12 @@ native method and returns its `CallableId`. The owner ID must identify an object
 type. Parameter and return-type IDs are resolved in the same runtime; IDs are
 runtime-local and must not be transferred between runtimes.
 
+`registerNativeStructMethod(id, definition)` provides the corresponding
+registration for struct owners. The class and struct entry points reject the
+other owner category. `Runtime::addMethod` dispatches to the appropriate entry
+point. Both publish methods in the same callable and native-member catalogs.
+Struct callbacks use the borrowed storage ABI above, not `getThis()`.
+
 Each `ParameterDefinition` supplies its type ID, name, and documentation.
 Parameters must have nonempty names and non-void types. Compiler-supplied
 parameter types retain their existing calling conventions. The return type may
@@ -1484,6 +1502,13 @@ own their methods and constructors; returned pointers are borrowed for the
 runtime's lifetime. Registration does not run native callbacks or alter stored
 field layouts, and remains available after field layout finalization.
 Struct owner IDs are rejected by these class APIs.
+
+`TypeManager::registerScriptStructMethod(typeId, name, parameters, path, source)`
+registers the corresponding struct-method signature. Class owner IDs are rejected.
+`Runtime::registerScriptMethod` dispatches by owner category. Struct descriptors
+own their methods under the same runtime-lifetime contract. Registration alone
+still does not parse or compile the retained source; embedding code must supply
+the method body through the existing compiler integration APIs.
 
 Include `<nomad/script/NativeMember.hpp>` for `ParameterDefinition`,
 `NativeMethodDefinition`, and `NativeConstructorDefinition`.

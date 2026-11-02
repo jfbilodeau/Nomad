@@ -215,7 +215,8 @@ void ExpressionArgument::onResolve(CompilerContext* context, ScriptCallableBase*
             IdentifierDefinition definition;
             context->getCompiler()->getIdentifierDefinition(identifier->getIdentifier(), function, definition);
             m_directStack = definition.identifierType == IdentifierType::FunctionVariable ||
-                definition.identifierType == IdentifierType::Parameter;
+                definition.identifierType == IdentifierType::Parameter ||
+                definition.identifierType == IdentifierType::Receiver;
         }
         if (!m_directStack && m_stagingVariable.isInvalid()) {
             m_stagingVariable = function->registerVariable(

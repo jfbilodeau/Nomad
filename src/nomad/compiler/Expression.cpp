@@ -709,13 +709,18 @@ bool NativeMemberExpression::resolveMember(
     if (!m_receiver->resolve(context, function)) {
         return false;
     }
+    if (m_receiver->getType() == nullptr) {
+        reportError(context, function, "Cannot determine receiver type for member '" + m_qualifiedName + "'");
+        return false;
+    }
 
     auto* runtime = context->getRuntime();
     m_memberId = runtime->getNativeMemberId(m_receiver->getType(), m_memberName);
 
     const auto* owner = m_receiver->getType()->asClassType();
+    const auto* composite = m_receiver->getType()->asCompositeType();
     if (runtime->getMemberType(m_memberId) == MemberType::Method ||
-        (owner != nullptr && std::ranges::any_of(owner->getMethods(),
+        (composite != nullptr && std::ranges::any_of(composite->getMethods(),
             [&](const auto* method) { return method->getName() == m_memberName; }))) {
         m_memberType = MemberType::Method;
         return true;
@@ -849,6 +854,24 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
             reportError(context, function, "Method '" + m_qualifiedName + "' has not been compiled");
             return;
         }
+        if (m_receiver->getType()->asStructType() != nullptr) {
+            if (context->getMode() != CompilerMode::Script || function == nullptr) {
+                reportError(context, function, "Struct method calls are not supported by the interpreter");
+                return;
+            }
+            const auto* identifier = m_receiver->asIdentifierExpression();
+            if (identifier != nullptr) {
+                compiler->getIdentifierDefinition(identifier->getIdentifier(), function, m_structReceiver);
+            }
+            if (identifier == nullptr ||
+                (m_structReceiver.identifierType != IdentifierType::FunctionVariable &&
+                 m_structReceiver.identifierType != IdentifierType::Parameter &&
+                 m_structReceiver.identifierType != IdentifierType::Receiver)) {
+                reportError(context, function,
+                    "Struct method receivers currently require a local, parameter, or 'this'");
+                return;
+            }
+        }
         for (NomadIndex index = 0; index < arguments.size(); ++index) {
             arguments[index]->setType(m_method->getParameters()[index].type);
         }
@@ -878,6 +901,16 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
         compiler->reportInternalError("Native member has not been resolved: " + m_qualifiedName);
     }
     const auto* receiverType = m_receiver->getType();
+    if (getType()->asStructType() != nullptr) {
+        compiler->reportError("Struct method results require a local destination");
+    }
+    if (m_memberType == MemberType::Method && receiverType->asStructType() != nullptr) {
+        compiler->addStructMethodCall(m_method->getId(), function, &m_arguments, m_structReceiver);
+        if (!getType()->isVoid()) {
+            compiler->addMoveResult(getType(), target);
+        }
+        return;
+    }
 
     if (m_memberType != MemberType::Property) {
         compiler->addOpCode(OpCodes::op_push_this);
@@ -903,9 +936,28 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
     }
 }
 
+void NativeMemberExpression::onCompileIntoLocal(
+    Compiler* compiler,
+    ScriptCallableBase* function,
+    const VariableId destination
+) {
+    if (getType()->asStructType() == nullptr) {
+        Expression::onCompileIntoLocal(compiler, function, destination);
+        return;
+    }
+    if (m_memberType != MemberType::Method || m_receiver->getType()->asStructType() == nullptr) {
+        compiler->reportError("Struct local destinations currently require a struct method receiver");
+    }
+    compiler->addStructMethodCall(m_method->getId(), function, &m_arguments, m_structReceiver, destination);
+}
+
 void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
     if (m_memberType == MemberType::Unknown) {
         raiseException("Native member has not been resolved: " + m_qualifiedName);
+    }
+    if (m_receiver->getType()->asStructType() != nullptr || getType()->asStructType() != nullptr) {
+        context.setError("Struct member values are not supported by the interpreter");
+        return;
     }
     m_receiver->evaluate(context);
     const auto* evaluatedReceiver = context.getResult();
@@ -1645,6 +1697,10 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBas
     }
     if (context->getCompiler()->getReceiverType(function) != nullptr && m_identifier.starts_with("this.")) {
         const auto* owner = context->getCompiler()->getReceiverType(function)->asClassType();
+        if (owner == nullptr) {
+            reportError(context, function, "Struct property access is not yet supported");
+            return;
+        }
         const auto* property = owner->getProperty(m_identifier.substr(5));
         if (property == nullptr) {
             reportError(context, function, "Unknown class field '" + m_identifier.substr(5) + "'");
@@ -1834,6 +1890,12 @@ void IdentifierExpression::onCompileIntoLocal(
     case IdentifierType::Parameter:
         getType()->emitCopyParameterToFunctionVariable(
             *compiler, function->getParameterOffset(m_identifierDefinition.parameterId), destinationOffset);
+        break;
+    case IdentifierType::Receiver:
+        if (getType()->getSize() != 0) {
+            getType()->emitCopyStorageParameterToFunctionVariable(
+                *compiler, *function->getCallStorageLayout().receiverOffset, 0, destinationOffset);
+        }
         break;
     default:
         compiler->reportError("Struct local destinations currently support only local variable or parameter sources");
@@ -2075,6 +2137,9 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
     // A later inference pass may establish the source type; do not permanently register an untyped capture.
     if (captureType == nullptr) {
         return false;
+    }
+    if (captureType->asStructType() != nullptr) {
+        compiler->reportError("Struct captures are not yet supported");
     }
 
     // We've found the capture. Walk back up and ensure the capture is propagated through all intermediate functions.

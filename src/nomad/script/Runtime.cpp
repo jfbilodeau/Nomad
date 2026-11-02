@@ -1254,8 +1254,8 @@ bool Runtime::canRegisterNativeMember(const Type* classType, const NomadString& 
         return false;
     }
 
-    const auto* owner = classType->asClassType();
-    if (owner == nullptr) {
+    const auto* owner = classType->asCompositeType();
+    if (owner == nullptr || (type != MemberType::Method && classType->asClassType() == nullptr)) {
         error = "only class types can have native members";
         return false;
     }
@@ -1517,7 +1517,13 @@ CallableId Runtime::registerScriptMethod(
     NomadString path,
     NomadString source
 ) {
-    return m_typeManager.registerScriptClassMethod(
+    const auto type = getType(id);
+    if (type.has_value() && (*type)->asClassType() != nullptr) {
+        return m_typeManager.registerScriptClassMethod(
+            id, std::move(name), std::move(parameters), std::move(path), std::move(source)
+        );
+    }
+    return m_typeManager.registerScriptStructMethod(
         id, std::move(name), std::move(parameters), std::move(path), std::move(source)
     );
 }
@@ -1534,14 +1540,20 @@ CallableId Runtime::registerScriptConstructor(
 }
 
 CallableId Runtime::addMethod(const TypeId id, NativeMethodDefinition definition) {
-    return m_typeManager.registerNativeClassMethod(id, std::move(definition));
+    const auto type = getType(id);
+    if (type.has_value() && (*type)->asClassType() != nullptr) {
+        return m_typeManager.registerNativeClassMethod(id, std::move(definition));
+    }
+    return m_typeManager.registerNativeStructMethod(id, std::move(definition));
 }
 
 void Runtime::catalogNativeMethod(const CallableId id) {
     const auto* method = getNativeMethod(id);
+    const auto* receiverType = method != nullptr ? method->getClassType() : nullptr;
+    const auto* owner = receiverType != nullptr ? receiverType->asCompositeType() : nullptr;
     if (method == nullptr || !ownsType(method->getClassType()) ||
-        method->getClassType()->asClassType() == nullptr ||
-        !std::ranges::any_of(method->getClassType()->asClassType()->getMethods(),
+        owner == nullptr ||
+        !std::ranges::any_of(owner->getMethods(),
             [method](const auto* candidate) { return candidate == method; })) {
         throw NomadException("Cannot catalog native method: invalid registration");
     }

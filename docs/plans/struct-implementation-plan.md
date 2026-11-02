@@ -2,9 +2,10 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Steps 1AP through 1AT have been reviewed; Step 1AU below is implemented and awaiting review.
-Struct argument copies and free-function destination returns are supported;
-source-level struct receiver expressions remain unimplemented.
+Steps 1AP through 1AU have been reviewed; Step 1AV below is implemented and awaiting review.
+Struct argument copies, destination returns, and registered method calls on
+locals, parameters, and `this` are supported. Struct property addressing remains
+unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -1873,6 +1874,51 @@ Validation:
 Next slice after review: struct method registration/resolution and source-level
 receiver lowering. Retained object-property addressing requires its own approved
 lowering/opcode design; return-call forwarding and NRVO remain later work.
+
+### Step 1AV: Registered struct methods in source expressions
+
+Approved scope and implementation:
+
+- Added native/script struct-method registration entry points alongside the
+  existing class APIs. Shared composite registration preserves parameter,
+  ownership, duplicate, callable-catalog, and member-signature contracts.
+  Runtime convenience APIs dispatch by owner category; class-only APIs continue
+  to reject struct owners, and struct-only APIs reject class owners.
+- Member resolution finds methods on either composite category. Compiled method
+  calls borrow struct locals, parameters, or the enclosing method's `this`,
+  using the Step 1AU emitter without new VM opcodes.
+- Struct-returning method expressions support staged assignments, arguments,
+  return statements, and discarded calls. Explicit struct arguments remain
+  owned copies, including ordinary uses of `this`.
+- A struct method can copy and return `this` through borrowed storage, and
+  forward its receiver through nested registered methods.
+- Temporary/property receivers, direct struct property access, struct closure
+  captures, and interpreter/host aggregate method storage fail explicitly.
+  Method registration retains source but does not automatically compile it.
+- Type inference enumerates composite properties and reports unresolved member
+  receiver types instead of dereferencing null while inference is incomplete.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Remaining regression group passed with executable source/AST fixtures covering
+  native and script calls, forward return inference, receiver mutation,
+  parameter-copy isolation, nested calls, struct/reference/void results,
+  self-assignment staging, ordinary `this` arguments without extra argument
+  staging, discarded results, empty calls, and repeated string-count restoration.
+- Registration tests cover category checks, catalog/overload identity, duplicate
+  signatures, and invalid callback/return metadata.
+- Language, remaining, bindings, and tooling regression groups passed,
+  including unsupported-path, host-method, interpreter, and capture rejection
+  coverage.
+- Four documentation tests and whitespace checks passed.
+- Struct declarations, property addressing, owner retention, copy-elision
+  selection, gameplay, and performance benchmarks remain outside this slice.
+
+Next slice after review: shared struct property addressing for locals,
+parameters, and borrowed receivers, followed by retained object-property owners.
+Discuss any necessary new address opcode before implementing it. Return-call
+forwarding and NRVO remain later optimization work.
 
 Remaining Step 1 work, requiring separate design approval:
 

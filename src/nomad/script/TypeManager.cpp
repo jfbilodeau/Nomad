@@ -291,6 +291,28 @@ CallableId TypeManager::registerScriptClassMethod(
     const auto type = getType(ownerId);
     const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
     auto* owner = getMutableClassType(classType);
+    return registerScriptMethod(owner, std::move(name), std::move(parameters), std::move(path), std::move(source));
+}
+
+CallableId TypeManager::registerScriptStructMethod(
+    const TypeId ownerId,
+    NomadString name,
+    std::vector<Parameter> parameters,
+    NomadString path,
+    NomadString source
+) {
+    auto* owner = getMutableCompositeType(ownerId);
+    return registerScriptMethod(owner != nullptr && owner->asStructType() != nullptr ? owner : nullptr,
+        std::move(name), std::move(parameters), std::move(path), std::move(source));
+}
+
+CallableId TypeManager::registerScriptMethod(
+    CompositeType* owner,
+    NomadString name,
+    std::vector<Parameter> parameters,
+    NomadString path,
+    NomadString source
+) {
     const auto canValidateParameters = owner != nullptr && !name.empty();
     const auto hasInvalidParameters = canValidateParameters && std::ranges::any_of(parameters, [this](const auto& parameter) {
         const auto isReceiverName = parameter.name == "this";
@@ -360,8 +382,24 @@ CallableId TypeManager::registerNativeClassMethod(
 ) {
     const auto type = getType(ownerId);
     const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
-    if (classType == nullptr) {
-        log::error("Cannot register native method '" + definition.name + "': owner must identify a class type");
+    return registerNativeMethod(getMutableClassType(classType), std::move(definition));
+}
+
+CallableId TypeManager::registerNativeStructMethod(
+    const TypeId ownerId,
+    NativeMethodDefinition definition
+) {
+    auto* owner = getMutableCompositeType(ownerId);
+    return registerNativeMethod(owner != nullptr && owner->asStructType() != nullptr ? owner : nullptr,
+        std::move(definition));
+}
+
+CallableId TypeManager::registerNativeMethod(
+    CompositeType* owner,
+    NativeMethodDefinition definition
+) {
+    if (owner == nullptr) {
+        log::error("Cannot register native method '" + definition.name + "': invalid owner type");
         return CallableId::INVALID;
     }
     const auto returnType = getType(definition.returnTypeId);
@@ -394,13 +432,12 @@ CallableId TypeManager::registerNativeClassMethod(
         }
     }
     NomadString error;
-    if (!m_runtime.canRegisterNativeMember(classType, definition.name, MemberType::Method, parameters, error)) {
+    if (!m_runtime.canRegisterNativeMember(owner, definition.name, MemberType::Method, parameters, error)) {
         log::error("Cannot register native method '" + definition.name + "': " + error);
         return CallableId::INVALID;
     }
-    auto* owner = getMutableClassType(classType);
     const auto id = owner->registerMethod(m_runtime, std::make_unique<NativeMethod>(
-        definition.name, classType, std::move(definition.function), std::move(parameters),
+        definition.name, owner, std::move(definition.function), std::move(parameters),
         *returnType, std::move(definition.documentation)
     ));
     if (id.isInvalid()) {

@@ -136,6 +136,11 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
+    void onCompileIntoLocal(
+        Compiler* compiler,
+        ScriptCallableBase* function,
+        VariableId destination
+    ) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
@@ -151,6 +156,7 @@ private:
     MemberReference m_memberId;
     MemberType m_memberType = MemberType::Unknown;
     const Method* m_method = nullptr;
+    IdentifierDefinition m_structReceiver;
     bool m_allowVoid = false;
 };
 

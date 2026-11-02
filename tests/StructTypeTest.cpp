@@ -5,6 +5,8 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerException.hpp>
 #include <nomad/compiler/Expression.hpp>
+#include <nomad/compiler/Parser.hpp>
+#include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/InterpreterContext.hpp>
@@ -2049,6 +2051,209 @@ BOOST_AUTO_TEST_CASE(compiled_struct_returns_support_nested_calls_assignments_ar
     BOOST_REQUIRE(interpreter.hasError());
     BOOST_TEST(interpreter.getResult() == nullptr);
     BOOST_TEST(calls == 9);
+}
+
+BOOST_AUTO_TEST_CASE(source_struct_methods_borrow_receivers_and_stage_owned_results) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto typeId = runtime.registerStruct("SourcePoint");
+    const auto emptyId = runtime.registerStruct("SourceEmpty");
+    const auto* type = runtime.getTypeByName("SourcePoint");
+    const auto* empty = runtime.getTypeByName("SourceEmpty");
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(typeId);
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeSourcePoint", [](VirtualMachine* active) {
+        auto* destination = active->getParameter(1).getStorageAddress();
+        destination[0] = active->getParameter(0);
+        destination[1].freeObjectValue();
+        destination[1].setStringValue("original");
+    }, {defParameter("number", runtime.getIntegerType(), "")}, type, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeSourceEmpty", [](VirtualMachine*) {},
+        {}, empty, "").isValid());
+    auto shiftCalls = 0;
+    const auto shiftId = runtime.addMethod(typeId, {
+        .name = "shiftSourcePoint",
+        .parameters = {{runtime.getIntegerType()->getId(), "delta", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine* active) {
+            ++shiftCalls;
+            auto& number = active->getStorageParameter(1, 0);
+            number.setIntegerValue(number.getIntegerValue() + active->getIntegerParameter(0));
+        },
+        .documentation = ""
+    });
+    BOOST_REQUIRE(shiftId.isValid());
+    BOOST_REQUIRE(runtime.addMethod(typeId, {
+        .name = "readSourcePoint",
+        .parameters = {},
+        .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [](VirtualMachine* active) {
+            active->setIntegerResult(active->getStorageParameter(0, 0).getIntegerValue());
+        },
+        .documentation = ""
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(typeId, {
+        .name = "copySourcePoint",
+        .parameters = {},
+        .returnTypeId = typeId,
+        .function = [type](VirtualMachine* active) {
+            auto* destination = active->getParameter(1).getStorageAddress();
+            type->freeValue(destination);
+            type->copyValue(&active->getStorageParameter(0, 0), destination);
+        },
+        .documentation = ""
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(typeId, {
+        .name = "textSourcePoint",
+        .parameters = {},
+        .returnTypeId = runtime.getStringType()->getId(),
+        .function = [](VirtualMachine* active) {
+            active->getResult().copyObjectValue(active->getStorageParameter(0, 1));
+        },
+        .documentation = ""
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(typeId, {
+        .name = "takeSourcePoint",
+        .parameters = {{typeId, "value", ""}},
+        .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [](VirtualMachine* active) {
+            auto value = active->getParameterStorage(0, 2);
+            value[0].setIntegerValue(-100);
+            value[1].freeObjectValue();
+            value[1].setStringValue("parameter copy");
+            active->setIntegerResult(active->getStorageParameter(2, 0).getIntegerValue());
+        },
+        .documentation = ""
+    }).isValid());
+    auto emptyCalls = 0;
+    BOOST_REQUIRE(runtime.addMethod(emptyId, {
+        .name = "cloneSourceEmpty",
+        .parameters = {},
+        .returnTypeId = emptyId,
+        .function = [&](VirtualMachine*) { ++emptyCalls; },
+        .documentation = ""
+    }).isValid());
+    const auto forwardId = runtime.registerScriptMethod(typeId, "sourceForward",
+        {defParameter("delta", runtime.getIntegerType(), "")}, "forward.nomad",
+        "this.shiftSourcePoint delta\ncopy = this\nthis.takeSourcePoint this\nthis.copySourcePoint\nreturn this");
+    const auto wrappedId = runtime.registerScriptMethod(typeId, "sourceWrapped",
+        {defParameter("delta", runtime.getIntegerType(), "")}, "wrapped.nomad", "return this.sourceForward delta");
+    const auto emptyForwardId = runtime.registerScriptMethod(emptyId, "emptySourceForward",
+        {}, "emptyForward.nomad", "this.cloneSourceEmpty\nreturn this");
+    BOOST_REQUIRE(forwardId.isValid());
+    BOOST_REQUIRE(wrappedId.isValid());
+    BOOST_REQUIRE(emptyForwardId.isValid());
+    fixture.addFunction("main",
+        "fun mutateCopy value:SourcePoint\nvalue.shiftSourcePoint 50\nreturn value.readSourcePoint\nend\n"
+        "fun relay value:SourcePoint\nreturn value.sourceWrapped 2\nend\n"
+        "value = makeSourcePoint 17\nvalue.shiftSourcePoint 3\n"
+        "assert (mutateCopy value) == 70\nassert (value.readSourcePoint) == 20\n"
+        "copy = value.copySourcePoint\ncopy.shiftSourcePoint 1\n"
+        "returned = value.sourceWrapped 4\n"
+        "assert (value.readSourcePoint) == 24\nassert (returned.readSourcePoint) == 24\n"
+        "returned.shiftSourcePoint 2\n"
+        "value = value.copySourcePoint\nvalue.copySourcePoint\n"
+        "assert (value.takeSourcePoint (value.copySourcePoint)) == 24\n"
+        "assert (value.textSourcePoint) == \"original\"\n"
+        "other = relay value\nassert (other.readSourcePoint) == 26\n"
+        "assert (value.readSourcePoint) == 24\n"
+        "empty = makeSourceEmpty\nempty.emptySourceForward\nempty = empty.cloneSourceEmpty\n"
+        "return (value.readSourcePoint) + (returned.readSourcePoint) + (copy.readSourcePoint)");
+    fixture.getCompiler().registerPhaseHook([&](CompilerContext* context, const CompilationPhase phase) {
+        if (phase != CompilationPhase::Parse) {
+            return;
+        }
+        for (const auto id : {forwardId, wrappedId, emptyForwardId}) {
+            auto* method = runtime.getScriptCallable(id);
+            fixture.getCompiler().registerMemberCompilation(
+                id, runtime.getFunctionId("main"), CompilationCallableTarget::Function);
+            auto body = std::make_unique<FunctionNode>(0, 0);
+            Tokenizer tokens(context, method->getPath(), method->getSourceCode());
+            while (tokens.nextLine()) {
+                if (auto statement = parser::parseLine(context, method, &tokens)) {
+                    body->addStatement(std::move(statement));
+                }
+            }
+            fixture.getCompiler().setFunctionBody(id, std::move(body));
+        }
+    });
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 71);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    }
+    BOOST_TEST(emptyCalls == 6);
+    BOOST_TEST(shiftCalls == 18);
+    const auto* forward = runtime.getScriptCallable(forwardId);
+    for (auto index = NomadIndex{0}; index < forward->getVariableCount(); ++index) {
+        const auto variableId = VariableId{toNomadId(index)};
+        BOOST_TEST(!forward->getVariableName(variableId).starts_with("$argument"));
+    }
+    VirtualMachine machine(&runtime);
+    RuntimeValue receiver;
+    BOOST_CHECK_THROW(machine.runNativeMethod(shiftId, {RuntimeValue(NomadInteger{1})}, receiver),
+        VirtualMachineException);
+    BOOST_CHECK_THROW(machine.runScriptMethod(forwardId, {RuntimeValue(NomadInteger{1})}, receiver),
+        VirtualMachineException);
+    BOOST_TEST(shiftCalls == 18);
+}
+
+BOOST_AUTO_TEST_CASE(source_struct_methods_reject_unsupported_receivers_and_interpreter_storage) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto typeId = runtime.registerStruct("ReceiverChecks");
+    const auto* type = runtime.getTypeByName("ReceiverChecks");
+    runtime.finalizeCompositeFieldLayout(typeId);
+    auto calls = 0;
+    BOOST_REQUIRE(runtime.addMethod(typeId, {
+        .name = "readReceiverCheck",
+        .parameters = {},
+        .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [&](VirtualMachine* active) { ++calls; active->setIntegerResult(1); },
+        .documentation = ""
+    }).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeReceiverCheck", [](VirtualMachine*) {},
+        {}, type, "").isValid());
+    fixture.addFunction("main", "return (makeReceiverCheck).readReceiverCheck");
+    BOOST_TEST(!fixture.compile());
+    BOOST_TEST(fixture.hasError("Struct method receivers currently require"));
+    BOOST_TEST(calls == 0);
+    ScriptFunction caller(CallableId{}, "checks", "checks.nomad", "");
+    caller.setReturnType(runtime.getVoidType());
+    caller.registerVariable("value", type);
+    CompilerContext context(&fixture.getCompiler());
+    NativeMemberExpression expression(nullptr, 1, 1, "value.readReceiverCheck", "readReceiverCheck",
+        std::make_unique<IdentifierExpression>(nullptr, 1, 1, "value"), ArgumentList{});
+    BOOST_REQUIRE(expression.resolve(&context, &caller));
+    const auto before = runtime.getInstructions().size();
+    expression.compile(&fixture.getCompiler(), &caller, ExpressionTarget::Result);
+    BOOST_TEST(runtime.getInstructions().size() == before + 2);
+    VirtualMachine machine(&runtime);
+    InterpreterContext interpreter(machine);
+    expression.evaluate(interpreter);
+    BOOST_REQUIRE(interpreter.hasError());
+    BOOST_TEST(interpreter.getResult() == nullptr);
+    BOOST_TEST(calls == 0);
+    const auto scriptId = runtime.registerScriptMethod(typeId, "checkProperties", {}, "properties.nomad", "");
+    auto* script = runtime.getScriptCallable(scriptId);
+    BOOST_REQUIRE(script != nullptr);
+    IdentifierExpression property(nullptr, 1, 1, "this.number");
+    BOOST_TEST(!property.resolve(&context, script));
+    const auto errorCount = context.getErrorCount();
+    AssignmentStatement assignment(1, 1, "this.number", std::make_unique<IntegerLiteral>(nullptr, 1, 1, 3));
+    BOOST_TEST(!assignment.resolve(&context, script));
+    BOOST_TEST(context.getErrorCount() == errorCount + 1);
+    const auto nestedId = runtime.registerScriptFunction("receiverCapture", "capture.nomad", "");
+    auto* nested = runtime.getScriptFunction(nestedId);
+    nested->setParentId(scriptId);
+    IdentifierExpression capture(nullptr, 1, 1, "this");
+    BOOST_CHECK_THROW(capture.resolve(&context, nested), CompilerException);
+    BOOST_TEST(nested->getParameterCount() == 0U);
 }
 
 BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_without_writing_instructions) {

@@ -256,6 +256,7 @@ public:
 
 private:
     std::unique_ptr<Expression> m_expression;
+    VariableId m_destination = VariableId::INVALID;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
