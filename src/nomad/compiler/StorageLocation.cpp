@@ -3,6 +3,7 @@
 #include <nomad/compiler/StorageLocation.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/SyntaxTree.hpp>
 
 #include <nomad/script/CompositeType.hpp>
 #include <nomad/script/Property.hpp>
@@ -18,6 +19,18 @@ StorageLocation::StorageLocation(const IdentifierDefinition root):
          root.identifierType != IdentifierType::Parameter && root.identifierType != IdentifierType::Receiver)) {
         throw NomadBug("Storage location requires a resolved local, parameter, or borrowed receiver");
     }
+}
+
+StorageLocation::StorageLocation(Expression* owner, const Property* property):
+    m_type(property != nullptr ? property->getValueType() : nullptr),
+    m_owner(owner),
+    m_objectProperty(property) {
+    if (owner == nullptr || property == nullptr || owner->getType() == nullptr ||
+        owner->getType()->asClassType() == nullptr || owner->getType() != property->getOwnerType() ||
+        property->asNativeProperty() != nullptr || m_type == nullptr || m_type->asStructType() == nullptr) {
+        throw NomadBug("Object storage location requires a resolved class owner and stored struct property");
+    }
+    m_root.valueType = m_type;
 }
 
 const Type* StorageLocation::getType() const {
@@ -36,6 +49,9 @@ StorageLocation StorageLocation::getProperty(const Property& property) const {
 }
 
 NomadIndex StorageLocation::getRootOffset(const ScriptCallableBase* function) const {
+    if (m_objectProperty != nullptr) {
+        return m_objectProperty->getOwnerType()->getFieldOffset(m_objectProperty->getId());
+    }
     const Type* rootType = nullptr;
     auto offset = NomadIndex{0};
     switch (m_root.identifierType) {
@@ -82,9 +98,34 @@ void StorageLocation::validate(const ScriptCallableBase* function) const {
     }
 }
 
-void StorageLocation::emitAddress(Compiler& compiler, const ScriptCallableBase* function) const {
+void StorageLocation::emitRetainOwner(Compiler& compiler, ScriptCallableBase* function) const {
+    if (m_owner != nullptr) {
+        m_owner->compile(&compiler, function, ExpressionTarget::Stack);
+    }
+}
+
+void StorageLocation::emitFreeOwner(Compiler& compiler) const {
+    if (m_owner != nullptr) {
+        m_owner->getType()->emitFreeStackValue(compiler, 0);
+        compiler.addOpCode(OpCodes::op_pop_1);
+    }
+}
+
+void StorageLocation::emitAddress(
+    Compiler& compiler,
+    const ScriptCallableBase* function,
+    const NomadIndex ownerOffset
+) const {
     validate(function);
     if (m_type->getSize() == 0) {
+        return;
+    }
+    if (m_objectProperty != nullptr) {
+        const auto firstOffset = getOffset(function);
+        compiler.addOpCode(OpCodes::op_stored_property_address_push);
+        compiler.addIndex(ownerOffset);
+        compiler.addIndex(firstOffset);
+        compiler.addIndex(firstOffset + m_type->getSize() - 1);
         return;
     }
     switch (m_root.identifierType) {
@@ -111,6 +152,9 @@ void StorageLocation::emitLoad(
     const ScriptCallableBase* function,
     const ExpressionTarget target
 ) const {
+    if (m_owner != nullptr) {
+        compiler.reportError("Object-owned struct property reads and writes are not yet supported");
+    }
     validate(function);
     switch (m_root.identifierType) {
     case IdentifierType::FunctionVariable:
@@ -128,6 +172,9 @@ void StorageLocation::emitLoad(
 }
 
 void StorageLocation::emitStoreResult(Compiler& compiler, const ScriptCallableBase* function) const {
+    if (m_owner != nullptr) {
+        compiler.reportError("Object-owned struct property reads and writes are not yet supported");
+    }
     validate(function);
     if (m_type->asStructType() != nullptr || m_type->getSize() != 1) {
         throw NomadBug("Result storage requires a single-slot non-struct value");
@@ -157,6 +204,9 @@ void StorageLocation::emitCopyToLocal(
     const ScriptCallableBase* function,
     const VariableId destination
 ) const {
+    if (m_owner != nullptr) {
+        compiler.reportError("Object-owned struct property reads and writes are not yet supported");
+    }
     validate(function);
     if (function->getVariableType(destination) != m_type) {
         throw NomadBug("Storage copy requires a matching local type");
@@ -185,6 +235,9 @@ void StorageLocation::emitCopyFromLocal(
     const ScriptCallableBase* function,
     const VariableId source
 ) const {
+    if (m_owner != nullptr) {
+        compiler.reportError("Object-owned struct property reads and writes are not yet supported");
+    }
     validate(function);
     if (function->getVariableType(source) != m_type) {
         throw NomadBug("Storage copy requires a matching local type");

@@ -2700,13 +2700,297 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_preserve_class_reference_semantics
     }
 }
 
+BOOST_AUTO_TEST_CASE(source_object_owned_struct_methods_retain_evaluated_owners_through_calls) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto emptyId = runtime.registerStruct("OwnedEmpty");
+    const auto pointId = runtime.registerStruct("OwnedPoint");
+    const auto outerId = runtime.registerStruct("OwnedOuter");
+    const auto ownerId = runtime.registerClass("OwnedReceiver", ClassMode::Closed);
+    const auto emptyOwnerId = runtime.registerClass("OnlyEmptyOwnedReceiver", ClassMode::Closed);
+    const auto* empty = runtime.getTypeByName("OwnedEmpty");
+    const auto* point = runtime.getTypeByName("OwnedPoint");
+    const auto* outer = runtime.getTypeByName("OwnedOuter");
+    const auto* owner = runtime.getTypeByName("OwnedReceiver")->asClassType();
+    const auto* emptyOwner = runtime.getTypeByName("OnlyEmptyOwnedReceiver")->asClassType();
+    BOOST_REQUIRE(runtime.registerProperty(pointId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(pointId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "before", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "point", point).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "after", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "prefix", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "outer", outer).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "empty", empty).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "suffix", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(emptyOwnerId, "empty", empty).isValid());
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.finalizeCompositeFieldLayout(emptyOwnerId);
+    const auto createOwner = [&](const NomadInteger number) {
+        auto* object = new ScriptObject(owner);
+        object->getStorageValue(0).setIntegerValue(101);
+        object->getStorageValue(1).setIntegerValue(202);
+        object->getStorageValue(2).setIntegerValue(number);
+        object->getStorageValue(3).setStringValue("kept");
+        object->getStorageValue(4).setIntegerValue(404);
+        object->getStorageValue(5).setIntegerValue(505);
+        return object;
+    };
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeOwnedReceiver", [&](VirtualMachine* active) {
+        active->getResult().setObjectValue(createOwner(17));
+    }, {}, owner, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeOnlyEmptyOwner", [emptyOwner](VirtualMachine* active) {
+        auto* object = new ScriptObject(emptyOwner);
+        BOOST_TEST(object->getStorageSize() == 0U);
+        active->getResult().setObjectValue(object);
+    }, {}, emptyOwner, "").isValid());
+    BOOST_REQUIRE(runtime.addMethod(pointId, {
+        .name = "ownedShift",
+        .parameters = {{runtime.getIntegerType()->getId(), "delta", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [](VirtualMachine* active) {
+            auto& number = active->getStorageParameter(1, 0);
+            number.setIntegerValue(number.getIntegerValue() + active->getIntegerParameter(0));
+        },
+        .documentation = ""
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(pointId, {
+        .name = "ownedRead",
+        .parameters = {},
+        .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [](VirtualMachine* active) {
+            active->setIntegerResult(active->getStorageParameter(0, 0).getIntegerValue());
+        },
+        .documentation = ""
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(pointId, {
+        .name = "ownedText",
+        .parameters = {},
+        .returnTypeId = runtime.getStringType()->getId(),
+        .function = [](VirtualMachine* active) {
+            active->getResult().copyObjectValue(active->getStorageParameter(0, 1));
+        },
+        .documentation = ""
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(pointId, {
+        .name = "ownedCopy",
+        .parameters = {},
+        .returnTypeId = pointId,
+        .function = [point](VirtualMachine* active) {
+            auto* destination = active->getParameter(1).getStorageAddress();
+            point->freeValue(destination);
+            point->copyValue(&active->getStorageParameter(0, 0), destination);
+        },
+        .documentation = ""
+    }).isValid());
+    const auto pointMethod = runtime.registerScriptMethod(pointId, "ownedScript",
+        {defParameter("delta", runtime.getIntegerType(), "")}, "ownedPoint.nomad",
+        "this.number = this.number + delta\nthis.text = this.text\nreturn this");
+    const auto outerMethod = runtime.registerScriptMethod(outerId, "ownedOuterScript",
+        {defParameter("delta", runtime.getIntegerType(), "")}, "ownedOuter.nomad",
+        "return this.point.ownedScript delta");
+    const auto ownerMethod = runtime.registerScriptMethod(ownerId, "ownedOwnerShift",
+        {defParameter("delta", runtime.getIntegerType(), "")}, "ownedReceiver.nomad",
+        "this.outer.point.ownedShift delta\nreturn this.outer.point.ownedRead");
+    BOOST_REQUIRE(pointMethod.isValid());
+    BOOST_REQUIRE(outerMethod.isValid());
+    BOOST_REQUIRE(ownerMethod.isValid());
+    ScriptObject* originalVictim = nullptr;
+    auto replacements = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction("replaceOwnedReceiver", [&](VirtualMachine* active) {
+        const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+        auto& value = active->getLocalAddress(main->getVariableOffset(main->getVariableId("victim")))[0];
+        originalVictim = static_cast<ScriptObject*>(value.getObjectValue());
+        BOOST_TEST(originalVictim->getReferenceCount() == 2U);
+        value.freeObjectValue();
+        value.setObjectValue(createOwner(100));
+        BOOST_TEST(originalVictim->getReferenceCount() == 1U);
+        ++replacements;
+        active->setIntegerResult(5);
+    }, {}, runtime.getIntegerType(), "").isValid());
+    BOOST_REQUIRE(runtime.addMethod(pointId, {
+        .name = "ownedSwapRead",
+        .parameters = {{runtime.getIntegerType()->getId(), "delta", ""}},
+        .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [&](VirtualMachine* active) {
+            BOOST_REQUIRE(active->peekStack(2).getObjectValue() == originalVictim);
+            BOOST_TEST(originalVictim->getReferenceCount() == 1U);
+            auto& number = active->getStorageParameter(1, 0);
+            number.setIntegerValue(number.getIntegerValue() + active->getIntegerParameter(0));
+            active->setIntegerResult(number.getIntegerValue());
+        },
+        .documentation = ""
+    }).isValid());
+    std::vector<NomadInteger> order;
+    auto orderedCalls = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction("getOrderedOwner", [&](VirtualMachine* active) {
+        ++orderedCalls;
+        order.clear();
+        order.push_back(0);
+        active->getResult().setObjectValue(createOwner(17));
+    }, {}, owner, "").isValid());
+    for (const auto number : {1, 2}) {
+        BOOST_REQUIRE(runtime.registerNativeFunction("ownedArgument" + std::to_string(number),
+            [&, number](VirtualMachine* active) {
+                order.push_back(number);
+                active->setIntegerResult(number);
+            }, {}, runtime.getIntegerType(), "").isValid());
+    }
+    BOOST_REQUIRE(runtime.addMethod(pointId, {
+        .name = "ownedOrder",
+        .parameters = {
+            {runtime.getIntegerType()->getId(), "first", ""},
+            {runtime.getIntegerType()->getId(), "second", ""}
+        },
+        .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [&](VirtualMachine* active) {
+            order.push_back(3);
+            active->setIntegerResult(active->getStorageParameter(2, 0).getIntegerValue() +
+                active->getIntegerParameter(0) + active->getIntegerParameter(1));
+        },
+        .documentation = ""
+    }).isValid());
+    auto emptyCalls = 0;
+    BOOST_REQUIRE(runtime.addMethod(emptyId, {
+        .name = "ownedEmpty",
+        .parameters = {},
+        .returnTypeId = emptyId,
+        .function = [&](VirtualMachine* active) {
+            BOOST_REQUIRE(active->peekStack(0).getObjectValue() != nullptr);
+            ++emptyCalls;
+        },
+        .documentation = ""
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(emptyId, {
+        .name = "ownedCreate",
+        .parameters = {},
+        .returnTypeId = pointId,
+        .function = [](VirtualMachine* active) {
+            BOOST_REQUIRE(active->peekStack(1).getObjectValue() != nullptr);
+            auto* destination = active->getParameter(0).getStorageAddress();
+            destination[0].setIntegerValue(123);
+            destination[1].freeObjectValue();
+            destination[1].setStringValue("empty created");
+        },
+        .documentation = ""
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(emptyId, {
+        .name = "ownedEmptyNumber",
+        .parameters = {},
+        .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [](VirtualMachine* active) {
+            BOOST_REQUIRE(active->peekStack(0).getObjectValue() != nullptr);
+            active->setIntegerResult(77);
+        },
+        .documentation = ""
+    }).isValid());
+    fixture.addFunction("main",
+        "fun takeOwnedPoint value:OwnedPoint\nvalue.number = value.number + 10\nreturn value.number\nend\n"
+        "fun relayOwned owner:OwnedReceiver\nreturn owner.outer.point.ownedCopy\nend\n"
+        "owner = makeOwnedReceiver\nowner.outer.point.ownedShift 3\n"
+        "assert (owner.outer.point.ownedRead) == 20\n"
+        "result = owner.outer.point.ownedScript 2\nresult.number = 500\n"
+        "assert (owner.outer.point.ownedRead) == 22\n"
+        "outerCopy = owner.outer.ownedOuterScript 1\nassert outerCopy.number == 23\n"
+        "assert (owner.ownedOwnerShift 4) == 27\n"
+        "assert (owner.outer.point.ownedText) == \"kept\"\n"
+        "text = (makeOwnedReceiver).outer.point.ownedText\nassert text == \"kept\"\n"
+        "copy = (makeOwnedReceiver).outer.point.ownedCopy\nassert copy.number == 17\nassert copy.text == \"kept\"\n"
+        "owner.outer.point.ownedScript 0\n"
+        "assert (takeOwnedPoint (owner.outer.point.ownedCopy)) == 37\n"
+        "relayed = relayOwned owner\nassert relayed.number == 27\n"
+        "victim = makeOwnedReceiver\nswapped = victim.outer.point.ownedScript replaceOwnedReceiver\n"
+        "assert swapped.number == 22\nassert swapped.text == \"kept\"\n"
+        "assert (victim.outer.point.ownedRead) == 100\n"
+        "victim = makeOwnedReceiver\n"
+        "assert (victim.outer.point.ownedSwapRead replaceOwnedReceiver) == 22\n"
+        "assert (victim.outer.point.ownedRead) == 100\n"
+        "assert ((getOrderedOwner).outer.point.ownedOrder ownedArgument1 ownedArgument2) == 20\n"
+        "assert (onlyOwnedScalar) == 17\njustReceiver = onlyOwnedStruct\nassert justReceiver.number == 18\n"
+        "owner.outer.point.ownedShift (owner.outer.point.ownedRead)\n"
+        "assert owner.prefix == 101\nassert owner.suffix == 505\n"
+        "return owner.outer.point.ownedRead");
+    fixture.addFunction("onlyEmpty",
+        "owner = makeOwnedReceiver\nowner.empty.ownedEmpty\n(makeOnlyEmptyOwner).empty.ownedEmpty\n"
+        "created = (makeOnlyEmptyOwner).empty.ownedCreate\n"
+        "assert created.number == 123\nassert created.text == \"empty created\"\n"
+        "return (makeOwnedReceiver).empty.ownedEmptyNumber");
+    fixture.addFunction("onlyOwnedScalar", "return (makeOwnedReceiver).outer.point.ownedRead");
+    fixture.addFunction("onlyOwnedStruct", "return (makeOwnedReceiver).outer.ownedOuterScript 1");
+    fixture.getCompiler().registerPhaseHook([&](CompilerContext* context, const CompilationPhase phase) {
+        if (phase != CompilationPhase::Parse) {
+            return;
+        }
+        for (const auto id : {pointMethod, outerMethod, ownerMethod}) {
+            auto* method = runtime.getScriptCallable(id);
+            fixture.getCompiler().registerMemberCompilation(
+                id, runtime.getFunctionId("main"), CompilationCallableTarget::Function);
+            auto body = std::make_unique<FunctionNode>(0, 0);
+            Tokenizer tokens(context, method->getPath(), method->getSourceCode());
+            while (tokens.nextLine()) {
+                if (auto statement = parser::parseLine(context, method, &tokens)) {
+                    body->addStatement(std::move(statement));
+                }
+            }
+            fixture.getCompiler().setFunctionBody(id, std::move(body));
+        }
+    });
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    const std::vector<NomadInteger> expectedOrder{0, 2, 1, 3};
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 54);
+        BOOST_TEST(order == expectedOrder, boost::test_tools::per_element());
+        const auto emptyOutcome = fixture.execute("onlyEmpty");
+        BOOST_REQUIRE_MESSAGE(!emptyOutcome.fault.has_value(), emptyOutcome.fault.value_or(""));
+        BOOST_TEST(emptyOutcome.integerValue == 77);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+    BOOST_TEST(replacements == 6);
+    BOOST_TEST(orderedCalls == 3);
+    BOOST_TEST(emptyCalls == 6);
+    std::ostringstream dump;
+    dumpInstructions(runtime, *runtime.getScriptFunction(runtime.getFunctionId("onlyEmpty")), dump);
+    BOOST_TEST(dump.str().find("op_stored_property_address_push") == NomadString::npos);
+    BOOST_TEST(dump.str().find("op_object_free_stack") != NomadString::npos);
+    auto sawOwnerAtTop = false;
+    auto sawOwnerBelowReturn = false;
+    const auto addressOpcode = runtime.getInstructionId(OpCodes::op_stored_property_address_push);
+    const auto& instructions = runtime.getInstructions();
+    for (const auto* name : {"onlyOwnedScalar", "onlyOwnedStruct"}) {
+        const auto* function = runtime.getScriptFunction(runtime.getFunctionId(name));
+        for (auto position = function->getFunctionStart(); position < function->getFunctionEnd();) {
+            const auto opcode = runtime.getInstructionId(instructions[position].fn);
+            BOOST_REQUIRE(opcode.isValid());
+            if (opcode == addressOpcode) {
+                const auto ownerOffset = instructions[position + 1].value.getIndexValue();
+                const auto firstOffset = instructions[position + 2].value.getIndexValue();
+                const auto lastOffset = instructions[position + 3].value.getIndexValue();
+                BOOST_TEST(ownerOffset <= 1U);
+                BOOST_CHECK((firstOffset == 2 && lastOffset == 3) || (firstOffset == 1 && lastOffset == 4));
+                sawOwnerAtTop = sawOwnerAtTop || ownerOffset == 0;
+                sawOwnerBelowReturn = sawOwnerBelowReturn || ownerOffset == 1;
+            }
+            position += 1 + runtime.getInstructionOperands(opcode).size();
+        }
+    }
+    BOOST_TEST(sawOwnerAtTop);
+    BOOST_TEST(sawOwnerBelowReturn);
+}
+
 BOOST_AUTO_TEST_CASE(source_struct_properties_reject_unknown_properties_and_unsupported_storage) {
-    const std::array<std::pair<NomadString, NomadString>, 5> cases{{
+    const std::array<std::pair<NomadString, NomadString>, 8> cases{{
         {"value = makeBoundaryLeaf\nreturn value.missing", "Unknown struct property"},
         {"value = makeBoundaryLeaf\nvalue.missing = 3", "Unknown struct property"},
         {"value = makeBoundaryLeaf\nvalue.number = \"bad\"", "Cannot assign value of type"},
         {"return (makeBoundaryLeaf).number", "Struct property receivers currently require"},
-        {"owner = makeBoundaryOwner\nreturn owner.value.number", "Struct property receivers currently require"}
+        {"owner = makeBoundaryOwner\nreturn owner.value.number", "Object-owned struct property reads and writes"},
+        {"owner = makeBoundaryOwner\ncopy = owner.value", "Object-owned struct property reads and writes"},
+        {"owner = makeBoundaryOwner\nowner.value.number = 3", "Object-owned struct property reads and writes"},
+        {"owner = makeBoundaryOwner\nowner.value = makeBoundaryLeaf", "Object-owned struct property reads and writes"}
     }};
     for (const auto& [source, diagnostic] : cases) {
         nomad::test::LanguageTestFixture fixture;

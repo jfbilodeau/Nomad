@@ -775,6 +775,11 @@ bool NativeMemberExpression::resolveMember(
                     reportError(context, function, "Class field '" + m_qualifiedName + "' does not take arguments");
                     return false;
                 }
+                if (context->getMode() == CompilerMode::Script && function != nullptr &&
+                    property->getValueType() != nullptr && property->getValueType()->asStructType() != nullptr &&
+                    property->asNativeProperty() == nullptr) {
+                    m_storage = StorageLocation(m_receiver.get(), property);
+                }
                 m_memberId = property->getId();
                 m_memberType = MemberType::Property;
                 return true;
@@ -902,7 +907,7 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
             m_structReceiver = m_receiver->getStorageLocation();
             if (!m_structReceiver.has_value()) {
                 reportError(context, function,
-                    "Struct method receivers currently require a local, parameter, or 'this'");
+                    "Struct method receivers currently require local, parameter, borrowed, or stored object-property storage");
                 return;
             }
         }

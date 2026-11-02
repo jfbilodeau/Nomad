@@ -918,19 +918,25 @@ values, with storage disjoint from the receiver and arguments.
 The callee accesses its struct receiver through the hidden storage parameter,
 not `VirtualMachine::getThis()`. Existing call frames preserve the enclosing
 object receiver without an additional `push_this`/`pop_this` pair. This emission
-API does not register methods, resolve source expressions, retain object-property
-owners, or compile method bodies.
+API does not register methods, resolve source expressions, or compile method
+bodies.
 
 Compiled member expressions can call registered struct methods on locals,
 ordinary parameters, a struct method's `this`, and nested struct properties
-rooted in that storage. Calls mutate the borrowed
+rooted in that storage. They can also borrow stored struct properties from
+class objects, including nested structs and temporary class-object results.
+The object expression is evaluated once before explicit arguments, and its
+owned reference remains on the stack until argument and descriptor cleanup
+complete. Replacing the original variable during argument evaluation does not
+change the object receiving the call. Calls mutate the borrowed
 receiver, while explicit struct arguments remain independent copies. Struct
 results support assignment, arguments, returns, and discarded call statements.
 A script method can copy or return `this`, or pass it as an ordinary struct
 argument; those uses copy its fields rather than expose the borrowed address.
 Empty receivers and results still execute their calls.
 
-Stored struct properties can be read and assigned through those same roots.
+Stored struct properties rooted in locals, ordinary struct parameters, or
+borrowed struct `this` can be read and assigned.
 Nested scalar/reference properties load and store directly. Struct property
 values can be copied into locals, passed as ordinary arguments, or returned.
 Aggregate property assignments evaluate the complete right-hand side in reserved
@@ -939,8 +945,9 @@ method calls that mutate the target. Reference properties retain ordinary
 reference semantics. Empty property calls and assignment expressions still
 execute their side effects.
 
-Temporary receivers, structs stored in object properties, and struct closure
-captures remain unsupported and produce compilation errors. This does not
+Temporary struct-value receivers, value reads/writes through object-owned
+struct storage, and struct closure captures remain unsupported and produce
+compilation errors. This does not
 prevent accessing ordinary class properties through a reference stored inside
 a supported struct.
 
@@ -956,11 +963,25 @@ the result register. `emitCopyToLocal` and `emitCopyFromLocal` require same-type
 locals and disjoint or identical ranges; overlapping replacements require prior
 staging. `emitAddress` pushes a non-owning pointer for nonempty storage and
 nothing for empty storage. `Compiler::addStructMethodCall` also accepts this
-storage description for nested receivers. These operations do not retain
-object owners, allocate runtime call state, or perform runtime alias checks.
+storage description for nested receivers. These operations do not allocate
+runtime call state or perform runtime alias checks.
+
+`StorageLocation(ownerExpression, property)` describes a stored struct property
+of a resolved class expression. The expression must have the property's owner
+type and remain alive through emission; native properties are not supported.
+`getProperty` can further select nested stored struct properties.
+This form currently supports method receiver addresses only; its value loads,
+stores, and local-copy operations report unsupported access.
+`emitRetainOwner` evaluates the class expression into one owned stack slot;
+`emitFreeOwner` releases and pops that slot when it is back at the stack top.
+For object-owned locations, `emitAddress` takes the owner's current stack
+distance, including any result descriptor already pushed. The struct-method
+call emitter sequences these operations automatically. Other storage roots
+emit no owner retention or cleanup. Empty receivers still evaluate and retain
+their class owner, but emit no receiver address.
 
 `op_stored_property_address_push(ownerOffset, firstOffset, lastOffset)` provides
-the address primitive for future object-owned struct lowering. `ownerOffset` is
+the address primitive for object-owned struct method receivers. `ownerOffset` is
 the distance from the current stack top to an already-retained object, measured
 before the address is pushed. The other operands are inclusive physical slot
 offsets within that object, computed by the compiler. All three are full-width
@@ -974,12 +995,13 @@ exposes the same borrowed pointer contract. Both entry points check that the
 receiver has script-object storage and that its actual allocation contains the
 last slot before forming an address. This rejects missing storage on older
 instances after class extension. Ordered bounds and a live owner remain caller
-requirements. Empty structs must not request an address; their owner evaluation
-and method side effects will be handled without a pointer.
+requirements. Empty structs do not request an address; their owner evaluation
+and method side effects execute without a pointer.
 
-This primitive does not yet enable source-level object-owned struct access or
-manage owner lifetimes. Compiler lowering must retain the evaluated owner
-through argument evaluation and the borrowed operation, then release it.
+This primitive itself does not manage owner lifetimes. Compiled method calls
+retain the evaluated owner through argument evaluation and the borrowed call,
+then release it without clobbering scalar/reference results. The existing
+fatal-fault contract still applies; this lowering adds no exception unwinding.
 
 The type-owned emission APIs also support borrowed storage:
 
@@ -1007,7 +1029,7 @@ register under the existing local-copy ownership contract. Empty types emit
 nothing. Initialization supplies existing type defaults separately and does not
 run constructors.
 
-Struct declarations, retained object-property lowering, aggregate
+Struct declarations, object-owned struct value reads/writes, aggregate
 interpreter/host values, and aggregate yield/resume support remain unsupported.
 Host free-function calls reject struct arguments and returns instead of using
 single-slot values for aggregate storage. Host method calls likewise reject

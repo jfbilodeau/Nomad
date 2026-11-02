@@ -9,17 +9,25 @@
 namespace nomad {
 
 class Compiler;
+class Expression;
 class Property;
 class ScriptCallableBase;
 
 class StorageLocation {
 public:
     explicit StorageLocation(IdentifierDefinition root);
+    StorageLocation(Expression* owner, const Property* property);
 
     [[nodiscard]] const Type* getType() const;
     [[nodiscard]] StorageLocation getProperty(const Property& property) const;
     void validate(const ScriptCallableBase* function) const;
-    void emitAddress(Compiler& compiler, const ScriptCallableBase* function) const;
+    void emitRetainOwner(Compiler& compiler, ScriptCallableBase* function) const;
+    void emitFreeOwner(Compiler& compiler) const;
+    void emitAddress(
+        Compiler& compiler,
+        const ScriptCallableBase* function,
+        NomadIndex ownerOffset = 0
+    ) const;
     void emitLoad(
         Compiler& compiler,
         const ScriptCallableBase* function,
@@ -44,6 +52,8 @@ private:
     IdentifierDefinition m_root;
     const Type* m_type;
     NomadIndex m_propertyOffset = 0;
+    Expression* m_owner = nullptr;
+    const Property* m_objectProperty = nullptr;
 };
 
 } // namespace nomad

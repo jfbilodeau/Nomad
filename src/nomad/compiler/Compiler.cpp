@@ -969,12 +969,13 @@ void Compiler::addStructMethodCall(
         reportInternalError("Struct method result requires a matching local only for struct returns");
     }
     const auto layout = method->getCallStorageLayout(arguments->getArgumentCount());
+    receiver.emitRetainOwner(*this, function);
     if (layout.returnOffset.has_value()) {
         addOpCode(OpCodes::op_local_address_push);
         addIndex(function->getVariableOffset(destinationId));
     }
     if (layout.receiverOffset.has_value()) {
-        receiver.emitAddress(*this, function);
+        receiver.emitAddress(*this, function, layout.returnOffset.has_value() ? 1 : 0);
     }
     arguments->compile(this, function);
     if (method->asScriptMethod() != nullptr) {
@@ -992,6 +993,7 @@ void Compiler::addStructMethodCall(
     } else if (hiddenSlotCount == 2) {
         addOpCode(OpCodes::op_pop_2);
     }
+    receiver.emitFreeOwner(*this);
 }
 
 void Compiler::addFreeArguments(const ArgumentList* arguments) {

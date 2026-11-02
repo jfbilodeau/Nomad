@@ -2,11 +2,12 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Steps 1AP through 1AW have been reviewed; Step 1AX below is implemented and awaiting review.
+Steps 1AP through 1AX have been reviewed; Step 1AY below is implemented and awaiting review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
-properties rooted in that storage. Retained object-property addressing remains
-unimplemented.
+properties rooted in that storage. Registered methods can also borrow
+object-owned struct properties with retained owners; value reads/writes through
+that storage remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -2010,6 +2011,57 @@ property method receivers, using the existing hidden-pointer call ABI. Keep the
 owner alive until argument, descriptor, and call cleanup have completed.
 Property reads/writes and aggregate destination lowering follow separately.
 Return-call forwarding and NRVO remain later optimization work.
+
+### Step 1AY: Retained object-owned struct method receivers
+
+Approved scope and implementation:
+
+- Extended compiler storage locations with a stored struct property rooted in a
+  resolved class expression. Nested property selection flattens offsets while
+  retaining the same owner expression.
+- Source method calls on these locations evaluate the owner once into an owned
+  stack slot before destination/receiver descriptors and explicit arguments.
+  The existing property-address opcode receives compiler-computed inclusive
+  slot bounds and the owner's stack distance.
+- Script/native callees keep the existing hidden-pointer ABI. Explicit arguments
+  retain right-to-left evaluation and owned-copy behavior. Replacing the
+  original object variable during argument evaluation cannot destroy or
+  redirect the borrowed receiver.
+- Argument and descriptor cleanup precede owner release; scalar/reference
+  results remain owned and struct results occupy their independent destination.
+  Empty receivers/results omit their descriptors while owner evaluation and
+  call side effects still execute.
+- Existing local/parameter/borrowed receivers emit no extra owner operations.
+  No new VM opcode, runtime call state, or per-call allocation was added.
+- Object-owned struct value loads, writes, and aggregate copies remain explicit
+  unsupported paths. This slice does not change the VM's documented fatal-fault
+  behavior or add exception unwinding.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, bindings, and tooling regression groups passed.
+- Executable source fixtures cover nested stored receivers, native/script
+  methods, class-method `this`, temporary class owners, owner replacement during
+  argument evaluation, nested calls, and scalar/reference/struct/void results.
+- Evaluation tracing verifies the owner is evaluated once before right-to-left
+  arguments. Copied results survive owner destruction without aliasing the
+  struct's value storage.
+- Empty methods execute on retained owners, including objects with zero
+  physical storage, without emitting a receiver-address opcode.
+- Bytecode checks cover compiler-computed inclusive nested ranges and owner
+  distances both with and without a result descriptor. Existing local/parameter
+  call regression coverage continues to pass.
+- Repeated execution restores live string/object counts. Unsupported direct
+  value reads, scalar/aggregate writes, temporary struct receivers, and unknown
+  properties still produce compilation errors.
+- Four documentation tests and whitespace checks passed.
+- Gameplay, performance benchmarks, and fault-unwind cleanup were not tested.
+
+Next slice after review: object-owned struct property reads and writes,
+including aggregate argument/return copies and staged replacement. Reuse shared
+storage lowering and retain evaluated owners across RHS effects. Return-call
+forwarding and NRVO remain later optimization work.
 
 Remaining Step 1 work, requiring separate design approval:
 
