@@ -921,6 +921,34 @@ void Compiler::addStructMethodCall(
     const IdentifierDefinition& receiver,
     const VariableId destinationId
 ) {
+    if (function == nullptr) {
+        reportInternalError("Struct method call requires a resolved caller");
+    }
+    auto root = receiver;
+    switch (root.identifierType) {
+    case IdentifierType::FunctionVariable:
+        root.valueType = function->getVariableType(root.variableId);
+        break;
+    case IdentifierType::Parameter:
+        (void)function->getParameterOffset(root.parameterId);
+        root.valueType = function->getParameterType(root.parameterId);
+        break;
+    case IdentifierType::Receiver:
+        root.valueType = function->getClassType();
+        break;
+    default:
+        reportInternalError("Struct method receiver requires local, parameter, or borrowed receiver storage");
+    }
+    addStructMethodCall(methodId, function, arguments, StorageLocation(root), destinationId);
+}
+
+void Compiler::addStructMethodCall(
+    const CallableId methodId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments,
+    const StorageLocation& receiver,
+    const VariableId destinationId
+) {
     const auto* method = m_runtime->getMethod(methodId);
     if (method == nullptr || function == nullptr || arguments == nullptr ||
         arguments->getReceiverType() != nullptr) {
@@ -931,61 +959,22 @@ void Compiler::addStructMethodCall(
     if (receiverType == nullptr || receiverType->asStructType() == nullptr || returnType == nullptr) {
         reportInternalError("Struct method call requires a resolved struct receiver and return type");
     }
-    const Type* sourceType = nullptr;
-    auto receiverOffset = NomadIndex{0};
-    switch (receiver.identifierType) {
-    case IdentifierType::FunctionVariable:
-        sourceType = function->getVariableType(receiver.variableId);
-        receiverOffset = function->getVariableOffset(receiver.variableId);
-        break;
-    case IdentifierType::Parameter:
-        receiverOffset = function->getParameterOffset(receiver.parameterId);
-        sourceType = function->getParameterType(receiver.parameterId);
-        break;
-    case IdentifierType::Receiver:
-        sourceType = function->getClassType();
-        break;
-    default:
-        reportInternalError("Struct method receiver requires local, parameter, or borrowed receiver storage");
-    }
-    if (sourceType != receiverType) {
+    if (receiver.getType() != receiverType) {
         reportInternalError("Struct method receiver storage has the wrong type");
     }
+    receiver.validate(function);
     const auto returnsStruct = returnType->asStructType() != nullptr;
     if ((returnsStruct && (destinationId.isInvalid() || function->getVariableType(destinationId) != returnType)) ||
         (!returnsStruct && destinationId.isValid())) {
         reportInternalError("Struct method result requires a matching local only for struct returns");
     }
     const auto layout = method->getCallStorageLayout(arguments->getArgumentCount());
-    if (receiver.identifierType == IdentifierType::Receiver && layout.receiverOffset.has_value()) {
-        const auto callerLayout = function->getCallStorageLayout();
-        if (!callerLayout.receiverOffset.has_value()) {
-            reportInternalError("Enclosing callable has no borrowed struct receiver");
-        }
-        receiverOffset = *callerLayout.receiverOffset;
-    }
     if (layout.returnOffset.has_value()) {
         addOpCode(OpCodes::op_local_address_push);
         addIndex(function->getVariableOffset(destinationId));
     }
     if (layout.receiverOffset.has_value()) {
-        switch (receiver.identifierType) {
-        case IdentifierType::FunctionVariable:
-            addOpCode(OpCodes::op_local_address_push);
-            addIndex(receiverOffset);
-            break;
-        case IdentifierType::Parameter:
-            addOpCode(OpCodes::op_parameter_address_push);
-            addIndex(receiverOffset + receiverType->getSize() - 1);
-            break;
-        case IdentifierType::Receiver:
-            addOpCode(OpCodes::op_storage_parameter_address_push);
-            addIndex(receiverOffset);
-            addIndex(0);
-            break;
-        default:
-            reportInternalError("Invalid resolved struct receiver storage");
-        }
+        receiver.emitAddress(*this, function);
     }
     arguments->compile(this, function);
     if (method->asScriptMethod() != nullptr) {

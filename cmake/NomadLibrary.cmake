@@ -21,6 +21,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Parser.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/SourceLoader.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/StatementParsers.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/StorageLocation.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/SyntaxTree.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Tokenizer.cpp
 

@@ -5,10 +5,12 @@
 #include <nomad/Nomad.hpp>
 
 #include <nomad/compiler/Identifier.hpp>
+#include <nomad/compiler/StorageLocation.hpp>
 
 #include <nomad/script/OpCode.hpp>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace nomad {
@@ -99,6 +101,7 @@ public:
         VariableId destination
     );
     [[nodiscard]] virtual bool isWritable() const;
+    [[nodiscard]] virtual std::optional<StorageLocation> getStorageLocation() const;
     [[nodiscard]] virtual IdentifierExpression* asIdentifierExpression();
     [[nodiscard]] virtual const IdentifierExpression* asIdentifierExpression() const;
     [[nodiscard]] virtual NativeMemberExpression* asNativeExpression();

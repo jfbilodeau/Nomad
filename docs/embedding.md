@@ -922,15 +922,42 @@ API does not register methods, resolve source expressions, retain object-propert
 owners, or compile method bodies.
 
 Compiled member expressions can call registered struct methods on locals,
-ordinary parameters, and a struct method's `this`. Calls mutate the borrowed
+ordinary parameters, a struct method's `this`, and nested struct properties
+rooted in that storage. Calls mutate the borrowed
 receiver, while explicit struct arguments remain independent copies. Struct
 results support assignment, arguments, returns, and discarded call statements.
 A script method can copy or return `this`, or pass it as an ordinary struct
 argument; those uses copy its fields rather than expose the borrowed address.
 Empty receivers and results still execute their calls.
 
-Temporary and embedded-property receivers, direct struct property access, and
-struct closure captures remain unsupported and produce compilation errors.
+Stored struct properties can be read and assigned through those same roots.
+Nested scalar/reference properties load and store directly. Struct property
+values can be copied into locals, passed as ordinary arguments, or returned.
+Aggregate property assignments evaluate the complete right-hand side in reserved
+local storage before replacing the property, including self-assignment and
+method calls that mutate the target. Reference properties retain ordinary
+reference semantics. Empty property calls and assignment expressions still
+execute their side effects.
+
+Temporary receivers, structs stored in object properties, and struct closure
+captures remain unsupported and produce compilation errors. This does not
+prevent accessing ordinary class properties through a reference stored inside
+a supported struct.
+
+`Expression::getStorageLocation()` returns an optional compiler-only
+`StorageLocation` for an addressable local, parameter, borrowed receiver, or
+stored struct property. Its logical root remains stable until physical offsets
+are computed during emission. Types and nested property layouts must be
+finalized before deriving properties or emitting storage operations.
+`getProperty(property)` derives same-owner stored struct property storage.
+`emitLoad` loads scalar/reference registers or pushes owned aggregate copies;
+`emitStoreResult` replaces a scalar/reference leaf and transfers ownership of
+the result register. `emitCopyToLocal` and `emitCopyFromLocal` require same-type
+locals and disjoint or identical ranges; overlapping replacements require prior
+staging. `emitAddress` pushes a non-owning pointer for nonempty storage and
+nothing for empty storage. `Compiler::addStructMethodCall` also accepts this
+storage description for nested receivers. These operations do not retain
+object owners, allocate runtime call state, or perform runtime alias checks.
 
 The type-owned emission APIs also support borrowed storage:
 

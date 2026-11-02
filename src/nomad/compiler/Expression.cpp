@@ -91,6 +91,10 @@ bool Expression::isWritable() const {
     return false;
 }
 
+std::optional<StorageLocation> Expression::getStorageLocation() const {
+    return std::nullopt;
+}
+
 IdentifierExpression* Expression::asIdentifierExpression() {
     return nullptr;
 }
@@ -682,7 +686,11 @@ bool NativeMemberExpression::isTerminal() const {
 }
 
 bool NativeMemberExpression::isWritable() const {
-    return false;
+    return m_storage.has_value();
+}
+
+std::optional<StorageLocation> NativeMemberExpression::getStorageLocation() const {
+    return m_storage;
 }
 
 NativeMemberExpression* NativeMemberExpression::asNativeExpression() {
@@ -706,6 +714,8 @@ bool NativeMemberExpression::resolveMember(
     m_memberId = PropertyId::INVALID;
     m_memberType = MemberType::Unknown;
     m_method = nullptr;
+    m_storage.reset();
+    m_structReceiver.reset();
     if (!m_receiver->resolve(context, function)) {
         return false;
     }
@@ -727,6 +737,32 @@ bool NativeMemberExpression::resolveMember(
     }
 
     if (runtime->getMemberType(m_memberId) == MemberType::Unknown) {
+        if (m_receiver->getType()->asStructType() != nullptr) {
+            const auto* property = composite->getProperty(m_memberName);
+            if (property == nullptr) {
+                reportError(context, function, "Unknown struct property '" + m_memberName +
+                    "' on type '" + composite->getTypeName() + "'");
+                return false;
+            }
+            if (m_hasExplicitArguments && m_arguments.getArgumentCount() != 0) {
+                reportError(context, function, "Struct property '" + m_qualifiedName + "' does not take arguments");
+                return false;
+            }
+            if (context->getMode() != CompilerMode::Script || function == nullptr) {
+                reportError(context, function, "Struct properties are not supported by the interpreter");
+                return false;
+            }
+            const auto storage = m_receiver->getStorageLocation();
+            if (!storage.has_value()) {
+                reportError(context, function,
+                    "Struct property receivers currently require local, parameter, or borrowed storage");
+                return false;
+            }
+            m_storage = storage->getProperty(*property);
+            m_memberId = property->getId();
+            m_memberType = MemberType::Property;
+            return true;
+        }
         if (owner != nullptr) {
             const auto* property = owner->getProperty(m_memberName);
             if (assignment && context->getMode() == CompilerMode::Script) {
@@ -781,6 +817,10 @@ bool NativeMemberExpression::resolveAssignmentTarget(
             context->getCompiler()->reportInternalError("Invalid property: " + m_qualifiedName);
         }
         setType(property->getValueType());
+        if (m_storage.has_value() && getType()->asStructType() != nullptr && m_stagingVariable.isInvalid()) {
+            m_stagingVariable = function->registerVariable(
+                "$property" + std::to_string(function->getVariableCount()), getType());
+        }
         return true;
     }
     if (!info->setFn) {
@@ -859,14 +899,8 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
                 reportError(context, function, "Struct method calls are not supported by the interpreter");
                 return;
             }
-            const auto* identifier = m_receiver->asIdentifierExpression();
-            if (identifier != nullptr) {
-                compiler->getIdentifierDefinition(identifier->getIdentifier(), function, m_structReceiver);
-            }
-            if (identifier == nullptr ||
-                (m_structReceiver.identifierType != IdentifierType::FunctionVariable &&
-                 m_structReceiver.identifierType != IdentifierType::Parameter &&
-                 m_structReceiver.identifierType != IdentifierType::Receiver)) {
+            m_structReceiver = m_receiver->getStorageLocation();
+            if (!m_structReceiver.has_value()) {
                 reportError(context, function,
                     "Struct method receivers currently require a local, parameter, or 'this'");
                 return;
@@ -901,11 +935,15 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
         compiler->reportInternalError("Native member has not been resolved: " + m_qualifiedName);
     }
     const auto* receiverType = m_receiver->getType();
-    if (getType()->asStructType() != nullptr) {
-        compiler->reportError("Struct method results require a local destination");
+    if (getType()->asStructType() != nullptr && (!m_storage.has_value() || target != ExpressionTarget::Stack)) {
+        compiler->reportError("Struct member values require a local destination or stack copies");
+    }
+    if (m_storage.has_value()) {
+        m_storage->emitLoad(*compiler, function, target);
+        return;
     }
     if (m_memberType == MemberType::Method && receiverType->asStructType() != nullptr) {
-        compiler->addStructMethodCall(m_method->getId(), function, &m_arguments, m_structReceiver);
+        compiler->addStructMethodCall(m_method->getId(), function, &m_arguments, *m_structReceiver);
         if (!getType()->isVoid()) {
             compiler->addMoveResult(getType(), target);
         }
@@ -945,10 +983,14 @@ void NativeMemberExpression::onCompileIntoLocal(
         Expression::onCompileIntoLocal(compiler, function, destination);
         return;
     }
+    if (m_storage.has_value()) {
+        m_storage->emitCopyToLocal(*compiler, function, destination);
+        return;
+    }
     if (m_memberType != MemberType::Method || m_receiver->getType()->asStructType() == nullptr) {
         compiler->reportError("Struct local destinations currently require a struct method receiver");
     }
-    compiler->addStructMethodCall(m_method->getId(), function, &m_arguments, m_structReceiver, destination);
+    compiler->addStructMethodCall(m_method->getId(), function, &m_arguments, *m_structReceiver, destination);
 }
 
 void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
@@ -1035,6 +1077,17 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
 void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression) {
     const auto* receiverType = m_receiver->getType();
     const auto* propertyType = getType();
+    if (m_storage.has_value()) {
+        if (propertyType->asStructType() != nullptr) {
+            expression->compileIntoLocal(compiler, function, m_stagingVariable);
+            m_storage->emitCopyFromLocal(*compiler, function, m_stagingVariable);
+            propertyType->emitFreeFunctionVariable(*compiler, function->getVariableOffset(m_stagingVariable));
+        } else {
+            expression->compile(compiler, function, ExpressionTarget::Result);
+            m_storage->emitStoreResult(*compiler, function);
+        }
+        return;
+    }
     m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
     compiler->addPushIntermediate(receiverType);
     expression->compile(compiler, function, ExpressionTarget::Result);
@@ -1045,6 +1098,10 @@ void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptCallabl
 }
 
 void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, const Expression* expression) const {
+    if (m_receiver->getType()->asStructType() != nullptr || getType()->asStructType() != nullptr) {
+        context.setError("Struct member values are not supported by the interpreter");
+        return;
+    }
     m_receiver->evaluate(context);
     const auto* evaluatedReceiver = context.getResult();
     if (evaluatedReceiver == nullptr) {
@@ -1872,6 +1929,16 @@ bool IdentifierExpression::isWritable() const {
     return m_writable;
 }
 
+std::optional<StorageLocation> IdentifierExpression::getStorageLocation() const {
+    if (getType() == nullptr ||
+        (m_identifierDefinition.identifierType != IdentifierType::FunctionVariable &&
+         m_identifierDefinition.identifierType != IdentifierType::Parameter &&
+         m_identifierDefinition.identifierType != IdentifierType::Receiver)) {
+        return std::nullopt;
+    }
+    return StorageLocation(m_identifierDefinition);
+}
+
 void IdentifierExpression::onCompileIntoLocal(
     Compiler* compiler,
     ScriptCallableBase* function,
@@ -1881,25 +1948,11 @@ void IdentifierExpression::onCompileIntoLocal(
         Expression::onCompileIntoLocal(compiler, function, destination);
         return;
     }
-    const auto destinationOffset = function->getVariableOffset(destination);
-    switch (m_identifierDefinition.identifierType) {
-    case IdentifierType::FunctionVariable:
-        getType()->emitCopyFunctionVariable(
-            *compiler, function->getVariableOffset(m_identifierDefinition.variableId), destinationOffset);
-        break;
-    case IdentifierType::Parameter:
-        getType()->emitCopyParameterToFunctionVariable(
-            *compiler, function->getParameterOffset(m_identifierDefinition.parameterId), destinationOffset);
-        break;
-    case IdentifierType::Receiver:
-        if (getType()->getSize() != 0) {
-            getType()->emitCopyStorageParameterToFunctionVariable(
-                *compiler, *function->getCallStorageLayout().receiverOffset, 0, destinationOffset);
-        }
-        break;
-    default:
+    const auto storage = getStorageLocation();
+    if (!storage.has_value()) {
         compiler->reportError("Struct local destinations currently support only local variable or parameter sources");
     }
+    storage->emitCopyToLocal(*compiler, function, destination);
 }
 
 std::unique_ptr<TypedValue> IdentifierExpression::getInitialValue(Compiler* compiler) const {

@@ -123,6 +123,7 @@ public:
 
     [[nodiscard]] bool isTerminal() const override;
     [[nodiscard]] bool isWritable() const override;
+    [[nodiscard]] std::optional<StorageLocation> getStorageLocation() const override;
     [[nodiscard]] NativeMemberExpression* asNativeExpression() override;
     [[nodiscard]] const NativeMemberExpression* asNativeExpression() const override;
 
@@ -156,7 +157,9 @@ private:
     MemberReference m_memberId;
     MemberType m_memberType = MemberType::Unknown;
     const Method* m_method = nullptr;
-    IdentifierDefinition m_structReceiver;
+    std::optional<StorageLocation> m_structReceiver;
+    std::optional<StorageLocation> m_storage;
+    VariableId m_stagingVariable = VariableId::INVALID;
     bool m_allowVoid = false;
 };
 
@@ -327,6 +330,7 @@ public:
 
     [[nodiscard]] const NomadString& getIdentifier() const;
     [[nodiscard]] bool isWritable() const override;
+    [[nodiscard]] std::optional<StorageLocation> getStorageLocation() const override;
     [[nodiscard]] IdentifierExpression* asIdentifierExpression() override;
     [[nodiscard]] const IdentifierExpression* asIdentifierExpression() const override;
     [[nodiscard]] std::unique_ptr<TypedValue> getInitialValue(Compiler* compiler) const override;

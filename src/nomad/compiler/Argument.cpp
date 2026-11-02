@@ -210,14 +210,7 @@ void ExpressionArgument::onResolve(CompilerContext* context, ScriptCallableBase*
         return;
     }
     if (context->getMode() == CompilerMode::Script && expressionType->asStructType() != nullptr) {
-        m_directStack = false;
-        if (const auto* identifier = m_expression->asIdentifierExpression()) {
-            IdentifierDefinition definition;
-            context->getCompiler()->getIdentifierDefinition(identifier->getIdentifier(), function, definition);
-            m_directStack = definition.identifierType == IdentifierType::FunctionVariable ||
-                definition.identifierType == IdentifierType::Parameter ||
-                definition.identifierType == IdentifierType::Receiver;
-        }
+        m_directStack = m_expression->getStorageLocation().has_value();
         if (!m_directStack && m_stagingVariable.isInvalid()) {
             m_stagingVariable = function->registerVariable(
                 "$argument" + std::to_string(function->getVariableCount()), expressionType);

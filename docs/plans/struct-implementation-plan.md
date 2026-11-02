@@ -2,9 +2,10 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Steps 1AP through 1AU have been reviewed; Step 1AV below is implemented and awaiting review.
+Steps 1AP through 1AV have been reviewed; Step 1AW below is implemented and awaiting review.
 Struct argument copies, destination returns, and registered method calls on
-locals, parameters, and `this` are supported. Struct property addressing remains
+locals, parameters, and `this` are supported, including nested stored struct
+properties rooted in that storage. Retained object-property addressing remains
 unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
@@ -1919,6 +1920,48 @@ Next slice after review: shared struct property addressing for locals,
 parameters, and borrowed receivers, followed by retained object-property owners.
 Discuss any necessary new address opcode before implementing it. Return-call
 forwarding and NRVO remain later optimization work.
+
+### Step 1AW: Shared stored struct property addressing
+
+Approved scope and implementation:
+
+- Added compiler-only storage locations rooted in logical locals, ordinary
+  parameters, or borrowed `this`, with flattened stored property offsets.
+  Emission computes local offsets and reverse parameter anchor distances from
+  finalized layouts. Existing opcodes handle all addressing and copies.
+- Stored struct properties support scalar/reference reads and writes, aggregate
+  local copies, direct argument pushes, returns, and discarded values.
+  Nested struct properties can borrow their storage for registered methods.
+- Scalar/reference writes evaluate the RHS before releasing and replacing the
+  old leaf. Aggregate writes stage the full RHS before replacing any destination
+  slots, preserving self-assignment and receiver-mutating call behavior.
+- Source `this.property` assignments on structs use member expressions while
+  class field inference retains its existing path.
+- Empty properties emit no storage pointer or field access; RHS calls and
+  methods still execute. Reference properties retain existing class semantics.
+- Unknown stored struct properties and unsupported temporary/object-owned
+  struct receivers fail explicitly. This slice does not add declaration syntax,
+  property inference, owner retention, or new VM opcodes.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, bindings, and tooling regression groups passed.
+- Executable fixtures cover nested local/parameter/borrowed property mutation,
+  parameter-copy isolation, scalar/reference writes, aggregate replacement,
+  self-assignment, receiver-mutating RHS calls, nested method receivers,
+  argument/return copies, empty side effects, and discarded empty properties.
+- Reference-field tests preserve shared class mutation while isolating property
+  replacement; repeated executions restore live string/object counts.
+- Bytecode tests verify nested parameter address and copy anchor operands.
+  Negative tests cover unknown properties, mismatched assignments, temporary
+  receivers, and unsupported object-owned struct addressing.
+- Four documentation tests and whitespace checks passed.
+- Gameplay and performance benchmarks were not run.
+
+Next slice after review: retained object-property owner/address lowering. Discuss
+the owner lifetime and any necessary new address opcode before implementing it.
+Return-call forwarding and NRVO remain later optimization work.
 
 Remaining Step 1 work, requiring separate design approval:
 

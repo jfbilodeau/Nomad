@@ -2242,10 +2242,14 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_reject_unsupported_receivers_and_inte
     const auto scriptId = runtime.registerScriptMethod(typeId, "checkProperties", {}, "properties.nomad", "");
     auto* script = runtime.getScriptCallable(scriptId);
     BOOST_REQUIRE(script != nullptr);
-    IdentifierExpression property(nullptr, 1, 1, "this.number");
+    NativeMemberExpression property(nullptr, 1, 1, "this.number", "number",
+        std::make_unique<IdentifierExpression>(nullptr, 1, 1, "this"), ArgumentList{});
     BOOST_TEST(!property.resolve(&context, script));
     const auto errorCount = context.getErrorCount();
-    AssignmentStatement assignment(1, 1, "this.number", std::make_unique<IntegerLiteral>(nullptr, 1, 1, 3));
+    MemberAssignmentStatement assignment(1, 1,
+        std::make_unique<NativeMemberExpression>(nullptr, 1, 1, "this.number", "number",
+            std::make_unique<IdentifierExpression>(nullptr, 1, 1, "this"), ArgumentList{}),
+        std::make_unique<IntegerLiteral>(nullptr, 1, 1, 3));
     BOOST_TEST(!assignment.resolve(&context, script));
     BOOST_TEST(context.getErrorCount() == errorCount + 1);
     const auto nestedId = runtime.registerScriptFunction("receiverCapture", "capture.nomad", "");
@@ -2254,6 +2258,274 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_reject_unsupported_receivers_and_inte
     IdentifierExpression capture(nullptr, 1, 1, "this");
     BOOST_CHECK_THROW(capture.resolve(&context, nested), CompilerException);
     BOOST_TEST(nested->getParameterCount() == 0U);
+}
+
+BOOST_AUTO_TEST_CASE(source_struct_properties_share_nested_local_parameter_and_borrowed_storage) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto emptyId = runtime.registerStruct("PropertyEmpty");
+    const auto leafId = runtime.registerStruct("PropertyLeaf");
+    const auto pairId = runtime.registerStruct("PropertyPair");
+    const auto* empty = runtime.getTypeByName("PropertyEmpty");
+    const auto* leaf = runtime.getTypeByName("PropertyLeaf");
+    const auto* pair = runtime.getTypeByName("PropertyPair");
+    BOOST_REQUIRE(runtime.registerProperty(leafId, "nothing", empty).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(leafId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(leafId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(leafId, "tail", empty).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(pairId, "prefix", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(pairId, "left", leaf).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(pairId, "middle", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(pairId, "right", leaf).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(pairId, "empty", empty).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(pairId, "suffix", runtime.getIntegerType()).isValid());
+    runtime.finalizeCompositeFieldLayout(pairId);
+    BOOST_REQUIRE(pair->getSize() == 7U);
+    BOOST_REQUIRE(runtime.registerNativeFunction("makePropertyPair", [](VirtualMachine* active) {
+        auto* destination = active->getParameter(0).getStorageAddress();
+        destination[0].setIntegerValue(101);
+        destination[1].setIntegerValue(11);
+        destination[2].freeObjectValue();
+        destination[2].setStringValue("left");
+        destination[3].freeObjectValue();
+        destination[3].setStringValue("middle");
+        destination[4].setIntegerValue(22);
+        destination[5].freeObjectValue();
+        destination[5].setStringValue("right");
+        destination[6].setIntegerValue(303);
+    }, {}, pair, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("makePropertyLeaf", [](VirtualMachine* active) {
+        auto* destination = active->getParameter(1).getStorageAddress();
+        destination[0] = active->getParameter(0);
+        destination[1].freeObjectValue();
+        destination[1].setStringValue("made");
+    }, {defParameter("number", runtime.getIntegerType(), "")}, leaf, "").isValid());
+    auto emptyCalls = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction("makePropertyEmpty", [&](VirtualMachine*) {
+        ++emptyCalls;
+    }, {}, empty, "").isValid());
+    auto emptyTouches = 0;
+    BOOST_REQUIRE(runtime.addMethod(emptyId, {
+        .name = "touchPropertyEmpty",
+        .parameters = {},
+        .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [&](VirtualMachine* active) {
+            ++emptyTouches;
+            active->setIntegerResult(123);
+        },
+        .documentation = ""
+    }).isValid());
+    const auto leafMethod = runtime.registerScriptMethod(leafId, "copyPropertyLeaf",
+        {defParameter("delta", runtime.getIntegerType(), "")}, "leaf.nomad",
+        "this.number = this.number + delta\nthis.text = this.text\nreturn this");
+    const auto pairMethod = runtime.registerScriptMethod(pairId, "mutatePropertyPair",
+        {defParameter("delta", runtime.getIntegerType(), "")}, "pair.nomad",
+        "this.left.number = this.left.number + delta\nthis.left.text = this.right.text\n"
+        "this.right = this.left\nthis.left = this.left\nthis.left = this.right.copyPropertyLeaf 1\n"
+        "this.empty = makePropertyEmpty\nreturn this.left");
+    const auto prepareMethod = runtime.registerScriptMethod(pairId, "preparePropertyAssignment",
+        {}, "prepare.nomad", "this.left.number = 999\nreturn 45");
+    BOOST_REQUIRE(leafMethod.isValid());
+    BOOST_REQUIRE(pairMethod.isValid());
+    BOOST_REQUIRE(prepareMethod.isValid());
+    fixture.addFunction("main",
+        "fun changePropertyParameter value:PropertyPair delta:int\n"
+        "assert value.prefix == 101\nassert value.suffix == 303\n"
+        "value.left.number = value.left.number + delta\nvalue.left.text = value.right.text\n"
+        "value.right = value.left\nvalue.right = value.right.copyPropertyLeaf 1\nreturn value.right\nend\n"
+        "fun takePropertyLeaf value:PropertyLeaf\nvalue.number = value.number + 5\nreturn value\nend\n"
+        "fun takePropertyEmpty value:PropertyEmpty\nreturn 7\nend\n"
+        "value = makePropertyPair\n"
+        "value.left.number = value.preparePropertyAssignment\nassert value.left.number == 45\n"
+        "value.left.number = 30\nvalue.left.text = value.left.text\nvalue.middle = value.left.text\n"
+        "value.right = value.left\nvalue.left = makePropertyLeaf 7\n"
+        "assert value.left.number == 7\nassert value.left.text == \"made\"\n"
+        "value.left = value.right\nvalue.left = value.left.copyPropertyLeaf 2\n"
+        "copy = value.left\ncopy.number = 100\ncopy.text = \"copy\"\n"
+        "isolated = changePropertyParameter value 3\n"
+        "assert isolated.number == 36\nassert value.left.number == 32\nassert value.right.number == 30\n"
+        "returned = value.mutatePropertyPair 5\n"
+        "assert returned.number == 38\nassert returned.text == \"left\"\n"
+        "relayed = takePropertyLeaf value.left\nassert relayed.number == 43\n"
+        "assert value.left.number == 38\nassert value.right.number == 38\n"
+        "assert value.middle == \"left\"\nassert value.prefix == 101\nassert value.suffix == 303\n"
+        "assert copy.number == 100\nassert copy.text == \"copy\"\n"
+        "value.empty = makePropertyEmpty\nvalue.left.nothing = makePropertyEmpty\n"
+        "value.left.tail = value.empty\nvalue.empty = value.empty\n"
+        "assert (takePropertyEmpty value.empty) == 7\n"
+        "assert (value.empty.touchPropertyEmpty) == 123\n"
+        "assert (value.left.tail.touchPropertyEmpty) == 123\nvalue.empty\n"
+        "return value.left.number + value.right.number");
+    fixture.getCompiler().registerPhaseHook([&](CompilerContext* context, const CompilationPhase phase) {
+        if (phase != CompilationPhase::Parse) {
+            return;
+        }
+        for (const auto id : {leafMethod, pairMethod, prepareMethod}) {
+            auto* method = runtime.getScriptCallable(id);
+            fixture.getCompiler().registerMemberCompilation(
+                id, runtime.getFunctionId("main"), CompilationCallableTarget::Function);
+            auto body = std::make_unique<FunctionNode>(0, 0);
+            Tokenizer tokens(context, method->getPath(), method->getSourceCode());
+            while (tokens.nextLine()) {
+                if (auto statement = parser::parseLine(context, method, &tokens)) {
+                    body->addStatement(std::move(statement));
+                }
+            }
+            fixture.getCompiler().setFunctionBody(id, std::move(body));
+        }
+    });
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 76);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    }
+    BOOST_TEST(emptyCalls == 9);
+    BOOST_TEST(emptyTouches == 6);
+    const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+    for (auto index = NomadIndex{0}; index < main->getVariableCount(); ++index) {
+        BOOST_TEST(!main->getVariableName(VariableId{toNomadId(index)}).starts_with("$argument"));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(struct_property_storage_resolves_parameter_subvalue_anchor_operands) {
+    Runtime runtime;
+    const auto leafId = runtime.registerStruct("OffsetLeaf");
+    const auto rootId = runtime.registerStruct("OffsetRoot");
+    const auto* leaf = runtime.getTypeByName("OffsetLeaf");
+    const auto* root = runtime.getTypeByName("OffsetRoot");
+    BOOST_REQUIRE(runtime.registerProperty(leafId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(leafId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(rootId, "prefix", runtime.getIntegerType()).isValid());
+    const auto leftId = runtime.registerProperty(rootId, "left", leaf);
+    const auto rightId = runtime.registerProperty(rootId, "right", leaf);
+    BOOST_REQUIRE(leftId.isValid());
+    BOOST_REQUIRE(rightId.isValid());
+    BOOST_REQUIRE(runtime.registerProperty(rootId, "suffix", runtime.getIntegerType()).isValid());
+    runtime.finalizeCompositeFieldLayout(rootId);
+    ScriptFunction caller(CallableId{}, "offsets", "offsets.nomad", "");
+    caller.setReturnType(runtime.getVoidType());
+    caller.addParameter("value", root, "");
+    const auto destination = caller.registerVariable("destination", leaf);
+    IdentifierDefinition definition;
+    definition.identifierType = IdentifierType::Parameter;
+    definition.valueType = root;
+    definition.parameterId = 0;
+    const auto left = StorageLocation(definition).getProperty(*runtime.getProperty(leftId));
+    const auto right = StorageLocation(definition).getProperty(*runtime.getProperty(rightId));
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+    auto start = instructions.size();
+    left.emitAddress(compiler, &caller);
+    BOOST_TEST(runtime.getInstructionId(instructions[start].fn).id ==
+        runtime.getInstructionId(OpCodes::op_parameter_address_push).id);
+    BOOST_TEST(instructions[start + 1].value.getIndexValue() == 4U);
+    start = instructions.size();
+    right.emitAddress(compiler, &caller);
+    BOOST_TEST(instructions[start + 1].value.getIndexValue() == 2U);
+    start = instructions.size();
+    left.emitCopyToLocal(compiler, &caller, destination);
+    BOOST_TEST(instructions[start + 1].value.getIndexValue() == 4U);
+    BOOST_TEST(instructions[start + 5].value.getIndexValue() == 3U);
+    start = instructions.size();
+    left.emitCopyFromLocal(compiler, &caller, destination);
+    BOOST_TEST(instructions[start + 3].value.getIndexValue() == 4U);
+    BOOST_TEST(instructions[start + 9].value.getIndexValue() == 3U);
+    start = instructions.size();
+    BOOST_CHECK_THROW(left.emitLoad(compiler, &caller, ExpressionTarget::Result), NomadException);
+    BOOST_TEST(instructions.size() == start);
+}
+
+BOOST_AUTO_TEST_CASE(source_struct_properties_preserve_class_reference_semantics_and_ownership) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto actorId = runtime.registerClass("PropertyActor", ClassMode::Closed);
+    const auto holderId = runtime.registerStruct("PropertyHolder");
+    const auto* actor = runtime.getTypeByName("PropertyActor")->asClassType();
+    const auto* holder = runtime.getTypeByName("PropertyHolder");
+    BOOST_REQUIRE(runtime.registerProperty(actorId, "value", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(holderId, "actor", actor).isValid());
+    runtime.finalizeCompositeFieldLayout(actorId);
+    runtime.finalizeCompositeFieldLayout(holderId);
+    BOOST_REQUIRE(runtime.registerNativeFunction("makePropertyActor", [actor](VirtualMachine* active) {
+        active->getResult().setObjectValue(new ScriptObject(actor));
+    }, {}, actor, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("makePropertyHolder", [actor](VirtualMachine* active) {
+        auto* destination = active->getParameter(0).getStorageAddress();
+        destination[0].freeObjectValue();
+        destination[0].setObjectValue(new ScriptObject(actor));
+    }, {}, holder, "").isValid());
+    const auto methodId = runtime.registerScriptMethod(holderId, "replacePropertyActor",
+        {defParameter("number", runtime.getIntegerType(), "")}, "actor.nomad",
+        "this.actor = this.actor\nthis.actor = makePropertyActor\nthis.actor.value = number\nreturn this.actor");
+    BOOST_REQUIRE(methodId.isValid());
+    fixture.addFunction("main",
+        "fun mutatePropertyHolder copy:PropertyHolder\n"
+        "copy.actor.value = 23\ncopy.actor = makePropertyActor\ncopy.actor.value = 71\nreturn copy.actor\nend\n"
+        "value = makePropertyHolder\nvalue.actor.value = 12\nvalue.actor = value.actor\n"
+        "copy = value\ncopy.actor.value = 19\nassert value.actor.value == 19\n"
+        "returned = mutatePropertyHolder value\nassert returned.value == 71\nassert value.actor.value == 23\n"
+        "copy.actor = makePropertyActor\ncopy.actor.value = 31\n"
+        "assert value.actor.value == 23\nassert copy.actor.value == 31\n"
+        "returned = value.replacePropertyActor 41\nassert returned.value == 41\nreturn value.actor.value");
+    fixture.getCompiler().registerPhaseHook([&](CompilerContext* context, const CompilationPhase phase) {
+        if (phase != CompilationPhase::Parse) {
+            return;
+        }
+        auto* method = runtime.getScriptCallable(methodId);
+        fixture.getCompiler().registerMemberCompilation(
+            methodId, runtime.getFunctionId("main"), CompilationCallableTarget::Function);
+        auto body = std::make_unique<FunctionNode>(0, 0);
+        Tokenizer tokens(context, method->getPath(), method->getSourceCode());
+        while (tokens.nextLine()) {
+            if (auto statement = parser::parseLine(context, method, &tokens)) {
+                body->addStatement(std::move(statement));
+            }
+        }
+        fixture.getCompiler().setFunctionBody(methodId, std::move(body));
+    });
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 41);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(source_struct_properties_reject_unknown_properties_and_unsupported_storage) {
+    const std::array<std::pair<NomadString, NomadString>, 5> cases{{
+        {"value = makeBoundaryLeaf\nreturn value.missing", "Unknown struct property"},
+        {"value = makeBoundaryLeaf\nvalue.missing = 3", "Unknown struct property"},
+        {"value = makeBoundaryLeaf\nvalue.number = \"bad\"", "Cannot assign value of type"},
+        {"return (makeBoundaryLeaf).number", "Struct property receivers currently require"},
+        {"owner = makeBoundaryOwner\nreturn owner.value.number", "Struct property receivers currently require"}
+    }};
+    for (const auto& [source, diagnostic] : cases) {
+        nomad::test::LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        const auto leafId = runtime.registerStruct("BoundaryLeaf");
+        const auto ownerId = runtime.registerClass("BoundaryOwner", ClassMode::Closed);
+        const auto* leaf = runtime.getTypeByName("BoundaryLeaf");
+        const auto* owner = runtime.getTypeByName("BoundaryOwner");
+        BOOST_REQUIRE(runtime.registerProperty(leafId, "number", runtime.getIntegerType()).isValid());
+        BOOST_REQUIRE(runtime.registerProperty(ownerId, "value", leaf).isValid());
+        runtime.finalizeCompositeFieldLayout(ownerId);
+        auto calls = 0;
+        BOOST_REQUIRE(runtime.registerNativeFunction("makeBoundaryLeaf", [&](VirtualMachine*) {
+            ++calls;
+        }, {}, leaf, "").isValid());
+        BOOST_REQUIRE(runtime.registerNativeFunction("makeBoundaryOwner", [&](VirtualMachine*) {
+            ++calls;
+        }, {}, owner, "").isValid());
+        fixture.addFunction("main", source);
+        BOOST_TEST(!fixture.compile());
+        BOOST_TEST(fixture.hasError(diagnostic));
+        BOOST_TEST(calls == 0);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_without_writing_instructions) {

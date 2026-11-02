@@ -242,11 +242,11 @@ std::unique_ptr<Expression> createNativeMemberExpression(
         IdentifierDefinition definition;
         context->getCompiler()->getIdentifierDefinition(identifier->getIdentifier(), function, definition);
         receiverType = definition.valueType;
-        if (definition.valueType != nullptr && definition.valueType->asClassType() != nullptr) {
+        if (definition.valueType != nullptr && definition.valueType->asCompositeType() != nullptr) {
             storedField = context->getRuntime()->getMemberType(
                 context->getRuntime()->getNativeMemberId(definition.valueType, memberName)
             ) == MemberType::Unknown && !std::ranges::any_of(
-                definition.valueType->asClassType()->getMethods(),
+                definition.valueType->asCompositeType()->getMethods(),
                 [&](const auto* method) { return method->getName() == memberName; }
             );
         }
@@ -1099,6 +1099,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
             return nullptr;
         }
         if (context->getMode() != CompilerMode::Interpreter &&
+            context->getCompiler()->getReceiverType(function)->asClassType() != nullptr &&
             target.starts_with("this.") && target.find('.', 5) == NomadString::npos &&
             tokens->getTokenCount() >= 3 && tokens->getTokenAt(1) == "=") {
             auto name = tokens->next().textValue;
