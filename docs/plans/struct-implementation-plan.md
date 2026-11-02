@@ -2,7 +2,7 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Steps 1AP through 1AV have been reviewed; Step 1AW below is implemented and awaiting review.
+Steps 1AP through 1AW have been reviewed; Step 1AX below is implemented and awaiting review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Retained object-property addressing remains
@@ -1961,6 +1961,54 @@ Validation:
 
 Next slice after review: retained object-property owner/address lowering. Discuss
 the owner lifetime and any necessary new address opcode before implementing it.
+Return-call forwarding and NRVO remain later optimization work.
+
+### Step 1AX: Checked stored property address primitive
+
+Approved scope and design:
+
+- Add the address primitive first, independently of compiler owner-lifetime
+  lowering and source-level object-owned struct access.
+- The original evaluated object must remain alive through argument evaluation
+  and the borrowed call, even if an argument replaces its former variable.
+  The compiler will keep that owner on the value stack in the following slice.
+- Use one new opcode with compiler-computed owner-stack distance and inclusive
+  first/last physical slot offsets. Computing the last slot at compilation
+  avoids runtime width/offset arithmetic.
+- Check script-object storage and actual allocation capacity before borrowing.
+  Do not allocate, build spans, copy aggregate values, or retain an owner inside
+  the address opcode. Empty structs require no address.
+
+Implementation:
+
+- Added `op_stored_property_address_push` with three full-width index operands.
+  It reads an already-retained owner without consuming it and pushes one
+  borrowed pointer, preserving result/intermediate registers.
+- Added `VirtualMachine::getStoredPropertyAddress` for ordered, nonempty
+  inclusive ranges. Existing scalar stored-property access shares its storage
+  checks without changing faults or ownership behavior.
+- No compiler emission or source-level support is enabled in this slice.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language and remaining regression groups passed.
+- Executed hand-emitted script fixtures verify nested address mutation,
+  retained-owner stack distances with and without a destination descriptor,
+  register preservation, unchanged owner reference counts, descriptor cleanup,
+  and restoration of live string/object counts.
+- Opcode metadata and instruction dumps include all three index operands.
+  Faulting bytecode covers null/non-storage receivers, empty allocations,
+  older objects after class extension, partial missing ranges, and a last-slot
+  operand above `NOMAD_ID_MAX`.
+- Four documentation tests and whitespace checks passed.
+- Source-level object-owned struct access, gameplay, and performance benchmarks
+  were not validated or enabled in this slice.
+
+Next slice after review: compiler-managed owner retention and stored struct
+property method receivers, using the existing hidden-pointer call ABI. Keep the
+owner alive until argument, descriptor, and call cleanup have completed.
+Property reads/writes and aggregate destination lowering follow separately.
 Return-call forwarding and NRVO remain later optimization work.
 
 Remaining Step 1 work, requiring separate design approval:

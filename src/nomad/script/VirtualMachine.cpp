@@ -489,14 +489,22 @@ void VirtualMachine::setProperty(
 }
 
 RuntimeValue& VirtualMachine::getStoredProperty(const NomadIndex offset) {
-    auto* object = dynamic_cast<ScriptObject*>(m_intermediate.getObjectValue());
+    return *getStoredPropertyAddress(m_intermediate, offset, offset);
+}
+
+RuntimeValue* VirtualMachine::getStoredPropertyAddress(
+    const RuntimeValue& receiver,
+    const NomadIndex firstOffset,
+    const NomadIndex lastOffset
+) {
+    auto* object = dynamic_cast<ScriptObject*>(receiver.getObjectValue());
     if (object == nullptr) {
         fault("Stored property receiver has no matching field storage");
     }
-    if (offset >= object->getStorageSize()) {
+    if (lastOffset >= object->getStorageSize()) {
         fault("Script object field index is out of bounds");
     }
-    return object->getStorageValue(offset);
+    return &object->getStorageValue(firstOffset);
 }
 
 void VirtualMachine::setNativeProperty(

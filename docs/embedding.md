@@ -959,6 +959,28 @@ nothing for empty storage. `Compiler::addStructMethodCall` also accepts this
 storage description for nested receivers. These operations do not retain
 object owners, allocate runtime call state, or perform runtime alias checks.
 
+`op_stored_property_address_push(ownerOffset, firstOffset, lastOffset)` provides
+the address primitive for future object-owned struct lowering. `ownerOffset` is
+the distance from the current stack top to an already-retained object, measured
+before the address is pushed. The other operands are inclusive physical slot
+offsets within that object, computed by the compiler. All three are full-width
+index operands. The opcode requires a nonempty, ordered range
+(`firstOffset <= lastOffset`) and pushes exactly one borrowed storage pointer.
+It preserves the owner and both value registers without retaining or releasing
+the object.
+
+`VirtualMachine::getStoredPropertyAddress(receiver, firstOffset, lastOffset)`
+exposes the same borrowed pointer contract. Both entry points check that the
+receiver has script-object storage and that its actual allocation contains the
+last slot before forming an address. This rejects missing storage on older
+instances after class extension. Ordered bounds and a live owner remain caller
+requirements. Empty structs must not request an address; their owner evaluation
+and method side effects will be handled without a pointer.
+
+This primitive does not yet enable source-level object-owned struct access or
+manage owner lifetimes. Compiler lowering must retain the evaluated owner
+through argument evaluation and the borrowed operation, then release it.
+
 The type-owned emission APIs also support borrowed storage:
 
 - `emitCopyFunctionVariableToStorageParameter(emitter, sourceOffset,

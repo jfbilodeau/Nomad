@@ -99,6 +99,12 @@ public:
     void getProperty(PropertyId memberId, const RuntimeValue& receiver, RuntimeValue& result);
     void setProperty(PropertyId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
     [[nodiscard]] RuntimeValue& getStoredProperty(NomadIndex offset);
+    // The compiler supplies ordered, nonempty inclusive bounds; the owner remains retained by the caller.
+    [[nodiscard]] RuntimeValue* getStoredPropertyAddress(
+        const RuntimeValue& receiver,
+        NomadIndex firstOffset,
+        NomadIndex lastOffset
+    );
     void callNativeIndexer(IndexerId indexerId, const RuntimeValue& receiver, bool write);
     void runNativeIndexer(
         IndexerId indexerId,

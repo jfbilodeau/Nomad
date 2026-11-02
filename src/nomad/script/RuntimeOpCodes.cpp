@@ -87,6 +87,9 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_object_free_parameter, op_object_free_parameter, "Release object at physical parameter offset", {Operand::Index});
 
     // Internal borrowed storage operations
+    registerInstruction(OpCodes::op_stored_property_address_push, op_stored_property_address_push,
+        "Push a nonempty stored property address from a retained stack owner and inclusive physical slot bounds",
+        {Operand::Index, Operand::Index, Operand::Index});
     registerInstruction(OpCodes::op_local_address_push, op_local_address_push,
         "Push a borrowed local storage address at physical offset", {Operand::Index});
     registerInstruction(OpCodes::op_parameter_address_push, op_parameter_address_push,

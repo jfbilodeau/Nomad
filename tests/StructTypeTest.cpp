@@ -299,6 +299,210 @@ BOOST_AUTO_TEST_CASE(inline_cycles_fail_but_reference_cycles_do_not) {
     BOOST_TEST(!owner->asCompositeType()->isFieldLayoutFinalized());
 }
 
+BOOST_AUTO_TEST_CASE(stored_property_address_opcode_borrows_nested_storage_from_a_retained_stack_owner) {
+    Runtime runtime;
+    const auto innerId = runtime.registerStruct("AddressInner");
+    const auto payloadId = runtime.registerStruct("AddressPayload");
+    const auto ownerId = runtime.registerClass("AddressOwner", ClassMode::Closed);
+    const auto* inner = runtime.getTypeByName("AddressInner");
+    const auto* payload = runtime.getTypeByName("AddressPayload");
+    const auto* ownerType = runtime.getTypeByName("AddressOwner")->asClassType();
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(payloadId, "before", runtime.getIntegerType()).isValid());
+    const auto nestedId = runtime.registerProperty(payloadId, "inner", inner);
+    BOOST_REQUIRE(nestedId.isValid());
+    BOOST_REQUIRE(runtime.registerProperty(payloadId, "after", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "prefix", runtime.getIntegerType()).isValid());
+    const auto propertyId = runtime.registerProperty(ownerId, "payload", payload);
+    BOOST_REQUIRE(propertyId.isValid());
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "suffix", runtime.getIntegerType()).isValid());
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    const auto firstOffset = ownerType->getFieldOffset(propertyId) +
+        payload->asCompositeType()->getFieldOffset(nestedId);
+    const auto lastOffset = firstOffset + inner->getSize() - 1;
+    BOOST_TEST(firstOffset == 2U);
+    BOOST_TEST(lastOffset == 3U);
+    const auto opcodeId = runtime.getInstructionId(OpCodes::op_stored_property_address_push);
+    BOOST_REQUIRE(opcodeId.isValid());
+    const auto& operands = runtime.getInstructionOperands(opcodeId);
+    BOOST_REQUIRE(operands.size() == 3U);
+    for (const auto operand : operands) {
+        BOOST_CHECK(operand == Operand::Index);
+    }
+    const auto instruction = runtime.getInstructionFn(opcodeId);
+    BOOST_REQUIRE(instruction != nullptr);
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    {
+        ScriptObject object(ownerType);
+        object.getStorageValue(0).setIntegerValue(101);
+        object.getStorageValue(1).setIntegerValue(202);
+        object.getStorageValue(2).setIntegerValue(17);
+        object.getStorageValue(3).setStringValue("original");
+        object.getStorageValue(4).setIntegerValue(404);
+        object.getStorageValue(5).setIntegerValue(505);
+        RuntimeValue owner;
+        owner.setObjectValue(&object);
+        auto compiler = runtime.createCompiler();
+        for (const auto ownerOffset : {NomadIndex{0}, NomadIndex{1}}) {
+            RuntimeValue destination;
+            const auto name = "addressOwner" + std::to_string(ownerOffset);
+            const auto setupId = runtime.registerNativeFunction(name + "Setup", [&, ownerOffset](VirtualMachine* active) {
+                active->pushObjectValue(owner);
+                if (ownerOffset != 0) {
+                    active->pushStorageAddress(&destination);
+                }
+                active->setIntegerResult(71);
+                active->setIntermediate(RuntimeValue{NomadInteger{83}});
+            }, {}, runtime.getVoidType(), "");
+            const auto inspectId = runtime.registerNativeFunction(name + "Inspect", [&, ownerOffset](VirtualMachine* active) {
+                BOOST_TEST(active->getIntegerResult() == 71);
+                BOOST_TEST(active->getIntermediate().getIntegerValue() == 83);
+                BOOST_TEST(object.getReferenceCount() == 2U);
+                BOOST_TEST(active->peekStack(ownerOffset + 1).getObjectValue() == &object);
+                if (ownerOffset != 0) {
+                    BOOST_TEST(active->peekStack(1).getStorageAddress() == &destination);
+                }
+                auto* address = active->peekStack(0).getStorageAddress();
+                BOOST_REQUIRE(address == &object.getStorageValue(firstOffset));
+                address[0].setIntegerValue(42);
+                address[1].freeObjectValue();
+                address[1].setStringValue("updated");
+                BOOST_TEST(object.getStorageValue(2).getIntegerValue() == 42);
+                BOOST_TEST(NomadString(object.getStorageValue(3).getStringValue()) == "updated");
+                BOOST_TEST(object.getStorageValue(0).getIntegerValue() == 101);
+                BOOST_TEST(object.getStorageValue(1).getIntegerValue() == 202);
+                BOOST_TEST(object.getStorageValue(4).getIntegerValue() == 404);
+                BOOST_TEST(object.getStorageValue(5).getIntegerValue() == 505);
+                active->setIntegerResult(address[0].getIntegerValue());
+            }, {}, runtime.getIntegerType(), "");
+            BOOST_REQUIRE(setupId.isValid());
+            BOOST_REQUIRE(inspectId.isValid());
+            const auto callerId = runtime.registerScriptFunction(name, "address.nomad", "");
+            auto* caller = runtime.getScriptFunction(callerId);
+            BOOST_REQUIRE(caller != nullptr);
+            caller->setReturnType(runtime.getIntegerType());
+            caller->setFunctionStart(runtime.getInstructions().size());
+            compiler->addFunctionEntry(caller);
+            compiler->addOpCode(OpCodes::op_call_native_function);
+            compiler->addId(setupId.id);
+            compiler->addOpCode(OpCodes::op_stored_property_address_push);
+            compiler->addIndex(ownerOffset);
+            compiler->addIndex(firstOffset);
+            compiler->addIndex(lastOffset);
+            compiler->addOpCode(OpCodes::op_call_native_function);
+            compiler->addId(inspectId.id);
+            ownerType->emitFreeStackValue(*compiler, ownerOffset + 1);
+            compiler->addOpCode(ownerOffset == 0 ? OpCodes::op_pop_2 : OpCodes::op_pop_3);
+            compiler->addFunctionReturn(caller);
+            caller->setFunctionEnd(runtime.getInstructions().size());
+            for (auto index = 0; index < 2; ++index) {
+                RuntimeValue result;
+                runtime.executeFunction(callerId, {}, result);
+                BOOST_TEST(result.getIntegerValue() == 42);
+                BOOST_TEST(object.getReferenceCount() == 1U);
+            }
+            VirtualMachine machine(&runtime);
+            BOOST_TEST(machine.getStoredPropertyAddress(owner, 5, 5) == &object.getStorageValue(5));
+            BOOST_TEST(machine.getStoredPropertyAddress(owner, 0, 5) == &object.getStorageValue(0));
+            std::ostringstream dump;
+            dumpInstructions(runtime, *caller, dump);
+            BOOST_TEST(dump.str().find("op_stored_property_address_push") != NomadString::npos);
+        }
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(stored_property_address_opcode_rejects_missing_ranges_and_non_storage_receivers) {
+    Runtime runtime;
+    const auto pairId = runtime.registerStruct("AddressPair");
+    const auto emptyId = runtime.registerStruct("AddressEmpty");
+    const auto ownerId = runtime.registerClass("GrowingAddressOwner", ClassMode::Opened);
+    const auto emptyOwnerId = runtime.registerClass("EmptyAddressOwner", ClassMode::Closed);
+    const auto* pair = runtime.getTypeByName("AddressPair");
+    const auto* empty = runtime.getTypeByName("AddressEmpty");
+    const auto* ownerType = runtime.getTypeByName("GrowingAddressOwner")->asClassType();
+    const auto* emptyOwnerType = runtime.getTypeByName("EmptyAddressOwner")->asClassType();
+    BOOST_REQUIRE(runtime.registerProperty(pairId, "first", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(pairId, "last", runtime.getIntegerType()).isValid());
+    runtime.finalizeCompositeFieldLayout(pairId);
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "prefix", runtime.getIntegerType()).isValid());
+    ScriptObject oldObject(ownerType);
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "pair", pair).isValid());
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    ScriptObject newObject(ownerType);
+    BOOST_REQUIRE(runtime.registerProperty(emptyOwnerId, "empty", empty).isValid());
+    runtime.finalizeCompositeFieldLayout(emptyOwnerId);
+    ScriptObject emptyObject(emptyOwnerType);
+    BOOST_TEST(oldObject.getStorageSize() == 1U);
+    BOOST_TEST(newObject.getStorageSize() == 3U);
+    BOOST_TEST(emptyObject.getFieldCount() == 1U);
+    BOOST_TEST(emptyObject.getStorageSize() == 0U);
+    RuntimeValue oldOwner;
+    oldOwner.setObjectValue(&oldObject);
+    RuntimeValue newOwner;
+    newOwner.setObjectValue(&newObject);
+    RuntimeValue emptyOwner;
+    emptyOwner.setObjectValue(&emptyObject);
+    const auto instruction = runtime.getInstructionFn(
+        runtime.getInstructionId(OpCodes::op_stored_property_address_push));
+    BOOST_REQUIRE(instruction != nullptr);
+    auto compiler = runtime.createCompiler();
+    auto caseCount = 0;
+    const auto expectFault = [&](
+        const RuntimeValue& owner,
+        const NomadIndex firstOffset,
+        const NomadIndex lastOffset,
+        const NomadString& diagnostic
+    ) {
+        const auto name = "addressFault" + std::to_string(caseCount++);
+        const auto setupId = runtime.registerNativeFunction(name + "Setup", [&](VirtualMachine* active) {
+            // External owners outlive the faulting run; this stack alias acquires no extra reference.
+            active->pushValue(owner);
+            active->setIntegerResult(71);
+            active->setIntermediate(RuntimeValue{NomadInteger{83}});
+        }, {}, runtime.getVoidType(), "");
+        BOOST_REQUIRE(setupId.isValid());
+        const auto callerId = runtime.registerScriptFunction(name, "addressFault.nomad", "");
+        auto* caller = runtime.getScriptFunction(callerId);
+        BOOST_REQUIRE(caller != nullptr);
+        caller->setReturnType(runtime.getVoidType());
+        caller->setFunctionStart(runtime.getInstructions().size());
+        compiler->addFunctionEntry(caller);
+        compiler->addOpCode(OpCodes::op_call_native_function);
+        compiler->addId(setupId.id);
+        compiler->addOpCode(OpCodes::op_stored_property_address_push);
+        compiler->addIndex(0);
+        compiler->addIndex(firstOffset);
+        compiler->addIndex(lastOffset);
+        compiler->addOpCode(OpCodes::op_pop_2);
+        compiler->addFunctionReturn(caller);
+        caller->setFunctionEnd(runtime.getInstructions().size());
+        VirtualMachine machine(&runtime);
+        const auto instructionIndex = machine.getInstructionIndex();
+        BOOST_CHECK_EXCEPTION(machine.run(caller, {}), VirtualMachineException, [&](const auto& error) {
+            return NomadString(error.what()).find(diagnostic) != NomadString::npos;
+        });
+        BOOST_TEST(machine.getInstructionIndex() == instructionIndex);
+        BOOST_TEST(machine.getIntegerResult() == 71);
+        BOOST_TEST(machine.getIntermediate().getIntegerValue() == 83);
+    };
+    expectFault(oldOwner, 1, 2, "out of bounds");
+    expectFault(oldOwner, 0, 2, "out of bounds");
+    expectFault(oldOwner, 0, toNomadIndex(NOMAD_ID_MAX) + 1, "out of bounds");
+    expectFault(emptyOwner, 0, 0, "out of bounds");
+    expectFault(RuntimeValue{}, 0, 0, "no matching field storage");
+    RuntimeValue nonStorageOwner;
+    nonStorageOwner.setStringValue("not script storage");
+    expectFault(nonStorageOwner, 0, 0, "no matching field storage");
+    nonStorageOwner.freeObjectValue();
+    VirtualMachine machine(&runtime);
+    BOOST_TEST(machine.getStoredPropertyAddress(oldOwner, 0, 0) == &oldObject.getStorageValue(0));
+    BOOST_TEST(machine.getStoredPropertyAddress(newOwner, 1, 2) == &newObject.getStorageValue(1));
+}
+
 BOOST_AUTO_TEST_CASE(local_cleanup_emits_only_owned_fields_at_full_width_nested_offsets) {
     Runtime runtime;
     const auto emptyId = runtime.registerStruct("EmptyCleanup");
