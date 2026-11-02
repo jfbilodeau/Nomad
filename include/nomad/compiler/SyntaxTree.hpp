@@ -138,7 +138,7 @@ protected:
     virtual void onCompileIntoLocal(
         Compiler* compiler,
         ScriptCallableBase* function,
-        NomadIndex destinationOffset
+        VariableId destination
     );
     virtual void onEvaluate(InterpreterContext& context) const;
     [[nodiscard]]

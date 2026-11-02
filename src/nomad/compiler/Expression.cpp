@@ -70,18 +70,19 @@ void Expression::compileIntoLocal(
     if (m_type == nullptr || m_type->isVoid() || function->getVariableType(destination) != m_type) {
         compiler->reportInternalError("Expression local destination requires a resolved matching value type");
     }
-    onCompileIntoLocal(compiler, function, function->getVariableOffset(destination));
+    onCompileIntoLocal(compiler, function, destination);
 }
 
 void Expression::onCompileIntoLocal(
     Compiler* compiler,
     ScriptCallableBase* function,
-    const NomadIndex destinationOffset
+    const VariableId destination
 ) {
     if (m_type->asStructType() != nullptr) {
         compiler->reportError("Struct expression local destination is not supported for this expression");
     }
     compile(compiler, function, ExpressionTarget::Result);
+    const auto destinationOffset = function->getVariableOffset(destination);
     m_type->emitFreeFunctionVariable(*compiler, destinationOffset);
     m_type->emitStoreFunctionVariable(*compiler, destinationOffset);
 }
@@ -591,6 +592,9 @@ void FunctionCallExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
+    if (getType()->asStructType() != nullptr) {
+        compiler->reportError("Struct function calls require a local destination");
+    }
     if (const auto* native = m_function->asNativeFunction()) {
         compiler->addNativeFunctionCall(native->getId(), function, &m_arguments);
     } else if (const auto* script = m_function->asScriptFunction()) {
@@ -600,6 +604,21 @@ void FunctionCallExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
     }
 
     compiler->addMoveResult(getType(), target);
+}
+
+void FunctionCallExpression::onCompileIntoLocal(
+    Compiler* compiler,
+    ScriptCallableBase* function,
+    const VariableId destination
+) {
+    if (getType()->asStructType() == nullptr) {
+        Expression::onCompileIntoLocal(compiler, function, destination);
+        return;
+    }
+    if (m_function == nullptr) {
+        raiseException("Function call to '" + m_name + "' has not been resolved");
+    }
+    compiler->addFunctionCallIntoLocal(m_function->getId(), function, &m_arguments, destination);
 }
 
 void FunctionCallExpression::addArgument(std::unique_ptr<Argument> argument) {
@@ -621,6 +640,10 @@ NomadIndex FunctionCallExpression::getArgumentCount() const {
 void FunctionCallExpression::onEvaluate(InterpreterContext& context) const {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
+    }
+    if (getType()->asStructType() != nullptr) {
+        context.setError("Struct-returning function calls are not supported by the interpreter");
+        return;
     }
     std::vector<TypedValue> evaluatedArguments;
     std::vector<RuntimeValue> values;
@@ -1796,12 +1819,13 @@ bool IdentifierExpression::isWritable() const {
 void IdentifierExpression::onCompileIntoLocal(
     Compiler* compiler,
     ScriptCallableBase* function,
-    const NomadIndex destinationOffset
+    const VariableId destination
 ) {
     if (getType()->asStructType() == nullptr) {
-        Expression::onCompileIntoLocal(compiler, function, destinationOffset);
+        Expression::onCompileIntoLocal(compiler, function, destination);
         return;
     }
+    const auto destinationOffset = function->getVariableOffset(destination);
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::FunctionVariable:
         getType()->emitCopyFunctionVariable(

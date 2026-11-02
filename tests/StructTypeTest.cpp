@@ -1,10 +1,13 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <LanguageTestFixture.hpp>
+
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerException.hpp>
 #include <nomad/compiler/Expression.hpp>
 
 #include <nomad/script/InstructionDump.hpp>
+#include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>
@@ -717,7 +720,7 @@ BOOST_AUTO_TEST_CASE(expressions_compile_into_local_storage_without_aggregate_re
     }
 }
 
-BOOST_AUTO_TEST_CASE(local_expression_destinations_handle_empty_structs_and_reject_unsupported_sources) {
+BOOST_AUTO_TEST_CASE(local_expression_destinations_handle_empty_structs_and_reject_invalid_targets) {
     Runtime runtime;
     const auto emptyId = runtime.registerStruct("EmptyExpression");
     const auto* empty = runtime.getTypeByName("EmptyExpression")->asStructType();
@@ -734,20 +737,23 @@ BOOST_AUTO_TEST_CASE(local_expression_destinations_handle_empty_structs_and_reje
     CompilerContext context(&compiler);
     IdentifierExpression expression(nullptr, 1, 1, "source");
     IdentifierExpression parameter(nullptr, 1, 1, "parameter");
-    FunctionCallExpression unsupported(nullptr, 1, 1, "getEmptyExpression");
+    FunctionCallExpression call(nullptr, 1, 1, "getEmptyExpression");
     IntegerLiteral unresolved(nullptr, 1, 1, 3);
     BOOST_REQUIRE(expression.resolve(&context, &function));
     BOOST_REQUIRE(parameter.resolve(&context, &function));
-    BOOST_REQUIRE(unsupported.resolve(&context, &function));
+    BOOST_REQUIRE(call.resolve(&context, &function));
     const auto initialSize = instructions.size();
     expression.compileIntoLocal(&compiler, &function, destination);
     expression.compileIntoLocal(&compiler, &function, source);
     BOOST_TEST(instructions.size() == initialSize);
     parameter.compileIntoLocal(&compiler, &function, destination);
-    BOOST_CHECK_THROW(unsupported.compileIntoLocal(&compiler, &function, destination), CompilerException);
     BOOST_CHECK_THROW(expression.compileIntoLocal(&compiler, &function, wrongType), NomadBug);
     BOOST_CHECK_THROW(unresolved.compileIntoLocal(&compiler, &function, wrongType), NomadBug);
     BOOST_TEST(instructions.size() == initialSize);
+    BOOST_CHECK_THROW(call.compile(&compiler, &function, ExpressionTarget::Result), CompilerException);
+    BOOST_TEST(instructions.size() == initialSize);
+    call.compileIntoLocal(&compiler, &function, destination);
+    BOOST_TEST(instructions.size() > initialSize);
 }
 
 BOOST_AUTO_TEST_CASE(struct_local_assignments_allocate_staging_before_entry_and_release_it_after_use) {
@@ -1685,6 +1691,89 @@ BOOST_AUTO_TEST_CASE(compiler_destination_calls_emit_only_required_hidden_pointe
     }
     BOOST_TEST(evaluations == 6);
     BOOST_TEST(emptyCalls == 3);
+}
+
+BOOST_AUTO_TEST_CASE(compiled_struct_returns_support_nested_calls_assignments_arguments_and_discard) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto typeId = runtime.registerStruct("ReturnPayload");
+    const auto nestedId = runtime.registerStruct("ReturnNested");
+    const auto emptyId = runtime.registerStruct("ReturnEmpty");
+    const auto* type = runtime.getTypeByName("ReturnPayload");
+    const auto* nested = runtime.getTypeByName("ReturnNested");
+    const auto* empty = runtime.getTypeByName("ReturnEmpty");
+    BOOST_REQUIRE(runtime.registerProperty(nestedId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "nested", nested).isValid());
+    runtime.finalizeCompositeFieldLayout(typeId);
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    auto calls = 0;
+    auto emptyCalls = 0;
+    const auto factoryId = runtime.registerNativeFunction("makePayload", [&](VirtualMachine* active) {
+        ++calls;
+        auto* destination = active->getParameter(1).getStorageAddress();
+        destination[0] = active->getParameter(0);
+        destination[1].freeObjectValue();
+        destination[1].setStringValue("returned");
+    }, {defParameter("number", runtime.getIntegerType(), "")}, type, "");
+    BOOST_REQUIRE(factoryId.isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeEmpty", [&](VirtualMachine*) {
+        ++emptyCalls;
+    }, {}, empty, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("readPayload", [](VirtualMachine* active) {
+        const auto value = active->getParameterStorage(0, 2);
+        BOOST_TEST(NomadString(value[1].getStringValue()) == "returned");
+        active->setIntegerResult(value[0].getIntegerValue());
+    }, {defParameter("payload", type, "")}, runtime.getIntegerType(), "").isValid());
+    fixture.addFunction("main",
+        "fun identity value:ReturnPayload\nreturn value\nend\n"
+        "fun forward value:ReturnPayload\nreturn identity value\nend\n"
+        "fun localReturn value:ReturnPayload\ncopy = forward value\nreturn copy\nend\n"
+        "fun replace value:ReturnPayload\nvalue = makePayload 31\nreturn value\nend\n"
+        "fun choose value:ReturnPayload flag:bool\nif flag\nreturn localReturn value\nend\nreturn replace value\nend\n"
+        "fun emptyReturn\nreturn makeEmpty\nend\n"
+        "original = makePayload 17\ncopy = forward original\n"
+        "copy = choose original false\n"
+        "identity original\nmakePayload 99\n"
+        "empty = emptyReturn\nemptyReturn\n"
+        "return (readPayload original) + (readPayload copy) + (readPayload (choose original true))");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto* forward = runtime.getScriptFunction(runtime.getFunctionId("forward"));
+    BOOST_REQUIRE(forward != nullptr);
+    BOOST_TEST(forward->getParameterStorageSize() == 2U);
+    BOOST_REQUIRE(forward->getCallStorageLayout().returnOffset.has_value());
+    BOOST_TEST(*forward->getCallStorageLayout().returnOffset == 2U);
+    auto returnLocals = NomadIndex{0};
+    for (auto index = NomadIndex{0}; index < forward->getVariableCount(); ++index) {
+        const auto id = VariableId{toNomadId(index)};
+        if (forward->getVariableName(id).starts_with("$return")) {
+            ++returnLocals;
+            BOOST_TEST(forward->getVisibleVariableName(id).empty());
+        }
+    }
+    BOOST_TEST(returnLocals == 1U);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 65);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    }
+    BOOST_TEST(calls == 9);
+    BOOST_TEST(emptyCalls == 6);
+    VirtualMachine machine(&runtime);
+    const auto* identity = runtime.getScriptFunction(runtime.getFunctionId("identity"));
+    BOOST_CHECK_THROW(machine.run(identity, {RuntimeValue{}}), VirtualMachineException);
+    BOOST_CHECK_THROW(machine.runNativeFunction(factoryId, {RuntimeValue(NomadInteger{1})}), VirtualMachineException);
+    InterpreterContext interpreter(machine);
+    interpreter.evaluateNativeFunctionCall(factoryId, {RuntimeValue(NomadInteger{1})});
+    BOOST_REQUIRE(interpreter.hasError());
+    BOOST_TEST(interpreter.getResult() == nullptr);
+    interpreter.clearError();
+    interpreter.evaluateFunctionCall(identity->getId(), {RuntimeValue{}});
+    BOOST_REQUIRE(interpreter.hasError());
+    BOOST_TEST(interpreter.getResult() == nullptr);
+    BOOST_TEST(calls == 9);
 }
 
 BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_without_writing_instructions) {

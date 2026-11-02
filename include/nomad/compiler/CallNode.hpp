@@ -111,6 +111,7 @@ protected:
 private:
     NomadString m_name;
     const Function* m_function = nullptr;
+    VariableId m_destination = VariableId::INVALID;
 };
 
 

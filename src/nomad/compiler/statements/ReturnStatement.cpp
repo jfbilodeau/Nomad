@@ -73,12 +73,26 @@ void ReturnStatementNode::onResolve(CompilerContext* context, ScriptCallableBase
             "Invalid return statement. Attempting to return `" + returnType->getTypeName() + "` but function returns `" +
                 functionReturnType->getTypeName() + "`"
         );
+        return;
+    }
+    if (returnType->asStructType() != nullptr && m_stagingVariable.isInvalid()) {
+        m_stagingVariable = function->registerVariable(
+            "$return" + std::to_string(function->getVariableCount()), returnType);
     }
 }
 
 void ReturnStatementNode::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     if (m_expression != nullptr) {
-        m_expression->compile(compiler, function, ExpressionTarget::Result);
+        if (m_stagingVariable.isValid()) {
+            m_expression->compileIntoLocal(compiler, function, m_stagingVariable);
+            const auto layout = function->getCallStorageLayout();
+            if (layout.returnOffset.has_value()) {
+                m_expression->getType()->emitCopyFunctionVariableToStorageParameter(
+                    *compiler, function->getVariableOffset(m_stagingVariable), *layout.returnOffset, 0);
+            }
+        } else {
+            m_expression->compile(compiler, function, ExpressionTarget::Result);
+        }
     }
 
     compiler->addFunctionReturn(function);

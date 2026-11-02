@@ -95,6 +95,11 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
+    void onCompileIntoLocal(
+        Compiler* compiler,
+        ScriptCallableBase* function,
+        VariableId destination
+    ) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
@@ -328,7 +333,7 @@ protected:
     void onCompileIntoLocal(
         Compiler* compiler,
         ScriptCallableBase* function,
-        NomadIndex destinationOffset
+        VariableId destination
     ) override;
     void onEvaluate(InterpreterContext& context) const override;
 

@@ -888,7 +888,15 @@ results emit no pointer or pointer cleanup. The destination must contain cleared
 or valid owned fields for the callee's destination emission; use a separate
 staging local before replacing an existing live target when required.
 This API does not resolve arguments, initialize storage, run constructors, or
-automatically compile a return statement into the destination.
+choose copy-elision eligibility.
+
+Compiled free-function expressions returning a struct support local destinations,
+including staged assignments and struct arguments. Script `return` statements
+support struct locals, parameters, and nested function calls. Returned fields are
+copied into the caller's destination before local cleanup. Existing assignment
+targets are replaced only after their source expression finishes. Discarded
+struct results are released, and empty results still execute their side effects.
+Return-call forwarding and named-return copy elision are not yet supported.
 
 The type-owned emission APIs also support borrowed storage:
 
@@ -916,10 +924,10 @@ register under the existing local-copy ownership contract. Empty types emit
 nothing. Initialization supplies existing type defaults separately and does not
 run constructors.
 
-This is a bytecode/type-emission foundation, validated with low-level fixtures.
-Automatic hidden-argument emission, compiled struct methods and return expressions,
-retained object-field lowering, aggregate host `run` arguments, and aggregate
-yield/resume support remain unsupported.
+Compiled struct methods, retained object-property lowering, aggregate
+interpreter/host values, and aggregate yield/resume support remain unsupported.
+Host free-function calls reject struct arguments and returns instead of using
+single-slot values for aggregate storage.
 
 ### Class type property metadata
 

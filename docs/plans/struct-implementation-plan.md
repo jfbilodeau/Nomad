@@ -2,8 +2,9 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Steps 1AP through 1AR have been reviewed; Step 1AS below is implemented and awaiting review. Struct argument copies
-are supported; compiled struct receivers and destination returns remain unimplemented.
+Steps 1AP through 1AS have been reviewed; Step 1AT below is implemented and awaiting review.
+Struct argument copies and free-function destination returns are supported;
+compiled struct receivers remain unimplemented.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -1793,6 +1794,44 @@ Validation:
 Next slice after review: wire struct-returning function expressions and return
 statements into caller destinations, including staged existing assignment
 targets. Borrowed struct methods and retained object-property owners follow.
+
+### Step 1AT: Compiled struct expressions and destination returns
+
+Approved scope and implementation:
+
+- Struct-returning script/native free-function expressions compile into reserved
+  local destinations. Existing assignment and argument staging use this path.
+- Script returns evaluate into a compiler-owned local, then copy its fields into
+  the caller's hidden destination before ordinary local cleanup. This is a
+  conservative copy path, not return-call forwarding or NRVO.
+- Discarded struct calls receive local storage and release their owned fields.
+- Empty results still evaluate calls and side effects without a destination
+  pointer or physical result slots.
+- Hidden locals are reused across resolution passes and remain invisible as
+  source variables. Scalar/class/void paths retain their existing behavior.
+- Scalar-register and interpreter aggregate call expressions fail explicitly.
+  Host free-function calls reject unsupported struct arguments/results before
+  using single-slot host storage.
+- No new opcodes, per-call runtime layout selection, or call-state allocations
+  are introduced.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- End-to-end source coverage exercises nested returns, local/parameter copies,
+  parameter replacement, existing assignments, aggregate arguments, early
+  branches, discarded results, empty-result side effects, repeated resolution,
+  and string ownership restoration.
+- Language, remaining, bindings, and tooling regression groups passed.
+- Unsupported scalar-register, interpreter, and host return paths are covered
+  by rejection tests; callbacks do not execute on rejected host returns.
+- Four documentation tests and whitespace checks passed.
+- Struct syntax, borrowed methods, direct return-call forwarding/NRVO, and
+  gameplay are outside this slice.
+
+Next slice after review: borrowed struct method calls and retained object-property
+owners. Direct return-call forwarding and conservative NRVO remain separate
+optimization work.
 
 Remaining Step 1 work, requiring separate design approval:
 

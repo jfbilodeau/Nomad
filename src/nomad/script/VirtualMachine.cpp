@@ -156,6 +156,9 @@ void VirtualMachine::run(
             closures.size() != function->getCaptureCount()) {
             fault("Incorrect script argument or capture count");
         }
+        if (function->getReturnType() != nullptr && function->getReturnType()->asStructType() != nullptr) {
+            fault("Host script calls do not support struct return storage");
+        }
         if (m_stackIndex >= m_stack.size() ||
             m_stack.size() - m_stackIndex < s_scriptFrameSlotCount + 2 ||
             function->getParameterCount() > m_stack.size() - m_stackIndex - s_scriptFrameSlotCount - 2) {
@@ -229,6 +232,9 @@ void VirtualMachine::pushHostArgument(
 ) {
     if (type == nullptr) {
         fault("Host argument has no parameter type");
+    }
+    if (type->asStructType() != nullptr) {
+        fault("Host calls do not support struct argument storage");
     }
     pushValue(RuntimeValue{});
     argumentTypes.push_back(type);
@@ -591,6 +597,9 @@ void VirtualMachine::runNativeFunction(const CallableId nativeFunctionId, const 
     }
     if (function->getReturnType() == nullptr) {
         fault("NativeFunction '" + function->getName() + "' has no return type");
+    }
+    if (function->getReturnType()->asStructType() != nullptr) {
+        fault("Host native calls do not support struct return storage");
     }
     if (!function->getReturnType()->isVoid()) {
         m_result = RuntimeValue{};

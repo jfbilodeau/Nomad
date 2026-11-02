@@ -288,11 +288,22 @@ void FunctionCallStatementNode::onResolve(CompilerContext* context, ScriptCallab
     }
 
     CallStatementNode::onResolve(context, function);
+    if (context->getMode() == CompilerMode::Script && function != nullptr &&
+        m_function->getReturnType() != nullptr && m_function->getReturnType()->asStructType() != nullptr &&
+        m_destination.isInvalid()) {
+        m_destination = function->registerVariable(
+            "$discard" + std::to_string(function->getVariableCount()), m_function->getReturnType());
+    }
 }
 
 void FunctionCallStatementNode::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
+    }
+    if (m_destination.isValid()) {
+        compiler->addFunctionCallIntoLocal(m_function->getId(), function, getArguments(), m_destination);
+        m_function->getReturnType()->emitFreeFunctionVariable(*compiler, function->getVariableOffset(m_destination));
+        return;
     }
     if (const auto* native = m_function->asNativeFunction()) {
         compiler->addNativeFunctionCall(native->getId(), function, getArguments());
@@ -311,6 +322,10 @@ void FunctionCallStatementNode::onCompile(Compiler* compiler, ScriptCallableBase
 void FunctionCallStatementNode::onEvaluate(InterpreterContext& context) const {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
+    }
+    if (m_function->getReturnType() != nullptr && m_function->getReturnType()->asStructType() != nullptr) {
+        context.setError("Struct-returning function calls are not supported by the interpreter");
+        return;
     }
 
     std::vector<TypedValue> evaluatedArguments;
