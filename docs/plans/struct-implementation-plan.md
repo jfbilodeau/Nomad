@@ -2,7 +2,7 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Steps 1AP through 1AY have been reviewed. Step 1AZ is implemented and awaiting
+Steps 1AP through 1AZ have been reviewed. Step 1BA is implemented and awaiting
 review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
@@ -2114,6 +2114,49 @@ Validation:
 Next after review: agree on the next construction/declaration slice. Struct
 construction and declaration syntax remain unsupported; return-call forwarding
 and NRVO remain later optimization work.
+
+### Step 1BA: Struct constructor ABI metadata and registration
+
+Approved scope:
+
+- Struct constructor callables return `void` and borrow the caller's destination
+  as `this`. Nonempty destinations require one hidden receiver pointer; empty
+  destinations require none. Construction expressions retain the constructed
+  struct type, distinct from the callable result.
+- Implement metadata and registration only. Destination-based `new` execution,
+  initializer sequencing, and declaration syntax remain separate slices.
+
+Implementation:
+
+- Native constructors retain independent constructed-type metadata. Class native
+  factories still return their declared created class, including factories whose
+  created class differs from their declaring owner.
+- TypeManager exposes explicit native/script struct constructor registration.
+  Runtime dispatches compatible registration APIs by owner category.
+- Shared composite registration validates and publishes constructor overloads;
+  duplicate signatures are rejected across native and script sources.
+- Call storage layouts describe nonempty borrowed constructor destinations and
+  copied explicit arguments. Parser constructor lookup includes structs.
+- Source construction, struct constructor body compilation, host object
+  construction, and class-native calls explicitly reject struct constructors
+  until destination lowering is implemented.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, bindings, and tooling regression groups passed.
+- Constructor tests cover owner category rejection, invalid registration,
+  native/script duplicates, overload catalogs, constructed-type identity,
+  empty/nonempty destinations, and aggregate argument widths.
+- Class factory tests preserve differing owner/created types and class results.
+- Source construction, constructor body compilation, and host/native class call
+  rejection are tested; rejected callbacks are not invoked.
+- Four documentation tests and whitespace checks passed. Struct constructor
+  execution, gameplay, and performance remain unvalidated in this metadata slice.
+
+Next after review: destination-based `new` calls and generated field initializer
+sequencing, followed by struct declaration syntax. Return forwarding and NRVO
+remain later optimization work.
 
 Remaining Step 1 work, requiring separate design approval:
 

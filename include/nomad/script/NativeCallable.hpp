@@ -75,6 +75,7 @@ public:
 
 private:
     NativeFunctionFn m_fn;
+    const Type* m_createdType;
 };
 
 } // namespace nomad

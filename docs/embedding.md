@@ -434,7 +434,29 @@ the same behavior. Declare stored fields with
 `TypeManager::registerScriptClassProperty` or `registerScriptStructProperty`.
 Register native class accessors with `TypeManager::registerNativeClassProperty`.
 Register class methods and constructors with the manager's explicit
-native/script class APIs. Register class and struct types with
+native/script class APIs. Register struct constructor metadata with
+`TypeManager::registerNativeStructConstructor(ownerId, definition)` or
+`registerScriptStructConstructor(ownerId, parameters, path, source)`.
+`Runtime::addConstructor` and `registerScriptConstructor` also accept struct
+owners. Struct constructors construct their declaring type; unlike class native
+factories, they cannot specify a different constructed type. Invalid owners,
+invalid parameters, empty native callbacks, and duplicate signatures are
+rejected without publishing a callable. Native/script duplicates share the
+same owner constructor catalog.
+
+Struct constructor callables return `void`; `Constructor::getConstructedType()`
+identifies the struct value produced by construction. Their call layout includes
+one borrowed destination receiver pointer after the explicit argument slots for
+a nonempty struct, and no receiver pointer for an empty struct. There is no
+separate return pointer. Finalize the composite layout before querying this ABI.
+Class factories still return their declared constructed class type.
+
+Registration and overload lookup are available, but struct `new` expressions,
+constructor body compilation, and host construction are not yet supported.
+`VirtualMachine::constructObject` and class native constructor calls reject struct
+constructors before invoking a callback.
+
+Register class and struct types with
 `TypeManager::registerClass` and `registerStruct`; existing Runtime entry points
 remain compatible. Enum, opaque-ID, and callback creation also belong to
 TypeManager, with compatible Runtime entry points. Callable
@@ -1305,7 +1327,7 @@ The type stores its fully qualified initializer name, available through
 Compile the class and complete field discovery before allocating the object.
 Initialize script-level hub variables with `initializeScripts()` first when
 required. Host construction rejects invalid constructor IDs, argument counts,
-and uncompiled constructors. If a field initializer fails, later initializers
+uncompiled constructors, and struct constructors. If a field initializer fails, later initializers
 and the source constructor body do not run, and no instance is returned.
 Destruction releases owned field values, including values stored in a partially
 populated object.

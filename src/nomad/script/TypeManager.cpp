@@ -350,6 +350,26 @@ CallableId TypeManager::registerScriptClassConstructor(
     const auto type = getType(ownerId);
     const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
     auto* owner = getMutableClassType(classType);
+    return registerScriptConstructor(owner, std::move(parameters), std::move(path), std::move(source));
+}
+
+CallableId TypeManager::registerScriptStructConstructor(
+    const TypeId ownerId,
+    std::vector<Parameter> parameters,
+    NomadString path,
+    NomadString source
+) {
+    const auto type = getType(ownerId);
+    auto* owner = type.has_value() && (*type)->asStructType() != nullptr ? getMutableCompositeType(ownerId) : nullptr;
+    return registerScriptConstructor(owner, std::move(parameters), std::move(path), std::move(source));
+}
+
+CallableId TypeManager::registerScriptConstructor(
+    CompositeType* owner,
+    std::vector<Parameter> parameters,
+    NomadString path,
+    NomadString source
+) {
     const auto hasInvalidParameters = owner != nullptr && std::ranges::any_of(parameters, [this](const auto& parameter) {
         const auto isReceiverName = parameter.name == "this";
         const auto hasValidType = !isReceiverName && ownsType(parameter.type) &&
@@ -471,6 +491,27 @@ CallableId TypeManager::registerNativeClassConstructor(
         log::error("Cannot register constructor: created type must identify a class type");
         return CallableId::INVALID;
     }
+    return registerNativeConstructor(getMutableClassType(classType), createdType, std::move(definition));
+}
+
+CallableId TypeManager::registerNativeStructConstructor(
+    const TypeId ownerId,
+    NativeConstructorDefinition definition
+) {
+    const auto type = getType(ownerId);
+    auto* owner = type.has_value() && (*type)->asStructType() != nullptr ? getMutableCompositeType(ownerId) : nullptr;
+    if (owner == nullptr) {
+        log::error("Cannot register constructor: owner must identify a struct type");
+        return CallableId::INVALID;
+    }
+    return registerNativeConstructor(owner, owner, std::move(definition));
+}
+
+CallableId TypeManager::registerNativeConstructor(
+    CompositeType* owner,
+    const Type* createdType,
+    NativeConstructorDefinition definition
+) {
     std::vector<Parameter> parameters;
     parameters.reserve(definition.parameters.size());
     for (const auto& parameterDefinition : definition.parameters) {
@@ -483,12 +524,11 @@ CallableId TypeManager::registerNativeClassConstructor(
             parameterDefinition.name, *parameterType, parameterDefinition.documentation
         ));
     }
-    auto* owner = getMutableClassType(classType);
     if (createdType->isInternal() || !definition.function) {
-        log::error("Cannot register constructor: a registered class, registered public class type, and callback are required");
+        log::error("Cannot register constructor: a registered public constructed type and callback are required");
         return CallableId::INVALID;
     }
-    const auto name = classType->getTypeName();
+    const auto name = owner->getTypeName();
     const auto isReservedName = name.empty() ||
         getParameterizedConstructorArgumentCount(name).has_value() ||
         getParameterizedTypeArgumentCount(name).has_value();
@@ -497,12 +537,16 @@ CallableId TypeManager::registerNativeClassConstructor(
         return CallableId::INVALID;
     }
     for (const auto& parameter : parameters) {
+        if (owner->asStructType() != nullptr && (parameter.type->isInternal() || parameter.name == "this")) {
+            log::error("Cannot register struct constructor: invalid parameter type or receiver parameter");
+            return CallableId::INVALID;
+        }
         if (parameter.type->isVoid()) {
             log::error("Cannot register constructor: parameter types must be registered and non-void");
             return CallableId::INVALID;
         }
     }
-    for (const auto* existing : m_runtime.getConstructors(classType)) {
+    for (const auto* existing : owner->getConstructors()) {
         if (existing->getParameterCount() != parameters.size()) {
             continue;
         }
@@ -516,7 +560,7 @@ CallableId TypeManager::registerNativeClassConstructor(
         }
     }
     return owner->registerConstructor(m_runtime, std::make_unique<NativeConstructor>(
-        name, classType, createdType, std::move(definition.function), std::move(parameters),
+        name, owner, createdType, std::move(definition.function), std::move(parameters),
         std::move(definition.documentation)
     ));
 }
@@ -606,11 +650,11 @@ IndexerId TypeManager::registerNativeClassIndexer(const TypeId ownerId, NativeIn
 
 bool TypeManager::hasConstructor(const NomadString& name) const {
     for (const auto& type : m_types) {
-        const auto* classType = type != nullptr ? type->asClassType() : nullptr;
-        if (classType == nullptr) {
+        const auto* owner = type != nullptr ? type->asCompositeType() : nullptr;
+        if (owner == nullptr) {
             continue;
         }
-        const auto constructors = classType->getConstructors();
+        const auto constructors = owner->getConstructors();
         const auto matchesName = std::ranges::any_of(constructors, [&](const auto* constructor) {
             return constructor->getName() == name;
         });

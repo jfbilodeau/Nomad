@@ -133,6 +133,10 @@ public:
         TypeId createdTypeId,
         NativeConstructorDefinition definition
     );
+    [[nodiscard]] CallableId registerNativeStructConstructor(
+        TypeId ownerId,
+        NativeConstructorDefinition definition
+    );
     [[nodiscard]] CallableId registerScriptClassMethod(
         TypeId ownerId,
         NomadString name,
@@ -148,6 +152,12 @@ public:
         NomadString source
     );
     [[nodiscard]] CallableId registerScriptClassConstructor(
+        TypeId ownerId,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
+    [[nodiscard]] CallableId registerScriptStructConstructor(
         TypeId ownerId,
         std::vector<Parameter> parameters,
         NomadString path,
@@ -173,6 +183,17 @@ public:
     void catalogType(std::unique_ptr<Type> type);
 
 private:
+    [[nodiscard]] CallableId registerScriptConstructor(
+        CompositeType* owner,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
+    [[nodiscard]] CallableId registerNativeConstructor(
+        CompositeType* owner,
+        const Type* createdType,
+        NativeConstructorDefinition definition
+    );
     struct ParameterizedConstructorRegistration {
         NomadString name;
         NomadIndex argumentCount;

@@ -1409,6 +1409,10 @@ void ConstructorExpression::onResolve(CompilerContext* context, ScriptCallableBa
         reportError(context, function, "Invalid constructor for '" + m_constructorName + "'");
         return;
     }
+    if (selected->getConstructedType()->asStructType() != nullptr) {
+        reportError(context, function, "Struct construction is not yet supported");
+        return;
+    }
     for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
         arguments[index]->setType(selected->getParameters()[index].type);
     }

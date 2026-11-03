@@ -1405,6 +1405,9 @@ void Compiler::compileObjectInitializer(const FunctionCompilation& source) {
 
 void Compiler::compileConstructor(const FunctionCompilation& source) {
     auto* constructor = source.function;
+    if (constructor->getClassType()->asStructType() != nullptr) {
+        reportError("Struct constructor body compilation is not yet supported");
+    }
     constructor->setFunctionStart(m_instructions.size());
     addFunctionEntry(constructor);
     const auto* type = constructor->getClassType()->asClassType();

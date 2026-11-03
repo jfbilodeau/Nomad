@@ -118,6 +118,9 @@ NomadObject* VirtualMachine::constructObject(
     if (constructor == nullptr || constructor->getParameters().size() != arguments.size()) {
         fault("Cannot construct object: invalid constructor or argument count");
     }
+    if (constructor->getClassType()->asStructType() != nullptr) {
+        fault("Host construction does not support struct destination storage");
+    }
     const auto* native = constructor->asNativeConstructor();
     const auto* script = constructor->asScriptConstructor();
     if (native == nullptr && (script == nullptr || script->getFunctionStart() == NOMAD_INVALID_INDEX ||
@@ -374,6 +377,9 @@ void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
 
 void VirtualMachine::callNativeConstructor(const CallableId constructorId) {
     const auto* constructor = m_runtime->getNativeConstructor(constructorId);
+    if (constructor->getClassType()->asStructType() != nullptr) {
+        fault("Class constructor calls do not support struct destination storage");
+    }
     const auto frame = beginNativeCall();
     m_this = RuntimeValue{};
     m_result = RuntimeValue{};

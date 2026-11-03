@@ -135,7 +135,7 @@ CallStorageLayout Callable::getCallStorageLayout(const NomadIndex argumentSlotCo
         }
         return layout.stackSlotCount++;
     };
-    if (m_type == CallableType::Method) {
+    if (m_type == CallableType::Method || m_type == CallableType::Constructor) {
         if (m_classType == nullptr) {
             throw NomadException("Cannot calculate call storage layout: receiver type of '" + m_name + "' is unresolved");
         }

@@ -1347,6 +1347,10 @@ CallableId Runtime::addConstructor(
     const TypeId createdTypeId,
     NativeConstructorDefinition definition
 ) {
+    const auto owner = getType(id);
+    if (owner.has_value() && (*owner)->asStructType() != nullptr && id == createdTypeId) {
+        return m_typeManager.registerNativeStructConstructor(id, std::move(definition));
+    }
     return m_typeManager.registerNativeClassConstructor(id, createdTypeId, std::move(definition));
 }
 
@@ -1534,6 +1538,12 @@ CallableId Runtime::registerScriptConstructor(
     NomadString path,
     NomadString source
 ) {
+    const auto type = getType(id);
+    if (type.has_value() && (*type)->asStructType() != nullptr) {
+        return m_typeManager.registerScriptStructConstructor(
+            id, std::move(parameters), std::move(path), std::move(source)
+        );
+    }
     return m_typeManager.registerScriptClassConstructor(
         id, std::move(parameters), std::move(path), std::move(source)
     );

@@ -3089,6 +3089,49 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_reject_unknown_properties_and_unsu
     }
 }
 
+BOOST_AUTO_TEST_CASE(registered_struct_constructors_reject_source_construction_until_destination_lowering) {
+    for (const auto empty : {false, true}) {
+        nomad::test::LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        const auto id = runtime.registerStruct("PendingConstruction");
+        if (!empty) {
+            BOOST_REQUIRE(runtime.registerProperty(id, "number", runtime.getIntegerType()).isValid());
+        }
+        runtime.finalizeCompositeFieldLayout(id);
+        auto calls = 0;
+        BOOST_REQUIRE(runtime.addConstructor(id, {
+            .parameters = {},
+            .function = [&](VirtualMachine*) { ++calls; },
+            .documentation = ""
+        }).isValid());
+        fixture.addFunction("main", "value = new PendingConstruction");
+        BOOST_TEST(!fixture.compile());
+        BOOST_CHECK_MESSAGE(fixture.hasError("Struct construction is not yet supported"), fixture.getDiagnostics());
+        BOOST_TEST(calls == 0);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(registered_struct_constructor_bodies_reject_class_initializer_lowering) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto id = runtime.registerStruct("PendingBody");
+    runtime.finalizeCompositeFieldLayout(id);
+    const auto constructorId = runtime.registerScriptConstructor(id, {}, "pending.nomad", "");
+    BOOST_REQUIRE(constructorId.isValid());
+    fixture.addFunction("main", "");
+    fixture.getCompiler().registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
+        if (phase != CompilationPhase::Parse) {
+            return;
+        }
+        fixture.getCompiler().registerMemberCompilation(
+            constructorId, runtime.getFunctionId("main"), CompilationCallableTarget::Constructor);
+        fixture.getCompiler().setFunctionBody(constructorId, std::make_unique<FunctionNode>(0, 0));
+    });
+    BOOST_TEST(!fixture.compile());
+    BOOST_CHECK_MESSAGE(fixture.hasError("Struct constructor body compilation is not yet supported"),
+        fixture.getDiagnostics());
+}
+
 BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_without_writing_instructions) {
     Runtime runtime;
     const auto id = runtime.registerStruct("Empty");

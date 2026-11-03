@@ -6,6 +6,7 @@
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/TypeManager.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
@@ -368,6 +369,8 @@ BOOST_AUTO_TEST_CASE(class_callables_share_runtime_ids_without_changing_layout_o
     }
     BOOST_TEST(runtime.getNativeMethod(methodId)->getClassType() == owner);
     BOOST_TEST(runtime.getNativeConstructor(constructorId)->getConstructedType() == manager.getTypeByName("Created"));
+    BOOST_TEST(runtime.getNativeConstructor(constructorId)->getReturnType() == manager.getTypeByName("Created"));
+    BOOST_TEST(!runtime.getNativeConstructor(constructorId)->getCallStorageLayout().receiverOffset.has_value());
     BOOST_TEST(runtime.getNativeConstructor(constructorId)->getClassType() == owner);
     BOOST_TEST(runtime.getNativeMemberId(owner, "managedMethod") == MemberReference{methodId});
     BOOST_TEST(runtime.getNativeMemberOverloadCount("managedMethod") == 1U);
@@ -616,6 +619,103 @@ BOOST_AUTO_TEST_CASE(struct_method_registration_shares_catalogs_and_preserves_ow
     invalid.function = {};
     BOOST_TEST(runtime.addMethod(structId, invalid).isInvalid());
     BOOST_TEST(runtime.getFunctionTableSize() == before + 2);
+}
+
+BOOST_AUTO_TEST_CASE(struct_constructor_registration_uses_void_borrowed_destination_metadata) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto structId = runtime.registerStruct("ConstructedStruct");
+    const auto emptyId = runtime.registerStruct("ConstructedEmpty");
+    const auto classId = runtime.registerClass("ConstructorClass", ClassMode::Closed);
+    const auto* type = runtime.getTypeByName("ConstructedStruct");
+    BOOST_REQUIRE(runtime.registerProperty(structId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(structId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(structId);
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    auto calls = 0;
+    const auto definition = NativeConstructorDefinition{
+        .parameters = {{runtime.getIntegerType()->getId(), "number", ""}},
+        .function = [&](VirtualMachine*) { ++calls; },
+        .documentation = "Struct construction."
+    };
+    const auto before = runtime.getFunctionTableSize();
+    BOOST_TEST(manager.registerNativeClassConstructor(structId, definition).isInvalid());
+    BOOST_TEST(manager.registerNativeStructConstructor(classId, definition).isInvalid());
+    BOOST_TEST(manager.registerScriptClassConstructor(structId, {}, "", "").isInvalid());
+    BOOST_TEST(manager.registerScriptStructConstructor(classId, {}, "", "").isInvalid());
+    BOOST_TEST(manager.registerNativeStructConstructor(TypeId::INVALID, definition).isInvalid());
+    BOOST_TEST(manager.registerScriptStructConstructor(TypeId::INVALID, {}, "", "").isInvalid());
+    BOOST_TEST(runtime.addConstructor(structId, classId, definition).isInvalid());
+    BOOST_TEST(runtime.getFunctionTableSize() == before);
+    const auto nativeId = runtime.addConstructor(structId, definition);
+    const auto scriptId = runtime.registerScriptConstructor(structId, {}, "constructor.nomad", "this.number = 1");
+    const auto emptyConstructorId = runtime.registerScriptConstructor(emptyId, {}, "", "");
+    const auto emptyNativeId = runtime.addConstructor(emptyId, definition);
+    const auto aggregateId = runtime.registerScriptConstructor(structId,
+        {defParameter("copy", type, ""), defParameter("number", runtime.getIntegerType(), "")}, "", "");
+    BOOST_REQUIRE(nativeId.isValid());
+    BOOST_REQUIRE(scriptId.isValid());
+    BOOST_REQUIRE(emptyConstructorId.isValid());
+    BOOST_REQUIRE(emptyNativeId.isValid());
+    BOOST_REQUIRE(aggregateId.isValid());
+    for (const auto id : {nativeId, scriptId}) {
+        const auto* constructor = runtime.getConstructor(id);
+        BOOST_REQUIRE(constructor != nullptr);
+        BOOST_TEST(constructor->getConstructedType() == type);
+        BOOST_TEST(constructor->getClassType() == type);
+        BOOST_TEST(constructor->getReturnType() == runtime.getVoidType());
+        const auto layout = constructor->getCallStorageLayout();
+        BOOST_REQUIRE(layout.receiverOffset.has_value());
+        BOOST_TEST(*layout.receiverOffset == constructor->getParameterStorageSize());
+        BOOST_TEST(!layout.returnOffset.has_value());
+        BOOST_TEST(layout.stackSlotCount == layout.argumentSlotCount + 1);
+    }
+    const auto emptyLayout = runtime.getConstructor(emptyConstructorId)->getCallStorageLayout();
+    BOOST_TEST(!emptyLayout.receiverOffset.has_value());
+    BOOST_TEST(!emptyLayout.returnOffset.has_value());
+    BOOST_TEST(emptyLayout.stackSlotCount == 0U);
+    const auto emptyNativeLayout = runtime.getConstructor(emptyNativeId)->getCallStorageLayout();
+    BOOST_TEST(runtime.getConstructor(emptyNativeId)->getReturnType() == runtime.getVoidType());
+    BOOST_TEST(runtime.getConstructor(emptyNativeId)->getConstructedType() == runtime.getTypeByName("ConstructedEmpty"));
+    BOOST_TEST(!emptyNativeLayout.receiverOffset.has_value());
+    BOOST_TEST(!emptyNativeLayout.returnOffset.has_value());
+    BOOST_TEST(emptyNativeLayout.argumentSlotCount == 1U);
+    BOOST_TEST(emptyNativeLayout.stackSlotCount == 1U);
+    BOOST_TEST(runtime.resolveConstructor(type, {runtime.getIntegerType()}).id == nativeId);
+    BOOST_TEST(runtime.resolveConstructor(type, {}).id == scriptId);
+    const auto aggregateLayout = runtime.getConstructor(aggregateId)->getCallStorageLayout();
+    BOOST_TEST(aggregateLayout.argumentSlotCount == 3U);
+    BOOST_REQUIRE(aggregateLayout.receiverOffset.has_value());
+    BOOST_TEST(*aggregateLayout.receiverOffset == 3U);
+    BOOST_TEST(aggregateLayout.stackSlotCount == 4U);
+    BOOST_TEST(type->asCompositeType()->getConstructors().size() == 3U);
+    const auto nativeCatalog = runtime.getConstructors(type);
+    BOOST_REQUIRE(nativeCatalog.size() == 1U);
+    BOOST_TEST(nativeCatalog.front()->getId() == nativeId);
+    BOOST_TEST(runtime.addConstructor(structId, definition).isInvalid());
+    BOOST_TEST(runtime.registerScriptConstructor(structId,
+        {defParameter("number", runtime.getIntegerType(), "")}, "", "").isInvalid());
+    auto invalid = definition;
+    invalid.function = {};
+    BOOST_TEST(runtime.addConstructor(structId, invalid).isInvalid());
+    invalid = definition;
+    invalid.parameters[0].typeId = runtime.getVoidType()->getId();
+    BOOST_TEST(runtime.addConstructor(structId, invalid).isInvalid());
+    invalid.parameters[0].typeId = TypeId::INVALID;
+    BOOST_TEST(runtime.addConstructor(structId, invalid).isInvalid());
+    invalid = definition;
+    invalid.parameters[0].name = "this";
+    BOOST_TEST(runtime.addConstructor(structId, invalid).isInvalid());
+    BOOST_TEST(runtime.registerScriptConstructor(structId,
+        {defParameter("this", runtime.getIntegerType(), "")}, "", "").isInvalid());
+    VirtualMachine machine(&runtime);
+    BOOST_CHECK_THROW(static_cast<void>(machine.constructObject(nativeId, {RuntimeValue{NomadInteger{1}}})),
+        VirtualMachineException);
+    BOOST_CHECK_THROW(static_cast<void>(machine.constructObject(scriptId, {})), VirtualMachineException);
+    BOOST_CHECK_THROW(static_cast<void>(machine.constructObject(emptyConstructorId, {})), VirtualMachineException);
+    BOOST_CHECK_THROW(machine.callNativeConstructor(nativeId), VirtualMachineException);
+    BOOST_TEST(calls == 0);
+    BOOST_TEST(runtime.getFunctionTableSize() == before + 5);
 }
 
 BOOST_AUTO_TEST_CASE(parameterized_callbacks_can_grow_family_catalog_and_initializer_registers_callables) {

@@ -927,8 +927,8 @@ std::unique_ptr<Expression> parseNewExpression(
     }
     const Constructor* shape = nullptr;
     const auto* classType = runtime->getTypeByName(constructorName);
-    if (classType != nullptr && classType->asClassType() != nullptr) {
-        for (const auto* constructor : classType->asClassType()->getConstructors()) {
+    if (classType != nullptr && classType->asCompositeType() != nullptr) {
+        for (const auto* constructor : classType->asCompositeType()->getConstructors()) {
             if (shape == nullptr || constructor->getParameterCount() > shape->getParameterCount()) {
                 shape = constructor;
             }
