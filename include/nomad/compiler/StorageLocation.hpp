@@ -6,6 +6,8 @@
 
 #include <nomad/script/OpCode.hpp>
 
+#include <vector>
+
 namespace nomad {
 
 class Compiler;
@@ -53,12 +55,13 @@ public:
     ) const;
 
 private:
+    [[nodiscard]] NomadIndex getPropertyOffset() const;
     [[nodiscard]] NomadIndex getRootOffset(const ScriptCallableBase* function) const;
     [[nodiscard]] NomadIndex getOffset(const ScriptCallableBase* function) const;
 
     IdentifierDefinition m_root;
     const Type* m_type;
-    NomadIndex m_propertyOffset = 0;
+    std::vector<const Property*> m_properties;
     Expression* m_owner = nullptr;
     const Property* m_objectProperty = nullptr;
 };

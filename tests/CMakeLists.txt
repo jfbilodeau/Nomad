@@ -43,6 +43,7 @@ add_executable(
     ./LanguageScriptDiscoveryTest.cpp
     ./LanguageServerTest.cpp
     ./LanguageStringLifetimeTest.cpp
+    ./LanguageStructTest.cpp
     ./LanguageTestFixture.cpp
     ./LanguageTypeTest.cpp
     ./LanguageVariableIdTest.cpp

@@ -11,6 +11,7 @@
 
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/StructType.hpp>
 
 #include <algorithm>
 #include <utility>
@@ -64,7 +65,8 @@ std::unique_ptr<ClassMemberDeclaration> parseMember(
     CompilerContext* context,
     ScriptCallableBase* function,
     Tokenizer* tokens,
-    const bool resolveParameters
+    const bool resolveParameters,
+    const bool isStruct
 ) {
     const auto line = tokens->getLineIndex();
     const auto column = tokens->getColumnIndex();
@@ -97,7 +99,7 @@ std::unique_ptr<ClassMemberDeclaration> parseMember(
             return nullptr;
         }
         if (tokens->endOfLine()) {
-            context->reportError("Class field '" + name + "' requires an initializer", tokens);
+            context->reportError(NomadString(isStruct ? "Struct" : "Class") + " field '" + name + "' requires an initializer", tokens);
             return nullptr;
         }
         auto depth = parser::countBlockOpenings(tokens);
@@ -141,13 +143,15 @@ bool parseClassDefinition(
     Tokenizer* tokens,
     NomadString& name,
     std::vector<std::unique_ptr<ClassMemberDeclaration>>& members,
-    const bool resolveParameters
+    const bool resolveParameters,
+    const bool isStruct
 ) {
+    const auto category = NomadString(isStruct ? "struct" : "class");
     if (!tokens->nextIdentifier(name)) {
         return false;
     }
     if (context->getRuntime()->getKeywordId(name).isValid()) {
-        context->reportError("Class name '" + name + "' is a reserved keyword", tokens);
+        context->reportError(NomadString(isStruct ? "Struct" : "Class") + " name '" + name + "' is a reserved keyword", tokens);
         return false;
     }
     if (!parser::expectEndOfLine(context, function, tokens)) {
@@ -160,7 +164,7 @@ bool parseClassDefinition(
             return parser::expectEndOfLine(context, function, tokens);
         }
         if (!tokens->endOfLine()) {
-            auto member = parseMember(context, function, tokens, resolveParameters);
+            auto member = parseMember(context, function, tokens, resolveParameters, isStruct);
             if (!member) {
                 return false;
             }
@@ -173,7 +177,7 @@ bool parseClassDefinition(
                         std::ranges::equal(existing->getParameters(), member->getParameters(),
                             [](const auto& first, const auto& second) { return first.type == second.type; })) {
                         context->reportError(
-                            "Duplicate class member '" + member->getName() + "'",
+                            "Duplicate " + category + " member '" + member->getName() + "'",
                             tokens->getSourceName(), member->getLine(), member->getColumn()
                         );
                         return false;
@@ -183,7 +187,7 @@ bool parseClassDefinition(
             members.push_back(std::move(member));
         }
     }
-    context->reportError("Unexpected end of file in class '" + name + "': expected 'end'", tokens);
+    context->reportError("Unexpected end of file in " + category + " '" + name + "': expected 'end'", tokens);
     return false;
 }
 
@@ -191,16 +195,19 @@ bool preDeclareClass(
     CompilerContext* context,
     ScriptCallableBase* function,
     Tokenizer* tokens,
-    const ClassMode mode
+    const ClassMode mode,
+    const bool isStruct = false
 ) {
     NomadString name;
     std::vector<std::unique_ptr<ClassMemberDeclaration>> members;
-    if (!parseClassDefinition(context, function, tokens, name, members, false)) {
+    if (!parseClassDefinition(context, function, tokens, name, members, false, isStruct)) {
         return false;
     }
     if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown ||
-        context->getRuntime()->getTypeManager().registerClass(name, mode).isInvalid()) {
-        context->reportError("Cannot declare class '" + name + "': identifier is already declared or invalid", tokens);
+        (isStruct ? context->getRuntime()->getTypeManager().registerStruct(name) :
+            context->getRuntime()->getTypeManager().registerClass(name, mode)).isInvalid()) {
+        context->reportError(NomadString("Cannot declare ") + (isStruct ? "struct" : "class") +
+            " '" + name + "': identifier is already declared or invalid", tokens);
         return false;
     }
     return true;
@@ -209,21 +216,23 @@ bool preDeclareClass(
 bool registerMemberSignatures(
     CompilerContext* context,
     ScriptCallableBase* function,
-    Tokenizer* tokens
+    Tokenizer* tokens,
+    const bool isStruct = false
 ) {
     NomadString name;
     std::vector<std::unique_ptr<ClassMemberDeclaration>> members;
-    if (!parseClassDefinition(context, function, tokens, name, members, true)) {
+    if (!parseClassDefinition(context, function, tokens, name, members, true, isStruct)) {
         return false;
     }
     auto* runtime = context->getRuntime();
-    const auto* type = runtime->getTypeByName(name);
-    if (type == nullptr || type->asClassType() == nullptr) {
-        context->reportError("Class '" + name + "' has no registered class type", tokens);
+    const auto* registeredType = runtime->getTypeByName(name);
+    const auto* type = registeredType != nullptr ? registeredType->asCompositeType() : nullptr;
+    if (type == nullptr || (isStruct ? type->asStructType() == nullptr : type->asClassType() == nullptr)) {
+        context->reportError(NomadString(isStruct ? "Struct" : "Class") + " '" + name + "' has no registered type", tokens);
         return false;
     }
-    const auto& initializerName = type->asClassType()->getInitializerName();
-    auto initializerRegistered = std::ranges::any_of(type->asClassType()->getMethods(), [&](const auto* method) {
+    const auto& initializerName = type->getInitializerName();
+    auto initializerRegistered = std::ranges::any_of(type->getMethods(), [&](const auto* method) {
         return method->getName() == initializerName;
     });
     for (const auto& member : members) {
@@ -238,15 +247,15 @@ bool registerMemberSignatures(
         if (member->getKind() == ClassMemberKind::Field) {
             if (initializerRegistered) continue;
             initializerRegistered = true;
-            id = runtime->getTypeManager().registerScriptClassMethod(
+            id = runtime->registerScriptMethod(
                 type->getId(), initializerName, {}, tokens->getSourceName(), tokens->getSource()
             );
         } else if (member->getKind() == ClassMemberKind::Constructor) {
-            id = runtime->getTypeManager().registerScriptClassConstructor(
+            id = runtime->registerScriptConstructor(
                 type->getId(), member->getParameters(), tokens->getSourceName(), tokens->getSource()
             );
         } else {
-            id = runtime->getTypeManager().registerScriptClassMethod(
+            id = runtime->registerScriptMethod(
                 type->getId(), member->getName(), member->getParameters(), tokens->getSourceName(), tokens->getSource()
             );
         }
@@ -268,7 +277,7 @@ bool registerMemberSignatures(
         }
     }
     if (!initializerRegistered) {
-        const auto id = runtime->getTypeManager().registerScriptClassMethod(
+        const auto id = runtime->registerScriptMethod(
             type->getId(), initializerName, {}, tokens->getSourceName(), tokens->getSource()
         );
         if (id.isInvalid()) {
@@ -280,8 +289,8 @@ bool registerMemberSignatures(
         context->getCompiler()->registerMemberCompilation(id, function->getId(), CompilationCallableTarget::PropertyInitializer);
         context->getCompiler()->setFunctionBody(id, std::make_unique<FunctionNode>(0, 0));
     }
-    if (type->asClassType()->getConstructors().empty()) {
-        const auto id = runtime->getTypeManager().registerScriptClassConstructor(
+    if (type->getConstructors().empty()) {
+        const auto id = runtime->registerScriptConstructor(
             type->getId(), {}, tokens->getSourceName(), tokens->getSource()
         );
         if (id.isInvalid()) {
@@ -295,7 +304,7 @@ bool registerMemberSignatures(
     return true;
 }
 
-CallableId findMemberCallable(const ClassType* type, const ClassMemberDeclaration& member) {
+CallableId findMemberCallable(const CompositeType* type, const ClassMemberDeclaration& member) {
     if (member.getKind() == ClassMemberKind::Constructor) {
         for (const auto* constructor : type->getConstructors()) {
             if (std::ranges::equal(constructor->getParameters(), member.getParameters(),
@@ -318,11 +327,11 @@ CallableId findMemberCallable(const ClassType* type, const ClassMemberDeclaratio
 
 bool parseMemberBodies(
     CompilerContext* context,
-    const ClassType* type,
+    const CompositeType* type,
     const Tokenizer* source,
     std::vector<std::unique_ptr<ClassMemberDeclaration>>& members
 ) {
-    auto initializerBody = std::make_unique<FunctionNode>(0, 0);
+    auto initializerBody = std::make_unique<FunctionNode>(source->getLineIndex(), source->getColumnIndex());
     auto initializerId = CallableId::INVALID;
     for (const auto* method : type->getMethods()) {
         if (method->getName() == type->getInitializerName()) {
@@ -356,7 +365,7 @@ bool parseMemberBodies(
                 const auto statement = tokens.next().textValue;
                 PreParseStatementFn preParser = nullptr;
                 // Class/hub declarations are rejected by their ordinary parsers in a callable body.
-                if (statement == "class" || statement == "hub" || statement == "open") continue;
+                if (statement == "class" || statement == "struct" || statement == "hub" || statement == "open") continue;
                 ParseStatementFn parser = nullptr;
                 StatementAvailability availability;
                 if (context->getCompiler()->getParseStatementFn(statement, parser, availability) &&
@@ -383,7 +392,7 @@ bool parseMemberBodies(
 ClassDeclaration::ClassDeclaration(
     const NomadIndex line,
     const NomadIndex column,
-    const ClassType* type,
+    const CompositeType* type,
     std::vector<std::unique_ptr<ClassMemberDeclaration>> members
 ):
     Statement(line, column),
@@ -391,7 +400,7 @@ ClassDeclaration::ClassDeclaration(
     m_members(std::move(members))
 {}
 
-const ClassType* ClassDeclaration::getType() const {
+const CompositeType* ClassDeclaration::getType() const {
     return m_type;
 }
 
@@ -450,33 +459,65 @@ bool preParseClassStatement(
     return registerMemberSignatures(context, function, tokens);
 }
 
-std::unique_ptr<Statement> parseClassStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
+bool preParseStructStatement(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    const PreParsePhase phase
+) {
+    if (phase == PreParsePhase::Declarations) {
+        return preDeclareClass(context, function, tokens, ClassMode::Closed, true);
+    }
+    return registerMemberSignatures(context, function, tokens, true);
+}
+
+namespace {
+
+std::unique_ptr<Statement> parseCompositeStatement(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    const bool isStruct
+) {
     const auto line = tokens->getLineIndex();
     const auto column = tokens->getColumnIndex();
     if (context->currentBodyEndsAtEnd() || !context->isFunctionRoot(function)) {
-        context->reportError("Classes may only be declared at script level or inside a hub", tokens);
+        context->reportError(NomadString(isStruct ? "Structs" : "Classes") +
+            " may only be declared at script level or inside a hub", tokens);
         return nullptr;
     }
     NomadString name;
     std::vector<std::unique_ptr<ClassMemberDeclaration>> members;
-    if (!parseClassDefinition(context, function, tokens, name, members, true)) {
+    if (!parseClassDefinition(context, function, tokens, name, members, true, isStruct)) {
         return nullptr;
     }
     if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown) {
-        context->reportError("Cannot declare class '" + name + "': identifier is already declared", tokens);
+        context->reportError(NomadString("Cannot declare ") + (isStruct ? "struct" : "class") +
+            " '" + name + "': identifier is already declared", tokens);
         return nullptr;
     }
-    const auto* type = context->getRuntime()->getTypeByName(name);
-    if (type == nullptr || type->asClassType() == nullptr) {
-        context->reportError("Class '" + name + "' has no registered class type", tokens);
+    const auto* registeredType = context->getRuntime()->getTypeByName(name);
+    const auto* type = registeredType != nullptr ? registeredType->asCompositeType() : nullptr;
+    if (type == nullptr || (isStruct ? type->asStructType() == nullptr : type->asClassType() == nullptr)) {
+        context->reportError(NomadString(isStruct ? "Struct" : "Class") + " '" + name + "' has no registered type", tokens);
         return nullptr;
     }
-    if (!parseMemberBodies(context, type->asClassType(), tokens, members)) {
+    if (!parseMemberBodies(context, type, tokens, members)) {
         return nullptr;
     }
-    auto declaration = std::make_unique<ClassDeclaration>(line, column, type->asClassType(), std::move(members));
+    auto declaration = std::make_unique<ClassDeclaration>(line, column, type, std::move(members));
     declaration->setEndSpan(tokens->getLineIndex(), tokens->getColumnIndex());
     return declaration;
+}
+
+} // namespace
+
+std::unique_ptr<Statement> parseClassStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
+    return parseCompositeStatement(context, function, tokens, false);
+}
+
+std::unique_ptr<Statement> parseStructStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
+    return parseCompositeStatement(context, function, tokens, true);
 }
 
 } // namespace nomad

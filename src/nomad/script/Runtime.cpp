@@ -157,9 +157,10 @@ Runtime::Runtime():
 
 //    register_keyword("stringId" NomadDoc("Load the string id of the given string"));
     registerKeyword("fun", NomadDoc("Function declaration"));
-    registerKeyword("class", NomadDoc("Declares a closed class type; use open class to allow compile-time extension"));
-    registerKeyword("hub", NomadDoc("Groups declarations in a namespace; use open hub to allow additional declaration blocks"));
-    registerKeyword("open", NomadDoc("Declares an extensible class or hub"));
+    registerKeyword("class", NomadDoc("Declares a closed class type"));
+    registerKeyword("struct", NomadDoc("Declares a closed struct"));
+    registerKeyword("hub", NomadDoc("Declare a hub"));
+    registerKeyword("open", NomadDoc("Declares an extensible class, struct or hub"));
     registerKeyword("new", NomadDoc("Constructs a new object"));
     registerKeyword("if", NomadDoc("if statement"));
     registerKeyword("else", NomadDoc("`else` branch of an `if` statement"));

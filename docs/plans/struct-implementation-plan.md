@@ -2,8 +2,8 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Steps 1AP through 1BA have been reviewed. Step 1BB is implemented and awaiting
-review.
+Steps 1AP through 1BB have been reviewed. Step 2 source declaration analysis is
+implemented and awaiting review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -83,9 +83,9 @@ This draft is not part of the published language guide.
 - Defer generic struct declarations and automatic `==`/`!=` for structs.
 - Defer generated C++ struct wrappers and automatic native C++ struct mapping.
   Existing generated bindings must remain correct when field offsets change.
-- Open structs are conditional: reuse existing open-class discovery if the extra
-  work is modest. Present the concrete cost and get a decision before implementing
-  open structs or deciding to defer them.
+- Open structs are deferred for this milestone, as approved during Step 2.
+  Closed structs support field discovery inside constructors, not external
+  field introduction.
 - Future struct collection initialization should run a parameterless constructor
   when available, otherwise the generated `$init`. Record this requirement, but
   do not implement struct collections in this milestone.
@@ -2242,6 +2242,54 @@ Prerequisite: step 1 approved.
 
 Review stop: analysis-only behavior and the open-struct decision. Do not claim
 executable struct support at this stage.
+
+Approved scope:
+
+- Implement source declaration analysis in one reviewable slice, reusing the
+  class declaration and composite member-resolution paths.
+- Finalize source struct layouts after inference and member discovery in the
+  existing Resolve phase. Do not add a compilation phase, opcode, or ABI.
+- Retain resolved property paths during inference and query physical offsets
+  only during validation/emission. A private property-offset query was approved.
+- Defer open structs for this milestone. Reuse requires more than parsing:
+  the descriptor currently fixes closed mode, and external field introduction
+  must be generalized and completed before layouts freeze.
+- Test semantic analysis, preserve class behavior, then stop without committing.
+
+Implementation:
+
+- `struct Name ... end` publishes symbols before cross-file signatures and
+  supports hub-qualified declarations, explicit initializer fields,
+  constructor-inferred fields, methods, overloaded constructors, and generated
+  `$init`/default constructors.
+- Shared declaration AST and callable registration use composite metadata;
+  existing class parser entry points remain available.
+- Empty structs retain their type identity in parameters and return expressions.
+  Nested layouts finalize after semantic resolution, with source diagnostics for
+  inline cycles.
+- Struct generic arguments are rejected before specialization in annotations,
+  explicit generic construction, and inferred generic construction. Recursive
+  annotation parsing rejects nested occurrences.
+- Open structs receive an explicit unsupported diagnostic. Interpreter aggregate
+  values, captures, temporary receivers, NRVO, and complete executable source
+  struct behavior remain outside this slice.
+
+Validation:
+
+- Windows Debug tests, compiler, runtime, and LSP targets built successfully.
+- All five unit-test groups passed: language, remaining, bindings, tooling, and
+  audio. Compiler export and LSP process integration tests also passed.
+- New analysis-only cases cover cross-file/hub symbols, empty type identity,
+  inferred fields, constructor/method overloads, nested and zero-width fields,
+  closed-field conflicts, inline cycles, reference cycle breaks, and explicit,
+  nested, and inferred generic-argument diagnostics.
+- Verified the agreed metadata example: `Point` has three logical fields/slots;
+  `Player` has two logical fields/four slots; `printPoint` has one logical
+  parameter/three slots; `updatePoint` has three logical parameters/five slots.
+- Analysis tests assert that instructions are not emitted and callable entry
+  points remain uncompiled. Existing compiled/interpreter/host regressions pass,
+  but complete executable source structs and gameplay were not validated.
+- Whitespace validation passed. Published language documentation is unchanged.
 
 ### Step 3: Storage, lifecycle, and VM call-frame support
 

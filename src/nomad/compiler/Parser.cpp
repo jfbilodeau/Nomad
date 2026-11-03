@@ -55,7 +55,7 @@ const Type* parseTypeName(
             if (argument == nullptr) {
                 return nullptr;
             }
-            if (argument->isVoid() || argument->isInternal()) {
+            if (argument->isVoid() || argument->isInternal() || argument->asStructType() != nullptr) {
                 context->reportError("Invalid type argument '" + argument->getTypeName() + "' for '" + name + "'", tokens);
                 return nullptr;
             }
@@ -137,7 +137,7 @@ NomadIndex countBlockOpenings(const Tokenizer* tokens) {
     }
     auto count = NomadIndex{0};
     if (statement == "while" || statement == "until" || statement == "do" ||
-        statement == "for" || statement == "hub" || statement == "class" || statement == "enum") {
+        statement == "for" || statement == "hub" || statement == "class" || statement == "struct" || statement == "enum") {
         ++count;
     }
     if (statement == "open" && tokens->getTokenCount() > 1 &&
@@ -873,6 +873,11 @@ std::unique_ptr<Expression> parseNewExpression(
         while (!tokens->endOfLine() && !tokens->is(">")) {
             const auto* argument = parseType(context, tokens);
             if (argument == nullptr) {
+                return nullptr;
+            }
+            if (argument->asStructType() != nullptr) {
+                context->reportError("Struct type argument '" + argument->getTypeName() +
+                    "' is not supported for constructor '" + constructorName + "'", tokens);
                 return nullptr;
             }
             typeArguments.push_back(argument);

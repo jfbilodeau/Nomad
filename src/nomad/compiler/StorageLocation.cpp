@@ -49,9 +49,17 @@ StorageLocation StorageLocation::getProperty(const Property& property) const {
         throw NomadBug("Storage property requires matching stored struct metadata");
     }
     auto storage = *this;
-    storage.m_propertyOffset += m_type->asCompositeType()->getFieldOffset(property.getId());
+    storage.m_properties.push_back(&property);
     storage.m_type = property.getValueType();
     return storage;
+}
+
+NomadIndex StorageLocation::getPropertyOffset() const {
+    auto offset = NomadIndex{0};
+    for (const auto* property : m_properties) {
+        offset += property->getOwnerType()->getFieldOffset(property->getId());
+    }
+    return offset;
 }
 
 NomadIndex StorageLocation::getRootOffset(const ScriptCallableBase* function) const {
@@ -90,16 +98,18 @@ NomadIndex StorageLocation::getRootOffset(const ScriptCallableBase* function) co
 
 NomadIndex StorageLocation::getOffset(const ScriptCallableBase* function) const {
     const auto offset = getRootOffset(function);
+    const auto propertyOffset = getPropertyOffset();
     if (m_root.identifierType == IdentifierType::Parameter) {
-        return offset + (m_root.valueType->getSize() - m_propertyOffset - m_type->getSize());
+        return offset + (m_root.valueType->getSize() - propertyOffset - m_type->getSize());
     }
-    return offset + m_propertyOffset;
+    return offset + propertyOffset;
 }
 
 void StorageLocation::validate(const ScriptCallableBase* function) const {
     (void)getRootOffset(function);
     const auto rootSize = m_root.valueType->getSize();
-    if (m_propertyOffset > rootSize || m_type->getSize() > rootSize - m_propertyOffset) {
+    const auto propertyOffset = getPropertyOffset();
+    if (propertyOffset > rootSize || m_type->getSize() > rootSize - propertyOffset) {
         throw NomadBug("Storage location exceeds its root storage");
     }
 }
@@ -188,7 +198,7 @@ void StorageLocation::emitAddress(
     case IdentifierType::Receiver:
         compiler.addOpCode(OpCodes::op_storage_parameter_address_push);
         compiler.addIndex(getRootOffset(function));
-        compiler.addIndex(m_propertyOffset);
+        compiler.addIndex(getPropertyOffset());
         break;
     default:
         throw NomadBug("Invalid storage address root");
@@ -228,7 +238,7 @@ void StorageLocation::emitLoad(
         m_type->emitLoadParameter(compiler, getOffset(function), target);
         break;
     case IdentifierType::Receiver:
-        m_type->emitLoadStorageParameter(compiler, getRootOffset(function), m_propertyOffset, target);
+        m_type->emitLoadStorageParameter(compiler, getRootOffset(function), getPropertyOffset(), target);
         break;
     default:
         throw NomadBug("Invalid storage load root");
@@ -256,10 +266,10 @@ void StorageLocation::emitStoreResult(Compiler& compiler, const ScriptCallableBa
         m_type->emitStoreParameter(compiler, getOffset(function));
         break;
     case IdentifierType::Receiver:
-        m_type->emitFreeStorageParameter(compiler, getRootOffset(function), m_propertyOffset);
+        m_type->emitFreeStorageParameter(compiler, getRootOffset(function), getPropertyOffset());
         compiler.addOpCode(OpCodes::op_storage_parameter_set);
         compiler.addIndex(getRootOffset(function));
-        compiler.addIndex(m_propertyOffset);
+        compiler.addIndex(getPropertyOffset());
         break;
     default:
         throw NomadBug("Invalid storage store root");
@@ -297,7 +307,7 @@ void StorageLocation::emitCopyToLocal(
         m_type->emitCopyParameterToFunctionVariable(compiler, getOffset(function), offset);
         break;
     case IdentifierType::Receiver:
-        m_type->emitCopyStorageParameterToFunctionVariable(compiler, getRootOffset(function), m_propertyOffset, offset);
+        m_type->emitCopyStorageParameterToFunctionVariable(compiler, getRootOffset(function), getPropertyOffset(), offset);
         break;
     default:
         throw NomadBug("Invalid storage copy source");
@@ -329,7 +339,7 @@ void StorageLocation::emitCopyFromLocal(
         m_type->emitCopyFunctionVariableToParameter(compiler, offset, getOffset(function));
         break;
     case IdentifierType::Receiver:
-        m_type->emitCopyFunctionVariableToStorageParameter(compiler, offset, getRootOffset(function), m_propertyOffset);
+        m_type->emitCopyFunctionVariableToStorageParameter(compiler, offset, getRootOffset(function), getPropertyOffset());
         break;
     default:
         throw NomadBug("Invalid storage copy destination");

@@ -42,6 +42,7 @@ Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
     registerParseStatementFn("fun", StatementAvailability::Compiler, parseFunStatement, preParseFunStatement);
     registerParseStatementFn("hub", StatementAvailability::Compiler, parseHubStatement, preParseHubStatement);
     registerParseStatementFn("class", StatementAvailability::Compiler, parseClassStatement, preParseClassStatement);
+    registerParseStatementFn("struct", StatementAvailability::Compiler, parseStructStatement, preParseStructStatement);
     registerParseStatementFn("open", StatementAvailability::Compiler, parseOpenStatement, preParseOpenStatement);
     registerParseStatementFn("assert", StatementAvailability::Compiler, parseAssertStatement);
     registerParseStatementFn("if", StatementAvailability::Both, parseIfStatement);
@@ -448,12 +449,7 @@ const Property* Compiler::resolveClassField(
     const NomadIndex column
 ) {
     const auto* receiver = getReceiverType(function);
-    const auto* owner = receiver != nullptr ? receiver->asClassType() : nullptr;
-    if (receiver != nullptr && receiver->asStructType() != nullptr) {
-        context->reportError("Struct property assignment is not yet supported",
-            function->getPath(), line, column);
-        return nullptr;
-    }
+    const auto* owner = receiver != nullptr ? receiver->asCompositeType() : nullptr;
     if (owner == nullptr) {
         reportInternalError("Class field resolution requires an object receiver");
     }
@@ -477,7 +473,7 @@ const Property* Compiler::resolveClassField(
 const Property* Compiler::resolveObjectField(
     CompilerContext* context,
     ScriptCallableBase* function,
-    const ClassType* owner,
+    const CompositeType* owner,
     const NomadString& name,
     const Type* valueType,
     const bool allowDeclaration,
@@ -487,40 +483,42 @@ const Property* Compiler::resolveObjectField(
     const auto report = [&](const NomadString& message) {
         context->reportError(message, function != nullptr ? function->getPath() : NomadString{}, line, column);
     };
+    const auto category = NomadString(owner->asStructType() != nullptr ? "struct" : "class");
     if (name.empty() || name.find('.') != NomadString::npos) {
-        report("Expected an unqualified class field name: '" + name + "'");
+        report("Expected an unqualified " + category + " field name: '" + name + "'");
         return nullptr;
     }
     for (const auto* method : owner->getMethods()) {
         if (method->getName() == name) {
-            report("Class field '" + name + "' conflicts with a method");
+            report(NomadString(owner->asStructType() != nullptr ? "Struct" : "Class") +
+                " field '" + name + "' conflicts with a method");
             return nullptr;
         }
     }
     const auto* property = owner->getProperty(name);
     if (property == nullptr && !allowDeclaration) {
-        report("Unknown class field '" + name + "'");
+        report("Unknown " + category + " field '" + name + "'");
         return nullptr;
     }
     if (valueType == nullptr) {
-        report("Cannot determine type of class field '" + name + "'");
+        report("Cannot determine type of " + category + " field '" + name + "'");
         return nullptr;
     }
     if (valueType->isVoid() || valueType->isInternal()) {
-        report("Invalid type for class field '" + name + "'");
+        report("Invalid type for " + category + " field '" + name + "'");
         return nullptr;
     }
     if (property != nullptr) {
         if (property->getValueType() != valueType) {
-            report("Cannot assign type '" + valueType->getTypeName() + "' to class field '" + name +
+            report("Cannot assign type '" + valueType->getTypeName() + "' to " + category + " field '" + name +
                 "' of type '" + property->getValueType()->getTypeName() + "'");
             return nullptr;
         }
         return property;
     }
-    const auto id = m_runtime->getTypeManager().registerScriptClassProperty(owner->getId(), name, valueType);
+    const auto id = m_runtime->registerProperty(owner->getId(), name, valueType);
     if (id.isInvalid()) {
-        report("Cannot register class field '" + name + "'");
+        report("Cannot register " + category + " field '" + name + "'");
         return nullptr;
     }
     m_externalFields.push_back({id, function != nullptr ? function->getPath() : NomadString{}, line, column});
@@ -1965,6 +1963,25 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     }
 
     reportFieldDiagnostics(context);
+    if (hasNewErrors()) {
+        return false;
+    }
+
+    for (const auto& source : m_functions) {
+        const auto* owner = source.function->getClassType();
+        if (source.kind != CompilationCallableTarget::PropertyInitializer ||
+            owner == nullptr || owner->asStructType() == nullptr) {
+            continue;
+        }
+        try {
+            m_runtime->finalizeCompositeFieldLayout(owner->getId());
+        } catch (const NomadBug&) {
+            throw;
+        } catch (const NomadException& exception) {
+            context->reportError(exception.what(), source.function->getPath(),
+                source.ast->getLine(), source.ast->getColumn());
+        }
+    }
     if (hasNewErrors()) {
         return false;
     }

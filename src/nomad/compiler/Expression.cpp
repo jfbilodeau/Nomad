@@ -739,6 +739,18 @@ bool NativeMemberExpression::resolveMember(
     if (runtime->getMemberType(m_memberId) == MemberType::Unknown) {
         if (m_receiver->getType()->asStructType() != nullptr) {
             const auto* property = composite->getProperty(m_memberName);
+            if (assignment && context->getMode() == CompilerMode::Script) {
+                const auto* identifier = dynamic_cast<const IdentifierExpression*>(m_receiver.get());
+                if (identifier != nullptr && identifier->getIdentifier() == "this" &&
+                    context->getCompiler()->getReceiverType(function) == composite) {
+                    property = context->getCompiler()->resolveClassField(
+                        context, function, m_memberName, valueType,
+                        runtime->getConstructor(function->getId()) != nullptr, getLine(), getColumn());
+                    if (property == nullptr) {
+                        return false;
+                    }
+                }
+            }
             if (property == nullptr) {
                 reportError(context, function, "Unknown struct property '" + m_memberName +
                     "' on type '" + composite->getTypeName() + "'");
@@ -1392,6 +1404,13 @@ void ConstructorExpression::onResolve(CompilerContext* context, ScriptCallableBa
         if (!inference.isResolved()) {
             reportError(context, function, inference.error);
             return;
+        }
+        for (const auto* argument : inference.typeArguments) {
+            if (argument->asStructType() != nullptr) {
+                reportError(context, function, "Struct type argument '" + argument->getTypeName() +
+                    "' is not supported for constructor '" + m_constructorName + "'");
+                return;
+            }
         }
         classType = runtime->getTypeManager().getParameterizedType(m_constructorName, inference.typeArguments);
         if (classType == nullptr) {

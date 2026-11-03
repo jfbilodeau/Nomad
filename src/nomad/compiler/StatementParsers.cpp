@@ -121,6 +121,10 @@ bool preParseHub(
 }
 
 bool expectOpenStatement(CompilerContext* context, Tokenizer* tokens, NomadString& statement) {
+    if (tokens->is("struct")) {
+        context->reportError("Open structs are not supported", tokens);
+        return false;
+    }
     if (!tokens->is("hub") && !tokens->is("class")) {
         context->reportError("Expected 'hub' or 'class' after 'open'", tokens);
         return false;
@@ -218,9 +222,9 @@ std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptCal
         }
         const auto openDeclaration = tokens->is("open") && tokens->getTokenCount() >= 2 &&
             (tokens->getTokenAt(1) == "hub" || tokens->getTokenAt(1) == "class");
-        if (!openDeclaration && !tokens->is("class") && !tokens->is("hub") && !tokens->is("fun") && !tokens->is("const") &&
+        if (!openDeclaration && !tokens->is("class") && !tokens->is("struct") && !tokens->is("hub") && !tokens->is("fun") && !tokens->is("const") &&
             !tokens->is("enum") && !tokens->is("event")) {
-            context->reportError("A hub may contain only variable, hub, class, function, constant, enum, or event declarations", tokens);
+            context->reportError("A hub may contain only variable, hub, class, struct, function, constant, enum, or event declarations", tokens);
             continue;
         }
         auto statement = parser::parseLine(context, function, tokens);
